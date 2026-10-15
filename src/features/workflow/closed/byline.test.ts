@@ -263,6 +263,19 @@ describe('openRunByline', () => {
     ).toBe(`Stopped ${phrase} · type a correction or ⏎ to continue`);
   });
 
+  it('names Apply, not the review, for a run stopped while it applied', () => {
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'open',
+          stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
+          resumeAt: { kind: 'apply' },
+        },
+      }),
+    ).toBe('Stopped at Apply · type a correction or ⏎ to continue');
+  });
+
   it('reopens the plan card a run with a typed plan is parked at', () => {
     expect(
       openRunByline({

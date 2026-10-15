@@ -1688,6 +1688,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-apply-conflict',
+      title: 'Workflow · a run whose Apply halted on conflicts, at rest',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'at-rest-apply-conflict',
+        title: 'Apply halt at rest',
+        kind: 'ready',
+        marker: 'Apply found 2 conflicting files',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-closed-elsewhere',
       title: 'Workflow · a paused run that another process ended',
       surface: screenSurface('workflow'),
@@ -2519,6 +2536,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Review-failed recovery menu',
         kind: 'question',
         marker: 'Fix again',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-apply-conflict',
+      title: 'Workflow · a run continued onto its Apply halt',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'recovery-apply-conflict',
+        title: 'Apply-conflict recovery menu',
+        kind: 'question',
+        marker: 'Files docs/readme.md',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

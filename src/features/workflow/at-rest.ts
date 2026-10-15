@@ -1,5 +1,6 @@
 import type { Phase } from '../../core/schemas/enums.js';
 import {
+  applyStopRailStages,
   getRailStages,
   type RailHalt,
   type RailStageState,
@@ -54,8 +55,8 @@ export function atRestRailStages(record: RunRecord): RailStageState[] {
       ? getRailStages('complete', applyOption)
       : getRailStages(recordPhase(record), { halted: 'cancelled', ...applyOption });
   }
-  const phase = status.resumeAt.kind === 'apply' ? 'complete' : recordPhase(record);
-  return getRailStages(phase, { halted: stopMark(status.stop), ...applyOption });
+  if (status.resumeAt.kind === 'apply') return applyStopRailStages(stopMark(status.stop));
+  return getRailStages(recordPhase(record), { halted: stopMark(status.stop), ...applyOption });
 }
 
 /**
@@ -94,9 +95,6 @@ export function applyStage(record: RunRecord): RailStageStatus | undefined {
     }
     if (status.as === 'discarded') return 'cancelled';
     if (status.as === 'ended') return undefined;
-  }
-  if (status.kind === 'open' && status.resumeAt.kind === 'apply') {
-    return stopMark(status.stop);
   }
   return 'pending';
 }

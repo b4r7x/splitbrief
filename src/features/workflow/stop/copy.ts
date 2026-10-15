@@ -6,6 +6,7 @@ import type { RunRecord } from '../../../core/sessions/run-record.js';
 import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import { suiteStatusParts } from '../display/phase-verb.js';
 import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
@@ -54,8 +55,8 @@ export interface StopByline {
 }
 
 /**
- * A step in the words the rest of the screen uses for it: a brief by id, and every planner call or
- * gate as the plan, the one stage the rail shows for them.
+ * A step in the words the rest of the screen uses for it: a brief by id, every planner call or
+ * gate as the plan, the one stage the rail shows for them, and Apply by the stage it names.
  */
 export function stepWord(step: StepRef): string {
   switch (step.kind) {
@@ -64,8 +65,12 @@ export function stepWord(step: StepRef): string {
       return 'the plan';
     case 'brief':
       return step.taskId;
-    default:
+    case 'review':
       return 'the review';
+    case 'apply':
+      return 'Apply';
+    default:
+      return assertNever(step);
   }
 }
 

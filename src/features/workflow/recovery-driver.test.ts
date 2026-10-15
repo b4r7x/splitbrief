@@ -214,13 +214,14 @@ describe('createRecoveryDriver', () => {
         seat: 'build',
         resetAt: Date.parse('2026-10-10T17:00:00.000Z'),
         issue: state.pendingRecovery,
+        at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
       }),
     );
 
     controller.abort();
 
     await settled;
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null, at: null });
   });
 
   it('clears the notice if the recovery question fails', async () => {
@@ -560,7 +561,51 @@ describe('createRecoveryDriver', () => {
     if (result.shouldRun) {
       expect(result.switchSeat?.candidate).toEqual({ tool: 'opencode' });
     }
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null, at: null });
+  });
+
+  it('marks Apply as the step an Apply halt waits at', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'apply-conflict',
+      phase: 'complete',
+      availableActions: ['retry-same-worker', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+    });
+    const halted: WorkflowState = {
+      ...state,
+      phase: 'complete',
+      reviewStatus: 'passed',
+      workspace: {
+        kind: 'worktree',
+        path: join(prepared.session.ref.projectDir, 'run-worktree'),
+        base: { snapshotId: 'base', head: null },
+      },
+    };
+    const controller = new AbortController();
+    const { inputMode } = makeInputMode([]);
+    let cancelQuestion = (): void => {};
+    const promptPendingRecovery = createRecoveryDriver({
+      prepared,
+      inputMode: {
+        ...inputMode,
+        setQuestionMode: () =>
+          new Promise<UserMessageInput>((_resolve, reject) => {
+            cancelQuestion = () => reject(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+          }),
+        resetMode: () => cancelQuestion(),
+      },
+      abortedRef: { current: false },
+      retentionNoticeHandled: { current: false },
+      sink: addTuiEvent,
+      setInlineResume: () => {},
+    });
+    const pending = promptPendingRecovery({ state: halted, controller, republishPrompt: false });
+    const settled = expect(pending).rejects.toBe(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+    await vi.waitFor(() => expect(recoveryNoticeStore.get().at).toEqual({ kind: 'apply' }));
+
+    controller.abort();
+    await settled;
+    expect(recoveryNoticeStore.get().at).toBeNull();
   });
 
   it('marks the halted seat for the header while the operator is answering', async () => {
@@ -573,8 +618,12 @@ describe('createRecoveryDriver', () => {
       resetAt: '2026-07-13T17:00:00.000Z',
       switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
     });
-    const noticeAtPrompt: Array<{ seat: string | null; resetAt: number | null; issue: unknown }> =
-      [];
+    const noticeAtPrompt: Array<{
+      seat: string | null;
+      resetAt: number | null;
+      issue: unknown;
+      at: unknown;
+    }> = [];
     const { inputMode } = makeInputMode(['a']);
     const observed: UseInputModeResult = {
       ...inputMode,
@@ -591,9 +640,10 @@ describe('createRecoveryDriver', () => {
         seat: 'build',
         resetAt: Date.parse('2026-07-13T17:00:00.000Z'),
         issue: state.pendingRecovery,
+        at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
       },
     ]);
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null, at: null });
   });
 
   it('opens the PLAN picker for a review halt whose REVIEW follows PLAN, and marks REVIEW', async () => {
@@ -661,9 +711,14 @@ describe('createRecoveryDriver', () => {
     await runDriver(prepared, state, observed);
 
     expect(noticeAtPrompt).toEqual([
-      { seat: 'build', resetAt: null, issue: state.pendingRecovery },
+      {
+        seat: 'build',
+        resetAt: null,
+        issue: state.pendingRecovery,
+        at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      },
     ]);
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null, at: null });
   });
 
   it('publishes the halted seat even when it offers no other tool', async () => {
@@ -700,9 +755,14 @@ describe('createRecoveryDriver', () => {
     await runDriver(prepared, state, observed);
 
     expect(noticeAtPrompt).toEqual([
-      { seat: 'review', resetAt: null, issue: state.pendingRecovery },
+      {
+        seat: 'review',
+        resetAt: null,
+        issue: state.pendingRecovery,
+        at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      },
     ]);
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null, at: null });
   });
 
   it('end run closes the run on the state and stops the loop', async () => {

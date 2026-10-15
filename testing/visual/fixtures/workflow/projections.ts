@@ -30,6 +30,7 @@ import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-se
 import { DEFAULT_LOCAL_RETRIES } from '../../../../src/core/pipeline-spec/retries.js';
 import { BOUNDS } from '../../../../src/core/pipeline-spec/bounds.js';
 import { buildConsultBoundRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/consult.js';
+import { buildApplyConflictRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/apply.js';
 import { taskFromSpec } from '../../../../src/engine/spec/plan-tasks.js';
 import { planConfirmations } from '../../../../src/engine/orchestrator/approval/confirm.js';
 import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
@@ -2711,6 +2712,34 @@ const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
       unverified: 6,
       phase: 'complete',
       acceptAsIs: true,
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
+};
+
+/**
+ * A run continued onto its Apply halt: the review passed, so the rail marks Apply and not the
+ * review, as the same run at rest does.
+ */
+const applyConflictRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-apply-conflict'),
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'complete',
+    reviewStatus: 'passed',
+    workspace: {
+      kind: 'worktree',
+      path: '.splitbrief/worktrees/visual/workspace',
+      base: { snapshotId: 'visual-base', head: null },
+    },
+    pendingRecovery: buildApplyConflictRecoveryIssue({
+      conflicts: [
+        { path: 'src/cli.js', kind: 'mode' },
+        { path: 'docs/readme.md', kind: 'unsupported-entry' },
+      ],
+      workspacePath: '.splitbrief/worktrees/visual/workspace',
       createdAt: new Date(FIXED_TS).toISOString(),
     }),
   }),
@@ -5711,6 +5740,7 @@ const projections = [
   },
   reviewFailedRecoveryProjection,
   reviewUnverifiedRecoveryProjection,
+  applyConflictRecoveryProjection,
   reviewContextRecoveryProjection,
   reviewCallFailedRecoveryProjection,
   leftIsolationRecoveryProjection,

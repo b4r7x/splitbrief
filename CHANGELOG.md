@@ -182,6 +182,8 @@
 - A call you stop reads `stopped by you` in the transcript.
 - The `/end` description no longer promises to keep every change on disk. It reads *Close the run, saving unapplied changes*, which is also true for a run that is ready to apply: End run discards it and saves its changes in `run.patch`.
 - The run ages on home and in `/sessions`, such as `just now` and `4m ago`, now move on while the list stays open. Before, they changed only after you opened and closed another panel.
+- A run whose Apply stopped on a conflict keeps the Apply stage on the header after you continue it, and a stop there reads *Stopped at Apply*. Before, the header marked the review as failed and the stop read *Stopped at the review*, although the review passed.
+- `esc` on the recovery menu of an Apply conflict or of a failed final review opens Stop options, as on every other recovery menu. Before, only `ctrl+c` left that menu.
 - When a coding tool changes during a run, for example when it updates itself, the halt names the tool and tells you that **Try again** checks it again. It no longer asks you to run `splitbrief doctor`.
 - `plan.md`, `tasks.md` and `review.md` name the REVIEW seat beside PLAN and BUILD. `splitbrief status` lists the three seats as PLAN, BUILD and REVIEW.
 - A correct change no longer fails its review over a test that already failed before the run. A reviewer check whose only failures also fail at the run base verifies the reviewer's claim and fails nothing. A minor finding stays a note in `review.md`, also when the reviewer could not verify it.

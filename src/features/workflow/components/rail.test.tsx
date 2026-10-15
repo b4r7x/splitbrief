@@ -575,6 +575,7 @@ describe('Rail — completion with a halt open', () => {
         availableActions: ['revise', 'end-run'],
         recommendedAction: 'revise',
       }),
+      at: { kind: 'review', cycle: 2 },
     });
     const ui = renderRail('B');
     await tick();
@@ -582,6 +583,52 @@ describe('Rail — completion with a halt open', () => {
 
     expect(frame).not.toContain('done');
     expect(frame).toContain(`${glyph('statusFailed')} Review`);
+    ui.unmount();
+    recoveryNoticeStore.reset();
+  });
+
+  // The review passed and Apply halted: the rail the run at rest painted stays when it continues.
+  it('marks Apply failed and the review done while an Apply halt waits', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
+    lifecycleStore.__testReset({
+      phase: 'complete',
+      status: 'complete',
+      startedAt: 0,
+      endedAt: 1,
+      durationMs: 1,
+    });
+    eventsStore.__testReset({
+      events: [{ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' }],
+    });
+    recoveryNoticeStore.open({
+      seat: null,
+      resetAt: null,
+      issue: makeRecoveryIssue({
+        reason: 'apply-conflict',
+        phase: 'complete',
+        availableActions: ['retry-same-worker', 'end-run'],
+        recommendedAction: 'retry-same-worker',
+      }),
+      at: { kind: 'apply' },
+    });
+    const ui = renderRail('B');
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${DONE} Review`);
+    expect(frame).toContain(`${glyph('statusFailed')} Apply`);
+    expect(
+      measureRailCells({
+        phase: 'complete',
+        cancelled: false,
+        form: 'B',
+        cols: 100,
+        tasks: tasksStore.get(),
+        events: eventsStore.get().events,
+        recoveryAt: { kind: 'apply' },
+        buildBlockShown: false,
+      }),
+    ).toBe(getTerminalCellWidth(frame.trim()));
     ui.unmount();
     recoveryNoticeStore.reset();
   });
@@ -608,7 +655,7 @@ describe('Rail — Form C (narrow floor)', () => {
           cols: 22,
           tasks: tasksStore.get(),
           events: eventsStore.get().events,
-          recoveryPending: false,
+          recoveryAt: null,
           buildBlockShown,
         }),
       ).toBe(getTerminalCellWidth(frame));

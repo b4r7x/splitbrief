@@ -94,7 +94,7 @@ export function Header({
     cols,
     tasks,
     events: eventsState.events,
-    recoveryPending: recoveryNotice.issue !== null,
+    recoveryAt: recoveryNotice.at,
     buildBlockShown,
     ...(stages !== undefined && { stages }),
   });

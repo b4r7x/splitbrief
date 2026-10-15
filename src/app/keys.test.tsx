@@ -33,6 +33,8 @@ import { SessionPreparation } from './session-preparation.js';
 import { Composer } from '../components/composer/composer.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { reviewKeysStore } from '../stores/ui/review-keys.js';
+import { recoveryNoticeStore } from '../stores/workflow/recovery-notice.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)
 // so the deferred arm flushes without copying that module-private literal here.
@@ -738,6 +740,42 @@ describe('useAppKeys: ESC stop ladder', () => {
     expect(overlayStore.get().active).toBe('stop-sheet');
     ui.unmount();
   });
+
+  // A run halted on Apply or on a failed final review has completed its phases, yet the panel
+  // waiting on it is part of the run: esc answers it as on a halt in the middle of a build.
+  it.each([
+    { reason: 'apply-conflict', at: { kind: 'apply' } },
+    { reason: 'review-failed', at: { kind: 'review', cycle: 0 } },
+  ] as const)(
+    'esc on the $reason halt panel of a completed run opens the stop sheet',
+    async ({ reason, at }) => {
+      lifecycleStore.__testReset({ phase: 'complete', status: 'complete' });
+      recoveryNoticeStore.open({
+        seat: null,
+        resetAt: null,
+        issue: makeRecoveryIssue({
+          reason,
+          phase: 'complete',
+          taskId: undefined,
+          taskTitle: undefined,
+          availableActions: ['retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-same-worker',
+        }),
+        at,
+      });
+      const exit = vi.fn();
+      const ui = renderFeature(<Harness exit={exit} />);
+      await tick();
+
+      await writeEsc(ui);
+      await tick();
+      vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+
+      expect(routerStore.get().screen).toBe('workflow');
+      expect(overlayStore.get().active).toBe('stop-sheet');
+      ui.unmount();
+    },
+  );
 
   it('parked Escape returns home even with an unsent draft', async () => {
     stopStore.park('mid-brief', null, null);

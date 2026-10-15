@@ -7,6 +7,7 @@ import {
   type OverlayType,
 } from '../../core/navigation/types.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
+import type { StepRef } from '../../core/schemas/run-step.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -16,7 +17,7 @@ import { plannerSupportsImages } from '../../core/runners/capabilities.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { formatSubmissionFailure } from '../../components/composer/home-hint.js';
-import { deriveRunStatus } from '../../core/sessions/run-status.js';
+import { deriveRunStatus, resumeStep } from '../../core/sessions/run-status.js';
 import type { EventSink } from '../../engine/events/types.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { publishRetainedWorkspaceNotice } from '../../engine/orchestrator/isolation/retention.js';
@@ -81,15 +82,16 @@ interface RecoveryDriverOptions {
 
 /**
  * The open halt, published for the rest of the screen while the operator reads the panel: the
- * issue itself, plus the two things the header annotates the bar with — the halted seat and, when
- * the runner named one, the clock its quota comes back on.
+ * issue itself, the step the run resumes at, and the two things the header annotates the bar
+ * with — the halted seat and, when the runner named one, the clock its quota comes back on.
  */
-function openRecoveryNotice(issue: RecoveryIssue): void {
+function openRecoveryNotice(issue: RecoveryIssue, at: StepRef): void {
   const resetAt = issue.resetAt === undefined ? Number.NaN : Date.parse(issue.resetAt);
   recoveryNoticeStore.open({
     seat: issue.seat ?? null,
     resetAt: Number.isFinite(resetAt) ? resetAt : null,
     issue,
+    at,
   });
 }
 
@@ -185,6 +187,7 @@ export function createRecoveryDriver(
   }: PromptPendingRecoveryArgs): Promise<PendingRecoveryResult> {
     const issue = state.pendingRecovery;
     if (issue === undefined) return { shouldRun: true, state };
+    const at = resumeStep(state);
 
     // The halt's declaration is its automatic intent: the declared fallback is taken
     // at once, with no panel question and no picker, and the run loop applies it
@@ -230,13 +233,13 @@ export function createRecoveryDriver(
         const offered = switchSeatCandidateForAnswer(answer, offer);
         if (offer === undefined || offered === undefined) {
           feedbackStore.setError('No other tool is offered for this seat.');
-          openRecoveryNotice(issue);
+          openRecoveryNotice(issue, at);
           return null;
         }
         const candidate = await pickSwappedSeat(offer.seat, offered, controller.signal);
         if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
         if (candidate === undefined) {
-          openRecoveryNotice(issue);
+          openRecoveryNotice(issue, at);
           return null;
         }
         feedbackStore.reset();
@@ -264,7 +267,7 @@ export function createRecoveryDriver(
         feedbackStore.setError(result.message);
         // The engine must stay parked on this halt. Returning shouldRun here re-enters the
         // workflow with the same pending issue before the operator can choose another action.
-        openRecoveryNotice(issue);
+        openRecoveryNotice(issue, at);
         return null;
       }
 
@@ -347,7 +350,7 @@ export function createRecoveryDriver(
 
     if (republishPrompt) publishRecoveryPrompted({ bus, phase: state.phase }, sessionId, issue);
 
-    openRecoveryNotice(issue);
+    openRecoveryNotice(issue, at);
 
     while (true) {
       const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));

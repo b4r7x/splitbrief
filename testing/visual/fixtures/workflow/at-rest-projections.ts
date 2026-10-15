@@ -21,6 +21,7 @@ import {
 } from '../../../../src/engine/providers/cost/breakdown.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
 import { buildSeatDownIssue } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import { buildApplyConflictRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/apply.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../../src/engine/events/workflow-cancel.js';
 import {
   WORKSPACE_KEPT_CODE,
@@ -1082,6 +1083,46 @@ const READY_OVERRIDE_LOG: readonly EngineEvent[] = READY_LOG.map((event) =>
       : event,
 );
 
+/** The review passed and Apply met two entries it would not write: the run waits at Apply. */
+const APPLY_CONFLICT = buildApplyConflictRecoveryIssue({
+  conflicts: [
+    { path: FILES.form, kind: 'mode' },
+    { path: FILES.docs, kind: 'unsupported-entry' },
+  ],
+  workspacePath: RUN_WORKSPACE.path,
+  createdAt: STARTED_AT_ISO,
+});
+
+const AT_REST_APPLY_CONFLICT = record({
+  sessionId: 'visual-at-rest-apply-conflict',
+  status: {
+    kind: 'open',
+    stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: APPLY_CONFLICT } },
+    resumeAt: { kind: 'apply' },
+  },
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'passed',
+    workspace: RUN_WORKSPACE,
+    pendingRecovery: APPLY_CONFLICT,
+  }),
+  summary: workspaceSummary('visual-at-rest-apply-conflict'),
+  ledger: READY_LEDGER,
+});
+
+const APPLY_CONFLICT_LOG: readonly EngineEvent[] = [
+  ...READY_LOG,
+  {
+    type: 'error',
+    ts: Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime + 30_000,
+    phase: 'complete',
+    message: APPLY_CONFLICT.message,
+    category: 'recovery',
+    code: 'apply_conflict',
+  },
+];
+
 const CLOSED_APPLIED = record({
   sessionId: 'visual-closed-applied',
   status: { kind: 'closed', as: 'applied' },
@@ -2053,6 +2094,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   }),
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
+  atRestProjection({
+    id: 'workflow-at-rest-apply-conflict',
+    route: { record: AT_REST_APPLY_CONFLICT, log: APPLY_CONFLICT_LOG },
+  }),
   {
     ...atRestProjection({
       id: 'workflow-at-rest-crashed-build',
