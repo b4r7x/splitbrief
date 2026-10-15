@@ -143,7 +143,7 @@ function buildConversationRowsProjectionWithContext(
       continue;
     }
     if (step.kind === 'activity-batch') {
-      flushActivityBatch(step.batch, step.settledSection !== undefined);
+      flushActivityBatch(step.batch, step.settledSection !== undefined || step.callEnded);
       continue;
     }
     if (step.kind === 'recovery') {

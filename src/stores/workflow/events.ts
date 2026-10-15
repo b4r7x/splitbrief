@@ -41,6 +41,26 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
   switch (event.type) {
     case 'runner_call_activity':
       return projectRunnerActivityForTuiEventLog(event);
+    // The transcript reads only that the call finished; an error ends it through its terminal activity.
+    case 'runner_call_completed':
+      return {
+        type: 'runner_call_completed',
+        ts: event.ts,
+        phase: event.phase,
+        ...(event.taskId !== undefined && { taskId: event.taskId }),
+        callId: event.callId,
+        role: event.role,
+        backendKind: event.backendKind,
+        sequence: event.sequence,
+        status: event.status,
+        error: null,
+        partial: false,
+        startedAt: event.startedAt,
+        endedAt: event.endedAt,
+        durationMs: event.durationMs,
+        usage: null,
+        nativeSessionId: null,
+      };
     case 'runner_call_started':
     case 'runner_call_runtime_status':
     case 'runner_call_text_delta':
@@ -50,7 +70,6 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
     case 'runner_call_artifact':
     case 'runner_call_warning':
     case 'runner_call_error':
-    case 'runner_call_completed':
     case 'runner_call_stalled':
     case 'runner_call_stall_cleared':
     case 'runner_call_heartbeat':
