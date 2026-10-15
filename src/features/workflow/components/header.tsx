@@ -5,7 +5,7 @@ import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
-import { useSharedClock } from '../hooks/use-shared-clock.js';
+import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import {
   lifecycleStore,
   runElapsedMs,

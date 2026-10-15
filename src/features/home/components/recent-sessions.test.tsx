@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Box, Text } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -44,6 +44,7 @@ describe('RecentSessions', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     resetAllStores();
     cleanupTempDir(projectDir);
     projectDir = '';
@@ -66,6 +67,22 @@ describe('RecentSessions', () => {
     expect(frame).not.toContain('Esc back');
     // The shell shares the row leading: every row opens with the mark-slot inset before its mark.
     expect(lineContaining(frame, 'alpha')).toMatch(new RegExp(`^ {${MARK_SLOT_CELLS}}◌ alpha`));
+    ui.unmount();
+  });
+
+  it('moves a row age on while home stays open, with no key pressed', async () => {
+    const now = 1_700_000_000_000;
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(now);
+    seed([{ id: 'r-age', feature: 'ageing', startedAt: now }]);
+
+    const ui = renderFeature(<RecentSessions width={120} />);
+    await flushEffects();
+    expect(lineContaining(ui.lastFrame() ?? '', 'ageing')).toContain('just now');
+
+    vi.advanceTimersByTime(2 * 60_000);
+    await flushEffects();
+    expect(lineContaining(ui.lastFrame() ?? '', 'ageing')).toContain('2m ago');
     ui.unmount();
   });
 

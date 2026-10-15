@@ -6,6 +6,7 @@ import { SOFT_SEP } from '../core/separators.js';
 import type { Session } from '../core/schemas/session.js';
 import { getSessionStatusDisplay } from '../core/sessions/display.js';
 import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
+import { useSharedClock } from '../hooks/use-shared-clock.js';
 
 export type SessionRowCursor =
   | { kind: 'none' }
@@ -14,9 +15,8 @@ export type SessionRowCursor =
 
 const NO_ROW_CURSOR: SessionRowCursor = { kind: 'none' };
 
-function formatRelativeTime(timestamp: number): string {
+function formatRelativeTime(timestamp: number, now: number): string {
   if (!Number.isFinite(timestamp)) return 'just now';
-  const now = Date.now();
   const diffMs = now - timestamp;
   const diffSecs = Math.floor(diffMs / 1000);
 
@@ -56,7 +56,8 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps)
   const display = getSessionStatusDisplay(session, t);
   const icon = display.icon;
   const iconColor = display.color;
-  const time = formatRelativeTime(session.completedAt ?? session.startedAt);
+  const now = useSharedClock({ active: true });
+  const time = formatRelativeTime(session.completedAt ?? session.startedAt, now);
   const feature = sanitizeTerminalDisplayText(session.feature);
   const selected = isSelected(cursor);
   const bg = selected ? t.selectionBg : undefined;

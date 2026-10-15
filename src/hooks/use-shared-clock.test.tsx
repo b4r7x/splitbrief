@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Box } from 'ink';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
-import { ThemeText as Text } from '../../../components/theme.js';
+import { ThemeText as Text } from '../components/theme.js';
 import { useSharedClock } from './use-shared-clock.js';
 
 const NOW = 1_700_000_000_000;

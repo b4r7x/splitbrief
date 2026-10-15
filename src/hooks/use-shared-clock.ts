@@ -35,9 +35,10 @@ function subscribe(listener: TickListener): () => void {
 }
 
 /**
- * The one ticking clock for every surface that states elapsed run time. One shared interval feeds
- * every subscriber the same `now`, so no two surfaces can sample a different second; a surface
- * that stops asking (a frozen clock) takes itself off the clock and the last sample stays.
+ * The one ticking clock for every surface that states elapsed run time or a session's age. One
+ * shared interval feeds every subscriber the same `now`, so no two surfaces can sample a different
+ * second; a surface that stops asking (a frozen clock) takes itself off the clock and the last
+ * sample stays.
  */
 export function useSharedClock(input: { active: boolean }): number {
   const { active } = input;
