@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect } from 'vitest';
@@ -12,6 +12,7 @@ import { type RunnerPidEntry, readRunnerPids } from '../../../src/core/sessions/
 import { loadState } from '../../../src/core/state/persistence.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
+import type { Implementer, ImplementerOptions } from '../../../src/engine/implementers/types.js';
 import { readProcessStartTimeMs } from '../../../src/lib/process/start-time.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { resolveReleaseMatrixSeat } from '../live/matrix.js';
@@ -129,6 +130,65 @@ export const FAILING_BASE_FIXTURE: LivePathsFixture = {
     'assert.equal(applyDiscount(19.99, 10), 17.99);',
   ].join('\n'),
 };
+
+export function withHiddenRetryCheck(
+  delegate: Implementer,
+  checkFile: string,
+): {
+  implementer: Implementer;
+  feedback: string[];
+} {
+  const feedback: string[] = [];
+  let acceptance: string | undefined;
+  const install = ({ projectDir, task, config }: ImplementerOptions) => {
+    if (acceptance === undefined) {
+      const sourceFile = join(projectDir, 'src/cart.mjs');
+      const source = existsSync(sourceFile) ? readFileSync(sourceFile, 'utf-8') : '';
+      let marker = '// Retry acceptance acknowledged.';
+      while (source.includes(marker)) marker += '.';
+      const failure = `Hidden acceptance check: add this exact comment to src/cart.mjs: ${marker}`;
+      acceptance = [
+        "import assert from 'node:assert/strict';",
+        "import { existsSync, readFileSync } from 'node:fs';",
+        "import { spawnSync } from 'node:child_process';",
+        "import { test } from 'node:test';",
+        "await test('Hidden acceptance check', () => {",
+        `  assert.ok(existsSync('src/cart.mjs') && readFileSync('src/cart.mjs', 'utf-8').includes(${JSON.stringify(marker)}), ${JSON.stringify(failure)});`,
+        '});',
+        "await test('Project test suite', () => {",
+        "  const suite = spawnSync('npm', ['test'], { stdio: 'inherit' });",
+        "  assert.equal(suite.status, 0, 'The project test suite must pass.');",
+        '});',
+        '',
+      ].join('\n');
+    }
+    writeFileSync(checkFile, acceptance);
+    config.validation.testCommand = `node ${JSON.stringify(checkFile)}`;
+    if (!task.checks?.some((check) => check.id === 'hidden-retry-acceptance')) {
+      task.checks = [
+        ...(task.checks ?? []),
+        { id: 'hidden-retry-acceptance', kind: 'test', value: checkFile, required: true },
+      ];
+    }
+  };
+  return {
+    feedback,
+    implementer: {
+      ...delegate,
+      implement: async (opts) => {
+        const result = await delegate.implement(opts);
+        install(opts);
+        return result;
+      },
+      retry: async (opts) => {
+        feedback.push(opts.error);
+        const result = await delegate.retry(opts);
+        install(opts);
+        return result;
+      },
+    },
+  };
+}
 
 export type LivePathsProject = Readonly<{
   id: string;
