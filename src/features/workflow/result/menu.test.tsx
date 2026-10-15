@@ -167,6 +167,18 @@ describe('ResultMenu', () => {
     ui.unmount();
   });
 
+  it('marks no action and offers only Tab while the composer holds focus', async () => {
+    const { ui } = renderMenu({ focused: false });
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${listRowLead('default')}Apply`);
+    expect(frame).not.toContain(`${listRowLead('active')}Apply`);
+    expect(frame).toContain('tab back to the actions');
+    expect(frame).not.toContain('⏎ confirm');
+    ui.unmount();
+  });
+
   it('takes no keys while the composer holds focus', async () => {
     const { ui, onCommand } = renderMenu({ focused: false });
     await flushEffects();

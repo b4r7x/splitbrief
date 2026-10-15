@@ -133,6 +133,9 @@
 - A failed final review takes a correction from the recovery panel or the composer.
 - Stop keys and the first typed input work after you resume a stopped run on the same screen, and `/resume` and `/end` work at the plan card.
 - A stop settles unfinished check rows as `stopped`, live and in a reopened run.
+- A call that you stopped reads `current turn interrupted: stopped by you`, with no `raw` tag after it.
+- The result menu of a ready run marks an action only while the menu has the keyboard. While you type in the composer, the menu's legend reads `tab back to the actions`, as on the recovery menu.
+- The command palette and the Skills list show a skill once, also when two skill folders declare the same skill name.
 - No stop surface claims changes that a run never made, and a run ended at the plan card reads `nothing built`.
 - A run whose final review passes as a stop arrives closes as complete, and End run during shutdown keeps a passed review.
 - A pause between briefs names the next brief, for example `Paused before T003.`

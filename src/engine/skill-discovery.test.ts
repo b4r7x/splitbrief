@@ -160,6 +160,15 @@ describe('discoverSkills', () => {
     expect(byId.get('g-second')).toBe('G Codex');
   });
 
+  it('keeps one skill per name, from the first root that has it', async () => {
+    writeSkillDir(globalRoot('.claude'), 'testing-patterns', 'name: testing\ndescription: a');
+    writeSkillDir(globalRoot('.claude'), 'pack-testing-patterns', 'name: testing\ndescription: b');
+    writeFlatSkill(projectRoot('.agents'), 'testing-copy', 'name: testing\ndescription: p');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['testing-copy']);
+  });
+
   it('orders project entries before global entries', async () => {
     writeFlatSkill(globalRoot('.claude'), 'g-one', 'name: G One\ndescription: d');
     writeFlatSkill(globalRoot('.agents'), 'g-two', 'name: G Two\ndescription: d');

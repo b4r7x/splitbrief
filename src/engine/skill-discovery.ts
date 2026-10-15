@@ -239,11 +239,14 @@ export async function discoverSkills(projectDir: string): Promise<SkillMeta[]> {
   if (agents !== null) ordered.push(agents);
   ordered.push(...globalScans.flat());
 
-  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
   const skills: SkillMeta[] = [];
   for (const skill of ordered) {
-    if (seen.has(skill.id) || ORCHESTRATION_SKILL_IDS.has(skill.id)) continue;
-    seen.add(skill.id);
+    if (seenIds.has(skill.id) || seenNames.has(skill.name)) continue;
+    if (ORCHESTRATION_SKILL_IDS.has(skill.id)) continue;
+    seenIds.add(skill.id);
+    seenNames.add(skill.name);
     skills.push(skill);
   }
   return skills;

@@ -1803,6 +1803,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-ready-composer-focus',
+      title: 'Workflow · a ready run with the composer focused',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-composer-focus',
+        title: 'Composer holds the keyboard',
+        kind: 'ready',
+        marker: 'tab back to the actions',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-ready-empty-diff',
       title: 'Workflow · Show diff with no changes',
       surface: screenSurface('workflow'),

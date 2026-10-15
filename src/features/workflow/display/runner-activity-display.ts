@@ -101,7 +101,8 @@ export function runnerActivityLedgerItem(
   const value = pretty?.value ?? rawValue;
   const diagnosticPreview = runnerActivityDiagnosticPreview(display);
   const severity = runnerActivitySeverity(display, { interrupted });
-  const rawMarker = display.rawAvailable === true ? 'raw' : null;
+  // A stopped call reads in the user's words; the raw tag is not for that row.
+  const rawMarker = display.rawAvailable === true && !interrupted ? 'raw' : null;
 
   return {
     visibleKey: input.activityId ?? [label, value, rawMarker ?? ''].join('\u0000'),
