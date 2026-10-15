@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readlink, stat, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import type {
   SnapshotFileEntry,
@@ -19,7 +19,7 @@ import {
 import type { EventBus } from '../events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { acquireSnapshotLock } from './lock.js';
-import { collectTrackedFiles, hashFile } from './files.js';
+import { hashFile, walkProjectEntries } from './files.js';
 import { encodeSnapshotPath, generateSnapshotId } from './path-codec.js';
 import { hasBaseline, readManifest, writeManifest } from './manifest.js';
 import { nowIso } from '../../utils/format-time.js';
@@ -46,20 +46,22 @@ async function captureFile(opts: {
   filesDir: string;
   force: boolean;
   baselineHash?: string | undefined;
+  baselineMode?: number | undefined;
 }): Promise<{ hash: string; entry?: SnapshotFileEntry }> {
-  const { projectDir, path, filesDir, force, baselineHash } = opts;
+  const { projectDir, path, filesDir, force, baselineHash, baselineMode } = opts;
   assertExistingPathConfined(path, projectDir);
   const hash = (await hashFile(join(projectDir, path))) ?? '';
-  if (!force && hash === (baselineHash ?? '')) {
-    return { hash };
-  }
   const encodedName = encodeSnapshotPath(path);
   const absPath = join(projectDir, path);
 
   let contents: Buffer;
   let mode: number;
   try {
-    [contents, { mode }] = await Promise.all([readFile(absPath), stat(absPath)]);
+    mode = (await stat(absPath)).mode & 0o777;
+    if (!force && hash === (baselineHash ?? '') && mode === baselineMode) {
+      return { hash };
+    }
+    contents = await readFile(absPath);
   } catch {
     // Read failure (unreadable/removed source). The path stays tracked via its
     // hash, but no blob is written and no entry is recorded — restore reports it
@@ -73,7 +75,7 @@ async function captureFile(opts: {
   assertWritablePathConfined(relative(projectDir, blobPath), projectDir);
   await writeFile(blobPath, contents, { mode: SECURE_FILE_MODE });
 
-  return { hash, entry: { path, hash, encodedName, mode: mode & 0o777 } };
+  return { hash, entry: { path, hash, encodedName, mode } };
 }
 
 function buildManifest(opts: {
@@ -82,6 +84,7 @@ function buildManifest(opts: {
   phase: SnapshotPhase;
   fileHashes: Record<string, string>;
   fileEntries: SnapshotFileEntry[];
+  symlinks: NonNullable<SnapshotManifest['symlinks']>;
   trackedFileCount: number;
   name?: string | undefined;
   taskIndex?: number | undefined;
@@ -94,6 +97,7 @@ function buildManifest(opts: {
     phase: opts.phase,
     fileHashes: opts.fileHashes,
     fileEntries: opts.fileEntries,
+    symlinks: opts.symlinks,
     trackedFileCount: opts.trackedFileCount,
     ...(opts.name !== undefined && { name: opts.name }),
     ...(opts.taskIndex !== undefined && { taskIndex: opts.taskIndex }),
@@ -105,7 +109,15 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
   const release = await acquireSnapshotLock(projectDir, sessionId);
   let result: CreateSnapshotResult;
   try {
-    const trackedPaths = await collectTrackedFiles(projectDir);
+    const trackedPaths: string[] = [];
+    const symlinks: NonNullable<SnapshotManifest['symlinks']> = [];
+    for await (const entry of walkProjectEntries(projectDir)) {
+      if (entry.kind === 'file') trackedPaths.push(entry.path);
+      if (entry.kind === 'symlink') {
+        symlinks.push({ path: entry.path, target: await readlink(join(projectDir, entry.path)) });
+      }
+    }
+    trackedPaths.sort();
 
     if (!(await hasBaseline(projectDir, sessionId))) {
       const filesDir = join(baselineDir({ projectDir, sessionId }), 'files');
@@ -128,6 +140,7 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
         phase,
         fileHashes,
         fileEntries,
+        symlinks,
         trackedFileCount: trackedPaths.length,
         name,
         taskIndex,
@@ -142,6 +155,9 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
     } else {
       const baselineManifest = await readManifest(projectDir, sessionId, SNAPSHOT_BASELINE_ID);
       const baselineHashes = new Map(Object.entries(baselineManifest.fileHashes));
+      const baselineModes = new Map(
+        baselineManifest.fileEntries.map((entry) => [entry.path, entry.mode]),
+      );
 
       const id = generateSnapshotId();
       const filesDir = snapshotFilesDir({ projectDir, sessionId }, id);
@@ -159,6 +175,7 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
           filesDir,
           force: false,
           baselineHash: baselineHashes.get(path),
+          baselineMode: baselineModes.get(path),
         });
         fileHashes[path] = captured.hash;
         if (captured.entry) fileEntries.push(captured.entry);
@@ -170,6 +187,7 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
         phase,
         fileHashes,
         fileEntries,
+        symlinks,
         trackedFileCount: trackedPaths.length,
         name,
         taskIndex,

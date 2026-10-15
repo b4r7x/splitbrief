@@ -22,6 +22,7 @@ export const SnapshotManifestSchema = z.object({
   taskIndex: z.number().int().nonnegative().optional(),
   fileHashes: z.record(z.string(), z.string()),
   fileEntries: z.array(SnapshotFileEntrySchema),
+  symlinks: z.array(z.object({ path: z.string(), target: z.string() })).optional(),
   trackedFileCount: z.number().nonnegative(),
 });
 export type SnapshotManifest = z.infer<typeof SnapshotManifestSchema>;

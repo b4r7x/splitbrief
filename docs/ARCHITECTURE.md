@@ -1087,6 +1087,7 @@ export const SnapshotManifestSchema: z.ZodObject<{
   createdAt: string; phase: SnapshotPhase; taskIndex?: number;
   fileHashes: Record<string, string>;
   fileEntries: SnapshotFileEntry[];
+  symlinks?: { path: string; target: string }[];
   trackedFileCount: number;
 }>
 export type SnapshotManifest
