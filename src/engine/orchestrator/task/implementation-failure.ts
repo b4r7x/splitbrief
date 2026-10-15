@@ -24,7 +24,6 @@ export async function handleFailedImplementation(opts: {
   task: Task;
   state: WorkflowState;
   implState: Awaited<ReturnType<typeof runImplementation>>;
-  taskStartTime: number;
   taskStartSnapshot: ChangedFilesSnapshot;
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
@@ -34,7 +33,6 @@ export async function handleFailedImplementation(opts: {
     wctx,
     task,
     implState,
-    taskStartTime,
     taskStartSnapshot,
     tokensBefore,
     taskBreakdowns,
@@ -204,7 +202,6 @@ export async function handleFailedImplementation(opts: {
       },
     }),
     state,
-    taskStartTime,
     taskStartSnapshot,
     tokensBefore,
     taskBreakdowns,

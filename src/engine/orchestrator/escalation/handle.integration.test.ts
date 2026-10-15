@@ -170,7 +170,6 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const outcome = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({ ...ref, implementer, planner, steering }),
       task,
       initialError: 'type error',
@@ -228,7 +227,6 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const outcome = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         ...ref,
         config: makeNoValidationConfig({ workflow: { review: 'task' } }),
@@ -271,7 +269,6 @@ describe('handleRetryAndEscalation', () => {
     const implementer = makeImplementer(); // default retry returns success
 
     const { result } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -301,7 +298,6 @@ describe('handleRetryAndEscalation', () => {
     ]);
 
     const { result, state } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -383,7 +379,6 @@ describe('handleRetryAndEscalation', () => {
       const { planner } = consultPlanner([guidanceAnswer('The export is missing', 'Add it.')]);
 
       const outcome = await handleRetryAndEscalation({
-        taskStartTime: Date.now(),
         wctx: makeWctx({ projectDir, sessionId, planner, implementer, bus }),
         task,
         initialError: 'type error',
@@ -431,7 +426,6 @@ describe('handleRetryAndEscalation', () => {
     ]);
 
     const { result } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -475,7 +469,6 @@ describe('handleRetryAndEscalation', () => {
     ]);
 
     const { state: halted } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -513,7 +506,6 @@ describe('handleRetryAndEscalation', () => {
 
     const second = consultPlanner([guidanceAnswer('Third diagnosis', 'Try again.')]);
     const { result, state: after } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -549,7 +541,6 @@ describe('handleRetryAndEscalation', () => {
     ]);
 
     const { state } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -584,7 +575,6 @@ describe('handleRetryAndEscalation', () => {
     const resumed = transition(reloaded, { type: 'RESET_TASK', taskId: child.id });
     const second = consultPlanner([guidanceAnswer('Still failing', 'Try again.')]);
     const { state: after } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -623,7 +613,6 @@ describe('handleRetryAndEscalation', () => {
     ]);
 
     const { result, state: finalState } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -660,7 +649,6 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const { result, state: finalState } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -712,7 +700,6 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const { result, state } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -758,7 +745,6 @@ describe('handleRetryAndEscalation', () => {
     });
 
     const { result, state } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -819,7 +805,6 @@ describe('handleRetryAndEscalation', () => {
     markHooksConfigTrusted(projectDir, hooks);
 
     const { result, state: finalState } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -902,7 +887,6 @@ describe('handleRetryAndEscalation', () => {
     const { bus, events } = makeBusRecorder();
 
     const { result, state: finalState } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,

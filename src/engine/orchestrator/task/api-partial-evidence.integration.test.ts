@@ -181,7 +181,6 @@ describe('partial evidence and resume', () => {
       task,
       state: implState.state,
       implState,
-      taskStartTime: Date.now(),
       taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
       tokensBefore: { ...implState.state.tokenUsage },
       taskBreakdowns: [],
@@ -229,7 +228,6 @@ describe('partial evidence and resume', () => {
     expect(ledgerTask(ledger)?.checks).toEqual([]);
 
     const commit = await validateCommitAndAdvance({
-      taskStartTime: Date.now(),
       task,
       projectDir,
       sessionId,
@@ -310,7 +308,6 @@ describe('partial evidence and resume', () => {
       task,
       state: implState.state,
       implState,
-      taskStartTime: Date.now(),
       taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
       tokensBefore: { ...implState.state.tokenUsage },
       taskBreakdowns: [],
@@ -440,7 +437,6 @@ describe('a partial apply in the checkout mode', () => {
       task,
       state: implState.state,
       implState,
-      taskStartTime: Date.now(),
       taskStartSnapshot,
       tokensBefore: { ...implState.state.tokenUsage },
       taskBreakdowns: [],
@@ -512,7 +508,6 @@ describe('a partial apply in the checkout mode', () => {
       task,
       state: implState.state,
       implState,
-      taskStartTime: Date.now(),
       taskStartSnapshot,
       tokensBefore: { ...implState.state.tokenUsage },
       taskBreakdowns: [],

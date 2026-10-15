@@ -138,7 +138,6 @@ describe('runRetryStep', () => {
     saveState(ref, state);
     const ctx = {
       ...makeWctx({ ...ref, config: makeNoValidationConfig() }),
-      taskStartTime: Date.now(),
       taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
       dependsOnFiles: [],
     };
@@ -192,7 +191,6 @@ describe('runRetryStep', () => {
         implementer: makeImplementer({ retry, implement }),
         bus,
       }),
-      taskStartTime: Date.now(),
       taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
       dependsOnFiles: [],
     };
@@ -264,7 +262,6 @@ describe('runRetryStep', () => {
           },
         }),
       }),
-      taskStartTime: Date.now(),
       taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
       dependsOnFiles: [],
     };
@@ -334,7 +331,6 @@ describe('runRetryStep', () => {
           signal: controller.signal,
           bus,
         }),
-        taskStartTime: Date.now(),
         taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
         dependsOnFiles: [],
       };
@@ -406,7 +402,6 @@ describe('runRetryStep', () => {
       const unknown = 'export const uncertain = true;\n';
       const ctx = {
         ...makeWctx({ projectDir, sessionId, config, isolation }),
-        taskStartTime: Date.now(),
         taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
         dependsOnFiles: [],
       };
@@ -506,7 +501,7 @@ describe('runRetryStep', () => {
       });
       first.workspace?.cleanup();
       await runRetryStep({
-        ctx: { ...wctx, taskStartSnapshot, dependsOnFiles: [], taskStartTime: Date.now() },
+        ctx: { ...wctx, taskStartSnapshot, dependsOnFiles: [] },
         task,
         state: first.state,
         lastError: 'failed first attempt',
@@ -548,7 +543,6 @@ describe('runRetryStep', () => {
 
     await runRetryStep({
       ctx: {
-        taskStartTime: Date.now(),
         projectDir,
         workspaceDir: projectDir,
         sessionId,
@@ -611,7 +605,6 @@ describe('runRetryStep', () => {
 
     const pending = runRetryStep({
       ctx: {
-        taskStartTime: Date.now(),
         projectDir,
         workspaceDir: projectDir,
         sessionId,
@@ -705,7 +698,6 @@ describe('runRetryStep', () => {
 
     const outcome = await runRetryStep({
       ctx: {
-        taskStartTime: Date.now(),
         projectDir,
         workspaceDir: projectDir,
         sessionId,
@@ -774,7 +766,6 @@ describe('runRetryStep', () => {
 
     const outcome = await runRetryStep({
       ctx: {
-        taskStartTime: Date.now(),
         projectDir,
         workspaceDir: projectDir,
         sessionId,
@@ -857,7 +848,6 @@ describe('runRetryStep', () => {
     await expect(
       runRetryStep({
         ctx: {
-          taskStartTime: Date.now(),
           ...makeWctx({ projectDir, sessionId, config: configWithProfiles() }),
           taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
           dependsOnFiles: [],
@@ -897,7 +887,6 @@ describe('runRetryStep', () => {
 
     const outcome = await runRetryStep({
       ctx: {
-        taskStartTime: Date.now(),
         projectDir,
         workspaceDir: projectDir,
         sessionId,
@@ -993,7 +982,6 @@ describe('runRetryStep', () => {
       const retryDirs: string[] = [];
       const outcome = await runRetryStep({
         ctx: {
-          taskStartTime: Date.now(),
           projectDir,
           workspaceDir: projectDir,
           sessionId,
@@ -1066,7 +1054,6 @@ describe('runRetryStep', () => {
 
       const outcome = await runRetryStep({
         ctx: {
-          taskStartTime: Date.now(),
           projectDir,
           workspaceDir: failed.projectDir,
           sessionId,
@@ -1128,7 +1115,6 @@ describe('runRetryStep — a failed attempt keeps its story', () => {
     const task = makeTask({ id: 'T040', suggestedFiles: ['src/story.ts'] });
     return runRetryStep({
       ctx: {
-        taskStartTime: Date.now(),
         ...makeWctx({ projectDir, sessionId, config: makeNoValidationConfig() }),
         taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
         dependsOnFiles: [],
@@ -1201,7 +1187,6 @@ describe('runRetryStep — gate denial', () => {
 
     const outcome = await runRetryStep({
       ctx: {
-        taskStartTime: Date.now(),
         projectDir,
         workspaceDir: projectDir,
         sessionId,

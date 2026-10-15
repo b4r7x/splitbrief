@@ -55,7 +55,6 @@ type HandleRetryOptions = {
   /** The first attempt's validation failure line; the diagnosis falls back to `initialError`. */
   initialDiagnosis?: string | undefined;
   currentState: WorkflowState;
-  taskStartTime: number;
   taskStartSnapshot?: ChangedFilesSnapshot;
   dependsOnFiles?: string[];
   profileOverride?: string | undefined;
@@ -260,7 +259,7 @@ function consultBoundHalt(
 export async function handleRetryAndEscalation(
   opts: HandleRetryOptions,
 ): Promise<{ state: WorkflowState; result: RetryResult }> {
-  const { wctx, initialError, currentState, taskStartTime } = opts;
+  const { wctx, initialError, currentState } = opts;
   let taskStartSnapshot = opts.taskStartSnapshot;
   if (!taskStartSnapshot) {
     try {
@@ -276,7 +275,6 @@ export async function handleRetryAndEscalation(
   }
   const ctx: EscalationContext = {
     ...wctx,
-    taskStartTime,
     taskStartSnapshot,
     dependsOnFiles: opts.dependsOnFiles ?? [],
     ...(opts.profileOverride !== undefined && { retryProfileOverride: opts.profileOverride }),
@@ -496,7 +494,6 @@ export async function handleRetryAndEscalation(
         sinks: ctx.sinks,
         state,
         seat,
-        taskStartTime: ctx.taskStartTime,
         ...(ctx.signal !== undefined && { signal: ctx.signal }),
         changedFiles,
         onStateChange: (next) => {

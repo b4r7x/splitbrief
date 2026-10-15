@@ -13,6 +13,7 @@ import type { PlannerConversation, WorkflowState } from '../../../core/schemas/w
 import type { OrchestratorCallbacks } from '../types.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { appendEngineEvent } from '../../../core/sessions/log-writer.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { processError } from '../../../lib/process/errors.js';
 import type { EngineEvent } from '../../events/types.js';
@@ -111,7 +112,6 @@ function harness(opts: {
   ).callbacks;
   return {
     ctx: {
-      taskStartTime: Date.now(),
       projectDir: opts.projectDir,
       workspaceDir: opts.projectDir,
       sessionId: opts.sessionId,
@@ -285,15 +285,13 @@ describe('applyConsultAnswer verify', () => {
     });
     const attempt = await getChangedFilesSnapshot(projectDir);
     const taskStartTime = Date.now();
-    const started = { ...ctx, taskStartTime };
+    appendEngineEvent(
+      { projectDir, sessionId },
+      { type: 'task_started', ts: taskStartTime, phase: 'implementing', taskId: task.id },
+    );
     const clock = vi.spyOn(Date, 'now').mockReturnValue(taskStartTime + 5_000);
     try {
-      await applyConsultAnswer(
-        started,
-        task,
-        verify(['K1'], 'The check predates the task'),
-        attempt,
-      );
+      await applyConsultAnswer(ctx, task, verify(['K1'], 'The check predates the task'), attempt);
     } finally {
       clock.mockRestore();
     }

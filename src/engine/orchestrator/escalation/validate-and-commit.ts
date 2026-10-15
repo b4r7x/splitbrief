@@ -51,7 +51,6 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
     method,
     transitionType,
     commitSuffix,
-    taskStartTime: ctx.taskStartTime,
     retryCount,
     implementerProfile: ctx.implementerProfile,
     acceptance,

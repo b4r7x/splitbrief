@@ -272,7 +272,6 @@ async function runRetryStepAttempt(
     report: deviationReportOf(retryResult),
     snapshot: workspace.snapshot,
     changedFiles: actualChangedFiles,
-    taskStartTime: ctx.taskStartTime,
   });
   state = confirmed.state;
   if (confirmed.kind === 'answer') {

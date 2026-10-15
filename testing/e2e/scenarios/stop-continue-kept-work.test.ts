@@ -7,6 +7,7 @@ import { groupEventsIntoSections } from '../../../src/core/sections/event-sectio
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
+import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
 import { stopByline } from '../../../src/features/workflow/stop/copy.js';
 import { eventsStore } from '../../../src/stores/workflow/events.js';
@@ -42,12 +43,13 @@ afterEach(async () => {
 });
 
 /**
- * What one implementer invocation does: the files it writes, the report it prints, then whether
- * it holds for a stop.
+ * What one implementer invocation does: the files it writes, the report it prints, how long it
+ * works, then whether it holds for a stop.
  */
 type ImplementerCall = Readonly<{
   writes?: Readonly<Record<string, string>>;
   report?: Readonly<Record<string, unknown>>;
+  worksMs?: number;
   holds?: true;
 }>;
 
@@ -97,6 +99,7 @@ for (const [file, text] of Object.entries(call.writes ?? {})) {
   writeFileSync(file, text);
 }
 if (call.report) process.stdout.write(JSON.stringify(call.report));
+if (call.worksMs) await delay(call.worksMs);
 if (call.holds) {
   writeFileSync(${JSON.stringify(join(tmpDir, 'implementer-hold.pid'))}, String(process.pid));
   const signalPath = join(${JSON.stringify(join(tmpDir, 'signal'))}, String(invocations), ${JSON.stringify(MARKER_FILE)});
@@ -190,7 +193,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
   it('passes the brief on the kept work when the resumed call changes nothing', async () => {
     fixture = createStopContinueFixture(
       implementerCalls([
-        { writes: BOTH_FILES, holds: true },
+        { writes: BOTH_FILES, worksMs: 1_000, holds: true },
         { report: { ...IDLE_REPORT, filesChanged: [MARKER_FILE] } },
       ]),
     );
@@ -225,9 +228,42 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
       expect(rows.join('\n')).not.toContain('no change needed');
     }
 
+    // The brief's time is the stretch it worked before the stop plus the one after Continue; the
+    // time the run sat stopped is left out. The transcript and the closed run show that one time.
+    const { events } = await readRunEvents({
+      projectDir: target.projectDir,
+      sessionId: parked.sessionId,
+    });
+    const starts = events.flatMap((event) => (event.type === 'task_started' ? [event.ts] : []));
+    const stop = events.find((event) => event.type === 'turn_interrupted');
+    const done = events.find((event) => event.type === 'task_completed');
+    const [firstStart, secondStart] = starts;
+    if (
+      firstStart === undefined ||
+      secondStart === undefined ||
+      stop === undefined ||
+      done?.type !== 'task_completed'
+    ) {
+      throw new Error('expected a brief stopped once and completed after Continue');
+    }
+    const worked = stop.ts - firstStart + (done.ts - secondStart);
+    expect(done.duration).toBeGreaterThanOrEqual(worked - 200);
+    expect(done.duration).toBeLessThan(done.ts - firstStart);
+    await hydrateRun(readRunRecord({ projectDir: target.projectDir, sessionId: parked.sessionId }));
+    const brief = groupEventsIntoSections(eventsStore.get().events).find(
+      (section) => section.type === 'completed-task',
+    );
+    expect(brief?.type === 'completed-task' && brief.summary.duration).toBe(done.duration);
+
     const patch = await endRunPatch(target, parked.sessionId);
     expect(patch).toContain(KEPT_GREET);
     expect(patch).toContain(KEPT_MARKER);
+    const closed = deriveSummaryView({
+      record: readRunRecord({ projectDir: target.projectDir, sessionId: parked.sessionId }),
+    });
+    expect(closed?.briefs.rows.map((row) => [row.id, row.durationMs])).toEqual([
+      ['T001', done.duration],
+    ]);
   });
 
   it('passes the brief on the kept work when a typed correction needs no change', async () => {

@@ -35,6 +35,7 @@ import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-r
 import { thrownConsultSeat } from '../consult/request.js';
 import { typedOutputError } from '../../runners/typed-output.js';
 import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
+import { readBriefWorkedMs } from './worked-time.js';
 
 export type RetryAndRecordOptions = {
   wctx: WorkflowContext;
@@ -43,7 +44,6 @@ export type RetryAndRecordOptions = {
   /** The first attempt's validation failure line, quoted as the diagnosis in place of `initialError`. */
   initialDiagnosis?: string | undefined;
   state: WorkflowState;
-  taskStartTime: number;
   taskStartSnapshot?: ChangedFilesSnapshot;
   initialChangedFiles?: string[] | undefined;
   /** How the first attempt ended, when it ended on a machine outcome. */
@@ -105,17 +105,14 @@ export function consultHandedBackToLoop(state: WorkflowState, task: Task): boole
   return current.parentId !== undefined && current.parentId === lineageIdOf(task);
 }
 
-type TaskFailureContext = Pick<
-  RetryAndRecordOptions,
-  'wctx' | 'task' | 'taskStartTime' | 'initialChangedFiles'
->;
+type TaskFailureContext = Pick<RetryAndRecordOptions, 'wctx' | 'task' | 'initialChangedFiles'>;
 
-function recordFailedTask(
+async function recordFailedTask(
   opts: TaskFailureContext,
   state: WorkflowState,
   attempts: number,
 ): Promise<void> {
-  return persistTaskEvidence({
+  await persistTaskEvidence({
     wctx: opts.wctx,
     state,
     task: opts.task,
@@ -124,7 +121,10 @@ function recordFailedTask(
       status: 'failed',
       method: 'failed',
       retries: attempts,
-      durationMs: Date.now() - opts.taskStartTime,
+      durationMs: await readBriefWorkedMs(
+        { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },
+        opts.task.id,
+      ),
       initialChangedFiles: opts.initialChangedFiles,
     },
   });
@@ -216,8 +216,7 @@ export async function handleTaskPlannerCallFailure(
 export async function retryAndRecord(
   opts: RetryAndRecordOptions,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
-  const { wctx, task, initialError, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } =
-    opts;
+  const { wctx, task, initialError, tokensBefore, taskBreakdowns, setTrackedState } = opts;
   let taskStartSnapshot = opts.taskStartSnapshot;
   // The attempt that reached the ladder counts on the lineage before the retry it
   // earned: one implementer call, one attempt, whether it failed on validation or
@@ -247,7 +246,6 @@ export async function retryAndRecord(
       initialError,
       ...(opts.initialDiagnosis !== undefined && { initialDiagnosis: opts.initialDiagnosis }),
       currentState: state,
-      taskStartTime,
       taskStartSnapshot,
       dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
       profileOverride: retryProfileOverride,

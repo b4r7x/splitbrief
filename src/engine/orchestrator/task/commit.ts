@@ -9,6 +9,7 @@ import { publishTaskComplete } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
+import { readBriefWorkedMs } from './worked-time.js';
 
 type ValidateCommitOptions = {
   task: Task;
@@ -21,7 +22,6 @@ type ValidateCommitOptions = {
   method: TaskCompletionMethod;
   transitionType: 'VALIDATION_PASS';
   commitSuffix?: string | undefined;
-  taskStartTime: number;
   retryCount?: number | undefined;
   implementerProfile?: string | undefined;
   taskChangedFiles?: string[] | undefined;
@@ -46,7 +46,7 @@ export function touchedNotSuggestedFiles(opts: {
   return opts.taskChangedFiles.filter((file) => !isInDeclaredSet(file, suggested));
 }
 
-/** A completion carries the brief's duration: one clock read for its event and its ledger entry. */
+/** A completion carries the brief's duration: one log read for its event and its ledger entry. */
 type CommitResult =
   | { state: WorkflowState; completed: false }
   | { state: WorkflowState; completed: true; durationMs: number };
@@ -60,7 +60,6 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     bus,
     method,
     transitionType,
-    taskStartTime,
     state,
     retryCount,
     implementerProfile,
@@ -74,7 +73,7 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     return { state, completed: false };
   }
 
-  const durationMs = Date.now() - taskStartTime;
+  const durationMs = await readBriefWorkedMs({ projectDir, sessionId }, task.id);
   const nextState = transitionAndSave({ projectDir, sessionId }, state, {
     type: transitionType,
   });

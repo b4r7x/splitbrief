@@ -88,7 +88,6 @@ describe('retry ladder', () => {
     const task = makeTask();
 
     await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,

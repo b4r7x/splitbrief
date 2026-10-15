@@ -24,6 +24,7 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { appendEngineEvent } from '../../../core/sessions/log-writer.js';
 import type { Validator } from '../validation/types.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
@@ -75,7 +76,6 @@ describe('retryAndRecord — retry budget', () => {
       task,
       initialError: 'tsc failed',
       state,
-      taskStartTime: Date.now(),
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns,
       setTrackedState,
@@ -126,7 +126,6 @@ describe('retryAndRecord — retry budget', () => {
       initialError: 'test failed',
       initialChangedFiles: ['src/initial.ts'],
       state,
-      taskStartTime: Date.now(),
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
@@ -150,8 +149,11 @@ describe('retryAndRecord — retry budget', () => {
     const implementer = makeImplementer({
       retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed' }),
     });
-    const taskStartTime = Date.now();
-    let now = taskStartTime;
+    let now = Date.now();
+    appendEngineEvent(
+      { projectDir, sessionId },
+      { type: 'task_started', ts: now, phase: 'implementing', taskId: task.id },
+    );
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => ++now);
     try {
       const result = await retryAndRecord({
@@ -159,7 +161,6 @@ describe('retryAndRecord — retry budget', () => {
         task,
         initialError: 'test failed',
         state,
-        taskStartTime,
         tokensBefore: { ...state.tokenUsage },
         taskBreakdowns: [],
         setTrackedState: vi.fn(),
@@ -171,6 +172,7 @@ describe('retryAndRecord — retry budget', () => {
 
     const complete = events.find((e) => e.type === 'task_completed');
     if (complete?.type !== 'task_completed') throw new Error('expected task_completed');
+    expect(complete.duration).toBeGreaterThan(0);
     expect(readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.durationMs).toBe(
       complete.duration,
     );
@@ -210,7 +212,6 @@ describe('retryAndRecord — retry budget', () => {
       task,
       initialError: 'initial tsc failure',
       state,
-      taskStartTime: Date.now(),
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
@@ -265,7 +266,6 @@ describe('retryAndRecord — retry budget', () => {
       task,
       initialError: 'initial tsc failure',
       state,
-      taskStartTime: Date.now(),
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
@@ -306,7 +306,6 @@ describe('retryAndRecord — the exhaustion issue', () => {
       task,
       initialError: 'lint: unexpected any',
       state,
-      taskStartTime: Date.now(),
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
@@ -388,7 +387,6 @@ describe('retryAndRecord — recovery stop points', () => {
       task,
       initialError: 'initial validation failed',
       state,
-      taskStartTime: Date.now(),
       taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
@@ -449,7 +447,6 @@ describe('retryAndRecord — recovery stop points', () => {
       task,
       initialError: 'initial validation failed',
       state,
-      taskStartTime: Date.now(),
       taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
@@ -497,7 +494,6 @@ describe('retryAndRecord — recovery stop points', () => {
       task,
       initialError: 'initial validation failed',
       state,
-      taskStartTime: Date.now(),
       taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
@@ -547,7 +543,6 @@ describe('retryAndRecord — recovery stop points', () => {
       task,
       initialError: 'initial validation failed',
       state,
-      taskStartTime: Date.now(),
       taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
@@ -616,7 +611,6 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
       err: new Error('Please sign in again'),
       label: 'Reviewer consult failed',
       seat: 'review',
-      taskStartTime: Date.now(),
       setTrackedState: vi.fn(),
     });
     expect(result.pendingRecovery).toMatchObject({
@@ -657,7 +651,6 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
       task,
       initialError: 'initial validation failed',
       state,
-      taskStartTime: Date.now(),
       taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],

@@ -106,7 +106,6 @@ describe('implementer tool-use limit', () => {
     });
 
     const { result: runResult } = await handleRetryAndEscalation({
-      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
