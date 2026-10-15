@@ -48,6 +48,7 @@ const { overlayStore } = await import('../../stores/ui/overlay.js');
 const { inputHeightStore } = await import('../../stores/ui/input-height.js');
 const { inputHistoryStore } = await import('../../stores/ui/input-history.js');
 const { feedbackStore } = await import('../../stores/ui/feedback.js');
+const { composerLiveStore } = await import('../../stores/ui/composer-live.js');
 const { stopStore } = await import('../../stores/workflow/stop.js');
 const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
 
@@ -301,7 +302,8 @@ describe('WorkflowScreen chrome calibration', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain(`${listRowLead('active')}Request changes`);
     expect(frame).not.toContain(`${listRowLead('active')}Edit plan.json`);
-    expect(frame).toContain('comment Split the CLI change into a separate task.');
+    expect(frame).toContain('Split the CLI change into a separate task.');
+    expect(frame).not.toContain('comment Split');
     expect(frame).toContain(REVIEW_COMMENT_HINTS);
     expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
     expect(outcome).toBeUndefined();
@@ -410,6 +412,63 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.stdin.write('\r');
     await vi.waitFor(() => {
       expect(outcome).toEqual({ approved: false, action: 'end-run' });
+    });
+    ui.unmount();
+  });
+
+  it('opens an empty change request on Request changes and sends what follows as the correction', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: FIXED_TS });
+    const reviewPath = join(projectDir, 'plan.md');
+    writeFileSync(reviewPath, 'Greet people by name.', 'utf8');
+    let outcome: ApprovalReviewResult | undefined;
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    navigatePreparedWorkflow(projectDir, 'plan card request changes');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'reviewing-plan',
+        feature: 'plan card request changes',
+      });
+      outcome = await opts.callbacks.onApprovalNeeded('plan', reviewPath, []);
+      return pendingWorkflow();
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Greet people by name.');
+    });
+    vi.advanceTimersByTime(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+    ui.stdin.write('\x1b[B');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    const requested = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(composerLiveStore.get().empty).toBe(true);
+    expect(requested).toContain(`${listRowLead('active')}Request changes`);
+    expect(requested).toContain(REVIEW_COMMENT_HINTS);
+    // An empty ⏎ sends nothing and settles nothing: the keys belong to the change request.
+    ui.stdin.write('\r');
+    await tick();
+    expect(outcome).toBeUndefined();
+
+    // A word the card reads as a command is part of the change request once it was chosen.
+    ui.stdin.write('n');
+    await flushEffects();
+    ui.stdin.write('o');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(outcome).toEqual({
+        approved: false,
+        action: 'revise',
+        message: { text: 'no', displayText: 'no', images: [], attachedInputs: [] },
+      });
     });
     ui.unmount();
   });

@@ -57,7 +57,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       kind: 'noarg',
       name: '/end',
       label: 'end run',
-      description: 'Close the run, keeping every change on disk',
+      description: 'Close the run, saving unapplied changes',
       category: 'workflow',
       validScreens: ['workflow'],
       guard: (c) =>

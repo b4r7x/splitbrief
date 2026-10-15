@@ -60,14 +60,12 @@ import {
   reviewDocumentOptions,
 } from '../../features/workflow/prompt-rows/approval.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
-import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import {
   formatRecoveryPrompt,
   recoveryComposerHint,
 } from '../../features/workflow/recovery-prompt.js';
-import { REVIEW_COMMENT_DRAFT } from '../../features/workflow/review-commands.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { navigateIndex } from '../../utils/indexing.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
@@ -187,11 +185,13 @@ export function WorkflowScreen({
       return;
     }
     if (reviewArtifact !== null && message.displayText.trim() === '') {
+      // An open change request takes ⏎ as `send`, and an empty one has nothing to send.
+      if (reviewCommenting) return;
       const row = reviewDocumentOptions(reviewArtifact)[reviewSelected];
       // The comment row hands the keyboard to the composer the same way a typed `c` does: one
-      // prefilled draft, so there is one spelling of a review comment and not two.
+      // empty change request, so there is one way into a review comment and not two.
       if (row === undefined || row.command === 'comment') {
-        composerDraftStore.request(REVIEW_COMMENT_DRAFT);
+        reviewKeysStore.requestComment();
         return;
       }
       void model.handleInput(plainUserMessage(row.command));

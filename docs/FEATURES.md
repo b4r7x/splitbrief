@@ -447,7 +447,7 @@ An older event without findings shows only the headline. A closed run's `Run` bl
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
 | `/resume` | Continue a paused or stopped run |
 | `/steer <correction>` | Stop now and continue with your correction, including `@file` references. Refusal clears the draft and records history; ↑ recalls it. |
-| `/end` | Close the run, keeping every change on disk |
+| `/end` | Close the run, saving unapplied changes |
 | `/stop` | Open the inline session-options menu (Stop now, Pause after this brief, End run) |
 
 **View**

@@ -606,6 +606,37 @@ describe('useAppKeys: ESC stop ladder', () => {
     ui.unmount();
   });
 
+  it('esc ends an empty Request changes and hands the keys back to the card rows', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    controlsStore.setInputMode('review');
+    const ui = renderFeature(
+      <>
+        <Harness exit={vi.fn()} />
+        <Composer
+          commands={[]}
+          currentScreen="workflow"
+          mode="review"
+          hint=""
+          onSubmit={() => {}}
+          onRuntimeCommand={() => {}}
+        />
+      </>,
+    );
+    await tick();
+    reviewKeysStore.requestComment();
+    await flushEffects();
+    expect(reviewKeysStore.get().commenting).toBe(true);
+
+    await writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+    await flushEffects();
+
+    expect(overlayStore.get().active).toBe('none');
+    expect(reviewKeysStore.get()).toEqual({ commenting: false, requested: false });
+    ui.unmount();
+  });
+
   it.each([
     ['two presses', ['\x1b', '\x1b']],
     ['one chunk', ['\x1b\x1b']],

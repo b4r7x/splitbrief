@@ -713,7 +713,7 @@ describe('buildConversationRows', () => {
         stage: 'aborted',
         kind: 'error',
         label: 'aborted runner_interrupted',
-        diagnosticPartial: 'CLI invocation was aborted',
+        diagnosticPartial: 'stopped by you',
       }),
       resumed,
     ]);
@@ -776,14 +776,14 @@ describe('buildConversationRows', () => {
       makeRunnerCallError({
         ...call('first'),
         status: 'aborted',
-        error: { code: 'runner_interrupted', message: 'CLI invocation was aborted' },
+        error: { code: 'runner_interrupted', message: 'stopped by you' },
       }),
       buildActivity('first', {
         activityId: 'first:terminal',
         stage: 'aborted',
         kind: 'error',
         label: 'aborted runner_interrupted',
-        diagnosticPartial: 'CLI invocation was aborted',
+        diagnosticPartial: 'stopped by you',
       }),
     ];
     const marks = (events: EngineEvent[]) => {

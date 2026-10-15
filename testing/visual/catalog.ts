@@ -1285,6 +1285,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-plan-card-request-empty',
+      title: 'Workflow · plan card with an empty change request',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'plan-card-request-empty',
+        title: 'Plan card before the change request is typed',
+        kind: 'review',
+        marker: 'Request changes (type what to change)',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-plan-repaired',
       title: 'Workflow · revised plan passes its checks',
       surface: screenSurface('workflow'),

@@ -672,6 +672,7 @@ describe('streamCompletion', () => {
     const terminal = expectOneErrorClosesOperation(events);
     expect(terminal).toMatchObject({
       status: 'aborted',
+      error: { code: 'runner_interrupted', message: 'stopped by you' },
       usage: { inputTokens: 100, outputTokens: 50 },
     });
   });

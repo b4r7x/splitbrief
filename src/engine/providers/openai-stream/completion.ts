@@ -19,6 +19,7 @@ import { error as createError } from '../../../utils/error.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
 import { createRunnerCallId } from '../../calls/call-id.js';
 import {
+  RUNNER_CALL_STOPPED_ERROR,
   createRunnerCallCredentialRedactor,
   runnerCallErrorFromUnknown,
   runnerCallInterruptedStatus,
@@ -462,12 +463,13 @@ export async function streamCompletion(
   } catch (err: unknown) {
     publishRuntime('settled');
     if (opts.signal?.aborted) {
+      const status = runnerCallInterruptedStatus(opts.signal);
       recorder.finishFailed({
-        status: runnerCallInterruptedStatus(opts.signal),
-        error: {
-          code: 'runner_interrupted',
-          message: redactCredential(toErrorMessage(err)),
-        },
+        status,
+        error:
+          status === 'timeout'
+            ? { code: 'runner_interrupted', message: redactCredential(toErrorMessage(err)) }
+            : RUNNER_CALL_STOPPED_ERROR,
         usage,
         nativeSessionId: null,
       });

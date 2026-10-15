@@ -45,9 +45,8 @@ describe.each(['workflow-plan-card', 'workflow-plan-card-commenting'])('%s appro
         expect(text).not.toContain(`${listRowLead('active')}Approve plan`);
         expect(text).toContain(REVIEW_COMMENT_HINTS);
         expect(text).not.toContain(REVIEW_DOCUMENT_HINTS);
-        expect(stripAnsiStyles(frame)).toContain(
-          'comment Split the CLI change into a separate task.',
-        );
+        expect(stripAnsiStyles(frame)).toContain('Split the CLI change into a separate task.');
+        expect(stripAnsiStyles(frame)).not.toContain('comment Split');
       } else {
         expect(text).toContain(`${listRowLead('active')}Approve plan and start the build`);
         if (cols >= 120) expect(text).toContain(REVIEW_DOCUMENT_HINTS);

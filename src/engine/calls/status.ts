@@ -64,6 +64,12 @@ export function boundedRunnerCallMessage(
   return `${redacted.slice(0, RUNNER_CALL_MESSAGE_MAX_LENGTH - 3)}...`;
 }
 
+/** A call the user stopped. The transcript shows the message under the call the stop cut. */
+export const RUNNER_CALL_STOPPED_ERROR: RunnerCallError = Object.freeze({
+  code: 'runner_interrupted',
+  message: 'stopped by you',
+});
+
 export function runnerCallInterruptedStatus(
   signal: AbortSignal | undefined,
 ): RunnerCallFailureStatus {

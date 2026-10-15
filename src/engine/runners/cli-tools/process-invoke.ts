@@ -7,6 +7,7 @@ import {
   runnerCallLineOutputLimit,
 } from '../../calls/output-limit.js';
 import {
+  RUNNER_CALL_STOPPED_ERROR,
   runnerCallErrorFromUnknown,
   runnerCallIdleTimeoutError,
   runnerCallInterruptedStatus,
@@ -716,10 +717,10 @@ export async function invokeProcessCli(
         context: context.callContext,
         credentialValues,
         status,
-        error: {
-          code: status === 'timeout' ? 'timeout' : 'runner_interrupted',
-          message: status === 'timeout' ? 'CLI invocation timed out' : 'CLI invocation was aborted',
-        },
+        error:
+          status === 'timeout'
+            ? { code: 'timeout', message: 'CLI invocation timed out' }
+            : RUNNER_CALL_STOPPED_ERROR,
       });
     }
     if (processError.isIdleTimeout(cause)) {

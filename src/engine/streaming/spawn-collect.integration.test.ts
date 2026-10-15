@@ -630,6 +630,29 @@ describe('spawnAndCollect', () => {
     });
   });
 
+  it('records a call the user stops as stopped by you', async () => {
+    const controller = new AbortController();
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      spawnAndCollect({
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write("ready\\n"); setInterval(() => {}, 60_000)'],
+        cwd: process.cwd(),
+        signal: controller.signal,
+        onText: () => controller.abort(),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toBeDefined();
+
+    expect(runnerCallErrors(events)).toEqual([
+      expect.objectContaining({
+        status: 'aborted',
+        error: { code: 'runner_interrupted', message: 'stopped by you' },
+      }),
+    ]);
+  });
+
   it('buffers stderr chunks without promoting them to result warnings by default', async () => {
     const stderrChunks: string[] = [];
     const result = await spawnAndCollect({
