@@ -614,7 +614,7 @@ drift report comparing the Task Brief against the captured brief diffs and the
 evidence ledger. The report is persisted as `drift-report.json` in the session
 directory and is also injected as a section into the final-review prompt.
 
-Final-review attribution comes from `review-changes.json`, which records the before/after bytes each passing brief changed in the run workspace, and their brief hashes. The full Git comparison remains workspace context, including unknown edits and independent changes within the same declared file. A missing expected file in the final drift report can mean that the brief's change capture was not recorded, rather than that the file was unchanged. Legacy sessions and direct writes without capture keep that uncertainty visible. The review packet's optional `changes.provenance` describes this evidence without changing the version-1 packet boundary.
+Final-review attribution comes from `review-changes.json`, which records the before/after bytes and mode, or the symlink target, of each entry a passing brief changed in the run workspace, and their brief hashes. The full Git comparison remains workspace context, including unknown edits and independent changes within the same declared file. A missing expected file in the final drift report can mean that the brief's change capture was not recorded, rather than that the file was unchanged. Legacy sessions and direct writes without capture keep that uncertainty visible. The review packet's optional `changes.provenance` describes this evidence without changing the version-1 packet boundary.
 
 ### Shape
 

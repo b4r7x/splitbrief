@@ -1,15 +1,5 @@
 import { spawn } from 'node:child_process';
-import {
-  chmod,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readlink,
-  rm,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -21,19 +11,14 @@ import {
 import type { SnapshotFileEntry, SnapshotManifest } from '../../../core/schemas/snapshot.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { gitBinary } from '../../../lib/git/client.js';
-import {
-  assertExistingPathConfined,
-  assertPathConfined,
-  assertWritablePathConfined,
-} from '../../../lib/path-confinement.js';
+import { assertPathConfined, assertWritablePathConfined } from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { resolveValidatedBlobPath } from '../../snapshots/blob-resolver.js';
-import { collectTrackedFiles, hashFile } from '../../snapshots/files.js';
+import { collectTrackedFiles, hashFile, listWorkspaceEntries } from '../../snapshots/files.js';
 import { readManifest } from '../../snapshots/manifest.js';
-import { readConfinedEntry } from '../approval/file-snapshots/entry.js';
+import { readChangeEntry, readConfinedEntry } from '../approval/file-snapshots/entry.js';
 import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
-import { listWorkspaceEntries } from '../isolation/entry-snapshot.js';
 
 type WorkspaceBase = { path: string; base: { snapshotId: string } };
 
@@ -119,6 +104,8 @@ function runGitDiff(root: string): Promise<string> {
         'diff',
         '--no-index',
         '--binary',
+        // A rename section keeps the `a/` `b/` folders in its paths; `git apply` then misses both.
+        '--no-renames',
         '--no-prefix',
         '--no-color',
         '--no-ext-diff',
@@ -175,7 +162,7 @@ export async function writeRunPatch(
   const tracked = new Set(
     base.symlinks === undefined
       ? await collectTrackedFiles(workspace.path, { ignoreProjectDir: projectDir })
-      : await listWorkspaceEntries(workspace.path, projectDir),
+      : await listWorkspaceEntries(workspace.path, { ignoreProjectDir: projectDir }),
   );
   const paths = [
     ...new Set([...Object.keys(base.fileHashes), ...(base.symlinks?.keys() ?? []), ...tracked]),
@@ -211,9 +198,8 @@ export async function writeRunPatch(
     let ours: PatchEntry;
     if (stat === null || stat.isDirectory()) {
       ours = { kind: 'absent' };
-    } else if (stat.isSymbolicLink() && base.symlinks !== undefined) {
-      assertExistingPathConfined(dirname(path), workspace.path);
-      ours = { kind: 'symlink', target: await readlink(join(workspace.path, path)) };
+    } else if (base.symlinks !== undefined) {
+      ours = await readChangeEntry(workspace.path, path);
     } else {
       ours = await readConfinedEntry(workspace.path, path);
     }

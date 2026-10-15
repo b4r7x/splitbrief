@@ -10,7 +10,7 @@ import { SECURE_FILE_MODE } from '../../../lib/fs.js';
 import { getGitForDir } from '../../../lib/git/client.js';
 import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
 import { isENOENT } from '../../../lib/process/errors.js';
-import { walkProjectEntries } from '../../snapshots/files.js';
+import { listWorkspaceEntries } from '../../snapshots/files.js';
 import {
   getChangedFilesSinceSnapshot,
   getChangedFilesSnapshot,
@@ -39,35 +39,16 @@ export function entryStoreDir(ref: SessionRef): string {
   return join(sessionDir(ref.projectDir, ref.sessionId), 'entries');
 }
 
-async function walkEntries(
-  dir: string,
-  ignoreProjectDir: string,
-): Promise<Map<string, 'file' | 'symlink'>> {
-  const entries = new Map<string, 'file' | 'symlink'>();
-  for await (const entry of walkProjectEntries(dir, { ignoreProjectDir })) {
-    if (entry.kind !== 'directory') entries.set(entry.path, entry.kind);
-  }
-  return entries;
-}
-
-/** Every file and link under `dir` the snapshots would record, sorted. */
-export async function listWorkspaceEntries(
-  dir: string,
-  ignoreProjectDir: string,
-): Promise<string[]> {
-  return [...(await walkEntries(dir, ignoreProjectDir)).keys()].sort();
-}
-
 export async function captureEntrySnapshot(
   dir: string,
   opts: { ignoreProjectDir: string; store: string },
 ): Promise<ChangedFilesSnapshot> {
-  const entries = await walkEntries(dir, opts.ignoreProjectDir);
+  const entries = await listWorkspaceEntries(dir, { ignoreProjectDir: opts.ignoreProjectDir });
   await mkdir(opts.store, { recursive: true, mode: 0o700 });
   const baselineFileHashes: Record<string, string | null> = {};
   const baselineFileModes: Record<string, number> = {};
   const symlinks: Record<string, string> = {};
-  for (const path of entries.keys()) {
+  for (const path of entries) {
     const target = await readProjectSymlink(dir, path);
     if (target !== null) {
       symlinks[path] = target;
@@ -82,7 +63,7 @@ export async function captureEntrySnapshot(
   }
   return {
     head: GIT_EMPTY_TREE_HASH,
-    files: [...entries.keys()].sort(),
+    files: entries,
     dirtyFileContents: {},
     baselineFileHashes,
     baselineFileModes,
@@ -100,13 +81,12 @@ async function restoreEntryFiles(
   const removedPaths: string[] = [];
   for (const file of files) {
     await removeConfinedSymlink(dir, file);
-    const link = snapshot.symlinks?.[file];
-    if (link !== undefined) {
-      await writeConfinedSymlink(dir, file, link);
-      continue;
-    }
     try {
       const entry = await entryToRestore(dir, snapshot, file, store);
+      if (entry.kind === 'symlink') {
+        await writeConfinedSymlink(dir, file, entry.target);
+        continue;
+      }
       await writeConfinedEntry(dir, file, entry);
       if (entry.kind === 'absent') removedPaths.push(file);
     } catch (err) {

@@ -74,3 +74,15 @@ export async function collectTrackedFiles(
   }
   return files.sort();
 }
+
+/** Every file and link under `projectDir` the snapshots would record, sorted. */
+export async function listWorkspaceEntries(
+  projectDir: string,
+  opts: CollectTrackedFilesOptions = {},
+): Promise<string[]> {
+  const entries: string[] = [];
+  for await (const entry of walkProjectEntries(projectDir, opts)) {
+    if (entry.kind !== 'directory') entries.push(entry.path);
+  }
+  return entries.sort();
+}

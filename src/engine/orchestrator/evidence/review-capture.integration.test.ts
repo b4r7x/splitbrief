@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeCallbacks, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -11,6 +12,7 @@ import {
   setupTaskProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import { sessionDir } from '../../../core/paths.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { captureTaskReviewChanges } from './review-capture.js';
@@ -212,10 +214,17 @@ describe('captureTaskReviewChanges from an entry snapshot (no git)', () => {
     writeFileSync(join(dir, 'gone.txt'), 'deleted by the task\n');
     writeFileSync(join(dir, 'run.sh'), '#!/bin/sh\n');
     chmodSync(join(dir, 'run.sh'), 0o644);
+    mkdirSync(join(dir, 'docs'));
+    symlinkSync('../edit.txt', join(dir, 'docs/readme.md'));
+    symlinkSync('edit.txt', join(dir, 'gone-link'));
     const taskStartSnapshot = await captureWorkspaceSnapshot(dir, ref);
     writeFileSync(join(dir, 'edit.txt'), 'after\n');
     rmSync(join(dir, 'gone.txt'));
     chmodSync(join(dir, 'run.sh'), 0o755);
+    rmSync(join(dir, 'docs/readme.md'));
+    symlinkSync('../run.sh', join(dir, 'docs/readme.md'));
+    rmSync(join(dir, 'gone-link'));
+    symlinkSync('run.sh', join(dir, 'new-link'));
     const task = makeTask({ id: 'T001', action: 'modify', suggestedFiles: ['edit.txt'] });
 
     await captureTaskReviewChanges({ ref, workspaceDir: dir, task, taskStartSnapshot });
@@ -227,15 +236,70 @@ describe('captureTaskReviewChanges from an entry snapshot (no git)', () => {
       const change = changes.get(path);
       if (change?.kind !== 'captured') return `not captured: ${change?.kind}`;
       const entry = change[side];
-      return entry === null ? null : Buffer.from(entry.base64, 'base64').toString('utf8');
+      if (entry === null) return null;
+      return 'symlink' in entry
+        ? `-> ${entry.symlink}`
+        : Buffer.from(entry.base64, 'base64').toString('utf8');
     };
     expect(decoded('edit.txt', 'before')).toBe('before\n');
     expect(decoded('edit.txt', 'after')).toBe('after\n');
     expect(decoded('gone.txt', 'before')).toBe('deleted by the task\n');
     expect(decoded('gone.txt', 'after')).toBeNull();
     const mode = changes.get('run.sh');
-    expect(mode?.kind === 'captured' && [mode.before?.mode, mode.after?.mode]).toEqual([
-      0o644, 0o755,
-    ]);
+    expect(mode).toMatchObject({ before: { mode: 0o644 }, after: { mode: 0o755 } });
+    expect(decoded('docs/readme.md', 'before')).toBe('-> ../edit.txt');
+    expect(decoded('docs/readme.md', 'after')).toBe('-> ../run.sh');
+    expect(decoded('gone-link', 'before')).toBe('-> edit.txt');
+    expect(decoded('gone-link', 'after')).toBeNull();
+    expect(decoded('new-link', 'before')).toBeNull();
+    expect(decoded('new-link', 'after')).toBe('-> run.sh');
+  });
+});
+
+describe('captureTaskReviewChanges from a git workspace', () => {
+  let dir = '';
+  afterEach(() => {
+    if (dir) cleanupTempDir(dir);
+    dir = '';
+  });
+
+  it('records committed, dirty and new symlinks by target, and a mode-only change', async () => {
+    dir = createTempDir('review-capture-links-');
+    const ref = { projectDir: dir, sessionId: 'sess-links' };
+    mkdirSync(sessionDir(dir, ref.sessionId), { recursive: true });
+    createTestGitRepo(dir, { 'a.txt': 'same\n', 'b.txt': 'same\n', 'src/cli.js': 'run\n' });
+    chmodSync(join(dir, 'src/cli.js'), 0o644);
+    symlinkSync('a.txt', join(dir, 'retargeted'));
+    symlinkSync('a.txt', join(dir, 'removed'));
+    execSync('git add -A && git commit -q -m links', { cwd: dir, stdio: 'pipe' });
+    symlinkSync('a.txt', join(dir, 'dirty'));
+    const taskStartSnapshot = await captureWorkspaceSnapshot(dir, ref);
+    chmodSync(join(dir, 'src/cli.js'), 0o755);
+    symlinkSync('b.txt', join(dir, 'created'));
+    for (const link of ['retargeted', 'dirty']) {
+      rmSync(join(dir, link));
+      symlinkSync('b.txt', join(dir, link));
+    }
+    rmSync(join(dir, 'removed'));
+    const task = makeTask({ id: 'T001', action: 'modify', suggestedFiles: ['src/cli.js'] });
+
+    await captureTaskReviewChanges({ ref, workspaceDir: dir, task, taskStartSnapshot });
+
+    const changes = Object.fromEntries(
+      (readReviewChanges(ref)?.changes ?? []).map((change) => [
+        change.path,
+        change.kind === 'captured' ? [change.before, change.after] : change.kind,
+      ]),
+    );
+    expect(changes).toEqual({
+      created: [null, { symlink: 'b.txt' }],
+      dirty: [{ symlink: 'a.txt' }, { symlink: 'b.txt' }],
+      removed: [{ symlink: 'a.txt' }, null],
+      retargeted: [{ symlink: 'a.txt' }, { symlink: 'b.txt' }],
+      'src/cli.js': [
+        expect.objectContaining({ mode: 0o644 }),
+        expect.objectContaining({ mode: 0o755 }),
+      ],
+    });
   });
 });

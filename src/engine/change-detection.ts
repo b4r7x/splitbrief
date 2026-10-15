@@ -1,11 +1,13 @@
 import { existsSync } from 'node:fs';
-import { lstat, readFile } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isInternalGitStatusPath } from '../core/paths.js';
 import { getCurrentChangedFiles } from '../lib/git/files.js';
 import { readFileModeAtHead, showFileAtHead } from '../lib/git/refs.js';
 import { isENOENT } from '../lib/process/errors.js';
 import { computeDiff } from '../utils/diff.js';
-import { collectTrackedFiles, hashFile } from './snapshots/files.js';
+import { readChangeEntry, type ChangeEntry } from './orchestrator/approval/file-snapshots/entry.js';
+import { hashFile, listWorkspaceEntries } from './snapshots/files.js';
 
 function hasGitMetadata(projectDir: string): boolean {
   return existsSync(join(projectDir, '.git'));
@@ -21,6 +23,7 @@ export type ChangeDetectorBaseline =
     }
   | {
       kind: 'file-hashes';
+      /** Each file and link: `<mode>:<sha256>`, `symlink:<target>`, `unreadable`, or null once absent. */
       hashes: Record<string, string | null>;
       ignoreProjectDir?: string | undefined;
     };
@@ -38,18 +41,18 @@ export type ChangeDetector = (
 
 const HASH_CONCURRENCY = 16;
 
-export async function hashFiles(
-  projectDir: string,
-  files: string[],
-): Promise<Record<string, string | null>> {
-  const entries: Record<string, string | null> = {};
+async function readEach<T>(
+  files: readonly string[],
+  read: (file: string) => Promise<T>,
+): Promise<Record<string, T>> {
+  const entries: Record<string, T> = {};
   let next = 0;
   async function worker(): Promise<void> {
     while (next < files.length) {
       const index = next++;
       const file = files[index];
       if (file === undefined) return;
-      entries[file] = await hashFile(join(projectDir, file));
+      entries[file] = await read(file);
     }
   }
   const workers = Array.from({ length: Math.min(HASH_CONCURRENCY, files.length) }, worker);
@@ -57,11 +60,32 @@ export async function hashFiles(
   return entries;
 }
 
-async function captureFileHashes(
+export async function hashFiles(
   projectDir: string,
-  opts: { ignoreProjectDir?: string | undefined } = {},
+  files: string[],
 ): Promise<Record<string, string | null>> {
-  return hashFiles(projectDir, await collectTrackedFiles(projectDir, opts));
+  return readEach(files, (file) => hashFile(join(projectDir, file)));
+}
+
+async function fingerprint(projectDir: string, file: string): Promise<string | null> {
+  let entry: ChangeEntry;
+  try {
+    entry = await readChangeEntry(projectDir, file);
+  } catch {
+    // A file the call made unreadable still differs from its start.
+    return 'unreadable';
+  }
+  if (entry.kind === 'absent') return null;
+  return entry.kind === 'symlink' ? `symlink:${entry.target}` : `${entry.mode}:${entry.sha256}`;
+}
+
+async function captureFingerprints(
+  projectDir: string,
+  opts: { ignoreProjectDir?: string | undefined },
+): Promise<Record<string, string | null>> {
+  return readEach(await listWorkspaceEntries(projectDir, opts), (file) =>
+    fingerprint(projectDir, file),
+  );
 }
 
 export async function captureChangeDetectorBaseline(
@@ -79,16 +103,19 @@ export async function captureChangeDetectorBaseline(
   }
   return {
     kind: 'file-hashes',
-    hashes: await captureFileHashes(projectDir, opts),
+    hashes: await captureFingerprints(projectDir, opts),
     ignoreProjectDir: opts.ignoreProjectDir,
   };
 }
 
+/** A symlink reads as its target, the way git stores it. */
 async function readBytes(projectDir: string, file: string): Promise<Buffer | null> {
   try {
-    return await readFile(join(projectDir, file));
+    const entry = await readChangeEntry(projectDir, file);
+    if (entry.kind === 'absent') return null;
+    return entry.kind === 'symlink' ? Buffer.from(entry.target) : entry.bytes;
   } catch {
-    // Absent, a directory, or unreadable: there is no content to compare against.
+    // A directory, or unreadable: there is no content to compare against.
     return null;
   }
 }
@@ -129,7 +156,7 @@ export async function summarizeChanges(
   suggestedFiles: readonly string[] = [],
 ): Promise<{ files: string[]; linesAdded?: number; linesRemoved?: number }> {
   if (before.kind === 'file-hashes') {
-    const after = await captureFileHashes(projectDir, {
+    const after = await captureFingerprints(projectDir, {
       ignoreProjectDir: before.ignoreProjectDir,
     });
     const files = [...new Set([...Object.keys(before.hashes), ...Object.keys(after)])].filter(
@@ -138,7 +165,11 @@ export async function summarizeChanges(
     return { files: orderChangedFiles(files, suggestedFiles) };
   }
 
-  const candidates = new Set([...before.files, ...(await getCurrentChangedFiles(projectDir))]);
+  const candidates = new Set(
+    [...before.files, ...(await getCurrentChangedFiles(projectDir))].filter(
+      (file) => !isInternalGitStatusPath(file),
+    ),
+  );
   const files: string[] = [];
   let linesAdded = 0;
   let linesRemoved = 0;

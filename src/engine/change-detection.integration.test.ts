@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -10,6 +10,56 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
 describe('file-hash change detection', () => {
+  it('reports a mode-only change and every symlink change from a file-hashes baseline', async () => {
+    const dir = createTempDir('change-detect-links');
+    try {
+      createTestGitRepo(dir, {
+        'cli.js': 'run\n',
+        'a.txt': 'same\n',
+        'b.txt': 'same\n',
+        'keep.txt': 'keep\n',
+      });
+      symlinkSync('a.txt', join(dir, 'retargeted'));
+      symlinkSync('a.txt', join(dir, 'removed'));
+      symlinkSync('a.txt', join(dir, 'replaced'));
+      chmodSync(join(dir, 'cli.js'), 0o644);
+      const baseline = await captureChangeDetectorBaseline(dir, { kind: 'file-hashes' });
+      const detect = createChangeDetector('Direct implementer');
+      expect(await detect(dir, baseline)).toMatchObject({ changed: false });
+
+      chmodSync(join(dir, 'cli.js'), 0o755);
+      expect(await detect(dir, baseline)).toEqual({ changed: true, output: '' });
+      symlinkSync('keep.txt', join(dir, 'created'));
+      rmSync(join(dir, 'retargeted'));
+      symlinkSync('b.txt', join(dir, 'retargeted'));
+      rmSync(join(dir, 'removed'));
+      rmSync(join(dir, 'replaced'));
+      writeFileSync(join(dir, 'replaced'), 'same\n');
+
+      expect(await summarizeChanges(dir, baseline)).toEqual({
+        files: ['cli.js', 'created', 'removed', 'replaced', 'retargeted'],
+      });
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('reports a symlink retargeted between files with the same bytes from a git-status baseline', async () => {
+    const dir = createTempDir('change-detect-git-link');
+    try {
+      createTestGitRepo(dir, { 'a.txt': 'same\n', 'b.txt': 'same\n' });
+      symlinkSync('a.txt', join(dir, 'link'));
+      const baseline = await captureChangeDetectorBaseline(dir, { kind: 'git-status' });
+
+      rmSync(join(dir, 'link'));
+      symlinkSync('b.txt', join(dir, 'link'));
+
+      expect((await summarizeChanges(dir, baseline)).files).toEqual(['link']);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
   it.each(['clean', 'dirty-content', 'dirty-mode'] as const)(
     'detects a mode-only change from a %s git-status baseline',
     async (initial) => {

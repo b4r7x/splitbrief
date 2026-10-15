@@ -6,22 +6,22 @@ import { appendReviewChanges } from '../../../core/evidence/review-changes.js';
 import { warnError } from '../../../lib/warn.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import {
-  readConfinedEntry,
-  sameFileEntry,
-  type FileSnapshotEntry,
+  readChangeEntry,
+  sameChangeEntry,
+  type ChangeEntry,
 } from '../approval/file-snapshots/entry.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
 import { entryStoreDir } from '../isolation/entry-snapshot.js';
 
-function serialized(entry: FileSnapshotEntry): ReviewFileEntry {
-  return entry.kind === 'absent'
-    ? null
-    : {
-        base64: entry.bytes.toString('base64'),
-        sha256: entry.sha256,
-        mode: entry.mode & 0o777,
-      };
+function serialized(entry: ChangeEntry): ReviewFileEntry {
+  if (entry.kind === 'absent') return null;
+  if (entry.kind === 'symlink') return { symlink: entry.target };
+  return {
+    base64: entry.bytes.toString('base64'),
+    sha256: entry.sha256,
+    mode: entry.mode & 0o777,
+  };
 }
 
 export async function captureTaskReviewChanges(opts: {
@@ -46,8 +46,8 @@ export async function captureTaskReviewChanges(opts: {
         file,
         entryStoreDir(opts.ref),
       );
-      const after = await readConfinedEntry(opts.workspaceDir, file);
-      if (sameFileEntry(before, after)) continue;
+      const after = await readChangeEntry(opts.workspaceDir, file);
+      if (sameChangeEntry(before, after)) continue;
       changes.push({
         ...identity,
         kind: 'captured',

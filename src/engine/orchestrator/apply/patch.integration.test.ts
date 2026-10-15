@@ -481,6 +481,30 @@ describe('writeRunPatch', () => {
     execFileSync('git', ['apply', '--check', patchPath], { cwd: replayDir });
   });
 
+  it('replays a deleted entry and a created entry with the same contents as a delete and a create', async () => {
+    const { ref, workspace } = await baseAndWorkspace(
+      { 'src/old.txt': 'same\n', 'src/kept.txt': 'kept\n' },
+      { 'old-link': 'src/kept.txt' },
+    );
+    rmSync(join(workspace.path, 'src/old.txt'));
+    writeFileSync(join(workspace.path, 'src/new.txt'), 'same\n');
+    rmSync(join(workspace.path, 'old-link'));
+    symlinkSync('src/kept.txt', join(workspace.path, 'new-link'));
+    const replayDir = createTempDir('run-patch-rename-replay-');
+    dirs.push(replayDir);
+    cpSync(join(ref.projectDir, 'src'), join(replayDir, 'src'), { recursive: true });
+    symlinkSync('src/kept.txt', join(replayDir, 'old-link'));
+
+    const patchPath = await writeRunPatch(ref, workspace);
+    if (patchPath === null) throw new Error('the changed workspace has no patch');
+
+    execFileSync('git', ['apply', patchPath], { cwd: replayDir });
+    expect(existsSync(join(replayDir, 'src/old.txt'))).toBe(false);
+    expect(readFileSync(join(replayDir, 'src/new.txt'), 'utf8')).toBe('same\n');
+    expect(existsSync(join(replayDir, 'old-link'))).toBe(false);
+    expect(readlinkSync(join(replayDir, 'new-link'))).toBe('src/kept.txt');
+  });
+
   it('refuses to write a patch when a new workspace file is unreadable', async () => {
     const { ref, workspace } = await baseAndWorkspace({ 'src/base.txt': 'base\n' });
     const unreadablePath = join(workspace.path, 'unreadable.txt');

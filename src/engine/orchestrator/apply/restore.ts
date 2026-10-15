@@ -1,7 +1,7 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { error } from '../../../utils/error.js';
-import { type ConfinedEntry, writeConfinedEntryOrLink } from '../approval/file-snapshots/entry.js';
+import { type ChangeEntry, writeConfinedEntryOrLink } from '../approval/file-snapshots/entry.js';
 import { type ApplyBackup, backupSideEntry, readApplyBackup, readBackupBlob } from './backup.js';
 import { readApplyEntry, sameSideEntry, type SideEntry, unsafeEntryError } from './states.js';
 import { transitionAndSave } from '../state-ops.js';
@@ -14,7 +14,7 @@ export type ApplyBackupReconciliation = {
   ambiguous: string[];
 };
 
-function matchesFingerprint(entry: ConfinedEntry | null, side: SideEntry | undefined): boolean {
+function matchesFingerprint(entry: ChangeEntry | null, side: SideEntry | undefined): boolean {
   return entry !== null && side !== undefined && sameSideEntry(entry, side);
 }
 
@@ -61,7 +61,7 @@ export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
   const conflicts = [...reconciliation.ambiguous];
   for (const path of reconciliation.written) {
     const before = replaced.get(path);
-    let entry: ConfinedEntry;
+    let entry: ChangeEntry;
     if (before !== undefined && 'target' in before) {
       entry = { kind: 'symlink', target: before.target };
     } else if (before !== undefined) {

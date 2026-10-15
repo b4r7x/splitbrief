@@ -5,7 +5,7 @@ import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import {
-  type ConfinedEntry,
+  type ChangeEntry,
   linkStaysInProject,
   writeConfinedEntryOrLink,
 } from '../approval/file-snapshots/entry.js';
@@ -65,7 +65,7 @@ export async function mergeApplyStates(
     ...new Set([...states.base.keys(), ...states.ours.keys(), ...states.theirs.keys()]),
   ].sort();
   const result: ApplyMerge = { promote: [], conflicts: [] };
-  const writes: { path: string; entry: ConfinedEntry }[] = [];
+  const writes: { path: string; entry: ChangeEntry }[] = [];
   for (const path of paths) {
     const base = states.base.get(path) ?? { kind: 'absent' };
     const ours = states.ours.get(path) ?? { kind: 'absent' };
