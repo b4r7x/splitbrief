@@ -7,6 +7,7 @@ import {
   skillsSection,
   type PromptPart,
 } from './builder.js';
+import { TASK_CMD_CHECK_RULE } from './plan-session.js';
 
 const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.
 
@@ -29,7 +30,7 @@ const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema yo
 
 const FIX_WORK_CONTRACT = `This review call is read-only. Do not write, edit or delete any file, or run commands that change the project. Return the verdict and the fix work in one review_answer.
 
-- fixTasks: complete TaskSpecs with findingIds. Each may edit any ordinary project file a finding needs, including a file no earlier task suggested.
+- fixTasks: complete TaskSpecs with findingIds. Each may edit any ordinary project file a finding needs, including a file no earlier task suggested. ${TASK_CMD_CHECK_RULE}
 - rejected: { findingId, reason } for a pending input that needs no work. Reject pending inputs only. A finding you would reject is not a blocking finding.
 - verify: { findingId, checkIds } for a finding or input whose work may already be on disk. Name registered run or task checks.
 - ask: { question, whyOnlyUserCanAnswer } or null. Use it only for a change to what is built that the plan and decisions cannot answer.

@@ -1,6 +1,6 @@
 import type { InputMode } from '../../core/navigation/types.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
-import { phaseStage } from '../../core/rail-stages.js';
+import { messageSeat } from '../../core/queue-state.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { queueCopy } from './queue-copy.js';
 
@@ -14,11 +14,12 @@ export function queuePlaceholder(input: {
   inputMode: InputMode;
   running: boolean;
   stopping: boolean;
+  reviewing: boolean;
   taskId?: string | null | undefined;
   steerableSeat?: CrewSeatId | null | undefined;
 }): string | undefined {
   if (input.inputMode !== 'normal' || !input.running || input.stopping) return undefined;
-  const seat = phaseStage(input.phase);
+  const seat = messageSeat(input.phase, input.reviewing);
   return seat === null
     ? undefined
     : queueCopy({ seat, taskId: input.taskId, steerable: input.steerableSeat === seat })

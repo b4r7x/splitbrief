@@ -181,6 +181,7 @@ async function refreshStaleTask(input: {
       workspaceDir: opts.wctx.workspaceDir,
       sessionId: opts.wctx.sessionId,
       bus: opts.wctx.bus,
+      config: opts.wctx.config,
       planner: opts.wctx.planner,
       reviewer: opts.wctx.reviewer,
       state,

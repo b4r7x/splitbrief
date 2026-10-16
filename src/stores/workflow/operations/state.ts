@@ -110,6 +110,17 @@ export interface OperationsState {
   validationStage?: RunningValidationStage | null;
   suiteStage?: RunningSuiteStage | null;
   reviewStage?: RunningOperation | null;
+  /**
+   * A task review is due inside the build phase: the engine's `pendingScheduledReview`, from the
+   * review's start until BUILD starts a brief or the review's fix cycle starts. A halt, a stop or
+   * a question inside it keeps it.
+   */
+  scheduledReview?: boolean;
+}
+
+/** REVIEW reads what is typed: a task review is due inside the build phase. */
+export function selectScheduledReview(state: OperationsState): boolean {
+  return state.scheduledReview === true;
 }
 
 const initial = (): OperationsState => ({
@@ -119,6 +130,7 @@ const initial = (): OperationsState => ({
   validationStage: null,
   suiteStage: null,
   reviewStage: null,
+  scheduledReview: false,
 });
 
 const store = createStore<OperationsState>(initial);

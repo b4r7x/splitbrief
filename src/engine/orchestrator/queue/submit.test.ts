@@ -633,56 +633,62 @@ describe('enqueue', () => {
   });
 
   it.each([
-    { phase: 'implementing', seat: 'build', taskId: 'T002', native: false },
-    { phase: 'final-review', seat: 'review', taskId: undefined, native: false },
-    { phase: 'planning', seat: 'plan', taskId: undefined, native: true },
-  ] as const)('routes input to $seat during $phase', async ({ phase, seat, taskId, native }) => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = {
-      ...makeResearchingState(),
-      phase,
-      tasks: [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })],
-      currentTaskIndex: 1,
-    };
-    const { bus, events } = makeBusRecorder();
-    const injectUserTurn = vi.fn(async () => ({ status: 'delivered' as const, usage: null }));
-    const planner = makePlanner({
-      capabilities: {
-        supportsConversationalPlanning: true,
-        supportsSessionResume: true,
-        supportsEffort: false,
-        supportsImages: false,
-        supportsSelfSummarisation: false,
-      },
-      injectUserTurn,
-    });
-    const serialize = createWriteSequencer();
-    const handler = createQueueHandler({
-      config: makeConfig(),
-      projectDir,
-      sessionId,
-      getState: () => state,
-      setState: (next) => {
-        state = next;
-      },
-      bus,
-      planner,
-      serialize,
-    });
+    { phase: 'implementing', seat: 'build', taskId: 'T002', native: false, reviewing: false },
+    { phase: 'implementing', seat: 'review', taskId: undefined, native: false, reviewing: true },
+    { phase: 'final-review', seat: 'review', taskId: undefined, native: false, reviewing: false },
+    { phase: 'planning', seat: 'plan', taskId: undefined, native: true, reviewing: false },
+  ] as const)(
+    'routes input to $seat during $phase (task review running: $reviewing)',
+    async ({ phase, seat, taskId, native, reviewing }) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      const done = makeTask({ id: 'T001', status: 'done' });
+      let state: WorkflowState = {
+        ...makeResearchingState(),
+        phase,
+        tasks: [done, makeTask({ id: 'T002' })],
+        currentTaskIndex: 1,
+        ...(reviewing && { pendingScheduledReview: { afterTaskId: done.id } }),
+      };
+      const { bus, events } = makeBusRecorder();
+      const injectUserTurn = vi.fn(async () => ({ status: 'delivered' as const, usage: null }));
+      const planner = makePlanner({
+        capabilities: {
+          supportsConversationalPlanning: true,
+          supportsSessionResume: true,
+          supportsEffort: false,
+          supportsImages: false,
+          supportsSelfSummarisation: false,
+        },
+        injectUserTurn,
+      });
+      const serialize = createWriteSequencer();
+      const handler = createQueueHandler({
+        config: makeConfig(),
+        projectDir,
+        sessionId,
+        getState: () => state,
+        setState: (next) => {
+          state = next;
+        },
+        bus,
+        planner,
+        serialize,
+      });
 
-    expect(await handler(plainUserMessage('check the running work'), phase)).toMatchObject({
-      status: 'accepted',
-    });
-    await serialize(() => {});
+      expect(await handler(plainUserMessage('check the running work'), phase)).toMatchObject({
+        status: 'accepted',
+      });
+      await serialize(() => {});
 
-    expect(injectUserTurn).toHaveBeenCalledTimes(native ? 1 : 0);
-    const message = loadState({ projectDir, sessionId })?.messageQueue[0];
-    if (message === undefined) throw new Error('expected queued message');
-    expect(isQueuedMessagePendingDelivery(message)).toBe(!native);
-    const queued = events.find((event) => event.type === 'message_queued');
-    expect(queued).toMatchObject({ seat, ...(taskId === undefined ? {} : { taskId }) });
-    if (taskId === undefined) expect(queued).not.toHaveProperty('taskId');
-  });
+      expect(injectUserTurn).toHaveBeenCalledTimes(native ? 1 : 0);
+      const message = loadState({ projectDir, sessionId })?.messageQueue[0];
+      if (message === undefined) throw new Error('expected queued message');
+      expect(isQueuedMessagePendingDelivery(message)).toBe(!native);
+      const queued = events.find((event) => event.type === 'message_queued');
+      expect(queued).toMatchObject({ seat, ...(taskId === undefined ? {} : { taskId }) });
+      if (taskId === undefined) expect(queued).not.toHaveProperty('taskId');
+    },
+  );
 
   it('enqueues a message into state and emits message-queued event', async () => {
     const { projectDir, sessionId } = setupProject(dirs);

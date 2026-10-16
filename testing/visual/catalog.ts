@@ -1920,6 +1920,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-closed-fix-cycle',
+      title: 'Workflow · closed after failed reviews and a fix cycle',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-fix-cycle',
+        title: 'The closed ledger names each failed review and its blocking findings',
+        kind: 'success',
+        marker: 'visual-closed-fix-cycle',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-undone',
       title: 'Workflow · Apply undone',
       surface: screenSurface('workflow'),

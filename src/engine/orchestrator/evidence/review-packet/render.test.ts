@@ -84,6 +84,41 @@ describe('renderReviewPacketMarkdown review seat', () => {
     expect(rendered.toLowerCase()).not.toContain('planner final review');
   });
 
+  it('lists every recorded review with what failed it, the failed task review included', () => {
+    const packet = makeReviewPacket();
+    const rendered = renderReviewPacketMarkdown(
+      {
+        ...packet,
+        evidence: {
+          ...packet.evidence,
+          reviews: [
+            {
+              scope: 'task',
+              afterTaskId: taskId('T001'),
+              cycle: 0,
+              outcome: 'fail',
+              blocking: [{ id: 'F1', text: 'The test file lacks the four examples.' }],
+              at: '2026-10-16T09:19:51.000Z',
+            },
+            { scope: 'final', cycle: 1, outcome: 'pass', blocking: [], at: '2026-10-16T09:25:00Z' },
+          ],
+        },
+      },
+      NULL_CACHE,
+    );
+
+    expect(rendered).toContain(
+      [
+        '## Reviews',
+        '- Task review after T001, fix cycle 0: fail',
+        '  - F1: The test file lacks the four examples.',
+        '- Final review, fix cycle 1: pass',
+        '',
+        '## Reviewer Final Review',
+      ].join('\n'),
+    );
+  });
+
   it('reads packets written before the reviewer was recorded and shows its absence', () => {
     const packet = makeReviewPacket();
     const saved = ReviewPacketSchema.parse({

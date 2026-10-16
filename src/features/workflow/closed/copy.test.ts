@@ -110,6 +110,31 @@ describe('runRows', () => {
     expect(runRows(makeView()).filter((row) => row.label === '')).toEqual([]);
   });
 
+  it('names each review that failed before the review of record, one row per finding', () => {
+    const view = makeView({
+      failedReviews: [
+        {
+          label: 'Review T001',
+          blocking: [{ id: 'F1', text: 'The test file lacks the four examples.' }],
+        },
+      ],
+    });
+    const rows = runRows(view);
+    expect(rows.slice(0, 4).map((row) => row.label)).toEqual(['Review', '', '', 'Packet']);
+    expect(rows[1]?.segments).toEqual([
+      {
+        spans: [
+          { text: 'Review T001 ', tone: 'text' },
+          { text: 'failed', tone: 'error' },
+        ],
+      },
+      { text: '1 blocking', tone: 'textDim' },
+    ]);
+    expect(rows[2]?.segments).toEqual([
+      { text: '  F1 The test file lacks the four examples.', tone: 'textDim' },
+    ]);
+  });
+
   it('reads a packet that was never written as a review that never ran', () => {
     const view = makeView({ review: { kind: 'missing' } });
     expect(segmentsFor(view, 'Review')).toEqual([

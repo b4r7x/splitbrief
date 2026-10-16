@@ -34,6 +34,7 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
       missingArtifacts: 0,
       preExisting: [],
     },
+    failedReviews: [],
     scope: { kind: 'checked', passed: true, errors: 0, warnings: 0 },
     quality: null,
     files: {

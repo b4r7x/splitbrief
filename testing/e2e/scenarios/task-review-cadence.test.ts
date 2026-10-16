@@ -2,14 +2,27 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
-import { SESSION_LOG_FILE, STATE_FILE, sessionsRoot } from '../../../src/core/paths.js';
+import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
+import {
+  REVIEW_PACKET_MARKDOWN_FILE,
+  SESSION_LOG_FILE,
+  STATE_FILE,
+  sessionsRoot,
+} from '../../../src/core/paths.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
+import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import type { ReviewAnswer } from '../../../src/core/schemas/review.js';
 import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import type { EngineEvent } from '../../../src/engine/events/types.js';
+import { runRows } from '../../../src/features/workflow/closed/copy.js';
+import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
+import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { readStopMenuRows } from '../../../src/features/workflow/stop/options.js';
 import { addEvent, reduceTasks } from '../../../src/stores/workflow/actions/event.js';
 import { selectRunningBrief, tasksStore } from '../../../src/stores/workflow/tasks.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
+import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -83,6 +96,10 @@ const findings: ReviewAnswer['findings'] = [
 ];
 const scopeError =
   'Finding F1 is outside the task review scope and cannot be assigned to a fix task.';
+const refusedCheck =
+  'Check T003-K1 is refused: `grep -F alpha src/alpha.mjs` runs a program outside the allowlist (grep).';
+const rejectedDecision = { what: 'Exported beta as a number', why: 'A number is simpler.' };
+const rejectReason = 'Criterion C2 needs beta to be the string beta; keep the string.';
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -98,12 +115,29 @@ afterEach(() => {
   restorePath = undefined;
 });
 
-async function runCadence(needsFix: boolean) {
+/** The transcript the run screen replays at 160 columns, one string per row. */
+function transcriptRows(events: EngineEvent[]): string[] {
+  return buildConversationRows({
+    sections: groupEventsIntoSections(events),
+    expandedDiffs: new Set(),
+    expandedActivityBatches: new Set(),
+    cols: 160,
+    viewportHeight: 50,
+    streaming: { taskId: null, lines: [], active: false },
+  }).rows.map((row) => rowText(row).trimEnd());
+}
+
+/**
+ * `needsFix`: the T001 review fails with fix work whose first answer is refused. `rejectDecision`:
+ * T002's first attempt reports a decision that PLAN rejects.
+ */
+async function runCadence(needsFix: boolean, rejectDecision = false) {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
   restorePath = activateSafeCliShimPath(target.tmpDir);
   const callsPath = join(target.tmpDir, 'calls.jsonl');
   const fixStatePath = join(target.tmpDir, 'fix-state.json');
+  const reportedPath = join(target.tmpDir, 'decision-reported');
   const plannerPath = join(target.tmpDir, 'planner.mjs');
   const implementerPath = join(target.tmpDir, 'implementer.mjs');
   const offlinePath = join(target.tmpDir, 'offline.mjs');
@@ -125,6 +159,11 @@ async function runCadence(needsFix: boolean) {
       checks: [{ id: 'T900-K1', kind: 'cmd', value: 'node --version', required: true }],
     }),
     findingIds: ['F1'],
+  };
+  const refusedFix = {
+    ...fix,
+    checks: [{ id: 'T003-K1', kind: 'cmd', value: 'grep -F alpha src/alpha.mjs', required: true }],
+    findingIds: ['F2'],
   };
   writeFileSync(
     plannerPath,
@@ -153,11 +192,13 @@ if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final 
     const repair = prompt.includes('It failed validation:');
     if (repair) kind = 'task-review-repair';
     answer.findings = ${JSON.stringify(findings)};
-    answer.fixTasks = [
-      ...(!repair ? [${JSON.stringify(invalidFix)}] : []),
-      ${JSON.stringify({ ...fix, findingIds: ['F2'] })},
-    ];
+    answer.fixTasks = repair
+      ? [${JSON.stringify({ ...fix, findingIds: ['F2'] })}]
+      : [${JSON.stringify(invalidFix)}, ${JSON.stringify(refusedFix)}];
   }
+} else if (prompt.includes('Confirm reported decisions')) {
+  kind = 'decision-confirm';
+  answer = ${JSON.stringify({ answer: { diagnosis: rejectReason, action: 'confirm', decisions: [] } })};
 } else if (prompt.includes('# Plan the change')) {
   kind = 'plan';
   answer = ${JSON.stringify({ result: plan })};
@@ -195,7 +236,7 @@ process.stdout.write(JSON.stringify(answer));
   ];
   writeFileSync(
     implementerPath,
-    `import { appendFileSync, copyFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+    `import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
@@ -210,11 +251,24 @@ if (entry.task.id === 'T003') {
   copyFileSync(join(root, sessions[0], ${JSON.stringify(STATE_FILE)}), ${JSON.stringify(fixStatePath)});
 }
 appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ kind: 'implement', taskId: entry.task.id }) + '\\n');
-for (const [file, source] of Object.entries(entry.files)) {
+const reports =
+  ${rejectDecision} && entry.task.id === 'T002' && !existsSync(${JSON.stringify(reportedPath)});
+const files = reports ? { ...entry.files, 'src/beta.mjs': 'export const beta = 2;\\n' } : entry.files;
+for (const [file, source] of Object.entries(files)) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, source);
 }
 console.log('Implemented ' + entry.task.id);
+if (reports) {
+  writeFileSync(${JSON.stringify(reportedPath)}, '');
+  console.log(JSON.stringify({
+    status: 'done',
+    filesChanged: Object.keys(entry.files),
+    touchedNotSuggested: [],
+    notes: null,
+    decisions: [${JSON.stringify(rejectedDecision)}],
+  }));
+}
 `,
   );
   const config = loadConfig(target.projectDir).config;
@@ -247,12 +301,12 @@ console.log('Implemented ' + entry.task.id);
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line));
-  return { state, events: replay.events, calls, fixStatePath };
+  return { state, events: replay.events, calls, fixStatePath, target, sessionId };
 }
 
 describe('e2e: task review cadence', () => {
   it('rejects pending-task fix work and replays the inserted fix before the pending brief', async () => {
-    const { state, events, calls, fixStatePath } = await runCadence(true);
+    const { state, events, calls, fixStatePath, target, sessionId } = await runCadence(true);
     expect(calls.map((call) => call.kind)).toEqual([
       'plan',
       'implement',
@@ -271,6 +325,10 @@ describe('e2e: task review cadence', () => {
     ]);
     const repair = calls.find((call) => call.kind === 'task-review-repair');
     expect(repair?.prompt).toContain(scopeError);
+    // A fix check the plan command policy refuses goes back to the reviewer and never becomes a
+    // required check of the fix brief.
+    expect(repair?.prompt).toContain(refusedCheck);
+    expect(JSON.stringify(state.tasks)).not.toContain('grep');
     const fixes = state.tasks.filter((task) => task.fix !== undefined);
     expect(fixes).toHaveLength(1);
     expect(fixes[0]).toMatchObject({
@@ -329,6 +387,47 @@ describe('e2e: task review cadence', () => {
         })),
       ),
     );
+    const failedReview = events.find(
+      (event) => event.type === 'review_completed' && event.afterTaskId === 'T001',
+    );
+    expect(failedReview).toMatchObject({
+      blockingFindings: [{ id: 'F2', text: findings[1]?.text }],
+    });
+    // The finding that failed the task review is on screen, in the section of that review.
+    const rows = transcriptRows(events);
+    const findingRow = rows.findIndex((row) => row.includes('Blocking F2'));
+    expect(rows[findingRow]).toMatch(/Blocking F2 +The alpha value has no explicit type test\.$/);
+    const heading = rows.findIndex((row) => row.trim() === 'Review T001');
+    expect(heading).toBeGreaterThan(-1);
+    expect(findingRow).toBeGreaterThan(heading);
+    // The failed task review stays in the evidence trail after the final review passes.
+    const reviews = readEvidenceLedger({ projectDir: target.projectDir, sessionId })?.reviews;
+    expect(reviews?.map((review) => [review.scope, review.afterTaskId, review.outcome])).toEqual([
+      ['task', 'T001', 'fail'],
+      ['task', 'T003', 'pass'],
+      ['task', 'T002', 'pass'],
+      ['final', undefined, 'pass'],
+    ]);
+    expect(reviews?.[0]).toMatchObject({
+      cycle: 0,
+      blocking: [{ id: 'F2', text: findings[1]?.text }],
+    });
+    const packet = readFileSync(
+      join(sessionsRoot(target.projectDir), sessionId, REVIEW_PACKET_MARKDOWN_FILE),
+      'utf8',
+    );
+    expect(packet).toContain(
+      `- Task review after T001, fix cycle 0: fail\n  - F2: ${findings[1]?.text}\n`,
+    );
+    const closed = deriveSummaryView({
+      record: readRunRecord({ projectDir: target.projectDir, sessionId }),
+    });
+    expect(closed?.failedReviews).toEqual([
+      { label: 'Review T001', blocking: [{ id: 'F2', text: findings[1]?.text }] },
+    ]);
+    expect(closed === null ? [] : runRows(closed).map((row) => row.segments)).toContainEqual([
+      { text: `  F2 ${findings[1]?.text}`, tone: 'textDim' },
+    ]);
     const initial = tasksStore.get();
     const running = events.slice(0, fixStartIndex + 1).reduce(reduceTasks, initial);
     expect(running.tasks.map((task) => task.id)).toEqual(order);
@@ -345,6 +444,40 @@ describe('e2e: task review cadence', () => {
     expect(
       completed.tasks.map((task) => ({ id: task.id, title: task.title, status: task.status })),
     ).toEqual(state.tasks.map((task) => ({ id: task.id, title: task.title, status: task.status })));
+  });
+
+  it('sends the brief back to BUILD with the reason when PLAN rejects the decisions it reported', async () => {
+    const { state, events, calls, target } = await runCadence(false, true);
+    expect(calls.map((call) => call.kind)).toEqual([
+      'plan',
+      'implement',
+      'task-review',
+      'implement',
+      'decision-confirm',
+      'implement',
+      'task-review',
+      'final-review',
+    ]);
+    expect(events.find((event) => event.type === 'consult_answered')).toMatchObject({
+      taskId: 'T002',
+      reason: 'deviation',
+      action: 'confirm',
+      decisionCount: 0,
+      rejectedCount: 1,
+      diagnosis: rejectReason,
+    });
+    const retry = events.find((event) => event.type === 'task_retry');
+    expect(retry).toMatchObject({ taskId: 'T002' });
+    expect(retry?.type === 'task_retry' ? retry.error : '').toContain(rejectReason);
+    expect(transcriptRows(events)).toContainEqual(
+      expect.stringContaining(`PLAN rejected 1 decision for T002 · ${rejectReason}`),
+    );
+    expect(state.plan?.decisions.map((decision) => decision.text).join('\n')).not.toContain(
+      rejectedDecision.what,
+    );
+    expect(readFileSync(join(target.projectDir, 'src/beta.mjs'), 'utf8')).toBe(
+      "export const beta = 'beta';\n",
+    );
   });
 
   it('records task review pairs between briefs and the final pair before workflow completion', async () => {

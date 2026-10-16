@@ -8,6 +8,7 @@ import { namedFailures } from '../../../core/review/base-split.js';
 import type {
   BriefRow,
   BriefRowState,
+  FailedReviewView,
   PhaseTiming,
   ReviewView,
   ScopeView,
@@ -417,6 +418,29 @@ export function reviewView(
     missingArtifacts: packet.missingArtifactCount,
     preExisting,
   };
+}
+
+/**
+ * The reviews the ledger recorded as failed, except the last final review: that one is the review
+ * of record, which the Review row already states.
+ */
+export function failedReviewViews(ledger: EvidenceLedger | null): FailedReviewView[] {
+  const reviews = ledger?.reviews ?? [];
+  const earlier = reviews.at(-1)?.scope === 'final' ? reviews.slice(0, -1) : reviews;
+  return earlier
+    .filter((review) => review.outcome === 'fail')
+    .map((review) => ({
+      label:
+        review.scope === 'final'
+          ? 'Final review'
+          : review.afterTaskId === undefined
+            ? 'Task review'
+            : `Review ${review.afterTaskId}`,
+      blocking: review.blocking.map((entry) => ({
+        id: sanitizeTerminalDisplayText(entry.id),
+        text: sanitizeTerminalDisplayText(entry.text),
+      })),
+    }));
 }
 
 export function scopeView(summary: Summary): ScopeView {

@@ -27,6 +27,7 @@ import {
   WORKSPACE_KEPT_CODE,
   WORKSPACE_NOTICE_CATEGORY,
 } from '../../../../src/core/sessions/workspace-notice.js';
+import { consultAttemptError } from '../../../../src/engine/orchestrator/escalation/consult-guidance.js';
 import { retainedWorkspaceNotice } from '../../../../src/engine/orchestrator/isolation/retention.js';
 import { scenarioId } from '../../contracts/identifiers.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
@@ -1185,6 +1186,45 @@ const CLOSED_PRE_EXISTING = record({
   ledger: READY_LEDGER,
 });
 
+/**
+ * A completed run whose task review and first final review failed before its fix cycle passed: the
+ * closed block names each failed review under the Review row, with the findings that failed it.
+ */
+const CLOSED_FIX_CYCLE: RunRecord = {
+  ...CLOSED_COMPLETE,
+  ref: { ...CLOSED_COMPLETE.ref, sessionId: 'visual-closed-fix-cycle' },
+  ledger: {
+    ...READY_LEDGER,
+    sessionId: 'visual-closed-fix-cycle',
+    reviews: [
+      {
+        scope: 'task',
+        afterTaskId: BRIEFS.wire.id,
+        cycle: 0,
+        outcome: 'fail',
+        blocking: [
+          {
+            id: 'F1',
+            text: 'An empty email passes validation, so the form submits a blank address.',
+          },
+        ],
+        at: GENERATED_AT,
+      },
+      {
+        scope: 'final',
+        cycle: 0,
+        outcome: 'fail',
+        blocking: [
+          { id: 'F1', text: 'The signup route returns 500 when the email field is missing.' },
+          { id: 'F2', text: 'The route tests never assert the error code of a rejected email.' },
+        ],
+        at: GENERATED_AT,
+      },
+      { scope: 'final', cycle: 1, outcome: 'pass', blocking: [], at: GENERATED_AT },
+    ],
+  },
+};
+
 function undoneApplyRecord(conflicts: string[]): RunRecord {
   const sessionId =
     conflicts.length === 0 ? 'visual-closed-undone' : 'visual-closed-undo-conflicts';
@@ -1740,6 +1780,53 @@ export const reviewTaskOutOfScopeProjection: WorkflowFixtureProjection = {
   ),
 };
 
+/**
+ * The fix brief's first attempt reports a decision PLAN rejects, so the brief goes back to BUILD
+ * with the reason and passes on its second attempt.
+ */
+function cadenceFixBrief(): EngineEvent[] {
+  const [started, completed] = cadenceBrief({
+    brief: CADENCE_BRIEFS[2],
+    index: 2,
+    started: 284_000,
+    completed: 310_000,
+  });
+  if (started === undefined || completed?.type !== 'task_completed') {
+    throw new Error('A cadence brief starts and completes');
+  }
+  const reason = 'The error must name the field; keep the field name in the message.';
+  return [
+    started,
+    {
+      type: 'consult_answered',
+      ts: CADENCE_TS + 296_000,
+      phase: 'implementing',
+      taskId: taskId('T003'),
+      reason: 'deviation',
+      action: 'confirm',
+      seat: 'plan',
+      diagnosis: reason,
+      newTaskIds: null,
+      decisionCount: 0,
+      rejectedCount: 1,
+    },
+    {
+      type: 'task_retry',
+      ts: CADENCE_TS + 297_000,
+      phase: 'implementing',
+      taskId: taskId('T003'),
+      attempt: 1,
+      maxRetries: 3,
+      error: consultAttemptError({
+        lastError: 'The planner rejected decisions this attempt reported.',
+        instructions: reason,
+        seat: 'plan',
+      }),
+    },
+    { ...completed, retries: 1 },
+  ];
+}
+
 const CADENCE_SETTLED_EVENTS: readonly EngineEvent[] = [
   ...CADENCE_EVENTS,
   {
@@ -1761,6 +1848,9 @@ const CADENCE_SETTLED_EVENTS: readonly EngineEvent[] = [
     afterTaskId: 'T002',
     verdict: 'fail',
     findings: { blocking: 1, minor: 0, outOfScope: 0 },
+    blockingFindings: [
+      { id: 'F1', text: 'An empty email passes validation, so the form submits a blank address.' },
+    ],
     duration: 49_000,
     ...CADENCE_SEAT,
   },
@@ -1771,7 +1861,7 @@ const CADENCE_SETTLED_EVENTS: readonly EngineEvent[] = [
     cycle: 1,
     taskIds: [taskId('T003')],
   },
-  ...cadenceBrief({ brief: CADENCE_BRIEFS[2], index: 2, started: 284_000, completed: 310_000 }),
+  ...cadenceFixBrief(),
   {
     type: 'review_started',
     ts: CADENCE_TS + 311_000,
@@ -2148,6 +2238,7 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-closed-pre-existing',
     route: { record: CLOSED_PRE_EXISTING },
   }),
+  atRestProjection({ id: 'workflow-closed-fix-cycle', route: { record: CLOSED_FIX_CYCLE } }),
   atRestProjection({ id: 'workflow-closed-undone', route: { record: undoneApplyRecord([]) } }),
   atRestProjection({
     id: 'workflow-closed-undo-conflicts',

@@ -2982,9 +2982,34 @@ describe('consult answer rows', () => {
         ...(seat === undefined ? {} : { seat }),
       });
 
-      expect(rows.map(rowText)).toEqual(['PLAN confirmed 2 decisions for T004']);
+      expect(rows.map(rowText)).toEqual([
+        'PLAN confirmed 2 decisions for T004 · Both are changes of how.',
+      ]);
       expect(rows[0]?.segments[0]).toMatchObject({ text: 'PLAN', tone: 'planner' });
       expect(rows.some((rowValue) => rowValue.kind === 'card-top')).toBe(false);
+    },
+  );
+
+  it.each([
+    [0, 2, 'PLAN rejected 2 decisions for T004 · C5 needs the four examples.'],
+    [1, 1, 'PLAN confirmed 1 decision, rejected 1 for T004 · C5 needs the four examples.'],
+  ])(
+    'renders a decision-confirm that confirms %i and rejects %i decisions with its reason',
+    (decisionCount, rejectedCount, text) => {
+      const rows = rowsFor({
+        type: 'consult_answered',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T004'),
+        reason: 'deviation',
+        action: 'confirm',
+        diagnosis: 'C5 needs the four examples.',
+        newTaskIds: null,
+        decisionCount,
+        rejectedCount,
+      });
+
+      expect(rows.map(rowText)).toEqual([text]);
     },
   );
 
@@ -3068,6 +3093,51 @@ describe('consult answer rows', () => {
         }),
       ).toEqual([]);
     }
+  });
+});
+
+describe('review_completed rows', () => {
+  function completed(
+    blockingFindings?: EngineEventOf<'review_completed'>['blockingFindings'],
+  ): EngineEventOf<'review_completed'> {
+    return {
+      type: 'review_completed',
+      ts: 0,
+      phase: 'implementing',
+      scope: 'task',
+      afterTaskId: 'T001',
+      tool: 'codex',
+      verdict: blockingFindings === undefined ? 'pass' : 'fail',
+      findings: { blocking: blockingFindings?.length ?? 0, minor: 0 },
+      ...(blockingFindings !== undefined && { blockingFindings }),
+      duration: 30_600,
+    };
+  }
+
+  it('names each finding that failed a review, and stays rowless for a review without one', () => {
+    const rows = eventRows({
+      event: completed([
+        { id: 'F1', text: 'The test file does not contain the four examples of criterion 5.' },
+        { id: 'V2', text: 'npm test failed: 2 tests.' },
+      ]),
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    });
+    expect(rows.map(rowText)).toEqual([
+      expect.stringMatching(
+        /^Blocking F1 +The test file does not contain the four examples of criterion 5\.$/,
+      ),
+      expect.stringMatching(/^Blocking V2 +npm test failed: 2 tests\.$/),
+    ]);
+    expect(
+      eventRows({
+        event: completed(),
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 120, viewportRows: 20, streaming },
+      }),
+    ).toEqual([]);
   });
 });
 

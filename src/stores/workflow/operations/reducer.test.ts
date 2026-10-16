@@ -8,9 +8,9 @@ import { hydrateFromState } from '../actions/hydrate.js';
 import { markCancellationRequested } from '../actions/interrupt.js';
 import { resetWorkflow } from '../actions/reset.js';
 import { MAX_COMPLETED_OPERATIONS } from './retention.js';
-import { operationsStore } from './state.js';
+import { operationsStore, selectScheduledReview } from './state.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
-import { makeValidate } from '#testing/helpers/events/task.js';
+import { makeTaskStart, makeValidate } from '#testing/helpers/events/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 
 it('retains admitted load metadata when cancellation finishes API waiting and ignores late status', () => {
@@ -196,6 +196,77 @@ describe('the tools a running call has open', () => {
     );
 
     expect(operationsStore.get().active?.openTools ?? []).toEqual([]);
+  });
+});
+
+describe('the scheduled task review', () => {
+  beforeEach(() => resetWorkflow());
+
+  const reviewStarted = (scope: 'task' | 'final') =>
+    addEvent({ type: 'review_started', ts: 1_000, phase: 'implementing', scope, tool: 'codex' });
+
+  it('holds from a task review start through its verdict, a stop and a resume', () => {
+    reviewStarted('task');
+    addEvent({
+      type: 'review_completed',
+      ts: 2_000,
+      phase: 'implementing',
+      scope: 'task',
+      tool: 'codex',
+      verdict: 'fail',
+      duration: 1_000,
+    });
+    addEvent({ type: 'workflow_cancelled', ts: 3_000, phase: 'implementing' });
+    addEvent({ type: 'workflow_resumed', ts: 4_000, phase: 'implementing' });
+
+    expect(selectScheduledReview(operationsStore.get())).toBe(true);
+  });
+
+  it('ends when BUILD starts a brief or the review opens its fix cycle', () => {
+    reviewStarted('task');
+    addEvent(makeTaskStart({ ts: 2_000, taskId: taskId('T002') }));
+    expect(selectScheduledReview(operationsStore.get())).toBe(false);
+
+    reviewStarted('task');
+    addEvent({
+      type: 'review_fix_started',
+      ts: 3_000,
+      phase: 'implementing',
+      cycle: 1,
+      taskIds: [taskId('T003')],
+    });
+    expect(selectScheduledReview(operationsStore.get())).toBe(false);
+
+    reviewStarted('task');
+    addEvent({
+      type: 'review_fix_started',
+      ts: 4_000,
+      phase: 'implementing',
+      cycle: 2,
+      taskIds: [],
+    });
+    expect(selectScheduledReview(operationsStore.get())).toBe(false);
+  });
+
+  it('ends when the user accepts a task review that is too large as is', () => {
+    reviewStarted('task');
+    addEvent({
+      type: 'recovery_resolved',
+      ts: 2_000,
+      phase: 'implementing',
+      issueId: 'issue-1',
+      reason: 'review-input-too-large',
+      action: 'accept-as-is',
+      outcome: 'continued',
+    });
+
+    expect(selectScheduledReview(operationsStore.get())).toBe(false);
+  });
+
+  it('is not set by a final review', () => {
+    reviewStarted('final');
+
+    expect(selectScheduledReview(operationsStore.get())).toBe(false);
   });
 });
 

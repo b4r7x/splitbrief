@@ -1,4 +1,14 @@
+import type { Phase } from './schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from './schemas/workflow.js';
+import { phaseStage } from './rail-stages.js';
+
+/**
+ * The seat that reads a message typed now: REVIEW while a task review runs inside the build
+ * phase, as it reads every unread message at its verdict call, else the seat of the phase's stage.
+ */
+export function messageSeat(phase: Phase, reviewing: boolean): ReturnType<typeof phaseStage> {
+  return reviewing ? 'review' : phaseStage(phase);
+}
 
 export function isQueuedMessagePendingDelivery(message: QueuedMessage): boolean {
   return (

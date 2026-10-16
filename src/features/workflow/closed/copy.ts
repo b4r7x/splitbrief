@@ -77,6 +77,7 @@ export function runRows(view: SummaryView): RunRow[] {
   const rows: RunRow[] = [
     { label: 'Review', seat: 'review', segments: reviewSegments(view.review) },
     ...preExistingRows(view.review),
+    ...failedReviewRows(view.failedReviews),
   ];
   if (view.applyUndo !== null) {
     const conflicts = view.applyUndo.conflicts.length;
@@ -176,6 +177,35 @@ function preExistingRows(review: ReviewView): RunRow[] {
     },
     ...check.tests.map(
       (test): RunRow => ({ label: '', segments: [{ text: `  ${test}`, tone: 'textDim' }] }),
+    ),
+  ]);
+}
+
+/**
+ * Each review that failed before the review of record, under the Review row: the review and how
+ * many findings blocked it, then one indented row per finding, so a fix cycle keeps its reason.
+ */
+function failedReviewRows(reviews: SummaryView['failedReviews']): RunRow[] {
+  return reviews.flatMap((review): RunRow[] => [
+    {
+      label: '',
+      segments: [
+        {
+          spans: [
+            { text: `${review.label} `, tone: 'text' },
+            { text: 'failed', tone: stateTone('failed') },
+          ],
+        },
+        ...(review.blocking.length > 0
+          ? [{ text: `${review.blocking.length} blocking`, tone: 'textDim' as const }]
+          : []),
+      ],
+    },
+    ...review.blocking.map(
+      (entry): RunRow => ({
+        label: '',
+        segments: [{ text: `  ${entry.id} ${entry.text}`, tone: 'textDim' }],
+      }),
     ),
   ]);
 }

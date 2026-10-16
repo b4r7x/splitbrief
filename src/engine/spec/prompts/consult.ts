@@ -16,6 +16,7 @@ import {
   workspaceReadInstructions,
   type PromptPart,
 } from './builder.js';
+import { TASK_CMD_CHECK_RULE } from './plan-session.js';
 
 export type ConsultPromptInput = Readonly<{
   workspaceDir: string;
@@ -76,7 +77,7 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
 
 The operator rule: the Operator Instructions are the user's own decisions for this task. No action undoes one of them. A question that concerns one of them quotes it, and its default keeps it.
 
-The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs \`ask-user\`.`;
+The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs \`ask-user\`. ${TASK_CMD_CHECK_RULE}`;
 
 function consultContract(seat: ConsultSeat): string {
   return `${CONSULT_ROLE[seat]} ${CONSULT_CONTRACT_BODY}`;
@@ -89,7 +90,7 @@ function decisionConfirmContract(answered: boolean): string {
   return `You are the run's planner. This call confirms the new decisions in the implementer's report before validation. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
 
 Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": … } }\`. \`answer.diagnosis\` states your assessment in one or two sentences. Answer with exactly one of these actions:
-- \`confirm\` with the exact \`decisions\` list you accept. Accept changes of how that keep every criterion. Accept every decision that carries out an operator instruction: the user made that decision. Accept a change that the user's answer keeps. The accepted entries extend the plan's confirmed decisions ledger. An empty list is valid.
+- \`confirm\` with the exact \`decisions\` list you accept. Accept changes of how that keep every criterion. Accept every decision that carries out an operator instruction: the user made that decision. Accept a change that the user's answer keeps. The accepted entries extend the plan's confirmed decisions ledger. A reported decision you leave out or reword is rejected: SPLITBRIEF sends the attempt back to the implementer with your diagnosis, so the diagnosis says what the retry must change. An empty list rejects every reported decision.
 - \`ask-user\` with \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null). Any other change of what is built is \`ask-user\`. Never ask about a decision that an operator instruction or an earlier answer already settles. A question that concerns an operator instruction quotes it, and its default keeps it.${
     answered
       ? `
@@ -97,7 +98,7 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
       : ''
   }
 
-Validation runs after a \`confirm\` answer. It has not run for this attempt yet. ${
+Validation runs after a \`confirm\` answer that accepts every reported decision. It has not run for this attempt yet. ${
     answered
       ? 'The user answered your question: the answer is the last operator instruction. A `guidance` answer sends this attempt to a retry without validation.'
       : 'After the user answers an `ask-user` question, SPLITBRIEF asks you again with the answer in the operator instructions.'

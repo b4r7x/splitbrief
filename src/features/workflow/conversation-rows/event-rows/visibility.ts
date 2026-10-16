@@ -33,7 +33,6 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'task_review_needed',
   'review_started',
   'review_step',
-  'review_completed',
   'review_fix_started',
   'hint_failed',
   'task_replaced',
@@ -62,7 +61,8 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
 
 type TranscriptRowlessEvent =
   | Extract<EngineEvent, { type: (typeof TRANSCRIPT_ROWLESS_EVENT_TYPES)[number] }>
-  | (Extract<EngineEvent, { type: 'runner_call_activity' }> & { kind: 'session' | 'unknown' });
+  | (Extract<EngineEvent, { type: 'runner_call_activity' }> & { kind: 'session' | 'unknown' })
+  | (Extract<EngineEvent, { type: 'review_completed' }> & { blockingFindings?: undefined });
 
 const transcriptRowlessEventTypes: ReadonlySet<string> = new Set(TRANSCRIPT_ROWLESS_EVENT_TYPES);
 
@@ -70,6 +70,8 @@ export function isTranscriptRowlessEvent(event: EngineEvent): event is Transcrip
   return (
     transcriptRowlessEventTypes.has(event.type) ||
     (event.type === 'runner_call_activity' &&
-      (event.kind === 'session' || isProtocolActivity(event)))
+      (event.kind === 'session' || isProtocolActivity(event))) ||
+    // A review shows a row only for what failed it; its outcome is the stage's own summary row.
+    (event.type === 'review_completed' && (event.blockingFindings ?? []).length === 0)
   );
 }

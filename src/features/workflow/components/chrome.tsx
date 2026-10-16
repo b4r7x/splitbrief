@@ -18,6 +18,10 @@ import type { listProjectFiles as listFiles } from '../../../lib/file-listing.js
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { selectRunningBrief, tasksStore } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
+import {
+  operationsStore,
+  selectScheduledReview,
+} from '../../../stores/workflow/operations/state.js';
 import { requestSteer } from '../handlers.js';
 
 export function WorkflowHeader({
@@ -129,11 +133,13 @@ export function WorkflowFooter({
   const steerableSeat = lifecycleStore.use((state) => state.steerableCall?.seat ?? null);
   const taskId = tasksStore.use((state) => selectRunningBrief(state, phase).current?.id);
   const stopping = stopStore.use((state) => state.intent !== 'none');
+  const reviewing = operationsStore.use(selectScheduledReview);
   const placeholder = queuePlaceholder({
     phase,
     inputMode: mode,
     running,
     stopping,
+    reviewing,
     taskId,
     steerableSeat,
   });

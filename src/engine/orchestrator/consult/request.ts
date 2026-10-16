@@ -9,15 +9,18 @@ import {
   type ConsultSeat,
   type ImplementerReport,
 } from '../../../core/schemas/consult.js';
+import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
+import { rejectedDecisions } from '../../../core/state/machine.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import type { EventBus } from '../../events/types.js';
 import type { Planner } from '../../planners/types.js';
 import type { Reviewer } from '../../reviewers/types.js';
 import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
+import { refusedCheckErrors } from '../../spec/plan-checks.js';
 import { buildConsultPrompt, type ConsultPromptInput } from '../../spec/prompts/consult.js';
 import { readChangeEntry } from '../approval/file-snapshots/entry.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
@@ -28,12 +31,15 @@ import { askPlannerSession, type PlannerSessionTurn } from '../planner-session.j
 import { runReviewerCall } from '../review-call.js';
 import { runSeatCall, seatFailureFromError } from '../escalation/seat-wait.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { planApprovesNpmScripts } from '../validation/run-checks.js';
 
 export type ConsultContext = Readonly<{
   projectDir: string;
   workspaceDir: string;
   sessionId: string;
   bus: EventBus;
+  /** With the state's approval, whether a `cmd` check of a rewrite or split may run an npm script. */
+  config: Config;
   planner: Pick<Planner, 'capabilities' | 'typedCall'>;
   /** Answers a fix task's repair consult; with no reviewer block it is the planner itself. */
   reviewer: Pick<Reviewer, 'typedCall'>;
@@ -83,7 +89,7 @@ export function consultSeat(task: Task, reason: ConsultReason): ConsultSeat {
 }
 
 /** The answer contract a consult reason takes: stale and deviation narrow the actions. */
-function answerContract(task: Task, reason: ConsultReason, answered: boolean) {
+function reasonContract(task: Task, reason: ConsultReason, answered: boolean) {
   if (reason === 'stale') {
     return {
       schema: consultAnswerSchemaFor(task, 'stale'),
@@ -109,6 +115,36 @@ function answerContract(task: Task, reason: ConsultReason, answered: boolean) {
     schema: consultAnswerSchemaFor(task),
     jsonSchema: CONSULT_ANSWER_JSON_SCHEMA,
     schemaName: 'consult_answer',
+  };
+}
+
+/**
+ * The answer contract of one consult. A rewrite or a split never brings in a `cmd` check that the
+ * plan command policy refuses: the answer fails the schema and the seat gets its one repair.
+ */
+function answerContract(
+  task: Task,
+  reason: ConsultReason,
+  answered: boolean,
+  npmScriptsApproved: boolean,
+) {
+  const contract = reasonContract(task, reason, answered);
+  return {
+    ...contract,
+    schema: contract.schema.superRefine((value, ctx) => {
+      const specs =
+        value.answer.action === 'rewrite-task'
+          ? [value.answer.task]
+          : value.answer.action === 'split-task'
+            ? value.answer.tasks
+            : [];
+      for (const error of refusedCheckErrors(
+        specs.flatMap((spec) => spec.checks),
+        npmScriptsApproved,
+      )) {
+        ctx.addIssue({ code: 'custom', message: error.message });
+      }
+    }),
   };
 }
 
@@ -200,7 +236,13 @@ function publishAnswer(
         revision: (input.task.revision ?? 1) + 1,
       }),
       ...(answer.answer.action === 'verify' && { checkIds: answer.answer.checkIds }),
-      ...(answer.answer.action === 'confirm' && { decisionCount: answer.answer.decisions.length }),
+      ...(answer.answer.action === 'confirm' && {
+        decisionCount: answer.answer.decisions.length,
+        rejectedCount:
+          input.report?.status === 'done'
+            ? rejectedDecisions(input.report.decisions, answer.answer.decisions).length
+            : 0,
+      }),
     },
   );
 }
@@ -226,7 +268,12 @@ export async function requestConsult(
   const seat = consultSeat(input.task, input.reason);
   const diff = await attemptDiff(ctx.workspaceDir, input.snapshot, input.changedFiles, ref);
   const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir, seat);
-  const contract = answerContract(input.task, input.reason, input.answered === true);
+  const contract = answerContract(
+    input.task,
+    input.reason,
+    input.answered === true,
+    planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),
+  );
   const onCallEvent = (event: RunnerCallEvent): void =>
     publishRunnerCallEvent(
       { bus: ctx.bus, phase: state.phase, rootDir: ctx.projectDir, taskId: input.task.id },

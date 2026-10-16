@@ -463,6 +463,7 @@ export async function handleRetryAndEscalation(
         workspaceDir: ctx.workspaceDir,
         sessionId: ctx.sessionId,
         bus: ctx.bus,
+        config: ctx.config,
         planner: ctx.planner,
         reviewer: ctx.reviewer,
         state,

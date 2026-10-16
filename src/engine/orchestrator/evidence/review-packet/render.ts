@@ -233,6 +233,13 @@ export function renderReviewPacketMarkdown(
     ...switchLines,
   ];
   if (recoveryLines.length === 0) recoveryLines.push('- No recovery decisions recorded.');
+  const reviewLines =
+    packet.evidence.reviews.length === 0
+      ? ['- No review recorded.']
+      : packet.evidence.reviews.flatMap((review) => [
+          `- ${review.scope === 'final' ? 'Final review' : `Task review${review.afterTaskId === undefined ? '' : ` after ${review.afterTaskId}`}`}, fix cycle ${review.cycle}: ${review.outcome}`,
+          ...review.blocking.map((entry) => `  - ${entry.id}: ${entry.text}`),
+        ]);
   const taskValidationLines = packet.validation.tasks.map(
     (task) => `- ${task.taskId} ${task.status}: ${checksSummary(task.checks)}`,
   );
@@ -313,6 +320,9 @@ export function renderReviewPacketMarkdown(
     '',
     '## Routing',
     `- Per-task routing entries: ${packet.cost.taskRouting.length}`,
+    '',
+    '## Reviews',
+    ...reviewLines,
     '',
     '## Reviewer Final Review',
     `- Status: ${packet.finalReview.status}`,

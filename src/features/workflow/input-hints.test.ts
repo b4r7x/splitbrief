@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { hintStateSeverity, queuePlaceholder, resolveInputHint } from './input-hints.js';
 
 describe('queuePlaceholder', () => {
-  const working = { inputMode: 'normal' as const, running: true, stopping: false };
+  const working = {
+    inputMode: 'normal' as const,
+    running: true,
+    stopping: false,
+    reviewing: false,
+  };
 
   it.each([
     'researching',
@@ -50,6 +55,12 @@ describe('queuePlaceholder', () => {
       );
     },
   );
+
+  it('invites a message for the reviewer while a task review runs inside the build phase', () => {
+    expect(
+      queuePlaceholder({ ...working, phase: 'implementing', reviewing: true, taskId: 'T002' }),
+    ).toBe('Message REVIEW · read at its verdict call…');
+  });
 
   it.each(['idle', 'complete'] as const)('names no queue destination while %s', (phase) => {
     expect(queuePlaceholder({ ...working, phase })).toBeUndefined();

@@ -126,7 +126,10 @@ export function publishReviewEvent(
   > &
     (
       | { type: 'review_started' }
-      | Pick<EngineEventOf<'review_completed'>, 'type' | 'verdict' | 'findings' | 'duration'>
+      | Pick<
+          EngineEventOf<'review_completed'>,
+          'type' | 'verdict' | 'findings' | 'blockingFindings' | 'duration'
+        >
     ),
 ): void {
   ctx.bus.publish({ ...event, ts: Date.now(), phase: ctx.phase });
@@ -337,6 +340,7 @@ export function publishConsultAnswered(
     revision?: number | undefined;
     checkIds?: readonly string[] | undefined;
     decisionCount?: number | undefined;
+    rejectedCount?: number | undefined;
   },
 ): void {
   ctx.bus.publish({
@@ -352,6 +356,7 @@ export function publishConsultAnswered(
     ...(opts.revision !== undefined && { revision: opts.revision }),
     ...(opts.checkIds !== undefined && { checkIds: [...opts.checkIds] }),
     ...(opts.decisionCount !== undefined && { decisionCount: opts.decisionCount }),
+    ...(opts.rejectedCount !== undefined && { rejectedCount: opts.rejectedCount }),
   });
 }
 

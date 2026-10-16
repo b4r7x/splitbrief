@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
-import { phaseStage } from '../../../core/rail-stages.js';
 import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
 import type { Planner } from '../../planners/types.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
@@ -14,7 +13,7 @@ import { warnError } from '../../../lib/warn.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { WriteSequencer } from '../serial-executor.js';
 import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
-import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue-state.js';
+import { isQueuedMessagePendingFirstDelivery, messageSeat } from '../../../core/queue-state.js';
 import type { QueueSubmissionResult, WorkflowContext } from '../types.js';
 import { deliverToRunningCall } from '../../calls/steering.js';
 import { absorbBuildCorrectionsById } from './build-corrections.js';
@@ -94,7 +93,7 @@ export function enqueueUserMessage({
   });
   recordUserMessage({ projectDir, sessionId, bus, phase }, input, { queuedMessage: message });
   const preview = formatQueuedMessagePreview(message);
-  const seat = phaseStage(phase);
+  const seat = messageSeat(phase, next.pendingScheduledReview !== undefined);
   const taskId = seat === 'build' ? next.tasks[next.currentTaskIndex]?.id : undefined;
   bus.publish({
     type: 'message_queued',
@@ -126,7 +125,7 @@ export function createQueueHandler(
   const ref = { projectDir, sessionId };
   return async (message: UserMessageInput, phase: Phase) => {
     const attached = steering?.current() ?? null;
-    const seat = phaseStage(phase);
+    const seat = messageSeat(phase, getState()?.pendingScheduledReview !== undefined);
     const call =
       attached !== null && seat !== null && seatForRunningCall(attached) === seat ? attached : null;
     const pendingDelivery = call === null ? undefined : Promise.withResolvers<void>();
