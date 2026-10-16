@@ -52,6 +52,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-review-task-cadence', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-task-cadence-settled', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-task-out-of-scope', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-complete-after-fix-tasks', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-fix-no-change', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-ready-to-apply', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-at-rest-crashed-build', ['120x40', '80x24', '60x18', '160x45']],

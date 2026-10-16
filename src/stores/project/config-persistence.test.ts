@@ -15,7 +15,7 @@ describe('config persistence', () => {
     { existingConfig: false, existingIgnore: true },
     { existingConfig: true, existingIgnore: false },
     { existingConfig: false, existingIgnore: false },
-  ])('a settings save never initializes gitignore', async ({ existingConfig, existingIgnore }) => {
+  ])('only a creating save adds the ignore rule', async ({ existingConfig, existingIgnore }) => {
     await withTempDir('settings-ignore', async (projectDir) => {
       const config = createDefaultConfig();
       if (existingConfig) writeConfig(projectDir, config);
@@ -28,8 +28,12 @@ describe('config persistence', () => {
         workflow: { ...config.workflow, approve: 'none' },
       });
 
-      expect(result.kind).toBe('saved');
-      if (existingIgnore) {
+      expect(result).toMatchObject({ kind: 'saved', ignoreRuleAdded: !existingConfig });
+      if (!existingConfig) {
+        expect(readFileSync(ignorePath, 'utf8')).toBe(
+          existingIgnore ? 'node_modules/\n.splitbrief/\n' : '.splitbrief/\n',
+        );
+      } else if (existingIgnore) {
         expect(readFileSync(ignorePath, 'utf8')).toBe('node_modules/\n');
       } else {
         expect(existsSync(ignorePath)).toBe(false);

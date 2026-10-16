@@ -71,7 +71,15 @@ describe('mergeEvent throughput', () => {
     addProjectedRunnerEvent(terminalEvent, sequence);
 
     const workflowEvents = eventsStore.get().events;
-    expect(workflowEvents.map((event) => event.type)).toEqual(['planner_text']);
+    expect(workflowEvents.map((event) => event.type)).toEqual([
+      'planner_text',
+      'runner_call_completed',
+    ]);
+    expect(workflowEvents[1]).toMatchObject({
+      callId: 'call-1',
+      usage: null,
+      nativeSessionId: null,
+    });
 
     const visiblePlannerEvent = workflowEvents.find((event) => event.type === 'planner_text');
     if (visiblePlannerEvent?.type !== 'planner_text') {

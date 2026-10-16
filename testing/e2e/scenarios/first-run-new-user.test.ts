@@ -327,7 +327,10 @@ async function initProject(target: FirstRun): Promise<Buffer> {
   expect(existsSync(configPath(target.projectDir))).toBe(false);
   const init = await splitbrief(target, ['init', '--yes']);
   expect(init.exitCode, `${init.stdout}\n${init.stderr}`).toBe(0);
-  expect(init.stdout).toContain(`Wrote ${SPLITBRIEF_DIR}/${CONFIG_FILE}`);
+  expect(init.stderr).toContain(
+    `No config found. Saved a ready crew to ${SPLITBRIEF_DIR}/${CONFIG_FILE}.`,
+  );
+  expect(init.stdout).not.toContain('Wrote');
   return readFileSync(configPath(target.projectDir));
 }
 

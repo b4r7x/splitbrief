@@ -350,7 +350,7 @@ describe('the workflow screen showing a closed run', () => {
       }),
     });
 
-    const ui = mount(80, 40);
+    const ui = mount(60, 18);
     const lines = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
     const crewRow = lines.find((line) => line.startsWith('Crew')) ?? '';
 

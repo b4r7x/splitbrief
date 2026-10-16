@@ -1,6 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { Command } from 'commander';
+import {
+  activateCompatibleCliShim,
+  installCompatibleCliShim,
+} from '#testing/helpers/compatible-cli-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { registerInitCommand } from '../../../src/cli/commands/init.js';
@@ -18,8 +22,25 @@ function initHelp(): string {
 let tmp: string;
 let prevCwd: string;
 let prevIsTTY: boolean | undefined;
+let shimDir: string;
+let restoreShim: () => void;
 
+// `init --yes` saves only a crew detection finds ready, so every test brings its own ready Codex.
 beforeEach(() => {
+  shimDir = createTempDir('cli-init-non-tty-codex');
+  restoreShim = activateCompatibleCliShim(
+    installCompatibleCliShim({
+      directory: shimDir,
+      tool: 'codex',
+      authChannel: 'session',
+    }),
+  );
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      throw new Error('Offline fixture');
+    }),
+  );
   tmp = createTempDir('cli-init-non-tty');
   prevCwd = process.cwd();
   process.chdir(tmp);
@@ -28,6 +49,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
+  restoreShim();
+  cleanupTempDir(shimDir);
   process.chdir(prevCwd);
   cleanupTempDir(tmp);
   (process.stdin as { isTTY?: boolean | undefined }).isTTY = prevIsTTY;
@@ -55,10 +79,12 @@ describe('CLI integration: init without a TTY', { timeout: 90_000 }, () => {
   });
 
   it('writes a loadable default config with --yes and no TTY', async () => {
-    const { exitCode, stdout } = await runCommand(['init', '--yes']);
+    const { exitCode, stderr } = await runCommand(['init', '--yes']);
 
     expect(exitCode).toBe(0);
-    expect(stdout).toContain('.splitbrief/config.yaml');
+    expect(stderr).toBe(
+      'No config found. Saved a ready crew to .splitbrief/config.yaml.\nAdded .splitbrief/ to .gitignore.\n',
+    );
     expect(loadConfig(tmp).config.version).toBe(3);
   });
 

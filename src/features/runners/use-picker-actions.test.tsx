@@ -274,7 +274,7 @@ describe('usePickerActions fallback slot', () => {
       config.implementerProfiles?.profiles.other,
     );
     expect(feedbackStore.get().message).toBe(
-      'Saved BUILD fallback · OpenAI Codex CLI · GPT-5 Codex to .splitbrief/config.yaml',
+      'Saved BUILD fallback · OpenAI Codex CLI · GPT-5 Codex to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
     );
     ui.unmount();
   });
@@ -300,7 +300,7 @@ describe('usePickerActions fallback slot', () => {
     });
 
     expect(feedbackStore.get().message).toBe(
-      'Saved BUILD fallback · OpenAI Codex CLI · GPT-6-Luna to .splitbrief/config.yaml',
+      'Saved BUILD fallback · OpenAI Codex CLI · GPT-6-Luna to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
     );
     ui.unmount();
   });
@@ -332,7 +332,7 @@ describe('usePickerActions fallback slot', () => {
     expect(saveConfig).toHaveBeenCalledTimes(1);
     expect(saveConfig.mock.calls[0]?.[0].implementer).not.toHaveProperty('fallback');
     expect(feedbackStore.get().message).toBe(
-      'Saved BUILD fallback · none to .splitbrief/config.yaml · Seat down pauses and asks',
+      'Saved BUILD fallback · none to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore · Seat down pauses and asks',
     );
     ui.unmount();
   });
@@ -506,7 +506,7 @@ describe('usePickerActions', () => {
     const label = role === 'planner' ? 'PLAN' : role === 'implementer' ? 'BUILD' : 'REVIEW';
     await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
     expect(feedbackStore.get()).toMatchObject({
-      message: `Saved ${label} · OpenAI Codex CLI · GPT-5 Codex to .splitbrief/config.yaml`,
+      message: `Saved ${label} · OpenAI Codex CLI · GPT-5 Codex to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore`,
       isError: false,
     });
     ui.unmount();
@@ -534,7 +534,8 @@ describe('usePickerActions', () => {
 
       await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
       expect(feedbackStore.get()).toMatchObject({
-        message: 'Saved PLAN · Ollama · ModelA to .splitbrief/config.yaml',
+        message:
+          'Saved PLAN · Ollama · ModelA to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
         isError: false,
       });
       ui.unmount();
@@ -616,7 +617,7 @@ describe('usePickerActions', () => {
 
     await vi.waitFor(() => {
       expect(feedbackStore.get().message).toBe(
-        `Saved ${CREW_SEAT_LABELS.review} ${PLANNER_INHERITANCE.mark} to .splitbrief/config.yaml`,
+        `Saved ${CREW_SEAT_LABELS.review} ${PLANNER_INHERITANCE.mark} to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore`,
       );
     });
     expect(configStore.get().config?.reviewer).toBeUndefined();
@@ -885,7 +886,7 @@ describe('usePickerActions', () => {
     expect(
       messages.filter((message) => message.startsWith(`Saved ${CREW_SEAT_LABELS.plan} · `)),
     ).toEqual([
-      `Saved ${CREW_SEAT_LABELS.plan} · Claude Code CLI · Opus 5.5 · high to .splitbrief/config.yaml`,
+      `Saved ${CREW_SEAT_LABELS.plan} · Claude Code CLI · Opus 5.5 · high to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore`,
     ]);
     expect(configStore.get().config?.planner).toMatchObject({
       tool: 'claude-code',
@@ -1136,7 +1137,8 @@ describe('usePickerActions', () => {
 
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toMatchObject({
-        message: 'Saved PLAN auth · api key to .splitbrief/config.yaml',
+        message:
+          'Saved PLAN auth · api key to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
         isError: false,
       });
     });
@@ -1159,7 +1161,8 @@ describe('usePickerActions', () => {
       });
     });
     expect(feedbackStore.get()).toMatchObject({
-      message: 'Saved PLAN · Custom Shell · auto to .splitbrief/config.yaml',
+      message:
+        'Saved PLAN · Custom Shell · auto to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
       isError: false,
     });
     ui.unmount();

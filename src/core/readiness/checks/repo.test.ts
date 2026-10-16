@@ -92,7 +92,7 @@ describe('buildRepoChecks dirty worktree', () => {
 
     expect(withRunFolder(checkout, run)).toEqual({
       ...checkout,
-      fix: 'The run edits this checkout. Commit or stash the edits you do not want this run to touch. A revert saves the files it replaces in .splitbrief/sessions/fix-the-readme/reverted/.',
+      fix: 'The run edits this checkout. A revert saves the files it replaces in .splitbrief/sessions/fix-the-readme/reverted/. Commit or stash the edits you do not want this run to touch.',
     });
     expect(withRunFolder(worktree, run)).toBe(worktree);
     expect(withRunFolder(detached, run)).toBe(detached);

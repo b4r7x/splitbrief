@@ -6,6 +6,7 @@ import type { CliExecutableReceipt } from '../../../src/core/discovery/detection
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
 import type { RunnerCallEvent } from '../../../src/engine/calls/types.js';
 import { createPlanner } from '../../../src/engine/runners/factory.js';
+import { executableChangedMessage } from '../../../src/engine/runners/resolve-cli-executable.js';
 import { CLI_CONFORMANCE_EXIT_CODES } from '../../../src/engine/runners/cli-tools/contract-harness.js';
 import { runFactoryEffectConformance } from '../../../src/engine/runners/cli-tools/contract-harness-effects.js';
 import { admitCandidateEffect } from '../../../src/engine/providers/candidate-contract.js';
@@ -303,7 +304,7 @@ describe('planner effect matrix — production factories under hostile config', 
         changedFiles: string[];
       };
       expect(record).toMatchObject({ role: 'planner', verdict: 'OMIT', changedFiles: [] });
-      expect(record.reason).toMatch(/identity/i);
+      expect(record.reason).toBe(executableChangedMessage('OpenCode CLI'));
     } finally {
       await scenario.cleanup();
     }
