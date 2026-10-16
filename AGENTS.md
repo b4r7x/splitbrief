@@ -24,8 +24,10 @@ A finding from a review, a live check, a test run or an audit is reported only w
 
 1. **Evidence.** The raw evidence that shows it: a capture, a log line, a `session.jsonl` event, a test output. Name the file.
 2. **Cause.** The code that causes it, with `file:line`, read in the current tree.
-3. **Who hits it.** Whether a normal user in a normal setup hits it: their own HOME, their signed-in tools, normal input. A result that comes only from the test conditions (a temporary HOME, a fake tool, an odd input the tester typed, an outage of an outside service, parallel runs on one machine) is a test artifact, not a product defect, and is labelled so.
-4. **What the user sees.** One sentence in plain words, and the class: 1 blocks work, loses data or gives a wrong outcome; 2 shows wrong or misleading text; 3 is cosmetic.
+3. **Who hits it, and its kind.** `PRODUCT` when a normal user in a normal setup hits it (their own HOME, their signed-in tools, normal input). `TEST` when only the test conditions cause it (a temporary HOME, exported API keys in the tester's shell, a fake tool, an odd input the tester typed, parallel runs on one machine, a flaw in the test or the harness). `ENV` when an outside service failed (an outage, a rate limit).
+4. **What the user sees.** One sentence in plain words. A `PRODUCT` finding also has a class: 1 blocks work, loses data or gives a wrong outcome; 2 shows wrong or misleading text; 3 is cosmetic.
+
+A `PRODUCT` finding is fixed in the product. A `TEST` finding is fixed in the test, the harness or the check setup; it blocks a release only when it breaks the gate or CI. An `ENV` finding is recorded, not fixed.
 
 Drop a finding that cannot be confirmed. Never report a guess as a defect.
 
