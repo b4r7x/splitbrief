@@ -443,13 +443,13 @@ export function WorkflowScreen({
               model.inputMode.mode !== 'normal' || model.promptPending || checksCardOpen
             }
             buildBlockShown={progressRows > 0}
+            keepPlaceholderWhileFocused={recoveryPromptOpen || model.atRestRecord !== undefined}
             {...(recoveryPromptOpen
               ? {
                   menuFocused: recoveryMenuFocused,
                   onToggleMenu: () => {
                     setRecoveryFocus({ key: recoveryFocusKey, menu: !recoveryMenuFocused });
                   },
-                  keepPlaceholderWhileFocused: true,
                 }
               : resultMenuOpen
                 ? {

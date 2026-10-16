@@ -120,14 +120,13 @@ describe('PickerView fallback slot', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('No fallback');
-    for (const line of [
-      'A Seat down halt',
-      'pauses the run and',
-      'asks which tool',
-      'takes the seat.',
-    ]) {
-      expect(frame).toContain(line);
-    }
+    // The card breaks the sentence at its own width, not at the narrowest card's.
+    const rows = frame.split('\n');
+    const first = rows.findIndex((row) =>
+      row.includes('A Seat down halt pauses the run and asks which tool takes'),
+    );
+    expect(first).toBeGreaterThan(-1);
+    expect(rows[first + 1]).toContain('| the seat.');
     ui.unmount();
   });
 });
@@ -229,6 +228,39 @@ describe('PickerView model confirmation', () => {
 describe('PickerView previews', () => {
   beforeEach(() => {
     terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+  });
+
+  it('breaks the local server help at the width of its card', async () => {
+    const ollama = pickerItem({
+      id: 'ollama',
+      displayName: 'Ollama',
+      kind: 'api',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'required',
+      billing: 'local',
+      permissions: readyPermissions,
+      status: { state: 'unavailable', remediation: 'Ollama is not answering.' },
+      available: false,
+    });
+    const catalog = pickerCatalog({
+      items: [ollama],
+      currentItem: ollama,
+      selectedItemId: ollama.id,
+      rightModels: [],
+      roleLabel: 'PLAN',
+      modelCounts: zeroCounts,
+    });
+    const ui = renderFeature(
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
+      { cols: 140, rows: 40 },
+    );
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Local server');
+    expect(frame).toContain('Run `ollama serve`');
+    expect(frame).toContain('⏎ opens its address, its token and a check.');
+    ui.unmount();
   });
 
   it('previews keep catalog casing and semantic posture fields', async () => {
@@ -432,6 +464,11 @@ describe('PickerView previews', () => {
     expect(frame).toContain('Auth required');
     expect(frame).toContain('Set ANTHROPIC_API_KEY');
     expect(frame).toContain('metered');
+    // The byline gives the remedy its own row, so the advice never runs into the catalog facts.
+    const rows = frame.split('\n').map((row) => row.trim());
+    const remedyRow = rows.findIndex((row) => row.startsWith('Set ANTHROPIC_API_KEY'));
+    expect(rows[remedyRow]).toBe('Set ANTHROPIC_API_KEY, then refresh detection.');
+    expect(rows[remedyRow + 1]).toContain('Anthropic');
     ui.unmount();
   });
 

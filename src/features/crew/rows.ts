@@ -8,7 +8,7 @@ import type { CrewSeatId } from '../../core/crew/identity.js';
 import { fallbackRowKey, seatFallback, type FallbackRow } from '../../core/crew/fallback.js';
 import { crossLabVerdict, resolveLab, type CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
-import type { CrewRow } from '../../core/crew/rows.js';
+import { crewRowKey, type CrewRow } from '../../core/crew/rows.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import {
   fallbackPickerOverlayFor,
@@ -85,6 +85,7 @@ async function persistCrew(config: Config, label: string): Promise<void> {
 }
 
 function openCrewRow(row: CrewRow, config: Config): CrewActivation {
+  overlayStore.setFocus(crewRowKey(row));
   const seatId = row.id;
   const runner = readActiveRunner({ config, role: CREW_SEAT_ROLES[seatId] });
   const model = normalizeConfiguredModel(

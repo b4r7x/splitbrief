@@ -102,9 +102,12 @@ function localConnectionPaneLines(item: PickerOption): string[] {
   const remedy =
     remediation === null
       ? []
-      : // The card truncates rather than wraps, so its copy is broken on words by hand.
-        [...wrapOnWords(remediation, CUSTOM_COMMAND_PANE_CELLS, PANE_REMEDY_LINES).lines, ''];
-  return [...remedy, '⏎ opens its address,', 'its token and a check.', '', 'Nothing is saved yet.'];
+      : // The remedy keeps what fits the narrowest card; the card breaks it again at its own width.
+        [
+          wrapOnWords(remediation, CUSTOM_COMMAND_PANE_CELLS, PANE_REMEDY_LINES).lines.join(' '),
+          '',
+        ];
+  return [...remedy, '⏎ opens its address, its token and a check.', '', 'Nothing is saved yet.'];
 }
 
 function postureLine(item: PickerOption): string {
@@ -203,7 +206,7 @@ export function PickerView({
       return {
         label: 'No fallback',
         verb: item.isCurrent === true ? 'keep no fallback' : 'clear fallback',
-        lines: ['A Seat down halt', 'pauses the run and', 'asks which tool', 'takes the seat.'],
+        lines: ['A Seat down halt pauses the run and asks which tool takes the seat.'],
       };
     }
     if (item.kind === 'inherit-planner') {
@@ -307,13 +310,12 @@ export function PickerView({
     }
     const signedOut = tool.status.state === 'unauthenticated';
     const stale = staleModelCopy(catalog.modelCounts.stale);
-    // A status remediation leads: a runner the picker cannot run says how to fix it before it
-    // recites what it is. The retained-stale line is already a refresh instruction, so a
-    // remediation ahead of it would only push it off the end.
+    // A status remediation takes the first row: a runner the picker cannot run says how to fix it,
+    // then on its own row what it is, so the advice never runs into the facts. The retained-stale
+    // line is already a refresh instruction, so a remediation ahead of it would only push it out.
     const reason = stale === undefined ? tool.status.remediation : null;
-    const spent = [reason, stale]
-      .filter((part): part is string => part !== null && part !== undefined)
-      .reduce((sum, part) => sum + getTerminalCellWidth(part) + getTerminalCellWidth(SOFT_SEP), 0);
+    const spent =
+      stale === undefined ? 0 : getTerminalCellWidth(stale) + getTerminalCellWidth(SOFT_SEP);
 
     const toolsByline = (): string => {
       const listing = pickerListingSource(toolId);
@@ -372,7 +374,7 @@ export function PickerView({
         ? modelsByline(row)
         : toolsByline();
     const trail = stale === undefined ? byline : `${byline}${SOFT_SEP}${stale}`;
-    return reason === null ? trail : `${reason}${SOFT_SEP}${trail}`;
+    return reason === null ? trail : `${reason}\n${trail}`;
   };
 
   return (

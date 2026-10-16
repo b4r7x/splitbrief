@@ -291,6 +291,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     },
     selectedLeftKey,
     terminalPane,
+    isDisabled,
     isOnCustomItem: rightActive && isOnVirtual,
     currentRightIsCustom,
     moveLeft,

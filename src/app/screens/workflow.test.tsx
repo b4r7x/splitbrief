@@ -700,6 +700,9 @@ describe('WorkflowScreen showing a run at rest', () => {
     const byline = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(byline).toContain('Stopped at T003');
     expect(byline).toContain('type a correction or ⏎ to continue');
+    // The focused composer keeps its hint; only the byline names what ⏎ does.
+    expect(byline).toContain('Type a correction…');
+    expect(byline.match(/⏎/g)).toHaveLength(1);
 
     ui.stdin.write('use the cached parser');
     await flushEffects();

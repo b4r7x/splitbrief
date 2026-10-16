@@ -3671,6 +3671,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · planner picker · a local server that is not running',
         marker: PICKER_TITLE_MARKER,
       },
+      {
+        id: 'overlay-picker-signed-out-tool',
+        title: 'Overlay · planner picker · a tool that is not signed in',
+        marker: PICKER_TITLE_MARKER,
+      },
       ...(
         [
           ['ollama', 'Ollama connection editor', 'Not checked yet'],

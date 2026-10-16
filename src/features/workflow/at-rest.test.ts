@@ -8,6 +8,7 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { ReviewPacketSummary } from '../../core/schemas/summary.js';
 import { atRestBriefMark, atRestComposer, atRestRailStages, recordPhase } from './at-rest.js';
+import { openRunBylineParts } from './closed/byline.js';
 
 const PACKET: ReviewPacketSummary = {
   jsonPath: 'review-packet.json',
@@ -146,6 +147,22 @@ describe('atRestRailStages on a run with a workspace', () => {
     ]);
   });
 
+  // A live worktree run reads `Plan → Build → Review`; stopping it must not add `○ Apply`.
+  it.each<{ label: string; status: RunStatus }>([
+    {
+      label: 'stopped in the build',
+      status: {
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+        resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      },
+    },
+    { label: 'driven by another process', status: { kind: 'running' } },
+  ])('shows the live stages on a run $label', ({ status }) => {
+    const stages = atRestRailStages(workspaceRecord(status, 'implementing'));
+    expect(stages.map((stage) => stage.stage)).toEqual(['plan', 'build', 'review']);
+  });
+
   it('marks Apply done on an applied run', () => {
     const stages = atRestRailStages(workspaceRecord({ kind: 'closed', as: 'applied' }));
     expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'done']);
@@ -210,7 +227,7 @@ describe('atRestRailStages on a run with a workspace', () => {
         },
       }),
     );
-    expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'failed', 'pending']);
+    expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'failed']);
   });
 
   it('keeps every stage done on a failed review accepted as is', () => {
@@ -307,9 +324,34 @@ describe('atRestComposer', () => {
     expect(composer).toEqual({
       continuable: true,
       commandsOnly: false,
-      placeholder: 'Type a correction, or ⏎ to continue…',
+      placeholder: 'Type a correction…',
     });
   });
+
+  // The byline names what ⏎ does on each stop; a placeholder that named it too said two things.
+  it.each([
+    [
+      'halted',
+      { kind: 'waiting-for-you', on: { kind: 'halt', issue: makeRecoveryIssue() } },
+      '⏎ to decide',
+    ],
+    [
+      'failed',
+      { kind: 'stopped', on: { kind: 'failed', message: 'Planning failed.' } },
+      '⏎ to retry the step',
+    ],
+  ] satisfies [string, StopReason, string][])(
+    'leaves the ⏎ verb of a %s run to its byline',
+    (_, stop, action) => {
+      const status = openWith(stop);
+      const composer = atRestComposer(recordAt({ status, phase: 'implementing' }));
+      const byline = openRunBylineParts({ status, continuable: true, width: 120 })
+        .map((part) => part.text)
+        .join('');
+      expect(composer.placeholder).toBe('Type a correction…');
+      expect(byline).toContain(action);
+    },
+  );
 
   it('takes commands only from a closed run', () => {
     const composer = atRestComposer(recordAt({ status: { kind: 'closed', as: 'complete' } }));

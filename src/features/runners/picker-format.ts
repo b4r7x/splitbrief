@@ -49,8 +49,8 @@ export type ModelCatalogDiagnostic =
   | Readonly<{ kind: 'probe-failed'; failure: 'command-failed'; cause: string }>;
 
 /**
- * The launcher's card is a fixed-height read-only pane that truncates instead of wrapping, so its
- * narrowest draw is what every line is written to: at 60 columns the overlay is 56 cells wide, the
+ * The launcher's card is a fixed-height read-only pane, so a line written to its narrowest draw
+ * never takes a second row: at 60 columns the overlay is 56 cells wide, the
  * Models box takes 27 of them and its padding and border spend 4, leaving these.
  */
 export const CUSTOM_COMMAND_PANE_CELLS = 23;

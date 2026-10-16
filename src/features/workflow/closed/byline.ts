@@ -124,10 +124,13 @@ function bylineFor(view: SummaryView): Byline {
   return { reason: null, action: '' };
 }
 
-/** The composer placeholder, by what the run on screen will take. */
+/**
+ * The composer placeholder, by what the run on screen will take. An open run's placeholder names
+ * no ⏎ verb: what ⏎ does depends on the stop, and the byline under the composer names it.
+ */
 export const AT_REST_PLACEHOLDER = {
-  open: 'Type a correction, or ⏎ to continue…',
-  inputRequired: 'Type your answer, or ⏎ to continue…',
+  open: 'Type a correction…',
+  inputRequired: 'Type your answer…',
   closed: `/ for a command${SOFT_SEP}⏎ for home…`,
   ready: `/ for a command${SOFT_SEP}tab for the result menu…`,
 } as const;

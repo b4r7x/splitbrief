@@ -1220,6 +1220,21 @@ function seedStoppedOllama(): void {
   });
 }
 
+// A tool that is not signed in takes neither → nor ⏎; the hint offers only the keys that act.
+const createSignedOutToolFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      publishVisualDiscovery({
+        cliTools: [
+          cliDetectionFor('ready', 'codex'),
+          cliDetectionFor('unauthenticated', 'claude-code'),
+        ],
+      });
+    },
+    focus: 'tool:claude-code',
+  });
+
 // Offline servers keep a reachable entry, followed by the editable connection form.
 const createLocalServerFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -2113,6 +2128,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
   [scenarioId('overlay-picker-custom-launcher'), createCustomCommandLauncherFixture],
   [scenarioId('overlay-picker-local-server'), createLocalServerFixture],
+  [scenarioId('overlay-picker-signed-out-tool'), createSignedOutToolFixture],
   [scenarioId('overlay-local-connection-ollama'), () => localConnectionFixture()],
   [
     scenarioId('overlay-local-connection-lmstudio'),
