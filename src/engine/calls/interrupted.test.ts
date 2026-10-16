@@ -91,12 +91,14 @@ describe('interruptedCallEvents', () => {
       endedAt: 45,
       durationMs: 15,
       usage: null,
+      endUnknown: true,
     });
     expect(closed[1]).toMatchObject({
       ts: 45,
       activityId: 'implementer-2:terminal',
       kind: 'error',
       stage: 'aborted',
+      endUnknown: true,
     });
     for (const event of closed) expect(EngineEventSchema.safeParse(event).success).toBe(true);
   });

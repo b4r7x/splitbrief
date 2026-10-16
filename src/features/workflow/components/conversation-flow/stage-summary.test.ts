@@ -7,7 +7,9 @@ import {
   groupEventsIntoSections,
   type StageSummary,
 } from '../../../../core/sections/event-sections.js';
+import { interruptedCallEvents } from '../../../../engine/calls/interrupted.js';
 import { EngineEventSchema } from '../../../../engine/events/schema.js';
+import type { EngineEvent } from '../../../../engine/events/types.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { stageSummaryRow } from './stage-summary.js';
 
@@ -40,6 +42,58 @@ describe('stageSummaryRow', () => {
       },
     });
   });
+  it.each([
+    ['a process exit', 'exit', 'at least 3.0s'],
+    ['your stop', 'stop', '3.0s'],
+  ] as const)('reads a review cut by %s with the duration it knows', (_cause, cut, detail) => {
+    const call = {
+      phase: 'final-review',
+      callId: 'review-1',
+      role: 'review',
+      backendKind: 'cli',
+      sequence: 3,
+    } as const;
+    const before: EngineEvent[] = [
+      { type: 'review_started', ts: 1_000, phase: 'final-review', scope: 'final', tool: 'codex' },
+      {
+        type: 'review_checks',
+        ts: 4_000,
+        phase: 'final-review',
+        scope: 'final',
+        status: 'planned',
+        commands: [{ id: 'V1', command: 'npm test', reason: 'Verify the change.' }],
+      },
+      { type: 'runner_call_started', ts: 4_000, ...call },
+    ];
+    // A stop you make ends the call at its moment; the stop event itself may land in another section.
+    const end: EngineEvent[] =
+      cut === 'exit'
+        ? interruptedCallEvents(before, '/repo')
+        : [
+            {
+              type: 'runner_call_activity',
+              ts: 4_000,
+              ...call,
+              activityId: 'review-1:terminal',
+              stage: 'aborted',
+              kind: 'error',
+              label: 'aborted runner_interrupted',
+              diagnosticPartial: 'stopped by you',
+              redacted: false,
+            },
+          ];
+    const events = [
+      ...before,
+      ...end,
+      { type: 'workflow_resumed', ts: 65_000, phase: 'final-review' },
+    ].map((event) => EngineEventSchema.parse(event));
+    const [section] = groupEventsIntoSections(events);
+    if (section?.type !== 'settled-stage') throw new Error('expected a settled review');
+    expect(stageSummaryRow(section.summary)).toMatchObject({
+      state: { kind: 'stage', outcome: 'stopped', detail: [detail] },
+    });
+  });
+
   it('omits the absent task anchor from a schema-valid review completion', () => {
     const event = EngineEventSchema.parse({
       type: 'review_completed',

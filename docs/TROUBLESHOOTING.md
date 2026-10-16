@@ -1146,7 +1146,7 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ### Symptom: I discarded or ended a run and need its work
 
-**Likely cause:** The run closed without Apply. Its notice names the patch: `Run changes not applied are saved in .splitbrief/sessions/<id>/run.patch; apply them with git apply.` The closed run's `Run` block names the file in its `Patch` row, and the byline of a discarded or ended run points at it: `Bring the changes back with git apply on the Patch file`. When the workspace was already gone, the notice reads `The run workspace at <path> is gone; no run patch was written.`
+**Likely cause:** The run closed without Apply. The closed run's `Run` block names the patch in its `Patch` row, and the byline of a discarded or ended run points at it: `Bring the changes back with git apply on the Patch file`. A headless `splitbrief continue <id> --action end-run` or `--action discard` names it on its close line: `Run changes not applied are saved in .splitbrief/sessions/<id>/run.patch; apply them with git apply.` When the workspace was already gone, the notice reads `The run workspace at <path> is gone; no run patch was written.`
 
 **Fix:** Inspect that patch. Use `git apply .splitbrief/sessions/<id>/run.patch` to bring the saved changes into a suitable checkout. Discarded and ended runs stay closed. If patch creation failed, the run remains open and keeps its workspace; resolve the reported failure, then close again.
 

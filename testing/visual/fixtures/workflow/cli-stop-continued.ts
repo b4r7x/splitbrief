@@ -53,7 +53,14 @@ const activity = (
   ts: number,
   fields: Pick<
     EngineEventOf<'runner_call_activity'>,
-    'activityId' | 'stage' | 'kind' | 'label' | 'target' | 'diagnosticPartial' | 'rawAvailable'
+    | 'activityId'
+    | 'stage'
+    | 'kind'
+    | 'label'
+    | 'target'
+    | 'diagnosticPartial'
+    | 'rawAvailable'
+    | 'endUnknown'
   >,
 ): EngineEvent => ({
   type: 'runner_call_activity',
@@ -120,6 +127,7 @@ export const cliStopContinuedProjection: WorkflowFixtureProjection = {
       kind: 'error',
       label: 'aborted runner_interrupted',
       diagnosticPartial: 'SPLITBRIEF exited',
+      endUnknown: true,
     }),
     { type: 'workflow_resumed', ts: epoch + 30_000, phase: 'implementing' },
     briefStarted(epoch + 30_100),

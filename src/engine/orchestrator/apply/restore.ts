@@ -1,7 +1,14 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { error } from '../../../utils/error.js';
-import { type ChangeEntry, writeConfinedEntryOrLink } from '../approval/file-snapshots/entry.js';
+import { rmdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
+import {
+  type ChangeEntry,
+  removeWriteTemporaries,
+  writeConfinedEntryOrLink,
+} from '../approval/file-snapshots/entry.js';
 import { type ApplyBackup, backupSideEntry, readApplyBackup, readBackupBlob } from './backup.js';
 import { readApplyEntry, sameSideEntry, type SideEntry, unsafeEntryError } from './states.js';
 import { transitionAndSave } from '../state-ops.js';
@@ -93,6 +100,16 @@ export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
       if (cause !== conflict && !unsafeEntryError(cause)) throw cause;
       conflicts.push(path);
     }
+  }
+  await removeWriteTemporaries(projectDir, [...expected.keys(), ...replaced.keys(), ...created]);
+  // Deepest first: a folder Apply made goes once it is empty again. One that holds anything, or
+  // that you replaced with a file or a link, stays.
+  for (const dir of [...backup.createdDirs].sort().reverse()) {
+    await rmdir(resolve(projectDir, dir)).catch((cause: unknown) => {
+      if (isENOENT(cause)) return;
+      if (isNodeError(cause) && (cause.code === 'ENOTEMPTY' || cause.code === 'ENOTDIR')) return;
+      throw cause;
+    });
   }
   return { restored: restored.sort(), unchanged: unchanged.sort(), conflicts: conflicts.sort() };
 }

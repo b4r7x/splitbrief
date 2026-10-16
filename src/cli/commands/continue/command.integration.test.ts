@@ -958,8 +958,9 @@ describe('continueCommand --action apply|discard|end-run', () => {
         output.restore();
       }
 
-      expect(output.stderr()).toContain(`Run ${SESSION_ID} discarded.`);
-      expect(output.stderr()).toContain('run.patch; apply them with git apply.');
+      expect(output.stderr()).toBe(
+        `Run ${SESSION_ID} discarded. Run changes not applied are saved in ${join(SPLITBRIEF_DIR, 'sessions', SESSION_ID, 'run.patch')}; apply them with git apply.\n`,
+      );
       expect(output.stdout()).toBe('');
       expect(read(run.dir, 'a.txt')).toBe(FIVE);
       expect(existsSync(join(run.dir, 'b.txt'))).toBe(false);
@@ -996,10 +997,10 @@ describe('continueCommand --action apply|discard|end-run', () => {
 
       const ref = { projectDir: run.dir, sessionId: SESSION_ID };
       const patch = join(sessionDir(run.dir, SESSION_ID), 'run.patch');
-      expect(logged).toEqual([`Run ${SESSION_ID} closed.`]);
-      expect(output.stderr()).toContain(
-        `Run changes not applied are saved in ${join(SPLITBRIEF_DIR, 'sessions', SESSION_ID, 'run.patch')}; apply them with git apply.`,
-      );
+      expect(logged).toEqual([
+        `Run ${SESSION_ID} closed. Run changes not applied are saved in ${join(SPLITBRIEF_DIR, 'sessions', SESSION_ID, 'run.patch')}; apply them with git apply.`,
+      ]);
+      expect(output.stderr()).not.toContain('run.patch');
       expect(loadState(ref)?.closed?.as).toBe('discarded');
       expect(readSession(ref)?.apply).toBe('discarded');
       expect(readFileSync(patch, 'utf8')).toContain('+created by the run');

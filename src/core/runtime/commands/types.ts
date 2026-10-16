@@ -256,7 +256,6 @@ export interface RuntimeCommandContext {
   listSkills: () => readonly SkillCommandOption[];
   toggleSkill: (id: string) => SkillToggleResult;
   refreshSkills: () => Promise<void>;
-  getCurrentPhase: () => Phase;
   resumeRun: () => boolean;
   /** Stop now and continue the run with this correction. False when there is no run to steer. */
   steerRun: (text: string) => boolean;

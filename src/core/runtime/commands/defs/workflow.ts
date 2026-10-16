@@ -157,10 +157,6 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
           ctx.setFeedbackError('Usage: /run reject confirm');
           return;
         }
-        if (isLivePhase(ctx.getCurrentPhase())) {
-          ctx.setFeedbackError('Run rejection is unavailable while work is active.');
-          return;
-        }
         try {
           const result = await ctx.rejectRun();
           switch (result.status) {

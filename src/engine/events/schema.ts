@@ -47,6 +47,7 @@ import {
   RunnerCallUsageSemanticsSchema,
   RunnerCallWarningSchema,
   runnerCallContextFields,
+  runnerCallEndUnknown,
   runnerCallTerminalFields,
 } from '../calls/schema.js';
 
@@ -370,6 +371,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     /** Raw model ids a fallback or refusal warning names; display layers resolve them. */
     originalModel: z.string().min(1).max(256).optional(),
     fallbackModel: z.string().min(1).max(256).optional(),
+    endUnknown: runnerCallEndUnknown,
   }),
   strictCallPhaseEvent('runner_call_session_id').extend({
     nativeSessionId: z.string(),
@@ -386,6 +388,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     partial: z.boolean(),
     rawTail: z.string().max(RUNNER_CALL_RAW_TAIL_MAX_LENGTH).optional(),
     ...runnerCallTerminalFields,
+    endUnknown: runnerCallEndUnknown,
   }),
   strictCallPhaseEvent('runner_call_completed').extend({
     status: z.literal('completed'),

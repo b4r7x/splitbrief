@@ -139,6 +139,7 @@ export function runnerCallErrorEvent(
     nativeSessionId: string | null;
     partial: boolean;
     rawTail?: string | undefined;
+    endUnknown?: true;
   },
 ): RunnerCallEvent {
   return {
@@ -154,5 +155,6 @@ export function runnerCallErrorEvent(
     partial: opts.partial,
     usage: opts.usage,
     nativeSessionId: opts.nativeSessionId,
+    ...(opts.endUnknown && { endUnknown: true }),
   };
 }

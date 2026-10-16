@@ -37,6 +37,7 @@ import {
 } from '../events.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { endRun } from '../run/close.js';
+import { haltCutApply } from '../apply/run.js';
 import { recordUserMessage } from '../transcript/user-message.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import { restoreExhaustedTaskFiles } from '../task/rollback.js';
@@ -122,8 +123,15 @@ export interface ApplyRecoveryActionOptions {
 }
 
 export async function applyRecoveryAction(
-  opts: ApplyRecoveryActionOptions,
+  input: ApplyRecoveryActionOptions,
 ): Promise<ApplyRecoveryActionResult> {
+  const { applying } = input.state;
+  // An Apply cut off by a crash is halted, though no process lived to record it: the action answers
+  // that halt as it answers the one a later re-entry would raise.
+  const opts =
+    input.state.pendingRecovery === undefined && applying !== undefined
+      ? { ...input, state: await haltCutApply(input, input.state, applying.backupId) }
+      : input;
   const issue = opts.state.pendingRecovery;
   if (!issue) {
     return {

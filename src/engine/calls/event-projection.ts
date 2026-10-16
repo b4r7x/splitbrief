@@ -117,6 +117,7 @@ export function projectRunnerCallEvent(
         partial: event.partial,
         usage: event.usage,
         nativeSessionId: event.nativeSessionId,
+        ...(event.endUnknown && { endUnknown: true }),
       };
     case 'call_completed':
       return {

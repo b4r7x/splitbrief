@@ -197,14 +197,14 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
   if (record.status.kind === 'closed' && !(run.kind === 'workspace' && canUndoApply(run.state))) {
     return { status: 'unavailable', message: `Run is closed (${record.status.as}).` };
   }
-  if (run.kind === 'snapshot') return rejectRunSnapshot(projectDir, sessionId);
-  const { state } = run;
   if (!isRunAtRest(record.ref) || record.status.kind === 'running') {
     return {
       status: 'unavailable',
       message: 'Run rejection is unavailable while the run is active.',
     };
   }
+  if (run.kind === 'snapshot') return rejectRunSnapshot(projectDir, sessionId);
+  const { state } = run;
   if (record.status.kind === 'closed') {
     return { status: 'undone', ...(await undoApply(record.ref, state)) };
   }
@@ -380,7 +380,6 @@ export function buildCommandContext({
     listSkills,
     toggleSkill,
     refreshSkills,
-    getCurrentPhase: () => lifecycleStore.get().phase,
     resumeRun: () => requestResume(plainUserMessage('')),
     steerRun: (text) => {
       const submission = prepareDraftSubmission(createDraftDocument(text), {

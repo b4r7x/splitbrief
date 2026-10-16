@@ -156,6 +156,8 @@ export type StageSummary =
       failedChecks: number;
       fixes: string[];
       duration: number;
+      /** A process exit cut its call: `duration` runs only to the last thing the call reported. */
+      endUnknown?: true;
     });
 
 export type Section<TEvent extends SectionableEvent = SectionableEvent> =
@@ -533,6 +535,15 @@ function settledStageSummary<TEvent extends SectionableEvent>(
     failedChecks,
     fixes,
     duration: completed ? completed.duration : duration,
+    ...(outcome === 'stopped' &&
+      items.some(
+        (event) =>
+          event.type === 'runner_call_activity' &&
+          'role' in event &&
+          event.role === 'review' &&
+          'endUnknown' in event &&
+          event.endUnknown === true,
+      ) && { endUnknown: true }),
   };
 }
 

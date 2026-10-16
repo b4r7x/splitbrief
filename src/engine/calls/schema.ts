@@ -135,6 +135,9 @@ const RunnerCallUnknownUpstreamBackendMetadataSchema = z.strictObject({
   upstreamType: boundedName.optional(),
 });
 
+/** The process went away before the call ended: `endedAt` is only the last thing it reported. */
+export const runnerCallEndUnknown = z.literal(true).optional();
+
 export const runnerCallTerminalFields = {
   startedAt: timestampMillis,
   endedAt: timestampMillis,
@@ -194,6 +197,7 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
     partial: z.boolean(),
     rawTail: z.string().max(RUNNER_CALL_RAW_TAIL_MAX_LENGTH).optional(),
     ...runnerCallTerminalFields,
+    endUnknown: runnerCallEndUnknown,
   }),
   callEvent('call_completed', {
     status: z.literal('completed'),

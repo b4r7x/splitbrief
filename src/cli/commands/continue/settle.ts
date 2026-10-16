@@ -2,7 +2,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { runApplyAtRest } from '../../../engine/orchestrator/apply/at-rest.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
-import { closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
+import { closedChangesSuffix, closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -33,7 +33,7 @@ export async function settleReadyRun(input: {
   if (action === 'discard') {
     const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
     if (closure.closedNow) finalize(closure.state);
-    process.stderr.write(`Run ${sessionId} discarded.\n`);
+    process.stderr.write(`Run ${sessionId} discarded.${closedChangesSuffix(closure.state)}\n`);
     return undefined;
   }
 
