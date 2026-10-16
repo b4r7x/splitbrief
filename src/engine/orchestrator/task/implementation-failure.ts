@@ -1,5 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
-import { revertedDir } from '../isolation/entry-snapshot.js';
+import { revertedDir } from '../../../core/paths.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';

@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { fsError } from '../lib/fs.js';
 import { sha256Hex } from '../utils/sha256.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
@@ -50,6 +50,11 @@ export function isValidSessionId(sessionId: string): boolean {
 export function sessionDir(projectDir: string, sessionId: string): string {
   validateSessionId(sessionId);
   return join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
+}
+
+/** Where a revert in the checkout saves the bytes it replaces, relative to the project. */
+export function revertedDir(ref: SessionRef): string {
+  return relative(ref.projectDir, join(sessionDir(ref.projectDir, ref.sessionId), 'reverted'));
 }
 
 export const RENDERS_DIR = 'renders';

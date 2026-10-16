@@ -18,22 +18,32 @@ function codes(plan: PlanProposal, contextFits = fits, dir = projectDir): string
 }
 
 describe('planRepairWarning', () => {
-  it.each(['Criterion C2 is served by no task.', 'Criterion C2 is served by no task'])(
-    'embeds the check message without a trailing full stop: %s',
-    (message) => {
-      for (const more of [
-        [],
-        [{ code: 'empty-plan', message: 'The plan has no task.' }],
-      ] as const) {
-        const first = { code: 'uncovered-criterion', message } as const;
-        const warning = planRepairWarning([first, ...more]);
-        expect(warning.message).toBe(
-          `The plan failed check uncovered-criterion: Criterion C2 is served by no task${more.length > 0 ? ' (+1 more)' : ''}; it goes back to the planner once.`,
-        );
-        expect(warning.planCheck).toEqual({ code: 'uncovered-criterion', message });
-      }
-    },
-  );
+  it('lists every failed check in plan order, without codes, and keeps the first blocking one', () => {
+    const render = {
+      code: 'render-check-unconfigured',
+      message: 'Check K2 renders a scenario.',
+    } as const;
+    const refused = {
+      code: 'refused-check-command',
+      message: 'Check K4 is refused: `test -d docs` does not name one file test.',
+    } as const;
+    const unchecked = { code: 'task-without-check', message: 'Task T001 has no check.' } as const;
+
+    expect(planRepairWarning([render, refused, unchecked])).toEqual({
+      message: [
+        'The plan failed 3 checks. It goes back to the planner once to fix them:',
+        '- Check K2 renders a scenario.',
+        '- Check K4 is refused: `test -d docs` does not name one file test.',
+        '- Task T001 has no check.',
+      ].join('\n'),
+      planCheck: refused,
+    });
+    expect(planRepairWarning([unchecked])).toEqual({
+      message:
+        'The plan failed 1 check. It goes back to the planner once to fix it:\n- Task T001 has no check.',
+      planCheck: unchecked,
+    });
+  });
 });
 
 describe('checkPlan', () => {
@@ -285,18 +295,18 @@ describe('checkPlan', () => {
     const refusedK8 = {
       code: 'refused-check-command',
       message:
-        'Check K8 is refused: `npx tsc --noEmit` runs npx without --no-install as its first option. Name a command the plan command policy runs, or use a `test` check.',
+        'Check K8 is refused: `npx tsc --noEmit` runs npx without --no-install as its first option. Change it to a command that plan checks allow, or to a check of kind `test` that names a test file.',
     };
     const refusedK10 = {
       code: 'refused-check-command',
       message:
-        'Check K10 is refused: `npm test -- run` passes the argument run to npm test; an npm command takes no run, exec, exec-env or explore argument. Name a command the plan command policy runs, or use a `test` check.',
+        'Check K10 is refused: `npm test -- run` passes the argument run to npm test; an npm command takes no run, exec, exec-env or explore argument. Change it to a command that plan checks allow, or to a check of kind `test` that names a test file.',
     };
     expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
       {
         code: 'refused-check-command',
         message:
-          'Check K9 is refused: `npm run lint` runs a package script or binary (npm run). Name a command the plan command policy runs, or use a `test` check.',
+          'Check K9 is refused: `npm run lint` runs a package script or binary (npm run). Change it to a command that plan checks allow, or to a check of kind `test` that names a test file.',
       },
       refusedK10,
       refusedK8,
@@ -327,7 +337,7 @@ describe('checkPlan', () => {
       {
         code: 'refused-check-command',
         message:
-          'Check K4 is refused: `test -d docs` does not name one file test; a plan check runs test only as test -e, -f, -x or -L <file>. Name a command the plan command policy runs, or use a `test` check.',
+          'Check K4 is refused: `test -d docs` does not name one file test; a plan check runs test only as test -e, -f, -x or -L <file>. Change it to a command that plan checks allow, or to a check of kind `test` that names a test file.',
       },
     ]);
   });

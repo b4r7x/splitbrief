@@ -462,7 +462,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     publishUserMessage({ bus: bus, phase: state.phase }, feature, {
       attachedInputs: runtime.attachedInputs,
     });
-    for (const message of startReadinessWarnings(createStartReadinessRecord(prepared.report))) {
+    for (const message of startReadinessWarnings(
+      createStartReadinessRecord(prepared.report, { projectDir, sessionId }),
+    )) {
       publishWarning({ bus, phase: state.phase, message });
     }
 

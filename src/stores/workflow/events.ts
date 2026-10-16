@@ -83,8 +83,12 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
       return null;
     case 'info':
       return { ...event, message: sanitizeTerminalDiagnosticText(event.message) };
+    // A warning may state its facts one per line, as a readiness warning or a plan send-back does.
     case 'warning':
-      return { ...event, message: sanitizeTerminalDiagnosticText(event.message) };
+      return {
+        ...event,
+        message: sanitizeTerminalDiagnosticText(event.message, { preserveLineBreaks: true }),
+      };
     case 'error':
       return { ...event, message: sanitizeTerminalDiagnosticText(event.message) };
     default:

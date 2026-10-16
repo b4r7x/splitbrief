@@ -23,7 +23,7 @@ import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
-import { revertedDir } from '../isolation/entry-snapshot.js';
+import { revertedDir } from '../../../core/paths.js';
 
 // The pre_validation hook gates the brief checks: a brief with no check runs no hook.
 const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];

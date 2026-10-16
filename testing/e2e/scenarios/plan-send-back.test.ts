@@ -91,8 +91,9 @@ it('shows a repaired plan passing its checks after one send-back, including afte
         const pass = 'The revised plan passes its checks.';
         expect(text.split(pass)).toHaveLength(2);
         expect(text).toContain(`SPLITBRIEF  ${pass}`);
-        expect(text.indexOf('goes back to the planner once.')).toBeGreaterThanOrEqual(0);
-        expect(text.indexOf(pass)).toBeGreaterThan(text.indexOf('goes back to the planner once.'));
+        const sentBack = 'It goes back to the planner once to fix';
+        expect(text.indexOf(sentBack)).toBeGreaterThanOrEqual(0);
+        expect(text.indexOf(pass)).toBeGreaterThan(text.indexOf(sentBack));
       }
     });
   } finally {

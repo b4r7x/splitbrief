@@ -371,7 +371,7 @@ describe('readiness checks', () => {
     expect(report.sections.flatMap((section) => section.checks)).toContainEqual(
       expect.objectContaining({
         id: 'repo.dirty-worktree',
-        fix: expect.stringContaining('.splitbrief/sessions/<id>/reverted/'),
+        fix: expect.stringContaining("the run's reverted/ folder, under .splitbrief/sessions/"),
       }),
     );
   });

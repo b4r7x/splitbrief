@@ -21,7 +21,7 @@ import type { GateDecision } from '../approval/types.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
-import { revertedDir } from '../isolation/entry-snapshot.js';
+import { revertedDir } from '../../../core/paths.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { briefInFlight } from '../../../core/state/selectors.js';
 

@@ -616,7 +616,7 @@ describe('the planning session on the live path', () => {
         expect.objectContaining({
           type: 'warning',
           message: expect.stringMatching(
-            new RegExp(`^The plan failed check ${code}: .+; it goes back to the planner once\\.$`),
+            /^The plan failed \d+ checks?\. It goes back to the planner once to fix (it|them):\n- .+$/s,
           ),
           planCheck: expect.objectContaining({ code, message: expect.any(String) }),
         }),
@@ -658,14 +658,14 @@ describe('the planning session on the live path', () => {
     ).toEqual([]);
   });
 
-  it('names the check code and reason in the warning on one failing check', async () => {
+  it('states the reason of one failing check in the warning, without its code', async () => {
     const run = await plan({ script: [uncoveredPlan, makePlanProposal()] });
 
     expect(run.events).toContainEqual(
       expect.objectContaining({
         type: 'warning',
         message:
-          'The plan failed check uncovered-criterion: Criterion C2 is served by no task; it goes back to the planner once.',
+          'The plan failed 1 check. It goes back to the planner once to fix it:\n- Criterion C2 is served by no task.',
         planCheck: {
           code: 'uncovered-criterion',
           message: 'Criterion C2 is served by no task.',
@@ -675,7 +675,7 @@ describe('the planning session on the live path', () => {
     expect(run.result.disposition).toBe('ready-for-tasks');
   });
 
-  it('names the first blocking check and the count of more checks when three checks fail', async () => {
+  it('lists all three failed checks and keeps the first blocking one when three checks fail', async () => {
     const threeErrorsPlan = makePlanProposal({
       criteria: [
         { id: 'C1', text: 'A name gets a greeting', checkIds: [] },
@@ -689,8 +689,12 @@ describe('the planning session on the live path', () => {
     expect(run.events).toContainEqual(
       expect.objectContaining({
         type: 'warning',
-        message:
-          'The plan failed check criterion-without-check: Criterion C1 names no check that verifies it (+2 more); it goes back to the planner once.',
+        message: [
+          'The plan failed 3 checks. It goes back to the planner once to fix them:',
+          '- Criterion C1 names no check that verifies it.',
+          '- Criterion C2 names no check that verifies it.',
+          '- Criterion C3 names no check that verifies it.',
+        ].join('\n'),
         planCheck: {
           code: 'criterion-without-check',
           message: 'Criterion C1 names no check that verifies it.',

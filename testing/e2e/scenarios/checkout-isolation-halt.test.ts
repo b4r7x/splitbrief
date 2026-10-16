@@ -63,7 +63,9 @@ describe('e2e: a checkout whose git state changes during an in-place implementer
     const readiness = DoctorRecordSchema.parse(JSON.parse(doctor.stdout.trim()));
     const warning = readiness.report.checks.find((check) => check.id === 'repo.dirty-worktree');
     expect(warning?.severity).toBe('warning');
-    expect(warning?.remediation).toContain('.splitbrief/sessions/<id>/reverted/');
+    expect(warning?.remediation).toContain(
+      "the run's reverted/ folder, under .splitbrief/sessions/",
+    );
 
     const halted = await cli(fixture, ['start', 'smoke']);
 

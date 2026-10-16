@@ -433,33 +433,46 @@ const planningPathNoticeProjection: WorkflowFixtureProjection = {
   ],
 };
 
+/** A plan sent back for a refused check command and a task without a check. */
+const planSendBackWarning = planRepairWarning([
+  {
+    code: 'refused-check-command',
+    message:
+      'Check K4 is refused: `test "$(readlink docs/readme.md)" = "../README.md"` does not name one file test; a plan check runs test only as test -e, -f, -x or -L <file>. Change it to a command that plan checks allow, or to a check of kind `test` that names a test file.',
+  },
+  { code: 'task-without-check', message: 'Task T001 has no check.' },
+]);
+
 const START_READINESS_FEATURE = 'Fix the typo in the README';
 
 /** The warnings a checkout-mode start states, worded by readiness itself. */
 const startReadinessWarningText = startReadinessWarnings(
-  createStartReadinessRecord({
-    generatedAt: new Date(FIXED_TS).toISOString(),
-    projectDir: '/Users/dev/app',
-    status: 'ready-with-warnings',
-    counts: { ok: 0, info: 0, warning: 1, blocker: 0 },
-    nextAction: { kind: 'continue', label: 'Continue', reason: 'warnings' },
-    sections: [
-      {
-        id: 'repo',
-        title: 'Repository',
-        checks: buildRepoChecks(
-          {
-            isGitRepo: true,
-            hasCommits: true,
-            dirtyFiles: ['README.md'],
-            untrackedFiles: ['my-notes.txt'],
-          },
-          'none',
-        ),
-      },
-    ],
-    metadata: {},
-  }),
+  createStartReadinessRecord(
+    {
+      generatedAt: new Date(FIXED_TS).toISOString(),
+      projectDir: '/Users/dev/app',
+      status: 'ready-with-warnings',
+      counts: { ok: 0, info: 0, warning: 1, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'warnings' },
+      sections: [
+        {
+          id: 'repo',
+          title: 'Repository',
+          checks: buildRepoChecks(
+            {
+              isGitRepo: true,
+              hasCommits: true,
+              dirtyFiles: ['README.md'],
+              untrackedFiles: ['my-notes.txt'],
+            },
+            'none',
+          ),
+        },
+      ],
+      metadata: {},
+    },
+    { projectDir: '/Users/dev/app', sessionId: VISUAL_WORKFLOW_SESSION_ID },
+  ),
 );
 
 const startReadinessWarningProjection: WorkflowFixtureProjection = {
@@ -5706,7 +5719,7 @@ const projections = [
         type: 'warning',
         ts: FIXED_TS + 1,
         phase: 'planning',
-        ...planRepairWarning([{ code: 'task-without-check', message: 'A task has no check.' }]),
+        ...planSendBackWarning,
       },
       {
         type: 'info',
@@ -5894,7 +5907,8 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     // Nor is a halt the engine composed around the tool's own bounded words, or the plan card's
     // plan.md and plan.json, which the plan formatter and the plan schema write whole, or the
     // implementer's JSON report, which the transcript reads as one summary line, or a start
-    // warning, which readiness words as its summary and its fix.
+    // warning, which readiness words as its summary, its details and its fix, or a plan
+    // send-back, which lists the plan checks' own messages.
     (value) =>
       value !== planCardProjection.review?.source &&
       value !== planCardProjection.review?.planJson &&
@@ -5907,6 +5921,8 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
       !startReadinessWarningText.includes(value) &&
+      value !== planSendBackWarning.message &&
+      value !== planSendBackWarning.planCheck?.message &&
       value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
       !projection.question?.questions?.some(
         (question) =>

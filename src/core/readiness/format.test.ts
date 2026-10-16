@@ -16,6 +16,8 @@ import {
 } from './format.js';
 import { deriveCliReadiness, StartReadinessRecordSchema } from '../schemas/readiness.js';
 
+const RUN = { projectDir: '/tmp/project', sessionId: '2026-01-01-fix-the-readme' };
+
 function reportWith(checks: ReadinessCheck[]): ReadinessReport {
   return {
     generatedAt: '2026-01-01T00:00:00.000Z',
@@ -111,7 +113,7 @@ describe('readiness formatting', () => {
     });
 
     const human = formatReadinessReport(report);
-    const record = createStartReadinessRecord(report);
+    const record = createStartReadinessRecord(report, RUN);
 
     expect(human).toContain('Run readiness:');
     expect(human).not.toContain('Required action');
@@ -334,7 +336,7 @@ describe('readiness formatting', () => {
     expect(blockerMessage).not.toContain(esc);
     expect(blockerMessage).toContain('SUMVISTAIL');
 
-    const record = createStartReadinessRecord(report);
+    const record = createStartReadinessRecord(report, RUN);
     const recorded = record.checks.find((check) => check.id === blocker.id);
     expect(recorded?.summary).toBe(rawSummary);
   });
@@ -349,13 +351,15 @@ describe('start readiness record', () => {
       ),
     );
 
-    const dirty = createStartReadinessRecord(report).checks.find(
+    const dirty = createStartReadinessRecord(report, RUN).checks.find(
       (check) => check.id === 'repo.dirty-worktree',
     );
 
     expect(dirty?.details).toContain('Examples: src/a.ts');
     expect(dirty?.remediation).toContain('The run edits this checkout.');
-    expect(dirty?.remediation).toContain('.splitbrief/sessions/<id>/reverted/');
+    expect(dirty?.remediation).toContain(
+      'A revert saves the files it replaces in .splitbrief/sessions/2026-01-01-fix-the-readme/reverted/.',
+    );
   });
 
   it('records the diagnostic remediation of a warning that names no fix, and no ok or info check', () => {
@@ -370,6 +374,7 @@ describe('start readiness record', () => {
         { id: 'fine', severity: 'ok', summary: 'Fine.', fix: 'Nothing.' },
         { id: 'note', severity: 'info', summary: 'A note.' },
       ]),
+      RUN,
     );
 
     expect(record.checks).toEqual([
@@ -402,7 +407,7 @@ describe('start readiness record', () => {
     ).toHaveLength(1);
   });
 
-  it('states each warning as its summary then its fix, and leaves blockers out', () => {
+  it('states each warning as its summary, its details, then its fix, and leaves blockers out', () => {
     const record = createStartReadinessRecord(
       reportWith([
         { id: 'stop', severity: 'blocker', summary: 'Cannot start.', fix: 'Install it.' },
@@ -413,13 +418,43 @@ describe('start readiness record', () => {
           details: ['Examples: a.ts'],
           fix: 'Commit it.',
         },
+        {
+          id: 'runners.preparation.implementer',
+          severity: 'warning',
+          summary: 'Implementer is ready with warnings.',
+          details: ['The sandbox profile is missing.'],
+        },
         { id: 'plain', severity: 'warning', summary: 'A plain warning.' },
       ]),
+      RUN,
     );
 
     expect(startReadinessWarnings(record)).toEqual([
-      'Working tree has 1 changed file. Commit it.',
+      'Working tree has 1 changed file.\nExamples: a.ts\nFix: Commit it.',
+      'Implementer is ready with warnings.\nThe sandbox profile is missing.',
       'A plain warning.',
     ]);
+  });
+
+  it('states a checkout warning in the words doctor prints, with the run folder named', () => {
+    const report = reportWith(
+      buildRepoChecks(
+        { isGitRepo: true, hasCommits: true, dirtyFiles: ['README.md'], untrackedFiles: [] },
+        'none',
+      ),
+    );
+    const [warning = ''] = startReadinessWarnings(createStartReadinessRecord(report, RUN));
+    const doctor = formatReadinessReport(report);
+
+    expect(warning.split('\n')).toEqual([
+      'Working tree has 1 changed file.',
+      'Examples: README.md',
+      'An attempt revert restores only the paths that attempt changed.',
+      'Fix: The run edits this checkout. Commit or stash the edits you do not want this run to touch. A revert saves the files it replaces in .splitbrief/sessions/2026-01-01-fix-the-readme/reverted/.',
+    ]);
+    for (const line of warning.split('\n').slice(0, 3)) expect(doctor).toContain(line);
+    expect(doctor).toContain(
+      "A revert saves the files it replaces in the run's reverted/ folder, under .splitbrief/sessions/.",
+    );
   });
 });

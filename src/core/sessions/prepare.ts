@@ -256,7 +256,7 @@ export function prepareNewSession(input: PrepareNewSessionInput): PrepareNewSess
     const directory = sessionDir(ref.projectDir, ref.sessionId);
     const target = join(directory, READINESS_FILE);
     const temporary = join(directory, `.${READINESS_FILE}.${randomUUID()}.tmp`);
-    const record = createStartReadinessRecord(input.report);
+    const record = createStartReadinessRecord(input.report, ref);
     assertWritablePathConfined(sessionRelativePath(ref.sessionId, READINESS_FILE), ref.projectDir);
     writeSecureFile(temporary, `${JSON.stringify(record, null, 2)}\n`);
     assertOwnedDirectory(owned, relativeDirectory, allocatedIdentity);
