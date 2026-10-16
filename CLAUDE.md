@@ -111,6 +111,23 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Change discipline, always.** Load the `change-discipline` skill before you implement, fix or review code, and follow it. Fix the root cause at the function every caller routes through. Reuse what the project already has. Migrate callers and delete the old path in the same change. Do not add speculative options, guards or fallbacks that hide errors. Hand back in its §9 form.
 - **Targeted edits only.** Do not rewrite entire files or modules. Provide targeted patches or unified diffs showing only the modified lines with 3 lines of context.
 
+## Reporting findings (binding)
+
+A finding from a review, a live check, a test run or an audit is reported only when it is confirmed. Every finding states four things:
+
+1. **Evidence.** The raw evidence that shows it: a capture, a log line, a `session.jsonl` event, a test output. Name the file.
+2. **Cause.** The code that causes it, with `file:line`, read in the current tree.
+3. **Who hits it.** Whether a normal user in a normal setup hits it: their own HOME, their signed-in tools, normal input. A result that comes only from the test conditions (a temporary HOME, a fake tool, an odd input the tester typed, an outage of an outside service, parallel runs on one machine) is a test artifact, not a product defect, and is labelled so.
+4. **What the user sees.** One sentence in plain words, and the class: 1 blocks work, loses data or gives a wrong outcome; 2 shows wrong or misleading text; 3 is cosmetic.
+
+Drop a finding that cannot be confirmed. Never report a guess as a defect.
+
+## Fixing a defect (binding)
+
+1. **Confirm first.** Before any edit, confirm the defect as "Reporting findings" requires: the evidence, the cause at `file:line`, and that a normal user hits it. A finding that cannot be confirmed is not fixed; report it as not confirmed.
+2. **Plan, then change.** Load the `change-discipline` skill. Write the plan: the one function every caller routes through, the callers to migrate, the old path to delete. Then implement it; no guessed design.
+3. **Tests at the end.** Planning, implementing, reviewing and fixing run no tests (typecheck, lint and format only). After the review passes, run the tests of the change once at the end. When a test fails, fix the root cause, review the fix, and run the tests again until they pass.
+
 ## User-facing text
 
 Text a user can read must not show how SPLITBRIEF is built. This covers the shipped docs (the Markdown files in `package.json` `files`), `CHANGELOG.md` and the GitHub release notes, CLI and TUI strings, the website, and the skills a user installs (the skills in `.claude-plugin/marketplace.json` and every skill not marked `metadata.internal: true`).
