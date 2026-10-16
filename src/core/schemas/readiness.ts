@@ -195,6 +195,11 @@ function platformName(platform: NodeJS.Platform): string {
   return PLATFORM_NAMES[platform] ?? platform;
 }
 
+/** The sign-in step every surface gives a signed-out tool; `names` is one tool or a list of them. */
+export function cliSignInStep(names: string): string {
+  return `Sign in to ${names}, then run \`splitbrief doctor\` again.`;
+}
+
 export function cliAuthRemediation(
   runner: Readonly<{
     tool: CliReadinessFacts['tool'];
@@ -215,7 +220,7 @@ export function cliAuthRemediation(
   if (credentialEnv !== undefined) {
     return `Export ${credentialEnv} for ${name}, then run \`splitbrief doctor\` again.`;
   }
-  const signIn = `Sign in to ${name}, then run \`splitbrief doctor\` again.`;
+  const signIn = cliSignInStep(name);
   switch (cliAuthChannelHostStateAccess(channel)) {
     case 'host-account':
       return `SPLITBRIEF looks for the ${name} session in the ${platformName(process.platform)} keychain. ${signIn}`;

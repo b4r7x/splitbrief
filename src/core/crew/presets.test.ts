@@ -2,27 +2,34 @@ import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { computeCrewPresets } from './presets.js';
 
+function notReadyOf(readyTools: Parameters<typeof computeCrewPresets>[0]['readyTools']) {
+  return Object.fromEntries(
+    computeCrewPresets({ config: makeConfig(), readyTools }).map((preset) => [
+      preset.id,
+      preset.notReady,
+    ]),
+  );
+}
+
 describe('computeCrewPresets', () => {
-  it('offers a preset whose every seat is installed and authenticated', () => {
-    const presets = computeCrewPresets({
-      config: makeConfig(),
-      readyTools: ['claude-code', 'codex'],
-    });
-
-    expect(presets.map((preset) => preset.id)).toContain('claude-crew-codex-review');
+  it('marks a preset whose every seat is installed and authenticated as ready', () => {
+    expect(notReadyOf(['claude-code', 'codex'])['claude-crew-codex-review']).toEqual([]);
   });
 
-  it('withholds a preset whose tool is not installed', () => {
-    const presets = computeCrewPresets({
-      config: makeConfig(),
-      readyTools: ['claude-code'],
+  it('keeps a preset whose tool is not ready and names that tool once', () => {
+    expect(notReadyOf(['claude-code'])).toEqual({
+      'claude-crew-codex-review': ['codex'],
+      'codex-crew-claude-review': ['codex'],
+      'claude-plan-opencode-build': ['opencode'],
     });
-
-    expect(presets.map((preset) => preset.id)).not.toContain('claude-crew-codex-review');
   });
 
-  it('returns nothing when no tool is available', () => {
-    expect(computeCrewPresets({ config: makeConfig(), readyTools: [] })).toEqual([]);
+  it('keeps every preset when no tool is ready', () => {
+    expect(notReadyOf([])).toEqual({
+      'claude-crew-codex-review': ['claude-code', 'codex'],
+      'codex-crew-claude-review': ['codex', 'claude-code'],
+      'claude-plan-opencode-build': ['claude-code', 'opencode'],
+    });
   });
 
   it('carries the concrete seat assignments a preset would write', () => {

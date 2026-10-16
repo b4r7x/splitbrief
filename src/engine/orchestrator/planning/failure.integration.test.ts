@@ -76,7 +76,7 @@ describe('handlePlanningFailure', () => {
       expect(result.state.pendingRecovery?.message).toContain('Add credit');
       const rows = events.filter((event) => event.type === 'error');
       expect(rows).toHaveLength(1);
-      if (auto) expect(rows[0]?.message).toBe('Balance spent on OpenCode CLI');
+      if (auto) expect(rows[0]?.message).toBe('Balance spent on deepseek (OpenCode CLI)');
       else expect(rows[0]?.message).toContain('change the PLAN tool');
     },
   );

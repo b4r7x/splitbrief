@@ -17,6 +17,7 @@ import type { CrewSeat } from '../../core/crew/seats.js';
 import type { PickerDetectionSnapshot } from '../../features/runners/model-catalog/status.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
+import { cliSignInStep } from '../../core/schemas/readiness.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { BOOT_MANIFEST_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
@@ -54,6 +55,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { wrapPathAware } from '../../utils/wrap.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { isAbortError } from '../../utils/abort.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -93,8 +95,8 @@ type SetupItem =
 
 /**
  * The panel yields in one order until it fits: the cross-lab verdict first (inside
- * `planSeatBlock`), then the section headers, then the blank rows between blocks, then the
- * ready-made crews.
+ * `planSeatBlock`), then the section headers, then the blank rows between blocks and under the
+ * sign-in step, then the ready-made crews.
  */
 const LADDER = [
   { headers: true, gaps: true, presets: true },
@@ -114,6 +116,7 @@ type SetupListInput = Readonly<{
   crewRows: readonly CrewRow[];
   verdict: CrewLabVerdict | undefined;
   presets: readonly CrewPreset[];
+  signIn: boolean;
   innerWidth: number;
   budget: number;
 }>;
@@ -124,7 +127,8 @@ function planStage(
 ): Readonly<{ plan: SetupListPlan; rows: number }> {
   const presetRows = stage.presets ? input.presets.length : 0;
   const blocks = presetRows > 0 ? 2 : 1;
-  const around = presetRows + (stage.headers ? blocks : 0) + (stage.gaps ? blocks : 0) + 1;
+  const gaps = blocks + (input.signIn ? 1 : 0);
+  const around = presetRows + (stage.headers ? blocks : 0) + (stage.gaps ? gaps : 0) + 1;
   const layout = planSeatBlock({
     rows: input.crewRows,
     verdict: input.verdict,
@@ -168,7 +172,7 @@ function crewKeysHint(item: SetupItem | undefined): string {
   if (item === undefined) return '⏎ change seat';
   switch (item.kind) {
     case 'preset':
-      return '⏎ use this crew';
+      return item.preset.notReady.length > 0 ? 'this crew needs ready tools' : '⏎ use this crew';
     case 'crew':
       return '⏎ change seat';
     case 'continue':
@@ -276,7 +280,7 @@ interface CrewStepProps {
 function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }: CrewStepProps) {
   const t = useTheme();
   const config = configStore.useConfig();
-  const { rows: crewRows, verdict, presets } = useCrew();
+  const { rows: crewRows, verdict, presets, signedOut } = useCrew();
   const { cols, rows: terminalRows } = terminalSizeStore.use((state) => state);
   const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
   const feedback = feedbackStore.use((state) => state);
@@ -317,16 +321,24 @@ function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }:
     density: CREW_PANEL_DENSITY,
   });
   const notice = layoutFeedbackNotice(feedback, innerWidth);
+  // One sentence names the signed-out tools and their step, so the ready-made crews keep their rows.
+  const signIn =
+    signedOut.length === 0
+      ? undefined
+      : wrapPathAware(cliSignInStep(signedOut.join(', ')), innerWidth);
+  const signInRows = signIn === undefined ? 0 : signIn.split('\n').length;
   const budget =
     innerRows -
     PANEL_CHROME_ROWS -
     (noConfig ? NOTE_BLOCK_ROWS : 0) -
     (note === undefined ? 0 : NOTE_BLOCK_ROWS) -
+    signInRows -
     (notice?.rows ?? 0);
   const { layout, showPresets, showHeaders, showGaps } = planSetupList({
     crewRows,
     verdict,
     presets,
+    signIn: signIn !== undefined,
     innerWidth,
     budget,
   });
@@ -358,6 +370,7 @@ function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }:
         onContinue(config);
         return;
       }
+      if (item.kind === 'preset' && item.preset.notReady.length > 0) return;
       crewActivate({ target: item, config });
     },
   });
@@ -380,6 +393,11 @@ function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }:
           <Text color={t.textDim} wrap="truncate-end">
             {note}
           </Text>
+        </Box>
+      )}
+      {signIn !== undefined && (
+        <Box marginBottom={showGaps ? 1 : 0}>
+          <Text color={t.warning}>{signIn}</Text>
         </Box>
       )}
       <ListViewport

@@ -162,7 +162,7 @@ export function SettingsOverlay() {
               : selectedItem.kind === 'fallback'
                 ? `${CREW_SEAT_LABELS[selectedItem.row.id]} fallback`
                 : (selectedItem.def.readLabel?.(config) ?? selectedItem.def.label),
-          lines: settingsHelpLines(selectedItem),
+          lines: settingsHelpLines(selectedItem, config),
         };
   const help = showDescription && detail !== undefined ? detail : null;
   const helpRows = help === null ? [] : helpTextRows(help.lines, rect.innerWidth);

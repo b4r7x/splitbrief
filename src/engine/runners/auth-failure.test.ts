@@ -4,6 +4,7 @@ import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import {
   isAuthFailureDiagnostic,
+  runnerAccountDisplayName,
   runnerAuthDisplayName,
   runnerLoginInstruction,
 } from './auth-failure.js';
@@ -116,6 +117,19 @@ describe('runnerAuthDisplayName', () => {
     expect(runnerLoginInstruction(implementer)).toBe(
       'Provide a valid opencode API key, then retry.',
     );
+  });
+});
+
+describe('runnerAccountDisplayName', () => {
+  it.each([
+    [
+      { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      'deepseek (OpenCode CLI)',
+    ],
+    [{ kind: 'cli', tool: 'opencode' }, 'OpenCode CLI'],
+    [{ kind: 'cli', tool: 'claude-code', model: 'sonnet' }, 'Claude Code CLI'],
+  ] as const)('names the account holder of %o', (implementer, name) => {
+    expect(runnerAccountDisplayName(makeConfig({ implementer }).implementer)).toBe(name);
   });
 });
 

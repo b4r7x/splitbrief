@@ -428,6 +428,7 @@ describe('formatToolsByline', () => {
       source: 'from copilot help config',
       unverifiedForPlan: true,
       diagnostic: undefined,
+      signedOut: false,
       lane: 'ready',
       capabilities: ['network', 'shell'],
       billing: 'subscription-included',
@@ -453,6 +454,36 @@ describe('formatToolsByline', () => {
     expect(wrapOnWords(line, budget, 2).cut).toBe(false);
   });
 
+  it('keeps a signed-out tool its whole sign-in step at 80 columns and offers no retry', () => {
+    const budget = overlayWidth({ cols: 80, density: 'wide' });
+    const cause =
+      'Please sign in to view available models. Launch the CLI without arguments to sign in.';
+    const diagnostic: ModelCatalogDiagnostic = {
+      kind: 'probe-failed',
+      failure: 'command-failed',
+      cause,
+    };
+    const line = bylineDiagnostic({
+      diagnostic,
+      modelCount: 1,
+      toolName: 'Google Antigravity CLI',
+      signedOut: true,
+      budget,
+    });
+
+    expect(line).toBe(`Google Antigravity CLI could not list models: ${cause}`);
+    expect(wrapOnWords(line ?? '', budget, 2).cut).toBe(false);
+    expect(
+      bylineDiagnostic({
+        diagnostic,
+        modelCount: 1,
+        toolName: 'Google Antigravity CLI',
+        signedOut: false,
+        budget,
+      }),
+    ).toContain('ctrl+r to retry');
+  });
+
   it('uses the singular noun for a single row', () => {
     const single = byline({ modelCount: 1 });
     expect(single).toContain('1 model');
@@ -471,6 +502,7 @@ describe('formatToolsByline', () => {
         diagnostic: { kind: 'probe-failed', failure: 'malformed' },
         modelCount: 1,
         toolName: 'Kilo Code CLI',
+        signedOut: false,
         budget: 108,
       }),
     ).toBe(
@@ -481,6 +513,7 @@ describe('formatToolsByline', () => {
         diagnostic: { kind: 'unsupported' },
         modelCount: 9,
         toolName: 'Claude Code CLI',
+        signedOut: false,
         budget: 108,
       }),
     ).toBeUndefined();
@@ -489,6 +522,7 @@ describe('formatToolsByline', () => {
         diagnostic: undefined,
         modelCount: 0,
         toolName: 'X',
+        signedOut: false,
         budget: 108,
       }),
     ).toBeUndefined();
@@ -501,13 +535,25 @@ describe('formatToolsByline', () => {
     'names the bundled list rather than denying it when rows are listed for %j',
     (diagnostic) => {
       const listed =
-        bylineDiagnostic({ diagnostic, modelCount: 3, toolName: 'OpenCode', budget: 108 }) ?? '';
+        bylineDiagnostic({
+          diagnostic,
+          modelCount: 3,
+          toolName: 'OpenCode',
+          signedOut: false,
+          budget: 108,
+        }) ?? '';
 
       expect(listed).toContain('Bundled model list');
       expect(listed).toContain('ctrl+r');
       expect(listed).not.toContain('has not run');
       expect(
-        bylineDiagnostic({ diagnostic, modelCount: 0, toolName: 'OpenCode', budget: 108 }),
+        bylineDiagnostic({
+          diagnostic,
+          modelCount: 0,
+          toolName: 'OpenCode',
+          signedOut: false,
+          budget: 108,
+        }),
       ).toBe(formatCatalogDiagnostic(diagnostic, 'OpenCode'));
     },
   );
@@ -632,6 +678,7 @@ describe('formatToolsByline', () => {
       source: "from Claude's documented aliases",
       unverifiedForPlan: false,
       diagnostic: undefined,
+      signedOut: false,
       lane: 'pending',
       capabilities: ['network', 'shell'],
       billing: 'subscription-included',
@@ -656,6 +703,7 @@ describe('formatToolsByline', () => {
         source: listing.source,
         unverifiedForPlan: listing.unverifiedForPlan,
         diagnostic: undefined,
+        signedOut: false,
         lane: 'ready',
         capabilities: formatPermissionLabels(cliPermissions(descriptor, 'implementer')),
         billing: 'unknown',

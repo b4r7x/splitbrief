@@ -100,6 +100,25 @@ describe('a catalog listing that exits non-zero', () => {
   );
 
   it.runIf(process.platform !== 'win32')(
+    'names the labelled error line over a progress line printed before it',
+    async () => {
+      // Captured from `agy models` 1.4.0 under an empty HOME (signed out), exit 1.
+      const outcome = await catalogOutcomeFor('catalog-failure-progress-first', {
+        stderr:
+          'Fetching available models...\nError: Please sign in to view available models. Launch the CLI without arguments to sign in.\n',
+        exitCode: 1,
+      });
+
+      expect(outcome).toEqual({
+        kind: 'command-failed',
+        cause:
+          'Please sign in to view available models. Launch the CLI without arguments to sign in.',
+      });
+    },
+    60_000,
+  );
+
+  it.runIf(process.platform !== 'win32')(
     'names the exit status when the tool wrote nothing to stderr',
     async () => {
       const outcome = await catalogOutcomeFor('catalog-failure-silent', {

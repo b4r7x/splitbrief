@@ -349,7 +349,7 @@ describe('handleFailedImplementation — the automatic seat switch intent', () =
     expect(auto?.candidate).toEqual({ tool: 'claude-code' });
     expect(auto?.configRevision).toMatch(/^[0-9a-f]{64}$/);
     expect(events.filter((event) => event.type === 'error').map((event) => event.message)).toEqual([
-      'Balance spent on OpenCode CLI',
+      'Balance spent on deepseek (OpenCode CLI)',
     ]);
     expect(next.pendingRecovery?.message).toContain('Add credit or change the BUILD tool');
   });

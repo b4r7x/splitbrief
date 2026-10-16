@@ -583,6 +583,23 @@ function seedAntigravityNativeListing(level: 'low' | 'medium' | 'high' = 'medium
   });
 }
 
+// `agy models` 1.4.0 signed out: a progress line, then the error that says how to sign in.
+function seedAntigravitySignedOut(): void {
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('unauthenticated', 'antigravity', { installedVersion: '1.4.0' })],
+    cliModels: [
+      catalogAttempt({
+        tool: 'antigravity',
+        outcome: {
+          kind: 'command-failed',
+          cause:
+            'Please sign in to view available models. Launch the CLI without arguments to sign in.',
+        },
+      }),
+    ],
+  });
+}
+
 /** A model Kilo serves through more than one provider, so its row merges them. */
 const KILO_ROUTED_MODEL = 'github-copilot/gpt-5.5';
 
@@ -1134,6 +1151,12 @@ const createPlannerPickerAntigravityListedFixture: FixtureFactory = () =>
       seedAntigravityNativeListing('high');
       pickerViewStore.expand('gemini-3.8-flash-high', 'gemini-3.8-flash-high', null);
     },
+    focus: 'tool:antigravity',
+  });
+const createPlannerPickerAntigravitySignedOutFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedAntigravitySignedOut,
     focus: 'tool:antigravity',
   });
 const createPlannerPickerAntigravityLowFixture: FixtureFactory = () =>
@@ -2077,6 +2100,10 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-codex'), createPlannerPickerCodexFixture],
   [scenarioId('overlay-planner-picker-antigravity'), createPlannerPickerAntigravityFixture],
   [scenarioId('overlay-planner-picker-antigravity-low'), createPlannerPickerAntigravityLowFixture],
+  [
+    scenarioId('overlay-planner-picker-antigravity-signed-out'),
+    createPlannerPickerAntigravitySignedOutFixture,
+  ],
   [
     scenarioId('overlay-planner-picker-antigravity-listed'),
     createPlannerPickerAntigravityListedFixture,

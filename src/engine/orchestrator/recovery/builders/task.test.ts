@@ -78,9 +78,10 @@ describe('runnerHaltRow', () => {
 
       expect(issue.switchSeat?.auto).toBeDefined();
       expect(runnerHaltRow(issue, 'provider.quota: Insufficient Balance')).toBe(
-        'Balance spent on OpenCode CLI',
+        'Balance spent on deepseek (OpenCode CLI)',
       );
-      expect(issue.message).toContain('Add credit');
+      expect(issue.message).toContain('Balance spent on deepseek (OpenCode CLI). Add credit');
+      expect(issue.details[0]).toMatch(/^OpenCode CLI reported: /);
       expect(issue.details.join('\n')).toContain('request_id: smoke-request');
       expect(runnerHaltRow({ ...issue, switchSeat: undefined }, 'raw words')).toBe(
         `${issue.message} (runner reported: raw words)`,
@@ -586,7 +587,7 @@ describe('a seat whose account the provider refuses', () => {
     expect(issue.resetAt).toBeUndefined();
     expect(issue.facts?.cause).toBe('balance');
     expect(issue.message).toBe(
-      'Balance spent on OpenCode CLI. Add credit or change the BUILD tool, then continue.',
+      'Balance spent on deepseek (OpenCode CLI). Add credit or change the BUILD tool, then continue.',
     );
     expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.availableActions).toEqual([
@@ -607,17 +608,17 @@ describe('a seat whose account the provider refuses', () => {
     [
       'balance',
       'build',
-      'Balance spent on OpenCode CLI. Add credit or change the BUILD tool, then continue.',
+      'Balance spent on deepseek (OpenCode CLI). Add credit or change the BUILD tool, then continue.',
     ],
     [
       'billing',
       'plan',
-      "Billing refused by OpenCode CLI. Fix the account's billing or change the PLAN tool, then continue.",
+      "Billing refused by deepseek (OpenCode CLI). Fix the account's billing or change the PLAN tool, then continue.",
     ],
     [
       'quota',
       'review',
-      'Quota spent on OpenCode CLI. Wait for the quota to renew or change the REVIEW tool, then continue.',
+      'Quota spent on deepseek (OpenCode CLI). Wait for the quota to renew or change the REVIEW tool, then continue.',
     ],
   ] as const)(
     'gives %s advice for the %s seat with the panel headline as its lead',

@@ -433,13 +433,16 @@ function catalogCommandFailureCause(
   output: CliProbeOutput,
   spawnFailure: Error | undefined,
 ): string {
-  const firstLine = output.stderr.split(/[\r\n]/).find((line) => line.trim() !== '') ?? '';
-  const cause = sanitizeTerminalDiagnosticText(
-    stripTerminalControls(firstLine)
-      .trim()
-      .replace(/^error:\s*/i, ''),
-    { maxChars: 200 },
-  ).trim();
+  const lines = output.stderr
+    .split(/[\r\n]/)
+    .map((line) => stripTerminalControls(line).trim())
+    .filter((line) => line !== '');
+  // A tool may print progress before its error (`agy models` writes `Fetching available
+  // models...` first), so the line the tool labels as its error outranks the first line.
+  const line = lines.find((candidate) => /^error:/i.test(candidate)) ?? lines[0] ?? '';
+  const cause = sanitizeTerminalDiagnosticText(line.replace(/^error:\s*/i, ''), {
+    maxChars: 200,
+  }).trim();
   if (cause !== '') return cause;
   if (spawnFailure !== undefined) {
     return sanitizeTerminalDiagnosticText(spawnFailure.message, { maxChars: 200 }).trim();

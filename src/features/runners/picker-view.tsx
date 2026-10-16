@@ -305,6 +305,7 @@ export function PickerView({
         if (remedy !== undefined) return remedy;
       }
     }
+    const signedOut = tool.status.state === 'unauthenticated';
     const stale = staleModelCopy(catalog.modelCounts.stale);
     // A status remediation leads: a runner the picker cannot run says how to fix it before it
     // recites what it is. The retained-stale line is already a refresh instruction, so a
@@ -325,6 +326,7 @@ export function PickerView({
         source: listing.source,
         unverifiedForPlan: listing.unverifiedForPlan,
         diagnostic: catalog.catalogDiagnostic,
+        signedOut,
         lane: catalog.catalogLane,
         capabilities: formatPermissionLabels(tool.permissions),
         billing: tool.billing,
@@ -361,6 +363,7 @@ export function PickerView({
       diagnostic: catalog.catalogDiagnostic,
       modelCount: catalog.modelRowCount,
       toolName: tool.displayName,
+      signedOut,
       budget: ctx.bylineBudget,
     });
     if (status !== undefined) return status;

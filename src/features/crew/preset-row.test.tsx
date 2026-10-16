@@ -20,12 +20,18 @@ const PRESET: CrewPreset = {
     implementer: { kind: 'cli', tool: 'opencode' },
     reviewer: { kind: 'cli', tool: 'codex' },
   },
+  notReady: [],
 };
 
-async function frameFor(width: number, cols: number, isCursor = true): Promise<string> {
+async function frameFor(
+  width: number,
+  cols: number,
+  isCursor = true,
+  preset: CrewPreset = PRESET,
+): Promise<string> {
   const ui = renderFeature(
     <PresetRowView
-      preset={PRESET}
+      preset={preset}
       isCursor={isCursor}
       width={width}
       labelWidth={getTerminalCellWidth(PRESET.label)}
@@ -97,6 +103,27 @@ describe('crew preset row', () => {
     expect(plain.startsWith(listRowLead('default'))).toBe(true);
     expect(cursored).not.toContain('·');
     expect(plain).not.toContain('·');
+  });
+
+  it('names the tools an unavailable crew needs in place of its description', async () => {
+    const frame = await frameFor(102, 120, true, { ...PRESET, notReady: ['claude-code', 'codex'] });
+    const line = stripAnsiStyles(frame).split('\n')[0] ?? '';
+
+    expect(line).toContain(
+      `${PRESET.label}  Unavailable · needs Claude Code CLI, OpenAI Codex CLI`,
+    );
+    expect(line).not.toContain(DESCRIPTION);
+  });
+
+  it('keeps the gutter and whole words when the label column fills a narrow row', async () => {
+    const width = getTerminalCellWidth(PRESET.label) + 3;
+    for (const notReady of [[], ['opencode']] as const) {
+      const line =
+        stripAnsiStyles(await frameFor(width, 40, true, { ...PRESET, notReady })).split('\n')[0] ??
+        '';
+
+      expect(line.trimEnd()).toBe(`${listRowLead('active')}${PRESET.label}`);
+    }
   });
 
   it('paints the label accent only under the highlight', async () => {
