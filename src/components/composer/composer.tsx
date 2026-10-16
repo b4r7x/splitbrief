@@ -19,7 +19,6 @@ import { isTextEntryInput } from '../../lib/terminal/text-entry.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { isRuntimeCommandLine } from '../../core/runtime/commands/lookup.js';
 import { useHistory } from './use-history.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { attachmentShortName, resolveAttachment } from '../../core/attachments/resolve.js';
@@ -27,7 +26,11 @@ import { formatAttachmentFailure } from '../../core/attachments/failure.js';
 import { createDraftDocument, draftLength } from '../../core/composer/document.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
-import { type DraftSubmission, prepareDraftSubmission } from '../../core/composer/submission.js';
+import {
+  type DraftSubmission,
+  isCommandDraft,
+  prepareDraftSubmission,
+} from '../../core/composer/submission.js';
 import { draftDocumentText, getInputHistoryDocuments } from '../../stores/ui/input-history.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { formatSeatIdentity } from '../../core/crew/identity.js';
@@ -508,29 +511,28 @@ function ComposerInput({
       );
       return;
     }
+    if (showCommandSuggestions || showReferenceSuggestions) return;
+    const trimmed = trimDraftDocument(document);
+    // A command runs in every mode: typed under a question or a recovery menu, it is never the answer.
+    if (isCommandDraft(trimmed)) {
+      inputHistoryStore.pushDocumentSubmission(trimmed, { currentScreen });
+      clearDraft();
+      onRuntimeCommand(draftDocumentText(trimmed));
+      return;
+    }
+
     if (mode !== 'normal') {
       if (send(document, false) && !submitKeepsDraft) clearDraft();
       return;
     }
 
-    if (showCommandSuggestions || showReferenceSuggestions) return;
-    const trimmed = trimDraftDocument(document);
-    const trimmedText = draftDocumentText(trimmed);
     if (trimmed.parts.length === 0) {
       if (deliverNow === undefined) onEmptySubmit?.();
       return;
     }
 
-    const commandLine = trimmed.parts[0]?.kind === 'text' && isRuntimeCommandLine(trimmedText);
-    if (commandsOnly === true && !commandLine) {
+    if (commandsOnly === true) {
       feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
-      return;
-    }
-
-    if (commandLine) {
-      inputHistoryStore.pushDocumentSubmission(trimmed, { currentScreen });
-      clearDraft();
-      onRuntimeCommand(trimmedText);
       return;
     }
 

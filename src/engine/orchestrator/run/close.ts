@@ -34,6 +34,14 @@ export function filesStillOnDiskSuffix(workspace: WorkflowState['workspace']): s
     : '';
 }
 
+/** The headless close line's tail: where the closed run's changes are. The run screen has its Patch row. */
+export function closedChangesSuffix(state: WorkflowState): string {
+  const patch = state.closed?.patch;
+  return patch === undefined
+    ? filesStillOnDiskSuffix(state.workspace)
+    : ` Run changes not applied are saved in ${patch}; apply them with git apply.`;
+}
+
 export async function removeClosedRunWorkspace(
   scope: SessionRef & { bus?: EventBus | undefined },
   workspace: NonNullable<WorkflowState['workspace']>,
@@ -89,10 +97,7 @@ export async function closeRunIfOpen(
         workspaceToRemove = workspace;
         if (existsSync(workspace.path)) {
           const patchPath = await writeRunPatch(scope, workspace);
-          if (patchPath !== null) {
-            patch = relative(scope.projectDir, patchPath);
-            warning = `Run changes not applied are saved in ${patch}; apply them with git apply.`;
-          }
+          if (patchPath !== null) patch = relative(scope.projectDir, patchPath);
         } else {
           warning = `The run workspace at ${workspace.path} is gone; no run patch was written.`;
         }

@@ -3,6 +3,7 @@ import { lstat, mkdir, open, readFile, rename, rm, symlink } from 'node:fs/promi
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { sessionDir } from '../../../core/paths.js';
+import { pathExists } from '../../../core/sessions/ownership-marker.js';
 import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../../lib/fs.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
@@ -36,6 +37,8 @@ const ApplyBackupSchema = z.object({
   id: z.string().min(1),
   replaced: z.array(ApplyBackupEntrySchema),
   created: z.array(z.string().min(1)),
+  /** The folders Apply made for its created files; a backup written before this field has none. */
+  createdDirs: z.array(z.string().min(1)).default([]),
   expected: z.array(ApplyExpectedEntrySchema),
 });
 
@@ -130,6 +133,7 @@ export async function writeApplyBackup(input: {
   );
   const replaced = new Map(previous?.replaced.map((entry) => [entry.path, entry]));
   const created = new Set(previous?.created);
+  const createdDirs = new Set(previous?.createdDirs);
   const expected = new Map(previous?.expected.map((entry) => [entry.path, entry]));
   const blobs = new Map<string, Buffer>();
   const candidates = new Map<string, { bytes: Buffer; mode: number } | { target: string }>();
@@ -149,6 +153,10 @@ export async function writeApplyBackup(input: {
         replaced.set(path, { path, target: checkout.target });
       } else {
         created.add(path);
+        for (let dir = dirname(path); dir !== '.'; dir = dirname(dir)) {
+          if (pathExists(join(projectDir, dir))) break;
+          createdDirs.add(dir);
+        }
       }
     }
 
@@ -182,6 +190,7 @@ export async function writeApplyBackup(input: {
       left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
     ),
     created: [...created].sort(),
+    createdDirs: [...createdDirs].sort(),
     expected: [...expected.values()].sort((left, right) =>
       left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
     ),

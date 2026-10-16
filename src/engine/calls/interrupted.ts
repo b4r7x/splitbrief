@@ -25,6 +25,7 @@ function isRunnerCallEvent(event: EngineEvent): event is RunnerCallEngineEvent {
  * with the process, so only the calls started since the last run start or resume are its own; a
  * call stays open until its completion or its error. A close is dated at the last thing its call
  * reported, so the resume that records it and a screen that reads the log first build one event.
+ * That date is only a lower bound — nothing saw the call end — so the close says its end is unknown.
  */
 export function interruptedCallEvents(
   events: readonly EngineEvent[],
@@ -61,6 +62,7 @@ export function interruptedCallEvents(
         usage: null,
         nativeSessionId,
         partial: false,
+        endUnknown: true,
       }),
       { phase, rootDir, sequence },
     );

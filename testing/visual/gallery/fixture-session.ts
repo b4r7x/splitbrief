@@ -252,7 +252,6 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     listSkills: listPreviewSkills,
     toggleSkill: togglePreviewSkill,
     refreshSkills: previewKeys.refreshSkills,
-    getCurrentPhase: () => lifecycleStore.get().phase,
     resumeRun: () => false,
     steerRun: () => false,
     endRun: () => false,

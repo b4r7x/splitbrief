@@ -9,12 +9,19 @@ import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { formatRejectRunMessage } from '../../../src/core/runtime/commands/messages.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
+import { feedbackStore } from '../../../src/stores/ui/feedback.js';
+import { isLivePhase } from '../../../src/core/phases.js';
+import { createRuntimeCommands } from '../../../src/core/runtime/commands/registry.js';
 import { bylineParts } from '../../../src/features/workflow/closed/byline.js';
+import { hydrateRun } from '../../../src/features/workflow/run-history.js';
+import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { failedReviewVerdict } from '#testing/helpers/typed-planner.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import {
   cli,
   createStopContinueFixture,
@@ -281,6 +288,59 @@ describe('run rejection after a source CLI run', () => {
     writeFileSync(fixture.greetPath, GREET_SOURCE);
     expect(await commands.rejectRun()).toMatchObject({ status: 'rejected', conflictedPaths: [] });
     expect(existsSync(fixture.greetPath)).toBe(false);
+    expect(loadState(ref)?.closed?.as).toBe('discarded');
+  });
+
+  it('rejects a run halted in its review through /run reject confirm once it is at rest', async () => {
+    fixture = createStopContinueFixture(implementer, { isolation: 'none' });
+    scriptReviews(
+      fixture,
+      "if (prompt.includes('Final Implementation Review')) process.exit(1);\nprocess.stdout.write(PLAN);",
+    );
+    const started = await cli(fixture, ['start', 'smoke']);
+    expect(started.exitCode, started.stderr).toBe(1);
+    const { ref, record, commands } = openRun(fixture);
+    expect(record.status.kind).toBe('open');
+    await hydrateRun(record);
+    const { phase } = lifecycleStore.get();
+    expect(phase).toBe(loadState(ref)?.phase);
+    expect(isLivePhase(phase)).toBe(true);
+    const reject = () =>
+      runCommandInTest({
+        commands: createRuntimeCommands(commands),
+        raw: '/run reject confirm',
+        screen: 'workflow',
+        phase,
+        openRunAtRest: true,
+        onError: (message) => {
+          throw new Error(message);
+        },
+      });
+
+    routerStore.updateRun({
+      run: record,
+      execution: {
+        kind: 'local',
+        prepared: makePreparedExecution({
+          projectDir: ref.projectDir,
+          sessionId: ref.sessionId,
+          feature: 'smoke',
+          config: makeConfig({ workflow: { isolation: 'none' } }),
+        }),
+      },
+    });
+    await reject();
+    expect(feedbackStore.get()).toEqual({
+      message: 'Run rejection is unavailable while the run is active.',
+      isError: true,
+    });
+    expect(readFileSync(fixture.greetPath, 'utf8')).toBe(GREET_SOURCE);
+
+    routerStore.updateRun({ run: record, execution: { kind: 'at-rest' } });
+    await reject();
+    expect(feedbackStore.get().isError).toBe(false);
+    expect(existsSync(fixture.greetPath)).toBe(false);
+    expect(existsSync(fixture.markerPath)).toBe(false);
     expect(loadState(ref)?.closed?.as).toBe('discarded');
   });
 

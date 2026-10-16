@@ -62,7 +62,6 @@ function createTestCommands(): RuntimeCommandDef[] {
     listSkills: () => [],
     toggleSkill: () => ({ status: 'unknown' }),
     refreshSkills: async () => {},
-    getCurrentPhase: () => lifecycleStore.get().phase,
     getQueueCopy: (count) =>
       queueCopy({
         seat: phaseStage(lifecycleStore.get().phase),

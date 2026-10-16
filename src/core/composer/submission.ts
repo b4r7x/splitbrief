@@ -3,16 +3,25 @@ import { formatAttachedText, resolveAttachment, resolveInputFile } from '../atta
 import type { AttachedInput, Attachment } from '../schemas/attachment.js';
 import type { DraftDocument, DraftPart } from '../schemas/draft-document.js';
 import type { UserMessageInput } from '../types/user-input.js';
+import { isRuntimeCommandLine } from '../runtime/commands/lookup.js';
 import { normalizeDraftDocument } from './document.js';
 
 export type DraftSubmission =
   | { ok: true; document: DraftDocument; message: UserMessageInput; plannerContext: string }
+  | { ok: false; reason: 'command' }
   | { ok: false; reason: AttachmentFailureReason | 'no-vision'; imageId?: string; path?: string };
+
+/** A draft that opens with a slash command is a command: it runs, and no seat ever reads it. */
+export function isCommandDraft(document: DraftDocument): boolean {
+  const first = normalizeDraftDocument(document).parts[0];
+  return first?.kind === 'text' && isRuntimeCommandLine(first.text.trimStart());
+}
 
 export function prepareDraftSubmission(
   document: DraftDocument,
   opts: { projectDir: string; supportsImages: boolean },
 ): DraftSubmission {
+  if (isCommandDraft(document)) return { ok: false, reason: 'command' };
   const parts: DraftPart[] = [];
   const images: Attachment[] = [];
   const attachedInputs: AttachedInput[] = [];

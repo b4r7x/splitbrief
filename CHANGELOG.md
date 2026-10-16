@@ -88,6 +88,12 @@
 
 ### Fixed
 
+- `/run reject confirm` works on a stopped or halted run in your checkout once nothing runs it, as the documentation says. Before, it always answered "unavailable while work is active".
+- A slash command typed while a recovery menu or a question is open runs as a command. Before, it was taken as your correction, started the recommended action and went to the next seat as a message.
+- After a crash during Apply, `splitbrief continue <id> --action retry` and `--action restore` work at once. Before, they failed with "No pending recovery issue is available." until a plain `splitbrief continue` ran first.
+- After a crash during Apply, Restore backup, Re-run Apply and undo leave no hidden temporary files in your checkout, and Restore and undo remove the empty folders that Apply made.
+- End run on a worktree or staged-copy run names its `run.patch` once: in the closed run's `Patch` row, or on the close line of `splitbrief continue --action end-run` and `--action discard`. Before, a warning row repeated it.
+- A review cut by a crash reads its time as `at least …`, because the exact end of the call is not known.
 - Setup and `splitbrief init` leave your checkout unchanged until the first save. That save adds `.splitbrief/` to `.gitignore` when git does not ignore it yet, and the save line says so. Before, a seat save left `.splitbrief/` untracked, opening `init` and quitting left a `.splitbrief/` folder, and no screen showed the `.gitignore` change. `splitbrief init --yes` reports its save once.
 - After a failed final review, the transcript names the action you chose, **Fix again**, as the recovery menu does. Before, it said **Send a correction**. The `splitbrief continue` line now names **Fix again** without the menu's hint. The transcript also names **Run the checks again** and **Skip review with a note** in the words of the menu.
 - Every Backspace deletes one character in every text field, also when the terminal sends several Backspaces at once.

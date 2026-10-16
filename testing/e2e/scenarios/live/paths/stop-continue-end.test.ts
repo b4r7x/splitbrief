@@ -129,10 +129,12 @@ describe('live paths: stop, continue, end', { timeout: 3 * LIVE_PATHS_TIMEOUT_MS
         'end-run',
       ]);
       expect(ended.exitCode, ended.stderr).toBe(0);
-      expect(ended.stdout).toBe(`Run ${stopped.sessionId} closed.\n`);
       const closed = readRunState(ref).closed;
       expect(closed?.as).toBe('ended');
       if (closed?.patch === undefined) throw new Error('the ended run saved no patch');
+      expect(ended.stdout).toBe(
+        `Run ${stopped.sessionId} closed. Run changes not applied are saved in ${closed.patch}; apply them with git apply.\n`,
+      );
       expect(readFileSync(join(projectDir, closed.patch), 'utf-8')).toContain('slugify');
       expect(existsSync(workspace.path)).toBe(false);
       expect(readFileSync(join(projectDir, FEATURE_FILE), 'utf-8')).toBe(checkoutSource);

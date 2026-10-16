@@ -1,4 +1,3 @@
-import type { Phase } from '../../schemas/enums.js';
 import type { OverlayType } from '../../navigation/types.js';
 import type {
   DiscoveryRefreshSummary,
@@ -20,7 +19,6 @@ interface CommandContextFactoryOptions {
   listSkills: RuntimeCommandContext['listSkills'];
   toggleSkill: RuntimeCommandContext['toggleSkill'];
   refreshSkills: RuntimeCommandContext['refreshSkills'];
-  getCurrentPhase: () => Phase;
   resumeRun: () => boolean;
   steerRun: (text: string) => boolean;
   endRun: () => boolean;
@@ -75,7 +73,6 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     listSkills: opts.listSkills,
     toggleSkill: opts.toggleSkill,
     refreshSkills: opts.refreshSkills,
-    getCurrentPhase: opts.getCurrentPhase,
     resumeRun: opts.resumeRun,
     steerRun: opts.steerRun,
     endRun: opts.endRun,

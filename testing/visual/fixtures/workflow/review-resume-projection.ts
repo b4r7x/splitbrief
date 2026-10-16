@@ -47,6 +47,7 @@ export const reviewResumeProjection: WorkflowFixtureProjection = {
       kind: 'error',
       label: 'aborted runner_interrupted',
       diagnosticPartial: 'SPLITBRIEF exited',
+      endUnknown: true,
       redacted: false,
     },
     { type: 'workflow_resumed', ts: epoch + 20_000, phase: 'final-review' },

@@ -88,6 +88,8 @@ describe('headless End run', { timeout: 240_000 }, () => {
       (event) => event.type === 'runner_call_error' && event.error.code === 'runner_interrupted',
     );
     expect(cut).toHaveLength(1);
+    // The killed BUILD call's record says nothing saw it end: its time is only a lower bound.
+    expect(cut[0]).toMatchObject({ role: 'implementer', endUnknown: true });
     const cutIndex = events.indexOf(cut[0] as (typeof events)[number]);
     expect(cutIndex).toBeLessThan(events.findIndex((event) => event.type === 'workflow_cancelled'));
 
@@ -120,10 +122,13 @@ describe('headless End run', { timeout: 240_000 }, () => {
     const ended = await cli(target, ['continue', parked.sessionId, '--action', 'end-run']);
 
     expect(ended.exitCode, ended.stderr).toBe(0);
-    expect(ended.stdout).toBe(`Run ${parked.sessionId} closed.\n`);
     const closed = readState(target, parked.sessionId).closed;
     expect(closed?.as).toBe('ended');
     if (closed?.patch === undefined) throw new Error('the ended run has no patch');
+    expect(ended.stdout).toBe(
+      `Run ${parked.sessionId} closed. Run changes not applied are saved in ${closed.patch}; apply them with git apply.\n`,
+    );
+    expect(ended.stderr).not.toContain('run.patch');
     const patch = join(target.projectDir, closed.patch);
     expect(patch).toBe(join(sessionDir(target.projectDir, parked.sessionId), 'run.patch'));
     expect(existsSync(patch)).toBe(true);
@@ -212,7 +217,8 @@ describe('headless End run', { timeout: 240_000 }, () => {
         expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(
           hasChanges,
         );
-        expect(ended.stderr.includes('apply them with git apply')).toBe(hasChanges);
+        expect(ended.stdout.includes('apply them with git apply')).toBe(hasChanges);
+        expect(ended.stderr).not.toContain('run.patch');
         await vi.waitFor(
           () => {
             const frame = stripAnsiStyles(ui.lastFrame());
@@ -284,14 +290,16 @@ describe('headless End run', { timeout: 240_000 }, () => {
     const ended = await cli(target, ['continue', parked.sessionId, '--action', 'end-run']);
 
     expect(ended.exitCode, ended.stderr).toBe(0);
-    expect(ended.stdout).toBe(`Run ${parked.sessionId} closed.\n`);
     const closed = readState(target, parked.sessionId).closed;
     expect(closed?.as).toBe('discarded');
     if (closed?.patch === undefined) throw new Error('the discarded run has no patch');
+    expect(ended.stdout).toBe(
+      `Run ${parked.sessionId} closed. Run changes not applied are saved in ${closed.patch}; apply them with git apply.\n`,
+    );
+    expect(ended.stderr).not.toContain('run.patch');
     const patch = join(target.projectDir, closed.patch);
     expect(patch).toBe(join(sessionDir(target.projectDir, parked.sessionId), 'run.patch'));
     expect(existsSync(patch)).toBe(true);
-    expect(ended.stderr).toContain('run.patch; apply them with git apply.');
     expect(existsSync(target.markerPath)).toBe(false);
     expect(existsSync(target.greetPath)).toBe(false);
     expect(checkoutEntries(target.projectDir)).toEqual(checkoutAtStart);
@@ -314,6 +322,6 @@ describe('headless End run', { timeout: 240_000 }, () => {
       streaming: { taskId: null, lines: [], active: false },
     }).rows.map(rowText);
     expect(rows.filter((row) => row.includes('Stopped by you'))).toHaveLength(1);
-    expect(rows.some((row) => row.includes('run.patch; apply them with git apply.'))).toBe(true);
+    expect(rows.some((row) => row.includes('run.patch'))).toBe(false);
   });
 });

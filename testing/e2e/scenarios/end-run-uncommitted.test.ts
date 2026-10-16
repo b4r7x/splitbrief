@@ -72,13 +72,15 @@ describe('e2e: headless End run on a run worktree with uncommitted changes', () 
     const ended = await cli(target, ['continue', sessionId, '--action', 'end-run']);
 
     expect(ended.exitCode, ended.stderr).toBe(0);
-    expect(ended.stdout).toBe(`Run ${sessionId} closed.\n`);
-    expect(ended.stderr).toContain('run.patch; apply them with git apply.');
+    expect(ended.stderr).not.toContain('run.patch');
     expect(ended.stderr).not.toContain('Could not remove the run workspace');
     expect(ended.stderr).not.toContain('forcing removal');
     const closed = readState(target, sessionId).closed;
     expect(closed?.as).toBe('discarded');
     if (closed?.patch === undefined) throw new Error('the ended run has no patch');
+    expect(ended.stdout).toBe(
+      `Run ${sessionId} closed. Run changes not applied are saved in ${closed.patch}; apply them with git apply.\n`,
+    );
     const patch = join(target.projectDir, closed.patch);
     expect(patch).toBe(join(sessionDir(target.projectDir, sessionId), 'run.patch'));
     const patchText = readFileSync(patch, 'utf8');

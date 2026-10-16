@@ -22,7 +22,7 @@ Handlers reach the engine and stores through the `RuntimeCommandContext` interfa
 
 The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 23 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
 
-A composer line is a slash command only when its first word is `/name` without another `/`; `/Users/me/notes.md` goes to the planner as text.
+A composer line is a slash command only when its first word is `/name` without another `/`; `/Users/me/notes.md` goes to the planner as text. A slash command runs in every composer mode, also while a question or a recovery menu waits for an answer; no seat ever reads it as a message.
 
 ---
 

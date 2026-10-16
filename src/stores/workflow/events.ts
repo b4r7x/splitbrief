@@ -359,6 +359,7 @@ function projectRunnerActivityForTuiEventLog(
     ...(diagnosticPartial !== undefined && { diagnosticPartial: diagnosticPartial.text }),
     ...(originalModel !== undefined && { originalModel: originalModel.text }),
     ...(fallbackModel !== undefined && { fallbackModel: fallbackModel.text }),
+    ...(event.endUnknown && { endUnknown: true }),
   };
 }
 

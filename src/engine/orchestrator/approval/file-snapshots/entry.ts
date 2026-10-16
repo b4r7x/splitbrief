@@ -3,6 +3,7 @@ import {
   lstat,
   open,
   readFile,
+  readdir,
   readlink,
   realpath,
   rename,
@@ -21,7 +22,7 @@ import {
   CONTROL_PLANE_SEGMENTS,
   pathConfinementError,
 } from '../../../../lib/path-confinement.js';
-import { isENOENT } from '../../../../lib/process/errors.js';
+import { isENOENT, isNodeError } from '../../../../lib/process/errors.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { collectTrackedFiles } from '../../../snapshots/files.js';
 import { warnError } from '../../../../lib/warn.js';
@@ -286,6 +287,35 @@ function confinedWriteTarget(
     `.${basename(fullPath)}.tmp.${randomBytes(8).toString('hex')}`,
   );
   return { fullPath, temporary };
+}
+
+const WRITE_TEMPORARY = /^\.(.+)\.tmp\.[0-9a-f]{16}$/;
+
+/**
+ * Removes the write temporaries a killed process left beside these paths. Its `finally` never ran,
+ * and the next write of the same file picks a new name, so nothing else ever removes them.
+ */
+export async function removeWriteTemporaries(
+  projectDir: string,
+  relativePaths: readonly string[],
+): Promise<void> {
+  const namesByDir = new Map<string, Set<string>>();
+  for (const relativePath of relativePaths) {
+    const fullPath = resolve(projectDir, relativePath);
+    const names = namesByDir.get(dirname(fullPath)) ?? new Set<string>();
+    namesByDir.set(dirname(fullPath), names.add(basename(fullPath)));
+  }
+  for (const [dir, names] of namesByDir) {
+    // A folder you removed, or replaced with a file, holds no temporaries.
+    const entries = await readdir(dir).catch((cause: unknown) => {
+      if (isENOENT(cause) || (isNodeError(cause) && cause.code === 'ENOTDIR')) return [];
+      throw cause;
+    });
+    for (const entry of entries) {
+      const name = WRITE_TEMPORARY.exec(entry)?.[1];
+      if (name !== undefined && names.has(name)) await rm(join(dir, entry), { force: true });
+    }
+  }
 }
 
 async function writeConfinedFileEntry(

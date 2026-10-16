@@ -28,6 +28,8 @@ export interface RunnerCallActivityProjection {
   /** Raw model ids the warning names, carried for display-layer catalog resolution. */
   originalModel?: string | undefined;
   fallbackModel?: string | undefined;
+  /** The call's terminal error: the process went away before it ended. */
+  endUnknown?: true;
 }
 
 interface ActivityText {
@@ -115,6 +117,7 @@ export function projectRunnerCallActivity(
         label: `${event.status} ${event.error.code}`,
         diagnosticPartial: event.error.message,
         rawAvailable: event.partial,
+        endUnknown: event.endUnknown,
       });
     // A success is told by its settled batch and the block after it; only a failure is news.
     case 'call_completed':
@@ -190,6 +193,7 @@ function buildActivity(opts: {
   diagnosticPartial?: string | undefined;
   originalModel?: string | undefined;
   fallbackModel?: string | undefined;
+  endUnknown?: true | undefined;
 }): RunnerCallActivityProjection | null {
   const label = cleanActivityText(opts.label, RUNNER_ACTIVITY_MAX_LENGTH);
   if (label === null) return null;
@@ -219,6 +223,7 @@ function buildActivity(opts: {
       diagnosticPartial !== null && { diagnosticPartial: diagnosticPartial.text }),
     ...(opts.originalModel !== undefined && { originalModel: opts.originalModel }),
     ...(opts.fallbackModel !== undefined && { fallbackModel: opts.fallbackModel }),
+    ...(opts.endUnknown && { endUnknown: true }),
     redacted:
       opts.redacted === true ||
       label.redacted ||

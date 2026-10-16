@@ -2,6 +2,7 @@ import {
   chmodSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -181,6 +182,33 @@ describe('undoApply', { timeout: 60_000 }, () => {
       expect(loadSaved(run).applied?.undone).toEqual({ at: expect.any(String), conflicts: [] });
       expect(loadSaved(run).closed?.as).toBe('applied');
       await expect(undoApply(ref, loadSaved(run))).rejects.toThrow('Apply already undone.');
+    });
+  });
+
+  it('leaves a folder Apply made that you replaced with a file, and names its file a conflict', async () => {
+    await withApplyRun(FILES, { sessionId: SESSION_ID }, async (run) => {
+      mkdirSync(join(run.ws, 'docs'));
+      writeFileSync(join(run.ws, 'docs', 'new.txt'), 'created\n');
+      const ref = { projectDir: run.dir, sessionId: run.sessionId };
+      saveState(
+        ref,
+        makeWorkflowState({ phase: 'complete', reviewStatus: 'passed', workspace: run.workspace }),
+      );
+      const { bus } = makeBusRecorder();
+      const applied = await runApply({ wctx: { ...ref, bus }, state: loadSaved(run) });
+      expect(applied.outcome).toBe('applied');
+      expect(read(run.dir, 'docs/new.txt')).toBe('created\n');
+      rmSync(join(run.dir, 'docs'), { recursive: true });
+      writeFileSync(join(run.dir, 'docs'), 'yours\n');
+
+      const undone = await undoApply(ref, loadSaved(run));
+
+      expect(undone.conflicts).toEqual(['docs/new.txt']);
+      expect(read(run.dir, 'docs')).toBe('yours\n');
+      expect(loadSaved(run).applied?.undone).toEqual({
+        at: expect.any(String),
+        conflicts: ['docs/new.txt'],
+      });
     });
   });
 

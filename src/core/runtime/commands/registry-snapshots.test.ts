@@ -93,34 +93,6 @@ describe('run snapshot runtime commands', () => {
     expect(refreshed).toBe(true);
   });
 
-  it('blocks run rejection while the workflow is live', async () => {
-    let called = false;
-    let error: string | undefined;
-    const commands = createRuntimeCommands(
-      makeCtx({
-        getCurrentPhase: () => 'implementing',
-        rejectRun: async () => {
-          called = true;
-          return { status: 'empty' };
-        },
-        setFeedbackError: (m) => {
-          error = m;
-        },
-      }),
-    );
-
-    await runCommandInTest({
-      commands: commands,
-      raw: '/run reject confirm',
-      screen: 'workflow',
-      phase: 'implementing',
-      onError: noop,
-    });
-
-    expect(called).toBe(false);
-    expect(error).toMatch(/unavailable while work is active/i);
-  });
-
   it('surfaces conflicts as an error when rejecting a run', async () => {
     let error: string | undefined;
     const commands = createRuntimeCommands(

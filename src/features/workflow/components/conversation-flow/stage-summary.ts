@@ -13,7 +13,10 @@ import { sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
 export function stageSummaryRow(summary: StageSummary): {
   state: Extract<TaskSummaryState, { kind: 'stage' }>;
 } {
-  const duration = formatDuration(summary.duration);
+  const duration =
+    summary.stage === 'review' && summary.endUnknown === true
+      ? `at least ${formatDuration(summary.duration)}`
+      : formatDuration(summary.duration);
   const title = sanitizeTerminalDisplayText(
     summary.stage === 'plan'
       ? summary.feature

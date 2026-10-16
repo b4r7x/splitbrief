@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -8,6 +16,7 @@ import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { readyToApplyMessage } from '../../../src/cli/sessions/resolve.js';
 import { applyBackupDir } from '../../../src/engine/orchestrator/apply/backup.js';
+import { undoApply } from '../../../src/engine/orchestrator/apply/restore.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   applyRun,
@@ -61,10 +70,9 @@ afterEach(async () => {
 });
 
 /**
- * Promotion writes each file through a temporary sibling opened with
- * `fs.promises.open`. While the arm file exists, the open of the marker's
- * temporary blocks before it creates anything: `src/greet.ts` sorts first, so
- * it is already in the checkout, and `src/marker.ts` is not. The preload then
+ * Promotion writes each file to a temporary sibling, then links it into place. While the arm file
+ * exists, the link of the marker's temporary blocks: `src/greet.ts` sorts first, so it is already in
+ * the checkout, and `src/marker.ts` is not, while its temporary holds its bytes. The preload then
  * writes the blocked file, which is what the test waits on before the kill.
  */
 function writeBlockingPreload(target: StopContinueFixture, armPath: string, blockedPath: string) {
@@ -77,16 +85,16 @@ import { basename, dirname } from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 import { setTimeout as delay } from 'node:timers/promises';
 globalThis.fetch = async () => { throw new Error('Network disabled in Apply E2E'); };
-const open = fs.open;
-fs.open = async (...args) => {
+const link = fs.link;
+fs.link = async (...args) => {
   const path = String(args[0]);
   if (existsSync(${JSON.stringify(armPath)}) &&
-      dirname(path) === ${JSON.stringify(realpathSync(join(target.projectDir, 'src')))} &&
+      dirname(path) === ${JSON.stringify(join(realpathSync(target.projectDir), 'src'))} &&
       basename(path).startsWith('.marker.ts.tmp.')) {
     writeFileSync(${JSON.stringify(blockedPath)}, String(process.pid));
     await delay(${APPLY_HOLD_MS});
   }
-  return open(...args);
+  return link(...args);
 };
 syncBuiltinESMExports();
 `,
@@ -95,6 +103,12 @@ syncBuiltinESMExports();
     'NODE_OPTIONS',
     `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`,
   );
+}
+
+/** The write temporaries Apply's promotion left in the checkout's `src`. */
+function writeTemporaries(target: StopContinueFixture): string[] {
+  const src = join(target.projectDir, 'src');
+  return existsSync(src) ? readdirSync(src).filter((name) => name.includes('.tmp.')) : [];
 }
 
 async function waitForFile(path: string, timeoutMs: number): Promise<boolean> {
@@ -109,10 +123,16 @@ async function waitForFile(path: string, timeoutMs: number): Promise<boolean> {
 /**
  * A real run that is ready to apply, then a headless Apply whose process group
  * is killed with SIGKILL between its `applying` record and its last checkout write.
+ * With no original greeting the checkout has no `src` folder, so Apply makes it.
  */
-async function crashMidApply(target: StopContinueFixture) {
-  mkdirSync(join(target.projectDir, 'src'));
-  writeFileSync(target.greetPath, ORIGINAL_GREET);
+async function crashMidApply(
+  target: StopContinueFixture,
+  original: string | null = ORIGINAL_GREET,
+) {
+  if (original !== null) {
+    mkdirSync(join(target.projectDir, 'src'));
+    writeFileSync(target.greetPath, original);
+  }
   const armPath = join(target.tmpDir, 'arm-apply-block');
   const blockedPath = join(target.tmpDir, 'apply-blocked');
   writeBlockingPreload(target, armPath, blockedPath);
@@ -126,7 +146,9 @@ async function crashMidApply(target: StopContinueFixture) {
   const workspace = ready.workspace;
   if (workspace === undefined) throw new Error('the run has no workspace');
   expect(workspace.kind).toBe('worktree');
-  expect(readFileSync(target.greetPath, 'utf8')).toBe(ORIGINAL_GREET);
+  expect(existsSync(target.greetPath) && readFileSync(target.greetPath, 'utf8')).toBe(
+    original ?? false,
+  );
   expect(existsSync(target.markerPath)).toBe(false);
 
   writeFileSync(armPath, '');
@@ -173,37 +195,7 @@ async function crashMidApply(target: StopContinueFixture) {
   expect(ended.exitCode, ended.stderr).toBe(1);
   expect(ended.stderr).toContain('Restore or retry Apply first');
   expect(readFileSync(statePath, 'utf8')).toBe(stateBytes);
-  const early = await cli(target, ['continue', sessionId, '--action', 'restore'], {
-    timeoutMs: CLI_TIMEOUT_MS,
-  });
-  expect(early.exitCode, early.stderr).toBe(1);
-  expect(early.stderr).toContain('No pending recovery issue is available.');
-  expect(readFileSync(statePath, 'utf8')).toBe(stateBytes);
-
-  const reopened = await cli(target, ['continue', sessionId], { timeoutMs: CLI_TIMEOUT_MS });
-  expect(reopened.exitCode, reopened.stderr).toBe(1);
-  expect(reopened.stderr).toContain('(apply-partial)');
-  expect(reopened.stderr).toContain(
-    `Continue with: splitbrief continue ${sessionId} --action retry`,
-  );
-  const halted = readState(target, sessionId);
-  const issue = halted.pendingRecovery;
-  expect(issue?.reason).toBe('apply-partial');
-  expect(issue?.availableActions).toEqual(
-    expect.arrayContaining(['retry-same-worker', 'restore-backup']),
-  );
-  expect(issue?.recommendedAction).toBe('retry-same-worker');
-  const details = issue?.details.join('\n') ?? '';
-  expect(details).toContain('Apply was cut off');
-  expect(details).toContain(`${GREET_FILE} · written`);
-  expect(details).toContain(`${MARKER_FILE} · not written`);
-  expect(halted.applying?.backupId).toBe(backupId);
-  expect(deriveRunStatus({ state: halted, liveness: 'not-alive' })).toMatchObject({
-    kind: 'open',
-    stop: { kind: 'waiting-for-you', on: { kind: 'halt' } },
-  });
-  expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
-  expect(existsSync(target.markerPath)).toBe(false);
+  expect(writeTemporaries(target)).toHaveLength(1);
 
   return { sessionId, backupId, workspacePath: workspace.path };
 }
@@ -221,6 +213,7 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
     expect(restored.stderr).toContain(readyToApplyMessage(sessionId));
     expect(readFileSync(target.greetPath, 'utf8')).toBe(ORIGINAL_GREET);
     expect(existsSync(target.markerPath)).toBe(false);
+    expect(writeTemporaries(target)).toEqual([]);
     const ready = readState(target, sessionId);
     expect(ready.applying).toBeUndefined();
     expect(ready.pendingRecovery).toBeUndefined();
@@ -236,10 +229,10 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
     expect(existsSync(workspacePath)).toBe(false);
   });
 
-  it('retries the remaining writes with the same backup and closes the run applied', async () => {
+  it('retries the remaining writes with the same backup, closes the run applied and undoes it clean', async () => {
     fixture = createStopContinueFixture(() => IMPLEMENTER_SCRIPT, { isolation: 'worktree' });
     const target = fixture;
-    const { sessionId, backupId, workspacePath } = await crashMidApply(target);
+    const { sessionId, backupId, workspacePath } = await crashMidApply(target, null);
 
     const retried = await cli(target, ['continue', sessionId, '--action', 'retry'], {
       timeoutMs: CLI_TIMEOUT_MS,
@@ -253,5 +246,56 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
     expect(closed.applying).toBeUndefined();
     expect(closed.pendingRecovery).toBeUndefined();
     expect(existsSync(workspacePath)).toBe(false);
+    expect(writeTemporaries(target)).toEqual([]);
+
+    const undone = await undoApply({ projectDir: target.projectDir, sessionId }, closed);
+    expect(undone.conflicts).toEqual([]);
+    expect(existsSync(join(target.projectDir, 'src'))).toBe(false);
+  });
+
+  it('restores a checkout Apply made a folder in to no folder at all', async () => {
+    fixture = createStopContinueFixture(() => IMPLEMENTER_SCRIPT, { isolation: 'worktree' });
+    const target = fixture;
+    const { sessionId } = await crashMidApply(target, null);
+
+    const restored = await cli(target, ['continue', sessionId, '--action', 'restore'], {
+      timeoutMs: CLI_TIMEOUT_MS,
+    });
+    expect(restored.exitCode, restored.stderr).toBe(0);
+    expect(existsSync(join(target.projectDir, 'src'))).toBe(false);
+    expect(
+      deriveRunStatus({ state: readState(target, sessionId), liveness: 'not-alive' }).kind,
+    ).toBe('ready-to-apply');
+  });
+
+  it('raises the cut Apply as a halt on a plain continue and names its retry', async () => {
+    fixture = createStopContinueFixture(() => IMPLEMENTER_SCRIPT, { isolation: 'worktree' });
+    const target = fixture;
+    const { sessionId, backupId } = await crashMidApply(target);
+
+    const reopened = await cli(target, ['continue', sessionId], { timeoutMs: CLI_TIMEOUT_MS });
+    expect(reopened.exitCode, reopened.stderr).toBe(1);
+    expect(reopened.stderr).toContain('(apply-partial)');
+    expect(reopened.stderr).toContain(
+      `Continue with: splitbrief continue ${sessionId} --action retry`,
+    );
+    const halted = readState(target, sessionId);
+    const issue = halted.pendingRecovery;
+    expect(issue?.reason).toBe('apply-partial');
+    expect(issue?.availableActions).toEqual(
+      expect.arrayContaining(['retry-same-worker', 'restore-backup']),
+    );
+    expect(issue?.recommendedAction).toBe('retry-same-worker');
+    const details = issue?.details.join('\n') ?? '';
+    expect(details).toContain('Apply was cut off');
+    expect(details).toContain(`${GREET_FILE} · written`);
+    expect(details).toContain(`${MARKER_FILE} · not written`);
+    expect(halted.applying?.backupId).toBe(backupId);
+    expect(deriveRunStatus({ state: halted, liveness: 'not-alive' })).toMatchObject({
+      kind: 'open',
+      stop: { kind: 'waiting-for-you', on: { kind: 'halt' } },
+    });
+    expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
+    expect(existsSync(target.markerPath)).toBe(false);
   });
 });

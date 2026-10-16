@@ -29,7 +29,6 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     listSkills: () => [],
     toggleSkill: () => ({ status: 'unknown' as const }),
     refreshSkills: async () => {},
-    getCurrentPhase: () => 'idle',
     resumeRun: noopTrue,
     steerRun: noopTrue,
     endRun: noopTrue,

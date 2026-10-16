@@ -28,6 +28,9 @@ export function noVisionFeedbackMessage(seatIdentity: string): string {
 export function formatSubmissionFailure(
   submission: Extract<DraftSubmission, { ok: false }>,
 ): string {
+  if (submission.reason === 'command') {
+    return 'A slash command is not a message. Run it from the composer.';
+  }
   const config = configStore.get().config;
   return submission.reason === 'no-vision'
     ? config === null

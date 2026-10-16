@@ -1242,13 +1242,6 @@ const CLOSED_DISCARDED_LOG: readonly EngineEvent[] = [
             ? { ...event, ...READY_REVIEW }
             : event,
   ),
-  {
-    type: 'warning',
-    ts: CLOSED_DISCARDED_AT,
-    phase: 'complete',
-    message:
-      'Run changes not applied are saved in .splitbrief/sessions/visual-closed-discarded/run.patch; apply them with git apply.',
-  },
   { type: 'workspace_closed', ts: CLOSED_DISCARDED_AT, phase: 'complete' },
 ];
 
@@ -1433,12 +1426,6 @@ const ENDED_WORKSPACE_LOG: readonly EngineEvent[] = [
     message: retainedWorkspaceNotice(RUN_WORKSPACE.path),
     category: WORKSPACE_NOTICE_CATEGORY,
     code: WORKSPACE_KEPT_CODE,
-  },
-  {
-    type: 'warning',
-    ts: ENDED_WORKSPACE_AT - 1_000,
-    phase: 'implementing',
-    message: `Run changes not applied are saved in ${ENDED_WORKSPACE_PATCH}; apply them with git apply.`,
   },
   { type: 'workspace_closed', ts: ENDED_WORKSPACE_AT - 1_000, phase: 'implementing' },
   {
