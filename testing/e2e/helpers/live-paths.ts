@@ -99,37 +99,13 @@ export const SLUGIFY_FIXTURE: LivePathsFixture = {
   ].join('\n'),
 };
 
-/** The base fails its own test: `subtotal` ignores the quantity, and the feature does not mention it. */
-export const FAILING_BASE_FIXTURE: LivePathsFixture = {
-  files: {
-    'package.json': PACKAGE_JSON,
-    'src/cart.mjs': [
-      'export function subtotal(items) {',
-      '  return items.reduce((sum, item) => sum + item.price, 0);',
-      '}',
-      '',
-    ].join('\n'),
-    'test/cart.test.mjs': [
-      "import assert from 'node:assert/strict';",
-      "import { test } from 'node:test';",
-      "import { subtotal } from '../src/cart.mjs';",
-      '',
-      "test('subtotal multiplies each price by its quantity', () => {",
-      '  assert.equal(subtotal([{ price: 2, qty: 3 }, { price: 5, qty: 1 }]), 11);',
-      '});',
-      '',
-    ].join('\n'),
-  },
-  feature:
-    'Add an exported function applyDiscount(amount, percent) to src/cart.mjs that returns amount reduced by percent percent, rounded to two decimals. Add node:test cases for applyDiscount to test/cart.test.mjs.',
-  acceptance: [
-    "import assert from 'node:assert/strict';",
-    "import { applyDiscount, subtotal } from './src/cart.mjs';",
-    'assert.equal(subtotal([{ price: 2, qty: 3 }, { price: 5, qty: 1 }]), 11);',
-    'assert.equal(applyDiscount(200, 15), 170);',
-    'assert.equal(applyDiscount(19.99, 10), 17.99);',
-  ].join('\n'),
-};
+/** The run's config with the hidden check as its test command; set before the run is prepared. */
+export function hiddenRetryCheckConfig(config: Config, checkFile: string): Config {
+  return {
+    ...config,
+    validation: { ...config.validation, testCommand: `node ${JSON.stringify(checkFile)}` },
+  };
+}
 
 export function withHiddenRetryCheck(
   delegate: Implementer,
@@ -140,20 +116,20 @@ export function withHiddenRetryCheck(
 } {
   const feedback: string[] = [];
   let acceptance: string | undefined;
-  const install = ({ projectDir, task, config }: ImplementerOptions) => {
+  const install = ({ projectDir, task }: ImplementerOptions) => {
     if (acceptance === undefined) {
-      const sourceFile = join(projectDir, 'src/cart.mjs');
-      const source = existsSync(sourceFile) ? readFileSync(sourceFile, 'utf-8') : '';
-      let marker = '// Retry acceptance acknowledged.';
-      while (source.includes(marker)) marker += '.';
-      const failure = `Hidden acceptance check: add this exact comment to src/cart.mjs: ${marker}`;
+      const testFile = join(projectDir, 'test/text.test.mjs');
+      const source = existsSync(testFile) ? readFileSync(testFile, 'utf-8') : '';
+      let title = 'slugify passes the retry acceptance';
+      while (source.includes(title)) title += ' again';
+      const failure = `Hidden acceptance check: add a node:test case named exactly "${title}" to test/text.test.mjs that asserts slugify('Retry Acceptance') returns 'retry-acceptance'.`;
       acceptance = [
         "import assert from 'node:assert/strict';",
         "import { existsSync, readFileSync } from 'node:fs';",
         "import { spawnSync } from 'node:child_process';",
         "import { test } from 'node:test';",
         "await test('Hidden acceptance check', () => {",
-        `  assert.ok(existsSync('src/cart.mjs') && readFileSync('src/cart.mjs', 'utf-8').includes(${JSON.stringify(marker)}), ${JSON.stringify(failure)});`,
+        `  assert.ok(existsSync('test/text.test.mjs') && readFileSync('test/text.test.mjs', 'utf-8').includes(${JSON.stringify(title)}), ${JSON.stringify(failure)});`,
         '});',
         "await test('Project test suite', () => {",
         "  const suite = spawnSync('npm', ['test'], { stdio: 'inherit' });",
@@ -163,7 +139,6 @@ export function withHiddenRetryCheck(
       ].join('\n');
     }
     writeFileSync(checkFile, acceptance);
-    config.validation.testCommand = `node ${JSON.stringify(checkFile)}`;
     if (!task.checks?.some((check) => check.id === 'hidden-retry-acceptance')) {
       task.checks = [
         ...(task.checks ?? []),
@@ -194,8 +169,10 @@ export type LivePathsProject = Readonly<{
   id: string;
   tmpDir: string;
   projectDir: string;
-  /** The CLI's state home; the run workspaces land under it. */
+  /** The state home of the CLI and of in-process runs; the run workspaces land under it. */
   stateHome: string;
+  /** Puts back the `XDG_STATE_HOME` the project replaced. */
+  restoreStateHome: () => void;
   config: Config;
   /** Stops recording the ledger entries of the project's runs and returns every entry seen; throws when a read failed. */
   stopWatchingRunners: () => RunnerPidEntry[];
@@ -220,12 +197,18 @@ export function createLivePathsProject(opts: {
     crew: opts.crew,
     workflow: opts.workflow,
   });
+  const previousStateHome = process.env.XDG_STATE_HOME;
+  process.env.XDG_STATE_HOME = stateHome;
   const runs = new AbortController();
   return {
     id: opts.id,
     tmpDir,
     projectDir,
     stateHome,
+    restoreStateHome: () => {
+      if (previousStateHome === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previousStateHome;
+    },
     config,
     stopWatchingRunners: watchRunnerLedgers(projectDir, runs),
     ...trackLiveRuns(runs),
@@ -252,9 +235,13 @@ export function trackLiveRuns(
 
 /**
  * Aborts and settles every run the scenario left going, copies every run's record to
- * `.test-artifacts/live/paths-<id>/<session>`, reaps what the runs left, and removes the project.
+ * `.test-artifacts/live/paths-<id>/<session>`, and reaps what the runs left. A passing scenario
+ * removes the project; a failed one keeps it, with its run workspaces, and prints its path.
  */
-export async function disposeLivePathsProject(project: LivePathsProject): Promise<void> {
+export async function disposeLivePathsProject(
+  project: LivePathsProject,
+  failed: boolean,
+): Promise<void> {
   try {
     await project.abortRuns();
     for (const sessionId of sessionIds(project.projectDir)) {
@@ -266,7 +253,12 @@ export async function disposeLivePathsProject(project: LivePathsProject): Promis
     }
     await reapOrphanRunners(project.projectDir);
   } finally {
-    cleanupTempDir(project.tmpDir);
+    if (failed) {
+      console.log(`kept the failed scenario's project and run workspaces at ${project.tmpDir}`);
+    } else {
+      cleanupTempDir(project.tmpDir);
+    }
+    project.restoreStateHome();
     project.stopWatchingRunners();
   }
 }

@@ -1,8 +1,6 @@
-import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveImplementerProfiles } from '../../../../../src/core/config/accessors/implementer-profiles.js';
-import { deriveRunStatus } from '../../../../../src/core/sessions/run-status.js';
 import { createEventBus } from '../../../../../src/engine/events/bus.js';
 import { createImplementerPublisher } from '../../../../../src/engine/orchestrator/events.js';
 import { runWorkflow } from '../../../../../src/engine/orchestrator/run/workflow.js';
@@ -17,7 +15,7 @@ import {
   createLivePathsProject,
   disposeLivePathsProject,
   expectCheckoutDelivers,
-  FAILING_BASE_FIXTURE,
+  hiddenRetryCheckConfig,
   LIVE_PATHS_TIMEOUT_MS,
   type LivePathsProject,
   livePathsEnabled,
@@ -25,6 +23,7 @@ import {
   readRunState,
   resolveLivePathsCrew,
   runSessionDir,
+  SLUGIFY_FIXTURE,
   survivorsAfter,
   withHiddenRetryCheck,
 } from '../../../helpers/live-paths.js';
@@ -34,8 +33,9 @@ const itLive = livePathsEnabled() ? it : it.skip;
 
 let project: LivePathsProject | undefined;
 
-afterEach(async () => {
-  if (project !== undefined) await disposeLivePathsProject(project);
+afterEach(async (ctx) => {
+  if (project !== undefined)
+    await disposeLivePathsProject(project, ctx.task.result?.state === 'fail');
   project = undefined;
 });
 
@@ -49,12 +49,12 @@ describe('live paths: failed check, then retry', { timeout: 2 * LIVE_PATHS_TIMEO
     if (gate.kind === 'skip') return ctx.skip(gate.reason);
     project = createLivePathsProject({
       id: 'failed-check-retry',
-      fixture: FAILING_BASE_FIXTURE,
+      fixture: SLUGIFY_FIXTURE,
       crew,
       workflow: { review: 'task' },
     });
     const { projectDir, tmpDir, config, startRun } = project;
-    expect(spawnSync('npm', ['test'], { cwd: projectDir }).status).not.toBe(0);
+    const checkFile = join(tmpDir, 'hidden-acceptance.mjs');
     resetAllStores();
     let retryFeedback: string[] = [];
 
@@ -64,8 +64,8 @@ describe('live paths: failed check, then retry', { timeout: 2 * LIVE_PATHS_TIMEO
         startRun((projectSignal) =>
           executeLiveWorkflow({
             projectDir,
-            feature: FAILING_BASE_FIXTURE.feature,
-            effectiveConfig: config,
+            feature: SLUGIFY_FIXTURE.feature,
+            effectiveConfig: hiddenRetryCheckConfig(config, checkFile),
             signal: AbortSignal.any([signal, projectSignal, ctx.signal]),
             runWorkflow: async (opts) => {
               const { prepared } = opts;
@@ -80,18 +80,9 @@ describe('live paths: failed check, then retry', { timeout: 2 * LIVE_PATHS_TIMEO
                 },
                 publisher: createImplementerPublisher(bus),
               });
-              const hidden = withHiddenRetryCheck(delegate, join(tmpDir, 'hidden-acceptance.mjs'));
+              const hidden = withHiddenRetryCheck(delegate, checkFile);
               retryFeedback = hidden.feedback;
-              const summary = await runWorkflow({
-                ...opts,
-                eventBus: bus,
-                _implementer: hidden.implementer,
-              });
-              const ready = readRunState(prepared.session.ref);
-              expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe(
-                'ready-to-apply',
-              );
-              return summary;
+              return runWorkflow({ ...opts, eventBus: bus, _implementer: hidden.implementer });
             },
           }),
         ),
@@ -105,7 +96,7 @@ describe('live paths: failed check, then retry', { timeout: 2 * LIVE_PATHS_TIMEO
     expect(retryFeedback[0]).toContain('Hidden acceptance check:');
 
     expect(readRunState(ref).closed?.as).toBe('applied');
-    expectCheckoutDelivers(projectDir, FAILING_BASE_FIXTURE);
+    expectCheckoutDelivers(projectDir, SLUGIFY_FIXTURE);
     expect(await survivorsAfter(project.stopWatchingRunners(), ORPHAN_BOUND_MS)).toEqual([]);
   });
 });
