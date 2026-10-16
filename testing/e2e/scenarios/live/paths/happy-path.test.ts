@@ -23,8 +23,9 @@ const itLive = livePathsEnabled() ? it : it.skip;
 
 let project: LivePathsProject | undefined;
 
-afterEach(async () => {
-  if (project !== undefined) await disposeLivePathsProject(project);
+afterEach(async (ctx) => {
+  if (project !== undefined)
+    await disposeLivePathsProject(project, ctx.task.result?.state === 'fail');
   project = undefined;
 });
 

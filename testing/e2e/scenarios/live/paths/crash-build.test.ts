@@ -26,8 +26,9 @@ let project: LivePathsProject | undefined;
 /** The tool processes still alive `ORPHAN_BOUND_MS` after the CLI was killed. */
 let survivors: number[] | undefined;
 
-afterEach(async () => {
-  if (project !== undefined) await disposeLivePathsProject(project);
+afterEach(async (ctx) => {
+  if (project !== undefined)
+    await disposeLivePathsProject(project, ctx.task.result?.state === 'fail');
   project = undefined;
 });
 
