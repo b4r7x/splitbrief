@@ -14,7 +14,8 @@ import {
   type ViewerArgv,
 } from './editor-command.js';
 import { isImplementerPhase, isLivePhase } from '../../core/phases.js';
-import { phaseStage } from '../../core/rail-stages.js';
+import { messageSeat } from '../../core/queue-state.js';
+import { operationsStore, selectScheduledReview } from '../../stores/workflow/operations/state.js';
 import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
 import { queueCopy } from './queue-copy.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -276,7 +277,7 @@ export function createReviewInputHandler(
         const trimmed = text.trim();
         if (trimmed) {
           const document = composerLiveStore.get().document;
-          const seat = phaseStage(phase);
+          const seat = messageSeat(phase, selectScheduledReview(operationsStore.get()));
           const taskId = selectRunningBrief(tasksStore.get(), phase).current?.id;
           const steerable = lifecycle.steerableCall?.seat === seat;
           const result = await effects.enqueue(message, phase);

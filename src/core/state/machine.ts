@@ -27,6 +27,18 @@ export function decisionLedgerText(decision: { what: string; why: string }): str
   return `${decision.what} — ${decision.why}`;
 }
 
+/**
+ * The reported decisions a confirm does not accept, matched by ledger text: an entry the confirm
+ * leaves out or rewrites is rejected.
+ */
+export function rejectedDecisions<T extends { what: string; why: string }>(
+  reported: readonly T[],
+  confirmed: readonly { what: string; why: string }[],
+): T[] {
+  const accepted = new Set(confirmed.map(decisionLedgerText));
+  return reported.filter((decision) => !accepted.has(decisionLedgerText(decision)));
+}
+
 const anytimeActions = [
   'CLOSE_RUN',
   'RECORD_WORKSPACE',

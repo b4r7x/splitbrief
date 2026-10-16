@@ -353,6 +353,79 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(result.state.plannerCalls?.used ?? 0).toBe(0);
   });
 
+  it('retries a rejected decision with the planner diagnosis before any validation', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+    const implementer = decidingImplementer([[WHAT], []]);
+    const validator = scriptedValidator({});
+    const diagnosis = 'Dropping the --json flag breaks the accepted outcome; keep the flag.';
+    const { planner, prompts } = scriptedPlanner({
+      confirm: () => ({ answer: { diagnosis, action: 'confirm', decisions: [] } }),
+    });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runLoop({
+      projectDir,
+      sessionId,
+      state: stateWithPlan([task]),
+      implementer,
+      validator,
+      planner,
+      bus,
+    });
+
+    expect(result.status).toBe('complete');
+    expect(eventTypes(events)).toEqual(['consult:deviation:confirm', 'retry']);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'consult_answered',
+        action: 'confirm',
+        decisionCount: 0,
+        rejectedCount: 1,
+        diagnosis,
+      }),
+    );
+    // The rejected attempt never reached its brief gate: only the retry's work was validated.
+    expect(validator.checkRuns.mock.calls.filter(([id]) => id === 'T001')).toHaveLength(1);
+    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
+    expect(retries).toHaveLength(1);
+    expect(retries[0]?.error).toContain(diagnosis);
+    expect(prompts.filter(isDecisionConfirm)).toHaveLength(1);
+    expect(result.state.plan?.decisions).toEqual([]);
+  });
+
+  it('rejects a reported decision the confirm rewords, though the count matches', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+    const implementer = decidingImplementer([[WHAT], []]);
+    const validator = scriptedValidator({});
+    const reworded = { what: 'Kept the --json flag', why: 'The criterion needs it' };
+    const { planner } = scriptedPlanner({ confirm: () => confirm([reworded]) });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runLoop({
+      projectDir,
+      sessionId,
+      state: stateWithPlan([task]),
+      implementer,
+      validator,
+      planner,
+      bus,
+    });
+
+    expect(result.status).toBe('complete');
+    expect(eventTypes(events)).toEqual(['consult:deviation:confirm', 'retry']);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'consult_answered',
+        action: 'confirm',
+        decisionCount: 1,
+        rejectedCount: 1,
+      }),
+    );
+    expect(validator.checkRuns.mock.calls.filter(([id]) => id === 'T001')).toHaveLength(1);
+  });
+
   it('confirms decisions with the consult and planner-call bounds spent, and never halts', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });

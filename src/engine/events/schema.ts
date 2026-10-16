@@ -574,6 +574,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     revision: z.number().int().optional(),
     checkIds: z.array(z.string()).optional(),
     decisionCount: z.number().int().nonnegative().optional(),
+    /** The reported decisions a decision-confirm left out: each one is rejected. */
+    rejectedCount: z.number().int().nonnegative().optional(),
   }),
   phaseEvent('task_replaced').extend({
     taskId: TaskIdSchema,
@@ -672,6 +674,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     /** The reviewer's outcome; failed/empty calls are `no-verdict`, stops are `stopped`. Both omit findings. */
     verdict: z.enum(['pass', 'pass-with-notes', 'fail', 'no-verdict', 'stopped']),
     findings: ReviewFindingCountsSchema.optional(),
+    /** What failed the review: each blocking finding and each red input that still blocks. */
+    blockingFindings: z.array(z.object({ id: z.string(), text: z.string() })).optional(),
     duration: z.number(),
   }),
   phaseEvent('review_step').extend({

@@ -44,6 +44,12 @@ function fileTestRule(): string {
   return `As a \`cmd\` check, ${forms.slice(0, -1).join(', ')} and ${forms.at(-1)} check that a file ${meanings.slice(0, -1).join(', ')} or ${meanings.at(-1)}; use them to check a file mode or a symbolic link instead of a new test file.`;
 }
 
+/**
+ * The `cmd` check policy of a TaskSpec a seat writes after the plan: a review's fix task and a
+ * consult's rewrite or split. `refusedCheckErrors` enforces it on each.
+ */
+export const TASK_CMD_CHECK_RULE = `A \`cmd\` check follows the plan check policy, with no shell operator. A package manager runs only its bare \`test\`, or \`npm run <script>\` for a script \`package.json\` defines when the user approved the plan. \`make\` or \`just\` runs only one bare \`typecheck\`, \`lint\` or \`test\` target. A test runner, linter or type checker of the project's stack, such as \`vitest\`, \`tsc\`, \`pytest\`, \`go\` or \`cargo\`, runs directly with its arguments. \`node\` runs only as \`node --test <test file>\` or \`node --check <file>\`. \`npx\` runs only as \`npx --no-install <stack tool>\`. ${fileTestRule()} SPLITBRIEF refuses any other command, such as \`grep\` or \`node scripts/x.js\`, and sends the refusal back for one repair. Prefer a \`test\` check that names a test file.`;
+
 function planRules(approvesPlan: boolean): string {
   return `- Research the repository read-only. Do not edit, create or delete any file.
 - Do not invoke a native user-question tool (AskUserQuestion or the like). SPLITBRIEF asks the user.

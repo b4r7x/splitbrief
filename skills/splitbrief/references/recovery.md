@@ -64,6 +64,7 @@ A failed stale call, malformed answer or unanswered guard leaves the stale revis
 Successful stale guidance records fresh input hashes and marks the revision in one transition. A rewrite records hashes on its new revision.
 An answered stale guard question records fresh input hashes and sends the operator's answer as guidance on the first attempt.
 A hand-back with new decisions gets one decision-confirm before validation: confirm (how) or ask-user (what).
+A decision the confirm leaves out or rewords is rejected. The attempt retries with the diagnosis and never validates.
 Decision-confirm runs at most once per attempt, bounded by the brief's attempts.
 It spends no run counter, never a lineage consult or a planner decision.
 A failed or malformed confirm answer warns, leaves the decisions out of the ledger and validates. It never pauses.
@@ -139,7 +140,7 @@ Use this typed engine contract. Register no render checks despite their presence
 
     The operator rule: the Operator Instructions are the user's own decisions for this task. No action undoes one of them. A question that concerns one of them quotes it, and its default keeps it.
 
-    The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs `ask-user`.
+    The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs `ask-user`. A `cmd` check follows the plan check policy, with no shell operator. A package manager runs only its bare `test`, or `npm run <script>` for a script `package.json` defines when the user approved the plan. `make` or `just` runs only one bare `typecheck`, `lint` or `test` target. A test runner, linter or type checker of the project's stack, such as `vitest`, `tsc`, `pytest`, `go` or `cargo`, runs directly with its arguments. `node` runs only as `node --test <test file>` or `node --check <file>`. `npx` runs only as `npx --no-install <stack tool>`. As a `cmd` check, `test -e <file>`, `test -f <file>`, `test -x <file>` and `test -L <file>` check that a file exists, is a regular file, is executable or is a symbolic link; use them to check a file mode or a symbolic link instead of a new test file. SPLITBRIEF refuses any other command, such as `grep` or `node scripts/x.js`, and sends the refusal back for one repair. Prefer a `test` check that names a test file.
 
     The run workspace is `<the run workspace>`. Read project files from this directory and resolve project-relative code paths there.
 

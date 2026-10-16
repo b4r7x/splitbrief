@@ -14,6 +14,7 @@ import { taskId } from '../../core/schemas/task.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
+import { operationsStore, selectScheduledReview } from '../../stores/workflow/operations/state.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
 import { selectRunningBrief, selectTaskListView, tasksStore } from '../../stores/workflow/tasks.js';
 import { readRunEvents } from '../events/replay.js';
@@ -111,4 +112,42 @@ describe('review fix task order through the engine and stores', () => {
       }
     },
   );
+
+  it('announces a fix cycle with no fix task and ends the scheduled review in the engine and the UI', () => {
+    resetWorkflow();
+    const ref = setupProject(dirs);
+    const tasks = [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })];
+    const state = {
+      ...makeImplState(tasks, { phase: 'implementing', currentTaskIndex: 1 }),
+      pendingScheduledReview: { afterTaskId: taskId('T001') },
+    };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const unsubscribe = bus.subscribe(addEvent);
+    try {
+      bus.publish({
+        type: 'review_started',
+        ts: 1,
+        phase: 'implementing',
+        scope: 'task',
+        tool: 'codex',
+      });
+      expect(selectScheduledReview(operationsStore.get())).toBe(true);
+      const started = startFixCycle({
+        wctx: makeWctx({ ...ref, bus }),
+        state,
+        setTrackedState: vi.fn(),
+        taskIds: [],
+      });
+      expect(started.pendingScheduledReview).toBeUndefined();
+      expect(events.filter((event) => event.type === 'tasks_planned')).toEqual([]);
+      expect(events.find((event) => event.type === 'review_fix_started')).toMatchObject({
+        cycle: 1,
+        taskIds: [],
+      });
+      expect(selectScheduledReview(operationsStore.get())).toBe(false);
+    } finally {
+      unsubscribe();
+    }
+  });
 });

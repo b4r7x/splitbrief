@@ -569,7 +569,7 @@ Queued text names the receiving seat. Examples are `1 queued for PLAN`, `1 queue
 
 The elapsed time is the step's own, formatted with the single `formatElapsedClock` (`m:ss`, or `h:mm:ss` once past an hour). During planning the step is the planner call that is open, counted from the moment that call opened; the first call after the run starts or resumes counts from that start, so the preparation before it stays on the clock. In the build and the final review the step is the stage. A resume starts the clock again, and the minutes the run spent waiting on you — a planner question, an approval gate — are subtracted, so answering a question does not make the next brief look slow.
 
-Enter with text queues a message for the seat of the active stage. The current call continues. Without a matching steerable call, the composer names that seat and its delivery time:
+Enter with text queues a message for the seat that reads it next: the seat of the active stage, or REVIEW while a task review runs inside the build (`workflow.review: task`), because the review reads every unread message at its verdict call. The current call continues. Without a matching steerable call, the composer names that seat and its delivery time:
 
 | Stage | Placeholder |
 |---|---|

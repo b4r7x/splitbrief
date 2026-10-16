@@ -37,6 +37,7 @@ import { warnError } from '../../lib/warn.js';
 import { isAbortError, throwIfAborted } from '../../utils/abort.js';
 import { triageLines, type ReviewTouchedNotSuggested } from '../spec/prompts/review.js';
 import { workspaceReadInstructions } from '../spec/prompts/builder.js';
+import { persistReviewEvidence } from './evidence/persistence.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
 import { readPacketEvents } from './evidence/review-packet/artifacts.js';
 import { renderChecksLogForPrompt, renderWholeChecksLog } from './evidence/review-packet/render.js';
@@ -96,6 +97,7 @@ import {
   type TriageResult,
 } from '../../core/schemas/review.js';
 import {
+  blockingEntries,
   blockingRedInputs,
   deriveReviewOutcome,
   findingInReviewScope,
@@ -106,7 +108,12 @@ import {
   type ReviewScope,
 } from '../../core/review/verdict.js';
 import { renderReviewMarkdown } from '../../core/review/render.js';
-import { checkRegistry, enabledReviewChecks } from './validation/run-checks.js';
+import {
+  checkRegistry,
+  enabledReviewChecks,
+  planApprovesNpmScripts,
+} from './validation/run-checks.js';
+import { refusedCheckErrors } from '../spec/plan-checks.js';
 import { seatSupportsImages } from '../../core/runners/capabilities.js';
 import { forceUnverifiedRenderCriteria, reviewRenders } from './review-renders.js';
 import { currentCandidateId } from './evidence/record-checks.js';
@@ -558,6 +565,10 @@ export async function runFinalReviewPhase(opts: {
           scope,
         ),
         ...fixTaskTargetErrors(candidate, userFiles),
+        ...refusedCheckErrors(
+          candidate.fixTasks.flatMap((task) => task.checks),
+          planApprovesNpmScripts({ config, state }),
+        ).map((error) => error.message),
       ]) {
         ctx.addIssue({ code: 'custom', message });
       }
@@ -898,6 +909,18 @@ export async function runFinalReviewPhase(opts: {
       type: 'RECORD_REVIEW',
       review: record,
     });
+    persistReviewEvidence({
+      wctx: { projectDir, sessionId, bus },
+      state,
+      review: {
+        scope: scope.kind,
+        ...(state.review?.afterTaskId !== undefined && { afterTaskId: state.review.afterTaskId }),
+        cycle: record.cycle,
+        outcome: record.outcome,
+        blocking: blockingEntries(outcome),
+        at: record.at,
+      },
+    });
     const pendingCommands = (state.pendingReviewCommands ?? []).filter(
       (command) => !dischargedReviewCommands.includes(command),
     );
@@ -1017,6 +1040,7 @@ export async function runFinalReviewPhase(opts: {
 
   if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
 
+  const blockingFindings = verdict === null ? [] : blockingEntries(verdict.outcome);
   publishReviewEvent(
     { bus, phase: state.phase },
     {
@@ -1025,11 +1049,12 @@ export async function runFinalReviewPhase(opts: {
       verdict: verdict?.outcome.kind ?? 'no-verdict',
       ...(verdict !== null && {
         findings: {
-          blocking: verdict.outcome.blocking.length + verdict.outcome.redInputs.length,
+          blocking: blockingFindings.length,
           minor: verdict.outcome.minor.length,
           outOfScope: verdict.outcome.outOfScope.length,
         },
       }),
+      ...(blockingFindings.length > 0 && { blockingFindings }),
       duration: Date.now() - finalReviewStart,
     },
   );

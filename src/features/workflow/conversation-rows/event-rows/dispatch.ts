@@ -305,6 +305,21 @@ export function eventRowBlock(options: {
         'message',
       );
     }
+    case 'review_completed':
+      return compositeBlock(
+        keyPrefix,
+        (event.blockingFindings ?? []).map((finding, index) =>
+          cardRowsBlock({
+            keyPrefix: `${keyPrefix}-finding-${index}`,
+            label: `Blocking ${finding.id}`,
+            value: finding.text,
+            width: ctx.width,
+            labelTone: stateTone('failed'),
+            valueTone: 'textDim',
+            markerTone: stateTone('failed'),
+          }),
+        ),
+      );
     case 'task_reset':
       return cardRowsBlock({
         keyPrefix,
@@ -586,12 +601,19 @@ function consultAnsweredSegments(
   const label = { text: CREW_SEAT_LABELS[seat], tone: CREW_SEAT_ROLES[seat] };
   if (event.reason === 'deviation') {
     if (event.action === 'confirm') {
+      const confirmed = event.decisionCount ?? 0;
+      const rejected = event.rejectedCount ?? 0;
+      const decided =
+        rejected === 0
+          ? `confirmed ${countNoun(confirmed, 'decision')}`
+          : confirmed === 0
+            ? `rejected ${countNoun(rejected, 'decision')}`
+            : `confirmed ${countNoun(confirmed, 'decision')}, rejected ${rejected}`;
       return [
         label,
-        {
-          text: ` confirmed ${countNoun(event.decisionCount ?? 0, 'decision')} for ${event.taskId}`,
-          tone: 'textDim',
-        },
+        { text: ` ${decided} for ${event.taskId}`, tone: 'textDim' },
+        { text: SOFT_SEP, tone: 'textDim' },
+        { text: event.diagnosis, tone: 'textDim' },
       ];
     }
     if (event.action === 'ask-user') {

@@ -128,6 +128,17 @@ const EvidenceFinalReviewSchema = z.object({
   status: EvidenceFinalReviewStatusSchema,
 });
 
+/** One review the run recorded: a task review or a final review, and what failed it. */
+export const EvidenceReviewSchema = z.object({
+  scope: z.enum(['task', 'final']),
+  afterTaskId: TaskIdSchema.optional(),
+  cycle: z.number().int().nonnegative(),
+  outcome: z.enum(['pass', 'pass-with-notes', 'fail']),
+  blocking: z.array(z.object({ id: z.string(), text: z.string() })),
+  at: z.string(),
+});
+export type EvidenceReview = z.infer<typeof EvidenceReviewSchema>;
+
 const EvidenceValidationSummarySchema = z.object({
   passed: z.number().nonnegative(),
   failed: z.number().nonnegative(),
@@ -144,6 +155,8 @@ export const EvidenceLedgerSchema = z.object({
   tasks: z.array(EvidenceTaskSchema),
   validationSummary: EvidenceValidationSummarySchema,
   finalReview: EvidenceFinalReviewSchema.optional(),
+  /** Every review in the order it ran, so a failed review and its findings stay on record. */
+  reviews: z.array(EvidenceReviewSchema).optional(),
   briefHash: z.string().nullable().optional(),
   approvals: z.array(EvidenceApprovalSchema).optional(),
   rejections: z.array(EvidenceRejectionSchema).optional(),

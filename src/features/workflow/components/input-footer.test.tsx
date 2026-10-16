@@ -1001,6 +1001,35 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  it('names REVIEW for the queue while a task review runs inside the build phase', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', queueDepth: 1 });
+    tasksStore.__testReset({
+      currentTask: 1,
+      totalTasks: 2,
+      tasks: [
+        { id: 'T003', title: 'T3', status: 'done' as const },
+        { id: 'T004', title: 'T4', status: 'pending' as const },
+      ],
+    });
+    addEvent({
+      type: 'review_started',
+      ts: 1,
+      phase: 'implementing',
+      scope: 'task',
+      afterTaskId: 'T003',
+      tool: 'codex',
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('1 queued for REVIEW');
+    expect(frame).not.toContain('queued for BUILD');
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
   it('byline stage labels are Title Case', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ phase: 'planning', status: 'complete' });

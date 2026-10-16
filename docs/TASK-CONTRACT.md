@@ -43,7 +43,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 
 `state.plan` (`PlanSchema`) keeps the plan without its tasks; the tasks live in `state.tasks`.
 
-**The decisions ledger.** An entry is `{ text, taskId }`. A plan's own decision carries `taskId: null`. When the implementer proposes a deviation in its report (`ImplementerReport.decisions`, `{ what, why }`), the planner confirms it with a decision-confirm before the attempt is validated (at most once per attempt, bounded by the brief's attempts, with no run counter; see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)), and its `confirm` answer makes `CONFIRM_DECISIONS` append `{ text: '<what> — <why>', taskId }`, naming the task that reported it. The ledger reaches every later brief's read-only Plan context, every consult and the review; the planner confirms a change of how only when the accepted criteria stay intact, and the user decides any change to what is built.
+**The decisions ledger.** An entry is `{ text, taskId }`. A plan's own decision carries `taskId: null`. When the implementer proposes a deviation in its report (`ImplementerReport.decisions`, `{ what, why }`), the planner confirms it with a decision-confirm before the attempt is validated (at most once per attempt, bounded by the brief's attempts, with no run counter; see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)), and its `confirm` answer makes `CONFIRM_DECISIONS` append `{ text: '<what> — <why>', taskId }`, naming the task that reported it. A reported decision the `confirm` leaves out or rewords is rejected: it never joins the ledger, and the attempt retries with the planner's diagnosis. The ledger reaches every later brief's read-only Plan context, every consult and the review; the planner confirms a change of how only when the accepted criteria stay intact, and the user decides any change to what is built.
 
 **`TaskSpec`.**
 
@@ -94,7 +94,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 | `dependency-cycle` | The dependencies have no cycle (`topoSort`) |
 | `context-overflow` | The task fits the implementer's context (`estimatePlanContextFits`, which refreshes each task's code and reuses the routing preview); the message names the task's context files and their sizes |
 | `no-capable-worker` | Some implementer can take the task (credentials, write mode, single-file contract); the message carries the routing reason |
-| `refused-check-command` | The plan command policy runs every `cmd` check of the plan, judged from its text at the run's approve level (`commandTextRefusal`); whether `package.json` defines an npm script is left to the check run, since a task can add the script |
+| `refused-check-command` | The plan command policy runs every `cmd` check of the plan, judged from its text at the run's approve level (`commandTextRefusal`); whether `package.json` defines an npm script is left to the check run, since a task can add the script. `refusedCheckErrors` applies the same rule to the `cmd` checks of a review's fix tasks, as a contract error of the review answer, and to the `cmd` checks of a consult's `rewrite-task` or `split-task` answer, as a contract error of the consult answer (`answerContract`, `src/engine/orchestrator/consult/request.ts`) |
 | `render-check-unconfigured` | Every render check of the plan needs `validation.render`; the plan goes back to the planner once with the reason, and when the planner keeps them the plan card opens with a "Before you approve" note naming them, since without the command the run halts before its review |
 
 A task with no suggested file is refused by the schema, not by `checkPlan`. `checkFullPlan` (`src/engine/orchestrator/planning/session.ts`) runs `checkPlan` with the context fit; the session and the plan card's edit path both call it. The in-app editor's save check runs `checkPlan` without the context fit (`planSaveErrors`), and the engine checks the fit after the save.
@@ -572,6 +572,14 @@ type EvidenceLedger = {
   }>;
   validationSummary: { passed: number; failed: number; skipped: number; escalated: number };
   finalReview?: { path: string; status: 'written' | 'failed' | 'skipped' };
+  reviews?: Array<{
+    scope: 'task' | 'final';
+    afterTaskId?: TaskId;
+    cycle: number;
+    outcome: 'pass' | 'pass-with-notes' | 'fail';
+    blocking: Array<{ id: string; text: string }>;
+    at: string;
+  }>;
   briefHash?: string | null;  // the plan-level hash, hashTaskBrief(state.tasks); absent and `null` read the same
 };
 ```

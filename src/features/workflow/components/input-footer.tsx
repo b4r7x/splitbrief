@@ -20,7 +20,10 @@ import {
   selectTaskListView,
   tasksStore,
 } from '../../../stores/workflow/tasks.js';
-import { operationsStore } from '../../../stores/workflow/operations/state.js';
+import {
+  operationsStore,
+  selectScheduledReview,
+} from '../../../stores/workflow/operations/state.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import {
@@ -43,6 +46,7 @@ import { formatSeatIdentity } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { queueCopy } from '../queue-copy.js';
+import { messageSeat } from '../../../core/queue-state.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
@@ -264,7 +268,7 @@ export function InputFooter({
   const queuedCopy =
     lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')
       ? queueCopy({
-          seat,
+          seat: messageSeat(lifecycle.phase, selectScheduledReview(operations)),
           taskId: runningBriefId,
           count: lifecycle.queueDepth,
         })

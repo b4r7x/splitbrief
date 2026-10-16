@@ -18,7 +18,7 @@ import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
 import type { ActionClass, TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import type { GateDecision } from '../approval/types.js';
-import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
+import type { EvidenceLedger, EvidenceReview } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { revertedDir } from '../../../core/paths.js';
@@ -224,6 +224,27 @@ export function persistRejectionEvidence(opts: {
     });
   } catch {
     // non-fatal: rejection evidence loss is acceptable vs crashing
+  }
+}
+
+/** Appends one review to the ledger; a lost entry warns and never fails the review. */
+export function persistReviewEvidence(opts: {
+  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
+  state: WorkflowState;
+  review: EvidenceReview;
+}): void {
+  const { wctx, state, review } = opts;
+  try {
+    mutateEvidenceLedger(wctx, (existing) => {
+      const ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
+      return { ...ledger, reviews: [...(ledger.reviews ?? []), review], generatedAt: nowIso() };
+    });
+  } catch (err) {
+    publishWarningFromError(
+      { bus: wctx.bus, phase: state.phase },
+      'failed to persist review evidence',
+      err,
+    );
   }
 }
 

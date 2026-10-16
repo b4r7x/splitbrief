@@ -30,7 +30,8 @@ import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { isOpenRunAtRest, routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { queueCopy } from '../features/workflow/queue-copy.js';
-import { phaseStage } from '../core/rail-stages.js';
+import { messageSeat } from '../core/queue-state.js';
+import { operationsStore, selectScheduledReview } from '../stores/workflow/operations/state.js';
 import { selectRunningBrief, tasksStore } from '../stores/workflow/tasks.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
 import { skillsStore } from '../stores/project/skills.js';
@@ -399,7 +400,7 @@ export function buildCommandContext({
     getQueueCopy: (count) => {
       const lifecycle = lifecycleStore.get();
       return queueCopy({
-        seat: phaseStage(lifecycle.phase),
+        seat: messageSeat(lifecycle.phase, selectScheduledReview(operationsStore.get())),
         taskId: selectRunningBrief(tasksStore.get(), lifecycle.phase).current?.id,
         count: count ?? lifecycle.queueDepth,
       });

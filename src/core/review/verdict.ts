@@ -57,6 +57,13 @@ export type ReviewOutcome = {
 
 export type RedInput = Pick<TriageInput, 'id' | 'text'>;
 
+/** What fails a review: each blocking finding, then each red input that still blocks. */
+export function blockingEntries(
+  outcome: Pick<ReviewOutcome, 'blocking' | 'redInputs'>,
+): { id: string; text: string }[] {
+  return [...outcome.blocking, ...outcome.redInputs].map(({ id, text }) => ({ id, text }));
+}
+
 /**
  * The red inputs that still block a review: each failed check or Apply re-check, except a reviewer
  * check SPLITBRIEF could not verify at the run base that the answer rejects. The reviewer decides

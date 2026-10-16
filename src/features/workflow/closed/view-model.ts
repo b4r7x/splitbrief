@@ -10,6 +10,7 @@ import { atRestRailStages } from '../at-rest.js';
 import {
   briefRows,
   buildSeatView,
+  failedReviewViews,
   filesView,
   phaseTimings,
   plannerSeatView,
@@ -66,6 +67,12 @@ export type ReviewView =
 
 export type PreExistingCheckView = Readonly<{ id: string; command: string; tests: string[] }>;
 
+/** A review that failed before the review of record, and what failed it. */
+export type FailedReviewView = Readonly<{
+  label: string;
+  blocking: readonly Readonly<{ id: string; text: string }>[];
+}>;
+
 export type ScopeView =
   | Readonly<{ kind: 'not-run' }>
   | Readonly<{
@@ -93,6 +100,8 @@ export interface SummaryView {
     earlierRows: BriefRow[];
   }>;
   review: ReviewView;
+  /** The reviews that failed before the review of record, so a fix cycle leaves its trace. */
+  failedReviews: readonly FailedReviewView[];
   scope: ScopeView;
   quality: BriefQualitySummary | null;
   files: Readonly<{
@@ -154,6 +163,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
       earlierRows: rows.earlier,
     },
     review: reviewView(summary, state?.review?.preExistingChecks ?? []),
+    failedReviews: failedReviewViews(ledger),
     scope: scopeView(summary),
     quality: summary.briefQuality ?? null,
     files: { ...files, patch: savedPatch(state, files.changed) },

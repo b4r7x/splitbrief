@@ -5,6 +5,7 @@ import { taskId, type Task } from '../../../core/schemas/task.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { ConsultRecord } from '../../../core/schemas/workflow.js';
 import { buildConsultPrompt, type ConsultPromptInput } from './consult.js';
+import { TASK_CMD_CHECK_RULE } from './plan-session.js';
 
 const plan: Plan = {
   summary: 'Add greeting support',
@@ -133,6 +134,7 @@ describe('buildConsultPrompt', () => {
     );
     expect(prompt).toContain('No action undoes one of them.');
     expect(prompt).toContain('This call is read-only');
+    expect(prompt).toContain(TASK_CMD_CHECK_RULE);
   });
 
   it('lets only guidance or a rewrite answer a stale consult', () => {

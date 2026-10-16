@@ -112,6 +112,22 @@ function nextOpenTools(
 }
 
 export function updateOperations(state: OperationsState, event: EngineEvent): OperationsState {
+  const next = updateRunningOperations(state, event);
+  const scheduledReview =
+    event.type === 'review_started' && event.scope === 'task'
+      ? true
+      : event.type === 'task_started' ||
+          event.type === 'review_fix_started' ||
+          event.type === 'workflow_complete' ||
+          (event.type === 'recovery_resolved' &&
+            event.action === 'accept-as-is' &&
+            event.reason === 'review-input-too-large')
+        ? false
+        : (next.scheduledReview ?? false);
+  return scheduledReview === (next.scheduledReview ?? false) ? next : { ...next, scheduledReview };
+}
+
+function updateRunningOperations(state: OperationsState, event: EngineEvent): OperationsState {
   switch (event.type) {
     case 'validate':
       return applyValidationStage(state, event);

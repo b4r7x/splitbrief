@@ -17,7 +17,7 @@ import {
   SeatSwapCandidateSchema,
 } from './recovery/schemas.js';
 import { SeatSwitchRecordSchema } from './workflow.js';
-import { EvidenceFinalReviewStatusSchema } from './evidence.js';
+import { EvidenceFinalReviewStatusSchema, EvidenceReviewSchema } from './evidence.js';
 import {
   CostAmountBasisSchema,
   CostBreakdownSchema,
@@ -207,6 +207,7 @@ const ReviewPacketEvidenceSchema = z.object({
     .nullable(),
   approvals: z.array(ReviewPacketApprovalEntrySchema),
   rejections: z.array(ReviewPacketApprovalEntrySchema),
+  reviews: z.array(EvidenceReviewSchema).default([]),
 });
 
 const ReviewPacketDriftSchema = z.object({

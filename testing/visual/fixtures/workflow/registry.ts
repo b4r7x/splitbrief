@@ -514,7 +514,13 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('review-task-cadence-settled'),
-    includesTranscript('Final review passed', 'Review T002 failed', 'fixes T003'),
+    includesTranscript(
+      'Final review passed',
+      'Review T002 failed',
+      'Blocking F1',
+      'PLAN rejected 1 decision for T003',
+      'fixes T003',
+    ),
   ],
   [checkpointId('review-task-out-of-scope'), includesAll('Review T001 passed', '3 notes')],
   [checkpointId('review-drift-clean'), includesAll('Drift · clean')],
@@ -650,6 +656,7 @@ const checkpointPredicates = [
   [checkpointId('ready-override'), includesAll()],
   [checkpointId('closed-applied'), includesAll()],
   [checkpointId('closed-pre-existing'), includesAll('V2 pre-existing')],
+  [checkpointId('closed-fix-cycle'), includesAll('Review T002', 'Final review', '2 blocking')],
   [checkpointId('closed-undone'), includesAll('Apply undone')],
   [checkpointId('closed-undo-conflicts'), includesAll('1 conflict kept')],
   [checkpointId('closed-discarded'), includesAll()],

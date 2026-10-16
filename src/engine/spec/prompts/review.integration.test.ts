@@ -21,6 +21,7 @@ import { REVIEW_FILE, sessionDir } from '../../../core/paths.js';
 import { getChangedFilesSnapshot } from '../../orchestrator/approval/file-snapshots/capture.js';
 import { runFinalReviewPhase } from '../../orchestrator/final-review.js';
 import { buildFinalReviewPrompt, type ReviewPlanData } from './review.js';
+import { TASK_CMD_CHECK_RULE } from './plan-session.js';
 
 const SPEC = '## Spec\nAdd a hello function.';
 const TASK_BRIEFS = '## Task T001\nAdd the hello export.';
@@ -133,6 +134,9 @@ describe('buildFinalReviewPrompt', () => {
       'every blocking finding inside the Review Scope that is not unverified',
     );
     expect(scope).toContain('Raise no finding for work a pending task owns.');
+    expect(result).toContain(TASK_CMD_CHECK_RULE);
+    expect(result).toContain('`test -e <file>`');
+    expect(result).not.toContain('`node`, `make`');
     expect(result).not.toContain('every acceptance criterion and requirement');
     expect(result).not.toContain('Final Implementation Review');
   });

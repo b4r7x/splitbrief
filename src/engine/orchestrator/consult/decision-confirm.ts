@@ -1,7 +1,7 @@
 import type { ImplementerReport } from '../../../core/schemas/consult.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
-import { decisionLedgerText } from '../../../core/state/machine.js';
+import { decisionLedgerText, rejectedDecisions } from '../../../core/state/machine.js';
 import { consultAttemptError, guidanceInstructions } from '../escalation/consult-guidance.js';
 import { publishWarning } from '../events.js';
 import type { WorkflowContext } from '../types.js';
@@ -17,9 +17,10 @@ type DecisionConfirmOutcome =
  * Confirms an attempt's new decisions before validation. A question the planner asks goes to
  * the user, and the planner is asked once more with the answer in the brief's operator
  * instructions: a confirm sends the kept work to validation with no new build call, and
- * guidance returns the change for the next attempt to deliver. When that second call fails or its
- * question stays unanswered, the next attempt delivers the first answer. A first question left
- * unanswered returns a failure to retry.
+ * guidance returns the change for the next attempt to deliver. A confirm that leaves out or
+ * rewrites a reported decision rejects it, and the attempt retries with the planner's diagnosis.
+ * When that second call fails or its question stays unanswered, the next attempt delivers the
+ * first answer. A first question left unanswered returns a failure to retry.
  */
 export async function confirmAttemptDecisions(opts: {
   wctx: WorkflowContext;
@@ -92,6 +93,22 @@ export async function confirmAttemptDecisions(opts: {
       return delivery === undefined
         ? { kind: 'retry', state, error: applied.reason }
         : { kind: 'answer', state, answer: delivery };
+    }
+    // A reported decision the confirm does not accept goes back to the implementer with the
+    // planner's diagnosis instead of reaching validation.
+    if (
+      applied.action === 'confirm' &&
+      rejectedDecisions(decisions, applied.decisions).length > 0
+    ) {
+      return {
+        kind: 'retry',
+        state,
+        error: consultAttemptError({
+          lastError: 'The planner rejected decisions this attempt reported.',
+          instructions: outcome.answer.answer.diagnosis,
+          seat,
+        }),
+      };
     }
     if (applied.action !== 'guidance') return { kind: 'validate', state };
     const asked = outcome.answer.answer.action === 'ask-user';

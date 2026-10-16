@@ -210,6 +210,29 @@ export function blocksPlan(error: PlanCheckError): boolean {
 }
 
 /**
+ * The `cmd` checks the plan command policy refuses from their text alone: a plan's checks, the
+ * checks of the fix tasks a review writes, and the checks of a consult's rewrite or split, so a
+ * refused command never becomes a required check.
+ */
+export function refusedCheckErrors(
+  checks: readonly Pick<TaskSpec['checks'][number], 'id' | 'kind' | 'value'>[],
+  npmScriptsApproved: boolean,
+): PlanCheckError[] {
+  return checks.flatMap((check): PlanCheckError[] => {
+    if (check.kind !== 'cmd') return [];
+    const refusal = commandTextRefusal(check.value, npmScriptsApproved);
+    return refusal === null
+      ? []
+      : [
+          {
+            code: 'refused-check-command',
+            message: `Check ${check.id} is refused: \`${check.value}\` ${refusal}. Change it to a command that plan checks allow, or to a check of kind \`test\` that names a test file.`,
+          },
+        ];
+  });
+}
+
+/**
  * The deterministic checks a plan passes before anyone approves it. `taskFits` is BUILD's fit per
  * task id, estimated with the task's fresh code: `overflow` blocks, and so does a task that no
  * implementer can take. `npmScriptsApproved` is the run's plan approval, under which a `cmd` check
@@ -238,15 +261,7 @@ export function checkPlan(
   }
   for (const id of duplicates(plan.criteria.map((criterion) => criterion.id)))
     fail('duplicate-criterion-id', `Criterion id ${id} is used twice.`);
-  for (const check of checks.filter((each) => each.kind === 'cmd')) {
-    const refusal = commandTextRefusal(check.value, npmScriptsApproved);
-    if (refusal !== null) {
-      fail(
-        'refused-check-command',
-        `Check ${check.id} is refused: \`${check.value}\` ${refusal}. Change it to a command that plan checks allow, or to a check of kind \`test\` that names a test file.`,
-      );
-    }
-  }
+  errors.push(...refusedCheckErrors(checks, npmScriptsApproved));
 
   for (const criterion of plan.criteria) {
     if (criterion.checkIds.length === 0) {

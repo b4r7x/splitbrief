@@ -135,6 +135,7 @@ export function buildEvidence(ledger: EvidenceLedger | null): ReviewPacket['evid
     finalReview: ledger?.finalReview ?? null,
     approvals: ledger?.approvals ?? [],
     rejections: ledger?.rejections ?? [],
+    reviews: ledger?.reviews ?? [],
   };
 }
 

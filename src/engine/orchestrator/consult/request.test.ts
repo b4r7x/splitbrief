@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
@@ -21,6 +22,7 @@ import { consultSeat, requestConsult, thrownConsultSeat, type ConsultContext } f
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 
+const config = makeConfig();
 const dirs: string[] = [];
 afterEach(() => {
   vi.useRealTimers();
@@ -187,7 +189,15 @@ describe('requestConsult', () => {
     if (task === undefined) throw new Error('missing consult task');
 
     await requestConsult(
-      { ...ref, workspaceDir, bus, planner: planner.planner, reviewer: planner.planner, state },
+      {
+        ...ref,
+        workspaceDir,
+        bus,
+        config,
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+      },
       {
         task,
         reason: 'failed',
@@ -273,6 +283,7 @@ describe('requestConsult', () => {
           workspaceDir,
           sessionId,
           bus,
+          config,
           planner: planner.planner,
           reviewer: planner.planner,
           state,
@@ -335,6 +346,7 @@ describe('requestConsult', () => {
       workspaceDir: projectDir,
       sessionId,
       bus,
+      config,
       planner: planner.planner,
       reviewer: planner.planner,
       state,
@@ -396,6 +408,7 @@ describe('requestConsult', () => {
       workspaceDir: projectDir,
       sessionId,
       bus,
+      config,
       planner: planner.planner,
       reviewer: planner.planner,
       state,
@@ -433,6 +446,7 @@ describe('requestConsult', () => {
         workspaceDir: projectDir,
         sessionId,
         bus,
+        config,
         planner: planner.planner,
         reviewer: planner.planner,
         state,
@@ -471,6 +485,7 @@ describe('requestConsult', () => {
         workspaceDir: projectDir,
         sessionId,
         bus,
+        config,
         planner: planner.planner,
         reviewer: planner.planner,
         state,
@@ -517,6 +532,7 @@ describe('requestConsult', () => {
           workspaceDir: projectDir,
           sessionId,
           bus,
+          config,
           planner: planner.planner,
           reviewer: planner.planner,
           state,
@@ -558,6 +574,7 @@ describe('requestConsult', () => {
           workspaceDir: projectDir,
           sessionId,
           bus,
+          config,
           planner: planner.planner,
           reviewer: planner.planner,
           state,
@@ -600,6 +617,7 @@ describe('requestConsult', () => {
         workspaceDir: projectDir,
         sessionId,
         bus,
+        config,
         planner: planner.planner,
         reviewer: planner.planner,
         state,
@@ -648,7 +666,16 @@ describe('requestConsult', () => {
     saveState({ projectDir, sessionId }, state);
 
     const pending = requestConsult(
-      { projectDir, workspaceDir: projectDir, sessionId, bus, planner, reviewer: planner, state },
+      {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        bus,
+        config,
+        planner,
+        reviewer: planner,
+        state,
+      },
       {
         task: state.tasks[0]!,
         reason: 'failed',
@@ -733,6 +760,7 @@ describe('requestConsult seats', () => {
       workspaceDir: projectDir,
       sessionId,
       bus,
+      config,
       planner,
       reviewer,
       state,

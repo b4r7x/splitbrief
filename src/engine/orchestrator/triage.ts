@@ -371,7 +371,7 @@ export function applyTriage(
   };
 }
 
-/** Review fix work spends one fix cycle; inserted tasks announce it. */
+/** Review fix work spends one fix cycle and announces it; inserted tasks re-plan the list. */
 export function startFixCycle(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
@@ -387,13 +387,13 @@ export function startFixCycle(args: {
   args.setTrackedState(state);
   if (args.taskIds.length > 0) {
     publishTasksPlanned({ bus: wctx.bus, phase: state.phase }, state.tasks);
-    wctx.bus.publish({
-      type: 'review_fix_started',
-      ts: Date.now(),
-      phase: state.phase,
-      cycle: fixCyclesOf(state).used,
-      taskIds: [...args.taskIds],
-    });
   }
+  wctx.bus.publish({
+    type: 'review_fix_started',
+    ts: Date.now(),
+    phase: state.phase,
+    cycle: fixCyclesOf(state).used,
+    taskIds: [...args.taskIds],
+  });
   return state;
 }
