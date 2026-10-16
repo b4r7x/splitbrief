@@ -586,7 +586,10 @@ describe('runApply', { timeout: 60_000 }, () => {
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'manifest.json'), JSON.stringify(old));
 
-      expect(await readApplyBackup(run.dir, run.sessionId, 'apply-old')).toEqual(old);
+      expect(await readApplyBackup(run.dir, run.sessionId, 'apply-old')).toEqual({
+        ...old,
+        createdDirs: [],
+      });
     });
   });
 

@@ -154,7 +154,7 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
             event.type === 'warning' &&
             event.message.includes(join(SPLITBRIEF_DIR, 'sessions', SESSION_ID, 'run.patch')),
         ),
-      ).toBe(true);
+      ).toBe(false);
 
       const replay = createTempDir('close-run-replay-');
       dirs.push(replay);
@@ -241,7 +241,10 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
 
     expect(result).toMatchObject({ ok: true, status: 'closed' });
     expect(result.state.closed?.as).toBe('ended');
-    expect(loadState(ref)?.closed?.as).toBe('ended');
+    expect(loadState(ref)?.closed).toMatchObject({
+      as: 'ended',
+      patch: join(SPLITBRIEF_DIR, 'sessions', SESSION_ID, 'run.patch'),
+    });
     expect(loadState(ref)?.pendingRecovery).toBeUndefined();
     expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(true);
     expect(removal.patchExisted).toEqual([true]);
@@ -252,7 +255,7 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
           event.type === 'warning' &&
           event.message.includes(join(SPLITBRIEF_DIR, 'sessions', SESSION_ID, 'run.patch')),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(events.map((event) => event.type)).toContain('workspace_closed');
   });
 

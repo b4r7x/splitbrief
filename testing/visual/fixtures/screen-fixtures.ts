@@ -491,6 +491,16 @@ export function createSetupFixture(
           ],
           modelsDev: { catalog: {} },
         });
+      // Every ready-made crew ready, so the checked seat is the one row that reads Unavailable.
+      else if (state === 'custom-unavailable' || state === 'persisted-api-override')
+        publishVisualDiscovery({
+          cliTools: [
+            cliDetectionFor('ready', 'claude-code'),
+            cliDetectionFor('ready', 'codex'),
+            cliDetectionFor('ready', 'opencode'),
+          ],
+          modelsDev: { catalog: {} },
+        });
       else publishFreshDiscovery();
       if (state === 'api-override' || state === 'persisted-api-override') {
         const config = configStore.get().config;

@@ -705,7 +705,7 @@ describe('applyRecoveryAction: switch-seat', () => {
         to: 'OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
         cause: 'runner-usage-limit',
         accountCause: 'balance',
-        headline: 'Balance spent on OpenCode CLI',
+        headline: 'Balance spent on deepseek (OpenCode CLI)',
         auto: true,
       });
       expect(loadState(ref)?.seatSwitches?.[0]).toEqual(result.state.seatSwitches?.[0]);
@@ -715,7 +715,7 @@ describe('applyRecoveryAction: switch-seat', () => {
         type: 'seat_switched',
         cause: 'runner-usage-limit',
         accountCause: 'balance',
-        headline: 'Balance spent on OpenCode CLI',
+        headline: 'Balance spent on deepseek (OpenCode CLI)',
         auto: true,
       });
     },

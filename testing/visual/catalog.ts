@@ -2249,7 +2249,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'recovery',
         title: 'Balance recovery menu',
         kind: 'question',
-        marker: 'Seat down · Balance spent on OpenCode CLI',
+        marker: 'Seat down · Balance spent on deepseek (OpenCode CLI)',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
