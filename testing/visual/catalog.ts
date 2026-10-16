@@ -3229,7 +3229,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'ready',
         title: 'Unavailable seat shown',
         kind: 'ready',
-        marker: 'Unavailable',
+        marker: 'choose ready seats',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'setup-signed-out-tools',
+      title: 'Setup · tools not signed in',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Signed-out tools named',
+        kind: 'ready',
+        marker: 'Sign in to',
       },
       elements: [
         { id: 'header', title: 'Setup header' },
@@ -3609,6 +3624,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-planner-picker-antigravity-listed',
         title: 'Overlay · planner picker · Antigravity high effort model',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-antigravity-signed-out',
+        title: 'Overlay · planner picker · Antigravity signed out',
         marker: PICKER_TITLE_MARKER,
       },
       {

@@ -228,6 +228,7 @@ describe('usePickerCatalog catalog diagnostic', () => {
       source: listing.source,
       unverifiedForPlan: listing.unverifiedForPlan,
       diagnostic: capturedCatalog?.catalogDiagnostic,
+      signedOut: false,
       lane: 'ready',
       capabilities: ['Network', 'Shell'],
       billing: 'provider-dependent',

@@ -386,6 +386,7 @@ export function createSetupFixture(
     | 'saved'
     | 'saved-ignore-rule'
     | 'unavailable'
+    | 'signed-out'
     | 'detecting'
     | 'cached-refresh'
     | 'cached-failure'
@@ -402,7 +403,7 @@ export function createSetupFixture(
       if (state === 'saved-ignore-rule') {
         createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, { '.gitignore': 'node_modules/\n' });
       }
-      if (state !== 'unavailable') {
+      if (state !== 'unavailable' && state !== 'signed-out') {
         configStore.load(VISUAL_FIXTURE_PROJECT_DIR);
       }
       if (state === 'custom-api' || state === 'custom-unavailable') {
@@ -479,6 +480,17 @@ export function createSetupFixture(
         }
       } else if (state === 'detecting')
         detectionStore.beginRefresh({ contexts: VISUAL_DETECTION_CONTEXTS });
+      // A new machine: three tools installed but not signed in, one ready.
+      else if (state === 'signed-out')
+        publishVisualDiscovery({
+          cliTools: [
+            cliDetectionFor('unauthenticated', 'claude-code'),
+            cliDetectionFor('unauthenticated', 'codex'),
+            cliDetectionFor('unauthenticated', 'antigravity'),
+            cliDetectionFor('ready', 'opencode'),
+          ],
+          modelsDev: { catalog: {} },
+        });
       else publishFreshDiscovery();
       if (state === 'api-override' || state === 'persisted-api-override') {
         const config = configStore.get().config;
@@ -502,10 +514,11 @@ export function createSetupFixture(
       }
       routerStore.init({ screen: 'setup', onComplete: 'home' });
     },
-    // The user walks up from PLAN to the first ready-made crew and takes it; the cursor stays there.
+    // The user walks up from PLAN, past the two other ready-made crews, to the first one and
+    // takes it; the cursor stays there.
     ...((state === 'saved' || state === 'saved-ignore-rule') && {
       afterMount: async (write) => {
-        for (const key of ['\x1b[A', '\x1b[A', '\r']) await write.press(key);
+        for (const key of ['\x1b[A', '\x1b[A', '\x1b[A', '\r']) await write.press(key);
       },
     }),
     teardown: () => {
@@ -1088,6 +1101,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('setup-saved'), () => createSetupFixture('saved')],
   [scenarioId('setup-saved-ignore-rule'), () => createSetupFixture('saved-ignore-rule')],
   [scenarioId('setup-unavailable-seat'), () => createSetupFixture('unavailable')],
+  [scenarioId('setup-signed-out-tools'), () => createSetupFixture('signed-out')],
   [scenarioId('setup-api-endpoint-override'), () => createSetupFixture('api-override')],
   [scenarioId('setup-custom-api'), () => createSetupFixture('custom-api')],
   [scenarioId('setup-custom-api-unavailable'), () => createSetupFixture('custom-unavailable')],

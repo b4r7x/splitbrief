@@ -48,8 +48,9 @@ export function parseMarkdownInlines(text: string): MarkdownInlineToken[] {
       continue;
     }
 
-    const link = findNextLink(text, index);
-    if (link && link.start <= codeOpen && link.end > codeOpen) {
+    let link = findNextLink(text, index);
+    while (link && link.end <= codeOpen) link = findNextLink(text, link.end);
+    if (link && link.start <= codeOpen) {
       // A complete link spanning the backtick outranks the code span; flushing
       // through its end lets the styled pass emit it with backticks literal.
       flushStyled(link.end);

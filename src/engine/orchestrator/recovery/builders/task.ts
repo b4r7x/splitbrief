@@ -37,7 +37,11 @@ import {
 import type { FinalReviewFailure } from '../../final-review.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
-import { runnerAuthDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
+import {
+  runnerAccountDisplayName,
+  runnerAuthDisplayName,
+  runnerLoginInstruction,
+} from '../../../runners/auth-failure.js';
 import { inputTooLargeFigures } from '../../../runners/input-limit.js';
 import { inputTooLargeSentence } from './review-input.js';
 import { usageLimitAdvice } from '../../../runners/usage-limit.js';
@@ -316,13 +320,17 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
       : classification.class === 'account' && classification.cause !== 'auth'
         ? classification.cause
         : undefined;
+  const holder =
+    cause === 'balance' || cause === 'billing' || cause === 'quota'
+      ? runnerAccountDisplayName(opts.runner)
+      : displayName;
   const message =
     classification.class === 'account'
       ? classification.cause === 'auth'
         ? `${displayName} is signed out. ${runnerLoginInstruction(opts.runner)}`
         : accountCauseAdvice({
             cause: classification.cause,
-            tool: displayName,
+            tool: holder,
             seat: opts.seatSwap?.seat ?? opts.seat,
           })
       : usageLimitAdvice({ tool: displayName, seat: opts.seatSwap?.seat ?? opts.seat });
@@ -353,7 +361,7 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
     ...(resetAt !== undefined && { resetAt: resetAt.toISOString() }),
     ...(switchSeat !== undefined && { switchSeat }),
     facts: compactFacts({
-      tool: displayName,
+      tool: holder,
       cause,
       providerMessage: opts.words,
       requestId: opts.requestId,

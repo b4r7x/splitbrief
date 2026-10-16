@@ -25,6 +25,7 @@ const PRESET: CrewPreset = {
     implementer: { kind: 'cli', tool: 'opencode' },
     reviewer: { kind: 'cli', tool: 'codex' },
   },
+  notReady: [],
 };
 
 function currentConfig(): Config {
@@ -194,6 +195,7 @@ describe('crew preset application', () => {
           planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
           implementer: { kind: 'cli', tool: 'opencode' },
         },
+        notReady: [],
       };
 
       const applied = crewActivate({ target: { kind: 'preset', preset }, config: currentConfig() });

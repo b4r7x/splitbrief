@@ -1,4 +1,5 @@
 import type { CrewSeatId } from '../../core/crew/identity.js';
+import type { Config } from '../../core/schemas/config.js';
 import { wrapPathAware } from '../../utils/wrap.js';
 import type { SettingsItem } from './items.js';
 
@@ -6,14 +7,21 @@ export interface HelpLine {
   text: string;
 }
 
-const SEAT_DESCRIPTIONS: Readonly<Record<CrewSeatId, string>> = {
-  plan: 'Plans the work and writes every Task Brief; the review seat inherits this setup when it has none of its own.',
-  build: 'Executes the briefs the planner writes; this is the seat that changes the code.',
-  review: "Reads the diff after every task; with no tool of its own it runs the planner's setup.",
-};
+function seatDescription(seat: CrewSeatId, config: Config): string {
+  switch (seat) {
+    case 'plan':
+      return 'Plans the work and writes every Task Brief; the review seat inherits this setup when it has none of its own.';
+    case 'build':
+      return 'Executes the briefs the planner writes; this is the seat that changes the code.';
+    case 'review':
+      return config.workflow.review === 'task'
+        ? "Reads the diff after every task; with no tool of its own it runs the planner's setup."
+        : "Reads the whole diff once after the last task; with no tool of its own it runs the planner's setup.";
+  }
+}
 
-export function settingsHelpLines(item: SettingsItem): HelpLine[] {
-  if (item.kind === 'crew') return [{ text: SEAT_DESCRIPTIONS[item.row.id] }];
+export function settingsHelpLines(item: SettingsItem, config: Config): HelpLine[] {
+  if (item.kind === 'crew') return [{ text: seatDescription(item.row.id, config) }];
   if (item.kind === 'fallback') {
     return [
       {

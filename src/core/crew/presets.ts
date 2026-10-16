@@ -18,6 +18,8 @@ export type CrewPreset = Readonly<{
   label: string;
   description: string;
   seats: CrewPresetSeats;
+  /** The preset's tools that are not ready (not installed or not signed in), in seat order. */
+  notReady: readonly CliToolId[];
 }>;
 
 type CrewPresetDeclaration = Readonly<{
@@ -88,12 +90,13 @@ export function computeCrewPresets(
 ): readonly CrewPreset[] {
   const ready = new Set<CliToolId>(input.readyTools);
 
-  return CREW_PRESET_DECLARATIONS.filter(
-    (preset) => ready.has(preset.plan) && ready.has(preset.build) && ready.has(preset.review),
-  ).map((preset) => ({
+  return CREW_PRESET_DECLARATIONS.map((preset) => ({
     id: preset.id,
     label: preset.label,
     description: preset.description,
     seats: presetSeats(input.config, preset),
+    notReady: [...new Set([preset.plan, preset.build, preset.review])].filter(
+      (tool) => !ready.has(tool),
+    ),
   }));
 }

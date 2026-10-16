@@ -4,7 +4,10 @@ import {
   type RunnerConfig,
 } from '../../core/config/accessors/runner-config.js';
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
-import { getRunnerIdentityDisplayName } from '../../core/providers/catalog.js';
+import {
+  getProviderDisplayName,
+  getRunnerIdentityDisplayName,
+} from '../../core/providers/catalog.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 
 /**
@@ -29,6 +32,22 @@ export function runnerAuthDisplayName(runner: DeepReadonly<RunnerConfig>): strin
   if (runner.kind === 'cli') return CLI_TOOL_CATALOG[runner.tool].displayName;
   if (runner.kind === 'api') return getRunnerIdentityDisplayName('api', runner.provider);
   return getRunnerDisplayName(runner);
+}
+
+/**
+ * Who holds the account a balance, billing or quota refusal names. A provider-dependent tool
+ * bills the provider its model route names (`deepseek/…` on OpenCode spends DeepSeek's balance);
+ * every other runner holds its own account.
+ */
+export function runnerAccountDisplayName(runner: DeepReadonly<RunnerConfig>): string {
+  const tool = runnerAuthDisplayName(runner);
+  if (runner.kind !== 'cli' || CLI_TOOL_CATALOG[runner.tool].auth.kind !== 'provider-dependent') {
+    return tool;
+  }
+  const route = runner.model ?? '';
+  const slash = route.indexOf('/');
+  if (slash <= 0) return tool;
+  return `${getProviderDisplayName(route.slice(0, slash))} (${tool})`;
 }
 
 /**

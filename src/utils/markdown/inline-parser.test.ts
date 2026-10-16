@@ -115,6 +115,7 @@ describe('parseMarkdownInlines', () => {
         'src/components/markdown.tsx',
       ],
       ['See [`file.ts`](src/file.ts) now', '`file.ts`', 'src/file.ts'],
+      ['[lib/a.mjs](f) exporting [`fn`](f#L1) along', '`fn`', 'f#L1'],
     ])('lets a link spanning a code span win from %s', (source, label, href) => {
       const tokens = parseMarkdownInlines(source);
 
@@ -122,6 +123,15 @@ describe('parseMarkdownInlines', () => {
       for (const token of tokens) {
         expect(token.text).not.toContain('](');
       }
+    });
+
+    it('keeps an earlier link a link beside a link spanning a code span', () => {
+      expect(parseMarkdownInlines('[lib/a.mjs](f) exporting [`fn`](f#L1) along')).toEqual([
+        { kind: 'link', text: 'lib/a.mjs', href: 'f' },
+        { kind: 'text', text: ' exporting ' },
+        { kind: 'link', text: '`fn`', href: 'f#L1' },
+        { kind: 'text', text: ' along' },
+      ]);
     });
   });
 

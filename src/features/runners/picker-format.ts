@@ -127,6 +127,12 @@ function noListingSentence(toolName: string): string {
   return `${toolName} does not support model listing`;
 }
 
+/** A signed-out tool's error already names its sign-in step, and a retry cannot sign it in. */
+function commandFailedCopy(toolName: string, cause: string, signedOut: boolean): string {
+  const failure = `${toolName} could not list models: ${cause}`;
+  return signedOut ? failure : `${failure}${SOFT_SEP}ctrl+r to retry`;
+}
+
 export function formatCatalogDiagnostic(
   diagnostic: ModelCatalogDiagnostic,
   toolName: string,
@@ -151,7 +157,7 @@ export function formatCatalogDiagnostic(
     case 'malformed':
       return `Unreadable model list${SOFT_SEP}ctrl+r will not help; add a custom model or report the output`;
     case 'command-failed':
-      return `${toolName} could not list models: ${diagnostic.cause}${SOFT_SEP}ctrl+r to retry`;
+      return commandFailedCopy(toolName, diagnostic.cause, false);
     case 'cancelled':
       return 'Model detection was cancelled. Press ctrl+r to retry';
     case 'not-run':
@@ -520,6 +526,7 @@ export function bylineDiagnostic(input: {
   diagnostic: ModelCatalogDiagnostic | undefined;
   modelCount: number;
   toolName: string;
+  signedOut: boolean;
   budget: number;
 }): string | undefined {
   const { diagnostic } = input;
@@ -529,14 +536,17 @@ export function bylineDiagnostic(input: {
   // Rows are listed and detection has not run: they are the bundled list. Saying detection has not
   // run would contradict the column beside it, so name the list the user is reading instead.
   if (input.modelCount > 0 && isDetectionNotRun(diagnostic)) return BUNDLED_LIST_COPY;
-  let fitted = formatCatalogDiagnostic(diagnostic, input.toolName);
-  if (diagnostic.kind !== 'probe-failed' || diagnostic.failure !== 'command-failed') return fitted;
+  if (diagnostic.kind !== 'probe-failed' || diagnostic.failure !== 'command-failed') {
+    return formatCatalogDiagnostic(diagnostic, input.toolName);
+  }
   let causeCells = getTerminalCellWidth(diagnostic.cause);
+  let fitted = commandFailedCopy(input.toolName, diagnostic.cause, input.signedOut);
   while (causeCells > 0 && wrapOnWords(fitted, input.budget, 2).cut) {
     causeCells -= 1;
-    fitted = formatCatalogDiagnostic(
-      { ...diagnostic, cause: truncateTerminalDisplayText(diagnostic.cause, causeCells) },
+    fitted = commandFailedCopy(
       input.toolName,
+      truncateTerminalDisplayText(diagnostic.cause, causeCells),
+      input.signedOut,
     );
   }
   return fitted;
@@ -555,6 +565,7 @@ export function formatToolsByline(input: {
   source: string | undefined;
   unverifiedForPlan: boolean;
   diagnostic: ModelCatalogDiagnostic | undefined;
+  signedOut: boolean;
   lane: CatalogLane;
   capabilities: readonly string[];
   billing: RunnerBillingPosture;
@@ -564,6 +575,7 @@ export function formatToolsByline(input: {
     diagnostic: input.diagnostic,
     modelCount: input.modelCount,
     toolName: input.toolName,
+    signedOut: input.signedOut,
     budget: input.budget,
   });
   if (status !== undefined) return status;

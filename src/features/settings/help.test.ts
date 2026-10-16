@@ -11,16 +11,28 @@ function itemAt(items: readonly SettingsItem[], key: string): SettingsItem {
   return item;
 }
 
-const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS, cliTools: [] });
+const config = makeConfig();
+const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, cliTools: [] });
 
 function linesFor(key: string) {
-  return settingsHelpLines(itemAt(items, key));
+  return settingsHelpLines(itemAt(items, key), config);
 }
 
 describe('settingsHelpLines', () => {
   it('explains the plan seat', () => {
     expect(linesFor('seat:plan')).toEqual([
       { text: expect.stringContaining('writes every Task Brief') },
+    ]);
+  });
+
+  it.each([
+    ['end', 'Reads the whole diff once after the last task'],
+    ['task', 'Reads the diff after every task'],
+  ] as const)('explains the review seat under review: %s', (review, text) => {
+    const reviewConfig = makeConfig({ workflow: { review } });
+
+    expect(settingsHelpLines(itemAt(items, 'seat:review'), reviewConfig)).toEqual([
+      { text: expect.stringContaining(text) },
     ]);
   });
 
@@ -78,7 +90,7 @@ describe('settingsHelpLines', () => {
 
   it('never points a help line at a command the merge deleted', () => {
     for (const item of items) {
-      for (const line of settingsHelpLines(item)) {
+      for (const line of settingsHelpLines(item, config)) {
         const commands = line.text.match(/(?<![\w.])\/[a-z-]+/g) ?? [];
         for (const removed of Object.keys(REMOVED_COMMANDS)) {
           expect(commands).not.toContain(removed);

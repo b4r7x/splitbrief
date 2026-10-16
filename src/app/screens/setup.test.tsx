@@ -1126,6 +1126,46 @@ describe('SetupScreen', () => {
     });
   });
 
+  it('names the signed-out tools and keeps a crew that needs them unavailable', async () => {
+    await withTempDir('setup-signed-out', async (projectDir) => {
+      configStore.load(projectDir);
+      terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+      freshDiscovery(beginDiscovery(), 1, {
+        cliTools: [
+          cliDetectionFor('unauthenticated', 'claude-code'),
+          cliDetectionFor('unauthenticated', 'codex'),
+          cliDetectionFor('ready', 'opencode'),
+        ],
+        providers: [],
+      });
+      const reviewer = configStore.get().config?.reviewer;
+
+      const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+        cols: 120,
+        rows: 40,
+      });
+      await flushEffects();
+
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain(
+        'Sign in to Claude Code CLI, OpenAI Codex CLI, then run `splitbrief doctor` again.',
+      );
+      expect(frame).toContain(
+        'Claude crew, Codex review    Unavailable · needs Claude Code CLI, OpenAI Codex CLI',
+      );
+
+      await focusRow(ui, UP, 'Claude crew, Codex review');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+        '↑↓ select · this crew needs ready tools · esc quit',
+      );
+      ui.stdin.write(ENTER);
+      await flushEffects();
+
+      expect(configStore.get().config?.reviewer).toEqual(reviewer);
+      ui.unmount();
+    });
+  });
+
   it('applies a crew preset and completes to workflow with the canonical config', async () => {
     await withTempDir('setup-complete', async (projectDir) => {
       configStore.load(projectDir);
