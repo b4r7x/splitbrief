@@ -1595,6 +1595,19 @@ const completeAfterFixTasksProjection: WorkflowFixtureProjection = {
         fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1)),
       ),
       {
+        ...orphanBriefStarted(
+          {
+            id: WORKFLOW_FIXTURE_FIX_TASK_ID,
+            title: WORKFLOW_FIXTURE_TEXT.reviewFixTask,
+            index: 3,
+            file: WORKFLOW_FIXTURE_SECOND_FILE,
+          },
+          FIXED_TS + 400,
+        ),
+        total: 4,
+        files: [WORKFLOW_FIXTURE_SECOND_FILE, WORKFLOW_FIXTURE_REVIEW_FILE],
+      },
+      {
         type: 'task_completed',
         ts: FIXED_TS + 500,
         phase: 'implementing',

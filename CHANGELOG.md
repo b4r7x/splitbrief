@@ -201,6 +201,8 @@
 - When a coding tool changes during a run, for example when it updates itself, the halt names the tool and tells you that **Try again** checks it again. It no longer asks you to run `splitbrief doctor`.
 - `plan.md`, `tasks.md` and `review.md` name the REVIEW seat beside PLAN and BUILD. `splitbrief status` lists the three seats as PLAN, BUILD and REVIEW.
 - A correct change no longer fails its review over a test that already failed before the run. A reviewer check whose only failures also fail at the run base verifies the reviewer's claim and fails nothing. A minor finding stays a note in `review.md`, also when the reviewer could not verify it.
+- A brief that changed more than one file keeps its file count, such as `+1 file`, on its transcript heading when the transcript is narrow, also beside the sidebar. Before, the heading dropped the count together with the `(modify)` note and named one file of two while the result menu said `2 files changed`. When room is short, the `(modify)` note goes first, then the path is shortened.
+- When the final review passes, the header keeps Plan, Build and Review marked until the result menu opens, and a worktree or staged-copy run then adds the Apply stage. Before, a run that was ready to apply showed `done · 1/1 briefs passed` in the header for a moment.
 
 ## [0.1.0] - 2026-08-07
 

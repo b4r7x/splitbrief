@@ -1,7 +1,6 @@
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { isImplementerPhase } from '../../../core/phases.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { EngineEvent } from '../../../engine/events/types.js';
 import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { ROW_LEADING } from '../../../components/row-leading.js';
@@ -90,17 +89,6 @@ export function getContentTopRow(): number {
  */
 export function getContentTopRowIndex(): number {
   return getContentTopRow() - 1;
-}
-
-// The most recent drift verdict from the event log, used for the review-stage done tail.
-// undefined means no drift report has landed yet.
-export function getRailDriftPassed(events: readonly EngineEvent[]): boolean | undefined {
-  for (let index = events.length - 1; index >= 0; index--) {
-    const event = events[index];
-    if (event?.type === 'drift_report')
-      return event.passed && event.errorCount === 0 && event.warningCount === 0;
-  }
-  return undefined;
 }
 
 export type RailForm = 'B' | 'C';

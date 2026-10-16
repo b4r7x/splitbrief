@@ -107,19 +107,27 @@ export function fitDetailRun(
   const tailText = (parts: DetailSpan[]): string => parts.map((part) => part.text).join(SOFT_SEP);
   const cells = (parts: DetailSpan[]): number =>
     getTerminalCellWidth(parts.length === 0 ? head : `${head}${TITLE_SEP}${tailText(parts)}`);
-  const filePath = tail[0];
-  if (filePath !== undefined && (isPresent(fileNote) || isPresent(extraFiles))) {
+  // The `(action)` note is decoration and drops first. The `+N files` count is a fact about the
+  // path it follows: it keeps its room while the path shortens, and it drops only with the path.
+  const [filePath, ...meta] = tail;
+  const count: DetailSpan | undefined =
+    filePath !== undefined && isPresent(extraFiles)
+      ? { text: extraFiles, tone: 'textDim' }
+      : undefined;
+  const counted =
+    filePath === undefined ? tail : [filePath, ...(count === undefined ? [] : [count]), ...meta];
+  if (filePath !== undefined && isPresent(fileNote)) {
     const annotatedTail = [
-      { ...filePath, text: isPresent(fileNote) ? `${filePath.text} ${fileNote}` : filePath.text },
-      ...(isPresent(extraFiles) ? [{ text: extraFiles, tone: 'textDim' as const }] : []),
-      ...tail.slice(1),
+      { ...filePath, text: `${filePath.text} ${fileNote}` },
+      ...counted.slice(1),
     ];
     if (cells(annotatedTail) <= budget) return { head, tail: annotatedTail };
   }
+  if (cells(counted) <= budget) return { head, tail: counted };
 
   const isSettled = settled ?? isSettledTail(tail);
   if (!isSettled) {
-    const segments = [...tail];
+    const segments = [...counted];
     while (segments.length > 1 && cells(segments) > budget) segments.pop();
     if (cells(segments) <= budget) return { head, tail: segments };
 
@@ -134,37 +142,45 @@ export function fitDetailRun(
     return { head: formatTaskHeading(task, budget), tail: [] };
   }
 
-  if (cells(tail) <= budget) return { head, tail };
-
-  const skipIndex = tail.findIndex((part) => part.text === 'skipped');
-  if (skipIndex >= 0 && tail.length > skipIndex + 1) {
-    const withoutReason = tail.slice(0, skipIndex + 1);
-    const reason = tail[skipIndex + 1];
+  const skipIndex = counted.findIndex((part) => part.text === 'skipped');
+  if (skipIndex >= 0 && counted.length > skipIndex + 1) {
+    const withoutReason = counted.slice(0, skipIndex + 1);
+    const reason = counted[skipIndex + 1];
     const room = budget - cells(withoutReason) - getTerminalCellWidth(SOFT_SEP);
     if (reason !== undefined && room > 0) {
       const shortenedReason = truncateTerminalDisplayText(reason.text, room);
       if (shortenedReason !== '…')
         return { head, tail: [...withoutReason, { ...reason, text: shortenedReason }] };
     }
-    return fitDetailRun(task, withoutReason, width, true);
+    return fitDetailRun(
+      task,
+      tail.filter((part) => part !== reason),
+      width,
+      true,
+      undefined,
+      extraFiles,
+    );
   }
 
   const { file, retries, keptMeta } = partitionSettledTail(tail);
+  const afterFile = file !== undefined && count !== undefined ? [count, ...keptMeta] : keptMeta;
 
-  const tailWithoutRetries = file === undefined ? keptMeta : [file, ...keptMeta];
+  const tailWithoutRetries = file === undefined ? keptMeta : [file, ...afterFile];
   if (retries !== undefined && cells(tailWithoutRetries) <= budget) {
     return { head, tail: tailWithoutRetries };
   }
 
   if (file !== undefined) {
-    const keptMetaWidth =
-      keptMeta.length === 0
+    const afterFileWidth =
+      afterFile.length === 0
         ? 0
-        : getTerminalCellWidth(SOFT_SEP) + getTerminalCellWidth(tailText(keptMeta));
-    const room = budget - getTerminalCellWidth(head) - TITLE_SEP.length - keptMetaWidth;
+        : getTerminalCellWidth(SOFT_SEP) + getTerminalCellWidth(tailText(afterFile));
+    const room = budget - getTerminalCellWidth(head) - TITLE_SEP.length - afterFileWidth;
     if (room > 0) {
+      // A bare `…` names no file, so the path and its count drop together.
       const shortenedFile = elidePathMiddle(file.text, room);
-      return { head, tail: [{ ...file, text: shortenedFile }, ...keptMeta] };
+      if (shortenedFile !== '…')
+        return { head, tail: [{ ...file, text: shortenedFile }, ...afterFile] };
     }
   }
 
@@ -322,7 +338,9 @@ export function TaskSummary(props: TaskSummaryProps) {
     taskHeading,
     detailRun({ state, safeFile, safeReason, safeNote, retries, duration, t }),
     width - (failed ? FAILED_SUFFIX.length : 0),
-    state.kind === 'settled',
+    // A halted brief with a file fits the way a settled one does: its state word and note keep
+    // their room, and the path and its count go first.
+    state.kind === 'settled' || (state.kind === 'halted' && isPresent(safeFile)),
     isPresent(safeFile) ? safeFileNote : undefined,
     isPresent(safeFile) ? safeExtraFiles : undefined,
   );

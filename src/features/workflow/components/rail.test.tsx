@@ -43,6 +43,14 @@ const DONE = glyph('stageDone');
 const PENDING = glyph('stagePending');
 const CANCELLED = glyph('statusCancelled');
 
+function briefs(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `T${String(index + 1).padStart(3, '0')}`,
+    title: `Brief ${index + 1}`,
+    status: 'done' as const,
+  }));
+}
+
 // 0-based column of a stage label as actually painted, to compare against the hit-test zones (which
 // are laid out in the same space, from RAIL_CONTENT_LEFT_COL onward).
 function renderedStageCol(frame: string, label: string): number {
@@ -137,25 +145,31 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     expect(runningFrame).toContain(`${PENDING} Build`);
   });
 
-  it('aligns every Form-B stage label with its hit-test zone (marker at the zone left edge)', async () => {
-    const cols = 80;
-    terminalSizeStore.__testReset({ cols, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const ui = renderRail('B');
-    await tick();
-    const frame = ui.lastFrame() ?? '';
+  it.each([
+    ['implementing', 'running'],
+    ['complete', 'complete'],
+  ] as const)(
+    'aligns every Form-B stage label with its hit-test zone at %s (marker at the zone left edge)',
+    async (phase, status) => {
+      const cols = 80;
+      terminalSizeStore.__testReset({ cols, rows: 40, isSmall: false });
+      lifecycleStore.__testReset({ phase, status, startedAt: 0 });
+      tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+      const ui = renderRail('B');
+      await tick();
+      const frame = ui.lastFrame() ?? '';
 
-    const zones = getRailStageZones({ form: 'B', phase: 'implementing', cols, fraction: '' });
-    expect(zones).toHaveLength(3);
-    for (const zone of zones) {
-      // The label is painted one marker slot to the right of the zone's left edge (the marker).
-      expect(renderedStageCol(frame, formatStageLabel(zone.stage))).toBe(
-        zone.left + RAIL_MARKER_SLOT_WIDTH,
-      );
-    }
-    ui.unmount();
-  });
+      const zones = getRailStageZones({ form: 'B', phase, cols, fraction: '' });
+      expect(zones).toHaveLength(3);
+      for (const zone of zones) {
+        // The label is painted one marker slot to the right of the zone's left edge (the marker).
+        expect(renderedStageCol(frame, formatStageLabel(zone.stage))).toBe(
+          zone.left + RAIL_MARKER_SLOT_WIDTH,
+        );
+      }
+      ui.unmount();
+    },
+  );
 
   it('paints no background pill behind the active stage — weight carries it', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
@@ -324,126 +338,46 @@ describe('Rail colors', () => {
       halted.unmount();
     },
   );
-
-  it.each(['dark', 'light'] as const)('paints completion facts by meaning in %s', (variant) => {
-    chalk.level = 3;
-    const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
-    lifecycleStore.__testReset({ phase: 'complete', status: 'complete' });
-    tasksStore.__testReset({
-      tasks: [{ id: 'T001', title: 'One', status: 'done' }],
-      totalTasks: 1,
-    });
-    for (const passed of [true, false, undefined]) {
-      eventsStore.__testReset({
-        events:
-          passed === undefined
-            ? []
-            : [
-                {
-                  type: 'drift_report',
-                  ts: 1,
-                  phase: 'final-review',
-                  passed,
-                  score: 1,
-                  errorCount: 0,
-                  warningCount: 0,
-                },
-              ],
-      });
-      const ui = renderFeature(
-        <ThemeProvider theme={theme}>
-          <Rail />
-        </ThemeProvider>,
-      );
-      const text = passed === undefined ? 'drift not run' : passed ? 'no drift' : 'drift found';
-      const tone = passed === undefined ? 'textDim' : passed ? 'success' : 'warning';
-      expect(ui.lastFrame()).toContain(
-        paint(theme.success, `${glyph('stageDone')} done`).replace('\u001b[39m', ''),
-      );
-      expect(ui.lastFrame()).toContain(
-        paint(theme.textDim, ' · 1/1 briefs passed').replace('\u001b[39m', ''),
-      );
-      expect(ui.lastFrame()).not.toContain(
-        paint(theme.success, 'passed').replace('\u001b[39m', ''),
-      );
-      expect(ui.lastFrame()).toContain(
-        paint(theme[tone], passed === undefined ? ` · 1/1 briefs passed · ${text}` : text).replace(
-          '\u001b[39m',
-          '',
-        ),
-      );
-      ui.unmount();
-    }
-  });
 });
 
-describe('Rail — completion reward', () => {
-  it.each(['dark', 'light'] as const)('warns on advisory drift in %s', (variant) => {
+describe('Rail — a passed review', () => {
+  // The engine phase is `complete` from the passing review until the run settles at rest as ready
+  // to apply or closed. That phase does not tell the two apart, so the rail never reads done.
+  it.each([
+    ['B', ['Plan', 'Build', 'Review']],
+    ['C', ['Review']],
+  ] as const)('keeps every stage marked in form %s and never reads done', async (form, labels) => {
     chalk.level = 3;
-    const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
-    lifecycleStore.__testReset({ phase: 'complete', status: 'complete' });
-    eventsStore.__testReset({
-      events: [
-        {
-          type: 'drift_report',
-          ts: 1,
-          phase: 'final-review',
-          passed: true,
-          score: 1,
-          errorCount: 0,
-          warningCount: 1,
-        },
-      ],
-    });
-    const ui = renderFeature(
-      <ThemeProvider theme={theme}>
-        <Rail />
-      </ThemeProvider>,
-    );
-    expect(ui.lastFrame()).toContain(paint(theme.warning, 'drift found'));
-    expect(stripAnsiStyles(ui.lastFrame())).not.toContain('no drift');
-    ui.unmount();
-  });
-
-  it('collapses to the single done line with the shared done mark', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({
-      phase: 'complete',
-      status: 'complete',
-      startedAt: 0,
-      endedAt: 1,
-      durationMs: 1,
-    });
-    tasksStore.__testReset({
-      currentTask: 7,
-      totalTasks: 7,
-      tasks: Array.from({ length: 7 }, (_, index) => ({
-        id: `T00${index + 1}`,
-        title: `Brief ${index + 1}`,
-        status: 'done' as const,
-      })),
-    });
+    lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0 });
+    tasksStore.__testReset({ currentTask: 12, totalTasks: 10, tasks: briefs(12) });
     eventsStore.__testReset({
-      events: [
-        {
-          type: 'drift_report',
-          ts: 1,
-          phase: 'final-review',
-          passed: true,
-          score: 1,
-          errorCount: 0,
-          warningCount: 0,
-        },
-      ],
+      events: [{ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' }],
     });
-    const ui = renderRail('B');
+    const ui = renderRail(form);
     await tick();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const raw = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(raw).trim();
 
-    expect(frame).toContain(`${glyph('stageDone')} done`);
-    expect(frame).toContain('7/7 briefs passed');
-    expect(frame).toContain('no drift');
-    expect(frame).not.toContain('Plan');
+    for (const label of labels) expect(frame).toContain(`${DONE} ${label}`);
+    expect(frame.split(DONE)).toHaveLength(labels.length + 1);
+    expect(frame).not.toContain('done');
+    expect(frame).not.toContain('briefs passed');
+    expect(frame).not.toContain('12/12');
+    // Every stage is behind the run: none is bold as the stage the run is on.
+    expect(raw).not.toContain('\u001b[1m');
+    expect(
+      measureRailCells({
+        phase: 'complete',
+        cancelled: false,
+        form,
+        cols: 100,
+        tasks: tasksStore.get(),
+        events: eventsStore.get().events,
+        recoveryAt: null,
+        buildBlockShown: false,
+      }),
+    ).toBe(getTerminalCellWidth(frame));
     ui.unmount();
   });
 
@@ -459,50 +393,13 @@ describe('Rail — completion reward', () => {
       await tick();
       const frame = stripAnsiStyles(ui.lastFrame());
       ui.unmount();
-      expect(frame).toContain(`${mark} done · drift not run`);
+      expect(frame).toContain(`${mark} Review`);
+      expect(frame).not.toContain('done');
     });
-  });
-
-  it('reports a drift failure on the completion line', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({
-      phase: 'complete',
-      status: 'complete',
-      startedAt: 0,
-      endedAt: 1,
-      durationMs: 1,
-    });
-    tasksStore.__testReset({ currentTask: 7, totalTasks: 7 });
-    eventsStore.__testReset({
-      events: [
-        {
-          type: 'drift_report',
-          ts: 1,
-          phase: 'final-review',
-          passed: false,
-          score: 0,
-          errorCount: 2,
-          warningCount: 0,
-        },
-      ],
-    });
-    const ui = renderRail('B');
-    await tick();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).toContain('drift found');
-    ui.unmount();
   });
 });
 
 describe('Rail — completion after a failed review', () => {
-  const briefs = (count: number) =>
-    Array.from({ length: count }, (_, index) => ({
-      id: `T${String(index + 1).padStart(3, '0')}`,
-      title: `Brief ${index + 1}`,
-      status: 'done' as const,
-    }));
-
   beforeEach(() => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({
@@ -512,25 +409,6 @@ describe('Rail — completion after a failed review', () => {
       endedAt: 1,
       durationMs: 1,
     });
-  });
-
-  // The plan had ten briefs and the review's triage appended two fix tasks: twelve briefs, each
-  // counted once, however many completions the log carried for them.
-  it('counts passed briefs out of the plan the fix tasks joined', async () => {
-    tasksStore.__testReset({ currentTask: 12, totalTasks: 10, tasks: briefs(12) });
-    eventsStore.__testReset({
-      events: [{ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' }],
-    });
-    const ui = renderRail('B');
-    await tick();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).toContain('12/12 briefs passed');
-    expect(frame).not.toContain('local');
-    // No drift report landed, so the line claims no drift check it never saw.
-    expect(frame).toContain('drift not run');
-    expect(frame).not.toContain('no drift');
-    ui.unmount();
   });
 
   it('never says done while the review failed, and marks the review stage failed', async () => {

@@ -157,7 +157,7 @@ describe('closedBlockRows', () => {
         }),
       });
       const label = taskTargetLabel({ ...task, file: started.file, files: task.suggestedFiles });
-      for (const width of [80, 120]) {
+      for (const width of [60, 80, 120]) {
         const result = computeConversationRowScroll({
           sections: groupEventsIntoSections([started, completed]),
           expandedDiffs: new Set(),
@@ -181,7 +181,9 @@ describe('closedBlockRows', () => {
         const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
         const briefLines = lines.filter((line) => line.includes(`${task.id} ${task.title}`));
         expect(briefLines).toHaveLength(2);
-        for (const line of briefLines) expect(line).toContain(label);
+        for (const line of briefLines) {
+          expect(line).toContain(width === 60 ? '· +1 file' : label);
+        }
         expect(briefLines[0]).toBe(briefLines[1]);
         ui.unmount();
       }

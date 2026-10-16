@@ -5,7 +5,11 @@ import { defaultTheme } from './theme.js';
 import { paint } from '../core/theme/paint.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { TaskSummary, fitDetailRun as fitDetailSpans } from './task-summary.js';
+import {
+  TaskSummary,
+  fitDetailRun as fitDetailSpans,
+  type TaskSummaryState,
+} from './task-summary.js';
 import { glyph } from '../lib/glyphs.js';
 import { getTerminalCellWidth } from '../utils/display-text.js';
 import { getMethodDisplay } from '../core/sessions/display.js';
@@ -140,7 +144,7 @@ describe('TaskSummary', () => {
     ui.unmount();
   });
 
-  it('drops target annotations before shortening the path', () => {
+  it('drops the action note, keeps the file count, then shortens the path', () => {
     const target = taskTargetParts({
       file: 'testing/visual/fixtures/workflow/registry.ts',
       files: ['registry.ts', 'a.ts', 'b.ts', 'c.ts'],
@@ -164,13 +168,124 @@ describe('TaskSummary', () => {
         { cols: width, rows: 18 },
       );
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toContain(`${method} · 2m 0s`);
-      expect(frame).toContain(width === 60 ? '…/registry.ts' : target.path);
+      expect(frame).toContain(`+3 files · ${method} · 2m 0s`);
       if (width === 120) expect(frame).toContain(`${target.path} (modify) · +3 files`);
-      else expect(frame).not.toContain(target.note);
+      else {
+        expect(frame).not.toContain(target.note);
+        expect(frame).not.toContain(target.path);
+      }
       expect(getTerminalCellWidth(frame)).toBeLessThanOrEqual(width);
       ui.unmount();
     }
+  });
+
+  describe('a brief that wrote two files at the width of a transcript beside the sidebar', () => {
+    const target = taskTargetParts({
+      file: 'src/cli.js',
+      files: ['src/cli.js', 'docs/readme.md'],
+      action: 'modify',
+    });
+    const head = 'T001 Make cli.js executable and add docs/readme.md symlink';
+    const row = (detail: string) => ` ${glyph('stageDone')} ${head}  ${detail}`;
+    const render = (
+      width: number,
+      state: Exclude<TaskSummaryState, { kind: 'stage' }> = { kind: 'settled', method: 'local' },
+    ) => {
+      const ui = renderFeature(
+        <TaskSummary
+          width={width}
+          id="T001"
+          title="Make cli.js executable and add docs/readme.md symlink"
+          state={state}
+          file={target.path}
+          fileNote={target.note}
+          extraFiles={target.extraFiles}
+          duration={11_800}
+        />,
+        { cols: width, rows: 18 },
+      );
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      ui.unmount();
+      return frame;
+    };
+    const full = () => row('src/cli.js (modify) · +1 file · passed · 11.8s');
+    const counted = () => row('src/cli.js · +1 file · passed · 11.8s');
+
+    it('keeps the note and the count while both fit', () => {
+      expect(render(getTerminalCellWidth(full()))).toBe(full());
+    });
+
+    it('drops the note first and keeps the count', () => {
+      for (const width of [getTerminalCellWidth(full()) - 1, getTerminalCellWidth(counted())]) {
+        expect(render(width)).toBe(counted());
+      }
+    });
+
+    it('shortens the path before the count goes', () => {
+      const width = getTerminalCellWidth(counted()) - 1;
+      const frame = render(width);
+      expect(frame).toContain('cli.js · +1 file · passed · 11.8s');
+      expect(frame).not.toContain('src/cli.js');
+      expect(getTerminalCellWidth(frame)).toBeLessThanOrEqual(width);
+    });
+
+    it('drops the count only with its path', () => {
+      for (const detail of ['+1 file · passed · 11.8s', '… · +1 file · passed · 11.8s']) {
+        expect(render(getTerminalCellWidth(row(detail)))).toBe(row('passed · 11.8s'));
+      }
+      const named = row('…s · +1 file · passed · 11.8s');
+      expect(render(getTerminalCellWidth(named))).toBe(named);
+    });
+
+    it('keeps the stopped word of a halted brief while its path shortens and its count drops', () => {
+      const stopped = { kind: 'halted', tone: 'cancelled', word: 'stopped' } as const;
+      const halted = (detail: string) => ` ${glyph('statusCancelled')} ${head}  ${detail}`;
+      const counted = halted('src/cli.js · +1 file · stopped');
+      expect(render(getTerminalCellWidth(counted), stopped)).toBe(counted);
+      const shortened = render(getTerminalCellWidth(counted) - 1, stopped);
+      expect(shortened).toContain('cli.js · +1 file · stopped');
+      expect(shortened).not.toContain('src/cli.js');
+      expect(render(getTerminalCellWidth(halted('… · +1 file · stopped')), stopped)).toBe(
+        halted('stopped'),
+      );
+      for (
+        let width = getTerminalCellWidth(halted('stopped'));
+        width <= getTerminalCellWidth(counted);
+        width += 1
+      ) {
+        const frame = render(width, stopped);
+        expect(frame).toContain('stopped');
+        if (frame.includes('+1 file')) expect(frame).toMatch(/[^\s…] · \+1 file · stopped$/);
+      }
+    });
+  });
+
+  it('keeps the file count of a skipped brief when its reason drops', () => {
+    const target = taskTargetParts({
+      file: 'src/orders.js',
+      files: ['src/orders.js', 'src/stock.js'],
+      action: 'modify',
+    });
+    const width = getTerminalCellWidth(
+      ` ${glyph('statusSkipped')} T002 Receive stock  src/orders.js · +1 file · skipped`,
+    );
+    const ui = renderFeature(
+      <TaskSummary
+        width={width + 2}
+        id="T002"
+        title="Receive stock"
+        state={{ kind: 'settled', method: 'skipped' }}
+        file={target.path}
+        fileNote={target.note}
+        extraFiles={target.extraFiles}
+        reason="The worker cannot continue because the selected account has reached its usage limit"
+      />,
+      { cols: width + 2, rows: 18 },
+    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toBe(
+      ` ${glyph('statusSkipped')} T002 Receive stock  src/orders.js · +1 file · skipped`,
+    );
+    ui.unmount();
   });
 
   it('keeps the extra file count in its own token when the target has no action', () => {

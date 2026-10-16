@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import type { Phase } from '../../../core/schemas/enums.js';
 import { PHASES } from '../../../core/schemas/enums.js';
-import type { EngineEvent } from '../../../engine/events/types.js';
 import {
   RAIL_STAGES,
   getActiveRailStage,
@@ -22,7 +20,6 @@ import {
   getContentTopRow,
   getContentTopRowIndex,
   getProgressRows,
-  getRailDriftPassed,
   measureFormB,
   railConnectorWidth,
   railFormBLabel,
@@ -30,22 +27,6 @@ import {
   selectRailForm,
   WORKFLOW_GUTTER_X,
 } from './chrome-rows.js';
-
-function driftReport(passed: boolean, ts = 1): EngineEvent {
-  return {
-    type: 'drift_report',
-    ts,
-    phase: 'final-review',
-    passed,
-    score: 1,
-    errorCount: 0,
-    warningCount: 0,
-  };
-}
-
-function plannerText(phase: Phase, ts = 1): EngineEvent {
-  return { type: 'planner_text', ts, phase, text: 'x' };
-}
 
 describe('getChromeContentWidth', () => {
   it('keeps the one-cell transcript lead as the gutter on both edges', () => {
@@ -223,31 +204,6 @@ describe('selectRailForm', () => {
 
   it('falls to Form C on a very narrow terminal', () => {
     expect(selectRailForm({ phase: 'implementing', cols: 12 })).toBe('C');
-  });
-});
-
-describe('getRailDriftPassed', () => {
-  it('does not call a warnings-only report clean', () => {
-    expect(
-      getRailDriftPassed([
-        {
-          type: 'drift_report',
-          ts: 1,
-          phase: 'final-review',
-          passed: true,
-          score: 1,
-          errorCount: 0,
-          warningCount: 1,
-        },
-      ]),
-    ).toBe(false);
-  });
-
-  it('returns the most recent drift verdict, undefined when none', () => {
-    expect(getRailDriftPassed([])).toBeUndefined();
-    expect(getRailDriftPassed([plannerText('final-review')])).toBeUndefined();
-    expect(getRailDriftPassed([driftReport(false, 1), driftReport(true, 2)])).toBe(true);
-    expect(getRailDriftPassed([driftReport(false, 1), plannerText('final-review', 2)])).toBe(false);
   });
 });
 
