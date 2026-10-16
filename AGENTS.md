@@ -29,6 +29,8 @@ A finding from a review, a live check, a test run or an audit is reported only w
 
 Drop a finding that cannot be confirmed. Never report a guess as a defect.
 
+An independent skeptic, not the agent that found it, checks every finding against these four points and tries to refute it before it is reported or fixed. Only the findings the skeptic confirms go to the owner or to a fix.
+
 ## Fixing a defect (binding)
 
 1. **Confirm first.** Before any edit, confirm the defect as "Reporting findings" requires: the evidence, the cause at `file:line`, and that a normal user hits it. A finding that cannot be confirmed is not fixed; report it as not confirmed.
