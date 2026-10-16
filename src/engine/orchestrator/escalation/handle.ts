@@ -18,7 +18,8 @@ import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { consultSeat, requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import { captureWorkspaceSnapshot, revertedDir } from '../isolation/entry-snapshot.js';
+import { revertedDir } from '../../../core/paths.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import {
   buildConsultBoundRecoveryIssue,
   consultBoundSpent,

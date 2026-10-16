@@ -349,7 +349,7 @@ describe('initializeWorkflow', () => {
       };
     }
 
-    it('states a readiness warning with its fix under the request of a new run', async () => {
+    it('states a readiness warning with its details and fix under the request of a new run', async () => {
       await withTempDir('splitbrief-init-start-warning', async (tempDir) => {
         const projectDir = realpathSync(tempDir);
         const sessionId = 'session-init-start-warning';
@@ -366,9 +366,12 @@ describe('initializeWorkflow', () => {
         expect(init.ok).toBe(true);
         const warnings = events.filter((event) => event.type === 'warning');
         expect(warnings).toHaveLength(1);
-        expect(warnings[0]?.message).toMatch(
-          /^Working tree has 1 changed file\. The run edits this checkout\. .*\.splitbrief\/sessions\/<id>\/reverted\/\.$/,
-        );
+        expect(warnings[0]?.message.split('\n')).toEqual([
+          'Working tree has 1 changed file.',
+          'Examples: README.md',
+          'An attempt revert restores only the paths that attempt changed.',
+          `Fix: The run edits this checkout. Commit or stash the edits you do not want this run to touch. A revert saves the files it replaces in .splitbrief/sessions/${sessionId}/reverted/.`,
+        ]);
         const request = events.findIndex((event) => event.type === 'user_message');
         expect(request).toBeGreaterThanOrEqual(0);
         expect(events.indexOf(warnings[0] as EngineEvent)).toBe(request + 1);

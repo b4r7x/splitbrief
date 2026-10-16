@@ -10,6 +10,8 @@ import {
 } from '../schemas/readiness.js';
 import { ungatedCliReadinessChecks } from './status.js';
 import type { ReadinessCheck, ReadinessReport, ReadinessSection } from './types.js';
+import type { SessionRef } from '../types/session-ref.js';
+import { withRunFolder } from './checks/repo.js';
 
 export const READINESS_DIAGNOSTIC_REMEDIATION: Readonly<
   Record<ReadinessDiagnosticStateId, string>
@@ -148,21 +150,32 @@ const READINESS_STATUS_WORDS: Readonly<Record<ReadinessReport['status'], string>
 const SEVERITY_WIDTH = 7;
 const DETAIL_INDENT = ' '.repeat(2 + SEVERITY_WIDTH + 2);
 
+/** A check as every surface states it: the summary, each detail, then the fix. */
+export function readinessCheckLines(
+  check: Readonly<{
+    summary: string;
+    details?: readonly string[] | undefined;
+    remediation?: string | null | undefined;
+  }>,
+): string[] {
+  return [
+    check.summary,
+    ...(check.details ?? []),
+    ...(check.remediation ? [`Fix: ${check.remediation}`] : []),
+  ];
+}
+
 /** The check id is for scripts (`--json`); a person reads the severity and the words. */
 function renderSectionLines(section: ReadinessSection): string[] {
   const lines: string[] = [];
   lines.push(`${section.title}:`);
   for (const check of section.checks) {
-    lines.push(
-      `  ${check.severity.padEnd(SEVERITY_WIDTH)}  ${sanitizeTerminalDisplayText(check.summary)}`,
-    );
-    for (const detail of check.details ?? []) {
-      lines.push(`${DETAIL_INDENT}${sanitizeTerminalDisplayText(detail)}`);
-    }
-    const remediation = readinessCheckRemediation(check);
-    if (remediation) {
-      lines.push(`${DETAIL_INDENT}Fix: ${sanitizeTerminalDisplayText(remediation)}`);
-    }
+    const [summary, ...rest] = readinessCheckLines({
+      ...check,
+      remediation: readinessCheckRemediation(check),
+    }).map((line) => sanitizeTerminalDisplayText(line));
+    lines.push(`  ${check.severity.padEnd(SEVERITY_WIDTH)}  ${summary}`);
+    lines.push(...rest.map((line) => `${DETAIL_INDENT}${line}`));
   }
   return lines;
 }
@@ -246,10 +259,15 @@ function blockerOnlySection(section: ReadinessSection): ReadinessSection | null 
   return { ...section, checks };
 }
 
-export function createStartReadinessRecord(report: ReadinessReport): StartReadinessRecord {
+/** The run's own record of its admission, so a check that names the run's folder names it. */
+export function createStartReadinessRecord(
+  report: ReadinessReport,
+  run: SessionRef,
+): StartReadinessRecord {
   const checks = report.sections
     .flatMap((section) => section.checks)
     .filter((check) => check.severity === 'blocker' || check.severity === 'warning')
+    .map((check) => withRunFolder(check, run))
     .map((check) => {
       const remediation = readinessCheckRemediation(check);
       return {
@@ -272,11 +290,9 @@ export function createStartReadinessRecord(report: ReadinessReport): StartReadin
   });
 }
 
-/** A recorded start warning as the run states it on one line: what readiness found, then what to do. */
+/** A recorded start warning as the run states it: what readiness found, its details, then what to do. */
 export function startReadinessWarnings(record: StartReadinessRecord): string[] {
   return record.checks
     .filter((check) => check.severity === 'warning')
-    .map((check) =>
-      check.remediation === undefined ? check.summary : `${check.summary} ${check.remediation}`,
-    );
+    .map((check) => readinessCheckLines(check).join('\n'));
 }

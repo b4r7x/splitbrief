@@ -311,7 +311,7 @@ describe('renderReviewPacketMarkdown admission readiness checks', () => {
           summary: 'Working tree has 1 changed file.',
           details: ['Examples: README.md'],
           remediation:
-            'A revert saves the files it replaces in .splitbrief/sessions/<id>/reverted/.',
+            'A revert saves the files it replaces in .splitbrief/sessions/2026-01-01-fix-the-readme/reverted/.',
         },
       ],
     });
@@ -319,7 +319,7 @@ describe('renderReviewPacketMarkdown admission readiness checks', () => {
       [
         '- warning repo.dirty-worktree: Working tree has 1 changed file.',
         '  - Examples: README.md',
-        '  - Fix: A revert saves the files it replaces in .splitbrief/sessions/<id>/reverted/.',
+        '  - Fix: A revert saves the files it replaces in .splitbrief/sessions/2026-01-01-fix-the-readme/reverted/.',
       ].join('\n'),
     );
   });

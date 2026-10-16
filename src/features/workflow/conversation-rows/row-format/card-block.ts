@@ -16,6 +16,8 @@ import { sanitizeRowDisplayText } from './text.js';
 
 const CARD_MIN_WIDTH = 10;
 const LEADING_CARD_SEPARATOR = /^·(?:\s+|$)/u;
+const LIST_ITEM = /^- /;
+const LIST_ITEM_HANG = '  ';
 
 function displayWidth(text: string): number {
   return getTerminalCellWidth(text);
@@ -101,10 +103,12 @@ function fittedCardHeaderSegments(input: {
   return segments;
 }
 
-// A soft wrap can move a list separator to the next row; explicit lines keep their text.
+// A soft wrap can move a list separator to the next row; explicit lines keep their text. A `- `
+// list item hangs its wrapped rows under its text, so each item reads as one.
 function wrappedCardBodyLines(text: string, width: number): string[] {
   return text.split('\n').flatMap((sourceLine) => {
-    const wrapped = wrapPathAware(sourceLine, width).split('\n');
+    const hang = LIST_ITEM.test(sourceLine) ? LIST_ITEM_HANG : '';
+    const wrapped = wrapPathAware(sourceLine, Math.max(1, width - hang.length)).split('\n');
     const lines: string[] = [];
 
     for (const [index, line] of wrapped.entries()) {
@@ -115,7 +119,7 @@ function wrappedCardBodyLines(text: string, width: number): string[] {
 
       const continuation = line.replace(LEADING_CARD_SEPARATOR, '');
       if (continuation === line) {
-        lines.push(line);
+        lines.push(`${hang}${line}`);
         continue;
       }
 
@@ -124,7 +128,7 @@ function wrappedCardBodyLines(text: string, width: number): string[] {
       if (previous?.endsWith(' ')) {
         lines[previousIndex] = previous.slice(0, -1);
       }
-      if (continuation.length > 0) lines.push(continuation);
+      if (continuation.length > 0) lines.push(`${hang}${continuation}`);
     }
 
     return lines;

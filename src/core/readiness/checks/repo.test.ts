@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildRepoChecks, exemptLiveSessionBlocker, type RepoReadinessInput } from './repo.js';
+import {
+  buildRepoChecks,
+  exemptLiveSessionBlocker,
+  withRunFolder,
+  type RepoReadinessInput,
+} from './repo.js';
 
 const cleanRepo: RepoReadinessInput = {
   isGitRepo: true,
@@ -63,12 +68,35 @@ describe('buildRepoChecks dirty worktree', () => {
 
       expect(warning?.severity).toBe('warning');
       expect(warning?.fix).toContain('The run edits this checkout.');
-      expect(warning?.fix).toContain('.splitbrief/sessions/<id>/reverted/');
+      expect(warning?.fix).toContain(
+        "A revert saves the files it replaces in the run's reverted/ folder, under .splitbrief/sessions/.",
+      );
       expect(warning?.details?.join(' ')).toContain('only the paths that attempt changed');
       expect(warning?.details?.join(' ')).not.toContain('The run edits this checkout');
       expect(checks.some((check) => check.severity === 'blocker')).toBe(false);
     },
   );
+
+  it('names the run folder once the run exists, and leaves every other check as it is', () => {
+    const run = { projectDir: '/tmp/project', sessionId: 'fix-the-readme' };
+    const dirty = (isolation: 'none' | 'worktree') =>
+      buildRepoChecks({ ...cleanRepo, dirtyFiles: ['src/a.ts'] }, isolation).find(
+        (check) => check.id === 'repo.dirty-worktree',
+      );
+    const checkout = dirty('none');
+    const worktree = dirty('worktree');
+    const detached = buildRepoChecks({ ...cleanRepo, onDetachedHead: true }).find(
+      (check) => check.id === 'repo.detached-head',
+    );
+    if (!checkout || !worktree || !detached) throw new Error('missing check');
+
+    expect(withRunFolder(checkout, run)).toEqual({
+      ...checkout,
+      fix: 'The run edits this checkout. Commit or stash the edits you do not want this run to touch. A revert saves the files it replaces in .splitbrief/sessions/fix-the-readme/reverted/.',
+    });
+    expect(withRunFolder(worktree, run)).toBe(worktree);
+    expect(withRunFolder(detached, run)).toBe(detached);
+  });
 
   it.each([undefined, 'worktree', 'staged-copy'] as const)(
     'leaves the revert note out of local edits with isolation %s',

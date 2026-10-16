@@ -1064,11 +1064,14 @@ describe('workflow visual fixtures', () => {
     }
   });
 
-  it('uses the production named-check warning with metadata and the additional-check count', () => {
+  it('uses the production send-back warning: every failed check, and the first one as metadata', () => {
     const projection = workflowFixtureProjections.get(scenarioId('workflow-recovery-plan-checks'));
     expect(projection?.events.find((event) => event.type === 'warning')).toMatchObject({
-      message:
-        'The plan failed check uncovered-criterion: Criterion C2 is served by no task (+1 more); it goes back to the planner once.',
+      message: [
+        'The plan failed 2 checks. It goes back to the planner once to fix them:',
+        '- Criterion C2 is served by no task.',
+        '- Tasks T002 and T003 depend on each other.',
+      ].join('\n'),
       planCheck: { code: 'uncovered-criterion', message: 'Criterion C2 is served by no task.' },
     });
   });

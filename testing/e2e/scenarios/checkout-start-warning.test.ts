@@ -13,7 +13,6 @@ const scenario = {
   feature: 'fix typo in README',
   config: makeE2eScenarioConfig({ workflow: { isolation: 'none' } }),
 };
-const REVERTED = '.splitbrief/sessions/<id>/reverted/';
 
 describe('e2e: a checkout-mode run started on uncommitted edits', () => {
   const ctx = setupE2eScenario(scenario);
@@ -24,6 +23,7 @@ describe('e2e: a checkout-mode run started on uncommitted edits', () => {
     await runE2eWorkflow(ctx, scenario);
 
     const [sessionId = ''] = readdirSync(join(ctx.projectDir, SPLITBRIEF_DIR, SESSIONS_DIR));
+    const REVERTED = `${SPLITBRIEF_DIR}/${SESSIONS_DIR}/${sessionId}/reverted/`;
     const record = readReadinessArtifact(ctx.projectDir, sessionId);
     if (record === null) throw new Error('Missing readiness.json');
     expect(record.checks).toContainEqual({
@@ -45,9 +45,13 @@ describe('e2e: a checkout-mode run started on uncommitted edits', () => {
         .slice(request + 1, request + 1 + stated.length)
         .map((event) => (event.type === 'warning' ? event.message : event.type)),
     ).toEqual(stated);
-    expect(
-      ctx.events.filter((event) => event.type === 'warning' && event.message.includes(REVERTED)),
-    ).toHaveLength(1);
+    const warnings = ctx.events.filter(
+      (event) => event.type === 'warning' && event.message.includes(REVERTED),
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      message: expect.stringContaining('\nExamples: my-notes.txt\n'),
+    });
 
     const packet = readFileSync(
       reviewPacketMarkdownPath({ projectDir: ctx.projectDir, sessionId }),

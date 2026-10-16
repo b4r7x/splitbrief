@@ -468,6 +468,19 @@ describe('eventsStore — append via addEvent', () => {
     ]);
   });
 
+  it('keeps the line breaks of a warning that states its facts one per line', () => {
+    addEvent({
+      type: 'warning',
+      ts: 1_000,
+      phase: 'planning',
+      message: 'Working tree has 1 changed file.\r\nExamples: README.md\nFix: Commit it.\u001b[31m',
+    });
+
+    expect(eventsStore.get().events).toMatchObject([
+      { message: 'Working tree has 1 changed file.\nExamples: README.md\nFix: Commit it.' },
+    ]);
+  });
+
   it('keeps recorded axes through live and replay activity projection and sanitizes each word', () => {
     const event = makeRunnerActivity({ axes: ['high', '\u001b[31mthinking\u001b[0m'] });
     const expected = expect.objectContaining({ axes: ['high', 'thinking'], redacted: true });

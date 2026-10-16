@@ -50,15 +50,13 @@ export function planRepairWarning(errors: readonly PlanCheckError[]): {
   planCheck?: PlanCheckError;
 } {
   const first = errors.find(blocksPlan) ?? errors[0];
-  const more = errors.length > 1 ? ` (+${errors.length - 1} more)` : '';
-  return first === undefined
-    ? {
-        message: `The plan failed ${countNoun(errors.length, 'check')}; it goes back to the planner once.`,
-      }
-    : {
-        message: `The plan failed check ${first.code}: ${first.message.replace(/\.$/, '')}${more}; it goes back to the planner once.`,
-        planCheck: first,
-      };
+  return {
+    message: [
+      `The plan failed ${countNoun(errors.length, 'check')}. It goes back to the planner once to fix ${errors.length === 1 ? 'it' : 'them'}:`,
+      ...errors.map((error) => `- ${error.message}`),
+    ].join('\n'),
+    ...(first !== undefined && { planCheck: first }),
+  };
 }
 
 const isCycle = matches('topo-circular-dependency');
@@ -245,7 +243,7 @@ export function checkPlan(
     if (refusal !== null) {
       fail(
         'refused-check-command',
-        `Check ${check.id} is refused: \`${check.value}\` ${refusal}. Name a command the plan command policy runs, or use a \`test\` check.`,
+        `Check ${check.id} is refused: \`${check.value}\` ${refusal}. Change it to a command that plan checks allow, or to a check of kind \`test\` that names a test file.`,
       );
     }
   }

@@ -5,6 +5,7 @@ import type {
 import { narrowRecord } from '../../../../utils/type-guards.js';
 import { CREW_SEAT_LABELS, formatSeatIdentity } from '../../../../core/crew/identity.js';
 import { checksSummary } from '../../../../core/validation/checks-summary.js';
+import { readinessCheckLines } from '../../../../core/readiness/format.js';
 import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
 import {
   recordedSeatIdentityInput,
@@ -38,11 +39,10 @@ function renderList(items: string[]): string {
 function renderReadinessChecks(readiness: ReviewPacket['readiness']): string[] {
   if (!readiness.present) return ['- Checks: unavailable'];
   if (readiness.checks.length === 0) return ['- Checks: no warnings or blockers'];
-  return readiness.checks.flatMap((check) => [
-    `- ${check.severity} ${check.id}: ${check.summary}`,
-    ...(check.details ?? []).map((detail) => `  - ${detail}`),
-    ...(check.remediation === undefined ? [] : [`  - Fix: ${check.remediation}`]),
-  ]);
+  return readiness.checks.flatMap((check) => {
+    const [summary, ...rest] = readinessCheckLines(check);
+    return [`- ${check.severity} ${check.id}: ${summary}`, ...rest.map((line) => `  - ${line}`)];
+  });
 }
 
 function renderChecksLog(checks: ReviewPacket['checks']): string[] {

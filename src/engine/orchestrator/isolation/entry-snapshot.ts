@@ -1,7 +1,7 @@
 import { lstat, mkdir, readlink, realpath, writeFile } from 'node:fs/promises';
 import { existsSync, type Stats } from 'node:fs';
-import { join, relative } from 'node:path';
-import { sessionDir } from '../../../core/paths.js';
+import { join } from 'node:path';
+import { revertedDir, sessionDir } from '../../../core/paths.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { evidenceLedgerPath, mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -123,11 +123,6 @@ export async function captureWorkspaceSnapshot(
   return (await gitDescribes(dir))
     ? getChangedFilesSnapshot(dir, onEmbeddedRepo)
     : captureEntrySnapshot(dir, { ignoreProjectDir: ref.projectDir, store: entryStoreDir(ref) });
-}
-
-/** Where a revert in the checkout saves the bytes it replaces, relative to the project. */
-export function revertedDir(ref: SessionRef): string {
-  return relative(ref.projectDir, join(sessionDir(ref.projectDir, ref.sessionId), 'reverted'));
 }
 
 /**

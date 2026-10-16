@@ -385,7 +385,10 @@ const checkpointPredicates = [
   [checkpointId('composer-outside-file'), includesAll('Attached files · 1', 'Planning…')],
   [checkpointId('question-outside-file'), includesAll('Attached files · 1', 'Planning…')],
   [checkpointId('planning-path-notice'), includesAll('cannot open', 'Planning…')],
-  [checkpointId('start-readiness-warning'), includesAll('Warning', 'reverted/', 'Planning…')],
+  [
+    checkpointId('start-readiness-warning'),
+    includesAll('Warning', 'Examples: README.md', 'reverted/', 'Planning…'),
+  ],
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
@@ -555,7 +558,10 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('plan-repaired'),
-    includesAll('Warning', 'SPLITBRIEF', 'The revised plan passes its checks.'),
+    (context) =>
+      includesAll('- Task T001 has no check.', 'The revised plan passes its checks.')(context) &&
+      (context.viewport.cols < 80 ||
+        includesAll('Warning', 'The plan failed 2 checks.', 'SPLITBRIEF')(context)),
   ],
   [checkpointId('plan-card-render-note'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
@@ -654,7 +660,10 @@ const checkpointPredicates = [
     (context) =>
       includesAll('Criterion C2 is served by no task.')(context) &&
       (context.viewport.cols < 80 ||
-        includesAll('The plan failed check uncovered-criterion:', '(+1 more)')(context)),
+        includesAll(
+          'The plan failed 2 checks.',
+          'Tasks T002 and T003 depend on each other.',
+        )(context)),
   ],
   [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
   [checkpointId('recovery-review'), includesAll()],

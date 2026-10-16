@@ -1,6 +1,8 @@
 import { countNoun } from '../../../utils/pluralize.js';
 import type { InProgressGitOp } from '../../../lib/git/repository.js';
+import { revertedDir } from '../../paths.js';
 import type { IsolationStrategy } from '../../schemas/enums.js';
+import type { SessionRef } from '../../types/session-ref.js';
 import type { ReadinessCheck } from '../types.js';
 
 export interface RepoReadinessInput {
@@ -15,6 +17,15 @@ export interface RepoReadinessInput {
 }
 
 export const ACTIVE_SESSION_LIVE_CHECK = 'repo.active-session-live';
+
+/** Before a run exists its folder has no name, so the fix names where the run's folder will be. */
+function checkoutFix(run: SessionRef | undefined): string {
+  const folder =
+    run === undefined
+      ? "the run's reverted/ folder, under .splitbrief/sessions/"
+      : `${revertedDir(run)}/`;
+  return `The run edits this checkout. Commit or stash the edits you do not want this run to touch. A revert saves the files it replaces in ${folder}.`;
+}
 
 export function buildRepoChecks(
   repo: RepoReadinessInput,
@@ -111,7 +122,7 @@ export function buildRepoChecks(
         ...(inCheckout ? ['An attempt revert restores only the paths that attempt changed.'] : []),
       ],
       fix: inCheckout
-        ? 'The run edits this checkout. Commit or stash the edits you do not want this run to touch. A revert saves the files it replaces in .splitbrief/sessions/<id>/reverted/.'
+        ? checkoutFix(undefined)
         : 'Review local edits if they may overlap the requested change.',
       metadata: { dirtyCount, untrackedCount },
     });
@@ -134,4 +145,9 @@ export function exemptLiveSessionBlocker(check: ReadinessCheck): ReadinessCheck 
     summary: check.summary,
     ...(check.metadata !== undefined && { metadata: check.metadata }),
   };
+}
+
+/** At run start the checkout warning names the run's own folder for the files a revert saves. */
+export function withRunFolder(check: ReadinessCheck, run: SessionRef): ReadinessCheck {
+  return check.fix === checkoutFix(undefined) ? { ...check, fix: checkoutFix(run) } : check;
 }

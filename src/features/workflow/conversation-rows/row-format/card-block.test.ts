@@ -36,6 +36,20 @@ describe('prepareCardRows', () => {
     );
   });
 
+  it('hangs the wrapped rows of a list item under its text', () => {
+    const rows = rowsOf({
+      keyPrefix: 'card',
+      label: 'Warning',
+      bodyLines: [{ text: 'Two failed:\n- one two three four five six seven\n- eight' }],
+      width: 24,
+      bodyPrefix: '',
+    });
+
+    expect(
+      rows.slice(1).map((row) => row.segments.map((segment) => segment.text).join('')),
+    ).toEqual(['Two failed:', '- one two three', '  four five six seven', '- eight']);
+  });
+
   it('carries an href on a meta segment through to the header row', () => {
     const rows = rowsOf({
       keyPrefix: 'card',
