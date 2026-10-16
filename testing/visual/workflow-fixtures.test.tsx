@@ -267,7 +267,7 @@ describe('workflow visual fixtures', () => {
         expect(frame).toContain('→ OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go');
         expect(frame).toContain('high');
         expect(frame.includes('automatic fallback')).toBe(auto);
-        expect(frame).toContain('Balance spent on OpenCode CLI');
+        expect(frame).toContain('Balance spent on deepseek (OpenCode CLI)');
         expect(frame).not.toContain('usage limit');
       } finally {
         await ui.unmount();
@@ -752,7 +752,7 @@ describe('workflow visual fixtures', () => {
       to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
       cause: 'runner-usage-limit',
       accountCause: 'balance',
-      headline: 'Balance spent on OpenCode CLI',
+      headline: 'Balance spent on deepseek (OpenCode CLI)',
       auto: true,
     });
     expect(projection.config?.implementer).toMatchObject({
@@ -789,7 +789,7 @@ describe('workflow visual fixtures', () => {
     expect(frame).not.toContain('Add credit');
     expect(frame).not.toContain('Change BUILD tool');
     expect(frame).not.toContain('BUILD failed');
-    expect(frame).toContain('Balance spent on OpenCode CLI');
+    expect(frame).toContain('Balance spent on deepseek (OpenCode CLI)');
     expect(frame).not.toContain('usage limit');
     expect(frame).not.toContain('worker ');
     expect(frame).not.toContain('Workspace kept');
@@ -895,7 +895,7 @@ describe('workflow visual fixtures', () => {
       expect(sidebar).toContain('DeepSeek V4.1 Flash');
       expect(sidebar).toContain('via opencode-go · high');
       expect(sidebar).not.toContain('deepseek/deepseek-flash');
-      expect(frame).toContain('Balance spent on OpenCode CLI');
+      expect(frame).toContain('Balance spent on deepseek (OpenCode CLI)');
       expect(frame).not.toContain('worker ');
       expect(sidebar).not.toMatch(/deepseek[^│]*· auto\b/);
       expect(frame).not.toMatch(/deepseek[^\n]*· auto\b/);
@@ -916,7 +916,7 @@ describe('workflow visual fixtures', () => {
         expect(frame).not.toContain('worker ');
         expect(frame).not.toContain('Workspace kept');
         const markers = [
-          'Recovery  Balance spent on OpenCode CLI',
+          'Recovery  Balance spent on deepseek (OpenCode CLI)',
           'BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek',
           '→ OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
           'automatic fallback',

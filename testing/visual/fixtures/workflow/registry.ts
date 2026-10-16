@@ -693,7 +693,7 @@ const checkpointPredicates = [
     checkpointId('seat-switched'),
     (context) =>
       includesTranscript(
-        'Recovery  Balance spent on OpenCode CLI',
+        'Recovery  Balance spent on deepseek (OpenCode CLI)',
         'automatic fallback',
       )(context) &&
       excludesAll('Add credit', 'Change BUILD tool')(context) &&

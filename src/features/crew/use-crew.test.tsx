@@ -1,4 +1,4 @@
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
@@ -15,10 +15,17 @@ function CrewProbe() {
   const source = review !== undefined && 'source' in review.seat ? review.seat.source : 'missing';
 
   return (
-    <Text>
-      {seats.map((row) => row.id).join(',')}/{source}/{crew.verdict ?? 'no-verdict'}/
-      {crew.presets.map((preset) => preset.id).join(',') || 'none'}
-    </Text>
+    <Box flexDirection="column">
+      <Text>
+        {seats.map((row) => row.id).join(',')}/{source}/{crew.verdict ?? 'no-verdict'}/
+      </Text>
+      {crew.presets.map((preset) => (
+        <Text key={preset.id}>
+          {preset.id}:{preset.notReady.join('+') || 'ready'}
+        </Text>
+      ))}
+      <Text>signedOut:{crew.signedOut.join(',')}</Text>
+    </Box>
   );
 }
 
@@ -63,11 +70,15 @@ describe('useCrew', () => {
     expect(await frame()).toContain('/cross-lab/');
   });
 
-  it('offers no preset while no tool has been detected as ready', async () => {
-    expect(await frame()).toContain('/none');
+  it('offers every ready-made crew and marks the tools not detected as ready', async () => {
+    const output = await frame();
+
+    expect(output).toContain('claude-crew-codex-review:claude-code+codex');
+    expect(output).toContain('codex-crew-claude-review:codex+claude-code');
+    expect(output).toContain('claude-plan-opencode-build:claude-code+opencode');
   });
 
-  it('offers only the presets whose every seat is ready', async () => {
+  it('marks a crew ready once the tool of every seat is ready', async () => {
     detectionStore.setDetection({
       providers: [],
       cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
@@ -75,12 +86,12 @@ describe('useCrew', () => {
 
     const output = await frame();
 
-    expect(output).toContain('claude-crew-codex-review');
-    expect(output).toContain('codex-crew-claude-review');
-    expect(output).not.toContain('claude-plan-opencode-build');
+    expect(output).toContain('claude-crew-codex-review:ready');
+    expect(output).toContain('codex-crew-claude-review:ready');
+    expect(output).toContain('claude-plan-opencode-build:opencode');
   });
 
-  it('withholds a preset whose tools are installed but not authenticated', async () => {
+  it('names installed tools that are not signed in and keeps their crews unavailable', async () => {
     detectionStore.setDetection({
       providers: [],
       cliTools: [
@@ -89,6 +100,9 @@ describe('useCrew', () => {
       ],
     });
 
-    expect(await frame()).toContain('/none');
+    const output = await frame();
+
+    expect(output).not.toContain(':ready');
+    expect(output).toContain('signedOut:Claude Code CLI,OpenAI Codex CLI');
   });
 });

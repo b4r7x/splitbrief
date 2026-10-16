@@ -309,7 +309,9 @@ describe('visual catalog', () => {
   it('requires the balance headline before capturing a spent-balance frame', () => {
     const scenario = findVisualScenario('workflow-recovery-balance-spent');
 
-    expect(scenario?.checkpoints[0]?.marker).toBe('Seat down · Balance spent on OpenCode CLI');
+    expect(scenario?.checkpoints[0]?.marker).toBe(
+      'Seat down · Balance spent on deepseek (OpenCode CLI)',
+    );
   });
 
   it('covers an automatic balance switch and its sidebar at a wide viewport', () => {

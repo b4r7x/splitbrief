@@ -127,28 +127,49 @@ describe('TwoColumnPicker terminal rows', () => {
     ui.unmount();
   });
 
+  /** Written to the eight rows the card has at 60x18 once its prose breaks at 23 cells. */
+  const SHORT_PANE: TerminalPane = {
+    ...TERMINAL_PANE,
+    lines: [
+      'The review seat runs whatever the planner runs.',
+      '',
+      'Claude Code CLI · Claude Sonnet 4',
+      'subscription · Network · Shell',
+    ],
+  };
+
   it.each([
-    { cols: 80, rows: 24 },
-    { cols: 60, rows: 18 },
-  ])('truncates the card and keeps the hint on one row at $cols columns', async (viewport) => {
-    const ui = renderTerminal(viewport);
-    await flushEffects();
-    const frame = ui.lastFrame() ?? '';
-    const lines = frame.split('\n');
+    { cols: 80, rows: 24, wrapped: ['The review seat runs whatever the', 'planner runs.'] },
+    { cols: 60, rows: 18, wrapped: ['The review seat runs', 'whatever the planner', 'runs.'] },
+  ])(
+    "breaks the card's prose on words and keeps the hint on one row at $cols columns",
+    async ({ wrapped, ...viewport }) => {
+      const ui = renderTerminal({ ...viewport, pane: SHORT_PANE });
+      await flushEffects();
+      const frame = ui.lastFrame() ?? '';
+      const lines = frame.split('\n');
 
-    // Still one filter row (the tool column's); the card never grows one.
-    expect(frame.split('Type to filter…').length - 1).toBe(1);
-    // The card's first content line no longer fits, so it is truncated, not wrapped.
-    expect(frame).toContain('The review seat runs w');
-    expect(frame).not.toContain(TERMINAL_PANE.lines[0]);
+      // Still one filter row (the tool column's); the card never grows one.
+      expect(frame.split('Type to filter…').length - 1).toBe(1);
+      // The frame row spans both boxes, so the card's own cells start where its label does.
+      const labelRow = lines.findIndex((line) => line.includes(SHORT_PANE.label));
+      const cardColumn = (lines[labelRow] ?? '').indexOf(SHORT_PANE.label);
+      const card = lines.map((line) => line.slice(cardColumn).replace(/│\s*$/u, '').trimEnd());
+      const first = card.indexOf(wrapped[0] ?? '');
+      expect(first, card.join('\n')).toBeGreaterThan(labelRow);
+      expect(card.slice(first, first + wrapped.length)).toEqual(wrapped);
+      expect(card.slice(labelRow).join('\n')).not.toContain('…');
 
-    const hintRows = lines.filter((line) => line.includes(`⏎ ${TERMINAL_PANE.verb}`));
-    expect(hintRows).toHaveLength(1);
-    expect(hintRows[0]).toContain('esc cancel');
-    expect(hintRows[0]).not.toContain('…');
-    expect(getTerminalCellWidth((hintRows[0] ?? '').trim())).toBeLessThanOrEqual(viewport.cols - 2);
-    ui.unmount();
-  });
+      const hintRows = lines.filter((line) => line.includes(`⏎ ${TERMINAL_PANE.verb}`));
+      expect(hintRows).toHaveLength(1);
+      expect(hintRows[0]).toContain('esc cancel');
+      expect(hintRows[0]).not.toContain('…');
+      expect(getTerminalCellWidth((hintRows[0] ?? '').trim())).toBeLessThanOrEqual(
+        viewport.cols - 2,
+      );
+      ui.unmount();
+    },
+  );
 
   // The card never scrolls and never grows: at the shortest supported terminal it has ten interior
   // rows, the label and the blank under it take two, and the ninth line is paid for by squeezing

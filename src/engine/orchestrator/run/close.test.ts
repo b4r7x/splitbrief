@@ -209,7 +209,7 @@ describe('endRunAtRest', () => {
       patch: '.splitbrief/sessions/ready-run/run.patch',
     });
     expect(events.filter((event) => event.type === 'workflow_cancelled')).toEqual([]);
-    expect(events.map((event) => event.type)).toEqual(['warning', 'workspace_closed']);
+    expect(events.map((event) => event.type)).toEqual(['workspace_closed']);
     expect(readSession(ref)?.status).toBe('ended');
   });
 
