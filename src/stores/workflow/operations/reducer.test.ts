@@ -519,6 +519,41 @@ describe('operationsStore', () => {
     expect(operationsStore.get().active?.reviewStep).toBe('choosing-checks');
   });
 
+  it('starts the review clock with the step its label names', () => {
+    addEvent({
+      type: 'review_started',
+      ts: 1_000,
+      phase: 'final-review',
+      scope: 'final',
+      tool: 'codex',
+    });
+    addEvent({ type: 'review_step', ts: 1_010, phase: 'final-review', step: 'choosing-checks' });
+    addEvent(
+      runnerStarted({ ts: 1_100, phase: 'final-review', role: 'review', taskId: undefined }),
+    );
+    addEvent(
+      runnerCompleted({ ts: 12_000, phase: 'final-review', role: 'review', taskId: undefined }),
+    );
+    addEvent({
+      type: 'review_checks',
+      ts: 12_050,
+      phase: 'final-review',
+      scope: 'final',
+      status: 'planned',
+      commands: [],
+    });
+    expect(operationsStore.get().active).toMatchObject({
+      reviewStep: 'verdict',
+      startedAt: 12_050,
+    });
+
+    addEvent({ type: 'review_step', ts: 12_060, phase: 'final-review', step: 'verdict' });
+    expect(operationsStore.get().active).toMatchObject({
+      reviewStep: 'verdict',
+      startedAt: 12_050,
+    });
+  });
+
   it('keeps planner_status on the planner role and closes it on done', () => {
     addEvent(
       makePlannerStatus({

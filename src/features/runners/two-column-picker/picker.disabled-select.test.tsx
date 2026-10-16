@@ -92,4 +92,35 @@ describe('TwoColumnPicker Enter on a disabled left row', () => {
     expect(confirms).toEqual([]);
     ui.unmount();
   });
+
+  it('offers only the keys that act on a disabled row', async () => {
+    const leftChanges: string[] = [];
+    const ui = renderPicker({
+      onLeftChange: (item) => {
+        leftChanges.push(item.id);
+      },
+    });
+    await vi.waitFor(
+      () => {
+        expect(leftChanges.at(-1)).toBe('alpha');
+      },
+      { timeout: 5_000 },
+    );
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('←→ column · ↑↓ select · ⏎ confirm · esc cancel');
+
+    ui.stdin.write(ARROW_DOWN); // -> beta (disabled)
+    await vi.waitFor(
+      () => {
+        expect(leftChanges.at(-1)).toBe('beta');
+      },
+      { timeout: 5_000 },
+    );
+    await flushEffects();
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('↑↓ select · esc cancel');
+    expect(frame).not.toContain('←→ column');
+    expect(frame).not.toContain('⏎ confirm');
+    ui.unmount();
+  });
 });

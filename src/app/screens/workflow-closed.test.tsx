@@ -129,6 +129,17 @@ describe('the workflow screen showing a closed run', () => {
     ui.unmount();
   });
 
+  it('keeps the hint in the focused composer', async () => {
+    showClosedRun({ summary: makeSummary() });
+
+    const ui = mount(120, 40);
+    await flushEffects();
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/ for a command · ⏎ for home…');
+
+    ui.unmount();
+  });
+
   it('refuses a typed letter and says the composer takes commands', async () => {
     showClosedRun({ summary: makeSummary() });
 

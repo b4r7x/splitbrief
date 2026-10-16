@@ -1,10 +1,10 @@
 import type { SpawnStdinWriter } from './lifecycle.js';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { processError } from '../errors.js';
+import { isNodeError, processError } from '../errors.js';
 import { killAllProcesses, SIGKILL_DELAY_MS } from '../registry.js';
 import {
   isFatalSignal,
@@ -501,14 +501,23 @@ describe('spawnPipe stdin failure', () => {
         },
       });
 
-      try {
-        await expect(pending).rejects.toSatisfy(spawnPipeError.isStdinIncomplete);
-        expect(performance.now() - drainStartedAt).toBeGreaterThanOrEqual(SIGKILL_DELAY_MS - 50);
-        expect(stderr).toContain(limitLine);
-      } finally {
+      onTestFinished(() => {
         const holderPid = Number(/holder:(\d+)/.exec(stderr)?.[1]);
-        if (holderPid > 1) process.kill(holderPid, 'SIGKILL');
-      }
+        if (!(holderPid > 1)) return;
+        try {
+          process.kill(holderPid, 'SIGKILL');
+        } catch (error) {
+          // The holder may have exited on its own already.
+          if (!isNodeError(error) || error.code !== 'ESRCH') throw error;
+        }
+      });
+
+      await expect(pending).rejects.toSatisfy(spawnPipeError.isStdinIncomplete);
+      const waited = performance.now() - drainStartedAt;
+      expect(waited).toBeGreaterThanOrEqual(SIGKILL_DELAY_MS - 50);
+      // The holder lives 10s: a wait that ran into its exit did not stop at the kill grace.
+      expect(waited).toBeLessThan(SIGKILL_DELAY_MS + 3_000);
+      expect(stderr).toContain(limitLine);
     },
     15_000,
   );

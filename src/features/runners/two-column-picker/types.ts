@@ -2,9 +2,8 @@ import type { ReactNode } from 'react';
 import type { RightItemOrVirtual } from './virtual-items.js';
 
 /**
- * A line of that card. A plain string is prose: at a width that cannot seat it the card truncates
- * rather than spend a second row on it. A `whole` line is a value — a seat identity, a posture —
- * which names nothing once it is cut, so it wraps at every width instead.
+ * A line of that card. A plain string is prose: the card breaks it on words at its own width. A
+ * `whole` line is a value — a seat identity, a posture — which breaks only at its own separators.
  */
 export type TerminalPaneLine = string | Readonly<{ whole: string }>;
 
@@ -96,6 +95,8 @@ export interface TwoColumnNavState<L, R> {
   right: ColumnState<RightItemOrVirtual<R>>;
   selectedLeftKey: string | null;
   terminalPane: TerminalPane | undefined;
+  /** The highlighted left row is disabled: neither → nor ⏎ acts on it. */
+  isDisabled: boolean;
   isOnCustomItem: boolean;
   currentRightIsCustom: boolean;
   moveLeft: (direction: 1 | -1) => void;

@@ -202,7 +202,9 @@ function updateRunningOperations(state: OperationsState, event: EngineEvent): Op
       const review = state.reviewStage;
       if (review === undefined || review === null) return state;
       const reviewStep = event.type === 'review_step' ? event.step : 'verdict';
-      const reviewStage = { ...review, reviewStep };
+      // The stage's clock is its step's: a new step starts the clock its label reads beside.
+      const reviewStage =
+        review.reviewStep === reviewStep ? review : { ...review, reviewStep, startedAt: event.ts };
       const next = updateKnownOperation(
         { ...state, reviewStage },
         review.callId,

@@ -79,8 +79,9 @@ export function routeBriefMark(route: RouteData): RailHalt | null {
 }
 
 /**
- * The Apply stage a workspace run wears on its header rail. A run with no workspace, one whose
- * workspace is the checkout itself, or an ended run nothing can apply has no Apply stage to show.
+ * The Apply stage a workspace run wears on its header rail once its review passed. Before that the
+ * rail shows Plan, Build and Review, as the live rail of the same run does. A run with no workspace,
+ * one whose workspace is the checkout itself, or an ended run nothing can apply has no Apply stage.
  */
 export function applyStage(record: RunRecord): RailStageStatus | undefined {
   if (record.hydration.kind !== 'loaded') return undefined;
@@ -88,15 +89,13 @@ export function applyStage(record: RunRecord): RailStageStatus | undefined {
   if (workspace === undefined || workspace.kind === 'checkout') return undefined;
   const status = record.status;
   if (status.kind === 'ready-to-apply') return 'pending';
-  if (status.kind === 'closed') {
-    // An undone Apply reverted the checkout, as a discard leaves it; kept later edits break nothing.
-    if (status.as === 'applied') {
-      return record.hydration.state.applied?.undone === undefined ? 'done' : 'cancelled';
-    }
-    if (status.as === 'discarded') return 'cancelled';
-    if (status.as === 'ended') return undefined;
+  if (status.kind !== 'closed') return undefined;
+  // An undone Apply reverted the checkout, as a discard leaves it; kept later edits break nothing.
+  if (status.as === 'applied') {
+    return record.hydration.state.applied?.undone === undefined ? 'done' : 'cancelled';
   }
-  return 'pending';
+  if (status.as === 'discarded') return 'cancelled';
+  return undefined;
 }
 
 export interface AtRestComposer {

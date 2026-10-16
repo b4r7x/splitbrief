@@ -48,6 +48,7 @@ export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: 
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
   onRefresh?: (() => void) | undefined;
+  /** The byline under the columns. Each line of its text starts a row of its own. */
   preview?: ((ctx: PreviewContext<L, R>) => string | undefined) | undefined;
   /**
    * An error standing right now, such as a save the config refused. The overlay hides the
@@ -60,9 +61,20 @@ const PREVIEW_MIN_COLS = 50;
 /** The byline's rows: the preview's, and an error's when one stands. */
 const BYLINE_ROWS = 2;
 
-/** A byline broken on words into its rows; words left over end its last row in an ellipsis. */
+/**
+ * A byline broken on words into its rows. Each line of the message starts a row, and a line with no
+ * row left is dropped; words left over of a line end its last row in an ellipsis.
+ */
 function bylineLines(message: string, cells: number): string[] {
-  const { lines, cut } = wrapOnWords(message, cells, BYLINE_ROWS);
+  const lines: string[] = [];
+  let cut = false;
+  for (const paragraph of message.split('\n')) {
+    if (lines.length === BYLINE_ROWS) break;
+    const wrapped = wrapOnWords(paragraph, cells, BYLINE_ROWS - lines.length);
+    lines.push(...wrapped.lines);
+    cut = wrapped.cut;
+    if (cut) break;
+  }
   if (!cut) return lines;
   const words = (lines.at(-1) ?? '').split(' ');
   while (words.length > 1 && getTerminalCellWidth(`${words.join(' ')}${ELLIPSIS}`) > cells) {
@@ -72,8 +84,6 @@ function bylineLines(message: string, cells: number): string[] {
 }
 
 const INNER_PADDING = 4;
-/** Below this card width the instruction line truncates instead of wrapping. */
-const CARD_WRAP_MIN_WIDTH = 40;
 const COLUMN_GAP = 3;
 const OUTER_CHROME_ROWS = 6;
 const INNER_CHROME_ROWS = 4;
@@ -86,7 +96,12 @@ type PickerHintKind = 'terminal' | 'expanded' | 'default';
 function getHint(input: {
   kind: PickerHintKind;
   terminalVerb: string | undefined;
-  nav: { isOnCustomItem: boolean; currentRightIsCustom: boolean };
+  nav: {
+    activeColumn: 'left' | 'right';
+    isDisabled: boolean;
+    isOnCustomItem: boolean;
+    currentRightIsCustom: boolean;
+  };
   hasRefresh: boolean;
   maxVisible: number;
   width: number;
@@ -128,6 +143,10 @@ function getHint(input: {
   if (nav.isOnCustomItem) {
     return fitHint('⏎ add custom', 'esc cancel', true);
   }
+  // A disabled tool row takes neither → nor ⏎, so the hint offers only the keys that act on it.
+  if (nav.activeColumn === 'left' && nav.isDisabled) {
+    return fitHint('', 'esc cancel', false);
+  }
   return fitHint('⏎ confirm', 'esc cancel', true);
 }
 
@@ -166,11 +185,12 @@ function TerminalPaneCard({
   height: number;
 }) {
   const t = useTheme();
-  // Only the widest viewport has room to spend a second row on a wrapped
-  // sentence; below it the card truncates so the box keeps its line count.
-  const wrap = contentWidth >= CARD_WRAP_MIN_WIDTH ? 'wrap' : 'truncate-end';
   const rows = pane.lines.flatMap((line) =>
-    typeof line === 'string' ? [line] : wrapValueLine(line.whole, contentWidth),
+    typeof line !== 'string'
+      ? wrapValueLine(line.whole, contentWidth)
+      : line === ''
+        ? ['']
+        : wrapOnWords(line, contentWidth, Number.POSITIVE_INFINITY).lines,
   );
   return (
     <Box
@@ -189,7 +209,7 @@ function TerminalPaneCard({
         line === '' ? (
           <Box key={`blank-${i}`} height={1} />
         ) : (
-          <Text key={`line-${i}`} color={t.textDim} wrap={wrap}>
+          <Text key={`line-${i}`} color={t.textDim} wrap="truncate-end">
             {sanitizeTerminalDisplayText(line)}
           </Text>
         ),
@@ -322,7 +342,9 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           bylineBudget: totalBoxWidth,
         });
   const previewText =
-    rawPreview === undefined ? undefined : sanitizeTerminalDisplayText(rawPreview);
+    rawPreview === undefined
+      ? undefined
+      : sanitizeTerminalDisplayText(rawPreview, { preserveLineBreaks: true });
   const showPreview = previewText !== undefined && previewText !== '' && cols > PREVIEW_MIN_COLS;
   const leftEmptyText = `No ${(leftProps.label ?? 'items').toLowerCase()} match`;
   const wheelStep = (direction: 'up' | 'down'): 1 | -1 => (direction === 'up' ? -1 : 1);

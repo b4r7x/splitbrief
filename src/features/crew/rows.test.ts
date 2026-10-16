@@ -230,6 +230,22 @@ describe('fallback row activation', () => {
     pickerViewStore.reset();
   });
 
+  it('returns to the crew row it opened, not to a fallback row opened before', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+    });
+    const build = deriveCrewRows({ config }).find((row) => row.id === 'build');
+    if (build === undefined) throw new Error('No build seat row.');
+    overlayStore.open('settings');
+    fallbackActivate({ row: fallbackRow(config, 'build'), config });
+    overlayStore.close();
+
+    crewActivate({ target: { kind: 'crew', row: build }, config });
+    overlayStore.close();
+
+    expect(overlayStore.get()).toMatchObject({ active: 'settings', focus: 'seat:build' });
+  });
+
   function fallbackRow(config: Config, id: FallbackRow['id']): FallbackRow {
     const row = deriveFallbackRows({ config, cliTools: [] }).find((entry) => entry.id === id);
     if (row === undefined) throw new Error(`No ${id} fallback row.`);
