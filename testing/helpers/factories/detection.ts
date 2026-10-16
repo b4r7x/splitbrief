@@ -1,7 +1,9 @@
+import { mkdirSync } from 'node:fs';
 import type { CliReadinessState, CliToolDetection } from '../../../src/core/discovery/detection.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
 import { cliDetectionFromReadiness } from '../../../src/engine/detection/detect.js';
 import { saveDetectionCache } from '../../../src/engine/detection/cache.js';
+import { getSplitbriefPath } from '../../../src/core/paths.js';
 import { deriveCliReadiness, type CliReadinessFacts } from '../../../src/core/schemas/readiness.js';
 
 export const PROBE_EXECUTABLE = Object.freeze({
@@ -98,11 +100,15 @@ export function cliDetectionsFor(
   return tools.map((tool) => cliDetectionFor(state, tool));
 }
 
-/** The detection the last readiness pass left behind, which a halt reads its seat swap offer from. */
+/**
+ * The detection the last readiness pass left behind, which a halt reads its seat swap offer from.
+ * A readiness pass runs in a project that has `.splitbrief/`, the only folder the cache writes into.
+ */
 export async function rememberDetectedTools(
   projectDir: string,
   cliTools: CliToolDetection[],
 ): Promise<void> {
+  mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
   await saveDetectionCache({
     projectDir,
     snapshot: {

@@ -24,7 +24,7 @@ function checkoutFix(run: SessionRef | undefined): string {
     run === undefined
       ? "the run's reverted/ folder, under .splitbrief/sessions/"
       : `${revertedDir(run)}/`;
-  return `The run edits this checkout. Commit or stash the edits you do not want this run to touch. A revert saves the files it replaces in ${folder}.`;
+  return `The run edits this checkout. A revert saves the files it replaces in ${folder}. Commit or stash the edits you do not want this run to touch.`;
 }
 
 export function buildRepoChecks(

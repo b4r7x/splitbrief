@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableReceipt } from '../../../src/core/discovery/detection.js';
 import type { CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
 import { createPlanner } from '../../../src/engine/runners/factory.js';
+import { executableChangedMessage } from '../../../src/engine/runners/resolve-cli-executable.js';
 import { codexPlannerAdapter } from '../../../src/engine/runners/cli-tools/codex.js';
 import { opencodePlannerAdapter } from '../../../src/engine/runners/cli-tools/opencode.js';
 import { CLI_CONFORMANCE_EXIT_CODES } from '../../../src/engine/runners/cli-tools/contract-harness.js';
@@ -311,7 +312,7 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
           recordPath: scenario.recordPath,
         });
         expect(outcome.verdict).toBe('OMIT');
-        expect(outcome.reason).toMatch(/identity/i);
+        expect(outcome.reason).toBe(executableChangedMessage('OpenCode CLI'));
         expect(existsSync(markerPath)).toBe(false);
       } finally {
         await scenario.cleanup();

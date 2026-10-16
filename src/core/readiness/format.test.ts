@@ -450,7 +450,7 @@ describe('start readiness record', () => {
       'Working tree has 1 changed file.',
       'Examples: README.md',
       'An attempt revert restores only the paths that attempt changed.',
-      'Fix: The run edits this checkout. Commit or stash the edits you do not want this run to touch. A revert saves the files it replaces in .splitbrief/sessions/2026-01-01-fix-the-readme/reverted/.',
+      'Fix: The run edits this checkout. A revert saves the files it replaces in .splitbrief/sessions/2026-01-01-fix-the-readme/reverted/. Commit or stash the edits you do not want this run to touch.',
     ]);
     for (const line of warning.split('\n').slice(0, 3)) expect(doctor).toContain(line);
     expect(doctor).toContain(

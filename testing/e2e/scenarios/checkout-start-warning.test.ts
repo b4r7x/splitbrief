@@ -34,7 +34,7 @@ describe('e2e: a checkout-mode run started on uncommitted edits', () => {
         'Examples: my-notes.txt',
         'An attempt revert restores only the paths that attempt changed.',
       ],
-      remediation: expect.stringMatching(/^The run edits this checkout\..*reverted\/\.$/),
+      remediation: `The run edits this checkout. A revert saves the files it replaces in ${REVERTED}. Commit or stash the edits you do not want this run to touch.`,
     });
 
     const stated = startReadinessWarnings(record);

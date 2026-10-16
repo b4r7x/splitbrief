@@ -262,7 +262,8 @@ describe('useSettingsEditor', () => {
     ui.stdin.write(' ');
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toEqual({
-        message: 'Saved Create branch · on to .splitbrief/config.yaml',
+        message:
+          'Saved Create branch · on to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
         isError: false,
       });
     });

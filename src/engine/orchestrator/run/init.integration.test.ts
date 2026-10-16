@@ -370,7 +370,7 @@ describe('initializeWorkflow', () => {
           'Working tree has 1 changed file.',
           'Examples: README.md',
           'An attempt revert restores only the paths that attempt changed.',
-          `Fix: The run edits this checkout. Commit or stash the edits you do not want this run to touch. A revert saves the files it replaces in .splitbrief/sessions/${sessionId}/reverted/.`,
+          `Fix: The run edits this checkout. A revert saves the files it replaces in .splitbrief/sessions/${sessionId}/reverted/. Commit or stash the edits you do not want this run to touch.`,
         ]);
         const request = events.findIndex((event) => event.type === 'user_message');
         expect(request).toBeGreaterThanOrEqual(0);

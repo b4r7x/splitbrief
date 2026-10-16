@@ -391,7 +391,9 @@ describe('runner picker semantics integration', () => {
         // The file lands before the save settles: the write still reads it back, syncs the
         // directory and drops its lock, and only then does the commit announce the seat.
         await vi.waitFor(() => {
-          expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to`);
+          expect(feedbackStore.get().message).toContain(
+            `Saved ${CREW_SEAT_LABELS.plan} · OpenAI Codex CLI`,
+          );
           expect(loadConfig(projectDir).config.planner).toMatchObject({
             kind: 'cli',
             tool: 'codex',
@@ -772,7 +774,9 @@ describe('runner picker semantics integration', () => {
         // Each save must settle before the next step: one still in flight hands the next
         // seat a stale revision, or loses its directory to the temp-dir cleanup.
         await vi.waitFor(() => {
-          expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to`);
+          expect(feedbackStore.get().message).toContain(
+            `Saved ${CREW_SEAT_LABELS.plan} · Claude Code CLI`,
+          );
           expect(loadConfig(projectDir).config.planner).toMatchObject({
             kind: 'cli',
             tool: 'claude-code',
@@ -790,7 +794,7 @@ describe('runner picker semantics integration', () => {
         implementerUi.unmount();
 
         await vi.waitFor(() => {
-          expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.build} set to`);
+          expect(feedbackStore.get().message).toContain(`Saved ${CREW_SEAT_LABELS.build} · Ollama`);
           expect(loadConfig(projectDir).config.implementer).toMatchObject({
             kind: 'api',
             provider: 'ollama',
@@ -844,7 +848,9 @@ describe('runner picker semantics integration', () => {
           ui.unmount();
 
           await vi.waitFor(() => {
-            expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to`);
+            expect(feedbackStore.get().message).toContain(
+              `Saved ${CREW_SEAT_LABELS.plan} · OpenAI Codex CLI`,
+            );
           });
           expect(loadConfig(projectDir).config.planner).toMatchObject({
             kind: 'cli',
