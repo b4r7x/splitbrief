@@ -23,7 +23,10 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
-import { getContentTopRow } from '../../features/workflow/layout/chrome-rows.js';
+import {
+  getContentTopRow,
+  railConnectorString,
+} from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { WorkflowScreen } from './workflow.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
@@ -33,6 +36,7 @@ import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js'
 import { workflowCommands } from '../../core/runtime/commands/defs/workflow.js';
 import { hydrateResume } from '../../features/workflow/resume-hydration.js';
 import { listRowLead } from '../../components/list-row.js';
+import { glyph } from '../../lib/glyphs.js';
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
@@ -51,6 +55,7 @@ const { feedbackStore } = await import('../../stores/ui/feedback.js');
 const { composerLiveStore } = await import('../../stores/ui/composer-live.js');
 const { stopStore } = await import('../../stores/workflow/stop.js');
 const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
+const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
 
 const FIXED_TS = 1_783_958_400_000;
 const SHIFT_ENTER = '\x1b[13;2u';
@@ -1232,6 +1237,125 @@ describe('WorkflowScreen stating a silent seat', () => {
     await flushEffects();
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('No output for 5:15');
 
+    ui.unmount();
+  });
+});
+
+describe('WorkflowScreen when the final review passes', () => {
+  let projectDir = '';
+
+  beforeEach(() => {
+    resetAllStores();
+    projectDir = createTempDir('workflow-review-passed');
+    runWorkflow.mockReset();
+  });
+
+  afterEach(() => {
+    resetAllStores();
+    if (projectDir) cleanupTempDir(projectDir);
+  });
+
+  // The engine tears the run down between its passing review and the at-rest hand-off. The run is
+  // ready to apply then, not done, so no header of that window reads done.
+  it('keeps the stages on the header until the ready run opens its result menu', async () => {
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    navigatePreparedWorkflow(projectDir, 'ready run');
+    const brief = taskId('T001');
+    let finishTeardown = () => {};
+    const teardown = new Promise<void>((resolve) => {
+      finishTeardown = resolve;
+    });
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'implementing',
+        feature: 'ready run',
+      });
+      publishEvent(opts, {
+        type: 'tasks_planned',
+        ts: FIXED_TS + 1,
+        phase: 'implementing',
+        total: 1,
+        tasks: [{ id: brief, title: 'Ready brief', index: 0, file: 'src/a.ts', action: 'modify' }],
+      });
+      publishEvent(opts, {
+        type: 'task_started',
+        ts: FIXED_TS + 2,
+        phase: 'implementing',
+        taskId: brief,
+        title: 'Ready brief',
+        index: 0,
+        total: 1,
+        file: 'src/a.ts',
+        action: 'modify',
+        tool: 'opencode',
+        model: 'ready-model',
+      });
+      publishEvent(opts, {
+        type: 'task_completed',
+        ts: FIXED_TS + 3,
+        phase: 'implementing',
+        taskId: brief,
+        title: 'Ready brief',
+        method: 'local',
+        retries: 0,
+        duration: 1_000,
+        tool: 'opencode',
+        model: 'ready-model',
+      });
+      publishEvent(opts, {
+        type: 'workflow_complete',
+        ts: FIXED_TS + 4,
+        phase: 'complete',
+        review: 'passed',
+        completedTasks: 1,
+      });
+      await teardown;
+      saveState(
+        opts.prepared.session.ref,
+        makeWorkflowState({
+          phase: 'complete',
+          reviewStatus: 'passed',
+          tasks: [makeTask({ id: 'T001', title: 'Ready brief', status: 'done' })],
+          workspace: {
+            kind: 'worktree',
+            path: join(projectDir, 'run-workspace'),
+            base: { snapshotId: 'workspace-base', head: null },
+          },
+        }),
+      );
+      return makeSummary({ feature: 'ready run', totalTasks: 1, completedByLocal: 1 });
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 120, rows: 40 },
+    );
+    const header = (frame: string) => stripAnsiStyles(frame).split('\n')[0] ?? '';
+    const done = glyph('stageDone');
+    await vi.waitFor(() => {
+      expect(lifecycleStore.get().phase).toBe('complete');
+    });
+    await flushEffects();
+
+    const live = header(ui.lastFrame());
+    for (const stage of ['Plan', 'Build', 'Review']) expect(live).toContain(`${done} ${stage}`);
+    expect(live).not.toContain('done');
+    expect(live).not.toContain('Apply');
+    const route = routerStore.get();
+    expect(route.screen === 'workflow' && route.execution.kind).toBe('local');
+
+    finishTeardown();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Ready to apply');
+    });
+    const rail = live.trim().split('  ')[0] ?? '';
+    expect(header(ui.lastFrame())).toContain(
+      `${rail}${railConnectorString()}${glyph('stagePending')} Apply`,
+    );
+    for (const frame of ui.frames) expect(header(frame)).not.toContain('done');
     ui.unmount();
   });
 });

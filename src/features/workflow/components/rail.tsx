@@ -4,7 +4,6 @@ import { formatStageLabel } from '../../../core/phase-display.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { SOFT_SEP } from '../../../core/separators.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import { TextSpans } from '../../../components/text-spans.js';
@@ -12,7 +11,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 import type { ConversationRowSegment, ConversationRowTone } from '../conversation-rows/types.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { tasksStore, selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
+import { tasksStore, type TasksState } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
@@ -28,7 +27,6 @@ import {
 import {
   chooseFormBVariant,
   getChromeContentWidth,
-  getRailDriftPassed,
   measureFormB,
   railConnectorString,
   railFormBLabel,
@@ -44,13 +42,6 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
-import { passedFractionSpans } from '../display/build-progress.js';
-
-interface RailDoneSummary {
-  passed: number;
-  total: number;
-  driftPassed: boolean | undefined;
-}
 
 // Done and active share the filled mark, so the three marks a live rail paints are one family of
 // one width on every font: weight and brightness tell the stage the run is on from the ones behind
@@ -164,56 +155,6 @@ function RailFormC({ stages, fraction }: { stages: RailStageState[]; fraction: s
   );
 }
 
-// The fraction the build block states, out of the plan as it stands — fix tasks a review appended
-// included — so a brief is counted once however many completions the log carried for it.
-function railCompleteText(summary: RailDoneSummary): string {
-  return railCompleteSpans(summary)
-    .map((span) => span.text)
-    .join('');
-}
-
-function railCompleteSpans(summary: RailDoneSummary): ConversationRowSegment[] {
-  const spans: ConversationRowSegment[] = [
-    { text: `${glyph('stageDone')} done`, tone: stateTone('passed') },
-  ];
-  if (summary.total > 0)
-    spans.push(
-      { text: SOFT_SEP, tone: 'textDim' },
-      ...passedFractionSpans(`${summary.passed}/${summary.total} briefs`),
-    );
-  spans.push({ text: SOFT_SEP, tone: 'textDim' });
-  spans.push({
-    text:
-      summary.driftPassed === undefined
-        ? 'drift not run'
-        : summary.driftPassed
-          ? 'no drift'
-          : 'drift found',
-    tone:
-      summary.driftPassed === undefined
-        ? stateTone('pending')
-        : summary.driftPassed
-          ? stateTone('passed')
-          : stateTone('attention'),
-  });
-  return spans;
-}
-
-function RailComplete({ summary }: { summary: RailDoneSummary }) {
-  return (
-    <Box height={1} overflow="hidden">
-      <Text>
-        <TextSpans parts={railCompleteSpans(summary)} />
-      </Text>
-    </Box>
-  );
-}
-
-function railDoneSummary(tasks: TasksState, events: readonly EngineEvent[]): RailDoneSummary {
-  const view = selectTaskListView(tasks);
-  return { passed: view.passed, total: view.total, driftPassed: getRailDriftPassed(events) };
-}
-
 const FAILED_REVIEW_STAGES = getRailStages('final-review', { halted: 'failed' });
 const APPLY_HALT_STAGES = applyStopRailStages('failed');
 
@@ -239,8 +180,8 @@ function haltedCompleteStages(
 }
 
 // The rail's actually-rendered width, so the header budgets the seat line against what the rail
-// paints — not the full three-stage pipeline. `complete` collapses to a short done line and a
-// narrow terminal collapses to Form C, both far shorter than the Form-B measure.
+// paints — not the full three-stage pipeline. A narrow terminal collapses to Form C, far shorter
+// than the Form-B measure.
 export function measureRailCells(input: {
   phase: Phase;
   cancelled: boolean;
@@ -255,9 +196,6 @@ export function measureRailCells(input: {
   stages?: readonly RailStageState[] | undefined;
 }): number {
   const halted = haltedCompleteStages(input.phase, input.events, input.recoveryAt);
-  if (input.stages === undefined && input.phase === 'complete' && halted === null) {
-    return getTerminalCellWidth(railCompleteText(railDoneSummary(input.tasks, input.events)));
-  }
   const stages = [
     ...(input.stages ?? halted ?? getRailStages(input.phase, { cancelled: input.cancelled })),
   ];
@@ -320,9 +258,6 @@ export function Rail({
     buildBlockShown,
   });
 
-  if (givenStages === undefined && phase === 'complete' && halted === null) {
-    return <RailComplete summary={railDoneSummary(tasks, eventsState.events)} />;
-  }
   if (resolved === 'C') {
     return <RailFormC stages={stages} fraction={fraction} />;
   }

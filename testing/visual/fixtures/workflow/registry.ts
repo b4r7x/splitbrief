@@ -31,6 +31,7 @@ import {
 } from '../common.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
+import { glyph } from '../../../../src/lib/glyphs.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
 import { reviewKeysStore } from '../../../../src/stores/ui/review-keys.js';
@@ -468,7 +469,19 @@ const checkpointPredicates = [
       );
     },
   ],
-  [checkpointId('complete-after-fix-tasks'), includesAll('4/4 briefs passed')],
+  [
+    checkpointId('complete-after-fix-tasks'),
+    (context) => {
+      const [rail = ''] = context.output.split('\n');
+      return (
+        includesAll()(context) &&
+        rail.split(glyph('stageDone')).length === 4 &&
+        excludesAll('done ·', 'drift not run', 'briefs passed')(context) &&
+        (context.viewport.cols < 160 || context.output.includes('Tasks 4/4')) &&
+        (context.viewport.cols < 80 || context.output.includes('+1 file'))
+      );
+    },
+  ],
   [checkpointId('review-fix-no-change'), includesAll('no change needed')],
   [
     checkpointId('resumed-kept-work'),

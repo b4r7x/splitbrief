@@ -730,13 +730,14 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-complete-after-fix-tasks',
+      viewports: WIDE_VIEWPORTS,
       title: 'Workflow · complete after the review appended a fix task',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'complete-after-fix-tasks',
-        title: 'Every brief counted once',
+        title: 'A passed review reads its stages, never done',
         kind: 'implementation',
-        marker: '4/4 briefs passed',
+        marker: '4/4',
       },
       elements: [{ id: 'header', title: 'Workflow header' }],
     }),
