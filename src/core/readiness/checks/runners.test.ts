@@ -717,6 +717,42 @@ describe('buildRunnerChecks reviewer seat', () => {
   });
 });
 
+describe('buildRunnerChecks write location', () => {
+  it.each([
+    {
+      isolation: 'none',
+      implementer: { kind: 'cli', tool: 'claude-code' },
+      line: 'BUILD edits this checkout.',
+    },
+    {
+      isolation: 'none',
+      implementer: { kind: 'api' },
+      line: 'SPLITBRIEF applies the edits BUILD returns to this checkout.',
+    },
+    {
+      isolation: 'worktree',
+      implementer: { kind: 'cli', tool: 'claude-code' },
+      line: 'BUILD edits files in the run workspace.',
+    },
+    {
+      isolation: 'worktree',
+      implementer: { kind: 'api' },
+      line: 'SPLITBRIEF applies the edits BUILD returns.',
+    },
+  ] as const)(
+    '$isolation with a $implementer.kind BUILD reads "$line"',
+    ({ isolation, implementer, line }) => {
+      const checks = buildRunnerChecks({
+        config: makeConfig({ implementer, workflow: { isolation } }),
+      });
+
+      expect(checks.find((check) => check.id === 'runners.implementer.default')?.details).toEqual([
+        line,
+      ]);
+    },
+  );
+});
+
 describe('buildRunnerChecks typed-output fallback', () => {
   const fallbackChecks = (config: ReturnType<typeof makeConfig>) =>
     buildRunnerChecks({ config }).filter((check) => check.id.endsWith('.typed-output-fallback'));
