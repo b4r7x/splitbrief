@@ -11,10 +11,10 @@ describe('rustStack', () => {
     expect(rustStack.test('/anywhere')).toBe('cargo test');
   });
 
-  it('declares Cargo.toml, no test file patterns and name-filter narrowing', () => {
+  it('declares Cargo.toml, the integration test pattern and cargo-target narrowing', () => {
     expect(rustStack.markers).toEqual(['Cargo.toml']);
-    expect(rustStack.testFilePatterns).toEqual([]);
-    expect(rustStack.narrowing).toEqual({ kind: 'name-filter', flag: '--' });
+    expect(rustStack.testFilePatterns).toEqual(['tests/*.rs']);
+    expect(rustStack.narrowing).toEqual({ kind: 'cargo-target' });
     expect(rustStack.allowedCommands).toEqual(['cargo']);
   });
 });

@@ -162,7 +162,7 @@ The reviewer chooses the reviewer checks from the project itself, and the review
 
 | Stack | Marker | test | Test files |
 |---|---|---|---|
-| `rust` | `Cargo.toml` | `cargo test` | `#[cfg(test)]` blocks in the changed file |
+| `rust` | `Cargo.toml` | `cargo test` | `tests/*.rs` in the crate, `#[cfg(test)]` blocks in the changed file |
 | `go` | `go.mod` | `go test ./...` | `*_test.go` |
 | `python` | `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements.txt`, `Pipfile` | `uv run pytest` with `uv.lock`, `poetry run pytest` with `poetry.lock`, else `pytest` | `test_*.py`, `*_test.py` |
 | `typescript` | `tsconfig.json`, or `typescript` in `package.json` dependencies | `npm test` when `scripts.test` exists | `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `__tests__/*.ts` |

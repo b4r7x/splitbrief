@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import YAML from 'yaml';
 import { buildStageContext, planTestCheck } from './run.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -75,7 +75,7 @@ describe('planTestCheck', () => {
     expect(planned).toMatchObject({ kind: 'run', resolved: { cmd: 'npm', source: 'manifest' } });
   });
 
-  it('runs the stack-default cargo test, narrowed, when the loaded config sets no test_command', () => {
+  it('runs the stack-default cargo test unfiltered for a crate root when the loaded config sets no test_command', () => {
     const configDir = join(tempDir, SPLITBRIEF_DIR);
     mkdirSync(configDir, { recursive: true });
     writeFileSync(join(configDir, 'config.yaml'), YAML.stringify({ version: 3 }), 'utf-8');
@@ -88,10 +88,73 @@ describe('planTestCheck', () => {
 
     expect(plan('src/main.rs', config)).toMatchObject({
       kind: 'run',
-      command: 'cargo test -- main',
-      args: ['test', '--', 'main'],
+      command: 'cargo test',
+      args: ['test'],
     });
   });
+
+  it.each([
+    ['tests/api.rs', '#[test]\nfn add_works() {}', 'cargo test --test api'],
+    ['src/lib.rs', '#[cfg(test)]\nmod tests {}', 'cargo test'],
+    ['src/parser.rs', '#[cfg(test)]\nmod tests {}', 'cargo test -- parser::'],
+    ['src/my-mod.rs', '#[cfg(test)]\nmod tests {}', 'cargo test'],
+    ['examples/e.rs', '#[cfg(test)]\nmod tests {}', 'cargo test --example e'],
+    ['benches/b.rs', '#[cfg(test)]\nmod tests {}', 'cargo test --bench b'],
+    [
+      'crates/foo/tests/api.rs',
+      '#[test]\nfn add_works() {}',
+      'cargo test --manifest-path crates/foo/Cargo.toml --test api',
+    ],
+    [
+      'crates/foo/src/x.rs',
+      '#[cfg(test)]\nmod tests {}',
+      'cargo test --manifest-path crates/foo/Cargo.toml -- x::',
+    ],
+  ])('runs the Rust tests of %s', (file, content, command) => {
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+    mkdirSync(join(tempDir, 'crates', 'foo'), { recursive: true });
+    writeFileSync(join(tempDir, 'crates', 'foo', 'Cargo.toml'), '[package]\nname = "foo"');
+    mkdirSync(dirname(join(tempDir, file)), { recursive: true });
+    writeFileSync(join(tempDir, file), content);
+
+    expect(plan(file, makeConfig({ testCommand: undefined }))).toMatchObject({
+      kind: 'run',
+      command,
+    });
+  });
+
+  it.each([
+    ['tests/it/helpers.rs', 'tests/it/main.rs', 'cargo test --test it'],
+    [
+      'examples/hello/src/lib.rs',
+      'examples/hello/Cargo.toml',
+      'cargo test --manifest-path examples/hello/Cargo.toml',
+    ],
+  ])('runs the Rust tests of %s, a file of its own target folder', (file, owner, command) => {
+    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+    mkdirSync(dirname(join(tempDir, file)), { recursive: true });
+    writeFileSync(join(tempDir, owner), '');
+    writeFileSync(join(tempDir, file), '#[cfg(test)]\nmod tests {}');
+
+    expect(plan(file, makeConfig({ testCommand: undefined }))).toMatchObject({
+      kind: 'run',
+      command,
+    });
+  });
+
+  it.each(['build.rs', 'tests/sub/x.rs'])(
+    'skips the Rust file %s that no cargo target runs',
+    (file) => {
+      writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
+      mkdirSync(dirname(join(tempDir, file)), { recursive: true });
+      writeFileSync(join(tempDir, file), '#[cfg(test)]\nmod tests {}');
+
+      expect(plan(file, makeConfig({ testCommand: undefined }))).toEqual({
+        kind: 'skip',
+        reason: 'no affected test file found',
+      });
+    },
+  );
 
   it('skips when a narrowing command finds no affected test file', () => {
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');

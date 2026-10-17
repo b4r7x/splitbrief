@@ -34,6 +34,7 @@ import type { ValidationResult } from './result.js';
 import { reviewerCommandRefusal } from './reviewer-command-policy.js';
 import { buildStageContext, planTestCheck } from './run.js';
 import { boundedOutputTail, runValidationStep } from './stage.js';
+import { countCargoTests } from './test-failures.js';
 import type { ValidationCommandRunner } from './types.js';
 
 export type CheckRunArtifact = {
@@ -161,6 +162,17 @@ async function runTestCheck(
       checkId: check.id,
       status: 'not-runnable',
       output: `${result.missingExecutable} not found`,
+      command: result.command,
+    };
+  }
+  // A test that ran shows in the visible counts; a cut-off output cannot show that none ran.
+  if (result.passed && planned.countsCargoTests && countCargoTests(result.capture.text) === 0) {
+    return {
+      checkId: check.id,
+      status: 'not-runnable',
+      output: result.capture.complete
+        ? 'the command ran no test'
+        : 'the test output was cut off before it showed a test that ran',
       command: result.command,
     };
   }

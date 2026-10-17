@@ -1,12 +1,12 @@
 export const STACK_IDS = ['typescript', 'javascript', 'python', 'go', 'rust'] as const;
 export type StackId = (typeof STACK_IDS)[number];
 
-export const NARROWING_KINDS = ['path-arg', 'package-arg', 'name-filter', 'none'] as const;
+export const NARROWING_KINDS = ['path-arg', 'package-arg', 'cargo-target', 'none'] as const;
 
 export type TestNarrowing = Extract<
   | { kind: 'path-arg'; separator: '--' | '' }
   | { kind: 'package-arg' }
-  | { kind: 'name-filter'; flag: '-run' | '--' }
+  | { kind: 'cargo-target' }
   | { kind: 'none' },
   { kind: (typeof NARROWING_KINDS)[number] }
 >;

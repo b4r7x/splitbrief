@@ -5,7 +5,7 @@ import { isTestPatternSafe } from '../test-discovery.js';
 import { goStack } from './go.js';
 import { javascriptStack } from './javascript.js';
 import { pythonStack } from './python.js';
-import { rustStack } from './rust.js';
+import { type CargoTarget, cargoSelection, cargoTestArgs, rustStack } from './rust.js';
 import type { Stack, StackId, StackMarker, TestNarrowing } from './types.js';
 import { typescriptStack } from './typescript.js';
 
@@ -96,7 +96,7 @@ export function findAffectedTestFiles(
     }
   }
   // A runner that takes file paths runs a named test file no pattern maps, such as a root
-  // `test.js`. A name filter or a package argument would select other tests, so those still skip.
+  // `test.js`. A package argument or a cargo target would select other tests, so those still skip.
   if (
     found.length === 0 &&
     stack.narrowing.kind === 'path-arg' &&
@@ -104,14 +104,35 @@ export function findAffectedTestFiles(
   ) {
     add(self);
   }
+  // A file of a cargo test, example or bench target runs that target; `build.rs`, or a file
+  // outside every crate's target folders, is no target.
+  if (stack.narrowing.kind === 'cargo-target') {
+    if (cargoTargetIn(projectDir, taskFile)?.selection.kind === 'target') add(self);
+    return found.filter((file) => cargoTargetIn(projectDir, relative(projectDir, file)) !== null);
+  }
   return found;
+}
+
+// A Rust file belongs to the crate of its nearest folder with a `Cargo.toml`.
+function cargoTargetIn(projectDir: string, file: string): CargoTarget | null {
+  for (let crate = dirname(file); ; crate = dirname(crate)) {
+    if (existsSync(join(projectDir, crate, 'Cargo.toml'))) {
+      const prefix = crate === '.' ? '' : `${crate}/`;
+      const selection = cargoSelection(file.slice(prefix.length), (path) =>
+        existsSync(join(projectDir, prefix, path)),
+      );
+      return selection === null ? null : { crate: crate === '.' ? '' : crate, selection };
+    }
+    if (dirname(crate) === crate) return null;
+  }
 }
 
 export function buildTestArgs(
   resolved: { cmd: string; args: readonly string[] },
   targets: readonly string[],
   narrowing: TestNarrowing,
-): string[] {
+  projectDir: string,
+): string[] | null {
   const args = [...resolved.args];
   if (targets.length === 0) return args;
   switch (narrowing.kind) {
@@ -121,11 +142,9 @@ export function buildTestArgs(
       const dirs = [...new Set(targets.map((target) => dirname(target)))];
       return [...args.filter((arg) => arg !== './...'), ...dirs.map((dir) => `./${dir}/`)];
     }
-    case 'name-filter': {
-      const names = [...new Set(targets.map((target) => basename(target).replace(/\.\w+$/, '')))];
-      return narrowing.flag === '-run'
-        ? [...args, '-run', names.join('|')]
-        : [...args, '--', ...names];
+    case 'cargo-target': {
+      const selection = cargoTestArgs(targets.map((target) => cargoTargetIn(projectDir, target)));
+      return selection === null ? null : [...args, ...selection];
     }
     case 'none':
       return args;
