@@ -7,6 +7,8 @@ import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { WORKFLOW_GUTTER_X } from '../../../src/features/workflow/layout/chrome-rows.js';
+import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/rect.js';
 import { terminalSequences } from '../../../src/lib/terminal/control.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
@@ -23,6 +25,8 @@ const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 const COLS = 160;
 const ROWS = 40;
 const APPROVE = 'Approve plan and start the build';
+const SIDEBAR_END =
+  WORKFLOW_GUTTER_X + getWorkflowSidebarWidth({ cols: COLS, sidebarVisible: true });
 let fixture: StopContinueFixture;
 let environment: Readonly<Record<string, string>>;
 let wrapperPath: string;
@@ -167,9 +171,18 @@ describe('e2e: interactive first-run copy', () => {
   it('publishes tasks before the first plan approval card opens', async () => {
     await runInteractive(['start', 'smoke'], async (_screen, firstCard) => {
       await vi.waitFor(() => expect(firstCard()).toBeDefined(), { timeout: 30_000 });
-      expect(firstCard()).toContain('Tasks');
-      expect(firstCard()).toContain('Add a greeting helper');
-      expect(firstCard()).not.toContain('Waiting for your answer');
+      const card = firstCard();
+      if (card === undefined) throw new Error('The plan card never opened');
+      // The approval byline also says `Waiting for your answer`, so only the sidebar box is read.
+      const rows = card.split('\n').map((row) => row.slice(WORKFLOW_GUTTER_X, SIDEBAR_END));
+      const top = rows.findIndex((row) => row.startsWith('┌'));
+      const bottom = rows.findIndex((row, index) => index > top && row.startsWith('└'));
+      expect(top).toBeGreaterThanOrEqual(0);
+      expect(bottom).toBeGreaterThan(top);
+      const sidebar = rows.slice(top, bottom + 1).join('\n');
+      expect(sidebar).toContain('Tasks');
+      expect(sidebar).toContain('Add a greeting helper');
+      expect(sidebar).not.toContain('Waiting for your answer');
       const sessionId = readActive(fixture.projectDir);
       if (sessionId === null) throw new Error('The plan card has no active session');
       const replay = await readRunEvents({ projectDir: fixture.projectDir, sessionId });
