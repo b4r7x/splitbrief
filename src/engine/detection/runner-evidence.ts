@@ -410,6 +410,7 @@ function evidenceFromLegacyReadiness(
     compatibility: compatibilityFromLegacy(readiness),
     credential: credentialFromCliAuth(context, auth),
     auth,
+    ...(readiness.providerAuth !== undefined && { providerAuth: readiness.providerAuth }),
   };
 }
 
@@ -655,6 +656,9 @@ async function probeResolvedCliEvidence(
     auth: declaredEvidence.auth,
     catalog,
     modelRun: modelRunFromCatalog(context, base, catalog),
+    ...(declaredEvidence.providerAuth !== undefined && {
+      providerAuth: declaredEvidence.providerAuth,
+    }),
   };
 }
 

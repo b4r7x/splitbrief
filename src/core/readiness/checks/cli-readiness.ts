@@ -1,8 +1,13 @@
+import { runnerSlotId, type RunnerConfigSlot } from '../../config/accessors/runner-config.js';
+import { formatSlotLabel } from '../../crew/identity.js';
+import type { SavedCatalog } from '../../discovery/catalog-read-merge.js';
+import type { CliProviderAuth } from '../../discovery/detection.js';
 import {
   CLI_TOOL_CATALOG,
   type CliToolId,
   type CliAuthChannelId,
 } from '../../runners/cli-tool-catalog.js';
+import { routeAuthState, routeNoCredential, routeSignInCommand } from '../../runners/route-auth.js';
 import {
   cliReadinessCheckId,
   type CliReadinessResult,
@@ -21,35 +26,84 @@ function diagnosticExecutablePath(result: CliReadinessResult): string | null {
   return result.executable === null ? null : REDACTED_EXECUTABLE_PATH;
 }
 
+/** A tool's remembered model catalog, which tells a route set up in the tool's own config. */
+export type RememberedToolCatalog = Readonly<{ tool: CliToolId }> & SavedCatalog;
+
+/** One seat of a configured CLI, as readiness reads it. */
+export type ConfiguredCliSeat = Readonly<{
+  slot: RunnerConfigSlot;
+  authChannel: CliAuthChannelId;
+  model: string | undefined;
+}>;
+
+/**
+ * A seat whose model route the tool's own credential listing does not sign
+ * in: the tool is ready, but every call on that route is refused. Readiness
+ * and start report it the same way, with the tool's sign-in command.
+ */
+export function routeSignInCheck(input: {
+  slot: RunnerConfigSlot;
+  tool: CliToolId;
+  model: string | undefined;
+  providerAuth: CliProviderAuth | undefined;
+  catalog: SavedCatalog | undefined;
+}): ReadinessCheck | undefined {
+  const auth = routeAuthState(input);
+  if (auth.kind !== 'needs-sign-in') return undefined;
+  const seat = formatSlotLabel(input.slot);
+  return {
+    id: `runners.route.${runnerSlotId(input.slot)}`,
+    severity: 'warning',
+    summary: `${seat}: ${routeNoCredential(input.tool, auth.provider)}.`,
+    fix: `Run \`${routeSignInCommand(input.tool, auth.provider)}\`, or choose another model in Settings > Crew > ${seat}.`,
+  };
+}
+
 export function configuredCliReadinessChecks(
-  configuredTools: ReadonlyMap<
-    CliToolId,
-    readonly { seat: string; authChannel: CliAuthChannelId }[]
-  >,
+  configuredTools: ReadonlyMap<CliToolId, readonly ConfiguredCliSeat[]>,
   results: readonly CliReadinessResult[],
+  catalogs: readonly RememberedToolCatalog[],
 ): ReadinessCheck[] {
   const resultsByTool = new Map(results.map((result) => [result.tool, result]));
-  return [...configuredTools].map(([tool, seats]) => {
+  return [...configuredTools].flatMap(([tool, seats]) => {
     const result = resultsByTool.get(tool);
-    if (result === undefined) return missingCliReadinessCheck(tool);
-    const check = cliReadinessCheck(result);
-    const cause = cliReadinessCause(result, check.diagnosticState);
-    if (cause === undefined) return check;
-    // Only a sign-in fact depends on the seat's authentication selection; a
-    // missing, untrusted or unproven executable blocks every seat of the tool.
-    const authentication = cause === 'unauthenticated' || cause === 'auth-unknown';
-    const authChannel = authentication ? result.authChannel : undefined;
-    if (authentication && authChannel === undefined) return check;
-    check.runnerCause = {
-      tool,
-      cause,
-      ...(authChannel !== undefined && { authChannel }),
-      seats: seats
-        .filter((seat) => authChannel === undefined || seat.authChannel === authChannel)
-        .map((seat) => seat.seat),
-    };
-    return check;
+    if (result === undefined) return [missingCliReadinessCheck(tool)];
+    const routeChecks = seats.flatMap(
+      (seat) =>
+        routeSignInCheck({
+          slot: seat.slot,
+          tool,
+          model: seat.model,
+          providerAuth: result.providerAuth,
+          catalog: catalogs.find((catalog) => catalog.tool === tool),
+        }) ?? [],
+    );
+    return [cliToolReadinessCheck(tool, seats, result), ...routeChecks];
   });
+}
+
+function cliToolReadinessCheck(
+  tool: CliToolId,
+  seats: readonly ConfiguredCliSeat[],
+  result: CliReadinessResult,
+): ReadinessCheck {
+  const check = cliReadinessCheck(result);
+  const cause = cliReadinessCause(result, check.diagnosticState);
+  if (cause === undefined) return check;
+  // Only a sign-in fact depends on the seat's authentication selection; a
+  // missing, untrusted or unproven executable blocks every seat of the tool.
+  const authentication = cause === 'unauthenticated' || cause === 'auth-unknown';
+  const authChannel = authentication ? result.authChannel : undefined;
+  if (authentication && authChannel === undefined) return check;
+  check.runnerCause = {
+    tool,
+    cause,
+    ...(authChannel !== undefined && { authChannel }),
+    seats: seats
+      .filter((seat) => authChannel === undefined || seat.authChannel === authChannel)
+      .map((seat) => formatSlotLabel(seat.slot)),
+  };
+  return check;
 }
 
 function cliReadinessCause(
@@ -145,7 +199,7 @@ function cliReadinessSummary(result: CliReadinessResult, name: string): string {
     case 'ready':
       return result.auth === 'not-required'
         ? `${name} is installed, trusted, compatible, and does not require authentication.`
-        : `${name} is installed, trusted, compatible, and authenticated.`;
+        : `${name} is installed, trusted, compatible, and signed in.`;
     case 'disabled':
       return `${name} is disabled.`;
     case 'unavailable':

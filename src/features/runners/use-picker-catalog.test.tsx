@@ -358,7 +358,8 @@ describe('usePickerCatalog', () => {
                     currentModel: currentCatalog.currentModel,
                     auth: {
                       providerAuth: currentCatalog.providerAuth,
-                      hasOracle: currentCatalog.hasOracle,
+                      catalog: currentCatalog.toolCatalog,
+                      tool: undefined,
                     },
                   })}
                 </Box>

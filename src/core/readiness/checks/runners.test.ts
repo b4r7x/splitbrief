@@ -189,6 +189,97 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.fix).not.toContain('ANTHROPIC_API_KEY');
   });
 
+  describe('a signed-in tool on a model route with no credential', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },
+    });
+    const opencode = (providerAuth: CliReadinessFacts['providerAuth']) =>
+      cliReadiness({
+        tool: 'opencode',
+        authChannel: 'provider-dependent',
+        auth: 'authenticated',
+        providerAuth,
+      });
+    // The saved model list serves OpenCode Go only, so it says nothing for ollama-cloud.
+    const goOnly = [{ tool: 'opencode' as const, models: [{ id: 'opencode-go/kimi-k3' }] }];
+    const routeCheck = (
+      providerAuth: CliReadinessFacts['providerAuth'],
+      cliCatalogs: Parameters<typeof buildRunnerChecks>[0]['cliCatalogs'] = goOnly,
+    ) =>
+      buildRunnerChecks({ config, cliReadiness: [opencode(providerAuth)], cliCatalogs }).find(
+        (candidate) => candidate.id.startsWith('runners.route.'),
+      );
+
+    it('warns that the route has no credential and names its sign-in step', () => {
+      expect(
+        routeCheck({ kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'stored' }] }),
+      ).toMatchObject({
+        id: 'runners.route.implementer.default',
+        severity: 'warning',
+        summary: 'BUILD: OpenCode CLI has no credential for ollama-cloud.',
+        fix: 'Run `opencode auth login ollama-cloud`, or choose another model in Settings > Crew > BUILD.',
+      });
+    });
+
+    it.each([
+      ['a route its model list serves', [{ id: 'ollama-cloud/deepseek-v4.1-flash' }]],
+      ['a route its model list does not serve', [{ id: 'opencode-go/kimi-k3' }]],
+    ])('leaves a tool signed in to no provider to its own sign-in line, on %s', (_, models) => {
+      const checks = buildRunnerChecks({
+        config,
+        cliReadiness: [
+          cliReadiness({
+            tool: 'opencode',
+            authChannel: 'provider-dependent',
+            auth: 'unauthenticated',
+            providerAuth: { kind: 'empty' },
+          }),
+        ],
+        cliCatalogs: [{ tool: 'opencode', models }],
+      });
+      expect(checks.find((candidate) => candidate.id.startsWith('runners.route.'))).toBeUndefined();
+      expect(
+        checks.find((candidate) => candidate.id === 'runners.cli.opencode.readiness'),
+      ).toMatchObject({ severity: 'blocker', runnerCause: { cause: 'unauthenticated' } });
+      expect(checks.map((check) => check.summary).join('\n')).not.toMatch(/available/i);
+    });
+
+    it('claims nothing when the route is signed in or the listing is unreadable', () => {
+      expect(
+        routeCheck({
+          kind: 'read',
+          facts: [{ provider: 'Ollama Cloud', source: 'env', envVar: 'OLLAMA_API_KEY' }],
+        }),
+      ).toBeUndefined();
+      expect(routeCheck({ kind: 'unreadable', reason: 'timeout' })).toBeUndefined();
+    });
+
+    it('claims nothing when the project has no saved model list', () => {
+      expect(
+        routeCheck({ kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'stored' }] }, []),
+      ).toBeUndefined();
+    });
+
+    it("claims nothing when the tool's saved model list serves another model of the route's provider", () => {
+      expect(
+        routeCheck({ kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'stored' }] }, [
+          { tool: 'opencode', models: [{ id: 'ollama-cloud/glm-5' }] },
+        ]),
+      ).toBeUndefined();
+    });
+
+    it("claims nothing when the tool's saved model list serves the route", () => {
+      const check = buildRunnerChecks({
+        config,
+        cliReadiness: [
+          opencode({ kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'stored' }] }),
+        ],
+        cliCatalogs: [{ tool: 'opencode', models: [{ id: 'ollama-cloud/deepseek-v4.1-flash' }] }],
+      }).find((candidate) => candidate.id.startsWith('runners.route.'));
+      expect(check).toBeUndefined();
+    });
+  });
+
   it('warns without claiming readiness when selected CLI authentication is unknown', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
@@ -201,7 +292,7 @@ describe('buildRunnerChecks availability guidance', () => {
       severity: 'warning',
       metadata: { status: 'unverified', auth: 'unknown' },
     });
-    expect(check?.summary).not.toContain('is installed, trusted, compatible, and authenticated');
+    expect(check?.summary).not.toContain('is installed, trusted, compatible, and signed in');
   });
 
   it('does not claim authentication when the selected CLI does not require it', () => {

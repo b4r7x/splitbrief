@@ -2,6 +2,7 @@ import type { DeepReadonly, RunnerConfig } from '../../../core/config/accessors/
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import {
   runnerOwnWords,
+  typedRunnerCallErrorCode,
   typedRunnerCallErrorMessage,
 } from '../../implementers/pipeline/call-result.js';
 import { runnerAuthDisplayName, runnerLoginInstruction } from '../../runners/auth-failure.js';
@@ -15,6 +16,7 @@ import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { nowIso } from '../../../utils/format-time.js';
+import { runnerDefectRow, runnerHaltRow, toolReported } from './builders/task.js';
 import {
   buildPlannerCallFailedRecoveryIssue,
   type PlannerCallFailureRecoveryOptions,
@@ -28,7 +30,6 @@ import { loadSeatSwapContext } from './seat-swap-context.js';
  */
 type PlannerSeatDownDiagnosis = Readonly<{
   classification: SeatFailureClassification;
-  words: string;
   requestId?: string | undefined;
 }>;
 
@@ -44,6 +45,8 @@ export type PlannerCallDiagnosis = Readonly<{
   tool: string;
   /** The tool's own words as the panel quotes them; empty when the call carried none. */
   details: string[];
+  /** The tool's own words as a halt reads them, else the message. */
+  words: string;
   /** When the quota comes back, when the tool's words named it. */
   resetsAt: Date | null;
   /** Present when the failure is a seat-down cause: what the one halt builder consumes. */
@@ -80,7 +83,14 @@ export function diagnosePlannerCallFailure(
   const advised =
     words === null ? message : `${input.label}: ${sanitizeTerminalDiagnosticText(words)}`;
   const tool = runnerAuthDisplayName(runner);
-  const details = typed === null ? [] : [`${tool} reported: ${typed}`];
+  const details = typed === null ? [] : [toolReported(tool, typed)];
+  const said = typed ?? words ?? message;
+  // A model the tool refused is the tool's own verdict on the seat's model: no
+  // reading of the words turns it into a quota or a sign-in, and the halt asks
+  // the route's credential listing which of the two it is.
+  if (typedRunnerCallErrorCode(err) === 'missing-model') {
+    return { failure: 'missing-model', message, tool, details, words: said, resetsAt: null };
+  }
   // The one classifier reads the tool's own words. A limit outranks the auth
   // check: its message must never earn login advice, because logging in does
   // not restore quota. API planners throw their provider errors, so the status
@@ -99,14 +109,15 @@ export function diagnosePlannerCallFailure(
   ) {
     const resetsAt = classification.class === 'rate-limited' ? classification.resetAt : null;
     // The row spells the reset from `resetsAt`, so the tool's words that end the message drop theirs.
-    const said = resetsAt === null ? advised : stripRecoveryResetClause(advised);
+    const advice = resetsAt === null ? advised : stripRecoveryResetClause(advised);
     return {
       failure: 'usage-limit',
-      message: `${endSentence(said)} ${usageLimitAdvice({ tool, seat: input.seat })}`,
+      message: `${endSentence(advice)} ${usageLimitAdvice({ tool, seat: input.seat })}`,
       tool,
       details,
+      words: said,
       resetsAt,
-      seatDown: { classification, words: typed ?? words ?? message },
+      seatDown: { classification },
     };
   }
   if (classification.class === 'account') {
@@ -115,11 +126,29 @@ export function diagnosePlannerCallFailure(
       message: `${endSentence(advised)} ${runnerLoginInstruction(runner)}`,
       tool,
       details,
+      words: said,
       resetsAt: null,
-      seatDown: { classification, words: typed ?? words ?? message },
+      seatDown: { classification },
     };
   }
-  return { failure: 'call-failed', message, tool, details, resetsAt: null };
+  return { failure: 'call-failed', message, tool, details, words: said, resetsAt: null };
+}
+
+/**
+ * The error row a planner-tier halt publishes. A failed call is its own message;
+ * a model refusal reads as the runner defect it is; every seat-down halt adds the
+ * tool's own words.
+ */
+export function plannerHaltRow(issue: RecoveryIssue, diagnosis: PlannerCallDiagnosis): string {
+  switch (diagnosis.failure) {
+    case 'call-failed':
+      return diagnosis.message;
+    case 'missing-model':
+      return runnerDefectRow(issue, diagnosis.tool, diagnosis.words);
+    case 'unauthenticated':
+    case 'usage-limit':
+      return runnerHaltRow(issue, diagnosis.tool, diagnosis.words);
+  }
 }
 
 /**
@@ -131,13 +160,19 @@ export async function plannerCallHaltIssue(
     Readonly<{
       projectDir: string;
       config: Config;
-      modelCache?: ModelCacheAccessor | undefined;
+      modelCache: ModelCacheAccessor | undefined;
       /** The seat a swap moves, and the runner it runs now. */
       swap: Omit<Parameters<typeof loadSeatSwapContext>[0], 'projectDir' | 'config' | 'modelCache'>;
     }>,
 ): Promise<RecoveryIssue> {
   const { projectDir, config, modelCache, swap, ...halt } = input;
-  const seatSwap = await loadSeatSwapContext({ projectDir, config, modelCache, ...swap });
+  const seatSwap = await loadSeatSwapContext({
+    projectDir,
+    config,
+    modelCache,
+    ...swap,
+    refusal: halt.diagnosis.words,
+  });
   return buildPlannerCallFailedRecoveryIssue({
     ...halt,
     runner: swap.runner,

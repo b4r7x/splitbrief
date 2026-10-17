@@ -279,7 +279,7 @@ describe('usePickerCatalog provider variant threading', () => {
       [
         cliCatalogAttempt({
           tool: 'opencode',
-          models: ['ollama-cloud/deepseek-v4-flash', 'opencode-go/deepseek-v4-flash'],
+          models: ['opencode/deepseek-v4-flash', 'opencode-go/deepseek-v4-flash'],
         }),
       ],
       [
@@ -298,7 +298,7 @@ describe('usePickerCatalog provider variant threading', () => {
     expect(merged?.id).toBe('opencode-go/deepseek-v4-flash');
     expect(merged?.variants?.map((variant) => variant.fullId)).toEqual([
       'opencode-go/deepseek-v4-flash',
-      'ollama-cloud/deepseek-v4-flash',
+      'opencode/deepseek-v4-flash',
     ]);
     ui.unmount();
   });

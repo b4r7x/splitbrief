@@ -1,3 +1,4 @@
+import { isCliToolId } from '../../src/core/runners/cli-tool-catalog.js';
 import type { RunnerRole } from '../../src/core/runners/seat-roles.js';
 import {
   assemblePickerDescriptors,
@@ -99,7 +100,7 @@ type DerivedCatalogField =
   | 'plannerIdentity'
   | 'catalogLane'
   | 'providerAuth'
-  | 'hasOracle'
+  | 'toolCatalog'
   | 'initialLeftIdx'
   | 'focusModels'
   | 'currentModel'
@@ -141,7 +142,11 @@ export function pickerCatalog(fixture: CatalogFixture): PickerCatalog {
       models: rightModels,
       expandedModelId: expandedModelId ?? null,
       providerAuth: base.providerAuth,
-      hasOracle: base.hasOracle ?? false,
+      catalog: base.toolCatalog,
+      tool:
+        base.currentItem !== undefined && isCliToolId(base.currentItem.id)
+          ? base.currentItem.id
+          : undefined,
       catalogLane: base.catalogLane ?? 'ready',
       persistedModel: base.persistedModel,
       customModels: base.customModels ?? [],
@@ -165,7 +170,7 @@ export function pickerCatalog(fixture: CatalogFixture): PickerCatalog {
     plannerIdentity: base.plannerIdentity ?? 'Claude Code CLI · Claude Sonnet 4',
     catalogLane: base.catalogLane ?? 'ready',
     providerAuth: base.providerAuth,
-    hasOracle: base.hasOracle ?? false,
+    toolCatalog: base.toolCatalog,
     initialLeftIdx: base.initialLeftIdx ?? 0,
     focusModels: base.focusModels ?? false,
     currentModel: base.currentModel,

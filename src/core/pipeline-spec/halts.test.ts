@@ -34,6 +34,13 @@ describe('classifyHaltSignature', () => {
       'usage',
     );
     expect(classifyHaltSignature(['unknown model: gpt-9'])).toBe('missing-model');
+    // OpenCode raises it for a route it holds no credential for and for a model or variant it
+    // cannot serve alike, so the words name a model the seat cannot run, never a sign-out.
+    expect(
+      classifyHaltSignature([
+        'provider.no-route: Model unavailable: ollama-cloud/deepseek-v4.1-flash',
+      ]),
+    ).toBe('missing-model');
     expect(classifyHaltSignature(['error: unknown flag --yolo'])).toBe('spawn');
   });
 

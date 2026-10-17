@@ -784,6 +784,180 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 
+  describe('the sign-in note on a saved OpenCode route', () => {
+    const CATALOG_CONTEXTS = { readiness: 'readiness', modelsDev: 'catalog', cliModels: 'tools' };
+    const DEEPSEEK = { id: 'deepseek', provider: 'DeepSeek', source: 'stored' } as const;
+    const signedInToDeepSeek = () =>
+      detectionStore.setDetection({
+        cliTools: [
+          cliDetectionFor('ready', 'opencode', {
+            providerAuth: { kind: 'read', facts: [DEEPSEEK] },
+          }),
+        ],
+        providers: [],
+      });
+    const confirmed = async (modelId: string): Promise<string> => {
+      const ui = renderFeature(
+        <ConfirmVariantProbe role="planner" toolId="opencode" modelId={modelId} />,
+      );
+      await flushEffects();
+      ui.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(configStore.get().config?.planner).toMatchObject({ model: modelId });
+      });
+      ui.unmount();
+      return feedbackStore.get().message ?? '';
+    };
+
+    it('names the gateway account in the words and with the sign-in command doctor and the halt use', async () => {
+      seed(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        }),
+      );
+      signedInToDeepSeek();
+
+      const message = await confirmed('opencode/big-pickle');
+      expect(message).toMatch(
+        / · OpenCode CLI has no credential for opencode — run opencode auth login opencode before start$/,
+      );
+      expect(message.match(/Saved/g)).toHaveLength(1);
+    });
+
+    it('names the sign-in for a route of a tool signed in to no provider, as the row reads it', async () => {
+      seed(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        }),
+      );
+      detectionStore.setDetection({
+        cliTools: [cliDetectionFor('ready', 'opencode', { providerAuth: { kind: 'empty' } })],
+        providers: [],
+      });
+
+      expect(await confirmed('ollama/llama3')).toMatch(
+        / · OpenCode CLI has no credential for ollama — run opencode auth login ollama before start$/,
+      );
+    });
+
+    it('adds no note for a route the tool lists though no credential names its provider', async () => {
+      seed(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        }),
+      );
+      signedInToDeepSeek();
+      const request = modelCacheStore.beginRefresh({ contexts: CATALOG_CONTEXTS });
+      modelCacheStore.publishLane({
+        request,
+        lane: {
+          lane: 'cliModels',
+          outcome: {
+            kind: 'fresh',
+            origin: 'request',
+            snapshot: {
+              source: 'cli-models',
+              contextKey: CATALOG_CONTEXTS.cliModels,
+              generation: 1,
+              requestId: 1,
+              fetchedAt: 1,
+              validatedAt: 1,
+              stale: false,
+              value: [
+                {
+                  connection: { tool: 'opencode', contextKey: 'opencode-context' },
+                  outcome: { kind: 'success', value: [{ id: 'ollama/llama3' }] },
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      expect(await confirmed('ollama/llama3')).not.toContain('auth login');
+    });
+
+    // A route only the last listing named can be a provider signed out since then.
+    it('counts a route a remembered listing serves before any live read', async () => {
+      seed(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        }),
+      );
+      modelCacheStore.hydrateDetection({
+        providers: [],
+        cliTools: [],
+        fetchedAt: 1,
+        validatedAt: 1,
+        generation: 0,
+        requestId: 0,
+        contexts: CATALOG_CONTEXTS,
+        cliCatalogs: [{ tool: 'opencode', probedAt: 1, models: [{ id: 'ollama/llama3' }] }],
+      });
+      signedInToDeepSeek();
+
+      expect(await confirmed('ollama/llama3')).not.toContain('auth login');
+    });
+
+    it('adds no note for a dropped route while the listing still serves its provider', async () => {
+      seed(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        }),
+      );
+      modelCacheStore.hydrateDetection({
+        providers: [],
+        cliTools: [],
+        fetchedAt: 1,
+        validatedAt: 1,
+        generation: 0,
+        requestId: 0,
+        contexts: CATALOG_CONTEXTS,
+        cliCatalogs: [
+          {
+            tool: 'opencode',
+            probedAt: 1,
+            models: [{ id: 'ollama/llama3' }, { id: 'ollama/qwen3' }],
+            missingOnce: ['ollama/qwen3'],
+          },
+        ],
+      });
+      signedInToDeepSeek();
+
+      expect(await confirmed('ollama/qwen3')).not.toContain('auth login');
+    });
+
+    it('names the sign-in for a route the last successful read dropped', async () => {
+      seed(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        }),
+      );
+      modelCacheStore.hydrateDetection({
+        providers: [],
+        cliTools: [],
+        fetchedAt: 1,
+        validatedAt: 1,
+        generation: 0,
+        requestId: 0,
+        contexts: CATALOG_CONTEXTS,
+        cliCatalogs: [
+          {
+            tool: 'opencode',
+            probedAt: 1,
+            models: [{ id: 'ollama/llama3' }],
+            missingOnce: ['ollama/llama3'],
+          },
+        ],
+      });
+      signedInToDeepSeek();
+
+      expect(await confirmed('ollama/llama3')).toMatch(
+        / · OpenCode CLI has no credential for ollama — run opencode auth login ollama before start$/,
+      );
+    });
+  });
+
   it('names the saved variant in the confirmation message', async () => {
     seed(makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6' } }));
 

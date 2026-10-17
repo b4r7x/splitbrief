@@ -62,13 +62,23 @@ describe('provider oracle parser', () => {
     expect(parseProviderOracleOutput(OPENCODE_V2_AUTH_LIST_JSON)).toEqual({
       kind: 'success',
       entries: [
-        { provider: 'OpenCode Go', source: 'stored' },
-        { provider: 'OpenCode Go', source: 'stored' },
-        { provider: 'Kimi For Coding (kimi.ai)', source: 'env', envVar: 'KIMI_API_KEY' },
-        { provider: 'Kimi For Coding (kimi.com)', source: 'env', envVar: 'KIMI_API_KEY' },
-        { provider: 'Ollama Cloud', source: 'env', envVar: 'OLLAMA_API_KEY' },
-        { provider: 'OpenAI', source: 'stored' },
-        { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
+        { id: 'opencode-go', provider: 'OpenCode Go', source: 'stored' },
+        { id: 'opencode-go', provider: 'OpenCode Go', source: 'stored' },
+        {
+          id: 'kimi-code-plan-global',
+          provider: 'Kimi For Coding (kimi.ai)',
+          source: 'env',
+          envVar: 'KIMI_API_KEY',
+        },
+        {
+          id: 'kimi-code-plan-cn',
+          provider: 'Kimi For Coding (kimi.com)',
+          source: 'env',
+          envVar: 'KIMI_API_KEY',
+        },
+        { id: 'ollama-cloud', provider: 'Ollama Cloud', source: 'env', envVar: 'OLLAMA_API_KEY' },
+        { id: 'openai', provider: 'OpenAI', source: 'stored' },
+        { id: 'openai', provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
       ],
     });
     expect(parseProviderOracleOutput('[]\n')).toEqual({ kind: 'success', entries: [] });

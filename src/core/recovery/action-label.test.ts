@@ -23,6 +23,22 @@ describe('recoveryActionLabel for a seat swap', () => {
     ]);
   });
 
+  it('names a model pick when the first offer keeps the halted tool', () => {
+    const own: SwitchSeatOffer = { seat: 'build', candidates: [{ tool: 'opencode' }] };
+    const other: SwitchSeatOffer = {
+      seat: 'build',
+      candidates: [{ tool: 'claude-code' }, { tool: 'opencode' }],
+    };
+
+    expect(
+      recoveryActionParts('switch-seat', { switchSeat: own, haltedTool: 'OpenCode CLI' }),
+    ).toEqual([{ text: 'Pick another ' }, { text: 'BUILD', seat: 'build' }, { text: ' model' }]);
+    expect(
+      recoveryActionLabel('switch-seat', { switchSeat: other, haltedTool: 'OpenCode CLI' }),
+    ).toBe('Change BUILD tool');
+    expect(recoveryActionLabel('switch-seat', { switchSeat: own })).toBe('Change BUILD tool');
+  });
+
   it('names no seat when nothing says which one halted', () => {
     expect(recoveryActionLabel('switch-seat')).toBe('Change tool');
     expect(recoveryActionParts('switch-seat')).toEqual([{ text: 'Change tool' }]);

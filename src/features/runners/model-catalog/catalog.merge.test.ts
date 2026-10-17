@@ -266,10 +266,12 @@ describe('provider variant merge', () => {
     expect(countModelOptions(freshModels)).toMatchObject({ confirmed: 1, stale: 0, bundled: 0 });
   });
 
-  it('sorts merged variants with configured-auth providers first', () => {
+  it('sorts merged variants with routes that can call first', () => {
+    // The tool lists both routes, but listing its own gateway account's models
+    // does not make them callable without that account.
     const facts: readonly CliProviderAuthFact[] = [{ provider: 'OpenRouter', source: 'oauth' }];
     const enumerated: readonly DetectedModel[] = [
-      { id: 'anthropic/deepseek-v4-flash' },
+      { id: 'opencode/deepseek-v4-flash' },
       { id: 'openrouter/deepseek-v4-flash' },
     ];
     const base = {
@@ -277,19 +279,17 @@ describe('provider variant merge', () => {
       customModels: [],
       currentItem: tool('opencode', { providerDependent: true }),
       cache: cliCache('opencode', enumerated),
+      tool: 'opencode',
+      catalog: { models: enumerated },
     } as const;
+    const callableFirst = ['openrouter/deepseek-v4-flash', 'opencode/deepseek-v4-flash'];
 
-    const read = findMergedRow(
-      buildRightModels({ ...base, providerAuth: { kind: 'read', facts } }),
-    );
-    expect(read?.variants?.map((variant) => variant.fullId)).toEqual([
-      'openrouter/deepseek-v4-flash',
-      'anthropic/deepseek-v4-flash',
-    ]);
+    const row = findMergedRow(buildRightModels({ ...base, providerAuth: { kind: 'read', facts } }));
+    expect(row?.variants?.map((variant) => variant.fullId)).toEqual(callableFirst);
 
-    // Only a read listing claims an auth state; every other listing leaves the
+    // A listing that claims no auth state, or names no provider at all, leaves the
     // enumeration recency order standing.
-    const recencyOrder = ['anthropic/deepseek-v4-flash', 'openrouter/deepseek-v4-flash'];
+    const recencyOrder = ['opencode/deepseek-v4-flash', 'openrouter/deepseek-v4-flash'];
     for (const providerAuth of [
       undefined,
       { kind: 'empty' },

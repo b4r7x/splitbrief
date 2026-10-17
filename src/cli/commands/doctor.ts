@@ -59,6 +59,7 @@ import { createRunnerSandboxEnv } from '../../engine/runners/sandbox-env.js';
 import { resolveCliExecutableAliases } from '../../engine/runners/resolve-cli-executable.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { loadRememberedSnapshot } from '../../engine/detection/cache.js';
 import { loadRememberedCatalog } from '../bootstrap/discovery.js';
 
 interface DoctorOpts {
@@ -355,10 +356,11 @@ async function withPreparationPreflights(options: {
   } = options;
   const config = collected.config;
   if (config === undefined) return collected.report;
-  const cliReadinessChecks = collected.report.sections
+  const runnerChecks = collected.report.sections
     .filter((section) => section.id === 'runners')
-    .flatMap((section) => section.checks)
-    .filter((check) => CLI_READINESS_CHECK_IDS.has(check.id));
+    .flatMap((section) => section.checks);
+  const collectedCheckIds = new Set(runnerChecks.map((check) => check.id));
+  const cliReadinessChecks = runnerChecks.filter((check) => CLI_READINESS_CHECK_IDS.has(check.id));
   const argVectorChecks = await collectArgVectorPreflightChecks({
     config,
     projectDir,
@@ -389,9 +391,13 @@ async function withPreparationPreflights(options: {
             sameRunnerCause(check.runnerCause, admission.runnerCause),
         ),
     ),
-    // The consent replay reports every shell and agent seat, so admission adds the others.
+    // The consent replay reports every shell and agent seat, so admission adds the others;
+    // a route check the live probe already reported is not repeated.
     ...admissionChecks.filter(
-      (check) => check.metadata?.kind !== 'shell' && check.metadata?.kind !== 'agent',
+      (check) =>
+        check.metadata?.kind !== 'shell' &&
+        check.metadata?.kind !== 'agent' &&
+        !collectedCheckIds.has(check.id),
     ),
     ...argVectorChecks,
     ...consentChecks,
@@ -430,6 +436,7 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
       const collected = await collectReadiness({
         projectDir,
         interaction,
+        cliCatalogs: (await loadRememberedSnapshot(projectDir))?.cliCatalogs,
         detectCliReadiness: deps.detectCliReadiness ?? detectConfiguredCliReadiness,
         probeRunnerAvailability: deps.probeRunnerAvailability ?? probeRunnerAvailability,
         seatDisplayName: (runner, role) => resolveSeatDisplayName(runner, role, modelCacheStore),

@@ -196,6 +196,17 @@ describe('workflow visual fixtures', () => {
     expect(frame).not.toContain('Change PLAN tool');
   });
 
+  it('names a REVIEW model refusal by the model and offers another model on its own tool', async () => {
+    const projection = workflowFixtureProjections.get(
+      scenarioId('workflow-recovery-review-model-not-listed'),
+    );
+    if (projection === undefined) throw new Error('Missing REVIEW model refusal scenario');
+    const frame = stripTerminalControls(await renderProjection(projection)).replace(/\s+/g, ' ');
+    expect(frame).toContain('Seat down · Model not listed by OpenCode CLI');
+    expect(frame).toContain('Pick another REVIEW model');
+    expect(frame).not.toContain('Change REVIEW tool');
+  });
+
   it.each([
     ['workflow-recovery-no-fallback', 'no fallback set'],
     [

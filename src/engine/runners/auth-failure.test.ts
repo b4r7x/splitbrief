@@ -4,6 +4,7 @@ import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import {
   isAuthFailureDiagnostic,
+  modelRefusalMessage,
   runnerAccountDisplayName,
   runnerAuthDisplayName,
   runnerLoginInstruction,
@@ -93,6 +94,33 @@ describe('runnerLoginInstruction', () => {
   });
 });
 
+describe('modelRefusalMessage', () => {
+  it('names the model the seat runs', () => {
+    expect(
+      modelRefusalMessage(
+        { kind: 'cli', tool: 'opencode', model: 'openai/gpt-nope' },
+        'wrong-model',
+      ),
+    ).toBe('Model openai/gpt-nope is not listed by OpenCode CLI; pick a listed model');
+  });
+
+  it('names the provider by its sign-in id when either cause fits', () => {
+    expect(
+      modelRefusalMessage({ kind: 'cli', tool: 'opencode', model: 'ollama/llama3' }, 'unknown'),
+    ).toBe(
+      'OpenCode CLI cannot use ollama/llama3: sign in with `opencode auth login ollama` if ollama has no credential, or pick a listed model',
+    );
+  });
+
+  it("names the tool's default model when the seat names none", () => {
+    for (const refusal of ['wrong-model', 'unknown'] as const) {
+      expect(modelRefusalMessage({ kind: 'cli', tool: 'opencode' }, refusal)).toBe(
+        'OpenCode CLI refused its default model; pick a listed model',
+      );
+    }
+  });
+});
+
 describe('runnerAuthDisplayName', () => {
   it('uses catalog display names for CLI tools', () => {
     const implementer = makeConfig({
@@ -126,6 +154,7 @@ describe('runnerAccountDisplayName', () => {
       { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
       'deepseek (OpenCode CLI)',
     ],
+    [{ kind: 'cli', tool: 'opencode', model: 'ollama/llama3' }, 'ollama (OpenCode CLI)'],
     [{ kind: 'cli', tool: 'opencode' }, 'OpenCode CLI'],
     [{ kind: 'cli', tool: 'claude-code', model: 'sonnet' }, 'Claude Code CLI'],
   ] as const)('names the account holder of %o', (implementer, name) => {

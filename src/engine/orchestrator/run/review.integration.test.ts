@@ -43,6 +43,13 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { diagnosePlannerCallFailure } from '../recovery/planner-call-failure.js';
 import { switchSeatAndPrepareResume } from '../recovery/switch-seat-resume.js';
+import { error } from '../../../utils/error.js';
+
+const evidence = vi.hoisted(() => ({ detectRunnerEvidence: vi.fn() }));
+vi.mock('../../detection/runner-evidence.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../detection/runner-evidence.js')>()),
+  ...evidence,
+}));
 import {
   followReviewAnswer,
   haltVerdictlessReview,
@@ -467,6 +474,62 @@ function firstFailsThenPassesReviewer(): Planner {
 }
 
 describe('runScheduledReview saved recovery', () => {
+  it('halts a REVIEW model refusal on a route with a credential as a model to change, not a failed call', async () => {
+    const ref = setupProject();
+    const route = 'ollama-cloud/glm-5';
+    const words = `provider.no-route: Model unavailable: ${route}`;
+    const config = makeNoValidationConfig({
+      reviewer: { kind: 'cli', tool: 'opencode', model: route },
+    });
+    writeConfig(ref.projectDir, config);
+    await rememberDetectedTools(ref.projectDir, cliDetectionsFor('ready', ['opencode']));
+    evidence.detectRunnerEvidence.mockResolvedValue({
+      providerAuth: {
+        kind: 'read',
+        facts: [{ id: 'ollama-cloud', provider: 'Ollama Cloud', source: 'stored' }],
+      },
+      catalog: { kind: 'success', value: [] },
+    });
+    const state: WorkflowState = { ...capState(), phase: 'final-review' };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const diagnosis = diagnosePlannerCallFailure({
+      err: error('runner-call-failed', 'Planner review call failed', {
+        status: 'failed',
+        error: { code: 'missing-model', message: words },
+      }),
+      label: 'Review failed',
+      runner: config.reviewer ?? config.planner,
+      seat: 'review',
+    });
+    const halted = await haltVerdictlessReview({
+      wctx: makeWctx({ ...ref, config, bus }),
+      state,
+      review: {
+        state,
+        verdict: null,
+        fixWork: null,
+        reviewText: '',
+        reviewStatus: 'failed',
+        failure: { kind: 'seat-blocked', diagnosis },
+      },
+      setTrackedState: vi.fn(),
+    });
+
+    const message = `Model ${route} is not listed by OpenCode CLI; pick a listed model`;
+    expect(evidence.detectRunnerEvidence).toHaveBeenCalledTimes(1);
+    expect(halted?.pendingRecovery).toMatchObject({
+      seat: 'review',
+      reason: 'planner-call-failed',
+      message,
+      recommendedAction: 'switch-seat',
+      switchSeat: { seat: 'review', candidates: [{ tool: 'opencode' }] },
+    });
+    expect(events.flatMap((event) => (event.type === 'error' ? [event.message] : []))).toEqual([
+      message,
+    ]);
+  });
+
   it('offers an inherited REVIEW swap and records its own seat without changing PLAN', async () => {
     const ref = setupProject();
     const config = makeNoValidationConfig({

@@ -5,6 +5,7 @@ import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { buildSeatProtocolErrorRecoveryIssue } from './builders/seat-protocol.js';
 import { loadSeatSwapContext } from './seat-swap-context.js';
 
@@ -16,6 +17,7 @@ export async function seatProtocolHaltIssue(
   input: Readonly<{
     projectDir: string;
     config: Config;
+    modelCache: ModelCacheAccessor | undefined;
     error: SeatProtocolError;
     phase: Phase;
     task?: Task | undefined;
@@ -25,6 +27,7 @@ export async function seatProtocolHaltIssue(
   const reviewed = input.error.data.seat === 'reviewer';
   const seatSwap = await loadSeatSwapContext({
     projectDir: input.projectDir,
+    modelCache: input.modelCache,
     seat: reviewed ? 'review' : 'plan',
     runner: reviewed ? reviewer.runner : input.config.planner,
     config: input.config,

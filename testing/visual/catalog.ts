@@ -2289,6 +2289,61 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-recovery-route-signed-out',
+      title: 'Workflow · a BUILD route with no credential',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'recovery',
+        title: 'Signed-out route recovery menu',
+        kind: 'question',
+        marker: 'Seat down · OpenCode CLI has no credential',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    ...[
+      {
+        id: 'workflow-recovery-model-not-listed',
+        title: 'Workflow · a BUILD model the tool does not list',
+        checkpointId: 'recovery',
+        marker: 'Seat down · Model not listed by OpenCode CLI',
+      },
+      {
+        id: 'workflow-recovery-model-refused',
+        title: 'Workflow · a BUILD model refused with no credential listing read',
+        checkpointId: 'recovery',
+        marker: 'Seat down · Model refused by OpenCode CLI',
+      },
+      {
+        id: 'workflow-recovery-review-model-not-listed',
+        title: 'Workflow · a REVIEW model the tool does not list, with no other tool',
+        checkpointId: 'recovery-model-pick',
+        marker: 'Seat down · Model not listed by OpenCode CLI',
+      },
+    ].map(({ id, title, checkpointId, marker }) =>
+      defineScenario({
+        id,
+        title,
+        surface: screenSurface('workflow'),
+        viewports: WIDE_VIEWPORTS,
+        checkpoint: {
+          id: checkpointId,
+          title: 'Model refusal recovery menu',
+          kind: 'question',
+          marker,
+        },
+        elements: [
+          { id: 'header', title: 'Workflow header' },
+          { id: 'question-panel', title: 'Recovery menu panel' },
+          { id: 'composer', title: 'Workflow composer' },
+        ],
+      }),
+    ),
     ...[
       {
         id: 'workflow-recovery-no-fallback',
@@ -3537,6 +3592,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Saved End-of-run checks',
       },
       {
+        id: 'overlay-settings-saved-route-sign-in',
+        title: 'Overlay · settings · a saved route with no credential',
+        marker: 'has no credential for opencode',
+      },
+      {
         id: 'overlay-settings-approve-checks-ask',
         title: 'Overlay · settings · the reviewer checks wait for your Run all or Skip all',
         marker: 'Approve checks',
@@ -3587,6 +3647,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-picker-provider-expanded-unreadable',
         title: 'Overlay · planner picker · routes with unknown sign-in',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-routes-model-list-unread',
+        title: 'Overlay · planner picker · a route whose model list was not read',
         marker: PICKER_TITLE_MARKER,
       },
       {

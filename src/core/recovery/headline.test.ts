@@ -111,6 +111,20 @@ describe('formatRecoveryHeadline', () => {
     }
   });
 
+  it.each([
+    ['implementer-recipe-invalid', 'build'],
+    ['planner-call-failed', 'plan'],
+    ['planner-call-failed', 'review'],
+  ] as const)('names a model refusal on a %s halt of %s by the model', (reason, seat) => {
+    const halt = (refusal: string) =>
+      formatRecoveryHeadline(
+        makeRecoveryIssue({ reason, seat, facts: { tool: 'OpenCode CLI', refusal } }),
+      );
+
+    expect(halt('wrong-model')).toBe('Model not listed by OpenCode CLI');
+    expect(halt('unknown')).toBe('Model refused by OpenCode CLI');
+  });
+
   it('names the Apply halts by the files they stopped on', () => {
     const apply = { phase: 'complete' as const, taskId: undefined, affectedTaskIds: [] };
     expect(

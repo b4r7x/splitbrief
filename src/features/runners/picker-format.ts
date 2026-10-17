@@ -14,8 +14,13 @@ import {
   effortLadderFor,
   type CatalogLane,
   type RightRow,
-  type RouteAuthState,
 } from './model-catalog/rows.js';
+import type { CliProviderAuthFact } from '../../core/discovery/detection.js';
+import {
+  routeNoCredential,
+  routeSignInCommand,
+  type RouteAuthState,
+} from '../../core/runners/route-auth.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import type { ResolvedModelMembership } from '../../engine/providers/model/catalog.js';
 import { assertNever } from '../../utils/type-guards.js';
@@ -248,19 +253,6 @@ function zeroConfirmedGuidance(input: {
   return { headline: 'No models listed', detail: undefined };
 }
 
-const GATEWAY_ACCOUNT_NAMES: Record<string, string> = {
-  'kilo-code': 'Kilo',
-  opencode: 'OpenCode',
-};
-
-/**
- * Gateway-gated model families (a tool's own free tier) need the distinct
- * "account" vocabulary: listing them does not imply they are callable.
- */
-export function gatewayAccountName(toolId: string): string | undefined {
-  return GATEWAY_ACCOUNT_NAMES[toolId];
-}
-
 /** The route's own sign-in fact: words only, and whether it reads as a dim state. */
 export function formatRouteAuth(input: { auth: RouteAuthState }): {
   word: string | undefined;
@@ -271,10 +263,12 @@ export function formatRouteAuth(input: { auth: RouteAuthState }): {
     case 'unchecked':
       return { word: undefined, dim: false };
     case 'configured':
-      return {
-        word: `signed in${SOFT_SEP}${credentialSourceWord(auth)}`,
-        dim: false,
-      };
+      return auth.source === 'listed'
+        ? { word: 'available', dim: false }
+        : {
+            word: `signed in${SOFT_SEP}${credentialSourceWord(auth.source, auth.envVar)}`,
+            dim: false,
+          };
     case 'needs-sign-in':
       return { word: 'needs sign-in', dim: true };
     case 'unknown':
@@ -286,8 +280,11 @@ export function formatRouteAuth(input: { auth: RouteAuthState }): {
   }
 }
 
-function credentialSourceWord(auth: Extract<RouteAuthState, { kind: 'configured' }>): string {
-  switch (auth.source) {
+function credentialSourceWord(
+  source: CliProviderAuthFact['source'],
+  envVar: string | undefined,
+): string {
+  switch (source) {
     case 'oauth':
       return 'oauth';
     case 'api':
@@ -295,9 +292,9 @@ function credentialSourceWord(auth: Extract<RouteAuthState, { kind: 'configured'
     case 'stored':
       return 'stored credential';
     case 'env':
-      return auth.envVar === undefined ? 'env' : `$${auth.envVar}`;
+      return envVar === undefined ? 'env' : `$${envVar}`;
     default:
-      return assertNever(auth.source);
+      return assertNever(source);
   }
 }
 
@@ -309,7 +306,6 @@ export function formatRouteRemedy(input: {
   auth: RouteAuthState;
   toolName: string;
   oracleCommand: string;
-  provider: string;
   versions: { observed: string; required: string } | undefined;
 }): string | undefined {
   const { auth } = input;
@@ -318,11 +314,14 @@ export function formatRouteRemedy(input: {
     return `sign-in state is not readable for ${input.toolName}${SOFT_SEP}pick the route you have set up`;
   }
   const [binary = input.oracleCommand] = input.oracleCommand.split(' ');
-  const signIn = `${binary} auth login ${input.provider}`;
-  if (auth.kind === 'needs-sign-in') return `sign in: ${signIn}${SOFT_SEP}then ctrl+r`;
+  if (auth.kind === 'needs-sign-in') {
+    return `sign in: ${routeSignInCommand(auth.tool, auth.provider)}${SOFT_SEP}then ctrl+r`;
+  }
   switch (auth.reason) {
     case 'empty':
-      return `signed in to no providers yet: ${signIn}${SOFT_SEP}then ctrl+r`;
+      return `signed in to no providers yet: ${routeSignInCommand(auth.tool, auth.provider)}${SOFT_SEP}then ctrl+r`;
+    case 'catalog-not-read':
+      return `ctrl+r to read the model list${SOFT_SEP}no credential listed for this provider`;
     case 'timeout':
       return `ctrl+r to re-check${SOFT_SEP}${binary} took too long listing providers`;
     case 'exit-failure':
@@ -337,7 +336,7 @@ export function formatRouteRemedy(input: {
     case 'not-probed':
       return 'ctrl+r to check provider sign-in';
     default:
-      return assertNever(auth.reason);
+      return assertNever(auth);
   }
 }
 
@@ -654,15 +653,10 @@ export function modelBylineAxes(input: {
   return words;
 }
 
+/** The note a saved route with no credential adds to the save message, in doctor's and the halt's words. */
 export function formatNeedsSignInSaveFeedback(input: {
-  modelId: string;
-  tag: string;
-  authKey: string;
-  loginCommand: string;
-  gatewayAccount?: string | undefined;
+  tool: CliToolId;
+  provider: string;
 }): string {
-  if (input.gatewayAccount !== undefined) {
-    return `Saved ${input.modelId}${SOFT_SEP}requires a ${input.gatewayAccount} account — run ${input.loginCommand} before start`;
-  }
-  return `Saved ${input.modelId}${SOFT_SEP}${input.tag} not signed in — run ${input.loginCommand} ${input.authKey} before start`;
+  return `${routeNoCredential(input.tool, input.provider)} — run ${routeSignInCommand(input.tool, input.provider)} before start`;
 }

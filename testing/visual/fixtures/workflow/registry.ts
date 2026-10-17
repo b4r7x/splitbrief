@@ -701,6 +701,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
   [checkpointId('recovery-review'), includesAll()],
+  [checkpointId('recovery-model-pick'), includesAll('Pick another REVIEW model')],
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
   [checkpointId('recovery-plan-swapped'), includesAll()],
   [

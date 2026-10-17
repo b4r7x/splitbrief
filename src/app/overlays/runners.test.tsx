@@ -433,12 +433,15 @@ describe('ToolModelPicker provider routes', () => {
 
   // The models lane publishes an empty tool list, so the detected tool has to be
   // re-stated after it; seeding in the other order leaves OpenCode undetected.
-  function seedOpenCode(providerAuth: CliToolDetection['providerAuth']) {
-    publishOpenCodePlannerModels([
+  function seedOpenCode(
+    providerAuth: CliToolDetection['providerAuth'],
+    models: readonly string[] = [
       'openrouter/deepseek-v4-flash',
       'anthropic/deepseek-v4-flash',
       'openrouter/deepseek-v4-flash-free',
-    ]);
+    ],
+  ) {
+    publishOpenCodePlannerModels(models);
     detectionStore.setDetection({
       providers: [],
       cliTools: [cliDetectionFor('ready', 'opencode', { providerAuth })],
@@ -450,7 +453,7 @@ describe('ToolModelPicker provider routes', () => {
     facts: [{ provider: 'Anthropic', source: 'oauth' }],
   } as const;
 
-  // Signed in, but to neither of the merged row's two routes.
+  // Signed in to neither route's provider: the tool's own listing is what vouches for both.
   const signedInToGroq = { kind: 'read', facts: [{ provider: 'Groq', source: 'api' }] } as const;
 
   afterEach(() => {
@@ -479,8 +482,14 @@ describe('ToolModelPicker provider routes', () => {
     await flushEffects();
   }
 
+  // OpenCode lists its own gateway route before its account is signed in, so only one of the
+  // merged row's two routes can call.
   it('confirms the one signed-in route without expanding the merged row', async () => {
-    seedOpenCode(signedInToAnthropic);
+    seedOpenCode(signedInToAnthropic, [
+      'opencode/deepseek-v4-flash',
+      'anthropic/deepseek-v4-flash',
+      'openrouter/deepseek-v4-flash-free',
+    ]);
     const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await focusMergedModelRow(ui);
 
@@ -496,7 +505,7 @@ describe('ToolModelPicker provider routes', () => {
     ui.unmount();
   });
 
-  it('expands to the route rows when neither route is signed in, then saves the chosen one', async () => {
+  it('expands to the route rows when two routes can call, then saves the chosen one', async () => {
     seedOpenCode(signedInToGroq);
     const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await focusMergedModelRow(ui);

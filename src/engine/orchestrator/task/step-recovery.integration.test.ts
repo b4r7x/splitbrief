@@ -605,7 +605,7 @@ describe('runSingleTask — signed-out runner', () => {
       reason: 'runner-unauthenticated',
       taskId: 'T001',
     });
-    expect(result.pendingRecovery?.message).toContain('OpenAI Codex CLI is signed out');
+    expect(result.pendingRecovery?.message).toContain('Signed out of OpenAI Codex CLI');
     expect(result.pendingRecovery?.message).toContain('codex logout');
     expect(result.pendingRecovery?.message).toContain('codex login');
     expect(result.pendingRecovery?.details.join('\n')).toContain(CODEX_BURNED_REFRESH);
@@ -719,7 +719,7 @@ function expectResetNamedOnce(events: EngineEvent[]): void {
   expect(row?.type === 'error' && row.resetAt).toBe(new Date(2026, 7, 8, 15, 27).toISOString());
   const text = row?.type === 'error' ? row.message : '';
   expect(text).toContain(
-    "(runner reported: You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits.)",
+    "(OpenAI Codex CLI reported: You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits.)",
   );
   expect(text).not.toMatch(/15:27|3:27 PM/);
 }

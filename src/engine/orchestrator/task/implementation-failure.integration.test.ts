@@ -74,7 +74,10 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
     expect(next.pendingRecovery).toMatchObject({
       reason: 'implementer-recipe-invalid',
       taskId: 'T001',
+      attempts: 1,
     });
+    // The halt counts the one call the tool refused.
+    expect(next.pendingRecovery?.details).toContain('Attempts: 1/1');
     expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
   });
 

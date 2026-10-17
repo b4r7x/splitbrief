@@ -2,6 +2,13 @@ import type { Config } from '../../../../core/schemas/config.js';
 import type { Phase, RecoveryAction } from '../../../../core/schemas/enums.js';
 import { BOUNDS } from '../../../../core/pipeline-spec/bounds.js';
 import type { SeatSwitchRecord } from '../../../../core/schemas/workflow.js';
+import {
+  routeNoCredential,
+  routeRefusal,
+  type ModelRefusal,
+  type RouteAuthState,
+  type RouteRefusal,
+} from '../../../../core/runners/route-auth.js';
 import type {
   RecoveryIssue,
   SeatSwapCandidate,
@@ -23,7 +30,7 @@ import type {
   RunnerConfig,
 } from '../../../../core/config/accessors/runner-config.js';
 import type { SeatFailureClassification } from '../../../runners/seat-failure.js';
-import { accountCauseAdvice } from '../../../../core/recovery/account-cause.js';
+import { accountCauseAdvice, formatAccountCause } from '../../../../core/recovery/account-cause.js';
 import {
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
@@ -38,6 +45,7 @@ import type { FinalReviewFailure } from '../../final-review.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import {
+  modelRefusalMessage,
   runnerAccountDisplayName,
   runnerAuthDisplayName,
   runnerLoginInstruction,
@@ -112,6 +120,8 @@ export interface RunnerFailureRecoveryOptions extends RecoveryBuilderBase, TaskR
   runner: Config['implementer'];
   toolMessage: string;
   seatSwap?: SeatSwapContext | undefined;
+  /** The switches this run already made, so a seat is moved to its fallback at most once. */
+  seatSwitches?: readonly SeatSwitchRecord[] | undefined;
   /**
    * The call ran in the checkout itself (`workflow.isolation: none`): nothing is
    * promoted there, and the attempt's files were put back with the bytes they
@@ -156,6 +166,13 @@ export type SeatSwapContext = Readonly<{
    * underneath it.
    */
   configRevision?: string | undefined;
+  /**
+   * What the halted seat's model route means, from the tool's own credential
+   * listing and model catalog, both read fresh on a model refusal.
+   * It tells a route refusal that is a sign-out from a model the tool cannot
+   * serve. Absent for a seat no CLI tool hosts.
+   */
+  routeAuth?: RouteAuthState | undefined;
 }>;
 
 /**
@@ -167,10 +184,7 @@ export type SeatSwapContext = Readonly<{
  */
 export function switchSeatOffer(context: SeatSwapContext | undefined): SwitchSeatOffer | undefined {
   if (context === undefined) return undefined;
-  const hostable =
-    runnerRoleForActiveRole(CREW_SEAT_ROLES[context.seat]) === 'implementer'
-      ? IMPLEMENTER_CLI_TOOL_IDS
-      : PLANNER_CLI_TOOL_IDS;
+  const hostable = seatHostableTools(context.seat);
   const seen = new Set<string>();
   const candidates: SeatSwapCandidate[] = [];
   for (const detected of context.detectedTools) {
@@ -190,6 +204,28 @@ export function switchSeatOffer(context: SeatSwapContext | undefined): SwitchSea
   }
   if (candidates.length === 0) return undefined;
   return { seat: context.seat, candidates };
+}
+
+function seatHostableTools(seat: CrewSeatId): readonly string[] {
+  return runnerRoleForActiveRole(CREW_SEAT_ROLES[seat]) === 'implementer'
+    ? IMPLEMENTER_CLI_TOOL_IDS
+    : PLANNER_CLI_TOOL_IDS;
+}
+
+/**
+ * A model refusal's offer: the other tools, then the seat's own tool without a
+ * model, so taking it opens the seat's picker on that tool to pick a listed
+ * model. It comes last, so a declared fallback still leads.
+ */
+function modelRefusalSeatOffer(context: SeatSwapContext | undefined): SwitchSeatOffer | undefined {
+  const offer = switchSeatOffer(context);
+  if (context === undefined || !includes(seatHostableTools(context.seat), context.currentTool)) {
+    return offer;
+  }
+  return {
+    seat: context.seat,
+    candidates: [...(offer?.candidates ?? []), { tool: context.currentTool }],
+  };
 }
 
 /**
@@ -219,6 +255,8 @@ export interface SeatDownRecoveryOptions extends RecoveryBuilderBase {
   seatSwitches?: readonly SeatSwitchRecord[] | undefined;
   /** Rows a caller adds below the halt's own (the consult advice, the seat it inherits). */
   details?: readonly string[] | undefined;
+  /** The provider a refused model route has no credential for; the halt names it as doctor does. */
+  routeProvider?: string | undefined;
 }
 
 /** The fallback row: the declared fallback's identity, or that the seat declares none. */
@@ -242,10 +280,15 @@ function fallbackDetail(opts: SeatDownRecoveryOptions, identity: string | undefi
   return `fallback: ${identity}`;
 }
 
+/** The tool's own words, attributed to the tool, as the panel and the transcript row quote them. */
+export function toolReported(tool: string, words: string): string {
+  return `${tool} reported: ${words}`;
+}
+
 /** The tool's own words, attributed, with the request id when the caller parsed one out. */
 function reportedDetail(displayName: string, opts: SeatDownRecoveryOptions): string {
   const requestId = opts.requestId === undefined ? '' : ` (request_id: ${opts.requestId})`;
-  return `${displayName} reported: ${opts.words}${requestId}`;
+  return toolReported(displayName, `${opts.words}${requestId}`);
 }
 
 /**
@@ -320,20 +363,23 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
       : classification.class === 'account' && classification.cause !== 'auth'
         ? classification.cause
         : undefined;
+  const provider = opts.routeProvider;
   const holder =
-    cause === 'balance' || cause === 'billing' || cause === 'quota'
+    classification.class === 'account' && provider === undefined
       ? runnerAccountDisplayName(opts.runner)
       : displayName;
   const message =
-    classification.class === 'account'
-      ? classification.cause === 'auth'
-        ? `${displayName} is signed out. ${runnerLoginInstruction(opts.runner)}`
-        : accountCauseAdvice({
-            cause: classification.cause,
-            tool: holder,
-            seat: opts.seatSwap?.seat ?? opts.seat,
-          })
-      : usageLimitAdvice({ tool: displayName, seat: opts.seatSwap?.seat ?? opts.seat });
+    provider !== undefined && opts.runner.kind === 'cli'
+      ? `${routeNoCredential(opts.runner.tool, provider)}. ${runnerLoginInstruction(opts.runner)}`
+      : classification.class === 'account'
+        ? classification.cause === 'auth'
+          ? `${formatAccountCause('auth', holder)}. ${runnerLoginInstruction(opts.runner)}`
+          : accountCauseAdvice({
+              cause: classification.cause,
+              tool: holder,
+              seat: opts.seatSwap?.seat ?? opts.seat,
+            })
+        : usageLimitAdvice({ tool: displayName, seat: opts.seatSwap?.seat ?? opts.seat });
   // A seat that cannot work recommends the move that gets it working: a detected
   // seat to switch to, then a named reset's wait, then the same-seat retry.
   const preferences: RecoveryAction[] = [];
@@ -362,6 +408,7 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
     ...(switchSeat !== undefined && { switchSeat }),
     facts: compactFacts({
       tool: holder,
+      provider,
       cause,
       providerMessage: opts.words,
       requestId: opts.requestId,
@@ -376,13 +423,24 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
 
 /**
  * The error row a runner halt publishes: its message, then the runner's own
- * words. A reset the halt records is dropped from those words: the row spells
- * it from `resetAt`, so one instant is spelled once.
+ * words, attributed to the tool as the panel attributes them. A reset the halt
+ * records is dropped from those words: the row spells it from `resetAt`, so one
+ * instant is spelled once.
  */
-export function runnerHaltRow(issue: RecoveryIssue, toolMessage: string): string {
+export function runnerHaltRow(issue: RecoveryIssue, tool: string, toolMessage: string): string {
   if (issue.switchSeat?.auto !== undefined) return formatRecoveryHeadline(issue);
   const words = issue.resetAt === undefined ? toolMessage : stripRecoveryResetClause(toolMessage);
-  return `${issue.message} (runner reported: ${words})`;
+  return `${issue.message} (${toolReported(tool, words)})`;
+}
+
+/**
+ * The error row a runner defect halt publishes: its message. A route sign-out
+ * the missing-model builder raised reads as every other sign-out row does.
+ */
+export function runnerDefectRow(issue: RecoveryIssue, tool: string, toolMessage: string): string {
+  return issue.reason === 'runner-unauthenticated'
+    ? runnerHaltRow(issue, tool, toolMessage)
+    : issue.message;
 }
 
 /** The error a retry-exhausted brief stopped on; a denial or a no-change message is not a check result. */
@@ -604,9 +662,22 @@ function runnerModel(runner: Config['implementer']): string | undefined {
   return 'model' in runner ? runner.model : undefined;
 }
 
-function recipeHaltIssue(opts: RunnerFailureRecoveryOptions, message: string): RecoveryIssue {
+/** Why a refused command line or a refused model halts at once, on every seat. */
+export function refusalStopDetail(refusal: ModelRefusal | undefined): string {
+  return `The run stopped instead of spending retries on ${refusal === undefined ? 'a command the tool cannot accept' : 'a model the tool refuses'}.`;
+}
+
+/**
+ * A refused command line or a refused model (`refusal`): both halt as
+ * `implementer-recipe-invalid`, and the `refusal` fact tells the headline which.
+ */
+function recipeHaltIssue(
+  opts: RunnerFailureRecoveryOptions,
+  message: string,
+  seatSwap: SwitchSeatOffer | undefined,
+  refusal?: ModelRefusal,
+): RecoveryIssue {
   const displayName = runnerAuthDisplayName(opts.runner);
-  const seatSwap = switchSeatOffer(opts.seatSwap);
   const actions = haltActions('implementer-recipe-invalid', [
     'retry-same-worker',
     seatSwap === undefined ? undefined : 'switch-seat',
@@ -622,8 +693,8 @@ function recipeHaltIssue(opts: RunnerFailureRecoveryOptions, message: string): R
     affectedTaskIds: [opts.task.id],
     message,
     details: [
-      `${displayName} reported: ${opts.toolMessage}`,
-      'The run stopped instead of spending retries on a command the tool cannot accept.',
+      toolReported(displayName, opts.toolMessage),
+      refusalStopDetail(refusal),
       ...attemptDetails(opts.attempts, opts.maxAttempts),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
@@ -634,6 +705,7 @@ function recipeHaltIssue(opts: RunnerFailureRecoveryOptions, message: string): R
       tool: displayName,
       model: runnerModel(opts.runner),
       recipeMessage: opts.toolMessage,
+      refusal,
     }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions, ['switch-seat']),
@@ -648,20 +720,66 @@ function recipeHaltIssue(opts: RunnerFailureRecoveryOptions, message: string): R
  */
 export function buildRecipeInvalidRecoveryIssue(opts: RunnerFailureRecoveryOptions): RecoveryIssue {
   const displayName = runnerAuthDisplayName(opts.runner);
-  return recipeHaltIssue(opts, `${displayName} rejected the command SPLITBRIEF built for it`);
+  return recipeHaltIssue(
+    opts,
+    `${displayName} rejected the command SPLITBRIEF built for it`,
+    switchSeatOffer(opts.seatSwap),
+  );
 }
 
 /**
- * A model the tool does not list is a recipe defect, not a transient failure:
- * every attempt reaches the same refusal until the seat names a listed model.
+ * What a model refusal means for the halted seat: the one decision every
+ * missing-model halt reads. OpenCode refuses a route with no credential and a
+ * misspelled model, an unavailable variant or a broken provider setup alike
+ * (`provider.no-route`), so the words never decide alone: the route's own
+ * credential listing does. A seat with no listing to ask reads as a model the
+ * tool does not list.
+ */
+export function seatRouteRefusal(seatSwap: SeatSwapContext | undefined): RouteRefusal {
+  return seatSwap?.routeAuth === undefined
+    ? { kind: 'wrong-model' }
+    : routeRefusal(seatSwap.routeAuth);
+}
+
+/**
+ * The offer and the message of a model refusal that is not a sign-out. Another
+ * seat is the recommended move, never a retry: every attempt reaches the same
+ * refusal until the seat names a listed model.
+ */
+export function modelRefusalHalt(
+  runner: DeepReadonly<RunnerConfig>,
+  refusal: ModelRefusal,
+  seatSwap: SeatSwapContext | undefined,
+): Readonly<{ message: string; offer: SwitchSeatOffer | undefined }> {
+  return { message: modelRefusalMessage(runner, refusal), offer: modelRefusalSeatOffer(seatSwap) };
+}
+
+/**
+ * A model the tool does not list is a recipe defect, not a transient failure.
+ * On a route with no credential the same refusal is the seat-down sign-out.
  */
 export function buildMissingModelRecoveryIssue(opts: RunnerFailureRecoveryOptions): RecoveryIssue {
-  const displayName = runnerAuthDisplayName(opts.runner);
-  const model = runnerModel(opts.runner) ?? 'the configured model';
-  return recipeHaltIssue(
-    opts,
-    `Model ${model} is not listed by ${displayName}; pick a listed model`,
-  );
+  const refusal = seatRouteRefusal(opts.seatSwap);
+  if (refusal.kind === 'signed-out') {
+    return buildSeatDownIssue({
+      id: opts.id,
+      seat: 'build',
+      runner: opts.runner,
+      classification: { class: 'account', cause: 'auth' },
+      words: opts.toolMessage,
+      routeProvider: refusal.provider,
+      task: opts.task,
+      phase: opts.phase ?? 'implementing',
+      attempts: opts.attempts,
+      maxAttempts: opts.maxAttempts,
+      selectedImplementerProfile: opts.selectedImplementerProfile,
+      seatSwap: opts.seatSwap,
+      seatSwitches: opts.seatSwitches,
+      createdAt: opts.createdAt,
+    });
+  }
+  const halt = modelRefusalHalt(opts.runner, refusal.kind, opts.seatSwap);
+  return recipeHaltIssue(opts, halt.message, halt.offer, refusal.kind);
 }
 
 /**
@@ -690,7 +808,7 @@ export function buildRepeatedTimeoutRecoveryIssue(
     affectedTaskIds: [opts.task.id],
     message: `${displayName} timed out twice in a row on ${opts.task.id}`,
     details: [
-      `${displayName} reported: ${opts.toolMessage}`,
+      toolReported(displayName, opts.toolMessage),
       'The run stopped instead of escalating a brief the implementer cannot finish in time.',
       ...attemptDetails(opts.attempts, opts.maxAttempts),
     ],
@@ -840,7 +958,7 @@ export function buildRunnerInputTooLargeRecoveryIssue(
       displayName,
     ),
     details: [
-      `${displayName} reported: ${opts.toolMessage}`,
+      toolReported(displayName, opts.toolMessage),
       'A retry sends the same prompt. Narrow the brief or end the run.',
       ...attemptDetails(opts.attempts, opts.maxAttempts),
     ],

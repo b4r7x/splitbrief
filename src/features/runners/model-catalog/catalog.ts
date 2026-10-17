@@ -6,6 +6,7 @@ import {
   getRunnerDisplayName,
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
+import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 import type { Config } from '../../../core/schemas/config.js';
 import {
@@ -19,7 +20,7 @@ import {
   type ModelIdentity,
 } from '../../../core/providers/canonical-model-id.js';
 import { resolveModelDisplayName } from '../../../core/discovery/model-catalog.js';
-import { isCliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { isCliToolId, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
 import { EFFORT_LEVELS } from '../../../core/schemas/enums.js';
 import { assertNever, includes } from '../../../utils/type-guards.js';
@@ -302,7 +303,9 @@ export function buildRightModels(params: {
   currentItem: PickerOption | undefined;
   cache?: ModelCacheAccessor;
   persistedModel?: string | undefined;
+  tool?: CliToolId | undefined;
   providerAuth?: CliProviderAuth | undefined;
+  catalog?: SavedCatalog | null | undefined;
   browseCatalog?: boolean | undefined;
 }): ModelOption[] {
   if (!params.currentItem) {
@@ -343,7 +346,9 @@ export function buildRightModels(params: {
       ? mergeProviderVariants(families, {
           persistedModel: params.persistedModel,
           customModels: params.customModels,
+          tool: params.tool,
           providerAuth: params.providerAuth,
+          catalog: params.catalog,
         })
       : families;
   const laddersById = new Map(merged.map((row) => [row.id, row.effortChoices ?? []]));

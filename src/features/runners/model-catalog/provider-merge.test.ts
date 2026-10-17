@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { mergeProviderVariants } from './provider-merge.js';
 import type { ModelOption } from './recency.js';
 
-const ctx = { persistedModel: undefined, customModels: [], providerAuth: undefined };
+const ctx = {
+  persistedModel: undefined,
+  customModels: [],
+  tool: undefined,
+  providerAuth: undefined,
+  catalog: undefined,
+};
 
 const openaiLunaFamily: ModelOption = {
   id: 'openai/gpt-5.6-luna',

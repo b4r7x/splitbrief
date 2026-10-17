@@ -10,6 +10,8 @@ import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { cliAuthRemediation } from '../../../core/schemas/readiness.js';
 import { runnerDiscoveryContextKey } from '../../detection/runner-evidence.js';
+import { getSplitbriefPath } from '../../../core/paths.js';
+import { saveDetectionCache } from '../../detection/cache.js';
 import { evaluateCandidate } from './evaluate-candidate.js';
 import type { RunnerCandidate } from './runner-candidates.js';
 import type { PreparationContext, PrepareExecutionDependencies } from './types.js';
@@ -257,5 +259,63 @@ describe('evaluateCandidate retries a transient session denial', () => {
     expect(result.check.fix).toBe(
       'SPLITBRIEF looks for the OpenAI Codex CLI session in its session files. Sign in to OpenAI Codex CLI, then run `splitbrief doctor` again.',
     );
+  });
+});
+
+describe('evaluateCandidate on a model route with no credential', () => {
+  const config = makeConfig({
+    implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },
+  });
+  const candidate: RunnerCandidate = {
+    slot: { role: 'implementer', profile: 'default' },
+    runner: config.implementer,
+    trustLabel: 'implementer',
+  };
+  const signedInToGo = () =>
+    preparationContext(config, async ({ context }) => ({
+      ...evidence(context),
+      runner: { id: 'opencode', kind: 'cli', locality: 'local', enabled: 'enabled' },
+      providerAuth: { kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'stored' }] },
+    }));
+
+  it('admits the seat and reports the route with its sign-in step', async () => {
+    stubHome();
+    const context = signedInToGo();
+    mkdirSync(getSplitbriefPath(context.projectDir), { recursive: true });
+    await saveDetectionCache({
+      projectDir: context.projectDir,
+      snapshot: {
+        contextKey: 'readiness-remembered',
+        fetchedAt: Date.now(),
+        validatedAt: Date.now(),
+        generation: 1,
+        requestId: 1,
+        providers: [],
+        cliTools: [],
+        cliCatalogs: [
+          { tool: 'opencode', models: [{ id: 'opencode-go/kimi-k3' }], probedAt: Date.now() },
+        ],
+      },
+    });
+
+    const result = await evaluateCandidate(candidate, context);
+
+    expect(result.kind).toBe('admitted');
+    if (result.kind !== 'admitted') return;
+    expect(result.routeCheck).toMatchObject({
+      id: 'runners.route.implementer.default',
+      severity: 'warning',
+      summary: 'BUILD: OpenCode CLI has no credential for ollama-cloud.',
+      fix: 'Run `opencode auth login ollama-cloud`, or choose another model in Settings > Crew > BUILD.',
+    });
+  });
+
+  it('reports no route when the project has no saved model list', async () => {
+    stubHome();
+    const result = await evaluateCandidate(candidate, signedInToGo());
+
+    expect(result.kind).toBe('admitted');
+    if (result.kind !== 'admitted') return;
+    expect(result.routeCheck).toBeUndefined();
   });
 });

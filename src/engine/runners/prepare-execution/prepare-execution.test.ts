@@ -533,7 +533,7 @@ describe('prepareExecution', () => {
     const rememberedReady = {
       id: 'runners.cli.codex.readiness',
       severity: 'ok' as const,
-      summary: 'OpenAI Codex CLI is installed, trusted, compatible, and authenticated.',
+      summary: 'OpenAI Codex CLI is installed, trusted, compatible, and signed in.',
       metadata: {
         tool: 'codex',
         status: 'ready',

@@ -252,6 +252,30 @@ describe('recovery prompt', () => {
     expect(visible).not.toContain('opencode,');
   });
 
+  it("offers the seat's own tool as a model to pick, never as a switch to the tool it runs", async () => {
+    const issue: RecoveryIssue = {
+      ...usageLimitIssue([{ tool: 'claude-code' }, { tool: 'opencode' }]),
+      facts: { tool: 'OpenCode CLI' },
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('w1   switch BUILD to Claude Code CLI');
+    expect(visible).toContain('w2   pick another BUILD model');
+    expect(visible).not.toContain('switch BUILD to OpenCode CLI');
+  });
+
+  it("names the menu row a model pick when the seat's own tool is the only offer", () => {
+    const issue: RecoveryIssue = {
+      ...usageLimitIssue([{ tool: 'opencode' }]),
+      facts: { tool: 'OpenCode CLI' },
+    };
+
+    expect(recoveryMenuLabel('switch-seat', issue)).toBe(
+      'Pick another BUILD model · restarts this brief',
+    );
+  });
+
   it('keeps the bare seat key when only one tool is offered', async () => {
     const issue = usageLimitIssue([{ tool: 'opencode' }]);
 

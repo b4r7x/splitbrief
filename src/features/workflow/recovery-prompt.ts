@@ -23,6 +23,7 @@ import {
   formatRecoveryHeadlineSpans,
 } from '../../core/recovery/headline.js';
 import {
+  keepsHaltedTool,
   recoveryActionLabel,
   recoveryActionParts,
   type RecoveryActionChoiceContext,
@@ -258,6 +259,7 @@ export function recoveryMenuParts(
     switchSeat: issue.switchSeat,
     seat: issue.seat,
     resetAt: issue.resetAt,
+    haltedTool: recoveryFactString(issue.facts, 'tool'),
   }).map(
     (part): ConversationRowSegment => ({
       text: part.text,
@@ -284,7 +286,19 @@ function recoveryMenuConsequence(action: RecoveryAction, issue: RecoveryIssue): 
   return issue.phase === 'final-review' ? 'runs the review again' : 'runs this step again';
 }
 
-function switchSeatRowText(seat: CrewSeatId, candidate: SeatSwapCandidate): string {
+/** A switch-seat row; the halted tool offered without a model reads as the menu's model pick. */
+function switchSeatRowText(
+  seat: CrewSeatId,
+  candidate: SeatSwapCandidate,
+  haltedTool: string | undefined,
+): string {
+  if (keepsHaltedTool(candidate, haltedTool)) {
+    const label = recoveryActionLabel('switch-seat', {
+      switchSeat: { seat, candidates: [candidate] },
+      haltedTool,
+    });
+    return label.charAt(0).toLowerCase() + label.slice(1);
+  }
   const displayName =
     candidate.model === undefined
       ? undefined
@@ -315,7 +329,7 @@ function switchSeatRows(context: RecoveryActionChoiceContext, recommended: boole
     kind: 'action',
     text: formatActionRow(
       switchSeatRowKey(index, offered.length),
-      switchSeatRowText(offer.seat, candidate),
+      switchSeatRowText(offer.seat, candidate, context.haltedTool),
     ),
     recommended: recommended && index === 0,
   }));
@@ -354,8 +368,8 @@ export function formatMiddotList(values: string[], max: number): string {
 
 function buildRecoveryActionRows(
   actions: RecoveryAction[],
-  context: RecoveryActionChoiceContext = {},
-  recommended?: RecoveryAction | undefined,
+  context: RecoveryActionChoiceContext,
+  recommended: RecoveryAction | undefined,
 ): ActionRow[] {
   const rows: ActionRow[] = [];
   for (const action of actions) {
@@ -396,6 +410,7 @@ function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
     seat: issue.seat,
     seatRetry: seatLevelRetrySeat(issue),
     resetAt: issue.resetAt,
+    haltedTool: recoveryFactString(issue.facts, 'tool'),
   };
   const recommended = resolveRecommendedAction(issue, actions);
   const facts = [...formatSubjectLines(issue), ...formatDetailLines(issue)];
@@ -527,7 +542,7 @@ function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
       { text: recoveryContextCauseWords(context), tone: 'text' },
     ];
   if (
-    issue.reason === 'runner-usage-limit' &&
+    (issue.reason === 'runner-usage-limit' || issue.reason === 'runner-unauthenticated') &&
     recoveryFactString(issue.facts, 'tool') !== undefined
   ) {
     return separatedSpans(formatRecoveryHeadline(issue), 'text');
@@ -536,6 +551,8 @@ function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
   // first fact row, so the header names the halt and nothing is said twice. A checkout halt's
   // rows do not repeat its changes, so its header names them.
   if (
+    issue.reason === 'implementer-recipe-invalid' ||
+    recoveryFactString(issue.facts, 'refusal') !== undefined ||
     issue.reason === 'implementer-left-isolation' ||
     issue.reason === 'checkout-changed' ||
     issue.reason === 'apply-conflict' ||

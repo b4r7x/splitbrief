@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { classifyHaltSignature } from '../../core/pipeline-spec/halts.js';
 import { runnerCallOutcome } from '../implementers/pipeline/call-result.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { opencodePlannerAdapter, opencodeProtocolEvents } from './cli-tools/opencode.js';
@@ -41,6 +42,8 @@ const OPENCODE_GO_LIMIT = 'provider.quota: Go usage limit exceeded';
 // Recorded on 2026-10-05: opencode with `deepseek/deepseek-flash` on a spent DeepSeek account.
 const OPENCODE_DEEPSEEK_BALANCE =
   'provider.quota: Insufficient Balance (request_id: 021cfcdf-894e-4f9c-8e1b-85ac99f6a0fe)';
+// Recorded on 2026-10-17: opencode with `ollama-cloud/deepseek-v4.1-flash` and no Ollama Cloud credential.
+const OPENCODE_NO_ROUTE = 'provider.no-route: Model unavailable: ollama-cloud/deepseek-v4.1-flash';
 // Captured live from `agy -p` (antigravity 1.2.7) on 2026-09-21, on stderr.
 const ANTIGRAVITY_QUOTA =
   'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s. (response may be truncated)';
@@ -69,6 +72,16 @@ const ENVELOPES: readonly Row[] = [
       source: 'result-error',
     },
     expected: 'account:balance',
+  },
+  {
+    name: 'opencode route refusal (provider.no-route) is not a sign-out on its own',
+    provenance: 'captured',
+    input: {
+      message: OPENCODE_NO_ROUTE,
+      providerType: 'provider.no-route',
+      source: 'result-error',
+    },
+    expected: 'other',
   },
   {
     name: 'codex usage limit with an absolute reset',
@@ -349,5 +362,28 @@ describe('classifySeatFailure on opencode error envelopes replayed through the a
     );
     expect(outcome.state).toBe('usage-limit');
     expect(outcome.remediation).not.toMatch(/log ?in|log ?out|authenticate/i);
+  });
+});
+
+describe('classifySeatFailure on the recorded opencode no-route refusal', () => {
+  it('halts the call as a missing model, never as a sign-out the words alone cannot prove', () => {
+    const line = JSON.stringify({
+      type: 'error',
+      error: {
+        type: 'provider.no-route',
+        message: 'Model unavailable: ollama-cloud/deepseek-v4.1-flash',
+      },
+    });
+    const terminal = opencodeFailure(line);
+    expect(terminal.status).toBe('failed');
+    if (terminal.status === 'completed') return;
+    expect(terminal.error.message).toBe(OPENCODE_NO_ROUTE);
+    expect(classifyHaltSignature([terminal.error.message])).toBe('missing-model');
+    expect(label(classifySeatFailure({ message: terminal.error.message, source: 'thrown' }))).toBe(
+      'other',
+    );
+    expect(
+      label(classifySeatFailure({ message: terminal.error.message, source: 'stderr-tail' })),
+    ).toBe('other');
   });
 });

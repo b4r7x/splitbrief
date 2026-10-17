@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { getSplitbriefPath } from '../../../core/paths.js';
+import { saveDetectionCache } from '../../detection/cache.js';
 import { configPath } from '../../../core/config/load/document.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -7,12 +9,47 @@ import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factori
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { switchSeatOffer } from './builders/task.js';
 import { loadSeatSwapContext, readSeatFallbackOfRecord } from './seat-swap-context.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection.js';
+
+const evidence = vi.hoisted(() => ({ detectRunnerEvidence: vi.fn() }));
+vi.mock('../../detection/runner-evidence.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../detection/runner-evidence.js')>()),
+  ...evidence,
+}));
 
 let dirs: string[] = [];
+
+/** The project remembers OpenCode with this credential listing and this saved model list. */
+async function projectRememberingOpencode(
+  name: string,
+  providerAuth: CliProviderAuth,
+  models: readonly string[],
+): Promise<string> {
+  const projectDir = createTempDir(name);
+  dirs.push(projectDir);
+  mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
+  await saveDetectionCache({
+    projectDir,
+    snapshot: {
+      contextKey: 'readiness-remembered',
+      fetchedAt: Date.now(),
+      validatedAt: Date.now(),
+      generation: 1,
+      requestId: 1,
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'opencode', { providerAuth })],
+      cliCatalogs: [
+        { tool: 'opencode', models: models.map((id) => ({ id })), probedAt: Date.now() },
+      ],
+    },
+  });
+  return projectDir;
+}
 
 afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
+  evidence.detectRunnerEvidence.mockReset();
 });
 
 async function projectWithRememberedTools(
@@ -43,6 +80,7 @@ describe('loadSeatSwapContext', () => {
     ]);
     const runner = { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } } as const;
     const context = await loadSeatSwapContext({
+      modelCache: undefined,
       projectDir,
       seat: 'build',
       runner,
@@ -52,6 +90,33 @@ describe('loadSeatSwapContext', () => {
     expect(context?.fallback).toEqual(runner.fallback);
   });
 
+  it("reads the seat's route against its own tool's credential listing, which tells a route sign-out from a model it cannot run", async () => {
+    const projectDir = await projectRememberingOpencode(
+      'seat-swap-provider-auth',
+      { kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'api' }] },
+      ['opencode-go/kimi-k3'],
+    );
+    const runner = {
+      kind: 'cli',
+      tool: 'opencode',
+      model: 'ollama-cloud/deepseek-v4.1-flash',
+    } as const;
+
+    const context = await loadSeatSwapContext({
+      modelCache: undefined,
+      projectDir,
+      seat: 'build',
+      runner,
+      config: makeConfig({ implementer: runner }),
+    });
+
+    expect(context?.routeAuth).toEqual({
+      kind: 'needs-sign-in',
+      tool: 'opencode',
+      provider: 'ollama-cloud',
+    });
+  });
+
   it('reads the remembered tools regardless of the context they were probed under', async () => {
     const projectDir = await projectWithRememberedTools('seat-swap-remembered', [
       cliDetectionFor('ready', 'codex'),
@@ -59,6 +124,7 @@ describe('loadSeatSwapContext', () => {
     ]);
 
     const context = await loadSeatSwapContext({
+      modelCache: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex' },
@@ -72,6 +138,7 @@ describe('loadSeatSwapContext', () => {
         { tool: 'codex', ready: true },
         { tool: 'claude-code', ready: true },
       ],
+      routeAuth: { kind: 'unchecked' },
     });
     expect(switchSeatOffer(context)).toEqual({
       seat: 'build',
@@ -86,6 +153,7 @@ describe('loadSeatSwapContext', () => {
     ]);
 
     const context = await loadSeatSwapContext({
+      modelCache: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex' },
@@ -102,6 +170,7 @@ describe('loadSeatSwapContext', () => {
     ]);
 
     const context = await loadSeatSwapContext({
+      modelCache: undefined,
       projectDir,
       seat: 'build',
       runner: makeConfig().implementer,
@@ -112,18 +181,122 @@ describe('loadSeatSwapContext', () => {
     expect(switchSeatOffer(context)).toEqual({ seat: 'build', candidates: [{ tool: 'codex' }] });
   });
 
-  it('offers nothing when the project has no remembered detection', async () => {
+  it('offers no other tool when the project has no remembered detection, and keeps the route', async () => {
     const projectDir = createTempDir('seat-swap-no-cache');
     dirs.push(projectDir);
 
-    await expect(
+    const context = await loadSeatSwapContext({
+      modelCache: undefined,
+      projectDir,
+      seat: 'build',
+      runner: { kind: 'cli', tool: 'codex' },
+      config: makeConfig(),
+    });
+
+    expect(context).toEqual({
+      seat: 'build',
+      currentTool: 'codex',
+      detectedTools: [],
+      routeAuth: { kind: 'unchecked' },
+    });
+    expect(switchSeatOffer(context)).toBeUndefined();
+  });
+
+  it("reads a route the tool's saved model list serves as configured", async () => {
+    const projectDir = createTempDir('seat-swap-remembered-catalog');
+    dirs.push(projectDir);
+    mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
+    const route = 'ollama-cloud/glm-5';
+    await saveDetectionCache({
+      projectDir,
+      snapshot: {
+        contextKey: 'readiness-remembered',
+        fetchedAt: Date.now(),
+        validatedAt: Date.now(),
+        generation: 1,
+        requestId: 1,
+        providers: [],
+        cliTools: [
+          cliDetectionFor('ready', 'opencode', {
+            providerAuth: { kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'api' }] },
+          }),
+        ],
+        cliCatalogs: [{ tool: 'opencode', models: [{ id: route }], probedAt: Date.now() }],
+      },
+    });
+    const runner = { kind: 'cli', tool: 'opencode', model: route } as const;
+
+    const context = await loadSeatSwapContext({
+      modelCache: undefined,
+      projectDir,
+      seat: 'build',
+      runner,
+      config: makeConfig({ implementer: runner }),
+    });
+
+    expect(context?.routeAuth).toEqual({ kind: 'configured', source: 'listed' });
+  });
+
+  describe('a model refusal re-reads the route fresh', () => {
+    const route = 'ollama-cloud/glm-5';
+    const runner = { kind: 'cli', tool: 'opencode', model: route } as const;
+    const refusal = 'provider.no-route: no route for ollama-cloud/glm-5';
+    const signedInToGo: CliProviderAuth = {
+      kind: 'read',
+      facts: [{ id: 'opencode-go', provider: 'OpenCode Go', source: 'stored' }],
+    };
+    // Saved before the sign-out: the model list still serves ollama-cloud.
+    const staleProject = (name: string) =>
+      projectRememberingOpencode(name, signedInToGo, [route, 'opencode-go/kimi-k3']);
+    const halt = (
+      projectDir: string,
+      haltRunner: typeof runner | { kind: 'cli'; tool: 'opencode' },
+    ) =>
       loadSeatSwapContext({
+        modelCache: undefined,
         projectDir,
         seat: 'build',
-        runner: { kind: 'cli', tool: 'codex' },
-        config: makeConfig(),
-      }),
-    ).resolves.toBeUndefined();
+        runner: haltRunner,
+        config: makeConfig({ implementer: haltRunner }),
+        refusal,
+      });
+
+    it('reads a sign-out the saved model list predates from the fresh model list', async () => {
+      evidence.detectRunnerEvidence.mockResolvedValue({
+        providerAuth: signedInToGo,
+        catalog: { kind: 'success', value: [{ id: 'opencode-go/kimi-k3' }] },
+      });
+      const context = await halt(await staleProject('seat-swap-fresh-signed-out'), runner);
+
+      expect(evidence.detectRunnerEvidence).toHaveBeenCalledWith(
+        expect.objectContaining({ includeCatalog: true }),
+      );
+      expect(context?.routeAuth).toEqual({
+        kind: 'needs-sign-in',
+        tool: 'opencode',
+        provider: 'ollama-cloud',
+      });
+    });
+
+    it('names both causes when the fresh model list cannot be read', async () => {
+      evidence.detectRunnerEvidence.mockResolvedValue({
+        providerAuth: signedInToGo,
+        catalog: { kind: 'command-failed', cause: 'exit 1' },
+      });
+      const context = await halt(await staleProject('seat-swap-fresh-unread'), runner);
+
+      expect(context?.routeAuth).toEqual({ kind: 'unknown', reason: 'catalog-not-read' });
+    });
+
+    it('probes nothing for a seat that names no model', async () => {
+      const context = await halt(await staleProject('seat-swap-fresh-no-model'), {
+        kind: 'cli',
+        tool: 'opencode',
+      });
+
+      expect(evidence.detectRunnerEvidence).not.toHaveBeenCalled();
+      expect(context?.routeAuth).toEqual({ kind: 'unchecked' });
+    });
   });
 
   it("leads with the seat's declared fallback when the pass saw its tool ready", async () => {
@@ -133,6 +306,7 @@ describe('loadSeatSwapContext', () => {
     ]);
 
     const context = await loadSeatSwapContext({
+      modelCache: undefined,
       projectDir,
       seat: 'build',
       config: makeConfig({
@@ -169,6 +343,7 @@ describe('loadSeatSwapContext', () => {
     ]);
 
     const context = await loadSeatSwapContext({
+      modelCache: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code', model: 'sonnet' } },
@@ -193,6 +368,7 @@ describe('loadSeatSwapContext', () => {
     ]);
 
     const context = await loadSeatSwapContext({
+      modelCache: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
@@ -213,6 +389,7 @@ describe('loadSeatSwapContext', () => {
     ]);
 
     const context = await loadSeatSwapContext({
+      modelCache: undefined,
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },

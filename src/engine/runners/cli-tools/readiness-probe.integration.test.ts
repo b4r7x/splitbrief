@@ -964,8 +964,8 @@ describe('opencode oracle argv follows the installed release', () => {
     expect(evidence.providerAuth).toEqual({
       kind: 'read',
       facts: expect.arrayContaining([
-        { provider: 'OpenCode Go', source: 'stored' },
-        { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
+        { id: 'opencode-go', provider: 'OpenCode Go', source: 'stored' },
+        { id: 'openai', provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
       ]),
     });
   });

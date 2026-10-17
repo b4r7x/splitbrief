@@ -61,11 +61,14 @@ import {
   buildSeatDownIssue,
   buildLeftIsolationRecoveryIssue,
   buildCheckoutChangedRecoveryIssue,
+  buildMissingModelRecoveryIssue,
+  runnerDefectRow,
   runnerHaltRow,
   type SeatDownRecoveryOptions,
   type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
+import { runnerAuthDisplayName } from '../../../../src/engine/runners/auth-failure.js';
 import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure.js';
 import {
   consultHaltDetails,
@@ -2612,7 +2615,11 @@ const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
       publishError({
         bus,
         phase: issue.phase,
-        message: runnerHaltRow(issue, OLLAMA_LIMIT_WORDS),
+        message: runnerHaltRow(
+          issue,
+          runnerAuthDisplayName(visualConfig().implementer),
+          OLLAMA_LIMIT_WORDS,
+        ),
         resetAt: issue.resetAt,
       }),
     );
@@ -2657,11 +2664,140 @@ const balanceSpentRecoveryProjection: WorkflowFixtureProjection = {
   get events() {
     const issue = balanceSpentRecoveryIssue();
     return publishedEvents(FIXED_TS + 100, (bus) =>
-      publishError({ bus, phase: issue.phase, message: runnerHaltRow(issue, BALANCE_WORDS) }),
+      publishError({
+        bus,
+        phase: issue.phase,
+        message: runnerHaltRow(issue, runnerAuthDisplayName(OPENCODE_BALANCE_SEAT), BALANCE_WORDS),
+      }),
     );
   },
   get resumeState() {
     return haltedResumeState(balanceSpentRecoveryIssue());
+  },
+};
+
+const OPENCODE_ROUTE_SEAT = {
+  kind: 'cli',
+  tool: 'opencode',
+  model: 'ollama-cloud/deepseek-v4.1-flash',
+} as const;
+const NO_ROUTE_WORDS = 'provider.no-route: Model unavailable: ollama-cloud/deepseek-v4.1-flash';
+
+type ModelRefusalRouteAuth = NonNullable<SeatSwapContext['routeAuth']>;
+
+/** A BUILD model refusal through the builder the halt uses, read against a route credential state. */
+function modelRefusalRecoveryIssue(routeAuth: ModelRefusalRouteAuth): RecoveryIssue {
+  return buildMissingModelRecoveryIssue({
+    id: `rec_visual_model_${routeAuth.kind}`,
+    task: HALTED_TASK,
+    phase: 'implementing',
+    runner: OPENCODE_ROUTE_SEAT,
+    toolMessage: NO_ROUTE_WORDS,
+    attempts: 1,
+    maxAttempts: DEFAULT_LOCAL_RETRIES,
+    selectedImplementerProfile: 'default',
+    seatSwap: {
+      seat: 'build',
+      currentTool: 'opencode',
+      currentModel: OPENCODE_ROUTE_SEAT.model,
+      detectedTools: [
+        { tool: 'opencode', ready: true },
+        { tool: 'claude-code', ready: true },
+      ],
+      routeAuth,
+    },
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+function modelRefusalProjection(
+  id: string,
+  routeAuth: ModelRefusalRouteAuth,
+): WorkflowFixtureProjection {
+  return {
+    ...usageLimitRecoveryProjection,
+    scenarioId: scenarioId(id),
+    config: { implementer: OPENCODE_ROUTE_SEAT },
+    get events() {
+      const issue = modelRefusalRecoveryIssue(routeAuth);
+      return publishedEvents(FIXED_TS + 100, (bus) =>
+        publishError({
+          bus,
+          phase: issue.phase,
+          message: runnerDefectRow(
+            issue,
+            runnerAuthDisplayName(OPENCODE_ROUTE_SEAT),
+            NO_ROUTE_WORDS,
+          ),
+        }),
+      );
+    },
+    get resumeState() {
+      return haltedResumeState(modelRefusalRecoveryIssue(routeAuth));
+    },
+  };
+}
+
+const ROUTE_SIGNED_OUT_AUTH: ModelRefusalRouteAuth = {
+  kind: 'needs-sign-in',
+  tool: 'opencode',
+  provider: 'ollama-cloud',
+};
+const MODEL_NOT_LISTED_AUTH: ModelRefusalRouteAuth = { kind: 'configured', source: 'api' };
+const MODEL_REFUSED_AUTH: ModelRefusalRouteAuth = { kind: 'unknown', reason: 'exit-failure' };
+
+/** A REVIEW model refusal on a signed-in route, on a machine whose only tool is the seat's own. */
+function reviewModelRefusalRecoveryIssue(): RecoveryIssue {
+  const err = error('runner-call-failed', 'Planner review call failed', {
+    role: 'review',
+    status: 'failed',
+    error: { code: 'missing-model', message: NO_ROUTE_WORDS },
+  });
+  return buildPlannerCallFailedRecoveryIssue({
+    id: 'rec_visual_review_model_not_listed',
+    diagnosis: diagnosePlannerCallFailure({
+      seat: 'review',
+      err,
+      label: 'Final review failed',
+      runner: OPENCODE_ROUTE_SEAT,
+    }),
+    seat: 'review',
+    phase: 'final-review',
+    runner: OPENCODE_ROUTE_SEAT,
+    seatSwap: {
+      seat: 'review',
+      currentTool: 'opencode',
+      currentModel: OPENCODE_ROUTE_SEAT.model,
+      detectedTools: [{ tool: 'opencode', ready: true }],
+      routeAuth: MODEL_NOT_LISTED_AUTH,
+    },
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const reviewModelRefusalProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-review-model-not-listed'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  config: { reviewer: OPENCODE_ROUTE_SEAT },
+  get events() {
+    const issue = reviewModelRefusalRecoveryIssue();
+    return publishedEvents(FIXED_TS + 100, (bus) =>
+      publishError({
+        bus,
+        phase: issue.phase,
+        message: runnerDefectRow(issue, runnerAuthDisplayName(OPENCODE_ROUTE_SEAT), NO_ROUTE_WORDS),
+      }),
+    );
+  },
+  get resumeState() {
+    return makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'final-review',
+      pendingRecovery: reviewModelRefusalRecoveryIssue(),
+    });
   },
 };
 
@@ -5617,6 +5753,10 @@ const projections = [
     }),
   },
   balanceSpentRecoveryProjection,
+  modelRefusalProjection('workflow-recovery-route-signed-out', ROUTE_SIGNED_OUT_AUTH),
+  modelRefusalProjection('workflow-recovery-model-not-listed', MODEL_NOT_LISTED_AUTH),
+  modelRefusalProjection('workflow-recovery-model-refused', MODEL_REFUSED_AUTH),
+  reviewModelRefusalProjection,
   balanceSeatSwitchProjection,
   stopSheetRecoveryProjection,
   buildConsultProjection,
@@ -5985,10 +6125,22 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     reviewSeatRecoveryIssue(),
     consultSeatRecoveryIssue(),
     planSwappedRecoveryIssue(),
+    modelRefusalRecoveryIssue(ROUTE_SIGNED_OUT_AUTH),
+    modelRefusalRecoveryIssue(MODEL_NOT_LISTED_AUTH),
+    modelRefusalRecoveryIssue(MODEL_REFUSED_AUTH),
   ];
   const engineHaltText = [
     ...halts.flatMap((issue) => [issue.message, ...issue.details]),
-    runnerHaltRow(usageLimitRecoveryIssue(), OLLAMA_LIMIT_WORDS),
+    runnerHaltRow(
+      usageLimitRecoveryIssue(),
+      runnerAuthDisplayName(visualConfig().implementer),
+      OLLAMA_LIMIT_WORDS,
+    ),
+    runnerDefectRow(
+      modelRefusalRecoveryIssue(ROUTE_SIGNED_OUT_AUTH),
+      runnerAuthDisplayName(OPENCODE_ROUTE_SEAT),
+      NO_ROUTE_WORDS,
+    ),
   ];
   const oversized = projectionStrings(projection).find(
     // The answered card's flat text joins its bounded qa pairs; it is not independent content.

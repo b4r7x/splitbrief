@@ -1,13 +1,10 @@
+import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
+import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { bestMembership } from './membership.js';
 import { peelOptionSuffix } from './option-merge.js';
-import {
-  compactProviderTag,
-  modelIdUnderProvider,
-  modelProviderAuthKey,
-  modelProviderPrefix,
-  resolveProviderAuthState,
-} from './provider-axis.js';
+import { routeAuthState } from '../../../core/runners/route-auth.js';
+import { compactProviderTag, modelIdUnderProvider, modelProviderPrefix } from './provider-axis.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 
 interface ProviderVariantSource {
@@ -18,7 +15,9 @@ interface ProviderVariantSource {
 interface ProviderMergeContext {
   readonly persistedModel: string | undefined;
   readonly customModels: readonly string[];
+  readonly tool: CliToolId | undefined;
   readonly providerAuth: CliProviderAuth | undefined;
+  readonly catalog: SavedCatalog | null | undefined;
 }
 
 function toVariant(source: ProviderVariantSource): ModelVariant {
@@ -44,17 +43,17 @@ function variantsOf(source: ProviderVariantSource): ModelVariant[] {
 
 function sortVariantsConfiguredFirst(
   variants: readonly ModelVariant[],
-  providerAuth: CliProviderAuth | undefined,
+  ctx: ProviderMergeContext,
 ): readonly ModelVariant[] {
-  // Only a read listing names configured providers; an empty or unreadable one
-  // claims no auth state, so the recency order stands.
-  if (providerAuth?.kind !== 'read') return variants;
-  const facts = providerAuth.facts;
-  const needsSignIn = (variant: ModelVariant): number => {
-    const authKey = modelProviderAuthKey(variant.fullId);
-    if (authKey === undefined) return 1;
-    return resolveProviderAuthState(authKey, facts) === 'configured' ? 0 : 1;
-  };
+  const needsSignIn = (variant: ModelVariant): number =>
+    routeAuthState({
+      tool: ctx.tool,
+      model: variant.fullId,
+      providerAuth: ctx.providerAuth,
+      catalog: ctx.catalog,
+    }).kind === 'configured'
+      ? 0
+      : 1;
   return variants.toSorted((a, b) => needsSignIn(a) - needsSignIn(b));
 }
 
@@ -64,7 +63,7 @@ function mergeGroupRows(
   ctx: ProviderMergeContext,
 ): ModelOption {
   const sources = [first, ...rest];
-  const variants = sortVariantsConfiguredFirst(sources.flatMap(variantsOf), ctx.providerAuth);
+  const variants = sortVariantsConfiguredFirst(sources.flatMap(variantsOf), ctx);
   if (rest.length === 0) {
     return first.row.variants === undefined ? { ...first.row, variants } : first.row;
   }

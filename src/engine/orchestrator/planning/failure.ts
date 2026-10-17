@@ -11,6 +11,7 @@ import {
 import {
   diagnosePlannerCallFailure,
   plannerCallHaltIssue,
+  plannerHaltRow,
 } from '../recovery/planner-call-failure.js';
 import {
   apiContextRecoveryFacts,
@@ -19,7 +20,6 @@ import {
 import { labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
-import { runnerHaltRow } from '../recovery/builders/task.js';
 
 export async function handlePlanningFailure(opts: {
   err: unknown;
@@ -96,10 +96,7 @@ export async function handlePlanningFailure(opts: {
   publishError({
     bus: wctx.bus,
     phase: latest.phase,
-    message:
-      diagnosis.seatDown === undefined
-        ? diagnosis.message
-        : runnerHaltRow(issue, diagnosis.seatDown.words),
+    message: plannerHaltRow(issue, diagnosis),
     resetAt: diagnosis.resetsAt?.toISOString(),
   });
 

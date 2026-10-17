@@ -1,3 +1,4 @@
+import type { SavedCatalog } from '../../core/discovery/catalog-read-merge.js';
 import type { CliProviderAuth } from '../../core/discovery/detection.js';
 import {
   seatPickerLane,
@@ -20,19 +21,17 @@ import {
   stepOptionAxis,
 } from './model-catalog/option-axis.js';
 import type { ModelOption, ModelVariant } from './model-catalog/recency.js';
-import {
-  effortLadderFor,
-  offersEffortLadder,
-  routeAuthStateFor,
-  type RightRow,
-} from './model-catalog/rows.js';
+import { effortLadderFor, offersEffortLadder, type RightRow } from './model-catalog/rows.js';
+import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { routeAuthState } from '../../core/runners/route-auth.js';
 import type { CycleOutcome, RightActivation } from './two-column-picker/types.js';
 import type { PickerActions } from './use-picker-actions.js';
 
-/** What the tool's credential listing is read against when a route's auth is judged. */
+/** What the tool's credential and model listings are read against when a route's auth is judged. */
 export interface RouteAuthContext {
-  hasOracle: boolean;
+  tool: CliToolId | undefined;
   providerAuth: CliProviderAuth | undefined;
+  catalog: SavedCatalog | null | undefined;
 }
 
 /**
@@ -117,10 +116,11 @@ function soleConfiguredRoute(row: RightRow, auth: RouteAuthContext): ModelVarian
   if (variants.length <= 1) return variants[0];
   const configured = variants.filter(
     (variant) =>
-      routeAuthStateFor({
-        hasOracle: auth.hasOracle,
-        variant,
+      routeAuthState({
+        tool: auth.tool,
+        model: variant.fullId,
         providerAuth: auth.providerAuth,
+        catalog: auth.catalog,
       }).kind === 'configured',
   );
   return configured.length === 1 ? configured[0] : undefined;

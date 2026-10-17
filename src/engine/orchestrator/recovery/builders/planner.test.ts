@@ -61,6 +61,84 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
   });
 
+  describe('on an OpenCode route refusal (provider.no-route)', () => {
+    const route = 'ollama-cloud/deepseek-v4.1-flash';
+    const words = `provider.no-route: Model unavailable: ${route}`;
+    const runner = makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: route } }).planner;
+    const halt = (
+      routeAuth: NonNullable<
+        Parameters<typeof buildPlannerCallFailedRecoveryIssue>[0]['seatSwap']
+      >['routeAuth'],
+      detectedTools: readonly { tool: string; ready: boolean }[] = [
+        { tool: 'claude-code', ready: true },
+      ],
+    ) =>
+      buildPlannerCallFailedRecoveryIssue({
+        diagnosis: {
+          failure: 'missing-model',
+          message: `Planning failed: ${words}`,
+          tool: 'OpenCode CLI',
+          words,
+        },
+        phase: 'planning',
+        runner,
+        seatSwap: {
+          seat: 'plan',
+          currentTool: 'opencode',
+          currentModel: route,
+          detectedTools,
+          routeAuth,
+        },
+        createdAt,
+      });
+
+    it("halts as the seat-down sign-out, in doctor's words, when the route has no credential", () => {
+      const issue = halt({ kind: 'needs-sign-in', tool: 'opencode', provider: 'ollama-cloud' });
+
+      expect(issue.reason).toBe('runner-unauthenticated');
+      expect(issue.message).toBe(
+        'OpenCode CLI has no credential for ollama-cloud. Run `opencode auth login ollama-cloud` in a separate terminal, then retry.',
+      );
+      expect(issue.facts).toMatchObject({ tool: 'OpenCode CLI', provider: 'ollama-cloud' });
+      expect(issue.details).toContain(`OpenCode CLI reported: ${words}`);
+      expectValidRecoveryIssue(issue);
+    });
+
+    it('halts as a model the tool does not list, recommending another seat, when the route has a credential', () => {
+      const issue = halt({ kind: 'configured', source: 'api' });
+
+      expect(issue.reason).toBe('planner-call-failed');
+      expect(issue.message).toBe(
+        `Model ${route} is not listed by OpenCode CLI; pick a listed model`,
+      );
+      expect(issue.facts).toMatchObject({ tool: 'OpenCode CLI', refusal: 'wrong-model' });
+      expect(issue.details).toContain(
+        'The run stopped instead of spending retries on a model the tool refuses.',
+      );
+      expect(issue.switchSeat?.candidates).toEqual([{ tool: 'claude-code' }, { tool: 'opencode' }]);
+      expect(issue.recommendedAction).toBe('switch-seat');
+      expectValidRecoveryIssue(issue);
+    });
+
+    it('names both causes when the credential listing could not be read', () => {
+      const issue = halt({ kind: 'unknown', reason: 'exit-failure' });
+
+      expect(issue.reason).toBe('planner-call-failed');
+      expect(issue.message).toBe(
+        `OpenCode CLI cannot use ${route}: sign in with \`opencode auth login ollama-cloud\` if ollama-cloud has no credential, or pick a listed model`,
+      );
+      expect(issue.facts).toMatchObject({ refusal: 'unknown' });
+      expect(issue.recommendedAction).toBe('switch-seat');
+    });
+
+    it("offers the seat's own tool when the machine has no other", () => {
+      const issue = halt({ kind: 'configured', source: 'listed' }, []);
+
+      expect(issue.switchSeat).toEqual({ seat: 'plan', candidates: [{ tool: 'opencode' }] });
+      expect(issue.recommendedAction).toBe('switch-seat');
+    });
+  });
+
   it('builds the one seat-down halt for a quota halt and a sign-out', () => {
     const limit = buildPlannerCallFailedRecoveryIssue({
       diagnosis: {
@@ -68,9 +146,9 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
         message: 'OpenAI Codex CLI hit its usage limit.',
         tool: 'OpenAI Codex CLI',
         resetsAt: new Date('2026-08-08T15:27:00.000Z'),
+        words: "You've hit your usage limit.",
         seatDown: {
           classification: { class: 'rate-limited', resetAt: new Date('2026-08-08T15:27:00.000Z') },
-          words: "You've hit your usage limit.",
         },
       },
       phase: 'planning',
@@ -83,7 +161,8 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
         failure: 'unauthenticated',
         message: 'OpenAI Codex CLI is signed out.',
         tool: 'OpenAI Codex CLI',
-        seatDown: { classification: { class: 'account', cause: 'auth' }, words: 'HTTP 403' },
+        words: 'HTTP 403',
+        seatDown: { classification: { class: 'account', cause: 'auth' } },
       },
       phase: 'planning',
       runner: plannerRunner,

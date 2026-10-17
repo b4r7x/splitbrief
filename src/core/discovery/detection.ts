@@ -298,11 +298,14 @@ export type CliAuthState = z.infer<typeof CliAuthStateSchema>;
 
 /**
  * One per-provider authentication fact reported by a CLI's own credential
- * listing. Carries only the provider display name, the source kind, and (for
- * environment entries) the env var name — never a credential value.
+ * listing. Carries the provider id (when the listing prints one), its display
+ * name, the source kind and, for environment entries, the env var name — never
+ * a credential value.
  */
 export const CliProviderAuthFactSchema = z
   .object({
+    /** The listing's provider id, the model-id segment it backs; the boxed listing prints none. */
+    id: z.string().min(1).max(200).optional(),
     provider: z.string().min(1).max(200),
     source: z.enum(['oauth', 'api', 'env', 'stored']),
     envVar: z.string().min(1).max(200).optional(),

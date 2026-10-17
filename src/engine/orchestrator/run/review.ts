@@ -15,10 +15,10 @@ import {
   type FinalReviewFailure,
   type FinalReviewResult,
 } from '../final-review.js';
-import { buildReviewFailedRecoveryIssue, runnerHaltRow } from '../recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/review-input.js';
 import { reviewSeatDetails } from '../recovery/builders/details.js';
-import { plannerCallHaltIssue } from '../recovery/planner-call-failure.js';
+import { plannerCallHaltIssue, plannerHaltRow } from '../recovery/planner-call-failure.js';
 import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
 import { applyTriage, startFixCycle } from '../triage.js';
@@ -130,6 +130,7 @@ async function haltProtocolError(args: {
   const issue = await seatProtocolHaltIssue({
     projectDir: args.wctx.projectDir,
     config: args.wctx.config,
+    modelCache: args.wctx.modelCache,
     error: args.error,
     phase: args.state.phase,
   });
@@ -180,7 +181,7 @@ export async function haltVerdictlessReview(args: {
     publishError({
       bus: wctx.bus,
       phase: state.phase,
-      message: runnerHaltRow(issue, failure.diagnosis.seatDown?.words ?? failure.diagnosis.message),
+      message: plannerHaltRow(issue, failure.diagnosis),
       resetAt: failure.diagnosis.resetsAt?.toISOString(),
       safety: { category: 'recovery', code: 'review_failed' },
     });

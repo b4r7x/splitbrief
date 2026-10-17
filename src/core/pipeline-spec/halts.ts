@@ -49,7 +49,14 @@ export const HALT_SIGNATURES = {
     'resource_exhausted',
     'exhausted your',
   ],
-  missingModel: ['unknown model', 'model not found', 'invalid model'],
+  missingModel: [
+    'unknown model',
+    'model not found',
+    'invalid model',
+    // OpenCode's refusal of a route it cannot serve: a misspelled or retired model, an unavailable
+    // variant, or a provider with no credential. Only the tool's credential listing tells a sign-out.
+    'provider.no-route',
+  ],
   spawnFailure: [
     'requires permissions',
     'use --yolo',

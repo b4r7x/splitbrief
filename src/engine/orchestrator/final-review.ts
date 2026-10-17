@@ -140,7 +140,8 @@ export const REVIEW_UNAVAILABLE = 'review-unavailable';
  * Why a review reached no verdict. `insufficient-context` is the packet refusing
  * before anything was dispatched; `call-failed` is a transport or protocol
  * failure, summarized — never a fabricated blocker count; `seat-blocked` is a
- * seat that cannot run at all until its quota comes back or its login does.
+ * seat that cannot run at all until its quota comes back, its login does, or it
+ * names a model its tool lists.
  */
 export type FinalReviewFailure =
   | Readonly<{ kind: 'insufficient-context'; diagnostic: ApiContextDiagnostic }>
