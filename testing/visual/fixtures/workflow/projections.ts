@@ -3616,6 +3616,35 @@ const manualSeatSwitchedProjection: WorkflowFixtureProjection = {
   ),
 };
 
+const crewChangedSeatProjection: WorkflowFixtureProjection = {
+  ...seatSwitchedProjection,
+  scenarioId: scenarioId('workflow-seat-crew-changed'),
+  events: seatSwitchedProjection.events.flatMap((event): EngineEvent[] => {
+    if (
+      event.type === 'error' ||
+      event.type === 'implementer_generate_failed' ||
+      event.type.startsWith('recovery_') ||
+      ('callId' in event && event.callId === 'visual-opencode-balance-failed')
+    )
+      return [];
+    if (event.type !== 'seat_switched') return [event];
+    return [
+      {
+        type: 'seat_switched',
+        ts: event.ts,
+        phase: event.phase,
+        seat: 'build',
+        from: 'OpenCode CLI · DeepSeek V4.1 Flash · via deepseek',
+        to: 'OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
+        cause: 'crew-changed',
+        auto: false,
+        configRevision: event.configRevision,
+      },
+      { type: 'workflow_resumed', ts: event.ts, phase: event.phase },
+    ];
+  }),
+};
+
 const SPENT_B2_REPLAY_LOG = `
 {"ts":"2026-10-11T13:56:40.377Z","kind":"event","type":"tasks_planned","phase":"implementing","data":{"tasks":[{"id":"T001","title":"Add wordCount to src/text.js","index":0,"file":"src/text.js","action":"modify"},{"id":"T002","title":"Add optional suffix to truncate in src/preview.js","index":1,"file":"src/preview.js","action":"modify"}],"total":2}}
 {"ts":"2026-10-11T13:56:40.429Z","kind":"event","type":"task_started","taskId":"T001","phase":"implementing","data":{"title":"Add wordCount to src/text.js","index":0,"total":2,"lineageAttempt":1,"attemptAllowance":8,"file":"src/text.js","files":["src/text.js","test/text.test.js"],"action":"modify","tool":"opencode","model":"deepseek/deepseek-flash","axes":[],"backendKind":"cli","implementerProfile":"default","contextFit":"fits","estimatedTokens":1573,"untruncatedEstimatedTokens":1573,"contextLength":1000000,"currentCodeTruncated":false,"currentCodeContextMode":"none","routingReason":"Selected profile default (fits, estimated 1573/1000000 tokens)"}}
@@ -3634,7 +3663,6 @@ const SPENT_B2_REPLAY_LOG = `
 {"ts":"2026-10-11T13:56:47.504Z","kind":"event","type":"recovery_action_selected","phase":"implementing","data":{"issueId":"rec_20261011135643_runner_usage_limit_implementing_T001","reason":"runner-usage-limit","action":"switch-seat","seat":"build"}}
 {"ts":"2026-10-11T13:56:47.552Z","kind":"event","type":"seat_switched","phase":"implementing","data":{"seat":"build","from":{"tool":"opencode","model":"deepseek/deepseek-flash"},"to":{"tool":"opencode","model":"opencode-go/deepseek-v4.1-flash","variant":"high"},"cause":"runner-usage-limit","accountCause":"balance","headline":"Balance spent on OpenCode CLI","auto":true,"configRevision":"643fca0d8c759fc0e3b5b4957fe3e290aaa87a3e309ec98100fa7cfca9db4aa7"}}
 {"ts":"2026-10-11T13:56:47.552Z","kind":"event","type":"recovery_resolved","phase":"implementing","data":{"issueId":"rec_20261011135643_runner_usage_limit_implementing_T001","reason":"runner-usage-limit","action":"switch-seat","seat":"build","outcome":"retry-current-task","implementerProfile":"default"}}
-{"ts":"2026-10-11T13:56:47.579Z","kind":"event","type":"warning","phase":"implementing","data":{"message":"BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high; the rest of the run uses the new seat"}}
 {"ts":"2026-10-11T13:56:47.599Z","kind":"event","type":"workflow_resumed","phase":"implementing","data":{}}
 {"ts":"2026-10-11T13:56:47.600Z","kind":"event","type":"workflow_config","phase":"implementing","data":{"plannerTool":"claude-code","plannerModel":"claude-opus-5-5","implementerTool":"opencode","implementerModel":"opencode-go/deepseek-v4.1-flash","reviewerTool":"codex","reviewerModel":"gpt-6.1-sol"}}
 {"ts":"2026-10-11T13:56:47.806Z","kind":"event","type":"tasks_planned","phase":"implementing","data":{"tasks":[{"id":"T001","title":"Add wordCount to src/text.js","index":0,"file":"src/text.js","action":"modify"},{"id":"T002","title":"Add optional suffix to truncate in src/preview.js","index":1,"file":"src/preview.js","action":"modify"}],"total":2}}
@@ -5859,6 +5887,7 @@ const projections = [
   hintSeatRecoveryProjection,
   seatSwitchedProjection,
   manualSeatSwitchedProjection,
+  crewChangedSeatProjection,
   planActivityProjection,
   planningClaudeFramesProjection,
   implementationSilentProjection,

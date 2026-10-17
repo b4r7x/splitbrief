@@ -22,15 +22,12 @@ import type { StreamingSink } from '../task/streaming-feed.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
+import { readConfigDocument } from '../../../core/config/load/document.js';
 import { sameSeatCandidate } from '../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import {
-  formatSeatChangeNotice,
-  reconcileSeatIdentities,
-  recordSeatIdentities,
-} from '../../../core/state/seats.js';
+import { reconcileSeatIdentities, recordSeatIdentities } from '../../../core/state/seats.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
 import {
   ensureSessionDir,
@@ -61,6 +58,7 @@ import {
   publishRecoveryResolved,
   publishWorkflowConfig,
   publishUserMessage,
+  publishSeatSwitched,
   publishWarning,
   publishWarningFromError,
   publishGitBranchCreated,
@@ -260,9 +258,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   if (savedState) await recordInterruptedCalls({ projectDir, sessionId, bus }, savedState);
   // Every resume passes here, from the app and from the CLI alike, so this is
   // the one place the record is compared and rewritten. A moved plan seat also drops the
-  // saved planner session: it belongs to the tool that left, so the notice's
-  // promise of a rebuilt context is kept below rather than handed to a tool
-  // that cannot resume it.
+  // saved planner session: it belongs to the tool that left, so the context is
+  // rebuilt below rather than handed to a tool that cannot resume it. A change no
+  // seat switch of this run recorded is recorded here as one.
   let planSeatChanged = false;
   if (savedState) {
     const changes = reconcileSeatIdentities(
@@ -283,16 +281,24 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       const recordedSwitch = recordedSwitches.findLast((event) => event.seat === change.seat);
       const recordedChange =
         recordedSwitch !== undefined &&
+        typeof recordedSwitch.to !== 'string' &&
         sameSeatCandidate(
           recordedSwitch.to,
           seatCandidateOfRunner(readActiveRunner({ config, role: CREW_SEAT_ROLES[change.seat] })),
         );
       if (!recordedChange) {
-        publishWarning({
-          bus,
-          phase: savedState.phase,
-          message: formatSeatChangeNotice(labelSeatChange(change, modelCache)),
-        });
+        const labelled = labelSeatChange(change, modelCache);
+        publishSeatSwitched(
+          { bus, phase: savedState.phase },
+          {
+            seat: change.seat,
+            from: labelled.before,
+            to: labelled.after,
+            cause: 'crew-changed',
+            auto: false,
+            configRevision: readConfigDocument(projectDir).revision?.rawSha256 ?? '',
+          },
+        );
       }
     }
     if (planSeatChanged) {

@@ -310,7 +310,7 @@ describe('a spent implementer switches to its declared fallback', { timeout: 90_
     expect(switchedEvent.switchId).toEqual(expect.any(String));
     expect(switchedEvent.switchId).toBe(swapped.state.seatSwitches?.[0]?.switchId);
     expect(switchedEvent.seat).toBe('build');
-    expect(switchedEvent.from.tool).toBe('agent');
+    expect(switchedEvent.from).toMatchObject({ tool: 'agent' });
     expect(switchedEvent.to).toEqual({ tool: 'opencode', model: FALLBACK_MODEL });
 
     const workspace = swapped.state.workspace;

@@ -18,7 +18,7 @@ import { ReviewFindingCountsSchema } from '../../core/schemas/review.js';
 import { CheckResultSchema, TaskIdSchema } from '../../core/schemas/task.js';
 import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
-import { ConsultRecordSchema } from '../../core/schemas/workflow.js';
+import { ConsultRecordSchema, SeatSwitchCauseSchema } from '../../core/schemas/workflow.js';
 import {
   readSavedRecoveryActions,
   SeatSwapCandidateSchema,
@@ -618,9 +618,9 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('seat_switched').extend({
     switchId: z.string().optional(),
     seat: z.enum(CREW_SEAT_IDS),
-    from: SeatSwapCandidateSchema,
-    to: SeatSwapCandidateSchema,
-    cause: RecoveryReasonSchema,
+    from: z.union([SeatSwapCandidateSchema, z.string()]),
+    to: z.union([SeatSwapCandidateSchema, z.string()]),
+    cause: SeatSwitchCauseSchema,
     accountCause: SeatAccountCauseSchema.optional(),
     headline: z.string().optional(),
     auto: z.boolean(),

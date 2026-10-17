@@ -1389,29 +1389,29 @@ describe('initializeWorkflow — seat record', () => {
   });
 
   it.each([
-    { name: 'a tool default', candidate: { tool: 'opencode' }, warning: false },
+    { name: 'a tool default', candidate: { tool: 'opencode' }, notice: false },
     {
       name: 'a collision in the model words',
       candidate: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
-      warning: false,
+      notice: false,
     },
-    { name: 'an unrecorded config edit', candidate: undefined, warning: true },
+    { name: 'an unrecorded config edit', candidate: undefined, notice: true },
     {
       name: 'a switch on another seat',
       candidate: { tool: 'opencode' },
       seat: 'review',
-      warning: true,
+      notice: true,
     },
     {
       name: 'another destination with the same model words and axis',
       candidate: { tool: 'opencode', model: 'deepseek/deepseek-flash', variant: 'high' },
-      warning: true,
+      notice: true,
     },
     {
       name: 'a switch already resumed',
       candidate: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
       resumed: true,
-      warning: true,
+      notice: true,
     },
   ] as const)('reconciles BUILD after $name', async (scenario) => {
     await withTempDir('splitbrief-init-switch-notice', async (projectDir) => {
@@ -1421,7 +1421,7 @@ describe('initializeWorkflow — seat record', () => {
         implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
       });
       const replacement =
-        scenario.candidate === undefined || scenario.warning
+        scenario.candidate === undefined || scenario.notice
           ? { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' }
           : scenario.candidate;
       const current = configWithSwitchedSeat(config, 'build', replacement);
@@ -1458,10 +1458,16 @@ describe('initializeWorkflow — seat record', () => {
         eventSink: (event) => events.push(event),
       });
       expect(init.ok).toBe(true);
-      const notices = events.filter(
-        (event) => event.type === 'warning' && /BUILD seat changed/.test(event.message),
+      const changes = events.filter(
+        (event) =>
+          event.type === 'seat_switched' &&
+          event.seat === 'build' &&
+          event.cause === 'crew-changed',
       );
-      expect(notices).toHaveLength(scenario.warning ? 1 : 0);
+      expect(changes).toHaveLength(scenario.notice ? 1 : 0);
+      expect(
+        events.filter((event) => event.type === 'warning' && /seat changed/.test(event.message)),
+      ).toEqual([]);
       expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(current));
     });
   });
@@ -1548,11 +1554,20 @@ describe('initializeWorkflow — seat record', () => {
       });
 
       expect(init.ok).toBe(true);
-      const warnings = events
-        .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
-        .map((e) => e.message);
-      expect(warnings).toContain(
-        'PLAN seat changed Claude Code CLI · Opus 5.5 · max → Claude Code CLI · auto; context will be rebuilt',
+      // With no review block the planner holds the review seat, so both seats moved.
+      expect(events.filter((e) => e.type === 'seat_switched')).toEqual(
+        (['plan', 'review'] as const).map((seat) =>
+          expect.objectContaining({
+            seat,
+            from: 'Claude Code CLI · Opus 5.5 · max',
+            to: 'Claude Code CLI · auto',
+            cause: 'crew-changed',
+            auto: false,
+          }),
+        ),
+      );
+      expect(events.filter((e) => e.type === 'warning' && /seat changed/.test(e.message))).toEqual(
+        [],
       );
     });
   });
@@ -1623,13 +1638,30 @@ describe('initializeWorkflow — seat record', () => {
       });
 
       expect(init.ok).toBe(true);
-      const warnings = events
-        .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
-        .map((e) => e.message);
-      expect(warnings.join('\n')).toContain(`PLAN seat changed ${retired} →`);
-      expect(warnings.join('\n')).toContain('context will be rebuilt');
-      expect(warnings.join('\n')).toContain('BUILD seat changed');
-      expect(warnings.join('\n')).toContain('the rest of the run uses the new seat');
+      const changes = events.filter((e) => e.type === 'seat_switched');
+      expect(changes).toEqual([
+        expect.objectContaining({
+          seat: 'plan',
+          from: retired,
+          cause: 'crew-changed',
+          auto: false,
+        }),
+        expect.objectContaining({
+          seat: 'build',
+          from: retired,
+          cause: 'crew-changed',
+          auto: false,
+        }),
+        expect.objectContaining({
+          seat: 'review',
+          from: retired,
+          cause: 'crew-changed',
+          auto: false,
+        }),
+      ]);
+      expect(events.filter((e) => e.type === 'warning' && /seat changed/.test(e.message))).toEqual(
+        [],
+      );
       expect(readSeatIdentities({ projectDir, sessionId })?.plan).not.toBe(retired);
       expect(tracked.current?.plannerSessionId).toBeNull();
     });

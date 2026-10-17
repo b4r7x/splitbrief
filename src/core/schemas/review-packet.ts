@@ -16,7 +16,7 @@ import {
   readSavedRecoverySelections,
   SeatSwapCandidateSchema,
 } from './recovery/schemas.js';
-import { SeatSwitchRecordSchema } from './workflow.js';
+import { SeatSwitchCauseSchema, SeatSwitchRecordSchema } from './workflow.js';
 import { EvidenceFinalReviewStatusSchema, EvidenceReviewSchema } from './evidence.js';
 import {
   CostAmountBasisSchema,
@@ -238,6 +238,7 @@ const ReviewPacketDriftSchema = z.object({
 export const ReviewPacketSeatSwitchSchema = SeatSwitchRecordSchema.omit({ ts: true }).extend({
   from: z.union([SeatSwapCandidateSchema, z.string()]),
   to: z.union([SeatSwapCandidateSchema, z.string()]),
+  cause: SeatSwitchCauseSchema,
 });
 
 const ReviewPacketEventSchema = z.preprocess(

@@ -290,7 +290,7 @@ describe('workflow visual fixtures', () => {
       stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
       resumeAt: { kind: 'review', cycle: 0 },
     });
-    expect(projection.events).toHaveLength(67);
+    expect(projection.events).toHaveLength(66);
     expect(projection.events.filter((event) => event.type === 'implementer_generate_done')).toEqual(
       [
         expect.objectContaining({ taskId: 'T001', file: 'src/text.js', duration: 15409 }),
@@ -301,9 +301,6 @@ describe('workflow visual fixtures', () => {
       (event) => event.type === 'implementer_generate_done',
     ))
       expect(event).not.toHaveProperty('files');
-    expect(projection.events.find((event) => event.type === 'warning')?.message).toBe(
-      'BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high; the rest of the run uses the new seat',
-    );
     for (const renderViewport of scenario.viewports) {
       const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
       try {

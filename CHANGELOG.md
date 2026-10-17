@@ -90,6 +90,7 @@
 
 - `/run reject confirm` works on a stopped or halted run in your checkout once nothing runs it, as the documentation says. Before, it always answered "unavailable while work is active".
 - A slash command typed while a recovery menu or a question is open runs as a command. Before, it was taken as your correction, started the recommended action and went to the next seat as a message.
+- A seat you change in the crew between a stop and a continue is listed in the review packet under Recovery Decisions with both seats and the cause `crew changed`, and the transcript shows it as one seat row. Before, the review packet only counted it as a warning.
 - After a crash during Apply, `splitbrief continue <id> --action retry` and `--action restore` work at once. Before, they failed with "No pending recovery issue is available." until a plain `splitbrief continue` ran first.
 - After a crash during Apply, Restore backup, Re-run Apply and undo leave no hidden temporary files in your checkout, and Restore and undo remove the empty folders that Apply made.
 - End run on a worktree or staged-copy run names its `run.patch` once: in the closed run's `Patch` row, or on the close line of `splitbrief continue --action end-run` and `--action discard`. Before, a warning row repeated it.

@@ -344,9 +344,9 @@ When REVIEW follows PLAN, both picker screens show `REVIEW = PLAN · saving here
 
 **During a run.** The next halt reads the fallback of record, in any phase. An automatic switch makes the old CLI seat the new fallback. An old non-CLI seat leaves none. A manual switch keeps the fallback. A REVIEW switch creates its own block when it inherited PLAN and leaves PLAN unchanged. A resolved automatic switch shows `Recovery  <cause> → continued on fallback`, with expandable runner words, then `<SEAT>  <from identity> → <to identity> · automatic fallback`. OpenCode identities name the provider (`via opencode-go`). Manual switches show both endpoints without the automatic marker.
 
-A switch does not write the session's `seats.json`. The next resume reconciles `seats.json` against the config. The engine checks each changed seat against the `seat_switched` events since the last `workflow_started` or `workflow_resumed`. If the latest switch for that seat records the current config, the engine emits no seat-change notice. A config change between runs still emits a notice.
+A switch does not write the session's `seats.json`. The next resume reconciles `seats.json` against the config. The engine checks each changed seat against the `seat_switched` events since the last `workflow_started` or `workflow_resumed`. If the latest switch for that seat records the current config, the engine records nothing. A config change between runs is recorded as a `seat_switched` event with the cause `crew changed`: the transcript shows one seat row, and the review packet lists it under Recovery Decisions with both identities.
 
-Older logs emitted that notice before `workflow_resumed`. The transcript folds only one matching notice before the resume that follows the switch. It keeps notices for config changes before later resumes. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) for conditions and detail rows.
+See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) for conditions and detail rows.
 
 ### Recovery stops
 

@@ -714,6 +714,15 @@ const checkpointPredicates = [
       !workflowTranscriptText().includes('BUILD failed'),
   ],
   [checkpointId('seat-switched-manual'), excludesAll('automatic fallback')],
+  [
+    checkpointId('seat-crew-changed'),
+    (context) =>
+      includesTranscript(
+        'BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek',
+        '→ OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
+        'crew changed',
+      )(context) && excludesAll('automatic fallback', 'Recovery  ', 'Warning')(context),
+  ],
   [checkpointId('seat-switched-balance'), includesAll()],
   [
     checkpointId('seat-switched-expanded-recovery'),

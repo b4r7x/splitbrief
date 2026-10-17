@@ -5,10 +5,6 @@ import {
 } from '../../../core/sections/event-sections.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { CREW_SEAT_LABELS, type CrewSeatId } from '../../../core/crew/identity.js';
-import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
-import { formatSeatChangeNotice } from '../../../core/state/seats.js';
-import { formatRecordedSeatChangeIdentities } from '../display/recorded-seat-identity.js';
 import { WORKSPACE_KEPT_CODE } from '../../../core/sessions/workspace-notice.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
@@ -110,7 +106,6 @@ export function* walkTranscript(
   let lastRowEvent: EngineEvent | null = null;
   let openHeader: EngineEventOf<'task_started'> | null = null;
   let restatedPrompt: EngineEventOf<'recovery_prompted'> | null = null;
-  const seatSwitches = new Map<CrewSeatId, EngineEventOf<'seat_switched'>>();
   let settledContext: { settledSection?: SettledTranscriptSection } = {};
 
   function* flush(): Generator<TranscriptWalkStep> {
@@ -169,19 +164,12 @@ export function* walkTranscript(
         continue;
       }
       if (automatic.hidden.has(event) || endedAttempts.has(event)) continue;
-      if (event.type === 'workflow_started' || event.type === 'workflow_resumed')
-        seatSwitches.clear();
-      if (event.type === 'seat_switched') seatSwitches.set(event.seat, event);
-      if (event.type === 'warning') {
-        if (event.code === WORKSPACE_KEPT_CODE && event !== workspaceNotice) continue;
-        const switched = [...seatSwitches.values()].find((switchEvent) =>
-          restatesSeatSwitch(event, switchEvent),
-        );
-        if (switched !== undefined) {
-          seatSwitches.delete(switched.seat);
-          continue;
-        }
-      }
+      if (
+        event.type === 'warning' &&
+        event.code === WORKSPACE_KEPT_CODE &&
+        event !== workspaceNotice
+      )
+        continue;
       if (
         isSettledSection(section) &&
         (event === started ||
@@ -355,21 +343,6 @@ function isCallError(activity: RunnerActivityEvent): boolean {
   return activity.kind === 'error' && activity.stage !== 'warning';
 }
 
-function restatesSeatSwitch(
-  warning: EngineEventOf<'warning'>,
-  switched: EngineEventOf<'seat_switched'>,
-): boolean {
-  const prefix = `${CREW_SEAT_LABELS[switched.seat]} seat changed `;
-  if (!warning.message.startsWith(prefix)) return false;
-  const identities = formatRecordedSeatChangeIdentities(
-    switched.from,
-    switched.to,
-    CREW_SEAT_ROLES[switched.seat],
-  );
-  const notice = formatSeatChangeNotice({ seat: switched.seat, before: '', after: identities.to });
-  return warning.message.endsWith(notice.slice(prefix.length));
-}
-
 type FailedCall = {
   event: EngineEventOf<'runner_call_activity' | 'runner_call_error' | 'runner_call_warning'>;
   events: EngineEvent[];
@@ -459,6 +432,7 @@ function automaticRecoveryFolds(sections: readonly Section<EngineEvent>[]) {
         if (
           chain !== undefined &&
           switched !== undefined &&
+          typeof switched.from !== 'string' &&
           event.action === 'switch-seat' &&
           event.seat === switched.seat &&
           event.reason === chain.recovery.prompted.reason &&
