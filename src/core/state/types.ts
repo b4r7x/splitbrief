@@ -84,6 +84,8 @@ export type StateAction =
       kept?: readonly string[];
     }
   | { type: 'RESUME_STEP' }
+  /** A reject put back these paths: the stop no longer keeps them. */
+  | { type: 'RECORD_REJECT'; removed: readonly string[] }
   | {
       type: 'RESTORE_BRIEF_PARK';
       step: Extract<StepRef, { kind: 'brief' }>;

@@ -153,6 +153,30 @@ describe('outcomeLineSpans', () => {
     ).toBe('Discarded · 3/3 briefs passed · 4 files saved in run.patch');
   });
 
+  it('claims no run.patch for a discarded run that saved none', () => {
+    const rejected = makeView({
+      outcome: { kind: 'discarded' },
+      checkpoint: {
+        kind: 'rejected',
+        putBack: { restored: ['a.ts', 'b.ts', 'c.ts', 'd.ts'], removed: ['c.ts', 'd.ts'] },
+      },
+    });
+    const unrecorded = makeView({
+      outcome: { kind: 'discarded' },
+      checkpoint: { kind: 'rejected' },
+    });
+    const unsaved = makeView({ outcome: { kind: 'discarded' } });
+    const text = (view: typeof rejected) =>
+      outcomeLineSpans(view, WIDE)
+        .map((span) => span.text)
+        .join('');
+    expect(text(rejected)).toBe(
+      'Discarded · 3/3 briefs passed · put back 2 replaced files, removed 2 created files',
+    );
+    expect(text(unrecorded)).toBe('Discarded · 3/3 briefs passed · 4 files changed');
+    expect(text(unsaved)).toBe('Discarded · 3/3 briefs passed · 4 files changed');
+  });
+
   it('counts the briefs of a run ended after every stage ran, with no empty stage word', () => {
     const view = makeView({ outcome: { kind: 'ended' } });
     expect(

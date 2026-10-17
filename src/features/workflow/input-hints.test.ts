@@ -47,14 +47,17 @@ describe('queuePlaceholder', () => {
     ).not.toContain('read after this tool');
   });
 
-  it.each(['implementing', 'validating-task', 'escalating'] as const)(
-    'names the running brief while %s',
-    (phase) => {
-      expect(queuePlaceholder({ ...working, phase, taskId: 'T003' })).toBe(
-        'Message BUILD on T003 · read when its call ends…',
-      );
-    },
-  );
+  it.each(['implementing', 'escalating'] as const)('names the running brief while %s', (phase) => {
+    expect(queuePlaceholder({ ...working, phase, taskId: 'T003' })).toBe(
+      'Message BUILD on T003 · read when its call ends…',
+    );
+  });
+
+  it('offers no BUILD call while the brief runs its checks: BUILD reads the message after them', () => {
+    expect(queuePlaceholder({ ...working, phase: 'validating-task', taskId: 'T003' })).toBe(
+      'Message BUILD on T003 · read after its checks…',
+    );
+  });
 
   it('invites a message for the reviewer while a task review runs inside the build phase', () => {
     expect(

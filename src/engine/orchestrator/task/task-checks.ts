@@ -2,7 +2,13 @@ import { fixCheckKeys, fixReviewChecks, judgeFixCheck } from '../../../core/revi
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
-import { planCheckRow, publishChecksRun, publishReviewCheck, unranCheckRow } from '../events.js';
+import {
+  planCheckRow,
+  publishChecksRun,
+  publishReviewCheck,
+  publishTaskValidating,
+  unranCheckRow,
+} from '../events.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { runBaseOf } from '../isolation/base-tree.js';
 import { runReviewCheck } from '../review-checks.js';
@@ -109,6 +115,12 @@ async function runTaskCheckCommands(
   const runs = await runChecks(
     opts.checkIds.filter((id) => !reviewCommands.has(id)),
     checkOptions,
+    (check, command) =>
+      publishTaskValidating(
+        { bus: checkOptions.bus, phase: checkOptions.phase },
+        task.id,
+        planCheckRow(check.id, command, check),
+      ),
   );
   const registry = checkRegistry(checkOptions);
   for (const run of runs) {

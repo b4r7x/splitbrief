@@ -22,8 +22,12 @@ export function queuePlaceholder(input: {
   const seat = messageSeat(input.phase, input.reviewing);
   return seat === null
     ? undefined
-    : queueCopy({ seat, taskId: input.taskId, steerable: input.steerableSeat === seat })
-        .placeholder;
+    : queueCopy({
+        seat,
+        taskId: input.taskId,
+        steerable: input.steerableSeat === seat,
+        checking: input.phase === 'validating-task',
+      }).placeholder;
 }
 
 // A gate that is on screen is its own legend: the review and question panels spell out every live

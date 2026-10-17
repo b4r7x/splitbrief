@@ -601,6 +601,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-build-brief-check',
+      title: 'Workflow · a brief running its own check after its BUILD call',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'build-brief-check',
+        title: 'The screen names the check the brief runs and offers no running BUILD call',
+        kind: 'implementation',
+        marker: 'Plan check K2',
+      },
+      elements: [
+        { id: 'header', title: 'Build progress' },
+        { id: 'transcript', title: 'Running brief' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-build-review-consult',
       title: 'Workflow · reviewer consult on a fix task',
       surface: screenSurface('workflow'),
@@ -1980,6 +1996,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-rejected',
+      title: 'Workflow · a checkout run rejected in part, then closed by a second reject',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-rejected',
+        title: 'Each reject is on record, and the closed run claims no run.patch',
+        kind: 'failure',
+        marker: 'visual-closed-rejected',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Reject rows and closed run ledger' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

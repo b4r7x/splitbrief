@@ -399,6 +399,7 @@ const checkpointPredicates = [
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
+  [checkpointId('build-brief-check'), includesAll('Plan check K2', 'read after its checks')],
   [
     checkpointId('build-review-consult'),
     includesAll('REVIEW → T904', 'Claude Code CLI', 'answering the consult on T904'),
@@ -666,6 +667,7 @@ const checkpointPredicates = [
   [checkpointId('closed-undone'), includesAll('Apply undone')],
   [checkpointId('closed-undo-conflicts'), includesAll('1 conflict kept')],
   [checkpointId('closed-discarded'), includesAll()],
+  [checkpointId('closed-rejected'), includesAll()],
   [checkpointId('closed-needs-attention'), includesAll()],
   [checkpointId('closed-ended'), includesAll()],
   [checkpointId('closed-ended-empty'), includesAll()],

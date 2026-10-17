@@ -218,6 +218,13 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     forced: false,
   },
   snapshot_restore_conflict: { snapshotId: 'snap-1', conflictedPaths: ['src/b.ts'] },
+  run_rejected: {
+    restored: ['src/a.ts', 'src/c.ts'],
+    removed: ['src/c.ts'],
+    conflicted: ['src/b.ts'],
+    missing: 0,
+    savedTo: '/tmp/rejected',
+  },
   mode_resolved: { phase: 'researching', mode: 'standard', approve: 'plan' },
   mode_advice: {
     phase: 'researching',
@@ -301,6 +308,11 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   },
   task_replaced: { phase: 'escalating', taskId: 'T001', revision: 2 },
   tasks_inserted: { phase: 'escalating', parentId: 'T001', taskIds: ['T011', 'T012'] },
+  task_validating: {
+    phase: 'implementing',
+    taskId: 'T001',
+    check: { id: 'C1', command: 'npm test' },
+  },
   checks_run: { phase: 'escalating', taskId: 'T001', results: [{ id: 'C1', status: 'pass' }] },
   seat_wait_started: {
     phase: 'implementing',
@@ -441,6 +453,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
 
 const EXTRA_SHAPES: Record<string, unknown>[] = [
   { type: 'steerable_call', phase: 'implementing' },
+  { type: 'task_validating', phase: 'implementing', taskId: 'T001' },
   {
     type: 'review_completed',
     phase: 'final-review',

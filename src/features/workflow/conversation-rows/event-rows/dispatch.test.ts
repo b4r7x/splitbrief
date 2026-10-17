@@ -263,6 +263,27 @@ describe('event row dispatch', () => {
       );
     }
   });
+  it('says a message queued while the brief runs its checks is read after them', () => {
+    const text = eventRows({
+      event: {
+        type: 'message_queued',
+        ts: 1,
+        phase: 'validating-task',
+        seat: 'build',
+        taskId: 'T003',
+        id: 'm-1',
+        preview: 'Keep the parser changes small.',
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+    expect(text).toBe(
+      'Queued for BUILD on T003 · read after its checks\nKeep the parser changes small.',
+    );
+  });
 
   it('keeps call capability changes out of the transcript', () => {
     expect(
@@ -812,6 +833,36 @@ describe('event row dispatch', () => {
 
     expect(rows.map(rowText)).toEqual(['T003 also changed src/x.ts, src/y.ts']);
     expect(rows[0]?.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
+  });
+
+  it('records a reject as a wrapped row that holds its whole result', () => {
+    const saved = '.splitbrief/sessions/run-1/reverted/2026-10-16T21-37-07-873Z';
+    const event = parseEngineEvent({
+      type: 'run_rejected',
+      ts: 0,
+      restored: ['README.md', 'lib/lerp.mjs', 'test/lerp.test.mjs'],
+      removed: ['lib/lerp.mjs', 'test/lerp.test.mjs'],
+      conflicted: ['lib/clamp.mjs'],
+      missing: 0,
+      savedTo: saved,
+    });
+    if (event === null) throw new Error('run_rejected did not parse');
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    const texts = rows.map(rowText);
+
+    expect(texts.map((text) => text.trim()).join(' ')).toMatch(
+      /^Rejected {2}Put back 1 replaced file, removed 2 created files\. 1 file left as you changed it:/,
+    );
+    expect(texts.map((text) => text.trim()).join(' ')).toContain(
+      `lib/clamp.mjs. The replaced files are saved in ${saved}. The run stays open, so you can reject it again.`,
+    );
+    expect(texts.every((text) => getTerminalCellWidth(text) <= 80)).toBe(true);
+    expect(texts.some((text) => text.endsWith('…'))).toBe(false);
   });
 
   describe('drift_report rows', () => {

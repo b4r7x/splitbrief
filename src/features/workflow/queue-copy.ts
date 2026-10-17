@@ -6,6 +6,8 @@ export function queueCopy(input: {
   taskId?: string | null | undefined;
   count?: number | undefined;
   steerable?: boolean | undefined;
+  /** The brief's checks run: no BUILD call is open, and BUILD reads the message after them. */
+  checking?: boolean | undefined;
   via?: 'mid-call' | undefined;
 }) {
   const label = input.seat === null ? null : CREW_SEAT_LABELS[input.seat];
@@ -16,7 +18,9 @@ export function queueCopy(input: {
   const timing = input.steerable
     ? 'read after this tool'
     : input.seat === 'build'
-      ? 'read when its call ends'
+      ? input.checking
+        ? 'read after its checks'
+        : 'read when its call ends'
       : input.seat === 'review'
         ? 'read at its verdict call'
         : 'read at its next call';

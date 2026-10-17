@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
@@ -21,9 +22,11 @@ import type { GateDecision } from '../approval/types.js';
 import type { EvidenceLedger, EvidenceReview } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
-import { revertedDir } from '../../../core/paths.js';
+import { revertedDir, sessionDir } from '../../../core/paths.js';
+import { checkSessionLockStatus } from '../../../core/sessions/lockfile-status.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { briefInFlight } from '../../../core/state/selectors.js';
+import { changedSinceAtRest } from '../../snapshots/run/rest-changes.js';
 
 export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState }): EvidenceLedger {
   const { ref, state } = opts;
@@ -99,19 +102,29 @@ export async function persistTaskEvidence(opts: {
 }
 
 /**
- * A run that closes inside a brief books what the brief left in its workspace: the ledger books a
- * brief when an attempt ends, and a stop cuts the attempt before that. Without it the record would
- * name fewer files than the run's changes hold.
+ * A run that closes inside a brief books what the brief left: the ledger books a brief when an
+ * attempt ends, and a stop cuts the attempt before that. Without it the record would name fewer
+ * files than the run's changes hold. An isolated workspace stays the run's until it closes, so it
+ * is read as it is. A checkout is the user's once its run's process exits: that process records a
+ * snapshot as it exits, and later edits and a reject change the checkout, so the brief's files are
+ * then the ones that changed up to that snapshot. A process that died took no such snapshot, so
+ * its checkout, like a live one, is read as it is.
  */
 export async function persistStoppedBriefEvidence(
   ref: SessionRef,
   state: WorkflowState,
-  workspaceDir: string,
 ): Promise<void> {
   const task = briefInFlight(state);
   const taskStart = state.changedFilesBaseline?.activeTaskSnapshot;
-  if (task === undefined || taskStart === undefined) return;
-  const changedFiles = await getChangedFilesSinceSnapshot(workspaceDir, taskStart);
+  const workspace = state.workspace;
+  if (task === undefined || taskStart === undefined || workspace === undefined) return;
+  if (!existsSync(workspace.path)) return;
+  const changedFiles =
+    workspace.kind === 'checkout' &&
+    checkSessionLockStatus({ sessionDir: sessionDir(ref.projectDir, ref.sessionId) }).kind ===
+      'exited'
+      ? await changedSinceAtRest(ref, taskStart)
+      : await getChangedFilesSinceSnapshot(workspace.path, taskStart);
   mutateEvidenceLedger(ref, (existing) =>
     recordLocalTaskEvidence({
       ledger: existing ?? getOrCreateLedger({ ref, state }),

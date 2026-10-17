@@ -42,6 +42,11 @@ export const RunSnapshotLedgerSchema = z.object({
   runSnapshotKinds: z.record(z.string(), RunSnapshotKindSchema).optional(),
   accepted: z.boolean(),
   rejected: z.boolean(),
+  /**
+   * What the rejects of this run put back: every path restored or removed; `removed` is the part
+   * of `restored` the run had created. Absent before a reject.
+   */
+  putBack: z.object({ restored: z.array(z.string()), removed: z.array(z.string()) }).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

@@ -397,6 +397,7 @@ export function createCheckRunner(opts: RunChecksOptions): (check: Check) => {
 export async function runChecks(
   checkIds: readonly string[],
   opts: RunChecksOptions,
+  onStart?: (check: Check, command: string) => void,
 ): Promise<CheckRunResult[]> {
   const prepare = createCheckRunner(opts);
   const registry = checkRegistry(opts);
@@ -409,7 +410,9 @@ export async function runChecks(
     if (check === undefined) {
       results.push({ checkId, status: 'unknown', output: `no check ${checkId}` });
     } else {
-      results.push(await prepare(check).run());
+      const prepared = prepare(check);
+      onStart?.(check, prepared.command);
+      results.push(await prepared.run());
     }
   }
   return results;

@@ -16,6 +16,13 @@ describe('queueCopy', () => {
     });
   });
 
+  it('says BUILD reads a message after its checks while the brief runs them', () => {
+    expect(queueCopy({ seat: 'build', taskId: 'T001', checking: true })).toMatchObject({
+      placeholder: 'Message BUILD on T001 · read after its checks…',
+      queued: { label: 'Queued', value: 'for BUILD on T001 · read after its checks' },
+    });
+  });
+
   it('uses the byline copy for /queue and names an empty queue', () => {
     const copy = queueCopy({ seat: 'build', taskId: 'T003', count: 2 });
     expect(copy.summary).toBe(copy.byline);

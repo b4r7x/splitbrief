@@ -291,6 +291,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'snapshot_created':
     case 'snapshot_restored':
     case 'snapshot_restore_conflict':
+    case 'run_rejected':
     case 'mode_resolved':
     case 'mode_advice':
     case 'instant_plan_received':
@@ -305,6 +306,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'consult_answered':
     case 'task_replaced':
     case 'tasks_inserted':
+    case 'task_validating':
     case 'checks_run':
     case 'seat_wait_started':
     case 'seat_switched':
