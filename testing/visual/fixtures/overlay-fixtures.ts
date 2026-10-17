@@ -1529,7 +1529,7 @@ const STOP_SHEET_NEXT = taskId('T003');
 
 // The sheet's pause row names the brief it would finish and the one it would not start, so the run
 // underneath it has to have both.
-function seedStopSheet(): void {
+function seedStopSheetPlan(): void {
   addEvent({
     type: 'workflow_started',
     ts: STOP_SHEET_TS - 1_000,
@@ -1565,6 +1565,10 @@ function seedStopSheet(): void {
       },
     ],
   });
+}
+
+function seedStopSheet(): void {
+  seedStopSheetPlan();
   addEvent({
     type: 'task_started',
     ts: STOP_SHEET_TS + 10,
@@ -1615,6 +1619,29 @@ const createParkedStopMenuFixture: FixtureFactory = () =>
       seedStopSheet();
       stopStore.request('stop-now');
       stopStore.park('mid-brief', 'T002', null);
+      markWorkflowPaused();
+    },
+  });
+// The stop cut the first brief before it wrote a file, so the run has no changes to keep.
+const createParkedFirstBriefStopMenuFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'stop-sheet',
+    underlyingScreen: 'workflow',
+    seed: () => {
+      seedStopSheetPlan();
+      addEvent({
+        type: 'task_started',
+        ts: STOP_SHEET_TS + 10,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        title: 'Add the stop sheet rows',
+        index: 0,
+        total: 3,
+        file: 'src/features/workflow/stop/options.ts',
+        action: 'create',
+      });
+      stopStore.request('stop-now');
+      stopStore.park('mid-brief', 'T001', null);
       markWorkflowPaused();
     },
   });
@@ -2224,6 +2251,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-fallback-picker-same-seat'), createFallbackPickerSameSeatFixture],
   [scenarioId('workflow-stop-sheet'), createStopSheetFixture],
   [scenarioId('workflow-stop-menu-parked'), createParkedStopMenuFixture],
+  [scenarioId('workflow-stop-menu-parked-first-brief'), createParkedFirstBriefStopMenuFixture],
   [
     scenarioId('workflow-stop-menu-quit-hint'),
     () => ({ ...createParkedStopMenuFixture(), afterMount: (write) => write('\x03') }),

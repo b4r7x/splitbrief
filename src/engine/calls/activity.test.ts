@@ -166,7 +166,7 @@ describe('projectRunnerCallActivity', () => {
         1,
         '/project',
       ),
-    ).toMatchObject({ kind: 'warning', label: 'warning stderr' });
+    ).toMatchObject({ kind: 'warning', label: 'warning' });
   });
 
   it('labels Antigravity inputs: CommandLine runs, AbsolutePath reads, TargetFile edits', () => {
@@ -470,7 +470,7 @@ describe('projectRunnerCallActivity', () => {
       activityId: 'call-1:terminal',
       stage: 'timeout',
       kind: 'error',
-      label: 'timeout timeout',
+      label: 'timeout',
       diagnosticPartial: 'runner timed out sk-***REDACTED***',
       rawAvailable: true,
       redacted: true,
@@ -493,7 +493,7 @@ describe('projectRunnerCallActivity', () => {
     ).toMatchObject({
       stage: 'warning',
       kind: 'warning',
-      label: 'warning stderr',
+      label: 'warning',
       diagnosticPartial: 'line one sk-***REDACTED***',
       rawAvailable: false,
       redacted: true,

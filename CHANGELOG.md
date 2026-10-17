@@ -226,6 +226,12 @@
 - A failed review shows its blocking findings in the transcript, live and when you open the run again, for example `Blocking F1  The test file does not contain the four examples`. Before, the row showed only the number of blocking findings.
 - A failed task review stays on record after a later review passes. `evidence.json` lists every review with its blocking findings, the review packet has a *Reviews* section, and the closed run names each earlier failed review and its findings under the Review row.
 - With `workflow.review: task`, a message you type while a task review is due is labelled for REVIEW, the seat that reads it, for example `Message REVIEW · read at its verdict call…` and `1 queued for REVIEW`. This holds also while the review waits on you or the run is stopped. Before, it was labelled for BUILD.
+- On a run ready to apply, `shift+↑↓` scrolls the transcript and leaves the Apply / Show diff / Discard choice where you put it. Before, each press also moved that choice, so the next `⏎` could apply or discard against your pick. The same holds for every menu above the composer.
+- After a stop that cut a brief before it wrote a file, Session options says `Draft stays.` and End run reads `close this run`, matching the byline. Before, it said `Changes and draft stay.` and `keep changes` for a run with no changes.
+- On a model row with several providers and one signed in, the picker line under the lists names the route that `⏎` saves. Before, it could name another provider's route while `⏎` saved the signed-in one, in Setup, in Settings › Fallback and in the seat pickers.
+- In the seat picker, moving onto a tool and pressing `→` starts the Models cursor on the same row whichever row you came from. Before, arriving from `= PLAN` or `+ Add custom command…` started it on `+ Add custom model…`.
+- When tools are not signed in, Setup tells you to sign in and run `splitbrief init` again, which names them again. Before, it sent you to `splitbrief doctor`, which without a saved crew could not name them.
+- A warning or failure from a tool reads as the tool's own message in the activity rows, for example `Warn  provider.quota: Insufficient Balance`. Before, a code came first, for example `Warn  opencode-error: provider.quota: …`.
 
 ## [0.1.0] - 2026-08-07
 

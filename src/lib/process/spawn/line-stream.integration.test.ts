@@ -551,6 +551,36 @@ describe('idle watchdog', () => {
     expect(isProcessAlive(childPid)).toBe(false);
   });
 
+  it('onWarn never reports less silence than the warn threshold', { timeout: 60_000 }, async () => {
+    const controller = new AbortController();
+    const { promise: warned, resolve: resolveWarn } = Promise.withResolvers<number>();
+    // Timers run on the monotonic clock; a wall clock that runs behind it reads less silence.
+    const realNow = Date.now.bind(Date);
+    const startedAt = realNow();
+    const now = vi
+      .spyOn(Date, 'now')
+      .mockImplementation(() => startedAt + Math.floor((realNow() - startedAt) / 2));
+    try {
+      const run = track(
+        controller,
+        spawnWithStdin({
+          command: 'node',
+          args: ['-e', 'setTimeout(() => {}, 60_000);'],
+          cwd: '.',
+          onLine: () => {},
+          signal: controller.signal,
+          idle: { warnMs: 300, killMs: 600_000, onWarn: resolveWarn },
+        }),
+      );
+
+      expect(await warned).toBeGreaterThanOrEqual(300);
+      controller.abort();
+      await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('output after the idle kill fires does not emit onClear or re-arm timers', {
     timeout: 60_000,
   }, async () => {

@@ -325,7 +325,7 @@ function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }:
   const signIn =
     signedOut.length === 0
       ? undefined
-      : wrapPathAware(cliSignInStep(signedOut.join(', ')), innerWidth);
+      : wrapPathAware(cliSignInStep(signedOut.join(', '), 'init'), innerWidth);
   const signInRows = signIn === undefined ? 0 : signIn.split('\n').length;
   const budget =
     innerRows -

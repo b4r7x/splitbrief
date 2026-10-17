@@ -126,6 +126,23 @@ function soleConfiguredRoute(row: RightRow, auth: RouteAuthContext): ModelVarian
   return configured.length === 1 ? configured[0] : undefined;
 }
 
+/**
+ * What Enter on a model row saves, and so the id its byline names: the drafted spelling while
+ * its expansion drafts one, else the one signed-in route, else the model itself, named by the
+ * spelling its chooser opens on.
+ */
+export function modelRowSave(
+  row: Extract<RightRow, { kind: 'model' }>,
+  auth: RouteAuthContext,
+  optionDraftId: string | null | undefined,
+): { via: 'draft' | 'route' | 'model'; fullId: string } {
+  const drafted = optionDraftOf(row.model, optionDraftId);
+  if (row.expanded && expansionDrafts(row.model)) return { via: 'draft', fullId: drafted };
+  const sole = soleConfiguredRoute(row, auth);
+  if (sole !== undefined) return { via: 'route', fullId: sole.fullId };
+  return { via: 'model', fullId: drafted };
+}
+
 export function activationOfRightRow(row: RightRow, auth: RouteAuthContext): RightActivation {
   return rightRowActivation(row, soleConfiguredRoute(row, auth));
 }
@@ -210,16 +227,10 @@ export function confirmRow(
     confirmDraft(row.model, routeDraftOf(row.model, row.providerPrefix, draftId), actions);
     return;
   }
-  if (row.expanded && expansionDrafts(row.model)) {
-    confirmDraft(row.model, optionDraftOf(row.model, draftId), actions);
-    return;
-  }
-  const sole = soleConfiguredRoute(row, deps.auth);
-  if (sole !== undefined) {
-    void actions.confirmProviderSelection(sole.fullId);
-    return;
-  }
-  void actions.confirm(left, row.model);
+  const save = modelRowSave(row, deps.auth, draftId);
+  if (save.via === 'draft') confirmDraft(row.model, save.fullId, actions);
+  else if (save.via === 'route') void actions.confirmProviderSelection(save.fullId);
+  else void actions.confirm(left, row.model);
 }
 
 /**

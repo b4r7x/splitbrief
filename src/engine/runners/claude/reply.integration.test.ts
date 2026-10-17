@@ -198,7 +198,7 @@ it('keeps the frames Claude Code keeps for itself out of the reply and the activ
   expect(activity).toContainEqual(
     expect.objectContaining({
       kind: 'warning',
-      label: 'warning claude_api_retry',
+      label: 'warning',
       diagnosticPartial: 'rate_limit (HTTP 429): retry 3 of 10 in 8.0s',
     }),
   );

@@ -12,8 +12,10 @@ import {
   cycleRightRow,
   expandedRowHint,
   isExpandableRow,
+  modelRowSave,
   rightRowActivation,
   seatEffortDraft,
+  type RouteAuthContext,
 } from './right-column-policy.js';
 
 function optionAxisRow(input: {
@@ -314,6 +316,34 @@ describe('confirmRow', () => {
     pickerViewStore.setEffortDraft('high');
 
     expect(savedEfforts(bare)).toEqual([['openai/gpt-5.6', undefined]]);
+  });
+
+  // A merged row's listed id is its first route; Enter saves the one signed-in route, and the
+  // byline reads the same resolver, so it names that route rather than the listed one.
+  it('saves the id the byline names on a merged row with one signed-in route', () => {
+    const row: RightRow = {
+      kind: 'model',
+      model: { id: 'opencode-go/gpt-5.6', variants: [...openaiVariants].reverse() },
+      provenance: 'Detected',
+      section: '',
+      expanded: false,
+    };
+    const auth: RouteAuthContext = {
+      hasOracle: true,
+      providerAuth: { kind: 'read', facts: [{ provider: 'OpenAI', source: 'oauth' }] },
+    };
+    const saved: string[] = [];
+    const actions = {
+      ...makeActions(),
+      confirmProviderSelection: async (fullId: string) => {
+        saved.push(fullId);
+      },
+    };
+
+    confirmRow(cliTool({ id: 'opencode', displayName: 'OpenCode' }), row, { actions, auth });
+
+    expect(saved).toEqual(['openai/gpt-5.6']);
+    expect(modelRowSave(row, auth, null).fullId).toBe('openai/gpt-5.6');
   });
 });
 

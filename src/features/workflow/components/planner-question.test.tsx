@@ -27,6 +27,7 @@ afterAll(() => {
 });
 
 const down = '\u001b[B';
+const shiftDown = '\u001b[1;2B';
 afterEach(() => {
   store.reset();
   vi.restoreAllMocks();
@@ -97,6 +98,34 @@ it('guards typeahead and reads rapid navigation synchronously before confirming'
   ui.stdin.write('\r');
   await flushEffects();
   expect(onAnswer).toHaveBeenCalledExactlyOnceWith('Builder');
+  ui.unmount();
+});
+
+it('leaves the answer selection and focus on shift+down, the transcript scroll key', async () => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  store.setQuestions([
+    { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+  ]);
+  const onAnswer = vi.fn();
+  const ui = renderFeature(
+    <PlannerQuestion
+      width={60}
+      height={12}
+      disabled={false}
+      onAnswer={onAnswer}
+      onCompose={() => {}}
+      onPrevious={() => {}}
+    />,
+  );
+  await flushEffects();
+  now += 200;
+  for (let press = 0; press < 4; press++) ui.stdin.write(shiftDown);
+  await flushEffects();
+  expect(store.get().focus).toBe('menu');
+  ui.stdin.write('\r');
+  await flushEffects();
+  expect(onAnswer).toHaveBeenCalledExactlyOnceWith('Planner');
   ui.unmount();
 });
 

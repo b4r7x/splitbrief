@@ -68,6 +68,8 @@ export function PlannerQuestion({
         );
         return;
       }
+      // shift+↑/↓ scrolls the transcript; Ink reports it as an arrow to every active handler.
+      if (key.shift && (key.upArrow || key.downArrow)) return;
       // The answer field can change focus during this same key dispatch.
       if (!focused || current.focus !== 'menu') return;
       const active = current.questions?.[current.index];

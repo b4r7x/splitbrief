@@ -3894,6 +3894,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Back to sessions',
       },
       {
+        id: 'workflow-stop-menu-parked-first-brief',
+        title: 'Workflow · parked options before any change',
+        marker: 'Back to sessions',
+      },
+      {
         id: 'workflow-stop-menu-quit-hint',
         title: 'Workflow · parked options · quit armed',
         marker: 'Press ctrl+c again to quit',

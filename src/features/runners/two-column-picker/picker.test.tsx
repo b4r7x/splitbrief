@@ -547,6 +547,67 @@ describe('TwoColumnPicker', () => {
     ui.unmount();
   });
 
+  it('starts the right cursor on the same row of a tool whichever left row the cursor came from', async () => {
+    const tools: Tool[] = [
+      { id: 'plan', displayName: 'Plan' },
+      { id: 'alpha', displayName: 'Alpha' },
+      { id: 'gamma', displayName: 'Gamma' },
+    ];
+    const confirms: string[] = [];
+    const customOpened: string[] = [];
+    function Consumer() {
+      const [leftId, setLeftId] = useState('plan');
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          leftProps={{
+            items: tools,
+            getKey: (t) => t.id,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
+          rightProps={{
+            items: MODELS_BY_TOOL[leftId] ?? [{ id: 'p-1', displayName: 'plan-1' }],
+            getKey: (m) => m.id,
+            renderRow: (m) => <Text>{m.displayName}</Text>,
+            onLeftChange: (t) => {
+              setLeftId(t.id);
+            },
+            // The highlighted row's custom row is the target's: `plan` has none.
+            customRow: {
+              appliesTo: (t) => t.id !== 'plan',
+              onSelect: (t) => customOpened.push(t.id),
+            },
+          }}
+          onConfirm={(l, r) => {
+            confirms.push(`${l.id}:${r?.id ?? 'none'}`);
+          }}
+          onCancel={() => {}}
+        />
+      );
+    }
+    const ui = renderFeature(<Consumer />);
+    const press = async (keys: string[]) => {
+      for (const key of keys) {
+        await flushEffects();
+        ui.stdin.write(key);
+        await flushEffects();
+      }
+      await tick(20);
+    };
+    const DOWN = '\u001B[B';
+    const UP = '\u001B[A';
+    const RIGHT = '\u001B[C';
+    const LEFT = '\u001B[D';
+
+    // From the row without a custom row, then from a tool with one.
+    await press([DOWN, RIGHT, '\r']);
+    await press([LEFT, DOWN, UP, RIGHT, '\r']);
+
+    expect(confirms).toEqual(['alpha:a-1', 'alpha:a-1']);
+    expect(customOpened).toEqual([]);
+    ui.unmount();
+  });
+
   it.each([
     { branch: 'printable input', keys: ['al'] },
     { branch: 'backspace', keys: ['alz', BACKSPACE] },

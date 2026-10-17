@@ -3,18 +3,17 @@ import {
   selectRunningBrief,
   selectTaskListView,
   tasksStore,
-  type TasksState,
 } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
-import type { Phase } from '../../../core/schemas/enums.js';
 import { getTerminalCellWidth, segmentsForRowText } from '../../../utils/display-text.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { wrappedProseSegments } from '../conversation-rows/row-format/text.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { changedFileCount } from '../closed/projections.js';
+import { stopKeptFiles } from './copy.js';
 
 export type StopRowId =
   | 'stop-now'
@@ -104,7 +103,7 @@ export function stopMenuLayout<
 export interface StopSheetInput {
   readonly currentTaskId: string | null;
   readonly nextTaskId: string | null;
-  /** A brief has run, so the run has changes to keep. */
+  /** The run has changes to keep. */
   readonly hasChanges?: boolean | undefined;
   readonly boundaryPauseRequested: boolean;
 }
@@ -184,9 +183,7 @@ export function readStopMenuRows(): StopRow[] {
               {
                 id: 'end-run' as const,
                 label: 'End run',
-                consequence: briefsHaveRun(tasksStore.get(), lifecycleStore.get().phase)
-                  ? 'close this run; keep changes'
-                  : 'close this run',
+                consequence: runHasChanges() ? 'close this run; keep changes' : 'close this run',
               },
             ]
           : []),
@@ -210,7 +207,7 @@ export function readStopMenuRows(): StopRow[] {
   const rows = stopSheetRows({
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: brief.next?.id ?? null,
-    hasChanges: briefsHaveRun(tasks, lifecycleStore.get().phase),
+    hasChanges: runHasChanges(),
     boundaryPauseRequested: stop.intent === 'pause-after-brief',
   });
   return recoveryNoticeStore.get().issue === null
@@ -218,10 +215,20 @@ export function readStopMenuRows(): StopRow[] {
     : rows.filter((row) => row.id === 'stop-now' || row.id === 'end-run');
 }
 
-/** A brief that ran left changes behind; until the first one starts, the run has none to keep. */
-function briefsHaveRun(tasks: TasksState, phase: Phase): boolean {
+/**
+ * A finished brief left changes behind. A stop that cut a brief kept the files the byline names, and
+ * no others. Without a stop to say so, a brief that started or failed may have written.
+ */
+function runHasChanges(): boolean {
+  const tasks = tasksStore.get();
   const view = selectTaskListView(tasks);
-  return selectRunningBrief(tasks, phase).current !== null || view.finished + view.failed > 0;
+  if (view.finished > 0) return true;
+  const route = routerStore.get();
+  const record =
+    route.screen === 'workflow' && route.execution.kind === 'at-rest' ? route.run : null;
+  const kept = stopKeptFiles(stopStore.get().parked, record);
+  if (kept !== null) return kept.length > 0;
+  return selectRunningBrief(tasks, lifecycleStore.get().phase).current !== null || view.failed > 0;
 }
 
 /** What every row keeps: the draft always, the run's changes once a brief has made some. */
@@ -230,7 +237,5 @@ export function stopSheetFooter(input: { hasChanges: boolean }): string {
 }
 
 export function readStopSheetFooter(): string {
-  return stopSheetFooter({
-    hasChanges: briefsHaveRun(tasksStore.get(), lifecycleStore.get().phase),
-  });
+  return stopSheetFooter({ hasChanges: runHasChanges() });
 }

@@ -232,6 +232,42 @@ describe('PickerView terminal panes', () => {
     ui.unmount();
   });
 
+  it('names in the byline the signed-in route that Enter saves on a merged row', async () => {
+    const kilo = cliTool('kilo-code', 'Kilo Code CLI');
+    const variants: ModelVariant[] = [
+      { fullId: 'ollama-cloud/glm-5.1', providerPrefix: 'ollama-cloud', tag: 'ollama-cloud' },
+      { fullId: 'opencode-go/glm-5.1', providerPrefix: 'opencode-go', tag: 'opencode-go' },
+    ];
+    // A merged row stands for its group under the first route it listed.
+    const model = { id: 'ollama-cloud/glm-5.1', displayName: 'GLM 5.1', variants };
+    const confirmed: string[] = [];
+    const actions = makeActions();
+    actions.confirmProviderSelection = async (fullId: string) => {
+      confirmed.push(fullId);
+    };
+    const catalog = makeCatalog({
+      items: [kilo],
+      currentItem: kilo,
+      rightRows: [{ kind: 'model', model, provenance: 'Detected', section: '', expanded: false }],
+      roleLabel: 'Implementer',
+      hasOracle: true,
+    });
+    catalog.providerAuth = { kind: 'read', facts: [{ provider: 'opencode-go', source: 'oauth' }] };
+    const ui = mount(
+      <PickerView slot="seat" role="implementer" catalog={catalog} actions={actions} />,
+    );
+    await flushEffects();
+    ui.stdin.write(RIGHT);
+    await flushEffects();
+
+    expect(frameText(ui)).toContain('opencode-go/glm-5.1');
+    expect(frameText(ui)).not.toContain('ollama-cloud/glm-5.1');
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(confirmed).toEqual(['opencode-go/glm-5.1']);
+    ui.unmount();
+  });
+
   it('expands a two-route model when no route is configured', async () => {
     const kilo = cliTool('kilo-code', 'Kilo Code CLI');
     const variants: ModelVariant[] = [
