@@ -1,11 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-import { removeWriteTemporaries } from '../approval/file-snapshots/entry.js';
 import { promoteStagedChanges } from '../approval/staged-project.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { WorkflowPersistenceContext } from '../types.js';
-import { writeApplyBackup } from './backup.js';
+import { removeApplyWriteTemporaries, writeApplyBackup } from './backup.js';
 import type { ApplyStates } from './states.js';
 
 type WriteApplyResult =
@@ -42,8 +41,10 @@ export async function writeApply(input: {
   });
   if (backup.kind === 'changed') return { kind: 'changed', state, files: backup.files };
 
-  // A re-run after a crash finds the temporaries the cut write left beside its files.
-  if (state.applying !== undefined) await removeWriteTemporaries(states.projectDir, files);
+  // A re-run after a crash finds the temporaries the cut write left beside its files, also beside
+  // a file it wrote before the cut, which this run no longer lists.
+  if (state.applying !== undefined)
+    await removeApplyWriteTemporaries(states.projectDir, backup.backup);
   state = transitionAndSave(scope, state, { type: 'APPLY_START', backupId });
   setTrackedState?.(state);
   const promoted = await promoteStagedChanges({

@@ -140,6 +140,7 @@ describe('/run on a run with a workspace', () => {
           expect(rejected).toEqual({
             status: 'undone',
             restored: ['a.txt', 'b.txt'],
+            removed: ['b.txt'],
             unchanged: [],
             conflicts: [],
           });
@@ -175,6 +176,7 @@ describe('/run on a run with a workspace', () => {
         expect(rejected).toEqual({
           status: 'undone',
           restored: ['a.txt'],
+          removed: [],
           unchanged: [],
           conflicts: ['b.txt'],
         });

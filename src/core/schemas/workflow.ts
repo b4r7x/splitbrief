@@ -98,6 +98,18 @@ export const ChangedFilesSnapshotSchema = z.object({
         .nullable(),
     )
     .optional(),
+  // A run workspace's dirty files by hash and mode; their bytes are in the session's entry store.
+  storedDirtyEntries: z
+    .record(
+      z.string(),
+      z
+        .object({
+          sha256: z.string().regex(/^[a-f0-9]{64}$/),
+          mode: z.number().int().min(0).max(0o777),
+        })
+        .nullable(),
+    )
+    .optional(),
   gitlinks: z.array(z.string()).optional(),
   // Symlinks that stay inside the project, by path: recorded by target, never read through.
   symlinks: z.record(z.string(), z.string()).optional(),

@@ -823,6 +823,56 @@ describe('runApply', { timeout: 60_000 }, () => {
         },
       );
     });
+
+    it('a re-run removes the temporary a cut write left beside a file it had already written', async () => {
+      await withApplyRun({ 'b.txt': 'base b\n' }, { sessionId: SESSION_ID }, async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+        writeFileSync(join(run.ws, 'b.txt'), 'ours b\n');
+        const healed = await failOn(run, 'b.txt');
+        await apply(run);
+        healed();
+        expect(read(run.dir, 'a.txt')).toBe('ours a\n');
+        // A kill between the link of a created file and the removal of its temporary.
+        const temporary = '.a.txt.tmp.0123456789abcdef';
+        writeFileSync(join(run.dir, temporary), 'ours a\n');
+
+        const result = await apply(run, await choose(run, 'retry-same-worker'));
+
+        expect(result.outcome).toBe('applied');
+        expect(existsSync(join(run.dir, temporary))).toBe(false);
+        expect(read(run.dir, 'a.txt')).toBe('ours a\n');
+        expect(read(run.dir, 'b.txt')).toBe('ours b\n');
+      });
+    });
+
+    it('a restore says how many replaced files it put back and created files it removed', async () => {
+      await withApplyRun(
+        { 'a.txt': 'base a\n', 'c.txt': 'base c\n' },
+        { sessionId: SESSION_ID },
+        async (run) => {
+          writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+          writeFileSync(join(run.ws, 'b.txt'), 'created b\n');
+          writeFileSync(join(run.ws, 'c.txt'), 'ours c\n');
+          const healed = await failOn(run, 'c.txt');
+          await apply(run);
+          healed();
+          const { bus, events } = makeBusRecorder();
+
+          await runApply({
+            wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
+            state: await choose(run, 'restore-backup'),
+          });
+
+          expect(read(run.dir, 'a.txt')).toBe('base a\n');
+          expect(existsSync(join(run.dir, 'b.txt'))).toBe(false);
+          const said = JSON.stringify(events);
+          expect(said).toContain(
+            'Restored Apply backup: put back 1 replaced file, removed 1 created file',
+          );
+          expect(said).not.toContain('put back 2');
+        },
+      );
+    });
   });
 });
 

@@ -130,6 +130,7 @@ export async function readWorkspaceRecord(ref: SessionRef): Promise<RetainedWork
     ...record.snapshot.files,
     ...Object.keys(record.snapshot.dirtyFileContents),
     ...Object.keys(record.snapshot.dirtyFileEntries ?? {}),
+    ...Object.keys(record.snapshot.storedDirtyEntries ?? {}),
     ...Object.keys(record.snapshot.baselineFileHashes ?? {}),
     ...Object.keys(record.snapshot.symlinks ?? {}),
     ...Object.keys(record.targetFiles),
@@ -174,7 +175,8 @@ export async function retainWorkspaceRecord(
     throw retentionError.unavailable();
   for (const file of workspace.targetBaseline.keys())
     assertPathConfined(file, workspace.projectDir);
-  // Staged rollback bytes stay in the session's entry store; the record carries hashes and modes.
+  // A workspace snapshot keeps its rollback bytes in the session's entry store and carries hashes
+  // and modes; a staged copy's record also drops its list of every entry.
   const snapshot =
     workspace.snapshot.baselineFileHashes === undefined
       ? workspace.snapshot

@@ -36,7 +36,7 @@ describe('buildApplyConflictRecoveryIssue', () => {
 });
 
 describe('buildApplyPartialRecoveryIssue', () => {
-  it('offers Re-run Apply, the backup restore or the end, and recommends Re-run Apply', () => {
+  it('offers Re-run Apply or the backup restore, never End run, and recommends Re-run Apply', () => {
     const issue = buildApplyPartialRecoveryIssue({
       backupId: 'b1',
       backupDir: '/tmp/backup',
@@ -47,7 +47,7 @@ describe('buildApplyPartialRecoveryIssue', () => {
       cause: 'EACCES',
     });
 
-    expect(issue.availableActions).toEqual(['retry-same-worker', 'restore-backup', 'end-run']);
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'restore-backup']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
     expect(RecoveryIssueSchema.safeParse(issue).success).toBe(true);
   });

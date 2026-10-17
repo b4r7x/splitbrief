@@ -50,6 +50,12 @@ describe('classifyHaltSignature', () => {
     );
   });
 
+  // Captured live from a claude-code final review on 2026-10-16: an `is_error` result whose text
+  // is the whole refusal, with no figures.
+  it("classifies Claude Code's 'Prompt is too long' refusal as input-too-large", () => {
+    expect(classifyHaltSignature(['Prompt is too long'])).toBe('input-too-large');
+  });
+
   it('a run whose own output names billing or a rate limit is not a usage halt', () => {
     expect(classifyHaltSignature(['writing src/billing/webhook.ts', 'tsc: 1 error'])).toBeNull();
     expect(classifyHaltSignature(['added a rate limit to the handler'])).toBeNull();

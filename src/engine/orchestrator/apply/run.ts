@@ -2,6 +2,7 @@ import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
+import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';
 import { awaitsApply, isAnsweredApplyRecovery } from '../../../core/sessions/run-status.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import { error, matches } from '../../../utils/error.js';
@@ -140,7 +141,7 @@ export async function runApply(input: {
       outcome: 'continued',
     });
     if (restored !== undefined) {
-      const message = `Restored Apply backup: put back ${countNoun(restored.restored.length, 'file')}`;
+      const message = `Restored Apply backup: ${formatApplyRestoreCounts(restored)}`;
       if (restored.conflicts.length > 0) {
         publishWarning({
           bus: wctx.bus,

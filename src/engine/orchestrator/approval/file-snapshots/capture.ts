@@ -1,5 +1,6 @@
+import { statSync } from 'node:fs';
 import { join } from 'node:path';
-import { lstat, readlink } from 'node:fs/promises';
+import { lstat, mkdir, readlink } from 'node:fs/promises';
 import { isInternalGitStatusPath } from '../../../../core/paths.js';
 import { isProcessOutputSink } from '../../../../lib/process/stdio-sinks.js';
 import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
@@ -19,10 +20,17 @@ import {
 } from '../../../snapshots/files.js';
 import { hashFiles } from '../../../change-detection.js';
 import { error } from '../../../../utils/error.js';
+import { sha256Hex } from '../../../../utils/sha256.js';
+import { SECURE_FILE_MODE } from '../../../../lib/fs.js';
 import { pathConfinementError } from '../../../../lib/path-confinement.js';
 import { readConfinedProjectFile } from './contents.js';
 import { uniqueProjectFiles } from './types.js';
-import { readConfinedEntry, readProjectSymlink, type FileSnapshotEntry } from './entry.js';
+import {
+  readConfinedEntry,
+  readProjectSymlink,
+  writeConfinedEntry,
+  type FileSnapshotEntry,
+} from './entry.js';
 
 type ExpandedChangedFiles = {
   files: string[];
@@ -38,6 +46,11 @@ export type CaptureSnapshotOptions = {
    * mis-snapshotted.
    */
   symlinkedEntriesAsAbsent?: boolean;
+  /**
+   * The session's content-addressed entry store. With one, each dirty file's bytes go there once
+   * and the snapshot records its hash and mode, so its size never grows with the files.
+   */
+  store?: string;
 };
 
 const captureError = {
@@ -66,6 +79,25 @@ async function expandChangedDirEntries(
     files: [...fileEntries, ...expandedUnderDirs],
     opaqueDirs: dirEntries.filter((dir) => opaqueSet.has(dir)),
   };
+}
+
+/**
+ * Writes an entry's bytes once into a content-addressed store, named by their hash. The bytes land
+ * through a synced temporary, so a cut write never leaves a short blob under that name; a short blob
+ * an earlier version left there is written again.
+ */
+export async function storeEntryBlob(
+  store: string,
+  entry: Readonly<{ sha256: string; bytes: Buffer }>,
+): Promise<void> {
+  const stored = statSync(join(store, entry.sha256), { throwIfNoEntry: false });
+  if (stored?.size === entry.bytes.length) return;
+  await writeConfinedEntry(store, entry.sha256, {
+    kind: 'file',
+    bytes: entry.bytes,
+    sha256: entry.sha256,
+    mode: SECURE_FILE_MODE,
+  });
 }
 
 export async function captureProjectFileHashes(
@@ -115,23 +147,36 @@ export async function getChangedFilesSnapshot(
           }
           throw err;
         }
-        return [
-          file,
-          entry.kind === 'absent'
-            ? null
-            : {
-                base64: entry.bytes.toString('base64'),
-                mode: entry.mode,
-              },
-        ] as const;
+        return [file, entry.kind === 'absent' ? null : entry] as const;
       }),
   );
+  const { store } = opts;
+  if (store !== undefined) {
+    await mkdir(store, { recursive: true, mode: 0o700 });
+    for (const [, entry] of entries) if (entry !== null) await storeEntryBlob(store, entry);
+  }
   const head = (await readHeadSha(projectDir)) ?? GIT_EMPTY_TREE_HASH;
   return {
     head,
     files,
     dirtyFileContents: {},
-    dirtyFileEntries: Object.fromEntries(entries),
+    ...(store === undefined
+      ? {
+          dirtyFileEntries: Object.fromEntries(
+            entries.map(([file, entry]) => [
+              file,
+              entry && { base64: entry.bytes.toString('base64'), mode: entry.mode },
+            ]),
+          ),
+        }
+      : {
+          storedDirtyEntries: Object.fromEntries(
+            entries.map(([file, entry]) => [
+              file,
+              entry && { sha256: entry.sha256, mode: entry.mode },
+            ]),
+          ),
+        }),
     ...(gitlinks.length > 0 ? { gitlinks } : {}),
     ...(symlinks.size > 0 ? { symlinks: Object.fromEntries(symlinks) } : {}),
   };
@@ -217,11 +262,19 @@ export async function getChangedFilesSinceSnapshot(
       .filter(
         (file) =>
           snapshot.dirtyFileEntries?.[file] !== undefined ||
+          snapshot.storedDirtyEntries?.[file] !== undefined ||
           snapshot.dirtyFileContents[file] !== undefined,
       )
       .map(async (file): Promise<string | null> => {
-        const storedEntry = snapshot.dirtyFileEntries?.[file];
-        if (storedEntry !== undefined) {
+        const inline = snapshot.dirtyFileEntries?.[file];
+        const saved =
+          inline === undefined
+            ? snapshot.storedDirtyEntries?.[file]
+            : inline && {
+                sha256: sha256Hex(Buffer.from(inline.base64, 'base64')),
+                mode: inline.mode,
+              };
+        if (saved !== undefined) {
           let current: FileSnapshotEntry;
           try {
             current = await readConfinedEntry(projectDir, file);
@@ -230,10 +283,10 @@ export async function getChangedFilesSinceSnapshot(
             if (pathConfinementError.isSymlinkRead(err)) return file;
             throw err;
           }
-          if (storedEntry === null) return current.kind === 'absent' ? null : file;
+          if (saved === null) return current.kind === 'absent' ? null : file;
           return current.kind === 'file' &&
-            current.mode === storedEntry.mode &&
-            current.bytes.equals(Buffer.from(storedEntry.base64, 'base64'))
+            current.mode === saved.mode &&
+            current.sha256 === saved.sha256
             ? null
             : file;
         }

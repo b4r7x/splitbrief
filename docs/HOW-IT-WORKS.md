@@ -246,7 +246,7 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **`snapshots/`** — the run's content-addressed snapshots: the run-start `baseline`, the `workspace-base` a workspace run starts from, `pre-final-review`, the `post-task-<n>` snapshots of a checkout run, and for a run without a workspace or a checkout-mode run the accepted-run snapshot, plus the run ledger. There are no configurable trigger points. See [SUBSYSTEMS.md](./SUBSYSTEMS.md).
 
-**`entries/`** — the content-addressed byte store of the entry snapshots. A staged copy, and a no-git checkout in checkout mode, take their task-start and attempt snapshots without git: hashes and modes in the snapshot, bytes once in this store. A restart restores from it.
+**`entries/`** — the content-addressed byte store of the run's snapshots. A staged copy, and a no-git checkout in checkout mode, take their task-start and attempt snapshots without git: hashes and modes in the snapshot, bytes once in this store. A worktree, and a checkout with git in checkout mode, take git's set of uncommitted files instead, and keep the bytes of those files here too. The snapshot, the workspace record and `state.json` therefore stay small however large your files are. A restart restores from this store.
 
 **`reverted/<stamp>/`** — the bytes SPLITBRIEF replaced when it reverted files in the checkout in checkout mode: a failed attempt's rollback, a denied protected write, an exhausted brief or an interrupted brief on restart. A symlink is saved as a link. The revert's warning names the folder.
 

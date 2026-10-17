@@ -942,6 +942,29 @@ describe('invokeProcessCli', () => {
     expect(runnerCallOutcome(result).state).toBe('input-too-large');
   });
 
+  it("an is_error result that says 'Prompt is too long' classifies input-too-large, not a result error", async () => {
+    // Claude Code's refusal of an oversized final review, captured live on 2026-10-16.
+    const frame = JSON.stringify({
+      type: 'result',
+      is_error: true,
+      result: 'Prompt is too long',
+      session_id: 'claude-too-long',
+      usage: { input_tokens: 0, output_tokens: 0 },
+    });
+    const result = await run(
+      claudeCodeImplementerAdapter,
+      invocation({
+        script: `process.stdout.write(${JSON.stringify(`${frame}\n`)});process.exitCode=1`,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'input-too-large', message: 'Prompt is too long' },
+    });
+    expect(runnerCallOutcome(result).state).toBe('input-too-large');
+  });
+
   it("exit 1 with 'Not logged in' on stderr classifies unauthenticated", async () => {
     const result = await run(
       adapter({ kind: 'stdin' }),

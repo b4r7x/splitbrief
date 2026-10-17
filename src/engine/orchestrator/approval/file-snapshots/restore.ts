@@ -1,9 +1,8 @@
 import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readEntryAtRef } from '../../../../lib/git/refs.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
-import { error } from '../../../../utils/error.js';
+import { error, matches } from '../../../../utils/error.js';
 import { isPathConfinementError, readCurrentFileContent } from './contents.js';
 import {
   readConfinedEntry,
@@ -15,12 +14,32 @@ import {
 } from './entry.js';
 import type { FileContentSnapshot, RestoreChangedFilesResult } from './types.js';
 
-const restoreError = {
+export const restoreError = {
   conflict: (file: string) =>
     error('approval-restore-conflict', `File changed before restoration: ${file}`, { file }),
   storeMissing: (file: string) =>
     error('approval-snapshot-store-missing', 'Entry snapshot needs its session store', { file }),
+  storeCorrupt: (file: string, path: string) =>
+    error('approval-snapshot-store-corrupt', `Entry snapshot does not match its hash: ${file}`, {
+      file,
+      path,
+    }),
+  isStoreCorrupt: matches('approval-snapshot-store-corrupt'),
 } as const;
+
+/** The stored bytes of a captured entry; a blob missing or not matching its hash is refused. */
+async function readStoredEntry(
+  store: string | undefined,
+  file: string,
+  stored: Readonly<{ sha256: string; mode: number }>,
+): Promise<ChangeEntry> {
+  if (store === undefined) throw restoreError.storeMissing(file);
+  const blob = await readConfinedEntry(store, stored.sha256);
+  if (blob.kind !== 'file' || blob.sha256 !== stored.sha256) {
+    throw restoreError.storeCorrupt(file, join(store, stored.sha256));
+  }
+  return { ...blob, mode: stored.mode };
+}
 
 /** The entry a file held when the snapshot was taken: its own capture, or the commit it names. */
 export async function entryToRestore(
@@ -34,15 +53,14 @@ export async function entryToRestore(
   if (snapshot.baselineFileModes !== undefined) {
     const hash = snapshot.baselineFileHashes?.[file];
     if (hash == null) return { kind: 'absent' };
-    if (store === undefined) throw restoreError.storeMissing(file);
-    const bytes = await readFile(join(store, hash));
-    return {
-      kind: 'file',
-      bytes,
-      sha256: sha256Hex(bytes),
+    return readStoredEntry(store, file, {
+      sha256: hash,
       mode: snapshot.baselineFileModes[file] ?? 0o644,
-    };
+    });
   }
+  const stored = snapshot.storedDirtyEntries?.[file];
+  if (stored === null) return { kind: 'absent' };
+  if (stored !== undefined) return readStoredEntry(store, file, stored);
   const saved = snapshot.dirtyFileEntries?.[file];
   if (saved === null) return { kind: 'absent' };
   if (saved !== undefined) {
