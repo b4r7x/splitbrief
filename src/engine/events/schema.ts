@@ -449,6 +449,18 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     snapshotId: z.string(),
     conflictedPaths: stringArray,
   }),
+  /**
+   * `/run reject confirm` put back the run's recorded changes: the files it put back or removed
+   * (`removed` is the part of `restored` the run had created), the paths it left as the user
+   * changed them, how many had no saved copy, and the folder that holds what it replaced.
+   */
+  noPhaseEvent('run_rejected').extend({
+    restored: stringArray,
+    removed: stringArray,
+    conflicted: stringArray,
+    missing: z.number().int().nonnegative(),
+    savedTo: z.string().optional(),
+  }),
   phaseEvent('mode_resolved').extend({
     mode: WorkflowModeSchema,
     approve: ApproveLevelSchema,
@@ -584,6 +596,16 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('tasks_inserted').extend({
     parentId: TaskIdSchema,
     taskIds: taskIdArray,
+  }),
+  /**
+   * A brief entered its validation (no `check`), then each of its plan checks starts (`check`).
+   * It has no transcript row: the byline and the activity line name the check while it runs.
+   */
+  phaseEvent('task_validating').extend({
+    taskId: TaskIdSchema,
+    check: z
+      .object({ id: z.string(), command: z.string(), scenario: z.string().optional() })
+      .optional(),
   }),
   phaseEvent('checks_run').extend({
     taskId: TaskIdSchema,

@@ -71,10 +71,10 @@ export function bylineParts(view: SummaryView, width: number): readonly Conversa
       width,
     );
   }
-  if (view.checkpoint === 'accepted') {
+  if (view.checkpoint?.kind === 'accepted') {
     return fitStatusByline('Accepted', 'nothing left to do', stateTone('passed'), width);
   }
-  if (view.checkpoint === 'rejected') {
+  if (view.checkpoint?.kind === 'rejected') {
     return fitStatusByline('Rejected', 'its files were restored', stateTone('attention'), width);
   }
   return fitByline(bylineFor(view), width);

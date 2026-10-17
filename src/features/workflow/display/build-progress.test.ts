@@ -918,6 +918,25 @@ describe('deriveBuildProgress', () => {
     expect(progress.freshness).toBe('running 0:42');
   });
 
+  // RC6 run C2: while K2 ran the block still read `working on T001` beside an idle BUILD.
+  it('names the brief plan check a brief runs from its start event, on its own clock', () => {
+    resetWorkflow();
+    addEvent({
+      type: 'task_validating',
+      ts: NOW - 11_000,
+      phase: 'validating-task',
+      taskId: taskId('T001'),
+      check: { id: 'K2', command: 'node --test test/sleep.test.mjs' },
+    });
+    const progress = deriveBuildProgress(
+      input({ lifecycle: lifecycleStore.get(), operations: operationsStore.get() }),
+    );
+    resetWorkflow();
+
+    expect(progress.activity).toBe('Plan check K2 · node --test test/sleep.test.mjs');
+    expect(progress.freshness).toBe('running 0:11');
+  });
+
   // Render of workflow-review-base-rerun at 60 columns: `… legacy.test.ts · running…` lost its clock.
   it('cuts a long command, never the clock that follows it, where they share a row', () => {
     const progress = deriveBuildProgress(

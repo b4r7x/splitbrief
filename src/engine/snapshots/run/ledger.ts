@@ -86,6 +86,7 @@ export async function createRunLedger(opts: {
   runSnapshotKind?: RunSnapshotKind;
   accepted: boolean;
   rejected: boolean;
+  putBack?: Readonly<{ restored: readonly string[]; removed: readonly string[] }>;
 }): Promise<RunSnapshotLedger> {
   const previous = await readRunLedger(opts.projectDir, opts.sessionId);
   const runSnapshotIds = [...(previous?.runSnapshotIds ?? []), opts.runSnapshot.id].filter(
@@ -95,6 +96,15 @@ export async function createRunLedger(opts: {
     ...(previous?.runSnapshotKinds ?? {}),
     ...(opts.runSnapshotKind !== undefined && { [opts.runSnapshot.id]: opts.runSnapshotKind }),
   };
+  const putBack =
+    opts.putBack === undefined
+      ? previous?.putBack
+      : {
+          restored: [
+            ...new Set([...(previous?.putBack?.restored ?? []), ...opts.putBack.restored]),
+          ],
+          removed: [...new Set([...(previous?.putBack?.removed ?? []), ...opts.putBack.removed])],
+        };
   const now = nowIso();
 
   return {
@@ -104,6 +114,7 @@ export async function createRunLedger(opts: {
     ...(Object.keys(runSnapshotKinds).length > 0 && { runSnapshotKinds }),
     accepted: opts.accepted,
     rejected: opts.rejected,
+    ...(putBack !== undefined && { putBack }),
     createdAt: previous?.createdAt ?? now,
     updatedAt: now,
   };

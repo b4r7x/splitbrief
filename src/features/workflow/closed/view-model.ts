@@ -2,7 +2,7 @@ import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { BriefQualitySummary, ReviewVerdict, Summary } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { RunRecord } from '../../../core/sessions/run-record.js';
+import type { RunCheckpoint, RunRecord } from '../../../core/sessions/run-record.js';
 import { canUndoApply, type RunStatus } from '../../../core/sessions/run-status.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
@@ -111,7 +111,7 @@ export interface SummaryView {
     /** The run.patch an ended or discarded workspace run saved its changes in, project-relative. */
     patch: string | null;
   }>;
-  checkpoint: 'accepted' | 'rejected' | null;
+  checkpoint: RunCheckpoint | null;
   canUndoApply: boolean;
   applyUndo: Readonly<{ conflicts: readonly string[] }> | null;
   phases: PhaseTiming[];
@@ -167,7 +167,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     scope: scopeView(summary),
     quality: summary.briefQuality ?? null,
     files: { ...files, patch: savedPatch(state, files.changed) },
-    checkpoint: record.checkpoint?.kind ?? null,
+    checkpoint: record.checkpoint,
     canUndoApply: state !== null && canUndoApply(state),
     applyUndo:
       state?.applied?.undone === undefined

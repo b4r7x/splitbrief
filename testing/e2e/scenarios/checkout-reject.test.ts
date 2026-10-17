@@ -6,7 +6,19 @@ import { buildCommandContext } from '../../../src/app/command-context.js';
 import { sessionsRoot, sessionDir } from '../../../src/core/paths.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
-import { formatRejectRunMessage } from '../../../src/core/runtime/commands/messages.js';
+import {
+  formatRejectRunMessage,
+  runRejectFacts,
+} from '../../../src/core/runtime/commands/messages.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { stopByline } from '../../../src/features/workflow/stop/copy.js';
+import { openRunBylineParts } from '../../../src/features/workflow/closed/byline.js';
+import { outcomeLineSpans } from '../../../src/features/workflow/closed/outcome.js';
+import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
+import { getSections } from '../../../src/stores/workflow/actions/sections.js';
+import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
+import { buildConversationRows } from '#testing/helpers/event-rows.js';
+import type { RunRecord } from '../../../src/core/sessions/run-record.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
@@ -25,11 +37,13 @@ import { runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import {
   cli,
   createStopContinueFixture,
+  endImplementerHold,
   ESCAPED_BRANCH,
   GREET_FILE,
   GREET_SOURCE,
   MARKER_FILE,
   MARKER_SOURCE,
+  startAndSignal,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
 
@@ -119,6 +133,72 @@ if (existsSync(${JSON.stringify(countPath)})) {
   writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
 }
 `;
+}
+
+/**
+ * The first call writes T001's files. The second call is T002: it writes its own file, then marks
+ * that it holds (under `t002-holding`, where a stop waits for it) until a stop ends it.
+ */
+function stoppableSecondBriefImplementer(checkoutDir: string): string {
+  const tmpDir = join(checkoutDir, '..');
+  const countPath = join(tmpDir, 'implementer-invocations');
+  const holding = join(tmpDir, 't002-holding', MARKER_FILE);
+  return `import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+for await (const chunk of process.stdin) void chunk;
+mkdirSync('src', { recursive: true });
+if (existsSync(${JSON.stringify(countPath)})) {
+  writeFileSync(${JSON.stringify(SECOND_FILE)}, ${JSON.stringify(SECOND_SOURCE)});
+  writeFileSync(${JSON.stringify(join(tmpDir, 'implementer-hold.pid'))}, String(process.pid));
+  mkdirSync(dirname(${JSON.stringify(holding)}), { recursive: true });
+  writeFileSync(${JSON.stringify(holding)}, '');
+  const deadline = Date.now() + 60_000;
+  while (!existsSync(${JSON.stringify(join(tmpDir, 'release-implementer'))}) && Date.now() < deadline) {
+    await delay(50);
+  }
+  writeFileSync(${JSON.stringify(join(tmpDir, 'implementer-hold-exited'))}, '');
+} else {
+  writeFileSync(${JSON.stringify(countPath)}, '1');
+  writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
+  writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
+}
+`;
+}
+
+/** The transcript of the run on screen, one trimmed line per row. */
+function transcriptText(): string {
+  const { rows } = buildConversationRows({
+    sections: getSections(),
+    cols: 120,
+    viewportHeight: 400,
+    expandedDiffs: new Set(),
+    expandedActivityBatches: new Set(),
+    streaming: { taskId: null, lines: [], active: false },
+  });
+  return rows.map((row) => rowText(row).trim()).join('\n');
+}
+
+/** The stop byline of a run parked mid-brief, read from the record the stop settled at rest. */
+function parkedBylineText(record: RunRecord, kept: readonly string[]): string {
+  return (
+    stopByline({
+      intent: 'stop-now',
+      phase: 'parked',
+      workflowPhase: 'implementing',
+      parked: { kind: 'mid-brief', taskId: 'T002', kept },
+      currentTaskId: 'T002',
+      nextTaskId: null,
+      passed: 1,
+      total: 2,
+      elapsedMs: 0,
+      questionPending: false,
+      suite: null,
+      record,
+    })
+      ?.parts.map((part) => part.text)
+      .join('') ?? ''
+  );
 }
 
 /** The fixture's plan with a second brief, T002, that writes its own file after T001. */
@@ -273,7 +353,9 @@ describe('run rejection after a source CLI run', () => {
       deletedPaths: [MARKER_FILE],
     });
     if (result.status !== 'rejected') throw new Error('run rejection failed');
-    expect(formatRejectRunMessage(result)).toContain(`left as you changed them: ${GREET_FILE}.`);
+    expect(formatRejectRunMessage(runRejectFacts(result))).toContain(
+      `1 file left as you changed it: ${GREET_FILE}.`,
+    );
     expect(readFileSync(fixture.greetPath, 'utf8')).toBe('later user edit\n');
     expect(readFileSync(join(fixture.projectDir, 'user.txt'), 'utf8')).toBe('later user file\n');
     expect(existsSync(fixture.markerPath)).toBe(false);
@@ -460,5 +542,99 @@ else {
     expect(existsSync(fixture.markerPath)).toBe(false);
     expect(readFileSync(join(fixture.projectDir, 'user.txt'), 'utf8')).toBe('later user file\n');
     expect(loadState(ref)?.closed?.as).toBe('discarded');
+  });
+
+  // RC6 run A: a stop cut T002, the user edited T001's file and wrote a file of their own, and two
+  // rejects followed. The first left the run open still claiming T002's partial changes, with no
+  // record of the reject and a feedback line cut at the pane width. The second closed it claiming a
+  // run.patch, saying the changes were "already there", with the user's file in the Files list.
+  it('records a partial reject, drops what it put back from the stop, and closes the second time without false claims', {
+    timeout: 180_000,
+  }, async () => {
+    fixture = createStopContinueFixture(stoppableSecondBriefImplementer, { isolation: 'none' });
+    planTwoBriefs(fixture);
+    const target = fixture;
+    try {
+      const parked = await startAndSignal(target, 'SIGINT', join(target.tmpDir, 't002-holding'));
+      expect(parked.exitCode).toBe(0);
+    } finally {
+      await endImplementerHold(target);
+    }
+    const parkedRun = openRun(target);
+    const { ref, commands } = parkedRun;
+    expect(loadState(ref)?.interruptedStep).toMatchObject({ cut: 'mid-step', kept: [SECOND_FILE] });
+    expect(parkedBylineText(parkedRun.record, [SECOND_FILE])).toBe(
+      'Stopped at T002 · Partial changes kept',
+    );
+    writeFileSync(target.greetPath, 'later user edit\n');
+    writeFileSync(join(target.projectDir, 'later-user.txt'), 'later user file\n');
+    resetWorkflow();
+
+    const first = await commands.rejectRun();
+
+    expect(first).toMatchObject({
+      status: 'rejected',
+      deletedPaths: [MARKER_FILE, SECOND_FILE],
+      conflictedPaths: [GREET_FILE],
+      missingSnapshotFiles: [],
+    });
+    if (first.status !== 'rejected' || first.savedTo === undefined) {
+      throw new Error('the partial reject saved no replaced files');
+    }
+    expect(existsSync(join(target.projectDir, SECOND_FILE))).toBe(false);
+    const open = readRunRecord(ref);
+    expect(open.status.kind).toBe('open');
+    expect(loadState(ref)?.interruptedStep).not.toHaveProperty('kept');
+    expect(parkedBylineText(open, [SECOND_FILE])).toBe('Stopped at T002');
+    const whole = `Rejected Removed 2 created files. 1 file left as you changed it: ${GREET_FILE}. The replaced files are saved in ${first.savedTo}. The run stays open, so you can reject it again.`;
+    expect(formatRejectRunMessage(runRejectFacts(first))).toBe(whole.slice('Rejected '.length));
+    expect(transcriptText().replace(/\s+/g, ' ')).toContain(whole);
+    expect((await readRunEvents(ref)).events.filter((e) => e.type === 'run_rejected')).toEqual([
+      expect.objectContaining({
+        restored: [MARKER_FILE, SECOND_FILE],
+        removed: [MARKER_FILE, SECOND_FILE],
+        conflicted: [GREET_FILE],
+        missing: 0,
+        savedTo: first.savedTo,
+      }),
+    ]);
+
+    resetWorkflow();
+    const reopened = readRunRecord(ref);
+    await hydrateRun(reopened);
+    expect(transcriptText().replace(/\s+/g, ' ')).toContain(whole);
+    if (reopened.status.kind !== 'open') throw new Error('the partial reject closed the run');
+    expect(
+      openRunBylineParts({ status: reopened.status, continuable: true, width: 120 })
+        .map((part) => part.text)
+        .join(''),
+    ).not.toContain('kept');
+
+    writeFileSync(target.greetPath, GREET_SOURCE);
+    const second = await commands.rejectRun();
+
+    expect(second).toMatchObject({
+      status: 'rejected',
+      deletedPaths: [GREET_FILE],
+      conflictedPaths: [],
+    });
+    expect(loadState(ref)?.closed?.as).toBe('discarded');
+    expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(false);
+    const { events } = await readRunEvents(ref);
+    expect(
+      events.filter((e) => e.type === 'warning' && e.message.includes('already there')),
+    ).toEqual([]);
+    const view = deriveSummaryView({ record: readRunRecord(ref) });
+    if (view === null) throw new Error('the discarded run left no closed view');
+    expect(
+      outcomeLineSpans(view, 120)
+        .map((span) => span.text)
+        .join(''),
+    ).toBe('Discarded · 1/2 briefs passed · removed 3 created files');
+    expect(view.files.changed).toEqual([GREET_FILE, MARKER_FILE, SECOND_FILE]);
+    expect([...view.files.partial]).toEqual([SECOND_FILE]);
+    expect(readFileSync(join(target.projectDir, 'later-user.txt'), 'utf8')).toBe(
+      'later user file\n',
+    );
   });
 });

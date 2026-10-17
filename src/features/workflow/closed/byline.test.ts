@@ -141,10 +141,10 @@ describe('bylineText', () => {
   });
 
   it('reports a decided checkpoint instead of offering one', () => {
-    expect(bylineText(makeView({ checkpoint: 'accepted' }), WIDE)).toBe(
+    expect(bylineText(makeView({ checkpoint: { kind: 'accepted' } }), WIDE)).toBe(
       'Accepted · nothing left to do',
     );
-    expect(bylineText(makeView({ checkpoint: 'rejected' }), WIDE)).toBe(
+    expect(bylineText(makeView({ checkpoint: { kind: 'rejected' } }), WIDE)).toBe(
       'Rejected · its files were restored',
     );
   });
@@ -581,7 +581,7 @@ describe('fitted byline parts', () => {
   ] as const)(
     'keeps the %s state separate from its dim action',
     (checkpoint, reason, reasonTone) => {
-      const view = makeView({ checkpoint });
+      const view = makeView({ checkpoint: { kind: checkpoint } });
       const parts = bylineParts(view, WIDE);
       expect(parts.slice(0, reason.includes(' · ') ? 3 : 1)).toEqual(
         reason.includes(' · ')

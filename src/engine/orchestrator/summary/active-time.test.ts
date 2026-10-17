@@ -72,6 +72,46 @@ describe('activeTimeOf', () => {
     expect(activeTimeOf(marks)).toBe(33_214 + 37_543);
   });
 
+  // The RC6 run C shape: a ctrl+⏎ interrupt-and-send cuts the call and the run goes on at once.
+  it('counts the time after an interrupt-and-send continues the cut call', () => {
+    const marks = [
+      mark('workflow_started', '2026-10-16T21:40:00.000Z'),
+      mark('runner_call_started', '2026-10-16T21:40:05.000Z'),
+      mark('turn_interrupted', '2026-10-16T21:41:20.000Z'),
+      mark('user_message', '2026-10-16T21:41:20.044Z'),
+      mark('runner_call_started', '2026-10-16T21:41:20.700Z'),
+      mark('workflow_complete', '2026-10-16T21:42:41.100Z'),
+    ];
+
+    expect(activeTimeOf(marks)).toBe(80_000 + 80_400);
+  });
+
+  it('leaves out the wait between a cut and the call the same process sent after it', () => {
+    const marks = [
+      mark('workflow_started', '2026-10-16T21:40:00.000Z'),
+      mark('runner_call_started', '2026-10-16T21:40:05.000Z'),
+      mark('turn_interrupted', '2026-10-16T21:41:00.000Z'),
+      mark('warning', '2026-10-16T21:41:00.400Z'),
+      mark('user_message', '2026-10-16T21:51:00.000Z'),
+      mark('runner_call_started', '2026-10-16T21:51:01.000Z'),
+      mark('workflow_complete', '2026-10-16T21:52:01.000Z'),
+    ];
+
+    expect(activeTimeOf(marks)).toBe(MIN + MIN);
+  });
+
+  it('opens no stretch at a call after a cut that a new process continued', () => {
+    const marks = [
+      mark('workflow_started', '2026-10-16T21:40:00.000Z'),
+      mark('turn_interrupted', '2026-10-16T21:41:00.000Z'),
+      mark('workflow_resumed', '2026-10-17T09:00:00.000Z'),
+      mark('runner_call_started', '2026-10-17T09:00:01.000Z'),
+      mark('workflow_complete', '2026-10-17T09:01:00.000Z'),
+    ];
+
+    expect(activeTimeOf(marks)).toBe(MIN + MIN);
+  });
+
   it('opens a stretch at the submit time of a continued boundary park', () => {
     const marks = [
       mark('workflow_started', '2026-10-15T10:00:00.000Z'),

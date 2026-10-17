@@ -8,7 +8,7 @@ import { assertNever, includes } from '../../../../utils/type-guards.js';
 import { isLivePhase } from '../../../phases.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { countNoun } from '../../../../utils/pluralize.js';
-import { formatApplyRestoreCounts, formatRejectRunMessage } from '../messages.js';
+import { formatApplyRestoreCounts, rejectRunFeedback, runRejectFacts } from '../messages.js';
 
 export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
   return [
@@ -168,12 +168,9 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
               break;
             case 'rejected': {
               ctx.refreshRun();
-              const message = formatRejectRunMessage(result);
-              if (result.conflictedPaths.length > 0 || result.missingSnapshotFiles.length > 0) {
-                ctx.setFeedbackError(message);
-              } else {
-                ctx.setFeedbackMessage(message);
-              }
+              const feedback = rejectRunFeedback(runRejectFacts(result));
+              if (feedback.isError) ctx.setFeedbackError(feedback.message);
+              else ctx.setFeedbackMessage(feedback.message);
               break;
             }
             case 'discarded':

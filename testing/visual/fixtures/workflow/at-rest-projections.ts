@@ -1398,6 +1398,70 @@ const CLOSED_ENDED = record({
   ledger: INTERRUPTED_BUILD_LEDGER,
 });
 
+/**
+ * A checkout run stopped inside T003, rejected once in part (it left a file the user had changed),
+ * then rejected again and closed as discarded. The reject put the run's files back, so nothing is
+ * in a run.patch, and each reject is a row of its own above the closed block.
+ */
+const CLOSED_REJECTED_SESSION = 'visual-closed-rejected';
+const CLOSED_REJECTED_AT = Date.parse(STARTED_AT_ISO) + 600_000;
+const CLOSED_REJECTED = record({
+  sessionId: CLOSED_REJECTED_SESSION,
+  status: { kind: 'closed', as: 'discarded' },
+  checkpoint: {
+    kind: 'rejected',
+    putBack: {
+      restored: [FILES.validate, FILES.formTest, FILES.signup, FILES.signupTest, FILES.form],
+      removed: [FILES.validate, FILES.formTest, FILES.signup, FILES.signupTest, FILES.form],
+    },
+  },
+  state: savedState({
+    phase: 'implementing',
+    currentTaskIndex: 2,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'escalated' },
+      { id: BRIEFS.routeTests.id, status: 'in_progress' },
+      { id: BRIEFS.blur.id, status: 'pending' },
+      { id: BRIEFS.docs.id, status: 'pending' },
+    ],
+    workspace: {
+      kind: 'checkout',
+      path: VISUAL_FIXTURE_PROJECT_DIR,
+      base: { snapshotId: 'run-baseline', head: null },
+    },
+    closed: { at: new Date(CLOSED_REJECTED_AT + 120_000).toISOString(), as: 'discarded' },
+  }),
+  summary: INTERRUPTED_BUILD_SUMMARY,
+  ledger: INTERRUPTED_BUILD_LEDGER,
+});
+const CLOSED_REJECTED_LOG: readonly EngineEvent[] = [
+  {
+    type: 'workflow_started',
+    ts: Date.parse(STARTED_AT_ISO),
+    phase: 'implementing',
+    feature: AT_REST_FIXTURE_FEATURE,
+  },
+  {
+    type: 'run_rejected',
+    ts: CLOSED_REJECTED_AT,
+    restored: [FILES.validate, FILES.formTest, FILES.signup, FILES.signupTest],
+    removed: [FILES.validate, FILES.formTest, FILES.signup, FILES.signupTest],
+    conflicted: [FILES.form],
+    missing: 0,
+    savedTo: `.splitbrief/sessions/${CLOSED_REJECTED_SESSION}/reverted/2026-09-14T10-18-07-873Z`,
+  },
+  {
+    type: 'run_rejected',
+    ts: CLOSED_REJECTED_AT + 120_000,
+    restored: [FILES.form],
+    removed: [FILES.form],
+    conflicted: [],
+    missing: 0,
+    savedTo: `.splitbrief/sessions/${CLOSED_REJECTED_SESSION}/reverted/2026-09-14T10-20-11-480Z`,
+  },
+];
+
 const CLOSED_ENDED_EMPTY = record({
   sessionId: 'visual-closed-ended-empty',
   status: { kind: 'closed', as: 'ended' },
@@ -2251,6 +2315,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-closed-complete-needs-attention',
     route: { record: CLOSED_NEEDS_ATTENTION },
+  }),
+  atRestProjection({
+    id: 'workflow-closed-rejected',
+    route: { record: CLOSED_REJECTED, log: CLOSED_REJECTED_LOG },
   }),
   atRestProjection({ id: 'workflow-closed-ended', route: { record: CLOSED_ENDED } }),
   atRestProjection({

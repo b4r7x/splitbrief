@@ -716,6 +716,37 @@ describe('withContinuationLoop', () => {
     expect(interrupted[0]).toMatchObject({ source: 'user', at: 'mid-step', step: PLANNER_STEP });
   });
 
+  // A steered final review read as a stopped review, a 'Run continued' row and a re-run.
+  it('an interrupt-and-send continues the cut call without a run resume', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus, events } = makeBusRecorder();
+    const { callbacks } = makeCallbacks({
+      onContinuationNeeded: async () => plainUserMessage('also add a comment'),
+    });
+    const sinks = makeSinks();
+
+    let attempt = 0;
+    await withContinuationLoop<string>({
+      ctx: { projectDir, sessionId, callbacks, bus, sinks },
+      state: createInitialState('feat'),
+      step: PLANNER_STEP,
+      body: async ({ signal }) => {
+        attempt += 1;
+        if (attempt === 1) {
+          sinks.trigger();
+          if (signal.aborted) throw new Error('aborted');
+        }
+        return 'ok';
+      },
+    });
+
+    const types = events.map((event) => event.type);
+    expect(attempt).toBe(2);
+    expect(types).toContain('turn_interrupted');
+    expect(types).toContain('user_message');
+    expect(types).not.toContain('workflow_resumed');
+  });
+
   it('propagates a non-abort throw immediately when no continuation handler is set', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { callbacks } = makeCallbacks();

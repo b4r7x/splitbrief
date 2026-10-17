@@ -147,6 +147,39 @@ describe('runTaskChecks', () => {
     ]);
   });
 
+  it('announces each plan check as it starts, before the checks it ran are recorded', async () => {
+    const { projectDir, sessionId } = setup('task-checks-start');
+    const task = makeTask({
+      id: 'T001',
+      checks: [...versionCheck(), { id: 'K3', kind: 'render', value: 'home', required: false }],
+    });
+    const { bus, events } = makeBusRecorder();
+
+    await runTaskChecks({
+      wctx: makeWctx({ projectDir, sessionId, bus }),
+      state: { ...makeImplState([task]), phase: 'validating-task' },
+      task,
+      checkIds: ['K1', 'K3', 'K404'],
+    });
+
+    const started = events.filter(
+      (event): event is EngineEventOf<'task_validating'> => event.type === 'task_validating',
+    );
+    expect(started.map((event) => [event.phase, event.taskId, event.check])).toEqual([
+      ['validating-task', 'T001', { id: 'K1', command: 'node --version' }],
+      ['validating-task', 'T001', { id: 'K3', command: '', scenario: 'home' }],
+    ]);
+    const types = events.map((event) => event.type);
+    expect(types.lastIndexOf('task_validating')).toBeLessThan(types.indexOf('checks_run'));
+    expect(events.find((event) => event.type === 'checks_run')).toMatchObject({
+      results: [
+        { id: 'K1', status: 'pass' },
+        { id: 'K3', status: 'not-runnable' },
+        { id: 'K404', status: 'unknown' },
+      ],
+    });
+  });
+
   it('leaves a task without checks unchanged', async () => {
     const { projectDir, sessionId } = setup('task-checks-none');
     const task = makeTask({ id: 'T001' });

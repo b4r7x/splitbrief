@@ -45,7 +45,7 @@ describe('run snapshot runtime commands', () => {
     expect(error).toMatch(/confirm/i);
   });
 
-  it('rejects the current run and reports changed files', async () => {
+  it('rejects the current run and points at the transcript row that holds the result', async () => {
     let message: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
@@ -69,9 +69,7 @@ describe('run snapshot runtime commands', () => {
       screen: 'workflow',
       onError: noop,
     });
-    expect(message).toContain('2 file(s)');
-    expect(message).toContain('snap-2');
-    expect(message).toContain('.splitbrief/sessions/run-1/reverted/stamp');
+    expect(message).toBe('Run rejected · the transcript names what it put back');
   });
 
   it('reports a checkout run closed as it is and refreshes it', async () => {
@@ -116,37 +114,7 @@ describe('run snapshot runtime commands', () => {
       screen: 'workflow',
       onError: noop,
     });
-    expect(error).toMatch(/conflict/i);
-    expect(error).toContain('left as you changed them: src/a.ts.');
-  });
-
-  it('bounds the named rejection conflicts with the shared list formatter', async () => {
-    let error: string | undefined;
-    const commands = createRuntimeCommands(
-      makeCtx({
-        rejectRun: async () => ({
-          status: 'rejected',
-          snapshotId: 'snap-3',
-          restoredPaths: [],
-          deletedPaths: [],
-          conflictedPaths: ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts'],
-          missingSnapshotFiles: [],
-        }),
-        setFeedbackError: (message) => {
-          error = message;
-        },
-      }),
-    );
-    await runCommandInTest({
-      commands,
-      raw: '/run reject confirm',
-      screen: 'workflow',
-      onError: noop,
-    });
-    expect(error).toContain(
-      'left as you changed them: a.ts · b.ts · c.ts · d.ts · e.ts · +2 more.',
-    );
-    expect(error).not.toContain('f.ts');
+    expect(error).toBe('Run rejected in part · the transcript names what it left');
   });
 
   it('reports the files Apply wrote on a workspace run', async () => {

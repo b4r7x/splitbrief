@@ -1038,4 +1038,33 @@ describe('operationsStore', () => {
     addEvent({ ...render, ts: 8_000, status: 'stopped' });
     expect(operationsStore.get().suiteStage).toBeNull();
   });
+
+  it('runs a brief plan check on its own clock from its start until the brief records its checks', () => {
+    const base = {
+      type: 'task_validating',
+      phase: 'validating-task',
+      taskId: taskId('T001'),
+    } as const;
+    addEvent({ ...base, ts: 1_000 });
+    expect(operationsStore.get().suiteStage ?? null).toBeNull();
+    addEvent({ ...base, ts: 2_000, check: { id: 'K1', command: 'npm run lint' } });
+    addEvent({ ...base, ts: 9_000, check: { id: 'K2', command: 'npm test' } });
+    expect(operationsStore.get().suiteStage).toEqual({
+      id: 'K2',
+      command: 'npm test',
+      moment: 'plan',
+      stageStartedTs: 9_000,
+    });
+    addEvent({
+      type: 'checks_run',
+      ts: 15_000,
+      phase: 'validating-task',
+      taskId: taskId('T001'),
+      results: [
+        { id: 'K1', status: 'pass' },
+        { id: 'K2', status: 'pass' },
+      ],
+    });
+    expect(operationsStore.get().suiteStage).toBeNull();
+  });
 });

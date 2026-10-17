@@ -396,6 +396,31 @@ describe('transition', () => {
     expect(none.interruptedStep).not.toHaveProperty('kept');
   });
 
+  it('RECORD_REJECT drops the files a reject put back from the stop, and the list when none stay', () => {
+    const step = { kind: 'brief', taskId: taskId('T002'), attempt: 0 } as const;
+    const stopped = transition(
+      { ...createInitialState('feat'), phase: 'implementing' },
+      { type: 'INTERRUPT_STEP', step, source: 'user', cut: 'mid-step', kept: ['a.ts', 'b.ts'] },
+    );
+
+    const partly = transition(stopped, { type: 'RECORD_REJECT', removed: ['a.ts', 'c.ts'] });
+    expect(partly.interruptedStep).toMatchObject({ step, cut: 'mid-step', kept: ['b.ts'] });
+    expect(partly.awaitingContinue).toBe(true);
+
+    const all = transition(partly, { type: 'RECORD_REJECT', removed: ['b.ts'] });
+    expect(all.interruptedStep).toMatchObject({ step, cut: 'mid-step' });
+    expect(all.interruptedStep).not.toHaveProperty('kept');
+    expect(deriveRunStatus({ state: all, liveness: 'not-alive' })).toMatchObject({
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
+    });
+    expect(deriveRunStatus({ state: all, liveness: 'not-alive' })).not.toHaveProperty(
+      'stop.on.kept',
+    );
+
+    const unstopped = createInitialState('feat');
+    expect(transition(unstopped, { type: 'RECORD_REJECT', removed: ['a.ts'] })).toBe(unstopped);
+  });
+
   it('INTERRUPT_STEP records a pause between briefs as a boundary cut', () => {
     const next = transition(
       { ...createInitialState('feat'), phase: 'implementing' },

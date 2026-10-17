@@ -63,6 +63,7 @@ import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
 import type { RecoveryFold, SettledTranscriptSection } from '../transcript-walk.js';
 import { phaseStage } from '../../../../core/rail-stages.js';
 import { queueCopy } from '../../queue-copy.js';
+import { formatRejectRunMessage } from '../../../../core/runtime/commands/messages.js';
 
 const DISCOVERED_VALIDATION_REFUSED = 'discovered_validation_refused';
 export const COLLAPSED_DRIFT_FINDING_LIMIT = 3;
@@ -201,6 +202,16 @@ export function eventRowBlock(options: {
         title: event.title,
         metadata: taskStartedMetadata(event),
         width: ctx.width,
+      });
+    case 'run_rejected':
+      return cardRowsBlock({
+        keyPrefix,
+        label: 'Rejected',
+        value: formatRejectRunMessage(event),
+        width: ctx.width,
+        labelTone: stateTone('attention'),
+        valueTone: 'textDim',
+        markerTone: stateTone('attention'),
       });
     case 'task_skipped':
       return cardRowsBlock({
@@ -395,6 +406,7 @@ export function eventRowBlock(options: {
         seat,
         taskId: event.type === 'message_queued' ? event.taskId : undefined,
         steerable: event.type === 'message_queued' && event.steerable,
+        checking: event.phase === 'validating-task',
       });
       const header =
         event.type === 'message_injected_native'

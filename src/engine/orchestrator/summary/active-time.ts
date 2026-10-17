@@ -15,23 +15,36 @@ export type RunMark = Readonly<{
 
 type Stretch = { start: number; latest: number; from: number };
 
+const RUN_STARTS_AND_STOPS = new Set([
+  'workflow_started',
+  'workflow_resumed',
+  'turn_interrupted',
+  'recovery_prompted',
+  'workflow_complete',
+  'workflow_cancelled',
+]);
+
 /**
  * How long the run ran: the sum of its running stretches, in log order. A start or a resume opens a
- * stretch; a stop, a halt, a completion or a cancellation closes it. Time the run sat stopped,
- * halted or at rest is no stretch, and a wait on the user inside a stretch is part of it. A stretch
- * that a process left open, by a crash or a restart, ends at the latest mark it holds. An End
- * taken at rest (`atRestFrom`) ends it at the latest mark dated before that End began, so neither
- * the days at rest nor what the End itself writes count. Null when the log never started the run.
+ * stretch; a stop, a halt, a completion or a cancellation closes it. A stop that the same process
+ * continued, by a steer, a ctrl+⏎ send or a Resume of the cut call, opens a stretch again at the
+ * next call. Time the run sat stopped, halted or at rest is no stretch, and a wait on the user
+ * inside a stretch is part of it. A stretch that a process left open, by a crash or a restart, ends
+ * at the latest mark it holds. An End taken at rest (`atRestFrom`) ends it at the latest mark dated
+ * before that End began, so neither the days at rest nor what the End itself writes count. Null
+ * when the log never started the run.
  */
 export function activeTimeOf(marks: readonly RunMark[]): number | null {
   let total = 0;
   let started = false;
   let stretch: Stretch | null = null;
+  let cut = false;
   const close = (end: (open: Stretch) => number): void => {
     if (stretch !== null) total += Math.max(0, end(stretch) - stretch.start);
     stretch = null;
   };
   marks.forEach((mark, index) => {
+    if (RUN_STARTS_AND_STOPS.has(mark.type)) cut = false;
     switch (mark.type) {
       case 'workflow_started':
         close((open) => open.latest);
@@ -50,6 +63,9 @@ export function activeTimeOf(marks: readonly RunMark[]): number | null {
         return;
       }
       case 'turn_interrupted':
+        close(() => mark.ts);
+        cut = true;
+        return;
       case 'recovery_prompted':
       case 'workflow_complete':
         close(() => mark.ts);
@@ -68,6 +84,14 @@ export function activeTimeOf(marks: readonly RunMark[]): number | null {
         );
         return;
       }
+      case 'runner_call_started':
+        if (cut) {
+          stretch = { start: mark.ts, latest: mark.ts, from: index };
+          cut = false;
+          return;
+        }
+        if (stretch !== null) stretch.latest = Math.max(stretch.latest, mark.ts);
+        return;
       default:
         if (stretch !== null) stretch.latest = Math.max(stretch.latest, mark.ts);
     }

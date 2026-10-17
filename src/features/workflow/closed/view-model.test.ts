@@ -1068,8 +1068,12 @@ describe('files', () => {
 
 describe('checkpoint, phases and pass-through', () => {
   it('reports the run-level checkpoint decision the record carries', () => {
-    expect(derive(makeSummary(), { checkpoint: { kind: 'accepted' } }).checkpoint).toBe('accepted');
-    expect(derive(makeSummary(), { checkpoint: { kind: 'rejected' } }).checkpoint).toBe('rejected');
+    expect(derive(makeSummary(), { checkpoint: { kind: 'accepted' } }).checkpoint).toEqual({
+      kind: 'accepted',
+    });
+    expect(derive(makeSummary(), { checkpoint: { kind: 'rejected' } }).checkpoint).toEqual({
+      kind: 'rejected',
+    });
     expect(derive(makeSummary()).checkpoint).toBeNull();
   });
 

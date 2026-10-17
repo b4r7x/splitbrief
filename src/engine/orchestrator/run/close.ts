@@ -15,6 +15,7 @@ import { persistStoppedBriefEvidence } from '../evidence/persistence.js';
 import {
   publishRecoveryActionSelected,
   publishRecoveryResolved,
+  publishRunRejected,
   publishWarning,
 } from '../events.js';
 import { removeRunWorkspace } from '../isolation/remove-worktree.js';
@@ -26,7 +27,10 @@ import {
   readWorkflowStateHead,
   rebaseOnPersistedWorkflowState,
   stateOpsError,
+  transitionAndSave,
 } from '../state-ops.js';
+import { rejectRunSnapshot } from '../../snapshots/run/lifecycle.js';
+import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
 
 export function filesStillOnDiskSuffix(workspace: WorkflowState['workspace']): string {
   return workspace === undefined || workspace.kind === 'checkout'
@@ -91,8 +95,11 @@ export async function closeRunIfOpen(
       patchHandled = true;
       const workspace = latest.workspace;
       if (workspace?.kind === 'checkout') {
-        warning =
-          'This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written.';
+        // A checkout run closes as discarded only after a reject put its changes back.
+        if (as === undefined) {
+          warning =
+            'This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written.';
+        }
       } else if (workspace !== undefined) {
         workspaceToRemove = workspace;
         if (existsSync(workspace.path)) {
@@ -115,9 +122,7 @@ export async function closeRunIfOpen(
       }),
     });
     if (result.kind === 'committed') {
-      if (latest.workspace !== undefined && existsSync(latest.workspace.path)) {
-        await persistStoppedBriefEvidence(scope, latest, latest.workspace.path);
-      }
+      await persistStoppedBriefEvidence(scope, latest);
       if (warning !== undefined) warn(warning, result.state.phase);
       if (workspaceToRemove !== undefined) {
         await removeClosedRunWorkspace(scope, workspaceToRemove, result.state.phase);
@@ -135,6 +140,33 @@ export async function closeRunIfOpen(
       });
     }
   }
+}
+
+/**
+ * `/run reject confirm` on a run that wrote the checkout: puts back the run's recorded changes and
+ * records the reject. A checkout run that the reject left nothing of closes as discarded. One that
+ * kept files the user changed stays open for another reject, and its stop no longer keeps the files
+ * the reject put back. An older run without a workspace record only records the reject.
+ */
+export async function rejectCheckoutRun(
+  scope: SessionRef & { bus: EventBus },
+  state: WorkflowState | null,
+): Promise<{
+  result: RejectRunSnapshotResult;
+  closure: { state: WorkflowState; closedNow: boolean } | null;
+}> {
+  const result = await rejectRunSnapshot(scope.projectDir, scope.sessionId);
+  if (result.status !== 'rejected') return { result, closure: null };
+  publishRunRejected(scope.bus, result);
+  if (state?.workspace?.kind !== 'checkout') return { result, closure: null };
+  if (result.conflictedPaths.length === 0 && result.missingSnapshotFiles.length === 0) {
+    return { result, closure: await closeRunIfOpen(scope, state, 'discarded') };
+  }
+  transitionAndSave(scope, rebaseOnPersistedWorkflowState(scope, state), {
+    type: 'RECORD_REJECT',
+    removed: [...result.restoredPaths, ...result.deletedPaths],
+  });
+  return { result, closure: null };
 }
 
 export const endRunError = {

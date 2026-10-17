@@ -25,6 +25,8 @@ import { labelError } from '../../utils/format-errors.js';
 import { redactSecrets } from '../../utils/redact.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import type { RunnerCallEvent } from '../calls/types.js';
+import type { RejectRunSnapshotResult } from '../../core/runtime/commands/types.js';
+import { runRejectFacts } from '../../core/runtime/commands/messages.js';
 
 type BusContext = {
   bus: EventBus;
@@ -375,6 +377,42 @@ export function publishTasksInserted(
     phase: ctx.phase,
     parentId,
     taskIds: [...taskIds],
+  });
+}
+
+export function publishTaskValidating(
+  ctx: BusContext,
+  taskId: TaskId,
+  check?: { id: string; command: string; scenario?: string | undefined },
+): void {
+  ctx.bus.publish({
+    type: 'task_validating',
+    ts: Date.now(),
+    phase: ctx.phase,
+    taskId,
+    ...(check !== undefined && {
+      check: {
+        id: check.id,
+        command: check.command,
+        ...(check.scenario !== undefined && { scenario: check.scenario }),
+      },
+    }),
+  });
+}
+
+export function publishRunRejected(
+  bus: EventBus,
+  result: Extract<RejectRunSnapshotResult, { status: 'rejected' }>,
+): void {
+  const facts = runRejectFacts(result);
+  bus.publish({
+    type: 'run_rejected',
+    ts: Date.now(),
+    restored: [...facts.restored],
+    removed: [...facts.removed],
+    conflicted: [...facts.conflicted],
+    missing: facts.missing,
+    ...(facts.savedTo !== undefined && { savedTo: facts.savedTo }),
   });
 }
 

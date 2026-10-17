@@ -8,6 +8,7 @@ import {
   assertWritablePathConfined,
 } from '../../../lib/path-confinement.js';
 import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
+import { runRejectFacts } from '../../../core/runtime/commands/messages.js';
 import { resolveValidatedBlobPath } from '../blob-resolver.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
@@ -227,7 +228,7 @@ export async function rejectRunSnapshotBody(
     restoredPaths,
     deletedPaths,
   );
-  const result: RejectRunSnapshotResult = {
+  const result: Extract<RejectRunSnapshotResult, { status: 'rejected' }> = {
     ...restored,
     snapshotId: latest.id,
     conflictedPaths: [...conflictedPaths, ...restored.conflictedPaths].sort(),
@@ -235,12 +236,14 @@ export async function rejectRunSnapshotBody(
 
   const fullyRejected =
     result.conflictedPaths.length === 0 && result.missingSnapshotFiles.length === 0;
+  const facts = runRejectFacts(result);
   const nextLedger = await createRunLedger({
     projectDir,
     sessionId,
     runSnapshot: latest,
     accepted: false,
     rejected: fullyRejected,
+    putBack: { restored: facts.restored, removed: facts.removed },
   });
   await writeRunLedger(projectDir, sessionId, nextLedger);
   return result;

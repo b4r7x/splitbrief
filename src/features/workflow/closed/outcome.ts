@@ -11,6 +11,7 @@ import {
   truncateTerminalDisplayText,
 } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
+import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';
 import { FINAL_REVIEW_NOT_RUN, findingCounts, scopeCleanSegment, type CopyTone } from './copy.js';
 import { stopPoint } from '../stop/copy.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
@@ -161,16 +162,21 @@ function appliedSegments(view: SummaryView): OutcomeSpan[][] {
 }
 
 function discardedSegments(view: SummaryView): OutcomeSpan[][] {
-  const changed = view.files.changed;
   return [
     [{ text: 'Discarded', tone: stateTone('attention') }],
     briefFraction(view),
-    secondaryFact(
-      changed === null || changed.length === 0
-        ? filesFact(view)
-        : `${countNoun(changed.length, 'file')} saved in run.patch`,
-    ),
+    secondaryFact(discardedFilesFact(view)),
   ];
+}
+
+/** Where a discarded run's changes went: back out of the checkout a reject put, or its run.patch. */
+function discardedFilesFact(view: SummaryView): string {
+  if (view.checkpoint?.kind === 'rejected' && view.checkpoint.putBack !== undefined)
+    return formatApplyRestoreCounts(view.checkpoint.putBack);
+  const changed = view.files.changed;
+  if (changed === null || changed.length === 0) return filesFact(view);
+  if (view.files.patch !== null) return `${countNoun(changed.length, 'file')} saved in run.patch`;
+  return filesFact(view);
 }
 
 function briefFraction(view: SummaryView): OutcomeSpan[] {

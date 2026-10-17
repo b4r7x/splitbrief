@@ -4,8 +4,17 @@ import type { SessionRef } from '../types/session-ref.js';
 import type { OwnedResumeState } from '../state/resume-hydration.js';
 import { deriveRunStatus, type RunStatus } from './run-status.js';
 
-/** The accept/reject decision the run ledger records; the loader maps it out of engine shapes. */
-export type RunCheckpoint = Readonly<{ kind: 'accepted' | 'rejected' }>;
+/**
+ * The accept/reject decision the run ledger records; the loader maps it out of engine shapes. A
+ * reject carries what it put back (`removed` is the part of `restored` the run had created),
+ * absent on a ledger from before it was kept.
+ */
+export type RunCheckpoint =
+  | Readonly<{ kind: 'accepted' }>
+  | Readonly<{
+      kind: 'rejected';
+      putBack?: Readonly<{ restored: readonly string[]; removed: readonly string[] }> | undefined;
+    }>;
 
 export interface RunRecord {
   ref: SessionRef;

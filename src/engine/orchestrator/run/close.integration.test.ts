@@ -28,6 +28,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { createSnapshot } from '../../snapshots/create.js';
+import { recordRunSnapshot } from '../../snapshots/run/ledger.js';
+import { markExited, writeLockfile } from '../../../core/sessions/lockfile.js';
 import { recordLocalTaskEvidence } from '../evidence/task.js';
 import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
 import { createRunIsolation } from '../isolation/create.js';
@@ -36,7 +38,7 @@ import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { runPlanApproval } from '../planning/session.js';
-import { closeRunIfOpen } from './close.js';
+import { closeRunIfOpen, rejectCheckoutRun } from './close.js';
 
 const removal = vi.hoisted(() => ({ patchExisted: [] as boolean[] }));
 vi.mock('../isolation/remove-worktree.js', async (importOriginal) => {
@@ -114,6 +116,57 @@ async function openWorkspaceRun(strategy: 'worktree' | 'staged-copy') {
   };
   saveState(ref, state);
   return { ref, state, workspaceDir, base };
+}
+
+/**
+ * A checkout run inside its brief T001, which declares lib/lerp.mjs and has written it and an
+ * undeclared test file since it started.
+ */
+async function checkoutRunInBrief() {
+  const projectDir = createTempDir('close-run-checkout-brief-');
+  dirs.push(projectDir);
+  createTestGitRepo(projectDir, { 'lib/clamp.mjs': 'export const clamp = 1;\n' });
+  const ref = { projectDir, sessionId: SESSION_ID };
+  ensureSessionDir(projectDir, SESSION_ID);
+  await createSnapshot({ ...ref, phase: 'manual', name: 'run-baseline' });
+  const taskStart = await captureWorkspaceSnapshot(projectDir, ref);
+  writeFileSync(join(projectDir, 'lib/lerp.mjs'), 'export const lerp = 1;\n');
+  mkdirSync(join(projectDir, 'test'), { recursive: true });
+  writeFileSync(join(projectDir, 'test/lerp.test.mjs'), 'lerp works\n');
+  const task = makeTask({ id: 'T001', title: 'Lerp', suggestedFiles: ['lib/lerp.mjs'] });
+  const state: WorkflowState = {
+    ...createInitialState('Checkout run'),
+    phase: 'implementing',
+    workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head: null } },
+    tasks: [{ ...task, status: 'in_progress' }],
+    currentTaskIndex: 0,
+    changedFilesBaseline: { head: null, fingerprints: {}, activeTaskSnapshot: taskStart },
+  };
+  saveState(ref, state);
+  return { ref, state, task };
+}
+
+/** The snapshot a checkout run records when it comes to rest. */
+async function recordRestSnapshot(ref: { projectDir: string; sessionId: string }) {
+  const rest = await createSnapshot({ ...ref, phase: 'manual', name: 'post-task-0' });
+  await recordRunSnapshot(ref.projectDir, ref.sessionId, rest.manifest, 'post-task');
+}
+
+async function writeRunLockfile(ref: { projectDir: string; sessionId: string }, pid: number) {
+  await writeLockfile(sessionDir(ref.projectDir, ref.sessionId), {
+    pid,
+    startTimeMs: Date.now(),
+    lastAliveMs: Date.now(),
+    sessionId: ref.sessionId,
+    feature: 'Checkout run',
+  });
+}
+
+/** A run's process records the rest snapshot as it exits, then marks its lockfile exited. */
+async function exitRunProcess(ref: { projectDir: string; sessionId: string }) {
+  await writeRunLockfile(ref, process.pid);
+  await recordRestSnapshot(ref);
+  await markExited(sessionDir(ref.projectDir, ref.sessionId), 0);
 }
 
 function checkoutFiles(projectDir: string) {
@@ -423,5 +476,85 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
           event.message.includes('nothing is unapplied and no run patch was written'),
       ),
     ).toBe(true);
+  });
+
+  // RC6 run A: after `/run reject confirm` removed the run's files, the close said they were
+  // "already there" and booked the user's later-user.txt and README.md as the stopped brief's.
+  it('closes a checkout run a reject put back as discarded, with no claim and only the brief files', async () => {
+    const { ref, state } = await checkoutRunInBrief();
+    await exitRunProcess(ref);
+    writeFileSync(join(ref.projectDir, 'later-user.txt'), 'the user wrote this after the stop\n');
+    const { bus, events } = makeBusRecorder();
+
+    const { closure } = await rejectCheckoutRun({ ...ref, bus }, state);
+
+    expect(closure?.state.closed?.as).toBe('discarded');
+    expect(existsSync(join(ref.projectDir, 'lib/lerp.mjs'))).toBe(false);
+    expect(existsSync(join(sessionDir(ref.projectDir, SESSION_ID), 'run.patch'))).toBe(false);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+    expect(readEvidenceLedger(ref)?.tasks.find((task) => task.id === 'T001')).toMatchObject({
+      status: 'in_progress',
+      changedFiles: ['lib/lerp.mjs', 'test/lerp.test.mjs'],
+    });
+  });
+
+  // A Seat down halt records no kept files: End run after it booked nothing for the halted brief,
+  // and the closed Files list left out the files it had written to the checkout.
+  it('End run after a Seat down halt in a checkout books what the brief wrote up to the rest, not later user edits', async () => {
+    const { ref, state, task } = await checkoutRunInBrief();
+    await exitRunProcess(ref);
+    writeFileSync(join(ref.projectDir, 'later-user.txt'), 'the user wrote this after the halt\n');
+    writeFileSync(join(ref.projectDir, 'lib/clamp.mjs'), 'the user edited this after the halt\n');
+    const halted: WorkflowState = {
+      ...state,
+      interruptedStep: {
+        step: { kind: 'brief', taskId: task.id, attempt: 0 },
+        source: 'seat',
+        cut: 'mid-step',
+        at: '2026-10-16T21:37:07.841Z',
+      },
+    };
+    saveState(ref, halted);
+
+    const closure = await closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, halted);
+
+    expect(closure.state.closed?.as).toBe('ended');
+    expect(readEvidenceLedger(ref)?.tasks.find((task) => task.id === 'T001')).toMatchObject({
+      status: 'in_progress',
+      changedFiles: ['lib/lerp.mjs', 'test/lerp.test.mjs'],
+    });
+    expect(readFileSync(join(ref.projectDir, 'later-user.txt'), 'utf8')).toBe(
+      'the user wrote this after the halt\n',
+    );
+  });
+
+  it('a checkout run that closes in its own process books the brief from the checkout as it is', async () => {
+    const { ref, state } = await checkoutRunInBrief();
+    await writeRunLockfile(ref, process.pid);
+
+    const closure = await closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, state);
+
+    expect(closure.state.closed?.as).toBe('ended');
+    expect(readEvidenceLedger(ref)?.tasks.find((task) => task.id === 'T001')).toMatchObject({
+      status: 'in_progress',
+      changedFiles: ['lib/lerp.mjs', 'test/lerp.test.mjs'],
+    });
+  });
+
+  // A process killed inside a brief records no rest snapshot: the latest one is older than what
+  // the brief wrote, so End run booked nothing of the brief while its files stayed in the checkout.
+  it('End run after the run process died in a brief books the brief from the checkout as it is', async () => {
+    const { ref, state } = await checkoutRunInBrief();
+    await recordRestSnapshot(ref);
+    writeFileSync(join(ref.projectDir, 'lib/smooth.mjs'), 'written after the last rest\n');
+    await writeRunLockfile(ref, 99999999);
+
+    const closure = await closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, state);
+
+    expect(closure.state.closed?.as).toBe('ended');
+    expect(readEvidenceLedger(ref)?.tasks.find((task) => task.id === 'T001')).toMatchObject({
+      status: 'in_progress',
+      changedFiles: ['lib/lerp.mjs', 'lib/smooth.mjs', 'test/lerp.test.mjs'],
+    });
   });
 });

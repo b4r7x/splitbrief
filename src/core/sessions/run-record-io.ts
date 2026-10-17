@@ -32,7 +32,9 @@ function readRunCheckpoint(ref: SessionRef): RunCheckpoint | null {
   const parsed = RunSnapshotLedgerSchema.safeParse(raw);
   if (!parsed.success) return null;
   if (parsed.data.accepted) return { kind: 'accepted' };
-  return parsed.data.rejected ? { kind: 'rejected' } : null;
+  if (!parsed.data.rejected) return null;
+  const { putBack } = parsed.data;
+  return { kind: 'rejected', ...(putBack !== undefined && { putBack }) };
 }
 
 function readLedger(ref: SessionRef): EvidenceLedger | null {

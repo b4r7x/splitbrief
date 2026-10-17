@@ -575,6 +575,7 @@ Enter with text queues a message for the seat that reads it next: the seat of th
 |---|---|
 | PLAN | `Message PLAN · read at its next call…` |
 | BUILD | `Message BUILD on T003 · read when its call ends…` |
+| BUILD, while the brief's checks run | `Message BUILD on T003 · read after its checks…` |
 | REVIEW | `Message REVIEW · read at its verdict call…` |
 
 See [Message queue](./ENGINE.md#message-queue) for each seat's delivery rules, corrections during checks, and retry behavior.
@@ -585,7 +586,7 @@ The `queueCopy` function supplies the placeholder, byline, transcript labels, an
 |---|---|
 | Byline and `/queue show` | `1 queued for BUILD on T003` |
 | Feedback | `Queued for BUILD on T003 · ctrl+⏎ sends now` |
-| Transcript, pending | `Queued for BUILD on T003 · read when its call ends` |
+| Transcript, pending | `Queued for BUILD on T003 · read when its call ends`, or `· read after its checks` while the brief's checks run |
 | Transcript, delivered | `Delivered to BUILD on T003` |
 
 When a steerable call of the receiving seat is attached, SPLITBRIEF offers the message to that running call. The seat reads it after its current tool. `steerable_call` events tell the UI which call can receive messages. One copy function supplies these texts:

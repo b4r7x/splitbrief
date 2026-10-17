@@ -85,6 +85,15 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
     const complete = events.find((e) => e.type === 'task_completed');
     expect(start).toMatchObject({ type: 'task_started', taskId: 'T001', index: 0, total: 1 });
     expect(complete).toMatchObject({ type: 'task_completed', taskId: 'T001', method: 'local' });
+    // The screen reads the validating phase the moment the brief enters it, not at a later event.
+    const types = events.map((e) => e.type);
+    expect(events.find((e) => e.type === 'task_validating')).toEqual({
+      type: 'task_validating',
+      ts: expect.any(Number),
+      phase: 'validating-task',
+      taskId: 'T001',
+    });
+    expect(types.indexOf('task_validating')).toBeLessThan(types.indexOf('task_completed'));
 
     expect(taskBreakdowns).toHaveLength(1);
     expect(taskBreakdowns[0]).toMatchObject({ taskId: 'T001', method: 'local' });

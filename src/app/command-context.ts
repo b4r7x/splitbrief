@@ -62,12 +62,12 @@ import { plannerSupportsImages } from '../core/runners/capabilities.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
-import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
+import { acceptRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
 import { runApplyAtRest } from '../engine/orchestrator/apply/at-rest.js';
 import { undoApply } from '../engine/orchestrator/apply/restore.js';
 import { canUndoApply } from '../core/sessions/run-status.js';
 import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
-import { closeRunIfOpen } from '../engine/orchestrator/run/close.js';
+import { closeRunIfOpen, rejectCheckoutRun } from '../engine/orchestrator/run/close.js';
 import { finalizeRunAtRest } from '../engine/orchestrator/session-lifecycle/finalize.js';
 import { addTuiEvent } from '../features/workflow/tui-sink.js';
 import { readRunRecord } from '../core/sessions/run-record-io.js';
@@ -204,7 +204,10 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
       message: 'Run rejection is unavailable while the run is active.',
     };
   }
-  if (run.kind === 'snapshot') return rejectRunSnapshot(projectDir, sessionId);
+  if (run.kind === 'snapshot') {
+    const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
+    return (await rejectCheckoutRun({ projectDir, sessionId, bus }, null)).result;
+  }
   const { state } = run;
   if (record.status.kind === 'closed') {
     return { status: 'undone', ...(await undoApply(record.ref, state)) };
@@ -215,17 +218,10 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
   }
   const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
   if (state.workspace?.kind === 'checkout') {
-    const result = await rejectRunSnapshot(projectDir, sessionId);
-    if (
-      result.status === 'rejected' &&
-      result.conflictedPaths.length === 0 &&
-      result.missingSnapshotFiles.length === 0
-    ) {
-      const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
-      if (closure.closedNow) {
-        finalizeRunAtRest({ ref: record.ref, config, state: closure.state });
-        sessionsStore.refresh();
-      }
+    const { result, closure } = await rejectCheckoutRun({ projectDir, sessionId, bus }, state);
+    if (closure?.closedNow === true) {
+      finalizeRunAtRest({ ref: record.ref, config, state: closure.state });
+      sessionsStore.refresh();
     }
     return result;
   }

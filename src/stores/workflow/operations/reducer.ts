@@ -133,6 +133,21 @@ function updateRunningOperations(state: OperationsState, event: EngineEvent): Op
       return applyValidationStage(state, event);
     case 'full_suite':
       return applySuiteStage(state, event);
+    // A brief's plan check has no row of its own; its start alone names the command the run is in.
+    case 'task_validating':
+      if (event.check === undefined) return state;
+      return {
+        ...state,
+        suiteStage: {
+          id: event.check.id,
+          command: event.check.command,
+          moment: 'plan',
+          ...(event.check.scenario !== undefined && { scenario: event.check.scenario }),
+          stageStartedTs: event.ts,
+        },
+      };
+    case 'checks_run':
+      return (state.suiteStage ?? null) === null ? state : { ...state, suiteStage: null };
     case 'runner_call_started':
       return startRunnerOperation(closeStatusFallbacks(state, event.ts), event);
     case 'runner_call_runtime_status':

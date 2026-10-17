@@ -175,6 +175,7 @@ describe('run with no reviewer configured', () => {
       'tasks_planned',
       'task_started',
       'cost_update',
+      'task_validating',
       'task_completed',
       'task_tokens',
       'snapshot_created',

@@ -338,6 +338,20 @@ describe('interrupted lifecycle', () => {
     expect(markLifecycleInterrupted(cancelled)).toBe(cancelled);
   });
 
+  it('reads the validating phase as soon as a brief enters its checks', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing', startedAt: 1_000 });
+
+    addEvent({
+      type: 'task_validating',
+      ts: 2_000,
+      phase: 'validating-task',
+      taskId: taskId('T001'),
+    });
+
+    expect(lifecycleStore.get()).toMatchObject({ status: 'running', phase: 'validating-task' });
+    expect(lifecycleStore.get().phaseFirstSeenTs['validating-task']).toBe(2_000);
+  });
+
   it('phase events do not resurrect running from interrupted', () => {
     lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing', startedAt: 1_000 });
 

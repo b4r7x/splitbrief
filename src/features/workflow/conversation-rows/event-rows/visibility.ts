@@ -37,6 +37,7 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'hint_failed',
   'task_replaced',
   'tasks_inserted',
+  'task_validating',
   'checks_run',
   'seat_wait_started',
   'seat_retry',

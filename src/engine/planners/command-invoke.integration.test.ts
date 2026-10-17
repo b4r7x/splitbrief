@@ -37,7 +37,7 @@ describe('createCommandBasedPlanner', () => {
           command: process.execPath,
           args: [
             '-e',
-            `require('node:fs').writeFileSync(${JSON.stringify(capture)}, Object.keys(process.env).join('\\n'))`,
+            `const fs = require('node:fs'); fs.readFileSync(0); fs.writeFileSync(${JSON.stringify(capture)}, Object.keys(process.env).join('\\n'))`,
           ],
           env: ['SPLITBRIEF_DECLARED_TOKEN'],
         },

@@ -6,7 +6,7 @@ import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { publishError } from '../events.js';
+import { publishError, publishTaskValidating } from '../events.js';
 import { error } from '../../../utils/error.js';
 import {
   addUsageAndSave,
@@ -511,6 +511,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'TASK_SENT' });
   setTrackedState(state);
+  publishTaskValidating({ bus: wctx.bus, phase: state.phase }, task.id);
 
   if (wctx.signal?.aborted) return state;
 

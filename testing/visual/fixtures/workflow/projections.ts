@@ -832,6 +832,51 @@ const buildConsultProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// The brief's BUILD call ended and its own check runs: no seat call is open, and the screen names
+// the check and its clock rather than an implementing brief.
+const buildBriefCheckProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-build-brief-check'),
+  events: [
+    ...implementationProjection.events.slice(0, 4),
+    {
+      type: 'runner_call_completed',
+      ts: FIXED_TS + 9_000,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      callId: FIXED_CALL_ID,
+      role: 'implementer',
+      backendKind: 'api',
+      runnerName: FIXED_RUNNER_NAME,
+      model: FIXED_RUNNER_MODEL,
+      axes: seatAxisWords(BASE_IMPLEMENTER),
+      attempt: 1,
+      sequence: 2,
+      durationMs: 8_800,
+      startedAt: FIXED_TS + 200,
+      endedAt: FIXED_TS + 9_000,
+      status: 'completed',
+      error: null,
+      partial: false,
+      usage: null,
+      nativeSessionId: null,
+    },
+    {
+      type: 'task_validating',
+      ts: FIXED_TS + 9_100,
+      phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+    },
+    {
+      type: 'task_validating',
+      ts: FIXED_TS + 9_200,
+      phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      check: { id: 'K2', command: 'npm test -- src/parser.test.ts' },
+    },
+  ],
+};
+
 // A session from before reviewer checks: a brief gate whose red stages are also red at the run base
 // accepts them as pre-existing failures. The rows stay for replaying such a session.
 const validationProjection: WorkflowFixtureProjection = {
@@ -5547,6 +5592,7 @@ const projections = [
   balanceSeatSwitchProjection,
   stopSheetRecoveryProjection,
   buildConsultProjection,
+  buildBriefCheckProjection,
   buildReviewConsultProjection,
   implementationRetryProjection,
   reviewFixProjection,

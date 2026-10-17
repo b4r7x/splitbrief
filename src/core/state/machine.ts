@@ -44,6 +44,7 @@ const anytimeActions = [
   'RECORD_WORKSPACE',
   'INTERRUPT_STEP',
   'RESUME_STEP',
+  'RECORD_REJECT',
   'RESTORE_BRIEF_PARK',
   'SET_PLANNER_CONVERSATION',
   'CLEAR_PLANNER_CONVERSATION',
@@ -590,6 +591,15 @@ export function transition(
         },
         awaitingContinue: true,
       };
+
+    case 'RECORD_REJECT': {
+      const step = state.interruptedStep;
+      if (step?.kept === undefined) return state;
+      const removed = new Set(action.removed);
+      const { kept: before, ...rest } = step;
+      const kept = before.filter((file) => !removed.has(file));
+      return { ...state, interruptedStep: kept.length > 0 ? { ...rest, kept } : rest };
+    }
 
     case 'RESUME_STEP':
       return {
