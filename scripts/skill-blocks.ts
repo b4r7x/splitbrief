@@ -436,9 +436,8 @@ function narrowingLabel(narrowing: TestNarrowing): string {
   switch (narrowing.kind) {
     case 'path-arg':
       return narrowing.separator === '--' ? 'path-arg (after `--`)' : 'path-arg';
-    case 'name-filter':
-      return `name-filter (\`${narrowing.flag}\`)`;
     case 'package-arg':
+    case 'cargo-target':
     case 'none':
       return narrowing.kind;
   }

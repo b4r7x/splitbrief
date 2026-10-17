@@ -11,6 +11,18 @@ const PATTERNS = {
   cargo: /^test (.+?) \.\.\. FAILED$/,
 };
 
+const CARGO_TEST_RESULT = /^test result: \w+\. (\d+) passed; (\d+) failed;/;
+
+/** The tests a cargo run ran: the passed and failed counts of its `test result:` lines. */
+export function countCargoTests(output: string): number {
+  let count = 0;
+  for (const line of stripVTControlCharacters(output).split('\n')) {
+    const match = CARGO_TEST_RESULT.exec(line.trim());
+    if (match !== null) count += Number(match[1]) + Number(match[2]);
+  }
+  return count;
+}
+
 export function failingTestKey(test: Pick<FailingTest, 'file' | 'name'>): string {
   return test.file === '' ? test.name : test.name === '' ? test.file : `${test.file}::${test.name}`;
 }

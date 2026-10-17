@@ -41,7 +41,14 @@ type StageContext = {
 };
 
 type TestCheckPlan =
-  | { kind: 'run'; resolved: ResolvedCommand; args: string[]; command: string }
+  | {
+      kind: 'run';
+      resolved: ResolvedCommand;
+      args: string[];
+      command: string;
+      /** A cargo selection passes only when its output shows a test that ran. */
+      countsCargoTests: boolean;
+    }
   | { kind: 'skip'; reason: string };
 
 export function buildStageContext(input: {
@@ -133,8 +140,16 @@ export function planTestCheck(file: string, ctx: StageContext): TestCheckPlan {
     stack: ctx.stack,
   });
   if (!target.run) return { kind: 'skip', reason: target.skipReason };
-  const args = buildTestArgs(resolved, target.targets, ctx.stack?.narrowing ?? { kind: 'none' });
-  return { kind: 'run', resolved, args, command: formatValidationCommand(resolved.cmd, args) };
+  const narrowing = ctx.stack?.narrowing ?? { kind: 'none' };
+  const args = buildTestArgs(resolved, target.targets, narrowing, ctx.projectDir);
+  if (args === null) return { kind: 'skip', reason: 'no single cargo command runs these tests' };
+  return {
+    kind: 'run',
+    resolved,
+    args,
+    command: formatValidationCommand(resolved.cmd, args),
+    countsCargoTests: narrowing.kind === 'cargo-target' && target.targets.length > 0,
+  };
 }
 
 export function createValidator(deps: ValidatorDeps = {}): Validator {

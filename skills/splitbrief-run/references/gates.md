@@ -36,7 +36,7 @@ Record the command and its source in plan.json and the plan block. Run commands 
 - The next review chooses and runs its reviewer checks again. Log check ids, commands, output, exits and artifact paths in validation.md. Re-run checks when the candidate changes. Earlier green output cannot verify changed code.
 - Format the brief changed files with the project formatter after every hand-back. A formatter failure records a warning.
 - Display at most 4096 characters per command, and keep the LAST 40 lines of a test command — runners print the pass/fail summary last.
-- Narrowing kinds: `path-arg`, `package-arg`, `name-filter`, `none`.
+- Narrowing kinds: `path-arg`, `package-arg`, `cargo-target`, `none`.
 <!-- /generated -->
 
 Append every check and every reviewer check to `validation.md` under `## T00N — attempt N` or `## Review N`, with each command on its own line above its fenced output.
@@ -46,7 +46,7 @@ Append every check and every reviewer check to `validation.md` under `## T00N �
 <!-- generated: gates -->
 | Language (marker) | test check command | test files |
 |---|---|---|
-| rust (`Cargo.toml`) | `cargo test` | inline `#\[cfg\(test\)\]` |
+| rust (`Cargo.toml`) | `cargo test` | `tests/*.rs`, inline `#\[cfg\(test\)\]` |
 | go (`go.mod`) | `go test ./...` | `*_test.go` |
 | python (`pyproject.toml`, `setup.py`, `setup.cfg`, `requirements.txt`, `Pipfile`) | `uv run pytest` | `test_*.py`, `*_test.py` |
 | typescript (`tsconfig.json`) | `npm test` | `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `__tests__/*.ts` |
@@ -58,7 +58,7 @@ A planner `test` check runs only the tests its file affects when the resolved co
 
 | Language | test narrowing | allowed commands |
 |---|---|---|
-| rust | name-filter (`--`) | `cargo` |
+| rust | cargo-target | `cargo` |
 | go | package-arg | `go` `golangci-lint` `staticcheck` |
 | python | path-arg | `pytest` `mypy` `ruff` `flake8` `pyright` `uv` `poetry` `python` |
 | typescript | path-arg (after `--`) | `npm` `npx` `node` `tsc` `vitest` `jest` `eslint` `prettier` `biome` |
