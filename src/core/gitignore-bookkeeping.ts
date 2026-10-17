@@ -19,8 +19,13 @@ export async function gitignoreDiffersOnlyBySplitbriefBookkeeping(
   const working = await readGitignoreSafe(join(projectDir, '.gitignore'));
   if (working === null) return false;
   const head = (await showFileAtHead(projectDir, '.gitignore'))?.toString('utf8') ?? '';
+  // Setup ends a last line that has no newline before it appends its own line, so the final
+  // newline is not compared.
   const stripSplitbrief = (text: string): string[] =>
-    text.split('\n').filter((line) => !SPLITBRIEF_GITIGNORE_LINES.has(line.trim()));
+    text
+      .replace(/\n$/, '')
+      .split('\n')
+      .filter((line) => !SPLITBRIEF_GITIGNORE_LINES.has(line.trim()));
   return stripSplitbrief(working).join('\n') === stripSplitbrief(head).join('\n');
 }
 

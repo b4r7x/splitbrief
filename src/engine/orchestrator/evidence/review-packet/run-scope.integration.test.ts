@@ -107,3 +107,26 @@ describe('resolveRunReviewScope with symlinks', () => {
     expect(retargeted.laterDiff).toContain('+../init.txt');
   });
 });
+
+describe('resolveRunReviewScope with a setup .gitignore', () => {
+  it("tells the reviewer that SPLITBRIEF's own .gitignore lines are no finding", async () => {
+    const p = project();
+    const base = {
+      ref: p.ref,
+      workspaceDir: p.projectDir,
+      tasks: [p.task],
+      workspaceFiles: [],
+      workspaceDiff: '',
+      preRunFiles: [],
+    };
+
+    const setup = await resolveRunReviewScope({ ...base, setupFiles: ['.gitignore'] });
+    expect(setup.provenance.setupFiles).toEqual(['.gitignore']);
+    expect(setup.description).toContain("SPLITBRIEF's own setup changes: .gitignore.");
+    expect(setup.description).toContain('raise no finding and give no fix task for it');
+
+    const none = await resolveRunReviewScope(base);
+    expect(none.description).toContain("SPLITBRIEF's own setup changes: none.");
+    expect(none.description).not.toContain('Such a .gitignore');
+  });
+});

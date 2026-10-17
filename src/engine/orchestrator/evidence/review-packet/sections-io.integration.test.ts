@@ -253,6 +253,8 @@ describe('resolveRunUniverse', () => {
     });
     expect(untouched.changedFiles).toEqual([]);
     expect(untouched.fullDiff).toBe('');
+    expect(untouched.setupFiles).toEqual(['.gitignore']);
+    expect(untouched.preRunFiles).toEqual([]);
 
     writeFileSync(join(projectDir, '.gitignore'), `${committed}.splitbrief/\n.trees/\ndist/\n`);
     const changed = await resolveRunUniverse({
@@ -262,6 +264,7 @@ describe('resolveRunUniverse', () => {
     });
     expect(changed.changedFiles).toEqual(['.gitignore']);
     expect(changed.fullDiff).toContain('+dist/');
+    expect(changed.setupFiles).toEqual([]);
   });
 });
 

@@ -281,6 +281,7 @@ export function renderReviewPacketMarkdown(
           `- Workspace context: ${packet.changes.provenance.workspaceFiles.join(', ') || 'none'}.`,
           `- Uncertain attribution or later edits: ${packet.changes.provenance.uncertainFiles.join(', ') || 'none observed'}.`,
           `- Already changed when this run started: ${packet.changes.provenance.preRunFiles.join(', ') || 'none'}.`,
+          `- SPLITBRIEF's own setup changes, not run changes: ${packet.changes.provenance.setupFiles.join(', ') || 'none'}.`,
           '- Workspace changes alone do not establish implementer authorship. Review mixed and uncertain edits against the recorded promotions and current behavior.',
         ]),
     '',

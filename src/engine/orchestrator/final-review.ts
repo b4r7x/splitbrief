@@ -455,6 +455,7 @@ export async function runFinalReviewPhase(opts: {
       workspaceFiles: universe.changedFiles,
       workspaceDiff: universe.fullDiff,
       preRunFiles: universe.preRunFiles,
+      setupFiles: universe.setupFiles,
       ...(state.applyReview !== undefined && {
         mergedPaths: state.applyReview.merged.map((entry) => entry.path),
       }),

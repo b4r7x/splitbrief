@@ -9,7 +9,7 @@ import { hydrateRun } from '../../../features/workflow/run-history.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { resolveSelectedSkills, runHeadless } from '../../headless.js';
 import { assertResumableState } from '../../sessions/resolve.js';
-import { setupWorkflow } from '../../setup.js';
+import { assertInteractiveTty, setupWorkflow } from '../../setup.js';
 import { resolveRunConfig } from '../../build-overrides.js';
 import {
   formatSeatChangeNotice,
@@ -64,6 +64,14 @@ function reportSeatChanges(ref: { projectDir: string; sessionId: string }, confi
   }
 }
 
+/**
+ * A resume without `--json` or `--plain` mounts the TUI, which needs a terminal. `continue` asks
+ * before its recovery action writes anything, so a refused resume leaves the run as it was.
+ */
+export function assertResumeTerminal(opts: Pick<WorkflowOpts, 'json' | 'plain'>): void {
+  if (opts.json !== true && opts.plain !== true) assertInteractiveTty('use --json or --plain');
+}
+
 export async function resumeSavedSession(args: {
   projectDir: string;
   sessionId: string;
@@ -80,6 +88,7 @@ export async function resumeSavedSession(args: {
   // prevents a raw legacy object from reaching preparation, rendering, or a
   // provider.
   assertResumableState(args.state, sessionId);
+  assertResumeTerminal(opts);
   const { state } = args;
 
   const config = args.config ?? resolveRunConfig({ projectDir, opts });

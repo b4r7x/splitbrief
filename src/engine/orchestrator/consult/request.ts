@@ -13,7 +13,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
-import { rejectedDecisions } from '../../../core/state/machine.js';
+import { decisionLedgerText, rejectedDecisions } from '../../../core/state/machine.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import type { EventBus } from '../../events/types.js';
@@ -247,11 +247,36 @@ function publishAnswer(
   );
 }
 
+/** A JSON escape the planner may decode in a decision text it reads back from the report. */
+const JSON_ESCAPE = /\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})/g;
+
+function decodedLedgerText(decision: { what: string; why: string }): string {
+  return decisionLedgerText(decision).replace(JSON_ESCAPE, (sequence) =>
+    JSON.parse(`"${sequence}"`),
+  );
+}
+
+/**
+ * The reported decisions a confirm accepts, in the implementer's own words. The planner reads
+ * them as text and can return an escape the implementer wrote, such as `\u0300`, as its
+ * character, so both sides compare decoded. A decision the confirm leaves out or rewords is not
+ * accepted, and a decision nobody reported never is.
+ */
+function acceptedDecisions(
+  report: ImplementerReport | null | undefined,
+  confirmed: readonly { what: string; why: string }[],
+): { what: string; why: string }[] {
+  if (report?.status !== 'done') return [];
+  const accepted = new Set(confirmed.map(decodedLedgerText));
+  return report.decisions.filter((decision) => accepted.has(decodedLedgerText(decision)));
+}
+
 /**
  * Asks the consult seat about one task and records its answer: the reviewer for a fix
  * task's repair, the planner for the rest (`consultSeat`). The planner continues its
  * session; the reviewer holds none and reads the full prompt. Deviation and stale
- * requests spend no consult allowance; both seats share the rest.
+ * requests spend no consult allowance; both seats share the rest. A confirm comes back with
+ * only the reported decisions it accepts, so the ledger and the counts never hold a reworded one.
  */
 export async function requestConsult(
   ctx: ConsultContext,
@@ -379,7 +404,17 @@ export async function requestConsult(
   if (input.reason !== 'deviation' && input.reason !== 'stale') {
     apply(transitionAndSave(ref, state, { type: 'COUNT_PLANNER_CALL' }));
   }
-  publishAnswer(ctx, state, input, consulted, seat);
+  // The record keeps the seat's own words; a confirm applies only the reported decisions it accepts.
+  const applied: ConsultAnswer =
+    consulted.answer.action === 'confirm'
+      ? {
+          answer: {
+            ...consulted.answer,
+            decisions: acceptedDecisions(input.report, consulted.answer.decisions),
+          },
+        }
+      : consulted;
+  publishAnswer(ctx, state, input, applied, seat);
   if (seat === 'plan') apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
-  return { answer: consulted };
+  return { answer: applied };
 }

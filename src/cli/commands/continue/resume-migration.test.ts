@@ -1,10 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import { assertResumableState } from '../../sessions/resolve.js';
 import { resumeSavedSession } from './resume.js';
+
+// A resume without --json or --plain mounts the TUI, which needs a terminal.
+beforeEach(() => {
+  process.stdin.isTTY = true;
+});
+
+afterEach(() => {
+  delete (process.stdin as { isTTY?: boolean }).isTTY;
+});
 
 function resumableState(overrides: Partial<WorkflowState> = {}): WorkflowState {
   return {

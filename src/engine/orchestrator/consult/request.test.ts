@@ -866,6 +866,91 @@ describe('requestConsult seats', () => {
     expect(seen.at(-1)?.lineages?.T003?.consultRecords.at(-1)?.seat).toBe('plan');
   });
 
+  it('applies and counts only the reported decisions a confirm accepts, in the implementer words', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const exact = { what: 'Used node:crypto', why: 'It is standard' };
+    const escaped = { what: 'Wrote the range as \\u0300-\\u036f escapes', why: 'They are exact' };
+    const reworded = { what: 'Kept the --json flag', why: 'The criterion needs it' };
+    const omitted = { what: 'Renamed the helper', why: 'The name was taken' };
+    const confirmed = [
+      exact,
+      { what: 'Wrote the range as ̀-ͯ escapes', why: 'They are exact' },
+      { what: 'Kept the --json output flag', why: 'The criterion needs it' },
+    ];
+    const planner = consultPlanner(
+      [
+        {
+          text: JSON.stringify({
+            answer: {
+              diagnosis: 'Two keep the criteria.',
+              action: 'confirm',
+              decisions: confirmed,
+            },
+          }),
+        },
+      ],
+      true,
+    );
+    const state = consultState();
+    saveState({ projectDir, sessionId }, state);
+    const seen: WorkflowState[] = [];
+    const events = makeBusRecorder();
+    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, planner.planner, seen);
+    const report = {
+      status: 'done' as const,
+      filesChanged: [],
+      touchedNotSuggested: [],
+      notes: null,
+      decisions: [exact, escaped, reworded, omitted],
+    };
+
+    const result = await requestConsult(
+      { ...ctx, bus: events.bus },
+      { ...request(state.tasks[0]!, 'deviation'), report },
+    );
+
+    expect('answer' in result && result.answer.answer).toMatchObject({
+      action: 'confirm',
+      decisions: [exact, escaped],
+    });
+    expect(events.events.find((event) => event.type === 'consult_answered')).toMatchObject({
+      action: 'confirm',
+      decisionCount: 2,
+      rejectedCount: 2,
+    });
+    expect(seen.at(-1)?.lineages?.T003?.consultRecords.at(-1)?.answer.answer).toMatchObject({
+      decisions: confirmed,
+    });
+  });
+
+  it('accepts no decision from a confirm on a consult that carries no done report', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const planner = consultPlanner(
+      [
+        {
+          text: JSON.stringify({
+            answer: {
+              diagnosis: 'Nothing was reported.',
+              action: 'confirm',
+              decisions: [{ what: 'Used node:crypto', why: 'It is standard' }],
+            },
+          }),
+        },
+      ],
+      true,
+    );
+    const state = consultState();
+    saveState({ projectDir, sessionId }, state);
+    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, planner.planner, []);
+
+    const result = await requestConsult(ctx, request(state.tasks[0]!, 'failed'));
+
+    expect('answer' in result && result.answer.answer).toMatchObject({
+      action: 'confirm',
+      decisions: [],
+    });
+  });
+
   it('lets one planner object answer both seats when no reviewer is configured', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const planner = consultPlanner(

@@ -51,6 +51,31 @@ describe('renderReviewPacketMarkdown review seat', () => {
     expect(rendered).not.toContain('GPT-6 Luna');
   });
 
+  it("names SPLITBRIEF's own .gitignore setup change apart from the run and the user's changes", () => {
+    const packet = makeReviewPacket();
+    const rendered = renderReviewPacketMarkdown(
+      {
+        ...packet,
+        changes: {
+          ...packet.changes,
+          provenance: {
+            path: 'review-changes.json',
+            status: 'available',
+            promotedFiles: ['src/a.ts'],
+            workspaceFiles: ['src/a.ts'],
+            uncertainFiles: [],
+            preRunFiles: [],
+            setupFiles: ['.gitignore'],
+          },
+        },
+      },
+      NULL_CACHE,
+    );
+
+    expect(rendered).toContain('- Already changed when this run started: none.');
+    expect(rendered).toContain("- SPLITBRIEF's own setup changes, not run changes: .gitignore.");
+  });
+
   it('lists the task tally without a local count', () => {
     const packet = makeReviewPacket();
     const rendered = renderReviewPacketMarkdown(

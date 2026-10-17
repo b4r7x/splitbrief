@@ -16,6 +16,7 @@ import {
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
 } from '../../../../utils/display-text.js';
+import { wrapPathAware } from '../../../../utils/wrap.js';
 import { crewLine, factSpans, runRows } from '../copy.js';
 import { LEDGER_LEAD, LEDGER_LEAD_CELLS, LedgerRule } from './lead.js';
 
@@ -32,7 +33,7 @@ export function runSectionRows(
   ];
   for (const [index, row] of [
     ...crewRows(view, valueWidth, crewNamed),
-    ...runRows(view),
+    ...runRows(view).flatMap((row) => proseLines(row, valueWidth)),
   ].entries()) {
     rows.push({
       // A follow-on row has no label of its own; its place keys it.
@@ -51,6 +52,21 @@ function crewRows(view: SummaryView, budget: number, crewNamed: boolean): RunRow
     span.seat === undefined ? [] : [{ text: span.text, tone: CREW_SEAT_ROLES[span.seat] }],
   );
   return segments.length === 0 ? [] : [{ label: 'Crew', segments }];
+}
+
+/** A prose row wraps at words, each further line under the text after its lead. */
+function proseLines(row: RunRow, width: number): RunRow[] {
+  const [fact] = row.segments;
+  if (row.hang === undefined || fact === undefined || 'spans' in fact) return [row];
+  const text = stripTerminalControls(fact.text);
+  const lead = text.slice(0, row.hang);
+  const indent = ' '.repeat(getTerminalCellWidth(lead));
+  return wrapPathAware(text.slice(row.hang), Math.max(1, width - indent.length))
+    .split('\n')
+    .map((line, index) => ({
+      label: index === 0 ? row.label : '',
+      segments: [{ text: `${index === 0 ? lead : indent}${line}`, tone: fact.tone }],
+    }));
 }
 
 function RunValueRow({ row, theme, width }: { row: RunRow; theme: Theme; width: number }) {
@@ -78,6 +94,7 @@ function RunValueRow({ row, theme, width }: { row: RunRow; theme: Theme; width: 
 /**
  * A value too wide for its column sheds whole ` · ` facts from the tail — half a fact states a
  * different fact — and the last one standing is cut from the middle so a path keeps both ends.
+ * Prose never reaches this cut: `proseLines` wraps it first.
  */
 function fitSegments(facts: RunRow['segments'], budget: number): CopySegment[] {
   const kept = facts.map(factSpans);

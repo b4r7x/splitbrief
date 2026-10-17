@@ -335,7 +335,10 @@ export function consultReplyAnswer(
   return { message, qa: [{ question: question.text, answer: message.displayText }] };
 }
 
-/** The consult seat's confirm: the decisions extend the run's ledger on the reporting task. */
+/**
+ * The consult seat's confirm: the reported decisions it accepts (`requestConsult` narrows the
+ * answer to them) extend the run's ledger on the reporting task.
+ */
 function applyConfirm(
   ctx: ConsultApplyContext,
   task: Task,
