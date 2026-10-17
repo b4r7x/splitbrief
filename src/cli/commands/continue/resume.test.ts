@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
@@ -13,7 +13,15 @@ import {
   writeSeatIdentities,
 } from '../../../core/state/seats.js';
 
-afterEach(() => modelCacheStore.reset());
+// A resume without --json or --plain mounts the TUI, which needs a terminal.
+beforeEach(() => {
+  process.stdin.isTTY = true;
+});
+
+afterEach(() => {
+  modelCacheStore.reset();
+  delete (process.stdin as { isTTY?: boolean }).isTTY;
+});
 
 describe('resume seat-change notice', () => {
   it('loads remembered catalog names before reporting a changed seat headlessly', async () => {

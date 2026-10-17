@@ -394,7 +394,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(result.state.plan?.decisions).toEqual([]);
   });
 
-  it('rejects a reported decision the confirm rewords, though the count matches', async () => {
+  it('rejects a reported decision the confirm rewords, and keeps the reworded text out of the ledger', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[WHAT], []]);
@@ -419,11 +419,12 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       expect.objectContaining({
         type: 'consult_answered',
         action: 'confirm',
-        decisionCount: 1,
+        decisionCount: 0,
         rejectedCount: 1,
       }),
     );
     expect(validator.checkRuns.mock.calls.filter(([id]) => id === 'T001')).toHaveLength(1);
+    expect(result.state.plan?.decisions).toEqual([]);
   });
 
   it('confirms decisions with the consult and planner-call bounds spent, and never halts', async () => {

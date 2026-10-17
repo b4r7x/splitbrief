@@ -233,4 +233,38 @@ describe('runSectionRows', () => {
     expect(narrow).toContain('2026-09-14…validation');
     for (const line of narrow.split('\n')) expect(line.length).toBeLessThanOrEqual(34);
   });
+
+  it('wraps a long failed-review finding at words, under its text, and never cuts it', () => {
+    const finding =
+      'slugify does not fold accented Latin letters to their base letters: src/slug.js line 3 removes them, but nothing maps é to e.';
+    const view = makeView({
+      failedReviews: [{ label: 'Review T001', blocking: [{ id: 'F1', text: finding }] }],
+    });
+    const rows = runSectionRows({ view, width: 80, theme: defaultTheme, crewNamed: true });
+    const ui = renderFeature(
+      <Box flexDirection="column">
+        {rows.map((row) => (
+          <Box key={row.key}>{row.node}</Box>
+        ))}
+      </Box>,
+      { cols: 80, rows: 30 },
+    );
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    ui.unmount();
+
+    const first = lines.findIndex((line) => line.includes('  F1 slugify'));
+    const head = lines[first] ?? '';
+    const column = head.indexOf('slugify');
+    // A wrapped line repeats the row's lead and indents to the text after `  F1 `.
+    const under = head.slice(0, column).replace('  F1 ', '     ');
+    const block = [head];
+    for (const line of lines.slice(first + 1)) {
+      if (!line.startsWith(under)) break;
+      block.push(line);
+    }
+    expect(block.length).toBeGreaterThan(1);
+    for (const line of block) expect(line.length).toBeLessThanOrEqual(80);
+    expect(block.map((line) => line.slice(column).trimEnd()).join(' ')).toBe(finding);
+    expect(block.join('\n')).not.toContain('…');
+  });
 });

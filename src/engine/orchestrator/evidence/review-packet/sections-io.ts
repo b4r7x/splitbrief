@@ -42,6 +42,8 @@ type RunUniverse = {
   changedFiles: string[];
   /** The files already changed when the run started: the user's own work, never a run change. */
   preRunFiles: string[];
+  /** SPLITBRIEF's own setup change: a .gitignore that differs only by its ignore lines. */
+  setupFiles: string[];
 };
 
 type RunWorkingTree = {
@@ -50,8 +52,9 @@ type RunWorkingTree = {
   /** The untracked run changes the git diff adds. */
   untracked: string[];
   preRunFiles: string[];
-  /** The files whose diff from the base commit is not the run's: the pre-run files, and a
-   * .gitignore that differs from it only by isolation's own lines. */
+  /** A .gitignore that differs from the base commit only by SPLITBRIEF's own lines. */
+  setupFiles: string[];
+  /** The files whose diff from the base commit is not the run's: the pre-run and setup files. */
   notRunFiles: ReadonlySet<string>;
   /** The pre-run files the run changed again, as the run base holds them. */
   preRunChanges: Map<string, Extract<RunBaseFile, { kind: 'new' | 'changed' }>>;
@@ -78,14 +81,14 @@ async function readRunWorkingTree(
   const preRunFiles = existsSync(join(workspaceDir, '.git'))
     ? uniqueSorted([...(baseline.runStartChangedFiles ?? [])])
     : [];
-  const notRunFiles = new Set(preRunFiles);
-  // Isolation's own .gitignore lines are not a change of the run.
-  if (
+  // SPLITBRIEF's own .gitignore lines are neither the user's change nor the run's.
+  const setupFiles =
     working.includes('.gitignore') &&
     !committed.includes('.gitignore') &&
     (await gitignoreDiffersOnlyBySplitbriefBookkeeping(workspaceDir))
-  )
-    notRunFiles.add('.gitignore');
+      ? ['.gitignore']
+      : [];
+  const notRunFiles = new Set([...preRunFiles, ...setupFiles]);
   const preRunChanges: RunWorkingTree['preRunChanges'] = new Map();
   if (preRunFiles.length > 0) {
     if (runBase === undefined) throw runUniverseError.missingRunBase();
@@ -101,6 +104,7 @@ async function readRunWorkingTree(
     changedFiles: uniqueSorted([...ownFiles, ...preRunChanges.keys()]),
     untracked: userVisibleChangedFiles(status.not_added).filter((file) => !notRunFiles.has(file)),
     preRunFiles,
+    setupFiles,
     notRunFiles,
     preRunChanges,
   };
@@ -154,6 +158,7 @@ export async function resolveRunUniverse(input: {
     fullDiff: diffs.join(''),
     changedFiles: tree.changedFiles,
     preRunFiles: tree.preRunFiles,
+    setupFiles: tree.setupFiles,
   };
 }
 

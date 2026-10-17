@@ -1,12 +1,13 @@
-import { mkdirSync, readdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { buildActivityBatchViewModel } from '../../../src/features/workflow/conversation-rows/activity-batch-model.js';
 import { prependPath, writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
 import {
   cli,
   createStopContinueFixture,
@@ -18,6 +19,12 @@ import {
 
 it('shows both file reads when a CLI tool supplies no upstream tool-use ids', async () => {
   const target = createStopContinueFixture(undefined, { isolation: 'none' });
+  // Copilot has no auth status command: readiness takes its session file as the sign-in fact.
+  // The CLI reads it from a throwaway home, never from the host's own Copilot session.
+  const home = useTrustHome('tool-activity-home');
+  vi.stubEnv('XDG_CONFIG_HOME', join(home.home, 'xdg'));
+  mkdirSync(join(home.home, '.copilot'));
+  writeFileSync(join(home.home, '.copilot', 'config.json'), '{"fixture":true}\n');
   const shims = join(target.tmpDir, 'bin');
   mkdirSync(shims);
   writeFakeNodeCli(
@@ -55,6 +62,8 @@ console.log(JSON.stringify({ type: 'assistant.message', data: { text: 'Implement
     expect(model.visibleItems.map((item) => item.value)).toEqual([GREET_FILE, MARKER_FILE]);
   } finally {
     restorePath();
+    vi.unstubAllEnvs();
+    home.restore();
     cleanupTempDir(target.tmpDir);
   }
 });

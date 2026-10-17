@@ -133,6 +133,8 @@ describe('runRows', () => {
     expect(rows[2]?.segments).toEqual([
       { text: '  F1 The test file lacks the four examples.', tone: 'textDim' },
     ]);
+    // The finding is prose: it wraps under the text after `  F1 `, never cut in the middle.
+    expect(rows[2]?.hang).toBe('  F1 '.length);
   });
 
   it('reads a packet that was never written as a review that never ran', () => {

@@ -23,7 +23,7 @@ import {
   applyRecoveryAction,
   seatRunnerValue,
 } from '../../../engine/orchestrator/recovery/actions.js';
-import { resumeSavedSession } from './resume.js';
+import { assertResumeTerminal, resumeSavedSession } from './resume.js';
 import { settleReadyRun } from './settle.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import {
@@ -219,6 +219,7 @@ export async function continueCommand(
     if (next === undefined) return;
     resumed = { state: next };
   } else {
+    assertResumeTerminal(opts);
     resumed =
       action === undefined
         ? { state: hydrated.state }

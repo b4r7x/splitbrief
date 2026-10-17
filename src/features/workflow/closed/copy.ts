@@ -45,6 +45,11 @@ export interface RunRow {
   seat?: CrewSeatId;
   /** Each fact fits as one unit; the renderer joins facts with ` · `. */
   segments: readonly CopyFact[];
+  /**
+   * A prose row's lead length: its one fact wraps at words, each further line under the text
+   * after the lead, so a sentence is never cut. A row without it is cut in the middle, as a path.
+   */
+  hang?: number;
 }
 
 export interface FileRow {
@@ -183,7 +188,8 @@ function preExistingRows(review: ReviewView): RunRow[] {
 
 /**
  * Each review that failed before the review of record, under the Review row: the review and how
- * many findings blocked it, then one indented row per finding, so a fix cycle keeps its reason.
+ * many findings blocked it, then one indented prose row per finding, so a fix cycle keeps its
+ * reason whole.
  */
 function failedReviewRows(reviews: SummaryView['failedReviews']): RunRow[] {
   return reviews.flatMap((review): RunRow[] => [
@@ -201,12 +207,14 @@ function failedReviewRows(reviews: SummaryView['failedReviews']): RunRow[] {
           : []),
       ],
     },
-    ...review.blocking.map(
-      (entry): RunRow => ({
+    ...review.blocking.map((entry): RunRow => {
+      const lead = `  ${entry.id} `;
+      return {
         label: '',
-        segments: [{ text: `  ${entry.id} ${entry.text}`, tone: 'textDim' }],
-      }),
-    ),
+        segments: [{ text: `${lead}${entry.text}`, tone: 'textDim' }],
+        hang: lead.length,
+      };
+    }),
   ]);
 }
 

@@ -42,6 +42,8 @@ export async function resolveRunReviewScope(opts: {
   workspaceDiff: string;
   /** The files already changed when the run started. */
   preRunFiles: readonly string[];
+  /** SPLITBRIEF's own setup changes in the workspace, apart from the run's and the user's. */
+  setupFiles?: readonly string[];
   mergedPaths?: readonly string[];
 }): Promise<RunReviewScope> {
   let status: ReviewProvenance['status'] = 'available';
@@ -142,6 +144,7 @@ export async function resolveRunReviewScope(opts: {
     workspaceFiles: uniqueSorted([...opts.workspaceFiles]),
     uncertainFiles: uniqueSorted([...uncertainFiles]),
     preRunFiles: uniqueSorted([...opts.preRunFiles]),
+    setupFiles: uniqueSorted([...(opts.setupFiles ?? [])]),
   };
   return {
     files,
@@ -159,6 +162,12 @@ export async function resolveRunReviewScope(opts: {
       `Files with uncertain attribution or later edits: ${provenance.uncertainFiles.join(', ') || 'none observed'}.`,
       `Files already changed when this run started: ${provenance.preRunFiles.join(', ') || 'none'}.`,
       "Those changes are the user's own work, not changes of this run: raise no finding and give no fix task for them. A file among them that the run changed too is a run change only in what the run did; its diff starts at the user's version.",
+      `SPLITBRIEF's own setup changes: ${provenance.setupFiles.join(', ') || 'none'}.`,
+      ...(provenance.setupFiles.length === 0
+        ? []
+        : [
+            "Such a .gitignore holds only the ignore lines SPLITBRIEF added for its own state. It is neither the user's change nor a change of this run: raise no finding and give no fix task for it.",
+          ]),
       'Unknown attribution is not proof of either implementer or operator authorship. Missing or invalid evidence, direct writes without capture and obsolete brief records remain unknown; they are not evidence of an empty run.',
       'Deterministic drift covers the recorded task changes only. A missing expected file in that report can mean missing provenance; inspect the workspace and task evidence before judging it.',
     ].join('\n\n'),

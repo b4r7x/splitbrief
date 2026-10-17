@@ -41,6 +41,8 @@ beforeEach(() => {
   tmp = createTempDir('cli-resume-interrupted');
   shimDir = createTempDir('cli-resume-interrupted-shim');
   createTestGitRepo(tmp);
+  // `resume` without --json or --plain mounts the TUI, which needs a terminal.
+  process.stdin.isTTY = true;
   const splitbriefDir = join(tmp, SPLITBRIEF_DIR);
   mkdirSync(splitbriefDir, { recursive: true });
   writeFileSync(
@@ -62,6 +64,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete (process.stdin as { isTTY?: boolean }).isTTY;
   restoreCompatibleCliShim?.();
   restoreCompatibleCliShim = undefined;
   cleanupTempDir(shimDir);

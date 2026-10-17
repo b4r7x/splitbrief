@@ -90,49 +90,58 @@ test('choosing a workflow step reaches its heading without a delayed document sl
 test('a scroll burst softens only the terminal and finishes without a long tail', async ({
   page,
 }) => {
+  // The ease runs on the page clock. A paused clock stepped one 16 ms frame at a time makes the
+  // frames the same on every machine, however slow the runner.
+  await page.clock.install();
   await openPage(page);
-  const result = await page.evaluate(async () => {
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+  const start = await page.evaluate(() => {
     const track = document.querySelector('[data-scroll-track]');
     const stage = document.querySelector('[data-scroll-stage]');
-    const transcript = document.querySelector('.work-document');
     const brief = document.querySelector('#brief');
-    if (!track || !stage || !transcript || !(brief instanceof HTMLElement))
-      throw new Error('Workflow is missing');
+    if (!track || !stage || !(brief instanceof HTMLElement)) throw new Error('Workflow is missing');
     const bounds = track.getBoundingClientRect();
     scrollTo({
       top: scrollY + bounds.top + (bounds.height - stage.clientHeight) * 0.24,
       behavior: 'instant',
     });
-    const position = scrollY;
-    const started = performance.now();
-    const frames: Array<{ elapsed: number; y: number; offset: number }> = [];
-    while (performance.now() - started < 300) {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      frames.push({
-        elapsed: performance.now() - started,
-        y: scrollY,
-        offset: -new DOMMatrixReadOnly(getComputedStyle(transcript).transform).m42,
-      });
-    }
-    return { position, destination: brief.offsetTop, frames };
+    // The browser sends its own scroll event at its next frame; this one lets the paused clock
+    // hold the first eased frame.
+    dispatchEvent(new Event('scroll'));
+    return { position: scrollY, destination: brief.offsetTop };
   });
-  expect(new Set(result.frames.map((frame) => frame.y))).toEqual(new Set([result.position]));
-  expect(
-    result.frames.some((frame) => frame.offset > 1 && frame.offset < result.destination - 1),
-  ).toBe(true);
+  const frames: Array<{ elapsed: number; y: number; offset: number }> = [];
+  for (let elapsed = 16; elapsed <= 304; elapsed += 16) {
+    await page.clock.runFor(16);
+    frames.push({
+      elapsed,
+      ...(await page.evaluate(() => {
+        const transcript = document.querySelector('.work-document');
+        if (!transcript) throw new Error('Workflow is missing');
+        return {
+          y: scrollY,
+          offset: -new DOMMatrixReadOnly(getComputedStyle(transcript).transform).m42,
+        };
+      })),
+    });
+  }
+  expect(new Set(frames.map((frame) => frame.y))).toEqual(new Set([start.position]));
+  expect(frames.some((frame) => frame.offset > 1 && frame.offset < start.destination - 1)).toBe(
+    true,
+  );
   let previousOffset = 0;
-  for (const frame of result.frames) {
+  for (const frame of frames) {
     expect(frame.offset).toBeGreaterThanOrEqual(previousOffset);
-    expect(frame.offset).toBeLessThanOrEqual(result.destination);
+    expect(frame.offset).toBeLessThanOrEqual(start.destination);
     previousOffset = frame.offset;
   }
-  const reached = result.frames.find((frame) => Math.abs(frame.offset - result.destination) < 0.01);
+  const reached = frames.find((frame) => Math.abs(frame.offset - start.destination) < 0.01);
   expect(reached?.elapsed).toBeLessThan(200);
-  expect(result.frames.at(-1)?.offset).toBe(result.destination);
+  expect(frames.at(-1)?.offset).toBe(start.destination);
   expect(
-    result.frames
+    frames
       .filter((frame) => frame.elapsed >= 200)
-      .every((frame) => frame.offset === result.destination),
+      .every((frame) => frame.offset === start.destination),
   ).toBe(true);
 });
 

@@ -45,6 +45,15 @@ let deps: ContinueDeps;
 let headlessRuns: HeadlessRun[];
 let renderRuns: RenderRun[];
 
+// An interactive continue mounts the TUI, which needs a terminal; each test that renders has one.
+beforeEach(() => {
+  process.stdin.isTTY = true;
+});
+
+afterEach(() => {
+  delete (process.stdin as { isTTY?: boolean }).isTTY;
+});
+
 function makeTmpProject(): string {
   tmp = createTempDir('continue-command-test');
   return tmp;
@@ -280,6 +289,36 @@ describe('continueCommand', () => {
     });
     expect(readdirSync(join(projectDir, SPLITBRIEF_DIR, 'sessions'))).toEqual([sessionId]);
     expect(headlessRuns[0]).toMatchObject({ sessionId, state: { phase: 'implementing' } });
+  });
+
+  it('refuses an interactive continue without a terminal before its recovery action writes', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-no-terminal';
+    writeLockfile(makeSessionDir(projectDir, sessionId), { exitedAt: Date.now(), sessionId });
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('test-feature'),
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001' })],
+        pendingRecovery: makeRecoveryIssue({}),
+      },
+    );
+    const statePath = join(sessionDir(projectDir, sessionId), 'state.json');
+    const before = readFileSync(statePath, 'utf8');
+    delete (process.stdin as { isTTY?: boolean }).isTTY;
+
+    for (const action of [undefined, parseContinueActionOption('retry')]) {
+      await expect(
+        continueCommand(sessionId, { projectDir, ...(action && { action }) }, deps),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining('interactive mode needs a TTY — use --json or --plain'),
+        exitCode: 1,
+      });
+    }
+    expect(readFileSync(statePath, 'utf8')).toBe(before);
+    expect(renderRuns).toHaveLength(0);
+    expect(headlessRuns).toHaveLength(0);
   });
 
   it('applies skip/retry/switch-seat headlessly', async () => {

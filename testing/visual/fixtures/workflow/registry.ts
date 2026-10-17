@@ -663,7 +663,13 @@ const checkpointPredicates = [
   [checkpointId('ready-override'), includesAll()],
   [checkpointId('closed-applied'), includesAll()],
   [checkpointId('closed-pre-existing'), includesAll('V2 pre-existing')],
-  [checkpointId('closed-fix-cycle'), includesAll('Review T002', 'Final review', '2 blocking')],
+  // A finding wraps at words, so at 60x18 the earlier failed review scrolls above the viewport.
+  [
+    checkpointId('closed-fix-cycle'),
+    (context) =>
+      includesAll('Final review', '2 blocking', 'email field is missing.')(context) &&
+      (context.viewport.cols < 80 || includesAll('Review T002 failed · 1 blocking')(context)),
+  ],
   [checkpointId('closed-undone'), includesAll('Apply undone')],
   [checkpointId('closed-undo-conflicts'), includesAll('1 conflict kept')],
   [checkpointId('closed-discarded'), includesAll()],

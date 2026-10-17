@@ -611,6 +611,8 @@ Continue the most recent run. A run is a durable record: an open run stays conti
 
 Closing a run clears `.splitbrief/active`, so after an `/end` there is nothing for `resume` to find. Use `splitbrief continue <session-id>` for an older open run. Accepts the same workflow flags as `start`.
 
+Without `--json` or `--plain`, `resume` opens the run screen, which needs a terminal. In a shell with no TTY it exits `1` with `interactive mode needs a TTY — use --json or --plain`, as `start` does.
+
 ### Usage
 
 ```
@@ -692,6 +694,8 @@ splitbrief continue [session-id-or-number] [--action <skip|retry|restore|switch-
 ```
 
 Continue a run by name, active session, or numeric alias. The run continues from its saved state. `skip`, `retry`, `restore`, and `switch-seat` first answer a pending recovery. `end-run` closes an open run, with or without a pending recovery, as End run does on the run screen. If Apply did not finish, restore or retry Apply first. Use `--action apply` or `--action discard` to settle a run whose review passed in its workspace. Any open run can continue. The command refuses a closed run with exit `1`. With `--json`, the refusal writes an error record on stdout: `{"type":"error","message":"Run <id> is closed (<as>); nothing to resume."}`.
+
+Without `--json` or `--plain`, a continue that carries the run on opens the run screen, which needs a terminal. In a shell with no TTY it exits `1` with `interactive mode needs a TTY — use --json or --plain`, as `start` does, before it answers a recovery: the run stays as it was. `end-run` and `discard` never open the run screen. `apply` opens it only when the merged result goes through its checks and review again; without a terminal that review then needs `splitbrief continue <id> --plain`.
 
 ### Options
 
