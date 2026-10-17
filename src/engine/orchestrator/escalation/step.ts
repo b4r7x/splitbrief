@@ -3,7 +3,6 @@ import { ImplementerReportSchema, type ImplementerReport } from '../../../core/s
 import { addUsageAndSave, rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAttemptChanges } from '../task/attempt-gate.js';
-import { captureTaskReviewChanges } from '../evidence/review-capture.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { withPerCallAbort } from '../cancellable-call.js';
 import { createRetryRuntime, type RetryRuntime, stateForRetryProfile } from './retry-runtime.js';
@@ -270,6 +269,7 @@ async function runRetryStepAttempt(
     task,
     state,
     report: deviationReportOf(retryResult),
+    taskStartSnapshot: ctx.taskStartSnapshot,
     snapshot: workspace.snapshot,
     changedFiles: actualChangedFiles,
   });
@@ -314,12 +314,6 @@ async function runRetryStepAttempt(
     };
   }
   if (commitResult.completed) {
-    await captureTaskReviewChanges({
-      ref: { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
-      workspaceDir: ctx.workspaceDir,
-      task,
-      taskStartSnapshot: ctx.taskStartSnapshot,
-    });
     return {
       state: commitResult.state,
       task,

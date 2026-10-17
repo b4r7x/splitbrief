@@ -27,6 +27,7 @@ export async function confirmAttemptDecisions(opts: {
   task: Task;
   state: WorkflowState;
   report: Extract<ImplementerReport, { status: 'done' }> | undefined;
+  taskStartSnapshot: ChangedFilesSnapshot;
   snapshot: ChangedFilesSnapshot;
   changedFiles: readonly string[];
   onStateChange?: ((state: WorkflowState) => void) | undefined;
@@ -82,6 +83,7 @@ export async function confirmAttemptDecisions(opts: {
         state,
         seat,
         changedFiles: opts.changedFiles,
+        taskStartSnapshot: opts.taskStartSnapshot,
         onStateChange,
       },
       task,

@@ -43,6 +43,8 @@ export type ConsultApplyContext = Readonly<{
   seat: ConsultSeat;
   signal?: AbortSignal | undefined;
   changedFiles?: readonly string[] | undefined;
+  /** Where the brief's first attempt started; null before any attempt ran (a stale refresh). */
+  taskStartSnapshot: ChangedFilesSnapshot | null;
   runCommand?: ValidationCommandRunner | undefined;
   /** Receives the state after each saved transition: the replacement, the inserted tasks. */
   onStateChange?: ((state: WorkflowState) => void) | undefined;
@@ -268,7 +270,9 @@ async function applyVerify(
     task,
     acceptance,
     projectDir: ctx.projectDir,
+    workspaceDir: ctx.workspaceDir,
     sessionId: ctx.sessionId,
+    taskStartSnapshot: ctx.taskStartSnapshot,
     config: ctx.config,
     bus: ctx.bus,
     state: gated.state,

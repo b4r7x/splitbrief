@@ -9,9 +9,14 @@ import { useTrustHome } from '#testing/helpers/trust-home.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
-import type { PlannerConversation, WorkflowState } from '../../../core/schemas/workflow.js';
+import type {
+  ChangedFilesSnapshot,
+  PlannerConversation,
+  WorkflowState,
+} from '../../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { readReviewChanges } from '../../../core/evidence/review-changes.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { appendEngineEvent } from '../../../core/sessions/log-writer.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -98,6 +103,7 @@ function harness(opts: {
   runCommand?: ValidationCommandRunner;
   onPlannerReply?: OrchestratorCallbacks['onPlannerReply'];
   changedFiles?: string[];
+  taskStartSnapshot?: ChangedFilesSnapshot;
 }): Harness {
   const otherTasks = opts.otherTasks ?? [];
   const state: WorkflowState = {
@@ -128,6 +134,7 @@ function harness(opts: {
       state,
       seat: 'plan',
       changedFiles: opts.changedFiles ?? [],
+      taskStartSnapshot: opts.taskStartSnapshot ?? null,
       ...(opts.runCommand !== undefined && { runCommand: opts.runCommand }),
       onStateChange: (next) => states.push(next),
     },
@@ -269,6 +276,38 @@ describe('applyConsultAnswer verify', () => {
     const saved = states.at(-1);
     expect(saved?.tasks[0]?.status).toBe('done');
     expect(saved?.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
+  });
+
+  it("records the brief's files since its task start when verify completes it after a retry", async () => {
+    const ref = setupRepo();
+    const task = makeTask({
+      id: 'T003',
+      suggestedFiles: ['src/greet.ts', 'src/added.ts'],
+      criteria: ['C1'],
+      status: 'failed',
+    });
+    const taskStartSnapshot = await getChangedFilesSnapshot(ref.projectDir);
+    writeFileSync(join(ref.projectDir, 'src/greet.ts'), 'export const greet = "done";\n');
+    writeFileSync(join(ref.projectDir, 'src/added.ts'), 'export const added = true;\n');
+    // The retry before the consult starts after the files landed and changes nothing.
+    const attempt = await getChangedFilesSnapshot(ref.projectDir);
+    const { ctx } = harness({
+      ...ref,
+      task,
+      plan: planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]),
+      runCommand: makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 }),
+      taskStartSnapshot,
+    });
+
+    const result = await applyConsultAnswer(ctx, task, verify(['K1'], 'Verify K1'), attempt);
+
+    expect(result.action).toBe('completed');
+    expect(
+      readReviewChanges(ref)?.changes.map((change) => [change.taskId, change.path, change.kind]),
+    ).toEqual([
+      ['T003', 'src/added.ts', 'captured'],
+      ['T003', 'src/greet.ts', 'captured'],
+    ]);
   });
 
   it('books the time since the brief started on the completion it publishes', async () => {

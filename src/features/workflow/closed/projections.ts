@@ -349,7 +349,10 @@ function rowMethod(
   recorded: TaskCompletionMethod | null,
 ): TaskCompletionMethod | null {
   if (status === undefined) return recorded;
-  if (status === 'done') return 'local';
+  if (status === 'done')
+    return recorded !== null && classifyTaskCompletionMethod(recorded) === 'local'
+      ? recorded
+      : 'local';
   if (status === 'escalated')
     return recorded !== null && classifyTaskCompletionMethod(recorded) === 'escalated'
       ? recorded

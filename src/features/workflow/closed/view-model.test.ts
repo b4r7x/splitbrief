@@ -763,6 +763,34 @@ describe('brief rows', () => {
     },
   );
 
+  it('names a done brief the consult seat completed as consulted, with its retry', () => {
+    const task = makeTask({ id: 'T001', title: 'Add clamp', status: 'done' });
+    const view = derive(
+      makeSummary({
+        totalTasks: 1,
+        completedByLocal: 1,
+        taskBreakdown: [booked({ taskId: taskId('T001'), method: 'consulted', retryCount: 1 })],
+      }),
+      {
+        status: ENDED,
+        hydration: {
+          kind: 'loaded',
+          state: makeWorkflowState({ phase: 'complete', tasks: [task] }),
+        },
+        ledger: makeLedger([
+          ledgerTask({
+            id: task.id,
+            title: task.title,
+            method: 'consulted',
+            retries: 1,
+            briefHash: hashTaskBrief([task]),
+          }),
+        ]),
+      },
+    );
+    expect(view.briefs.rows[0]).toMatchObject({ state: 'local', method: 'consulted', retries: 1 });
+  });
+
   it('lists all current briefs when a run ends at its plan gate before the first evidence write', () => {
     const tasks = [
       makeTask({ id: 'T001', title: 'First brief' }),

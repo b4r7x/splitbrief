@@ -1,10 +1,11 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
+import { captureTaskReviewChanges } from '../evidence/review-capture.js';
 import { publishTaskComplete } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
@@ -15,7 +16,10 @@ type ValidateCommitOptions = {
   task: Task;
   acceptance: ValidationAcceptance;
   projectDir: string;
+  workspaceDir: string;
   sessionId: string;
+  /** Where the brief's first attempt started; null when no attempt ran, so no file is the brief's. */
+  taskStartSnapshot: ChangedFilesSnapshot | null;
   config: Config;
   state: WorkflowState;
   bus: EventBus;
@@ -102,6 +106,14 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
       phase: nextState.phase,
       taskId: task.id,
       files: touchedNotSuggested,
+    });
+  }
+  if (opts.taskStartSnapshot !== null) {
+    await captureTaskReviewChanges({
+      ref: { projectDir, sessionId },
+      workspaceDir: opts.workspaceDir,
+      task,
+      taskStartSnapshot: opts.taskStartSnapshot,
     });
   }
 

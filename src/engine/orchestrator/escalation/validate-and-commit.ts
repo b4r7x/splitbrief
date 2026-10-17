@@ -44,7 +44,9 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
   const result = await validateCommitAndAdvance({
     task,
     projectDir: ctx.projectDir,
+    workspaceDir: ctx.workspaceDir,
     sessionId: ctx.sessionId,
+    taskStartSnapshot: ctx.taskStartSnapshot,
     config: ctx.config,
     bus: ctx.bus,
     state,

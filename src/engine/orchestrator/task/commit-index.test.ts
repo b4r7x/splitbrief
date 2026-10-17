@@ -62,6 +62,8 @@ describe('validateCommitAndAdvance — index preservation', () => {
         task,
         acceptance: acceptedAcceptance,
         projectDir,
+        workspaceDir: projectDir,
+        taskStartSnapshot: null,
         sessionId,
         config: makeLegacyCommitConfig({ commitStrategy }),
         state,

@@ -24,7 +24,6 @@ import {
   persistRejectionEvidence,
   persistApprovalEvidence,
 } from '../evidence/persistence.js';
-import { captureTaskReviewChanges } from '../evidence/review-capture.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { denialMessage } from './attempt-gate.js';
 import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
@@ -214,6 +213,7 @@ async function refreshStaleTask(input: {
       seat: consultSeat(task, 'stale'),
       ...(opts.wctx.signal !== undefined && { signal: opts.wctx.signal }),
       changedFiles: [],
+      taskStartSnapshot: null,
       onStateChange: (next) => {
         state = next;
         opts.setTrackedState(next);
@@ -468,6 +468,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       task,
       state,
       report: report?.status === 'done' ? report : undefined,
+      taskStartSnapshot,
       snapshot: implState.workspace.snapshot,
       changedFiles: gate.approvedFiles,
       onStateChange: (next) => {
@@ -538,7 +539,9 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     const commitResult = await validateCommitAndAdvance({
       task,
       projectDir,
+      workspaceDir: wctx.workspaceDir,
       sessionId,
+      taskStartSnapshot,
       config,
       bus: wctx.bus,
       state,
@@ -550,12 +553,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       applyResult: implState.implResult.applyResult,
     });
     if (commitResult.completed) {
-      await captureTaskReviewChanges({
-        ref: { projectDir, sessionId },
-        workspaceDir: wctx.workspaceDir,
-        task,
-        taskStartSnapshot,
-      });
       state = commitResult.state;
       setTrackedState(state);
       opts.onTaskAcceptedFiles?.(taskChangedFiles);

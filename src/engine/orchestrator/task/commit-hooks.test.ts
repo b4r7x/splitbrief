@@ -88,6 +88,8 @@ describe('validateCommitAndAdvance — legacy commit hooks', () => {
       task,
       acceptance: acceptedAcceptance,
       projectDir,
+      workspaceDir: projectDir,
+      taskStartSnapshot: null,
       sessionId,
       config: makeLegacyCommitConfig({ commitStrategy: 'per-task', hooks }),
       state,

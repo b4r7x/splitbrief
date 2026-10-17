@@ -800,8 +800,19 @@ const CLOSED_COMPLETE = record({
       { id: BRIEFS.routeTests.id, status: 'done' },
     ],
   }),
-  summary: OLDER_READY_SUMMARY,
-  ledger: READY_LEDGER,
+  // The consult seat completed the brief that needed a retry.
+  summary: {
+    ...OLDER_READY_SUMMARY,
+    taskBreakdown: READY_TASKS.map((task) =>
+      task.taskId === BRIEFS.wire.id ? { ...task, method: 'consulted' } : task,
+    ),
+  },
+  ledger: {
+    ...READY_LEDGER,
+    tasks: READY_LEDGER.tasks.map((task) =>
+      task.id === BRIEFS.wire.id ? { ...task, method: 'consulted' } : task,
+    ),
+  },
 });
 
 /** The reviewed workspace the checkout has not received: the result menu's own run. */
