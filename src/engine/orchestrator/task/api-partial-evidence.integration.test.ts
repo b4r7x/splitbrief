@@ -230,6 +230,8 @@ describe('partial evidence and resume', () => {
     const commit = await validateCommitAndAdvance({
       task,
       projectDir,
+      workspaceDir: projectDir,
+      taskStartSnapshot: null,
       sessionId,
       config: wctx.config,
       bus,

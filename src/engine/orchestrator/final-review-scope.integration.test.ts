@@ -10,7 +10,9 @@ import {
   makeCallbacks,
   makePlanner,
   TEST_METADATA,
+  TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
+import { makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   failedReviewVerdict,
@@ -28,6 +30,9 @@ import {
 } from '../../core/paths.js';
 import { REVIEW_CHANGES_FILE } from '../../core/evidence/review-changes.js';
 import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
+import type { Check } from '../../core/schemas/task.js';
+import { saveState } from '../../core/state/persistence.js';
+import { applyConsultAnswer } from './consult/apply.js';
 import { getChangedFilesSnapshot } from './approval/file-snapshots/capture.js';
 import { captureTaskReviewChanges } from './evidence/review-capture.js';
 import { getOrCreateLedger } from './evidence/persistence.js';
@@ -236,6 +241,76 @@ describe('final review task completion provenance', () => {
       expect(markdown).toContain('Workspace context: src/mixed.ts, src/tool-fix.ts');
     },
   );
+
+  it('names the file a brief created when verify completes it after a retry', async () => {
+    const p = await project();
+    const created = 'src/created.ts';
+    const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
+    const task = makeTask({
+      suggestedFiles: [created],
+      action: 'create',
+      status: 'failed',
+      criteria: [],
+    });
+    const taskStartSnapshot = await getChangedFilesSnapshot(p.projectDir);
+    writeFileSync(join(p.projectDir, created), 'export const created = true;\n');
+    // The retry before the consult starts after the file landed and changes nothing.
+    const attempt = await getChangedFilesSnapshot(p.projectDir);
+    const state = {
+      ...makeImplState([task], {
+        plan: {
+          summary: 'Create the file',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'The file exists', checkIds: ['K1'] }],
+          checks,
+          validation: null,
+        },
+        changedFilesBaseline: { head: null, runStartChangedFiles: [file], fingerprints: {} },
+        workspace: p.workspace,
+      }),
+      phase: 'escalating' as const,
+      attempt: 1,
+    };
+    saveState(p.ref, state);
+    const applied = await applyConsultAnswer(
+      {
+        ...p.ref,
+        workspaceDir: p.projectDir,
+        bus: makeBusRecorder().bus,
+        config: makeNoValidationConfig(),
+        validator: { formatChangedFiles: vi.fn().mockResolvedValue(undefined) },
+        callbacks: makeCallbacks().callbacks,
+        sinks: TEST_SINKS,
+        state,
+        seat: 'plan',
+        changedFiles: [],
+        taskStartSnapshot,
+        runCommand: makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 }),
+      },
+      task,
+      {
+        answer: {
+          diagnosis: 'The file is already in the workspace.',
+          action: 'verify',
+          checkIds: ['K1'],
+          reason: 'K1 covers the file.',
+        },
+      },
+      attempt,
+    );
+    expect(applied.action).toBe('completed');
+    writeEvidenceLedger(p.ref, getOrCreateLedger({ ref: p.ref, state: makeImplState([task]) }));
+
+    const { packet } = await review(p, false, [task]);
+
+    expect(packet.changes.provenance).toMatchObject({ promotedFiles: [created] });
+    const drift = JSON.parse(
+      readFileSync(join(sessionDir(p.projectDir, p.sessionId), DRIFT_REPORT_FILE), 'utf8'),
+    );
+    expect(drift.findings).not.toContainEqual(
+      expect.objectContaining({ code: 'missing_expected_file' }),
+    );
+  });
 
   it('keeps overlapping edits after capture explicit without erasing the run effect', async () => {
     const p = await project();

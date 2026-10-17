@@ -498,6 +498,7 @@ export async function handleRetryAndEscalation(
         seat,
         ...(ctx.signal !== undefined && { signal: ctx.signal }),
         changedFiles,
+        taskStartSnapshot: ctx.taskStartSnapshot,
         onStateChange: (next) => {
           state = next;
         },

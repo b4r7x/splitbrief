@@ -74,6 +74,7 @@ function contextFor(
       projectDir,
       workspaceDir: projectDir,
       sessionId,
+      taskStartSnapshot: null,
       bus,
       config: makeConfig({}),
       validator: createValidator(),
