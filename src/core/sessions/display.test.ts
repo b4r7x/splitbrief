@@ -37,6 +37,21 @@ describe('getSessionStatusDisplay', () => {
       });
     },
   );
+
+  it.each(['unicode-mono', 'ascii-mono'] as const)(
+    'marks a run whose Apply was undone cancelled and dim at %s',
+    async (profile) => {
+      await withCaptureEnvironment({ viewport: { cols: 80, rows: 24 }, profile }, () => {
+        for (const status of ['complete', 'ended'] as const) {
+          expect(getSessionStatusDisplay({ status, apply: 'undone' }, theme)).toEqual({
+            icon: glyph('statusCancelled'),
+            color: 'textDim',
+            word: 'apply undone',
+          });
+        }
+      });
+    },
+  );
 });
 
 describe('sessionStatusWord', () => {

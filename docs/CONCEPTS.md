@@ -108,7 +108,7 @@ The retired phases `researching`, `specifying`, `reviewing-spec`, `clarifying`, 
 
 **Step** (`StepRef`, `src/core/schemas/run-step.ts`): a planner call, gate, brief attempt, review cycle or Apply. Older planner and gate names remain readable. `resumeStep(state)` names the next step. Planning continues as one session.
 
-**Closed**: a run that cannot continue. Workspace runs close as `applied`, `discarded` or `ended`. Older passed runs keep `complete`. Closing preserves unapplied work through [the shared close path](./WORKFLOW.md#apply).
+**Closed**: a run that cannot continue. Workspace runs close as `applied`, `discarded` or `ended`, and an applied run whose Apply was undone reads `undone`. Older passed runs keep `complete`. Closing preserves unapplied work through [the shared close path](./WORKFLOW.md#apply).
 
 **Continuing a run**: `continueRun` (`src/engine/orchestrator/run/continue.ts`) is the one path. A park this process still holds settles in place; a run at rest is re-entered on its saved state with what the operator typed riding along as a *steer*, folded into the step's own prompt rather than replacing it. A cold crash mid-generation loses the stream, not the run: the step loop picks up at the first artifact it has not written.
 

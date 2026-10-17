@@ -65,7 +65,7 @@ import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { acceptRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
 import { runApplyAtRest } from '../engine/orchestrator/apply/at-rest.js';
 import { undoApply } from '../engine/orchestrator/apply/restore.js';
-import { canUndoApply } from '../core/sessions/run-status.js';
+import { canUndoApply, type RunStatus } from '../core/sessions/run-status.js';
 import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
 import { closeRunIfOpen, rejectCheckoutRun } from '../engine/orchestrator/run/close.js';
 import { finalizeRunAtRest } from '../engine/orchestrator/session-lifecycle/finalize.js';
@@ -135,6 +135,10 @@ function isRunAtRest(ref: SessionRef): boolean {
   );
 }
 
+function closedRunMessage(as: Extract<RunStatus, { kind: 'closed' }>['as']): string {
+  return as === 'undone' ? 'Apply already undone; the run is closed.' : `Run is closed (${as}).`;
+}
+
 async function acceptRun(
   projectDir: string,
   sessionId: string,
@@ -153,7 +157,7 @@ async function acceptRun(
       message:
         record.status.as === 'applied'
           ? 'Run already applied.'
-          : `Run is closed (${record.status.as}).`,
+          : closedRunMessage(record.status.as),
     };
   }
   if (!isRunAtRest(record.ref) || record.status.kind === 'running') {
@@ -196,7 +200,7 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
   const run = runCommandState(record);
   if (run.kind === 'unavailable') return { status: 'unavailable', message: run.message };
   if (record.status.kind === 'closed' && !(run.kind === 'workspace' && canUndoApply(run.state))) {
-    return { status: 'unavailable', message: `Run is closed (${record.status.as}).` };
+    return { status: 'unavailable', message: closedRunMessage(record.status.as) };
   }
   if (!isRunAtRest(record.ref) || record.status.kind === 'running') {
     return {

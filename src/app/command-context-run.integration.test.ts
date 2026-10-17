@@ -151,7 +151,11 @@ describe('/run on a run with a workspace', () => {
           expect(savedState(run.dir).closed?.as).toBe('applied');
           expect(await ctx.rejectRun()).toEqual({
             status: 'unavailable',
-            message: 'Run is closed (applied).',
+            message: 'Apply already undone; the run is closed.',
+          });
+          expect(await ctx.acceptRun(false)).toEqual({
+            status: 'unavailable',
+            message: 'Apply already undone; the run is closed.',
           });
           expect(lifecycle.rejectRunSnapshot).not.toHaveBeenCalled();
         },

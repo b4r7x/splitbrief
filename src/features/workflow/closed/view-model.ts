@@ -191,7 +191,8 @@ function outcomeKindFor(
   closedAs: Extract<RunStatus, { kind: 'closed' }>['as'],
 ): SummaryOutcomeKind {
   if (closedAs === 'ended') return 'ended';
-  if (closedAs === 'applied') return 'applied';
+  // An undone Apply reads as the Apply it took back; the view's `applyUndo` names the undo.
+  if (closedAs === 'applied' || closedAs === 'undone') return 'applied';
   if (closedAs === 'discarded') return 'discarded';
   const packet = summary.reviewPacket;
   const verdict = packet?.finalReviewVerdict ?? null;

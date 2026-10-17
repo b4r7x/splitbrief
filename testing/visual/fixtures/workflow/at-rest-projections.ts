@@ -1241,7 +1241,7 @@ function undoneApplyRecord(conflicts: string[]): RunRecord {
     conflicts.length === 0 ? 'visual-closed-undone' : 'visual-closed-undo-conflicts';
   return record({
     sessionId,
-    status: { kind: 'closed', as: 'applied' },
+    status: { kind: 'closed', as: 'undone' },
     state: savedState({
       phase: 'complete',
       briefs: WORKSPACE_BRIEFS,

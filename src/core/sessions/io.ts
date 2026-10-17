@@ -79,10 +79,10 @@ function startedAtMs(startedAt: string | null): number {
  */
 export function rowFor(base: SessionRowBase, status: RunStatus, summary: Summary | null): Session {
   if (status.kind === 'closed') {
-    if (status.as === 'applied') {
+    if (status.as === 'applied' || status.as === 'undone') {
       return summary !== null
-        ? { ...base, status: 'complete', summary, apply: 'applied' }
-        : { ...base, status: 'ended', summary, apply: 'applied' };
+        ? { ...base, status: 'complete', summary, apply: status.as }
+        : { ...base, status: 'ended', summary, apply: status.as };
     }
     if (status.as === 'discarded') {
       return { ...base, status: 'ended', summary, apply: 'discarded' };

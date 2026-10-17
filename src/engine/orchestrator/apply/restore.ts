@@ -14,6 +14,7 @@ import {
 } from './backup.js';
 import { readApplyEntry, sameSideEntry, type SideEntry, unsafeEntryError } from './states.js';
 import { transitionAndSave } from '../state-ops.js';
+import { refreshSessionRow } from '../session-lifecycle/finalize.js';
 
 type ApplyBackupInput = { projectDir: string; sessionId: string; backupId: string };
 
@@ -134,6 +135,9 @@ export async function undoApply(
   if (applied === undefined) throw error('apply-not-undoable', 'Run was not applied.');
   if (applied.undone !== undefined) throw error('apply-not-undoable', 'Apply already undone.');
   const result = await restoreApplyBackup({ ...ref, backupId: applied.backupId });
-  transitionAndSave(ref, state, { type: 'APPLY_UNDONE', conflicts: result.conflicts });
+  refreshSessionRow(
+    ref,
+    transitionAndSave(ref, state, { type: 'APPLY_UNDONE', conflicts: result.conflicts }),
+  );
   return result;
 }

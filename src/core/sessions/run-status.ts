@@ -35,7 +35,7 @@ export type RunStatus =
   | { kind: 'running' }
   | { kind: 'open'; stop: StopReason; resumeAt: StepRef }
   | { kind: 'ready-to-apply'; override: boolean }
-  | { kind: 'closed'; as: 'complete' | 'ended' | 'applied' | 'discarded' };
+  | { kind: 'closed'; as: 'complete' | 'ended' | 'applied' | 'undone' | 'discarded' };
 
 /** An open run whose process went away mid-step, so nothing recorded where or why it stopped. */
 export function processWentAway(status: RunStatus): boolean {
@@ -156,7 +156,8 @@ function seatToolWord(state: WorkflowState, seat: CrewSeatId): string {
  * How a run stands, from the state it saved and whether a process still holds it.
  * A passing review, or a failed one accepted as is, closes a run without a workspace or on the
  * checkout; a run with a worktree or staged copy becomes ready to apply, and Apply, Discard or End
- * close it. A halt still waiting for an answer keeps either open.
+ * close it. An Apply undone later leaves the run closed as undone. A halt still waiting for an
+ * answer keeps either open.
  */
 export function deriveRunStatus(
   input: Readonly<{
@@ -165,7 +166,10 @@ export function deriveRunStatus(
   }>,
 ): RunStatus {
   const { state } = input;
-  if (state.closed !== undefined) return { kind: 'closed', as: state.closed.as };
+  if (state.closed !== undefined) {
+    const undone = state.closed.as === 'applied' && state.applied?.undone !== undefined;
+    return { kind: 'closed', as: undone ? 'undone' : state.closed.as };
+  }
   if (
     awaitsApply(state) &&
     state.pendingRecovery === undefined &&

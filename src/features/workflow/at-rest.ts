@@ -51,7 +51,7 @@ export function atRestRailStages(record: RunRecord): RailStageState[] {
   if (status.kind === 'running') return getRailStages(recordPhase(record), applyOption);
   if (status.kind === 'ready-to-apply') return getRailStages('complete', applyOption);
   if (status.kind === 'closed') {
-    return status.as === 'complete' || status.as === 'applied'
+    return status.as === 'complete' || status.as === 'applied' || status.as === 'undone'
       ? getRailStages('complete', applyOption)
       : getRailStages(recordPhase(record), { halted: 'cancelled', ...applyOption });
   }
@@ -90,11 +90,9 @@ export function applyStage(record: RunRecord): RailStageStatus | undefined {
   const status = record.status;
   if (status.kind === 'ready-to-apply') return 'pending';
   if (status.kind !== 'closed') return undefined;
+  if (status.as === 'applied') return 'done';
   // An undone Apply reverted the checkout, as a discard leaves it; kept later edits break nothing.
-  if (status.as === 'applied') {
-    return record.hydration.state.applied?.undone === undefined ? 'done' : 'cancelled';
-  }
-  if (status.as === 'discarded') return 'cancelled';
+  if (status.as === 'undone' || status.as === 'discarded') return 'cancelled';
   return undefined;
 }
 
