@@ -173,6 +173,11 @@ describe('atRestRailStages on a run with a workspace', () => {
     expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'cancelled']);
   });
 
+  it('keeps Plan, Build and Review done and marks Apply cancelled on an undone run', () => {
+    const stages = atRestRailStages(workspaceRecord({ kind: 'closed', as: 'undone' }));
+    expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'cancelled']);
+  });
+
   it('adds no Apply stage to an ended run', () => {
     const stages = atRestRailStages(
       workspaceRecord({ kind: 'closed', as: 'ended' }, 'implementing'),

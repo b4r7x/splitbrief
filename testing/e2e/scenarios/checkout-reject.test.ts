@@ -1,10 +1,15 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createElement } from 'react';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildCommandContext } from '../../../src/app/command-context.js';
 import { sessionsRoot, sessionDir } from '../../../src/core/paths.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { listSessions, readSession } from '../../../src/core/sessions/io.js';
+import { SessionRow } from '../../../src/components/session-row.js';
+import { renderFeature } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import {
   formatRejectRunMessage,
@@ -304,6 +309,32 @@ describe('run rejection after a source CLI run', () => {
       expect(loadState(ref)?.closed?.as).toBe('applied');
     },
   );
+
+  it('lists a run whose Apply was undone as apply undone in Sessions', async () => {
+    fixture = createStopContinueFixture(implementer, { isolation: 'staged-copy' });
+    const started = await cli(fixture, ['start', 'smoke']);
+    expect(started.exitCode, started.stderr).toBe(0);
+    const opened = openRun(fixture);
+    const applied = await cli(fixture, ['continue', opened.ref.sessionId, '--action', 'apply']);
+    expect(applied.exitCode, applied.stderr).toBe(0);
+    const { commands } = openRun(fixture);
+
+    expect(await commands.rejectRun()).toMatchObject({ status: 'undone' });
+
+    expect(readSession(opened.ref)?.apply).toBe('undone');
+    expect(await commands.acceptRun(false)).toEqual({
+      status: 'unavailable',
+      message: 'Apply already undone; the run is closed.',
+    });
+    const [session] = listSessions(fixture.projectDir);
+    if (session === undefined) throw new Error('undone run left no session row');
+    const ui = renderFeature(createElement(SessionRow, { session }));
+    const row = stripAnsiStyles(ui.lastFrame() ?? '');
+    ui.unmount();
+    expect(row).toContain('apply undone');
+    expect(row).not.toContain('applied');
+  });
+
   it('refuses rejection after a passing review closes the run', async () => {
     fixture = createStopContinueFixture(implementer, { isolation: 'none' });
     const started = await cli(fixture, ['start', 'smoke']);

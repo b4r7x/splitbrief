@@ -330,6 +330,28 @@ describe('rows derived from state.json', () => {
     expect(listSessions(tmp)[0]).toMatchObject({ status, apply: as });
   });
 
+  it('lists a run whose Apply was undone as undone, not applied', () => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = '2024-01-01-undone';
+    saveState(
+      { projectDir: tmp, sessionId },
+      makeImplState([makeTask()], {
+        phase: 'complete',
+        reviewStatus: 'passed',
+        workspace: { kind: 'worktree', path: '/tmp/wt', base: { snapshotId: 'b', head: null } },
+        closed: { at: '2024-01-01T00:00:00.000Z', as: 'applied' },
+        applied: {
+          at: '2024-01-01T00:00:00.000Z',
+          backupId: 'backup',
+          files: ['src/a.ts'],
+          undone: { at: '2024-01-01T00:01:00.000Z', conflicts: [] },
+        },
+      }),
+    );
+
+    expect(listSessions(tmp)[0]).toMatchObject({ status: 'ended', apply: 'undone' });
+  });
+
   it('names a halted run as waiting for you', () => {
     tmp = createTempDir('sessions-io-test');
     const sessionId = '2024-01-01-halted';

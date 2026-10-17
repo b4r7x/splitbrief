@@ -123,6 +123,21 @@ export function reopenSessionRecord(ref: SessionRef): void {
   saveSummary(ref, running);
 }
 
+/**
+ * A closed run whose state changes after its record was written, as an undone Apply does, re-derives
+ * its row from that state, so `summary.json` never reports the status the change replaced.
+ */
+export function refreshSessionRow(ref: SessionRef, state: WorkflowState): void {
+  const session = readSession(ref);
+  if (session === null) return;
+  const { id, feature, startedAt, completedAt, stateVersion, phase } = session;
+  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  saveSummary(
+    ref,
+    rowFor({ id, feature, startedAt, completedAt, stateVersion, phase }, status, session.summary),
+  );
+}
+
 export function saveFinalSession(opts: SaveFinalSessionOpts): void {
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
   const status = finalRunStatus(opts);

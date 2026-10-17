@@ -20,6 +20,7 @@ const CLOSED_MESSAGE: Record<Extract<RunStatus, { kind: 'closed' }>['as'], strin
   complete: 'Cannot continue: this run is complete; start a new one.',
   ended: 'Cannot continue: this run was ended; start a new one.',
   applied: 'Cannot continue: this run was applied; start a new one.',
+  undone: 'Cannot continue: the Apply of this run was undone; start a new one.',
   discarded: 'Cannot continue: this run was discarded; start a new one.',
 };
 

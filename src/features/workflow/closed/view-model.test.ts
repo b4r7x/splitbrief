@@ -10,6 +10,7 @@ import { taskId } from '../../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { arrowSep } from '../../../core/separators.js';
@@ -240,49 +241,42 @@ describe('a run with a workspace', () => {
     ).toMatchObject({ preExisting: [] });
   });
 
+  function undoneRecord(conflicts: string[]): Partial<Omit<RunRecord, 'summary'>> {
+    const state = makeWorkflowState({
+      phase: 'complete',
+      workspace: WORKSPACE,
+      closed: { at: CLOSED_AT, as: 'applied' },
+      applied: {
+        at: CLOSED_AT,
+        backupId: 'apply-1',
+        files: CHANGED,
+        undone: { at: CLOSED_AT, conflicts },
+      },
+    });
+    return {
+      status: deriveRunStatus({ state, liveness: 'not-alive' }),
+      hydration: { kind: 'loaded', state },
+    };
+  }
+
   // `/run reject confirm` on a run whose Apply was already undone refuses (`canUndoApply`):
   // the closed block of that run says the undo happened and offers it no second time.
   it('reads an applied run whose Apply was undone as undone, offering no second undo', () => {
-    const view = derive(readySummary({ changedFiles: CHANGED }), {
-      status: { kind: 'closed', as: 'applied' },
-      hydration: {
-        kind: 'loaded',
-        state: makeWorkflowState({
-          phase: 'complete',
-          workspace: WORKSPACE,
-          applied: {
-            at: CLOSED_AT,
-            backupId: 'apply-1',
-            files: CHANGED,
-            undone: { at: CLOSED_AT, conflicts: [] },
-          },
-        }),
-      },
-    });
+    const view = derive(readySummary({ changedFiles: CHANGED }), undoneRecord([]));
     const byline = bylineParts(view, 120)
       .map((part) => part.text)
       .join('');
     expect(byline).not.toContain('/run reject');
     expect(byline.toLowerCase()).toContain('undone');
+    expect(outcomeLineSpans(view, 120)[0]?.text).toBe('Apply undone');
+    expect(view.rail.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'cancelled']);
   });
 
   it('names undo conflicts on the Apply row and marks the reverted Apply on the rail', () => {
-    const view = derive(readySummary({ changedFiles: CHANGED }), {
-      status: { kind: 'closed', as: 'applied' },
-      hydration: {
-        kind: 'loaded',
-        state: makeWorkflowState({
-          phase: 'complete',
-          workspace: WORKSPACE,
-          applied: {
-            at: CLOSED_AT,
-            backupId: 'apply-1',
-            files: CHANGED,
-            undone: { at: CLOSED_AT, conflicts: ['src/later-edit.ts'] },
-          },
-        }),
-      },
-    });
+    const view = derive(
+      readySummary({ changedFiles: CHANGED }),
+      undoneRecord(['src/later-edit.ts']),
+    );
     const row = runRows(view).find((row) => row.label === 'Apply');
     expect(row).toBeDefined();
     if (row === undefined) throw new Error('Missing Apply row');

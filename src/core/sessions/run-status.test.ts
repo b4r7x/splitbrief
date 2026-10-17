@@ -422,6 +422,16 @@ describe('a run with a workspace', () => {
     });
   });
 
+  it('closed undone after an undone Apply', () => {
+    const applying = transition(state(passed()), { type: 'APPLY_START', backupId: 'apply-1' });
+    const applied = transition(applying, { type: 'APPLY_DONE', files: ['src/a.ts'] });
+    const undone = transition(applied, { type: 'APPLY_UNDONE', conflicts: [] });
+    expect(deriveRunStatus({ state: undone, liveness: 'not-alive' })).toEqual({
+      kind: 'closed',
+      as: 'undone',
+    });
+  });
+
   it('closed discarded', () => {
     const discarded = transition(state(passed()), { type: 'CLOSE_RUN', as: 'discarded' });
     expect(deriveRunStatus({ state: discarded, liveness: 'not-alive' })).toEqual({

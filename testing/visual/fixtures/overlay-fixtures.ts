@@ -305,6 +305,20 @@ export function seedSessions(): void {
       totalTime: 120_000,
     }),
   });
+  const undoneSession = makeSession({
+    id: 'visual-session-undone',
+    feature: 'Rename the config loader',
+    startedAt: 1_735_722_000_000,
+    completedAt: 1_735_722_100_000,
+    status: 'complete',
+    apply: 'undone',
+    summary: makeSummary({
+      feature: 'Rename the config loader',
+      totalTasks: 1,
+      completedByLocal: 1,
+      totalTime: 100_000,
+    }),
+  });
   const discardedSession = makeSession({
     id: 'visual-session-discarded',
     feature: 'Try the cache rewrite',
@@ -345,6 +359,7 @@ export function seedSessions(): void {
     session,
     readySession,
     appliedSession,
+    undoneSession,
     discardedSession,
   ];
   for (const item of sessions) {
