@@ -4,12 +4,14 @@ import { error } from '../../../utils/error.js';
 import { rmdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
+import { type ChangeEntry, writeConfinedEntryOrLink } from '../approval/file-snapshots/entry.js';
 import {
-  type ChangeEntry,
-  removeWriteTemporaries,
-  writeConfinedEntryOrLink,
-} from '../approval/file-snapshots/entry.js';
-import { type ApplyBackup, backupSideEntry, readApplyBackup, readBackupBlob } from './backup.js';
+  type ApplyBackup,
+  backupSideEntry,
+  readApplyBackup,
+  readBackupBlob,
+  removeApplyWriteTemporaries,
+} from './backup.js';
 import { readApplyEntry, sameSideEntry, type SideEntry, unsafeEntryError } from './states.js';
 import { transitionAndSave } from '../state-ops.js';
 
@@ -52,8 +54,10 @@ export async function reconcileApplyBackup(
   return classifyApplyBackup(projectDir, await readApplyBackup(projectDir, sessionId, backupId));
 }
 
+/** `removed` names the paths of `restored` that Apply had created, so restoring them deleted them. */
 export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
   restored: string[];
+  removed: string[];
   unchanged: string[];
   conflicts: string[];
 }> {
@@ -64,6 +68,7 @@ export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
   const expected = new Map(backup.expected.map((entry) => [entry.path, backupSideEntry(entry)]));
   const created = new Set(backup.created);
   const restored: string[] = [];
+  const removed: string[] = [];
   const unchanged = [...reconciliation.pending];
   const conflicts = [...reconciliation.ambiguous];
   for (const path of reconciliation.written) {
@@ -96,12 +101,13 @@ export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
         if (!matchesFingerprint(await readApplyEntry(projectDir, path), after)) throw conflict;
       });
       restored.push(path);
+      if (entry.kind === 'absent') removed.push(path);
     } catch (cause) {
       if (cause !== conflict && !unsafeEntryError(cause)) throw cause;
       conflicts.push(path);
     }
   }
-  await removeWriteTemporaries(projectDir, [...expected.keys(), ...replaced.keys(), ...created]);
+  await removeApplyWriteTemporaries(projectDir, backup);
   // Deepest first: a folder Apply made goes once it is empty again. One that holds anything, or
   // that you replaced with a file or a link, stays.
   for (const dir of [...backup.createdDirs].sort().reverse()) {
@@ -111,7 +117,12 @@ export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
       throw cause;
     });
   }
-  return { restored: restored.sort(), unchanged: unchanged.sort(), conflicts: conflicts.sort() };
+  return {
+    restored: restored.sort(),
+    removed: removed.sort(),
+    unchanged: unchanged.sort(),
+    conflicts: conflicts.sort(),
+  };
 }
 
 /** Undo after Apply: the checkout goes back to its pre-Apply bytes and the run records the undo. */

@@ -8,7 +8,7 @@ import { assertNever, includes } from '../../../../utils/type-guards.js';
 import { isLivePhase } from '../../../phases.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { countNoun } from '../../../../utils/pluralize.js';
-import { formatRejectRunMessage } from '../messages.js';
+import { formatApplyRestoreCounts, formatRejectRunMessage } from '../messages.js';
 
 export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
   return [
@@ -184,7 +184,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
               break;
             case 'undone': {
               ctx.refreshRun();
-              const message = `Apply undone: put back ${countNoun(result.restored.length, 'file')}`;
+              const message = `Apply undone: ${formatApplyRestoreCounts(result)}`;
               if (result.conflicts.length > 0) {
                 ctx.setFeedbackError(
                   `${message}; left as you changed them: ${result.conflicts.join(', ')}.`,

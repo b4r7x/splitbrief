@@ -9,6 +9,7 @@ import {
   readlinkSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -1755,6 +1756,39 @@ describe('run workspace attempts', () => {
       }
     },
   );
+
+  it('keeps a worktree with more than 8 MiB of uncommitted bytes across a stop and a restart', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('run-workspace-large-dirty');
+    try {
+      createTestGitRepo(dir, { 'src.txt': 'base\n' });
+      const large = Buffer.alloc(9 * 1024 * 1024, 'a');
+      writeFileSync(join(dir, 'large.bin'), large);
+      const first = isolation(dir, 'worktree');
+      const cut = await first.acquire({ role: 'implementer', config });
+      writeFileSync(join(cut.projectDir, 'large.bin'), Buffer.alloc(9 * 1024 * 1024, 'b'));
+      writeFileSync(join(cut.projectDir, 'src.txt'), 'cut\n');
+      await cut.retain?.();
+      await first.dispose();
+      const recordPath = join(sessionDir(dir, SESSION_ID), 'retained-workspace.json');
+      expect(statSync(recordPath).size).toBeLessThan(1024 * 1024);
+      expect(
+        (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
+      ).toBe(true);
+
+      const next = isolation(dir, 'worktree');
+      const attempt = await next.acquire({ role: 'implementer', config });
+
+      expect(attempt.projectDir).toBe(cut.projectDir);
+      expect(readFileSync(join(attempt.projectDir, 'large.bin')).equals(large)).toBe(true);
+      expect(readFileSync(join(attempt.projectDir, 'src.txt'), 'utf8')).toBe('base\n');
+      expect(await getChangedFilesSinceSnapshot(attempt.projectDir, attempt.snapshot)).toEqual([]);
+      await next.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
 
   it.each(['worktree', 'staged-copy'] as const)(
     'limits %s cleanup to the supplied changed files',

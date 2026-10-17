@@ -268,6 +268,7 @@ describe('run snapshot runtime commands', () => {
         rejectRun: async () => ({
           status: 'undone',
           restored: ['src/a.ts'],
+          removed: [],
           unchanged: [],
           conflicts: ['src/b.ts'],
         }),
@@ -282,16 +283,19 @@ describe('run snapshot runtime commands', () => {
       screen: 'workflow',
       onError: noop,
     });
-    expect(error).toBe('Apply undone: put back 1 file; left as you changed them: src/b.ts.');
+    expect(error).toBe(
+      'Apply undone: put back 1 replaced file; left as you changed them: src/b.ts.',
+    );
   });
 
-  it('reports a clean undo as a message', async () => {
+  it('reports a clean undo as a message that counts the created files it removed', async () => {
     let message: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
         rejectRun: async () => ({
           status: 'undone',
           restored: ['src/a.ts', 'src/b.ts'],
+          removed: ['src/b.ts'],
           unchanged: [],
           conflicts: [],
         }),
@@ -306,6 +310,6 @@ describe('run snapshot runtime commands', () => {
       screen: 'workflow',
       onError: noop,
     });
-    expect(message).toBe('Apply undone: put back 2 files.');
+    expect(message).toBe('Apply undone: put back 1 replaced file, removed 1 created file.');
   });
 });

@@ -8,7 +8,7 @@ import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../../lib/fs.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';
-import { readConfinedEntry } from '../approval/file-snapshots/entry.js';
+import { readConfinedEntry, removeWriteTemporaries } from '../approval/file-snapshots/entry.js';
 import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
 import { readApplyEntry, sameSideEntry, type SideEntry, sideChangedError } from './states.js';
 
@@ -53,6 +53,20 @@ export function backupSideEntry(
   return entry.sha256 === null || entry.mode === null
     ? { kind: 'absent' }
     : { kind: 'file', sha256: entry.sha256, mode: entry.mode };
+}
+
+/**
+ * Removes the write temporaries a cut Apply left beside any path of its set, written or not. Every
+ * path of the set has an expected entry.
+ */
+export function removeApplyWriteTemporaries(
+  projectDir: string,
+  backup: ApplyBackup,
+): Promise<void> {
+  return removeWriteTemporaries(
+    projectDir,
+    backup.expected.map((entry) => entry.path),
+  );
 }
 
 export function applyBackupDir(projectDir: string, sessionId: string, backupId: string): string {

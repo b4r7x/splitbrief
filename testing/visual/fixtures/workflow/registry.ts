@@ -163,6 +163,12 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       afterMount: () => feedbackStore.setMessage('No run changes to show.'),
     });
   }
+  if (projection.scenarioId === 'workflow-closed-undone') {
+    return () => ({
+      ...base(),
+      afterMount: () => feedbackStore.setMessage('Apply undone: removed 2 created files.'),
+    });
+  }
   if (atRest !== undefined && projection.events.length > 0) {
     return () => {
       const lifecycle = base();

@@ -54,7 +54,13 @@ export type RejectRunSnapshotResult =
 export type RejectRunResult =
   | RejectRunSnapshotResult
   | { status: 'discarded' }
-  | { status: 'undone'; restored: string[]; unchanged: string[]; conflicts: string[] }
+  | {
+      status: 'undone';
+      restored: string[];
+      removed: string[];
+      unchanged: string[];
+      conflicts: string[];
+    }
   | { status: 'unavailable'; message: string };
 
 export type QueueClearCommandResult =

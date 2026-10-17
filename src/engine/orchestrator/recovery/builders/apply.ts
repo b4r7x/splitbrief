@@ -100,11 +100,8 @@ export function buildApplyPartialRecoveryIssue(
     message: '',
     details: [...details, `Backup of the replaced files: ${backupDir}`],
     facts: compactFacts({ backupId, written, total }),
-    availableActions: haltActions('apply-partial', [
-      'retry-same-worker',
-      'restore-backup',
-      'end-run',
-    ]),
+    // End run refuses while Apply is unfinished, so the halt offers only what finishes or undoes it.
+    availableActions: haltActions('apply-partial', ['retry-same-worker', 'restore-backup']),
     recommendedAction: 'retry-same-worker',
     createdAt,
   });

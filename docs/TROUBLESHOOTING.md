@@ -442,12 +442,12 @@ A REVIEW account refusal or long-reset limit raises a Seat down halt. Its config
 
 ---
 
-### Symptom: the run halted with "Review input too large for OpenAI Codex CLI"
+### Symptom: the run halted with "Review input too large for OpenAI Codex CLI" or "Review input too large for Claude Code"
 
-**Likely cause:** The final review prompt is larger than the reviewer tool accepts. Codex takes at most 1,048,576 characters. SPLITBRIEF already trimmed whole new files, the diffs of files no brief declares and the recorded evidence, and the rest of the run diff is still over the cap. The same halt follows when the tool itself answers `input_too_large`.
+**Likely cause:** The final review prompt is larger than the reviewer tool accepts. Codex takes at most 1,048,576 characters. SPLITBRIEF already trimmed whole new files, the diffs of files no brief declares and the recorded evidence, and the rest of the run diff is still over the cap. The same halt follows when the tool itself refuses the input: Codex answers `input_too_large`, and Claude Code answers `Prompt is too long`. Claude Code has no character cap, so SPLITBRIEF trims nothing for it and the halt names no cap.
 
 **Fix:**
-1. Read the halt details. They name the prompt size, the cap and the largest file diffs.
+1. Read the halt details. They name the prompt size, the cap when the tool has one, and the largest file diffs.
 2. Choose **Skip review** to make a workspace run ready to apply with no review. Your note is recorded, and Apply asks for one confirmation. Nothing is reported as verified.
 3. Or choose **End run**. The changes are saved in `.splitbrief/sessions/<id>/run.patch`, and the workspace is removed.
 4. A retry is not offered, because it would send the same input. For the next run, give the review seat a tool with a larger input (`/crew review`), or keep the run smaller.

@@ -17,6 +17,7 @@ import { simpleGit } from 'simple-git';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { sessionDir } from '../../../core/paths.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -86,6 +87,26 @@ describe('entry snapshots of a directory git does not describe', () => {
     const stored = readdirSync(entryStoreDir(ref)).length;
     await captureWorkspaceSnapshot(dir, ref);
     expect(readdirSync(entryStoreDir(ref))).toHaveLength(stored);
+  });
+
+  it('blocks continuation on a stored entry that does not match its hash', async () => {
+    const dir = project();
+    const ref = { projectDir: dir, sessionId: SESSION };
+    const snapshot = await captureWorkspaceSnapshot(dir, ref);
+    const hash = snapshot.baselineFileHashes?.['src/a.ts'];
+    if (hash == null) throw new Error('src/a.ts was not stored');
+    writeFileSync(join(entryStoreDir(ref), hash), 'export');
+    writeFileSync(join(dir, 'src', 'a.ts'), 'attempt bytes\n');
+
+    await expect(
+      restoreWorkspaceFiles({
+        ref,
+        dir,
+        snapshot: { ...snapshot, restoreFiles: ['src/a.ts'] },
+        files: ['src/a.ts'],
+      }),
+    ).rejects.toMatchObject({ kind: 'isolation-retention-unavailable' });
+    expect(readFileSync(join(dir, 'src', 'a.ts'), 'utf8')).toBe('attempt bytes\n');
   });
 
   it('takes the git snapshot where git describes the directory', async () => {
@@ -186,6 +207,55 @@ describe('a revert in the checkout itself', () => {
     expect(readFileSync(join(dir, 'scratch.txt'), 'utf8')).toBe('user notes\n');
     if (result.savedTo === undefined) throw new Error('Missing revert backup');
     expect(readdirSync(result.savedTo).sort()).toEqual(['attempt.txt', 'created.txt']);
+  });
+
+  it('writes again a short blob a cut write left under the hash, so a revert puts back every byte', async () => {
+    const dir = project();
+    createTestGitRepo(dir, { 'user.txt': 'committed\n' });
+    const uncommitted = Buffer.from('uncommitted user work\n'.repeat(64));
+    writeFileSync(join(dir, 'user.txt'), uncommitted);
+    const ref = { projectDir: dir, sessionId: SESSION };
+    const store = entryStoreDir(ref);
+    mkdirSync(store, { recursive: true });
+    writeFileSync(join(store, sha256Hex(uncommitted)), uncommitted.subarray(0, 7));
+
+    const snapshot = await captureWorkspaceSnapshot(dir, ref);
+
+    expect(snapshot.storedDirtyEntries?.['user.txt']?.sha256).toBe(sha256Hex(uncommitted));
+    expect(readFileSync(join(store, sha256Hex(uncommitted)))).toEqual(uncommitted);
+    expect(readdirSync(store).filter((name) => name.startsWith('.'))).toEqual([]);
+    writeFileSync(join(dir, 'user.txt'), 'failed attempt\n');
+
+    await restoreWorkspaceFiles({
+      ref,
+      dir,
+      snapshot: { ...snapshot, restoreFiles: ['user.txt'] },
+      files: ['user.txt'],
+    });
+
+    expect(readFileSync(join(dir, 'user.txt'))).toEqual(uncommitted);
+  });
+
+  it('refuses a stored blob that does not match its hash and leaves the file as it is', async () => {
+    const dir = project();
+    createTestGitRepo(dir, { 'user.txt': 'committed\n' });
+    writeFileSync(join(dir, 'user.txt'), 'uncommitted user work\n');
+    const ref = { projectDir: dir, sessionId: SESSION };
+    const snapshot = await captureWorkspaceSnapshot(dir, ref);
+    const hash = snapshot.storedDirtyEntries?.['user.txt']?.sha256;
+    if (hash === undefined) throw new Error('user.txt was not stored');
+    writeFileSync(join(entryStoreDir(ref), hash), 'uncommi');
+    writeFileSync(join(dir, 'user.txt'), 'failed attempt\n');
+
+    await expect(
+      restoreWorkspaceFiles({
+        ref,
+        dir,
+        snapshot: { ...snapshot, restoreFiles: ['user.txt'] },
+        files: ['user.txt'],
+      }),
+    ).rejects.toMatchObject({ kind: 'approval-snapshot-store-corrupt' });
+    expect(readFileSync(join(dir, 'user.txt'), 'utf8')).toBe('failed attempt\n');
   });
 
   it.each(['git', 'entries'] as const)(

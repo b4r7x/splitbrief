@@ -1,4 +1,4 @@
-import { lstat, mkdir, readlink, realpath, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readlink, realpath } from 'node:fs/promises';
 import { existsSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 import { revertedDir, sessionDir } from '../../../core/paths.js';
@@ -6,7 +6,6 @@ import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { evidenceLedgerPath, mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { evidenceError } from '../../../core/evidence/errors.js';
-import { SECURE_FILE_MODE } from '../../../lib/fs.js';
 import { getGitForDir } from '../../../lib/git/client.js';
 import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
 import { isENOENT } from '../../../lib/process/errors.js';
@@ -14,6 +13,7 @@ import { listWorkspaceEntries } from '../../snapshots/files.js';
 import {
   getChangedFilesSinceSnapshot,
   getChangedFilesSnapshot,
+  storeEntryBlob,
 } from '../approval/file-snapshots/capture.js';
 import {
   readConfinedEntry,
@@ -25,6 +25,7 @@ import {
 import {
   entryToRestore,
   restoreDirtyFilesFromSnapshot,
+  restoreError,
 } from '../approval/file-snapshots/restore.js';
 import { retentionError } from './retention.js';
 import { recordApiRevertEvidence } from '../evidence/task.js';
@@ -58,8 +59,7 @@ export async function captureEntrySnapshot(
     if (file.kind === 'absent') continue;
     baselineFileHashes[path] = file.sha256;
     baselineFileModes[path] = file.mode;
-    const blob = join(opts.store, file.sha256);
-    if (!existsSync(blob)) await writeFile(blob, file.bytes, { mode: SECURE_FILE_MODE });
+    await storeEntryBlob(opts.store, file);
   }
   return {
     head: GIT_EMPTY_TREE_HASH,
@@ -90,7 +90,7 @@ async function restoreEntryFiles(
       await writeConfinedEntry(dir, file, entry);
       if (entry.kind === 'absent') removedPaths.push(file);
     } catch (err) {
-      if (isENOENT(err)) throw retentionError.unavailable();
+      if (restoreError.isStoreCorrupt(err)) throw retentionError.unavailable();
       throw err;
     }
   }
@@ -113,16 +113,19 @@ async function gitDescribes(dir: string): Promise<boolean> {
 
 /**
  * The snapshot an attempt or a brief starts from in the run workspace: git's dirty
- * set where git describes the directory, every entry by hash otherwise.
+ * set where git describes the directory, every entry otherwise. Either way it records
+ * hashes and modes, and the bytes go once into the session's entry store, so the
+ * snapshot, the continuation record and `state.json` stay small however large the files.
  */
 export async function captureWorkspaceSnapshot(
   dir: string,
   ref: SessionRef,
   onEmbeddedRepo?: (dir: string) => void,
 ): Promise<ChangedFilesSnapshot> {
+  const store = entryStoreDir(ref);
   return (await gitDescribes(dir))
-    ? getChangedFilesSnapshot(dir, onEmbeddedRepo)
-    : captureEntrySnapshot(dir, { ignoreProjectDir: ref.projectDir, store: entryStoreDir(ref) });
+    ? getChangedFilesSnapshot(dir, onEmbeddedRepo, { store })
+    : captureEntrySnapshot(dir, { ignoreProjectDir: ref.projectDir, store });
 }
 
 /**
@@ -191,9 +194,14 @@ export async function restoreWorkspaceFiles(input: {
     ));
   } else {
     for (const file of files) await removeConfinedSymlink(dir, file);
-    ({ restoredFiles, removedPaths } = await restoreDirtyFilesFromSnapshot(dir, snapshot, [
-      ...files,
-    ]));
+    ({ restoredFiles, removedPaths } = await restoreDirtyFilesFromSnapshot(
+      dir,
+      snapshot,
+      [...files],
+      {},
+      undefined,
+      entryStoreDir(ref),
+    ));
   }
   if (removedPaths.length > 0 && existsSync(evidenceLedgerPath(ref))) {
     mutateEvidenceLedger(ref, (current) => {

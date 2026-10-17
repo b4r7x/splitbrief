@@ -17,6 +17,7 @@ import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { readyToApplyMessage } from '../../../src/cli/sessions/resolve.js';
 import { applyBackupDir } from '../../../src/engine/orchestrator/apply/backup.js';
 import { undoApply } from '../../../src/engine/orchestrator/apply/restore.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   applyRun,
@@ -70,13 +71,27 @@ afterEach(async () => {
 });
 
 /**
- * Promotion writes each file to a temporary sibling, then links it into place. While the arm file
- * exists, the link of the marker's temporary blocks: `src/greet.ts` sorts first, so it is already in
- * the checkout, and `src/marker.ts` is not, while its temporary holds its bytes. The preload then
- * writes the blocked file, which is what the test waits on before the kill.
+ * Where the kill cuts Apply. `marker-link`: promotion writes each file to a temporary sibling, then
+ * links it into place, and the link of the marker's temporary blocks. `src/greet.ts` sorts first,
+ * so it is already in the checkout, and `src/marker.ts` is not, while its temporary holds its bytes.
+ * `greet-cleanup`: the greeting is linked into place and the removal of its temporary blocks, so
+ * the written greeting keeps its temporary beside it and the marker is not written.
  */
-function writeBlockingPreload(target: StopContinueFixture, armPath: string, blockedPath: string) {
+type ApplyCut = 'marker-link' | 'greet-cleanup';
+
+/**
+ * While the arm file exists, the cut's call blocks. The preload then writes the blocked file,
+ * which is what the test waits on before the kill.
+ */
+function writeBlockingPreload(
+  target: StopContinueFixture,
+  armPath: string,
+  blockedPath: string,
+  cut: ApplyCut,
+) {
   const preload = join(target.tmpDir, 'apply-block.mjs');
+  const [call, prefix] =
+    cut === 'marker-link' ? ['link', '.marker.ts.tmp.'] : ['rm', '.greet.ts.tmp.'];
   writeFileSync(
     preload,
     `import fs from 'node:fs/promises';
@@ -85,16 +100,16 @@ import { basename, dirname } from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 import { setTimeout as delay } from 'node:timers/promises';
 globalThis.fetch = async () => { throw new Error('Network disabled in Apply E2E'); };
-const link = fs.link;
-fs.link = async (...args) => {
+const original = fs.${call};
+fs.${call} = async (...args) => {
   const path = String(args[0]);
   if (existsSync(${JSON.stringify(armPath)}) &&
       dirname(path) === ${JSON.stringify(join(realpathSync(target.projectDir), 'src'))} &&
-      basename(path).startsWith('.marker.ts.tmp.')) {
+      basename(path).startsWith(${JSON.stringify(prefix)})) {
     writeFileSync(${JSON.stringify(blockedPath)}, String(process.pid));
     await delay(${APPLY_HOLD_MS});
   }
-  return link(...args);
+  return original(...args);
 };
 syncBuiltinESMExports();
 `,
@@ -109,6 +124,12 @@ syncBuiltinESMExports();
 function writeTemporaries(target: StopContinueFixture): string[] {
   const src = join(target.projectDir, 'src');
   return existsSync(src) ? readdirSync(src).filter((name) => name.includes('.tmp.')) : [];
+}
+
+/** The transcript lines the run wrote to its session log. */
+async function plannerTexts(target: StopContinueFixture, sessionId: string): Promise<string[]> {
+  const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
+  return events.flatMap((event) => (event.type === 'planner_text' ? [event.text] : []));
 }
 
 async function waitForFile(path: string, timeoutMs: number): Promise<boolean> {
@@ -128,6 +149,7 @@ async function waitForFile(path: string, timeoutMs: number): Promise<boolean> {
 async function crashMidApply(
   target: StopContinueFixture,
   original: string | null = ORIGINAL_GREET,
+  cutAt: ApplyCut = 'marker-link',
 ) {
   if (original !== null) {
     mkdirSync(join(target.projectDir, 'src'));
@@ -135,7 +157,7 @@ async function crashMidApply(
   }
   const armPath = join(target.tmpDir, 'arm-apply-block');
   const blockedPath = join(target.tmpDir, 'apply-blocked');
-  writeBlockingPreload(target, armPath, blockedPath);
+  writeBlockingPreload(target, armPath, blockedPath, cutAt);
 
   const started = await cli(target, ['start', 'smoke'], { timeoutMs: CLI_TIMEOUT_MS });
   expect(started.exitCode, started.stderr).toBe(0);
@@ -220,6 +242,9 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
     expect(ready.closed).toBeUndefined();
     expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
     expect(existsSync(workspacePath)).toBe(true);
+    expect(await plannerTexts(target, sessionId)).toContain(
+      'Restored Apply backup: put back 1 replaced file',
+    );
 
     const applied = await applyRun(target, sessionId);
     expect(applied.exitCode, applied.stderr).toBe(0);
@@ -229,29 +254,32 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
     expect(existsSync(workspacePath)).toBe(false);
   });
 
-  it('retries the remaining writes with the same backup, closes the run applied and undoes it clean', async () => {
-    fixture = createStopContinueFixture(() => IMPLEMENTER_SCRIPT, { isolation: 'worktree' });
-    const target = fixture;
-    const { sessionId, backupId, workspacePath } = await crashMidApply(target, null);
+  it.each(['marker-link', 'greet-cleanup'] as const)(
+    'retries the remaining writes after a %s cut with the same backup, closes the run applied, leaves no temporary and undoes it clean',
+    async (cut) => {
+      fixture = createStopContinueFixture(() => IMPLEMENTER_SCRIPT, { isolation: 'worktree' });
+      const target = fixture;
+      const { sessionId, backupId, workspacePath } = await crashMidApply(target, null, cut);
 
-    const retried = await cli(target, ['continue', sessionId, '--action', 'retry'], {
-      timeoutMs: CLI_TIMEOUT_MS,
-    });
-    expect(retried.exitCode, retried.stderr).toBe(0);
-    expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
-    expect(readFileSync(target.markerPath, 'utf8')).toBe(MARKER_SOURCE);
-    const closed = readState(target, sessionId);
-    expect(closed.closed?.as).toBe('applied');
-    expect(closed.applied?.backupId).toBe(backupId);
-    expect(closed.applying).toBeUndefined();
-    expect(closed.pendingRecovery).toBeUndefined();
-    expect(existsSync(workspacePath)).toBe(false);
-    expect(writeTemporaries(target)).toEqual([]);
+      const retried = await cli(target, ['continue', sessionId, '--action', 'retry'], {
+        timeoutMs: CLI_TIMEOUT_MS,
+      });
+      expect(retried.exitCode, retried.stderr).toBe(0);
+      expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
+      expect(readFileSync(target.markerPath, 'utf8')).toBe(MARKER_SOURCE);
+      const closed = readState(target, sessionId);
+      expect(closed.closed?.as).toBe('applied');
+      expect(closed.applied?.backupId).toBe(backupId);
+      expect(closed.applying).toBeUndefined();
+      expect(closed.pendingRecovery).toBeUndefined();
+      expect(existsSync(workspacePath)).toBe(false);
+      expect(writeTemporaries(target)).toEqual([]);
 
-    const undone = await undoApply({ projectDir: target.projectDir, sessionId }, closed);
-    expect(undone.conflicts).toEqual([]);
-    expect(existsSync(join(target.projectDir, 'src'))).toBe(false);
-  });
+      const undone = await undoApply({ projectDir: target.projectDir, sessionId }, closed);
+      expect(undone.conflicts).toEqual([]);
+      expect(existsSync(join(target.projectDir, 'src'))).toBe(false);
+    },
+  );
 
   it('restores a checkout Apply made a folder in to no folder at all', async () => {
     fixture = createStopContinueFixture(() => IMPLEMENTER_SCRIPT, { isolation: 'worktree' });
@@ -263,6 +291,9 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
     });
     expect(restored.exitCode, restored.stderr).toBe(0);
     expect(existsSync(join(target.projectDir, 'src'))).toBe(false);
+    const said = await plannerTexts(target, sessionId);
+    expect(said).toContain('Restored Apply backup: removed 1 created file');
+    expect(said.some((text) => text.includes('put back'))).toBe(false);
     expect(
       deriveRunStatus({ state: readState(target, sessionId), liveness: 'not-alive' }).kind,
     ).toBe('ready-to-apply');
@@ -282,9 +313,8 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
     const halted = readState(target, sessionId);
     const issue = halted.pendingRecovery;
     expect(issue?.reason).toBe('apply-partial');
-    expect(issue?.availableActions).toEqual(
-      expect.arrayContaining(['retry-same-worker', 'restore-backup']),
-    );
+    // End run refuses while Apply is unfinished, so the panel offers only these two rows.
+    expect(issue?.availableActions).toEqual(['retry-same-worker', 'restore-backup']);
     expect(issue?.recommendedAction).toBe('retry-same-worker');
     const details = issue?.details.join('\n') ?? '';
     expect(details).toContain('Apply was cut off');

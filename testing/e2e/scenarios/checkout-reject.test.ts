@@ -214,6 +214,7 @@ describe('run rejection after a source CLI run', () => {
       expect(await commands.rejectRun()).toEqual({
         status: 'undone',
         restored: [MARKER_FILE],
+        removed: [MARKER_FILE],
         unchanged: [],
         conflicts: [GREET_FILE],
       });

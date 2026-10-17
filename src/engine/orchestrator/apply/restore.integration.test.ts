@@ -110,6 +110,7 @@ describe('restoreApplyBackup', { timeout: 60_000 }, () => {
 
       expect(result).toEqual({
         restored: ['a.txt', 'gone.txt', 'new.txt'],
+        removed: ['new.txt'],
         unchanged: ['z.txt'],
         conflicts: [],
       });
@@ -134,6 +135,7 @@ describe('restoreApplyBackup', { timeout: 60_000 }, () => {
 
       expect(result).toEqual({
         restored: ['gone.txt'],
+        removed: [],
         unchanged: ['z.txt'],
         conflicts: ['a.txt', 'new.txt'],
       });
@@ -153,6 +155,7 @@ describe('restoreApplyBackup', { timeout: 60_000 }, () => {
 
       expect(again).toEqual({
         restored: [],
+        removed: [],
         unchanged: ['a.txt', 'gone.txt', 'new.txt', 'z.txt'],
         conflicts: [],
       });
@@ -265,6 +268,7 @@ describe('undoApply', { timeout: 60_000 }, () => {
 
         expect(undone).toEqual({
           restored: ['gone-link', 'link', 'made', 'tool.sh'],
+          removed: ['made'],
           unchanged: [],
           conflicts: [],
         });
