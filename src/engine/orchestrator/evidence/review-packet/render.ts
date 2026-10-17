@@ -12,6 +12,7 @@ import {
   resolveSeatChangeIdentities,
 } from '../../../providers/model/display-names.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
+import { formatFindingCounts } from '../../../../core/review/verdict.js';
 import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
 import type { ActiveRunnerRole } from '../../../../core/runners/seat-roles.js';
 
@@ -329,7 +330,7 @@ export function renderReviewPacketMarkdown(
     `- Status: ${packet.finalReview.status}`,
     `- Verdict: ${packet.finalReview.verdict ?? 'unknown'}`,
     `- Criteria: ${packet.finalReview.criteriaPassed} passed, ${packet.finalReview.criteriaFailed} failed`,
-    `- Findings: ${packet.finalReview.findingCounts.critical} critical, ${packet.finalReview.findingCounts.warning} warning, ${packet.finalReview.findingCounts.note} note`,
+    `- Findings: ${formatFindingCounts(packet.finalReview.findingCounts)}`,
     `- Path: ${packet.finalReview.path}`,
     `- ${packet.finalReview.statusText}`,
     ...(packet.finalReview.excerpt ? [`- Excerpt: ${packet.finalReview.excerpt}`] : []),

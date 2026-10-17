@@ -70,7 +70,7 @@ function deviationReportOf(result: RetryInvokeResult): DeviationReport | undefin
 export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepResult> {
   const { ctx, attempts, profileOverride, isolationRole } = opts;
   let { state, task } = opts;
-  ({ task, state } = await refreshAndPersistCode(task, ctx, state, ctx.workspaceDir));
+  ({ task, state } = await refreshAndPersistCode(task, ctx, state, ctx.workspaceDir, 'retry'));
 
   const retryRuntime = await createRetryRuntime(ctx, profileOverride);
   state = rebaseOnPersistedWorkflowState(ctx, state);

@@ -19,6 +19,7 @@ import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { arrowSep } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format-time.js';
 import { countNoun } from '../../../utils/pluralize.js';
+import { formatFindingCounts } from '../../../core/review/verdict.js';
 import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
 
 /**
@@ -67,11 +68,6 @@ export interface BriefRowParts {
   fileNote?: string | undefined;
   extraFiles?: string | undefined;
   note?: string | undefined;
-}
-
-/** The two finding tallies every review sentence spells the same way. */
-export function findingCounts(counts: Readonly<{ critical: number; warning: number }>): string {
-  return `${counts.critical} blocking, ${counts.warning} advisory`;
 }
 
 /**
@@ -144,7 +140,7 @@ function reviewSegments(review: ReviewView): CopySegment[] {
   const segments: CopySegment[] = [];
   const verdict = verdictSegment(review.verdict);
   if (verdict !== null) segments.push(verdict);
-  segments.push({ text: findingCounts(review.counts), tone: 'textDim' });
+  segments.push({ text: formatFindingCounts(review.counts), tone: 'textDim' });
   if (review.evidence.total > 0) {
     segments.push({
       text: `${review.evidence.validated}/${review.evidence.total} briefs validated`,

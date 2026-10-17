@@ -229,6 +229,53 @@ describe('runRetryStep', () => {
     expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(1);
   });
 
+  it('retries a brief that creates its anchor as create over the file its first attempt wrote', async () => {
+    const ref = setupProject();
+    const task = makeTask({ action: 'create', suggestedFiles: ['src/clamp.ts'] });
+    const state = makeImplState([task], { attempt: 1 });
+    saveState(ref, state);
+    mkdirSync(join(ref.projectDir, 'src'), { recursive: true });
+    writeFileSync(join(ref.projectDir, 'src/clamp.ts'), 'export const clamp = 0;\n');
+    const retriedActions: string[] = [];
+    const ctx = {
+      ...makeWctx({
+        ...ref,
+        implementer: makeImplementer({
+          retry: async ({ task: retried, projectDir }) => {
+            retriedActions.push(retried.action);
+            writeFileSync(join(projectDir, 'src/clamp.ts'), 'export const clamp = 1;\n');
+            return { success: true, output: 'fixed' };
+          },
+        }),
+      }),
+      taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
+      dependsOnFiles: [],
+    };
+
+    const outcome = await runRetryStep({
+      ctx,
+      task,
+      state,
+      lastError: 'failed check',
+      attempts: 2,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      usageCategory: 'implementer',
+      retryFailureFallback: 'retry failed',
+      invokeRetry: makeImplementerRetryInvoker({
+        context: ctx.context,
+        kind: 'local',
+        sessionId: ref.sessionId,
+        languageContext: buildLanguageContext('typescript'),
+        phase: state.phase,
+      }),
+    });
+
+    expect(outcome.result?.completed).toBe(true);
+    expect(retriedActions).toEqual(['create']);
+    expect(loadState(ref)?.tasks[0]?.action).toBe('create');
+  });
+
   it('writes one bundle receipt for a retry before completing the task', async () => {
     const ref = setupProject();
     const task = makeTask({ suggestedFiles: ['created.ts'] });

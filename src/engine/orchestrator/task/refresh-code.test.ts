@@ -36,6 +36,7 @@ describe('refreshAndPersistCode', () => {
         { projectDir, sessionId },
         state,
         projectDir,
+        'dispatch',
       );
 
       expect(result.task.currentCode).toBeUndefined();
@@ -67,6 +68,7 @@ describe('refreshAndPersistCode', () => {
         { projectDir, sessionId, continuation },
         state,
         projectDir,
+        'dispatch',
       );
 
       expect(result.task).toBe(task);
@@ -109,6 +111,7 @@ describe('refreshAndPersistCode', () => {
         { projectDir, sessionId },
         state,
         workspaceDir,
+        'dispatch',
       );
 
       expect(result.task.currentCode).toBe('workspace anchor');
@@ -144,6 +147,7 @@ describe('refreshAndPersistCode', () => {
         { projectDir, sessionId },
         state,
         projectDir,
+        'dispatch',
       );
 
       expect(result.task.currentCode).toBe('anchor code');
@@ -181,6 +185,7 @@ describe('refreshAndPersistCode', () => {
         { projectDir, sessionId },
         state,
         projectDir,
+        'dispatch',
       );
 
       expect(result.task.currentCodeByFile).toBeUndefined();
@@ -214,7 +219,7 @@ describe('refreshAndPersistCode', () => {
         tasks: [task],
       };
 
-      await refreshAndPersistCode(task, { projectDir, sessionId }, state, projectDir);
+      await refreshAndPersistCode(task, { projectDir, sessionId }, state, projectDir, 'dispatch');
       const resumed = loadState({ projectDir, sessionId });
 
       const saved = resumed?.tasks[0];
@@ -250,6 +255,7 @@ describe('refreshAndPersistCode', () => {
         { projectDir, sessionId },
         state,
         projectDir,
+        'dispatch',
       );
 
       expect(result.task.action).toBe('modify');
@@ -262,6 +268,80 @@ describe('refreshAndPersistCode', () => {
       const prompt = formatTaskPrompt({ task: result.task, context: defaultContext });
       expect(prompt).toContain('Action: modify');
       expect(prompt).toContain('export const x = 1;');
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('keeps create on a retry whose workspace holds the anchor its first attempt wrote', async () => {
+    const projectDir = createTempDir('refresh-code-retry-create');
+    const sessionId = 'sess-refresh-retry-create';
+    ensureSessionDir(projectDir, sessionId);
+    try {
+      const task = makeTask({ action: 'create', suggestedFiles: ['src/x.ts'] });
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src', 'x.ts'), 'export const x = 1;\n');
+      const state = {
+        ...createInitialState('feature'),
+        phase: 'implementing' as const,
+        attempt: 1,
+        tasks: [task],
+      };
+
+      const result = await refreshAndPersistCode(
+        task,
+        { projectDir, sessionId },
+        state,
+        projectDir,
+        'retry',
+      );
+
+      expect(result.task.action).toBe('create');
+      expect(result.task.currentCode).toBe('export const x = 1;\n');
+      expect(loadState({ projectDir, sessionId })?.tasks[0]?.action).toBe('create');
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('keeps create on a Continue past a consult bound that replays the brief on its own files', async () => {
+    const projectDir = createTempDir('refresh-code-continue-create');
+    const sessionId = 'sess-refresh-continue-create';
+    ensureSessionDir(projectDir, sessionId);
+    try {
+      const task = makeTask({ action: 'create', suggestedFiles: ['src/x.ts'] });
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src', 'x.ts'), 'export const x = 1;\n');
+      const state = {
+        ...createInitialState('feature'),
+        phase: 'implementing' as const,
+        tasks: [task],
+        lineages: {
+          [task.id]: {
+            consults: 2,
+            attempts: 3,
+            consultAllowance: 1,
+            attemptAllowance: 0,
+            staleConsultedRevision: {},
+            consultRecords: [],
+            replacedParents: [],
+            notes: [],
+            carriedFailure: 'expected 3 to be 4',
+          },
+        },
+      };
+
+      const result = await refreshAndPersistCode(
+        task,
+        { projectDir, sessionId },
+        state,
+        projectDir,
+        'dispatch',
+      );
+
+      expect(result.task.action).toBe('create');
+      expect(result.task.currentCode).toBe('export const x = 1;\n');
+      expect(loadState({ projectDir, sessionId })?.tasks[0]?.action).toBe('create');
     } finally {
       cleanupTempDir(projectDir);
     }
@@ -288,6 +368,7 @@ describe('refreshAndPersistCode', () => {
         { projectDir, sessionId },
         state,
         projectDir,
+        'dispatch',
       );
 
       expect(result.task.action).toBe('create');
@@ -322,6 +403,7 @@ describe('refreshAndPersistCode', () => {
         { projectDir, sessionId },
         state,
         projectDir,
+        'dispatch',
       );
 
       expect(result.task.currentCode).toBe('anchor code');

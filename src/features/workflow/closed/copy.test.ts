@@ -30,7 +30,7 @@ describe('runRows', () => {
     const view = makeView();
     expect(segmentsFor(view, 'Review')).toEqual([
       { text: 'pass with notes', tone: 'success' },
-      { text: '0 blocking, 1 advisory', tone: 'textDim' },
+      { text: '0 blocking, 1 note', tone: 'textDim' },
       { text: '3/3 briefs validated', tone: 'textDim' },
     ]);
     expect(segmentsFor(view, 'Packet')).toEqual([
@@ -40,6 +40,18 @@ describe('runRows', () => {
       },
     ]);
     expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'clean', tone: 'success' }]);
+  });
+
+  it('counts every minor and out-of-scope finding as a note', () => {
+    const base = makeView();
+    if (base.review.kind !== 'written') throw new Error('fixture review is not written');
+    const view = makeView({
+      review: { ...base.review, counts: { critical: 0, warning: 1, note: 2 } },
+    });
+    expect(segmentsFor(view, 'Review')).toContainEqual({
+      text: '0 blocking, 3 notes',
+      tone: 'textDim',
+    });
   });
 
   it('names the run.patch a run left its changes in, after the packet', () => {
