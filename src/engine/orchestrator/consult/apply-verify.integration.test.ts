@@ -93,13 +93,18 @@ function harness(opts: {
   sessionId: string;
   task: Task;
   plan: Plan;
+  otherTasks?: Task[];
   validator?: Validator;
   runCommand?: ValidationCommandRunner;
   onPlannerReply?: OrchestratorCallbacks['onPlannerReply'];
   changedFiles?: string[];
 }): Harness {
+  const otherTasks = opts.otherTasks ?? [];
   const state: WorkflowState = {
-    ...makeImplState([opts.task], { plan: opts.plan }),
+    ...makeImplState([...otherTasks, opts.task], {
+      plan: opts.plan,
+      currentTaskIndex: otherTasks.length,
+    }),
     phase: 'escalating',
     attempt: 1,
   };
@@ -360,6 +365,98 @@ describe('applyConsultAnswer verify', () => {
     expect(runner.calls).toEqual([]);
     expect(events.filter((event) => event.type === 'checks_run')).toEqual([]);
     expect(events).toHaveLength(0);
+  });
+
+  it("accepts a selection naming another task's check of a shared criterion and runs it", async () => {
+    const { projectDir, sessionId } = setupRepo();
+    const done = makeTask({
+      id: 'T001',
+      criteria: ['C1'],
+      status: 'done',
+      checks: [{ id: 'K5', kind: 'cmd', value: 'biome check', required: true }],
+    });
+    const task = makeTask({
+      id: 'T002',
+      suggestedFiles: ['src/greet.ts'],
+      criteria: ['C1'],
+      status: 'failed',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+    });
+    const plan = planWith([], ['K1', 'K5']);
+    const runner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
+    const { ctx, states, events } = harness({
+      projectDir,
+      sessionId,
+      task,
+      plan,
+      otherTasks: [done],
+      runCommand: runner,
+      changedFiles: ['src/greet.ts'],
+    });
+    const attempt = await getChangedFilesSnapshot(projectDir);
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      verify(['K1', 'K5'], 'Both criterion checks cover the files'),
+      attempt,
+    );
+
+    expect(result).toMatchObject({ action: 'completed', task: { id: 'T002', status: 'done' } });
+    expect(states.at(-1)?.tasks.map((t) => t.status)).toEqual(['done', 'done']);
+    expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
+      {
+        taskId: 'T002',
+        results: expect.arrayContaining([
+          { id: 'K1', status: 'pass' },
+          { id: 'K5', status: 'pass' },
+        ]),
+      },
+    ]);
+    expect(events.filter((event) => event.type === 'task_completed')).toMatchObject([
+      { taskId: 'T002', method: 'consulted' },
+    ]);
+  });
+
+  it("does not require a pending owner's check of a shared criterion", async () => {
+    const { projectDir, sessionId } = setupRepo();
+    const pending = makeTask({
+      id: 'T002',
+      criteria: ['C1'],
+      status: 'pending',
+      checks: [{ id: 'K2', kind: 'cmd', value: 'test -e src/beta.mjs', required: true }],
+    });
+    const task = makeTask({
+      id: 'T001',
+      suggestedFiles: ['src/greet.ts'],
+      criteria: ['C1'],
+      status: 'failed',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+    });
+    const plan = planWith([], ['K1', 'K2']);
+    const runner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
+    const { ctx, events } = harness({
+      projectDir,
+      sessionId,
+      task,
+      plan,
+      otherTasks: [pending],
+      runCommand: runner,
+      changedFiles: ['src/greet.ts'],
+    });
+    const attempt = await getChangedFilesSnapshot(projectDir);
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      verify(['K1'], 'K2 belongs to T002'),
+      attempt,
+    );
+
+    expect(result).toMatchObject({ action: 'completed', task: { id: 'T001', status: 'done' } });
+    expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
+      { taskId: 'T001', results: [{ id: 'K1', status: 'pass' }] },
+    ]);
   });
 
   it('records a failing check and fails the consult without completing the task', async () => {
