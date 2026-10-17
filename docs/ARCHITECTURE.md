@@ -923,7 +923,7 @@ The old file-halt enums and event schemas remain readers for saved sessions. [Re
 `tasks_planned` (the ordered brief list, published at loop entry and after each structural change: `tasks` with `id`, `title`, `index`, `file`, `action`, and `total`), `task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_replaced`, `tasks_inserted`, `task_touched_not_suggested` (the files a completed brief changed that no brief suggested), `task_reset`, `task_tokens`, `task_review_needed` (replay only: the per-task review gate is deleted), `review_fix_started`. Replay only: `task_scope_widened`, `hint_failed`, `task_full_fail`
 
 **Consult / seat:**
-`consult_answered` (one row per answer: the task, reason, action, diagnosis and any new ids, revision or check ids), `consult_bound_spent`, `seat_retry`, `seat_wait_started`, `no_progress_cut`, `seat_switched` (published when a seat switch commits: `seat`, `from`, `to`, `cause`, `auto`, `configRevision`)
+`consult_answered` (one row per answer: the task, reason, action, diagnosis and any new ids, revision or check ids), `consult_bound_spent`, `seat_retry`, `seat_wait_started`, `no_progress_cut`, `seat_switched` (published when a seat switch commits, and on resume for a crew change made between runs with cause `crew-changed` and labelled `from`/`to`: `seat`, `from`, `to`, `cause`, `auto`, `configRevision`)
 
 **Implementer (3):**
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`

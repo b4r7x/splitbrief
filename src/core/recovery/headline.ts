@@ -6,7 +6,7 @@ import { assertNever } from '../../utils/type-guards.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { formatAccountCause } from './account-cause.js';
 import type { SeatLineSpan } from '../crew/identity.js';
-import type { SeatSwitchRecord } from '../schemas/workflow.js';
+import type { SeatSwitchCause } from '../schemas/workflow.js';
 
 type RecoveryHeadlineInput = Pick<
   RecoveryIssue,
@@ -196,9 +196,10 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
     .join('');
 }
 
-export function formatSeatSwitchCause(
-  record: Pick<SeatSwitchRecord, 'cause' | 'headline'>,
-): string {
+export function formatSeatSwitchCause(record: {
+  cause: SeatSwitchCause;
+  headline?: string | undefined;
+}): string {
   if (record.headline !== undefined) return record.headline;
   switch (record.cause) {
     case 'runner-usage-limit':

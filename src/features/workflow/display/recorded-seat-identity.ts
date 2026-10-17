@@ -1,8 +1,4 @@
-import {
-  type candidateIdsOf,
-  formatSeatIdentity,
-  type SeatIds,
-} from '../../../core/crew/identity.js';
+import { formatSeatIdentity, type SeatIds } from '../../../core/crew/identity.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import {
   recordedSeatIdentityInput,
@@ -35,8 +31,8 @@ export function formatRecordedSeatIdentity(
 }
 
 export function formatRecordedSeatChangeIdentities(
-  from: Parameters<typeof candidateIdsOf>[0],
-  to: Parameters<typeof candidateIdsOf>[0],
+  from: Parameters<typeof resolveSeatChangeIdentities>[0]['from'],
+  to: Parameters<typeof resolveSeatChangeIdentities>[0]['to'],
   role: ActiveRunnerRole,
 ): Readonly<{ from: string; to: string }> {
   return resolveSeatChangeIdentities({ from, to, role, cache: modelCacheStore });

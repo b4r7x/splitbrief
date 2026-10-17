@@ -2447,6 +2447,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-seat-crew-changed',
+      title: 'Workflow · BUILD seat changed in the crew before a continue',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'seat-crew-changed',
+        title: 'Crew change row in the transcript',
+        kind: 'implementation',
+        marker: 'crew changed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-spent-b2-replay',
       title: 'Workflow · historical spent-balance smoke replay',
       surface: screenSurface('workflow'),

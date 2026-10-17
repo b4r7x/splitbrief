@@ -289,6 +289,45 @@ describe('packet recovery evidence', () => {
     }
   });
 
+  it('builds and renders a crew change made between stop and continue with both identities', async () => {
+    const projectDir = createTempDir('packet-crew-change');
+    const ref = { projectDir, sessionId: 'crew-change' };
+    try {
+      ensureSessionDir(projectDir, ref.sessionId);
+      saveState(ref, { ...createInitialState('feat'), phase: 'implementing' });
+      const from = 'OpenCode CLI · DeepSeek V4.1 Flash · via ollama-cloud';
+      const to = 'OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go';
+      createJsonlSink(ref)({
+        type: 'seat_switched',
+        ts: Date.parse('2026-10-10T12:58:12.125Z'),
+        phase: 'implementing',
+        seat: 'build',
+        from,
+        to,
+        cause: 'crew-changed',
+        auto: false,
+        configRevision: 'revision',
+      });
+      const saved = loadState(ref);
+      if (saved === null) throw new Error('Missing saved state');
+      const packet = await buildReviewPacket({
+        ...ref,
+        workspaceDir: ref.projectDir,
+        state: saved,
+        summary: makeSummary(),
+        finalReviewStatus: 'failed',
+      });
+
+      expect(
+        renderReviewPacketMarkdown(packet, NULL_CACHE)
+          .split('\n')
+          .filter((line) => line.startsWith('- BUILD switched')),
+      ).toEqual([`- BUILD switched manually: ${from} → ${to}; crew changed`]);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
   it('keeps a legacy saved switch broad without inferring an account cause', () => {
     const recovery = recoveryFor([], {
       ...state,

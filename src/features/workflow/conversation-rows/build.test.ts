@@ -278,13 +278,6 @@ describe('automatic recovery from the spent-balance smoke', () => {
 
   const resumedEvents = [
     {
-      type: 'warning',
-      ts: 1791727007579,
-      phase: 'implementing',
-      message:
-        'BUILD seat changed OpenCode CLI \u00b7 DeepSeek V4.1 Flash \u00b7 via deepseek \u2192 OpenCode CLI \u00b7 DeepSeek V4.1 Flash \u00b7 via opencode-go \u00b7 high; the rest of the run uses the new seat',
-    },
-    {
       type: 'workflow_resumed',
       ts: 1791727007599,
       phase: 'implementing',
@@ -459,7 +452,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
     }
   });
 
-  it('replays the complete spent-b2 switch through the warning and restarted call without a Warning block', () => {
+  it('replays the complete spent-b2 switch through the restarted call without a Warning block', () => {
     const { rows } = project([...events, ...resumedEvents]);
     expect(rows.map(rowText).filter((text) => text !== '')).toEqual([
       `Recovery  Balance spent on OpenCode CLI${arrowSep()}continued on fallback  ctrl+d`,
@@ -468,22 +461,6 @@ describe('automatic recovery from the spent-balance smoke', () => {
       'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file · OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
       'working on src/text.js…',
     ]);
-  });
-
-  it.each([
-    'Unrelated tool warning',
-    'PLAN seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high; context will be rebuilt',
-    'BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · low; the rest of the run uses the new seat',
-    'BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · another/model · high; the rest of the run uses the new seat',
-  ])('keeps the unrelated warning %s on replay', (message) => {
-    const replay = resumedEvents.map((event) =>
-      event.type === 'warning' ? { ...event, message } : event,
-    );
-    const text = project([...events, ...replay])
-      .rows.map(rowText)
-      .join('\n');
-    expect(text).toContain('Warning');
-    expect(text).toContain(message);
   });
 
   it.each(['plan', 'review'] as const)('folds a %s seat failure by the issue and call', (seat) => {

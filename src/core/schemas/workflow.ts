@@ -265,6 +265,10 @@ export const SeatWaitSchema = z.object({
   resetAt: z.string(),
 });
 
+/** A seat moved for a recovery reason, or because the crew changed while the run was stopped. */
+export const SeatSwitchCauseSchema = RecoveryReasonSchema.or(z.literal('crew-changed'));
+export type SeatSwitchCause = z.infer<typeof SeatSwitchCauseSchema>;
+
 export const SeatSwitchRecordSchema = z.object({
   switchId: z.string().optional(),
   seat: z.enum(CREW_SEAT_IDS),

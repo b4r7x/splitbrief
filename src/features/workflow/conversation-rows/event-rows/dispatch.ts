@@ -774,6 +774,8 @@ function recoveryActionSegments(
   const modelChanged =
     event.action === 'switch-seat' &&
     switched !== undefined &&
+    typeof switched.from !== 'string' &&
+    typeof switched.to !== 'string' &&
     switched.from.tool === switched.to.tool &&
     switched.from.model !== switched.to.model;
   return recoveryActionParts(event.action, { reason: event.reason, seat: event.seat }).map(
