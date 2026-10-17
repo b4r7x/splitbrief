@@ -1694,10 +1694,10 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain(
-      activityLine('WARN', 'stderr: npm deprecated package token sk-***REDACTED***'),
-    );
-    expect(text).toContain(activityLine('ERR', 'exit_code_1: Command failed: npm test'));
+    expect(text).toContain(activityLine('WARN', 'npm deprecated package token sk-***REDACTED***'));
+    expect(text).toContain(activityLine('ERR', 'Command failed: npm test'));
+    expect(text).not.toContain('stderr');
+    expect(text).not.toContain('exit_code_1');
     expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
 

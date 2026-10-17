@@ -226,20 +226,19 @@ function runnerActivityLedgerValue(
   input: RunnerActivityDisplayInput,
   opts: { interrupted: boolean },
 ): string {
+  const detail = runnerActivityDiagnosticPreview(input);
   if (opts.interrupted) {
-    const detail = runnerActivityDiagnosticPreview(input);
     return detail ? `current turn interrupted: ${detail}` : 'current turn interrupted';
   }
+  // A warning or a failure reads the tool's own message, never the code SPLITBRIEF tagged it with.
+  if (detail !== null) return detail;
 
   if (/^tool (Read|Write|Edit|MultiEdit)$/i.test(input.label)) return 'file';
   if (/^tool (Bash|Shell)$/i.test(input.label)) return 'command';
 
   const source = input.target ?? input.label;
   const withoutVerb = stripActivityVerb(source);
-  const primary = shellCommandFromText(withoutVerb) ?? shellCommandFromText(source) ?? withoutVerb;
-  const detail = runnerActivityDiagnosticPreview(input);
-  if (detail === null || primary.includes(detail)) return primary;
-  return `${primary}: ${detail}`;
+  return shellCommandFromText(withoutVerb) ?? shellCommandFromText(source) ?? withoutVerb;
 }
 
 function runnerActivityLedgerLabel(
@@ -372,11 +371,7 @@ function isProse(value: string): boolean {
 }
 
 function isUserInterruptedActivity(input: RunnerActivityDisplayInput): boolean {
-  return (
-    input.stage === 'aborted' &&
-    input.kind === 'error' &&
-    input.label.includes('runner_interrupted')
-  );
+  return input.stage === 'aborted' && input.kind === 'error';
 }
 
 function isDiagnosticActivity(input: RunnerActivityDisplayInput): boolean {

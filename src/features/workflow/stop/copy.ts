@@ -98,6 +98,7 @@ function subject(input: StopBylineInput): string {
  */
 function stoppedLead(input: StopBylineInput, tone: StateTone): ConversationRowSegment[] {
   const status = input.record?.status;
+  const kept = (stopKeptFiles(input.parked, input.record)?.length ?? 0) > 0;
   if (status?.kind !== 'open') {
     const brief = input.parked?.taskId ?? input.currentTaskId;
     if (brief === null) return stopLeadParts('Stopped', tone);
@@ -107,7 +108,6 @@ function stoppedLead(input: StopBylineInput, tone: StateTone): ConversationRowSe
         : input.parked?.kind === 'mid-brief'
           ? 'mid-step'
           : undefined;
-    const kept = cut === 'mid-step' && (input.parked?.kept.length ?? 0) > 0;
     return stopLeadParts(
       'Stopped',
       tone,
@@ -116,14 +116,31 @@ function stoppedLead(input: StopBylineInput, tone: StateTone): ConversationRowSe
     );
   }
   const paused = status.stop.on.kind === 'paused' ? status.stop.on : undefined;
-  const kept =
-    status.resumeAt.kind === 'brief' && paused?.at === 'mid-step' && (paused.kept?.length ?? 0) > 0;
   return stopLeadParts(
     'Stopped',
     tone,
     ` ${stopPoint(status.resumeAt, paused?.at)}`,
     kept ? PARTIAL_KEPT : undefined,
   );
+}
+
+/**
+ * The files a stop kept from the brief it cut mid-step; empty when it cut none, null when no stop
+ * recorded them. The record of a run at rest speaks for it over the live park.
+ */
+export function stopKeptFiles(
+  parked: StopBylineInput['parked'],
+  record: RunRecord | null | undefined,
+): readonly string[] | null {
+  const status = record?.status;
+  if (status?.kind === 'open') {
+    if (status.stop.on.kind !== 'paused') return null;
+    return status.resumeAt.kind === 'brief' && status.stop.on.at === 'mid-step'
+      ? (status.stop.on.kept ?? [])
+      : [];
+  }
+  if (parked === null) return null;
+  return parked.kind === 'mid-brief' ? parked.kept : [];
 }
 
 const PARTIAL_KEPT = 'Partial changes kept';

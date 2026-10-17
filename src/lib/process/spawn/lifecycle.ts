@@ -306,7 +306,9 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       idleWarnTimer = setTimeout(() => {
         idleWarned = true;
         if (idle.onWarn !== undefined) {
-          invokeVoidGuarded(() => idle.onWarn?.(Date.now() - since));
+          // Node starts the timer from the cached loop time, which can be older than `since`, and
+          // the wall clock can run behind the monotonic one, so the reading may be under warnMs.
+          invokeVoidGuarded(() => idle.onWarn?.(Math.max(idle.warnMs, Date.now() - since)));
         }
       }, idle.warnMs);
       idleWarnTimer.unref?.();

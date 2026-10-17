@@ -55,6 +55,8 @@ export interface LeftColumnProps<L> {
 }
 
 export interface CustomRowOptions<L, R> {
+  /** The left items whose column carries the row; every item when absent. */
+  appliesTo?: ((left: L) => boolean) | undefined;
   onSelect: (left: L) => void;
   isCustom?: ((item: R) => boolean) | undefined;
   onDelete?: ((item: R) => void) | undefined;

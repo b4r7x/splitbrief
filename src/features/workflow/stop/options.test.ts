@@ -5,6 +5,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
 import {
@@ -18,6 +19,7 @@ import {
   STOP_SHEET_LEGEND,
   STOP_SHEET_PARKED_LEGEND,
   readStopMenuRows,
+  readStopSheetFooter,
   stopMenuLayout,
   stopSheetFooter,
   stopSheetRows,
@@ -326,5 +328,63 @@ describe('readStopMenuRows at a recovery halt', () => {
       'pause-after-brief',
       'end-run',
     ]);
+  });
+});
+
+describe('Session options after a stop cut a brief', () => {
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  beforeEach(() => {
+    addEvent({
+      type: 'tasks_planned',
+      ts: 1,
+      phase: 'implementing',
+      tasks: [{ id: taskId('T001'), title: 'Sum', index: 0, file: 'src/sum.js', action: 'create' }],
+      total: 1,
+    });
+    addEvent(makeTaskStart({ taskId: taskId('T001'), index: 0, total: 1 }));
+  });
+
+  it('keeps only the draft when the cut brief had written nothing, as the byline says', () => {
+    stopStore.park('mid-brief', 'T001', null, []);
+
+    expect(readStopSheetFooter()).toBe('Draft stays.');
+    expect(readStopMenuRows().find((row) => row.id === 'end-run')?.consequence).toBe(
+      'close this run',
+    );
+  });
+
+  it('keeps changes when the cut brief had written files', () => {
+    stopStore.park('mid-brief', 'T001', null, ['src/sum.js']);
+
+    expect(readStopSheetFooter()).toBe(STOP_SHEET_FOOTER);
+    expect(readStopMenuRows().find((row) => row.id === 'end-run')?.consequence).toBe(
+      'close this run; keep changes',
+    );
+  });
+
+  it('reads the kept files from the record of a stopped run at rest', () => {
+    const atRest = (kept?: readonly string[]) =>
+      routerStore.init({
+        screen: 'workflow',
+        run: makeRunRecord({
+          status: {
+            kind: 'open',
+            stop: {
+              kind: 'stopped',
+              on: { kind: 'paused', at: 'mid-step', ...(kept !== undefined && { kept }) },
+            },
+            resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+          },
+        }),
+        execution: { kind: 'at-rest' },
+      });
+
+    atRest();
+    expect(readStopSheetFooter()).toBe('Draft stays.');
+    atRest(['src/sum.js']);
+    expect(readStopSheetFooter()).toBe(STOP_SHEET_FOOTER);
   });
 });

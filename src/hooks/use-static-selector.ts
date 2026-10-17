@@ -56,6 +56,8 @@ export function useStaticSelector<T>({
   useInput(
     (input, key) => {
       if (shouldHandleInput !== undefined && !shouldHandleInput(input, key)) return;
+      // shift+↑/↓ scrolls the transcript; Ink reports it as an arrow to every active handler.
+      if (key.shift && (key.upArrow || key.downArrow)) return;
       if (key.upArrow) {
         moveTo(navigateIndex('up', selectedRef.current, items.length));
         return;

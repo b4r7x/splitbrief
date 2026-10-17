@@ -1148,7 +1148,7 @@ describe('SetupScreen', () => {
 
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain(
-        'Sign in to Claude Code CLI, OpenAI Codex CLI, then run `splitbrief doctor` again.',
+        'Sign in to Claude Code CLI, OpenAI Codex CLI, then run `splitbrief init` again.',
       );
       expect(frame).toContain(
         'Claude crew, Codex review    Unavailable · needs Claude Code CLI, OpenAI Codex CLI',

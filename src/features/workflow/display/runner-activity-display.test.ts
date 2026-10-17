@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { projectRunnerCallActivity } from '../../../engine/calls/activity.js';
+import { normalizeRunnerCallWarning } from '../../../engine/calls/warnings.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import { parseOpencodeLine } from '../../../engine/streaming/parse-opencode.js';
 import {
@@ -244,12 +245,65 @@ describe('runnerActivityLedgerItem', () => {
       }),
     ).toMatchObject({
       label: 'ERR',
-      value: 'command_timeout: Command timed out',
+      value: 'Command timed out',
       diagnosticPreview: 'Command timed out',
       tone: 'error',
       valueTone: 'error',
       severity: 'error',
     });
+  });
+
+  it('shows a tool warning and failure as the tool message, without the code they carry', () => {
+    const message = 'provider.quota: Insufficient Balance (request_id: c69db249)';
+    const base = {
+      ts: 1_200,
+      callId: 'call-open',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+      model: 'deepseek/deepseek-flash',
+      attempt: 0,
+    } as const;
+    const warning = projectRunnerCallActivity(
+      {
+        ...base,
+        type: 'call_warning',
+        warning: normalizeRunnerCallWarning({ code: 'opencode-error', message }),
+      },
+      1,
+      '/project',
+    );
+    const failure = projectRunnerCallActivity(
+      {
+        ...base,
+        type: 'call_error',
+        status: 'failed',
+        error: { code: 'opencode-error', message },
+        startedAt: 1_000,
+        endedAt: 2_000,
+        durationMs: 1_000,
+        partial: true,
+        usage: null,
+        nativeSessionId: null,
+      },
+      2,
+      '/project',
+    );
+    if (warning === null || failure === null) throw new Error('expected activity');
+
+    expect(runnerActivityLedgerItem(warning)).toMatchObject({ label: 'WARN', value: message });
+    expect(runnerActivityLedgerItem(failure)).toMatchObject({ label: 'ERR', value: message });
+  });
+
+  it('reads a stopped call as a stop, whatever its recorded label', () => {
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'aborted',
+        kind: 'error',
+        label: 'aborted',
+        diagnosticPartial: 'stopped by you',
+      }),
+    ).toMatchObject({ label: 'STOP', value: 'current turn interrupted: stopped by you' });
   });
 });
 
@@ -319,7 +373,7 @@ describe('warning model id resolution', () => {
       { cache: catalog },
     );
 
-    expect(item.value).toBe('claude_fallback: Opus 5.5 → Sonnet 5 (overloaded)');
+    expect(item.value).toBe('Opus 5.5 → Sonnet 5 (overloaded)');
     expect(item.diagnosticPreview).toBe('Opus 5.5 → Sonnet 5 (overloaded)');
   });
 
@@ -334,7 +388,7 @@ describe('warning model id resolution', () => {
       { cache: catalog },
     );
 
-    expect(item.value).toBe('claude_fallback: Opus 5.5 → Claude Zeta 9 (overloaded)');
+    expect(item.value).toBe('Opus 5.5 → Claude Zeta 9 (overloaded)');
   });
 
   it('replaces the longest id first so a shorter sibling cannot rewrite part of it', () => {
@@ -354,7 +408,7 @@ describe('warning model id resolution', () => {
   it('leaves a row with no structured ids exactly as recorded', () => {
     const item = runnerActivityLedgerItem({ ...fallbackRow }, { cache: catalog });
 
-    expect(item.value).toBe('claude_fallback: claude-opus-5-5 → claude-sonnet-5 (overloaded)');
+    expect(item.value).toBe('claude-opus-5-5 → claude-sonnet-5 (overloaded)');
     expect(resolveRunnerActivityModelNames({ ...fallbackRow }, catalog)).toBeNull();
   });
 
@@ -370,7 +424,7 @@ describe('warning model id resolution', () => {
       { cache: catalog },
     );
 
-    expect(item.value).toBe('claude_fallback: Claude Opus 5.5 → Claude Sonnet 5 (overloaded)');
+    expect(item.value).toBe('Claude Opus 5.5 → Claude Sonnet 5 (overloaded)');
   });
 
   it('routes each seat role to the catalog that names its models', () => {

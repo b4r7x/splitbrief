@@ -114,7 +114,7 @@ export function projectRunnerCallActivity(
         activityId: `${event.callId}:terminal`,
         stage: event.status,
         kind: 'error',
-        label: `${event.status} ${event.error.code}`,
+        label: event.status,
         diagnosticPartial: event.error.message,
         rawAvailable: event.partial,
         endUnknown: event.endUnknown,
@@ -157,18 +157,15 @@ function warningActivity(
 ): RunnerCallActivityProjection | null {
   if (!showsRunnerCallWarningOnPrimarySurface(warning)) return null;
   const kind = warning.severity === 'error' ? 'error' : 'warning';
-  const labelPrefix = warning.severity === 'error' ? 'error' : 'warning';
-  const label = cleanActivityText(`${labelPrefix} ${warning.code}`, RUNNER_ACTIVITY_MAX_LENGTH);
-  if (label === null) return null;
   const diagnosticPartial = cleanActivityText(warning.message, RUNNER_ACTIVITY_TARGET_MAX_LENGTH);
   const identity =
-    warning.fingerprint || warningActivityIdentity(label.text, diagnosticPartial?.text ?? '');
+    warning.fingerprint || warningActivityIdentity(kind, diagnosticPartial?.text ?? '');
 
   return buildActivity({
     activityId: `${callId}:warning:${identity}`,
     stage: 'warning',
     kind,
-    label: `${labelPrefix} ${warning.code}`,
+    label: kind,
     diagnosticPartial: warning.message,
     rawAvailable: warning.rawRef !== undefined,
     redacted: warning.redacted,

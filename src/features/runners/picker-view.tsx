@@ -38,6 +38,7 @@ import {
   confirmRow as confirmRightRow,
   cycleRightRow,
   expandedRowHint,
+  modelRowSave,
   rightRowMatches,
   seatEffortDraft,
   type RouteAuthContext,
@@ -184,7 +185,6 @@ export function PickerView({
       .filter((line) => line !== undefined)
       .join(SOFT_SEP) || undefined;
   const saveError = feedbackStore.use((s) => (s.isError ? s.message : null));
-  const allowsCustom = catalog.currentItem?.modelCapability.allowsCustom ?? false;
 
   const toolId =
     catalog.currentItem !== undefined && includes(CLI_TOOL_IDS, catalog.currentItem.id)
@@ -352,7 +352,7 @@ export function PickerView({
           ? current.variant.fullId
           : current.kind === 'axis'
             ? routeDraftOf(model, current.providerPrefix, catalog.optionDraftId)
-            : optionDraftOf(model, catalog.optionDraftId);
+            : modelRowSave(current, authContext, catalog.optionDraftId).fullId;
       return formatModelsByline({
         label,
         id,
@@ -451,18 +451,15 @@ export function PickerView({
               refreshing={catalog.discovery.refreshing}
             />
           ),
-        ...(allowsCustom
-          ? {
-              customRow: {
-                onSelect: actions.openCustomModel,
-                onDelete: (row: KeyedRightRow) => {
-                  if (row.kind === 'model') void actions.deleteRight(row.model);
-                },
-                isCustom: (row: KeyedRightRow) =>
-                  slot === 'seat' && row.kind === 'model' && isCustomModel(row.model),
-              },
-            }
-          : {}),
+        customRow: {
+          appliesTo: (item) => item.modelCapability.allowsCustom,
+          onSelect: actions.openCustomModel,
+          onDelete: (row: KeyedRightRow) => {
+            if (row.kind === 'model') void actions.deleteRight(row.model);
+          },
+          isCustom: (row: KeyedRightRow) =>
+            slot === 'seat' && row.kind === 'model' && isCustomModel(row.model),
+        },
         renderRow: (row, { isCursor, maxWidth }) =>
           renderModelRow({
             row,

@@ -50,15 +50,15 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const leftGetKey = leftProps.getKey;
   const terminalPaneOf = leftProps.terminalPane;
   const isLeftItemDisabled = leftProps.isDisabled;
-  const isRightItemCustom = rightProps.customRow?.isCustom;
   const initialLeftIndex = leftProps.initialIndex ?? 0;
-  const allowCustomRight = !!rightProps.customRow;
-  const virtualCount = allowCustomRight ? 1 : 0;
-  const initialRightIndex = (rightProps.initialIndex ?? 0) + virtualCount;
+  const customRow = rightProps.customRow;
+  const virtualCountOf = (left: L | undefined): number => {
+    if (customRow === undefined) return 0;
+    const applies = customRow.appliesTo;
+    return applies === undefined || (left !== undefined && applies(left)) ? 1 : 0;
+  };
   const resolveInitialRightIndex = rightProps.resolveInitialIndex;
   const onLeftChange = rightProps.onLeftChange ?? noop;
-  const onCustomRightOverlay = rightProps.customRow?.onSelect;
-  const onDeleteRight = rightProps.customRow?.onDelete;
   const activationOf = rightProps.activationOf;
   const onExpand = rightProps.onExpand;
   const onCollapse = rightProps.onCollapse;
@@ -90,17 +90,22 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
       if (item) onLeftChange(item);
     },
   });
+  const virtualCount = virtualCountOf(leftCol.currentItem);
+  const isRightItemCustom = virtualCount > 0 ? customRow?.isCustom : undefined;
+  const onCustomRightOverlay = virtualCount > 0 ? customRow?.onSelect : undefined;
+  const onDeleteRight = virtualCount > 0 ? customRow?.onDelete : undefined;
   const rightCol = useColumnState<R>({
     source: rightItems,
     filterFn: rightProps.filterBy ?? defaultRightFilter,
     getKey: rightProps.getKey,
-    initialIndex: initialRightIndex,
+    initialIndex: (rightProps.initialIndex ?? 0) + virtualCount,
     virtualCount,
   });
 
-  const filteredRight: RightItemOrVirtual<R>[] = allowCustomRight
-    ? [{ id: CUSTOM_ROW_ID, isVirtual: true as const }, ...rightCol.items]
-    : rightCol.items;
+  const filteredRight: RightItemOrVirtual<R>[] =
+    virtualCount > 0
+      ? [{ id: CUSTOM_ROW_ID, isVirtual: true as const }, ...rightCol.items]
+      : rightCol.items;
   const rightEffectiveIndex = clampIndex(rightCol.index, filteredRight.length);
   const rightCurrentItem = filteredRight[rightEffectiveIndex];
 
@@ -118,9 +123,10 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
 
   // The reset destination has to follow the highlighted left item: with a
   // synthesized Auto row at index 0, a constant reset would land on it and
-  // confirming would silently rewrite an explicitly configured model.
+  // confirming would silently rewrite an explicitly configured model. The
+  // custom row it offsets past is the target's too, never the item being left.
   const resetRight = (left?: L) =>
-    rightCol.reset((resolveInitialRightIndex?.(left) ?? 0) + virtualCount);
+    rightCol.reset((resolveInitialRightIndex?.(left) ?? 0) + virtualCountOf(left));
 
   // A column of notices and headers is a dead end: advancing into it parks the
   // cursor on rows whose Enter does nothing.

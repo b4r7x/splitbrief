@@ -6,6 +6,8 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 
 const UP = '\u001b[A';
 const DOWN = '\u001b[B';
+const SHIFT_UP = '\u001b[1;2A';
+const SHIFT_DOWN = '\u001b[1;2B';
 const ENTER = '\r';
 const ESC = '\u001b';
 
@@ -64,6 +66,34 @@ describe('useStaticSelector', () => {
     await tick(20);
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('cancelled:yes');
+    });
+
+    ui.unmount();
+  });
+
+  it('leaves the selection on shift+up/down, the transcript scroll key, and moves on plain arrows', async () => {
+    const ui = renderFeature(<Harness items={['alpha', 'beta', 'gamma']} />);
+    await tick(20);
+
+    for (const key of [SHIFT_UP, SHIFT_UP, SHIFT_DOWN]) {
+      await flushEffects();
+      ui.stdin.write(key);
+      await tick(20);
+    }
+    expect(ui.lastFrame()).toContain('current:alpha');
+
+    await flushEffects();
+    ui.stdin.write(DOWN);
+    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('current:beta');
+    });
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('chosen:beta@1');
     });
 
     ui.unmount();

@@ -318,7 +318,7 @@ Open `/usage` from a live or saved workflow to inspect reported counters and ava
 | `Pause after this brief` | finish `T<id>` including checks and review; do not start `T<next>` |
 | `End run` | stop execution; close this run; keep changes |
 
-The second row appears only while a brief is running, and reads `Keep running` once a pause is pending. Before any brief has run, no row claims changes: `Stop now` reads `stop execution; keep the run open`, `End run` reads `stop execution; close this run`, and the title line promises `Draft stays.` instead of `Changes and draft stay.`. `↑↓` selects, `Enter` executes, a second `esc` performs Stop now, and `Tab` dismisses without changing the run. No letter keys trigger an action.
+The second row appears only while a brief is running, and reads `Keep running` once a pause is pending. When the run has no changes to keep, no row claims changes. That is the case before any brief has run, and after a stop that cut a brief before it wrote a file while no brief had finished. Then `Stop now` reads `stop execution; keep the run open`, `End run` reads `stop execution; close this run`, and the title line promises `Draft stays.` instead of `Changes and draft stay.`. After such a stop, the `End run` row of the stopped menu reads `close this run` instead of `close this run; keep changes`. `↑↓` selects, `Enter` executes, a second `esc` performs Stop now, and `Tab` dismisses without changing the run. No letter keys trigger an action.
 
 **How to use.**
 
@@ -652,7 +652,7 @@ Saved task status and matching evidence control stopped-brief attribution, inclu
 
 **Format (closed byline).** A worktree or staged-copy run closed after Apply reads `Undo the Apply with /run reject confirm`. Checkout runs close as complete, without Apply. Once the Apply is undone, the byline reads `Apply undone · nothing left to undo`. If the undo kept files you changed after Apply, it reads `Apply undone · your later edits were kept`. A discarded run that saved a patch reads `Bring the changes back with git apply on the Patch file`. The `Patch` row of the `Run` section names the file. An ended run reads `Ended · bring the changes back with git apply on the Patch file`, or `Ended · esc home` with no patch. End run hands the byline to the closed run at once. A completed run has an empty byline: `esc home` is already in the legend above the composer. A run that needs attention points to its findings, scope deviations or failed briefs. Closed bylines offer no acceptance or rejection of those runs. See [`/run`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject).
 
-**How to use.** `⏎` on a session row opens the run. `esc` leaves a run at rest for home — there is nothing to stop, so no stop sheet opens. When the transcript outgrows its height it scrolls a line at a time with `shift+↑↓` (plain arrows stay with the composer history) or a page with `pgup`/`pgdn`, the legend gains `shift+↑↓ scroll`, and the byline never scrolls away.
+**How to use.** `⏎` on a session row opens the run. `esc` leaves a run at rest for home — there is nothing to stop, so no stop sheet opens. When the transcript outgrows its height it scrolls a line at a time with `shift+↑↓` (plain arrows stay with the composer history and any menu above it) or a page with `pgup`/`pgdn`, the legend gains `shift+↑↓ scroll`, and the byline never scrolls away.
 
 ### Terminal colours
 

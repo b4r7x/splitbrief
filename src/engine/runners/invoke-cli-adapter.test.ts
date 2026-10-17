@@ -526,7 +526,7 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
     expect(activity).toContainEqual(
       expect.objectContaining({
         kind: 'warning',
-        label: 'warning claude_api_retry',
+        label: 'warning',
         diagnosticPartial: 'overloaded (HTTP 529): retry 1 of 10 in 2.1s',
       }),
     );
@@ -670,14 +670,14 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
     expect(activity).toContainEqual(
       expect.objectContaining({
         kind: 'warning',
-        label: 'warning claude_rate_limit',
+        label: 'warning',
         diagnosticPartial: expect.stringContaining('approaching'),
       }),
     );
     expect(activity).toContainEqual(
       expect.objectContaining({
         kind: 'error',
-        label: 'error claude_rate_limit',
+        label: 'error',
         diagnosticPartial: expect.stringContaining('reached'),
       }),
     );
@@ -721,19 +721,23 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
     expect(activity).toContainEqual(
       expect.objectContaining({
         kind: 'error',
-        label: 'error claude_refusal',
+        label: 'error',
         diagnosticPartial: 'claude-opus-5 refused (bio): no fallback model',
       }),
     );
     expect(activity).toContainEqual(
       expect.objectContaining({
         kind: 'error',
-        label: 'error claude_notice',
+        label: 'error',
         diagnosticPartial: "You've hit your usage limit",
       }),
     );
     expect(activity).toContainEqual(
-      expect.objectContaining({ kind: 'warning', label: 'warning claude_api_retry' }),
+      expect.objectContaining({
+        kind: 'warning',
+        label: 'warning',
+        diagnosticPartial: 'overloaded (HTTP 529): retry 1 of 10 in 2.1s',
+      }),
     );
     expect(result).toMatchObject({ status: 'failed' });
     const terminals = terminalRows(events);
@@ -767,7 +771,7 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
     expect(activityRows(events)).toContainEqual(
       expect.objectContaining({
         kind: 'warning',
-        label: 'warning claude_fallback',
+        label: 'warning',
         diagnosticPartial: 'claude-opus-5-5 → claude-sonnet-5 (overloaded)',
         originalModel: 'claude-opus-5-5',
         fallbackModel: 'claude-sonnet-5',

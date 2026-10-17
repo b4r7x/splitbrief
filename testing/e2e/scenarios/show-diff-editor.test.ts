@@ -34,12 +34,12 @@ it.each([
     const message = `run.patch open in ${editor}. ${instruction}`;
     try {
       const openingAt = await fixture.openDiff();
+      await fixture.waitForRedraw();
       await vi.waitFor(() => {
         expect(fixture.editorStarted(), rawIo()).toBe(true);
         expect(screen(), rawIo().slice(openingAt)).toContain(message);
         expect(terminal.buffer.active.type).toBe('normal');
       });
-      await fixture.waitForRedraw();
       await delay(1_100);
       expect(screen()).toContain(message);
       const args: string[] = JSON.parse(readFileSync(fixture.startedPath, 'utf8'));
