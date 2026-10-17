@@ -1,5 +1,6 @@
 import {
   resolveRunnerConfigContext,
+  runnerSlotId,
   type RunnerConfig,
   type RunnerConfigSlot,
 } from '../../../core/config/accessors/runner-config.js';
@@ -8,7 +9,6 @@ import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-r
 import { formatSlotLabel } from '../../../core/crew/identity.js';
 import type { ReadinessCheck } from '../../../core/readiness/types.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { assertNever } from '../../../utils/type-guards.js';
 import type { PreparationPolicy } from './types.js';
 
 export type RunnerCandidate = Readonly<{
@@ -22,26 +22,13 @@ export type CandidateEnumeration = Readonly<{
   checks: readonly ReadinessCheck[];
 }>;
 
-function slotId(slot: RunnerConfigSlot): string {
-  switch (slot.role) {
-    case 'planner':
-      return 'planner';
-    case 'implementer':
-      return `implementer.${slot.profile}`;
-    case 'reviewer':
-      return 'reviewer';
-    default:
-      return assertNever(slot);
-  }
-}
-
 export function admittedCheck(
   slot: RunnerConfigSlot,
   kind: RunnerConfig['kind'],
   details: readonly string[] = [],
 ): ReadinessCheck {
   return {
-    id: `runners.preparation.${slotId(slot)}`,
+    id: `runners.preparation.${runnerSlotId(slot)}`,
     severity: 'ok',
     summary: `${formatSlotLabel(slot)} is ready to start.`,
     ...(details.length > 0 && { details: [...details] }),
@@ -59,7 +46,7 @@ export function warningCheck(
   details: readonly string[] = [],
 ): ReadinessCheck {
   return {
-    id: `runners.preparation.${slotId(slot)}`,
+    id: `runners.preparation.${runnerSlotId(slot)}`,
     severity: 'warning',
     summary: `${formatSlotLabel(slot)} is ready with warnings.`,
     details: [...warnings.map((warning) => warning.message), ...details],
@@ -74,7 +61,7 @@ export function blockedCheck(
   fix = 'Review the configured runner, then retry.',
 ): ReadinessCheck {
   return {
-    id: `runners.preparation.${slotId(slot)}`,
+    id: `runners.preparation.${runnerSlotId(slot)}`,
     severity: 'blocker',
     summary: `${formatSlotLabel(slot)} could not start.`,
     details: [reason],

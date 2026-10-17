@@ -40,6 +40,7 @@ import { formatSeatIdentity, type CrewSeatId } from '../../../src/core/crew/iden
 import { deriveFallbackRows } from '../../../src/core/crew/fallback.js';
 import { deriveCrewRows } from '../../../src/core/crew/rows.js';
 import { crewActivate, fallbackActivate } from '../../../src/features/crew/rows.js';
+import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
 import { configStore } from '../../../src/stores/project/config.js';
@@ -414,16 +415,14 @@ function seedOpencodeCatalog(): void {
 }
 
 function seedProviderAuth(
-  arm: 'read' | 'empty' | 'unreadable',
+  arm: 'read' | 'unreadable',
   reason: CliProviderAuthUnreadableReason = 'parse-failure',
 ): void {
   seedOpencodeCatalog();
   const providerAuth: CliProviderAuth =
     arm === 'read'
       ? { kind: 'read', facts: [{ provider: 'OpenAI', source: 'api' }] }
-      : arm === 'empty'
-        ? { kind: 'empty' }
-        : { kind: 'unreadable', reason };
+      : { kind: 'unreadable', reason };
   const detection = detectionStore.get();
   detectionStore.setDetection({
     providers: [...detection.providers],
@@ -433,6 +432,50 @@ function seedProviderAuth(
     ],
   });
 }
+
+/**
+ * OpenCode right after signing out of every provider: its listing now serves its own gateway
+ * only, so the routes the previous read served are kept one more read with nothing vouching
+ * for them.
+ */
+function seedSignedOutOpencode(): void {
+  seedOpencodeCatalog();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'opencode', { providerAuth: { kind: 'empty' } })],
+    cliModels: [
+      catalogAttempt({
+        tool: 'opencode',
+        outcome: {
+          kind: 'success',
+          value: opencodeApiModels().filter((model) => model.id.startsWith('opencode/')),
+        },
+      }),
+    ],
+  });
+}
+
+/**
+ * OpenCode signed in to OpenAI only, on a seat route of another provider, with its model listing
+ * not read: the credential listing cannot vouch for the route and no model list says otherwise.
+ */
+function seedOpencodeModelListUnread(): void {
+  seedConfig({ planner: { kind: 'cli', tool: 'opencode', model: OPENCODE_UNLISTED_ROUTE } })();
+  publishVisualDiscovery({
+    cliTools: [
+      cliDetectionFor('ready', 'opencode', {
+        providerAuth: { kind: 'read', facts: [{ provider: 'OpenAI', source: 'api' }] },
+      }),
+    ],
+    cliModels: [
+      catalogAttempt({
+        tool: 'opencode',
+        outcome: { kind: 'command-failed', cause: 'opencode api GET /api/model exited 1' },
+      }),
+    ],
+  });
+}
+
+const OPENCODE_UNLISTED_ROUTE = 'ollama-cloud/glm-5';
 
 /**
  * The one detection an oracle tool can carry with no `providerAuth` at all: the
@@ -922,6 +965,24 @@ const createSettingsSavedFixture: FixtureFactory = () => ({
     );
   },
 });
+// The picker closed on a saved route that needs a sign-in: Settings carries the save message and
+// the note in doctor's words.
+const createSettingsSavedRouteSignInFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'opencode/big-pickle' } }),
+  }),
+  afterMount: () => {
+    feedbackStore.setMessage(
+      [
+        formatConfigSaveSuccess('PLAN · OpenCode CLI · Big Pickle · via opencode', {
+          ignoreRuleAdded: false,
+        }),
+        formatNeedsSignInSaveFeedback({ tool: 'opencode', provider: 'opencode' }),
+      ].join(SOFT_SEP),
+    );
+  },
+});
 const createSettingsApproveChecksAskFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
@@ -964,7 +1025,7 @@ const createProviderExpandedEmptyFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
     seed: () => {
-      seedProviderAuth('empty');
+      seedSignedOutOpencode();
       pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
     },
     focus: OPENCODE_FOCUS,
@@ -975,6 +1036,15 @@ const createProviderExpandedUnreadableFixture: FixtureFactory = () =>
     seed: () => {
       seedProviderAuth('unreadable', 'parse-failure');
       pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
+    },
+    focus: OPENCODE_FOCUS,
+  });
+const createRoutesModelListUnreadFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedOpencodeModelListUnread();
+      pickerViewStore.expand(OPENCODE_UNLISTED_ROUTE);
     },
     focus: OPENCODE_FOCUS,
   });
@@ -2106,6 +2176,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-end-checks'), createSettingsEndChecksFixture],
   [scenarioId('overlay-settings-end-checks-off'), createSettingsEndChecksOffFixture],
   [scenarioId('overlay-settings-saved'), createSettingsSavedFixture],
+  [scenarioId('overlay-settings-saved-route-sign-in'), createSettingsSavedRouteSignInFixture],
   [scenarioId('overlay-settings-approve-checks-ask'), createSettingsApproveChecksAskFixture],
   [scenarioId('overlay-settings-isolation-checkout'), createSettingsIsolationCheckoutFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
@@ -2116,6 +2187,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-claude-effort-set'), createClaudeEffortSetFixture],
   [scenarioId('overlay-picker-claude-effort-returned'), createClaudeEffortReturnedFixture],
   [scenarioId('overlay-picker-provider-expanded-empty'), createProviderExpandedEmptyFixture],
+  [scenarioId('overlay-picker-routes-model-list-unread'), createRoutesModelListUnreadFixture],
   [
     scenarioId('overlay-picker-provider-expanded-unreadable'),
     createProviderExpandedUnreadableFixture,

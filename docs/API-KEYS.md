@@ -62,7 +62,18 @@ Never paste real or placeholder secrets (`sk-ant-…`, `sk-or-…`, `gsk_…`) i
 
 ## Missing credentials in the runner picker
 
-The runner picker (`/crew plan`, `/crew build`) marks rows whose credential is missing as **Auth required** and names the tool's own sign-in command — for example `opencode auth login opencode-go`. It never asks you for a key: SPLITBRIEF does not accept, validate, or store credentials typed into the TUI. Selecting such a row still saves the selection, with the same sign-in note repeated as feedback.
+The runner picker (`/crew plan`, `/crew build`, `/crew review`) marks a tool that is not signed in as **Auth required** and names the tool's own sign-in command. It never asks you for a key: SPLITBRIEF does not accept, validate, or store credentials typed into the TUI.
+
+OpenCode and Kilo Code call a `provider/model` route through that provider's credential, so each route row shows its own state:
+
+| Route word | Meaning |
+|---|---|
+| `signed in · <source>` | The tool's credential listing names the provider: `oauth`, `api key`, `stored credential` or the environment variable, such as `$OLLAMA_API_KEY`. |
+| `available` | The tool holds at least one stored or environment credential, none of them for the provider, and its model listing serves a model of that provider, for example a provider set up in the tool's own config. |
+| `needs sign-in` | The tool has no credential for the provider, and its model listing serves no model of that provider. The tool's own gateway (`opencode/…`, `kilo/…`) always needs its credential. When the tool holds no credential at all, every route reads `needs sign-in` and the tool reads **Auth required**. The line under the lists names the sign-in command, for example `opencode auth login opencode-go`, or `signed in to no providers yet: opencode auth login opencode-go` when the tool holds no credential. |
+| `sign-in unknown` | The tool's credential listing could not be read, or the tool has no credential for the provider and its model listing was not read. The line under the lists reads `ctrl+r to read the model list` in the second case. Press `ctrl+r` to read both again. |
+
+Selecting a `needs sign-in` route still saves the selection, and the save message adds the same sentence and command that `splitbrief doctor` gives: `OpenCode CLI has no credential for opencode-go — run opencode auth login opencode-go before start`. `splitbrief doctor` and the start of a run then warn about the seat, for example ``BUILD: OpenCode CLI has no credential for opencode-go.``, and name the same command. When OpenCode refuses a call on that route, the seat halts at once as **Seat down** with the same sentence and command, and a seat with a fallback moves to it. When the provider has a credential and OpenCode still refuses the model, the halt asks you to pick a listed model instead; see [Approval and recovery](./APPROVAL-AND-RECOVERY.md).
 
 Run the named command in your shell, or export the provider's environment variable (above), and the row stops being marked.
 

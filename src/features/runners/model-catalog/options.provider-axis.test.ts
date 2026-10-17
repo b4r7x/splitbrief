@@ -1,20 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { CliProviderAuthFact } from '../../../core/discovery/detection.js';
 import { assemblePickerDescriptors, buildPickerOptions } from './options.js';
-import {
-  compactProviderTag,
-  findProviderCredentialFact,
-  modelBareId,
-  modelProviderAuthKey,
-  modelProviderPrefix,
-  resolveProviderAuthState,
-} from './provider-axis.js';
-
-const FACTS: readonly CliProviderAuthFact[] = [
-  { provider: 'GitHub Copilot', source: 'oauth' },
-  { provider: 'Alibaba Coding Plan', source: 'api' },
-  { provider: 'Kimi For Coding', source: 'env', envVar: 'KIMI_API_KEY' },
-];
+import { compactProviderTag, modelBareId, modelProviderPrefix } from './provider-axis.js';
+import { modelProviderAuthKey } from '../../../core/runners/route-auth.js';
 
 describe('providerDependent flag', () => {
   it('marks only the CLIs whose credential oracle serves per-provider facts', () => {
@@ -62,32 +49,5 @@ describe('model id provider resolution', () => {
     expect(modelBareId('ollama-cloud/deepseek-v4-flash-free')).not.toBe(
       modelBareId('opencode-go/deepseek-v4-flash'),
     );
-  });
-});
-
-describe('credential fact resolution', () => {
-  it('matches oracle display names to id segments through slugification', () => {
-    expect(resolveProviderAuthState('github-copilot', FACTS)).toBe('configured');
-    expect(findProviderCredentialFact('github-copilot', FACTS)?.source).toBe('oauth');
-  });
-
-  it('matches a longer display name to its id-segment stem on a dash boundary', () => {
-    expect(resolveProviderAuthState('alibaba', FACTS)).toBe('configured');
-  });
-
-  it('matches env facts through the env var stem', () => {
-    expect(resolveProviderAuthState('kimi', FACTS)).toBe('configured');
-    expect(findProviderCredentialFact('kimi', FACTS)?.envVar).toBe('KIMI_API_KEY');
-  });
-
-  it('reports needs-signin for a provider no fact backs', () => {
-    expect(resolveProviderAuthState('openrouter', FACTS)).toBe('needs-signin');
-    expect(resolveProviderAuthState('kilo', FACTS)).toBe('needs-signin');
-  });
-
-  it('never lets an unresolvable fact claim another provider', () => {
-    const weird: readonly CliProviderAuthFact[] = [{ provider: 'Weird Provider™', source: 'api' }];
-    expect(resolveProviderAuthState('openrouter', weird)).toBe('needs-signin');
-    expect(resolveProviderAuthState('weird-provider', weird)).toBe('configured');
   });
 });

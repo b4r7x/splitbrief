@@ -621,7 +621,11 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     });
   });
 
-  async function consultHalted(words = CODEX_LIMIT) {
+  async function consultHalted(
+    words = CODEX_LIMIT,
+    code = 'codex-turn-failed',
+    runConfig: typeof config = config,
+  ) {
     const { projectDir, sessionId } = setupProject();
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['codex', 'claude-code']));
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] });
@@ -633,7 +637,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
       typedCall: scriptedTypedCall([
         error('runner-call-failed', 'Planner escalation call failed', {
           status: 'failed',
-          error: { code: 'codex-turn-failed', message: words },
+          error: { code, message: words },
         }),
       ]).typedCall,
     });
@@ -646,7 +650,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
         implementer: makeImplementer({
           retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
         }),
-        config,
+        config: runConfig,
       }),
       task,
       initialError: 'initial validation failed',
@@ -691,16 +695,41 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     expect(loadState({ projectDir, sessionId })?.pendingRecovery?.reason).toBe(
       'runner-usage-limit',
     );
-    // The error row carries the halt's reset for the row to spell; its words name no clock, and
-    // codex's own words drop theirs.
+    // The error row is the halt's own, as on the PLAN and REVIEW seats: the halt's message, then
+    // the tool's words. It carries the reset for the row to spell, so codex's words drop theirs.
     const published = events.find((event) => event.type === 'error');
     expect(published?.type === 'error' && published.resetAt).toBe(issue?.resetAt);
     const row = published?.type === 'error' ? published.message : '';
-    expect(row).toMatch(/^Planner consult for T001 failed: You've hit your usage limit\./);
+    expect(row).toBe(
+      `${issue?.message} (OpenAI Codex CLI reported: You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits.)`,
+    );
     expect(row).not.toMatch(/13:02|1:02 PM|try again/);
     expect(
       readEvidenceLedger({ projectDir, sessionId })?.tasks.find((t) => t.id === 'T001'),
     ).toMatchObject({ status: 'failed', method: 'failed' });
+  });
+
+  // The consult is a PLAN-seat call, so a model the planner's tool refuses halts that seat, not
+  // the brief: retrying the brief would reach the same refusal on every attempt.
+  it('halts a consult on a model the planner tool refuses on the plan seat, naming the brief', async () => {
+    const words = 'model not found: gpt-nope';
+    const { result, events } = await consultHalted(words, 'missing-model', {
+      ...config,
+      planner: { ...config.planner, model: 'gpt-nope' },
+    });
+
+    const issue = result.state.pendingRecovery;
+    expect(issue).toMatchObject({
+      reason: 'planner-call-failed',
+      seat: 'plan',
+      taskId: 'T001',
+      message: 'Model gpt-nope is not listed by OpenAI Codex CLI; pick a listed model',
+      recommendedAction: 'switch-seat',
+      switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }, { tool: 'codex' }] },
+    });
+    expect(issue?.details).toContain('The planner could not answer the consult for T001.');
+    const published = events.find((event) => event.type === 'error');
+    expect(published?.type === 'error' && published.message).toBe(issue?.message);
   });
 
   it("moves the planner block and keeps the brief's attempt on the new tool", async () => {

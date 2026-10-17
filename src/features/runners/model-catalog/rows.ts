@@ -1,17 +1,16 @@
 import type { ActiveRunnerConfig } from '../../../core/config/accessors/active-runner.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import type { ProvenanceWord } from '../../../core/providers/provenance.js';
-import type {
-  CliProviderAuth,
-  CliProviderAuthFact,
-  CliProviderAuthUnreadableReason,
-} from '../../../core/discovery/detection.js';
+import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 import { deriveCliAuthSelection } from '../../../core/runners/cli-auth-selection.js';
 import type {
   CliAuthEnforcementEvidence,
   CliAuthMethod,
+  CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
+import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
@@ -25,15 +24,7 @@ import {
   type OptionAxisName,
 } from './option-axis.js';
 import type { PickerOption } from './options.js';
-import { findProviderCredentialFact, modelProviderAuthKey } from './provider-axis.js';
 import type { ModelOption, ModelVariant } from './recency.js';
-
-/** What the tool's own credential listing says about one route's provider. */
-export type RouteAuthState =
-  | { kind: 'configured'; source: CliProviderAuthFact['source']; envVar?: string }
-  | { kind: 'needs-sign-in' }
-  | { kind: 'unknown'; reason: CliProviderAuthUnreadableReason | 'empty' }
-  | { kind: 'unchecked' };
 
 /**
  * A steppable dimension of an expanded model: spelled by the model id, or by the
@@ -181,33 +172,6 @@ export const AUTH_METHOD_WORDS: Readonly<Record<AuthMethodChoice, string>> = {
 
 /** What a configured method no adapter can enforce reads as: the run would be refused. */
 export const AUTH_UNPROVEN_WORD = 'unproven';
-
-export function routeAuthStateFor(input: {
-  hasOracle: boolean;
-  variant: ModelVariant;
-  providerAuth: CliProviderAuth | undefined;
-}): RouteAuthState {
-  if (!input.hasOracle) return { kind: 'unchecked' };
-  if (input.providerAuth === undefined) return { kind: 'unchecked' };
-  switch (input.providerAuth.kind) {
-    case 'empty':
-      return { kind: 'unknown', reason: 'empty' };
-    case 'unreadable':
-      return { kind: 'unknown', reason: input.providerAuth.reason };
-    case 'read': {
-      const authKey = modelProviderAuthKey(input.variant.fullId) ?? input.variant.providerPrefix;
-      const fact = findProviderCredentialFact(authKey, input.providerAuth.facts);
-      if (fact === undefined) return { kind: 'needs-sign-in' };
-      return {
-        kind: 'configured',
-        source: fact.source,
-        ...(fact.envVar === undefined ? {} : { envVar: fact.envVar }),
-      };
-    }
-    default:
-      return assertNever(input.providerAuth);
-  }
-}
 
 /** True when any route of the row, or the row itself, carries the tool's own preset ladder. */
 export function offersEffortLadder(model: ModelOption): boolean {
@@ -368,7 +332,9 @@ export function buildRightRows(input: {
   models: readonly ModelOption[];
   expandedModelId: string | null;
   providerAuth: CliProviderAuth | undefined;
-  hasOracle: boolean;
+  /** The tool's own model listing, read against the route like its credential listing. */
+  catalog: SavedCatalog | null | undefined;
+  tool: CliToolId | undefined;
   catalogLane: CatalogLane;
   persistedModel: string | undefined;
   customModels: readonly string[];
@@ -477,10 +443,11 @@ export function buildRightRows(input: {
         variant,
         last: isLastRoute,
         tree: { depth: 1, parentContinues: false } as const,
-        auth: routeAuthStateFor({
-          hasOracle: input.hasOracle,
-          variant,
+        auth: routeAuthState({
+          tool: input.tool,
+          model: variant.fullId,
           providerAuth: input.providerAuth,
+          catalog: input.catalog,
         }),
       });
       rows.push(

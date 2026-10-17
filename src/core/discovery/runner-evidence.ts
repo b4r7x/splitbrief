@@ -1,4 +1,4 @@
-import type { DetectedModel, ExecutableIdentity } from './detection.js';
+import type { CliProviderAuth, DetectedModel, ExecutableIdentity } from './detection.js';
 
 export type { ExecutableIdentity };
 
@@ -99,6 +99,8 @@ export type RunnerEvidence = Readonly<{
   endpoint: ProbeOutcome<null>;
   catalog: ProbeOutcome<readonly DetectedModel[]>;
   modelRun: ModelRunFact;
+  /** What the tool's per-provider credential listing said; absent when no listing ran. */
+  providerAuth?: CliProviderAuth | undefined;
 }>;
 
 export const START_FACTS = [

@@ -11,14 +11,27 @@ import type { RecoveryBuilderBase } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
 import { chooseRecommended, haltActions } from './actions.js';
 import { taskFiles } from './details.js';
-import { buildSeatDownIssue, switchSeatOffer, type SeatSwapContext } from './task.js';
+import type { SeatFailureClassification } from '../../../runners/seat-failure.js';
+import {
+  buildSeatDownIssue,
+  modelRefusalHalt,
+  refusalStopDetail,
+  seatRouteRefusal,
+  switchSeatOffer,
+  type SeatSwapContext,
+} from './task.js';
 
 /** Why the plan seat could not produce its artifact. */
-export type PlannerSeatFailure = 'unauthenticated' | 'usage-limit' | 'call-failed';
+export type PlannerSeatFailure =
+  | 'unauthenticated'
+  | 'usage-limit'
+  | 'missing-model'
+  | 'call-failed';
 
 const PLANNER_FAILURE_REASONS = {
   unauthenticated: 'runner-unauthenticated',
   'usage-limit': 'runner-usage-limit',
+  'missing-model': 'planner-call-failed',
   'call-failed': 'planner-call-failed',
 } as const satisfies Record<PlannerSeatFailure, RecoveryReason>;
 
@@ -53,20 +66,28 @@ export interface PlannerCallFailureRecoveryOptions extends RecoveryBuilderBase {
  * re-issued, moved to another detected tool, or the run stopped on it. There is
  * no bigger profile to route to — the seat either runs again or it does not run —
  * and a task to skip only when the call was a brief's hint. A sign-out or a
- * refusal the classifier named builds the one seat-down halt instead.
+ * refusal the classifier named, or a model refusal on a route with no
+ * credential, builds the one seat-down halt instead.
  */
 export function buildPlannerCallFailedRecoveryIssue(
   opts: PlannerCallFailureRecoveryOptions,
 ): RecoveryIssue {
   const { diagnosis } = opts;
-  if (diagnosis.seatDown !== undefined) {
+  const words = diagnosis.words ?? diagnosis.message;
+  const refusal =
+    diagnosis.failure === 'missing-model' ? seatRouteRefusal(opts.seatSwap) : undefined;
+  const classification: SeatFailureClassification | undefined =
+    diagnosis.seatDown?.classification ??
+    (refusal?.kind === 'signed-out' ? { class: 'account', cause: 'auth' } : undefined);
+  if (classification !== undefined) {
     return buildSeatDownIssue({
       id: opts.id,
       seat: opts.seat ?? 'plan',
       runner: opts.runner,
-      classification: diagnosis.seatDown.classification,
-      words: diagnosis.seatDown.words,
-      ...(diagnosis.seatDown.requestId !== undefined && {
+      classification,
+      words,
+      ...(refusal?.kind === 'signed-out' && { routeProvider: refusal.provider }),
+      ...(diagnosis.seatDown?.requestId !== undefined && {
         requestId: diagnosis.seatDown.requestId,
       }),
       task: opts.task,
@@ -79,7 +100,13 @@ export function buildPlannerCallFailedRecoveryIssue(
   }
   const reason = PLANNER_FAILURE_REASONS[diagnosis.failure];
   const resetsAt = diagnosis.resetsAt ?? null;
-  const offer = switchSeatOffer(opts.seatSwap);
+  const modelRefusalKind =
+    refusal === undefined || refusal.kind === 'signed-out' ? undefined : refusal.kind;
+  const modelRefusal =
+    modelRefusalKind === undefined
+      ? undefined
+      : modelRefusalHalt(opts.runner, modelRefusalKind, opts.seatSwap);
+  const offer = modelRefusal === undefined ? switchSeatOffer(opts.seatSwap) : modelRefusal.offer;
   const actions = haltActions(reason, [
     'retry-same-worker',
     offer === undefined ? undefined : 'switch-seat',
@@ -95,15 +122,19 @@ export function buildPlannerCallFailedRecoveryIssue(
     task: opts.task,
     files: opts.task === undefined ? [] : taskFiles(opts.task),
     affectedTaskIds: opts.task === undefined ? [] : [opts.task.id],
-    message: diagnosis.message,
-    details: [...(diagnosis.details ?? []), ...(opts.details ?? [])],
+    message: modelRefusal?.message ?? diagnosis.message,
+    details: [
+      ...(diagnosis.details ?? []),
+      ...(modelRefusalKind === undefined ? [] : [refusalStopDetail(modelRefusalKind)]),
+      ...(opts.details ?? []),
+    ],
     ...(resetsAt !== null && { resetAt: resetsAt.toISOString() }),
     ...(offer !== undefined && { switchSeat: offer }),
-    facts: compactFacts({ tool: diagnosis.tool, ...opts.facts }),
+    facts: compactFacts({ tool: diagnosis.tool, refusal: modelRefusalKind, ...opts.facts }),
     availableActions: actions,
     recommendedAction: chooseRecommended(
       actions,
-      diagnosis.failure === 'usage-limit' ? ['switch-seat'] : [],
+      diagnosis.failure === 'usage-limit' || modelRefusal !== undefined ? ['switch-seat'] : [],
     ),
     createdAt: opts.createdAt,
   });

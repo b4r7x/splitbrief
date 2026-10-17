@@ -81,7 +81,6 @@ function makeCatalog(input: {
   currentItem: PickerOption;
   rightRows?: RightRow[];
   roleLabel?: string;
-  hasOracle?: boolean;
   focusModels?: boolean;
   initialRightIndex?: number;
 }): PickerCatalog {
@@ -103,7 +102,7 @@ function makeCatalog(input: {
     catalogDiagnostic: undefined,
     catalogLane: 'ready',
     providerAuth: { kind: 'read', facts: [] },
-    hasOracle: input.hasOracle ?? false,
+    toolCatalog: { models: [] },
     currentCommand: undefined,
     currentCommandKind: undefined,
     customModels: [],
@@ -216,7 +215,6 @@ describe('PickerView terminal panes', () => {
       currentItem: kilo,
       rightRows: [{ kind: 'model', model, provenance: 'Detected', section: '', expanded: false }],
       roleLabel: 'Planner',
-      hasOracle: true,
     });
     // Only `openai` has a credential, so exactly one of the two routes is usable.
     catalog.providerAuth = { kind: 'read', facts: [{ provider: 'openai', source: 'oauth' }] };
@@ -250,7 +248,6 @@ describe('PickerView terminal panes', () => {
       currentItem: kilo,
       rightRows: [{ kind: 'model', model, provenance: 'Detected', section: '', expanded: false }],
       roleLabel: 'Implementer',
-      hasOracle: true,
     });
     catalog.providerAuth = { kind: 'read', facts: [{ provider: 'opencode-go', source: 'oauth' }] };
     const ui = mount(
@@ -291,7 +288,6 @@ describe('PickerView terminal panes', () => {
             { kind: 'model', model, provenance: 'Detected', section: '', expanded: false },
           ],
           roleLabel: 'Planner',
-          hasOracle: true,
         })}
         actions={actions}
       />,
@@ -371,7 +367,7 @@ describe('PickerView terminal panes', () => {
         model,
         variant,
         last: true,
-        auth: { kind: 'needs-sign-in' },
+        auth: { kind: 'needs-sign-in', tool: 'kilo-code', provider: 'openrouter' },
         tree: { depth: 1, parentContinues: false },
       },
     ];
@@ -384,7 +380,6 @@ describe('PickerView terminal panes', () => {
           currentItem: kilo,
           rightRows: rows,
           roleLabel: 'Planner',
-          hasOracle: true,
         })}
         actions={makeActions()}
       />,
@@ -394,6 +389,47 @@ describe('PickerView terminal panes', () => {
     await flushEffects();
 
     expect(frameText(ui)).toContain('sign in: kilo auth login openrouter');
+    ui.unmount();
+  });
+
+  it("names the route's first id segment in the sign-in command, as doctor and the halt do", async () => {
+    const kilo = cliTool('kilo-code', 'Kilo Code CLI');
+    const variant: ModelVariant = {
+      fullId: 'kilo/openrouter/free',
+      providerPrefix: 'kilo/openrouter',
+      tag: 'openrouter',
+    };
+    const model = { id: 'kilo/openrouter/free', variants: [variant] };
+    const rows: RightRow[] = [
+      { kind: 'model', model, provenance: 'Detected', section: '', expanded: true },
+      {
+        kind: 'route',
+        model,
+        variant,
+        last: true,
+        auth: { kind: 'needs-sign-in', tool: 'kilo-code', provider: 'kilo' },
+        tree: { depth: 1, parentContinues: false },
+      },
+    ];
+    const ui = mount(
+      <PickerView
+        slot="seat"
+        role="planner"
+        catalog={makeCatalog({
+          items: [kilo],
+          currentItem: kilo,
+          rightRows: rows,
+          roleLabel: 'Planner',
+        })}
+        actions={makeActions()}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write(RIGHT);
+    await flushEffects();
+
+    expect(frameText(ui)).toContain('sign in: kilo auth login kilo');
+    expect(frameText(ui)).not.toContain('kilo auth login kilo/openrouter');
     ui.unmount();
   });
 
@@ -418,7 +454,6 @@ describe('PickerView terminal panes', () => {
           currentItem: cursor,
           rightRows: rows,
           roleLabel: 'Planner',
-          hasOracle: false,
         })}
         actions={makeActions()}
       />,
@@ -849,7 +884,8 @@ describe('PickerView hybrid route and axis expansion', () => {
       models: [model],
       expandedModelId: model.id,
       providerAuth: undefined,
-      hasOracle: false,
+      catalog: undefined,
+      tool: undefined,
       catalogLane: 'ready',
       persistedModel: undefined,
       customModels: [],
@@ -1019,7 +1055,8 @@ describe('PickerView authentication method rows', () => {
       models: [routed],
       expandedModelId: routed.id,
       providerAuth: undefined,
-      hasOracle: false,
+      catalog: undefined,
+      tool: undefined,
       catalogLane: 'ready',
       persistedModel: undefined,
       customModels: [],

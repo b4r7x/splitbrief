@@ -291,7 +291,9 @@ describe('formatRouteAuth', () => {
     const configured = formatRouteAuth({
       auth: { kind: 'configured', source: 'oauth' },
     });
-    const missing = formatRouteAuth({ auth: { kind: 'needs-sign-in' } });
+    const missing = formatRouteAuth({
+      auth: { kind: 'needs-sign-in', tool: 'opencode', provider: 'openai' },
+    });
     const unknown = formatRouteAuth({
       auth: { kind: 'unknown', reason: 'timeout' },
     });
@@ -305,16 +307,19 @@ describe('formatRouteAuth', () => {
     expect(new Set([configured.word, missing.word, unknown.word]).size).toBe(3);
   });
 
-  it('reads a listing that named no provider as needing sign-in, not as unknown', () => {
-    const empty = formatRouteAuth({ auth: { kind: 'unknown', reason: 'empty' } });
-    const missing = formatRouteAuth({ auth: { kind: 'needs-sign-in' } });
-    const timeout = formatRouteAuth({ auth: { kind: 'unknown', reason: 'timeout' } });
+  it('reads every route of a tool signed in to no provider as needing a sign-in, as it read before', () => {
+    expect(
+      formatRouteAuth({
+        auth: { kind: 'unknown', reason: 'empty', tool: 'opencode', provider: 'ollama' },
+      }),
+    ).toEqual({ word: 'needs sign-in', dim: true });
+  });
 
-    expect(empty.word).toBe(missing.word);
-    expect(empty.dim).toBe(true);
-    expect(timeout.word).toBe('sign-in unknown');
-    expect(timeout.dim).toBe(true);
-    expect(empty.word).not.toBe(timeout.word);
+  it('reads a route the tool lists, with no credential behind it, as available rather than signed in', () => {
+    expect(formatRouteAuth({ auth: { kind: 'configured', source: 'listed' } })).toEqual({
+      word: 'available',
+      dim: false,
+    });
   });
 
   it('names the environment variable a configured route reads', () => {
@@ -330,7 +335,6 @@ describe('formatRouteRemedy', () => {
   const route = {
     toolName: 'OpenCode CLI',
     oracleCommand: 'opencode providers list',
-    provider: 'opencode-go',
     versions: { observed: '0.3.0', required: '0.40.0' },
   };
 
@@ -341,7 +345,11 @@ describe('formatRouteRemedy', () => {
   });
 
   it('leads with the sign-in command for a route the tool has no credential for', () => {
-    const remedy = formatRouteRemedy({ auth: { kind: 'needs-sign-in' }, ...route }) ?? '';
+    const remedy =
+      formatRouteRemedy({
+        auth: { kind: 'needs-sign-in', tool: 'opencode', provider: 'opencode-go' },
+        ...route,
+      }) ?? '';
 
     expect(remedy).toContain('opencode auth login opencode-go');
     expect(remedy.indexOf('opencode auth login opencode-go')).toBeLessThan(
@@ -349,20 +357,35 @@ describe('formatRouteRemedy', () => {
     );
   });
 
-  it.each([
-    'empty',
-    'timeout',
-    'exit-failure',
-    'parse-failure',
-    'version-mismatch',
-    'not-probed',
-  ] as const)('puts the action ahead of the explanation for %s', (reason) => {
-    const remedy = formatRouteRemedy({ auth: { kind: 'unknown', reason }, ...route }) ?? '';
-    const [head = ''] = remedy.split(SOFT_SEP);
-
-    expect(remedy).not.toBe('');
-    expect(head).toMatch(/ctrl\+r|upgrade|auth login/);
+  it('names the sign-in command when the tool is signed in to no provider, as it did before', () => {
+    expect(
+      formatRouteRemedy({
+        auth: { kind: 'unknown', reason: 'empty', tool: 'opencode', provider: 'ollama' },
+        ...route,
+      }),
+    ).toBe('signed in to no providers yet: opencode auth login ollama · then ctrl+r');
   });
+
+  it('asks for the model list, not a sign-in check, when only the model list was not read', () => {
+    const remedy =
+      formatRouteRemedy({ auth: { kind: 'unknown', reason: 'catalog-not-read' }, ...route }) ?? '';
+
+    expect(remedy.startsWith('ctrl+r to read the model list')).toBe(true);
+    expect(remedy).not.toBe(
+      formatRouteRemedy({ auth: { kind: 'unknown', reason: 'not-probed' }, ...route }),
+    );
+  });
+
+  it.each(['timeout', 'exit-failure', 'parse-failure', 'version-mismatch', 'not-probed'] as const)(
+    'puts the action ahead of the explanation for %s',
+    (reason) => {
+      const remedy = formatRouteRemedy({ auth: { kind: 'unknown', reason }, ...route }) ?? '';
+      const [head = ''] = remedy.split(SOFT_SEP);
+
+      expect(remedy).not.toBe('');
+      expect(head).toMatch(/ctrl\+r|upgrade|auth login/);
+    },
+  );
 
   it('names the version gap the upgrade has to close', () => {
     const remedy =

@@ -328,7 +328,7 @@ const ORACLE_TOOLS = {
     stateFile: join('.local', 'share', 'opencode', 'auth.json'),
     report:
       '[{"id":"openai","name":"OpenAI","connections":[{"type":"credential","id":"cred_0001","label":"default"}]}]\n',
-    facts: [{ provider: 'OpenAI', source: 'stored' }],
+    facts: [{ id: 'openai', provider: 'OpenAI', source: 'stored' }],
   },
   'kilo-code': {
     argv: ['kilo', 'auth', 'list'],

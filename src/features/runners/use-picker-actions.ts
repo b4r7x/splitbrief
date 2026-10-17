@@ -15,7 +15,6 @@ import { seatIdentitiesFromConfig, seatIdentityChanges } from '../../core/state/
 import { SOFT_SEP } from '../../core/separators.js';
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { cliProviderAuthFacts } from '../../core/discovery/detection.js';
 import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
 
 import {
@@ -49,11 +48,7 @@ import {
 } from './local-connection-form.js';
 import { applyCliAuthChoice } from '../../core/runners/cli-auth-selection.js';
 import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
-import {
-  CLI_TOOL_CATALOG,
-  CLI_TOOL_IDS,
-  type CliAuthMethod,
-} from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS, type CliAuthMethod } from '../../core/runners/cli-tool-catalog.js';
 import {
   PICKER_ROLE_SEAT_IDS,
   seatPickerLane,
@@ -65,14 +60,9 @@ import type { Config } from '../../core/schemas/config.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
 import type { PickerOption, RunnerPickerOption } from './model-catalog/options.js';
 import { readPickerRunner } from './model-catalog/catalog.js';
-import {
-  compactProviderTag,
-  modelProviderAuthKey,
-  modelProviderPrefix,
-  resolveProviderAuthState,
-} from './model-catalog/provider-axis.js';
+import { routeAuthState } from '../../core/runners/route-auth.js';
 import type { ModelOption } from './model-catalog/recency.js';
-import { formatNeedsSignInSaveFeedback, gatewayAccountName } from './picker-format.js';
+import { formatNeedsSignInSaveFeedback } from './picker-format.js';
 import { refreshPickerDetection } from './refresh-detection.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import { AUTH_METHOD_WORDS, effortLadderFor, type RightRow } from './model-catalog/rows.js';
@@ -272,30 +262,23 @@ function runnerItemOf(item: PickerOption | undefined): RunnerPickerOption | unde
 }
 
 /**
- * The provider honesty note for a chosen variant, mirroring the picker's
- * confirm-time semantics: an unreadable oracle claims nothing, a configured
- * provider needs no note, and only a missing credential names the login
- * command that unblocks the saved selection.
+ * The provider honesty note for a chosen variant, read the way its picker row
+ * reads it: only a route that needs a sign-in names the login command that
+ * unblocks the saved selection.
  */
 function needsSignInVariantNote(item: RunnerPickerOption, fullId: string): string | undefined {
   const toolId = includes(CLI_TOOL_IDS, item.id) ? item.id : undefined;
   if (toolId === undefined) return undefined;
-  const facts = cliProviderAuthFacts(
-    detectionStore.get().cliTools.find((d) => d.tool === toolId)?.providerAuth,
-  );
-  if (facts === undefined) return undefined;
-  const authKey = modelProviderAuthKey(fullId);
-  const prefix = modelProviderPrefix(fullId);
-  if (authKey === undefined || prefix === undefined) return undefined;
-  if (resolveProviderAuthState(authKey, facts) === 'configured') return undefined;
-  const gatewayKey = CLI_TOOL_CATALOG[toolId].command;
-  return formatNeedsSignInSaveFeedback({
-    modelId: fullId,
-    tag: compactProviderTag(prefix),
-    authKey,
-    loginCommand: `${gatewayKey} auth login`,
-    ...(authKey === gatewayKey ? { gatewayAccount: gatewayAccountName(toolId) } : {}),
+  const auth = routeAuthState({
+    tool: toolId,
+    model: fullId,
+    providerAuth: detectionStore.get().cliTools.find((d) => d.tool === toolId)?.providerAuth,
+    catalog: modelCacheStore.getCliCatalogRuntime({ tool: toolId }),
   });
+  if (auth.kind === 'needs-sign-in' || (auth.kind === 'unknown' && auth.reason === 'empty')) {
+    return formatNeedsSignInSaveFeedback({ tool: auth.tool, provider: auth.provider });
+  }
+  return undefined;
 }
 
 /** The ladder the row published for this id; an empty one is unknown, never a reason to clear. */

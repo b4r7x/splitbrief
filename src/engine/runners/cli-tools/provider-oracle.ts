@@ -72,8 +72,10 @@ const ENVIRONMENT_ENTRY_PATTERN = /^(.+?) +([A-Z][A-Z0-9_]*)$/;
 
 // `opencode auth list --format json` (2.0.12): one object per provider, whose
 // connections are stored credentials (the kind is not reported) or env vars.
+// `id` is the provider's model-id segment (`kimi-code-plan-global`); `name` is display text.
 const JsonListingSchema = z.array(
   z.object({
+    id: z.string().trim().min(1).optional(),
     name: z.string().trim().min(1),
     connections: z.array(
       z.discriminatedUnion('type', [
@@ -93,14 +95,18 @@ function parseJsonListing(text: string): ProviderOracleParse {
   }
   const listing = JsonListingSchema.safeParse(value);
   if (!listing.success) return PARSE_FAILURE;
-  const entries = listing.data.flatMap((provider) =>
-    provider.connections.map(
+  const entries = listing.data.flatMap((provider) => {
+    const identity = {
+      ...(provider.id === undefined ? {} : { id: provider.id }),
+      provider: provider.name,
+    };
+    return provider.connections.map(
       (connection): CliProviderAuthFact =>
         connection.type === 'env'
-          ? { provider: provider.name, source: 'env', envVar: connection.name }
-          : { provider: provider.name, source: 'stored' },
-    ),
-  );
+          ? { ...identity, source: 'env', envVar: connection.name }
+          : { ...identity, source: 'stored' },
+    );
+  });
   return entries.length > MAX_ORACLE_ENTRIES ? PARSE_FAILURE : { kind: 'success', entries };
 }
 
@@ -110,7 +116,7 @@ function parseJsonListing(text: string): ProviderOracleParse {
  * box-drawing glyphs, and section reordering. Every unrecognized line and
  * every count mismatch resolves to a parse failure — never a throw — so the
  * caller can fall back instead of trusting a misread listing. Only provider
- * display names, source kinds, and env var names are captured.
+ * ids, display names, source kinds, and env var names are captured.
  */
 export function parseProviderOracleOutput(text: string): ProviderOracleParse {
   if (text.trimStart().startsWith('[')) return parseJsonListing(text);

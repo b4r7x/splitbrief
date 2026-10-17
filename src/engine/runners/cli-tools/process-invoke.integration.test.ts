@@ -737,6 +737,33 @@ describe('invokeProcessCli', () => {
     expect(runnerCallOutcome(authResult).state).toBe('unauthenticated');
   });
 
+  it('a provider.no-route error line takes the missing-model code, so the brief is not retried', async () => {
+    // Recorded on 2026-10-17: opencode with no Ollama Cloud credential. A misspelled model
+    // or an unavailable variant prints the same refusal.
+    const envelope = JSON.stringify({
+      type: 'error',
+      error: {
+        type: 'provider.no-route',
+        message: 'Model unavailable: ollama-cloud/deepseek-v4.1-flash',
+      },
+    });
+
+    const result = await run(
+      opencodeImplementerAdapter,
+      opencodeEnvelopeInvocation(envelope),
+      'fixture prompt',
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: {
+        code: 'missing-model',
+        message: 'provider.no-route: Model unavailable: ollama-cloud/deepseek-v4.1-flash',
+      },
+    });
+    expect(runnerCallOutcome(result).state).toBe('missing-model');
+  });
+
   it("a text-exit adapter's parsed failed terminal wins over the bare non-zero exit code", async () => {
     // Captured verbatim from `opencode run --format json`: the provider failure
     // arrives as an error envelope on stdout and the process then exits 1.

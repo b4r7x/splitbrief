@@ -49,6 +49,20 @@ export function resolveRunnerConfigContext(source: RunnerConfigSource): RunnerCo
   }
 }
 
+/** The slot as a check id segment: `planner`, `implementer.<profile>`, `reviewer`. */
+export function runnerSlotId(slot: RunnerConfigSlot): string {
+  switch (slot.role) {
+    case 'planner':
+      return 'planner';
+    case 'implementer':
+      return `implementer.${slot.profile}`;
+    case 'reviewer':
+      return 'reviewer';
+    default:
+      return assertNever(slot);
+  }
+}
+
 export function runnerRoleForSlot(slot: RunnerConfigSlot): RunnerRole {
   return runnerRoleForActiveRole(slot.role);
 }

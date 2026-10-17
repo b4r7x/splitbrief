@@ -20,9 +20,9 @@ import {
   type PickerSlot,
   type SeatPickerRole,
 } from '../../core/runners/seat-roles.js';
+import type { SavedCatalog } from '../../core/discovery/catalog-read-merge.js';
 import type { CliProviderAuth } from '../../core/discovery/detection.js';
 import { seatAxisFocusSeat, toolRowFocusTool } from '../../core/navigation/types.js';
-import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { includes } from '../../utils/type-guards.js';
 import type { ModelCatalogDiagnostic } from './picker-format.js';
 import {
@@ -76,8 +76,8 @@ export interface PickerCatalog {
   catalogLane: CatalogLane;
   /** The highlighted tool's own credential listing, tri-state at the source. */
   providerAuth: CliProviderAuth | undefined;
-  /** The tool can enumerate its provider sign-ins, so route rows may claim one. */
-  hasOracle: boolean;
+  /** The highlighted tool's own model listing, read against a route with its credential listing. */
+  toolCatalog: SavedCatalog | null | undefined;
   currentCommand: string | undefined;
   currentCommandKind: 'shell' | 'agent' | undefined;
   customModels: string[];
@@ -258,10 +258,14 @@ export function usePickerCatalog(
       ? cliTools.find((detection) => detection.tool === tool)?.providerAuth
       : undefined;
   };
+  const toolCatalogOf = (item: PickerOption | undefined): SavedCatalog | null | undefined => {
+    const tool = toolIdOf(item);
+    return item?.providerDependent === true && tool !== undefined
+      ? modelCacheStore.getCliCatalogRuntime({ tool })
+      : undefined;
+  };
 
-  const toolId = toolIdOf(currentItem);
   const providerAuth = authOf(currentItem);
-  const hasOracle = toolId !== undefined && providerOracleCommand(toolId) !== undefined;
 
   // Read the scoped catalog lane so a catalog-only publication rerenders this
   // picker; actual role-aware lookup remains inside modelCacheStore.
@@ -270,6 +274,7 @@ export function usePickerCatalog(
 
   const catalogFor = (item: PickerOption | undefined) => {
     const auth = authOf(item);
+    const toolCatalog = toolCatalogOf(item);
     const tool = toolIdOf(item);
     const models = buildRightModels({
       role: lane,
@@ -277,7 +282,9 @@ export function usePickerCatalog(
       currentItem: item,
       cache: modelCacheStore,
       persistedModel,
+      tool,
       providerAuth: auth,
+      catalog: toolCatalog,
       browseCatalog,
     });
     return {
@@ -286,7 +293,8 @@ export function usePickerCatalog(
         models,
         expandedModelId,
         providerAuth: auth,
-        hasOracle: tool !== undefined && providerOracleCommand(tool) !== undefined,
+        catalog: toolCatalog,
+        tool,
         catalogLane,
         persistedModel,
         customModels,
@@ -358,7 +366,7 @@ export function usePickerCatalog(
     catalogDiagnostic,
     catalogLane,
     providerAuth,
-    hasOracle,
+    toolCatalog: toolCatalogOf(currentItem),
     currentCommand,
     currentCommandKind,
     customModels,

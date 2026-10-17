@@ -30,9 +30,11 @@ import {
   buildRetryExhaustedRecoveryIssue,
   buildSeatDownIssue,
   recoveryBuilderForRunnerOutcome,
+  runnerDefectRow,
   runnerHaltRow,
 } from '../recovery/builders/task.js';
 import { classifySeatFailure, type SeatFailureClassification } from '../../runners/seat-failure.js';
+import { runnerAuthDisplayName } from '../../runners/auth-failure.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -120,7 +122,7 @@ async function seatDownHalt(
   publishError({
     bus: ctx.bus,
     phase: stepOutcome.state.phase,
-    message: runnerHaltRow(issue, stepOutcome.lastError),
+    message: runnerHaltRow(issue, runnerAuthDisplayName(failure.runner), stepOutcome.lastError),
     ...(issue.resetAt !== undefined && { resetAt: issue.resetAt }),
   });
   // A seat that is down cuts the brief it was running: the park names the step
@@ -154,10 +156,12 @@ async function runnerDefectHalt(
   const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
   const seatSwap = await loadSeatSwapContext({
     projectDir: ctx.projectDir,
+    modelCache: ctx.modelCache,
     seat: 'build',
     runner: failure.runner,
     config: ctx.config,
     implementerProfile: failingProfile,
+    refusal: stepOutcome.lastError,
   });
   const issue = build({
     task,
@@ -168,12 +172,17 @@ async function runnerDefectHalt(
     maxAttempts: DEFAULT_LOCAL_RETRIES,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
     ...(seatSwap !== undefined && { seatSwap }),
+    seatSwitches: stepOutcome.state.seatSwitches,
     ...(stepOutcome.state.workspace?.kind === 'checkout' && {
       inPlace: { revertedDir: revertedDir(ctx) },
     }),
     createdAt: nowIso(),
   });
-  publishError({ bus: ctx.bus, phase: stepOutcome.state.phase, message: issue.message });
+  publishError({
+    bus: ctx.bus,
+    phase: stepOutcome.state.phase,
+    message: runnerDefectRow(issue, runnerAuthDisplayName(failure.runner), stepOutcome.lastError),
+  });
   return {
     state: raisePendingRecovery(ctx, stepOutcome.state, issue),
     result: failedRetry(stepOutcome.attempts),

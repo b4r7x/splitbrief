@@ -45,7 +45,13 @@ describe('fallback of record', () => {
         projectDir,
         makeConfig({ planner: { ...runner, fallback }, implementer: { ...runner, fallback } }),
       );
-      const context = await loadSeatSwapContext({ projectDir, seat, runner, config });
+      const context = await loadSeatSwapContext({
+        projectDir,
+        modelCache: undefined,
+        seat,
+        runner,
+        config,
+      });
       const issue = buildSeatDownIssue({
         seat,
         runner,
@@ -140,6 +146,7 @@ describe('fallback of record', () => {
       }),
     );
     const context = await loadSeatSwapContext({
+      modelCache: undefined,
       projectDir,
       seat: 'build',
       runner,
@@ -162,7 +169,13 @@ describe('fallback of record', () => {
     const config = makeConfig({ implementer: runner });
     writeConfig(projectDir, config);
     writeFileSync(configPath(projectDir), rawYaml);
-    const context = await loadSeatSwapContext({ projectDir, seat: 'build', runner, config });
+    const context = await loadSeatSwapContext({
+      projectDir,
+      modelCache: undefined,
+      seat: 'build',
+      runner,
+      config,
+    });
     const issue = buildSeatDownIssue({
       seat: 'build',
       runner,
@@ -218,7 +231,13 @@ describe('fallback of record', () => {
       reviewer: runner,
     });
     writeConfig(projectDir, config);
-    const context = await loadSeatSwapContext({ projectDir, seat: 'review', runner, config });
+    const context = await loadSeatSwapContext({
+      projectDir,
+      modelCache: undefined,
+      seat: 'review',
+      runner,
+      config,
+    });
     expect(context?.fallback).toBeUndefined();
   });
 });

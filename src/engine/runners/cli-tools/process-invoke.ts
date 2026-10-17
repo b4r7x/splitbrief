@@ -649,15 +649,21 @@ export async function invokeProcessCli(
     }
     // A failed terminal that names no halt of its own leaves the diagnosis to stderr.
     const stderrHalt = namesHalt(terminal.error) ? null : haltFailure(closed.stderr.split('\n'));
-    // A tool refuses an oversized prompt as an ordinary failed result (Claude Code: "Prompt is too
-    // long"). No later reader looks at those words again, so the refusal takes the halt's code here.
-    const refusedInput = classifyHaltSignature([terminal.error.message]) === 'input-too-large';
+    // A tool refuses an oversized prompt or a model it cannot serve as an ordinary failed result
+    // (Claude Code: "Prompt is too long"; OpenCode: `provider.no-route`). No later reader looks at
+    // those words again, so the refusal takes the halt's code here.
+    const refusal = classifyHaltSignature([terminal.error.message]);
+    const refusalCode =
+      refusal === 'input-too-large' || refusal === 'missing-model'
+        ? HALT_FAILURES[refusal].code
+        : undefined;
     return () =>
       recorder.finishFailed({
-        status: stderrHalt === null && !refusedInput ? terminal.status : 'failed',
-        error: refusedInput
-          ? { ...terminal.error, code: 'input-too-large' }
-          : (stderrHalt ?? terminal.error),
+        status: stderrHalt === null && refusalCode === undefined ? terminal.status : 'failed',
+        error:
+          refusalCode !== undefined
+            ? { ...terminal.error, code: refusalCode }
+            : (stderrHalt ?? terminal.error),
         usage: terminal.usage,
         nativeSessionId: terminal.nativeSessionId,
         partial: terminal.partial,

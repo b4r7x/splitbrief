@@ -107,7 +107,7 @@ describe('isExpandableRow', () => {
     id: 'opus',
     variants: [{ fullId: 'opus', providerPrefix: '', tag: 'opus' }],
   };
-  const unchecked = { hasOracle: false, providerAuth: undefined };
+  const unchecked = { tool: undefined, providerAuth: undefined, catalog: undefined };
 
   it('opens a collapsed option-family row', () => {
     expect(
@@ -147,11 +147,31 @@ describe('isExpandableRow', () => {
       isExpandableRow(
         { kind: 'model', model: openai, provenance: 'Detected', section: '', expanded: false },
         {
-          hasOracle: true,
+          tool: 'opencode',
           providerAuth: { kind: 'read', facts: [{ provider: 'OpenAI', source: 'oauth' }] },
+          catalog: { models: [] },
         },
       ),
     ).toBe(false);
+  });
+
+  // No route can call: Enter opens the chooser and saves nothing, so the user sees the sign-in rows.
+  it('opens a collapsed two-route row where no route can call, and saves no route', () => {
+    const row: RightRow = {
+      kind: 'model',
+      model: openai,
+      provenance: 'Detected',
+      section: '',
+      expanded: false,
+    };
+    const auth: RouteAuthContext = {
+      tool: 'opencode',
+      providerAuth: { kind: 'read', facts: [{ provider: 'Anthropic', source: 'oauth' }] },
+      catalog: { models: [] },
+    };
+
+    expect(isExpandableRow(row, auth)).toBe(true);
+    expect(modelRowSave(row, auth, null)).toEqual({ via: 'model', fullId: 'openai/gpt-5.6' });
   });
 
   it('treats an expanded model row as expandable even when Enter confirms or collapses', () => {
@@ -191,7 +211,7 @@ describe('expandedRowHint', () => {
     expect(
       expandedRowHint(
         { kind: 'model', model: openai, provenance: 'Detected', section: '', expanded: true },
-        { hasOracle: false, providerAuth: undefined },
+        { tool: undefined, providerAuth: undefined, catalog: undefined },
       ),
     ).toBe('⏎ collapse');
   });
@@ -199,7 +219,7 @@ describe('expandedRowHint', () => {
   it('names space and enter when the axis ladder can step', () => {
     const hint = expandedRowHint(
       optionAxisRow({ model: opus, axis: 'effort', value: 'high', steps: true }),
-      { hasOracle: false, providerAuth: undefined },
+      { tool: undefined, providerAuth: undefined, catalog: undefined },
     );
     expect(hint).toContain('space');
     expect(hint).toContain('⏎');
@@ -208,14 +228,14 @@ describe('expandedRowHint', () => {
   it('names only enter when the axis ladder cannot step', () => {
     const hint = expandedRowHint(
       optionAxisRow({ model: opus, axis: 'effort', value: 'high', steps: false }),
-      { hasOracle: false, providerAuth: undefined },
+      { tool: undefined, providerAuth: undefined, catalog: undefined },
     );
     expect(hint).toContain('⏎');
     expect(hint).not.toContain('space');
   });
 
   it('offers browse on an action row and nothing on a route row', () => {
-    const auth = { hasOracle: false, providerAuth: undefined };
+    const auth = { tool: undefined, providerAuth: undefined, catalog: undefined };
     expect(
       expandedRowHint(
         { kind: 'action', action: 'browse-catalog', text: 'Browse the full catalog…' },
@@ -274,7 +294,7 @@ describe('confirmRow', () => {
     };
     confirmRow(cliTool({ id: 'opencode', displayName: 'OpenCode' }), effortRow, {
       actions,
-      auth: { hasOracle: false, providerAuth: undefined },
+      auth: { tool: undefined, providerAuth: undefined, catalog: undefined },
     });
     return saved;
   }
@@ -329,8 +349,9 @@ describe('confirmRow', () => {
       expanded: false,
     };
     const auth: RouteAuthContext = {
-      hasOracle: true,
+      tool: 'opencode',
       providerAuth: { kind: 'read', facts: [{ provider: 'OpenAI', source: 'oauth' }] },
+      catalog: { models: [] },
     };
     const saved: string[] = [];
     const actions = {
@@ -452,7 +473,8 @@ describe('cycleRightRow', () => {
       expandedModelId: model.id,
       optionDraftId: model.id,
       providerAuth: undefined,
-      hasOracle: false,
+      catalog: undefined,
+      tool: undefined,
       catalogLane: 'ready',
       persistedModel: model.id,
       customModels: [],
@@ -470,7 +492,7 @@ describe('cycleRightRow', () => {
     };
     confirmRow(cliTool({ id: 'antigravity', displayName: 'Google Antigravity CLI' }), row, {
       actions,
-      auth: { hasOracle: false, providerAuth: undefined },
+      auth: { tool: undefined, providerAuth: undefined, catalog: undefined },
     });
     expect(saved).toEqual([{ model: 'gemini-3.8-flash-low', effort: undefined }]);
   });
@@ -521,7 +543,7 @@ describe('cycleRightRow', () => {
 });
 
 describe('authentication method rows', () => {
-  const unchecked = { hasOracle: false, providerAuth: undefined };
+  const unchecked = { tool: undefined, providerAuth: undefined, catalog: undefined };
   const enforceable: readonly AuthMethodChoice[] = ['session', 'api-key', 'host-configured'];
 
   beforeEach(() => {

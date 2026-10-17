@@ -4,10 +4,11 @@ import { z } from 'zod';
 export const SeatAccountCauseSchema = z.enum(['balance', 'billing', 'quota', 'auth']);
 export type SeatAccountCause = z.infer<typeof SeatAccountCauseSchema>;
 
-const ACCOUNT_CAUSE_WORDS: Readonly<Record<Exclude<SeatAccountCause, 'auth'>, string>> = {
+const ACCOUNT_CAUSE_WORDS: Readonly<Record<SeatAccountCause, string>> = {
   balance: 'Balance spent on',
   billing: 'Billing refused by',
   quota: 'Quota spent on',
+  auth: 'Signed out of',
 };
 
 const ACCOUNT_CAUSE_ADVICE: Readonly<Record<Exclude<SeatAccountCause, 'auth'>, string>> = {
@@ -16,8 +17,13 @@ const ACCOUNT_CAUSE_ADVICE: Readonly<Record<Exclude<SeatAccountCause, 'auth'>, s
   quota: 'Wait for the quota to renew',
 };
 
-export function formatAccountCause(cause: Exclude<SeatAccountCause, 'auth'>, tool: string): string {
+export function formatAccountCause(cause: SeatAccountCause, tool: string): string {
   return `${ACCOUNT_CAUSE_WORDS[cause]} ${tool}`;
+}
+
+/** A model route whose provider the tool holds no credential for, as doctor and a halt name it. */
+export function formatNoCredential(tool: string, provider: string): string {
+  return `${tool} has no credential for ${provider}`;
 }
 
 export function accountCauseAdvice(

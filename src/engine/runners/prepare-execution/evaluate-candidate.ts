@@ -2,7 +2,6 @@ import {
   runnerRoleForSlot,
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
-import { contentIdentityId } from '../../../core/config/accessors/content-identity.js';
 import { findConfiguredCustomCommand } from '../../../core/config/custom-command-catalog.js';
 import { inlineRunnerCommand } from '../../../core/config/custom-commands.js';
 import {
@@ -15,6 +14,9 @@ import { admitCliAuthChannel } from '../../../core/runners/cli-auth-selection.js
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { cliAuthRemediation, cliReadinessRemediation } from '../../../core/schemas/readiness.js';
 import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../../core/readiness/format.js';
+import { routeSignInCheck } from '../../../core/readiness/checks/cli-readiness.js';
+import { loadRememberedSnapshot } from '../../detection/cache.js';
+import { cliSeatDiscoveryContext } from '../../detection/cli-context.js';
 import { READINESS_DIAGNOSTIC_STATE_IDS } from '../../../core/schemas/readiness.js';
 import type { RunnerReadinessCauseId } from '../../../core/readiness/types.js';
 import { formatSlotLabel } from '../../../core/crew/identity.js';
@@ -222,19 +224,12 @@ async function evaluateCli(
   candidate: RunnerCandidate & Readonly<{ runner: Extract<RunnerConfig, { kind: 'cli' }> }>,
   context: PreparationContext,
 ): Promise<SlotEvaluation> {
-  const authChannel = resolveCliRunnerAuth(candidate.runner).id;
-  const discoveryContext = {
+  const discoveryContext = cliSeatDiscoveryContext({
     role: runnerRoleForSlot(candidate.slot),
-    kind: 'cli' as const,
-    id: candidate.runner.tool,
-    ...(candidate.runner.model !== undefined && { model: candidate.runner.model }),
-    authChannel,
-    credentialPresent: false,
-    // The observation names the configuration being checked, not this
-    // preparation: two concurrent preparations of the same config ask the
-    // runner one question. The receipt below is still minted per preparation.
-    configGeneration: contentIdentityId('config', context.config),
-  };
+    runner: candidate.runner,
+    config: context.config,
+  });
+  const authChannel = resolveCliRunnerAuth(candidate.runner).id;
   const expectedContextKey = runnerDiscoveryContextKey(discoveryContext);
   const detect = (): Promise<RunnerEvidence> =>
     context.deps.detectRunnerEvidence({
@@ -355,12 +350,22 @@ async function evaluateCli(
       });
     }
   }
+  const routeCheck = routeSignInCheck({
+    slot: candidate.slot,
+    tool: candidate.runner.tool,
+    model: effectiveModel ?? configuredModel,
+    providerAuth: evidence.providerAuth,
+    catalog: (await loadRememberedSnapshot(context.projectDir))?.cliCatalogs?.find(
+      (catalog) => catalog.tool === candidate.runner.tool,
+    ),
+  });
   return {
     kind: 'admitted',
     check:
       warnings.length > 0
         ? warningCheck(candidate.slot, candidate.runner.kind, warnings, details)
         : admittedCheck(candidate.slot, candidate.runner.kind, details),
+    ...(routeCheck !== undefined && { routeCheck }),
     gate: {
       kind: 'cli',
       slot: candidate.slot,

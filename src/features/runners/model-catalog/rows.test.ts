@@ -14,14 +14,14 @@ import {
   BROWSE_CATALOG_TEXT,
   buildRightRows,
   rightRowKey,
-  routeAuthStateFor,
   sectionOf,
 } from './rows.js';
 
 const BASE = {
   expandedModelId: null,
   providerAuth: undefined,
-  hasOracle: false,
+  catalog: undefined,
+  tool: undefined,
   catalogLane: 'ready',
   persistedModel: undefined,
   customModels: [],
@@ -839,59 +839,5 @@ describe('buildRightRows', () => {
 
   it('exports the Auto row metadata phrase', () => {
     expect(AUTO_ROW_METADATA).toBe('tool decides');
-  });
-});
-
-describe('routeAuthStateFor', () => {
-  const variant: ModelVariant = {
-    fullId: 'openai/gpt-5.6',
-    providerPrefix: 'openai',
-    tag: 'openai',
-  };
-
-  it('claims nothing when the tool has no credential oracle', () => {
-    expect(
-      routeAuthStateFor({
-        hasOracle: false,
-        variant,
-        providerAuth: { kind: 'read', facts: [{ provider: 'OpenAI', source: 'oauth' }] },
-      }),
-    ).toEqual({ kind: 'unchecked' });
-  });
-
-  it('keeps an empty listing distinct from a read one', () => {
-    expect(
-      routeAuthStateFor({ hasOracle: true, variant, providerAuth: { kind: 'empty' } }),
-    ).toEqual({ kind: 'unknown', reason: 'empty' });
-  });
-
-  it('names the source when a fact backs the route provider', () => {
-    expect(
-      routeAuthStateFor({
-        hasOracle: true,
-        variant,
-        providerAuth: { kind: 'read', facts: [{ provider: 'OpenAI', source: 'oauth' }] },
-      }),
-    ).toEqual({ kind: 'configured', source: 'oauth' });
-  });
-
-  it('needs sign-in when the listing names other providers only', () => {
-    expect(
-      routeAuthStateFor({
-        hasOracle: true,
-        variant,
-        providerAuth: { kind: 'read', facts: [{ provider: 'Anthropic', source: 'api' }] },
-      }),
-    ).toEqual({ kind: 'needs-sign-in' });
-  });
-
-  it('carries the reason an unreadable listing gave', () => {
-    expect(
-      routeAuthStateFor({
-        hasOracle: true,
-        variant,
-        providerAuth: { kind: 'unreadable', reason: 'parse-failure' },
-      }),
-    ).toEqual({ kind: 'unknown', reason: 'parse-failure' });
   });
 });

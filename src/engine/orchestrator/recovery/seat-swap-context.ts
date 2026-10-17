@@ -8,7 +8,16 @@ import {
   type SeatFallback,
 } from '../../../core/crew/fallback.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
-import { loadRememberedSnapshot } from '../../detection/cache.js';
+import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection.js';
+import { classifyHaltSignature } from '../../../core/pipeline-spec/halts.js';
+import { PROVIDER_ORACLE_TOOL_IDS } from '../../../core/runners/cli-tool-catalog.js';
+import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
+import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
+import { includes } from '../../../utils/type-guards.js';
+import { loadRememberedSnapshot, type DetectionCacheSnapshot } from '../../detection/cache.js';
+import { cliSeatDiscoveryContext } from '../../detection/cli-context.js';
+import { detectRunnerEvidence } from '../../detection/runner-evidence.js';
 import type { DetectedSeatTool, SeatSwapContext } from './builders/task.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 
@@ -49,9 +58,60 @@ export function readSeatFallbackOfRecord(
   return { kind: 'read', fallback, configRevision: loaded.revision?.rawSha256 };
 }
 
+/** A credential listing the halt could not read; the route then reads as `unknown`. */
+const UNREAD_PROVIDER_AUTH: CliProviderAuth = { kind: 'unreadable', reason: 'exit-failure' };
+
+/**
+ * What the halted seat's route means. A model refusal re-reads the tool's credential listing and
+ * model catalog once, fresh and together: the remembered pair has no age limit, and a sign-out it
+ * predates would read as a model the tool does not list. Every other halt reads the remembered pair.
+ */
+async function haltRouteAuth(
+  input: Readonly<{
+    projectDir: string;
+    seat: CrewSeatId;
+    runner: SeatRunner;
+    config: Config;
+    refusal?: string | undefined;
+  }>,
+  remembered: DetectionCacheSnapshot | null,
+): Promise<RouteAuthState | undefined> {
+  const { runner } = input;
+  if (runner.kind !== 'cli') return undefined;
+  if (runner.model === undefined) return { kind: 'unchecked' };
+  let providerAuth = remembered?.cliTools.find((cli) => cli.tool === runner.tool)?.providerAuth;
+  let catalog: SavedCatalog | undefined = remembered?.cliCatalogs?.find(
+    (saved) => saved.tool === runner.tool,
+  );
+  if (
+    includes(PROVIDER_ORACLE_TOOL_IDS, runner.tool) &&
+    classifyHaltSignature([input.refusal ?? '']) === 'missing-model'
+  ) {
+    try {
+      const evidence = await detectRunnerEvidence({
+        context: cliSeatDiscoveryContext({
+          role: runnerRoleForActiveRole(CREW_SEAT_ROLES[input.seat]),
+          runner,
+          config: input.config,
+        }),
+        projectDir: input.projectDir,
+        includeCatalog: true,
+      });
+      providerAuth = evidence.providerAuth ?? UNREAD_PROVIDER_AUTH;
+      catalog =
+        evidence.catalog.kind === 'success' ? { models: evidence.catalog.value } : undefined;
+    } catch {
+      providerAuth = UNREAD_PROVIDER_AUTH;
+      catalog = undefined;
+    }
+  }
+  return routeAuthState({ tool: runner.tool, model: runner.model, providerAuth, catalog });
+}
+
 /**
  * The swap offer a seat-down halt carries: the seat, the identity it was on, and
- * every CLI tool the last readiness pass remembered. A declared fallback the pass
+ * every CLI tool the last readiness pass remembered. A CLI seat always gets a
+ * context, so its route's meaning reaches the halt with nothing else detected. A declared fallback the pass
  * saw ready or unverified leads the rows with its own model and effort; one it
  * cannot run is not offered, and the halt names why. `switchSeatOffer` narrows
  * the rest to the ready ones and drops the offer when nothing is available.
@@ -62,15 +122,21 @@ export async function loadSeatSwapContext(
     seat: CrewSeatId;
     runner: SeatRunner;
     config: Config;
-    modelCache?: ModelCacheAccessor | undefined;
+    /** Required so no halt drops the run's cache: the fallback row names its model through it. */
+    modelCache: ModelCacheAccessor | undefined;
     implementerProfile?: string | undefined;
+    /** The tool's own words on the halted call; a model refusal re-reads the route's evidence. */
+    refusal?: string | undefined;
   }>,
 ): Promise<SeatSwapContext | undefined> {
   // A halt holds no discovery context — the run is stopping, not detecting — so
-  // the snapshot is read for what it remembers. The offer is a suggestion the
+  // the snapshot is read for what it remembers; only a model refusal re-reads its
+  // route's credential and model catalog (`haltRouteAuth`). The offer is a suggestion the
   // operator confirms; the seat is re-prepared from scratch when they take it.
   const remembered = await loadRememberedSnapshot(input.projectDir);
   const rememberedTools = remembered?.cliTools ?? [];
+  const currentTool = currentSeatTool(input.runner);
+  const routeAuth = await haltRouteAuth(input, remembered);
   let detectedTools: DetectedSeatTool[] = rememberedTools.map((cli) => ({
     tool: cli.tool,
     ready: cli.diagnostic.state === 'ready',
@@ -96,17 +162,23 @@ export async function loadSeatSwapContext(
       ];
     }
   }
-  if (detectedTools.length === 0 && fallback === undefined && fallbackReadFailed === undefined)
+  if (
+    detectedTools.length === 0 &&
+    fallback === undefined &&
+    fallbackReadFailed === undefined &&
+    routeAuth === undefined
+  )
     return undefined;
   return {
     seat: input.seat,
     ...(input.modelCache !== undefined && { modelCache: input.modelCache }),
-    currentTool: currentSeatTool(input.runner),
+    currentTool,
     ...(input.runner.model !== undefined && { currentModel: input.runner.model }),
     detectedTools,
     ...(fallback !== undefined && { fallback }),
     ...(blockedReason !== undefined && { fallbackBlockedReason: blockedReason }),
     ...(fallbackReadFailed !== undefined && { fallbackReadFailed }),
     ...(configRevision !== undefined && { configRevision }),
+    ...(routeAuth !== undefined && { routeAuth }),
   };
 }

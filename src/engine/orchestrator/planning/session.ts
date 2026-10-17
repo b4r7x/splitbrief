@@ -584,6 +584,7 @@ async function settle(
     default: {
       const seatSwap = await loadSeatSwapContext({
         projectDir,
+        modelCache: wctx.modelCache,
         seat: 'plan',
         runner: config.planner,
         config,

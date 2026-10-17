@@ -21,12 +21,12 @@ import {
   BROWSE_CATALOG_TEXT,
   type RightAxisName,
   type RightRow,
-  type RouteAuthState,
   type TreeLead,
 } from './model-catalog/rows.js';
+import type { RouteAuthState } from '../../core/runners/route-auth.js';
 import { renderModelRow, renderToolRow, toolStatusesFit } from './tool-row.js';
 
-const AUTH = { hasOracle: false, providerAuth: undefined };
+const AUTH = { tool: undefined, providerAuth: undefined, catalog: undefined };
 
 function modelRow(
   model: ModelOption,
@@ -1501,7 +1501,7 @@ describe('runner row grammar', () => {
           tag: 'opencode-go',
         },
         last: true,
-        auth: { kind: 'needs-sign-in' },
+        auth: { kind: 'needs-sign-in', tool: 'opencode', provider: 'opencode-go' },
         tree: { depth: 1, parentContinues: false },
       };
       const narrow = await rowLine(row, 22);

@@ -4,7 +4,7 @@ import { SOFT_SEP } from '../separators.js';
 import { formatResetAt } from './reset-clock.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { countNoun } from '../../utils/pluralize.js';
-import { formatAccountCause } from './account-cause.js';
+import { formatAccountCause, formatNoCredential } from './account-cause.js';
 import type { SeatLineSpan } from '../crew/identity.js';
 import type { SeatSwitchCause } from '../schemas/workflow.js';
 
@@ -67,6 +67,18 @@ export function leftIsolationCause(task: string): string {
   return `${task} left the isolation directory`;
 }
 
+/** A model the tool refused, on any seat: the `refusal` fact a model-refusal halt carries. */
+function modelRefusalCause(issue: RecoveryHeadlineInput): string | undefined {
+  switch (recoveryFactString(issue.facts, 'refusal')) {
+    case 'wrong-model':
+      return `Model not listed by ${toolName(issue)}`;
+    case 'unknown':
+      return `Model refused by ${toolName(issue)}`;
+    default:
+      return undefined;
+  }
+}
+
 /**
  * The halt in the words the operator needs: what stopped, on which tool or
  * brief, and — for a quota halt — when it comes back. Never the raw enums.
@@ -93,8 +105,17 @@ export function formatRecoveryHeadlineSpans(
         { text: `Usage limit on ${toolName(issue)}${reset === undefined ? '' : ` · ${reset}`}` },
       ];
     }
-    case 'runner-unauthenticated':
-      return [{ text: `Signed out of ${toolName(issue)}` }];
+    case 'runner-unauthenticated': {
+      const provider = recoveryFactString(issue.facts, 'provider');
+      return [
+        {
+          text:
+            provider === undefined
+              ? formatAccountCause('auth', toolName(issue))
+              : formatNoCredential(toolName(issue), provider),
+        },
+      ];
+    }
     case 'retry-exhausted':
       return [
         {
@@ -112,7 +133,7 @@ export function formatRecoveryHeadlineSpans(
     case 'scope-violation':
       return [{ text: `${taskName(issue)} wrote outside its declared files` }];
     case 'implementer-recipe-invalid':
-      return [{ text: `Tool recipe rejected by ${toolName(issue)}` }];
+      return [{ text: modelRefusalCause(issue) ?? `Tool recipe rejected by ${toolName(issue)}` }];
     case 'implementer-left-isolation':
       return [{ text: leftIsolationCause(taskName(issue)) }];
     case 'checkout-changed':
@@ -123,7 +144,9 @@ export function formatRecoveryHeadlineSpans(
       ];
     case 'runner-timeout-repeated':
       return [{ text: `Two timeouts in a row on ${taskName(issue)}` }];
-    case 'planner-call-failed':
+    case 'planner-call-failed': {
+      const refusal = modelRefusalCause(issue);
+      if (refusal !== undefined) return [{ text: refusal }];
       return [
         {
           text: issue.seat === 'review' ? 'Reviewer' : 'Planner',
@@ -131,6 +154,7 @@ export function formatRecoveryHeadlineSpans(
         },
         { text: ' call failed' },
       ];
+    }
     case 'seat-protocol-error':
       return [{ text: 'Seat answer did not match its contract' }];
     case 'planner-returned-no-briefs':

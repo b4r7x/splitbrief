@@ -17,7 +17,6 @@ import {
   CLI_TOOL_CATALOG,
   defaultCliAuthChannel,
   type CliToolId,
-  type CliAuthChannelId,
 } from '../../runners/cli-tool-catalog.js';
 import type { Config } from '../../schemas/config.js';
 import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
@@ -26,34 +25,39 @@ import type { ReadinessCheck, SeatNamer } from '../types.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { runnerAvailabilityCheck, type RunnerAvailabilityFact } from './availability.js';
-import { configuredCliReadinessChecks } from './cli-readiness.js';
+import {
+  configuredCliReadinessChecks,
+  type ConfiguredCliSeat,
+  type RememberedToolCatalog,
+} from './cli-readiness.js';
 import { modelSelection } from './runner-label.js';
 import { buildRunnerTrustBoundaryChecks } from './runner-trust-boundary.js';
 
 export function buildRunnerChecks({
   config,
   cliReadiness = [],
+  cliCatalogs = [],
   availability,
   seatDisplayName,
 }: {
   config: Config;
   cliReadiness?: readonly CliReadinessResult[] | undefined;
+  /** The tools' remembered model catalogs; a route one of them serves can call. */
+  cliCatalogs?: readonly RememberedToolCatalog[] | undefined;
   availability?: readonly RunnerAvailabilityFact[] | undefined;
   seatDisplayName?: SeatDisplayName | undefined;
 }): ReadinessCheck[] {
   const nameSeat: SeatNamer = (runner, role) =>
     formatSeatIdentity({ seat: runner, displayName: seatDisplayName?.(runner, role) });
   const checks: ReadinessCheck[] = [];
-  const configuredCliTools = new Map<
-    CliToolId,
-    { seat: string; authChannel: CliAuthChannelId }[]
-  >();
+  const configuredCliTools = new Map<CliToolId, ConfiguredCliSeat[]>();
   const addCliSeat = (slot: RunnerConfigSlot, runner: RunnerConfig): void => {
     if (runner.kind !== 'cli') return;
     const seats = configuredCliTools.get(runner.tool) ?? [];
     seats.push({
-      seat: formatSlotLabel(slot),
+      slot,
       authChannel: runner.authChannel ?? defaultCliAuthChannel(runner.tool).id,
+      model: runner.model,
     });
     configuredCliTools.set(runner.tool, seats);
   };
@@ -127,7 +131,7 @@ export function buildRunnerChecks({
   }
 
   if (availability === undefined) checks.push(availabilityCheck());
-  checks.push(...configuredCliReadinessChecks(configuredCliTools, cliReadiness));
+  checks.push(...configuredCliReadinessChecks(configuredCliTools, cliReadiness, cliCatalogs));
 
   return checks;
 }

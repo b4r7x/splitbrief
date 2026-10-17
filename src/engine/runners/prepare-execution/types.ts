@@ -51,6 +51,8 @@ export type SlotEvaluation =
   | Readonly<{
       kind: 'admitted';
       check: ReadinessCheck;
+      /** The seat's model route has no credential in the tool's own listing. */
+      routeCheck?: ReadinessCheck | undefined;
       gate: RunnerGate;
       trustPersisted?: boolean | undefined;
     }>

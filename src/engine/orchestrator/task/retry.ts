@@ -21,9 +21,11 @@ import { recordTaskUsage } from '../tokens.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { retryProfileOverrideForTask } from './routing.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import {
   diagnosePlannerCallFailure,
   plannerCallHaltIssue,
+  plannerHaltRow,
 } from '../recovery/planner-call-failure.js';
 import { consultHaltDetails, reviewSeatDetails } from '../recovery/builders/details.js';
 import { loadState } from '../../../core/state/persistence.js';
@@ -154,51 +156,60 @@ export async function handleTaskPlannerCallFailure(
     runner: halt.runner,
     seat: halt.seat,
   });
-  publishError({
-    bus: wctx.bus,
-    phase: opts.state.phase,
-    message: diagnosis.message,
-    resetAt: diagnosis.resetsAt?.toISOString(),
-  });
+  const publishRow = (message: string) =>
+    publishError({
+      bus: wctx.bus,
+      phase: opts.state.phase,
+      message,
+      resetAt: diagnosis.resetsAt?.toISOString(),
+    });
   const recoveryBaseState = loadState(wctx) ?? opts.state;
   if (recoveryBaseState.pendingRecovery) {
+    publishRow(diagnosis.message);
     setTrackedState(recoveryBaseState);
     return recoveryBaseState;
   }
   // A consult seat out of quota or signed out halts on that seat, not as a brief
   // that exhausted its retries. The halt names the brief, so retrying it or
   // moving the seat replays that brief from its start.
-  const issue = typedOutputError.isSeatProtocol(err)
-    ? await seatProtocolHaltIssue({
-        projectDir: wctx.projectDir,
-        config: wctx.config,
-        error: err,
-        phase: recoveryBaseState.phase,
-        task,
-      })
-    : diagnosis.failure === 'call-failed' && consultSeat === undefined
-      ? buildRetryExhaustedRecoveryIssue({
-          task,
-          phase: recoveryBaseState.phase,
-          validationSummary: diagnosis.message,
-          attempts: recoveryBaseState.attempt,
-          maxAttempts: DEFAULT_LOCAL_RETRIES,
-          allowRetryOverride: true,
-          selectedImplementerProfile: wctx.implementerProfile,
-          createdAt: nowIso(),
-        })
-      : await plannerCallHaltIssue({
-          projectDir: wctx.projectDir,
-          modelCache: wctx.modelCache,
-          config: wctx.config,
-          diagnosis,
-          task,
-          phase: recoveryBaseState.phase,
-          seat: halt.seat,
-          seatSwitches: recoveryBaseState.seatSwitches,
-          swap: halt.swap,
-          details: [...consultHaltDetails(task.id, halt.seat), ...halt.details],
-        });
+  let issue: RecoveryIssue;
+  let row = diagnosis.message;
+  if (typedOutputError.isSeatProtocol(err)) {
+    issue = await seatProtocolHaltIssue({
+      projectDir: wctx.projectDir,
+      config: wctx.config,
+      modelCache: wctx.modelCache,
+      error: err,
+      phase: recoveryBaseState.phase,
+      task,
+    });
+  } else if (diagnosis.failure === 'call-failed' && consultSeat === undefined) {
+    issue = buildRetryExhaustedRecoveryIssue({
+      task,
+      phase: recoveryBaseState.phase,
+      validationSummary: diagnosis.message,
+      attempts: recoveryBaseState.attempt,
+      maxAttempts: DEFAULT_LOCAL_RETRIES,
+      allowRetryOverride: true,
+      selectedImplementerProfile: wctx.implementerProfile,
+      createdAt: nowIso(),
+    });
+  } else {
+    issue = await plannerCallHaltIssue({
+      projectDir: wctx.projectDir,
+      modelCache: wctx.modelCache,
+      config: wctx.config,
+      diagnosis,
+      task,
+      phase: recoveryBaseState.phase,
+      seat: halt.seat,
+      seatSwitches: recoveryBaseState.seatSwitches,
+      swap: halt.swap,
+      details: [...consultHaltDetails(task.id, halt.seat), ...halt.details],
+    });
+    row = plannerHaltRow(issue, diagnosis);
+  }
+  publishRow(row);
   const nextState = raisePendingRecovery(
     wctx,
     recoveryBaseState,

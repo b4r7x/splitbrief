@@ -26,13 +26,8 @@ import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
 import { formatModelName } from '../../core/model-display.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { isOptionFamily, optionDraftOf, routeDraftOf } from './model-catalog/option-axis.js';
-import {
-  AUTH_METHOD_WORDS,
-  rightRowKey,
-  sectionOf,
-  type RightRow,
-  type RouteAuthState,
-} from './model-catalog/rows.js';
+import { AUTH_METHOD_WORDS, rightRowKey, sectionOf, type RightRow } from './model-catalog/rows.js';
+import type { RouteAuthState } from '../../core/runners/route-auth.js';
 import {
   activationOfRightRow,
   confirmRow as confirmRightRow,
@@ -242,8 +237,9 @@ export function PickerView({
   };
 
   const authContext: RouteAuthContext = {
-    hasOracle: catalog.hasOracle,
+    tool: toolId,
     providerAuth: catalog.providerAuth,
+    catalog: catalog.toolCatalog,
   };
 
   const rightRows = keyRows(catalog.rightRows);
@@ -281,7 +277,6 @@ export function PickerView({
         auth,
         toolName: tool.displayName,
         oracleCommand: oracleCommand ?? '',
-        provider: variant.providerPrefix,
         versions,
       });
     };

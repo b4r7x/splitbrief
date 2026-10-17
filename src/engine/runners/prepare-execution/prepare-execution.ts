@@ -209,6 +209,13 @@ type AdmissionResult =
   | Readonly<{ kind: 'admitted'; admitted: AdmittedRunners }>
   | Readonly<{ kind: 'blocked'; report: ReadinessReport }>;
 
+function slotEvaluationChecks(slot: EvaluatedSlot): ReadinessCheck[] {
+  const { evaluation } = slot;
+  return evaluation.kind === 'admitted' && evaluation.routeCheck !== undefined
+    ? [evaluation.check, evaluation.routeCheck]
+    : [evaluation.check];
+}
+
 /** The last report the caller can attach to a failure, updated as it is refined. */
 type ReportSink = { report?: ReadinessReport | undefined };
 
@@ -282,7 +289,7 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
     }
     throwIfPreparationAborted(input.signal, trustPersisted);
   }
-  const slotChecks = buildRunnerAdmissionChecks(evaluated.map((slot) => slot.evaluation.check));
+  const slotChecks = buildRunnerAdmissionChecks(evaluated.flatMap(slotEvaluationChecks));
   report = applyRunnerPreparationChecks(report, slotChecks);
   sink.report = report;
   if (evaluated.some((slot) => slot.evaluation.kind === 'blocked')) {
@@ -508,5 +515,5 @@ export async function collectRunnerAdmissionChecks(
     evaluated.push({ candidate, evaluation });
     throwIfAborted(signal);
   }
-  return buildRunnerAdmissionChecks(evaluated.map((slot) => slot.evaluation.check));
+  return buildRunnerAdmissionChecks(evaluated.flatMap(slotEvaluationChecks));
 }

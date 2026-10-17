@@ -4,11 +4,13 @@ import {
   type RunnerConfig,
 } from '../../core/config/accessors/runner-config.js';
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
-import {
-  getProviderDisplayName,
-  getRunnerIdentityDisplayName,
-} from '../../core/providers/catalog.js';
+import { getRunnerIdentityDisplayName } from '../../core/providers/catalog.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import {
+  modelProviderAuthKey,
+  routeSignInCommand,
+  type ModelRefusal,
+} from '../../core/runners/route-auth.js';
 
 /**
  * Signed-out diagnostics match the shared halt phrases (`HALT_SIGNATURES.auth`),
@@ -34,20 +36,23 @@ export function runnerAuthDisplayName(runner: DeepReadonly<RunnerConfig>): strin
   return getRunnerDisplayName(runner);
 }
 
+/** The provider a provider-dependent tool's model route names (`deepseek/…` → `deepseek`). */
+function routeProvider(runner: DeepReadonly<RunnerConfig>): string | undefined {
+  if (runner.kind !== 'cli' || CLI_TOOL_CATALOG[runner.tool].auth.kind !== 'provider-dependent') {
+    return undefined;
+  }
+  return runner.model === undefined ? undefined : modelProviderAuthKey(runner.model);
+}
+
 /**
- * Who holds the account a balance, billing or quota refusal names. A provider-dependent tool
- * bills the provider its model route names (`deepseek/…` on OpenCode spends DeepSeek's balance);
- * every other runner holds its own account.
+ * Who holds the account a refusal names, as every halt names it. A provider-dependent tool signs
+ * in and bills the provider its model route names (`deepseek/…` on OpenCode spends DeepSeek's
+ * balance: `deepseek (OpenCode CLI)`); every other runner holds its own account.
  */
 export function runnerAccountDisplayName(runner: DeepReadonly<RunnerConfig>): string {
+  const provider = routeProvider(runner);
   const tool = runnerAuthDisplayName(runner);
-  if (runner.kind !== 'cli' || CLI_TOOL_CATALOG[runner.tool].auth.kind !== 'provider-dependent') {
-    return tool;
-  }
-  const route = runner.model ?? '';
-  const slash = route.indexOf('/');
-  if (slash <= 0) return tool;
-  return `${getProviderDisplayName(route.slice(0, slash))} (${tool})`;
+  return provider === undefined ? tool : `${provider} (${tool})`;
 }
 
 /**
@@ -57,6 +62,10 @@ export function runnerAccountDisplayName(runner: DeepReadonly<RunnerConfig>): st
  * login command get an honest generic instruction instead of a guessed one.
  */
 export function runnerLoginInstruction(runner: DeepReadonly<RunnerConfig>): string {
+  const provider = routeProvider(runner);
+  if (runner.kind === 'cli' && provider !== undefined) {
+    return `Run \`${routeSignInCommand(runner.tool, provider)}\` in a separate terminal, then retry.`;
+  }
   if (runner.kind === 'cli') {
     switch (runner.tool) {
       case 'codex':
@@ -71,4 +80,22 @@ export function runnerLoginInstruction(runner: DeepReadonly<RunnerConfig>): stri
     return `Provide a valid ${getRunnerIdentityDisplayName('api', runner.provider)} API key, then retry.`;
   }
   return `Re-authenticate the ${runnerAuthDisplayName(runner)} runner, then retry.`;
+}
+
+/**
+ * A model refusal that is not a known sign-out: a model the tool does not list,
+ * or, with the route's credential listing unread, both causes and both remedies.
+ */
+export function modelRefusalMessage(
+  runner: DeepReadonly<RunnerConfig>,
+  refusal: ModelRefusal,
+): string {
+  const tool = runnerAuthDisplayName(runner);
+  const model = 'model' in runner ? runner.model : undefined;
+  if (model === undefined) return `${tool} refused its default model; pick a listed model`;
+  const provider = routeProvider(runner);
+  if (refusal === 'unknown' && runner.kind === 'cli' && provider !== undefined) {
+    return `${tool} cannot use ${model}: sign in with \`${routeSignInCommand(runner.tool, provider)}\` if ${provider} has no credential, or pick a listed model`;
+  }
+  return `Model ${model} is not listed by ${tool}; pick a listed model`;
 }

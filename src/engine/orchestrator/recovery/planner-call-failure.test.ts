@@ -6,7 +6,17 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { defaultCliAuthChannel, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { error } from '../../../utils/error.js';
 import { streamError } from '../../streaming/stream-errors.js';
-import { diagnosePlannerCallFailure, plannerCallHaltIssue } from './planner-call-failure.js';
+import {
+  diagnosePlannerCallFailure,
+  plannerCallHaltIssue,
+  plannerHaltRow,
+} from './planner-call-failure.js';
+
+const evidence = vi.hoisted(() => ({ detectRunnerEvidence: vi.fn() }));
+vi.mock('../../detection/runner-evidence.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../detection/runner-evidence.js')>()),
+  ...evidence,
+}));
 
 it('carries the catalog name through the planner halt and fallback context', async () => {
   await withTempDir('catalog-planner-halt', async (projectDir) => {
@@ -27,10 +37,8 @@ it('carries the catalog name through the planner halt and fallback context', asy
       diagnosis: {
         failure: 'usage-limit',
         message: 'Balance spent',
-        seatDown: {
-          classification: { class: 'account', cause: 'balance' },
-          words: 'Balance spent',
-        },
+        words: 'Balance spent',
+        seatDown: { classification: { class: 'account', cause: 'balance' } },
       },
       phase: 'planning',
       swap: { seat: 'plan', runner: config.planner },
@@ -170,5 +178,126 @@ describe('diagnosePlannerCallFailure on an API seat', () => {
 
     expect(diagnosis.failure).toBe(failure);
     expect(diagnosis.message).toContain(body);
+  });
+});
+
+describe('a model refusal on a planner-tier seat', () => {
+  const route = 'ollama-cloud/glm-5';
+  const words = `provider.no-route: Model unavailable: ${route}`;
+  const runner = { kind: 'cli', tool: 'opencode', model: route } as const;
+  const refused = error('runner-call-failed', 'Planner review call failed', {
+    status: 'failed',
+    error: { code: 'missing-model', message: words },
+  });
+  const diagnosis = diagnosePlannerCallFailure({
+    err: refused,
+    label: 'Planning failed',
+    runner,
+    seat: 'plan',
+  });
+
+  afterEach(() => {
+    evidence.detectRunnerEvidence.mockReset();
+  });
+
+  async function halt(projectDir: string) {
+    // The remembered listing predates a sign-out: it still names the route's provider.
+    await rememberDetectedTools(projectDir, [
+      cliDetectionFor('ready', 'opencode', {
+        providerAuth: {
+          kind: 'read',
+          facts: [{ id: 'ollama-cloud', provider: 'Ollama Cloud', source: 'stored' }],
+        },
+      }),
+    ]);
+    const config = makeConfig({ planner: runner });
+    return plannerCallHaltIssue({
+      modelCache: undefined,
+      projectDir,
+      config,
+      diagnosis,
+      phase: 'planning',
+      swap: { seat: 'plan', runner: config.planner },
+    });
+  }
+
+  it('reads as a missing model, not a failed call', () => {
+    expect(diagnosis.failure).toBe('missing-model');
+  });
+
+  it("re-reads the route's credential once and halts as the sign-out it finds", async () => {
+    evidence.detectRunnerEvidence.mockResolvedValue({
+      providerAuth: {
+        kind: 'read',
+        facts: [{ id: 'opencode-go', provider: 'OpenCode Go', source: 'stored' }],
+      },
+      catalog: { kind: 'success', value: [{ id: 'opencode-go/kimi-k3' }] },
+    });
+    await withTempDir('planner-halt-probe-signed-out', async (projectDir) => {
+      const issue = await halt(projectDir);
+
+      expect(evidence.detectRunnerEvidence).toHaveBeenCalledTimes(1);
+      expect(issue.reason).toBe('runner-unauthenticated');
+      expect(issue.message).toContain('OpenCode CLI has no credential for ollama-cloud.');
+      expect(plannerHaltRow(issue, diagnosis)).toBe(
+        `${issue.message} (OpenCode CLI reported: ${words})`,
+      );
+    });
+  });
+
+  it('names both causes when the re-read fails', async () => {
+    evidence.detectRunnerEvidence.mockRejectedValue(new Error('spawn opencode ENOENT'));
+    await withTempDir('planner-halt-probe-failed', async (projectDir) => {
+      const issue = await halt(projectDir);
+
+      expect(issue.reason).toBe('planner-call-failed');
+      expect(issue.message).toContain('if ollama-cloud has no credential, or pick a listed model');
+      // A model refusal publishes the row the BUILD seat publishes for it: the halt's own message.
+      expect(plannerHaltRow(issue, diagnosis)).toBe(issue.message);
+    });
+  });
+
+  it('reads no credential for a halt that is not a model refusal', async () => {
+    await withTempDir('planner-halt-no-probe', async (projectDir) => {
+      const config = makeConfig({ planner: runner });
+      await plannerCallHaltIssue({
+        modelCache: undefined,
+        projectDir,
+        config,
+        diagnosis: {
+          failure: 'usage-limit',
+          message: 'Quota spent',
+          words: 'Quota spent',
+          seatDown: { classification: { class: 'account', cause: 'quota' } },
+        },
+        phase: 'planning',
+        swap: { seat: 'plan', runner: config.planner },
+      });
+
+      expect(evidence.detectRunnerEvidence).not.toHaveBeenCalled();
+    });
+  });
+
+  it('publishes a failed call as its own message', async () => {
+    const failed = diagnosePlannerCallFailure({
+      err: failedCall('socket hang up'),
+      label: 'Planning failed',
+      runner,
+      seat: 'plan',
+    });
+    await withTempDir('planner-halt-call-failed-row', async (projectDir) => {
+      const config = makeConfig({ planner: runner });
+      const issue = await plannerCallHaltIssue({
+        modelCache: undefined,
+        projectDir,
+        config,
+        diagnosis: failed,
+        phase: 'planning',
+        swap: { seat: 'plan', runner: config.planner },
+      });
+
+      expect(failed.failure).toBe('call-failed');
+      expect(plannerHaltRow(issue, failed)).toBe(failed.message);
+    });
   });
 });

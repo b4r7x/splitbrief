@@ -20,6 +20,7 @@ import {
   buildReviewFailedRecoveryIssue,
   buildRunnerInputTooLargeRecoveryIssue,
   buildSeatDownIssue,
+  runnerDefectRow,
   buildSnapshotFailedRecoveryIssue,
   recoveryBuilderForRunnerOutcome,
   runnerHaltRow,
@@ -77,14 +78,15 @@ describe('runnerHaltRow', () => {
       });
 
       expect(issue.switchSeat?.auto).toBeDefined();
-      expect(runnerHaltRow(issue, 'provider.quota: Insufficient Balance')).toBe(
+      expect(runnerHaltRow(issue, 'OpenCode CLI', 'provider.quota: Insufficient Balance')).toBe(
         'Balance spent on deepseek (OpenCode CLI)',
       );
       expect(issue.message).toContain('Balance spent on deepseek (OpenCode CLI). Add credit');
       expect(issue.details[0]).toMatch(/^OpenCode CLI reported: /);
       expect(issue.details.join('\n')).toContain('request_id: smoke-request');
-      expect(runnerHaltRow({ ...issue, switchSeat: undefined }, 'raw words')).toBe(
-        `${issue.message} (runner reported: raw words)`,
+      // The row attributes the tool's words the way the panel does.
+      expect(runnerHaltRow({ ...issue, switchSeat: undefined }, 'OpenCode CLI', 'raw words')).toBe(
+        `${issue.message} (OpenCode CLI reported: raw words)`,
       );
     },
   );
@@ -552,6 +554,182 @@ describe('buildSeatDownIssue', () => {
   });
 });
 
+describe('an OpenCode route refusal (provider.no-route)', () => {
+  // Recorded on 2026-10-17: opencode with no Ollama Cloud credential. A misspelled model or an
+  // unavailable variant prints the same refusal, so only the tool's own credential listing tells
+  // a sign-out from a model the seat cannot run.
+  const route = 'ollama-cloud/deepseek-v4.1-flash';
+  const noRoute = `provider.no-route: Model unavailable: ${route}`;
+  const runner = makeConfig({
+    implementer: { kind: 'cli', tool: 'opencode', model: route },
+  }).implementer;
+  const fallback = { tool: 'claude-code', model: 'sonnet' } as const;
+  const seatSwap = (providers: readonly string[]) => ({
+    seat: 'build' as const,
+    currentTool: 'opencode',
+    currentModel: route,
+    detectedTools: [
+      { tool: 'opencode', ready: true },
+      { ...fallback, ready: true },
+    ],
+    fallback,
+    configRevision: 'revision',
+    routeAuth: providers.includes('Ollama Cloud')
+      ? { kind: 'configured' as const, source: 'api' as const }
+      : { kind: 'needs-sign-in' as const, tool: 'opencode' as const, provider: 'ollama-cloud' },
+  });
+
+  it('on a route with no credential, halts as Seat down with the sign-in step and the fallback move', () => {
+    const issue = buildMissingModelRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
+      runner,
+      toolMessage: noRoute,
+      seatSwap: seatSwap(['OpenCode Go']),
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('runner-unauthenticated');
+    expect(haltOf(issue.reason)).toBe('seat-down');
+    // Doctor's sentence, so the halt and `splitbrief doctor` name the cause the same way.
+    expect(issue.message).toBe(
+      'OpenCode CLI has no credential for ollama-cloud. Run `opencode auth login ollama-cloud` in a separate terminal, then retry.',
+    );
+    expect(formatRecoveryHeadline(issue)).toBe('OpenCode CLI has no credential for ollama-cloud');
+    expect(issue.facts).toMatchObject({ tool: 'OpenCode CLI', provider: 'ollama-cloud' });
+    expect(issue.details).toContain(`OpenCode CLI reported: ${noRoute}`);
+    expect(issue.recommendedAction).toBe('switch-seat');
+    expect(issue.switchSeat?.auto).toEqual({ candidate: fallback, configRevision: 'revision' });
+    // The seat moves by itself, so the row names the halt and never asks for the sign-in.
+    expect(runnerDefectRow(issue, 'OpenCode CLI', noRoute)).toBe(
+      'OpenCode CLI has no credential for ollama-cloud',
+    );
+    expectValidRecoveryIssue(issue);
+  });
+
+  it("names the tool's own gateway by the id its sign-in command takes", () => {
+    const gateway = 'opencode/big-pickle';
+    const issue = buildMissingModelRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'opencode', model: gateway } })
+        .implementer,
+      toolMessage: `provider.no-route: Model unavailable: ${gateway}`,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'opencode',
+        currentModel: gateway,
+        detectedTools: [{ tool: 'claude-code', ready: true }],
+        routeAuth: { kind: 'needs-sign-in', tool: 'opencode', provider: 'opencode' },
+      },
+      createdAt,
+    });
+
+    expect(issue.message).toBe(
+      'OpenCode CLI has no credential for opencode. Run `opencode auth login opencode` in a separate terminal, then retry.',
+    );
+    expect(formatRecoveryHeadline(issue)).toBe('OpenCode CLI has no credential for opencode');
+    expect(issue.facts).toMatchObject({ tool: 'OpenCode CLI', provider: 'opencode' });
+    expect(runnerDefectRow(issue, 'OpenCode CLI', 'provider.no-route')).toBe(
+      `${issue.message} (OpenCode CLI reported: provider.no-route)`,
+    );
+  });
+
+  it('on a route that has a credential, halts as a model the tool does not list, with no move and no sign-in', () => {
+    const issue = buildMissingModelRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
+      runner,
+      toolMessage: noRoute,
+      seatSwap: seatSwap(['OpenCode Go', 'Ollama Cloud']),
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('implementer-recipe-invalid');
+    expect(issue.message).toBe(`Model ${route} is not listed by OpenCode CLI; pick a listed model`);
+    expect(issue.message).not.toMatch(/sign|auth login/i);
+    expect(runnerDefectRow(issue, 'OpenCode CLI', noRoute)).toBe(issue.message);
+    expect(issue.switchSeat?.auto).toBeUndefined();
+    // The seat's own tool is offered without a model: taking it opens the picker on that tool.
+    expect(issue.switchSeat?.candidates).toEqual([fallback, { tool: 'opencode' }]);
+    expect(issue.recommendedAction).toBe('switch-seat');
+    expect(issue.details).toContain(`OpenCode CLI reported: ${noRoute}`);
+    // A model refusal is named as one, never as a command line the tool rejected.
+    expect(formatRecoveryHeadline(issue)).toBe('Model not listed by OpenCode CLI');
+    expect(issue.details).toContain(
+      'The run stopped instead of spending retries on a model the tool refuses.',
+    );
+    expect(issue.details.join('\n')).not.toMatch(/command/);
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('with no credential listing read, names both causes and moves nothing', () => {
+    const issue = buildMissingModelRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
+      runner,
+      toolMessage: noRoute,
+      seatSwap: { ...seatSwap([]), routeAuth: { kind: 'unknown', reason: 'exit-failure' } },
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('implementer-recipe-invalid');
+    expect(issue.message).toBe(
+      `OpenCode CLI cannot use ${route}: sign in with \`opencode auth login ollama-cloud\` if ollama-cloud has no credential, or pick a listed model`,
+    );
+    expect(issue.switchSeat?.auto).toBeUndefined();
+    expect(issue.recommendedAction).toBe('switch-seat');
+    expect(formatRecoveryHeadline(issue)).toBe('Model refused by OpenCode CLI');
+    expect(issue.details.join('\n')).not.toMatch(/command/);
+  });
+
+  it("on a machine with only the seat's own tool, offers that tool to pick a listed model", () => {
+    const issue = buildMissingModelRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
+      runner,
+      toolMessage: noRoute,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'opencode',
+        currentModel: route,
+        detectedTools: [{ tool: 'opencode', ready: true }],
+        routeAuth: { kind: 'configured', source: 'listed' },
+      },
+      createdAt,
+    });
+
+    expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'opencode' }] });
+    expect(issue.recommendedAction).toBe('switch-seat');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('moves the seat automatically at most once per run', () => {
+    const issue = buildMissingModelRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
+      runner,
+      toolMessage: noRoute,
+      seatSwap: seatSwap(['OpenCode Go']),
+      seatSwitches: [
+        {
+          seat: 'build',
+          from: 'OpenCode CLI · ollama-cloud/deepseek-v4.1-flash',
+          to: 'Claude Code CLI · sonnet',
+          cause: 'runner-unauthenticated',
+          auto: true,
+          configRevision: 'revision',
+          ts: createdAt,
+        },
+      ],
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('runner-unauthenticated');
+    expect(issue.switchSeat?.auto).toBeUndefined();
+  });
+});
+
 describe('a seat whose account the provider refuses', () => {
   // Recorded on 2026-10-05: opencode on a spent DeepSeek account.
   const balance =
@@ -671,7 +849,9 @@ describe('a seat whose account the provider refuses', () => {
     });
 
     expect(issue.reason).toBe('runner-unauthenticated');
-    expect(issue.message).toContain('OpenCode CLI is signed out');
+    expect(issue.message).toBe(
+      'Signed out of deepseek (OpenCode CLI). Run `opencode auth login deepseek` in a separate terminal, then retry.',
+    );
     expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.availableActions).toEqual([
       'retry-same-worker',
@@ -817,6 +997,7 @@ describe('buildRecipeInvalidRecoveryIssue', () => {
     expect(issue.reason).toBe('implementer-recipe-invalid');
     expect(issue.message).toContain('rejected the command');
     expect(issue.details.join('\n')).toContain("unknown option '--nope'");
+    expect(formatRecoveryHeadline(issue)).toBe('Tool recipe rejected by OpenAI Codex CLI');
     expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(issue);
@@ -1031,7 +1212,7 @@ describe('buildMissingModelRecoveryIssue', () => {
     expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.switchSeat).toEqual({
       seat: 'build',
-      candidates: [{ tool: 'claude-code', model: 'sonnet' }],
+      candidates: [{ tool: 'claude-code', model: 'sonnet' }, { tool: 'codex' }],
     });
     expectValidRecoveryIssue(issue);
   });
