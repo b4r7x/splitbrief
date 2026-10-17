@@ -12,7 +12,8 @@ import {
 } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';
-import { FINAL_REVIEW_NOT_RUN, findingCounts, scopeCleanSegment, type CopyTone } from './copy.js';
+import { FINAL_REVIEW_NOT_RUN, scopeCleanSegment, type CopyTone } from './copy.js';
+import { formatFindingCounts } from '../../../core/review/verdict.js';
 import { stopPoint } from '../stop/copy.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import { passedFractionSpans } from '../display/build-progress.js';
@@ -218,7 +219,7 @@ function filesFact(view: SummaryView): string {
 
 function reviewFact(review: ReviewView): OutcomeSpan[] {
   if (review.kind !== 'written') return secondaryFact(FINAL_REVIEW_NOT_RUN);
-  const counts = findingCounts(review.counts);
+  const counts = formatFindingCounts(review.counts);
   return review.verdict === 'fail'
     ? [
         ...secondaryFact('review '),

@@ -151,6 +151,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       wctx,
       state,
       wctx.workspaceDir,
+      'dispatch',
     ));
     setTrackedState(state);
 

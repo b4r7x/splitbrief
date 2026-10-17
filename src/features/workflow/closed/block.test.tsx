@@ -361,7 +361,7 @@ describe('closedBlockRows', () => {
         ['Review', 'reviewer'],
         ['pass with notes', 'success'],
         ['clean', 'success'],
-        [' · 0 blocking, 1 advisory · 3/3 briefs validated', 'textDim'],
+        [' · 0 blocking, 1 note · 3/3 briefs validated', 'textDim'],
         ['planning 2m 50s', 'textDim'],
         ['2026-09-14-add-email-validation-with-tests', 'textDim'],
         [' · ', 'textDim'],

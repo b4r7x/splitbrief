@@ -94,7 +94,7 @@ function printReview(outcome: ReviewOutcome, relativePath: string, theme: Theme)
   console.log(`\n${chalk.bold('Verdict:')} ${reviewOutcomeWord(outcome)}`);
   for (const [severity, findings] of [
     ['critical', outcome.blocking],
-    ['warning', outcome.minor],
+    ['note', outcome.minor],
     ['note', outcome.outOfScope],
   ] as const) {
     for (const finding of findings)

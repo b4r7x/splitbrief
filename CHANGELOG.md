@@ -254,6 +254,8 @@
 - In the seat picker, moving onto a tool and pressing `→` starts the Models cursor on the same row whichever row you came from. Before, arriving from `= PLAN` or `+ Add custom command…` started it on `+ Add custom model…`.
 - When tools are not signed in, Setup tells you to sign in and run `splitbrief init` again, which names them again. Before, it sent you to `splitbrief doctor`, which without a saved crew could not name them.
 - A warning or failure from a tool reads as the tool's own message in the activity rows, for example `Warn  provider.quota: Insufficient Balance`. Before, a code came first, for example `Warn  opencode-error: provider.quota: …`.
+- A brief that creates a file reads `create` on the closed run also after a retry or a Continue past its consult limit, not `modify`.
+- A minor or out-of-scope review finding reads as a note in the closed run, the review packet and `splitbrief review`. The closed run and the review packet read the review count as `0 blocking, 3 notes`.
 
 ## [0.1.0] - 2026-08-07
 

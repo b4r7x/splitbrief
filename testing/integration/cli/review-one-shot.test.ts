@@ -308,6 +308,8 @@ describe('CLI integration: splitbrief review', () => {
     expect(stdout).toContain('pass_with_notes');
     // The rendered review is markdown: its line breaks survive to stdout.
     expect(stdout).toContain('### Verdict\n\npass_with_notes');
+    // A minor finding reads as a note, as review.md lists it under **Note**.
+    expect(stdout).toContain('  note: the changed line has no test.');
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
 
     const reviewsRoot = join(tmp, SPLITBRIEF_DIR, REVIEWS_DIR);

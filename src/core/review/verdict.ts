@@ -1,6 +1,7 @@
 import type { ReviewVerdict, TriageInput, TriageResult } from '../schemas/review.js';
 import { isTaskCompleted } from '../schemas/task.js';
 import type { ReviewRecord, WorkflowState } from '../schemas/workflow.js';
+import { countNoun } from '../../utils/pluralize.js';
 
 export type Finding = ReviewVerdict['findings'][number];
 
@@ -108,6 +109,13 @@ export function reviewFindingCounts(outcome: ReviewOutcome) {
     warning: outcome.minor.length,
     note: outcome.outOfScope.length,
   };
+}
+
+/** The finding tallies the closed run and the review packet spell the same way: a minor and an out-of-scope finding are both notes. */
+export function formatFindingCounts(
+  counts: Readonly<{ critical: number; warning: number; note: number }>,
+): string {
+  return `${counts.critical} blocking, ${countNoun(counts.warning + counts.note, 'note')}`;
 }
 
 export function verdictCoverageErrors(verdict: ReviewVerdict, scope: ReviewScope): string[] {

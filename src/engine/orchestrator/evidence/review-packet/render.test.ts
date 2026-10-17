@@ -90,6 +90,23 @@ describe('renderReviewPacketMarkdown review seat', () => {
     expect(tally).toBe('- Tasks: 7 total, 2 escalated, 1 skipped, 1 failed');
   });
 
+  it('counts a minor finding and an out-of-scope finding as notes beside the blocking count', () => {
+    const packet = makeReviewPacket();
+    const rendered = renderReviewPacketMarkdown(
+      {
+        ...packet,
+        finalReview: {
+          ...packet.finalReview,
+          findingCounts: { critical: 0, warning: 1, note: 2 },
+        },
+      },
+      NULL_CACHE,
+    );
+
+    const findings = rendered.split('\n').find((line) => line.startsWith('- Findings:'));
+    expect(findings).toBe('- Findings: 0 blocking, 3 notes');
+  });
+
   it('heads the verdict with the review seat and names the runner that held it', () => {
     const packet = makeReviewPacket();
     const rendered = renderReviewPacketMarkdown(

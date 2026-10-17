@@ -269,7 +269,13 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   let task = opts.task;
   if (!opts.taskCodeRefreshed) {
-    ({ task, state } = await refreshAndPersistCode(opts.task, wctx, state, wctx.workspaceDir));
+    ({ task, state } = await refreshAndPersistCode(
+      opts.task,
+      wctx,
+      state,
+      wctx.workspaceDir,
+      'dispatch',
+    ));
     setTrackedState(state);
   }
 

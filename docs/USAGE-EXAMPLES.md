@@ -1003,7 +1003,7 @@ pass_with_notes
 ...
 
 Verdict: pass_with_notes
-  warning: the new branch in resolve() has no test
+  note: the new branch in resolve() has no test
 .splitbrief/reviews/2026-09-11-174210/review.md
 ```
 

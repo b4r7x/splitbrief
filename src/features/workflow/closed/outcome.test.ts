@@ -134,7 +134,7 @@ describe('outcomeLineSpans', () => {
         .map((span) => span.text)
         .join(''),
     ).toBe(
-      'Applied · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files applied',
+      'Applied · 3/3 briefs passed · review 0 blocking, 1 note · scope clean · 4 files applied',
     );
   });
 
@@ -210,7 +210,7 @@ describe('outcomeLineSpans', () => {
         .map((span) => span.text)
         .join(''),
     ).toBe(
-      'Complete · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed',
+      'Complete · 3/3 briefs passed · review 0 blocking, 1 note · scope clean · 4 files changed',
     );
   });
 
@@ -246,7 +246,7 @@ describe('outcomeLineSpans', () => {
         .map((span) => span.text)
         .join(''),
     ).toBe(
-      'Needs attention · 3/3 briefs passed · 1 failed · review failed 2 blocking, 1 advisory · scope 2 deviations · 5 files changed',
+      'Needs attention · 3/3 briefs passed · 1 failed · review failed 2 blocking, 1 note · scope 2 deviations · 5 files changed',
     );
   });
 
@@ -430,7 +430,7 @@ describe('outcomeLineSpans', () => {
     expect(line.startsWith('Complete · 3/3 briefs passed')).toBe(true);
     for (const token of line.split(' · ')) {
       expect(
-        'Complete · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed'.split(
+        'Complete · 3/3 briefs passed · review 0 blocking, 1 note · scope clean · 4 files changed'.split(
           ' · ',
         ),
       ).toContain(token);

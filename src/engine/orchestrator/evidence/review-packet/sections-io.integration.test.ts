@@ -557,7 +557,7 @@ describe('renderReviewPacketMarkdown final review block', () => {
 
     expect(rendered).toContain('- Verdict: fail');
     expect(rendered).toContain('- Criteria: 2 passed, 1 failed');
-    expect(rendered).toContain('- Findings: 1 critical, 0 warning, 0 note');
+    expect(rendered).toContain('- Findings: 1 blocking, 0 notes');
   });
 
   it('renders a null verdict as unknown, never as pass', () => {
