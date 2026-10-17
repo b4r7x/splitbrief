@@ -18,6 +18,7 @@ import {
   defaultCliAuthChannel,
   type CliToolId,
 } from '../../runners/cli-tool-catalog.js';
+import { getIsolationStrategy } from '../../config/accessors/values.js';
 import type { Config } from '../../schemas/config.js';
 import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
 import type { CliReadinessResult } from '../../schemas/readiness.js';
@@ -80,6 +81,13 @@ export function buildRunnerChecks({
 
   if (resolved !== null) {
     const defaultProfile = resolved.defaultProfile;
+    const inCheckout = getIsolationStrategy(config) === 'none';
+    const directWrites = inCheckout
+      ? 'BUILD edits this checkout.'
+      : 'BUILD edits files in the run workspace.';
+    const returnedWrites = inCheckout
+      ? 'SPLITBRIEF applies the edits BUILD returns to this checkout.'
+      : 'SPLITBRIEF applies the edits BUILD returns.';
     checks.push({
       id: 'runners.implementer.default',
       severity: 'ok',
@@ -90,9 +98,7 @@ export function buildRunnerChecks({
               `${CREW_SEAT_LABELS.build} choices: ${resolved.profiles.map((profile) => profile.name).join(', ')}`,
             ]
           : []),
-        defaultProfile.capabilities.writesFiles === 'direct'
-          ? 'BUILD edits files in the run workspace.'
-          : 'SPLITBRIEF applies the edits BUILD returns.',
+        defaultProfile.capabilities.writesFiles === 'direct' ? directWrites : returnedWrites,
       ],
       metadata: {
         defaultProfile: defaultProfile.name,

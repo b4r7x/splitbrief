@@ -1,12 +1,22 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { readReviewChanges } from '../../../src/core/evidence/review-changes.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { makeE2eScenarioConfig } from '../helpers/config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/harness.js';
+import { cli } from '../helpers/stop-continue-fixture.js';
+
+const DoctorRecordSchema = z.object({
+  type: z.literal('readiness_report'),
+  report: z.object({
+    checks: z.array(z.object({ id: z.string(), details: z.array(z.string()).optional() })),
+  }),
+});
 
 // The trivial-edit exchange, run in the checkout itself: the planner and the
 // implementer answer exactly as they do in a worktree run.
@@ -27,6 +37,16 @@ describe('e2e: the checkout mode edits the checkout and closes on its passing re
       '# SPLITBRIEF\n\nA small fixure project for e2e replay.\n',
       'utf-8',
     );
+    const doctor = await cli(
+      { projectDir: ctx.projectDir, stateHome: join(homedir(), 'state') },
+      ['doctor'],
+      { json: true, timeoutMs: 30_000 },
+    );
+    expect(doctor.stdout, doctor.stderr).not.toBe('');
+    const readiness = DoctorRecordSchema.parse(JSON.parse(doctor.stdout.trim()));
+    expect(
+      readiness.report.checks.find((check) => check.id === 'runners.implementer.default')?.details,
+    ).toEqual(['SPLITBRIEF applies the edits BUILD returns to this checkout.']);
     let readmeAtTaskCompleted: string | undefined;
 
     const summary = await runE2eWorkflow(ctx, scenario, (event) => {
