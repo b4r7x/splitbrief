@@ -10,6 +10,7 @@ import type {
   PlannerConversation,
   WorkflowState,
 } from '../../../core/schemas/workflow.js';
+import { dueCriterionIds } from '../../../core/review/verdict.js';
 import { briefCorrections } from '../../../core/state/machine.js';
 import { insertTasks } from '../../../core/state/task-insert.js';
 import { error } from '../../../utils/error.js';
@@ -93,7 +94,7 @@ function droppedCriteriaChecks(
 ): string[] {
   const carried = new Set((task.checks ?? []).map((check) => check.id));
   const kept = new Set(specs.flatMap((spec) => spec.checks.map((check) => check.id)));
-  return criteriaCheckIds(task, plan).filter(
+  return criteriaCheckIds(task.criteria ?? [], plan).filter(
     (checkId) => carried.has(checkId) && !kept.has(checkId),
   );
 }
@@ -206,8 +207,8 @@ async function applySplit(
 
 const ASK_USER_QUESTION_ID = 'ask-user';
 
-function criteriaCheckIds(task: Task, plan: Plan | undefined): string[] {
-  const served = new Set(task.criteria ?? []);
+function criteriaCheckIds(criteria: readonly string[], plan: Plan | undefined): string[] {
+  const served = new Set(criteria);
   const checkIds = new Set<string>();
   for (const criterion of plan?.criteria ?? []) {
     if (!served.has(criterion.id)) continue;
@@ -218,14 +219,19 @@ function criteriaCheckIds(task: Task, plan: Plan | undefined): string[] {
 
 function verifySelectionError(
   task: Task,
-  plan: Plan | undefined,
+  state: WorkflowState,
   checkIds: readonly string[],
 ): string | null {
   if (checkIds.length === 0) return 'the verify selection names no check';
-  const known = checkRegistry({ task, plan });
+  const known = checkRegistry({ task, tasks: state.tasks, plan: state.plan });
   const unknown = checkIds.filter((checkId) => !known.has(checkId));
   if (unknown.length > 0) return `the verify selection names unknown checks: ${unknown.join(', ')}`;
-  const missing = criteriaCheckIds(task, plan).filter((checkId) => !checkIds.includes(checkId));
+  // The brief gate checks a criterion only once it is due, so a later owner's check never binds.
+  const due = new Set(dueCriterionIds(state, task.id));
+  const dueCriteria = (task.criteria ?? []).filter((criterionId) => due.has(criterionId));
+  const missing = criteriaCheckIds(dueCriteria, state.plan).filter(
+    (checkId) => !checkIds.includes(checkId),
+  );
   if (missing.length > 0) {
     return `the verify selection misses the task's criteria checks: ${missing.join(', ')}`;
   }
@@ -238,8 +244,7 @@ async function applyVerify(
   action: VerifyAction,
   attempt: ChangedFilesSnapshot | null,
 ): Promise<ConsultApplyOutcome> {
-  const plan = ctx.state.plan;
-  const selectionError = verifySelectionError(task, plan, action.checkIds);
+  const selectionError = verifySelectionError(task, ctx.state, action.checkIds);
   if (selectionError !== null) return { action: 'failed', reason: selectionError };
 
   const changedFiles = ctx.changedFiles ?? [];
