@@ -59,6 +59,8 @@ export function isTestScript(file: string, stacks: readonly Stack[] = STACKS): b
   );
 }
 
+const TEST_FILE_STEM = /^(?:tests?|spec)$/;
+
 function hasInlineTests(absolutePath: string, pattern: RegExp): boolean {
   if (!existsSync(absolutePath)) return false;
   return pattern.test(readFileSync(absolutePath, 'utf-8'));
@@ -92,6 +94,15 @@ export function findAffectedTestFiles(
     for (const testDir of stack.testDirs) {
       add(join(projectDir, dir.replace(/^src/, testDir), patternDir, fileName));
     }
+  }
+  // A runner that takes file paths runs a named test file no pattern maps, such as a root
+  // `test.js`. A name filter or a package argument would select other tests, so those still skip.
+  if (
+    found.length === 0 &&
+    stack.narrowing.kind === 'path-arg' &&
+    (isTestScript(taskFile, [stack]) || TEST_FILE_STEM.test(name))
+  ) {
+    add(self);
   }
   return found;
 }
