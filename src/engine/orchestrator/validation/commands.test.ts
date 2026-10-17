@@ -103,6 +103,22 @@ describe('planTestCheck', () => {
     });
   });
 
+  it('runs the test file a check names when no test pattern maps it', () => {
+    writeFileSync(join(tempDir, 'package.json'), '{"scripts":{"test":"mocha"}}');
+    writeFileSync(join(tempDir, 'test.js'), '');
+
+    expect(
+      plan('test.js', makeConfig({ testCommand: undefined }), {
+        testCommand: 'npm test',
+        testPattern: '*.test.js',
+      }),
+    ).toMatchObject({
+      kind: 'run',
+      command: 'npm test -- test.js',
+      args: ['test', '--', 'test.js'],
+    });
+  });
+
   it('skips with its reason on an unrecognised stack', () => {
     expect(plan('src/app.ts', makeConfig({ testCommand: undefined }))).toEqual({
       kind: 'skip',

@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { buildTestArgs, detectStack, findAffectedTestFiles, isTestScript } from './registry.js';
+import { goStack } from './go.js';
+import { javascriptStack } from './javascript.js';
 import { pythonStack } from './python.js';
 import { rustStack } from './rust.js';
 import { typescriptStack } from './typescript.js';
@@ -96,6 +98,35 @@ describe('findAffectedTestFiles', () => {
     expect(findAffectedTestFiles('src/lib.rs', dir, rustStack)).toEqual([
       join(dir, 'src', 'lib.rs'),
     ]);
+  });
+
+  it('a named file no test pattern maps is its own target', () => {
+    writeFileSync(join(dir, 'test.js'), '');
+    expect(findAffectedTestFiles('test.js', dir, javascriptStack, '*.test.js')).toEqual([
+      join(dir, 'test.js'),
+    ]);
+  });
+
+  it('a named file under a test folder is its own target', () => {
+    mkdirSync(join(dir, 'test'), { recursive: true });
+    writeFileSync(join(dir, 'test', 'api.js'), '');
+    expect(findAffectedTestFiles('test/api.js', dir, javascriptStack)).toEqual([
+      join(dir, 'test', 'api.js'),
+    ]);
+  });
+
+  it('a named source file no test maps is no target', () => {
+    writeFileSync(join(dir, 'src', 'add.mjs'), '');
+    expect(findAffectedTestFiles('src/add.mjs', dir, javascriptStack)).toEqual([]);
+  });
+
+  it('a stack that narrows by name or package never runs the named file itself', () => {
+    mkdirSync(join(dir, 'tests'), { recursive: true });
+    writeFileSync(join(dir, 'tests', 'api.rs'), 'fn add_works() {}\n');
+    mkdirSync(join(dir, 'util'), { recursive: true });
+    writeFileSync(join(dir, 'util', 'strings.go'), 'package util\n');
+    expect(findAffectedTestFiles('tests/api.rs', dir, rustStack)).toEqual([]);
+    expect(findAffectedTestFiles('util/strings.go', dir, goStack)).toEqual([]);
   });
 
   it('returns nothing when no test file exists', () => {

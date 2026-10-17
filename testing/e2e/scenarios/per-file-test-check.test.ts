@@ -223,4 +223,28 @@ describe('e2e: a plan with a per-file test check', () => {
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) expect(row).toMatchObject({ command: 'npm test' });
   });
+
+  it('runs a root test.js that no test pattern maps, and reaches the review', async () => {
+    const { run, state, events, calls } = await runAlpha({
+      projectFiles: {
+        'package.json': `${JSON.stringify({
+          name: 'alpha',
+          private: true,
+          scripts: { test: 'node --test' },
+        })}\n`,
+        'test.js':
+          "const assert = require('node:assert');\nimport('./src/alpha.mjs').then((m) => assert.equal(m.alpha, 'alpha'));\n",
+      },
+      checks: [{ id: 'K1', kind: 'test', value: 'test.js', required: true }],
+    });
+
+    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+    expect(state.phase).toBe('complete');
+    expect(state.reviewStatus).toBe('passed');
+    expect(calls).toContain('final-review');
+    expect(state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
+    const rows = events.filter((event) => event.type === 'full_suite' && event.id === 'K1');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row).toMatchObject({ command: 'npm test -- test.js' });
+  });
 });
