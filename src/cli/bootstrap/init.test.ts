@@ -6,7 +6,7 @@ import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
-import { initStores } from './init.js';
+import { initStores, teardownStores } from './init.js';
 import { awaitBackgroundDiscovery } from './discovery.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
@@ -20,6 +20,7 @@ import { detectCapabilities } from '../../engine/providers/capabilities.js';
 import * as capabilitiesModule from '../../engine/providers/capabilities.js';
 import { loadDetectionCacheSnapshot, saveDetectionCache } from '../../engine/detection/cache.js';
 import * as detectionServiceModule from '../../engine/detection/service.js';
+import * as cliDiscoveryModule from '../../engine/providers/discovery.js';
 import * as modelsDevCacheModule from '../../engine/providers/models-dev-cache.js';
 import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev-cache.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -100,6 +101,7 @@ beforeEach(() => {
 // Boot leaves the models.dev seed and the detection refresh running; both write
 // caches under HOME, so the fake home cannot be removed until they settle.
 afterEach(async () => {
+  teardownStores();
   await awaitBackgroundDiscovery();
   vi.restoreAllMocks();
   resetAllStores();
@@ -679,5 +681,160 @@ describe('initStores', () => {
     await initStores(dir);
 
     expect(controlsStore.get().sidebarVisible).toBe(false);
+  }, 30_000);
+});
+
+describe('a crew change after start-up', () => {
+  it('re-reads the model lists once, naming the project, when the crew gains OpenCode', async () => {
+    const dir = makeProjectDir();
+    const codex = { kind: 'cli', tool: 'codex', model: 'gpt-5.5' } as const;
+    const withOpenCode = {
+      ...codex,
+      fallback: { tool: 'opencode', model: 'ollama-cloud/glm-5.3' },
+    } as const;
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: codex,
+      }),
+    );
+    const discover = vi.spyOn(cliDiscoveryModule, 'discoverAllCliTools').mockResolvedValue([]);
+    const refreshDetection = vi.fn(async (input?: detectionServiceModule.DetectionRefreshInput) => {
+      await input?.deps.discoverAllCliTools({
+        mode: 'manual',
+        signal: new AbortController().signal,
+      });
+      return { providers: [], cliTools: [], catalog: null, cliModels: [] };
+    });
+    vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+      loadDetection: async () => ({ providers: [], cliTools: [], catalog: null, cliModels: [] }),
+      refreshDetection,
+      shutdown: async () => {},
+    });
+    await initStores(dir);
+    await awaitBackgroundDiscovery();
+
+    await configStore.save({ ...requireConfig(), implementer: withOpenCode });
+    await awaitBackgroundDiscovery();
+
+    expect(refreshDetection).toHaveBeenCalledOnce();
+    expect(refreshDetection.mock.calls[0]?.[0]?.projectDir).toBe(dir);
+    expect(discover).toHaveBeenCalledOnce();
+    expect(discover.mock.calls[0]?.[0]).toMatchObject({ projectDir: dir, refresh: 'manual' });
+    expect(discover.mock.calls[0]?.[0].crewTools?.has('opencode')).toBe(true);
+
+    await configStore.save({
+      ...requireConfig(),
+      implementer: { ...withOpenCode, model: 'gpt-5.4' },
+    });
+    await configStore.save({ ...requireConfig(), implementer: codex });
+    teardownStores();
+    await configStore.save({ ...requireConfig(), implementer: withOpenCode });
+    await awaitBackgroundDiscovery();
+
+    expect(refreshDetection).toHaveBeenCalledOnce();
+  }, 30_000);
+
+  function holdStartupLoad() {
+    const order: string[] = [];
+    let release = () => {};
+    const discover = vi.spyOn(cliDiscoveryModule, 'discoverAllCliTools').mockResolvedValue([]);
+    const refreshDetection = vi.fn(async (input?: detectionServiceModule.DetectionRefreshInput) => {
+      order.push('refresh');
+      await input?.deps.discoverAllCliTools({
+        mode: 'manual',
+        signal: new AbortController().signal,
+      });
+      return { providers: [], cliTools: [], catalog: null, cliModels: [] };
+    });
+    vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+      loadDetection: () =>
+        new Promise((resolve) => {
+          release = () => {
+            order.push('start-up settled');
+            resolve({ providers: [], cliTools: [], catalog: null, cliModels: [] });
+          };
+        }),
+      refreshDetection,
+      shutdown: async () => {},
+    });
+    return { order, discover, refreshDetection, release: () => release() };
+  }
+
+  function writeCodexCrew(dir: string): void {
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' },
+      }),
+    );
+  }
+
+  const openCodeSeat = { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/glm-5.3' } as const;
+
+  it('re-reads the model lists once, after the start-up read, when a seat gains OpenCode during it', async () => {
+    const dir = makeProjectDir();
+    writeCodexCrew(dir);
+    const held = holdStartupLoad();
+    await initStores(dir);
+
+    await configStore.save({ ...requireConfig(), implementer: openCodeSeat });
+    held.release();
+    await awaitBackgroundDiscovery();
+
+    expect(held.order).toEqual(['start-up settled', 'refresh']);
+    expect(held.refreshDetection.mock.calls[0]?.[0]?.projectDir).toBe(dir);
+    expect(held.discover.mock.calls[0]?.[0]).toMatchObject({ projectDir: dir, refresh: 'manual' });
+    expect(held.discover.mock.calls[0]?.[0].crewTools?.has('opencode')).toBe(true);
+
+    await configStore.save({ ...requireConfig(), implementer: { ...openCodeSeat, model: 'x/y' } });
+    await awaitBackgroundDiscovery();
+
+    expect(held.refreshDetection).toHaveBeenCalledOnce();
+  }, 30_000);
+
+  it('does not re-read the model lists when the crew is unchanged at the end of the start-up read', async () => {
+    const dir = makeProjectDir();
+    writeCodexCrew(dir);
+    const held = holdStartupLoad();
+    await initStores(dir);
+
+    held.release();
+    await awaitBackgroundDiscovery();
+
+    expect(held.refreshDetection).not.toHaveBeenCalled();
+  }, 30_000);
+
+  it('re-reads the model lists once when a seat gains OpenCode after the start-up read', async () => {
+    const dir = makeProjectDir();
+    writeCodexCrew(dir);
+    const held = holdStartupLoad();
+    await initStores(dir);
+    held.release();
+    await awaitBackgroundDiscovery();
+
+    await configStore.save({ ...requireConfig(), implementer: openCodeSeat });
+    await awaitBackgroundDiscovery();
+
+    expect(held.order).toEqual(['start-up settled', 'refresh']);
+  }, 30_000);
+
+  it('does not watch the crew when the stores are torn down during the start-up read', async () => {
+    const dir = makeProjectDir();
+    writeCodexCrew(dir);
+    const held = holdStartupLoad();
+    await initStores(dir);
+
+    teardownStores();
+    held.release();
+    await awaitBackgroundDiscovery();
+    await configStore.save({ ...requireConfig(), implementer: openCodeSeat });
+    await awaitBackgroundDiscovery();
+
+    expect(held.refreshDetection).not.toHaveBeenCalled();
   }, 30_000);
 });

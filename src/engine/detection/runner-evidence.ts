@@ -62,6 +62,12 @@ export interface DetectRunnerEvidenceOptions {
   probeDeclaredReadiness?: ProbeDeclaredCliReadinessEvidence | undefined;
   includeCatalog?: boolean | undefined;
   catalogRefresh?: 'automatic' | 'manual' | undefined;
+  /**
+   * The model list names `projectDir`, so it carries the providers the project's
+   * own tool config sets up. OpenCode loads that config, its plugins and its MCP
+   * servers to answer, so only a read for a tool the crew uses sets it.
+   */
+  catalogNamesProject?: boolean | undefined;
   /** Observation-only catalog attribution handoff; receives an immutable receipt snapshot. */
   onResolvedCliExecutable?: ((executable: CliExecutableIdentity) => void) | undefined;
   now?: (() => number) | undefined;
@@ -637,6 +643,7 @@ async function probeResolvedCliEvidence(
         version: declaredEvidence.version,
         refresh: options.catalogRefresh ?? 'automatic',
         projectDir: options.projectDir ?? process.cwd(),
+        namesProject: options.catalogNamesProject === true,
         now,
         signal,
         authProbeRun,

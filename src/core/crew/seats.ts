@@ -72,3 +72,21 @@ export function deriveCrewSeats(
     },
   ];
 }
+
+/**
+ * Every CLI tool the config runs in this project: on PLAN, on any BUILD profile,
+ * on REVIEW, or as one of their fallbacks.
+ */
+export function crewCliTools(config: Config): ReadonlySet<string> {
+  const runners = [
+    config.planner,
+    ...resolveImplementerProfiles(config).profiles.map((profile) => profile.config),
+    resolveReviewerRunner(config).runner,
+  ];
+  return new Set(
+    runners.flatMap((runner) => [
+      ...(runner.kind === 'cli' ? [runner.tool] : []),
+      ...(runner.fallback === undefined ? [] : [runner.fallback.tool]),
+    ]),
+  );
+}

@@ -937,6 +937,34 @@ describe('createDetectionService', () => {
     ]);
   });
 
+  it('remembers whether the latest model list read named the project', async () => {
+    const clock = createClock();
+    let namesProject = true;
+    const deps = makeDeps({
+      now: clock.now,
+      sourceContexts: sourceContexts(),
+      discoverAllCliTools: async () => [
+        {
+          connection: { tool: 'opencode', contextKey: 'opencode-context' },
+          outcome: { kind: 'success', value: [{ id: 'lmstudio/qwen3' }] },
+          ...(namesProject ? { namesProject } : {}),
+        },
+      ],
+    });
+    const savedNamesProject = async () => {
+      clock.advance(1_000);
+      const restarted = createDetectionService();
+      await restarted.loadDetection({ deps, projectDir: tempDir });
+      await restarted.getPendingSave();
+      await restarted.shutdown();
+      return (await loadRememberedSnapshot(tempDir))?.cliCatalogs?.[0]?.namesProject;
+    };
+
+    expect(await savedNamesProject()).toBe(true);
+    namesProject = false;
+    expect(await savedNamesProject()).toBeUndefined();
+  });
+
   it('persists the provider auth facts a CLI probe read', async () => {
     const providerAuth = {
       kind: 'read',

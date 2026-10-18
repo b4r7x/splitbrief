@@ -297,6 +297,7 @@ export function createDetectionService() {
             {
               tool: attempt.connection.tool,
               models: attempt.outcome.value.map(cloneDetectedModel),
+              ...(attempt.namesProject === true ? { namesProject: true } : {}),
               probedAt,
             },
           ]
@@ -320,6 +321,7 @@ export function createDetectionService() {
         tool: catalog.tool,
         models: read.models,
         ...(read.missingOnce.length === 0 ? {} : { missingOnce: read.missingOnce }),
+        ...(catalog.namesProject === true ? { namesProject: true } : {}),
         probedAt: read.complete ? catalog.probedAt : (remembered?.probedAt ?? 0),
       };
     });

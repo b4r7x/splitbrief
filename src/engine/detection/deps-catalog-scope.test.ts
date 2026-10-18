@@ -99,6 +99,40 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
     ).toHaveLength(1);
   });
 
+  it.each([
+    {
+      name: 'names the project to an OpenCode 2 listing when OpenCode is only a fallback',
+      planner: { kind: 'cli', tool: 'codex', fallback: { tool: 'opencode' } },
+      named: true,
+    },
+    {
+      name: 'names no project to an OpenCode 2 listing the crew does not use',
+      planner: { kind: 'cli', tool: 'codex' },
+      named: false,
+    },
+  ] as const)('$name', async ({ planner, named }) => {
+    const argsLog = writeShim(shimDir, 'opencode', [
+      'if [ "$1" = "--version" ]; then',
+      "  printf '%s\\n' '2.0.14'",
+      '  exit 0',
+      'fi',
+      `printf '%s\\n' '{"data":[]}'`,
+    ]);
+
+    const deps = createProductionDetectionDeps({ config: makeConfig({ planner }), projectDir });
+    await deps.discoverAllCliTools({ mode: 'automatic', signal: new AbortController().signal });
+
+    const listings = readFileSync(argsLog, 'utf8')
+      .trim()
+      .split('\n')
+      .filter((line) => line.startsWith('api|'));
+    expect(listings).toEqual([
+      named
+        ? `api|GET|/api/model|-H|x-opencode-directory:${encodeURIComponent(projectDir)}|`
+        : 'api|GET|/api/model|',
+    ]);
+  });
+
   it('probes each catalog-capable tool once and keeps every provider variant of a duplicated model', async () => {
     writeShim(shimDir, 'codex', [
       'if [ "$1" = "--version" ]; then',

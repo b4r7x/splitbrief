@@ -208,7 +208,8 @@ function catalogProbeForVersion(
     }) === 'incompatible';
   if (!below) return probe;
   // The legacy listing is one the sandbox already served, so the host-account
-  // posture the newer server needs is dropped rather than carried down.
+  // posture and the directory header the newer server needs are dropped rather
+  // than carried down.
   return Object.freeze({
     kind: 'catalog',
     command: immutableProbeCommand(legacy.command),
@@ -339,9 +340,16 @@ async function runAdmittedCatalogProbe(
   cwd: string,
   env: NodeJS.ProcessEnv,
   externalSignal: AbortSignal | undefined,
+  projectDir: string | undefined,
 ): Promise<ProbeOutcome<readonly DetectedModel[]>> {
   throwIfAborted(externalSignal);
-  const [, ...args] = command.command;
+  const [, ...declared] = command.command;
+  // The cwd stays neutral; only the header names the project, encoded as
+  // OpenCode's own client encodes it, so no path segment becomes an argument.
+  const args =
+    projectDir === undefined || command.directoryHeader === undefined
+      ? declared
+      : [...declared, '-H', `${command.directoryHeader}:${encodeURIComponent(projectDir)}`];
   const timeoutMs =
     Number.isFinite(command.timeoutMs) && command.timeoutMs > 0
       ? Math.min(command.timeoutMs, CATALOG_PROBE_TIMEOUT_CEILING_MS)
@@ -487,6 +495,8 @@ export async function probeContextCatalog(
     version: ProbeOutcome<string>;
     refresh: 'automatic' | 'manual';
     projectDir: string;
+    /** The listing names `projectDir` to a tool that declares a directory header. */
+    namesProject: boolean;
     now: () => number;
     signal: AbortSignal | undefined;
     /** This pass's auth status run. When its argv is the catalog's, its output is the listing. */
@@ -554,6 +564,7 @@ export async function probeContextCatalog(
             neutralDir,
             environment.env,
             input.signal,
+            input.namesProject ? input.projectDir : undefined,
           );
     const after = await resolveCustomExecutable({
       command: operation.executable.executableIdentity.canonicalPath,

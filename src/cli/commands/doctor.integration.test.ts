@@ -654,7 +654,14 @@ describe('doctor command', () => {
             requestId: 1,
             providers: [],
             cliTools: [],
-            cliCatalogs: [{ tool: 'opencode', models: [{ id: 'ollama/llama3' }], probedAt: 1 }],
+            cliCatalogs: [
+              {
+                tool: 'opencode',
+                models: [{ id: 'ollama/llama3' }],
+                namesProject: true,
+                probedAt: 1,
+              },
+            ],
           },
         });
         const storesNoCredential = deriveCliReadiness({

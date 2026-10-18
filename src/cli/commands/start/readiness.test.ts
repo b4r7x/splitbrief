@@ -15,6 +15,7 @@ import { deriveCliReadiness } from '../../../core/schemas/readiness.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { readActive } from '../../../core/sessions/active-pointer.js';
 import { prepareNewSession } from '../../../core/sessions/prepare.js';
+import { saveDetectionCache } from '../../../engine/detection/cache.js';
 import {
   detectRunnerEvidence,
   runnerDiscoveryContextKey,
@@ -329,12 +330,12 @@ describe('readConfiguredCliRoutes', () => {
     });
   }
 
-  /** OpenCode's model list, read from the tool, serves `ollama/llama3`. */
-  function listReads(): () => number {
+  /** OpenCode's model list, read from the tool: by default it serves `ollama/llama3`. */
+  function listReads(models: readonly string[] = ['ollama/llama3']): () => number {
     vi.mocked(detectRunnerEvidence).mockImplementation(async ({ context }) => ({
       ...cliEvidence(context),
       runner: { id: 'opencode', kind: 'cli', locality: 'local', enabled: 'enabled' },
-      catalog: { kind: 'success', value: [{ id: 'ollama/llama3' }] },
+      catalog: { kind: 'success', value: models.map((id) => ({ id })) },
     }));
     return () =>
       vi.mocked(detectRunnerEvidence).mock.calls.filter(([input]) => input.includeCatalog === true)
@@ -356,6 +357,63 @@ describe('readConfiguredCliRoutes', () => {
     expect(routes.catalogs).toEqual([
       expect.objectContaining({ tool: 'opencode', models: [{ id: 'ollama/llama3' }] }),
     ]);
+  });
+
+  /** A list saved before OpenCode joined the crew: its read did not name the project. */
+  async function saveUnnamedList(projectDir: string, models: readonly string[]): Promise<void> {
+    await saveDetectionCache({
+      projectDir,
+      snapshot: {
+        contextKey: 'remembered',
+        fetchedAt: 1,
+        validatedAt: 1,
+        generation: 1,
+        requestId: 1,
+        providers: [],
+        cliTools: [],
+        cliCatalogs: [{ tool: 'opencode', models: models.map((id) => ({ id })), probedAt: 1 }],
+      },
+    });
+  }
+
+  it('reads no list for a route a saved list serves, also one that did not name the project', async () => {
+    const reads = listReads();
+    const config = makeConfig({ implementer: LOCAL_ROUTE });
+    const projectDir = projectWithConfig(config);
+    await saveUnnamedList(projectDir, ['ollama/llama3']);
+
+    const routes = await readConfiguredCliRoutes({
+      routeCatalogs: new Map(),
+      projectDir,
+      config,
+      cliReadiness: [opencodeReadiness({ kind: 'empty' })],
+    });
+
+    expect(reads()).toBe(0);
+    expect(routes.catalogs).toEqual([
+      expect.objectContaining({ tool: 'opencode', models: [{ id: 'ollama/llama3' }] }),
+    ]);
+  });
+
+  it('reads the routes of one tool on two providers against its fresh list, not a saved one that did not name the project', async () => {
+    const fresh = ['ollama/llama3', 'ollama-cloud/glm-5'];
+    const reads = listReads(fresh);
+    const config = makeConfig({
+      planner: LOCAL_ROUTE,
+      implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/glm-5' },
+    });
+    const projectDir = projectWithConfig(config);
+    await saveUnnamedList(projectDir, ['ollama/llama3']);
+
+    const routes = await readConfiguredCliRoutes({
+      routeCatalogs: new Map(),
+      projectDir,
+      config,
+      cliReadiness: [opencodeReadiness({ kind: 'empty' })],
+    });
+
+    expect(reads()).toBe(1);
+    expect(routes.catalogs).toEqual([{ tool: 'opencode', models: fresh.map((id) => ({ id })) }]);
   });
 
   it('reads no list when a stored credential covers the route', async () => {

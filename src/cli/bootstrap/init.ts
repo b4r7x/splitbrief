@@ -5,7 +5,7 @@ import { createLogger } from '../../lib/logger.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
 import { loadProjectState, teardownProjectState } from './project.js';
-import { loadDiscovery } from './discovery.js';
+import { loadDiscovery, teardownDiscovery } from './discovery.js';
 
 export function bootstrapStoresSync(projectDir: string, opts: WorkflowOpts = {}): void {
   initLogger(projectDir);
@@ -43,6 +43,7 @@ export async function initStores(projectDir: string, opts: WorkflowOpts = {}): P
 
 export function teardownStores(): void {
   teardownProjectState();
+  teardownDiscovery();
 }
 
 function initUIChrome(): void {

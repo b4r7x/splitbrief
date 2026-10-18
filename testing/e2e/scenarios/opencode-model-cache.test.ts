@@ -45,6 +45,7 @@ describe('e2e: OpenCode model cache', () => {
   it('merges new rows and removes a cached row only after two consecutive absences', async () => {
     const responsePath = join(shimDir, 'response.json');
     const shimPath = join(shimDir, 'opencode');
+    // OpenCode is on BUILD, so the shim answers only a listing that names the project.
     writeFileSync(
       shimPath,
       `#!/bin/sh
@@ -56,7 +57,7 @@ if [ "$1" = "auth" ] && [ "$2" = "list" ]; then
   printf '%s\\n' '[{"name":"p","connections":[{"type":"credential"}]}]'
   exit 0
 fi
-if [ "$#" -eq 3 ] && [ "$1" = "api" ] && [ "$2" = "GET" ] && [ "$3" = "/api/model" ]; then
+if [ "$#" -eq 5 ] && [ "$1" = "api" ] && [ "$2" = "GET" ] && [ "$3" = "/api/model" ] && [ "$4" = "-H" ] && [ "$5" = ${shellQuoteArg(`x-opencode-directory:${encodeURIComponent(projectDir)}`)} ]; then
   exec /bin/cat ${shellQuoteArg(responsePath)}
 fi
 printf 'Unexpected opencode arguments: %s\\n' "$*" >&2

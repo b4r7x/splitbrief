@@ -8,7 +8,11 @@ import { getDefaultDetectionService } from '../../engine/detection/service.js';
 import {
   detectionContextsForCurrentConfig,
   loadDetectionForCurrentConfig,
+  refreshDetectionForCurrentConfig,
 } from '../../engine/detection/store-publication.js';
+import { listsProjectProvidersOnRequest } from '../../engine/detection/route-catalog.js';
+import { crewCliTools } from '../../core/crew/seats.js';
+import { isCliToolId } from '../../core/runners/cli-tool-catalog.js';
 import {
   hydrateDetectionIntoStores,
   hydrateModelsDevCatalogIntoStores,
@@ -21,6 +25,7 @@ import type { Config } from '../../core/schemas/config.js';
 import { loadConfig } from '../../core/config/load/io.js';
 
 const inFlightDiscovery = new Set<Promise<void>>();
+let crewWatchTeardown: (() => void) | null = null;
 
 function trackDiscovery(work: Promise<void>): void {
   inFlightDiscovery.add(work);
@@ -40,6 +45,11 @@ export async function awaitBackgroundDiscovery(): Promise<void> {
 export async function loadDiscovery(projectDir: string): Promise<void> {
   const storeConfig = configStore.get().config;
   if (!storeConfig) return;
+  teardownDiscovery();
+  let watchCancelled = false;
+  crewWatchTeardown = () => {
+    watchCancelled = true;
+  };
 
   try {
     const caps = await detectCapabilities(storeConfig);
@@ -69,13 +79,59 @@ export async function loadDiscovery(projectDir: string): Promise<void> {
       service: getDefaultDetectionService(),
       publication: detectionStore,
       current,
-    }).catch((err: unknown) => {
-      warnError('Could not refresh runner discovery', err);
-    }),
+    })
+      .catch((err: unknown) => {
+        warnError('Could not refresh runner discovery', err);
+      })
+      .then(() => {
+        if (!watchCancelled) crewWatchTeardown = watchCrewForProjectListing(storeConfig);
+      }),
   );
 
   const skills = await discoverSkills(projectDir);
   skillsStore.setAvailable(skills);
+}
+
+export function teardownDiscovery(): void {
+  crewWatchTeardown?.();
+  crewWatchTeardown = null;
+}
+
+/**
+ * A tool whose model list carries the project's own providers only when the read names the project
+ * was listed without them while it sat outside the crew of the start-up read. When the crew gains
+ * it — on a seat or as a fallback — the lists are read again, as `/refresh` does. The watch starts
+ * when the start-up read settles and first compares that read's crew with the current one: a read
+ * started earlier would supersede a newer one, so a change made during it waits for it.
+ */
+function watchCrewForProjectListing(loadedConfig: Config): () => void {
+  let previous = crewCliTools(loadedConfig);
+  const refreshOnGain = () => {
+    const config = configStore.get().config;
+    const current = config === null ? new Set<string>() : crewCliTools(config);
+    const gained = [...current].some(
+      (tool) => !previous.has(tool) && isCliToolId(tool) && listsProjectProvidersOnRequest(tool),
+    );
+    previous = current;
+    if (!gained) return;
+    trackDiscovery(
+      refreshDetectionForCurrentConfig({
+        service: getDefaultDetectionService(),
+        publication: detectionStore,
+        getCurrent: () => {
+          const { config, projectDir } = configStore.get();
+          return config === null ? null : { config, projectDir };
+        },
+      }).then(
+        () => undefined,
+        (err: unknown) => {
+          warnError('Could not refresh runner discovery', err);
+        },
+      ),
+    );
+  };
+  refreshOnGain();
+  return configStore.subscribe(refreshOnGain);
 }
 
 async function hydrateRememberedDetection(

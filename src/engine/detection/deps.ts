@@ -1,6 +1,7 @@
 import type { Config } from '../../core/schemas/config.js';
 import { readActiveRunnerLens } from '../../core/config/accessors/active-runner.js';
 import { contentIdentityId } from '../../core/config/accessors/content-identity.js';
+import { crewCliTools } from '../../core/crew/seats.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import {
   projectRunnerDiscoveryContext,
@@ -242,6 +243,7 @@ export function createProductionDetectionDeps(
       discoverAllCliTools({
         contexts: catalogDiscoveryContexts(contexts),
         projectDir: input.projectDir,
+        crewTools: crewCliTools(input.config),
         refresh: mode,
         signal,
       }),
