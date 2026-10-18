@@ -1185,6 +1185,29 @@ describe('SetupScreen', () => {
     });
   });
 
+  it('gives a saved crew the same in-screen check for a signed-out tool, not init', async () => {
+    await withTempDir('setup-signed-out-saved', async (projectDir) => {
+      configStore.load(projectDir);
+      await configStore.save(makeConfig());
+      terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+      freshDiscovery(beginDiscovery(), 1, {
+        cliTools: [
+          cliDetectionFor('unauthenticated', 'codex'),
+          cliDetectionFor('ready', 'claude-code'),
+        ],
+        providers: [],
+      });
+
+      const ui = renderFeature(<SetupScreen />, { cols: 120, rows: 40 });
+      await flushEffects();
+
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('Sign in to OpenAI Codex CLI, then ⏎ on a seat and ctrl+r.');
+      expect(frame).not.toContain('splitbrief init');
+      ui.unmount();
+    });
+  });
+
   it('names the signed-out tools and keeps a crew that needs them unavailable', async () => {
     await withTempDir('setup-signed-out', async (projectDir) => {
       configStore.load(projectDir);
@@ -1207,7 +1230,7 @@ describe('SetupScreen', () => {
 
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain(
-        'Sign in to Claude Code CLI, OpenAI Codex CLI, then run `splitbrief init` again.',
+        'Sign in to Claude Code CLI, OpenAI Codex CLI, then ⏎ on a seat and ctrl+r.',
       );
       expect(frame).toContain(
         'Claude crew, Codex review    Unavailable · needs Claude Code CLI, OpenAI Codex CLI',
