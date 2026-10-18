@@ -96,7 +96,8 @@ Set it in Settings › Fallback, or write `fallback` under `planner`, `implement
 The Fallback section is directly below Crew. It has one row per seat: PLAN, BUILD, REVIEW.
 Each row shows the fallback as a seat identity, or `none · pause and ask`.
 A REVIEW that follows PLAN shows `= PLAN · …` and uses PLAN's fallback.
-A note names why the halt cannot offer it: ` · not installed`, a readiness state, or ` · same as the seat`.
+A note names why the halt cannot offer it: ` · not installed`, a readiness state, ` · needs sign-in`, or ` · same as the seat`.
+A tool signed in to other providers shows ` · needs sign-in` when the fallback route needs a sign-in: the tool has no credential for the route's provider, and its model list serves no model of it, or the route is the tool's own gateway (`opencode/…`, `kilo/…`).
 The BUILD row edits the default implementer profile's fallback.
 Setup shows no fallback. Crew rows show no fallback line.
 

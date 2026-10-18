@@ -211,8 +211,8 @@ The panel title reads `Seat down · <cause>`. The details carry the tool's own w
 | Seat already runs the fallback identity | `fallback: <identity> · the seat runs it now` |
 | Config of record does not load | `fallback: not read · config.yaml does not load` |
 
-The reason is `not installed` for a missing tool, or the tool's readiness state.
-`ready` and `unverified` do not block the fallback offer. Switching still requires admission.
+The reason is `not installed` for a missing tool, the tool's readiness state, or `needs sign-in`.
+`ready` and `unverified` do not block the fallback offer, except on a fallback route that the picker marks `needs sign-in` ([API keys](./API-KEYS.md#missing-credentials-in-the-runner-picker)). On that route the tool's credential listing does not name the route's provider, and either its model list was read and serves no model of that provider, or the route is the tool's own gateway (`opencode/…`, `kilo/…`). The reason is then `needs sign-in`, so the halt does not move the seat to that fallback. Switching still requires admission.
 The identity test is `isSeatIdentity` in `src/core/crew/identity.ts`. The same tool with no model, or the same resolved model, counts as the current seat.
 
 Set the seat's fallback in Settings › Fallback, or write it in `.splitbrief/config.yaml` using [Configuration §fallback](./CONFIGURATION.md#fallback).

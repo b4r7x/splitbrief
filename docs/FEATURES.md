@@ -336,7 +336,7 @@ Stopping keeps workspace changes. Closing follows [the Apply close path](./WORKF
 
 ### Seat fallback
 
-**What it does.** Each seat can name a CLI fallback. Settings › Fallback is directly below Crew and has one row for PLAN, BUILD and REVIEW. A row shows the fallback's seat identity, or `none · pause and ask`. An inherited REVIEW shows `= PLAN · …` and uses PLAN's fallback. A note names `not installed`, another readiness state, or `same as the seat`. Crew rows show no fallback line. Setup shows no fallback.
+**What it does.** Each seat can name a CLI fallback. Settings › Fallback is directly below Crew and has one row for PLAN, BUILD and REVIEW. A row shows the fallback's seat identity, or `none · pause and ask`. An inherited REVIEW shows `= PLAN · …` and uses PLAN's fallback. A note names `not installed`, another readiness state, `needs sign-in`, or `same as the seat`. A tool signed in to other providers shows `needs sign-in` on a fallback route that the picker marks the same way, and the seat does not move to it by itself. Crew rows show no fallback line. Setup shows no fallback.
 
 **How to use.** Press ⏎ on a Fallback row. The same tool/model picker opens with the title `<SEAT> fallback · tool, model, effort`. None is first and clears the fallback. The picker offers only CLI tools that the seat can host. It has the seat's model, effort and variant axes, with model-id axes in `fallback.model`, and no auth-method row. It refuses the seat's own identity with `<SEAT> runs <identity> now · choose another tool or model`. A typed custom model saves `fallback.model` only under `Custom fallback model · <SEAT>`.
 
