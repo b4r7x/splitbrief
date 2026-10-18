@@ -103,6 +103,22 @@ it.each(['live', 'transcript'] as const)(
   },
 );
 
+it.each(['live', 'transcript'] as const)(
+  'ends a %s check that has no command on its lead, with no empty slot',
+  (context) => {
+    expect(suiteStageParts({ id: 'K4', moment: 'plan', command: '' }, context)).toEqual([
+      { text: 'Plan', tone: 'planner' },
+      { text: ' check K4', tone: 'textDim' },
+    ]);
+  },
+);
+
+it('ends the live status of a check that has no command on its lead', () => {
+  expect(
+    suiteStatusText({ phase: 'implementing', suite: { id: 'K4', moment: 'plan', command: '' } }),
+  ).toBe('Plan check K4');
+});
+
 describe('activeVerb', () => {
   it('uses the review activity wording for a running reviewer and for a waiting verdict', () => {
     resetWorkflow();

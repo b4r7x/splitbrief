@@ -391,6 +391,18 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(fullSuiteRow(reviewCheck({ id: 'V3', status: 'not-run', detail: 'V2 failed' }))).toBe(
       'Reviewer check V3 · npm test · not\u00a0run · V2 failed',
     );
+    expect(
+      fullSuiteRow(
+        reviewCheck({
+          phase: 'implementing',
+          id: 'K4',
+          moment: 'plan',
+          command: '',
+          status: 'not-run',
+          detail: 'no affected test file found',
+        }),
+      ),
+    ).toBe('Plan check K4 · not\u00a0run · no affected test file found');
   });
 
   it.each(['pre-review', 'base', 'brief'] as const)(
