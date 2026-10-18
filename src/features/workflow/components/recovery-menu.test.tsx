@@ -3,13 +3,17 @@ import { defaultTheme, ThemeProvider } from '../../../components/theme.js';
 import { paint } from '../../../core/theme/paint.js';
 import { resolveTheme } from '../../../core/theme/resolve.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { listRowLead } from '../../../components/list-row.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { createDraftDocument } from '../../../core/composer/document.js';
+import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { RecoveryMenu } from './recovery-menu.js';
+
+afterEach(() => composerLiveStore.reset());
 
 function mount(onResolve: (answer: string) => void, width = 80, issue = makeRecoveryIssue()) {
   return renderFeature(
@@ -299,6 +303,25 @@ it('says what ⏎ in the composer does while it holds focus, and lists no live k
   expect(frame).not.toContain('↑↓ select');
   expect(frame).toContain('Continue');
   expect(frame).not.toContain('c   Continue');
+  ui.unmount();
+});
+
+it('says ⏎ runs the command when the composer holds a slash command', async () => {
+  composerLiveStore.setDraft(createDraftDocument('/scroll top'));
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={makeRecoveryIssue()}
+      width={80}
+      clampedBoxRows={14}
+      focused={false}
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  const frame = stripAnsiStyles(ui.lastFrame());
+  expect(frame).toContain('⏎ runs the command · tab back to the actions');
+  expect(frame).not.toContain('typed correction');
   ui.unmount();
 });
 

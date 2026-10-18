@@ -22,6 +22,8 @@ import {
   recommendedRecoveryAction,
 } from '../recovery-prompt.js';
 import { countPromptBodyRows } from '../prompt-body-rows.js';
+import { isCommandDraft } from '../../../core/composer/submission.js';
+import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 
 interface ActionItem {
   action: RecoveryAction;
@@ -140,8 +142,10 @@ export function RecoveryMenu({
   // Tab hands the keys to the composer, where a letter is a typed letter, so the panel stops
   // advertising its keys until focus comes back and says what ⏎ there does instead.
   const correctionAction = correctionActionFor(issue);
-  const composerLegend =
-    correctionAction === undefined
+  const commandDraft = composerLiveStore.use((draft) => isCommandDraft(draft.document));
+  const composerLegend = commandDraft
+    ? '⏎ runs the command'
+    : correctionAction === undefined
       ? 'typing goes to the composer'
       : `⏎ ${recoveryMenuLabel(correctionAction, issue)} with the typed correction`;
   const legend = fitKeyLegend(

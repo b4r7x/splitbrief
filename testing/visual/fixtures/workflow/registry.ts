@@ -261,6 +261,19 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       },
     });
   }
+  if (
+    projection.scenarioId === 'workflow-recovery-slash-draft' ||
+    projection.scenarioId === 'workflow-recovery-slash-list'
+  ) {
+    const draft = projection.scenarioId === 'workflow-recovery-slash-draft' ? '/scroll top ' : '/s';
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        await write.press('\t');
+        await write.press(draft);
+      },
+    });
+  }
   if (projection.scenarioId === 'workflow-resuming') {
     return () => {
       const lifecycle = base();
@@ -775,6 +788,11 @@ const checkpointPredicates = [
     checkpointId('consult-bound-note'),
     includesAll('Continue with the typed correction', CONSULT_BOUND_NOTE),
   ],
+  [
+    checkpointId('recovery-slash-draft'),
+    includesAll('⏎ runs the command · tab back to the actions', '/scroll top'),
+  ],
+  [checkpointId('recovery-slash-list'), includesAll('/skills', 'tab fill')],
   [checkpointId('review-failed'), includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is')],
   [checkpointId('review-fix-again'), includesAll('Recovery  Fix again')],
   [
