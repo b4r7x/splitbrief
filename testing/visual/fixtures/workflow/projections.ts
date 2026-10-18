@@ -244,6 +244,11 @@ export interface WorkflowFixtureProjection {
    * carries is prompted by the real recovery driver instead of staged by the fixture.
    */
   readonly resumeState?: WorkflowState;
+  /**
+   * What the resumed run does before it halts: the events it publishes, then the halt it saves as
+   * the engine saves it, so the screen's own loop reads the halt back and opens the panel.
+   */
+  readonly resumedRun?: { readonly events: readonly EngineEvent[]; readonly halt: RecoveryIssue };
   readonly summary?: Readonly<Summary>;
   readonly stop?: FixtureStopState;
   /** Set when the scenario shows a run that is not moving; the screen mounts no runner. */
@@ -3017,6 +3022,60 @@ const applyConflictRecoveryProjection: WorkflowFixtureProjection = {
       createdAt: new Date(FIXED_TS).toISOString(),
     }),
   }),
+};
+
+const resumedApplyPartialIssue = buildApplyPartialRecoveryIssue({
+  backupId: 'visual-apply',
+  backupDir: '.splitbrief/apply-backups/visual-apply',
+  createdAt: new Date(FIXED_TS).toISOString(),
+  written: [WORKFLOW_FIXTURE_REVIEW_FILE],
+  files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+  failedFile: WORKFLOW_FIXTURE_SECOND_FILE,
+  cause: 'EACCES: permission denied',
+});
+
+/**
+ * A run that passed its review continues into Apply, and Apply stops part way. The run logs its
+ * resume in `complete`, then the halt, as a live run logs them; the rail keeps the passed review.
+ */
+const resumedApplyPartialRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-resumed-apply-partial'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  config: AGY_CREW,
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'complete',
+    reviewStatus: 'passed',
+    workspace: {
+      kind: 'worktree',
+      path: '.splitbrief/worktrees/visual/workspace',
+      base: { snapshotId: 'visual-base', head: null },
+    },
+  }),
+  events: [],
+  resumedRun: {
+    get events(): EngineEvent[] {
+      return publishedEvents(FIXED_TS, (bus) => {
+        const phase = 'complete';
+        bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase });
+        publishError({
+          bus,
+          phase,
+          message: resumedApplyPartialIssue.message,
+          safety: { category: 'recovery', code: 'apply_partial' },
+        });
+        publishRecoveryPrompted(
+          { bus, phase },
+          VISUAL_WORKFLOW_SESSION_ID,
+          resumedApplyPartialIssue,
+        );
+      });
+    },
+    halt: resumedApplyPartialIssue,
+  },
 };
 
 const reviewContextRecoveryProjection: WorkflowFixtureProjection = {
@@ -6114,6 +6173,7 @@ const projections = [
   reviewFixAgainProjection,
   reviewUnverifiedRecoveryProjection,
   applyConflictRecoveryProjection,
+  resumedApplyPartialRecoveryProjection,
   reviewContextRecoveryProjection,
   reviewCallFailedRecoveryProjection,
   leftIsolationRecoveryProjection,
@@ -6168,10 +6228,15 @@ export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixture
     ].map((projection) => [projection.scenarioId, projection]),
   );
 
-/** The text the question panel prints: a clarification prompt, or the halt the resumed state carries. */
+/** The halt on screen: the one the resumed state carries, or the one its run raises. */
+export function fixtureHalt(projection: WorkflowFixtureProjection): RecoveryIssue | undefined {
+  return projection.resumeState?.pendingRecovery ?? projection.resumedRun?.halt;
+}
+
+/** The text the question panel prints: a clarification prompt, or the halt on screen. */
 export function fixtureQuestionHint(projection: WorkflowFixtureProjection): string | null {
   if (projection.question !== undefined) return projection.question.prompt;
-  const halt = projection.resumeState?.pendingRecovery;
+  const halt = fixtureHalt(projection);
   return halt === undefined ? null : formatRecoveryPrompt(halt);
 }
 

@@ -651,6 +651,12 @@ const checkpointPredicates = [
       includesAll('Re-run Apply', 'Apply found 2 conflicting files')(context) &&
       excludesAll('the review')(context),
   ],
+  // The halt is on screen and the live resume into Apply has landed.
+  [
+    checkpointId('recovery-resumed-apply-partial'),
+    (context) =>
+      includesAll('Apply stopped part way')(context) && lifecycleStore.get().status === 'running',
+  ],
   [checkpointId('resuming'), includesAll('Resuming T')],
   [
     checkpointId('at-rest-closed-elsewhere'),

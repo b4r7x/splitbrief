@@ -152,12 +152,15 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
     expect(controlsStore.get().sidebarVisible).toBe(projection.sidebarVisible);
     if (projection.atRest === undefined) {
       // A resumed halt republishes its own prompt through the recovery driver, so
-      // that one event belongs to production, not to the projection's event list.
+      // that one event belongs to production, not to the projection's event list. A run that
+      // resumes and halts publishes its own events, its prompt among them.
       const consultAnswer =
         projection.scenarioId === 'workflow-consult-answer-default' ||
         projection.scenarioId === 'workflow-consult-answer-typed';
       const drivenEvents =
-        (projection.resumeState?.pendingRecovery === undefined ? 0 : 1) + (consultAnswer ? 1 : 0);
+        (projection.resumeState?.pendingRecovery === undefined ? 0 : 1) +
+        (consultAnswer ? 1 : 0) +
+        (projection.resumedRun?.events.length ?? 0);
       expect(eventsStore.get().events).toHaveLength(
         mergeEventLog([...projection.events]).length + drivenEvents,
       );

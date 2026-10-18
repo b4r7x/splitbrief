@@ -2791,6 +2791,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-resumed-apply-partial',
+      title: 'Workflow · Apply stopped part way after the run resumed into it',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-resumed-apply-partial',
+        title: 'Apply-partial recovery menu after the resume',
+        kind: 'question',
+        marker: 'Re-run Apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-review-unverified',
       title: 'Workflow · a final review that left criteria unverified',
       surface: screenSurface('workflow'),
