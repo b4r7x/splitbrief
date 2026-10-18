@@ -244,7 +244,10 @@ export type RawCopilotCliContract = Readonly<{
   command: typeof COPILOT_COMMAND;
   role: 'planner' | 'implementer';
   versionArgs: readonly ['--version'];
-  auth: Readonly<{ kind: 'env-or-native'; env: readonly ['GH_TOKEN', 'GITHUB_TOKEN'] }>;
+  auth: Readonly<{
+    kind: 'env-or-native';
+    env: readonly ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'];
+  }>;
   rawInvocation: readonly string[];
   promptTransport: 'argv';
   expectedRawTerminal: 'process-exit';
@@ -265,7 +268,7 @@ function rawContract(role: 'planner' | 'implementer'): RawCopilotCliContract {
     command: COPILOT_COMMAND,
     role,
     versionArgs: COPILOT_VERSION_ARGS,
-    auth: { kind: 'env-or-native', env: ['GH_TOKEN', 'GITHUB_TOKEN'] },
+    auth: { kind: 'env-or-native', env: ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'] },
     rawInvocation:
       role === 'planner'
         ? [

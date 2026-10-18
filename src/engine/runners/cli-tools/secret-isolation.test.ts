@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished } from 'vitest';
 import { SANDBOX_DIR } from '../../../core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
@@ -272,6 +272,12 @@ describe('readonly provider bridge canary matrix', () => {
   const itUnix = process.platform === 'win32' ? it.skip : it;
 
   itUnix('bridges only the selected static CLI state snapshot and seals it read-only', async () => {
+    // Copilot bridges its files on Linux; on macOS its token is a keychain item.
+    const hostPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    onTestFinished(() => {
+      Object.defineProperty(process, 'platform', { value: hostPlatform, configurable: true });
+    });
     const hostHome = createTempDir('secret-isolation-bridge-host');
     const projectDir = createTempDir('secret-isolation-bridge-project');
     dirs.push(hostHome, projectDir);

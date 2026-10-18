@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -197,6 +197,8 @@ const HOST_DETECTION_ENV = [
   'XDG_DATA_HOME',
   'APPDATA',
   'LOCALAPPDATA',
+  'COPILOT_HOME',
+  'COPILOT_GITHUB_TOKEN',
   'GH_TOKEN',
   'GITHUB_TOKEN',
   'OPENAI_API_KEY',
@@ -348,7 +350,9 @@ describe('all-admitted-tools auth channels', () => {
               'claude-code': 'authenticated',
               codex: 'authenticated',
               opencode: 'authenticated',
-              copilot: 'authenticated',
+              // Copilot's macOS token is a keychain item and Copilot has no status
+              // command, so there the seeded config file proves nothing.
+              copilot: process.platform === 'darwin' ? 'unknown' : 'authenticated',
               'kilo-code': 'authenticated',
               cursor: 'authenticated',
               'command-code': 'authenticated',
@@ -359,7 +363,11 @@ describe('all-admitted-tools auth channels', () => {
             },
           );
           const copilot = result.cliTools.find((detection) => detection.tool === 'copilot');
-          expect(copilot?.diagnostic).toEqual({ state: 'ready', remediation: null });
+          expect(copilot?.diagnostic).toMatchObject(
+            process.platform === 'darwin'
+              ? { state: 'unverified' }
+              : { state: 'ready', remediation: null },
+          );
         },
       });
     },
@@ -369,6 +377,12 @@ describe('all-admitted-tools auth channels', () => {
   it.runIf(process.platform !== 'win32')(
     'reports absent bridged session state as unauthenticated and unresolvable tools as unavailable',
     async () => {
+      // Copilot bridges its files on Linux; on macOS its token is a keychain item.
+      const hostPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      onTestFinished(() => {
+        Object.defineProperty(process, 'platform', { value: hostPlatform, configurable: true });
+      });
       await withAdmittedCliHost({
         shims: ['copilot'],
         sessionState: [],

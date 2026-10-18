@@ -12,11 +12,13 @@ export type SandboxStateRoot = 'home' | 'config' | 'data';
 
 /**
  * Where an entry's host root comes from: a host environment variable as it
- * stands, or an XDG base folder resolved the way OpenCode and Kilo Code
- * resolve it (`xdgBaseDir`), so a set `XDG_CONFIG_HOME` or `XDG_DATA_HOME`
- * replaces the HOME default instead of adding to it.
+ * stands, or a folder resolved the way the tool resolves it. `xdg-config` and
+ * `xdg-data` are XDG base folders as OpenCode and Kilo Code resolve them
+ * (`xdgBaseDir`), so a set `XDG_CONFIG_HOME` or `XDG_DATA_HOME` replaces the
+ * HOME default instead of adding to it. `copilot-home` is Copilot's config
+ * folder: `COPILOT_HOME` when set, else `HOME/.copilot`.
  */
-export type CliStateSource = HostStateEnvKey | 'xdg-config' | 'xdg-data';
+export type CliStateSource = HostStateEnvKey | 'xdg-config' | 'xdg-data' | 'copilot-home';
 
 type CliStatePath = Readonly<{
   source: CliStateSource;
@@ -26,6 +28,8 @@ type CliStatePath = Readonly<{
 }>;
 
 export const CURSOR_CLI_CONFIG_DESTINATION = '.cursor/cli-config.json';
+
+export const COPILOT_CONFIG_DESTINATION = '.copilot/config.json';
 
 /**
  * The allowlisted host state a file-bridged session channel may reach — never
@@ -88,10 +92,10 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
   ],
   copilot: [
     {
-      source: 'HOME',
-      relativePath: '.copilot/config.json',
+      source: 'copilot-home',
+      relativePath: 'config.json',
       destination: 'home',
-      destinationPath: '.copilot/config.json',
+      destinationPath: COPILOT_CONFIG_DESTINATION,
     },
     {
       source: 'HOME',
@@ -233,12 +237,14 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
  * the child the host's `unrestricted` / yolo setting and write-enable a planner
  * that was not given `--force`. Copilot's `oauth_token` is a long-lived GitHub
  * token that does not rotate on use, and Claude Code's file store has shown no
- * rotation — both stay on the sealed snapshot. Misclassification is asymmetric:
- * passing a static credential through costs only that directory's default
- * privacy, while snapshotting a rotating one destroys the login. CommandCode's
- * `~/.commandcode/auth.json` holds a named long-lived `apiKey` minted once at
- * login — it carries no refresh token and no rotation to lose — so it takes the
- * sealed snapshot rather than a live link.
+ * rotation — both stay on the sealed snapshot where they use a file. On macOS
+ * both keep the token in the login keychain instead, and their channels take
+ * the host account (`hostKeychainPlatforms`), so nothing is copied there.
+ * Misclassification is asymmetric: passing a static credential through costs
+ * only that directory's default privacy, while snapshotting a rotating one
+ * destroys the login. CommandCode's `~/.commandcode/auth.json` holds a named
+ * long-lived `apiKey` minted once at login — it carries no refresh token and no
+ * rotation to lose — so it takes the sealed snapshot rather than a live link.
  */
 type CliCredentialModel = 'static-secret' | 'rotating-oauth';
 

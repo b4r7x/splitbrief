@@ -92,8 +92,14 @@ function hostAccountAuthScript(hostHome: string): string {
 }
 
 describe('session-state presence readiness', () => {
+  const hostPlatform = process.platform;
+  const setPlatform = (value: NodeJS.Platform): void => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+
   afterEach(() => {
     vi.unstubAllEnvs();
+    setPlatform(hostPlatform);
   });
 
   // On macOS the Claude Code, Cursor and Antigravity session credentials are
@@ -105,16 +111,8 @@ describe('session-state presence readiness', () => {
   // host home is a temporary directory, so nothing here consults a real
   // keychain and every machine running the suite enforces the contract.
   describe('keychain-backed session channel', () => {
-    const hostPlatform = process.platform;
-    const setPlatform = (value: NodeJS.Platform): void => {
-      Object.defineProperty(process, 'platform', { value, configurable: true });
-    };
-
     beforeEach(() => {
       setPlatform('darwin');
-    });
-    afterEach(() => {
-      setPlatform(hostPlatform);
     });
 
     it.each(['claude-code', 'cursor', 'antigravity'] as const)(
@@ -220,11 +218,14 @@ describe('session-state presence readiness', () => {
   });
 
   it('never lets a bridged session file outvote the tool’s own status command', async () => {
+    // Copilot bridges its files on Linux; on macOS its token is a keychain item.
+    setPlatform('linux');
     await withTempDir('readiness-session-bridged', async (hostHome) => {
       const executable = await nodeExecutable();
       await mkdir(join(hostHome, '.copilot'), { recursive: true });
       await writeFile(join(hostHome, '.copilot', 'config.json'), '{"loggedInUsers":["fixture"]}');
       vi.stubEnv('HOME', hostHome);
+      vi.stubEnv('COPILOT_GITHUB_TOKEN', '');
       vi.stubEnv('GH_TOKEN', '');
       vi.stubEnv('GITHUB_TOKEN', '');
 
@@ -241,11 +242,13 @@ describe('session-state presence readiness', () => {
   });
 
   it('authenticates a probe-less session channel from bridged copilot state presence', async () => {
+    setPlatform('linux');
     await withTempDir('readiness-copilot-present', async (hostHome) => {
       const executable = await nodeExecutable();
       await mkdir(join(hostHome, '.copilot'), { recursive: true });
       await writeFile(join(hostHome, '.copilot', 'config.json'), '{"loggedInUsers":["fixture"]}');
       vi.stubEnv('HOME', hostHome);
+      vi.stubEnv('COPILOT_GITHUB_TOKEN', '');
       vi.stubEnv('GH_TOKEN', '');
       vi.stubEnv('GITHUB_TOKEN', '');
 
@@ -262,9 +265,11 @@ describe('session-state presence readiness', () => {
   });
 
   it('does not read a probe-less session channel as authenticated from the probe’s own litter', async () => {
+    setPlatform('linux');
     await withTempDir('readiness-copilot-litter', async (hostHome) => {
       const executable = await nodeExecutable();
       vi.stubEnv('HOME', hostHome);
+      vi.stubEnv('COPILOT_GITHUB_TOKEN', '');
       vi.stubEnv('GH_TOKEN', '');
       vi.stubEnv('GITHUB_TOKEN', '');
 
@@ -288,9 +293,11 @@ describe('session-state presence readiness', () => {
   });
 
   it('keeps a probe-less session channel unauthenticated when no session state exists', async () => {
+    setPlatform('linux');
     await withTempDir('readiness-copilot-absent', async (hostHome) => {
       const executable = await nodeExecutable();
       vi.stubEnv('HOME', hostHome);
+      vi.stubEnv('COPILOT_GITHUB_TOKEN', '');
       vi.stubEnv('GH_TOKEN', '');
       vi.stubEnv('GITHUB_TOKEN', '');
 
@@ -319,6 +326,79 @@ describe('session-state presence readiness', () => {
     });
 
     expect(result.auth).toBe('not-checked');
+  });
+
+  it('does not verify a macOS Copilot sign-in from its config file', async () => {
+    setPlatform('darwin');
+    await withTempDir('readiness-copilot-darwin', async (hostHome) => {
+      const executable = await nodeExecutable();
+      // On macOS `config.json` lists the signed-in users, and the token itself
+      // is a keychain item no file check can see.
+      await mkdir(join(hostHome, '.copilot'), { recursive: true });
+      await writeFile(join(hostHome, '.copilot', 'config.json'), '{"loggedInUsers":["fixture"]}');
+      vi.stubEnv('HOME', hostHome);
+      vi.stubEnv('COPILOT_GITHUB_TOKEN', '');
+      vi.stubEnv('GH_TOKEN', '');
+      vi.stubEnv('GITHUB_TOKEN', '');
+
+      const result = await probeCliReadiness({
+        tool: 'copilot',
+        executable,
+        authChannel: 'session',
+        probe: sessionProbe({ authNotRun: true }),
+        classifyVersion: () => 'compatible',
+      });
+
+      expect(result).toMatchObject({ auth: 'unknown', status: 'unverified' });
+    });
+  });
+
+  it('counts COPILOT_GITHUB_TOKEN as a Copilot credential', async () => {
+    setPlatform('linux');
+    await withTempDir('readiness-copilot-token', async (hostHome) => {
+      const executable = await nodeExecutable();
+      vi.stubEnv('HOME', hostHome);
+      vi.stubEnv('COPILOT_GITHUB_TOKEN', 'github_pat_readiness_fixture');
+      vi.stubEnv('GH_TOKEN', '');
+      vi.stubEnv('GITHUB_TOKEN', '');
+
+      const result = await probeCliReadiness({
+        tool: 'copilot',
+        executable,
+        authChannel: 'session',
+        probe: sessionProbe({ authNotRun: true }),
+        classifyVersion: () => 'compatible',
+      });
+
+      expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
+    });
+  });
+
+  it('does not verify Copilot from a Copilot IDE-plugin file alone', async () => {
+    setPlatform('linux');
+    await withTempDir('readiness-copilot-ide-plugin', async (hostHome) => {
+      const executable = await nodeExecutable();
+      await mkdir(join(hostHome, '.config', 'github-copilot'), { recursive: true });
+      await writeFile(
+        join(hostHome, '.config', 'github-copilot', 'apps.json'),
+        '{"github.com:Iv1":{"oauth_token":"ide-plugin-fixture"}}',
+      );
+      vi.stubEnv('HOME', hostHome);
+      vi.stubEnv('XDG_CONFIG_HOME', '');
+      vi.stubEnv('COPILOT_GITHUB_TOKEN', '');
+      vi.stubEnv('GH_TOKEN', '');
+      vi.stubEnv('GITHUB_TOKEN', '');
+
+      const result = await probeCliReadiness({
+        tool: 'copilot',
+        executable,
+        authChannel: 'session',
+        probe: sessionProbe({ authNotRun: true }),
+        classifyVersion: () => 'compatible',
+      });
+
+      expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
+    });
   });
 });
 

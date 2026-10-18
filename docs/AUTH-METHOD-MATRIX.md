@@ -43,7 +43,7 @@ Every tool can hold the planner and the implementer seat; the reviewer seat reus
 | `cursor` · `api-key` | none | `CURSOR_API_KEY` only | private `HOME`; nothing bridged |
 | `opencode` · `provider-dependent` | none | live passthrough of the OpenCode config and data folders your own OpenCode uses (`$XDG_CONFIG_HOME/opencode` and `$XDG_DATA_HOME/opencode`, or `~/.config/opencode` and `~/.local/share/opencode` when those variables are unset), **plus every `*_API_KEY` in the parent environment** | nothing |
 | `kilo-code` · `provider-dependent` | none | live passthrough of the Kilo Code config and data folders your own Kilo Code uses (`$XDG_CONFIG_HOME/kilo` and `$XDG_DATA_HOME/kilo`, or `~/.config/kilo` and `~/.local/share/kilo` when those variables are unset), and of the folders of older Kilo Code versions when they exist (`~/.kilocode`, and `$XDG_CONFIG_HOME/kilocode` or `~/.config/kilocode`), **plus every `*_API_KEY` in the parent environment** | nothing |
-| `copilot` · `session` | none | `GH_TOKEN` / `GITHUB_TOKEN` **and** a sealed copy of Copilot's credential files, simultaneously | nothing |
+| `copilot` · `session` | none | `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` **and**, simultaneously, on macOS the real `HOME`/`USER` (keychain) plus a set `COPILOT_HOME`; on Linux a sealed copy of `config.json` from `COPILOT_HOME` or `~/.copilot` and of the Copilot editor-plugin files | nothing |
 | `command-code` · `session` | none | sealed copy of the tool's credential files | no credential env var exists |
 | `antigravity` · `session` | none | macOS: real `HOME`/`USER` (`host-account`), with no copied files. Linux: no credential bridge | no credential env var is accepted for this tool |
 
@@ -55,11 +55,11 @@ The `*_API_KEY` passthrough on provider-dependent channels is deliberate: OpenCo
 
 ## Behavior under competing, missing and shared credentials
 
-**Competing credentials.** Only Copilot documents a precedence, and it is the host's, not SPLITBRIEF's: `copilot help environment` states that `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` (in that order) are "an authentication token that takes precedence over previously stored credentials". SPLITBRIEF's Copilot `session` channel declares both the env vars and the file bridge, so both sources are present at once and the tool's rule decides. No other supported tool documents a precedence between an environment credential and a stored login, so for every other tool the installed build decides.
+**Competing credentials.** Only Copilot documents a precedence, and it is the host's, not SPLITBRIEF's: `copilot help environment` states that `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` (in that order) are "an authentication token that takes precedence over previously stored credentials". SPLITBRIEF's Copilot `session` channel declares both the env vars and the host state (the keychain on macOS, the file bridge elsewhere), so both sources are present at once and the tool's rule decides. No other supported tool documents a precedence between an environment credential and a stored login, so for every other tool the installed build decides.
 
 **Missing selected credential.** An explicit `session` or `api-key` selection without exact invocation-enforcement evidence is refused before the child starts, regardless of alternate host credentials. Use host configuration by omitting the choice.
 
-**Shared login state.** SPLITBRIEF does not invoke login, logout or account-switch commands. File staging depends on the tool: Codex, OpenCode and Kilo use live state paths; Cursor does so where its channel uses files. Claude Code, Copilot and Command Code use sealed copies where file staging applies. The macOS session channels for Claude Code, Cursor and Antigravity instead keep the real `HOME` and `USER` so the OS keychain is reachable. Those children can update their own host state; the sealed-file guarantee does not apply to them. Antigravity has no file bridge on Linux. These are staging rules, not an authentication-method guarantee.
+**Shared login state.** SPLITBRIEF does not invoke login, logout or account-switch commands. File staging depends on the tool: Codex, OpenCode and Kilo use live state paths; Cursor does so where its channel uses files. Claude Code, Copilot and Command Code use sealed copies where file staging applies. The macOS session channels for Claude Code, Cursor, Antigravity and Copilot instead keep the real `HOME` and `USER` so the OS keychain is reachable. Those children can update their own host state; the sealed-file guarantee does not apply to them. Antigravity has no file bridge on Linux. These are staging rules, not an authentication-method guarantee.
 
 **Staging parity.** The readiness probe and the runner build their environment from the same channel rules. The only difference is the sandbox root, which changes which directory the child gets, not which credential. A channel that readiness reports as authenticated is staged the same way for the run.
 
@@ -85,7 +85,7 @@ The credential variables of a runner come from one place per kind:
 | `claude-code` `session` / `api-key` | none / `ANTHROPIC_API_KEY` | the channel's `env` |
 | `codex` `session` / `api-key` | none / `OPENAI_API_KEY` | the channel's `env` |
 | `cursor` `session` / `api-key` | none / `CURSOR_API_KEY` | the channel's `env` |
-| `copilot` `session` | `GH_TOKEN`, `GITHUB_TOKEN` | the channel's `env` |
+| `copilot` `session` | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` | the channel's `env` |
 | `command-code`, `antigravity` `session` | none | the channel's `env` |
 | `opencode`, `kilo-code` `provider-dependent` | every `*_API_KEY` of the parent | the provider-dependent rule above |
 | `shell`, `agent` (inline or in `customCommands`) | the names in the runner's `env` list | the runner config |

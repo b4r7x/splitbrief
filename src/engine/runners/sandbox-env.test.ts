@@ -43,6 +43,11 @@ const itUnix = process.platform === 'win32' ? it.skip : it;
 
 let dirs: string[] = [];
 const originalEnvValues = new Map<string, string | undefined>();
+const hostPlatform = process.platform;
+
+function setPlatform(value: NodeJS.Platform): void {
+  Object.defineProperty(process, 'platform', { value, configurable: true });
+}
 
 function setEnv(key: string, value: string): void {
   if (!originalEnvValues.has(key)) originalEnvValues.set(key, process.env[key]);
@@ -60,6 +65,7 @@ afterEach(() => {
     else process.env[key] = value;
   }
   originalEnvValues.clear();
+  setPlatform(hostPlatform);
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
@@ -656,6 +662,7 @@ describe('runnerAuthEnvKeys', () => {
       'OPENAI_API_KEY',
     ]);
     expect(runnerAuthEnvKeys({ kind: 'cli', tool: 'copilot', authChannel: 'session' })).toEqual([
+      'COPILOT_GITHUB_TOKEN',
       'GH_TOKEN',
       'GITHUB_TOKEN',
     ]);
@@ -927,6 +934,8 @@ describe('runnerAuthEnvKeys', () => {
   itUnix(
     'copies only selected static provider state once and seals the snapshot files',
     async () => {
+      // Copilot bridges its files on Linux; on macOS its token is a keychain item.
+      setPlatform('linux');
       const hostHome = createTempDir('sandbox-state-host');
       const projectDir = createTempDir('sandbox-state-copy');
       const escapeTarget = createTempDir('sandbox-state-escape');
@@ -1072,6 +1081,8 @@ describe('runnerAuthEnvKeys', () => {
   itUnix(
     "two implementer profiles on different tools receive distinct sandbox roots; neither HOME contains the other tool's state entry",
     async () => {
+      // Copilot bridges its files on Linux; on macOS its token is a keychain item.
+      setPlatform('linux');
       const hostHome = createTempDir('sandbox-tool-root-host');
       const projectDir = createTempDir('sandbox-tool-root-project');
       dirs.push(hostHome, projectDir);
@@ -1298,6 +1309,8 @@ describe('runnerAuthEnvKeys', () => {
   itUnix(
     'clears one named tool from the sandbox and leaves every other bridge standing',
     async () => {
+      // Copilot bridges its files on Linux; on macOS its token is a keychain item.
+      setPlatform('linux');
       const hostHome = createTempDir('sandbox-state-clear-one-host');
       const projectDir = createTempDir('sandbox-state-clear-one-project');
       dirs.push(hostHome, projectDir);
@@ -1335,6 +1348,8 @@ describe('runnerAuthEnvKeys', () => {
   );
 
   itUnix('clears bridged snapshots from every role root, not only the unscoped one', async () => {
+    // Copilot bridges its files on Linux; on macOS its token is a keychain item.
+    setPlatform('linux');
     const hostHome = createTempDir('sandbox-role-clear-host');
     const projectDir = createTempDir('sandbox-role-clear-project');
     dirs.push(hostHome, projectDir);
@@ -1943,6 +1958,8 @@ describe('concurrent sandbox acquisition', () => {
   itUnix(
     'serializes two concurrent acquisitions of one root; both succeed and each child reads the credential',
     async () => {
+      // Copilot bridges its files on Linux; on macOS its token is a keychain item.
+      setPlatform('linux');
       const hostHome = createTempDir('sandbox-concurrent-host');
       const projectDir = createTempDir('sandbox-concurrent-project');
       dirs.push(hostHome, projectDir);
@@ -1976,4 +1993,98 @@ describe('concurrent sandbox acquisition', () => {
       expect(statSync(sealed).mode & 0o777).toBe(0o400);
     },
   );
+});
+
+describe('Copilot session staging', () => {
+  const runner = { kind: 'cli', tool: 'copilot', authChannel: 'session' } as const;
+
+  itUnix('hands a macOS Copilot child the real HOME and USER and copies no file', async () => {
+    setPlatform('darwin');
+    const hostHome = createTempDir('sandbox-copilot-darwin-home');
+    const projectDir = createTempDir('sandbox-copilot-darwin');
+    dirs.push(hostHome, projectDir);
+    mkdirSync(join(hostHome, '.copilot'), { recursive: true });
+    writeFileSync(join(hostHome, '.copilot', 'config.json'), '{"loggedInUsers":["fixture"]}');
+    setEnv('HOME', hostHome);
+    unsetEnv('COPILOT_HOME');
+
+    const env = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
+
+    // Copilot keeps its macOS token in the login keychain, which resolves
+    // through HOME, so a private HOME holds no sign-in at all.
+    expect(env.HOME).toBe(hostHome);
+    expect(env.USER).toBe(userInfo().username);
+    expect(env.COPILOT_HOME).toBeUndefined();
+    const roleHome = join(projectDir, SANDBOX_DIR, 'implementer', 'copilot', 'home');
+    expect(existsSync(join(roleHome, '.copilot'))).toBe(false);
+    expect(sandboxCredentialValues(env)).toEqual([]);
+  });
+
+  itUnix('passes a set COPILOT_HOME to a macOS Copilot child', async () => {
+    setPlatform('darwin');
+    const hostHome = createTempDir('sandbox-copilot-darwin-copilot-home-host');
+    const copilotHome = createTempDir('sandbox-copilot-darwin-copilot-home');
+    const projectDir = createTempDir('sandbox-copilot-darwin-copilot-home-project');
+    dirs.push(hostHome, copilotHome, projectDir);
+    setEnv('HOME', hostHome);
+    setEnv('COPILOT_HOME', copilotHome);
+
+    const env = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
+
+    expect(env.COPILOT_HOME).toBe(copilotHome);
+  });
+
+  itUnix('bridges the Copilot config from a set COPILOT_HOME on Linux', async () => {
+    setPlatform('linux');
+    const hostHome = createTempDir('sandbox-copilot-linux-home');
+    const copilotHome = createTempDir('sandbox-copilot-linux-copilot-home');
+    const projectDir = createTempDir('sandbox-copilot-linux');
+    dirs.push(hostHome, copilotHome, projectDir);
+    // A stale default folder beside the one Copilot actually reads.
+    mkdirSync(join(hostHome, '.copilot'), { recursive: true });
+    writeFileSync(join(hostHome, '.copilot', 'config.json'), '{"stale":true}');
+    writeFileSync(join(copilotHome, 'config.json'), '{"oauth_token":"copilot-home-canary"}');
+    setEnv('HOME', hostHome);
+    setEnv('COPILOT_HOME', copilotHome);
+
+    const env = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
+
+    // The child keeps the private HOME and no COPILOT_HOME, so it reads the
+    // copy at `<sandbox HOME>/.copilot`.
+    expect(env.HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'copilot', 'home'));
+    expect(env.COPILOT_HOME).toBeUndefined();
+    expect(readFileSync(join(env.HOME as string, '.copilot', 'config.json'), 'utf8')).toBe(
+      '{"oauth_token":"copilot-home-canary"}',
+    );
+    expect(await bridgedCliStatePresent(env, 'copilot')).toBe(true);
+  });
+
+  it('passes COPILOT_GITHUB_TOKEN to a Copilot child', async () => {
+    const projectDir = createTempDir('sandbox-copilot-token');
+    dirs.push(projectDir);
+    setEnv('COPILOT_GITHUB_TOKEN', 'github_pat_copilot_canary');
+
+    const env = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
+
+    expect(env.COPILOT_GITHUB_TOKEN).toBe('github_pat_copilot_canary');
+  });
+
+  itUnix('does not count Copilot IDE-plugin files alone as a Copilot sign-in', async () => {
+    setPlatform('linux');
+    const hostHome = createTempDir('sandbox-copilot-ide-home');
+    const projectDir = createTempDir('sandbox-copilot-ide');
+    dirs.push(hostHome, projectDir);
+    mkdirSync(join(hostHome, '.config', 'github-copilot'), { recursive: true });
+    writeFileSync(
+      join(hostHome, '.config', 'github-copilot', 'apps.json'),
+      '{"github.com:Iv1":{"oauth_token":"ide-plugin-canary"}}',
+    );
+    setEnv('HOME', hostHome);
+    unsetEnv('COPILOT_HOME');
+    unsetEnv('XDG_CONFIG_HOME');
+
+    const env = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
+
+    expect(await bridgedCliStatePresent(env, 'copilot')).toBe(false);
+  });
 });
