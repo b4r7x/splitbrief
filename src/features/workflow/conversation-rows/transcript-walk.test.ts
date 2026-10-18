@@ -91,6 +91,101 @@ describe('walkTranscript', () => {
     ]);
   });
 
+  describe('an Apply recovery that resumes before its outcome', () => {
+    const applyPrompted: EngineEventOf<'recovery_prompted'> = {
+      type: 'recovery_prompted',
+      ts: 1_000,
+      phase: 'complete',
+      issueId: 'apply-1',
+      reason: 'apply-partial',
+      headline: 'Apply stopped part way',
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['retry-same-worker', 'restore-backup'],
+      recommendedAction: 'retry-same-worker',
+      resumeCommand: 'splitbrief continue',
+    };
+    const applySelected: EngineEventOf<'recovery_action_selected'> = {
+      type: 'recovery_action_selected',
+      ts: 2_000,
+      phase: 'complete',
+      issueId: applyPrompted.issueId,
+      reason: applyPrompted.reason,
+      action: 'retry-same-worker',
+    };
+    const resumed: EngineEvent = {
+      type: 'workflow_resumed',
+      ts: 3_000,
+      phase: 'complete',
+      inProcess: true,
+    };
+    const config: EngineEvent = {
+      type: 'workflow_config',
+      ts: 3_001,
+      phase: 'complete',
+      plannerTool: 'claude-code',
+      implementerTool: 'opencode',
+    };
+
+    it('keeps one Recovery fold and shows the resume after it', () => {
+      const applyResolved: EngineEventOf<'recovery_resolved'> = {
+        type: 'recovery_resolved',
+        ts: 4_000,
+        phase: 'complete',
+        issueId: applyPrompted.issueId,
+        reason: applyPrompted.reason,
+        action: 'retry-same-worker',
+        outcome: 'continued',
+      };
+      const steps = [
+        ...walkTranscript(
+          groupEventsIntoSections([applyPrompted, applySelected, resumed, config, applyResolved]),
+        ),
+      ];
+
+      expect(steps).toEqual([
+        { kind: 'event', event: config, globalIndex: 3 },
+        {
+          kind: 'recovery',
+          recovery: {
+            firstIndex: 0,
+            issueId: applyPrompted.issueId,
+            prompted: applyPrompted,
+            selected: applySelected,
+            resolved: applyResolved,
+          },
+        },
+        { kind: 'event', event: resumed, globalIndex: 2 },
+      ]);
+    });
+
+    it('shows the resume after the open fold when no outcome follows', () => {
+      const halt: EngineEvent = {
+        type: 'error',
+        ts: 5_000,
+        phase: 'complete',
+        message: 'Apply stopped part way',
+      };
+      const steps = [
+        ...walkTranscript(groupEventsIntoSections([applyPrompted, applySelected, resumed, halt])),
+      ];
+
+      expect(steps).toEqual([
+        {
+          kind: 'recovery',
+          recovery: {
+            firstIndex: 0,
+            issueId: applyPrompted.issueId,
+            prompted: applyPrompted,
+            selected: applySelected,
+          },
+        },
+        { kind: 'event', event: resumed, globalIndex: 2 },
+        { kind: 'event', event: halt, globalIndex: 3 },
+      ]);
+    });
+  });
+
   it('keeps halt deduplication across a steerable call change', () => {
     const halt: EngineEvent = {
       type: 'error',

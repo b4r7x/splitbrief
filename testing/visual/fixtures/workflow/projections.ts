@@ -30,7 +30,10 @@ import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-se
 import { DEFAULT_LOCAL_RETRIES } from '../../../../src/core/pipeline-spec/retries.js';
 import { BOUNDS } from '../../../../src/core/pipeline-spec/bounds.js';
 import { buildConsultBoundRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/consult.js';
-import { buildApplyConflictRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/apply.js';
+import {
+  buildApplyConflictRecoveryIssue,
+  buildApplyPartialRecoveryIssue,
+} from '../../../../src/engine/orchestrator/recovery/builders/apply.js';
 import { taskFromSpec } from '../../../../src/engine/spec/plan-tasks.js';
 import { planConfirmations } from '../../../../src/engine/orchestrator/approval/confirm.js';
 import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
@@ -3194,6 +3197,61 @@ const resolvedRetryRecoveryProjection: WorkflowFixtureProjection = {
   },
 };
 
+/**
+ * Apply stopped part way and the person chose Re-run Apply. Apply settles the halt after the run
+ * resumes, as a real run logs it; the transcript still reads one Recovery row, then the resume.
+ */
+const resolvedApplyRetryRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-resolved-apply-retry'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  get events(): EngineEvent[] {
+    const issue = buildApplyPartialRecoveryIssue({
+      backupId: 'visual-apply',
+      backupDir: '.splitbrief/apply-backups/visual-apply',
+      createdAt: new Date(FIXED_TS).toISOString(),
+      written: [WORKFLOW_FIXTURE_REVIEW_FILE],
+      files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+      failedFile: WORKFLOW_FIXTURE_SECOND_FILE,
+      cause: 'EACCES: permission denied',
+    });
+    return [
+      ...everyBriefPassed(),
+      finalReviewStarted(FIXED_TS + 1_000, BASE_PLANNER),
+      finalReviewCompleted({
+        ts: FIXED_TS + 8_000,
+        duration: 7_000,
+        verdict: 'pass',
+        seat: BASE_PLANNER,
+      }),
+      { type: 'workflow_complete', ts: FIXED_TS + 8_000, phase: 'complete', review: 'passed' },
+      ...publishedEvents(FIXED_TS + 9_000, (bus) => {
+        const phase = 'complete';
+        const recovery = { bus, phase, issue, action: 'retry-same-worker' } as const;
+        publishError({
+          bus,
+          phase,
+          message: issue.message,
+          safety: { category: 'recovery', code: 'apply_partial' },
+        });
+        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue);
+        publishRecoveryActionSelected(recovery);
+        bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase, inProcess: true });
+        bus.publish({
+          type: 'workflow_config',
+          ts: FIXED_TS,
+          phase,
+          plannerTool: 'claude-code',
+          implementerTool: 'ollama',
+          implementerModel: FIXED_RUNNER_MODEL,
+        });
+        publishRecoveryResolved({ ...recovery, outcome: 'continued' });
+      }),
+    ];
+  },
+};
+
 // The retried brief passed and the next one runs: the halt belongs to the brief it stopped, so it
 // stays in that brief's retained body beneath its completed heading.
 const implementationAfterRetryProjection: WorkflowFixtureProjection = {
@@ -6062,6 +6120,7 @@ const projections = [
   leftIsolationInPlaceRecoveryProjection,
   checkoutChangedRecoveryProjection,
   resolvedRetryRecoveryProjection,
+  resolvedApplyRetryRecoveryProjection,
   implementationAfterRetryProjection,
   apiContextRecoveryProjection,
   planSeatRecoveryProjection,

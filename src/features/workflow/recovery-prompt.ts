@@ -162,8 +162,11 @@ function formatRecoveryActionText(
   action: RecoveryAction,
   context: RecoveryActionChoiceContext = {},
 ): string {
-  const apply = applyRecoveryActionText(action, context.reason);
-  if (apply !== undefined) return apply;
+  const applyConsequence = applyRecoveryConsequence(action, context.reason);
+  if (applyConsequence !== undefined) {
+    const label = recoveryActionLabel(action, context);
+    return `${label.charAt(0).toLowerCase()}${label.slice(1)}${SOFT_SEP}${applyConsequence}`;
+  }
   switch (action) {
     case 'retry-same-worker':
       return context.seatRetry === undefined
@@ -194,23 +197,18 @@ function formatRecoveryActionText(
   }
 }
 
-function applyRecoveryActionText(
+function applyRecoveryConsequence(
   action: RecoveryAction,
   reason: RecoveryActionChoiceContext['reason'],
 ): string | undefined {
   if (reason !== 'apply-conflict' && reason !== 'apply-partial') return undefined;
-  if (action === 'end-run') {
-    return 'end run · closes this run, the checkout keeps what it has now';
-  }
-  if (action === 'restore-backup' && reason === 'apply-partial') {
-    return 'restore backup · puts back the files Apply replaced and removes the ones it created';
-  }
+  if (action === 'end-run') return 'closes this run, the checkout keeps what it has now';
+  if (action === 'restore-backup' && reason === 'apply-partial')
+    return 'puts back the files Apply replaced and removes the ones it created';
   if (action !== 'retry-same-worker') return undefined;
-  const consequence =
-    reason === 'apply-conflict'
-      ? 'after you resolve the files in the workspace'
-      : 'writes the files still missing';
-  return `re-run Apply · ${consequence}`;
+  return reason === 'apply-conflict'
+    ? 'after you resolve the files in the workspace'
+    : 'writes the files still missing';
 }
 
 /** How many of a seat's detected tools the halt offers; a longer list is a settings question. */
@@ -245,15 +243,6 @@ export function recoveryMenuParts(
   action: RecoveryAction,
   issue: RecoveryIssue,
 ): ConversationRowSegment[] {
-  const apply =
-    action === 'retry-same-worker' || action === 'restore-backup'
-      ? applyRecoveryActionText(action, issue.reason)
-      : undefined;
-  if (apply !== undefined)
-    return separatedSpans(apply.charAt(0).toUpperCase() + apply.slice(1), 'text').map(
-      (part, index) =>
-        index === 0 ? part : ({ ...part, tone: 'textDim' } satisfies ConversationRowSegment),
-    );
   const label = recoveryActionParts(action, {
     reason: issue.reason,
     switchSeat: issue.switchSeat,
@@ -273,6 +262,10 @@ export function recoveryMenuParts(
 }
 
 function recoveryMenuConsequence(action: RecoveryAction, issue: RecoveryIssue): string | undefined {
+  if (action === 'retry-same-worker' || action === 'restore-backup') {
+    const apply = applyRecoveryConsequence(action, issue.reason);
+    if (apply !== undefined) return apply;
+  }
   if (action === 'revise')
     return issue.reason === 'review-failed' ? 'add a note, grant one more fix cycle' : undefined;
   const seatLevel = isSeatLevelRetry(issue);
