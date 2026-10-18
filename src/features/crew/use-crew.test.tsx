@@ -105,4 +105,48 @@ describe('useCrew', () => {
     expect(output).not.toContain(':ready');
     expect(output).toContain('signedOut:Claude Code CLI,OpenAI Codex CLI');
   });
+
+  it.each([
+    ['names', ['opencode/big-pickle'], 'signedOut:OpenCode CLI'],
+    ['leaves out', ['ollama/llama3'], 'signedOut:'],
+  ])(
+    '%s a tool that stores no credential by whether its model list serves a provider',
+    async (_case, ids, line) => {
+      detectionStore.setDetection({
+        providers: [],
+        cliTools: [
+          cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+        ],
+      });
+      const contexts = { readiness: 'readiness', modelsDev: 'catalog', cliModels: 'tools' };
+      const request = modelCacheStore.beginRefresh({ contexts });
+      modelCacheStore.publishLane({
+        request,
+        lane: {
+          lane: 'cliModels',
+          outcome: {
+            kind: 'fresh',
+            origin: 'request',
+            snapshot: {
+              source: 'cli-models',
+              contextKey: contexts.cliModels,
+              generation: 1,
+              requestId: 1,
+              fetchedAt: 1,
+              validatedAt: 1,
+              stale: false,
+              value: [
+                {
+                  connection: { tool: 'opencode', contextKey: 'opencode-context' },
+                  outcome: { kind: 'success', value: ids.map((id) => ({ id })) },
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      expect((await frame()).split('\n').at(-1)).toBe(line);
+    },
+  );
 });

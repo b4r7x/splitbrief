@@ -25,6 +25,7 @@ import { detectRunnerEvidence } from '../../detection/runner-evidence.js';
 import { resolveSeatDisplayName } from '../../providers/model/display-names.js';
 import { NULL_CACHE } from '../../providers/model/resolution.js';
 import { collectArgVectorPreflightChecks } from '../arg-vector-preflight.js';
+import type { RouteCatalogReads } from '../../detection/route-catalog.js';
 import {
   CUSTOM_RUNNER_TRUST_PERSISTED_AFTER_ABORT,
   prepareCustomRunnerAdmission,
@@ -271,6 +272,7 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
     preparationId,
     signal: input.signal,
     nativeTrustViolations,
+    routeCatalogs: new Map(),
     deps,
   };
   const evaluated: EvaluatedSlot[] = [];
@@ -470,6 +472,8 @@ export type RunnerAdmissionPreflightInput = Readonly<{
   purpose?: PreparationPolicy['purpose'] | undefined;
   signal?: AbortSignal | undefined;
   deps?: Partial<PrepareExecutionDependencies> | undefined;
+  /** The model lists an earlier pass over the same seats read, so this pass reads none again. */
+  routeCatalogs: RouteCatalogReads;
 }>;
 
 /**
@@ -507,6 +511,7 @@ export async function collectRunnerAdmissionChecks(
     preparationId,
     signal,
     nativeTrustViolations,
+    routeCatalogs: input.routeCatalogs,
     deps,
   };
   const evaluated: EvaluatedSlot[] = [];

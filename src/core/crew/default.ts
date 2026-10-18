@@ -1,6 +1,9 @@
 import { createDefaultConfig } from '../config/load/defaults.js';
 import { getRunnerModelName, type RunnerConfig } from '../config/accessors/runner-config.js';
+import type { SavedCatalogOf } from '../discovery/catalog-read-merge.js';
 import type { CliToolDetection, ProviderDetection } from '../discovery/detection.js';
+import { routeAuthState } from '../runners/route-auth.js';
+import { takesHostModel } from '../providers/automatic-model.js';
 import { CLI_TOOL_IDS, cliToolSupportsRole } from '../runners/cli-tool-catalog.js';
 import type { Config } from '../schemas/config.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
@@ -10,6 +13,8 @@ import { resolveReviewerRunner } from '../config/accessors/reviewer-runner.js';
 export type CrewDetection = Readonly<{
   cliTools: readonly CliToolDetection[];
   providers: readonly (Omit<ProviderDetection, 'provider'> & { provider: string })[];
+  /** Each CLI tool's own model listing, which tells a provider set up in the tool's config. */
+  cliCatalog?: SavedCatalogOf | undefined;
 }>;
 
 export function resolveInitialCrew(input: { persisted: Config; overrides: CLIOverrides }): Config {
@@ -43,9 +48,22 @@ export function selectInitialCrew(input: { detected: Config | null; overrides: C
 
 export function detectedSeatReady(runner: RunnerConfig, detection: CrewDetection): boolean {
   switch (runner.kind) {
+    // A tool that stores no credential still calls a route its model list serves, as start admits it:
+    // a seat on `auto` or with no model calls the model the tool selects on this host.
     case 'cli':
       return detection.cliTools.some(
-        (tool) => tool.tool === runner.tool && tool.diagnostic.state === 'ready',
+        (tool) =>
+          tool.tool === runner.tool &&
+          (tool.diagnostic.state === 'ready' ||
+            (tool.diagnostic.state === 'unauthenticated' &&
+              routeAuthState({
+                tool: tool.tool,
+                model: takesHostModel(runner.model, runner.tool)
+                  ? (tool.selectedModel ?? runner.model)
+                  : runner.model,
+                providerAuth: tool.providerAuth,
+                catalog: detection.cliCatalog?.(tool.tool),
+              }).kind === 'configured')),
       );
     case 'api': {
       const model = getRunnerModelName(runner);

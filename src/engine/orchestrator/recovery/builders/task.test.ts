@@ -5,6 +5,8 @@ import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.j
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
 import { formatRecoveryHeadline } from '../../../../core/recovery/headline.js';
 import { haltOf } from '../../../../core/recovery/halt.js';
+import type { SavedCatalog } from '../../../../core/discovery/catalog-read-merge.js';
+import { routeAuthState } from '../../../../core/runners/route-auth.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import {
   buildApprovalDeniedRecoveryIssue,
@@ -605,6 +607,45 @@ describe('an OpenCode route refusal (provider.no-route)', () => {
       'OpenCode CLI has no credential for ollama-cloud',
     );
     expectValidRecoveryIssue(issue);
+  });
+
+  // A tool that stores no credential: the route reads from its model list alone.
+  const noCredentialHalt = (catalog: SavedCatalog | undefined) =>
+    buildMissingModelRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
+      runner,
+      toolMessage: noRoute,
+      seatSwap: {
+        ...seatSwap([]),
+        routeAuth: routeAuthState({
+          tool: 'opencode',
+          model: route,
+          providerAuth: { kind: 'empty' },
+          catalog,
+        }),
+      },
+      createdAt,
+    });
+
+  it('on a tool that stores no credential and whose model list does not serve the route, halts as Seat down', () => {
+    const issue = noCredentialHalt({ models: [{ id: 'ollama/llama3' }] });
+
+    expect(issue.reason).toBe('runner-unauthenticated');
+    expect(issue.message).toBe(
+      'OpenCode CLI has no credential for ollama-cloud. Run `opencode auth login ollama-cloud` in a separate terminal, then retry.',
+    );
+    expect(issue.switchSeat?.auto).toEqual({ candidate: fallback, configRevision: 'revision' });
+  });
+
+  it('on a tool that stores no credential and whose model list could not be read, names both causes and never moves the seat', () => {
+    const issue = noCredentialHalt(undefined);
+
+    expect(issue.reason).toBe('implementer-recipe-invalid');
+    expect(issue.message).toBe(
+      `OpenCode CLI cannot use ${route}: sign in with \`opencode auth login ollama-cloud\` if ollama-cloud has no credential, or pick a listed model`,
+    );
+    expect(issue.switchSeat?.auto).toBeUndefined();
   });
 
   it("names the tool's own gateway by the id its sign-in command takes", () => {

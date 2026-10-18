@@ -132,6 +132,44 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
+  it.each([
+    ['serves', ['ollama/llama3'], false],
+    ['does not serve', ['lmstudio/qwen3'], true],
+  ])(
+    'notes a BUILD fallback on an OpenCode that stores no credential only when its model list %s the route',
+    async (_case, models, noted) => {
+      seed({
+        implementer: {
+          kind: 'cli',
+          tool: 'claude-code',
+          fallback: { tool: 'opencode', model: 'ollama/llama3' },
+        },
+      });
+      detectionStore.hydrate({
+        providers: [],
+        cliTools: [
+          cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+        ],
+        cliCatalogs: [{ tool: 'opencode', models: models.map((id) => ({ id })), probedAt: 1 }],
+        fetchedAt: 1,
+        validatedAt: 1,
+        generation: 1,
+        requestId: 1,
+        contexts: { readiness: 'settings-r', modelsDev: 'settings-m', cliModels: 'settings-c' },
+      });
+      overlayStore.open('settings', 'fallback:build');
+      const ui = renderAt(120, 40);
+      await flushEffects();
+
+      const lines = frameLines(ui);
+      const build = lineWith(lines.slice(indexOfLine(lines, 'Fallback') + 1), 'BUILD');
+      expect(build).toContain('OpenCode');
+      expect(build?.includes('unauthenticated')).toBe(noted);
+
+      ui.unmount();
+    },
+  );
+
   it('marks an inherited REVIEW fallback with the planner it follows', async () => {
     seed({ planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } } });
     detectionStore.setDetection({ providers: [], cliTools: [cliDetectionFor('ready', 'codex')] });

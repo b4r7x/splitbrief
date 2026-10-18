@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import type { RouteData } from '../../../src/stores/navigation/router.js';
@@ -24,7 +24,11 @@ import { buildRepoChecks } from '../../../src/core/readiness/checks/repo.js';
 import { selectNextAction } from '../../../src/core/readiness/status.js';
 import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
 import type { PreparationOutcome } from '../../../src/engine/runners/prepared-execution.js';
-import type { CliToolDetection } from '../../../src/core/discovery/detection.js';
+import type { CliToolDetection, DetectedModel } from '../../../src/core/discovery/detection.js';
+import {
+  nativeCliCatalogToDetectedModels,
+  parseOpenCodeNativeModelCatalog,
+} from '../../../src/engine/providers/cli-model-catalog.js';
 import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-code-options.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/models-dev-lane.js';
@@ -132,6 +136,25 @@ export function setupVisualFixture(context: FixtureContext): void {
     rows: context.viewport.rows,
     isSmall: context.viewport.cols < 120,
   });
+}
+
+// The whole of `opencode api GET /api/model` on opencode 2.0.14, the listing the probe reads, with
+// `location.directory` neutralised. `api-model.json` beside it is the five-row parser fixture.
+export function opencodeApiModels(): readonly DetectedModel[] {
+  const stdout = readFileSync(
+    join(import.meta.dirname, '../../fixtures/opencode/api-model-full.json'),
+    'utf8',
+  );
+  const catalog = parseOpenCodeNativeModelCatalog(stdout);
+  if (catalog === null) throw new Error('opencode/api-model-full.json did not parse');
+  return nativeCliCatalogToDetectedModels(catalog);
+}
+
+/** The listing of an OpenCode with Ollama Cloud set up only in its config: its gateway and that provider. */
+export function opencodeConfigOnlyModels(): readonly DetectedModel[] {
+  return opencodeApiModels().filter(
+    (model) => model.id.startsWith('opencode/') || model.id.startsWith('ollama-cloud/'),
+  );
 }
 
 export function seedVisualConfig(overrides?: VisualConfigOverrides): void {
@@ -392,6 +415,7 @@ export function createSetupFixture(
     | 'saved-ignore-rule'
     | 'unavailable'
     | 'signed-out'
+    | 'config-only'
     | 'detecting'
     | 'cached-refresh'
     | 'cached-failure'
@@ -408,8 +432,13 @@ export function createSetupFixture(
       if (state === 'saved-ignore-rule') {
         createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, { '.gitignore': 'node_modules/\n' });
       }
-      if (state !== 'unavailable' && state !== 'signed-out') {
+      if (state !== 'unavailable' && state !== 'signed-out' && state !== 'config-only') {
         configStore.load(VISUAL_FIXTURE_PROJECT_DIR);
+      }
+      if (state === 'config-only') {
+        seedVisualConfig({
+          implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/glm-5.3' },
+        });
       }
       if (state === 'custom-api' || state === 'custom-unavailable') {
         seedVisualConfig({
@@ -493,6 +522,25 @@ export function createSetupFixture(
             cliDetectionFor('unauthenticated', 'codex'),
             cliDetectionFor('unauthenticated', 'antigravity'),
             cliDetectionFor('ready', 'opencode'),
+          ],
+          modelsDev: { catalog: {} },
+        });
+      // OpenCode stores no credential and calls Ollama Cloud, set up in its own config.
+      else if (state === 'config-only')
+        publishVisualDiscovery({
+          cliTools: [
+            cliDetectionFor('ready', 'claude-code'),
+            cliDetectionFor('ready', 'codex'),
+            cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+          ],
+          cliModels: [
+            {
+              connection: { tool: 'opencode', contextKey: 'implementer-opencode-visual' },
+              outcome: {
+                kind: 'success',
+                value: opencodeConfigOnlyModels(),
+              },
+            },
           ],
           modelsDev: { catalog: {} },
         });
@@ -1129,6 +1177,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('setup-saved-ignore-rule'), () => createSetupFixture('saved-ignore-rule')],
   [scenarioId('setup-unavailable-seat'), () => createSetupFixture('unavailable')],
   [scenarioId('setup-signed-out-tools'), () => createSetupFixture('signed-out')],
+  [scenarioId('setup-config-only-tool'), () => createSetupFixture('config-only')],
   [scenarioId('setup-api-endpoint-override'), () => createSetupFixture('api-override')],
   [scenarioId('setup-custom-api'), () => createSetupFixture('custom-api')],
   [scenarioId('setup-custom-api-unavailable'), () => createSetupFixture('custom-unavailable')],

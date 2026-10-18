@@ -123,7 +123,7 @@ describe('routeAuthState', () => {
     });
   });
 
-  it('reads a listing signed in to no provider as unknown for every route, as it read before', () => {
+  it('reads a listing signed in to no provider, whose read model list does not serve the route, as empty', () => {
     expect(stateOf(model, { kind: 'empty' })).toEqual({
       kind: 'unknown',
       reason: 'empty',
@@ -138,14 +138,60 @@ describe('routeAuthState', () => {
     });
   });
 
-  it('never reads a route as available while the tool is signed in to no provider', () => {
-    // The tool row reads Auth required then; its route must not read available beside it.
+  it('reads a route the model list serves as set up while the tool stores no credential at all', () => {
+    // A local-only OpenCode: `ollama/llama3` set up in the global opencode.json, `auth list` prints [].
     expect(stateOf('ollama/llama3', { kind: 'empty' }, listing('ollama/llama3'))).toEqual({
+      kind: 'configured',
+      source: 'listed',
+    });
+    expect(
+      stateOf(
+        'ollama/llama3',
+        { kind: 'empty' },
+        { models: [{ id: 'ollama/llama3' }] },
+        'kilo-code',
+      ),
+    ).toEqual({ kind: 'configured', source: 'listed' });
+  });
+
+  it('reads an empty listing as empty when the read model list does not serve the route', () => {
+    expect(stateOf('ollama/llama3', { kind: 'empty' }, listing('lmstudio/qwen3'))).toEqual({
       kind: 'unknown',
       reason: 'empty',
       tool: 'opencode',
       provider: 'ollama',
     });
+    expect(
+      stateOf(
+        'ollama/llama3',
+        { kind: 'empty' },
+        {
+          models: [{ id: 'ollama/llama3' }],
+          missingOnce: ['ollama/llama3'],
+        },
+      ),
+    ).toEqual({ kind: 'unknown', reason: 'empty', tool: 'opencode', provider: 'ollama' });
+  });
+
+  it('reads an empty listing whose model list was not read, or failed to read, as catalog-not-read', () => {
+    // A failed read reaches here as no list at all: nothing proves the route is signed out.
+    expect(stateOf('ollama/llama3', { kind: 'empty' }, null)).toEqual({
+      kind: 'unknown',
+      reason: 'catalog-not-read',
+    });
+    expect(stateOf('ollama/llama3', { kind: 'empty' }, { models: null })).toEqual({
+      kind: 'unknown',
+      reason: 'catalog-not-read',
+    });
+    expect(routeRefusal(stateOf('ollama/llama3', { kind: 'empty' }, null))).toEqual({
+      kind: 'unknown',
+    });
+  });
+
+  it("never reads the tool's own gateway as set up while the tool stores no credential", () => {
+    expect(
+      stateOf('opencode/big-pickle', { kind: 'empty' }, listing('opencode/big-pickle')),
+    ).toEqual({ kind: 'unknown', reason: 'empty', tool: 'opencode', provider: 'opencode' });
     expect(stateOf('opencode/big-pickle', { kind: 'empty' }, null)).toEqual({
       kind: 'unknown',
       reason: 'empty',
@@ -324,9 +370,15 @@ describe('routeRefusal', () => {
     expect(routeRefusal({ kind: 'configured', source: 'listed' })).toEqual({ kind: 'wrong-model' });
     expect(routeRefusal({ kind: 'unchecked' })).toEqual({ kind: 'wrong-model' });
     expect(routeRefusal({ kind: 'unknown', reason: 'exit-failure' })).toEqual({ kind: 'unknown' });
+    expect(routeRefusal({ kind: 'unknown', reason: 'catalog-not-read' })).toEqual({
+      kind: 'unknown',
+    });
+  });
+
+  it('reads a refusal as signed out when the tool stores no credential and the model list does not serve the route', () => {
     expect(
       routeRefusal({ kind: 'unknown', reason: 'empty', tool: 'opencode', provider: 'ollama' }),
-    ).toEqual({ kind: 'unknown' });
+    ).toEqual({ kind: 'signed-out', provider: 'ollama' });
   });
 
   it("spells a route with no credential in doctor's words", () => {

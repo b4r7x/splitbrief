@@ -3,21 +3,36 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { CliExecutableReceiptSchema } from '../../../core/discovery/detection.js';
+import {
+  CliExecutableReceiptSchema,
+  type CliProviderAuth,
+} from '../../../core/discovery/detection.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { sessionDir } from '../../../core/paths.js';
+import { deriveCliReadiness } from '../../../core/schemas/readiness.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { readActive } from '../../../core/sessions/active-pointer.js';
 import { prepareNewSession } from '../../../core/sessions/prepare.js';
-import { runnerDiscoveryContextKey } from '../../../engine/detection/runner-evidence.js';
+import {
+  detectRunnerEvidence,
+  runnerDiscoveryContextKey,
+} from '../../../engine/detection/runner-evidence.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import {
   cliPreparationPolicy,
   detectConfiguredCliReadiness,
   prepareStartExecution,
+  readConfiguredCliRoutes,
 } from './readiness.js';
+
+// The fresh model-list read spawns the tool; each case sees only the read it answers.
+vi.mock('../../../engine/detection/runner-evidence.js', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('../../../engine/detection/runner-evidence.js')>();
+  return { ...original, detectRunnerEvidence: vi.fn(original.detectRunnerEvidence) };
+});
 
 const executable = CliExecutableReceiptSchema.parse({
   path: '/usr/local/bin/codex',
@@ -43,6 +58,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.mocked(detectRunnerEvidence).mockReset();
   vi.unstubAllEnvs();
   for (const directory of directories.splice(0)) cleanupTempDir(directory);
 });
@@ -285,5 +301,98 @@ describe('detectConfiguredCliReadiness', () => {
     });
 
     expect(results.map((result) => result.tool)).toEqual(['opencode']);
+  });
+});
+
+describe('readConfiguredCliRoutes', () => {
+  const LOCAL_ROUTE = { kind: 'cli', tool: 'opencode', model: 'ollama/llama3' } as const;
+
+  function opencodeReadiness(
+    providerAuth: CliProviderAuth,
+    facts: Partial<Parameters<typeof deriveCliReadiness>[0]> = {},
+  ) {
+    const testedVersion = CLI_TOOL_CATALOG.opencode.compatibility.testedVersion;
+    return deriveCliReadiness({
+      tool: 'opencode',
+      enabled: true,
+      installation: 'installed',
+      executable: { path: '/usr/local/bin/opencode', fingerprint: executable.fingerprint },
+      trust: 'trusted',
+      installedVersion: testedVersion,
+      testedVersion,
+      compatibility: 'compatible',
+      auth: 'unauthenticated',
+      authChannel: 'provider-dependent',
+      providerAuth,
+      probedAt: 1,
+      ...facts,
+    });
+  }
+
+  /** OpenCode's model list, read from the tool, serves `ollama/llama3`. */
+  function listReads(): () => number {
+    vi.mocked(detectRunnerEvidence).mockImplementation(async ({ context }) => ({
+      ...cliEvidence(context),
+      runner: { id: 'opencode', kind: 'cli', locality: 'local', enabled: 'enabled' },
+      catalog: { kind: 'success', value: [{ id: 'ollama/llama3' }] },
+    }));
+    return () =>
+      vi.mocked(detectRunnerEvidence).mock.calls.filter(([input]) => input.includeCatalog === true)
+        .length;
+  }
+
+  it('reads the list once for two seats whose route no credential covers', async () => {
+    const reads = listReads();
+    const config = makeConfig({ planner: LOCAL_ROUTE, implementer: LOCAL_ROUTE });
+
+    const routes = await readConfiguredCliRoutes({
+      routeCatalogs: new Map(),
+      projectDir: projectWithConfig(config),
+      config,
+      cliReadiness: [opencodeReadiness({ kind: 'empty' })],
+    });
+
+    expect(reads()).toBe(1);
+    expect(routes.catalogs).toEqual([
+      expect.objectContaining({ tool: 'opencode', models: [{ id: 'ollama/llama3' }] }),
+    ]);
+  });
+
+  it('reads no list when a stored credential covers the route', async () => {
+    const reads = listReads();
+    const config = makeConfig({ implementer: LOCAL_ROUTE });
+
+    await readConfiguredCliRoutes({
+      routeCatalogs: new Map(),
+      projectDir: projectWithConfig(config),
+      config,
+      cliReadiness: [
+        opencodeReadiness(
+          { kind: 'read', facts: [{ id: 'ollama', provider: 'Ollama', source: 'api' }] },
+          { auth: 'authenticated' },
+        ),
+      ],
+    });
+
+    expect(reads()).toBe(0);
+  });
+
+  it('reads no list for a tool refused on another fact', async () => {
+    const reads = listReads();
+    const config = makeConfig({ implementer: LOCAL_ROUTE });
+
+    await readConfiguredCliRoutes({
+      routeCatalogs: new Map(),
+      projectDir: projectWithConfig(config),
+      config,
+      cliReadiness: [
+        opencodeReadiness(
+          { kind: 'empty' },
+          { installedVersion: '0.0.1', compatibility: 'incompatible' },
+        ),
+      ],
+    });
+
+    expect(reads()).toBe(0);
   });
 });

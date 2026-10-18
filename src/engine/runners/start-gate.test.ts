@@ -129,6 +129,7 @@ function admit(
     expectedSelectionId: 'unselected',
     interaction: overrides.interaction ?? 'interactive',
     unverifiedAuth: overrides.unverifiedAuth ?? 'denied',
+    route: { kind: 'unchecked' },
   });
 }
 
@@ -201,6 +202,7 @@ describe('fresh CLI start gate', () => {
       expectedSelectionId: 'unselected',
       interaction: 'interactive',
       unverifiedAuth: 'denied',
+      route: { kind: 'unchecked' },
     });
     const disclosed = admitFreshCliStart({
       tool: 'copilot',
@@ -209,6 +211,7 @@ describe('fresh CLI start gate', () => {
       expectedSelectionId: 'unselected',
       interaction: 'interactive',
       unverifiedAuth: 'disclosed',
+      route: { kind: 'unchecked' },
     });
 
     expect(initial).toEqual({ kind: 'disclosure-required', auth: 'unknown' });
@@ -246,6 +249,7 @@ describe('fresh CLI start gate', () => {
       expectedSelectionId: 'unselected',
       interaction: 'headless',
       unverifiedAuth: 'denied',
+      route: { kind: 'unchecked' },
     });
     const allowed = admitFreshCliStart({
       tool: 'copilot',
@@ -254,6 +258,7 @@ describe('fresh CLI start gate', () => {
       expectedSelectionId: 'unselected',
       interaction: 'headless',
       unverifiedAuth: 'allowed',
+      route: { kind: 'unchecked' },
     });
 
     expect(denied).toEqual({ kind: 'denied', reason: { kind: 'authentication-unverified' } });

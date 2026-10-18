@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { chmod, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { env, platform } from 'node:process';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type {
@@ -200,6 +200,10 @@ function sequenceClock(values: readonly number[]): () => number {
 }
 
 describe('legacy CLI detection presentation', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('returns one canonical result per catalog CLI without selecting a default channel', async () => {
     const results = await detectAvailableCliTools({
       projectDir: '/neutral/project',
@@ -312,6 +316,36 @@ describe('legacy CLI detection presentation', () => {
       providerAuth: { kind: 'unreadable', reason: 'not-probed' },
     });
   });
+
+  it.each([
+    ['stores no credential', 'unauthenticated', 'ollama/llama3'],
+    ['is signed in', 'authenticated', undefined],
+  ] as const)(
+    'carries the model an OpenCode that %s selects in its own config only when its route decides the seat',
+    async (_case, auth, selectedModel) => {
+      await withTempDir('detect-selected-model', async (configHome) => {
+        await mkdir(join(configHome, 'opencode'));
+        await writeFile(join(configHome, 'opencode', 'opencode.json'), '{"model":"ollama/llama3"}');
+        vi.stubEnv('XDG_CONFIG_HOME', configHome);
+        const [result] = await detectAvailableCliTools({
+          tools: ['opencode'],
+          authChannels: { opencode: 'provider-dependent' },
+          resolveExecutable: async () => executable,
+          probeReadiness: async (options) => ({
+            ...deriveProbe(options, auth),
+            authChannel: 'provider-dependent',
+            providerAuth: { kind: 'empty' },
+          }),
+          now: () => 11,
+        });
+
+        expect(result?.diagnostic.state).toBe(
+          auth === 'authenticated' ? 'ready' : 'unauthenticated',
+        );
+        expect(result?.selectedModel).toBe(selectedModel);
+      });
+    },
+  );
 
   it('retains unavailable and untrusted resolver facts separately', async () => {
     const unavailable = await detectAvailableCliTools({

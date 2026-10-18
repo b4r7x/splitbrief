@@ -3591,7 +3591,7 @@ const fallbackNotInstalledRecoveryProjection = fallbackRecoveryProjection({
     seat: 'build',
     currentTool: '',
     fallback: SEAT_FALLBACK,
-    fallbackBlockedReason: fallbackBlockedReason(undefined),
+    fallbackBlockedReason: fallbackBlockedReason(SEAT_FALLBACK, undefined, undefined),
     detectedTools: [{ tool: 'codex', ready: true }],
   },
 });

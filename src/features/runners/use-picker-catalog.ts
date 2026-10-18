@@ -208,7 +208,12 @@ export function usePickerCatalog(
   const rawItems = buildPickerOptions(
     role,
     assemblePickerDescriptors(),
-    { cliTools, providers, providerOutcomes },
+    {
+      cliTools,
+      providers,
+      providerOutcomes,
+      cliCatalog: (tool) => modelCacheStore.getCliCatalogRuntime({ tool }),
+    },
     undefined,
   );
   const items = buildLeftItems({

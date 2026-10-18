@@ -3419,6 +3419,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'setup-config-only-tool',
+      title: 'Setup · a tool that calls a provider set up in its config',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Crew setup ready',
+        kind: 'ready',
+        marker: 'Set up your crew',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
       id: 'setup-signed-out-tools',
       title: 'Setup · tools not signed in',
       surface: screenSurface('setup'),
@@ -3731,6 +3746,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-picker-routes-model-list-unread',
         title: 'Overlay · planner picker · a route whose model list was not read',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-config-only-tool',
+        title: 'Overlay · planner picker · a tool that calls a provider set up in its config',
         marker: PICKER_TITLE_MARKER,
       },
       {

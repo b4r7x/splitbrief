@@ -1,9 +1,10 @@
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { Command } from 'commander';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir, withTempDir } from '#testing/helpers/temp-dir.js';
 import { addWorkflowOptions } from '../../options.js';
 import { configPath } from '../../../core/config/load/document.js';
 import { loadConfig } from '../../../core/config/load/io.js';
@@ -18,6 +19,13 @@ import {
   checkCrewAvailability,
   selectDetectedDefaultCrew,
 } from '../../../engine/detection/crew.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
+import { saveDetectionCache } from '../../../engine/detection/cache.js';
+import {
+  detectRunnerEvidence,
+  runnerDiscoveryContextKey,
+} from '../../../engine/detection/runner-evidence.js';
 import { configStore } from '../../../stores/project/config.js';
 import { installDiagnosticSink } from '../../../lib/warn.js';
 import { runHeadlessStart } from './streaming.js';
@@ -29,10 +37,27 @@ vi.mock('../../../engine/detection/detect.js', async (original) => ({
   detectAll: boundary.detectAll,
 }));
 
+// Reading a tool's model list spawns the tool; each case sees only the list it answers.
+vi.mock('../../../engine/detection/runner-evidence.js', async (original) => {
+  const actual = await original<typeof import('../../../engine/detection/runner-evidence.js')>();
+  return { ...actual, detectRunnerEvidence: vi.fn(actual.detectRunnerEvidence) };
+});
+
+// A first run reads the model each tool selects on this host; each case gets a host of its own.
+let host: string | undefined;
+beforeEach(() => {
+  host = createTempDir('first-run-host');
+  vi.stubEnv('HOME', host);
+  vi.stubEnv('XDG_CONFIG_HOME', join(host, '.config'));
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  vi.mocked(detectRunnerEvidence).mockReset();
   configStore.reset();
+  if (host !== undefined) cleanupTempDir(host);
+  host = undefined;
 });
 
 const roles = ['planner', 'implementer', 'reviewer'] as const;
@@ -266,5 +291,108 @@ describe('first-run seat override parity', () => {
           ? 'custom-coder'
           : undefined,
     );
+  });
+});
+
+describe('a first run that puts an OpenCode storing no credential on BUILD', () => {
+  const LOCAL_MODEL = 'ollama/llama3';
+
+  /** The model list OpenCode prints when SPLITBRIEF reads it from the tool. */
+  function listEvidence(
+    context: Parameters<typeof runnerDiscoveryContextKey>[0],
+    models: readonly string[],
+  ): RunnerEvidence {
+    const contextKey = runnerDiscoveryContextKey(context);
+    const testedVersion = CLI_TOOL_CATALOG.opencode.compatibility.testedVersion;
+    return {
+      runner: { id: 'opencode', kind: 'cli', locality: 'local', enabled: 'enabled' },
+      context: { key: contextKey, observedAt: 1, source: 'fresh' },
+      installation: 'installed',
+      executable: { kind: 'unknown' },
+      compatibility: { kind: 'compatible', installedVersion: testedVersion, testedVersion },
+      credential: 'absent',
+      auth: 'missing',
+      endpoint: { kind: 'not-run' },
+      catalog: { kind: 'success', value: models.map((id) => ({ id })) },
+      modelRun: { kind: 'unknown', selectionId: 'unselected', observedAt: 1, contextKey },
+      providerAuth: { kind: 'empty' },
+    };
+  }
+
+  it.each([
+    {
+      label: 'its saved model list serves the route',
+      saved: [LOCAL_MODEL],
+      read: [],
+      starts: true,
+    },
+    {
+      label: 'its model list, read from the tool, serves the route',
+      read: [LOCAL_MODEL],
+      starts: true,
+    },
+    { label: 'its model list does not serve the route', read: ['lmstudio/qwen3'], starts: false },
+  ])('$label', async ({ saved, read, starts }) => {
+    await withTempDir('config-only-first-run', async (projectDir) => {
+      createTestGitRepo(projectDir);
+      boundary.detectAll.mockResolvedValue({
+        cliTools: [
+          cliDetectionFor('ready', 'claude-code'),
+          cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+        ],
+        providers: [],
+      });
+      // A project that holds no config can still hold a saved model list.
+      if (saved !== undefined) {
+        mkdirSync(join(projectDir, '.splitbrief'));
+        await saveDetectionCache({
+          projectDir,
+          snapshot: {
+            contextKey: 'remembered',
+            fetchedAt: 1,
+            validatedAt: 1,
+            generation: 1,
+            requestId: 1,
+            providers: [],
+            cliTools: [],
+            cliCatalogs: [{ tool: 'opencode', models: saved.map((id) => ({ id })), probedAt: 1 }],
+          },
+        });
+      }
+      vi.mocked(detectRunnerEvidence).mockImplementation(async ({ context }) =>
+        listEvidence(context, read),
+      );
+      let prepared: Config | undefined;
+      const deps: StartDeps = {
+        initStores: async () => {},
+        renderApp: async () => {},
+        runHeadless: async () => {},
+        prepareExecution: async (input) => {
+          prepared = input.effectiveConfig;
+          return { kind: 'failed', error: new Error('Reached preparation') };
+        },
+      };
+      const notice = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await expect(
+          runHeadlessStart({
+            deps,
+            projectDir,
+            feature: 'Local build',
+            enrichedFeature: undefined,
+            plannerContext: undefined,
+            opts: parse(['--implementer', 'opencode', '--implementer-model', LOCAL_MODEL]),
+            mode: 'plain',
+          }),
+        ).rejects.toThrow(starts ? 'Reached preparation' : 'BUILD is unavailable');
+      } finally {
+        notice.mockRestore();
+      }
+
+      expect(existsSync(configPath(projectDir))).toBe(starts);
+      expect(prepared?.implementer).toEqual(
+        starts ? { kind: 'cli', tool: 'opencode', model: LOCAL_MODEL } : undefined,
+      );
+    });
   });
 });

@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { settleUnderFakeTimers } from '#testing/helpers/fake-timers.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { CliExecutableReceiptSchema } from '../../../core/discovery/detection.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
@@ -913,8 +914,7 @@ describe('prepareExecution', () => {
       },
     });
     await vi.waitFor(() => expect(detectRunnerEvidence).toHaveBeenCalledTimes(1));
-    await vi.advanceTimersByTimeAsync(1_500);
-    const outcome = await pending;
+    const outcome = await settleUnderFakeTimers(pending);
 
     expect(outcome.kind).toBe('blocked');
     if (outcome.kind !== 'blocked') return;
@@ -981,6 +981,7 @@ describe('prepareExecution', () => {
     },
   ] as const)('supplies the specific remedy for $label', async ({ evidence, remedy }) => {
     const checks = await collectRunnerAdmissionChecks({
+      routeCatalogs: new Map(),
       projectDir: projectDir(),
       config: makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
       purpose: 'spec',
@@ -999,6 +1000,7 @@ describe('prepareExecution', () => {
   it('reports an unknown version shared by three seats once', async () => {
     const seat = { kind: 'cli', tool: 'codex' } as const;
     const checks = await collectRunnerAdmissionChecks({
+      routeCatalogs: new Map(),
       projectDir: projectDir(),
       config: makeConfig({ planner: seat, implementer: seat, reviewer: seat }),
       interaction: 'headless',
@@ -1088,6 +1090,7 @@ describe('prepareExecution', () => {
     async (auth, state, cause, message, remedy) => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       const pending = collectRunnerAdmissionChecks({
+        routeCatalogs: new Map(),
         projectDir: projectDir(),
         config: makeConfig({ planner: { kind: 'cli', tool: 'codex', authChannel: 'session' } }),
         purpose: 'spec',
@@ -1096,8 +1099,7 @@ describe('prepareExecution', () => {
           detectRunnerEvidence: async ({ context }) => ({ ...freshCliEvidence(context), auth }),
         },
       });
-      await vi.advanceTimersByTimeAsync(1_500);
-      const checks = await pending;
+      const checks = await settleUnderFakeTimers(pending);
       expect(checks).toHaveLength(1);
       expect(checks[0]).toMatchObject({
         details: [message],
@@ -1115,6 +1117,7 @@ describe('prepareExecution', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const seat = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
     const pending = collectRunnerAdmissionChecks({
+      routeCatalogs: new Map(),
       projectDir: projectDir(),
       config: makeConfig({ planner: seat, implementer: seat }),
       interaction: 'headless',
@@ -1125,8 +1128,7 @@ describe('prepareExecution', () => {
         }),
       },
     });
-    await vi.advanceTimersByTimeAsync(1_500);
-    const checks = await pending;
+    const checks = await settleUnderFakeTimers(pending);
     expect(checks).toHaveLength(2);
     expect(checks.find((check) => check.diagnosticState === 'auth-unknown')?.fix).toContain(
       '--allow-unverified-auth',
@@ -1895,5 +1897,83 @@ describe('a seat left on auto', () => {
       }),
     );
     expect(config.implementer).toMatchObject({ model: 'auto' });
+  });
+});
+
+describe('the model list a CLI route is read against', () => {
+  const LOCAL_ROUTE = { kind: 'cli', tool: 'opencode', model: 'ollama/llama3' } as const;
+
+  /** OpenCode serving `ollama/llama3`; it stores a credential only when `providerAuth` names one. */
+  function opencodeSeats(
+    config: Parameters<typeof makeConfig>[0],
+    evidence: Partial<RunnerEvidence> = {},
+  ) {
+    const detect = vi.fn<PrepareExecutionDependencies['detectRunnerEvidence']>(
+      async ({ context, includeCatalog }) => ({
+        ...freshCliEvidence(context),
+        runner: { id: 'opencode', kind: 'cli', locality: 'local', enabled: 'enabled' },
+        auth: 'missing',
+        providerAuth: { kind: 'empty' },
+        ...evidence,
+        ...(includeCatalog === true && {
+          catalog: { kind: 'success', value: [{ id: 'ollama/llama3' }] },
+        }),
+      }),
+    );
+    const pending = collectRunnerAdmissionChecks({
+      routeCatalogs: new Map(),
+      projectDir: projectDir(),
+      config: makeConfig(config),
+      interaction: 'headless',
+      deps: { detectRunnerEvidence: detect },
+    });
+    const listReads = (): number =>
+      detect.mock.calls.filter(([input]) => input.includeCatalog === true).length;
+    return { pending, listReads };
+  }
+
+  it('reads one tool list once for two seats of that tool', async () => {
+    const { pending, listReads } = opencodeSeats({
+      planner: LOCAL_ROUTE,
+      implementer: LOCAL_ROUTE,
+    });
+
+    const checks = await pending;
+
+    expect(listReads()).toBe(1);
+    expect(checks.filter((check) => check.severity === 'blocker')).toEqual([]);
+  });
+
+  it('reads no list when a stored credential covers the route', async () => {
+    const { pending, listReads } = opencodeSeats(
+      { planner: LOCAL_ROUTE },
+      {
+        auth: 'verified',
+        providerAuth: {
+          kind: 'read',
+          facts: [{ id: 'ollama', provider: 'Ollama', source: 'api' }],
+        },
+      },
+    );
+
+    await pending;
+
+    expect(listReads()).toBe(0);
+  });
+
+  it('reads no list for a seat the tool refuses on another fact', async () => {
+    const { pending, listReads } = opencodeSeats(
+      { planner: LOCAL_ROUTE },
+      {
+        compatibility: { kind: 'incompatible', installedVersion: '0.0.1', testedVersion: '9.9.9' },
+      },
+    );
+
+    const checks = await pending;
+
+    expect(listReads()).toBe(0);
+    expect(checks[0]).toMatchObject({
+      runnerCause: { tool: 'opencode', cause: 'incompatible-version' },
+    });
   });
 });

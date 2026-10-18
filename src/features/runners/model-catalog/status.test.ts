@@ -127,6 +127,46 @@ describe('deriveCliStatus with per-provider facts', () => {
   });
 });
 
+describe('deriveCliStatus for a tool that stores no credential', () => {
+  function listing(ids: readonly string[] | undefined): PickerDetectionSnapshot {
+    return {
+      cliTools: [
+        cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+      ],
+      providers: [],
+      cliCatalog: (tool) =>
+        tool === 'opencode' && ids !== undefined
+          ? { models: ids.map((id) => ({ id })) }
+          : undefined,
+    };
+  }
+
+  it('reads ready on the providers its model list serves, the routes start admits', () => {
+    const status = deriveCliStatus(
+      CLI_TOOL_CATALOG.opencode,
+      listing(['ollama/llama3', 'ollama/qwen3', 'lmstudio/qwen3', 'opencode/big-pickle']),
+    );
+
+    expect(status).toEqual({
+      state: 'ready',
+      remediation: null,
+      configuredProviders: ['ollama', 'lmstudio'],
+    });
+  });
+
+  it.each([
+    ['its model list serves only the tool’s own gateway', ['opencode/big-pickle']],
+    ['its model list was not read', undefined],
+  ])('reads Auth required when %s', (_case, ids) => {
+    const status = deriveCliStatus(CLI_TOOL_CATALOG.opencode, listing(ids));
+
+    expect(status).toEqual({
+      state: 'unauthenticated',
+      remediation: 'Sign in or configure a provider, then ctrl+r. Free models require sign-in.',
+    });
+  });
+});
+
 describe('deriveCliStatus remediation inside the picker', () => {
   it('ends a signed-out tool on the picker refresh, never on doctor', () => {
     const detection = cliDetectionFor('unauthenticated', 'opencode', {

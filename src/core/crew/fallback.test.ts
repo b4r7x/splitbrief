@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import type { SavedCatalog } from '../discovery/catalog-read-merge.js';
 import type { CliToolDetection } from '../discovery/detection.js';
 import {
   deriveFallbackRows,
@@ -192,6 +193,42 @@ describe('deriveFallbackRows', () => {
   });
 });
 
+describe('deriveFallbackRows on a fallback tool that stores no credential', () => {
+  const config = makeConfig({
+    implementer: {
+      kind: 'cli',
+      tool: 'codex',
+      model: 'gpt-5',
+      fallback: { tool: 'opencode', model: 'ollama/llama3' },
+    },
+  });
+  const cliTools = [
+    cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+  ];
+  const listing =
+    (ids: readonly string[]) =>
+    (tool: string): SavedCatalog | undefined =>
+      tool === 'opencode' ? { models: ids.map((id) => ({ id })) } : undefined;
+
+  it('offers it on a model its model list serves', () => {
+    const rows = deriveFallbackRows({ config, cliTools, cliCatalog: listing(['ollama/llama3']) });
+
+    expect(rowOf(rows, 'build').note).toBeUndefined();
+  });
+
+  it('names it signed out when its model list does not serve the model or was not read', () => {
+    const unserved = deriveFallbackRows({
+      config,
+      cliTools,
+      cliCatalog: listing(['lmstudio/qwen3']),
+    });
+    const unread = deriveFallbackRows({ config, cliTools });
+
+    expect(rowOf(unserved, 'build').note).toBe('unauthenticated');
+    expect(rowOf(unread, 'build').note).toBe('unauthenticated');
+  });
+});
+
 describe('seatFallback', () => {
   it('reads BUILD from the default profile rather than the implementer mirror or another profile', () => {
     const config = makeConfig({
@@ -217,15 +254,25 @@ describe('seatFallback', () => {
 });
 
 describe('fallbackBlockedReason', () => {
+  const codex = { tool: 'codex' };
+
   it('offers a ready or unverified tool, the same states the halt offers', () => {
-    expect(fallbackBlockedReason(cliDetectionFor('ready', 'codex'))).toBeUndefined();
-    expect(fallbackBlockedReason(cliDetectionFor('unverified', 'codex'))).toBeUndefined();
+    expect(fallbackBlockedReason(codex, cliDetectionFor('ready', 'codex'), undefined)).toBe(
+      undefined,
+    );
+    expect(fallbackBlockedReason(codex, cliDetectionFor('unverified', 'codex'), undefined)).toBe(
+      undefined,
+    );
   });
 
   it('reads an absent or unavailable tool as not installed and names every other state', () => {
-    expect(fallbackBlockedReason(undefined)).toBe('not installed');
-    expect(fallbackBlockedReason(cliDetectionFor('unavailable', 'codex'))).toBe('not installed');
-    expect(fallbackBlockedReason(cliDetectionFor('incompatible', 'codex'))).toBe('incompatible');
+    expect(fallbackBlockedReason(codex, undefined, undefined)).toBe('not installed');
+    expect(fallbackBlockedReason(codex, cliDetectionFor('unavailable', 'codex'), undefined)).toBe(
+      'not installed',
+    );
+    expect(fallbackBlockedReason(codex, cliDetectionFor('incompatible', 'codex'), undefined)).toBe(
+      'incompatible',
+    );
   });
 });
 

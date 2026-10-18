@@ -1,10 +1,16 @@
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { runnerRoleForSlot, runnerSlotId } from '../../../core/config/accessors/runner-config.js';
+import type {
+  CliRouteInputs,
+  RememberedToolCatalog,
+} from '../../../core/readiness/checks/cli-readiness.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
 import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import { routeAuthState } from '../../../core/runners/route-auth.js';
 import {
   CLI_TOOL_IDS,
   type CliAuthChannelId,
@@ -18,6 +24,19 @@ import {
 import { assertNoLiveSession, clearStaleSession } from '../../../core/sessions/guards.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { detectAvailableCliReadiness } from '../../../engine/detection/detect.js';
+import { loadRememberedSnapshot } from '../../../engine/detection/cache.js';
+import { cliSeatDiscoveryContext } from '../../../engine/detection/cli-context.js';
+import {
+  freshRouteCatalog,
+  routeReadsCatalog,
+  type RouteCatalogReads,
+} from '../../../engine/detection/route-catalog.js';
+import { detectRunnerEvidence } from '../../../engine/detection/runner-evidence.js';
+import { resolveSeatModel } from '../../../engine/runners/host-model-selection.js';
+import {
+  runnerCandidates,
+  type RunnerCandidate,
+} from '../../../engine/runners/prepare-execution/runner-candidates.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { PreparationPolicy } from '../../../engine/runners/prepare-execution/types.js';
 import type {
@@ -73,6 +92,64 @@ export const detectConfiguredCliReadiness: DetectCliReadiness = async ({ project
   if (tools.length === 0) return [];
   return detectAvailableCliReadiness({ projectDir, tools, authChannels });
 };
+
+/**
+ * What doctor and a headless first run read each CLI seat's route against, the way start reads it:
+ * the model the seat calls, and the tool's model list. The list is read fresh only when none is
+ * saved, the seat's route waits on it, and the tool is ready or refused only on sign-in;
+ * `routeCatalogs` holds those reads, so a later pass over the same seats reads no list again.
+ */
+export async function readConfiguredCliRoutes(
+  input: Readonly<{
+    projectDir: string;
+    config: Config;
+    cliReadiness: readonly Pick<CliReadinessResult, 'tool' | 'status' | 'providerAuth'>[];
+    routeCatalogs: RouteCatalogReads;
+  }>,
+): Promise<CliRouteInputs> {
+  const { projectDir, config } = input;
+  const saved = (await loadRememberedSnapshot(projectDir))?.cliCatalogs ?? [];
+  const seatModels = new Map<string, string | undefined>();
+  let candidates: readonly RunnerCandidate[];
+  try {
+    candidates = runnerCandidates(config, 'new-workflow').candidates;
+  } catch {
+    // Runner readiness reports the invalid profile; every route then reads its configured model.
+    return { seatModels, catalogs: saved };
+  }
+  for (const { slot, runner } of candidates) {
+    if (runner.kind !== 'cli') continue;
+    const catalog = saved.find((remembered) => remembered.tool === runner.tool);
+    const seatModel = await resolveSeatModel(runner, process.env, catalog?.models);
+    seatModels.set(runnerSlotId(slot), seatModel.model);
+    const readiness = input.cliReadiness.find((result) => result.tool === runner.tool);
+    if (
+      (readiness?.status === 'ready' || readiness?.status === 'unauthenticated') &&
+      routeReadsCatalog(
+        routeAuthState({
+          tool: runner.tool,
+          model: seatModel.model,
+          providerAuth: readiness.providerAuth,
+          catalog,
+        }),
+      )
+    ) {
+      await freshRouteCatalog(input.routeCatalogs, runner.tool, () =>
+        detectRunnerEvidence({
+          context: cliSeatDiscoveryContext({ role: runnerRoleForSlot(slot), runner, config }),
+          projectDir,
+          includeCatalog: true,
+        }),
+      );
+    }
+  }
+  const catalogs: RememberedToolCatalog[] = [...saved];
+  for (const [tool, read] of input.routeCatalogs) {
+    const catalog = await read;
+    if (catalog !== undefined) catalogs.push({ tool, ...catalog });
+  }
+  return { seatModels, catalogs };
+}
 
 // A live session is left in place: preparation readiness reports it as the
 // `repo.active-session-live` blocker with its remediation.

@@ -18,7 +18,7 @@ import type { CliReadinessResult } from '../../schemas/readiness.js';
 import type { ReadinessReport, ReadinessSection } from '../types.js';
 import type { SeatDisplayName } from '../../crew/identity.js';
 import type { RunnerAvailabilityFact } from './availability.js';
-import type { RememberedToolCatalog } from './cli-readiness.js';
+import type { CliRouteInputs } from './cli-readiness.js';
 import type { ConfigReadinessInput } from './config.js';
 import type { PackageScriptsReadinessInput } from './validation.js';
 import type { RepoReadinessInput } from './repo.js';
@@ -30,7 +30,7 @@ export interface BuildReadinessReportInput {
   packageScripts: PackageScriptsReadinessInput;
   repo: RepoReadinessInput;
   cliReadiness?: readonly CliReadinessResult[] | undefined;
-  cliCatalogs?: readonly RememberedToolCatalog[] | undefined;
+  cliRoutes?: CliRouteInputs | undefined;
   availability?: readonly RunnerAvailabilityFact[] | undefined;
   /** How the run the report describes starts; a headless one approves its plan card unattended. */
   interaction?: 'interactive' | 'headless' | undefined;
@@ -93,7 +93,8 @@ function buildSections(input: BuildReadinessReportInput): ReadinessSection[] {
       checks: buildRunnerChecks({
         config: input.config,
         cliReadiness: input.cliReadiness,
-        cliCatalogs: input.cliCatalogs,
+        cliCatalogs: input.cliRoutes?.catalogs,
+        cliSeatModels: input.cliRoutes?.seatModels,
         availability: input.availability,
         seatDisplayName: input.seatDisplayName,
       }),

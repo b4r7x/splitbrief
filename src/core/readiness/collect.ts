@@ -41,7 +41,7 @@ import type { WorkflowOpts } from '../types/config-options.js';
 import type { SessionRef } from '../types/session-ref.js';
 import type { BuildReadinessReportInput } from './checks/build.js';
 import type { RunnerAvailabilityFact } from './checks/availability.js';
-import type { RememberedToolCatalog } from './checks/cli-readiness.js';
+import type { CliRouteInputs } from './checks/cli-readiness.js';
 import type { ConfigReadinessInput } from './checks/config.js';
 import type { PackageScriptsReadinessInput } from './checks/validation.js';
 import type { RepoReadinessInput } from './checks/repo.js';
@@ -58,8 +58,18 @@ export interface CollectReadinessOptions {
   opts?: WorkflowOpts | undefined;
   config?: Config | undefined;
   cliReadiness?: readonly CliReadinessResult[] | undefined;
-  /** The tools' remembered model catalogs, which route checks read. */
-  cliCatalogs?: readonly RememberedToolCatalog[] | undefined;
+  /**
+   * Optional for doctor-style diagnostics: what each CLI seat's route is read against, the model
+   * the seat calls and the tool's model list. Without it, a route reads the seat's configured model
+   * and no model list. Execution admission reads its own.
+   */
+  readCliRoutes?:
+    | ((input: {
+        projectDir: string;
+        config: Config;
+        cliReadiness: readonly CliReadinessResult[];
+      }) => Promise<CliRouteInputs>)
+    | undefined;
   /**
    * Optional live CLI probe for doctor-style diagnostics. Execution admission
    * performs its own fresh generic runner preparation.
@@ -151,6 +161,14 @@ export async function collectReadiness(
       cliReadiness = [];
     }
   }
+  const cliRoutes =
+    loaded.config && options.readCliRoutes
+      ? await options.readCliRoutes({
+          projectDir: options.projectDir,
+          config: loaded.config,
+          cliReadiness: cliReadiness ?? [],
+        })
+      : undefined;
   let availability: readonly RunnerAvailabilityFact[] | undefined;
   if (loaded.config && options.probeRunnerAvailability) {
     try {
@@ -168,7 +186,7 @@ export async function collectReadiness(
     repo,
     ...(loaded.config !== undefined && { config: loaded.config }),
     ...(cliReadiness !== undefined && { cliReadiness }),
-    ...(options.cliCatalogs !== undefined && { cliCatalogs: options.cliCatalogs }),
+    ...(cliRoutes !== undefined && { cliRoutes }),
     ...(availability !== undefined && { availability }),
     ...(options.interaction !== undefined && { interaction: options.interaction }),
     ...(options.seatDisplayName !== undefined && { seatDisplayName: options.seatDisplayName }),

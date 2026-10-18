@@ -796,6 +796,34 @@ describe('usePickerActions', () => {
         ],
         providers: [],
       });
+    const listsModels = (ids: readonly string[]) => {
+      const request = modelCacheStore.beginRefresh({ contexts: CATALOG_CONTEXTS });
+      modelCacheStore.publishLane({
+        request,
+        lane: {
+          lane: 'cliModels',
+          outcome: {
+            kind: 'fresh',
+            origin: 'request',
+            snapshot: {
+              source: 'cli-models',
+              contextKey: CATALOG_CONTEXTS.cliModels,
+              generation: 1,
+              requestId: 1,
+              fetchedAt: 1,
+              validatedAt: 1,
+              stale: false,
+              value: [
+                {
+                  connection: { tool: 'opencode', contextKey: 'opencode-context' },
+                  outcome: { kind: 'success', value: ids.map((id) => ({ id })) },
+                },
+              ],
+            },
+          },
+        },
+      });
+    };
     const confirmed = async (modelId: string): Promise<string> => {
       const ui = renderFeature(
         <ConfirmVariantProbe role="planner" toolId="opencode" modelId={modelId} />,
@@ -834,10 +862,25 @@ describe('usePickerActions', () => {
         cliTools: [cliDetectionFor('ready', 'opencode', { providerAuth: { kind: 'empty' } })],
         providers: [],
       });
+      listsModels(['lmstudio/qwen3']);
 
       expect(await confirmed('ollama/llama3')).toMatch(
         / · OpenCode CLI has no credential for ollama — run opencode auth login ollama before start$/,
       );
+    });
+
+    it('adds no note for a tool signed in to no provider before its model list is read', async () => {
+      seed(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        }),
+      );
+      detectionStore.setDetection({
+        cliTools: [cliDetectionFor('ready', 'opencode', { providerAuth: { kind: 'empty' } })],
+        providers: [],
+      });
+
+      expect(await confirmed('ollama/llama3')).not.toContain('auth login');
     });
 
     it('adds no note for a route the tool lists though no credential names its provider', async () => {
@@ -847,32 +890,7 @@ describe('usePickerActions', () => {
         }),
       );
       signedInToDeepSeek();
-      const request = modelCacheStore.beginRefresh({ contexts: CATALOG_CONTEXTS });
-      modelCacheStore.publishLane({
-        request,
-        lane: {
-          lane: 'cliModels',
-          outcome: {
-            kind: 'fresh',
-            origin: 'request',
-            snapshot: {
-              source: 'cli-models',
-              contextKey: CATALOG_CONTEXTS.cliModels,
-              generation: 1,
-              requestId: 1,
-              fetchedAt: 1,
-              validatedAt: 1,
-              stale: false,
-              value: [
-                {
-                  connection: { tool: 'opencode', contextKey: 'opencode-context' },
-                  outcome: { kind: 'success', value: [{ id: 'ollama/llama3' }] },
-                },
-              ],
-            },
-          },
-        },
-      });
+      listsModels(['ollama/llama3']);
 
       expect(await confirmed('ollama/llama3')).not.toContain('auth login');
     });

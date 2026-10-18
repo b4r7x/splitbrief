@@ -51,6 +51,7 @@ import {
   reportConfigSaveFailure,
 } from '../../stores/project/save-feedback.js';
 import { detectionStore } from '../../stores/project/detection.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -73,6 +74,11 @@ export const PRESET_SECTION = 'Ready-made crews';
 const CREW_SECTION = 'Crew';
 const CONTINUE_SECTION = '';
 
+/** Setup reads each tool's own model list the way the picker does. */
+function withCliCatalogs(detection: PickerDetectionSnapshot): PickerDetectionSnapshot {
+  return { ...detection, cliCatalog: (tool) => modelCacheStore.getCliCatalogRuntime({ tool }) };
+}
+
 async function unavailableSetupSeats(
   config: Config,
   detection: PickerDetectionSnapshot,
@@ -81,9 +87,10 @@ async function unavailableSetupSeats(
   const { config: effective, diskConfig: persisted } = configStore.get();
   if (effective === null || persisted === null) throw configError.loadNotCalled('setup');
   const saved = persistedConfigForSave({ persisted, effective, updated: config });
+  const crewDetection = withCliCatalogs(detection);
   const [invocationSeats, persistedSeats] = await Promise.all([
-    checkCrewAvailability({ config, detection, signal }),
-    checkCrewAvailability({ config: saved, detection, signal }),
+    checkCrewAvailability({ config, detection: crewDetection, signal }),
+    checkCrewAvailability({ config: saved, detection: crewDetection, signal }),
   ]);
   return [...invocationSeats, ...persistedSeats];
 }
@@ -298,7 +305,7 @@ function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }:
     availability.detection === detection;
   const unavailableSeats = checked
     ? availability.seats
-    : unavailableCrewSeats({ config, detection });
+    : unavailableCrewSeats({ config, detection: withCliCatalogs(detection) });
   const canContinue = checked && unavailableSeats.length === 0;
 
   useEffect(() => {

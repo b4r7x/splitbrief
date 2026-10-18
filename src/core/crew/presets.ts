@@ -1,6 +1,7 @@
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../config/accessors/reviewer-runner.js';
 import type { CliToolId } from '../runners/cli-tool-catalog.js';
+import { detectedSeatReady, type CrewDetection } from './default.js';
 import type { Config } from '../schemas/config.js';
 import type { ImplementerCliToolId, PlannerCliToolId } from '../schemas/enums.js';
 import type { ImplementerConfig } from '../schemas/implementer-config.js';
@@ -18,7 +19,7 @@ export type CrewPreset = Readonly<{
   label: string;
   description: string;
   seats: CrewPresetSeats;
-  /** The preset's tools that are not ready (not installed or not signed in), in seat order. */
+  /** The preset's tools whose seat is not ready (not installed, or not signed in for its route), in seat order. */
   notReady: readonly CliToolId[];
 }>;
 
@@ -58,45 +59,68 @@ const CREW_PRESET_DECLARATIONS: readonly CrewPresetDeclaration[] = Object.freeze
   },
 ]);
 
-function presetReviewerSeat(
+/**
+ * The configured seat when it already runs the preset's tool (`kept`), else a seat the preset makes
+ * for that tool. An inherited review seat is the plan seat.
+ */
+function presetSeats(
   config: Config,
   preset: CrewPresetDeclaration,
-): ReviewerConfig | undefined {
-  if (preset.review === preset.plan) return undefined;
-  const reviewer = resolveReviewerRunner(config).runner;
-  return reviewer.kind === 'cli' && reviewer.tool === preset.review
-    ? reviewer
-    : { kind: 'cli', tool: preset.review };
-}
-
-function presetSeats(config: Config, preset: CrewPresetDeclaration): CrewPresetSeats {
+): Readonly<{
+  seats: CrewPresetSeats;
+  kept: Readonly<Record<'plan' | 'build' | 'review', boolean>>;
+}> {
   const implementer = resolveImplementerProfiles(config).defaultProfile.config;
-  const reviewer = presetReviewerSeat(config, preset);
+  const reviewer = preset.review === preset.plan ? undefined : resolveReviewerRunner(config).runner;
+  const keepsPlan = config.planner.kind === 'cli' && config.planner.tool === preset.plan;
+  const keepsBuild = implementer.kind === 'cli' && implementer.tool === preset.build;
+  const keepsReview = reviewer?.kind === 'cli' && reviewer.tool === preset.review;
   return {
-    planner:
-      config.planner.kind === 'cli' && config.planner.tool === preset.plan
-        ? config.planner
-        : { kind: 'cli', tool: preset.plan },
-    implementer:
-      implementer.kind === 'cli' && implementer.tool === preset.build
-        ? implementer
-        : { kind: 'cli', tool: preset.build },
-    ...(reviewer === undefined ? {} : { reviewer }),
+    seats: {
+      planner: keepsPlan ? config.planner : { kind: 'cli', tool: preset.plan },
+      implementer: keepsBuild ? implementer : { kind: 'cli', tool: preset.build },
+      ...(reviewer === undefined
+        ? {}
+        : { reviewer: keepsReview ? reviewer : { kind: 'cli', tool: preset.review } }),
+    },
+    kept: {
+      plan: keepsPlan,
+      build: keepsBuild,
+      review: reviewer === undefined ? keepsPlan : keepsReview,
+    },
   };
 }
 
 export function computeCrewPresets(
-  input: Readonly<{ config: Config; readyTools: readonly CliToolId[] }>,
+  input: Readonly<{ config: Config; detection: CrewDetection }>,
 ): readonly CrewPreset[] {
-  const ready = new Set<CliToolId>(input.readyTools);
-
-  return CREW_PRESET_DECLARATIONS.map((preset) => ({
-    id: preset.id,
-    label: preset.label,
-    description: preset.description,
-    seats: presetSeats(input.config, preset),
-    notReady: [...new Set([preset.plan, preset.build, preset.review])].filter(
-      (tool) => !ready.has(tool),
-    ),
-  }));
+  // A seat the preset makes names no model, and a tool that stores no credential is safe only on a
+  // route its model list serves, so only a ready tool fills it.
+  const toolReady = (tool: CliToolId) =>
+    input.detection.cliTools.some(
+      (detection) => detection.tool === tool && detection.diagnostic.state === 'ready',
+    );
+  return CREW_PRESET_DECLARATIONS.map((preset) => {
+    const { seats, kept } = presetSeats(input.config, preset);
+    const runners = [
+      [preset.plan, seats.planner, kept.plan],
+      [preset.build, seats.implementer, kept.build],
+      [preset.review, seats.reviewer ?? seats.planner, kept.review],
+    ] as const;
+    return {
+      id: preset.id,
+      label: preset.label,
+      description: preset.description,
+      seats,
+      notReady: [
+        ...new Set(
+          runners
+            .filter(([tool, runner, isKept]) =>
+              isKept ? !detectedSeatReady(runner, input.detection) : !toolReady(tool),
+            )
+            .map(([tool]) => tool),
+        ),
+      ],
+    };
+  });
 }

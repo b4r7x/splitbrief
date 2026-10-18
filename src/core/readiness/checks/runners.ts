@@ -2,6 +2,7 @@ import { resolveImplementerProfiles } from '../../config/accessors/implementer-p
 import {
   getRunnerDisplayName,
   getRunnerModelName,
+  runnerSlotId,
   type RunnerConfig,
   type RunnerConfigSlot,
 } from '../../config/accessors/runner-config.js';
@@ -38,6 +39,7 @@ export function buildRunnerChecks({
   config,
   cliReadiness = [],
   cliCatalogs = [],
+  cliSeatModels,
   availability,
   seatDisplayName,
 }: {
@@ -45,6 +47,8 @@ export function buildRunnerChecks({
   cliReadiness?: readonly CliReadinessResult[] | undefined;
   /** The tools' remembered model catalogs; a route one of them serves can call. */
   cliCatalogs?: readonly RememberedToolCatalog[] | undefined;
+  /** The model each CLI seat calls, by `runnerSlotId`; without it, the seat's configured model. */
+  cliSeatModels?: ReadonlyMap<string, string | undefined> | undefined;
   availability?: readonly RunnerAvailabilityFact[] | undefined;
   seatDisplayName?: SeatDisplayName | undefined;
 }): ReadinessCheck[] {
@@ -58,7 +62,7 @@ export function buildRunnerChecks({
     seats.push({
       slot,
       authChannel: runner.authChannel ?? defaultCliAuthChannel(runner.tool).id,
-      model: runner.model,
+      model: cliSeatModels?.get(runnerSlotId(slot)) ?? runner.model,
     });
     configuredCliTools.set(runner.tool, seats);
   };

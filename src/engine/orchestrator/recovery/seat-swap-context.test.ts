@@ -288,6 +288,16 @@ describe('loadSeatSwapContext', () => {
       expect(context?.routeAuth).toEqual({ kind: 'unknown', reason: 'catalog-not-read' });
     });
 
+    it('never reads a tool that stores no credential as signed out when the fresh model list cannot be read', async () => {
+      evidence.detectRunnerEvidence.mockResolvedValue({
+        providerAuth: { kind: 'empty' },
+        catalog: { kind: 'command-failed', cause: 'exit 1' },
+      });
+      const context = await halt(await staleProject('seat-swap-fresh-empty-unread'), runner);
+
+      expect(context?.routeAuth).toEqual({ kind: 'unknown', reason: 'catalog-not-read' });
+    });
+
     it('probes nothing for a seat that names no model', async () => {
       const context = await halt(await staleProject('seat-swap-fresh-no-model'), {
         kind: 'cli',
@@ -381,6 +391,50 @@ describe('loadSeatSwapContext', () => {
     expect(context?.detectedTools).toContainEqual({ tool: 'claude-code', ready: false });
     expect(switchSeatOffer(context)).toBeUndefined();
   });
+
+  it.each([
+    ['takes', ['ollama/llama3'], undefined],
+    ['names why it does not take', ['lmstudio/qwen3'], 'unauthenticated'],
+  ])(
+    'reads a fallback tool that stores no credential against its saved model list: %s it',
+    async (_case, models, blocked) => {
+      const projectDir = createTempDir('seat-swap-fallback-no-credential');
+      dirs.push(projectDir);
+      mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
+      await saveDetectionCache({
+        projectDir,
+        snapshot: {
+          contextKey: 'readiness-remembered',
+          fetchedAt: Date.now(),
+          validatedAt: Date.now(),
+          generation: 1,
+          requestId: 1,
+          providers: [],
+          cliTools: [
+            cliDetectionFor('ready', 'codex'),
+            cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+          ],
+          cliCatalogs: [
+            { tool: 'opencode', models: models.map((id) => ({ id })), probedAt: Date.now() },
+          ],
+        },
+      });
+      const fallback = { tool: 'opencode', model: 'ollama/llama3' };
+
+      const context = await loadSeatSwapContext({
+        modelCache: undefined,
+        projectDir,
+        seat: 'build',
+        runner: { kind: 'cli', tool: 'codex', fallback },
+        config: makeConfig({ implementer: { kind: 'cli', tool: 'codex', fallback } }),
+      });
+
+      expect(context?.fallbackBlockedReason).toBe(blocked);
+      expect(switchSeatOffer(context)?.candidates).toEqual(
+        blocked === undefined ? [fallback] : undefined,
+      );
+    },
+  );
 
   it('calls a declared fallback with no executable not installed', async () => {
     const projectDir = await projectWithRememberedTools('seat-swap-fallback-absent', [

@@ -10,6 +10,19 @@ import { probeRunnerAvailability } from '../runners/probe-availability.js';
 
 afterEach(() => vi.unstubAllGlobals());
 
+/** OpenCode with a provider set up only in its config: `opencode auth list` prints []. */
+function noCredentialOpencode(ids: readonly string[] | undefined) {
+  return {
+    cliTools: [
+      cliDetectionFor('ready', 'claude-code'),
+      cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+    ],
+    providers: [],
+    cliCatalog: (tool: string) =>
+      tool === 'opencode' && ids !== undefined ? { models: ids.map((id) => ({ id })) } : undefined,
+  };
+}
+
 function detectionFor(config: Config) {
   const { sourceContexts } = createProductionDetectionDeps({ config, projectDir: '/project' });
   return {
@@ -183,6 +196,50 @@ describe('detected default crew connections', () => {
       ),
     ).toBe(false);
   });
+
+  it.each([
+    ['a model its model list serves', 'ollama/llama3', ['ollama/llama3'], []],
+    ['a model its model list does not serve', 'ollama-cloud/glm-5', ['ollama/llama3'], ['build']],
+    ['a model list that was not read', 'ollama/llama3', undefined, ['build']],
+  ])(
+    'reads an OpenCode build seat that stores no credential on %s as start does',
+    async (_case, model, ids, unavailable) => {
+      const config = makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'opencode', model },
+      });
+
+      const seats = await checkCrewAvailability({ config, detection: noCredentialOpencode(ids) });
+
+      expect(seats.map((seat) => seat.id)).toEqual(unavailable);
+    },
+  );
+
+  it.each([
+    ['on auto', { model: 'auto' }],
+    ['with no model', {}],
+  ])(
+    "reads an OpenCode build seat %s by the model the tool's own config selects",
+    async (_case, model) => {
+      const detection = noCredentialOpencode(['ollama/llama3']);
+      const config = makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'opencode', ...model },
+      });
+
+      expect(
+        await checkCrewAvailability({
+          config,
+          detection: {
+            ...detection,
+            cliTools: detection.cliTools.map((tool) =>
+              tool.tool === 'opencode' ? { ...tool, selectedModel: 'ollama/llama3' } : tool,
+            ),
+          },
+        }),
+      ).toEqual([]);
+    },
+  );
 
   it('uses ambient detection only for the default connection', () => {
     const config = createDefaultConfig();
