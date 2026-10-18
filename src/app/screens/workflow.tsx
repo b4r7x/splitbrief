@@ -1,5 +1,5 @@
 import { plainUserMessage } from '../../core/types/user-input.js';
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Box } from 'ink';
 import { StopMenu } from '../../features/workflow/stop/menu.js';
 import { readStopMenuRows, stopMenuLayout } from '../../features/workflow/stop/options.js';
@@ -107,6 +107,10 @@ export function WorkflowScreen({
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
   const [scrollBelowLabel, setScrollBelowLabel] = useState('');
   const [reviewSelected, setReviewSelected] = useState(0);
+  // Ink delivers every key of one stdin read before React re-renders, so ⏎ right after ↓ runs the
+  // composer's handler from the render before ↓. The ref carries the row ↓ moved to across it.
+  const reviewSelectedRef = useRef(reviewSelected);
+  reviewSelectedRef.current = reviewSelected;
   const reviewKeysCommenting = reviewKeysStore.use((state) => state.commenting);
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
   const reviewConfirms = reviewStore.use((state) => state.confirms);
@@ -129,13 +133,16 @@ export function WorkflowScreen({
   const reviewCommenting = reviewArtifact !== null && reviewKeysCommenting;
 
   useLayoutEffect(() => {
+    reviewSelectedRef.current = 0;
     setReviewSelected(0);
   }, [reviewArtifact, reviewOwnerToken]);
 
   const handleReviewBoundaryNavigate = (direction: 'up' | 'down'): boolean => {
     if (reviewArtifact === null) return false;
     const optionCount = reviewDocumentOptions(reviewArtifact).length;
-    setReviewSelected((index) => navigateIndex(direction, index, optionCount));
+    const next = navigateIndex(direction, reviewSelectedRef.current, optionCount);
+    reviewSelectedRef.current = next;
+    setReviewSelected(next);
     return true;
   };
 
@@ -187,7 +194,7 @@ export function WorkflowScreen({
     if (reviewArtifact !== null && message.displayText.trim() === '') {
       // An open change request takes ⏎ as `send`, and an empty one has nothing to send.
       if (reviewCommenting) return;
-      const row = reviewDocumentOptions(reviewArtifact)[reviewSelected];
+      const row = reviewDocumentOptions(reviewArtifact)[reviewSelectedRef.current];
       // The comment row hands the keyboard to the composer the same way a typed `c` does: one
       // empty change request, so there is one way into a review comment and not two.
       if (row === undefined || row.command === 'comment') {
