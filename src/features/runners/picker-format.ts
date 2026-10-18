@@ -38,10 +38,10 @@ import type { ModelOption } from './model-catalog/recency.js';
 const DETECTING_MODELS_COPY = 'Detecting models…';
 // Detection has not run yet, whichever path noticed it: one state, one sentence, naming the key
 // that runs it rather than asking for a selection the user has already made.
-const DETECTION_NOT_RUN_COPY = 'Model detection has not run yet. Press ctrl+r to refresh';
+const DETECTION_NOT_RUN = 'Model detection has not run yet';
 // Detection has not run *and* the panel beside the byline is listing rows: those rows are the
 // bundled list, so the byline names which list the user is reading instead of denying it exists.
-const BUNDLED_LIST_COPY = `Bundled model list${SOFT_SEP}ctrl+r detects this tool's models`;
+const BUNDLED_LIST = 'Bundled model list';
 
 /** Why a native CLI catalog probe produced no confirmed models. */
 export type ModelCatalogDiagnostic =
@@ -132,17 +132,33 @@ function noListingSentence(toolName: string): string {
   return `${toolName} does not support model listing`;
 }
 
-/** A signed-out tool's error already names its sign-in step, and a retry cannot sign it in. */
-function commandFailedCopy(toolName: string, cause: string, signedOut: boolean): string {
-  const failure = `${toolName} could not list models: ${cause}`;
-  return signedOut ? failure : `${failure}${SOFT_SEP}ctrl+r to retry`;
+/**
+ * A tool the picker cannot run states its remediation on the row above the catalog line. A retry
+ * alone cannot sign the tool in or install it, and a CLI remediation that a recheck settles ends on
+ * ctrl+r itself, so the catalog line names no retry of its own.
+ */
+function withRetry(failure: string, retry: string, remedied: boolean): string {
+  return remedied ? failure : `${failure}${retry}`;
+}
+
+function detectionNotRunCopy(remedied: boolean): string {
+  return withRetry(DETECTION_NOT_RUN, '. Press ctrl+r to refresh', remedied);
+}
+
+function commandFailedCopy(toolName: string, cause: string, remedied: boolean): string {
+  return withRetry(
+    `${toolName} could not list models: ${cause}`,
+    `${SOFT_SEP}ctrl+r to retry`,
+    remedied,
+  );
 }
 
 export function formatCatalogDiagnostic(
   diagnostic: ModelCatalogDiagnostic,
   toolName: string,
+  remedied: boolean,
 ): string {
-  if (diagnostic.kind === 'not-probed') return DETECTION_NOT_RUN_COPY;
+  if (diagnostic.kind === 'not-probed') return detectionNotRunCopy(remedied);
   if (diagnostic.kind === 'unsupported') return noListingSentence(toolName);
   switch (diagnostic.failure) {
     case 'unsupported':
@@ -156,17 +172,21 @@ export function formatCatalogDiagnostic(
     // Unreachable is not unauthenticated: the network is what failed, so the remedy is the retry
     // every other reachability failure offers, never a sign-in the tool never asked for.
     case 'offline':
-      return 'Model detection could not reach the network. Press ctrl+r to retry';
+      return withRetry(
+        'Model detection could not reach the network',
+        '. Press ctrl+r to retry',
+        remedied,
+      );
     case 'timeout':
-      return 'Model detection timed out. Press ctrl+r to retry';
+      return withRetry('Model detection timed out', '. Press ctrl+r to retry', remedied);
     case 'malformed':
-      return `Unreadable model list${SOFT_SEP}ctrl+r will not help; add a custom model or report the output`;
+      return `Unreadable model list${SOFT_SEP}${remedied ? '' : 'ctrl+r will not help; '}add a custom model or report the output`;
     case 'command-failed':
-      return commandFailedCopy(toolName, diagnostic.cause, false);
+      return commandFailedCopy(toolName, diagnostic.cause, remedied);
     case 'cancelled':
-      return 'Model detection was cancelled. Press ctrl+r to retry';
+      return withRetry('Model detection was cancelled', '. Press ctrl+r to retry', remedied);
     case 'not-run':
-      return DETECTION_NOT_RUN_COPY;
+      return detectionNotRunCopy(remedied);
   }
 }
 
@@ -477,9 +497,9 @@ export function customModelEntryCopy(
     : { placeholder: `e.g. ${first}`, examples: rest };
 }
 
-function laneStatus(lane: CatalogLane): string | undefined {
+function laneStatus(lane: CatalogLane, remedied: boolean): string | undefined {
   if (lane === 'pending') return CATALOG_LANE_PENDING;
-  if (lane === 'failed') return `${CATALOG_FETCH_FAILED}${SOFT_SEP}ctrl+r`;
+  if (lane === 'failed') return withRetry(CATALOG_FETCH_FAILED, `${SOFT_SEP}ctrl+r`, remedied);
   return undefined;
 }
 
@@ -525,27 +545,38 @@ export function bylineDiagnostic(input: {
   diagnostic: ModelCatalogDiagnostic | undefined;
   modelCount: number;
   toolName: string;
-  signedOut: boolean;
+  status: PickerOptionStatus;
   budget: number;
 }): string | undefined {
   const { diagnostic } = input;
   if (diagnostic === undefined) return undefined;
+  // A signed-out tool's remediation is already the sign-in step: the tool's facts take the row.
+  if (
+    input.status.state === 'unauthenticated' &&
+    diagnostic.kind === 'probe-failed' &&
+    (diagnostic.failure === 'missing-credential' || diagnostic.failure === 'invalid-credential')
+  ) {
+    return undefined;
+  }
+  const remedied = input.status.remediation !== null;
   // An alias lane by design is not a failure: claude-code lists rows and still reports `unsupported`.
   if (input.modelCount > 0 && diagnostic.kind === 'unsupported') return undefined;
   // Rows are listed and detection has not run: they are the bundled list. Saying detection has not
   // run would contradict the column beside it, so name the list the user is reading instead.
-  if (input.modelCount > 0 && isDetectionNotRun(diagnostic)) return BUNDLED_LIST_COPY;
+  if (input.modelCount > 0 && isDetectionNotRun(diagnostic)) {
+    return withRetry(BUNDLED_LIST, `${SOFT_SEP}ctrl+r detects this tool's models`, remedied);
+  }
   if (diagnostic.kind !== 'probe-failed' || diagnostic.failure !== 'command-failed') {
-    return formatCatalogDiagnostic(diagnostic, input.toolName);
+    return formatCatalogDiagnostic(diagnostic, input.toolName, remedied);
   }
   let causeCells = getTerminalCellWidth(diagnostic.cause);
-  let fitted = commandFailedCopy(input.toolName, diagnostic.cause, input.signedOut);
+  let fitted = commandFailedCopy(input.toolName, diagnostic.cause, remedied);
   while (causeCells > 0 && wrapOnWords(fitted, input.budget, 2).cut) {
     causeCells -= 1;
     fitted = commandFailedCopy(
       input.toolName,
       truncateTerminalDisplayText(diagnostic.cause, causeCells),
-      input.signedOut,
+      remedied,
     );
   }
   return fitted;
@@ -564,7 +595,7 @@ export function formatToolsByline(input: {
   source: string | undefined;
   unverifiedForPlan: boolean;
   diagnostic: ModelCatalogDiagnostic | undefined;
-  signedOut: boolean;
+  status: PickerOptionStatus;
   lane: CatalogLane;
   capabilities: readonly string[];
   billing: RunnerBillingPosture;
@@ -574,12 +605,12 @@ export function formatToolsByline(input: {
     diagnostic: input.diagnostic,
     modelCount: input.modelCount,
     toolName: input.toolName,
-    signedOut: input.signedOut,
+    status: input.status,
     budget: input.budget,
   });
   if (status !== undefined) return status;
 
-  const lane = laneStatus(input.lane);
+  const lane = laneStatus(input.lane, input.status.remediation !== null);
   const provenance = lane ?? input.source;
   // The lane status replaces the source, so a lane that is not ready carries no trust clause.
   const trust =

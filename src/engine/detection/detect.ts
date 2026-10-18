@@ -12,6 +12,7 @@ import type { CliReadinessResult } from '../../core/schemas/readiness.js';
 import {
   cliExecutableTrustRemediation,
   cliReadinessCheckId,
+  cliReadinessRemediation,
   deriveCliReadiness,
 } from '../../core/schemas/readiness.js';
 import { matches } from '../../utils/error.js';
@@ -47,11 +48,15 @@ export interface DetectCliToolsOptions {
   signal?: AbortSignal | undefined;
 }
 
+/** A detection is what the runner picker shows, so its remediation ends on the picker's recheck. */
 export function cliDetectionFromReadiness(result: CliReadinessResult): CliToolDetection {
   const diagnostic =
-    result.remediation === null
+    result.status === 'ready'
       ? { state: 'ready' as const, remediation: null }
-      : { state: result.status, remediation: result.remediation };
+      : {
+          state: result.status,
+          remediation: cliReadinessRemediation(result, result.status, 'picker'),
+        };
   return {
     tool: result.tool,
     executable: result.executable,
@@ -118,7 +123,7 @@ function unresolvedReadiness(
       probedAt,
       checkId: cliReadinessCheckId(tool),
       status: 'untrusted',
-      remediation: cliExecutableTrustRemediation(CLI_TOOL_CATALOG[tool].displayName),
+      remediation: cliExecutableTrustRemediation(CLI_TOOL_CATALOG[tool].displayName, 'doctor'),
     };
   }
 

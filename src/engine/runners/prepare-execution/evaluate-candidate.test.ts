@@ -158,7 +158,7 @@ describe('evaluateCandidate policy denial remediation', () => {
       severity: 'blocker',
       diagnosticState: 'auth-policy-denied',
       fix: scenario.unsupported
-        ? cliAuthRemediation({ tool: scenario.tool, authChannel: 'session' })
+        ? cliAuthRemediation({ tool: scenario.tool, authChannel: 'session' }, 'doctor')
         : READINESS_DIAGNOSTIC_REMEDIATION['auth-policy-denied'],
     });
   });

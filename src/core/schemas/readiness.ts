@@ -196,12 +196,19 @@ function platformName(platform: NodeJS.Platform): string {
 }
 
 /**
- * The sign-in step every surface gives a signed-out tool; `names` is one tool or a list of them.
- * It ends on the command that names signed-out tools again from where the user is: `doctor`
- * checks a saved crew, and Setup (`init`) checks a project with or without one.
+ * Where the user checks a tool again: `doctor` checks a saved crew, Setup (`init`) checks a
+ * project with or without one, and inside the runner picker `ctrl+r` checks the tools again.
  */
-export function cliSignInStep(names: string, recheck: 'doctor' | 'init'): string {
-  return `Sign in to ${names}, then run \`splitbrief ${recheck}\` again.`;
+export type CliRecheck = 'doctor' | 'init' | 'picker';
+
+/** The step every remediation ends on, spelled from where the user is. */
+export function thenRecheck(recheck: CliRecheck): string {
+  return recheck === 'picker' ? 'then ctrl+r' : `then run \`splitbrief ${recheck}\` again`;
+}
+
+/** The sign-in step every surface gives a signed-out tool; `names` is one tool or a list of them. */
+export function cliSignInStep(names: string, recheck: CliRecheck): string {
+  return `Sign in to ${names}, ${thenRecheck(recheck)}.`;
 }
 
 export function cliAuthRemediation(
@@ -209,12 +216,13 @@ export function cliAuthRemediation(
     tool: CliReadinessFacts['tool'];
     authChannel?: CliReadinessFacts['authChannel'];
   }>,
+  recheck: CliRecheck,
 ): string {
   const channels = CLI_TOOL_CATALOG[runner.tool].auth.channels;
   const name = CLI_TOOL_CATALOG[runner.tool].displayName;
   const channel = channels.find((entry) => entry.id === runner.authChannel);
   if (channel === undefined) {
-    return `Select an authentication channel for ${name}, then run \`splitbrief doctor\` again.`;
+    return `Select an authentication channel for ${name}, ${thenRecheck(recheck)}.`;
   }
   if (!cliAuthChannelPlatformSupported(channel)) {
     const supported = channel.supportedPlatforms?.map(platformName).join(', ');
@@ -222,9 +230,12 @@ export function cliAuthRemediation(
   }
   const credentialEnv = channel.env[0];
   if (credentialEnv !== undefined) {
-    return `Export ${credentialEnv} for ${name}, then run \`splitbrief doctor\` again.`;
+    return `Export ${credentialEnv} for ${name}, ${thenRecheck(recheck)}.`;
   }
-  const signIn = cliSignInStep(name, 'doctor');
+  const signIn = cliSignInStep(name, recheck);
+  // The picker byline keeps one row for the remedy and the next for the tool's facts or its
+  // failure, so it gives the step alone; doctor has the room to say where SPLITBRIEF looks.
+  if (recheck === 'picker') return signIn;
   switch (cliAuthChannelHostStateAccess(channel)) {
     case 'host-account':
       return `SPLITBRIEF looks for the ${name} session in the ${platformName(process.platform)} keychain. ${signIn}`;
@@ -235,8 +246,8 @@ export function cliAuthRemediation(
   }
 }
 
-export function cliExecutableTrustRemediation(name: string): string {
-  return `Install ${name} outside the project. Put its absolute directory first on PATH, then run \`splitbrief doctor\` again.`;
+export function cliExecutableTrustRemediation(name: string, recheck: CliRecheck): string {
+  return `Install ${name} outside the project. Put its absolute directory first on PATH, ${thenRecheck(recheck)}.`;
 }
 
 export function cliReadinessRemediation(
@@ -245,20 +256,21 @@ export function cliReadinessRemediation(
     'tool' | 'authChannel' | 'installedVersion' | 'testedVersion' | 'compatibility'
   >,
   status: Exclude<z.infer<typeof CliReadinessStateSchema>, 'ready'>,
+  recheck: CliRecheck,
 ): string {
   const name = CLI_TOOL_CATALOG[facts.tool].displayName;
   switch (status) {
     case 'disabled':
       return `Enable ${name} before selecting it as a runner.`;
     case 'unavailable':
-      return `Install ${name}, then run \`splitbrief doctor\` again.`;
+      return `Install ${name}, ${thenRecheck(recheck)}.`;
     case 'untrusted':
-      return cliExecutableTrustRemediation(name);
+      return cliExecutableTrustRemediation(name, recheck);
     case 'incompatible':
-      return `Install the tested ${name} version (${facts.testedVersion}), then run \`splitbrief doctor\` again.`;
+      return `Install the tested ${name} version (${facts.testedVersion}), ${thenRecheck(recheck)}.`;
     case 'unverified':
       if (facts.installedVersion === null || facts.compatibility !== 'compatible') {
-        return `Verify ${name} against tested version ${facts.testedVersion}, then run \`splitbrief doctor\` again.`;
+        return `Verify ${name} against tested version ${facts.testedVersion}, ${thenRecheck(recheck)}.`;
       }
       if (
         CLI_TOOL_CATALOG[facts.tool].auth.channels.some(
@@ -266,13 +278,13 @@ export function cliReadinessRemediation(
             channel.id === facts.authChannel && !cliAuthChannelPlatformSupported(channel),
         )
       )
-        return cliAuthRemediation(facts);
+        return cliAuthRemediation(facts, recheck);
       // Honest about the ceiling of a cheap check: stored credentials prove
       // presence, never a working session, and re-running readiness cannot
       // change that — only a real call can.
       return `${name} authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real ${name} call settles it; if that call fails to authenticate, sign in to ${name} again.`;
     case 'unauthenticated':
-      return cliAuthRemediation(facts);
+      return cliAuthRemediation(facts, recheck);
   }
 }
 
@@ -281,5 +293,10 @@ export function deriveCliReadiness(input: CliReadinessFacts): CliReadinessResult
   const status = deriveCliReadinessStatus(facts);
   const checkId = cliReadinessCheckId(facts.tool);
   if (status === 'ready') return { ...facts, checkId, status, remediation: null };
-  return { ...facts, checkId, status, remediation: cliReadinessRemediation(facts, status) };
+  return {
+    ...facts,
+    checkId,
+    status,
+    remediation: cliReadinessRemediation(facts, status, 'doctor'),
+  };
 }

@@ -225,7 +225,7 @@ describe('TwoColumnPicker', () => {
               },
               modelCount: 0,
               toolName: 'OpenCode CLI',
-              signedOut: false,
+              status: { state: 'ready', remediation: null },
               budget: bylineBudget,
             }),
           ),

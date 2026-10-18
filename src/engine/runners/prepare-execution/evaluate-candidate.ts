@@ -92,13 +92,13 @@ function cliAdmissionProblem({
           return {
             message: `${name} is not signed in.`,
             cause: 'unauthenticated',
-            fix: cliAuthRemediation({ tool, authChannel }),
+            fix: cliAuthRemediation({ tool, authChannel }, 'doctor'),
           };
         case 'invalid':
           return {
             message: `${name} credentials are invalid.`,
             cause: 'unauthenticated',
-            fix: cliAuthRemediation({ tool, authChannel }),
+            fix: cliAuthRemediation({ tool, authChannel }, 'doctor'),
           };
         case 'timeout':
           return {
@@ -125,14 +125,14 @@ function cliAdmissionProblem({
             fix: CLI_TOOL_CATALOG[tool].auth.channels.some(
               (channel) => channel.id === authChannel && !cliAuthChannelPlatformSupported(channel),
             )
-              ? cliAuthRemediation({ tool, authChannel })
+              ? cliAuthRemediation({ tool, authChannel }, 'doctor')
               : READINESS_DIAGNOSTIC_REMEDIATION['auth-policy-denied'],
           };
         case 'not-selected':
           return {
             message: `${name} has no authentication channel selected.`,
             cause: 'auth-not-selected',
-            fix: cliAuthRemediation({ tool }),
+            fix: cliAuthRemediation({ tool }, 'doctor'),
           };
         case 'cancelled':
           return {
@@ -161,7 +161,7 @@ function cliAdmissionProblem({
         return {
           message: `${name} is not installed.`,
           cause: 'missing-binary',
-          fix: cliReadinessRemediation(facts, 'unavailable'),
+          fix: cliReadinessRemediation(facts, 'unavailable', 'doctor'),
         };
       }
       if (reason.kind === 'installation') {
@@ -174,26 +174,26 @@ function cliAdmissionProblem({
       return {
         message: `${name} executable could not be trusted.`,
         cause: 'untrusted-path',
-        fix: cliReadinessRemediation(facts, 'untrusted'),
+        fix: cliReadinessRemediation(facts, 'untrusted', 'doctor'),
       };
     case 'compatibility':
       if (reason.fact === 'incompatible') {
         return {
           message: `${name} version is not compatible.`,
           cause: 'incompatible-version',
-          fix: cliReadinessRemediation(facts, 'incompatible'),
+          fix: cliReadinessRemediation(facts, 'incompatible', 'doctor'),
         };
       }
       return {
         message: `${name} version could not be confirmed as compatible.`,
         cause: 'unknown-version',
-        fix: cliReadinessRemediation(facts, 'unverified'),
+        fix: cliReadinessRemediation(facts, 'unverified', 'doctor'),
       };
     case 'disabled':
       return {
         message: `${name} is disabled.`,
         cause: 'disabled',
-        fix: cliReadinessRemediation(facts, 'disabled'),
+        fix: cliReadinessRemediation(facts, 'disabled', 'doctor'),
       };
     case 'context-mismatch':
     case 'evidence-source':

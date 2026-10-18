@@ -7,8 +7,10 @@ import {
   zeroCounts,
 } from '#testing/helpers/runner-picker.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -23,6 +25,7 @@ import { formatCatalogDiagnostic } from './picker-format.js';
 import { PickerView } from './picker-view.js';
 import { noFallbackOption, type PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
+import { deriveCliStatus } from './model-catalog/status.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
@@ -356,7 +359,11 @@ describe('PickerView previews', () => {
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(
-      formatCatalogDiagnostic({ kind: 'probe-failed', failure: 'missing-credential' }, 'Codex'),
+      formatCatalogDiagnostic(
+        { kind: 'probe-failed', failure: 'missing-credential' },
+        'Codex',
+        false,
+      ),
     );
     expect(frame).not.toContain('3 models');
     expect(frame).not.toContain('detected');
@@ -470,6 +477,89 @@ describe('PickerView previews', () => {
     expect(rows[remedyRow]).toBe('Set ANTHROPIC_API_KEY, then refresh detection.');
     expect(rows[remedyRow + 1]).toContain('Anthropic');
     ui.unmount();
+  });
+
+  describe('a signed-out tool whose model listing failed', () => {
+    const status = deriveCliStatus(CLI_TOOL_CATALOG.opencode, {
+      cliTools: [
+        cliDetectionFor('unauthenticated', 'opencode', { authChannel: 'provider-dependent' }),
+      ],
+      providers: [],
+    });
+    const opencode = pickerItem({
+      id: 'opencode',
+      displayName: 'OpenCode CLI',
+      kind: 'cli',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'optional',
+      billing: 'subscription-included',
+      permissions: readyPermissions,
+      status,
+      available: false,
+    });
+
+    async function bylineRows(
+      catalogDiagnostic: PickerCatalog['catalogDiagnostic'],
+      cols = 160,
+    ): Promise<string[]> {
+      const catalog: PickerCatalog = pickerCatalog({
+        browseCatalog: false,
+        items: [opencode],
+        rightModels: [],
+        currentItem: opencode,
+        selectedItemId: opencode.id,
+        roleLabel: 'Planner',
+        modelCounts: zeroCounts,
+        catalogDiagnostic,
+      });
+      terminalSizeStore.__testReset({ cols, rows: 40, isSmall: false });
+      const ui = renderFeature(
+        <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
+      );
+      await flushEffects();
+      const rows = (ui.lastFrame() ?? '').split('\n').map((row) => row.trim());
+      ui.unmount();
+      return rows;
+    }
+
+    it('keeps the sign-in step first when the listing timed out', async () => {
+      const rows = await bylineRows({ kind: 'probe-failed', failure: 'timeout' });
+      const frame = rows.join('\n');
+      const remedyRow = rows.findLastIndex((row) => row.includes('Sign in to OpenCode CLI'));
+      expect(remedyRow).toBeGreaterThanOrEqual(0);
+      expect(rows[remedyRow]).toContain('then ctrl+r.');
+      expect(rows[remedyRow + 1]).toBe('Model detection timed out');
+      expect(frame).not.toContain('splitbrief doctor');
+      expect(`${rows[remedyRow]} ${rows[remedyRow + 1]}`.match(/ctrl\+r/g)).toHaveLength(1);
+    });
+
+    it('keeps the sign-in step first when the listing command failed', async () => {
+      const rows = await bylineRows({
+        kind: 'probe-failed',
+        failure: 'command-failed',
+        cause: 'exit 1',
+      });
+      const frame = rows.join('\n');
+      const remedyRow = rows.findLastIndex((row) => row.includes('Sign in to OpenCode CLI'));
+      expect(remedyRow).toBeGreaterThanOrEqual(0);
+      expect(rows[remedyRow + 1]).toBe('OpenCode CLI could not list models: exit 1');
+      expect(frame).not.toContain('ctrl+r to retry');
+    });
+
+    it('fits the sign-in step on one row at 80 columns and keeps the failure under it', async () => {
+      const rows = await bylineRows({ kind: 'probe-failed', failure: 'timeout' }, 80);
+      const remedyRow = rows.findLastIndex((row) => row.includes('Sign in to OpenCode CLI'));
+      expect(rows[remedyRow]).toBe('Sign in to OpenCode CLI, then ctrl+r.');
+      expect(rows[remedyRow + 1]).toBe('Model detection timed out');
+    });
+
+    it('says sign in once when the listing found no credential', async () => {
+      const rows = await bylineRows({ kind: 'probe-failed', failure: 'missing-credential' }, 80);
+      const remedyRow = rows.findLastIndex((row) => row.includes('Sign in to OpenCode CLI'));
+      expect(rows[remedyRow]).toBe('Sign in to OpenCode CLI, then ctrl+r.');
+      expect(rows[remedyRow + 1]).toMatch(/^OpenCode CLI/);
+      expect(rows.join('\n')).not.toContain('to detect its models');
+    });
   });
 
   it('shows auto-only guidance without a custom model row', async () => {

@@ -3789,6 +3789,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · planner picker · a tool that is not signed in',
         marker: PICKER_TITLE_MARKER,
       },
+      {
+        id: 'overlay-picker-signed-out-probe-timeout',
+        title: 'Overlay · planner picker · a signed-out tool whose model listing timed out',
+        marker: PICKER_TITLE_MARKER,
+      },
       ...(
         [
           ['ollama', 'Ollama connection editor', 'Not checked yet'],
