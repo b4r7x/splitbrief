@@ -8,7 +8,12 @@ import { assertNever, includes } from '../../../../utils/type-guards.js';
 import { isLivePhase } from '../../../phases.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { countNoun } from '../../../../utils/pluralize.js';
-import { formatApplyRestoreCounts, rejectRunFeedback, runRejectFacts } from '../messages.js';
+import {
+  APPLY_UNFINISHED_REFUSAL,
+  formatApplyRestoreCounts,
+  rejectRunFeedback,
+  runRejectFacts,
+} from '../messages.js';
 
 export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
   return [
@@ -60,8 +65,10 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       description: 'Close the run, saving unapplied changes',
       category: 'workflow',
       validScreens: ['workflow'],
-      guard: (c) =>
-        c.openRunAtRest || isLivePhase(c.phase) ? undefined : 'No run to end in this phase',
+      guard: (c) => {
+        if (c.applyUnfinished) return APPLY_UNFINISHED_REFUSAL;
+        return c.openRunAtRest || isLivePhase(c.phase) ? undefined : 'No run to end in this phase';
+      },
       handler: () => {
         if (!ctx.endRun()) ctx.setFeedbackError('No active run to end.');
       },

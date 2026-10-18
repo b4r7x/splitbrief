@@ -2,6 +2,7 @@ import { createStore, storeBase } from '../create-store.js';
 import { publishFeedbackError, publishFeedbackReset } from '../channels/feedback.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
+import { applyUnfinished } from '../../core/sessions/run-status.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
@@ -128,6 +129,16 @@ export function isOpenRunAtRest(route: RouteData): boolean {
     route.screen === 'workflow' &&
     route.execution.kind === 'at-rest' &&
     route.run.status.kind !== 'closed'
+  );
+}
+
+/** An open run at rest whose Apply did not finish: its screen can continue it, not end it. */
+export function isApplyUnfinishedAtRest(route: RouteData): boolean {
+  return (
+    route.screen === 'workflow' &&
+    isOpenRunAtRest(route) &&
+    route.run.hydration.kind === 'loaded' &&
+    applyUnfinished(route.run.hydration.state)
   );
 }
 

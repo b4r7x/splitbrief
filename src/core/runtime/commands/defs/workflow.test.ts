@@ -19,10 +19,20 @@ describe('/resume', () => {
     const resume = command('/resume');
 
     expect(
-      resume.guard?.({ phase: 'implementing', plannerSupportsImages: true, openRunAtRest: false }),
+      resume.guard?.({
+        phase: 'implementing',
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        applyUnfinished: false,
+      }),
     ).toBeUndefined();
     expect(
-      resume.guard?.({ phase: 'idle', plannerSupportsImages: true, openRunAtRest: false }),
+      resume.guard?.({
+        phase: 'idle',
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        applyUnfinished: false,
+      }),
     ).toBe('No run to resume in this phase');
   });
 
@@ -30,13 +40,19 @@ describe('/resume', () => {
     const resume = command('/resume');
 
     expect(
-      resume.guard?.({ phase: 'reviewing-spec', plannerSupportsImages: true, openRunAtRest: true }),
+      resume.guard?.({
+        phase: 'reviewing-spec',
+        plannerSupportsImages: true,
+        openRunAtRest: true,
+        applyUnfinished: false,
+      }),
     ).toBeUndefined();
     expect(
       resume.guard?.({
         phase: 'reviewing-spec',
         plannerSupportsImages: true,
         openRunAtRest: false,
+        applyUnfinished: false,
       }),
     ).toBe('No run to resume in this phase');
   });
@@ -68,13 +84,28 @@ describe('/steer', () => {
     const steer = argCommand('/steer');
 
     expect(
-      steer.guard?.({ phase: 'implementing', plannerSupportsImages: true, openRunAtRest: false }),
+      steer.guard?.({
+        phase: 'implementing',
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        applyUnfinished: false,
+      }),
     ).toBeUndefined();
     expect(
-      steer.guard?.({ phase: 'reviewing-plan', plannerSupportsImages: true, openRunAtRest: true }),
+      steer.guard?.({
+        phase: 'reviewing-plan',
+        plannerSupportsImages: true,
+        openRunAtRest: true,
+        applyUnfinished: false,
+      }),
     ).toBeUndefined();
     expect(
-      steer.guard?.({ phase: 'idle', plannerSupportsImages: true, openRunAtRest: false }),
+      steer.guard?.({
+        phase: 'idle',
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        applyUnfinished: false,
+      }),
     ).toBe('No run to steer in this phase');
   });
 
@@ -111,10 +142,20 @@ describe('/end', () => {
     const end = command('/end');
 
     expect(
-      end.guard?.({ phase: 'implementing', plannerSupportsImages: true, openRunAtRest: false }),
+      end.guard?.({
+        phase: 'implementing',
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        applyUnfinished: false,
+      }),
     ).toBeUndefined();
     expect(
-      end.guard?.({ phase: 'complete', plannerSupportsImages: true, openRunAtRest: false }),
+      end.guard?.({
+        phase: 'complete',
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        applyUnfinished: false,
+      }),
     ).toBe('No run to end in this phase');
   });
 
@@ -122,11 +163,32 @@ describe('/end', () => {
     const end = command('/end');
 
     expect(
-      end.guard?.({ phase: 'reviewing-spec', plannerSupportsImages: true, openRunAtRest: true }),
+      end.guard?.({
+        phase: 'reviewing-spec',
+        plannerSupportsImages: true,
+        openRunAtRest: true,
+        applyUnfinished: false,
+      }),
     ).toBeUndefined();
     expect(
-      end.guard?.({ phase: 'reviewing-spec', plannerSupportsImages: true, openRunAtRest: false }),
+      end.guard?.({
+        phase: 'reviewing-spec',
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        applyUnfinished: false,
+      }),
     ).toBe('No run to end in this phase');
+  });
+
+  it('is not offered on a run at rest whose Apply did not finish', () => {
+    expect(
+      command('/end').guard?.({
+        phase: 'complete',
+        plannerSupportsImages: true,
+        openRunAtRest: true,
+        applyUnfinished: true,
+      }),
+    ).toBe('Apply did not finish. Restore or retry Apply first, then end the run.');
   });
 
   it('ends the run through the end port', async () => {

@@ -367,6 +367,7 @@ export function transition(
         phase: 'complete',
         completedAt: now.toISOString(),
         reviewStatus: action.reviewStatus,
+        acceptedAsIs: undefined,
         ...(action.candidate !== undefined && { reviewedCandidate: action.candidate }),
         ...(action.reviewStatus === 'passed' && {
           applyReview: undefined,
@@ -493,7 +494,11 @@ export function transition(
     case 'ACCEPT_AS_IS':
       return {
         ...state,
-        acceptedAsIs: { at: now.toISOString(), findings: action.findings },
+        acceptedAsIs: {
+          at: now.toISOString(),
+          findings: action.findings,
+          ...(action.note !== undefined && { note: action.note }),
+        },
         applyReview: undefined,
         pendingTriage: undefined,
       };

@@ -81,6 +81,7 @@ describe('typed review overrides', () => {
       ...ref,
       state,
       action: 'accept-as-is',
+      comment: plainUserMessage('  Proof is in the PR.  '),
       bus: makeBusRecorder().bus,
     });
     expect(result.ok).toBe(true);
@@ -88,6 +89,7 @@ describe('typed review overrides', () => {
       'Need proof',
       'Criterion C1: unverified — Render pending',
     ]);
+    expect(result.state.acceptedAsIs?.note).toBe('Proof is in the PR.');
   });
 });
 

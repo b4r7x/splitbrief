@@ -4116,6 +4116,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Back to sessions',
       },
       {
+        id: 'workflow-stop-menu-parked-applying',
+        title: 'Workflow · options while Apply is unfinished',
+        marker: 'Back to sessions',
+      },
+      {
         id: 'workflow-stop-menu-parked-first-brief',
         title: 'Workflow · parked options before any change',
         marker: 'Back to sessions',

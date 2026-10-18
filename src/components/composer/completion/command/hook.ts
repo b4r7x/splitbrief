@@ -12,7 +12,11 @@ import {
 import { detectedModelFact, seatSupportsImages } from '../../../../core/runners/capabilities.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { modelCacheStore } from '../../../../stores/discovery/model-cache/state.js';
-import { isOpenRunAtRest, routerStore } from '../../../../stores/navigation/router.js';
+import {
+  isApplyUnfinishedAtRest,
+  isOpenRunAtRest,
+  routerStore,
+} from '../../../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import type { CommandCompletionRow } from './menu.js';
@@ -78,6 +82,7 @@ export function useCommandCompletion({
   const phase = lifecycleStore.use((s) => s.phase);
   const config = configStore.use((s) => s.config);
   const openRunAtRest = routerStore.use(isOpenRunAtRest);
+  const applyUnfinished = routerStore.use(isApplyUnfinishedAtRest);
   const guardContext: CommandGuardContext = {
     phase,
     plannerSupportsImages:
@@ -87,6 +92,7 @@ export function useCommandCompletion({
         detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
       }),
     openRunAtRest,
+    applyUnfinished,
   };
 
   const commandMode = isRuntimeCommandLine(value);

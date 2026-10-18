@@ -214,6 +214,8 @@ export interface CommandGuardContext {
   plannerSupportsImages: boolean;
   /** The screen shows a run read back from disk that is not closed: it can be continued or ended. */
   openRunAtRest: boolean;
+  /** The run on screen is at rest with an Apply that did not finish: End run refuses it. */
+  applyUnfinished: boolean;
 }
 
 type CommandArgSpec =

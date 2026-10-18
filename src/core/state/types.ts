@@ -60,7 +60,7 @@ export type StateAction =
       reviewAfterTaskId?: TaskId;
     }
   | { type: 'RECORD_WORKSPACE'; workspace: NonNullable<WorkflowState['workspace']> }
-  | { type: 'ACCEPT_AS_IS'; findings: string[] }
+  | { type: 'ACCEPT_AS_IS'; findings: string[]; note?: string }
   | {
       type: 'APPLY_REVIEW_START';
       merged: { path: string; checkoutHunks: string }[];

@@ -15,8 +15,10 @@ import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
+import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/review-input.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -1101,6 +1103,95 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
         events.filter((event) => JSON.stringify(event).includes('a.txt drops the error')),
       ).toHaveLength(1);
       expect(JSON.stringify(events)).not.toMatch(/verified|verification passed|review passed/i);
+    });
+  });
+
+  it.each([
+    {
+      acceptedAsIs: { findings: ['Review input is 9 characters'], note: 'Checked by hand.' },
+      warning:
+        'Run accepted as is with 1 open finding: Review input is 9 characters. Your note: Checked by hand. No review checked them;',
+    },
+    {
+      acceptedAsIs: { findings: ['Missing test.'] },
+      warning: 'Run accepted as is with 1 open finding: Missing test. No review checked them;',
+    },
+    {
+      acceptedAsIs: { findings: ['Is the cap right?'], note: 'Why review this?' },
+      warning:
+        'Run accepted as is with 1 open finding: Is the cap right? Your note: Why review this? No review checked them;',
+    },
+  ])(
+    'the override warning counts findings only and shows the note once: $warning',
+    async ({ acceptedAsIs, warning }) => {
+      await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+        const ref = { projectDir: run.dir, sessionId: run.sessionId };
+        const accepted = makeWorkflowState({
+          phase: 'complete',
+          reviewStatus: 'failed',
+          workspace: run.workspace,
+          acceptedAsIs: { at: new Date().toISOString(), ...acceptedAsIs },
+          reviewedCandidate: await captureReviewedCandidate({ ...ref, workspace: run.workspace }),
+        });
+        saveState(ref, accepted);
+        const { bus, events } = makeBusRecorder();
+
+        const asked = await runApply({ wctx: { ...ref, bus }, state: accepted });
+
+        expect(asked.outcome).toBe('needs-confirmation');
+        const messages = events.flatMap((event) =>
+          'message' in event && typeof event.message === 'string' ? [event.message] : [],
+        );
+        const warnings = messages.filter((message) => message.startsWith('Run accepted as is'));
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain(warning);
+        expect(warnings[0]).not.toContain('..');
+      });
+    },
+  );
+
+  it('a task review skipped as is, then a passing final review: Apply asks nothing', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+      const ref = { projectDir: run.dir, sessionId: run.sessionId };
+      const halted = makeWorkflowState({
+        phase: 'implementing',
+        workspace: run.workspace,
+        pendingRecovery: buildReviewInputTooLargeRecoveryIssue({
+          phase: 'implementing',
+          createdAt: new Date().toISOString(),
+          failure: { kind: 'input-too-large', chars: 9, maxChars: 5, largestFiles: [] },
+          tool: 'codex',
+          acceptAsIs: true,
+        }),
+      });
+      saveState(ref, halted);
+      const { bus, events } = makeBusRecorder();
+      const skipped = await applyRecoveryAction({
+        ...ref,
+        state: halted,
+        action: 'accept-as-is',
+        comment: plainUserMessage('Checked by hand.'),
+        bus,
+      });
+      if (!skipped.ok) throw new Error(skipped.message);
+      expect(skipped.state.phase).toBe('implementing');
+      const passed = transition(transition(skipped.state, { type: 'ALL_DONE' }), {
+        type: 'REVIEW_DONE',
+        reviewStatus: 'passed',
+        candidate: await captureReviewedCandidate({ ...ref, workspace: run.workspace }),
+      });
+      saveState(ref, passed);
+      expect(deriveRunStatus({ state: passed, liveness: 'not-alive' })).toEqual({
+        kind: 'ready-to-apply',
+        override: false,
+      });
+
+      const result = await runApply({ wctx: { ...ref, bus }, state: passed });
+
+      expect(result.outcome).toBe('applied');
+      expect(JSON.stringify(events)).not.toContain('Run accepted as is');
     });
   });
 });

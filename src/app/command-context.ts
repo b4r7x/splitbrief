@@ -27,7 +27,11 @@ import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
-import { isOpenRunAtRest, routerStore } from '../stores/navigation/router.js';
+import {
+  isApplyUnfinishedAtRest,
+  isOpenRunAtRest,
+  routerStore,
+} from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { queueCopy } from '../features/workflow/queue-copy.js';
 import { messageSeat } from '../core/queue-state.js';
@@ -491,6 +495,7 @@ export function useRuntimeCommands({
           modelCacheStore.getDetection().providers,
         ),
         openRunAtRest: isOpenRunAtRest(routerStore.get()),
+        applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
         onError: feedbackStore.setError,
       }),
     );

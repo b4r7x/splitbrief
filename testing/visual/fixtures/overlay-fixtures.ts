@@ -32,7 +32,7 @@ import type { CostBreakdown, Summary } from '../../../src/core/schemas/summary.j
 import type { EvidenceLedger } from '../../../src/core/schemas/evidence.js';
 import { type Task, taskId } from '../../../src/core/schemas/task.js';
 import { ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
-import type { RunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus, type RunStatus } from '../../../src/core/sessions/run-status.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { SOFT_SEP } from '../../../src/core/separators.js';
 import { formatSeatIdentity, type CrewSeatId } from '../../../src/core/crew/identity.js';
@@ -1929,6 +1929,100 @@ const REWOUND_GATE_LEDGER: EvidenceLedger = {
   })),
 };
 
+/** An Apply that wrote one of two files and stopped: Restore or Re-run Apply settles it. */
+const APPLY_PARTIAL_HALT: RecoveryIssue = {
+  id: 'rec_visual_apply_partial',
+  reason: 'apply-partial',
+  phase: 'complete',
+  status: 'awaiting-user',
+  files: ['src/features/workflow/stop/sheet.tsx'],
+  affectedTaskIds: [],
+  message: 'Apply did not finish: wrote 1 of 2 files.',
+  details: [
+    'Wrote 1 of 2 files; src/features/workflow/stop/sheet.tsx failed: disk full',
+    'Backup of the replaced files: .splitbrief/sessions/2026-10-17-apply-partial/apply/b1',
+  ],
+  facts: { backupId: 'b1', written: 1, total: 2 },
+  availableActions: ['retry-same-worker', 'restore-backup'],
+  recommendedAction: 'retry-same-worker',
+  createdAt: '2026-10-17T00:00:00.000Z',
+};
+
+/** Every brief of the stop sheet plan passed, so the run reached Apply. */
+function seedAppliedBriefs(): void {
+  seedStopSheetPlan();
+  const briefs = [
+    {
+      id: taskId('T001'),
+      title: 'Add the stop sheet rows',
+      file: 'src/features/workflow/stop/options.ts',
+      action: 'create' as const,
+    },
+    {
+      id: STOP_SHEET_RUNNING,
+      title: 'Render the stop sheet',
+      file: 'src/features/workflow/stop/sheet.tsx',
+      action: 'create' as const,
+    },
+    {
+      id: STOP_SHEET_NEXT,
+      title: 'Route the stop overlay',
+      file: 'src/app/router.tsx',
+      action: 'modify' as const,
+    },
+  ];
+  briefs.forEach((brief, index) => {
+    const ts = STOP_SHEET_TS + 10 + index * 5_000;
+    addEvent({
+      type: 'task_started',
+      ts,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      index,
+      total: briefs.length,
+      file: brief.file,
+      action: brief.action,
+    });
+    addEvent({
+      type: 'task_completed',
+      ts: ts + 4_000,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      method: 'local',
+      retries: 0,
+      duration: 4_000,
+    });
+  });
+}
+
+/** The run reopened at rest on that halt; its saved state still records the unfinished Apply. */
+function applyPartialRoute(): RouteData {
+  const state = {
+    ...createInitialState('Add the stop sheet', new Date(VISUAL_PUBLISHED_AT)),
+    phase: 'complete' as const,
+    reviewStatus: 'passed' as const,
+    workspace: {
+      kind: 'staged-copy' as const,
+      path: `${VISUAL_FIXTURE_PROJECT_DIR}/.splitbrief/workspace`,
+      base: { snapshotId: 'visual-base', head: null },
+    },
+    applying: { at: '2026-10-17T00:00:00.000Z', backupId: 'b1' },
+    pendingRecovery: APPLY_PARTIAL_HALT,
+  };
+  return {
+    screen: 'workflow',
+    run: makeRunRecord({
+      ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: '2026-10-17-apply-partial' },
+      feature: 'Add the stop sheet',
+      hydration: { kind: 'loaded', state },
+      status: deriveRunStatus({ state, liveness: 'not-alive' }),
+    }),
+    execution: { kind: 'at-rest' },
+  };
+}
+
 /**
  * A stop at the plan gate, where the product leaves it: the run loop has returned, the route carries
  * the record it re-read, and no brief has started. End run closes the same record.
@@ -2549,6 +2643,16 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
       }),
       afterMount: (write) => write('\x1b[B'),
     }),
+  ],
+  [
+    scenarioId('workflow-stop-menu-parked-applying'),
+    () =>
+      createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        workflowRoute: applyPartialRoute,
+        seed: seedAppliedBriefs,
+      }),
   ],
   [
     scenarioId('workflow-stop-menu-ended-gate'),

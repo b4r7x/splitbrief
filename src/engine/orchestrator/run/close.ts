@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { relative } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { applyUnfinished, deriveRunStatus } from '../../../core/sessions/run-status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
@@ -31,6 +31,7 @@ import {
 } from '../state-ops.js';
 import { rejectRunSnapshot } from '../../snapshots/run/lifecycle.js';
 import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
+import { APPLY_UNFINISHED_REFUSAL } from '../../../core/runtime/commands/messages.js';
 
 export function filesStillOnDiskSuffix(workspace: WorkflowState['workspace']): string {
   return workspace === undefined || workspace.kind === 'checkout'
@@ -170,16 +171,12 @@ export async function rejectCheckoutRun(
 }
 
 export const endRunError = {
-  applying: () =>
-    error(
-      'end-run-while-applying',
-      'Apply did not finish. Restore or retry Apply first, then end the run.',
-    ),
+  applying: () => error('end-run-while-applying', APPLY_UNFINISHED_REFUSAL),
   isApplying: matches('end-run-while-applying'),
 };
 
 export function assertCanCloseRun(state: WorkflowState): void {
-  if (state.applying !== undefined) throw endRunError.applying();
+  if (applyUnfinished(state)) throw endRunError.applying();
 }
 
 /**

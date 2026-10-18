@@ -448,7 +448,7 @@ A REVIEW account refusal or long-reset limit raises a Seat down halt. Its config
 
 **Fix:**
 1. Read the halt details. They name the prompt size, the cap when the tool has one, and the largest file diffs.
-2. Choose **Skip review** to make a workspace run ready to apply with no review. Your note is recorded, and Apply asks for one confirmation. Nothing is reported as verified.
+2. Choose **Skip review** to make a workspace run ready to apply with no review. Your note is recorded, and Apply shows it in its warning and asks for one confirmation. Nothing is reported as verified.
 3. Or choose **End run**. The changes are saved in `.splitbrief/sessions/<id>/run.patch`, and the workspace is removed.
 4. A retry is not offered, because it would send the same input. For the next run, give the review seat a tool with a larger input (`/crew review`), or keep the run smaller.
 

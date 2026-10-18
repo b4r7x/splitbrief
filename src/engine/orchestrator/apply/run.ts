@@ -312,11 +312,13 @@ export async function runApply(input: {
     return { outcome: 'review', state };
   }
   if (state.acceptedAsIs !== undefined && input.overrideConfirmed !== true && !retrying) {
-    const findings = state.acceptedAsIs.findings;
+    const { findings, note } = state.acceptedAsIs;
+    const clause = (text: string): string => text.replace(/\.$/, '');
+    const sentence = (text: string): string => (/[.!?]$/.test(text) ? text : `${text}.`);
     publishWarning({
       bus: wctx.bus,
       phase: state.phase,
-      message: `Run accepted as is with ${countNoun(findings.length, 'open finding')}: ${findings.join('; ')}. No review checked them; Apply needs one confirmation (/run accept confirm).`,
+      message: `Run accepted as is with ${countNoun(findings.length, 'open finding')}: ${sentence(findings.map(clause).join('; '))}${note === undefined ? '' : ` Your note: ${sentence(note)}`} No review checked them; Apply needs one confirmation (/run accept confirm).`,
       safety: { category: 'recovery', code: 'apply_override_unconfirmed' },
     });
     return { outcome: 'needs-confirmation', state };

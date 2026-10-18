@@ -67,6 +67,7 @@ export function runCommandInTest(args: {
   screen: 'home' | 'workflow' | 'setup';
   phase?: Phase;
   openRunAtRest?: boolean;
+  applyUnfinished?: boolean;
   onError: (msg: string) => void;
 }): Promise<void> {
   return executeRuntimeCommand(args.commands, args.raw, {
@@ -74,6 +75,7 @@ export function runCommandInTest(args: {
     phase: args.phase ?? 'idle',
     plannerSupportsImages: true,
     openRunAtRest: args.openRunAtRest ?? false,
+    applyUnfinished: args.applyUnfinished ?? false,
     onError: args.onError,
   });
 }

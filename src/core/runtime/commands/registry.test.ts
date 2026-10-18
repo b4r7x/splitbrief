@@ -87,10 +87,20 @@ describe('createRuntimeCommands registry shape', () => {
     const image = commands.find((cmd) => cmd.name === '/image');
 
     expect(
-      image?.guard?.({ phase: 'idle', plannerSupportsImages: false, openRunAtRest: false }),
+      image?.guard?.({
+        phase: 'idle',
+        plannerSupportsImages: false,
+        openRunAtRest: false,
+        applyUnfinished: false,
+      }),
     ).toBeTypeOf('string');
     expect(
-      image?.guard?.({ phase: 'idle', plannerSupportsImages: true, openRunAtRest: false }),
+      image?.guard?.({
+        phase: 'idle',
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        applyUnfinished: false,
+      }),
     ).toBeUndefined();
   });
 

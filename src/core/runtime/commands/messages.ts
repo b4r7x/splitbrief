@@ -21,6 +21,10 @@ export function formatApplyRestoreCounts(result: {
   return done.length > 0 ? done.join(', ') : 'nothing to put back';
 }
 
+/** Why End run and Discard refuse a run whose Apply did not finish. */
+export const APPLY_UNFINISHED_REFUSAL =
+  'Apply did not finish. Restore or retry Apply first, then end the run.';
+
 /** What `/run reject confirm` did to the checkout, as the run's transcript records it. */
 export type RunRejectFacts = Readonly<{
   restored: readonly string[];
