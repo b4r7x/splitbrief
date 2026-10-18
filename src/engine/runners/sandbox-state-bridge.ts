@@ -18,6 +18,7 @@ import {
   CLI_CREDENTIAL_MODELS,
   CLI_STATE_PATHS,
   type CliStateSource,
+  COPILOT_CONFIG_DESTINATION,
   CURSOR_CLI_CONFIG_DESTINATION,
   FILE_LINKED_CREDENTIAL_TOOLS,
   sandboxRoot,
@@ -288,6 +289,11 @@ function hostStateRoot(source: CliStateSource, hostEnv: NodeJS.ProcessEnv): stri
       return xdgBaseDir(hostEnv, 'XDG_CONFIG_HOME', hostEnv.HOME);
     case 'xdg-data':
       return xdgBaseDir(hostEnv, 'XDG_DATA_HOME', hostEnv.HOME);
+    case 'copilot-home':
+      return (
+        hostEnv.COPILOT_HOME ??
+        (hostEnv.HOME === undefined ? undefined : join(hostEnv.HOME, '.copilot'))
+      );
     default:
       return hostEnv[source];
   }
@@ -365,6 +371,11 @@ export async function bridgedCliStatePresent(
   for (const statePath of CLI_STATE_PATHS[tool]) {
     // Sandbox-owned policy is not a credential; the session file is.
     if (tool === 'cursor' && statePath.destinationPath === CURSOR_CLI_CONFIG_DESTINATION) {
+      continue;
+    }
+    // The github-copilot files belong to the Copilot IDE plugins: they exist
+    // without a Copilot CLI sign-in.
+    if (tool === 'copilot' && statePath.destinationPath !== COPILOT_CONFIG_DESTINATION) {
       continue;
     }
     const root = roots[statePath.destination];

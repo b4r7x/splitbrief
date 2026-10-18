@@ -42,10 +42,10 @@ export type CliAuthChannel = Readonly<{
   /**
    * Platforms where this channel's credential is an OS keychain item rather
    * than a file, so the file-copying state bridge has nothing to carry. macOS
-   * keeps the Claude Code, Cursor Agent CLI and Antigravity sessions in the login keychain,
-   * whose default search list resolves through `HOME` and whose item is keyed
-   * on the account name in `USER`; a staged child reaches it only when both
-   * keep their host values.
+   * keeps the Claude Code, Cursor Agent CLI, Antigravity and GitHub Copilot CLI
+   * sessions in the login keychain, whose default search list resolves through
+   * `HOME` and whose item is keyed on the account name in `USER`; a staged child
+   * reaches it only when both keep their host values.
    */
   hostKeychainPlatforms: readonly NodeJS.Platform[];
   /** Platforms with an admitted credential bridge; omitted when no restriction is known. */
@@ -505,9 +505,10 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     auth: authPolicy('session', [
       authChannel({
         id: 'session',
-        env: ['GH_TOKEN', 'GITHUB_TOKEN'],
+        env: ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'],
         stateBridge: 'host-cli-state',
         billing: 'subscription-included',
+        hostKeychainPlatforms: ['darwin'],
       }),
     ]),
     billing: 'subscription-included',

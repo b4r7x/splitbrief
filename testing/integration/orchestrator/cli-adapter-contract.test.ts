@@ -155,7 +155,8 @@ const AUTH_FAILURE_FACTS_BY_PROBE_CONTRACT = {
   'claude-code': 'unknown',
   codex: 'unknown',
   opencode: 'authenticated',
-  copilot: 'authenticated',
+  // A bridged config file signs Copilot in on Linux; on macOS its token is a keychain item.
+  copilot: process.platform === 'darwin' ? 'unknown' : 'authenticated',
   'kilo-code': 'authenticated',
   cursor: 'unknown',
   'command-code': 'unknown',

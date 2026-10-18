@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createDefaultConfig } from '../../../core/config/load/defaults.js';
 import {
   isolationWorktreePath,
@@ -570,6 +570,12 @@ describe('createRunIsolation', () => {
     'builds each implementer profile the environment its own runner selects',
     { timeout: 60_000 },
     async () => {
+      // Copilot bridges its files on Linux; on macOS its token is a keychain item.
+      const hostPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      onTestFinished(() => {
+        Object.defineProperty(process, 'platform', { value: hostPlatform, configurable: true });
+      });
       const dir = createTempDir('isolation-two-profiles');
       const hostHome = useHostHome();
       try {

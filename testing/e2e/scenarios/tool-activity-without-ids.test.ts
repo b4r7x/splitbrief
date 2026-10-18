@@ -19,8 +19,9 @@ import {
 
 it('shows both file reads when a CLI tool supplies no upstream tool-use ids', async () => {
   const target = createStopContinueFixture(undefined, { isolation: 'none' });
-  // Copilot has no auth status command: readiness takes its session file as the sign-in fact.
-  // The CLI reads it from a throwaway home, never from the host's own Copilot session.
+  // Copilot has no auth status command: on Linux readiness takes its config file as the sign-in
+  // fact, and on macOS the sign-in is unknown, which `--allow-unverified-auth` admits. The CLI
+  // reads from a throwaway home, never from the host's own Copilot session.
   const home = useTrustHome('tool-activity-home');
   vi.stubEnv('XDG_CONFIG_HOME', join(home.home, 'xdg'));
   mkdirSync(join(home.home, '.copilot'));

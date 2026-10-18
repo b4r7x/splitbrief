@@ -42,6 +42,13 @@ const EXISTING_CLI_TOOL_IDS = [
   'antigravity',
 ] as const;
 
+const KEYCHAIN_SESSION_TOOLS: ReadonlySet<string> = new Set([
+  'claude-code',
+  'cursor',
+  'antigravity',
+  'copilot',
+]);
+
 function resolveRepoPath(relativePath: string): string {
   return join(REPO_ROOT, relativePath);
 }
@@ -386,7 +393,11 @@ describe('CLI tool catalog', () => {
     expect(selectCliAuthChannel('copilot', { channel: 'api-key' })).toBeUndefined();
     expect(CLI_TOOL_CATALOG['claude-code'].auth.env).toEqual([]);
     expect(CLI_TOOL_CATALOG.codex.auth.env).toEqual([]);
-    expect(CLI_TOOL_CATALOG.copilot.auth.env).toEqual(['GH_TOKEN', 'GITHUB_TOKEN']);
+    expect(CLI_TOOL_CATALOG.copilot.auth.env).toEqual([
+      'COPILOT_GITHUB_TOKEN',
+      'GH_TOKEN',
+      'GITHUB_TOKEN',
+    ]);
   });
 
   it('defaults an unset auth selection to the host session when the tool declares one', () => {
@@ -400,17 +411,13 @@ describe('CLI tool catalog', () => {
     expect(defaultCliAuthChannel('kilo-code').id).toBe('provider-dependent');
   });
 
-  it('declares Claude Code, Cursor Agent CLI and Antigravity session credentials keychain items on macOS and nowhere else', () => {
+  it('declares Claude Code, Cursor Agent CLI, Antigravity and GitHub Copilot CLI session credentials keychain items on macOS and nowhere else', () => {
     for (const tool of CLI_TOOL_IDS) {
       for (const channel of CLI_TOOL_CATALOG[tool].auth.channels) {
         expect({ tool, channel: channel.id, platforms: channel.hostKeychainPlatforms }).toEqual({
           tool,
           channel: channel.id,
-          platforms:
-            (tool === 'claude-code' || tool === 'cursor' || tool === 'antigravity') &&
-            channel.id === 'session'
-              ? ['darwin']
-              : [],
+          platforms: KEYCHAIN_SESSION_TOOLS.has(tool) && channel.id === 'session' ? ['darwin'] : [],
         });
       }
     }
@@ -449,15 +456,20 @@ describe('CLI tool catalog', () => {
     expect(cliAuthChannelHostStateAccess(session, 'win32')).toBe('bridged-files');
   });
 
+  // GitHub Copilot CLI keeps its macOS token in the login keychain; the
+  // `config.json` beside it lists the signed-in users but holds no token.
+  it('routes the GitHub Copilot CLI session channel through the host account only on macOS', () => {
+    const [session] = CLI_TOOL_CATALOG.copilot.auth.channels;
+
+    expect(cliAuthChannelHostStateAccess(session, 'darwin')).toBe('host-account');
+    expect(cliAuthChannelHostStateAccess(session, 'linux')).toBe('bridged-files');
+    expect(cliAuthChannelHostStateAccess(session, 'win32')).toBe('bridged-files');
+  });
+
   it('keeps every other session channel on the file bridge, including on macOS', () => {
     for (const tool of CLI_TOOL_IDS) {
       for (const channel of CLI_TOOL_CATALOG[tool].auth.channels) {
-        if (
-          (tool === 'claude-code' || tool === 'cursor' || tool === 'antigravity') &&
-          channel.id === 'session'
-        ) {
-          continue;
-        }
+        if (KEYCHAIN_SESSION_TOOLS.has(tool) && channel.id === 'session') continue;
         expect({
           tool,
           channel: channel.id,

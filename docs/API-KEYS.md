@@ -32,7 +32,7 @@ The `api-key` channel rows describe what that channel stages. Selecting it expli
 |----------|---------------------|-------------------|-------|
 | Claude Code CLI (`api-key` channel) | `ANTHROPIC_API_KEY` | — | Passed to the `claude` subprocess; nothing else in the environment is copied |
 | Codex CLI (`api-key` channel) | `OPENAI_API_KEY` | — | Passed to the `codex` subprocess |
-| Copilot CLI (`session`, its only channel) | `GH_TOKEN` / `GITHUB_TOKEN` | — | Passed to the `copilot` subprocess, whichever variable is set; with neither, the bridged `copilot` login is used |
+| Copilot CLI (`session`, its only channel) | `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` | — | Passed to the `copilot` subprocess; Copilot uses the first one set, in that order. With none set, your `copilot login` is used: the macOS keychain, or the copied Copilot config on Linux and Windows |
 | Cursor Agent CLI (`api-key` channel) | `CURSOR_API_KEY` | — | Passed to the `cursor-agent` subprocess |
 | Local Ollama | `OLLAMA_LOCAL_API_KEY` | — | Optional only for a secured loopback daemon; configure `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never accepted or sent locally. |
 | LM Studio | Not inferred | — | Local provider; no key required. A daemon you put behind one takes it inline or as `apiKey: env:YOUR_VAR` |
@@ -101,7 +101,7 @@ SPLITBRIEF takes several steps to protect your API keys:
 - **Header-only transport** — keys are only used in HTTP `Authorization` headers, never embedded in URLs or query parameters
 - **Boolean detection flags** — provider detection returns `hasKey: true/false`, never the actual key value
 - **Key format validation** — a provider that declares a credential prefix has its key checked against it; prefix mismatches fail closed before any network request
-- **Bridged CLI session state** — a CLI runner on a host-state channel whose credential is a file (`session` for Codex and Copilot, `provider-dependent` for OpenCode and Kilo Code, and `session` for Claude Code and Cursor Agent CLI on Linux and Windows) cannot read your real `HOME`, so SPLITBRIEF copies only that tool's admitted credential file (for example `~/.claude/.credentials.json`) into `<project>/.splitbrief/sandbox/`, owner-only and read-only. The copy is refreshed when the host credential rotates and deleted when the run finishes; `.splitbrief/` must stay in `.gitignore`. Omit `authChannel` to use the host CLI configuration; a private environment alone does not prove method enforcement.
+- **Bridged CLI session state** — a CLI runner on a host-state channel whose credential is a file (`session` for Codex, `provider-dependent` for OpenCode and Kilo Code, and `session` for Claude Code, Cursor Agent CLI and Copilot on Linux and Windows) cannot read your real `HOME`, so SPLITBRIEF copies only that tool's admitted credential file (for example `~/.claude/.credentials.json`) into `<project>/.splitbrief/sandbox/`, owner-only and read-only. The copy is refreshed when the host credential rotates and deleted when the run finishes; `.splitbrief/` must stay in `.gitignore`. Omit `authChannel` to use the host CLI configuration; a private environment alone does not prove method enforcement.
 
 ### Claude Code on macOS
 
@@ -127,11 +127,19 @@ The cost is the same as Claude Code's: `~` resolves to your real home, and `agy`
 
 SPLITBRIEF has no admitted Antigravity credential bridge on Linux or Windows. No host credential is handed over and `agy models` is not run. Authentication stays unknown, catalog access is unsupported, and readiness explains that signing in again cannot enable the bridge on those platforms.
 
+### GitHub Copilot CLI on macOS
+
+`copilot login` stores its token in the macOS login keychain. `~/.copilot/config.json` lists the signed-in users but holds no token, so a copy of it signs nothing in. SPLITBRIEF therefore hands a macOS Copilot `session` runner **your real `HOME` and `USER`** (`host-account`) and copies nothing. When you set `COPILOT_HOME`, the runner gets it too, because Copilot reads its config folder from there. Copilot has no sign-in status command, so readiness reports the sign-in as unknown; the first real Copilot call settles it. A start with `--plain` or `--json` then needs `--allow-unverified-auth`. A token in `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN` is passed to the runner and counts as signed in.
+
+The cost is the same as Claude Code's: `~` resolves to your real home, and `copilot` may write its own state under `~/.copilot` (or `COPILOT_HOME`). Everything else the sandbox redirects still points inside `<project>/.splitbrief/sandbox/`, except the private `TMPDIR` in the system temp directory.
+
+On Linux and Windows, SPLITBRIEF copies Copilot's `config.json` from `COPILOT_HOME`, or from `~/.copilot` when `COPILOT_HOME` is not set, read-only into the sandbox. Only that file counts as a Copilot sign-in. The `github-copilot` files of the Copilot editor plugins are copied too, but they do not count as a Copilot CLI sign-in.
+
 <a id="exception-one-keychain-backed-session-channels-on-macos"></a>
 
 ### What a `host-account` child can and cannot reach
 
-The discriminants are declared, not scattered through the engine as platform checks: a channel declares `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), and the Claude Code, Cursor Agent CLI and Antigravity `session` channels declare `['darwin']`; `cliAuthChannelHostStateAccess()` maps that to `host-account`, everything else to `bridged-files` or `none`. Within `bridged-files`, `CLI_CREDENTIAL_MODELS` (`src/engine/runners/sandbox-state-paths.ts`) declares per tool whether the credential is a `static-secret` (sealed snapshot copy) or `rotating-oauth` (live passthrough).
+The discriminants are declared, not scattered through the engine as platform checks: a channel declares `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), and the Claude Code, Cursor Agent CLI, Antigravity and Copilot `session` channels declare `['darwin']`; `cliAuthChannelHostStateAccess()` maps that to `host-account`, everything else to `bridged-files` or `none`. Within `bridged-files`, `CLI_CREDENTIAL_MODELS` (`src/engine/runners/sandbox-state-paths.ts`) declares per tool whether the credential is a `static-secret` (sealed snapshot copy) or `rotating-oauth` (live passthrough).
 
 Which runners keep a private HOME, and which do not:
 
@@ -143,7 +151,8 @@ Which runners keep a private HOME, and which do not:
 | Cursor Agent CLI, `session` channel, Linux / Windows | private, under `.splitbrief/sandbox/<role>/home` | a file bridge of the declared Cursor state paths |
 | Antigravity, `session` channel, **macOS** | your real `HOME`, plus real `USER` | the login keychain, through its default search list |
 | Antigravity, `session` channel, Linux / Windows | private | none — unsupported credential bridge; authentication remains unknown |
-| Copilot, `session` channel, every platform | private | a read-only copy of Copilot's own credential files |
+| Copilot, `session` channel, **macOS** | your real `HOME`, plus real `USER` and a set `COPILOT_HOME` | the login keychain, through its default search list |
+| Copilot, `session` channel, Linux / Windows | private | a read-only copy of Copilot's own credential files |
 | Codex, `session` channel, every platform | private, with Codex's sessions and history in it | your real `~/.codex/auth.json`, live — reads **and writes** |
 | OpenCode and Kilo Code, `provider-dependent` channel | private, but that tool's own state directory is a link to the real one | that tool's real state directory, live — reads **and writes** |
 | Any runner on an `api-key` channel | private | none — the credential arrives as an environment variable |
@@ -155,11 +164,11 @@ What the `host-account` child gains:
 
 - `~`-relative resolution lands in your real home, so a tool reading its own defaults there — `~/.ssh/config`, `~/.aws/credentials`, `~/.npmrc`, `~/.gitconfig` — finds the real file instead of an empty sandbox.
 - The login keychain becomes reachable through its **default** search list, so `security find-generic-password …` with no keychain argument now returns your items. That is the point of the change; it is also its cost.
-- Claude Code writes its own state to your real home (`~/.claude.json`, history, project permissions), exactly as it does when you run `claude` yourself — the sandbox no longer absorbs those writes. Cursor Agent CLI may write under the real `~/.cursor` (the IDE home) the same way, and `agy` under whatever it keeps in your home.
+- Claude Code writes its own state to your real home (`~/.claude.json`, history, project permissions), exactly as it does when you run `claude` yourself — the sandbox no longer absorbs those writes. Cursor Agent CLI may write under the real `~/.cursor` (the IDE home) the same way, Copilot under `~/.copilot` (or `COPILOT_HOME`), and `agy` under whatever it keeps in your home.
 
 And what it does **not** gain, so the accounting is not overstated:
 
-- Nothing beyond `HOME`, `USERPROFILE` and `USER` is handed back. `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `APPDATA`, `LOCALAPPDATA`, `npm_config_cache`, `PIP_CACHE_DIR` and `CARGO_HOME` still point inside `<project>/.splitbrief/sandbox/`, `TMPDIR`, `TMP` and `TEMP` still point at the sandbox's private temp directory, and the environment allowlist still strips every credential variable it strips today.
+- Nothing beyond `HOME`, `USERPROFILE` and `USER` is handed back, plus `COPILOT_HOME` for Copilot when you set it. `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `APPDATA`, `LOCALAPPDATA`, `npm_config_cache`, `PIP_CACHE_DIR` and `CARGO_HOME` still point inside `<project>/.splitbrief/sandbox/`, `TMPDIR`, `TMP` and `TEMP` still point at the sandbox's private temp directory, and the environment allowlist still strips every credential variable it strips today.
 - The temp directory is the one redirect outside the project: `<system tmp>/sb-<hash>`, owner-only (`0700`), one per sandbox root (the hash is the first 12 hex digits of the SHA-256 of the root path), and removed when the run, probe or staged copy that created it is torn down. Under a worktree's ignored `.splitbrief/` a temporary git repository sees the enclosing one, and the worktree path is long enough to push a unix socket bound in it (tsx's IPC pipe) past the 104-byte macOS limit, which fails with `EADDRINUSE` (`sandboxTempDir`, `src/engine/runners/sandbox-state-paths.ts`).
 - No new *filesystem* reach. The sandbox is env redirection, not confinement: a child in a sandbox HOME could already read `/Users/you/.ssh/` by absolute path, and could already open the login keychain by naming `~/Library/Keychains/login.keychain-db` explicitly. What changes is which paths the child finds *by default*, not which paths it is permitted to open.
 - No credential is copied anywhere. The session token stays in the keychain; nothing is written to disk, so nothing can outlive the run or be committed by accident.

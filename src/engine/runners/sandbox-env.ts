@@ -189,16 +189,24 @@ export function runnerSandboxIdentity(runner: RunnerLike): string {
 /**
  * The host account state a `host-account` channel's child keeps. macOS resolves
  * the login keychain through `HOME` and keys the session item on the account
- * name in `USER` for keychain-backed session channels (Claude Code and Cursor).
- * Measured against `claude auth status` on 2026-08-06, a child given the real
- * `HOME` but not `USER` still reports `"loggedIn": false`. Nothing else the
- * sandbox redirects is handed back, so temp, cache and XDG state stay isolated
- * — but this child does read and write the real home directory. See
- * docs/PLANNERS-AND-IMPLEMENTERS.md, "Credential channels".
+ * name in `USER` for keychain-backed session channels (Claude Code, Cursor,
+ * Antigravity and Copilot). Measured against `claude auth status` on
+ * 2026-08-06, a child given the real `HOME` but not `USER` still reports
+ * `"loggedIn": false`. Copilot also keeps a set `COPILOT_HOME`, a path and not
+ * a credential: Copilot reads its config folder from it before `~/.copilot`.
+ * Nothing else the sandbox redirects is handed back, so temp, cache and XDG
+ * state stay isolated — but this child does read and write the real home
+ * directory. See docs/PLANNERS-AND-IMPLEMENTERS.md, "Credential channels".
  */
-function hostAccountState(): Readonly<Record<string, string>> {
+function hostAccountState(tool: CliToolId | undefined): Readonly<Record<string, string>> {
   const home = homedir();
-  return { HOME: home, USERPROFILE: home, USER: userInfo().username };
+  const copilotHome = tool === 'copilot' ? process.env.COPILOT_HOME : undefined;
+  return {
+    HOME: home,
+    USERPROFILE: home,
+    USER: userInfo().username,
+    ...(copilotHome === undefined ? {} : { COPILOT_HOME: copilotHome }),
+  };
 }
 
 function copilotPackageCacheHome(): string {
@@ -311,7 +319,9 @@ export async function createSandboxEnv(options: {
       const env = createSanitizedChildEnv(process.env, preserveEnvKeys);
       const sandboxState = {
         PATH: await sanitizedRuntimePath(projectDir),
-        ...(hostState === 'host-account' ? hostAccountState() : { HOME: home, USERPROFILE: home }),
+        ...(hostState === 'host-account'
+          ? hostAccountState(selectedCli)
+          : { HOME: home, USERPROFILE: home }),
         TMPDIR: tmp,
         TMP: tmp,
         TEMP: tmp,

@@ -1117,7 +1117,7 @@ CLI method selection requires exact tool/platform/version invocation-enforcement
 |---|---|---|
 | `ANTHROPIC_API_KEY` | `cli` `claude-code` | A credential the host CLI may use. Its own configuration determines the method; this does not prove API billing. |
 | `OPENAI_API_KEY` | `cli` `codex` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
-| `GH_TOKEN` / `GITHUB_TOKEN` | `cli` `copilot` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
+| `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` | `cli` `copilot` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
 | `CURSOR_API_KEY` | `cli` `cursor` | A credential the host CLI may use; SPLITBRIEF offers no enforced method switch today. |
 | `OLLAMA_LOCAL_API_KEY` | local `ollama` daemon | Optional. Only use it through `apiKey: env:OLLAMA_LOCAL_API_KEY` when your loopback daemon requires authentication. |
 
