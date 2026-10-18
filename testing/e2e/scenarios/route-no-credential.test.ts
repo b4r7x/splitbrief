@@ -6,8 +6,10 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { routeAuthState } from '../../../src/core/runners/route-auth.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { formatRouteAuth } from '../../../src/features/runners/picker-format.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
@@ -33,6 +35,7 @@ const SIGNED_OUT =
 const WRONG_MODEL = `Model ${ROUTE_MODEL} is not listed by OpenCode CLI; pick a listed model`;
 const LOCAL_MODEL = 'ollama/llama3';
 const PROJECT_MODEL = 'lmstudio/qwen3';
+const GATEWAY_MODEL = 'opencode/grok-code';
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
 let trustHome: ReturnType<typeof createTrustHome> | undefined;
@@ -53,6 +56,8 @@ afterEach(() => {
  * list serves OpenCode Go only, as a real OpenCode lists no model of a provider it cannot reach.
  * A `localOnly` OpenCode stores no credential at all and serves the Ollama set up in its config,
  * and the LM Studio set up in the project's config only when the listing names that project.
+ * A `databaseSignIn` OpenCode stores no `auth.json` credential. Like OpenCode 2, its listing names
+ * the OpenCode gateway sign-in only when it can read `$XDG_DATA_HOME/opencode/opencode.db`.
  */
 function installShims(
   binDir: string,
@@ -60,31 +65,39 @@ function installShims(
   claudeCalls: string,
   credential: boolean,
   localOnly: boolean,
+  databaseSignIn: boolean,
   projectDir: string,
 ): void {
-  const providers = localOnly
-    ? []
-    : [
-        { name: 'OpenCode Go', connections: [{ type: 'credential' }] },
-        ...(credential
-          ? [{ id: 'ollama-cloud', name: 'Ollama Cloud', connections: [{ type: 'credential' }] }]
-          : []),
-      ];
+  const providers =
+    localOnly || databaseSignIn
+      ? []
+      : [
+          { name: 'OpenCode Go', connections: [{ type: 'credential' }] },
+          ...(credential
+            ? [{ id: 'ollama-cloud', name: 'Ollama Cloud', connections: [{ type: 'credential' }] }]
+            : []),
+        ];
+  const gateway = { id: 'opencode', name: 'OpenCode', connections: [{ type: 'credential' }] };
   const served = localOnly
     ? { id: 'llama3', providerID: 'ollama' }
-    : { id: 'kimi-k3', providerID: 'opencode-go' };
+    : databaseSignIn
+      ? { id: 'grok-code', providerID: 'opencode' }
+      : { id: 'kimi-k3', providerID: 'opencode-go' };
   const projectServed = localOnly ? [{ id: 'qwen3', providerID: 'lmstudio' }] : [];
   writeFakeNodeCli(
     binDir,
     'opencode',
-    `const { appendFileSync, realpathSync } = require('node:fs');
+    `const { appendFileSync, existsSync, realpathSync } = require('node:fs');
+const { join } = require('node:path');
 const args = process.argv.slice(2);
 if (args[0] === '--version') {
   console.log('${CLI_TOOL_CATALOG.opencode.compatibility.testedVersion}');
   process.exit(0);
 }
 if (args[0] === 'auth' && args[1] === 'list') {
-  console.log(${JSON.stringify(JSON.stringify(providers))});
+  const data = process.env.XDG_DATA_HOME || join(require('node:os').homedir(), '.local', 'share');
+  const database = existsSync(join(data, 'opencode', 'opencode.db'));
+  console.log(JSON.stringify([...${JSON.stringify(providers)}, ...(database ? [${JSON.stringify(gateway)}] : [])]));
   process.exit(0);
 }
 if (args.slice(0, 3).join(' ') === 'api GET /api/model') {
@@ -155,6 +168,8 @@ type RouteOptions = {
   seat?: 'build' | 'review';
   credential?: boolean;
   localOnly?: boolean;
+  /** Signed in with `opencode auth login` only: OpenCode 2 keeps it in `opencode.db`, never in `auth.json`. */
+  databaseSignIn?: boolean;
   /** The local-only seat takes the provider set up in the project's OpenCode config. */
   projectModel?: boolean;
   /**
@@ -170,6 +185,7 @@ async function routeFixture({
   seat = 'build',
   credential = false,
   localOnly = false,
+  databaseSignIn = false,
   projectModel = false,
   savedList = true,
   fallback,
@@ -177,7 +193,13 @@ async function routeFixture({
   const opencodeRoute = {
     kind: 'cli',
     tool: 'opencode',
-    model: projectModel ? PROJECT_MODEL : localOnly ? LOCAL_MODEL : ROUTE_MODEL,
+    model: databaseSignIn
+      ? GATEWAY_MODEL
+      : projectModel
+        ? PROJECT_MODEL
+        : localOnly
+          ? LOCAL_MODEL
+          : ROUTE_MODEL,
   } as const;
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
@@ -187,18 +209,27 @@ async function routeFixture({
   vi.stubEnv('XDG_DATA_HOME', join(trustHome.home, '.local', 'share'));
   mkdirSync(join(trustHome.home, '.claude'), { recursive: true });
   writeFileSync(join(trustHome.home, '.claude', '.credentials.json'), '{"fixture":true}\n');
-  if (!localOnly) {
-    mkdirSync(join(trustHome.home, '.local', 'share', 'opencode'), { recursive: true });
-    writeFileSync(
-      join(trustHome.home, '.local', 'share', 'opencode', 'auth.json'),
-      '{"opencode-go":{"type":"api"}}\n',
-    );
+  const opencodeData = join(trustHome.home, '.local', 'share', 'opencode');
+  if (databaseSignIn) {
+    mkdirSync(opencodeData, { recursive: true });
+    writeFileSync(join(opencodeData, 'opencode.db'), 'fixture');
+  } else if (!localOnly) {
+    mkdirSync(opencodeData, { recursive: true });
+    writeFileSync(join(opencodeData, 'auth.json'), '{"opencode-go":{"type":"api"}}\n');
   }
   const binDir = join(target.tmpDir, 'bin');
   mkdirSync(binDir);
   const opencodeCalls = join(target.tmpDir, 'opencode-calls.jsonl');
   const claudeCalls = join(target.tmpDir, 'claude-calls.jsonl');
-  installShims(binDir, opencodeCalls, claudeCalls, credential, localOnly, target.projectDir);
+  installShims(
+    binDir,
+    opencodeCalls,
+    claudeCalls,
+    credential,
+    localOnly,
+    databaseSignIn,
+    target.projectDir,
+  );
   restorePath = activateSafeCliShimPath(binDir);
 
   const config = loadConfig(target.projectDir).config;
@@ -249,7 +280,7 @@ async function routeFixture({
     "globalThis.fetch = async () => { throw new Error('Network disabled in route E2E'); };\n",
   );
   vi.stubEnv('NODE_OPTIONS', `--import=${offlinePreload}`);
-  return { target, opencodeCalls, claudeCalls };
+  return { target, opencodeCalls, claudeCalls, cliTools };
 }
 
 async function startRun(target: StopContinueFixture) {
@@ -483,4 +514,32 @@ describe('e2e: a local-only OpenCode that stores no credential', { timeout: 240_
       ]);
     },
   );
+});
+
+describe('e2e: OpenCode signed in with opencode auth login', { timeout: 240_000 }, () => {
+  it('reads the OpenCode gateway route as signed in from opencode.db alone, and start calls it', async () => {
+    const { target, opencodeCalls, cliTools } = await routeFixture({
+      databaseSignIn: true,
+      savedList: false,
+    });
+    const providerAuth = cliTools.find((tool) => tool.tool === 'opencode')?.providerAuth;
+    const route = routeAuthState({
+      tool: 'opencode',
+      model: GATEWAY_MODEL,
+      providerAuth,
+      catalog: undefined,
+    });
+    expect(formatRouteAuth({ auth: route }).word).toBe('signed in · stored credential');
+
+    const doctor = await cli(target, ['doctor'], { timeoutMs: 60_000 });
+    const out = stripVTControlCharacters(doctor.stdout);
+    expect(out, doctor.stderr).toContain(
+      'OpenCode CLI is installed, trusted, compatible, and signed in.',
+    );
+    expect(out).not.toContain('OpenCode CLI has no credential for opencode');
+
+    const { run } = await startRun(target);
+    expect(`${run.stdout}\n${run.stderr}`).not.toContain('OpenCode CLI is not signed in.');
+    expect(recordedCalls(opencodeCalls)).toEqual([{ model: GATEWAY_MODEL }]);
+  });
 });
