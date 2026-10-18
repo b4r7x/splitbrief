@@ -502,10 +502,14 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
   );
 
   it.each(['opencode', 'kilo-code'] as const)(
-    'keeps %s unauthenticated, as a listing with no provider, when no allowlisted state reaches the sandboxed oracle',
+    'keeps %s unauthenticated when its own listing names no provider and no state or key exists',
     async (tool) => {
       await withTempDir(`readiness-${tool}-oracle-absent`, async (hostHome) => {
-        const executable = await oracleShim(hostHome, tool, reportBody(tool));
+        const executable = await oracleShim(
+          hostHome,
+          tool,
+          "printf '%s\\n' '┌  Credentials' '│' '└  0 credentials'\nexit 0",
+        );
         stubHostState(hostHome);
         stubNoProviderKeys();
 
@@ -518,10 +522,34 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
         });
 
         expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
-        // No credential reaches the staged oracle, so it can list none: an empty listing,
-        // which lets a route set up in the tool's own config decide.
         expect(result.providerAuth).toEqual({ kind: 'empty' });
       });
     },
   );
+
+  it('verifies opencode from its own listing when the sign-in lives only in opencode.db', async () => {
+    await withTempDir('readiness-opencode-oracle-db-only', async (hostHome) => {
+      // OpenCode 2 writes `opencode auth login` to its database and never to auth.json.
+      await mkdir(join(hostHome, 'xdg-data', 'opencode'), { recursive: true });
+      await writeFile(join(hostHome, 'xdg-data', 'opencode', 'opencode.db'), 'fixture');
+      const executable = await oracleShim(
+        hostHome,
+        'opencode',
+        `if [ -f "$XDG_DATA_HOME/opencode/opencode.db" ]; then\n${reportBody('opencode')}\nfi\nprintf '[]\\n'\nexit 0`,
+      );
+      stubHostState(hostHome);
+      stubNoProviderKeys();
+
+      const result = await probeCliReadiness({
+        tool: 'opencode',
+        executable,
+        authChannel: 'provider-dependent',
+        probe: oracleContract('opencode'),
+        classifyVersion: () => 'compatible',
+      });
+
+      expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
+      expect(result.providerAuth).toEqual({ kind: 'read', facts: ORACLE_TOOLS.opencode.facts });
+    });
+  });
 });

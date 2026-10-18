@@ -248,9 +248,10 @@ async function probeOpencodeWithoutBridgedState(
       if (key.endsWith('_API_KEY')) vi.stubEnv(key, '');
     }
     vi.stubEnv('FOO_API_KEY', providerKey ?? '');
+    // Like the real listing, the fake names the provider only when its key reaches it.
     const executable = await fakeOpencode(
       dir,
-      `process.stdout.write(${JSON.stringify(ORACLE_READ_OUTPUT)}); process.exit(0);`,
+      `process.stdout.write(process.env.FOO_API_KEY ? ${JSON.stringify(ORACLE_READ_OUTPUT)} : ${JSON.stringify(ORACLE_EMPTY_OUTPUT)}); process.exit(0);`,
     );
     return probeCliReadiness({
       tool: 'opencode',
@@ -871,6 +872,7 @@ describe('CLI readiness probe', () => {
 
       expect(result.auth).toBe('unauthenticated');
       expect(result.status).toBe('unauthenticated');
+      expect(result.providerAuth).toEqual({ kind: 'empty' });
     });
 
     itUnix('still reports a bridged credential file as authenticated', async () => {
