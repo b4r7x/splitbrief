@@ -1794,6 +1794,76 @@ describe('backend compatibility fixtures', () => {
     );
   });
 
+  function seedKiloHome(hostHome: string, token: string): void {
+    mkdirSync(join(hostHome, '.config', 'kilo'), { recursive: true });
+    writeFileSync(join(hostHome, '.config', 'kilo', 'kilo.json'), '{"model":"a/b"}');
+    mkdirSync(join(hostHome, '.local', 'share', 'kilo'), { recursive: true });
+    writeFileSync(
+      join(hostHome, '.local', 'share', 'kilo', 'auth.json'),
+      JSON.stringify({ token }),
+    );
+  }
+
+  itUnix('links the Kilo XDG folders in place of the HOME folders', async () => {
+    const hostHome = createTempDir('sandbox-kilo-xdg-host');
+    const projectDir = createTempDir('sandbox-kilo-xdg-project');
+    dirs.push(hostHome, projectDir);
+    const homeToken = 'kilo-home-canary-4b9e';
+    const xdgToken = 'kilo-xdg-canary-7d2a';
+    seedKiloHome(hostHome, homeToken);
+    const xdgConfig = join(hostHome, 'xdg-config');
+    const xdgData = join(hostHome, 'xdg-data');
+    mkdirSync(join(xdgConfig, 'kilo'), { recursive: true });
+    mkdirSync(join(xdgData, 'kilo'), { recursive: true });
+    writeFileSync(join(xdgData, 'kilo', 'auth.json'), JSON.stringify({ token: xdgToken }));
+    setEnv('HOME', hostHome);
+    setEnv('XDG_CONFIG_HOME', xdgConfig);
+    setEnv('XDG_DATA_HOME', xdgData);
+
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'kilo-code', authChannel: 'provider-dependent' },
+      'implementer',
+    );
+
+    expect(readlinkSync(join(env.XDG_CONFIG_HOME as string, 'kilo'))).toBe(
+      realpathSync(join(xdgConfig, 'kilo')),
+    );
+    expect(readlinkSync(join(env.XDG_DATA_HOME as string, 'kilo'))).toBe(
+      realpathSync(join(xdgData, 'kilo')),
+    );
+    expect(sandboxCredentialValues(env)).toContain(xdgToken);
+    expect(sandboxCredentialValues(env)).not.toContain(homeToken);
+  });
+
+  // Kilo Code reads $XDG_CONFIG_HOME/kilo and $XDG_DATA_HOME/kilo when the
+  // variables are set, and never falls back to the HOME folders.
+  itUnix('does not link the Kilo HOME folders when the XDG folders hold no kilo', async () => {
+    const hostHome = createTempDir('sandbox-kilo-xdg-empty-host');
+    const projectDir = createTempDir('sandbox-kilo-xdg-empty-project');
+    dirs.push(hostHome, projectDir);
+    const token = 'kilo-stale-home-canary-3e8c';
+    seedKiloHome(hostHome, token);
+    const xdgConfig = join(hostHome, 'xdg-config');
+    const xdgData = join(hostHome, 'xdg-data');
+    mkdirSync(xdgConfig);
+    mkdirSync(xdgData);
+    setEnv('HOME', hostHome);
+    setEnv('XDG_CONFIG_HOME', xdgConfig);
+    setEnv('XDG_DATA_HOME', xdgData);
+
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'kilo-code', authChannel: 'provider-dependent' },
+      'implementer',
+    );
+
+    expect(existsSync(join(env.XDG_CONFIG_HOME as string, 'kilo'))).toBe(false);
+    expect(existsSync(join(env.XDG_DATA_HOME as string, 'kilo'))).toBe(false);
+    expect(sandboxCredentialValues(env)).not.toContain(token);
+    expect(await bridgedCliStatePresent(env, 'kilo-code')).toBe(false);
+  });
+
   itUnix('seals the command-code auth snapshot and exposes no ambient env credential', async () => {
     const hostHome = createTempDir('sandbox-command-code-host');
     const projectDir = createTempDir('sandbox-command-code-project');

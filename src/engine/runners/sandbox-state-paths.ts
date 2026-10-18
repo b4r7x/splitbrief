@@ -6,21 +6,15 @@ import { CLI_TOOL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalo
 import type { RunnerRole } from '../../core/runners/seat-roles.js';
 import { sha256Hex } from '../../utils/sha256.js';
 
-type HostStateEnvKey =
-  | 'HOME'
-  | 'USERPROFILE'
-  | 'XDG_CONFIG_HOME'
-  | 'XDG_DATA_HOME'
-  | 'APPDATA'
-  | 'LOCALAPPDATA';
+type HostStateEnvKey = 'HOME' | 'USERPROFILE' | 'XDG_CONFIG_HOME' | 'APPDATA' | 'LOCALAPPDATA';
 
 export type SandboxStateRoot = 'home' | 'config' | 'data';
 
 /**
  * Where an entry's host root comes from: a host environment variable as it
- * stands, or an XDG base folder resolved the way OpenCode resolves it
- * (`xdgBaseDir`), so a set `XDG_CONFIG_HOME` or `XDG_DATA_HOME` replaces the
- * HOME default instead of adding to it.
+ * stands, or an XDG base folder resolved the way OpenCode and Kilo Code
+ * resolve it (`xdgBaseDir`), so a set `XDG_CONFIG_HOME` or `XDG_DATA_HOME`
+ * replaces the HOME default instead of adding to it.
  */
 export type CliStateSource = HostStateEnvKey | 'xdg-config' | 'xdg-data';
 
@@ -138,8 +132,8 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
   ],
   'kilo-code': [
     {
-      source: 'HOME',
-      relativePath: '.config/kilo/auth.json',
+      source: 'xdg-config',
+      relativePath: 'kilo/auth.json',
       destination: 'config',
       destinationPath: 'kilo/auth.json',
     },
@@ -157,12 +151,6 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
     },
     {
       source: 'XDG_CONFIG_HOME',
-      relativePath: 'kilo/auth.json',
-      destination: 'config',
-      destinationPath: 'kilo/auth.json',
-    },
-    {
-      source: 'XDG_CONFIG_HOME',
       relativePath: 'kilocode/auth.json',
       destination: 'config',
       destinationPath: 'kilocode/auth.json',
@@ -174,13 +162,7 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
       destinationPath: 'kilo/auth.json',
     },
     {
-      source: 'HOME',
-      relativePath: '.local/share/kilo/auth.json',
-      destination: 'data',
-      destinationPath: 'kilo/auth.json',
-    },
-    {
-      source: 'XDG_DATA_HOME',
+      source: 'xdg-data',
       relativePath: 'kilo/auth.json',
       destination: 'data',
       destinationPath: 'kilo/auth.json',
