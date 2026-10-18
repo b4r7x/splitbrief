@@ -101,7 +101,7 @@ SPLITBRIEF takes several steps to protect your API keys:
 - **Header-only transport** — keys are only used in HTTP `Authorization` headers, never embedded in URLs or query parameters
 - **Boolean detection flags** — provider detection returns `hasKey: true/false`, never the actual key value
 - **Key format validation** — a provider that declares a credential prefix has its key checked against it; prefix mismatches fail closed before any network request
-- **Bridged CLI session state** — a CLI runner on a host-state channel whose credential is a file (`session` for Codex, `provider-dependent` for OpenCode and Kilo Code, and `session` for Claude Code, Cursor Agent CLI and Copilot on Linux and Windows) cannot read your real `HOME`, so SPLITBRIEF copies only that tool's admitted credential file (for example `~/.claude/.credentials.json`) into `<project>/.splitbrief/sandbox/`, owner-only and read-only. The copy is refreshed when the host credential rotates and deleted when the run finishes; `.splitbrief/` must stay in `.gitignore`. Omit `authChannel` to use the host CLI configuration; a private environment alone does not prove method enforcement.
+- **Bridged CLI session state** — a CLI runner on a host-state channel whose credential is a file (`session` for Codex and Command Code, `provider-dependent` for OpenCode and Kilo Code, and `session` for Claude Code, Cursor Agent CLI and Copilot on Linux and Windows) cannot read your real `HOME`. SPLITBRIEF gives it only that tool's own sign-in, in one of two ways. Claude Code, Copilot and Command Code get a copy of their credential file (for example `~/.claude/.credentials.json`) in `<project>/.splitbrief/sandbox/`, owner-only and read-only. The copy is replaced when your own file changes and deleted when the run finishes. Codex, Cursor Agent CLI, OpenCode and Kilo Code renew their sign-in during a run, and a copy would lose the new token. So SPLITBRIEF links Codex's `~/.codex/auth.json` and Cursor's `${XDG_CONFIG_HOME:-~/.config}/cursor/auth.json` into the sandbox, and links the whole state folder of OpenCode and Kilo Code. Through that link the runner reads **and writes** your own sign-in, and SPLITBRIEF removes the link when the run finishes. `.splitbrief/` must stay in `.gitignore`. Omit `authChannel` to use the host CLI configuration; a private environment alone does not prove method enforcement.
 
 ### Claude Code on macOS
 
@@ -113,9 +113,11 @@ The historical `api-key` staging alternative is not an available method switch t
 
 ### Cursor Agent CLI on macOS
 
-Cursor Agent CLI stores its subscription session in the macOS login keychain, not in the files the Linux file-bridge copies, so there is nothing for the file bridge to copy. `agent status` inside a remapped HOME reports `Not logged in` even when the host is already signed in via `agent login`. SPLITBRIEF therefore hands a macOS Cursor Agent CLI `session` runner **your real `HOME` and `USER`** (`host-account`) instead of a sandbox home, and copies nothing. That is how the paid subscription plans.
+Cursor Agent CLI stores its subscription session in the macOS login keychain, so there is no file for a file bridge to copy. `agent status` inside a remapped HOME reports `Not logged in` even when the host is already signed in via `agent login`. SPLITBRIEF therefore hands a macOS Cursor Agent CLI `session` runner **your real `HOME` and `USER`** (`host-account`) instead of a sandbox home, and copies nothing. That is how the paid subscription plans.
 
 The cost is the same as Claude Code's `session` channel on macOS: `~` resolves to your real home. Everything else the sandbox redirects still points inside `<project>/.splitbrief/sandbox/`, except the private `TMPDIR` in the system temp directory.
+
+On Linux, Cursor Agent CLI keeps its sign-in in `${XDG_CONFIG_HOME:-~/.config}/cursor/auth.json`. SPLITBRIEF links that one file into the sandbox, so a token that Cursor refreshes during a run lands in your own file. Only that file counts as a Cursor sign-in.
 
 The historical `api-key` staging alternative is not an available method switch today. Explicit method selection requires invocation-enforcement evidence; omit the field and configure the host CLI.
 
@@ -148,7 +150,7 @@ Which runners keep a private HOME, and which do not:
 | Claude Code, `session` channel, **macOS** | your real `HOME`, plus real `USER` | the login keychain, through its default search list |
 | Claude Code, `session` channel, Linux / Windows | private, under `.splitbrief/sandbox/<role>/home` | a read-only copy of `~/.claude/.credentials.json` |
 | Cursor Agent CLI, `session` channel, **macOS** | your real `HOME`, plus real `USER` | the login keychain, through its default search list |
-| Cursor Agent CLI, `session` channel, Linux / Windows | private, under `.splitbrief/sandbox/<role>/home` | a file bridge of the declared Cursor state paths |
+| Cursor Agent CLI, `session` channel, Linux / Windows | private, under `.splitbrief/sandbox/<role>/home` | a live link to Cursor's sign-in file, `${XDG_CONFIG_HOME:-~/.config}/cursor/auth.json` |
 | Antigravity, `session` channel, **macOS** | your real `HOME`, plus real `USER` | the login keychain, through its default search list |
 | Antigravity, `session` channel, Linux / Windows | private | none — unsupported credential bridge; authentication remains unknown |
 | Copilot, `session` channel, **macOS** | your real `HOME`, plus real `USER` and a set `COPILOT_HOME` | the login keychain, through its default search list |

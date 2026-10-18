@@ -73,7 +73,7 @@ async function seedHostSessionState(
   const relative =
     tool === 'claude-code'
       ? join('.claude', '.credentials.json')
-      : join('.cursor', 'agent-cli-state.json');
+      : join('.config', 'cursor', 'auth.json');
   const path = join(hostHome, relative);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, '{"session":"fixture"}');
@@ -215,6 +215,76 @@ describe('session-state presence readiness', () => {
         });
       },
     );
+  });
+
+  // On Linux Cursor keeps its sign-in in `${XDG_CONFIG_HOME:-~/.config}/cursor/auth.json`,
+  // and the status fixture answers only from what the staged child can reach there.
+  describe('file-bridged Cursor session on Linux', () => {
+    const childSignInScript =
+      "const p = require('node:path').join(process.env.XDG_CONFIG_HOME ?? '', 'cursor', 'auth.json'); console.log(require('node:fs').existsSync(p) ? 'verified' : 'missing')";
+
+    beforeEach(() => {
+      setPlatform('linux');
+    });
+
+    it('reads Cursor as signed in from the sign-in file in the host config folder', async () => {
+      await withTempDir('readiness-cursor-linux-home', async (hostHome) => {
+        await seedHostSessionState(hostHome, 'cursor');
+        vi.stubEnv('HOME', hostHome);
+        vi.stubEnv('XDG_CONFIG_HOME', '');
+
+        const result = await probeCliReadiness({
+          tool: 'cursor',
+          executable: await nodeExecutable(),
+          authChannel: 'session',
+          probe: sessionProbe({ authScript: childSignInScript }),
+          classifyVersion: () => 'compatible',
+        });
+
+        expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
+      });
+    });
+
+    it('reads Cursor as signed in from the sign-in file under a set XDG_CONFIG_HOME', async () => {
+      await withTempDir('readiness-cursor-linux-xdg', async (root) => {
+        const hostHome = join(root, 'home');
+        const hostConfig = join(root, 'config');
+        await mkdir(join(hostConfig, 'cursor'), { recursive: true });
+        await writeFile(join(hostConfig, 'cursor', 'auth.json'), '{"accessToken":"fixture"}');
+        await mkdir(hostHome);
+        vi.stubEnv('HOME', hostHome);
+        vi.stubEnv('XDG_CONFIG_HOME', hostConfig);
+
+        const result = await probeCliReadiness({
+          tool: 'cursor',
+          executable: await nodeExecutable(),
+          authChannel: 'session',
+          probe: sessionProbe({ authScript: childSignInScript }),
+          classifyVersion: () => 'compatible',
+        });
+
+        expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
+      });
+    });
+
+    it('reads Cursor as not signed in when the host holds only its UI state file', async () => {
+      await withTempDir('readiness-cursor-linux-ui-state', async (hostHome) => {
+        await mkdir(join(hostHome, '.cursor'), { recursive: true });
+        await writeFile(join(hostHome, '.cursor', 'agent-cli-state.json'), '{"version":1}');
+        vi.stubEnv('HOME', hostHome);
+        vi.stubEnv('XDG_CONFIG_HOME', '');
+
+        const result = await probeCliReadiness({
+          tool: 'cursor',
+          executable: await nodeExecutable(),
+          authChannel: 'session',
+          probe: sessionProbe({ authScript: "console.log('verified')" }),
+          classifyVersion: () => 'compatible',
+        });
+
+        expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
+      });
+    });
   });
 
   it('never lets a bridged session file outvote the tool’s own status command', async () => {
