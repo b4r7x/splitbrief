@@ -259,7 +259,7 @@
 - After a stop that cut a brief before it wrote a file, Session options says `Draft stays.` and End run reads `close this run`, matching the byline. Before, it said `Changes and draft stay.` and `keep changes` for a run with no changes.
 - On a model row with several providers and one signed in, the picker line under the lists names the route that `⏎` saves. Before, it could name another provider's route while `⏎` saved the signed-in one, in Setup, in Settings › Fallback and in the seat pickers.
 - In the seat picker, moving onto a tool and pressing `→` starts the Models cursor on the same row whichever row you came from. Before, arriving from `= PLAN` or `+ Add custom command…` started it on `+ Add custom model…`.
-- When tools are not signed in, Setup tells you to sign in and run `splitbrief init` again, which names them again. Before, it sent you to `splitbrief doctor`, which without a saved crew could not name them.
+- When tools are not signed in, Setup names them and tells you to sign in, then press ⏎ on a seat and ctrl+r, which checks them again without leaving Setup. Before, it sent you to `splitbrief doctor`, which without a saved crew could not name them.
 - A warning or failure from a tool reads as the tool's own message in the activity rows, for example `Warn  provider.quota: Insufficient Balance`. Before, a code came first, for example `Warn  opencode-error: provider.quota: …`.
 - A brief that creates a file reads `create` on the closed run also after a retry or a Continue past its consult limit, not `modify`.
 - A minor or out-of-scope review finding reads as a note in the closed run, the review packet and `splitbrief review`. The closed run and the review packet read the review count as `0 blocking, 3 notes`.

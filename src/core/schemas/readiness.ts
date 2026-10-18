@@ -196,14 +196,21 @@ function platformName(platform: NodeJS.Platform): string {
 }
 
 /**
- * Where the user checks a tool again: `doctor` checks a saved crew, Setup (`init`) checks a
- * project with or without one, and inside the runner picker `ctrl+r` checks the tools again.
+ * Where the user checks a tool again: `doctor` checks a saved crew, inside the runner picker
+ * `ctrl+r` checks the tools again, and Setup reaches that picker through `⏎` on a seat.
  */
-export type CliRecheck = 'doctor' | 'init' | 'picker';
+export type CliRecheck = 'doctor' | 'picker' | 'setup';
 
 /** The step every remediation ends on, spelled from where the user is. */
 export function thenRecheck(recheck: CliRecheck): string {
-  return recheck === 'picker' ? 'then ctrl+r' : `then run \`splitbrief ${recheck}\` again`;
+  switch (recheck) {
+    case 'doctor':
+      return 'then run `splitbrief doctor` again';
+    case 'picker':
+      return 'then ctrl+r';
+    case 'setup':
+      return 'then ⏎ on a seat and ctrl+r';
+  }
 }
 
 /** The sign-in step every surface gives a signed-out tool; `names` is one tool or a list of them. */
