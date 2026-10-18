@@ -268,6 +268,67 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.unmount();
   });
 
+  it.each([
+    {
+      name: 'opens Request changes when ↓⏎ arrive in one read',
+      before: '',
+      chunk: '\x1b[B\r',
+      settled: false,
+    },
+    {
+      name: 'approves when ↑⏎ arrive in one read from Request changes',
+      before: '\x1b[B',
+      chunk: '\x1b[A\r',
+      settled: true,
+    },
+  ])('$name', async ({ before, chunk, settled }) => {
+    vi.useFakeTimers({ toFake: ['Date'], now: FIXED_TS });
+    const reviewPath = join(projectDir, 'plan.md');
+    writeFileSync(reviewPath, 'Greet people by name.', 'utf8');
+    const outcomes: ApprovalReviewResult[] = [];
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    navigatePreparedWorkflow(projectDir, 'plan card burst');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'reviewing-plan',
+        feature: 'plan card burst',
+      });
+      outcomes.push(await opts.callbacks.onApprovalNeeded('plan', reviewPath, []));
+      return pendingWorkflow();
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Greet people by name.');
+    });
+    vi.advanceTimersByTime(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+    if (before !== '') {
+      ui.stdin.write(before);
+      await flushEffects();
+    }
+    ui.stdin.write(chunk);
+
+    if (settled) {
+      await vi.waitFor(() => {
+        expect(outcomes).toEqual([{ approved: true }]);
+      });
+    } else {
+      await flushEffects();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain(`${listRowLead('active')}Request changes`);
+      expect(frame).toContain(REVIEW_COMMENT_HINTS);
+      await tick();
+      expect(outcomes).toEqual([]);
+    }
+    ui.unmount();
+  });
+
   it('keeps Request changes marked while its composer draft owns the keys', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: FIXED_TS });
     const reviewPath = join(projectDir, 'plan.md');
