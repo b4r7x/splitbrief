@@ -468,6 +468,7 @@ const checkpointPredicates = [
   [checkpointId('implementation-retry'), includesAll('briefs passed')],
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
+  [checkpointId('recovery-resolved-apply-retry'), includesAll('Run continued')],
   [checkpointId('review-fix'), includesAll()],
   [checkpointId('review-choosing-checks'), includesAll()],
   [checkpointId('review-verdict-only'), includesAll()],

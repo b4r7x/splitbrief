@@ -78,7 +78,8 @@ export type TranscriptWalkStep =
 // event (yielded before that event), or the end of the transcript; row-less events never split it.
 // A recovery folds the same way: its prompt or its selection opens the fold, and the selection,
 // the reset and the outcome of that issue join it until another row-producing event closes it.
-// Its seat switch waits for the fold to close, then follows the Recovery row it belongs to.
+// Its seat switch, and a resume between its selection and its outcome, wait for the fold to
+// close, then follow the Recovery row they belong to in log order.
 // A prompt the error row before it already states opens nothing. A brief its recovery restarted
 // keeps the one header it opened with: the Recovery row already says it went back to pending.
 // A seat switch folds one matching reconciliation notice before the next run starts or resumes.
@@ -102,7 +103,7 @@ export function* walkTranscript(
   const endedActivity = endedCallActivity(sections);
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
-  let recoverySwitch: Extract<TranscriptWalkStep, { kind: 'event' }> | null = null;
+  let afterRecovery: Extract<TranscriptWalkStep, { kind: 'event' }>[] = [];
   let lastRowEvent: EngineEvent | null = null;
   let openHeader: EngineEventOf<'task_started'> | null = null;
   let restatedPrompt: EngineEventOf<'recovery_prompted'> | null = null;
@@ -117,10 +118,10 @@ export function* walkTranscript(
         ...settledContext,
       };
     if (recovery !== null) yield { kind: 'recovery', recovery, ...settledContext };
-    if (recoverySwitch !== null) yield recoverySwitch;
+    yield* afterRecovery;
     activityBatch = null;
     recovery = null;
-    recoverySwitch = null;
+    afterRecovery = [];
   }
 
   for (const section of sections) {
@@ -204,14 +205,23 @@ export function* walkTranscript(
         event.type === 'seat_switched' &&
         recovery !== null &&
         recovery.resolved === undefined &&
-        recoverySwitch === null &&
+        recovery.seatSwitch === undefined &&
         recovery.selected?.action === 'switch-seat' &&
         recovery.selected.seat === event.seat &&
         recovery.selected.reason === event.cause &&
         recovery.selected.phase === event.phase
       ) {
         recovery.seatSwitch = event;
-        recoverySwitch = { kind: 'event', event, globalIndex, ...settledContext };
+        afterRecovery.push({ kind: 'event', event, globalIndex, ...settledContext });
+        continue;
+      }
+      if (
+        event.type === 'workflow_resumed' &&
+        recovery !== null &&
+        recovery.selected !== undefined &&
+        recovery.resolved === undefined
+      ) {
+        afterRecovery.push({ kind: 'event', event, globalIndex, ...settledContext });
         continue;
       }
       if (recovery !== null && joinsRecovery(recovery, event)) continue;

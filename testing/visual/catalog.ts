@@ -2869,6 +2869,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'transcript', title: 'Implementation transcript' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-recovery-resolved-apply-retry',
+      title: 'Workflow · an Apply halt resolved with Re-run Apply',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-resolved-apply-retry',
+        title: 'Apply halt and Re-run Apply folded into one Recovery row',
+        kind: 'implementation',
+        marker: 'Re-run Apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+      ],
+    }),
     // The same halt read back later: the transcript rows the halt wrote and the byline naming it.
     defineScenario({
       id: 'workflow-at-rest-left-isolation',

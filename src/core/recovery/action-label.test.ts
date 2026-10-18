@@ -65,3 +65,12 @@ describe('recoveryActionLabel for a correction', () => {
     expect(recoveryActionLabel('revise', { reason })).toBe(label);
   });
 });
+
+describe('recoveryActionLabel for an Apply halt', () => {
+  it.each(['apply-partial', 'apply-conflict'] as const)(
+    'names a retry on a %s halt as Re-run Apply',
+    (reason) => {
+      expect(recoveryActionLabel('retry-same-worker', { reason })).toBe('Re-run Apply');
+    },
+  );
+});

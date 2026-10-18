@@ -45,6 +45,8 @@ export function recoveryActionParts(
     case 'retry-same-worker':
       if (context.reason === 'required-checks-unrunnable')
         return [{ text: 'Run the checks again' }];
+      if (context.reason === 'apply-partial' || context.reason === 'apply-conflict')
+        return [{ text: 'Re-run Apply' }];
       return context.seatRetry === undefined
         ? [{ text: 'Try again' }]
         : [

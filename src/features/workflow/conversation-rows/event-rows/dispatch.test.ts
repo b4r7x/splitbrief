@@ -721,6 +721,50 @@ describe('event row dispatch', () => {
     expect(spans).toContainEqual({ text: ' · ', tone: 'textDim' });
   });
 
+  it('names a resolved Apply retry as Re-run Apply', () => {
+    const block = recoveryRowBlock(
+      'recovery',
+      {
+        firstIndex: 0,
+        issueId: 'issue',
+        prompted: {
+          type: 'recovery_prompted',
+          ts: 0,
+          phase: 'complete',
+          issueId: 'issue',
+          reason: 'apply-partial',
+          headline: 'Apply stopped part way',
+          availableActions: ['retry-same-worker', 'restore-backup'],
+          files: [],
+          affectedTaskIds: [],
+          recommendedAction: 'retry-same-worker',
+          resumeCommand: 'splitbrief resume',
+        },
+        selected: {
+          type: 'recovery_action_selected',
+          ts: 0,
+          phase: 'complete',
+          issueId: 'issue',
+          reason: 'apply-partial',
+          action: 'retry-same-worker',
+        },
+        resolved: {
+          type: 'recovery_resolved',
+          ts: 0,
+          phase: 'complete',
+          issueId: 'issue',
+          reason: 'apply-partial',
+          action: 'retry-same-worker',
+          outcome: 'continued',
+        },
+      },
+      120,
+    );
+    expect(block?.createRows(0, block.rowCount).map(rowText)).toEqual([
+      `Recovery  Apply stopped part way · Re-run Apply${arrowSep()}continued`,
+    ]);
+  });
+
   it.each([
     [true, 0, 0, 'success'],
     [false, 1, 0, 'error'],
