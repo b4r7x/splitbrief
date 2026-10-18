@@ -7,7 +7,11 @@ import type { Screen } from '../../core/navigation/types.js';
 import type { CommandGuardContext, RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import { isOpenRunAtRest, routerStore } from '../../stores/navigation/router.js';
+import {
+  isApplyUnfinishedAtRest,
+  isOpenRunAtRest,
+  routerStore,
+} from '../../stores/navigation/router.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -57,6 +61,7 @@ export function buildPaletteSources({
           detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
         }),
         openRunAtRest: isOpenRunAtRest(routerStore.get()),
+        applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
       },
     }),
     skillItems: buildSkillItems(skills.available, skills.selected),

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
@@ -145,6 +146,7 @@ describe('e2e: the review tool refuses its input as too long', { timeout: 240_00
       sessionId,
       state: haltState,
       action: 'accept-as-is',
+      comment: plainUserMessage('Fixtures too big.'),
       bus: createRecoveryBus({ projectDir, sessionId }),
       config: loadConfig(projectDir).config,
     });
@@ -156,6 +158,7 @@ describe('e2e: the review tool refuses its input as too long', { timeout: 240_00
       override: true,
     });
     expect(ready.acceptedAsIs?.findings).toEqual([issue?.message]);
+    expect(ready.acceptedAsIs?.note).toBe('Fixtures too big.');
     expect(existsSync(join(target.projectDir, GREET_FILE))).toBe(false);
   });
 });

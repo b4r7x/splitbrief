@@ -88,6 +88,8 @@
 
 ### Fixed
 
+- Session options, the command palette, help and `/` completion no longer offer End run while an Apply is unfinished; restore or retry Apply first.
+- Skip review no longer counts your note as an open finding: the Apply warning shows it once as your note, and a finding that ends with a period no longer shows two. A run whose final review passed after a skipped task review applies without asking for confirmation, and its Review stage shows a failed final review as failed.
 - When OpenCode or Kilo Code is signed in to other providers, a fallback on a model that the picker marks `needs sign-in` now shows `needs sign-in` in Settings › Fallback. A signed-out or out-of-quota seat no longer moves to it by itself and halts a second time.
 - The workflow sidebar keeps the OpenCode CLI name in a long seat identity: the tool, the model, and the route with its effort each take a row. On a short terminal each seat takes one row, and the crew never paints over the sidebar's bottom border.
 - A long message in the composer stays inside its frame: no line runs into the right edge, every wrapped line starts at the same column, and ctrl+a moves to, and ctrl+u deletes back to, the start of the line you see.

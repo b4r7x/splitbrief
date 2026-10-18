@@ -7,6 +7,7 @@ import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { taskId } from '../../../core/schemas/task.js';
 import {
   makeReviewFixInsertedEvents,
@@ -205,6 +206,53 @@ describe('readStopMenuRows on a run ready to apply', () => {
     expect(rows.map((row) => row.id)).toEqual(['end-run', 'leave']);
     expect(rows[0]?.consequence).toBe('discard the result; it changed no files');
     expect(rows[0]?.consequence).not.toContain('run.patch');
+  });
+});
+
+describe('readStopMenuRows during an unfinished Apply', () => {
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  const applyPartial = makeRecoveryIssue({
+    reason: 'apply-partial',
+    phase: 'complete',
+    availableActions: ['retry-same-worker', 'restore-backup'],
+  });
+
+  it('offers no End run on a run at rest whose Apply did not finish', () => {
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({
+        hydration: {
+          kind: 'loaded',
+          state: makeWorkflowState({
+            phase: 'complete',
+            applying: { at: '2026-10-17T00:00:00.000Z', backupId: 'b1' },
+            pendingRecovery: applyPartial,
+          }),
+        },
+        status: {
+          kind: 'open',
+          stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: applyPartial } },
+          resumeAt: { kind: 'review', cycle: 0 },
+        },
+      }),
+      execution: { kind: 'at-rest' },
+    });
+
+    expect(readStopMenuRows().map((row) => row.id)).toEqual(['resume', 'leave']);
+  });
+
+  it('offers no End run at a live halt whose actions refuse it', () => {
+    recoveryNoticeStore.open({
+      seat: 'build',
+      resetAt: null,
+      issue: applyPartial,
+      at: { kind: 'review', cycle: 0 },
+    });
+
+    expect(readStopMenuRows().map((row) => row.id)).toEqual(['stop-now']);
   });
 });
 

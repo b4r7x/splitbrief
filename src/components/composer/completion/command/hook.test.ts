@@ -8,6 +8,11 @@ import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { useCommandCompletion } from './hook.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
+import { workflowCommands } from '../../../../core/runtime/commands/defs/workflow.js';
+import { routerStore } from '../../../../stores/navigation/router.js';
+import { makeCtx } from '#testing/helpers/runtime-commands.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 
 const ENTER = '\r';
 const ARROW_UP = '\u001b[A';
@@ -285,6 +290,59 @@ describe('useCommandCompletion submit routing', () => {
       },
       { timeout: 5000 },
     );
+    ui.unmount();
+  });
+});
+
+function WorkflowNamesHarness({ value }: { value: string }) {
+  const command = useCommandCompletion({
+    commands: workflowCommands(makeCtx()),
+    currentScreen: 'workflow',
+    value,
+    setValue: () => {},
+    onRuntimeCommand: () => {},
+  });
+  return createElement(Text, null, command.filtered.map((row) => row.name).join(' '));
+}
+
+describe('useCommandCompletion on a run at rest', () => {
+  beforeEach(() => {
+    resetAllStores();
+  });
+
+  const atRest = (applying: { at: string; backupId: string } | undefined) =>
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({
+        hydration: {
+          kind: 'loaded',
+          state: makeWorkflowState({
+            phase: 'complete',
+            ...(applying !== undefined && { applying }),
+          }),
+        },
+        status: {
+          kind: 'open',
+          stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+          resumeAt: { kind: 'review', cycle: 0 },
+        },
+      }),
+      execution: { kind: 'at-rest' },
+    });
+
+  it('lists /end on an open run', async () => {
+    atRest(undefined);
+    const ui = renderFeature(createElement(WorkflowNamesHarness, { value: '/en' }));
+    await tick(20);
+    expect(ui.lastFrame()).toContain('/end');
+    ui.unmount();
+  });
+
+  it('does not list /end while its Apply did not finish', async () => {
+    atRest({ at: '2026-10-17T00:00:00.000Z', backupId: 'b1' });
+    const ui = renderFeature(createElement(WorkflowNamesHarness, { value: '/en' }));
+    await tick(20);
+    expect(ui.lastFrame()).not.toContain('/end');
     ui.unmount();
   });
 });

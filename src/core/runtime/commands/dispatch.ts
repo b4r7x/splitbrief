@@ -9,6 +9,7 @@ interface CommandExecutionOptions {
   phase: Phase;
   plannerSupportsImages: boolean;
   openRunAtRest: boolean;
+  applyUnfinished: boolean;
   onError: (msg: string) => void;
 }
 
@@ -45,6 +46,7 @@ export async function executeRuntimeCommand(
     phase: options.phase,
     plannerSupportsImages: options.plannerSupportsImages,
     openRunAtRest: options.openRunAtRest,
+    applyUnfinished: options.applyUnfinished,
   });
   if (blocked !== undefined) {
     options.onError(blocked);

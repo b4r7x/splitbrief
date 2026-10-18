@@ -1,4 +1,4 @@
-import { routerStore } from '../../../stores/navigation/router.js';
+import { isApplyUnfinishedAtRest, routerStore } from '../../../stores/navigation/router.js';
 import {
   selectRunningBrief,
   selectTaskListView,
@@ -180,11 +180,17 @@ export function readStopMenuRows(): StopRow[] {
                 label: 'Resume',
                 consequence: 'continue this run; keep the unsent draft',
               },
-              {
-                id: 'end-run' as const,
-                label: 'End run',
-                consequence: runHasChanges() ? 'close this run; keep changes' : 'close this run',
-              },
+              ...(isApplyUnfinishedAtRest(route)
+                ? []
+                : [
+                    {
+                      id: 'end-run' as const,
+                      label: 'End run',
+                      consequence: runHasChanges()
+                        ? 'close this run; keep changes'
+                        : 'close this run',
+                    },
+                  ]),
             ]
           : []),
       {
@@ -210,9 +216,15 @@ export function readStopMenuRows(): StopRow[] {
     hasChanges: runHasChanges(),
     boundaryPauseRequested: stop.intent === 'pause-after-brief',
   });
-  return recoveryNoticeStore.get().issue === null
+  const issue = recoveryNoticeStore.get().issue;
+  // A halt offers only the actions it accepts: an unfinished Apply's halt refuses End run.
+  return issue === null
     ? rows
-    : rows.filter((row) => row.id === 'stop-now' || row.id === 'end-run');
+    : rows.filter(
+        (row) =>
+          row.id === 'stop-now' ||
+          (row.id === 'end-run' && issue.availableActions.includes('end-run')),
+      );
 }
 
 /**

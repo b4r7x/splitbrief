@@ -405,10 +405,8 @@ describe('final review input cap', () => {
     expect(skipped.state.phase).toBe('complete');
     expect(skipped.state.reviewStatus).not.toBe('passed');
     expect(skipped.state.review).toBeUndefined();
-    expect(skipped.state.acceptedAsIs?.findings).toEqual([
-      issue?.message,
-      'Reviewed the diff by hand.',
-    ]);
+    expect(skipped.state.acceptedAsIs?.findings).toEqual([issue?.message]);
+    expect(skipped.state.acceptedAsIs?.note).toBe('Reviewed the diff by hand.');
     expect(awaitsApply(skipped.state)).toBe(true);
   });
 });

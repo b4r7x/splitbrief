@@ -1664,6 +1664,33 @@ describe('the run workspace and Apply', () => {
     expect(next.acceptedAsIs).toEqual({ at: '2026-10-03T10:00:00.000Z', findings: ['F1', 'F2'] });
   });
 
+  it('ACCEPT_AS_IS stores the note apart from the findings', () => {
+    const failed = { ...ready(), reviewStatus: 'failed' as const };
+    const next = transition(
+      failed,
+      { type: 'ACCEPT_AS_IS', findings: ['F1'], note: 'Checked by hand.' },
+      NOW,
+    );
+    expect(next.acceptedAsIs).toEqual({
+      at: '2026-10-03T10:00:00.000Z',
+      findings: ['F1'],
+      note: 'Checked by hand.',
+    });
+  });
+
+  it.each(['passed', 'failed'] as const)(
+    'a %s final review replaces a task review skipped as is',
+    (reviewStatus) => {
+      const implementing = { ...createInitialState('feat'), phase: 'implementing' as const };
+      const skipped = transition(implementing, { type: 'ACCEPT_AS_IS', findings: ['F1'] }, NOW);
+      const done = transition(transition(skipped, { type: 'ALL_DONE' }), {
+        type: 'REVIEW_DONE',
+        reviewStatus,
+      });
+      expect(done.acceptedAsIs).toBeUndefined();
+    },
+  );
+
   it('APPLY_REVIEW_START only from ready', () => {
     const merged = [{ path: 'src/a.ts', checkoutHunks: '@@ -1 +1 @@\n-a\n+b\n' }];
     const accepted = transition(

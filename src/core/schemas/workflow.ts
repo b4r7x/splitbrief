@@ -394,7 +394,9 @@ const WorkflowStateFields = {
       undone: z.object({ at: z.string(), conflicts: z.array(z.string()) }).optional(),
     })
     .optional(),
-  acceptedAsIs: z.object({ at: z.string(), findings: z.array(z.string()) }).optional(),
+  acceptedAsIs: z
+    .object({ at: z.string(), findings: z.array(z.string()), note: z.string().optional() })
+    .optional(),
   /** The run diff of the workspace the last final review judged: path → entry key. */
   reviewedCandidate: z.record(z.string(), z.string()).optional(),
   /** Set while an integration review runs after Apply changed the candidate. */

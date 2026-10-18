@@ -457,10 +457,10 @@ function applyAcceptAsIsRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
-  const comment = opts.comment?.displayText.trim() ?? '';
+  const note = opts.comment?.displayText.trim() ?? '';
   const findings =
     issue.reason === 'review-input-too-large'
-      ? [issue.message, ...(comment === '' ? [] : [comment])]
+      ? [issue.message]
       : readCriticalFindings(
           { projectDir: opts.projectDir, sessionId: opts.sessionId },
           opts.state,
@@ -490,7 +490,7 @@ function applyAcceptAsIsRecoveryAction(
   state = transitionAndSave(
     opts,
     state,
-    { type: 'ACCEPT_AS_IS', findings },
+    { type: 'ACCEPT_AS_IS', findings, ...(note !== '' && { note }) },
     { expectedRevision: state.stateRevision ?? 0 },
   );
   state = transitionAndSave(

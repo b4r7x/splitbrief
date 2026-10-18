@@ -164,10 +164,10 @@ Commands that act on the active run: stop, resume or end the run, manage the que
 
 - **Purpose**: Close the run and preserve unapplied workspace work. See [Apply](./WORKFLOW.md#apply).
 - **Screens**: `workflow`.
-- **Phase guard**: `isLivePhase(phase)`, or an open run at rest on the screen in any phase — a gate it waits at included (`isOpenRunAtRest`, `src/stores/navigation/router.ts`); elsewhere the feedback line reads `"No run to end in this phase"`.
+- **Phase guard**: `isLivePhase(phase)`, or an open run at rest on the screen in any phase — a gate it waits at included (`isOpenRunAtRest`, `src/stores/navigation/router.ts`); elsewhere the feedback line reads `"No run to end in this phase"`. A run at rest whose Apply did not finish is refused (`isApplyUnfinishedAtRest`): the palette, `/help` and `/` completion do not list `/end`, and a typed `/end` reads `"Apply did not finish. Restore or retry Apply first, then end the run."`.
 - **Args**: none.
 - **Example**: `/end`
-- **Behavior**: Calls `ctx.endRun()` through the same close path as the stop menu. End run on a ready workspace run means Discard. Earlier End run closes as `ended`. End run refuses an unfinished Apply: restore or retry Apply first. The refusal preserves the workspace, Apply backup and recovery. The close path preserves unapplied work before removing the workspace. With no active run, it reports `No active run to end.`. See [Apply](./WORKFLOW.md#apply).
+- **Behavior**: Calls `ctx.endRun()` through the same close path as the stop menu. End run on a ready workspace run means Discard. Earlier End run closes as `ended`. End run refuses an unfinished Apply: restore or retry Apply first. Session options then offer no End run. The refusal preserves the workspace, Apply backup and recovery. The close path preserves unapplied work before removing the workspace. With no active run, it reports `No active run to end.`. See [Apply](./WORKFLOW.md#apply).
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`.
 - **See also**: `/resume`, `/run`.
 

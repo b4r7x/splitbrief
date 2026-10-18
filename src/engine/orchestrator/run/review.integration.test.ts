@@ -869,7 +869,7 @@ describe('runScheduledReview saved recovery', () => {
     expect(skipped.state.pendingScheduledReview).toBeUndefined();
     expect(skipped.state.pendingRecovery).toBeUndefined();
     expect(skipped.state.review?.scope).toBe('task');
-    expect(skipped.state.acceptedAsIs?.findings).toContain('Reviewed the diff by hand.');
+    expect(skipped.state.acceptedAsIs?.note).toBe('Reviewed the diff by hand.');
     // Skipping one task's review never makes the whole run ready to apply or closes it.
     expect(deriveRunStatus({ state: skipped.state, liveness: 'not-alive' }).kind).toBe('open');
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);

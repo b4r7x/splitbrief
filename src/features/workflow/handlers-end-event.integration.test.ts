@@ -17,7 +17,11 @@ import { readActive, reactivateExistingSession } from '../../core/sessions/activ
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { readRunEvents } from '../../engine/events/replay.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
-import { isOpenRunAtRest, routerStore } from '../../stores/navigation/router.js';
+import {
+  isApplyUnfinishedAtRest,
+  isOpenRunAtRest,
+  routerStore,
+} from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -129,6 +133,7 @@ describe('End run at rest', () => {
       screen: 'workflow',
       phase: 'escalating',
       openRunAtRest: isOpenRunAtRest(routerStore.get()),
+      applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
       onError: (message) => errors.push(message),
     });
 
@@ -178,6 +183,7 @@ describe('/resume and /end on a run at rest at a gate', () => {
         screen: 'workflow',
         phase: atGate.phase,
         openRunAtRest: isOpenRunAtRest(routerStore.get()),
+        applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
         onError: (message) => errors.push(message),
       });
     return { ref, errors, run };

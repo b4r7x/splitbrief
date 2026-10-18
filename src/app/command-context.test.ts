@@ -139,6 +139,7 @@ describe('buildCommandContext', () => {
         phase: 'implementing',
         plannerSupportsImages: false,
         openRunAtRest: false,
+        applyUnfinished: false,
         onError,
       },
     );
@@ -205,6 +206,7 @@ describe('buildCommandContext', () => {
       phase: 'implementing',
       plannerSupportsImages: true,
       openRunAtRest: false,
+      applyUnfinished: false,
       onError: () => {},
     });
     expect(feedbackStore.get().message).toBe(
@@ -223,6 +225,7 @@ describe('buildCommandContext', () => {
       phase: 'implementing',
       plannerSupportsImages: true,
       openRunAtRest: false,
+      applyUnfinished: false,
       onError: () => {},
     });
     expect(feedbackStore.get().message).toBe('Queue is empty');
@@ -237,6 +240,7 @@ describe('buildCommandContext', () => {
         phase: 'implementing',
         plannerSupportsImages: true,
         openRunAtRest: false,
+        applyUnfinished: false,
         onError: () => {},
       });
       expect(feedbackStore.get().message).toBe(queueCopy({ seat: null, count }).clearFeedback);

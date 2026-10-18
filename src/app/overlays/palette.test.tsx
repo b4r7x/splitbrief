@@ -98,6 +98,7 @@ function renderCommandPalette(): ReturnType<typeof render> {
           phase: lifecycleStore.get().phase,
           plannerSupportsImages: true,
           openRunAtRest: false,
+          applyUnfinished: false,
           onError: feedbackStore.setError,
         })
       }
@@ -400,6 +401,7 @@ describe('CommandPaletteOverlay', () => {
             phase: lifecycleStore.get().phase,
             plannerSupportsImages: true,
             openRunAtRest: false,
+            applyUnfinished: false,
             onError: feedbackStore.setError,
           })
         }

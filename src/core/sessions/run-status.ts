@@ -134,6 +134,11 @@ export function canUndoApply(state: WorkflowState): boolean {
   );
 }
 
+/** An Apply that started and did not finish: only Restore or a retried Apply settles it, never End run. */
+export function applyUnfinished(state: WorkflowState): boolean {
+  return state.applying !== undefined;
+}
+
 export function isAnsweredApplyRecovery(issue: RecoveryIssue): issue is RecoveryIssue & {
   reason: 'apply-partial';
   status: 'applying';
@@ -174,7 +179,7 @@ export function deriveRunStatus(
     awaitsApply(state) &&
     state.pendingRecovery === undefined &&
     state.interruptedStep === undefined &&
-    state.applying === undefined
+    !applyUnfinished(state)
   ) {
     return { kind: 'ready-to-apply', override: state.reviewStatus !== 'passed' };
   }
