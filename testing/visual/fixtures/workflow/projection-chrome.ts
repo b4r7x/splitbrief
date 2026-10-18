@@ -1,5 +1,9 @@
 import { PhaseSchema, type Phase } from '../../../../src/core/schemas/enums.js';
-import { getWorkflowFixturePromptRows, type WorkflowFixtureProjection } from './projections.js';
+import {
+  fixtureHalt,
+  getWorkflowFixturePromptRows,
+  type WorkflowFixtureProjection,
+} from './projections.js';
 
 // The phase the screen is in at the checkpoint: the last event that carries one.
 export function checkpointPhase(projection: WorkflowFixtureProjection): Phase {
@@ -36,8 +40,8 @@ export function projectionChromeFacts(
     phase: checkpointPhase(projection),
     // `workflow_cancelled` is what sets the lifecycle's cancelled flag; nothing else does.
     cancelled: projection.events.some((event) => event.type === 'workflow_cancelled'),
-    // A saved halt is the only recovery notice a fixture resumes into.
-    halted: projection.resumeState?.pendingRecovery !== undefined,
+    // A saved halt, or the one the run raises, is the only recovery notice a fixture shows.
+    halted: fixtureHalt(projection) !== undefined,
     promptRows: getWorkflowFixturePromptRows(projection, cols),
     atRest: projection.atRest !== undefined,
     // The stop ladder the fixture stages parks the run the same way the screen's store does.

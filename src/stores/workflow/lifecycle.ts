@@ -13,7 +13,6 @@ const STALL_CLEARING_EVENT_TYPES = new Set<EngineEvent['type']>([
   'planner_text',
 ]);
 
-type RunningPhase = Exclude<Phase, 'complete'>;
 type LifecycleStatus = 'idle' | 'running' | 'interrupted' | 'paused' | 'complete' | 'cancelled';
 type PhaseFirstSeenTs = Readonly<Partial<Record<Phase, number>>>;
 
@@ -48,6 +47,11 @@ interface LifecycleBase {
   waitedMs?: Readonly<Partial<Record<Phase, number>>>;
   /** When a stopped run last started moving again, so the stage clock leaves its park out. */
   resumedAt?: number | null;
+  /**
+   * The lifecycle is the saved state read back from disk, and the engine has not started, resumed,
+   * completed or cancelled the run since.
+   */
+  restored?: boolean;
 }
 
 interface IdleLifecycleState extends LifecycleBase {
@@ -62,7 +66,7 @@ interface IdleLifecycleState extends LifecycleBase {
 }
 
 interface RunningLifecycleState extends LifecycleBase {
-  phase: RunningPhase;
+  phase: Phase;
   status: 'running';
   interruptParked: false;
   cancelled: false;
@@ -76,7 +80,7 @@ interface RunningLifecycleState extends LifecycleBase {
 // continuation prompt has not reached a call boundary yet) from a parked prompt
 // that actually owns the composer.
 interface InterruptedLifecycleState extends LifecycleBase {
-  phase: RunningPhase;
+  phase: Phase;
   status: 'interrupted';
   interruptParked: boolean;
   cancelled: false;
@@ -87,7 +91,7 @@ interface InterruptedLifecycleState extends LifecycleBase {
 }
 
 interface PausedLifecycleState extends LifecycleBase {
-  phase: RunningPhase;
+  phase: Phase;
   status: 'paused';
   interruptParked: false;
   cancelled: false;
@@ -572,7 +576,7 @@ function applyRunningPhase(
     });
   }
   if (state.status === 'running' || state.status === 'interrupted' || state.status === 'paused') {
-    return { ...state, phase: runningPhase(phase), phaseFirstSeenTs, stall: null };
+    return { ...state, phase, phaseFirstSeenTs, stall: null };
   }
   return { ...state, phase, phaseFirstSeenTs };
 }
@@ -587,7 +591,7 @@ function runningLifecycleState(input: {
   resumedAt?: number | null;
 }): RunningLifecycleState {
   return {
-    phase: runningPhase(input.phase),
+    phase: input.phase,
     status: 'running',
     interruptParked: false,
     cancelled: false,
@@ -608,8 +612,4 @@ function runningLifecycleState(input: {
     durationMs: null,
     reason: null,
   };
-}
-
-function runningPhase(phase: Phase): RunningPhase {
-  return phase === 'complete' ? 'idle' : phase;
 }

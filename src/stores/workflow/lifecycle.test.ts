@@ -220,6 +220,16 @@ describe('lifecycleStore', () => {
     expect(lifecycleStore.get().phaseFirstSeenTs).toEqual({ specifying: 9_000 });
   });
 
+  // A run that passed its review resumes into Apply in `complete`: it runs, and it stays past review.
+  it('keeps complete on a run that resumes into its Apply step', () => {
+    addEvent({ type: 'workflow_complete', ts: 1_000, phase: 'complete', review: 'passed' });
+
+    addEvent({ type: 'workflow_resumed', ts: 2_000, phase: 'complete', inProcess: true });
+
+    expect(lifecycleStore.get().status).toBe('running');
+    expect(lifecycleStore.get().phase).toBe('complete');
+  });
+
   it('carries phaseFirstSeenTs into terminal states', () => {
     addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
     addEvent({ type: 'workflow_complete', ts: 2_000, phase: 'complete' });

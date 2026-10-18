@@ -40,6 +40,7 @@ function lifecycleFromState(current: LifecycleState, state: WorkflowState): Life
     attemptStartedTs: current.attemptStartedTs ?? null,
     startedAt,
     reason: null,
+    restored: true,
   } as const;
   if (state.phase === 'complete') {
     return {

@@ -369,6 +369,7 @@ describe('Rail — a passed review', () => {
     expect(
       measureRailCells({
         phase: 'complete',
+        status: 'complete',
         cancelled: false,
         form,
         cols: 100,
@@ -498,6 +499,7 @@ describe('Rail — completion with a halt open', () => {
     expect(
       measureRailCells({
         phase: 'complete',
+        status: 'complete',
         cancelled: false,
         form: 'B',
         cols: 100,
@@ -509,6 +511,70 @@ describe('Rail — completion with a halt open', () => {
     ).toBe(getTerminalCellWidth(frame.trim()));
     ui.unmount();
     recoveryNoticeStore.reset();
+  });
+});
+
+// A live run that passed its review resumes into Apply with `workflow_resumed` in `complete`: the
+// rail stays the one the run at rest painted, with Apply as the stage the run is on.
+describe('Rail — a live run resumed into its Apply step', () => {
+  beforeEach(() => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
+    addEvent({ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' });
+    addEvent({ type: 'workflow_resumed', ts: 2, phase: 'complete', inProcess: true });
+  });
+
+  afterEach(() => {
+    recoveryNoticeStore.reset();
+  });
+
+  it('keeps every stage done and shows Apply as the stage it runs', async () => {
+    chalk.level = 3;
+    const ui = renderRail('B');
+    await tick();
+    const raw = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(raw);
+
+    for (const label of STAGES) expect(frame).toContain(`${DONE} ${label}`);
+    expect(frame).toContain(`${DONE} Apply`);
+    expect(frame).not.toContain(PENDING);
+    // Apply is the stage the run is on: bold, and the only bold stage.
+    expect(raw).toContain(`\u001b[1m${paint(defaultTheme.text, `${DONE} Apply`)}`);
+    expect(raw.split('\u001b[1m')).toHaveLength(2);
+    expect(
+      measureRailCells({
+        phase: lifecycleStore.get().phase,
+        status: lifecycleStore.get().status,
+        cancelled: false,
+        form: 'B',
+        cols: 100,
+        tasks: tasksStore.get(),
+        events: eventsStore.get().events,
+        recoveryAt: null,
+        buildBlockShown: false,
+      }),
+    ).toBe(getTerminalCellWidth(frame.trim()));
+    ui.unmount();
+  });
+
+  it('marks Apply failed when Apply halts after the resume', async () => {
+    recoveryNoticeStore.open({
+      seat: null,
+      resetAt: null,
+      issue: makeRecoveryIssue({
+        reason: 'apply-partial',
+        phase: 'complete',
+        availableActions: ['retry-same-worker', 'restore-backup'],
+        recommendedAction: 'retry-same-worker',
+      }),
+      at: { kind: 'apply' },
+    });
+    const ui = renderRail('B');
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    for (const label of STAGES) expect(frame).toContain(`${DONE} ${label}`);
+    expect(frame).toContain(`${glyph('statusFailed')} Apply`);
+    ui.unmount();
   });
 });
 
@@ -528,6 +594,7 @@ describe('Rail — Form C (narrow floor)', () => {
       expect(
         measureRailCells({
           phase: 'implementing',
+          status: 'running',
           cancelled: false,
           form: 'C',
           cols: 22,

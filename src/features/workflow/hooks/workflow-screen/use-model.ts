@@ -24,6 +24,7 @@ import {
   type SessionSelectDeps,
 } from '../../../../stores/navigation/session-select.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
+import { recoveryNoticeStore } from '../../../../stores/workflow/recovery-notice.js';
 import { feedbackStore } from '../../../../stores/ui/feedback.js';
 import { stopStore } from '../../../../stores/workflow/stop.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
@@ -65,10 +66,11 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   const inputMode = useInputMode();
   const review = createReviewInputHandler(inputMode, deps?.reviewInput);
 
-  const [{ cancelled, phase }, { filePath: reviewFilePath }] = useStores(
+  const [{ cancelled, phase, restored }, { filePath: reviewFilePath }] = useStores(
     lifecycleStore,
     reviewStore,
   );
+  const recoveryOpen = recoveryNoticeStore.use((s) => s.issue !== null);
 
   const atRestRecord = execution?.kind === 'at-rest' ? record : undefined;
   const atRestProjectDir = atRestRecord?.ref.projectDir;
@@ -154,6 +156,17 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   const closedView =
     atRestRecord === undefined ? null : deriveSummaryView({ record: atRestRecord });
   const closed = atRestRecord !== undefined && atRestRecord.status.kind === 'closed';
+  // A run continued into Apply keeps the rail it rested with until the engine re-enters it or a
+  // halt opens; the live rail cannot tell a run about to resume into Apply from a finished one.
+  const railRecord =
+    atRestRecord ??
+    (local !== undefined &&
+    restored === true &&
+    !recoveryOpen &&
+    record?.status.kind === 'open' &&
+    record.status.resumeAt.kind === 'apply'
+      ? record
+      : undefined);
 
   const resumeAtRest = useEffectEvent(continueAtRest);
   useEffect(() => {
@@ -190,7 +203,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     atRestRecord,
     closed,
     closedView,
-    railStages: atRestRecord === undefined ? undefined : atRestRailStages(atRestRecord),
+    railStages: railRecord === undefined ? undefined : atRestRailStages(railRecord),
     continuable: composer?.continuable ?? false,
     handleInput,
     handleRuntimeCommand: onRuntimeCommand,

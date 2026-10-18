@@ -10,7 +10,7 @@ import { TextSpans } from '../../../components/text-spans.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { ConversationRowSegment, ConversationRowTone } from '../conversation-rows/types.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore, type LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore, type TasksState } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -157,19 +157,23 @@ function RailFormC({ stages, fraction }: { stages: RailStageState[]; fraction: s
 
 const FAILED_REVIEW_STAGES = getRailStages('final-review', { halted: 'failed' });
 const APPLY_HALT_STAGES = applyStopRailStages('failed');
+const APPLY_RUNNING_STAGES = getRailStages('complete', { apply: 'active' });
 
 // A run reaches `complete` whichever way its review went. One whose review failed stopped on that
 // review — the log says so, or the halt it raised still waits — so the rail marks the review failed
 // and never calls the run done. A halt at Apply follows a review that passed: the rail marks Apply,
-// the step the run resumes at, as the rail of the same run at rest does.
-function haltedCompleteStages(
+// the step the run resumes at, as the rail of the same run at rest does. A run still running in
+// `complete` resumed into Apply after a passed or accepted review, so Apply is the stage it is on.
+function completePhaseStages(
   phase: Phase,
+  status: LifecycleState['status'],
   events: readonly EngineEvent[],
   recoveryAt: StepRef | null,
 ): readonly RailStageState[] | null {
   if (phase !== 'complete') return null;
   if (recoveryAt?.kind === 'apply') return APPLY_HALT_STAGES;
   if (recoveryAt !== null) return FAILED_REVIEW_STAGES;
+  if (status === 'running') return APPLY_RUNNING_STAGES;
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index];
     if (event?.type === 'workflow_complete') {
@@ -184,6 +188,7 @@ function haltedCompleteStages(
 // than the Form-B measure.
 export function measureRailCells(input: {
   phase: Phase;
+  status: LifecycleState['status'];
   cancelled: boolean;
   form: RailForm;
   cols: number;
@@ -195,9 +200,16 @@ export function measureRailCells(input: {
   /** Stages the caller already knows; a run at rest wears the mark its own status earned. */
   stages?: readonly RailStageState[] | undefined;
 }): number {
-  const halted = haltedCompleteStages(input.phase, input.events, input.recoveryAt);
+  const completeStages = completePhaseStages(
+    input.phase,
+    input.status,
+    input.events,
+    input.recoveryAt,
+  );
   const stages = [
-    ...(input.stages ?? halted ?? getRailStages(input.phase, { cancelled: input.cancelled })),
+    ...(input.stages ??
+      completeStages ??
+      getRailStages(input.phase, { cancelled: input.cancelled })),
   ];
   if (input.form === 'C') {
     const fraction = resolveRailFraction({
@@ -242,10 +254,15 @@ export function Rail({
     pendingRecovery: recovery.issue !== null,
     pendingApproval: approval.status === 'pending',
   });
-  const halted = haltedCompleteStages(phase, eventsState.events, recovery.at);
+  const completeStages = completePhaseStages(
+    phase,
+    lifecycle.status,
+    eventsState.events,
+    recovery.at,
+  );
   const stages = [
     ...(givenStages ??
-      halted ??
+      completeStages ??
       getRailStages(phase, {
         cancelled,
         ...(display.halted === undefined ? {} : { halted: display.halted }),

@@ -79,7 +79,7 @@ export function Header({
     eventsStore,
     recoveryNoticeStore,
   );
-  const { phase, cancelled } = lifecycle;
+  const { phase, status, cancelled } = lifecycle;
   const config = configStore.use((s) => s.config);
   const savedHalt = routerStore.use((state) =>
     state.screen === 'workflow' && state.execution.kind === 'at-rest'
@@ -89,6 +89,7 @@ export function Header({
   const displayNames = useCrewDisplayNames(config);
   const railCells = measureRailCells({
     phase,
+    status,
     cancelled,
     form: railForm ?? 'B',
     cols,

@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js';
 import { cliDetectionFor } from '../../../helpers/factories/detection.js';
+import { makeSummary } from '../../../helpers/factories/summary.js';
 import type { WorkflowScreenDeps } from '../../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-run-loop.js';
 import type { ReviewInputEffects } from '../../../../src/features/workflow/review-parser.js';
@@ -27,6 +28,7 @@ import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-
 import { PLAN_JSON_FILE, SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
 import { plainUserMessage } from '../../../../src/core/types/user-input.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
+import { saveState } from '../../../../src/core/state/persistence.js';
 import { PREVIEW_UNAVAILABLE, type FixtureContext, type FixtureFactory } from '../common.js';
 import {
   createWorkflowBaseFixture,
@@ -245,6 +247,15 @@ export function createWorkflowFixtureAppDeps(
     if (projection !== undefined) {
       applyProjection(projection);
       await activateFixtureInputMode(projection, options);
+      const resumed = projection.resumedRun;
+      if (resumed !== undefined && options.savedState !== undefined) {
+        for (const event of resumed.events) addEvent(event);
+        saveState(options.prepared.session.ref, {
+          ...options.savedState,
+          pendingRecovery: resumed.halt,
+        });
+        return makeSummary({ feature: projection.feature });
+      }
     }
     return waitForFixtureAbort(options.signal);
   };

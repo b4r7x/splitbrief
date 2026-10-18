@@ -1,24 +1,16 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sessionDir } from '../../../src/core/paths.js';
-import {
-  readActive,
-  reactivateExistingSession,
-} from '../../../src/core/sessions/active-pointer.js';
-import { createInitialState } from '../../../src/core/state/machine.js';
-import { saveState } from '../../../src/core/state/persistence.js';
-import { applyBackupDir, writeApplyBackup } from '../../../src/engine/orchestrator/apply/backup.js';
-import { captureAcquisitionBaseline } from '../../../src/engine/orchestrator/approval/file-snapshots/entry.js';
-import { buildApplyPartialRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/apply.js';
-import { createSnapshot } from '../../../src/engine/snapshots/create.js';
+import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { seedApplyingRun } from '../helpers/applying-run.js';
 import {
   cli,
   createStopContinueFixture,
@@ -32,70 +24,16 @@ afterEach(() => {
   fixture = undefined;
 });
 
-/** A staged-copy run whose Apply wrote a.txt and stopped before b.txt, partial or interrupted. */
-async function seedApplyingRun(kind: 'partial' | 'interrupted') {
-  fixture = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
-  const target = fixture;
-  const ref = { projectDir: target.projectDir, sessionId: `applying-${kind}` };
-  const at = '2026-10-11T00:00:00.000Z';
-  const files = ['a.txt', 'b.txt'];
-  for (const file of files) writeFileSync(join(target.projectDir, file), 'before Apply\n');
-  await createSnapshot({ ...ref, phase: 'manual', name: 'baseline' });
-  const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
-  const workspaceDir = join(target.tmpDir, 'workspace');
-  cpSync(target.projectDir, workspaceDir, {
-    recursive: true,
-    filter: (path) => !['.git', '.splitbrief'].includes(basename(path)),
-  });
-  for (const file of files) writeFileSync(join(workspaceDir, file), 'run result\n');
-  const backupId = `backup-${kind}`;
-  const backupDir = applyBackupDir(ref.projectDir, ref.sessionId, backupId);
-  const backup = await writeApplyBackup({
-    ...ref,
-    backupId,
-    workspaceDir,
-    files,
-    theirs: new Map(
-      [...(await captureAcquisitionBaseline(target.projectDir))].map(([path, file]) => [
-        path,
-        { kind: 'file', ...file },
-      ]),
-    ),
-  });
-  if (backup.kind !== 'written') throw new Error('fixture checkout changed before Apply');
-  writeFileSync(join(target.projectDir, 'a.txt'), 'run result\n');
-  const pendingRecovery = buildApplyPartialRecoveryIssue({
-    backupId,
-    backupDir,
-    createdAt: at,
-    written: ['a.txt'],
-    files,
-    failedFile: 'b.txt',
-    cause: 'fixture write interrupted',
-  });
-  saveState(ref, {
-    ...createInitialState('Recover Apply'),
-    phase: 'complete',
-    reviewStatus: 'passed',
-    workspace: {
-      kind: 'staged-copy',
-      path: workspaceDir,
-      base: { snapshotId: base.manifest.id, head: null },
-    },
-    applying: { at, backupId },
-    ...(kind === 'partial' ? { pendingRecovery } : {}),
-  });
-  reactivateExistingSession(ref);
-  const statePath = join(sessionDir(ref.projectDir, ref.sessionId), 'state.json');
-  return { target, ref, files, workspaceDir, backupDir, backup, statePath };
-}
-
 describe('End run during Apply recovery', () => {
   it.each(['partial', 'interrupted'] as const)(
     'refuses a %s Apply and preserves the checkout, workspace, backup and recovery',
     async (kind) => {
-      const { target, ref, files, workspaceDir, backupDir, backup, statePath } =
-        await seedApplyingRun(kind);
+      const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
+      fixture = target;
+      const { ref, files, workspaceDir, backupDir, backup, statePath } = await seedApplyingRun(
+        target,
+        kind,
+      );
       const before = readFileSync(statePath, 'utf8');
       const manifest = readFileSync(join(backupDir, 'manifest.json'), 'utf8');
 
@@ -135,7 +73,9 @@ describe('End run during Apply recovery', () => {
   it.each(['partial', 'interrupted'] as const)(
     'offers no End run in Session options on a %s Apply opened at rest',
     async (kind) => {
-      const { target, statePath } = await seedApplyingRun(kind);
+      const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
+      fixture = target;
+      const { statePath } = await seedApplyingRun(target, kind);
       const before = readFileSync(statePath, 'utf8');
       const home = join(target.tmpDir, 'home');
       mkdirSync(home);
