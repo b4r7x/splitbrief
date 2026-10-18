@@ -346,7 +346,7 @@ describe('formatSeatIdentity', () => {
     );
   });
 
-  it('keeps the tool, model name and effort when the sidebar needs two identity rows', () => {
+  it('keeps the tool, model name and effort when the sidebar needs more identity rows', () => {
     const identity = formatSeatIdentity({
       seat: {
         kind: 'cli',
@@ -355,9 +355,25 @@ describe('formatSeatIdentity', () => {
         variant: 'high',
       },
     });
-    expect(wrapSeatIdentity(identity, 30)).toEqual([
+    for (const budget of [23, 28, 30, 33]) {
+      expect(wrapSeatIdentity(identity, budget)).toEqual([
+        'OpenCode CLI',
+        'DeepSeek V4.1 Flash',
+        'via opencode-go · high',
+      ]);
+      expect(
+        wrapSeatIdentity(
+          formatSeatIdentity({
+            seat: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },
+          }),
+          budget,
+        ),
+      ).toEqual(['OpenCode CLI', 'DeepSeek V4.1 Flash', 'via ollama-cloud']);
+    }
+    expect(wrapSeatIdentity(identity, 20)).toEqual([
+      'OpenCode CLI',
       'DeepSeek V4.1 Flash',
-      'via opencode-go · high',
+      'via opencode-go',
     ]);
     expect(wrapSeatIdentity(identity, 34)).toEqual([
       'OpenCode CLI · DeepSeek V4.1 Flash',

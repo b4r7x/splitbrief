@@ -547,7 +547,7 @@ export function wrapSeatIdentity(identity: string, budget: number): string[] {
           ]
         : fits(toolAndModel)
           ? [toolAndModel, providerAndAxes]
-          : [toolAndModel.toSpliced(providerIndex - 2, 1), providerAndAxes]
+          : [toolAndModel.slice(0, -1), toolAndModel.slice(-1), providerAndAxes]
     ).map((row) => cutSeatIdentity(row.join(CREW_IDENTITY_SEPARATOR), budget));
   }
   return [

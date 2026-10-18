@@ -242,6 +242,30 @@ describe('Sidebar — passed count', () => {
     ui.unmount();
   });
 
+  it('keeps the OpenCode tool on its own row when the model and route need two more', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },
+      }),
+    });
+    tasksStore.__testReset({ tasks: [task('1', 'done')] });
+
+    const ui = renderFeature(<Sidebar width={35} />);
+    await tick();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const buildIndex = lines.findIndex((line) => line.includes('BUILD'));
+
+    // The border glyph depends on the glyph set, so only the inner columns are compared.
+    expect(lines.slice(buildIndex, buildIndex + 3).map((line) => line.slice(1, -1))).toEqual([
+      ' BUILD   OpenCode CLI            ',
+      '         DeepSeek V4.1 Flash     ',
+      '         via ollama-cloud        ',
+    ]);
+
+    ui.unmount();
+  });
+
   it('shows the waiting placeholder while a stage runs with no tasks', async () => {
     tasksStore.__testReset({ tasks: [] });
     lifecycleStore.__testReset({ phase: 'researching', startedAt: Date.now() - 65_000 });
@@ -327,11 +351,7 @@ describe('Sidebar — passed count', () => {
     );
     tasksStore.__testReset({ tasks });
 
-    const ui = renderFeature(
-      <Box height={10}>
-        <Sidebar width={32} />
-      </Box>,
-    );
+    const ui = renderFeature(<Sidebar width={32} height={10} />);
     await tick();
     const frame = ui.lastFrame() ?? '';
 
@@ -423,6 +443,55 @@ describe('Sidebar — minimum-height contract', () => {
     await tick();
 
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Tasks');
+    ui.unmount();
+  });
+
+  function useOpenCodeBuildSeat(): void {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },
+      }),
+    });
+    tasksStore.__testReset({ tasks: [task('1', 'done'), task('2', 'in_progress')] });
+  }
+
+  it('gives each seat one row when the wrapped crew does not fit above the bottom border', async () => {
+    forceUnicodeGlyphs();
+    useOpenCodeBuildSeat();
+
+    const ui = renderFeature(<Sidebar width={34} height={7} />);
+    await tick();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+
+    expect(lines).toHaveLength(7);
+    expect(lines.slice(3, 6).map((line) => line.slice(1, -1))).toEqual([
+      ' PLAN    Claude Code CLI · auto ',
+      ' BUILD   DeepSeek V4.1 Flash    ',
+      ` REVIEW  ${PLANNER_INHERITANCE.mark}`.padEnd(32),
+    ]);
+    expect(lines[6]).toBe(`└${'─'.repeat(32)}┘`);
+
+    ui.unmount();
+  });
+
+  it.each([
+    { height: 6, crew: ['PLAN', 'BUILD'] },
+    { height: 5, crew: ['PLAN'] },
+    { height: 4, crew: [] },
+  ])('clips the crew inside the bottom border at height $height', async ({ height, crew }) => {
+    forceUnicodeGlyphs();
+    useOpenCodeBuildSeat();
+
+    const ui = renderFeature(<Sidebar width={34} height={height} />);
+    await tick();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+
+    expect(lines).toHaveLength(height);
+    expect(lines[2]?.slice(1, -1)).toBe(` ${'─'.repeat(30)} `);
+    expect(lines.slice(3, -1).map((line) => line.slice(2).split(' ')[0])).toEqual(crew);
+    expect(lines.at(-1)).toBe(`└${'─'.repeat(32)}┘`);
+
     ui.unmount();
   });
 });
