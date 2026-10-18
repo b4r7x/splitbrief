@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { App, type AppProps } from '../../../src/app/root.js';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
+import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
@@ -13,7 +14,9 @@ import { hydrateRun } from '../../../src/features/workflow/run-history.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
+import { completionStore } from '../../../src/stores/ui/completion.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
+import { flushSessionDrafts, saveSessionDraft } from '../../../src/stores/ui/session-drafts.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -41,7 +44,7 @@ afterEach(() => {
   fixture = undefined;
 });
 
-it('runs /scroll top typed under a recovery menu and never takes it as the correction', async () => {
+async function openHaltedRun(draft?: string) {
   fixture = createStopContinueFixture(escapingImplementerScript);
   const halted = await cli(fixture, ['start', 'smoke']);
   expect(halted.exitCode, halted.stderr).toBe(1);
@@ -53,6 +56,10 @@ it('runs /scroll top typed under a recovery menu and never takes it as the corre
   const state = loadState(ref);
   if (state === null) throw new Error('The halted run saved no state');
   expect(state.pendingRecovery?.reason).toBe('checkout-changed');
+  if (draft !== undefined) {
+    saveSessionDraft(ref, createDraftDocument(draft));
+    flushSessionDrafts();
+  }
   const record = readRunRecord(ref);
   const { config } = loadConfig(projectDir);
   configStore.__testReset({ projectDir, config, diskConfig: config });
@@ -73,11 +80,22 @@ it('runs /scroll top typed under a recovery menu and never takes it as the corre
   await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Needs you'));
   await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
   await flushEffects();
+  return { screen, ref, state, runWorkflow };
+}
 
+it('runs /scroll top typed under a recovery menu and never takes it as the correction', async () => {
+  const { screen, ref, state, runWorkflow } = await openHaltedRun();
   screen.stdin.write('\t');
   await flushEffects();
-  screen.stdin.write('/scroll top');
+  screen.stdin.write('/scr');
   await flushEffects();
+  expect(stripAnsiStyles(screen.lastFrame())).toContain('/scroll  Scroll conversation');
+  // Past a finished argument the list closes, and the panel says what ⏎ does with the draft.
+  screen.stdin.write('oll top ');
+  await flushEffects();
+  const drafted = stripAnsiStyles(screen.lastFrame());
+  expect(drafted).toContain('⏎ runs the command · tab back to the actions');
+  expect(drafted).not.toContain('typed correction');
   screen.stdin.write('\r');
   await vi.waitFor(() =>
     expect(feedbackStore.get()).toEqual({
@@ -94,4 +112,15 @@ it('runs /scroll top typed under a recovery menu and never takes it as the corre
   expect(saved?.messageQueue.map((message) => message.text)).not.toContain('/scroll top');
   const { events } = await readRunEvents(ref);
   expect(events.filter((event) => event.type === 'recovery_action_selected')).toEqual([]);
+});
+
+it('paints no command list from a saved slash draft while the recovery menu holds focus', async () => {
+  const { screen } = await openHaltedRun('/scr');
+  const frame = stripAnsiStyles(screen.lastFrame());
+  expect(frame).not.toContain('Scroll conversation');
+  expect(frame).toContain('tab type a correction');
+  expect(completionStore.get().open).toBe(false);
+
+  screen.stdin.write('\x1b');
+  await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Stop options'));
 });

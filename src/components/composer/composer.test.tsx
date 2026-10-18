@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import { mkdirSync, realpathSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Box } from 'ink';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
@@ -26,6 +27,7 @@ import { tokensStore } from '../../stores/workflow/tokens.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
+import { completionStore } from '../../stores/ui/completion.js';
 import { MAX_ATTACHMENT_BYTES } from '../../core/schemas/attachment.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';
 import { COMMANDS_ONLY_NOTICE, Composer } from './composer.js';
@@ -761,6 +763,113 @@ describe('Composer blocking-question isolation', () => {
     await flushEffects();
     expect(submissions).toEqual(['unfinished answer']);
     expect(ui.lastFrame()).not.toContain('unfinished answer');
+    ui.unmount();
+  });
+
+  const SCROLL: RuntimeCommandDef = {
+    kind: 'arg',
+    name: '/scroll',
+    label: 'scroll',
+    description: 'Scroll conversation',
+    category: 'view',
+    args: { kind: 'closed', options: ['top', 'bottom'] },
+    validScreens: ['workflow'],
+    handler: () => {},
+  };
+
+  it('opens the command list for a slash typed as an answer', async () => {
+    const ui = renderDockedComposer({
+      commands: [SCROLL],
+      currentScreen: 'workflow',
+      mode: 'question',
+      hint: '',
+      onSubmit: () => {},
+      onRuntimeCommand: () => {},
+    });
+    await flushEffects();
+    ui.stdin.write('/scr');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Scroll conversation');
+    ui.unmount();
+  });
+
+  it('paints no command list while the composer cannot take keys', async () => {
+    const composer = (disabled: boolean) => (
+      <Box flexDirection="column" height={20} justifyContent="flex-end">
+        <Composer
+          commands={[SCROLL]}
+          currentScreen="workflow"
+          mode="question"
+          hint=""
+          disabled={disabled}
+          onSubmit={() => {}}
+          onRuntimeCommand={() => {}}
+        />
+      </Box>
+    );
+    const ui = renderFeature(composer(false));
+    await flushEffects();
+    ui.stdin.write('/scr');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Scroll conversation');
+
+    ui.rerender(composer(true));
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Scroll conversation');
+    expect(completionStore.get().open).toBe(false);
+
+    ui.rerender(composer(false));
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Scroll conversation');
+    expect(completionStore.get().open).toBe(true);
+    ui.unmount();
+  });
+
+  it('lets Tab complete the open command list and hands focus away only once it is closed', async () => {
+    const onTab = vi.fn();
+    const ui = renderDockedComposer({
+      commands: [SCROLL],
+      currentScreen: 'workflow',
+      mode: 'question',
+      hint: '',
+      onSubmit: () => {},
+      onRuntimeCommand: () => {},
+      onTab,
+    });
+    await flushEffects();
+    ui.stdin.write('/scr');
+    await flushEffects();
+    ui.stdin.write('\t');
+    await flushEffects();
+    expect(composerLiveStore.get().text).toBe('/scroll');
+    expect(onTab).not.toHaveBeenCalled();
+
+    ui.stdin.write('\x1b');
+    await flushEffects();
+    ui.stdin.write('\t');
+    await flushEffects();
+    expect(onTab).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
+  it('sends an answer that opens with a path as the answer', async () => {
+    const submissions: string[] = [];
+    const commands: string[] = [];
+    const ui = renderDockedComposer({
+      commands: [SCROLL],
+      currentScreen: 'workflow',
+      mode: 'question',
+      hint: '',
+      onSubmit: (submission) => submissions.push(submission.message.text),
+      onRuntimeCommand: (command) => commands.push(command),
+    });
+    await flushEffects();
+    ui.stdin.write('/etc/app/config.yaml');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(submissions).toEqual(['/etc/app/config.yaml']);
+    expect(commands).toEqual([]);
     ui.unmount();
   });
 });

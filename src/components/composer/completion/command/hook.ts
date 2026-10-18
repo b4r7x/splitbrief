@@ -130,7 +130,7 @@ export function useCommandCompletion({
         )
       : null;
   const argRows = argOptions !== null && argOptions.length > 0 ? argOptions : null;
-  const showSuggestions = commandMode && !suppressed && (!hasArgs || argRows !== null);
+  const showSuggestions = commandMode && !suppressed && !disabled && (!hasArgs || argRows !== null);
   const argPrefix = argRows === null ? null : `${commandToken} ${argHead}`;
   const matchQuery = argRows === null ? query : argToken.toLowerCase();
   const filtered = showSuggestions
@@ -167,7 +167,7 @@ export function useCommandCompletion({
     });
 
   const { inputKey, bumpInputKey } = useCompletionNavigation({
-    isActive: showSuggestions && !disabled,
+    isActive: showSuggestions,
     latestRef,
     hasItems: (l) => l.filtered.length > 0 || l.fuzzyMatch !== null,
     onMove: (l, dir) => moveSelection(l, dir),

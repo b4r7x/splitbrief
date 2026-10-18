@@ -11,11 +11,20 @@ import { useReferenceCompletion } from './hook.js';
 
 const FILES = ['src/app.ts', 'src/index.ts'];
 
-function ShowSuggestionsHarness({ value, suppressed }: { value: string; suppressed?: boolean }) {
+function ShowSuggestionsHarness({
+  value,
+  suppressed,
+  disabled,
+}: {
+  value: string;
+  suppressed?: boolean;
+  disabled?: boolean;
+}) {
   const reference = useReferenceCompletion({
     files: FILES,
     value,
     setValue: () => {},
+    disabled,
     suppressed,
   });
   return createElement(Text, null, String(reference.showSuggestions));
@@ -119,6 +128,15 @@ describe('useReferenceCompletion suppression', () => {
 
     const hidden = renderFeature(
       createElement(ShowSuggestionsHarness, { value: '@src', suppressed: true }),
+    );
+    await tick(20);
+    expect(hidden.lastFrame()).toContain('false');
+    hidden.unmount();
+  });
+
+  it('a disabled composer shows no reference suggestions', async () => {
+    const hidden = renderFeature(
+      createElement(ShowSuggestionsHarness, { value: '@src', disabled: true }),
     );
     await tick(20);
     expect(hidden.lastFrame()).toContain('false');

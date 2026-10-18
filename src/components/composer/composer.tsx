@@ -294,11 +294,11 @@ function ComposerInput({
   });
   const projectFiles = useProjectFiles(projectDir, listProjectFiles);
 
-  const completionValue = mode === 'normal' ? view.text : '';
+  // A command runs from an answer too, so its list opens there.
   const command = useCommandCompletion({
     commands,
     currentScreen,
-    value: completionValue,
+    value: mode === 'review' ? '' : view.text,
     setValue: setText,
     onRuntimeCommand,
     disabled,
@@ -307,7 +307,7 @@ function ComposerInput({
 
   const reference = useReferenceCompletion({
     files: projectFiles,
-    value: completionValue,
+    value: mode === 'normal' ? view.text : '',
     setValue: setText,
     disabled,
     suppressed: historyActive,
@@ -675,7 +675,8 @@ function ComposerInput({
                   handleSubmit(onSendNow);
                   return false;
                 }
-                if (onTab !== undefined && (key.tab || (key.shift && key.tab))) {
+                // An open list owns Tab: it completes the row, and focus stays in the box.
+                if (onTab !== undefined && !completionOpen && (key.tab || (key.shift && key.tab))) {
                   onTab();
                   return false;
                 }

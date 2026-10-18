@@ -96,7 +96,7 @@ export function useReferenceCompletion({
   const token = findReferenceToken(value);
   const filtered = token ? filterFiles(files, token.query) : [];
   const showSuggestions =
-    token !== null && filtered.length > 0 && dismissedValue !== value && !suppressed;
+    token !== null && filtered.length > 0 && dismissedValue !== value && !suppressed && !disabled;
   const selectionKey = buildReferenceSelectionKey(token, filtered);
   const { effectiveSelectedIndex, latestRef, moveSelection } =
     useCompletionSelection<LatestReferenceState>({
@@ -108,7 +108,7 @@ export function useReferenceCompletion({
     });
 
   const { inputKey, bumpInputKey } = useCompletionNavigation({
-    isActive: showSuggestions && !disabled,
+    isActive: showSuggestions,
     latestRef,
     hasItems: (l) => !!l.token && l.filtered.length > 0,
     onMove: (l, dir) => moveSelection(l, dir),

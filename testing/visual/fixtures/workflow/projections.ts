@@ -6007,6 +6007,14 @@ const projections = [
     ...consultBoundRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-consult-bound-note'),
   },
+  {
+    ...consultBoundRecoveryProjection,
+    scenarioId: scenarioId('workflow-recovery-slash-draft'),
+  },
+  {
+    ...consultBoundRecoveryProjection,
+    scenarioId: scenarioId('workflow-recovery-slash-list'),
+  },
   reviewFailedRecoveryProjection,
   reviewFixAgainProjection,
   reviewUnverifiedRecoveryProjection,

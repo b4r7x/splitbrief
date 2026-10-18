@@ -2664,6 +2664,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-slash-draft',
+      title: 'Workflow · a slash command typed beside the recovery menu',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-slash-draft',
+        title: 'Recovery menu legend over a command draft',
+        kind: 'question',
+        marker: 'Needs you · T901 used its consult allowance',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-slash-list',
+      title: 'Workflow · the command list opened beside the recovery menu',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-slash-list',
+        title: 'Command list over the recovery menu',
+        kind: 'question',
+        marker: 'tab fill',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-review-failed',
       title: 'Workflow · a checkout final review that failed after its repair cycles',
       surface: screenSurface('workflow'),
