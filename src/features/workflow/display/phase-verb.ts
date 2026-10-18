@@ -154,6 +154,8 @@ export function suiteStageParts(
 ): ConversationRowSegment[] {
   const leadTone = context === 'live' ? stateTone('running') : 'textDim';
   if (suite.scenario !== undefined) return [{ text: `Render ${suite.scenario}`, tone: leadTone }];
+  // A check that did not run has no command to name.
+  if (suite.command === '') return suiteMomentParts(suite, leadTone);
   return [
     ...suiteMomentParts(suite, leadTone),
     { text: SOFT_SEP, tone: 'textDim' },

@@ -1023,6 +1023,41 @@ const planCheckRefusedProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// The plan's test check found no affected test file, so it did not run and has no command to name.
+const planCheckNotRunProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-plan-check-not-run'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    ...touchedNotSuggestedProjection.events.filter(
+      (event) => event.type === 'workflow_started' || event.type === 'tasks_planned',
+    ),
+    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_started'),
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 390,
+      phase: 'validating-task',
+      moment: 'plan',
+      id: 'K4',
+      command: '',
+      status: 'not-run',
+      detail: 'no affected test file found',
+    },
+    {
+      type: 'checks_run',
+      ts: FIXED_TS + 400,
+      phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      results: [
+        { id: 'K1', status: 'pass' },
+        { id: 'K4', status: 'not-runnable' },
+      ],
+    },
+    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_completed'),
+  ],
+};
+
 /** What production code publishes on a bus of its own, stamped in order from `ts`. */
 function publishedEvents(ts: number, publish: (bus: EventBus) => void): EngineEvent[] {
   const bus = createEventBus();
@@ -5996,6 +6031,7 @@ const projections = [
   plannerCommandsRefusedProjection,
   touchedNotSuggestedProjection,
   planCheckRefusedProjection,
+  planCheckNotRunProjection,
   completedOrphanRowsProjection,
   usageLimitRecoveryProjection,
   noFallbackRecoveryProjection,

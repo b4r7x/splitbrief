@@ -568,6 +568,7 @@ const checkpointPredicates = [
   [checkpointId('planner-commands-refused'), includesAll('Validation')],
   [checkpointId('touched-not-suggested'), includesAll('also changed')],
   [checkpointId('plan-check-refused'), includesAll('Plan check K2', 'refused')],
+  [checkpointId('plan-check-not-run'), includesAll('Plan check K4 · not')],
   [
     checkpointId('completed-orphan-rows'),
     includesTranscript(

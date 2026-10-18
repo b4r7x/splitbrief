@@ -1143,6 +1143,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-plan-check-not-run',
+      title: 'Workflow · a plan check that did not run, with no command to name',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-check-not-run',
+        title: 'A not-run plan check row with its reason and no empty command slot',
+        kind: 'implementation',
+        marker: 'Plan check K4',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-completed-orphan-rows',
       title: 'Workflow · completed briefs retain run-level and boundary rows',
       surface: screenSurface('workflow'),
