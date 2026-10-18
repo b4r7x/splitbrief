@@ -325,7 +325,8 @@ describe('session-state presence readiness', () => {
 const ORACLE_TOOLS = {
   opencode: {
     argv: ['opencode', 'auth', 'list', '--standalone', '--format', 'json'],
-    stateFile: join('.local', 'share', 'opencode', 'auth.json'),
+    // OpenCode reads `$XDG_DATA_HOME/opencode`, which `stubHostState` sets.
+    stateFile: join('xdg-data', 'opencode', 'auth.json'),
     report:
       '[{"id":"openai","name":"OpenAI","connections":[{"type":"credential","id":"cred_0001","label":"default"}]}]\n',
     facts: [{ id: 'openai', provider: 'OpenAI', source: 'stored' }],

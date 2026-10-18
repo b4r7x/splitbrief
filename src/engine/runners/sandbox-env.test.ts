@@ -1514,6 +1514,8 @@ describe('backend compatibility fixtures', () => {
     writeFileSync(join(hostHome, '.config', 'opencode', 'auth.json'), JSON.stringify({ token }));
     writeFileSync(join(hostHome, '.config', 'opencode', 'opencode.json'), '{"dangerous":true}');
     setEnv('HOME', hostHome);
+    unsetEnv('XDG_CONFIG_HOME');
+    unsetEnv('XDG_DATA_HOME');
 
     const env = await createRunnerSandboxEnv(
       projectDir,
@@ -1559,6 +1561,130 @@ describe('backend compatibility fixtures', () => {
     const linkDir = join(env.XDG_CONFIG_HOME as string, 'opencode');
     expect(readlinkSync(linkDir)).toBe(realpathSync(join(hostHome, '.config', 'opencode')));
     expect(readFileSync(join(linkDir, 'opencode.json'), 'utf8')).toBe(config);
+  });
+
+  function seedOpenCodeHome(hostHome: string, token: string): void {
+    mkdirSync(join(hostHome, '.config', 'opencode'), { recursive: true });
+    writeFileSync(join(hostHome, '.config', 'opencode', 'opencode.json'), '{"model":"a/b"}');
+    mkdirSync(join(hostHome, '.local', 'share', 'opencode'), { recursive: true });
+    writeFileSync(
+      join(hostHome, '.local', 'share', 'opencode', 'auth.json'),
+      JSON.stringify({ token }),
+    );
+  }
+
+  itUnix(
+    'links the OpenCode HOME folders when XDG_CONFIG_HOME and XDG_DATA_HOME are unset',
+    async () => {
+      const hostHome = createTempDir('sandbox-opencode-xdg-unset-host');
+      const projectDir = createTempDir('sandbox-opencode-xdg-unset-project');
+      dirs.push(hostHome, projectDir);
+      const token = 'opencode-home-data-canary-2b7c';
+      seedOpenCodeHome(hostHome, token);
+      setEnv('HOME', hostHome);
+      unsetEnv('XDG_CONFIG_HOME');
+      unsetEnv('XDG_DATA_HOME');
+
+      const env = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' },
+        'implementer',
+      );
+
+      expect(readlinkSync(join(env.XDG_CONFIG_HOME as string, 'opencode'))).toBe(
+        realpathSync(join(hostHome, '.config', 'opencode')),
+      );
+      expect(readlinkSync(join(env.XDG_DATA_HOME as string, 'opencode'))).toBe(
+        realpathSync(join(hostHome, '.local', 'share', 'opencode')),
+      );
+      expect(sandboxCredentialValues(env)).toContain(token);
+    },
+  );
+
+  itUnix('links the OpenCode XDG folders in place of the HOME folders', async () => {
+    const hostHome = createTempDir('sandbox-opencode-xdg-host');
+    const projectDir = createTempDir('sandbox-opencode-xdg-project');
+    dirs.push(hostHome, projectDir);
+    const homeToken = 'opencode-home-canary-5d1e';
+    const xdgToken = 'opencode-xdg-canary-8a4f';
+    seedOpenCodeHome(hostHome, homeToken);
+    const xdgConfig = join(hostHome, 'xdg-config');
+    const xdgData = join(hostHome, 'xdg-data');
+    mkdirSync(join(xdgConfig, 'opencode'), { recursive: true });
+    mkdirSync(join(xdgData, 'opencode'), { recursive: true });
+    writeFileSync(join(xdgData, 'opencode', 'auth.json'), JSON.stringify({ token: xdgToken }));
+    setEnv('HOME', hostHome);
+    setEnv('XDG_CONFIG_HOME', xdgConfig);
+    setEnv('XDG_DATA_HOME', xdgData);
+
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' },
+      'implementer',
+    );
+
+    expect(readlinkSync(join(env.XDG_CONFIG_HOME as string, 'opencode'))).toBe(
+      realpathSync(join(xdgConfig, 'opencode')),
+    );
+    expect(readlinkSync(join(env.XDG_DATA_HOME as string, 'opencode'))).toBe(
+      realpathSync(join(xdgData, 'opencode')),
+    );
+    expect(sandboxCredentialValues(env)).toContain(xdgToken);
+    expect(sandboxCredentialValues(env)).not.toContain(homeToken);
+  });
+
+  // OpenCode reads $XDG_CONFIG_HOME/opencode and $XDG_DATA_HOME/opencode when the
+  // variables are set, and never falls back to the HOME folders.
+  itUnix(
+    'does not link the OpenCode HOME folders when the XDG folders hold no opencode',
+    async () => {
+      const hostHome = createTempDir('sandbox-opencode-xdg-empty-host');
+      const projectDir = createTempDir('sandbox-opencode-xdg-empty-project');
+      dirs.push(hostHome, projectDir);
+      const token = 'opencode-stale-home-canary-6c3a';
+      seedOpenCodeHome(hostHome, token);
+      const xdgConfig = join(hostHome, 'xdg-config');
+      const xdgData = join(hostHome, 'xdg-data');
+      mkdirSync(xdgConfig);
+      mkdirSync(xdgData);
+      setEnv('HOME', hostHome);
+      setEnv('XDG_CONFIG_HOME', xdgConfig);
+      setEnv('XDG_DATA_HOME', xdgData);
+
+      const env = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' },
+        'implementer',
+      );
+
+      expect(existsSync(join(env.XDG_CONFIG_HOME as string, 'opencode'))).toBe(false);
+      expect(existsSync(join(env.XDG_DATA_HOME as string, 'opencode'))).toBe(false);
+      expect(sandboxCredentialValues(env)).not.toContain(token);
+      expect(await bridgedCliStatePresent(env, 'opencode')).toBe(false);
+    },
+  );
+
+  // OpenCode reads a relative XDG folder against its working directory, which
+  // the sandbox does not share, so the bridge links nothing for that root.
+  itUnix('does not link the OpenCode HOME folders when XDG_CONFIG_HOME is relative', async () => {
+    const hostHome = createTempDir('sandbox-opencode-xdg-relative-host');
+    const projectDir = createTempDir('sandbox-opencode-xdg-relative-project');
+    dirs.push(hostHome, projectDir);
+    seedOpenCodeHome(hostHome, 'opencode-relative-canary-9e2d');
+    setEnv('HOME', hostHome);
+    setEnv('XDG_CONFIG_HOME', 'relative-config');
+    unsetEnv('XDG_DATA_HOME');
+
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' },
+      'implementer',
+    );
+
+    expect(existsSync(join(env.XDG_CONFIG_HOME as string, 'opencode'))).toBe(false);
+    expect(readlinkSync(join(env.XDG_DATA_HOME as string, 'opencode'))).toBe(
+      realpathSync(join(hostHome, '.local', 'share', 'opencode')),
+    );
   });
 
   itUnix(
@@ -1646,6 +1772,8 @@ describe('backend compatibility fixtures', () => {
       JSON.stringify({ kilocodeToken }),
     );
     setEnv('HOME', hostHome);
+    unsetEnv('XDG_CONFIG_HOME');
+    unsetEnv('XDG_DATA_HOME');
 
     const env = await createRunnerSandboxEnv(
       projectDir,

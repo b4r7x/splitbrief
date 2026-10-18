@@ -184,6 +184,7 @@ async function routeFixture({
   trustHome = createTrustHome('e2e-route-no-credential-home');
   // OpenCode reads its own config, so it reads the one under this home, never the tester's.
   vi.stubEnv('XDG_CONFIG_HOME', join(trustHome.home, '.config'));
+  vi.stubEnv('XDG_DATA_HOME', join(trustHome.home, '.local', 'share'));
   mkdirSync(join(trustHome.home, '.claude'), { recursive: true });
   writeFileSync(join(trustHome.home, '.claude', '.credentials.json'), '{"fixture":true}\n');
   if (!localOnly) {

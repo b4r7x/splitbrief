@@ -13,12 +13,33 @@ function homeDir(env: NodeJS.ProcessEnv): string {
   return env.HOME ?? homedir();
 }
 
-function configHome(env: NodeJS.ProcessEnv): string {
-  return env.XDG_CONFIG_HOME ?? join(homeDir(env), '.config');
-}
+const XDG_BASE_DEFAULTS = {
+  XDG_CONFIG_HOME: ['.config'],
+  XDG_DATA_HOME: ['.local', 'share'],
+  XDG_STATE_HOME: ['.local', 'state'],
+} as const;
 
-function stateHome(env: NodeJS.ProcessEnv): string {
-  return env.XDG_STATE_HOME ?? join(homeDir(env), '.local', 'state');
+/**
+ * An XDG base folder resolved the way OpenCode resolves it: a non-empty
+ * variable replaces the default under `home`, and a missing folder there never
+ * falls back to that default.
+ */
+export function xdgBaseDir(
+  env: NodeJS.ProcessEnv,
+  base: keyof typeof XDG_BASE_DEFAULTS,
+  home: string,
+): string;
+export function xdgBaseDir(
+  env: NodeJS.ProcessEnv,
+  base: keyof typeof XDG_BASE_DEFAULTS,
+  home: string | undefined,
+): string | undefined;
+export function xdgBaseDir(
+  env: NodeJS.ProcessEnv,
+  base: keyof typeof XDG_BASE_DEFAULTS,
+  home: string | undefined,
+): string | undefined {
+  return env[base] || (home === undefined ? undefined : join(home, ...XDG_BASE_DEFAULTS[base]));
 }
 
 // A `//` inside a string is a URL, not a comment: `opencode.jsonc` opens with a
@@ -103,11 +124,15 @@ async function readXdgSelection(
   env: NodeJS.ProcessEnv,
 ): Promise<HostModelSelection | null> {
   for (const extension of ['json', 'jsonc']) {
-    const path = join(configHome(env), name, `${name}.${extension}`);
+    const path = join(
+      xdgBaseDir(env, 'XDG_CONFIG_HOME', homeDir(env)),
+      name,
+      `${name}.${extension}`,
+    );
     const model = stringField(await readJson(path), 'model');
     if (model !== null) return { model, source: path };
   }
-  const path = join(stateHome(env), name, 'model.json');
+  const path = join(xdgBaseDir(env, 'XDG_STATE_HOME', homeDir(env)), name, 'model.json');
   const state = await readJson(path);
   if (!isRecord(state)) return null;
   const recent = Array.isArray(state.recent) ? state.recent[0] : undefined;

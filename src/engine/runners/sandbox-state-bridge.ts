@@ -12,10 +12,12 @@ import {
 import { dirname, isAbsolute, join } from 'node:path';
 import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import { error } from '../../utils/error.js';
+import { xdgBaseDir } from './host-model-selection.js';
 import { addStateRedactionValue, collectStateStrings } from './sandbox-credential-values.js';
 import {
   CLI_CREDENTIAL_MODELS,
   CLI_STATE_PATHS,
+  type CliStateSource,
   CURSOR_CLI_CONFIG_DESTINATION,
   FILE_LINKED_CREDENTIAL_TOOLS,
   sandboxRoot,
@@ -280,6 +282,17 @@ async function passthroughStateEntry(
   return passthroughCredentialValues(source, tool);
 }
 
+function hostStateRoot(source: CliStateSource, hostEnv: NodeJS.ProcessEnv): string | undefined {
+  switch (source) {
+    case 'xdg-config':
+      return xdgBaseDir(hostEnv, 'XDG_CONFIG_HOME', hostEnv.HOME);
+    case 'xdg-data':
+      return xdgBaseDir(hostEnv, 'XDG_DATA_HOME', hostEnv.HOME);
+    default:
+      return hostEnv[source];
+  }
+}
+
 export async function bridgeCliState(
   tool: CliToolId,
   hostEnv: NodeJS.ProcessEnv,
@@ -290,7 +303,7 @@ export async function bridgeCliState(
   const credentialValues = new Set<string>();
   const verifiedRoots = new Set<string>();
   for (const statePath of paths) {
-    const sourceRoot = hostEnv[statePath.source];
+    const sourceRoot = hostStateRoot(statePath.source, hostEnv);
     if (sourceRoot === undefined || !isAbsolute(sourceRoot)) continue;
     const root = sandboxState[statePath.destination];
     const source = join(sourceRoot, statePath.relativePath);
