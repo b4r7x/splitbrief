@@ -166,15 +166,18 @@ async function declaredReadinessEvidence({
     if (authEnvironment.credential === 'unobservable') return { version, auth: 'unknown' };
     return { version, auth: authEnvironment.credential === 'present' ? 'verified' : 'missing' };
   }
+  const oracleProbe = isProviderOracleProbe({ tool, command: authProbe });
   // A credential the staged child cannot read is a credential it does not have,
-  // whatever the host holds. Running the tool's own status command here would
-  // only re-observe that, at the cost of a subprocess: a credential listing would
-  // name no provider. An unobservable one is different: the status command below
-  // is the only thing that can see it.
-  if (authEnvironment.credential === 'absent' && authChannelRequiresCredential(authChannel)) {
-    return isProviderOracleProbe({ tool, command: authProbe })
-      ? { version, auth: 'missing', providerAuth: { kind: 'empty' } }
-      : { version, auth: 'missing' };
+  // whatever the host holds, so a status command would only re-observe that. A
+  // provider listing always runs: OpenCode 2 keeps its sign-ins in `opencode.db`,
+  // which the presence check does not read, so only the listing can say. An
+  // unobservable credential also goes to the status command below.
+  if (
+    !oracleProbe &&
+    authEnvironment.credential === 'absent' &&
+    authChannelRequiresCredential(authChannel)
+  ) {
+    return { version, auth: 'missing' };
   }
   const authCommand = authProbeCommandForVersion(tool, authProbe, version);
   const output = await runProbe({
@@ -188,7 +191,7 @@ async function declaredReadinessEvidence({
     return { version: { kind: 'cancelled' }, auth: 'cancelled' };
   }
   onAuthProbeRun?.({ command: authCommand, output });
-  if (isProviderOracleProbe({ tool, command: authProbe })) {
+  if (oracleProbe) {
     return {
       version,
       ...oracleAuthEvidence({
