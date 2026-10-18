@@ -272,8 +272,11 @@ the conversation and the document review, so zero-height and prompt-clamped bodi
 introduce a second breakpoint or hidden bottom row.
 
 Sidebar seats keep the tool, model and effort words. An identity that exceeds its column wraps after the tool.
-The second row starts in the identity column and keeps the seat color. Each row uses the existing segment rule.
+When neither the tool and model nor the model and route fit one row, an OpenCode seat takes three rows: the tool, the model, then the route and effort.
+Each later row starts in the identity column and keeps the seat color. Each row uses the existing segment rule.
 The task list pays for every seat row. An inherited review seat stays on one row as `REVIEW = PLAN`.
+When the list has no rows left and the wrapped seats still do not fit, each seat takes one row with the same segment rule.
+A panel too short even for that clips the seat rows inside its bottom border.
 
 ## Overlays
 

@@ -88,6 +88,7 @@
 
 ### Fixed
 
+- The workflow sidebar keeps the OpenCode CLI name in a long seat identity: the tool, the model, and the route with its effort each take a row. On a short terminal each seat takes one row, and the crew never paints over the sidebar's bottom border.
 - A long message in the composer stays inside its frame: no line runs into the right edge, every wrapped line starts at the same column, and ctrl+a moves to, and ctrl+u deletes back to, the start of the line you see.
 - A check that did not run no longer shows an empty slot where its command goes, in the transcript, the build progress, the input footer and the stop menu: `Plan check K4 · not run · no affected test file found`.
 - A slash command typed under a recovery menu, or in a reply to the planner or the reviewer, opens the command list as it does elsewhere. While the list is open, Tab fills in the highlighted row and keeps you in the composer. Once the list closes, the recovery menu reads `⏎ runs the command · tab back to the actions`. Before, no command list opened, and the menu said ⏎ would retry or continue with your text as the correction, though ⏎ ran the command.

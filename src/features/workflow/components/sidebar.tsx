@@ -19,6 +19,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   CREW_LABEL_WIDTH,
+  cutSeatIdentity,
   formatSeatIdentity,
   PLANNER_INHERITANCE,
   wrapSeatIdentity,
@@ -31,6 +32,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { routeBriefMark } from '../at-rest.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import {
+  getSidebarFooterBudget,
   getSidebarTaskListRows,
   getSidebarTaskTitleWidth,
   getSidebarTaskWindow,
@@ -50,6 +52,11 @@ import { wrapHard } from '../../../utils/wrap.js';
 interface SidebarProps {
   width: number;
   height?: number | undefined;
+}
+
+interface SeatRows {
+  seat: CrewSeat;
+  rows: string[];
 }
 
 interface RowSpec {
@@ -282,19 +289,26 @@ export function Sidebar({ width, height }: SidebarProps) {
     outcomeOffset += row.length;
     return spans;
   });
-  const seatRows = seats.map((seat) => ({
-    seat,
-    rows:
-      seat.id === 'review' && seat.source === 'planner'
-        ? [PLANNER_INHERITANCE.mark]
-        : wrapSeatIdentity(
-            formatSeatIdentity({ seat: seat.runner, displayName: displayNames?.[seat.id] }),
-            innerWidth - CREW_LABEL_WIDTH,
-          ),
-  }));
+  const identityWidth = innerWidth - CREW_LABEL_WIDTH;
+  const crewRows = (toRows: (identity: string) => string[]): SeatRows[] =>
+    seats.map((seat) => ({
+      seat,
+      rows:
+        seat.id === 'review' && seat.source === 'planner'
+          ? [PLANNER_INHERITANCE.mark]
+          : toRows(formatSeatIdentity({ seat: seat.runner, displayName: displayNames?.[seat.id] })),
+    }));
+  const countFooterRows = (crew: readonly SeatRows[]): number =>
+    crew.reduce((total, { rows }) => total + rows.length, outcomeRows.length);
+  const wrappedSeatRows = crewRows((identity) => wrapSeatIdentity(identity, identityWidth));
+  // With the list already at zero rows, a wrapped crew that still overruns the bottom border gives
+  // each seat the one row its cut identity takes.
+  const seatRows =
+    height !== undefined && countFooterRows(wrappedSeatRows) > getSidebarFooterBudget({ height })
+      ? crewRows((identity) => [cutSeatIdentity(identity, identityWidth)])
+      : wrappedSeatRows;
 
-  const footerRows =
-    seatRows.reduce((total, { rows }) => total + rows.length, 0) + outcomeRows.length;
+  const footerRows = countFooterRows(seatRows);
   // Without a height the caller is not budgeting rows, so the list never windows.
   const listRows =
     height === undefined ? tasks.length : getSidebarTaskListRows({ height, footerRows });
@@ -360,11 +374,11 @@ export function Sidebar({ width, height }: SidebarProps) {
         {tail.length > 0 && <Text color={t.textDim}>{`${LIST_INDENT}${tail.join(SOFT_SEP)}`}</Text>}
       </Box>
 
-      <Box flexDirection="column" flexShrink={0}>
-        <Box paddingX={1}>
+      <Box flexDirection="column" flexShrink={1} overflow="hidden">
+        <Box paddingX={1} flexShrink={0}>
           <Divider width={innerWidth} />
         </Box>
-        <Box flexDirection="column" paddingX={1}>
+        <Box flexDirection="column" paddingX={1} flexShrink={0}>
           {outcomeRowSpans.map((spans, index) => (
             <Text key={index}>
               <TextSpans parts={spans} />
