@@ -274,6 +274,49 @@ describe('fallbackBlockedReason', () => {
       'incompatible',
     );
   });
+
+  describe.each(['ready', 'unverified'] as const)(
+    'on a %s tool signed in to another provider',
+    (state) => {
+      const fallback = { tool: 'opencode', model: 'ollama-cloud/glm-5' };
+      const opencode = cliDetectionFor(state, 'opencode', {
+        providerAuth: {
+          kind: 'read',
+          facts: [{ id: 'anthropic', provider: 'Anthropic', source: 'oauth' }],
+        },
+      });
+      const listing = (ids: readonly string[]): SavedCatalog => ({
+        models: ids.map((id) => ({ id })),
+      });
+
+      it('names the route needs sign-in when its model list was read and does not serve the route', () => {
+        expect(
+          fallbackBlockedReason(fallback, opencode, listing(['anthropic/claude-sonnet-4'])),
+        ).toBe('needs sign-in');
+      });
+
+      it('offers it when its model list serves the route or was not read', () => {
+        expect(
+          fallbackBlockedReason(fallback, opencode, listing(['ollama-cloud/glm-5'])),
+        ).toBeUndefined();
+        expect(fallbackBlockedReason(fallback, opencode, undefined)).toBeUndefined();
+      });
+
+      it('gives the Settings row the same note', () => {
+        const config = makeConfig({
+          implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5', fallback },
+        });
+
+        const rows = deriveFallbackRows({
+          config,
+          cliTools: [opencode],
+          cliCatalog: () => listing(['anthropic/claude-sonnet-4']),
+        });
+
+        expect(rowOf(rows, 'build').note).toBe('needs sign-in');
+      });
+    },
+  );
 });
 
 describe('fallbackRunner', () => {

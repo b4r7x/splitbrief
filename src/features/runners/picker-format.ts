@@ -17,6 +17,7 @@ import {
 } from './model-catalog/rows.js';
 import type { CliProviderAuthFact } from '../../core/discovery/detection.js';
 import {
+  ROUTE_NEEDS_SIGN_IN,
   routeNoCredential,
   routeSignInCommand,
   type RouteAuthState,
@@ -290,10 +291,10 @@ export function formatRouteAuth(input: { auth: RouteAuthState }): {
             dim: false,
           };
     case 'needs-sign-in':
-      return { word: 'needs sign-in', dim: true };
+      return { word: ROUTE_NEEDS_SIGN_IN, dim: true };
     case 'unknown':
       return auth.reason === 'empty'
-        ? { word: 'needs sign-in', dim: true }
+        ? { word: ROUTE_NEEDS_SIGN_IN, dim: true }
         : { word: 'sign-in unknown', dim: true };
     default:
       return assertNever(auth);

@@ -944,6 +944,38 @@ const createSettingsFallbackSetFixture: FixtureFactory = () =>
     },
     focus: 'fallback:plan',
   });
+// A ready OpenCode signed in to OpenAI whose listing serves no Ollama Cloud model: the BUILD
+// fallback on that route needs a sign-in, so its row carries the needs sign-in note.
+const createSettingsFallbackNeedsSignInFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: () => {
+      seedConfig({
+        implementer: {
+          ...BUILD_CODEX_SEAT,
+          fallback: { tool: 'opencode', model: OPENCODE_UNLISTED_ROUTE },
+        },
+      })();
+      publishVisualDiscovery({
+        cliTools: [
+          cliDetectionFor('ready', 'codex'),
+          cliDetectionFor('ready', 'opencode', {
+            providerAuth: { kind: 'read', facts: [{ provider: 'OpenAI', source: 'api' }] },
+          }),
+        ],
+        cliModels: [
+          catalogAttempt({
+            tool: 'opencode',
+            outcome: {
+              kind: 'success',
+              value: opencodeApiModels().filter((model) => !model.id.startsWith('ollama-cloud/')),
+            },
+          }),
+        ],
+      });
+    },
+    focus: 'fallback:build',
+  });
 const createSettingsFallbackFilteredFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:fallback' });
 const createSettingsInheritedEffortFixture: FixtureFactory = () =>
@@ -2224,6 +2256,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-fallback-none'), createSettingsFallbackNoneFixture],
   [scenarioId('overlay-settings-fallback-catalog'), createSettingsFallbackCatalogFixture],
   [scenarioId('overlay-settings-fallback-set'), createSettingsFallbackSetFixture],
+  [scenarioId('overlay-settings-fallback-needs-sign-in'), createSettingsFallbackNeedsSignInFixture],
   [scenarioId('overlay-settings-fallback-filtered'), createSettingsFallbackFilteredFixture],
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
   [scenarioId('overlay-settings-crew-kilo-copilot'), createSettingsCrewKiloCopilotFixture],

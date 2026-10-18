@@ -3616,6 +3616,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Fallback',
       },
       {
+        id: 'overlay-settings-fallback-needs-sign-in',
+        title: 'Overlay · settings · a ready fallback tool whose route needs a sign-in',
+        marker: 'needs sign-in',
+      },
+      {
         id: 'overlay-settings-fallback-catalog',
         title: 'Overlay · settings · matching crew and fallback catalog names',
         marker: 'Fallback',

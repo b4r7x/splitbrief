@@ -7,7 +7,7 @@ import { writeConfig } from '../../../core/config/load/io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { switchSeatOffer } from './builders/task.js';
+import { buildSeatDownIssue, switchSeatOffer } from './builders/task.js';
 import { loadSeatSwapContext, readSeatFallbackOfRecord } from './seat-swap-context.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 
@@ -472,6 +472,46 @@ describe('loadSeatSwapContext', () => {
       expect(context?.fallbackBlockedReason).toBe(blocked);
       expect(switchSeatOffer(context)?.candidates).toEqual(
         blocked === undefined ? [fallback] : undefined,
+      );
+    },
+  );
+
+  it.each([
+    ['moves to it', ['ollama-cloud/glm-5'], undefined],
+    ['does not move to it', ['anthropic/claude-sonnet-4'], 'needs sign-in'],
+  ])(
+    'reads a fallback on a ready tool signed in to another provider against its saved model list: an account halt %s',
+    async (_case, models, blocked) => {
+      const projectDir = await projectRememberingOpencode(
+        'seat-swap-fallback-ready-route',
+        { kind: 'read', facts: [{ id: 'anthropic', provider: 'Anthropic', source: 'oauth' }] },
+        models,
+      );
+      const fallback = { tool: 'opencode', model: 'ollama-cloud/glm-5' };
+      const runner = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex', fallback } as const;
+      const config = makeConfig({ implementer: runner });
+      writeConfig(projectDir, config);
+
+      const context = await loadSeatSwapContext({
+        modelCache: undefined,
+        projectDir,
+        seat: 'build',
+        runner,
+        config,
+      });
+      const issue = buildSeatDownIssue({
+        seat: 'build',
+        runner,
+        phase: 'implementing',
+        classification: { class: 'account', cause: 'balance' },
+        words: 'Insufficient Balance',
+        seatSwap: context,
+        createdAt: '2026-10-10T12:00:00.000Z',
+      });
+
+      expect(context?.fallbackBlockedReason).toBe(blocked);
+      expect(issue.switchSeat?.auto?.candidate).toEqual(
+        blocked === undefined ? fallback : undefined,
       );
     },
   );

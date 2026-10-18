@@ -3,7 +3,7 @@ import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import type { SavedCatalog, SavedCatalogOf } from '../discovery/catalog-read-merge.js';
 import type { CliToolDetection } from '../discovery/detection.js';
 import { isCliToolId } from '../runners/cli-tool-catalog.js';
-import { routeAuthState } from '../runners/route-auth.js';
+import { ROUTE_NEEDS_SIGN_IN, routeAuthState } from '../runners/route-auth.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import type { Config } from '../schemas/config.js';
 import { SOFT_SEP } from '../separators.js';
@@ -27,7 +27,10 @@ export type FallbackRow = Readonly<{
   identity?: string | undefined;
   /** REVIEW with no block of its own: it runs PLAN's fallback. */
   inherited: boolean;
-  /** Why a halt would not take it: 'same as the seat', 'not installed', or the readiness state word. */
+  /**
+   * Why a halt would not take it: 'same as the seat', 'not installed', the readiness state word, or
+   * the route word 'needs sign-in'.
+   */
   note?: string | undefined;
 }>;
 
@@ -59,7 +62,8 @@ export function fallbackRunner(fallback: SeatFallback): RunnerConfig | undefined
 
 /**
  * Why a halt would not take the fallback. A tool that stores no credential still calls a route its
- * model list serves, so a fallback on such a route is taken.
+ * model list serves, so a fallback on such a route is taken. A ready or unverified tool's route
+ * that needs a sign-in is refused on every call, so the note names the route word the picker shows.
  */
 export function fallbackBlockedReason(
   fallback: SeatFallback,
@@ -68,13 +72,15 @@ export function fallbackBlockedReason(
 ): string | undefined {
   const state = detection?.diagnostic.state;
   if (state === undefined || state === 'unavailable') return 'not installed';
-  if (state === 'ready' || state === 'unverified') return undefined;
   const route = routeAuthState({
     tool: detection?.tool,
     model: fallback.model,
     providerAuth: detection?.providerAuth,
     catalog,
   });
+  if (state === 'ready' || state === 'unverified') {
+    return route.kind === 'needs-sign-in' ? ROUTE_NEEDS_SIGN_IN : undefined;
+  }
   return state === 'unauthenticated' && route.kind === 'configured' ? undefined : state;
 }
 

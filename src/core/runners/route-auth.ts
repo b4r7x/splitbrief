@@ -190,6 +190,9 @@ export function routeRefusal(auth: RouteAuthState): RouteRefusal {
   }
 }
 
+/** The word the picker route row and the Settings fallback note show for a route not signed in. */
+export const ROUTE_NEEDS_SIGN_IN = 'needs sign-in';
+
 /**
  * The one sentence doctor, start, a halt and the picker use for a route with no credential. The
  * provider is the id the tool's sign-in command takes, never a display name.
