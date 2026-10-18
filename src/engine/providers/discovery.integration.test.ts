@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -452,7 +452,61 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       'opencode-go/mimo-v2.6-flash',
       'openai/gpt-5.6-luna-fast',
     ]);
+    expect(attempts.map((attempt) => attempt.namesProject)).toEqual([false]);
     expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'api|GET|/api/model|']);
+  });
+
+  it('names the project directory to an OpenCode 2 listing in the crew, from a neutral cwd', async () => {
+    const opencodeLog = join(shimDir, 'opencode.args');
+    const opencodeCwdLog = join(shimDir, 'opencode.cwd');
+    installCatalogShim('opencode', {
+      logPath: opencodeLog,
+      cwdLogPath: opencodeCwdLog,
+      version: '2.0.14',
+      catalog: JSON.stringify({ data: [{ providerID: 'lmstudio', id: 'qwen3' }] }),
+    });
+    // A path segment that is a forbidden probe word stays inside the encoded header value.
+    const runDir = join(projectDir, 'my app', 'run');
+    mkdirSync(runDir, { recursive: true });
+
+    const attempts = await discoverAllCliTools({
+      contexts: [context('opencode')],
+      projectDir: runDir,
+      crewTools: new Set(['opencode']),
+      resolveExecutable: exactResolver,
+    });
+
+    expect(successfulModels(attempts, 'opencode')?.map((model) => model.id)).toEqual([
+      'lmstudio/qwen3',
+    ]);
+    expect(attempts.map((attempt) => attempt.namesProject)).toEqual([true]);
+    expect(loggedArgs(opencodeLog)).toEqual([
+      '--version|',
+      `api|GET|/api/model|-H|x-opencode-directory:${encodeURIComponent(runDir)}|`,
+    ]);
+    const catalogCwd = readFileSync(opencodeCwdLog, 'utf8').trim();
+    expect(catalogCwd).not.toBe(runDir);
+    expect(catalogCwd).not.toContain(projectDir);
+  });
+
+  it.each([
+    { name: 'an OpenCode 2 listing the crew does not use', version: '2.0.14', crew: [] },
+    { name: 'the legacy OpenCode listing in the crew', version: '1.4.0', crew: ['opencode'] },
+  ])('names no project directory to $name', async ({ version, crew }) => {
+    const opencodeLog = join(shimDir, 'opencode.args');
+    installCatalogShim('opencode', { logPath: opencodeLog, version, catalog: '' });
+
+    await discoverAllCliTools({
+      contexts: [context('opencode')],
+      projectDir,
+      crewTools: new Set(crew),
+      resolveExecutable: exactResolver,
+    });
+
+    expect(loggedArgs(opencodeLog)).toEqual([
+      '--version|',
+      version === '1.4.0' ? 'models|--verbose|' : 'api|GET|/api/model|',
+    ]);
   });
 
   it('sends no refresh argv on manual OpenCode 2 discovery, which has no refresh flag', async () => {

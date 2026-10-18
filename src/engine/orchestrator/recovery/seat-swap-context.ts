@@ -17,6 +17,7 @@ import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 import { includes } from '../../../utils/type-guards.js';
 import { loadRememberedSnapshot, type DetectionCacheSnapshot } from '../../detection/cache.js';
 import { cliSeatDiscoveryContext } from '../../detection/cli-context.js';
+import { savedRouteCatalog } from '../../detection/route-catalog.js';
 import { detectRunnerEvidence } from '../../detection/runner-evidence.js';
 import type { DetectedSeatTool, SeatSwapContext } from './builders/task.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -80,9 +81,7 @@ async function haltRouteAuth(
   if (runner.kind !== 'cli') return undefined;
   if (runner.model === undefined) return { kind: 'unchecked' };
   let providerAuth = remembered?.cliTools.find((cli) => cli.tool === runner.tool)?.providerAuth;
-  let catalog: SavedCatalog | undefined = remembered?.cliCatalogs?.find(
-    (saved) => saved.tool === runner.tool,
-  );
+  let catalog: SavedCatalog | undefined = savedRouteCatalog(remembered, runner.tool, runner.model);
   if (
     includes(PROVIDER_ORACLE_TOOL_IDS, runner.tool) &&
     classifyHaltSignature([input.refusal ?? '']) === 'missing-model'
@@ -96,6 +95,7 @@ async function haltRouteAuth(
         }),
         projectDir: input.projectDir,
         includeCatalog: true,
+        catalogNamesProject: true,
       });
       providerAuth = evidence.providerAuth ?? UNREAD_PROVIDER_AUTH;
       catalog =
@@ -151,7 +151,7 @@ export async function loadSeatSwapContext(
     blockedReason = fallbackBlockedReason(
       fallback,
       detection,
-      remembered?.cliCatalogs?.find((catalog) => catalog.tool === fallback.tool),
+      savedRouteCatalog(remembered, fallback.tool, fallback.model),
     );
     if (blockedReason === undefined) {
       detectedTools = [

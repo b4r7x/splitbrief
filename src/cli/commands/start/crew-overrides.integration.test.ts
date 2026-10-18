@@ -355,7 +355,14 @@ describe('a first run that puts an OpenCode storing no credential on BUILD', () 
             requestId: 1,
             providers: [],
             cliTools: [],
-            cliCatalogs: [{ tool: 'opencode', models: saved.map((id) => ({ id })), probedAt: 1 }],
+            cliCatalogs: [
+              {
+                tool: 'opencode',
+                models: saved.map((id) => ({ id })),
+                namesProject: true,
+                probedAt: 1,
+              },
+            ],
           },
         });
       }

@@ -427,6 +427,35 @@ describe('detection cache', () => {
     expect(reloaded?.cliCatalogs).toEqual([catalog]);
   });
 
+  it('remembers whether a model list read named the project, and reads an older list as not', async () => {
+    const named: RememberedCliCatalog = {
+      tool: 'opencode',
+      models: [{ id: 'lmstudio/qwen3' }],
+      namesProject: true,
+      probedAt: 1_786_000_000_500,
+    };
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ cliCatalogs: [named] }),
+    });
+    expect(
+      (await loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }))
+        ?.cliCatalogs,
+    ).toEqual([named]);
+
+    const cacheFile = join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json');
+    const older = JSON.parse(await readFile(cacheFile, 'utf8'));
+    delete older.cliCatalogs[0].namesProject;
+    await writeFile(cacheFile, JSON.stringify(older));
+    const reloaded = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(reloaded?.cliCatalogs).toEqual([
+      { tool: 'opencode', models: [{ id: 'lmstudio/qwen3' }], probedAt: 1_786_000_000_500 },
+    ]);
+  });
+
   it('remembers 600 absences across a restart and removes them on the second empty read', async () => {
     const models = Array.from({ length: 600 }, (_, index) => ({ id: `model-${index}` }));
     const initialCatalog: RememberedCliCatalog = {

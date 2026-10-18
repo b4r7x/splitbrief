@@ -32,6 +32,7 @@ const SIGNED_OUT =
   'OpenCode CLI has no credential for ollama-cloud. Run `opencode auth login ollama-cloud` in a separate terminal, then retry.';
 const WRONG_MODEL = `Model ${ROUTE_MODEL} is not listed by OpenCode CLI; pick a listed model`;
 const LOCAL_MODEL = 'ollama/llama3';
+const PROJECT_MODEL = 'lmstudio/qwen3';
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
 let trustHome: ReturnType<typeof createTrustHome> | undefined;
@@ -50,7 +51,8 @@ afterEach(() => {
  * OpenCode whose Ollama Cloud route refuses every call. Signed in to OpenCode Go only, or, with
  * `credential`, to Ollama Cloud too, so the refusal is the model's and not the account's. Its model
  * list serves OpenCode Go only, as a real OpenCode lists no model of a provider it cannot reach.
- * A `localOnly` OpenCode stores no credential at all and serves the Ollama set up in its config.
+ * A `localOnly` OpenCode stores no credential at all and serves the Ollama set up in its config,
+ * and the LM Studio set up in the project's config only when the listing names that project.
  */
 function installShims(
   binDir: string,
@@ -58,6 +60,7 @@ function installShims(
   claudeCalls: string,
   credential: boolean,
   localOnly: boolean,
+  projectDir: string,
 ): void {
   const providers = localOnly
     ? []
@@ -70,10 +73,11 @@ function installShims(
   const served = localOnly
     ? { id: 'llama3', providerID: 'ollama' }
     : { id: 'kimi-k3', providerID: 'opencode-go' };
+  const projectServed = localOnly ? [{ id: 'qwen3', providerID: 'lmstudio' }] : [];
   writeFakeNodeCli(
     binDir,
     'opencode',
-    `const { appendFileSync } = require('node:fs');
+    `const { appendFileSync, realpathSync } = require('node:fs');
 const args = process.argv.slice(2);
 if (args[0] === '--version') {
   console.log('${CLI_TOOL_CATALOG.opencode.compatibility.testedVersion}');
@@ -83,8 +87,14 @@ if (args[0] === 'auth' && args[1] === 'list') {
   console.log(${JSON.stringify(JSON.stringify(providers))});
   process.exit(0);
 }
-if (args.join(' ') === 'api GET /api/model') {
-  console.log(JSON.stringify({ data: [${JSON.stringify(served)}] }));
+if (args.slice(0, 3).join(' ') === 'api GET /api/model') {
+  const header = args[3] === '-H' ? args[4] : '';
+  const directory = header.startsWith('x-opencode-directory:') ? header.slice(21) : '';
+  const named =
+    directory !== '' &&
+    !directory.includes('/') &&
+    realpathSync(decodeURIComponent(directory)) === realpathSync(${JSON.stringify(projectDir)});
+  console.log(JSON.stringify({ data: [${JSON.stringify(served)}, ...(named ? ${JSON.stringify(projectServed)} : [])] }));
   process.exit(0);
 }
 if (args[0] === 'serve') {
@@ -145,8 +155,14 @@ type RouteOptions = {
   seat?: 'build' | 'review';
   credential?: boolean;
   localOnly?: boolean;
-  /** Whether the project holds a saved OpenCode model list; without one, doctor and start read it fresh. */
-  savedList?: boolean;
+  /** The local-only seat takes the provider set up in the project's OpenCode config. */
+  projectModel?: boolean;
+  /**
+   * Whether the project holds a saved OpenCode model list; without one, doctor and start read it
+   * fresh. `before-crew` saves the list a pass read before OpenCode joined the crew, which names
+   * no project, as an earlier release saved every list.
+   */
+  savedList?: boolean | 'before-crew';
   fallback?: { tool: 'claude-code'; model: string };
 };
 
@@ -154,13 +170,14 @@ async function routeFixture({
   seat = 'build',
   credential = false,
   localOnly = false,
+  projectModel = false,
   savedList = true,
   fallback,
 }: RouteOptions = {}) {
   const opencodeRoute = {
     kind: 'cli',
     tool: 'opencode',
-    model: localOnly ? LOCAL_MODEL : ROUTE_MODEL,
+    model: projectModel ? PROJECT_MODEL : localOnly ? LOCAL_MODEL : ROUTE_MODEL,
   } as const;
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
@@ -180,7 +197,7 @@ async function routeFixture({
   mkdirSync(binDir);
   const opencodeCalls = join(target.tmpDir, 'opencode-calls.jsonl');
   const claudeCalls = join(target.tmpDir, 'claude-calls.jsonl');
-  installShims(binDir, opencodeCalls, claudeCalls, credential, localOnly);
+  installShims(binDir, opencodeCalls, claudeCalls, credential, localOnly, target.projectDir);
   restorePath = activateSafeCliShimPath(binDir);
 
   const config = loadConfig(target.projectDir).config;
@@ -214,15 +231,16 @@ async function routeFixture({
   await rememberDetectedTools(
     target.projectDir,
     cliTools,
-    savedList
-      ? [
+    savedList === false
+      ? []
+      : [
           {
             tool: 'opencode',
             models: [{ id: localOnly ? LOCAL_MODEL : 'opencode-go/kimi-k3' }],
+            ...(savedList === 'before-crew' ? {} : { namesProject: true }),
             probedAt: Date.now(),
           },
-        ]
-      : [],
+        ],
   );
   const offlinePreload = join(target.tmpDir, 'offline.mjs');
   writeFileSync(
@@ -411,12 +429,14 @@ describe('e2e: a REVIEW route refused by OpenCode', { timeout: 240_000 }, () => 
 
 describe('e2e: a local-only OpenCode that stores no credential', { timeout: 240_000 }, () => {
   it.each([
-    { label: 'saved', savedList: true },
-    { label: 'read fresh', savedList: false },
+    { label: 'saved', savedList: true, projectModel: false },
+    { label: 'read fresh', savedList: false, projectModel: false },
+    { label: 'project-naming', savedList: false, projectModel: true },
+    { label: 'saved-before-crew', savedList: 'before-crew' as const, projectModel: true },
   ])(
     'doctor shows no blocker for a BUILD route its $label model list serves, and claims no sign-in',
-    async ({ savedList }) => {
-      const { target } = await routeFixture({ localOnly: true, savedList });
+    async ({ savedList, projectModel }) => {
+      const { target } = await routeFixture({ localOnly: true, savedList, projectModel });
 
       const json = await cli(target, ['doctor'], { timeoutMs: 60_000, json: true });
       const record = JSON.parse(json.stdout.trim()) as {
@@ -441,17 +461,25 @@ describe('e2e: a local-only OpenCode that stores no credential', { timeout: 240_
   );
 
   it.each([
-    { label: 'saved', savedList: true },
-    { label: 'read fresh', savedList: false },
+    { label: 'saved', savedList: true, projectModel: false },
+    { label: 'read fresh', savedList: false, projectModel: false },
+    { label: 'project-naming', savedList: false, projectModel: true },
+    { label: 'saved-before-crew', savedList: 'before-crew' as const, projectModel: true },
   ])(
     'start admits the BUILD seat by its $label model list and calls OpenCode on that route',
-    async ({ savedList }) => {
-      const { target, opencodeCalls } = await routeFixture({ localOnly: true, savedList });
+    async ({ savedList, projectModel }) => {
+      const { target, opencodeCalls } = await routeFixture({
+        localOnly: true,
+        savedList,
+        projectModel,
+      });
       const { run } = await startRun(target);
       const output = `${run.stdout}\n${run.stderr}`;
 
       expect(output).not.toContain('OpenCode CLI is not signed in.');
-      expect(recordedCalls(opencodeCalls)).toEqual([{ model: LOCAL_MODEL }]);
+      expect(recordedCalls(opencodeCalls)).toEqual([
+        { model: projectModel ? PROJECT_MODEL : LOCAL_MODEL },
+      ]);
     },
   );
 });

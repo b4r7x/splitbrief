@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { CrewSeatId } from './identity.js';
-import { deriveCrewSeats, type CrewSeat } from './seats.js';
+import { crewCliTools, deriveCrewSeats, type CrewSeat } from './seats.js';
 
 function seatOf<Id extends CrewSeatId>(
   seats: readonly CrewSeat[],
@@ -71,5 +71,31 @@ describe('deriveCrewSeats', () => {
     const plan = seatOf(deriveCrewSeats({ config }), 'plan');
 
     expect(plan.model).toContain('auto');
+  });
+});
+
+describe('crewCliTools', () => {
+  it('names each CLI tool on a seat, on any BUILD profile and on a fallback', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+      implementerProfiles: {
+        default: 'small',
+        profiles: {
+          small: { kind: 'cli', tool: 'claude-code' },
+          big: { kind: 'cli', tool: 'kilo-code', fallback: { tool: 'opencode' } },
+        },
+      },
+    });
+
+    expect([...crewCliTools(config)].sort()).toEqual([
+      'claude-code',
+      'codex',
+      'kilo-code',
+      'opencode',
+    ]);
+  });
+
+  it('names no tool the config does not run', () => {
+    expect([...crewCliTools(makeConfig())]).toEqual(['claude-code']);
   });
 });

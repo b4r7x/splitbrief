@@ -29,6 +29,8 @@ function isNativeCatalogContext(context: RunnerDiscoveryContext): context is Nat
 export interface DiscoverAllCliToolsOptions {
   readonly contexts: readonly RunnerDiscoveryContext[];
   readonly projectDir: string;
+  /** The tools the crew uses; only their listings name `projectDir`. */
+  readonly crewTools?: ReadonlySet<string> | undefined;
   readonly refresh?: 'automatic' | 'manual' | undefined;
   readonly signal?: AbortSignal | undefined;
   /** A test resolver may choose a real receipt; detector-owned readiness remains canonical. */
@@ -40,6 +42,7 @@ function detectorOptions(
   input: Readonly<{
     context: NativeCatalogContext;
     options: DiscoverAllCliToolsOptions;
+    namesProject: boolean;
     onResolvedCliExecutable: (executable: CliExecutableIdentity) => void;
   }>,
 ): DetectRunnerEvidenceOptions {
@@ -48,6 +51,7 @@ function detectorOptions(
     projectDir: input.options.projectDir,
     includeCatalog: true,
     catalogRefresh: input.options.refresh ?? 'automatic',
+    catalogNamesProject: input.namesProject,
     onResolvedCliExecutable: input.onResolvedCliExecutable,
     ...(input.options.resolveExecutable === undefined
       ? {}
@@ -65,10 +69,12 @@ export async function discoverAllCliTools(
   const attempts = await Promise.all(
     contexts.map(async (context): Promise<ScopedCliCatalogAttempt> => {
       let executable: CliExecutableIdentity | undefined;
+      const namesProject = options.crewTools?.has(context.id) === true;
       const evidence = await detectRunnerEvidence(
         detectorOptions({
           context,
           options,
+          namesProject,
           onResolvedCliExecutable: (resolved) => {
             executable = resolved;
           },
@@ -81,6 +87,7 @@ export async function discoverAllCliTools(
           ...(executable === undefined ? {} : { executable }),
         }),
         outcome: evidence.catalog,
+        namesProject,
       };
     }),
   );

@@ -149,7 +149,7 @@ Which runners keep a private HOME, and which do not:
 | Any runner on an `api-key` channel | private | none — the credential arrives as an environment variable |
 | Every `api`, `shell`, or `agent` runner | private | none |
 
-One probe, not a runner, also takes your real `HOME` and `USER`: OpenCode 2's model listing, `opencode api GET /api/model`. It is a read that its own server answers, and OpenCode runs keep the row above. The reason and the writes are in the catalog-probe exception of [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md).
+One probe, not a runner, also takes your real `HOME` and `USER`: OpenCode 2's model listing, `opencode api GET /api/model`. OpenCode's own server answers it, and OpenCode runs keep the row above. When OpenCode is on a seat or a fallback, the listing also names the project directory, and the server then loads the project's OpenCode config with its plugins and its local MCP servers. The reason and the details are in the catalog-probe exception of [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md).
 
 What the `host-account` child gains:
 

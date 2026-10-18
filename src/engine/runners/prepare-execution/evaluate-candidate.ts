@@ -19,6 +19,7 @@ import { loadRememberedSnapshot } from '../../detection/cache.js';
 import {
   freshRouteCatalog,
   routeReadsCatalog,
+  savedRouteCatalog,
   type RouteCatalog,
 } from '../../detection/route-catalog.js';
 import { cliSeatDiscoveryContext } from '../../detection/cli-context.js';
@@ -265,9 +266,11 @@ async function evaluateCli(
   }
   // A tool that stores no credential still calls a provider set up in its own
   // config, so the seat's route, read against its model list, is part of admission.
-  let catalog: RouteCatalog | undefined = (
-    await loadRememberedSnapshot(context.projectDir)
-  )?.cliCatalogs?.find((saved) => saved.tool === candidate.runner.tool);
+  let catalog: RouteCatalog | undefined = savedRouteCatalog(
+    await loadRememberedSnapshot(context.projectDir),
+    candidate.runner.tool,
+    seatModel.model,
+  );
   const routeOf = (fresh: RunnerEvidence): RouteAuthState =>
     routeAuthState({
       tool: candidate.runner.tool,
@@ -317,6 +320,7 @@ async function evaluateCli(
         projectDir: context.projectDir,
         signal: context.signal,
         includeCatalog: true,
+        catalogNamesProject: true,
       }),
     );
     throwIfAborted(context.signal);

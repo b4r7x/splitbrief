@@ -39,7 +39,12 @@ async function projectRememberingOpencode(
       providers: [],
       cliTools: [cliDetectionFor('ready', 'opencode', { providerAuth })],
       cliCatalogs: [
-        { tool: 'opencode', models: models.map((id) => ({ id })), probedAt: Date.now() },
+        {
+          tool: 'opencode',
+          models: models.map((id) => ({ id })),
+          namesProject: true,
+          probedAt: Date.now(),
+        },
       ],
     },
   });
@@ -202,40 +207,69 @@ describe('loadSeatSwapContext', () => {
     expect(switchSeatOffer(context)).toBeUndefined();
   });
 
-  it("reads a route the tool's saved model list serves as configured", async () => {
-    const projectDir = createTempDir('seat-swap-remembered-catalog');
-    dirs.push(projectDir);
-    mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
-    const route = 'ollama-cloud/glm-5';
-    await saveDetectionCache({
-      projectDir,
-      snapshot: {
-        contextKey: 'readiness-remembered',
-        fetchedAt: Date.now(),
-        validatedAt: Date.now(),
-        generation: 1,
-        requestId: 1,
-        providers: [],
-        cliTools: [
-          cliDetectionFor('ready', 'opencode', {
-            providerAuth: { kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'api' }] },
-          }),
-        ],
-        cliCatalogs: [{ tool: 'opencode', models: [{ id: route }], probedAt: Date.now() }],
-      },
-    });
-    const runner = { kind: 'cli', tool: 'opencode', model: route } as const;
+  it.each([
+    {
+      label: 'a list that names the project and serves it as configured',
+      namesProject: true,
+      models: ['ollama-cloud/glm-5'],
+      expected: { kind: 'configured', source: 'listed' },
+    },
+    {
+      label: 'a list that did not name the project but serves it as configured',
+      namesProject: false,
+      models: ['ollama-cloud/glm-5'],
+      expected: { kind: 'configured', source: 'listed' },
+    },
+    {
+      label: 'a list that did not name the project and does not serve it as unread',
+      namesProject: false,
+      models: ['ollama/llama3'],
+      expected: { kind: 'unknown', reason: 'catalog-not-read' },
+    },
+  ])(
+    "reads a route against the tool's saved model list: $label",
+    async ({ namesProject, models, expected }) => {
+      const projectDir = createTempDir('seat-swap-remembered-catalog');
+      dirs.push(projectDir);
+      mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
+      const route = 'ollama-cloud/glm-5';
+      await saveDetectionCache({
+        projectDir,
+        snapshot: {
+          contextKey: 'readiness-remembered',
+          fetchedAt: Date.now(),
+          validatedAt: Date.now(),
+          generation: 1,
+          requestId: 1,
+          providers: [],
+          cliTools: [
+            cliDetectionFor('ready', 'opencode', {
+              providerAuth: { kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'api' }] },
+            }),
+          ],
+          cliCatalogs: [
+            {
+              tool: 'opencode',
+              models: models.map((id) => ({ id })),
+              namesProject,
+              probedAt: Date.now(),
+            },
+          ],
+        },
+      });
+      const runner = { kind: 'cli', tool: 'opencode', model: route } as const;
 
-    const context = await loadSeatSwapContext({
-      modelCache: undefined,
-      projectDir,
-      seat: 'build',
-      runner,
-      config: makeConfig({ implementer: runner }),
-    });
+      const context = await loadSeatSwapContext({
+        modelCache: undefined,
+        projectDir,
+        seat: 'build',
+        runner,
+        config: makeConfig({ implementer: runner }),
+      });
 
-    expect(context?.routeAuth).toEqual({ kind: 'configured', source: 'listed' });
-  });
+      expect(context?.routeAuth).toEqual(expected);
+    },
+  );
 
   describe('a model refusal re-reads the route fresh', () => {
     const route = 'ollama-cloud/glm-5';
@@ -393,11 +427,12 @@ describe('loadSeatSwapContext', () => {
   });
 
   it.each([
-    ['takes', ['ollama/llama3'], undefined],
-    ['names why it does not take', ['lmstudio/qwen3'], 'unauthenticated'],
+    ['takes', ['ollama/llama3'], true, undefined],
+    ['takes, from a list that did not name the project,', ['ollama/llama3'], false, undefined],
+    ['names why it does not take', ['lmstudio/qwen3'], true, 'unauthenticated'],
   ])(
     'reads a fallback tool that stores no credential against its saved model list: %s it',
-    async (_case, models, blocked) => {
+    async (_case, models, namesProject, blocked) => {
       const projectDir = createTempDir('seat-swap-fallback-no-credential');
       dirs.push(projectDir);
       mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
@@ -415,7 +450,12 @@ describe('loadSeatSwapContext', () => {
             cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
           ],
           cliCatalogs: [
-            { tool: 'opencode', models: models.map((id) => ({ id })), probedAt: Date.now() },
+            {
+              tool: 'opencode',
+              models: models.map((id) => ({ id })),
+              namesProject,
+              probedAt: Date.now(),
+            },
           ],
         },
       });

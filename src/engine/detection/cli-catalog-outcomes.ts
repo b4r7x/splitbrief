@@ -16,6 +16,8 @@ export interface ScopedCliCatalogConnection {
 export interface ScopedCliCatalogAttempt {
   readonly connection: ScopedCliCatalogConnection;
   readonly outcome: ProbeOutcome<readonly DetectedModel[]>;
+  /** The read named the project, so its list carries the providers the project's own config sets up. */
+  readonly namesProject?: boolean | undefined;
 }
 
 export type ScopedCliCatalogRuntimeState = 'fresh' | 'stale' | 'failed';
@@ -101,5 +103,6 @@ export function cloneScopedCliCatalogAttempt(
   return {
     connection: cloneConnection(attempt.connection),
     outcome: cloneOutcome(attempt.outcome),
+    ...(attempt.namesProject === undefined ? {} : { namesProject: attempt.namesProject }),
   };
 }

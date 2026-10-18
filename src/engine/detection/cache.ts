@@ -138,6 +138,8 @@ const CachedCliCatalogSchema = z
       .max(MAX_CLI_CATALOG_READ_MODELS)
       .readonly()
       .optional(),
+    /** Absent on lists read without naming the project, and on lists an earlier release saved. */
+    namesProject: z.literal(true).optional(),
     probedAt: z.number().int().nonnegative(),
   })
   .strict();
@@ -192,6 +194,8 @@ export interface RememberedCliCatalog {
   readonly tool: CliToolId;
   readonly models: readonly DetectedModel[];
   readonly missingOnce?: readonly string[] | undefined;
+  /** The read named the project, so the list carries the providers the project's own config sets up. */
+  readonly namesProject?: boolean | undefined;
   readonly probedAt: number;
 }
 
@@ -322,6 +326,7 @@ function cachedCliCatalog(catalog: RememberedCliCatalog): z.input<typeof CachedC
     ...(catalog.missingOnce === undefined
       ? {}
       : { missingOnce: catalog.missingOnce.filter((id) => modelIds.has(id)) }),
+    ...(catalog.namesProject === true ? { namesProject: true } : {}),
     probedAt: catalog.probedAt,
   };
 }

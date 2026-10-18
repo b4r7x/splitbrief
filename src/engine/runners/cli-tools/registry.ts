@@ -431,6 +431,7 @@ function structuralCatalogProbe(
     parser: NativeCatalogParser;
     manualCommand?: readonly [string, ...string[]] | undefined;
     hostState?: 'host-account' | undefined;
+    directoryHeader?: 'x-opencode-directory' | undefined;
     timeoutMs?: number | undefined;
     legacy?: Readonly<{
       belowVersion: string;
@@ -451,6 +452,7 @@ function structuralCatalogProbe(
     maxOutputBytes: CODEX_NATIVE_MODEL_CATALOG_PROBE.maxOutputBytes,
     ...(manualCommand === undefined ? {} : { manualCommand }),
     ...(input.hostState === undefined ? {} : { hostState: input.hostState }),
+    ...(input.directoryHeader === undefined ? {} : { directoryHeader: input.directoryHeader }),
     ...(input.legacy === undefined
       ? {}
       : {
@@ -481,6 +483,9 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
         // a directory's providers on first sight and cannot see an `env`-type
         // provider connection the sandbox strips. See docs/AUTH-METHOD-MATRIX.md.
         hostState: 'host-account',
+        // Without the header the server lists the global providers only, none that
+        // the project's own opencode.json sets up.
+        directoryHeader: 'x-opencode-directory',
         parser: parseOpenCodeNativeModelCatalog,
         // 2.x has no refresh flag — `opencode models` takes only `--standalone`
         // and `--server` — so a manual refresh re-runs this GET, which is a real

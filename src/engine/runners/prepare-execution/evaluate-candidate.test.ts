@@ -295,7 +295,12 @@ describe('evaluateCandidate on a model route with no credential', () => {
         providers: [],
         cliTools: [],
         cliCatalogs: [
-          { tool: 'opencode', models: [{ id: 'opencode-go/kimi-k3' }], probedAt: Date.now() },
+          {
+            tool: 'opencode',
+            models: [{ id: 'opencode-go/kimi-k3' }],
+            namesProject: true,
+            probedAt: Date.now(),
+          },
         ],
       },
     });
@@ -348,7 +353,11 @@ describe('evaluateCandidate on a local-only OpenCode seat', () => {
     return { candidate, context: preparationContext(config, detect), detect };
   }
 
-  async function rememberModelList(projectDir: string, ids: readonly string[]): Promise<void> {
+  async function rememberModelList(
+    projectDir: string,
+    ids: readonly string[],
+    namesProject = true,
+  ): Promise<void> {
     mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
     await saveDetectionCache({
       projectDir,
@@ -361,7 +370,12 @@ describe('evaluateCandidate on a local-only OpenCode seat', () => {
         providers: [],
         cliTools: [],
         cliCatalogs: [
-          { tool: 'opencode', models: ids.map((id) => ({ id })), probedAt: Date.now() },
+          {
+            tool: 'opencode',
+            models: ids.map((id) => ({ id })),
+            namesProject,
+            probedAt: Date.now(),
+          },
         ],
       },
     });
@@ -411,6 +425,28 @@ describe('evaluateCandidate on a local-only OpenCode seat', () => {
     await evaluateCandidate(candidate, context);
 
     expect(detect).not.toHaveBeenCalledWith(expect.objectContaining({ includeCatalog: true }));
+  });
+
+  it('admits the seat on a saved list that did not name the project but serves its route', async () => {
+    stubHome();
+    const { candidate, context, detect } = localSeat('ollama/llama3');
+    await rememberModelList(context.projectDir, ['ollama/llama3'], false);
+
+    const result = await evaluateCandidate(candidate, context);
+
+    expect(detect).not.toHaveBeenCalledWith(expect.objectContaining({ includeCatalog: true }));
+    expect(result.kind).toBe('admitted');
+  });
+
+  it('reads the model list fresh when the saved one did not name the project and does not serve the route', async () => {
+    stubHome();
+    const { candidate, context, detect } = localSeat('ollama-cloud/glm-5', ['ollama-cloud/glm-5']);
+    await rememberModelList(context.projectDir, ['ollama/llama3'], false);
+
+    const result = await evaluateCandidate(candidate, context);
+
+    expect(detect).toHaveBeenCalledWith(expect.objectContaining({ includeCatalog: true }));
+    expect(result.kind).toBe('admitted');
   });
 
   it.each([
