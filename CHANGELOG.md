@@ -88,6 +88,7 @@
 
 ### Fixed
 
+- Cursor Agent CLI on Linux reads as signed in after `cursor-agent login`, and a token it refreshes during a run is kept in your own sign-in file.
 - OpenCode 2 signed in with `opencode auth login` now reads as signed in. Before, the model picker marked its `opencode/…` models `needs sign-in`, and a run on them did not start, with "OpenCode CLI is not signed in". Its models on the other providers it is signed in to now read `signed in · stored credential` instead of `available`.
 - Session options, the command palette, help and `/` completion no longer offer End run while an Apply is unfinished; restore or retry Apply first.
 - After **Re-run Apply** or **Restore backup** on an Apply halt, the transcript shows one Recovery row, such as `Recovery  Re-run Apply → continued`, then `Run continued`. Before, it split the choice and its outcome into two Recovery rows and named **Re-run Apply** as *Try again*.

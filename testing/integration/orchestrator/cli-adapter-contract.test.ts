@@ -173,7 +173,7 @@ const HOME_SESSION_STATE_PATHS: Partial<Record<ImplementerCliToolId, string>> = 
   opencode: '.config/opencode/auth.json',
   copilot: '.copilot/config.json',
   'kilo-code': '.config/kilo/auth.json',
-  cursor: '.cursor/agent-cli-state.json',
+  cursor: '.config/cursor/auth.json',
   'command-code': '.commandcode/auth.json',
 };
 

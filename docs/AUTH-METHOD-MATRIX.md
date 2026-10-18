@@ -39,7 +39,7 @@ Every tool can hold the planner and the implementer seat; the reviewer seat reus
 | `claude-code` · `api-key` | none | `ANTHROPIC_API_KEY` only | private `HOME`; nothing bridged |
 | `codex` · `session` | none | live passthrough of `~/.codex/auth.json` (`rotating-oauth`) | `OPENAI_API_KEY` |
 | `codex` · `api-key` | none | `OPENAI_API_KEY` only | private `HOME`; nothing bridged |
-| `cursor` · `session` | none | macOS: real `HOME`/`USER` (keychain). Linux: live passthrough of the declared Cursor state paths | `CURSOR_API_KEY` |
+| `cursor` · `session` | none | macOS: real `HOME`/`USER` (keychain). Linux: live link to `${XDG_CONFIG_HOME:-~/.config}/cursor/auth.json` | `CURSOR_API_KEY` |
 | `cursor` · `api-key` | none | `CURSOR_API_KEY` only | private `HOME`; nothing bridged |
 | `opencode` · `provider-dependent` | none | live passthrough of the OpenCode config and data folders your own OpenCode uses (`$XDG_CONFIG_HOME/opencode` and `$XDG_DATA_HOME/opencode`, or `~/.config/opencode` and `~/.local/share/opencode` when those variables are unset), **plus every `*_API_KEY` in the parent environment** | nothing |
 | `kilo-code` · `provider-dependent` | none | live passthrough of the Kilo Code config and data folders your own Kilo Code uses (`$XDG_CONFIG_HOME/kilo` and `$XDG_DATA_HOME/kilo`, or `~/.config/kilo` and `~/.local/share/kilo` when those variables are unset), and of the folders of older Kilo Code versions when they exist (`~/.kilocode`, and `$XDG_CONFIG_HOME/kilocode` or `~/.config/kilocode`), **plus every `*_API_KEY` in the parent environment** | nothing |

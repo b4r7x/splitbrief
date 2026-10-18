@@ -389,15 +389,17 @@ describe('createSandboxEnv', () => {
     const hostHome = createTempDir('sandbox-cursor-session-route-home');
     const projectDir = createTempDir('sandbox-cursor-session-route');
     dirs.push(hostHome, projectDir);
-    mkdirSync(join(hostHome, '.cursor'), { recursive: true });
-    writeFileSync(join(hostHome, '.cursor', 'agent-cli-state.json'), '{"session":"fixture"}');
+    mkdirSync(join(hostHome, '.config', 'cursor'), { recursive: true });
+    writeFileSync(join(hostHome, '.config', 'cursor', 'auth.json'), '{"accessToken":"fixture"}');
     setEnv('HOME', hostHome);
+    unsetEnv('XDG_CONFIG_HOME');
 
     const runner = { kind: 'cli', tool: 'cursor', authChannel: 'session' } as const;
     const env = await createRunnerSandboxEnv(projectDir, runner, 'planner');
 
-    const roleHome = join(projectDir, SANDBOX_DIR, 'planner', 'cursor', 'home');
-    const staged = join(roleHome, '.cursor', 'agent-cli-state.json');
+    const roleRoot = join(projectDir, SANDBOX_DIR, 'planner', 'cursor');
+    const roleHome = join(roleRoot, 'home');
+    const staged = join(roleRoot, 'config', 'cursor', 'auth.json');
     if (cliAuthChannelHostStateAccess(resolveCliRunnerAuth(runner)) === 'host-account') {
       expect(env.HOME).toBe(hostHome);
       expect(existsSync(staged)).toBe(false);
@@ -1703,12 +1705,13 @@ describe('backend compatibility fixtures', () => {
   });
 
   itUnix(
-    'a bridged cursor env exposes exactly the two declared paths and nothing else from ~/.cursor',
+    'a bridged cursor env links the Cursor sign-in file and seeds its own policy, nothing else',
     async () => {
       const hostHome = createTempDir('sandbox-cursor-host');
       const projectDir = createTempDir('sandbox-cursor-project');
       dirs.push(hostHome, projectDir);
-      const agentStateToken = 'cursor-agent-state-canary-9f1b';
+      const accessToken = 'cursor-access-token-canary-9f1b';
+      const uiStateToken = 'cursor-agent-state-canary-4e2a';
       const hostCliConfig = JSON.stringify({
         approvalMode: 'unrestricted',
         sandbox: { mode: 'disabled' },
@@ -1717,14 +1720,19 @@ describe('backend compatibility fixtures', () => {
       writeFileSync(join(hostHome, '.cursor', 'cli-config.json'), hostCliConfig);
       writeFileSync(
         join(hostHome, '.cursor', 'agent-cli-state.json'),
-        JSON.stringify({ token: agentStateToken }),
+        JSON.stringify({ workerIdsByDisplayName: { worker: uiStateToken } }),
       );
       writeFileSync(join(hostHome, '.cursor', 'unrelated.json'), '{"not":"admitted"}');
+      const hostAuthDir = join(hostHome, '.config', 'cursor');
+      mkdirSync(hostAuthDir, { recursive: true });
+      writeFileSync(join(hostAuthDir, 'auth.json'), JSON.stringify({ accessToken }));
+      writeFileSync(join(hostAuthDir, 'unrelated.json'), '{"not":"admitted"}');
       setEnv('HOME', hostHome);
+      unsetEnv('XDG_CONFIG_HOME');
 
       // The file bridge is asked for directly: on macOS this channel is
-      // host-account, and the two-path isolation under test is the
-      // bridged-files contract.
+      // host-account, and the isolation under test is the bridged-files
+      // contract Linux runs on.
       const env = await createSandboxEnv({
         projectDir,
         selectedCli: 'cursor',
@@ -1733,45 +1741,84 @@ describe('backend compatibility fixtures', () => {
       });
 
       const sandboxCursor = join(env.HOME as string, '.cursor');
-      const hostCursor = join(hostHome, '.cursor');
       const childCliConfigPath = join(sandboxCursor, 'cli-config.json');
       const childCliConfig = readFileSync(childCliConfigPath, 'utf8');
       expect(lstatSync(sandboxCursor).isSymbolicLink()).toBe(false);
       expect(lstatSync(childCliConfigPath).isSymbolicLink()).toBe(false);
       expect(childCliConfig).not.toBe(hostCliConfig);
-      expect(childCliConfig).not.toContain('"approvalMode":"unrestricted"');
       expect(JSON.parse(childCliConfig)).toEqual(
         expect.objectContaining({
           approvalMode: 'allowlist',
           sandbox: { mode: 'enabled' },
         }),
       );
-      expect(readFileSync(join(sandboxCursor, 'agent-cli-state.json'), 'utf8')).toBe(
-        JSON.stringify({ token: agentStateToken }),
-      );
-      expect(readdirSync(sandboxCursor).toSorted()).toEqual([
-        'agent-cli-state.json',
-        'cli-config.json',
-      ]);
-      expect(existsSync(join(sandboxCursor, 'unrelated.json'))).toBe(false);
+      expect(readdirSync(sandboxCursor)).toEqual(['cli-config.json']);
+
+      const childAuthDir = join(env.XDG_CONFIG_HOME as string, 'cursor');
+      const childAuth = join(childAuthDir, 'auth.json');
+      expect(lstatSync(childAuthDir).isSymbolicLink()).toBe(false);
+      expect(readlinkSync(childAuth)).toBe(realpathSync(join(hostAuthDir, 'auth.json')));
+      expect(readdirSync(childAuthDir)).toEqual(['auth.json']);
       expect(await bridgedCliStatePresent(env, 'cursor')).toBe(true);
-      writeFileSync(
-        join(sandboxCursor, 'cli-config.json'),
-        JSON.stringify({ token: 'rotated-cli' }),
+
+      writeFileSync(childCliConfigPath, JSON.stringify({ token: 'rotated-cli' }));
+      writeFileSync(childAuth, JSON.stringify({ accessToken: 'rotated-access' }));
+      expect(readFileSync(join(hostHome, '.cursor', 'cli-config.json'), 'utf8')).toBe(
+        hostCliConfig,
       );
-      writeFileSync(
-        join(sandboxCursor, 'agent-cli-state.json'),
-        JSON.stringify({ token: 'rotated-agent' }),
+      expect(readFileSync(join(hostAuthDir, 'auth.json'), 'utf8')).toBe(
+        JSON.stringify({ accessToken: 'rotated-access' }),
       );
-      expect(readFileSync(join(hostCursor, 'cli-config.json'), 'utf8')).toBe(hostCliConfig);
-      expect(readFileSync(join(hostCursor, 'agent-cli-state.json'), 'utf8')).toBe(
-        JSON.stringify({ token: 'rotated-agent' }),
-      );
-      expect(readFileSync(join(hostCursor, 'unrelated.json'), 'utf8')).toBe('{"not":"admitted"}');
-      expect(sandboxCredentialValues(env)).toContain(agentStateToken);
+      expect(sandboxCredentialValues(env)).toContain(accessToken);
+      expect(sandboxCredentialValues(env)).not.toContain(uiStateToken);
       expect(sandboxCredentialValues(env)).not.toContain('unrestricted');
     },
   );
+
+  itUnix('a bridged cursor env takes the sign-in file from a set XDG_CONFIG_HOME', async () => {
+    const hostHome = createTempDir('sandbox-cursor-xdg-home');
+    const hostConfig = createTempDir('sandbox-cursor-xdg-config');
+    const projectDir = createTempDir('sandbox-cursor-xdg-project');
+    dirs.push(hostHome, hostConfig, projectDir);
+    mkdirSync(join(hostConfig, 'cursor'), { recursive: true });
+    writeFileSync(join(hostConfig, 'cursor', 'auth.json'), '{"accessToken":"xdg"}');
+    mkdirSync(join(hostHome, '.config', 'cursor'), { recursive: true });
+    writeFileSync(join(hostHome, '.config', 'cursor', 'auth.json'), '{"accessToken":"home"}');
+    setEnv('HOME', hostHome);
+    setEnv('XDG_CONFIG_HOME', hostConfig);
+
+    const env = await createSandboxEnv({
+      projectDir,
+      selectedCli: 'cursor',
+      hostState: 'bridged-files',
+      role: 'planner',
+    });
+
+    expect(readlinkSync(join(env.XDG_CONFIG_HOME as string, 'cursor', 'auth.json'))).toBe(
+      realpathSync(join(hostConfig, 'cursor', 'auth.json')),
+    );
+    expect(await bridgedCliStatePresent(env, 'cursor')).toBe(true);
+  });
+
+  itUnix('a host with only the Cursor UI state file has no Cursor sign-in', async () => {
+    const hostHome = createTempDir('sandbox-cursor-ui-state-home');
+    const projectDir = createTempDir('sandbox-cursor-ui-state-project');
+    dirs.push(hostHome, projectDir);
+    mkdirSync(join(hostHome, '.cursor'), { recursive: true });
+    writeFileSync(join(hostHome, '.cursor', 'agent-cli-state.json'), '{"version":1}');
+    setEnv('HOME', hostHome);
+    unsetEnv('XDG_CONFIG_HOME');
+
+    const env = await createSandboxEnv({
+      projectDir,
+      selectedCli: 'cursor',
+      hostState: 'bridged-files',
+      role: 'planner',
+    });
+
+    expect(existsSync(join(env.HOME as string, '.cursor', 'agent-cli-state.json'))).toBe(false);
+    expect(await bridgedCliStatePresent(env, 'cursor')).toBe(false);
+  });
 
   itUnix('bridges the Kilo auth entries as live passthrough links', async () => {
     const hostHome = createTempDir('sandbox-kilo-host');
