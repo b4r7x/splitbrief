@@ -335,7 +335,7 @@ describe('legacy CLI detection presentation', () => {
         trust: 'not-checked',
         diagnostic: {
           state: 'unavailable',
-          remediation: 'Install OpenAI Codex CLI, then run `splitbrief doctor` again.',
+          remediation: 'Install OpenAI Codex CLI, then ctrl+r.',
         },
         probedAt: 7,
       },

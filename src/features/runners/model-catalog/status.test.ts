@@ -90,7 +90,7 @@ describe('deriveCliStatus with per-provider facts', () => {
 
     expect(status).toEqual({
       state: 'unauthenticated',
-      remediation: 'Sign in or configure a provider - free models require sign-in.',
+      remediation: 'Sign in or configure a provider, then ctrl+r. Free models require sign-in.',
     });
   });
 
@@ -123,6 +123,29 @@ describe('deriveCliStatus with per-provider facts', () => {
     expect(status).toEqual({
       state: 'incompatible',
       remediation: detection.diagnostic.remediation,
+    });
+  });
+});
+
+describe('deriveCliStatus remediation inside the picker', () => {
+  it('ends a signed-out tool on the picker refresh, never on doctor', () => {
+    const detection = cliDetectionFor('unauthenticated', 'opencode', {
+      authChannel: 'provider-dependent',
+    });
+
+    const status = deriveCliStatus(CLI_TOOL_CATALOG.opencode, snapshot(detection));
+
+    expect(status.state).toBe('unauthenticated');
+    expect(status.remediation).toContain('Sign in to OpenCode CLI, then ctrl+r.');
+    expect(status.remediation).not.toContain('splitbrief doctor');
+  });
+
+  it('ends a tool with no detection on the picker refresh, never on doctor', () => {
+    const status = deriveCliStatus(CLI_TOOL_CATALOG.codex, { cliTools: [], providers: [] });
+
+    expect(status).toEqual({
+      state: 'unavailable',
+      remediation: 'Install OpenAI Codex CLI, then ctrl+r.',
     });
   });
 });

@@ -723,7 +723,7 @@ describe('detection cache', () => {
       cliTools: [
         {
           executable: null,
-          diagnostic: { state: 'incompatible', remediation: 'Run `splitbrief doctor` again.' },
+          diagnostic: { state: 'incompatible', remediation: 'Press ctrl+r to check again.' },
         },
       ],
     });

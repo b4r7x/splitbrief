@@ -13,6 +13,7 @@ import {
   type SeatPickerRole,
 } from '../../../core/runners/seat-roles.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
+import { cliReadinessRemediation, thenRecheck } from '../../../core/schemas/readiness.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 
 export type PickerStatusState = CliReadinessState;
@@ -78,8 +79,7 @@ function findConfiguredProviderRuntime(
   return scoped.find((entry) => entry.connection.provider === input.provider) ?? null;
 }
 
-const PROVIDER_SIGN_IN_REMEDIATION =
-  'Sign in or configure a provider - free models require sign-in.';
+const PROVIDER_SIGN_IN_REMEDIATION = `Sign in or configure a provider, ${thenRecheck('picker')}. Free models require sign-in.`;
 
 /**
  * A provider-dependent CLI's own credential listing outranks presence-derived
@@ -112,7 +112,16 @@ export function deriveCliStatus(
   if (!cliDetection) {
     return {
       state: 'unavailable',
-      remediation: `Install ${descriptor.displayName}, then run \`splitbrief doctor\` again.`,
+      remediation: cliReadinessRemediation(
+        {
+          tool: descriptor.id,
+          installedVersion: null,
+          testedVersion: descriptor.compatibility.testedVersion,
+          compatibility: 'not-checked',
+        },
+        'unavailable',
+        'picker',
+      ),
     };
   }
   const factStatus = providerFactStatus(descriptor, cliDetection);

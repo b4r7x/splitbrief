@@ -17,7 +17,7 @@ export const READINESS_DIAGNOSTIC_REMEDIATION: Readonly<
   Record<ReadinessDiagnosticStateId, string>
 > = {
   'missing-binary': 'Install the configured CLI, then run `splitbrief doctor` again.',
-  'untrusted-path': cliExecutableTrustRemediation('the configured CLI'),
+  'untrusted-path': cliExecutableTrustRemediation('the configured CLI', 'doctor'),
   'incompatible-version': 'Install the tested CLI version, then run `splitbrief doctor` again.',
   unauthenticated: 'Sign in to the configured CLI, then run `splitbrief doctor` again.',
   'auth-unknown':

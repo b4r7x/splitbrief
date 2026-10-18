@@ -644,7 +644,12 @@ function seedAntigravityNativeListing(level: 'low' | 'medium' | 'high' = 'medium
 // `agy models` 1.4.0 signed out: a progress line, then the error that says how to sign in.
 function seedAntigravitySignedOut(): void {
   publishVisualDiscovery({
-    cliTools: [cliDetectionFor('unauthenticated', 'antigravity', { installedVersion: '1.4.0' })],
+    cliTools: [
+      cliDetectionFor('unauthenticated', 'antigravity', {
+        installedVersion: '1.4.0',
+        authChannel: 'session',
+      }),
+    ],
     cliModels: [
       catalogAttempt({
         tool: 'antigravity',
@@ -708,6 +713,21 @@ function seedOpencodeCommandFailed(): void {
         },
       }),
     ],
+  });
+}
+
+function seedOpencodeSignedOutProbeTimeout(): void {
+  seedConfig({
+    planner: { kind: 'cli', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
+  })();
+  publishVisualDiscovery({
+    cliTools: [
+      cliDetectionFor('unauthenticated', 'opencode', {
+        installedVersion: '2.0.26',
+        authChannel: 'provider-dependent',
+      }),
+    ],
+    cliModels: [catalogAttempt({ tool: 'opencode', outcome: { kind: 'timeout' } })],
   });
 }
 
@@ -1157,6 +1177,12 @@ const createPlannerPickerCommandFailedFixture: FixtureFactory = () =>
     seed: seedOpencodeCommandFailed,
     focus: OPENCODE_FOCUS,
   });
+const createPlannerPickerSignedOutProbeTimeoutFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedOpencodeSignedOutProbeTimeout,
+    focus: OPENCODE_FOCUS,
+  });
 const createPlannerPickerCommandFailedStaleFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -1313,7 +1339,7 @@ const createSignedOutToolFixture: FixtureFactory = () =>
       publishVisualDiscovery({
         cliTools: [
           cliDetectionFor('ready', 'codex'),
-          cliDetectionFor('unauthenticated', 'claude-code'),
+          cliDetectionFor('unauthenticated', 'claude-code', { authChannel: 'session' }),
         ],
       });
     },
@@ -2243,6 +2269,10 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-custom-launcher'), createCustomCommandLauncherFixture],
   [scenarioId('overlay-picker-local-server'), createLocalServerFixture],
   [scenarioId('overlay-picker-signed-out-tool'), createSignedOutToolFixture],
+  [
+    scenarioId('overlay-picker-signed-out-probe-timeout'),
+    createPlannerPickerSignedOutProbeTimeoutFixture,
+  ],
   [scenarioId('overlay-local-connection-ollama'), () => localConnectionFixture()],
   [
     scenarioId('overlay-local-connection-lmstudio'),

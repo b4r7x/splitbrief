@@ -303,7 +303,6 @@ export function PickerView({
         if (remedy !== undefined) return remedy;
       }
     }
-    const signedOut = tool.status.state === 'unauthenticated';
     const stale = staleModelCopy(catalog.modelCounts.stale);
     // A status remediation takes the first row: a runner the picker cannot run says how to fix it,
     // then on its own row what it is, so the advice never runs into the facts. The retained-stale
@@ -323,7 +322,7 @@ export function PickerView({
         source: listing.source,
         unverifiedForPlan: listing.unverifiedForPlan,
         diagnostic: catalog.catalogDiagnostic,
-        signedOut,
+        status: tool.status,
         lane: catalog.catalogLane,
         capabilities: formatPermissionLabels(tool.permissions),
         billing: tool.billing,
@@ -360,10 +359,14 @@ export function PickerView({
       diagnostic: catalog.catalogDiagnostic,
       modelCount: catalog.modelRowCount,
       toolName: tool.displayName,
-      signedOut,
+      status: tool.status,
       budget: ctx.bylineBudget,
     });
-    if (status !== undefined) return status;
+    // A status remediation outranks the listing failure: it comes first, and the failure takes the
+    // row left after it.
+    if (status !== undefined) {
+      return tool.status.remediation === null ? status : `${tool.status.remediation}\n${status}`;
+    }
     const byline =
       ctx.activeColumn === 'right' && row !== null && row.kind !== 'action'
         ? modelsByline(row)

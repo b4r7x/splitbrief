@@ -1416,7 +1416,7 @@ describe('usePickerCatalog count', () => {
         source: undefined,
         unverifiedForPlan: false,
         diagnostic: undefined,
-        signedOut: false,
+        status: { state: 'ready', remediation: null },
         lane: 'ready',
         capabilities: [],
         billing: item.billing,

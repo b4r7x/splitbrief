@@ -311,7 +311,7 @@ function assertTrustedIdentity(
   if (requiresExactTrust) {
     throw error(
       'cli-executable-untrusted',
-      `Refusing untrusted executable for ${diagnosticCommand(command)}. ${cliExecutableTrustRemediation('the CLI')}`,
+      `Refusing untrusted executable for ${diagnosticCommand(command)}. ${cliExecutableTrustRemediation('the CLI', 'doctor')}`,
       { command: diagnosticCommand(command), identity: diagnosticIdentity(identity) },
     );
   }

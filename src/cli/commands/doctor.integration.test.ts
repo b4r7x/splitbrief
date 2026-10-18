@@ -854,7 +854,7 @@ describe('doctor command', () => {
     );
     const { report } = JSON.parse(writes.join('')) as { report: ReadinessReportJson };
     const checks = report.checks.filter((check) => check.stateId === 'auth-policy-denied');
-    const remedy = cliAuthRemediation({ tool: 'antigravity', authChannel: 'session' });
+    const remedy = cliAuthRemediation({ tool: 'antigravity', authChannel: 'session' }, 'doctor');
     expect(checks).toHaveLength(1);
     expect(checks[0]).toMatchObject({ severity: 'blocker', remediation: remedy });
     expect(text).toContain(`Fix: ${remedy}`);
