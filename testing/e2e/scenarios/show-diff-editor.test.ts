@@ -15,6 +15,7 @@ it.each([
   { editor: 'open', code: 0, fullscreen: false },
   { editor: 'less', code: 0, fullscreen: true },
   { editor: 'less', code: 1, fullscreen: false },
+  { editor: 'more', code: 0, fullscreen: true },
 ] as const)(
   'shows how to return while $editor waits, then restores fullscreen=$fullscreen after exit $code',
   async ({ editor, code, fullscreen }) => {
@@ -28,7 +29,7 @@ it.each([
     const instruction =
       editor === 'open'
         ? 'Quit the editor app to return.'
-        : editor === 'less'
+        : editor === 'less' || editor === 'more'
           ? 'Press q to return.'
           : 'Close the file to return.';
     const message = `run.patch open in ${editor}. ${instruction}`;
@@ -69,6 +70,14 @@ it.each([
       child.write('\x03');
       await vi.waitFor(() => expect(fixture.didExit(), rawIo()).toBe(true), { timeout: 5_000 });
       expect(await fixture.exited).toMatchObject({ exitCode: 0 });
+      expect(terminal.buffer.active.type).toBe('normal');
+      if (editor === 'more') {
+        // `more` wrote the patch on the shell screen, below the line: nothing of it is erased.
+        expect(screen()).toContain(message);
+        expect(screen()).toContain('+hello from the run');
+      } else {
+        expect(screen()).not.toContain(message);
+      }
     } finally {
       await fixture.unmount();
     }

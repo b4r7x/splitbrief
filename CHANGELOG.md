@@ -68,6 +68,7 @@
 - **CLI model lists keep a model through one missing read.** A model is added at once and removed only after two agreeing reads.
 - **Flag precedence is stated.** `--planner`, `--implementer`, `--provider` and `--reviewer` help states that a CLI tool id always selects the CLI. A `--*-api-base` flag on a non-API seat warns and is ignored.
 - Home shows no recent-sessions section when there are none.
+- Show diff keeps less open on its own screen with its `Press q to return.` prompt, also when `LESS` or `PAGER` sets `-e`, `-E`, `-F`, `-m`, `-M` or `-X`.
 - **How long a run ran is stated once, when it closes.** The workflow header and sidebar no longer show a clock for the whole run. A closed run states how long it ran in its Run section, for example `Ran 1m 51s`. Time the run sat stopped, halted or at rest is left out, and time it waited on you while it ran counts. A run recorded before this release reads `Ran not recorded`.
 
 ### Removed
@@ -89,6 +90,7 @@
 ### Fixed
 
 - Cursor Agent CLI on Linux reads as signed in after `cursor-agent login`, and a token it refreshes during a run is kept in your own sign-in file.
+- After Show diff opens the patch in less or in your editor in fullscreen mode, the line that says how to return no longer stays in your shell after SPLITBRIEF exits.
 - OpenCode 2 signed in with `opencode auth login` now reads as signed in. Before, the model picker marked its `opencode/…` models `needs sign-in`, and a run on them did not start, with "OpenCode CLI is not signed in". Its models on the other providers it is signed in to now read `signed in · stored credential` instead of `available`.
 - Session options, the command palette, help and `/` completion no longer offer End run while an Apply is unfinished; restore or retry Apply first.
 - After **Re-run Apply** or **Restore backup** on an Apply halt, the transcript shows one Recovery row, such as `Recovery  Re-run Apply → continued`, then `Run continued`. Before, it split the choice and its outcome into two Recovery rows and named **Re-run Apply** as *Try again*.

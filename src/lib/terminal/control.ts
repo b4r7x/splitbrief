@@ -15,10 +15,15 @@ export const terminalSequences = {
   enableBracketedPaste: '\u001b[?2004h',
   disableBracketedPaste: '\u001b[?2004l',
   popKittyKeyboard: '\u001b[<u',
+  eraseDown: '\u001b[J',
 } as const;
 
 export function kittyPushSequence(bitmask: number): string {
   return `\u001b[>${bitmask}u`;
+}
+
+export function cursorUpSequence(rows: number): string {
+  return `\u001b[${rows}A`;
 }
 
 let outputErrorGuardInstalled = false;

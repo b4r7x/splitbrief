@@ -18,14 +18,18 @@ import { makeWorkflowState } from './factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from './temp-dir.js';
 
 interface ShowDiffEditorOptions {
-  /** `less` stands for the pager Show diff falls back to: the run sets no editor. */
-  readonly editor: 'cursor' | 'open' | 'less';
+  /**
+   * `less` stands for the pager Show diff falls back to: the run sets no editor. `more` is a
+   * `PAGER` that prints the patch on the shell screen.
+   */
+  readonly editor: 'cursor' | 'open' | 'less' | 'more';
   readonly exitCode: number;
   readonly fullscreen: boolean;
   readonly viewport: { readonly cols: number; readonly rows: number };
 }
 
 export async function mountShowDiffEditor(options: ShowDiffEditorOptions) {
+  const pager = options.editor === 'less' || options.editor === 'more';
   const dir = createTempDir('show-diff-editor');
   try {
     const fixture = await createFixture(dir, options);
@@ -52,7 +56,8 @@ export async function mountShowDiffEditor(options: ShowDiffEditorOptions) {
           env: {
             ...environment,
             XDG_STATE_HOME: join(dir, 'state'),
-            ...(options.editor !== 'less' && {
+            ...(options.editor === 'more' && { PAGER: 'more' }),
+            ...(!pager && {
               VISUAL: `${shellQuoteArg(fixture.editorPath)} ${fixture.editorArgs.join(' ')}`,
             }),
           },
@@ -96,7 +101,7 @@ export async function mountShowDiffEditor(options: ShowDiffEditorOptions) {
         const waitForText = (text: string) => waitFor(() => screen().includes(text), text);
         const release = () => writeFileSync(fixture.releasePath, 'close');
         // A pager quits on a key it reads from the terminal, like `less`.
-        const quit = () => (options.editor === 'less' ? child.write('q') : release());
+        const quit = () => (pager ? child.write('q') : release());
         let disposal: Promise<void> | undefined;
         return {
           ...fixture,
@@ -200,8 +205,10 @@ async function createFixture(dir: string, options: ShowDiffEditorOptions) {
     options.editor === 'open'
       ? ['-W', '-t']
       : options.editor === 'less'
-        ? ['-+F', '-Ps?e(END) .Press q to return\\.']
-        : ['--wait'];
+        ? ['-+E', '-+F', '-+M', '-+X', '-Ps?e(END) .Press q to return\\.']
+        : options.editor === 'more'
+          ? []
+          : ['--wait'];
   const editorScript = join(binDir, 'editor.cjs');
   writeFileSync(
     editorScript,
@@ -209,8 +216,8 @@ async function createFixture(dir: string, options: ShowDiffEditorOptions) {
 const args = process.argv.slice(2);
 if (JSON.stringify(args.slice(0, -1)) !== ${JSON.stringify(JSON.stringify(editorArgs))}) process.exit(1);
 fs.writeFileSync(${JSON.stringify(startedPath)}, JSON.stringify(args));
-${
-  options.editor === 'less'
+${options.editor === 'more' ? `process.stdout.write(fs.readFileSync(args.at(-1), 'utf8'));\n` : ''}${
+  options.editor === 'less' || options.editor === 'more'
     ? `process.stdin.setRawMode(true);
 process.stdin.on('data', (key) => {
   if (key.includes('q')) process.exit(${options.exitCode});
@@ -231,7 +238,7 @@ setTimeout(() => process.exit(4), 30000).unref();
     `#!/bin/sh\nexec ${shellQuoteArg(process.execPath)} ${shellQuoteArg(editorScript)} "$@"\n`,
     { mode: 0o755 },
   );
-  if (options.editor === 'less') {
+  if (options.editor === 'less' || options.editor === 'more') {
     // An installed GUI editor Show diff must not guess when no editor is set.
     writeFileSync(
       join(binDir, 'cursor'),

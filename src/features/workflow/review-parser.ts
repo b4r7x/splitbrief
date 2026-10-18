@@ -11,6 +11,7 @@ import {
   editorDisplayLabel,
   editorWaitingMessage,
   resolveEditorArgv,
+  viewerRestoresScreen,
   type ViewerArgv,
 } from './editor-command.js';
 import { isImplementerPhase, isLivePhase } from '../../core/phases.js';
@@ -23,6 +24,8 @@ import {
   resumeTerminalAfterEditor,
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
+import { cursorUpSequence, terminalSequences } from '../../lib/terminal/control.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
@@ -70,12 +73,22 @@ export function runEditor({
   spawnEditor,
 }: RunEditorOptions): Promise<EditorExit> {
   suspendTerminalForEditor();
+  const message = editorWaitingMessage({ command, args, kind }, filePath);
+  const messageRows = Math.max(
+    1,
+    Math.ceil(getTerminalCellWidth(message) / process.stdout.columns),
+  );
   return new Promise<EditorExit>((resolve, reject) => {
-    process.stdout.write(`\r\n${editorWaitingMessage({ command, args, kind }, filePath)}\n`);
+    process.stdout.write(`\r\n${message}\n`);
     const child = spawnEditor(command, [...args, filePath]);
     child.once('error', reject);
     child.once('close', (code, signal) => resolve({ code, signal }));
   }).finally(() => {
+    // A viewer that restores the screen leaves the cursor below the waiting line, so this erases
+    // the blank row and the wrapped message rows above it. Any other viewer wrote below the line.
+    if (viewerRestoresScreen({ command, args, kind })) {
+      process.stdout.write(`${cursorUpSequence(messageRows + 1)}\r${terminalSequences.eraseDown}`);
+    }
     resumeTerminalAfterEditor();
   });
 }

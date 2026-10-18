@@ -16,11 +16,13 @@ import { addEvent } from '../../stores/workflow/actions/event.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
+import { terminalSequences } from '../../lib/terminal/control.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { clearAllHandlers, setQueueHandler } from './handlers.js';
 import {
   createReviewInputHandler,
   openReviewFileExternally,
+  runEditor,
   type ReviewInputEffects,
   type SpawnEditor,
 } from './review-parser.js';
@@ -138,6 +140,82 @@ describe('openReviewFileExternally stale-owner feedback', () => {
 
     expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
   });
+
+  it('erases the wrapped waiting line after the editor closes and before the TUI takes the screen back', async () => {
+    setActiveTerminalHandover({
+      fullscreen: true,
+      mouse: false,
+      sourceStdin: { isRaw: false, pause: vi.fn(), resume: vi.fn() },
+    });
+    const planMd = join(tempDir, 'plan.md');
+    writeFileSync(planMd, 'Greet people by name\n');
+    reviewStore.setReviewFile(planMd);
+    const output: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      output.push(String(chunk));
+      return true;
+    });
+    const columns = Object.getOwnPropertyDescriptor(process.stdout, 'columns');
+    Object.defineProperty(process.stdout, 'columns', { value: 40, configurable: true });
+    const child = new EventEmitter();
+    const spawnEditor: SpawnEditor = () => {
+      queueMicrotask(() => {
+        output.push('<editor closed>');
+        child.emit('close', 0, null);
+      });
+      return child;
+    };
+
+    try {
+      await openReviewFileExternally(makeInputMode(), spawnEditor);
+    } finally {
+      if (columns) Object.defineProperty(process.stdout, 'columns', columns);
+      else Reflect.deleteProperty(process.stdout, 'columns');
+      vi.restoreAllMocks();
+    }
+
+    // "plan.json open in mock-editor. Close the file to return." is 56 cells: 2 rows at 40 columns.
+    const written = output.join('');
+    const erase = '\u001b[3A\r\u001b[J';
+    expect(written).toContain('\r\nplan.json open in mock-editor. Close the file to return.\n');
+    expect(written.indexOf('<editor closed>')).toBeLessThan(written.indexOf(erase));
+    expect(written.indexOf(erase)).toBeLessThan(written.indexOf(terminalSequences.enterAltBuffer));
+  });
+
+  it.each([
+    { command: 'more', kind: 'pager', message: 'run.patch open in more. Press q to return.' },
+    { command: 'ed', kind: 'editor', message: 'run.patch open in ed. Close the file to return.' },
+  ] as const)(
+    'leaves the waiting line of $command, which writes on the shell screen',
+    async ({ command, kind, message }) => {
+      const output: string[] = [];
+      vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+        output.push(String(chunk));
+        return true;
+      });
+      const child = new EventEmitter();
+      const spawnEditor: SpawnEditor = () => {
+        queueMicrotask(() => child.emit('close', 0, null));
+        return child;
+      };
+
+      try {
+        await runEditor({
+          command,
+          args: [],
+          kind,
+          filePath: join(tempDir, 'run.patch'),
+          spawnEditor,
+        });
+      } finally {
+        vi.restoreAllMocks();
+      }
+
+      const written = output.join('');
+      expect(written).toContain(`\r\n${message}\n`);
+      expect(written).not.toContain(terminalSequences.eraseDown);
+    },
+  );
 
   it('settles the card with the in-app edit when the external editor fails to start', async () => {
     const planMd = join(tempDir, 'plan.md');
