@@ -26,3 +26,18 @@ export function computeComposerHintBudget(input: { boxWidth: number; paddingX?: 
 export function fitComposerHintKeys(keys: string, budget: number): string {
   return getTerminalCellWidth(keys) <= budget ? keys : '';
 }
+
+// The draft wraps in the cells between the prompt and the in-box hint, or the right padding when
+// no hint shows. The paint and the caret model both read this one width.
+export function computeComposerInputColumns(input: {
+  boxWidth: number;
+  paddingX: number;
+  hintKeys: string;
+}): number {
+  const hintWidth =
+    input.hintKeys === '' ? 0 : COMPOSER_HINT_MARGIN_LEFT + getTerminalCellWidth(input.hintKeys);
+  return Math.max(
+    1,
+    input.boxWidth - COMPOSER_BORDER_WIDTH - input.paddingX * 2 - COMPOSER_PROMPT_WIDTH - hintWidth,
+  );
+}

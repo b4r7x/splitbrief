@@ -11,6 +11,12 @@ import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
+import { overlayRect } from '../../core/navigation/overlay-rect.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { useStores } from '../../stores/use-stores.js';
+
+// The input box's border and padding (2 + 2) and the prompt with its space (2).
+const INPUT_CHROME_COLUMNS = 6;
 
 interface TextInputOverlayProps {
   title: string;
@@ -51,6 +57,11 @@ export function TextInputOverlay({
   const [value, setValue] = useState(initialValue);
   const [visibleRows, setVisibleRows] = useState(rows);
   const focus = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
+  const [{ cols, rows: termRows }] = useStores(terminalSizeStore);
+  const columns = Math.max(
+    1,
+    overlayRect({ cols, rows: termRows, density: 'roomy' }).innerWidth - INPUT_CHROME_COLUMNS,
+  );
 
   useEffect(() => {
     overlayStore.setExclusive(true);
@@ -111,6 +122,7 @@ export function TextInputOverlay({
             rows={rows}
             maxRows={maxRows}
             mask={mask}
+            columns={columns}
             placeholder={placeholder}
             keepPlaceholderWhileFocused
             focus={focus}

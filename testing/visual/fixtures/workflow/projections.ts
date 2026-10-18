@@ -5740,6 +5740,7 @@ const projections = [
   planningProjection,
   startAttachedFilesProjection,
   composerOutsideFileProjection,
+  { ...planningProjection, scenarioId: scenarioId('workflow-composer-long-draft') },
   questionOutsideFileProjection,
   planningPathNoticeProjection,
   startReadinessWarningProjection,

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Box, Text } from 'ink';
 import type { Key } from 'ink';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
+import { DEFAULT_RENDER_VIEWPORT, flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { MultilineInput, type InputAtom, type InputEdit } from './multiline-input.js';
 
 const CTRL_R = '\x12';
@@ -43,6 +43,7 @@ function Harness({ onFileDrop, keyBindings, onShortcut, onSubmit }: HarnessProps
         {...(onSubmit ? { onSubmit } : {})}
         showCursor={false}
         rows={1}
+        columns={DEFAULT_RENDER_VIEWPORT.cols}
       />
     </Box>
   );
@@ -245,6 +246,7 @@ function SanitizeHarness({ onChange }: { onChange?: (value: string) => void }) {
       }}
       showCursor={false}
       rows={1}
+      columns={DEFAULT_RENDER_VIEWPORT.cols}
     />
   );
 }
@@ -287,7 +289,13 @@ function CursorHarness() {
   return (
     <Box flexDirection="column">
       <Text>value:[{value}]</Text>
-      <MultilineInput value={value} onChange={setValue} showCursor={true} rows={1} />
+      <MultilineInput
+        value={value}
+        onChange={setValue}
+        showCursor={true}
+        rows={1}
+        columns={DEFAULT_RENDER_VIEWPORT.cols}
+      />
     </Box>
   );
 }
@@ -544,7 +552,13 @@ function applyAtomEdit(model: AtomModel, edit: InputEdit): AtomModel {
   };
 }
 
-function AtomHarness({ initial, columns }: { initial: AtomModel; columns?: number }) {
+function AtomHarness({
+  initial,
+  columns = DEFAULT_RENDER_VIEWPORT.cols,
+}: {
+  initial: AtomModel;
+  columns?: number;
+}) {
   const [model, setModel] = useState(initial);
   return (
     <Box flexDirection="column">
@@ -555,7 +569,7 @@ function AtomHarness({ initial, columns }: { initial: AtomModel; columns?: numbe
         value={atomValue(model)}
         atoms={atomSpans(model)}
         onChange={(_value, edit) => setModel(applyAtomEdit(model, edit))}
-        {...(columns === undefined ? {} : { columns })}
+        columns={columns}
         showCursor={true}
         rows={1}
         maxRows={6}

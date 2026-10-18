@@ -786,7 +786,7 @@ src/
 ├── components/                    Shared UI (cross-feature)
 │   ├── filter-input.tsx           Filterable text input
 │   ├── input/                     controlled-multiline-input,
-│   │                              measure-box, multiline-input, segments,
+│   │                              multiline-input, segments,
 │   │                              text-editing, viewport-scroll
 │   ├── composer/                  composer, history,
 │   │                              use-history, completion/{layout,

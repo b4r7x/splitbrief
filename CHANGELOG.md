@@ -88,6 +88,7 @@
 
 ### Fixed
 
+- A long message in the composer stays inside its frame: no line runs into the right edge, every wrapped line starts at the same column, and ctrl+a moves to, and ctrl+u deletes back to, the start of the line you see.
 - A check that did not run no longer shows an empty slot where its command goes, in the transcript, the build progress, the input footer and the stop menu: `Plan check K4 · not run · no affected test file found`.
 - A slash command typed under a recovery menu, or in a reply to the planner or the reviewer, opens the command list as it does elsewhere. While the list is open, Tab fills in the highlighted row and keeps you in the composer. Once the list closes, the recovery menu reads `⏎ runs the command · tab back to the actions`. Before, no command list opened, and the menu said ⏎ would retry or continue with your text as the correction, though ⏎ ran the command.
 - In the runner picker, over Setup and in Settings, a tool that is not installed or not signed in gives one short remedy that ends on the picker's own recheck: `Sign in to OpenCode CLI, then ctrl+r.` When its model listing timed out or failed for another reason, the failure follows on the row under the remedy, such as `Model detection timed out`, with no second `ctrl+r`. Before, the remedy said to run `splitbrief doctor` again, which names no tool before a crew is saved, and a failed listing hid the sign-in step.

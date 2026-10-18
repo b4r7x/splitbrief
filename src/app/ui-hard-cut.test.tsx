@@ -44,7 +44,7 @@ function NavigationReturnHarness() {
   return (
     <Layout
       screen={
-        <Box flexDirection="column" height={12} justifyContent="flex-end">
+        <Box flexDirection="column" flexGrow={1} height={12} justifyContent="flex-end">
           <Composer
             commands={[]}
             currentScreen={route.screen}

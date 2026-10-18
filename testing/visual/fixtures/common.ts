@@ -16,6 +16,13 @@ export const PREVIEW_UNAVAILABLE = 'Unavailable in preview';
  */
 export const VISUAL_FIXTURE_EPOCH = 1_783_958_400_000;
 
+/**
+ * A composer draft longer than one row: its words wrap, and the path is longer than any input row,
+ * so it hard-wraps. Home and the workflow screen paint the same draft.
+ */
+export const LONG_COMPOSER_DRAFT =
+  'Keep the receiving flow as it is, but make the scanner screen show the last three pallets with their weights and the time each one was scanned. Read docs/specs/receiving/scanner-screen/pallet-weights-and-scan-history-v3-final-approved-by-the-operations-team.md before you start, and do not change the label printer.';
+
 export interface FixtureContext {
   readonly scenario: ScenarioDefinition;
   readonly checkpoint: CheckpointDefinition;

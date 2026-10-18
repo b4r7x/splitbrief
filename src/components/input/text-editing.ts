@@ -1,4 +1,3 @@
-import { wrapHard } from '../../utils/wrap.js';
 import { normalizeKeySignature } from '../../core/keybindings/normalize.js';
 import { resolveTextEditingKeyAction } from '../../core/keybindings/text.js';
 import type { TextEditingKeyAction } from '../../core/keybindings/text.js';
@@ -8,8 +7,9 @@ import {
   nextGraphemeIndex,
   prevGraphemeIndex,
   wrapVisualLines,
+  wrapWordVisualLines,
 } from '../../core/editor/grapheme-motions.js';
-import { normalizeLineEndings } from './segments.js';
+import { normalizeLineEndings, TAB_SIZE } from './segments.js';
 
 const RAW_BACKSPACE = '\x7f';
 
@@ -45,40 +45,33 @@ function deleteWordBackward(value: string, cursor: number): EditResult {
   };
 }
 
-// Ctrl+A (move-line-start) and Ctrl+U (delete-line-backward) act on VISUAL rows,
-// so this must match how Ink actually paints the composer: Ink auto-wraps <Text>
-// with wrap-ansi WORD-wrap (controlled-multiline-input.tsx), not the grapheme
-// char-wrap in wrapVisualLines. On the composer, wrap-ansi IS the painted-column
-// oracle, so re-pointing this at wrapVisualLines would desync the caret from the
-// rendered rows on wrapped multi-word lines (e.g. "abc defghijk" @10 breaks at the
-// space, not mid-word). The single-width-fn rule (CON-F) applies to the editor
-// surfaces that pre-wrap with wrapVisualLines; the Ink-auto-wrapped composer must
-// keep wrap-ansi here. Offsets stay in UTF-16 code units to match wrap-ansi output.
+// Ctrl+A (move-line-start) and Ctrl+U (delete-line-backward) act on the painted row of the
+// caret. The paint wraps the draft with its caret cell and each tab as TAB_SIZE spaces through
+// wrapWordVisualLines (controlled-multiline-input.tsx), so this builds the same painted text,
+// wraps it the same way and maps the row start back to its offset in `value`. A row that
+// starts inside a tab's spaces starts after the tab.
 function findVisualLineStart(value: string, cursor: number, columns: number): number {
-  const logicalStart = value.lastIndexOf('\n', cursor - 1) + 1;
-  const nextNewline = value.indexOf('\n', logicalStart);
-  const logicalEnd = nextNewline === -1 ? value.length : nextNewline;
-  const logicalLine = value.slice(logicalStart, logicalEnd);
-  const cursorInLine = cursor - logicalStart;
-
-  // Insert cursor space to match Ink rendering (segments are squashed then wrapped).
-  const lineWithCursor = logicalLine.slice(0, cursorInLine) + ' ' + logicalLine.slice(cursorInLine);
-
-  const visualLines = wrapHard(lineWithCursor, columns).split('\n');
-
-  let offset = 0;
-  for (let i = 0; i < visualLines.length; i++) {
-    const line = visualLines[i];
-    if (line === undefined) continue;
-    const lineLen = line.length;
-    const isLast = i === visualLines.length - 1;
-    if (cursorInLine < offset + lineLen || (isLast && cursorInLine <= offset + lineLen)) {
-      break;
+  let painted = '';
+  let caret = 0;
+  const valueOffsets: number[] = [];
+  for (let i = 0; i <= value.length; i++) {
+    if (i === cursor) {
+      caret = painted.length;
+      painted += ' ';
+      valueOffsets.push(i);
     }
-    offset += lineLen;
+    if (i === value.length) break;
+    if (value[i] === '\t') {
+      painted += ' '.repeat(TAB_SIZE);
+      valueOffsets.push(i, ...Array<number>(TAB_SIZE - 1).fill(i + 1));
+    } else {
+      painted += value[i];
+      valueOffsets.push(i);
+    }
   }
-
-  return logicalStart + offset;
+  const rows = wrapWordVisualLines(painted, columns, caret);
+  const rowStart = rows.findLast((row) => row.start <= caret)?.start ?? 0;
+  return valueOffsets[rowStart] ?? 0;
 }
 
 function toNfc(value: string, cursor: number): { value: string; cursor: number } {
