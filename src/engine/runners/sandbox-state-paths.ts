@@ -16,8 +16,16 @@ type HostStateEnvKey =
 
 export type SandboxStateRoot = 'home' | 'config' | 'data';
 
+/**
+ * Where an entry's host root comes from: a host environment variable as it
+ * stands, or an XDG base folder resolved the way OpenCode resolves it
+ * (`xdgBaseDir`), so a set `XDG_CONFIG_HOME` or `XDG_DATA_HOME` replaces the
+ * HOME default instead of adding to it.
+ */
+export type CliStateSource = HostStateEnvKey | 'xdg-config' | 'xdg-data';
+
 type CliStatePath = Readonly<{
-  source: HostStateEnvKey;
+  source: CliStateSource;
   relativePath: string;
   destination: SandboxStateRoot;
   destinationPath: string;
@@ -60,13 +68,7 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
   ],
   opencode: [
     {
-      source: 'HOME',
-      relativePath: '.config/opencode/auth.json',
-      destination: 'config',
-      destinationPath: 'opencode/auth.json',
-    },
-    {
-      source: 'XDG_CONFIG_HOME',
+      source: 'xdg-config',
       relativePath: 'opencode/auth.json',
       destination: 'config',
       destinationPath: 'opencode/auth.json',
@@ -78,13 +80,7 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
       destinationPath: 'opencode/auth.json',
     },
     {
-      source: 'HOME',
-      relativePath: '.local/share/opencode/auth.json',
-      destination: 'data',
-      destinationPath: 'opencode/auth.json',
-    },
-    {
-      source: 'XDG_DATA_HOME',
+      source: 'xdg-data',
       relativePath: 'opencode/auth.json',
       destination: 'data',
       destinationPath: 'opencode/auth.json',

@@ -92,6 +92,23 @@ describe('readHostModelSelection', () => {
     expect(selection).toEqual({ model: 'opencode-go/deepseek-v4.1-flash', source: path });
   });
 
+  it('reads the default config directory when XDG_CONFIG_HOME is empty', async () => {
+    const path = write('.config/opencode/opencode.json', '{"model":"anthropic/claude-opus-5"}');
+
+    const selection = await readHostModelSelection('opencode', { HOME: home, XDG_CONFIG_HOME: '' });
+
+    expect(selection).toEqual({ model: 'anthropic/claude-opus-5', source: path });
+  });
+
+  it('reads the default state directory when XDG_STATE_HOME is empty', async () => {
+    const state = { recent: [{ providerID: 'kilo', modelID: 'kilo-fast' }] };
+    const path = write('.local/state/kilo/model.json', JSON.stringify(state));
+
+    const selection = await readHostModelSelection('kilo-code', { HOME: home, XDG_STATE_HOME: '' });
+
+    expect(selection).toEqual({ model: 'kilo/kilo-fast', source: path });
+  });
+
   it('reads the top-level codex model', async () => {
     const toml = ['# the tool writes this', 'model = "gpt-6-astra"', '', '[profiles.review]'];
     const path = write('.codex/config.toml', toml.join('\n'));

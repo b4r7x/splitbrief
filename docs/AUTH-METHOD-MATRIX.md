@@ -41,7 +41,7 @@ Every tool can hold the planner and the implementer seat; the reviewer seat reus
 | `codex` · `api-key` | none | `OPENAI_API_KEY` only | private `HOME`; nothing bridged |
 | `cursor` · `session` | none | macOS: real `HOME`/`USER` (keychain). Linux: live passthrough of the declared Cursor state paths | `CURSOR_API_KEY` |
 | `cursor` · `api-key` | none | `CURSOR_API_KEY` only | private `HOME`; nothing bridged |
-| `opencode` · `provider-dependent` | none | live passthrough of `~/.config/opencode/auth.json`, **plus every `*_API_KEY` in the parent environment** | nothing |
+| `opencode` · `provider-dependent` | none | live passthrough of the OpenCode config and data folders your own OpenCode uses (`$XDG_CONFIG_HOME/opencode` and `$XDG_DATA_HOME/opencode`, or `~/.config/opencode` and `~/.local/share/opencode` when those variables are unset), **plus every `*_API_KEY` in the parent environment** | nothing |
 | `kilo-code` · `provider-dependent` | none | the tool's live state directory, **plus every `*_API_KEY`** | nothing |
 | `copilot` · `session` | none | `GH_TOKEN` / `GITHUB_TOKEN` **and** a sealed copy of Copilot's credential files, simultaneously | nothing |
 | `command-code` · `session` | none | sealed copy of the tool's credential files | no credential env var exists |
