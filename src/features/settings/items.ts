@@ -15,6 +15,7 @@ import {
 } from '../../core/crew/rows.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { CliToolDetection } from '../../core/discovery/detection.js';
+import type { SavedCatalogOf } from '../../core/discovery/catalog-read-merge.js';
 import {
   SETTINGS_SECTIONS,
   type SettingDef,
@@ -31,6 +32,7 @@ export function buildSettingsItems(
     config: Config;
     defs: readonly SettingDef[];
     cliTools: readonly CliToolDetection[];
+    cliCatalog?: SavedCatalogOf | undefined;
     displayNames?: Partial<Record<CrewSeatId, string>> | undefined;
     seatDisplayName?: SeatDisplayName | undefined;
   }>,

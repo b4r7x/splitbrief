@@ -12,11 +12,13 @@ import { CLI_TOOL_CATALOG, PROVIDER_ORACLE_TOOL_IDS, type CliToolId } from './cl
  * Whether one model route can call. `configured`: a credential in the tool's
  * own listing backs the route's provider, or the tool's model listing serves a
  * model of that provider although no credential names it (a provider set up in
- * the tool's config). `needs-sign-in`: both listings were read and neither
- * holds, or the route is the tool's own gateway account with no credential.
- * `unknown`: the credential listing names no provider at all (`empty`), the
- * credential listing could not be read, or no credential backs the route and the
- * model listing was not read (`catalog-not-read`). `unchecked`: the tool has no
+ * the tool's config), also when the tool stores no credential at all.
+ * `needs-sign-in`: both listings were read and neither holds, or the route is the
+ * tool's own gateway account with no credential. `unknown`: the credential
+ * listing names no provider at all and the model listing was read and does not
+ * serve the route, or the route is the gateway (`empty`); the credential listing
+ * could not be read; or no credential backs the route and the model listing was
+ * not read or its read failed (`catalog-not-read`). `unchecked`: the tool has no
  * credential listing, or the seat or its model names no provider.
  */
 export type RouteAuthState =
@@ -95,7 +97,7 @@ function catalogListsProvider(
 
 /**
  * The one route sign-in fact the picker, readiness, start and a halt read. `catalog` is the tool's
- * own model listing; `undefined` or `models: null` means it was never read.
+ * own model listing; `undefined` or `models: null` means it was never read or its read failed.
  */
 export function routeAuthState(input: {
   tool: CliToolId | undefined;
@@ -117,7 +119,6 @@ export function routeAuthState(input: {
     return { kind: 'unknown', reason: input.providerAuth.reason };
   }
   const facts = input.providerAuth.kind === 'read' ? input.providerAuth.facts : [];
-  if (facts.length === 0) return { kind: 'unknown', reason: 'empty', tool, provider: authKey };
   const fact = facts.find((candidate) => factBacksAuthKey(candidate, authKey));
   if (fact !== undefined) {
     return {
@@ -126,22 +127,46 @@ export function routeAuthState(input: {
       ...(fact.envVar === undefined ? {} : { envVar: fact.envVar }),
     };
   }
-  if (isGatewayAccount(tool, authKey)) return { kind: 'needs-sign-in', tool, provider: authKey };
-  const { catalog } = input;
-  if (catalog === null || catalog === undefined || catalog.models === null) {
-    return { kind: 'unknown', reason: 'catalog-not-read' };
-  }
-  if (catalogListsProvider(catalog.models, catalog.missingOnce, authKey)) {
+  const gateway = isGatewayAccount(tool, authKey);
+  const models = input.catalog?.models ?? null;
+  if (
+    !gateway &&
+    models !== null &&
+    catalogListsProvider(models, input.catalog?.missingOnce, authKey)
+  ) {
     return { kind: 'configured', source: 'listed' };
   }
+  if (!gateway && models === null) return { kind: 'unknown', reason: 'catalog-not-read' };
+  if (facts.length === 0) return { kind: 'unknown', reason: 'empty', tool, provider: authKey };
   return { kind: 'needs-sign-in', tool, provider: authKey };
 }
 
 /**
+ * The providers whose routes one tool can call, by `routeAuthState` on each model its listing
+ * serves. A tool that stores no credential still calls the providers set up in its config.
+ */
+export function servedProviders(input: {
+  tool: CliToolId;
+  providerAuth: CliProviderAuth | undefined;
+  catalog: SavedCatalog | null | undefined;
+}): readonly string[] {
+  const providers = new Set<string>();
+  for (const { id } of input.catalog?.models ?? []) {
+    const provider = modelProviderAuthKey(id);
+    if (provider !== undefined && routeAuthState({ ...input, model: id }).kind === 'configured') {
+      providers.add(provider);
+    }
+  }
+  return [...providers];
+}
+
+/**
  * What a refused model route means. `signed-out`: neither the tool's credential
- * listing nor its model listing holds the route's provider. `wrong-model`: the
- * route can call, or the tool has no listing to ask, so the model is the cause.
- * `unknown`: a listing could not be read, so either cause fits.
+ * listing nor its model listing holds the route's provider, also when the tool
+ * stores no credential at all. `wrong-model`: the route can call, or the tool has
+ * no listing to ask, so the model is the cause. `unknown`: the credential listing
+ * could not be read, or no credential backs the route and the model listing was
+ * not read or its read failed, so either cause fits.
  */
 export type RouteRefusal =
   | Readonly<{ kind: 'signed-out'; provider: string }>
@@ -159,7 +184,9 @@ export function routeRefusal(auth: RouteAuthState): RouteRefusal {
     case 'unchecked':
       return { kind: 'wrong-model' };
     case 'unknown':
-      return { kind: 'unknown' };
+      return auth.reason === 'empty'
+        ? { kind: 'signed-out', provider: auth.provider }
+        : { kind: 'unknown' };
   }
 }
 

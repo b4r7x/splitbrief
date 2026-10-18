@@ -29,7 +29,10 @@ import type { RunnerAvailabilityFact } from '../../core/readiness/checks/availab
 import type { ReadinessCheck } from '../../core/readiness/types.js';
 import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
 import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
-import { runnerDiscoveryContextKey } from '../../engine/detection/runner-evidence.js';
+import {
+  detectRunnerEvidence,
+  runnerDiscoveryContextKey,
+} from '../../engine/detection/runner-evidence.js';
 import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { registerDoctorCommand, type SeatProbeCall } from './doctor.js';
 import { saveDetectionCache } from '../../engine/detection/cache.js';
@@ -37,6 +40,13 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { configStore } from '../../stores/project/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliReadinessFactsFor } from '#testing/helpers/factories/detection.js';
+
+// Reading a tool's model list spawns the tool; a case that counts the reads answers them itself.
+vi.mock('../../engine/detection/runner-evidence.js', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('../../engine/detection/runner-evidence.js')>();
+  return { ...original, detectRunnerEvidence: vi.fn(original.detectRunnerEvidence) };
+});
 
 const EXECUTABLE_DIGEST = 'a'.repeat(64);
 const codexExecutable = CliExecutableReceiptSchema.parse({
@@ -93,6 +103,8 @@ beforeEach(() => {
   originalExitCode = process.exitCode;
   tmp = createTempDir('doctor-command-test');
   shimDir = createTempDir('doctor-command-shim');
+  // OpenCode and Kilo seats read their own config, so they read an empty one, never the tester's.
+  vi.stubEnv('XDG_CONFIG_HOME', join(tmp, 'xdg-config'));
   restoreCliShim = activateCompatibleCliShim(
     installCompatibleCliShim({ directory: shimDir, tool: 'claude-code', authChannel: 'session' }),
   );
@@ -100,6 +112,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   Object.defineProperty(process, 'platform', { value: hostPlatform, configurable: true });
   process.exitCode = originalExitCode;
   configStore.__testReset();
@@ -606,6 +619,141 @@ describe('doctor command', () => {
       .map((check) => check.summary);
     expect(summaries).toContain('BUILD OpenAI Codex CLI · GPT-6-Luna configured.');
     expect(summaries.join('\n')).not.toContain('GPT-6 Luna');
+  });
+
+  // A local-only OpenCode: no stored credential, a provider set up in its own config.
+  it.each([
+    { label: 'on auto', model: '\n  model: auto' },
+    { label: 'with no model', model: '' },
+  ])(
+    'reports no sign-in blocker for a no-credential OpenCode seat $label whose own config selects a model its list serves',
+    async ({ model }) => {
+      initGitRepo(tmp);
+      const configHome = join(tmp, 'config-home');
+      mkdirSync(join(configHome, 'opencode'), { recursive: true });
+      writeFileSync(
+        join(configHome, 'opencode', 'opencode.json'),
+        JSON.stringify({ model: 'ollama/llama3' }),
+      );
+      vi.stubEnv('XDG_CONFIG_HOME', configHome);
+      try {
+        writeConfig(
+          tmp,
+          validConfigYaml().replace(
+            /implementer:\n( {2}.*\n)+/,
+            `implementer:\n  kind: cli\n  tool: opencode${model}\n`,
+          ),
+        );
+        await saveDetectionCache({
+          projectDir: tmp,
+          snapshot: {
+            contextKey: 'remembered',
+            fetchedAt: 1,
+            validatedAt: 1,
+            generation: 1,
+            requestId: 1,
+            providers: [],
+            cliTools: [],
+            cliCatalogs: [{ tool: 'opencode', models: [{ id: 'ollama/llama3' }], probedAt: 1 }],
+          },
+        });
+        const storesNoCredential = deriveCliReadiness({
+          tool: 'opencode',
+          enabled: true,
+          installation: 'installed',
+          executable: {
+            path: '/usr/local/bin/opencode',
+            fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+          },
+          trust: 'trusted',
+          installedVersion: CLI_TOOL_CATALOG.opencode.compatibility.testedVersion,
+          testedVersion: CLI_TOOL_CATALOG.opencode.compatibility.testedVersion,
+          compatibility: 'compatible',
+          auth: 'unauthenticated',
+          authChannel: 'provider-dependent',
+          providerAuth: { kind: 'empty' },
+          probedAt: 1,
+        });
+        const writes = captureStdout();
+        await runDoctor(
+          ['--project', tmp, '--json'],
+          async () => [...deterministicCliReadiness(), storesNoCredential],
+          async () => null,
+          async () => [],
+          async () => [],
+        );
+        const checks =
+          (JSON.parse(writes.join('').trim()) as { report?: { checks?: DoctorJsonCheck[] } }).report
+            ?.checks ?? [];
+
+        expect(checks.find((check) => check.id === 'runners.cli.opencode.readiness')).toMatchObject(
+          { severity: 'ok' },
+        );
+        expect(checks.filter((check) => check.severity === 'blocker')).toEqual([]);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
+  it('reads the model list once for two OpenCode seats that store no credential, across both passes', async () => {
+    initGitRepo(tmp);
+    const configHome = join(tmp, 'config-home');
+    vi.stubEnv('XDG_CONFIG_HOME', configHome);
+    vi.mocked(detectRunnerEvidence).mockImplementation(async ({ context, includeCatalog }) => ({
+      ...freshCodexEvidence(context, { auth: 'missing' }),
+      runner: { id: 'opencode', kind: 'cli', locality: 'local', enabled: 'enabled' },
+      providerAuth: { kind: 'empty' },
+      ...(includeCatalog === true && {
+        catalog: { kind: 'success', value: [{ id: 'ollama/llama3' }] },
+      }),
+    }));
+    try {
+      writeConfig(
+        tmp,
+        validConfigYaml()
+          .replace(
+            /planner:\n( {2}.*\n)+/,
+            'planner:\n  kind: cli\n  tool: opencode\n  model: ollama/llama3\n',
+          )
+          .replace(
+            /implementer:\n( {2}.*\n)+/,
+            'implementer:\n  kind: cli\n  tool: opencode\n  model: ollama/llama3\n',
+          ),
+      );
+      const storesNoCredential = deriveCliReadiness({
+        tool: 'opencode',
+        enabled: true,
+        installation: 'installed',
+        executable: {
+          path: '/usr/local/bin/opencode',
+          fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+        },
+        trust: 'trusted',
+        installedVersion: CLI_TOOL_CATALOG.opencode.compatibility.testedVersion,
+        testedVersion: CLI_TOOL_CATALOG.opencode.compatibility.testedVersion,
+        compatibility: 'compatible',
+        auth: 'unauthenticated',
+        authChannel: 'provider-dependent',
+        providerAuth: { kind: 'empty' },
+        probedAt: 1,
+      });
+      const writes = captureStdout();
+      await runDoctor(['--project', tmp, '--json'], async () => [storesNoCredential]);
+      const checks =
+        (JSON.parse(writes.join('').trim()) as { report?: { checks?: DoctorJsonCheck[] } }).report
+          ?.checks ?? [];
+
+      expect(
+        vi
+          .mocked(detectRunnerEvidence)
+          .mock.calls.filter(([input]) => input.includeCatalog === true),
+      ).toHaveLength(1);
+      expect(checks.filter((check) => check.severity === 'blocker')).toEqual([]);
+    } finally {
+      vi.mocked(detectRunnerEvidence).mockReset();
+      vi.unstubAllEnvs();
+    }
   });
 
   it.each([

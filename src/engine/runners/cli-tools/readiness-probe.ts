@@ -168,10 +168,13 @@ async function declaredReadinessEvidence({
   }
   // A credential the staged child cannot read is a credential it does not have,
   // whatever the host holds. Running the tool's own status command here would
-  // only re-observe that, at the cost of a subprocess. An unobservable one is
-  // different: the status command below is the only thing that can see it.
+  // only re-observe that, at the cost of a subprocess: a credential listing would
+  // name no provider. An unobservable one is different: the status command below
+  // is the only thing that can see it.
   if (authEnvironment.credential === 'absent' && authChannelRequiresCredential(authChannel)) {
-    return { version, auth: 'missing' };
+    return isProviderOracleProbe({ tool, command: authProbe })
+      ? { version, auth: 'missing', providerAuth: { kind: 'empty' } }
+      : { version, auth: 'missing' };
   }
   const authCommand = authProbeCommandForVersion(tool, authProbe, version);
   const output = await runProbe({

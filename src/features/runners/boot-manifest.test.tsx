@@ -56,6 +56,71 @@ describe('BootManifest', () => {
     ui.unmount();
   });
 
+  it.each([
+    ['ticks', ['ollama/llama3'], glyph('check', 'unicode')],
+    ['warns on', ['lmstudio/qwen3'], glyph('statusWarning', 'unicode')],
+  ])(
+    '%s a seat on a tool that stores no credential by whether its model list serves the route',
+    (_case, models, mark) => {
+      configStore.__testReset({
+        projectDir: '/tmp/project',
+        config: makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'ollama/llama3' } }),
+      });
+      detectionStore.hydrate({
+        providers: [],
+        cliTools: [
+          cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+        ],
+        cliCatalogs: [{ tool: 'opencode', models: models.map((id) => ({ id })), probedAt: 100 }],
+        fetchedAt: 100,
+        validatedAt: 100,
+        generation: 0,
+        requestId: 0,
+        contexts: CONTEXTS,
+      });
+      const ui = renderFeature(<BootManifest />);
+      const plan = stripAnsiStyles(ui.lastFrame())
+        .split('\n')
+        .find((line) => line.includes('PLAN'));
+      expect(plan?.trim().endsWith(mark)).toBe(true);
+      ui.unmount();
+    },
+  );
+
+  it.each([
+    ['on auto', { model: 'auto' }],
+    ['with no model', {}],
+  ])(
+    "ticks a seat %s on a tool that stores no credential by the model the tool's own config selects",
+    (_case, model) => {
+      configStore.__testReset({
+        projectDir: '/tmp/project',
+        config: makeConfig({ planner: { kind: 'cli', tool: 'opencode', ...model } }),
+      });
+      detectionStore.hydrate({
+        providers: [],
+        cliTools: [
+          {
+            ...cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+            selectedModel: 'ollama/llama3',
+          },
+        ],
+        cliCatalogs: [{ tool: 'opencode', models: [{ id: 'ollama/llama3' }], probedAt: 100 }],
+        fetchedAt: 100,
+        validatedAt: 100,
+        generation: 0,
+        requestId: 0,
+        contexts: CONTEXTS,
+      });
+      const ui = renderFeature(<BootManifest />);
+      const plan = stripAnsiStyles(ui.lastFrame())
+        .split('\n')
+        .find((line) => line.includes('PLAN'));
+      expect(plan?.trim().endsWith(glyph('check', 'unicode'))).toBe(true);
+      ui.unmount();
+    },
+  );
+
   it('leaves a remembered stale lane pending instead of checking it off', () => {
     detectionStore.hydrate({
       providers: [],

@@ -24,7 +24,6 @@ import {
   parseCopilotHelpConfigCatalog,
   parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
-  parseOpenCodeNativeModelCatalog,
 } from '../../../src/engine/providers/cli-model-catalog.js';
 import { resolveSeatDisplayName } from '../../../src/engine/providers/model/display-names.js';
 import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js';
@@ -77,6 +76,8 @@ import { hashTaskBrief } from '../../../src/core/evidence/brief-hash.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
 import { VISUAL_FIXTURE_EPOCH } from './common.js';
 import {
+  opencodeApiModels,
+  opencodeConfigOnlyModels,
   publishVisualDiscovery,
   seedVisualConfig,
   seedRoutedCrew,
@@ -119,18 +120,6 @@ const OPENCODE_ROUTED_MODEL = 'openai/gpt-5.6-luna';
 
 /** Opens the picker on OpenCode with the model column live, as the frames show. */
 const OPENCODE_FOCUS = 'tool:opencode';
-
-// The whole of `opencode api GET /api/model` on opencode 2.0.14, the listing the probe reads, with
-// `location.directory` neutralised. `api-model.json` beside it is the five-row parser fixture.
-function opencodeApiModels(): readonly DetectedModel[] {
-  const stdout = readFileSync(
-    join(import.meta.dirname, '../../fixtures/opencode/api-model-full.json'),
-    'utf8',
-  );
-  const catalog = parseOpenCodeNativeModelCatalog(stdout);
-  if (catalog === null) throw new Error('opencode/api-model-full.json did not parse');
-  return nativeCliCatalogToDetectedModels(catalog);
-}
 
 // `kilo models --verbose` on kilo 7.0.49, 29 of its 132 blocks verbatim: each model a test names,
 // enough free routes to scroll the kilo-free picker at 120x40, and one model per provider prefix.
@@ -491,6 +480,28 @@ function seedOpencodeModelListUnread(): void {
 }
 
 const OPENCODE_UNLISTED_ROUTE = 'ollama-cloud/glm-5';
+
+/**
+ * OpenCode with Ollama Cloud set up only in its own config: `opencode auth list` prints no
+ * credential, and its model listing serves its own gateway and that provider.
+ */
+function seedConfigOnlyOpencode(): void {
+  seedConfig({ planner: { kind: 'cli', tool: 'opencode', model: OPENCODE_CONFIG_ROUTE } })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } })],
+    cliModels: [
+      catalogAttempt({
+        tool: 'opencode',
+        outcome: {
+          kind: 'success',
+          value: opencodeConfigOnlyModels(),
+        },
+      }),
+    ],
+  });
+}
+
+const OPENCODE_CONFIG_ROUTE = 'ollama-cloud/glm-5.3';
 
 /**
  * The one detection an oracle tool can carry with no `providerAuth` at all: the
@@ -1080,6 +1091,15 @@ const createRoutesModelListUnreadFixture: FixtureFactory = () =>
     seed: () => {
       seedOpencodeModelListUnread();
       pickerViewStore.expand(OPENCODE_UNLISTED_ROUTE);
+    },
+    focus: OPENCODE_FOCUS,
+  });
+const createConfigOnlyToolFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedConfigOnlyOpencode();
+      pickerViewStore.expand(OPENCODE_CONFIG_ROUTE);
     },
     focus: OPENCODE_FOCUS,
   });
@@ -2229,6 +2249,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-claude-effort-returned'), createClaudeEffortReturnedFixture],
   [scenarioId('overlay-picker-provider-expanded-empty'), createProviderExpandedEmptyFixture],
   [scenarioId('overlay-picker-routes-model-list-unread'), createRoutesModelListUnreadFixture],
+  [scenarioId('overlay-picker-config-only-tool'), createConfigOnlyToolFixture],
   [
     scenarioId('overlay-picker-provider-expanded-unreadable'),
     createProviderExpandedUnreadableFixture,

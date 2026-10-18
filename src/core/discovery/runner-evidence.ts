@@ -1,4 +1,5 @@
 import type { CliProviderAuth, DetectedModel, ExecutableIdentity } from './detection.js';
+import type { RouteAuthState } from '../runners/route-auth.js';
 
 export type { ExecutableIdentity };
 
@@ -120,6 +121,8 @@ export type StartAdmissionOptions = Readonly<{
   requiredFacts: readonly StartFact[];
   interaction: 'interactive' | 'headless';
   unverifiedAuth: 'denied' | 'disclosed' | 'allowed';
+  /** Whether the seat's model route can call, which a tool storing no credential still can. */
+  route: RouteAuthState;
 }>;
 
 export type StartAdmission =
@@ -231,10 +234,14 @@ export function admitStart(options: StartAdmissionOptions): StartAdmission {
  * Denying interactively — the old first-class-tier behaviour — punished the
  * honesty: it turned "cannot verify without spending a call" into a runner
  * that could never start.
+ *
+ * A tool that stores no credential (`missing`) still calls a provider set up in
+ * its own config: a route its model listing serves is admitted.
  */
 function admitAuthentication(options: StartAdmissionOptions): StartAdmission | null {
   const { auth } = options.evidence;
   if (auth === 'verified' || auth === 'not-required') return null;
+  if (auth === 'missing' && options.route.kind === 'configured') return null;
   if (auth !== 'unknown') {
     return { kind: 'denied', reason: { kind: 'authentication', fact: auth } };
   }

@@ -148,7 +148,11 @@ export async function loadSeatSwapContext(
   let blockedReason: string | undefined;
   if (fallback !== undefined) {
     const detection = rememberedTools.find((cli) => cli.tool === fallback.tool);
-    blockedReason = fallbackBlockedReason(detection);
+    blockedReason = fallbackBlockedReason(
+      fallback,
+      detection,
+      remembered?.cliCatalogs?.find((catalog) => catalog.tool === fallback.tool),
+    );
     if (blockedReason === undefined) {
       detectedTools = [
         {

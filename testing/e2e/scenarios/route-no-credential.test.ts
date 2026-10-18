@@ -31,6 +31,7 @@ const SIGN_IN_FIX =
 const SIGNED_OUT =
   'OpenCode CLI has no credential for ollama-cloud. Run `opencode auth login ollama-cloud` in a separate terminal, then retry.';
 const WRONG_MODEL = `Model ${ROUTE_MODEL} is not listed by OpenCode CLI; pick a listed model`;
+const LOCAL_MODEL = 'ollama/llama3';
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
 let trustHome: ReturnType<typeof createTrustHome> | undefined;
@@ -49,19 +50,26 @@ afterEach(() => {
  * OpenCode whose Ollama Cloud route refuses every call. Signed in to OpenCode Go only, or, with
  * `credential`, to Ollama Cloud too, so the refusal is the model's and not the account's. Its model
  * list serves OpenCode Go only, as a real OpenCode lists no model of a provider it cannot reach.
+ * A `localOnly` OpenCode stores no credential at all and serves the Ollama set up in its config.
  */
 function installShims(
   binDir: string,
   opencodeCalls: string,
   claudeCalls: string,
   credential: boolean,
+  localOnly: boolean,
 ): void {
-  const providers = [
-    { name: 'OpenCode Go', connections: [{ type: 'credential' }] },
-    ...(credential
-      ? [{ id: 'ollama-cloud', name: 'Ollama Cloud', connections: [{ type: 'credential' }] }]
-      : []),
-  ];
+  const providers = localOnly
+    ? []
+    : [
+        { name: 'OpenCode Go', connections: [{ type: 'credential' }] },
+        ...(credential
+          ? [{ id: 'ollama-cloud', name: 'Ollama Cloud', connections: [{ type: 'credential' }] }]
+          : []),
+      ];
+  const served = localOnly
+    ? { id: 'llama3', providerID: 'ollama' }
+    : { id: 'kimi-k3', providerID: 'opencode-go' };
   writeFakeNodeCli(
     binDir,
     'opencode',
@@ -76,7 +84,7 @@ if (args[0] === 'auth' && args[1] === 'list') {
   process.exit(0);
 }
 if (args.join(' ') === 'api GET /api/model') {
-  console.log(JSON.stringify({ data: [{ id: 'kimi-k3', providerID: 'opencode-go' }] }));
+  console.log(JSON.stringify({ data: [${JSON.stringify(served)}] }));
   process.exit(0);
 }
 if (args[0] === 'serve') {
@@ -136,27 +144,43 @@ if (args.includes('--input-format')) {
 type RouteOptions = {
   seat?: 'build' | 'review';
   credential?: boolean;
+  localOnly?: boolean;
+  /** Whether the project holds a saved OpenCode model list; without one, doctor and start read it fresh. */
+  savedList?: boolean;
   fallback?: { tool: 'claude-code'; model: string };
 };
 
-const OPENCODE_ROUTE = { kind: 'cli', tool: 'opencode', model: ROUTE_MODEL } as const;
-
-async function routeFixture({ seat = 'build', credential = false, fallback }: RouteOptions = {}) {
+async function routeFixture({
+  seat = 'build',
+  credential = false,
+  localOnly = false,
+  savedList = true,
+  fallback,
+}: RouteOptions = {}) {
+  const opencodeRoute = {
+    kind: 'cli',
+    tool: 'opencode',
+    model: localOnly ? LOCAL_MODEL : ROUTE_MODEL,
+  } as const;
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
   trustHome = createTrustHome('e2e-route-no-credential-home');
+  // OpenCode reads its own config, so it reads the one under this home, never the tester's.
+  vi.stubEnv('XDG_CONFIG_HOME', join(trustHome.home, '.config'));
   mkdirSync(join(trustHome.home, '.claude'), { recursive: true });
   writeFileSync(join(trustHome.home, '.claude', '.credentials.json'), '{"fixture":true}\n');
-  mkdirSync(join(trustHome.home, '.local', 'share', 'opencode'), { recursive: true });
-  writeFileSync(
-    join(trustHome.home, '.local', 'share', 'opencode', 'auth.json'),
-    '{"opencode-go":{"type":"api"}}\n',
-  );
+  if (!localOnly) {
+    mkdirSync(join(trustHome.home, '.local', 'share', 'opencode'), { recursive: true });
+    writeFileSync(
+      join(trustHome.home, '.local', 'share', 'opencode', 'auth.json'),
+      '{"opencode-go":{"type":"api"}}\n',
+    );
+  }
   const binDir = join(target.tmpDir, 'bin');
   mkdirSync(binDir);
   const opencodeCalls = join(target.tmpDir, 'opencode-calls.jsonl');
   const claudeCalls = join(target.tmpDir, 'claude-calls.jsonl');
-  installShims(binDir, opencodeCalls, claudeCalls, credential);
+  installShims(binDir, opencodeCalls, claudeCalls, credential, localOnly);
   restorePath = activateSafeCliShimPath(binDir);
 
   const config = loadConfig(target.projectDir).config;
@@ -166,7 +190,7 @@ async function routeFixture({ seat = 'build', credential = false, fallback }: Ro
       ? {
           ...config,
           implementer: {
-            ...OPENCODE_ROUTE,
+            ...opencodeRoute,
             contextLength: 200_000,
             ...(fallback !== undefined && { fallback }),
           },
@@ -174,7 +198,7 @@ async function routeFixture({ seat = 'build', credential = false, fallback }: Ro
       : {
           ...config,
           implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
-          reviewer: OPENCODE_ROUTE,
+          reviewer: opencodeRoute,
         },
   );
   const cliTools = await detectAvailableCliTools({
@@ -184,12 +208,22 @@ async function routeFixture({ seat = 'build', credential = false, fallback }: Ro
     role: 'implementer',
   });
   expect(Object.fromEntries(cliTools.map((tool) => [tool.tool, tool.diagnostic.state]))).toEqual({
-    opencode: 'ready',
+    opencode: localOnly ? 'unauthenticated' : 'ready',
     'claude-code': 'ready',
   });
-  await rememberDetectedTools(target.projectDir, cliTools, [
-    { tool: 'opencode', models: [{ id: 'opencode-go/kimi-k3' }], probedAt: Date.now() },
-  ]);
+  await rememberDetectedTools(
+    target.projectDir,
+    cliTools,
+    savedList
+      ? [
+          {
+            tool: 'opencode',
+            models: [{ id: localOnly ? LOCAL_MODEL : 'opencode-go/kimi-k3' }],
+            probedAt: Date.now(),
+          },
+        ]
+      : [],
+  );
   const offlinePreload = join(target.tmpDir, 'offline.mjs');
   writeFileSync(
     offlinePreload,
@@ -373,4 +407,51 @@ describe('e2e: a REVIEW route refused by OpenCode', { timeout: 240_000 }, () => 
     );
     expect(recordedCalls(opencodeCalls)).toEqual([{ model: ROUTE_MODEL }]);
   });
+});
+
+describe('e2e: a local-only OpenCode that stores no credential', { timeout: 240_000 }, () => {
+  it.each([
+    { label: 'saved', savedList: true },
+    { label: 'read fresh', savedList: false },
+  ])(
+    'doctor shows no blocker for a BUILD route its $label model list serves, and claims no sign-in',
+    async ({ savedList }) => {
+      const { target } = await routeFixture({ localOnly: true, savedList });
+
+      const json = await cli(target, ['doctor'], { timeoutMs: 60_000, json: true });
+      const record = JSON.parse(json.stdout.trim()) as {
+        report: { checks: { id: string; severity: string; summary: string }[] };
+      };
+      const runnerChecks = record.report.checks.filter((check) => check.id.startsWith('runners.'));
+      // The fixture's PLAN is a repository-local command, which doctor refuses on its own.
+      const buildBlockers = runnerChecks.filter(
+        (check) => check.severity === 'blocker' && /opencode|implementer/.test(check.id),
+      );
+      expect(buildBlockers, json.stderr).toEqual([]);
+      expect(runnerChecks.find((check) => check.id === 'runners.cli.opencode.readiness')).toEqual(
+        expect.objectContaining({
+          severity: 'ok',
+          summary: expect.stringContaining('stores no credential'),
+        }),
+      );
+      expect(runnerChecks.map((check) => check.summary).join('\n')).not.toMatch(
+        /OpenCode CLI (is not signed in|has no credential|is installed, trusted, compatible, and signed in)/,
+      );
+    },
+  );
+
+  it.each([
+    { label: 'saved', savedList: true },
+    { label: 'read fresh', savedList: false },
+  ])(
+    'start admits the BUILD seat by its $label model list and calls OpenCode on that route',
+    async ({ savedList }) => {
+      const { target, opencodeCalls } = await routeFixture({ localOnly: true, savedList });
+      const { run } = await startRun(target);
+      const output = `${run.stdout}\n${run.stderr}`;
+
+      expect(output).not.toContain('OpenCode CLI is not signed in.');
+      expect(recordedCalls(opencodeCalls)).toEqual([{ model: LOCAL_MODEL }]);
+    },
+  );
 });

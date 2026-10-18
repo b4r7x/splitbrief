@@ -61,6 +61,8 @@ export function SettingsOverlay() {
   const displayNames = useCrewDisplayNames(config);
   const detectedContextLength = configStore.use((state) => state.detectedContextLength);
   const cliTools = detectionStore.use((state) => state.cliTools);
+  // A catalog-only publication changes a fallback's route, so it rerenders the rows.
+  detectionStore.use((state) => state.cliCatalogOutcomes);
   const [{ focus }, { cols, rows }, feedback] = useStores(
     overlayStore,
     terminalSizeStore,
@@ -80,6 +82,7 @@ export function SettingsOverlay() {
     config,
     defs: SETTINGS_DEFS,
     cliTools,
+    cliCatalog: (tool) => modelCacheStore.getCliCatalogRuntime({ tool }),
     displayNames,
     seatDisplayName: (runner, role) => resolveSeatDisplayName(runner, role, modelCacheStore),
   });

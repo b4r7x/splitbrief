@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { RouteAuthState } from '../runners/route-auth.js';
 import {
   admitStart,
   type AuthFact,
@@ -56,7 +57,11 @@ function freshEvidence(
   };
 }
 
-function startAdmission(evidence: RunnerEvidence, requiredFacts: readonly StartFact[] = []) {
+function startAdmission(
+  evidence: RunnerEvidence,
+  requiredFacts: readonly StartFact[] = [],
+  route: RouteAuthState = { kind: 'unchecked' },
+) {
   return admitStart({
     evidence,
     expectedContextKey: 'runner:codex:context-1',
@@ -64,6 +69,7 @@ function startAdmission(evidence: RunnerEvidence, requiredFacts: readonly StartF
     requiredFacts,
     interaction: 'interactive',
     unverifiedAuth: 'denied',
+    route,
   });
 }
 
@@ -93,6 +99,7 @@ describe('runner evidence', () => {
         requiredFacts: ['authentication'],
         interaction,
         unverifiedAuth,
+        route: { kind: 'unchecked' },
       });
 
     expect(admit('interactive', 'disclosed')).toEqual({ kind: 'admitted' });
@@ -108,6 +115,27 @@ describe('runner evidence', () => {
       reason: { kind: 'authentication-unverified' },
     });
   });
+
+  it('admits a tool with no stored credential on a route its model list serves', () => {
+    const evidence = freshEvidence({ auth: 'missing' });
+
+    expect(
+      startAdmission(evidence, ['authentication'], { kind: 'configured', source: 'listed' }),
+    ).toEqual({ kind: 'admitted' });
+  });
+
+  it.each([
+    { kind: 'unchecked' },
+    { kind: 'unknown', reason: 'empty', tool: 'opencode', provider: 'ollama' },
+    { kind: 'needs-sign-in', tool: 'opencode', provider: 'ollama' },
+  ] satisfies readonly RouteAuthState[])(
+    'denies a tool with no stored credential on a $kind route',
+    (route) => {
+      expect(startAdmission(freshEvidence({ auth: 'missing' }), ['authentication'], route)).toEqual(
+        { kind: 'denied', reason: { kind: 'authentication', fact: 'missing' } },
+      );
+    },
+  );
 
   it.each([
     { kind: 'unsupported' },

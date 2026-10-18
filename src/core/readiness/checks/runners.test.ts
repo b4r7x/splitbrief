@@ -221,27 +221,72 @@ describe('buildRunnerChecks availability guidance', () => {
       });
     });
 
-    it.each([
-      ['a route its model list serves', [{ id: 'ollama-cloud/deepseek-v4.1-flash' }]],
-      ['a route its model list does not serve', [{ id: 'opencode-go/kimi-k3' }]],
-    ])('leaves a tool signed in to no provider to its own sign-in line, on %s', (_, models) => {
+    const storesNoCredential = cliReadiness({
+      tool: 'opencode',
+      authChannel: 'provider-dependent',
+      auth: 'unauthenticated',
+      providerAuth: { kind: 'empty' },
+    });
+
+    it('keeps the sign-in blocker of a tool that stores no credential when its model list does not serve the route', () => {
       const checks = buildRunnerChecks({
         config,
-        cliReadiness: [
-          cliReadiness({
-            tool: 'opencode',
-            authChannel: 'provider-dependent',
-            auth: 'unauthenticated',
-            providerAuth: { kind: 'empty' },
-          }),
-        ],
-        cliCatalogs: [{ tool: 'opencode', models }],
+        cliReadiness: [storesNoCredential],
+        cliCatalogs: [{ tool: 'opencode', models: [{ id: 'opencode-go/kimi-k3' }] }],
       });
       expect(checks.find((candidate) => candidate.id.startsWith('runners.route.'))).toBeUndefined();
       expect(
         checks.find((candidate) => candidate.id === 'runners.cli.opencode.readiness'),
-      ).toMatchObject({ severity: 'blocker', runnerCause: { cause: 'unauthenticated' } });
+      ).toMatchObject({
+        severity: 'blocker',
+        runnerCause: { cause: 'unauthenticated', seats: ['BUILD'] },
+      });
       expect(checks.map((check) => check.summary).join('\n')).not.toMatch(/available/i);
+    });
+
+    it('lifts the sign-in blocker for a route its model list serves, without claiming a sign-in', () => {
+      const local = makeConfig({
+        implementer: { kind: 'cli', tool: 'opencode', model: 'ollama/llama3' },
+      });
+      const checks = buildRunnerChecks({
+        config: local,
+        cliReadiness: [storesNoCredential],
+        cliCatalogs: [{ tool: 'opencode', models: [{ id: 'ollama/llama3' }] }],
+      });
+      expect(
+        checks.filter(
+          (check) => check.severity === 'blocker' && check.metadata?.tool !== 'claude-code',
+        ),
+      ).toEqual([]);
+      expect(checks.find((candidate) => candidate.id.startsWith('runners.route.'))).toBeUndefined();
+      const tool = checks.find((candidate) => candidate.id === 'runners.cli.opencode.readiness');
+      expect(tool).toMatchObject({
+        severity: 'ok',
+        summary:
+          'OpenCode CLI is installed, trusted, compatible, and stores no credential; it calls the providers set up in its config.',
+      });
+      expect(tool?.summary).not.toContain('signed in');
+      expect(tool?.fix).toBeUndefined();
+      expect(tool?.runnerCause).toBeUndefined();
+    });
+
+    it('names only the seats whose route its model list does not serve in the sign-in blocker', () => {
+      const mixed = makeConfig({
+        planner: { kind: 'cli', tool: 'opencode', model: 'ollama/llama3' },
+        implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },
+      });
+      const checks = buildRunnerChecks({
+        config: mixed,
+        cliReadiness: [storesNoCredential],
+        cliCatalogs: [{ tool: 'opencode', models: [{ id: 'ollama/llama3' }] }],
+      });
+      expect(
+        checks.find((candidate) => candidate.id === 'runners.cli.opencode.readiness'),
+      ).toMatchObject({
+        severity: 'blocker',
+        summary: 'OpenCode CLI is not signed in.',
+        runnerCause: { cause: 'unauthenticated', seats: ['BUILD'] },
+      });
     });
 
     it('claims nothing when the route is signed in or the listing is unreadable', () => {

@@ -1,13 +1,17 @@
 import { runnerSlotId, type RunnerConfigSlot } from '../../config/accessors/runner-config.js';
 import { formatSlotLabel } from '../../crew/identity.js';
 import type { SavedCatalog } from '../../discovery/catalog-read-merge.js';
-import type { CliProviderAuth } from '../../discovery/detection.js';
 import {
   CLI_TOOL_CATALOG,
   type CliToolId,
   type CliAuthChannelId,
 } from '../../runners/cli-tool-catalog.js';
-import { routeAuthState, routeNoCredential, routeSignInCommand } from '../../runners/route-auth.js';
+import {
+  routeAuthState,
+  routeNoCredential,
+  routeSignInCommand,
+  type RouteAuthState,
+} from '../../runners/route-auth.js';
 import {
   cliReadinessCheckId,
   type CliReadinessResult,
@@ -29,6 +33,14 @@ function diagnosticExecutablePath(result: CliReadinessResult): string | null {
 /** A tool's remembered model catalog, which tells a route set up in the tool's own config. */
 export type RememberedToolCatalog = Readonly<{ tool: CliToolId }> & SavedCatalog;
 
+/** What each configured CLI seat's route is read against. */
+export type CliRouteInputs = Readonly<{
+  /** The model each CLI seat calls, by `runnerSlotId`: `auto` or no model resolved as start does. */
+  seatModels: ReadonlyMap<string, string | undefined>;
+  /** The tools' model lists: the saved list, or a fresh read when none is saved and a route waits on it. */
+  catalogs: readonly RememberedToolCatalog[];
+}>;
+
 /** One seat of a configured CLI, as readiness reads it. */
 export type ConfiguredCliSeat = Readonly<{
   slot: RunnerConfigSlot;
@@ -41,21 +53,17 @@ export type ConfiguredCliSeat = Readonly<{
  * in: the tool is ready, but every call on that route is refused. Readiness
  * and start report it the same way, with the tool's sign-in command.
  */
-export function routeSignInCheck(input: {
-  slot: RunnerConfigSlot;
-  tool: CliToolId;
-  model: string | undefined;
-  providerAuth: CliProviderAuth | undefined;
-  catalog: SavedCatalog | undefined;
-}): ReadinessCheck | undefined {
-  const auth = routeAuthState(input);
+export function routeSignInCheck(
+  slot: RunnerConfigSlot,
+  auth: RouteAuthState,
+): ReadinessCheck | undefined {
   if (auth.kind !== 'needs-sign-in') return undefined;
-  const seat = formatSlotLabel(input.slot);
+  const seat = formatSlotLabel(slot);
   return {
-    id: `runners.route.${runnerSlotId(input.slot)}`,
+    id: `runners.route.${runnerSlotId(slot)}`,
     severity: 'warning',
-    summary: `${seat}: ${routeNoCredential(input.tool, auth.provider)}.`,
-    fix: `Run \`${routeSignInCommand(input.tool, auth.provider)}\`, or choose another model in Settings > Crew > ${seat}.`,
+    summary: `${seat}: ${routeNoCredential(auth.tool, auth.provider)}.`,
+    fix: `Run \`${routeSignInCommand(auth.tool, auth.provider)}\`, or choose another model in Settings > Crew > ${seat}.`,
   };
 }
 
@@ -68,18 +76,36 @@ export function configuredCliReadinessChecks(
   return [...configuredTools].flatMap(([tool, seats]) => {
     const result = resultsByTool.get(tool);
     if (result === undefined) return [missingCliReadinessCheck(tool)];
-    const routeChecks = seats.flatMap(
-      (seat) =>
-        routeSignInCheck({
-          slot: seat.slot,
-          tool,
-          model: seat.model,
-          providerAuth: result.providerAuth,
-          catalog: catalogs.find((catalog) => catalog.tool === tool),
-        }) ?? [],
-    );
-    return [cliToolReadinessCheck(tool, seats, result), ...routeChecks];
+    const catalog = catalogs.find((saved) => saved.tool === tool);
+    const routes = seats.map((seat) => ({
+      seat,
+      auth: routeAuthState({
+        tool,
+        model: seat.model,
+        providerAuth: result.providerAuth,
+        catalog,
+      }),
+    }));
+    const routeChecks = routes.flatMap(({ seat, auth }) => routeSignInCheck(seat.slot, auth) ?? []);
+    // A tool that stores no credential still calls a provider set up in its own
+    // config: a seat whose route its model list serves needs no sign-in.
+    const signInSeats =
+      result.status === 'unauthenticated'
+        ? routes.filter(({ auth }) => auth.kind !== 'configured').map(({ seat }) => seat)
+        : seats;
+    if (signInSeats.length === 0) return [configRoutedCliReadinessCheck(result), ...routeChecks];
+    return [cliToolReadinessCheck(tool, signInSeats, result), ...routeChecks];
   });
+}
+
+function configRoutedCliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
+  const { id, metadata } = cliReadinessCheck(result);
+  return {
+    id,
+    metadata,
+    severity: 'ok',
+    summary: `${CLI_TOOL_CATALOG[result.tool].displayName} is installed, trusted, compatible, and stores no credential; it calls the providers set up in its config.`,
+  };
 }
 
 function cliToolReadinessCheck(

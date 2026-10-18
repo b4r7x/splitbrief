@@ -8,6 +8,7 @@ import type { Config } from '../core/schemas/config.js';
 import { CLI_TOOL_IDS, defaultCliAuthChannel } from '../core/runners/cli-tool-catalog.js';
 import { detectAll, detectAvailableCliTools } from '../engine/detection/detect.js';
 import { checkCrewAvailability, selectDetectedDefaultCrew } from '../engine/detection/crew.js';
+import { readConfiguredCliRoutes } from './commands/start/readiness.js';
 import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
 import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
 import { cliError } from './errors.js';
@@ -91,7 +92,24 @@ export async function ensureHeadlessConfig(input: {
   });
   const detected = selectDetectedDefaultCrew(detection);
   const { persisted, effective } = selectInitialCrew({ detected, overrides });
-  const [unavailable] = await checkCrewAvailability({ config: effective, detection });
+  // A tool that stores no credential is ready on a route its model list serves, read as start reads it.
+  const { catalogs } = await readConfiguredCliRoutes({
+    projectDir,
+    config: effective,
+    cliReadiness: detection.cliTools.map(({ tool, diagnostic, providerAuth }) => ({
+      tool,
+      status: diagnostic.state,
+      providerAuth,
+    })),
+    routeCatalogs: new Map(),
+  });
+  const [unavailable] = await checkCrewAvailability({
+    config: effective,
+    detection: {
+      ...detection,
+      cliCatalog: (tool) => catalogs.find((catalog) => catalog.tool === tool),
+    },
+  });
   if (unavailable !== undefined) {
     throw cliError(
       detected === null

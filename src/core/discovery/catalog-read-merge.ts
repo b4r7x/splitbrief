@@ -1,5 +1,6 @@
 import { cloneDetectedModel } from './clone-model.js';
 import type { DetectedModel } from './detection.js';
+import type { CliToolId } from '../runners/cli-tool-catalog.js';
 
 export const MAX_CLI_CATALOG_READ_MODELS = 1_000;
 
@@ -32,3 +33,6 @@ export type SavedCatalog = Readonly<{
   models: readonly Readonly<{ id: string }>[] | null;
   missingOnce?: readonly string[] | undefined;
 }>;
+
+/** One tool's saved catalog, looked up by tool. */
+export type SavedCatalogOf = (tool: CliToolId) => SavedCatalog | null | undefined;

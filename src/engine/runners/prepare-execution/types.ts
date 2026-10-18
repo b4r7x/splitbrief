@@ -3,6 +3,7 @@ import type { ReadinessCheck } from '../../../core/readiness/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import type { prepareNewSession } from '../../../core/sessions/prepare.js';
+import type { RouteCatalogReads } from '../../detection/route-catalog.js';
 import type { detectRunnerEvidence } from '../../detection/runner-evidence.js';
 import type { collectArgVectorPreflightChecks } from '../arg-vector-preflight.js';
 import type { prepareCustomRunnerAdmission } from '../custom-admission.js';
@@ -44,6 +45,7 @@ export type PreparationContext = Readonly<{
   preparationId: string;
   signal: AbortSignal;
   nativeTrustViolations: ReadonlySet<string>;
+  routeCatalogs: RouteCatalogReads;
   deps: PrepareExecutionDependencies;
 }>;
 

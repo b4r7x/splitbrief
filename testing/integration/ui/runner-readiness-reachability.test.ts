@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cliReadinessFactsFor, PROBE_EXECUTABLE } from '#testing/helpers/factories/detection.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   CLI_READINESS_STATES,
   type CliExecutableIdentity,
@@ -75,8 +77,18 @@ async function cliPickerOptions(
 const UNREACHABLE_PICKER_STATES: readonly CliReadinessState[] = ['disabled'];
 
 describe('CLI readiness reachability from the real detection producer', () => {
+  let configHome: string;
+
+  // An OpenCode or Kilo that stores no credential reads its own config, so it reads an empty one, never the tester's.
   beforeEach(() => {
     detectionStore.reset();
+    configHome = createTempDir('reachability-config');
+    vi.stubEnv('XDG_CONFIG_HOME', join(configHome, 'xdg'));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    cleanupTempDir(configHome);
   });
 
   it('admits every catalog CLI tool as ready and selectable on a best-case probe', async () => {

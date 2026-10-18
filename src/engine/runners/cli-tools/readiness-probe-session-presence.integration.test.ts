@@ -500,7 +500,7 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
   );
 
   it.each(['opencode', 'kilo-code'] as const)(
-    'keeps %s unauthenticated when no allowlisted state reaches the sandboxed oracle',
+    'keeps %s unauthenticated, as a listing with no provider, when no allowlisted state reaches the sandboxed oracle',
     async (tool) => {
       await withTempDir(`readiness-${tool}-oracle-absent`, async (hostHome) => {
         const executable = await oracleShim(hostHome, tool, reportBody(tool));
@@ -516,6 +516,9 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
         });
 
         expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
+        // No credential reaches the staged oracle, so it can list none: an empty listing,
+        // which lets a route set up in the tool's own config decide.
+        expect(result.providerAuth).toEqual({ kind: 'empty' });
       });
     },
   );

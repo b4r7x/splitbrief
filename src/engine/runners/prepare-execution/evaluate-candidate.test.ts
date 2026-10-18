@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { settleUnderFakeTimers } from '#testing/helpers/fake-timers.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { CliExecutableReceiptSchema } from '../../../core/discovery/detection.js';
 import type { AuthFact, RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
@@ -108,6 +109,7 @@ function preparationContext(
     preparationId: 'preparation-1',
     signal: new AbortController().signal,
     nativeTrustViolations: new Set(),
+    routeCatalogs: new Map(),
     deps: {
       detectRunnerEvidence,
       collectReadiness: notCalled('collectReadiness'),
@@ -149,9 +151,9 @@ describe('evaluateCandidate policy denial remediation', () => {
     });
 
     vi.useFakeTimers();
-    const pending = evaluateCandidate(candidate, preparationContext(config, detect));
-    await vi.advanceTimersByTimeAsync(1500);
-    const result = await pending;
+    const result = await settleUnderFakeTimers(
+      evaluateCandidate(candidate, preparationContext(config, detect)),
+    );
 
     expect(result.kind).toBe('blocked');
     expect(result.check).toMatchObject({
@@ -228,9 +230,9 @@ describe('evaluateCandidate retries a transient session denial', () => {
     const detect = vi.fn(probe);
 
     vi.useFakeTimers();
-    const pending = evaluateCandidate(candidate, preparationContext(config, detect));
-    await vi.advanceTimersByTimeAsync(1500);
-    const result = await pending;
+    const result = await settleUnderFakeTimers(
+      evaluateCandidate(candidate, preparationContext(config, detect)),
+    );
 
     expect(detect).toHaveBeenCalledTimes(2);
     expect(result.kind).toBe('admitted');
@@ -249,9 +251,9 @@ describe('evaluateCandidate retries a transient session denial', () => {
     const detect = vi.fn(probe);
 
     vi.useFakeTimers();
-    const pending = evaluateCandidate(candidate, preparationContext(config, detect));
-    await vi.advanceTimersByTimeAsync(1500);
-    const result = await pending;
+    const result = await settleUnderFakeTimers(
+      evaluateCandidate(candidate, preparationContext(config, detect)),
+    );
 
     expect(detect).toHaveBeenCalledTimes(2);
     expect(result.kind).toBe('blocked');
@@ -317,5 +319,120 @@ describe('evaluateCandidate on a model route with no credential', () => {
     expect(result.kind).toBe('admitted');
     if (result.kind !== 'admitted') return;
     expect(result.routeCheck).toBeUndefined();
+  });
+});
+
+describe('evaluateCandidate on a local-only OpenCode seat', () => {
+  /** `freshList`: what a fresh read of the tool's model list answers; omitted, the read fails. */
+  function localSeat(model: string, freshList?: readonly string[]) {
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'opencode', model } });
+    const candidate: RunnerCandidate = {
+      slot: { role: 'implementer', profile: 'default' },
+      runner: config.implementer,
+      trustLabel: 'implementer',
+    };
+    const detect = vi.fn<PrepareExecutionDependencies['detectRunnerEvidence']>(
+      async ({ context: discovery, includeCatalog }) => ({
+        ...evidence(discovery, 'missing'),
+        runner: { id: 'opencode', kind: 'cli', locality: 'local', enabled: 'enabled' },
+        // `ollama/llama3` set up in the global opencode.json: `opencode auth list` prints [].
+        providerAuth: { kind: 'empty' },
+        ...(includeCatalog === true && {
+          catalog:
+            freshList === undefined
+              ? { kind: 'command-failed', cause: 'exit 1' }
+              : { kind: 'success', value: freshList.map((id) => ({ id })) },
+        }),
+      }),
+    );
+    return { candidate, context: preparationContext(config, detect), detect };
+  }
+
+  async function rememberModelList(projectDir: string, ids: readonly string[]): Promise<void> {
+    mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
+    await saveDetectionCache({
+      projectDir,
+      snapshot: {
+        contextKey: 'readiness-remembered',
+        fetchedAt: Date.now(),
+        validatedAt: Date.now(),
+        generation: 1,
+        requestId: 1,
+        providers: [],
+        cliTools: [],
+        cliCatalogs: [
+          { tool: 'opencode', models: ids.map((id) => ({ id })), probedAt: Date.now() },
+        ],
+      },
+    });
+  }
+
+  it('admits the seat when the saved model list serves its route', async () => {
+    stubHome();
+    const { candidate, context } = localSeat('ollama/llama3');
+    await rememberModelList(context.projectDir, ['ollama/llama3']);
+
+    const result = await evaluateCandidate(candidate, context);
+
+    expect(result.kind).toBe('admitted');
+    if (result.kind !== 'admitted') return;
+    expect(result.routeCheck).toBeUndefined();
+    expect(result.gate).toMatchObject({ kind: 'cli', tool: 'opencode' });
+  });
+
+  it("admits a seat left on auto by the model the tool's own config selects", async () => {
+    const home = stubHome();
+    writeHostFile(home, '.config/opencode/opencode.json', '{"model":"ollama/llama3"}');
+    const { candidate, context } = localSeat('auto');
+    await rememberModelList(context.projectDir, ['ollama/llama3']);
+
+    const result = await evaluateCandidate(candidate, context);
+
+    expect(result.kind).toBe('admitted');
+    if (result.kind !== 'admitted') return;
+    expect(result.gate).toMatchObject({ kind: 'cli', effectiveModel: 'ollama/llama3' });
+  });
+
+  it('reads the model list fresh when none is saved, and admits the seat it serves', async () => {
+    stubHome();
+    const { candidate, context, detect } = localSeat('ollama/llama3', ['ollama/llama3']);
+
+    const result = await evaluateCandidate(candidate, context);
+
+    expect(detect).toHaveBeenCalledWith(expect.objectContaining({ includeCatalog: true }));
+    expect(result.kind).toBe('admitted');
+  });
+
+  it('reads no model list fresh when one is saved', async () => {
+    stubHome();
+    const { candidate, context, detect } = localSeat('ollama/llama3', ['ollama/llama3']);
+    await rememberModelList(context.projectDir, ['lmstudio/qwen3']);
+
+    await evaluateCandidate(candidate, context);
+
+    expect(detect).not.toHaveBeenCalledWith(expect.objectContaining({ includeCatalog: true }));
+  });
+
+  it.each([
+    ['no saved model list and a failed fresh read', undefined, undefined],
+    [
+      'no saved model list and a fresh one that does not serve the route',
+      undefined,
+      ['lmstudio/qwen3'],
+    ],
+    ['a saved model list that does not serve the route', ['lmstudio/qwen3'], undefined],
+  ])('keeps the tool sign-in blocker with %s', async (_, ids, freshList) => {
+    stubHome();
+    const { candidate, context } = localSeat('ollama/llama3', freshList);
+    if (ids !== undefined) await rememberModelList(context.projectDir, ids);
+
+    const result = await evaluateCandidate(candidate, context);
+
+    expect(result.kind).toBe('blocked');
+    expect(result.check).toMatchObject({
+      severity: 'blocker',
+      details: expect.arrayContaining(['OpenCode CLI is not signed in.']),
+      runnerCause: { tool: 'opencode', cause: 'unauthenticated' },
+    });
   });
 });

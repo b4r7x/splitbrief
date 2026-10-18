@@ -4,9 +4,11 @@ import {
   type ProviderDetection,
 } from '../../../core/discovery/detection.js';
 import type { CliReadinessState } from '../../../core/discovery/detection.js';
+import type { SavedCatalog, SavedCatalogOf } from '../../../core/discovery/catalog-read-merge.js';
 import type { ApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
 import { hasApiKey } from '../../../core/providers/catalog.js';
 import type { CliToolDescriptor } from '../../../core/runners/cli-tool-catalog.js';
+import { servedProviders } from '../../../core/runners/route-auth.js';
 import {
   seatPickerLane,
   type ActiveRunnerRole,
@@ -23,7 +25,8 @@ export type PickerOptionStatus =
       state: 'ready';
       remediation: null;
       /**
-       * Deduplicated provider names from the tool's own credential listing.
+       * Deduplicated provider names from the tool's own credential listing, or,
+       * when it stores no credential, the providers its model listing serves.
        * Present only when a provider oracle ran; absent for presence-derived
        * readiness.
        */
@@ -41,6 +44,8 @@ export type PickerDetectionSnapshot = Readonly<{
   providers: readonly ProviderDetection[];
   /** Memory-only role/provider outcomes for the active configured connections. */
   providerOutcomes?: readonly ConfiguredProviderRuntime[] | undefined;
+  /** Each CLI tool's own model listing, which tells a provider set up in the tool's config. */
+  cliCatalog?: SavedCatalogOf | undefined;
   hasApiKeyOverride?: (provider: string) => boolean;
 }>;
 
@@ -85,11 +90,13 @@ const PROVIDER_SIGN_IN_REMEDIATION = `Sign in or configure a provider, ${thenRec
  * A provider-dependent CLI's own credential listing outranks presence-derived
  * auth, but only on the auth axis: trust, compatibility, and availability
  * blockers stand. Absent facts (legacy cache, oracle fallback) resolve nothing
- * so the presence-derived diagnostic keeps governing.
+ * so the presence-derived diagnostic keeps governing. A tool that stores no
+ * credential is ready on the providers its model listing serves.
  */
 function providerFactStatus(
   descriptor: CliToolDescriptor,
   detection: CliToolDetection,
+  catalog: SavedCatalog | null | undefined,
 ): PickerOptionStatus | undefined {
   if (descriptor.auth.kind !== 'provider-dependent') return undefined;
   const facts = cliProviderAuthFacts(detection.providerAuth);
@@ -97,7 +104,10 @@ function providerFactStatus(
   if (detection.diagnostic.state !== 'ready' && detection.diagnostic.state !== 'unauthenticated') {
     return undefined;
   }
-  const providers = [...new Set(facts.map((fact) => fact.provider))];
+  const providers =
+    facts.length > 0
+      ? [...new Set(facts.map((fact) => fact.provider))]
+      : servedProviders({ tool: detection.tool, providerAuth: detection.providerAuth, catalog });
   if (providers.length === 0) {
     return { state: 'unauthenticated', remediation: PROVIDER_SIGN_IN_REMEDIATION };
   }
@@ -124,7 +134,11 @@ export function deriveCliStatus(
       ),
     };
   }
-  const factStatus = providerFactStatus(descriptor, cliDetection);
+  const factStatus = providerFactStatus(
+    descriptor,
+    cliDetection,
+    detections.cliCatalog?.(cliDetection.tool),
+  );
   if (factStatus !== undefined) return factStatus;
   if (cliDetection.diagnostic.state === 'ready') {
     return { state: 'ready', remediation: null };

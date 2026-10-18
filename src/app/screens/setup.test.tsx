@@ -614,6 +614,59 @@ describe('SetupScreen', () => {
     });
   });
 
+  it.each([
+    ['serves', ['ollama/llama3'], true],
+    ['does not serve', ['lmstudio/qwen3'], false],
+  ])(
+    'lets Continue keep an OpenCode build seat that stores no credential only when its model list %s the route',
+    async (_case, models, saves) => {
+      await withTempDir('setup-config-only', async (projectDir) => {
+        configStore.load(projectDir);
+        await configStore.save(
+          makeConfig({
+            planner: { kind: 'cli', tool: 'claude-code' },
+            implementer: { kind: 'cli', tool: 'opencode', model: 'ollama/llama3' },
+          }),
+        );
+        routerStore.init({ screen: 'setup', onComplete: 'home' });
+        const request = beginDiscovery();
+        expect(
+          detectionStore.publish({
+            request,
+            result: {
+              providers: [],
+              cliTools: [
+                cliDetectionFor('ready', 'claude-code'),
+                cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+              ],
+              catalog: {},
+              cliModels: [
+                {
+                  connection: { tool: 'opencode', contextKey: DISCOVERY_CONTEXTS.cliModels },
+                  outcome: { kind: 'success', value: models.map((id) => ({ id })) },
+                },
+              ],
+              generation: 1,
+            },
+          }),
+        ).toBe(true);
+        const ui = renderFeature(<SetupScreen />);
+        await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
+        await flushEffects();
+        await continueSetup(ui);
+
+        await vi.waitFor(() => expect(routerStore.get().screen).toBe(saves ? 'home' : 'setup'));
+        if (!saves) expect(ui.lastFrame() ?? '').toContain('Choose a ready tool and model');
+        expect(loadConfig(projectDir).config.implementer).toMatchObject({
+          kind: 'cli',
+          tool: 'opencode',
+          model: 'ollama/llama3',
+        });
+        ui.unmount();
+      });
+    },
+  );
+
   it('blocks Continue when a selected seat becomes unavailable', async () => {
     await withTempDir('setup-unavailable-continue', async (projectDir) => {
       configStore.load(projectDir);
@@ -871,7 +924,10 @@ describe('SetupScreen', () => {
 
     const [preset] = computeCrewPresets({
       config: makeConfig(),
-      readyTools: ['claude-code', 'codex'],
+      detection: {
+        cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
+        providers: [],
+      },
     });
     if (preset === undefined)
       throw new Error('Expected a ready-made crew for the installed tools.');
@@ -979,7 +1035,10 @@ describe('SetupScreen', () => {
 
     const [preset] = computeCrewPresets({
       config: makeConfig(),
-      readyTools: ['claude-code', 'codex'],
+      detection: {
+        cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
+        providers: [],
+      },
     });
     if (preset === undefined)
       throw new Error('Expected a ready-made crew for the installed tools.');

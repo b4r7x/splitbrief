@@ -8,9 +8,11 @@ import {
   type CrewSeatId,
 } from '../../core/crew/identity.js';
 import { deriveCrewSeats } from '../../core/crew/seats.js';
+import { detectedSeatReady } from '../../core/crew/default.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { configStore } from '../../stores/project/config.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { useStores } from '../../stores/use-stores.js';
 import { assertNever } from '../../utils/type-guards.js';
@@ -21,14 +23,16 @@ interface SeatMarkInput {
   readonly refreshing: boolean;
   readonly landed: boolean;
   readonly detection: CliToolDetection | undefined;
+  /** The seat can call: its tool is ready, or its route is one a tool storing no credential serves. */
+  readonly ready: boolean;
   readonly isCliSeat: boolean;
   readonly frame: string;
 }
 
-function SeatMark({ refreshing, landed, detection, isCliSeat, frame }: SeatMarkInput) {
+function SeatMark({ refreshing, landed, detection, ready, isCliSeat, frame }: SeatMarkInput) {
   const t = useTheme();
   if (isCliSeat && detection !== undefined) {
-    if (detection.diagnostic.state === 'ready') {
+    if (ready) {
       return <Text color={t.success}>{glyph('check')}</Text>;
     }
     return <Text color={t.warning}>{glyph('statusWarning')}</Text>;
@@ -112,6 +116,14 @@ export function BootManifest() {
                   refreshing={refresh.readiness.refreshing}
                   landed={readinessLanded}
                   detection={detection}
+                  ready={
+                    runner.kind === 'cli' &&
+                    detectedSeatReady(runner, {
+                      cliTools,
+                      providers: [],
+                      cliCatalog: (tool) => modelCacheStore.getCliCatalogRuntime({ tool }),
+                    })
+                  }
                   isCliSeat={runner.kind === 'cli'}
                   frame={frame}
                 />

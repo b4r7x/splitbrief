@@ -412,6 +412,11 @@ export const CliToolDetectionSchema = z
     auth: CliAuthStateSchema,
     /** Absent only for a tool with no credential oracle to read. */
     providerAuth: CliProviderAuthSchema.optional(),
+    /**
+     * The model the tool selects in its own config or state on this host. Read only for a tool that
+     * stores no credential, whose seat on `auto` or with no model is ready on that model's route.
+     */
+    selectedModel: z.string().min(1).optional(),
     diagnostic: CliDiagnosticSchema,
     probedAt: z.number().int().nonnegative(),
   })

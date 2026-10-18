@@ -1538,6 +1538,29 @@ describe('backend compatibility fixtures', () => {
     );
   });
 
+  itUnix('links an OpenCode config folder that holds no auth.json', async () => {
+    const hostHome = createTempDir('sandbox-opencode-config-only-host');
+    const projectDir = createTempDir('sandbox-opencode-config-only-project');
+    dirs.push(hostHome, projectDir);
+    const config = '{"provider":{"ollama":{"models":{"llama3":{}}}}}';
+    mkdirSync(join(hostHome, '.config', 'opencode'), { recursive: true });
+    writeFileSync(join(hostHome, '.config', 'opencode', 'opencode.json'), config);
+    setEnv('HOME', hostHome);
+    unsetEnv('XDG_CONFIG_HOME');
+
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' },
+      'implementer',
+    );
+
+    // OpenCode reads its global config from $XDG_CONFIG_HOME/opencode, so a provider
+    // set up only there reaches the run.
+    const linkDir = join(env.XDG_CONFIG_HOME as string, 'opencode');
+    expect(readlinkSync(linkDir)).toBe(realpathSync(join(hostHome, '.config', 'opencode')));
+    expect(readFileSync(join(linkDir, 'opencode.json'), 'utf8')).toBe(config);
+  });
+
   itUnix(
     'a bridged cursor env exposes exactly the two declared paths and nothing else from ~/.cursor',
     async () => {

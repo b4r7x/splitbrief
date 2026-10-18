@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { takesHostModel } from '../../core/providers/automatic-model.js';
 import { assertNever, isRecord } from '../../utils/type-guards.js';
 
 /** The model a tool has selected on this host, and the file that said so. */
@@ -183,4 +184,29 @@ export async function readHostModelSelection(
     default:
       return assertNever(tool);
   }
+}
+
+/**
+ * The model a CLI seat calls: `named`, the model the seat names (or none, when it names none and
+ * the tool keeps no readable selection); `host`, the tool's own selection on this host for a seat on
+ * `auto` or with no model; `auto-unread`, a seat on `auto` whose tool keeps no readable selection.
+ * Start and doctor read the seat's route on this model.
+ */
+export type SeatModel =
+  | Readonly<{ kind: 'named'; model: string | undefined }>
+  | Readonly<{ kind: 'host'; model: string; source: string }>
+  | Readonly<{ kind: 'auto-unread'; model: string }>;
+
+export async function resolveSeatModel(
+  runner: Readonly<{ tool: CliToolId; model?: string | undefined }>,
+  env: NodeJS.ProcessEnv,
+  detectedModels: readonly DetectedModel[] | undefined,
+): Promise<SeatModel> {
+  const { tool, model } = runner;
+  if (!takesHostModel(model, tool)) return { kind: 'named', model };
+  const selection = await readHostModelSelection(tool, env, detectedModels);
+  if (selection !== null) return { kind: 'host', ...selection };
+  // A seat that named no model never asked for one, so the tool's own default is the answer it
+  // wanted; only a declared `auto` is left unmet.
+  return model === undefined ? { kind: 'named', model } : { kind: 'auto-unread', model };
 }

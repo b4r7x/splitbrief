@@ -10,6 +10,7 @@ import {
   type StartAdmission,
   type StartFact,
 } from '../../core/discovery/runner-evidence.js';
+import type { RouteAuthState } from '../../core/runners/route-auth.js';
 import { error } from '../../utils/error.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { RunnerGate, RunnerGateExpectation } from './prepared-execution.js';
@@ -49,6 +50,7 @@ export interface AdmitFreshCliStartOptions {
   readonly expectedSelectionId: string;
   readonly interaction: 'interactive' | 'headless';
   readonly unverifiedAuth: 'denied' | 'disclosed' | 'allowed';
+  readonly route: RouteAuthState;
 }
 
 export function runnerGateFor(
@@ -143,6 +145,7 @@ export function admitFreshCliStart(options: AdmitFreshCliStartOptions): FreshCli
     requiredFacts: CLI_START_REQUIRED_FACTS,
     interaction: options.interaction,
     unverifiedAuth: options.unverifiedAuth,
+    route: options.route,
   });
   if (admission.kind === 'disclosure-required') return admission;
   if (admission.kind === 'denied') return admission;

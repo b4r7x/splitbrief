@@ -1,7 +1,9 @@
 import { readActiveRunner } from '../config/accessors/active-runner.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
+import type { SavedCatalog, SavedCatalogOf } from '../discovery/catalog-read-merge.js';
 import type { CliToolDetection } from '../discovery/detection.js';
 import { isCliToolId } from '../runners/cli-tool-catalog.js';
+import { routeAuthState } from '../runners/route-auth.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import type { Config } from '../schemas/config.js';
 import { SOFT_SEP } from '../separators.js';
@@ -55,16 +57,33 @@ export function fallbackRunner(fallback: SeatFallback): RunnerConfig | undefined
   };
 }
 
-export function fallbackBlockedReason(detection: CliToolDetection | undefined): string | undefined {
+/**
+ * Why a halt would not take the fallback. A tool that stores no credential still calls a route its
+ * model list serves, so a fallback on such a route is taken.
+ */
+export function fallbackBlockedReason(
+  fallback: SeatFallback,
+  detection: CliToolDetection | undefined,
+  catalog: SavedCatalog | null | undefined,
+): string | undefined {
   const state = detection?.diagnostic.state;
   if (state === undefined || state === 'unavailable') return 'not installed';
-  return state === 'ready' || state === 'unverified' ? undefined : state;
+  if (state === 'ready' || state === 'unverified') return undefined;
+  const route = routeAuthState({
+    tool: detection?.tool,
+    model: fallback.model,
+    providerAuth: detection?.providerAuth,
+    catalog,
+  });
+  return state === 'unauthenticated' && route.kind === 'configured' ? undefined : state;
 }
 
 export function deriveFallbackRows(
   input: Readonly<{
     config: Config;
     cliTools: readonly CliToolDetection[];
+    /** Each CLI tool's own model listing, which tells a provider set up in the tool's config. */
+    cliCatalog?: SavedCatalogOf | undefined;
     seatDisplayName?: SeatDisplayName | undefined;
   }>,
 ): readonly FallbackRow[] {
@@ -80,12 +99,17 @@ export function deriveFallbackRows(
             seat: runner,
             displayName: input.seatDisplayName?.(runner, CREW_SEAT_ROLES[seat.id]),
           });
+    const detection = input.cliTools.find((candidate) => candidate.tool === fallback.tool);
     const note = isSeatIdentity(
       { tool: seat.runner.kind === 'cli' ? seat.runner.tool : '', model: seat.runner.model },
       fallback,
     )
       ? 'same as the seat'
-      : fallbackBlockedReason(input.cliTools.find((detection) => detection.tool === fallback.tool));
+      : fallbackBlockedReason(
+          fallback,
+          detection,
+          detection === undefined ? undefined : input.cliCatalog?.(detection.tool),
+        );
     return {
       id: seat.id,
       fallback,

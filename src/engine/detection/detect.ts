@@ -2,6 +2,7 @@ import type { CliToolDetection, ProviderDetection } from '../../core/discovery/d
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
+  PROVIDER_ORACLE_TOOL_IDS,
   selectCliAuthChannel,
   type CliAuthChannelId,
   type CliToolId,
@@ -16,6 +17,7 @@ import {
   deriveCliReadiness,
 } from '../../core/schemas/readiness.js';
 import { matches } from '../../utils/error.js';
+import { includes } from '../../utils/type-guards.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { detectAvailableProviders } from '../providers/catalog-detection.js';
 import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
@@ -26,6 +28,7 @@ import {
 } from '../runners/resolve-cli-executable.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
 import { probeCliReadiness } from '../runners/cli-tools/readiness-probe.js';
+import { readHostModelSelection } from '../runners/host-model-selection.js';
 
 type ResolveCliExecutable = CliExecutableResolver;
 type ProbeCliReadiness = typeof probeCliReadiness;
@@ -217,7 +220,14 @@ async function detectCliTool(
   tool: CliToolId,
   options: DetectCliToolDependencies,
 ): Promise<CliToolDetection> {
-  return cliDetectionFromReadiness(await detectCliToolReadiness(tool, options));
+  const readiness = await detectCliToolReadiness(tool, options);
+  const detection = cliDetectionFromReadiness(readiness);
+  // Only the route of a tool that stores no credential decides its seat, so only its selection is read.
+  if (readiness.status !== 'unauthenticated' || !includes(PROVIDER_ORACLE_TOOL_IDS, tool)) {
+    return detection;
+  }
+  const selection = await readHostModelSelection(tool);
+  return selection === null ? detection : { ...detection, selectedModel: selection.model };
 }
 
 /**

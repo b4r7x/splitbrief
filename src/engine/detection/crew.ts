@@ -65,7 +65,7 @@ export function crewDetectionForSeat(input: {
   const role = connectionRole(config, input.role);
   const runner = readActiveRunner({ config, role });
   if (runner.kind !== 'api') {
-    return { cliTools: detection.cliTools, providers: [] };
+    return { cliTools: detection.cliTools, providers: [], cliCatalog: detection.cliCatalog };
   }
   const fact = availabilityForSeat(input);
   if (fact !== undefined) {

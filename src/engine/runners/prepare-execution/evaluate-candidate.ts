@@ -11,11 +11,16 @@ import {
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { admitCliAuthChannel } from '../../../core/runners/cli-auth-selection.js';
-import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { cliAuthRemediation, cliReadinessRemediation } from '../../../core/schemas/readiness.js';
 import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../../core/readiness/format.js';
 import { routeSignInCheck } from '../../../core/readiness/checks/cli-readiness.js';
+import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
 import { loadRememberedSnapshot } from '../../detection/cache.js';
+import {
+  freshRouteCatalog,
+  routeReadsCatalog,
+  type RouteCatalog,
+} from '../../detection/route-catalog.js';
 import { cliSeatDiscoveryContext } from '../../detection/cli-context.js';
 import { READINESS_DIAGNOSTIC_STATE_IDS } from '../../../core/schemas/readiness.js';
 import type { RunnerReadinessCauseId } from '../../../core/readiness/types.js';
@@ -31,7 +36,7 @@ import {
   inlineRunnerSecurityPosture,
   type ConfiguredCustomRunner,
 } from '../custom-trust.js';
-import { readHostModelSelection } from '../host-model-selection.js';
+import { resolveSeatModel } from '../host-model-selection.js';
 import { resolveCliRunnerAuth } from '../sandbox-env.js';
 import { admitFreshCliStart, type FreshCliStartGateResult } from '../start-gate.js';
 import { throwIfPreparationAborted } from './abort-guard.js';
@@ -237,7 +242,40 @@ async function evaluateCli(
       projectDir: context.projectDir,
       signal: context.signal,
     });
-  const admit = (fresh: RunnerEvidence): FreshCliStartGateResult =>
+  let evidence = await detect();
+  throwIfAborted(context.signal);
+  const warnings: PreparationWarning[] = [];
+  // `auto` is the operator's intent, not a model: the tool would resolve it
+  // from its own config, which the run's record and its argv cannot see. Read
+  // that selection here and name it, so every surface says what actually ran.
+  const details: string[] = [];
+  const seatModel = await resolveSeatModel(
+    candidate.runner,
+    process.env,
+    evidence.catalog.kind === 'success' ? evidence.catalog.value : undefined,
+  );
+  const effectiveModel = seatModel.kind === 'host' ? seatModel.model : undefined;
+  if (seatModel.kind === 'host') {
+    details.push(`model: auto → ${seatModel.model} (from ${seatModel.source})`);
+  } else if (seatModel.kind === 'auto-unread') {
+    warnings.push({
+      code: 'host_model_selection_unreadable',
+      message: `model: auto — ${CLI_TOOL_CATALOG[candidate.runner.tool].displayName} has no readable model selection; the tool's own default applies.`,
+    });
+  }
+  // A tool that stores no credential still calls a provider set up in its own
+  // config, so the seat's route, read against its model list, is part of admission.
+  let catalog: RouteCatalog | undefined = (
+    await loadRememberedSnapshot(context.projectDir)
+  )?.cliCatalogs?.find((saved) => saved.tool === candidate.runner.tool);
+  const routeOf = (fresh: RunnerEvidence): RouteAuthState =>
+    routeAuthState({
+      tool: candidate.runner.tool,
+      model: seatModel.model,
+      providerAuth: fresh.providerAuth,
+      catalog,
+    });
+  const admit = (fresh: RunnerEvidence, route = routeOf(fresh)): FreshCliStartGateResult =>
     admitFreshCliStart({
       tool: candidate.runner.tool,
       evidence: fresh,
@@ -245,11 +283,9 @@ async function evaluateCli(
       expectedSelectionId: candidate.runner.model ?? 'unselected',
       interaction: context.policy.interaction,
       unverifiedAuth: context.policy.unverifiedAuth,
+      route,
     });
-  let evidence = await detect();
-  throwIfAborted(context.signal);
   let admission = admit(evidence);
-  const warnings: PreparationWarning[] = [];
   // A session channel's auth fact is whatever the tool's own status command
   // answered a moment ago, and that command is cold on the first call of a
   // continue: it can report no session for a host that has one. One denial is
@@ -268,6 +304,23 @@ async function evaluateCli(
       code: 'readiness_probe_retried',
       message: `${CLI_TOOL_CATALOG[candidate.runner.tool].displayName} reported no sign-in at first and confirmed it on a second check.`,
     });
+  }
+  // The fresh list costs a tool call, so it is read only when the route waits on it and the gate
+  // would admit the seat were the route callable: a seat refused on another fact never reads it.
+  if (
+    routeReadsCatalog(routeOf(evidence)) &&
+    admit(evidence, { kind: 'configured', source: 'listed' }).kind === 'admitted'
+  ) {
+    catalog = await freshRouteCatalog(context.routeCatalogs, candidate.runner.tool, () =>
+      context.deps.detectRunnerEvidence({
+        context: discoveryContext,
+        projectDir: context.projectDir,
+        signal: context.signal,
+        includeCatalog: true,
+      }),
+    );
+    throwIfAborted(context.signal);
+    admission = admit(evidence);
   }
   if (admission.kind === 'disclosure-required') {
     return {
@@ -324,41 +377,7 @@ async function evaluateCli(
       ),
     };
   }
-  // `auto` is the operator's intent, not a model: the tool would resolve it
-  // from its own config, which the run's record and its argv cannot see. Read
-  // that selection here and name it, so every surface says what actually ran.
-  const details: string[] = [];
-  let effectiveModel: string | undefined;
-  const configuredModel = candidate.runner.model;
-  const declaredAuto =
-    configuredModel !== undefined && isAutomaticModel(configuredModel, candidate.runner.tool);
-  if (declaredAuto || configuredModel === undefined) {
-    const selection = await readHostModelSelection(
-      candidate.runner.tool,
-      process.env,
-      evidence.catalog.kind === 'success' ? evidence.catalog.value : undefined,
-    );
-    if (selection !== null) {
-      effectiveModel = selection.model;
-      details.push(`model: auto → ${selection.model} (from ${selection.source})`);
-    } else if (declaredAuto) {
-      // A seat that named no model never asked for one, so the tool's own
-      // default is the answer it wanted; only a declared `auto` is left unmet.
-      warnings.push({
-        code: 'host_model_selection_unreadable',
-        message: `model: auto — ${CLI_TOOL_CATALOG[candidate.runner.tool].displayName} has no readable model selection; the tool's own default applies.`,
-      });
-    }
-  }
-  const routeCheck = routeSignInCheck({
-    slot: candidate.slot,
-    tool: candidate.runner.tool,
-    model: effectiveModel ?? configuredModel,
-    providerAuth: evidence.providerAuth,
-    catalog: (await loadRememberedSnapshot(context.projectDir))?.cliCatalogs?.find(
-      (catalog) => catalog.tool === candidate.runner.tool,
-    ),
-  });
+  const routeCheck = routeSignInCheck(candidate.slot, routeOf(evidence));
   return {
     kind: 'admitted',
     check:

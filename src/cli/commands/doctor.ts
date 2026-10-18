@@ -23,7 +23,8 @@ import { probeRunnerAvailability } from '../../engine/runners/probe-availability
 import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { writeHeadlessJsonRecord } from '../../engine/events/public-json.js';
-import { detectConfiguredCliReadiness } from './start/readiness.js';
+import { detectConfiguredCliReadiness, readConfiguredCliRoutes } from './start/readiness.js';
+import type { RouteCatalogReads } from '../../engine/detection/route-catalog.js';
 import type { DetectCliReadiness } from './start/readiness.js';
 import { appendFile, chmod, mkdir, realpath } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -59,7 +60,6 @@ import { createRunnerSandboxEnv } from '../../engine/runners/sandbox-env.js';
 import { resolveCliExecutableAliases } from '../../engine/runners/resolve-cli-executable.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import { loadRememberedSnapshot } from '../../engine/detection/cache.js';
 import { loadRememberedCatalog } from '../bootstrap/discovery.js';
 
 interface DoctorOpts {
@@ -70,6 +70,7 @@ interface DoctorOpts {
 
 export interface DoctorDeps {
   detectCliReadiness?: DetectCliReadiness | undefined;
+  readCliRoutes?: typeof readConfiguredCliRoutes | undefined;
   runArgVectorHelp?: ArgVectorPreflightCheckInput['runHelp'] | undefined;
   probeRunnerAvailability?: typeof probeRunnerAvailability | undefined;
   collectRunnerAdmissionChecks?: typeof collectRunnerAdmissionChecks | undefined;
@@ -346,6 +347,7 @@ async function withPreparationPreflights(options: {
   readonly interaction: 'interactive' | 'headless';
   readonly runHelp?: ArgVectorPreflightCheckInput['runHelp'] | undefined;
   readonly collectAdmissionChecks?: typeof collectRunnerAdmissionChecks | undefined;
+  readonly routeCatalogs: RouteCatalogReads;
 }): Promise<ReadinessReport> {
   const {
     collected,
@@ -353,6 +355,7 @@ async function withPreparationPreflights(options: {
     interaction,
     runHelp,
     collectAdmissionChecks = collectRunnerAdmissionChecks,
+    routeCatalogs,
   } = options;
   const config = collected.config;
   if (config === undefined) return collected.report;
@@ -379,6 +382,7 @@ async function withPreparationPreflights(options: {
           projectDir,
           config,
           interaction,
+          routeCatalogs,
         })
       : [];
   return applyRunnerPreparationChecks(collected.report, [
@@ -433,10 +437,13 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
       const interaction =
         opts.json === true || process.stdin.isTTY !== true ? 'headless' : 'interactive';
       await loadRememberedCatalog(projectDir);
+      // The routes pass and the admission pass read each tool's model list once between them.
+      const routeCatalogs: RouteCatalogReads = new Map();
+      const readCliRoutes = deps.readCliRoutes ?? readConfiguredCliRoutes;
       const collected = await collectReadiness({
         projectDir,
         interaction,
-        cliCatalogs: (await loadRememberedSnapshot(projectDir))?.cliCatalogs,
+        readCliRoutes: (input) => readCliRoutes({ ...input, routeCatalogs }),
         detectCliReadiness: deps.detectCliReadiness ?? detectConfiguredCliReadiness,
         probeRunnerAvailability: deps.probeRunnerAvailability ?? probeRunnerAvailability,
         seatDisplayName: (runner, role) => resolveSeatDisplayName(runner, role, modelCacheStore),
@@ -447,6 +454,7 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
         interaction,
         runHelp: deps.runArgVectorHelp,
         collectAdmissionChecks: deps.collectRunnerAdmissionChecks,
+        routeCatalogs,
       });
 
       if (opts.json) {

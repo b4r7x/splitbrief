@@ -24,6 +24,11 @@ export function isAutomaticModel(model: string | undefined, providerId?: string)
   return normalizeConfiguredModel(model, providerId) === AUTOMATIC_MODEL;
 }
 
+/** Whether a CLI seat calls the model its tool selects on this host: it is on `auto` or names no model. */
+export function takesHostModel(model: string | undefined, tool: string): boolean {
+  return model === undefined || isAutomaticModel(model, tool);
+}
+
 /**
  * CLI automatic selection is structural, not catalog-driven: it resolves to no
  * model at all so the adapter omits `--model` and the tool uses whatever its own

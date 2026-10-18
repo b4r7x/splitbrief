@@ -286,15 +286,16 @@ describe('provider variant merge', () => {
 
     const row = findMergedRow(buildRightModels({ ...base, providerAuth: { kind: 'read', facts } }));
     expect(row?.variants?.map((variant) => variant.fullId)).toEqual(callableFirst);
+    // With no credential stored at all, the route the model list serves still calls.
+    const storesNone = findMergedRow(
+      buildRightModels({ ...base, providerAuth: { kind: 'empty' } }),
+    );
+    expect(storesNone?.variants?.map((variant) => variant.fullId)).toEqual(callableFirst);
 
-    // A listing that claims no auth state, or names no provider at all, leaves the
+    // A listing that claims no auth state, or could not be read, leaves the
     // enumeration recency order standing.
     const recencyOrder = ['opencode/deepseek-v4-flash', 'openrouter/deepseek-v4-flash'];
-    for (const providerAuth of [
-      undefined,
-      { kind: 'empty' },
-      { kind: 'unreadable', reason: 'timeout' },
-    ] as const) {
+    for (const providerAuth of [undefined, { kind: 'unreadable', reason: 'timeout' }] as const) {
       const row = findMergedRow(buildRightModels({ ...base, providerAuth }));
       expect(row?.variants?.map((variant) => variant.fullId)).toEqual(recencyOrder);
     }
