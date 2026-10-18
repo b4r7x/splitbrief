@@ -71,6 +71,15 @@ export function editorWaitingMessage(
   );
 }
 
+/**
+ * Whether the viewer leaves the cursor below the waiting line when it quits, so the TUI can erase
+ * that line. `less` and a terminal editor restore the screen, a GUI editor never draws on it;
+ * another pager and `ed` write on the shell screen.
+ */
+export function viewerRestoresScreen({ command, kind }: ViewerArgv): boolean {
+  return kind === 'pager' ? editorName(command) === 'less' : editorName(command) !== 'ed';
+}
+
 function editorName(command: string): string {
   return editorDisplayLabel(command).toLowerCase();
 }
@@ -165,9 +174,10 @@ export function resolveEditorArgv(options: ResolveEditorArgvOptions = {}): Edito
   return { command: 'vi', args: [] };
 }
 
-// `-+F` keeps `less` open on a short file when `LESS` carries `F`. `less` covers the TUI's return
-// hint with the alternate screen, so its prompt repeats the hint. `PAGER` arguments follow and win.
-const lessViewerArgs = ['-+F', '-Ps?e(END) .Press q to return\\.'];
+// The TUI erases its return hint on the assumption that `less` restores the screen, so `-+E`,
+// `-+F` and `-+X` follow the `LESS` and `PAGER` flags and win: `less` stays open on the alternate
+// screen. That screen covers the hint, so the short prompt repeats it and `-+M` keeps that prompt.
+const lessViewerArgs = ['-+E', '-+F', '-+M', '-+X', '-Ps?e(END) .Press q to return\\.'];
 
 /**
  * What reads a file without editing it: the editor you set, else your pager. No GUI editor is
@@ -178,6 +188,6 @@ export function resolveViewerArgv(env: NodeJS.ProcessEnv = process.env): ViewerA
   if (editor) return { ...editor, kind: 'editor' };
   const { command, args } = parseEditor(env.PAGER) ?? { command: 'less', args: [] };
   if (editorName(command) === 'less')
-    return { command, args: [...lessViewerArgs, ...args], kind: 'pager' };
+    return { command, args: [...args, ...lessViewerArgs], kind: 'pager' };
   return { command, args, kind: 'pager' };
 }

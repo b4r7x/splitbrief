@@ -1158,7 +1158,7 @@ Every other `GIT_*` variable does not reach git, for example `GIT_CONFIG_GLOBAL`
 | `SPLITBRIEF_REDUCE_MOTION` / `REDUCE_MOTION` | Set to `1` to pin TUI spinner frames and slow status ticks to 1s (`src/lib/terminal/reduce-motion.ts`). |
 | `VISUAL` | Explicit external editor for the plan card's `plan.json` (`Ctrl+O`) and for **Show diff**. Takes precedence over every other editor source, including detected GUI editors. |
 | `EDITOR` | External editor fallback when `VISUAL` is unset or empty. For `plan.json`, non-terminal values are used before auto-detected GUI editors; terminal editors such as `vim` or `nano` are used only after GUI detection and macOS `open -W -t` fail. Implicit GUI detection probes only safe absolute `PATH` segments and honors Windows `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. **Show diff** uses `EDITOR` as it is and never detects a GUI editor. |
-| `PAGER` | The pager for **Show diff** when `VISUAL` and `EDITOR` are both unset or empty. When `PAGER` is unset too, Show diff uses `less`. Show diff keeps `less` open on a short patch, even when `LESS` contains `F`, and the `less` prompt reads `Press q to return.` |
+| `PAGER` | The pager for **Show diff** when `VISUAL` and `EDITOR` are both unset or empty. When `PAGER` is unset too, Show diff uses `less`. Show diff keeps `less` open on its own screen, also on a short patch and when `LESS` or `PAGER` sets `-e`, `-E`, `-F`, `-m`, `-M` or `-X`, and the `less` prompt reads `Press q to return.` |
 
 ---
 

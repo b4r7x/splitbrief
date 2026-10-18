@@ -124,7 +124,11 @@ describe('showRunDiff', () => {
   );
 
   it.each([
-    { pager: '', command: 'less', args: ['-+F', '-Ps?e(END) .Press q to return\\.'] },
+    {
+      pager: '',
+      command: 'less',
+      args: ['-+E', '-+F', '-+M', '-+X', '-Ps?e(END) .Press q to return\\.'],
+    },
     { pager: 'more -d', command: 'more', args: ['-d'] },
   ])('pages the patch with $command when no editor is set', async ({ pager, command, args }) => {
     vi.stubEnv('VISUAL', '');
@@ -145,6 +149,8 @@ describe('showRunDiff', () => {
 
     expect(spawnEditor).toHaveBeenCalledWith(command, [...args, patch.path]);
     expect(output.join('')).toContain(`result-run.patch open in ${command}. Press q to return.`);
+    // Only `less` restores the screen; `more` wrote the patch below the line, so nothing is erased.
+    expect(output.join('').includes('\r\u001b[J')).toBe(command === 'less');
     expect(feedbackStore.get()).toEqual({
       message: `${command} exited with code 1`,
       isError: true,

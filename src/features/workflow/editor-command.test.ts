@@ -8,6 +8,7 @@ import {
   editorWaitingMessage,
   resolveEditorArgv,
   resolveViewerArgv,
+  viewerRestoresScreen,
 } from './editor-command.js';
 
 function withBinDir<T>(executables: readonly string[], run: (dir: string) => T): T {
@@ -206,7 +207,7 @@ describe('resolveViewerArgv', () => {
       const viewer = resolveViewerArgv({ VISUAL: '', EDITOR: '  ', PATH: dir });
       expect(viewer).toEqual({
         command: 'less',
-        args: ['-+F', '-Ps?e(END) .Press q to return\\.'],
+        args: ['-+E', '-+F', '-+M', '-+X', '-Ps?e(END) .Press q to return\\.'],
         kind: 'pager',
       });
       expect(editorWaitingMessage(viewer, '/tmp/run.patch')).toBe(
@@ -223,10 +224,14 @@ describe('resolveViewerArgv', () => {
     });
   });
 
-  it('keeps a less PAGER open on a short patch and lets its own arguments win', () => {
-    expect(resolveViewerArgv({ PAGER: '/usr/bin/less -R', LESS: 'FRX' })).toEqual({
-      command: '/usr/bin/less',
-      args: ['-+F', '-Ps?e(END) .Press q to return\\.', '-R'],
+  it.each([
+    { pager: '/usr/bin/less -R', command: '/usr/bin/less', args: ['-R'] },
+    { pager: 'less -FRX', command: 'less', args: ['-FRX'] },
+    { pager: 'less -EM', command: 'less', args: ['-EM'] },
+  ])('keeps the less PAGER $pager open on its own screen', ({ pager, command, args }) => {
+    expect(resolveViewerArgv({ PAGER: pager, LESS: 'FRX' })).toEqual({
+      command,
+      args: [...args, '-+E', '-+F', '-+M', '-+X', '-Ps?e(END) .Press q to return\\.'],
       kind: 'pager',
     });
   });
@@ -244,6 +249,21 @@ describe('resolveViewerArgv', () => {
         'run.patch open in vim. Close the file to return.',
       );
     });
+  });
+});
+
+describe('viewerRestoresScreen', () => {
+  it.each([
+    { viewer: 'less', kind: 'pager', restores: true },
+    { viewer: 'less -X', kind: 'pager', restores: true },
+    { viewer: 'more -d', kind: 'pager', restores: false },
+    { viewer: 'vim', kind: 'editor', restores: true },
+    { viewer: 'code --wait', kind: 'editor', restores: true },
+    { viewer: 'open -W -t', kind: 'editor', restores: true },
+    { viewer: 'ed', kind: 'editor', restores: false },
+  ] as const)('reads $viewer as restoring the screen: $restores', ({ viewer, kind, restores }) => {
+    const env = kind === 'pager' ? { PAGER: viewer } : { VISUAL: viewer };
+    expect(viewerRestoresScreen(resolveViewerArgv(env))).toBe(restores);
   });
 });
 
