@@ -1,9 +1,10 @@
 import { ThemeText as Text, useTheme } from '../theme.js';
-import { useEffect, useRef, useState } from 'react';
-import { Box, Spacer } from 'ink';
+import { useEffect, useRef } from 'react';
+import { Box } from 'ink';
 import { buildSegments, type SegmentType } from './segments.js';
 import { computeViewportScroll } from './viewport-scroll.js';
-import { MeasureBox } from './measure-box.js';
+import { wrapWordVisualLines } from '../../core/editor/grapheme-motions.js';
+import { segmentsForRowText } from '../../utils/display-text.js';
 
 export interface TextStyle {
   bold?: boolean;
@@ -26,10 +27,9 @@ export interface ControlledMultilineInputProps {
   mask?: string | undefined;
   showCursor?: boolean | undefined;
   focus?: boolean | undefined;
-  tabSize?: number | undefined;
   cursorIndex?: number | undefined;
   highlight?: { start: number; end: number } | undefined;
-  measureColumns?: number | undefined;
+  columns: number;
   onVisibleRowsChange?: ((rows: number) => void) | undefined;
 }
 
@@ -44,16 +44,13 @@ export function ControlledMultilineInput({
   mask,
   showCursor = true,
   focus = true,
-  tabSize = 4,
   cursorIndex = 0,
   highlight,
-  measureColumns,
+  columns,
   onVisibleRowsChange,
 }: ControlledMultilineInputProps) {
   const t = useTheme();
   const scrollOffsetRef = useRef(0);
-  const [contentHeight, setContentHeight] = useState(0);
-  const [markerHeight, setMarkerHeight] = useState(0);
 
   const { preCursor, postCursor } = buildSegments({
     value,
@@ -63,35 +60,36 @@ export function ControlledMultilineInput({
     keepPlaceholderWhileFocused,
     showCursor,
     mask,
-    tabSize,
     highlight,
   });
+
+  // The paint wraps its own rows, so each row fits `columns` and Ink never wraps one. The caret
+  // model (findVisualLineStart, text-editing.ts) wraps the same painted text, tabs expanded,
+  // through the same function.
+  const parts = [...preCursor, ...postCursor].map((segment) => ({
+    text: segment.value,
+    type: segment.type,
+  }));
+  const cursorAt = preCursor.findIndex((segment) => segment.type === 'cursor');
+  const caretOffset = (cursorAt === -1 ? preCursor : preCursor.slice(0, cursorAt)).reduce(
+    (sum, segment) => sum + segment.value.length,
+    0,
+  );
+  const visualRows = wrapWordVisualLines(
+    parts.map((part) => part.text).join(''),
+    columns,
+    preCursor[cursorAt]?.value ? caretOffset : -1,
+  );
+  const contentHeight = visualRows.length;
+  const markerHeight = visualRows.findLastIndex((row) => row.start <= caretOffset) + 1;
+  const paintedParts = visualRows.flatMap((row, index) => [
+    ...(index === 0 ? [] : [{ text: '\n', type: undefined }]),
+    ...segmentsForRowText(parts, row.text, row.start),
+  ]);
 
   const minRows = rows ?? maxRows ?? 1;
   const capRows = maxRows ?? rows ?? 1;
   const effectiveVisibleRows = Math.max(minRows, Math.min(capRows, contentHeight));
-  const contentMeasureKey = [
-    value,
-    cursorIndex,
-    focus ? 1 : 0,
-    showCursor ? 1 : 0,
-    placeholder,
-    keepPlaceholderWhileFocused === true ? 1 : 0,
-    mask ?? '',
-    highlight?.start ?? -1,
-    highlight?.end ?? -1,
-    measureColumns ?? 0,
-    tabSize,
-  ].join('|');
-  const markerMeasureKey = [
-    value,
-    cursorIndex,
-    focus ? 1 : 0,
-    showCursor ? 1 : 0,
-    mask ?? '',
-    measureColumns ?? 0,
-    tabSize,
-  ].join('|');
 
   useEffect(() => {
     onVisibleRowsChange?.(effectiveVisibleRows);
@@ -136,35 +134,14 @@ export function ControlledMultilineInput({
       flexGrow={0}
       flexShrink={0}
     >
-      <Box flexDirection="column">
-        <Box height={effectiveVisibleRows} overflowY="hidden" flexShrink={0} flexDirection="column">
-          <Box marginTop={-scrollOffset} flexDirection="column">
-            <MeasureBox onHeightChange={setContentHeight} measureKey={contentMeasureKey}>
-              <Text>
-                {preCursor.map((segment, idx) => (
-                  <Text key={`pre-${idx}`} {...getStyle(segment.type)}>
-                    {segment.value}
-                  </Text>
-                ))}
-                {postCursor.map((segment, idx) => (
-                  <Text key={`post-${idx}`} {...getStyle(segment.type)}>
-                    {segment.value}
-                  </Text>
-                ))}
-              </Text>
-            </MeasureBox>
-          </Box>
-          <Spacer />
-        </Box>
-        <MeasureBox onHeightChange={setMarkerHeight} measureKey={markerMeasureKey}>
-          <Text>
-            {preCursor.map((segment, idx) => (
-              <Text key={`marker-${idx}`} {...getStyle(segment.type)}>
-                {segment.value}
-              </Text>
-            ))}
-          </Text>
-        </MeasureBox>
+      <Box marginTop={-scrollOffset} flexDirection="column" flexShrink={0}>
+        <Text>
+          {paintedParts.map((part, idx) => (
+            <Text key={idx} {...getStyle(part.type)}>
+              {part.text}
+            </Text>
+          ))}
+        </Text>
       </Box>
     </Box>
   );

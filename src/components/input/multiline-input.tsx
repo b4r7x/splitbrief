@@ -149,7 +149,6 @@ interface MultilineInputProps extends ControlledMultilineInputProps {
   /** Where the caret starts on a fresh mount; the end of the value when unset. */
   initialCursorIndex?: number | undefined;
   onCursorChange?: ((index: number) => void) | undefined;
-  columns?: number;
   keyBindings?: {
     submit?: (key: Key) => boolean;
     newline?: (key: Key) => boolean;
@@ -394,7 +393,7 @@ export function MultilineInput({
       value={value}
       cursorIndex={cursorIndex}
       highlight={highlight}
-      measureColumns={columns}
+      columns={columns}
       showCursor={showCursor}
       focus={focus}
     />

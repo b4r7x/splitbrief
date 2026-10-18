@@ -182,6 +182,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'home-draft-long',
+      title: 'Home · a draft longer than one row',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Wrapped draft with a hard-wrapped path',
+        kind: 'ready',
+        marker: 'label printer.',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
+    defineScenario({
       id: 'home-draft-path',
       title: 'Home · a pasted absolute path in the draft',
       surface: screenSurface('home'),
@@ -401,6 +416,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Message and attached file' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-composer-long-draft',
+      title: 'Workflow · composer draft longer than one row',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'composer-long-draft',
+        title: 'Wrapped draft with a hard-wrapped path',
+        kind: 'planning',
+        marker: 'label printer.',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

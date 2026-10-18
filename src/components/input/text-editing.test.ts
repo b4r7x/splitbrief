@@ -167,10 +167,10 @@ describe('applyEditAction', () => {
     expect(edit('delete-line-backward', value, cursor, columns)).toEqual(expected);
   });
 
-  // findVisualLineStart must match Ink's wrap-ansi WORD-wrap render, NOT a grapheme
-  // char-wrap. "abc defghijk" @10 renders as "abc " / "defghijk", so the 2nd visual
-  // row starts at 4; a char-wrap (wrapVisualLines) would break at 10. These cases
-  // fail if findVisualLineStart is re-pointed at wrapVisualLines (guards REQ-011).
+  // findVisualLineStart must match the painted WORD wrap, NOT a grapheme char-wrap.
+  // "abc defghijk" @10 paints as "abc " / "defghijk", so the 2nd visual row starts
+  // at 4; a char-wrap (wrapVisualLines) would break at 10. These cases fail if
+  // findVisualLineStart is re-pointed at wrapVisualLines (guards REQ-011).
   it.each([
     ['two-word wrap', 'abc defghijk', 12, 10, { value: 'abc defghijk', cursor: 4 }],
     ['long-word hard wrap', 'abcdefghijklmno', 15, 10, { value: 'abcdefghijklmno', cursor: 10 }],
@@ -179,6 +179,29 @@ describe('applyEditAction', () => {
     'move-line-start lands on the word-wrap row start (%s)',
     (_l, value, cursor, columns, expected) => {
       expect(edit('move-line-start', value, cursor, columns)).toEqual(expected);
+    },
+  );
+
+  // 'efghi' ends exactly at column 10, so its break space does not fit: the word moves down
+  // with it and the second painted row starts on 'efghi', never on the space before 'jk'.
+  // A tab paints as spaces: 'ab\tcdefgh ijk' @8 paints 'ab    ' / 'cdefgh ' / 'ijk', and
+  // 'abcdef\tgh' @8 paints 'abcdef  ' / '  gh', a row that starts inside the tab, after it.
+  it.each([
+    ['a word that ends at the row edge', 'abcd efghi jk', 10, 5],
+    ['wide characters', 'a 你好你好 世界', 10, 7],
+    ['a tab before the row', 'ab\tcdefgh ijk', 8, 10],
+    ['a row that starts inside a tab', 'abcdef\tgh', 8, 7],
+  ] as const)(
+    'ctrl+a and ctrl+u on row 2 act on the painted row start (%s)',
+    (_l, value, columns, rowStart) => {
+      expect(edit('move-line-start', value, value.length, columns)).toEqual({
+        value,
+        cursor: rowStart,
+      });
+      expect(edit('delete-line-backward', value, value.length, columns)).toEqual({
+        value: value.slice(0, rowStart),
+        cursor: rowStart,
+      });
     },
   );
 

@@ -42,7 +42,12 @@ import { createTestGitRepo } from '../../helpers/git.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
-import type { FixtureContext, FixtureLifecycle, FixtureRegistry } from './common.js';
+import {
+  LONG_COMPOSER_DRAFT,
+  type FixtureContext,
+  type FixtureLifecycle,
+  type FixtureRegistry,
+} from './common.js';
 
 /**
  * The context keys every visual fixture publishes discovery under. A lane
@@ -907,6 +912,17 @@ function createDraftPathFixture(): FixtureLifecycle {
   };
 }
 
+function createLongDraftFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      composerDraftStore.request(LONG_COMPOSER_DRAFT);
+    },
+    teardown: home.teardown,
+  };
+}
+
 function createOutsideAttachmentFailureFixture(reason: InputFileFailureReason): FixtureLifecycle {
   const home = createHomeFixture();
   return {
@@ -1083,6 +1099,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
   [scenarioId('home-draft-path'), createDraftPathFixture],
+  [scenarioId('home-draft-long'), createLongDraftFixture],
   [scenarioId('home-reference-completion'), createReferenceCompletionFixture],
   [scenarioId('home-recent-sessions'), createRecentSessionsFixture],
   [scenarioId('home-draft-image'), createDraftImageFixture],

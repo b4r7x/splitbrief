@@ -10,6 +10,7 @@ import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { renderDockedComposer } from '#testing/helpers/composer.js';
+import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
@@ -2152,5 +2153,131 @@ describe('Composer in-box hints', () => {
     expect(emptied).toBe(absent);
     expect(emptied).not.toBe(hinted);
     expect(getTerminalCellWidth(emptied)).toBe(getTerminalCellWidth(hinted));
+  });
+});
+
+describe('Composer long draft wrap', () => {
+  const CTRL_A = '\x01';
+  const EVIDENCE_DRAFT =
+    "REVIEW: treat this as a blocking requirement of T002 that the current code misses: slugify must fold accented Latin letters to their base letters, so slugify('Crème Brûlée à la Carte') returns 'creme-brulee-a-la-carte' instead of dropping the accented letters. Write that blocking finding as one full sentence of at least 30 words that names the input, the expected output, the actual output and the file.";
+  // The 12th word ends exactly at cell 132, the input width at 138 columns, so its break space
+  // does not fit in that row.
+  const FULL_ROW_DRAFT = `${'abcdefghij '.repeat(11)}abcdefghijk tail`;
+
+  beforeEach(() => {
+    resetAllStores();
+    forceUnicodeGlyphs();
+  });
+
+  function boxRows(frame: string): string[] {
+    const rows = stripAnsiStyles(frame).split('\n');
+    const top = rows.findIndex((row) => row.includes('╭'));
+    const bottom = rows.findIndex((row) => row.includes('╰'));
+    return rows.slice(top + 1, bottom);
+  }
+
+  function textStart(row: string, first: boolean): number {
+    const left = row.indexOf('│');
+    if (first) return row.indexOf('› ', left) + 2;
+    return left + 1 + (row.slice(left + 1).match(/^ */)?.[0].length ?? 0);
+  }
+
+  async function renderDraft(cols: number, draft: string, keys?: string) {
+    terminalSizeStore.__testReset({ cols, rows: 30 });
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        {...(keys === undefined ? {} : { boxHints: { keys } })}
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+      />,
+      { cols, rows: 30 },
+    );
+    await flushEffects();
+    ui.stdin.write(draft);
+    await flushEffects();
+    return ui;
+  }
+
+  it.each([
+    ['the evidence draft', EVIDENCE_DRAFT],
+    ['an exactly full first row', FULL_ROW_DRAFT],
+  ])('keeps every row of %s inside the padding at one start column', async (_label, draft) => {
+    const ui = await renderDraft(138, draft);
+
+    const rows = boxRows(ui.lastFrame() ?? '');
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) expect(row.trimEnd().endsWith(' │'), row).toBe(true);
+    const start = textStart(rows[0] ?? '', true);
+    for (const row of rows.slice(1)) expect(textStart(row, false), row).toBe(start);
+    ui.unmount();
+  });
+
+  it.each([
+    ['an exactly full first row', 138, FULL_ROW_DRAFT, undefined],
+    ['a row beside the hint keys', 80, EVIDENCE_DRAFT, 'ctrl+e edit'],
+  ])('ctrl+a on the last row of %s lands on its painted start', async (_l, cols, draft, keys) => {
+    const ui = await renderDraft(cols, draft, keys);
+    ui.stdin.write(CTRL_A);
+    await flushEffects();
+    ui.stdin.write('X');
+    await flushEffects();
+
+    const rows = boxRows(ui.lastFrame() ?? '');
+    const last = rows.at(-1) ?? '';
+    expect(last.slice(textStart(last, rows.length === 1)).startsWith('X'), last).toBe(true);
+    for (const row of rows) expect(row.trimEnd().endsWith(' │'), row).toBe(true);
+    ui.unmount();
+  });
+
+  // At 40 columns the pasted draft paints 'Run    make build first then' / 'check every single
+  // output file' / 'now'.
+  async function pasteTabDraft() {
+    terminalSizeStore.__testReset({ cols: 40, rows: 30 });
+    const submitted: string[] = [];
+    const ui = renderThroughFilteredStdin(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        onSubmit={(submission) => submitted.push(submission.message.text)}
+        onRuntimeCommand={() => {}}
+      />,
+      { cols: 40, rows: 30 },
+    );
+    await flushEffects();
+    ui.pressBytes(
+      '\u001b[200~Run\tmake build first then check every single output file now\u001b[201~',
+    );
+    await flushEffects();
+    expect(boxRows(ui.lastFrame() ?? '')).toHaveLength(3);
+    return { ui, submitted };
+  }
+
+  it('ctrl+u on the last row of a pasted draft with a tab deletes only that row', async () => {
+    const { ui } = await pasteTabDraft();
+    ui.pressBytes('\x15');
+    await flushEffects();
+
+    expect(boxRows(ui.lastFrame() ?? '').map((row) => row.trim())).toEqual([
+      '│ › Run    make build first then       │',
+      '│   check every single output file     │',
+    ]);
+    ui.unmount();
+  });
+
+  it('ctrl+a on the last row of a pasted draft with a tab lands on that row and keeps the tab', async () => {
+    const { ui, submitted } = await pasteTabDraft();
+    for (const key of [CTRL_A, 'X', '\r']) {
+      ui.pressBytes(key);
+      await flushEffects();
+    }
+
+    expect(submitted).toEqual(['Run\tmake build first then check every single output file Xnow']);
+    ui.unmount();
   });
 });

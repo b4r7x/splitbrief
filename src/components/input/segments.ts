@@ -7,8 +7,11 @@ export interface Segment {
   type?: SegmentType;
 }
 
-function expandTabs(text: string, tabSize: number): string {
-  return text.replace(/\t/g, ' '.repeat(tabSize));
+// The paint shows a tab as this many spaces; the caret model (text-editing.ts) wraps it the same.
+export const TAB_SIZE = 4;
+
+function expandTabs(text: string): string {
+  return text.replace(/\t/g, ' '.repeat(TAB_SIZE));
 }
 
 export function normalizeLineEndings(text: string): string {
@@ -24,7 +27,6 @@ export interface BuildSegmentsParams {
   keepPlaceholderWhileFocused?: boolean | undefined;
   showCursor: boolean;
   mask?: string | undefined;
-  tabSize: number;
   highlight?: { start: number; end: number } | undefined;
 }
 
@@ -99,7 +101,6 @@ export function buildSegments(params: BuildSegmentsParams): SegmentResult {
     keepPlaceholderWhileFocused,
     showCursor,
     mask,
-    tabSize,
     highlight,
   } = params;
 
@@ -108,7 +109,7 @@ export function buildSegments(params: BuildSegmentsParams): SegmentResult {
     if (!isPlaceholder && mask) {
       return normalized.replace(/[^\n]/g, mask);
     }
-    return stripTerminalControls(expandTabs(normalized, tabSize), { preserveLineBreaks: true });
+    return stripTerminalControls(expandTabs(normalized), { preserveLineBreaks: true });
   };
 
   if (!value) {

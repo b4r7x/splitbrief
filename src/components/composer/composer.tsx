@@ -45,7 +45,11 @@ import {
 } from './home-hint.js';
 import { useProjectFiles } from './use-project-files.js';
 import { trimDraftDocument, usePasteDrafts } from './use-paste-drafts.js';
-import { computeComposerHintBudget, fitComposerHintKeys } from './hint-zones.js';
+import {
+  computeComposerHintBudget,
+  computeComposerInputColumns,
+  fitComposerHintKeys,
+} from './hint-zones.js';
 import { useReviewKeys } from './use-review-keys.js';
 import { useDraftSync } from './use-draft-sync.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
@@ -202,7 +206,6 @@ function ComposerInput({
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const [{ projectDir, config }] = useStores(configStore);
   const [{ message: feedbackMessage, isError: feedbackIsError }] = useStores(feedbackStore);
-  const inputColumns = Math.max(1, (width ?? cols) - 4 - inputPaddingX * 2);
   const [caretSeed, setCaretSeed] = useState<{ epoch: number; index: number } | null>(null);
   const caretRef = useRef(0);
   const [visibleRows, setVisibleRows] = useState(1);
@@ -569,6 +572,11 @@ function ComposerInput({
     boxHints?.keys ?? '',
     computeComposerHintBudget({ boxWidth: hintBoxWidth, paddingX: inputPaddingX }),
   );
+  const inputColumns = computeComposerInputColumns({
+    boxWidth: hintBoxWidth,
+    paddingX: inputPaddingX,
+    hintKeys,
+  });
 
   const completionCap = computeCompletionCap(rows, visibleRows);
   const referenceSuggestionsCap = Math.min(MAX_REFERENCE_SUGGESTIONS, completionCap);
@@ -645,7 +653,7 @@ function ComposerInput({
           <Text color={promptColorForMode(mode, theme)}>
             {`${promptGlyph ?? glyph('prompt')} `}
           </Text>
-          <Box flexGrow={1} overflow="hidden">
+          <Box flexGrow={1} flexBasis={0} overflow="hidden">
             <MultilineInput
               key={`${command.inputKey}:${reference.inputKey}:${inputEpoch}`}
               value={view.text}

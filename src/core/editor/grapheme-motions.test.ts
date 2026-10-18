@@ -10,6 +10,7 @@ import {
   wordBoundaryBackward,
   wordBoundaryForward,
   wrapVisualLines,
+  wrapWordVisualLines,
 } from './grapheme-motions.js';
 
 const ZWJ_FAMILY = '\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}';
@@ -150,5 +151,61 @@ describe('word boundaries stop at whitespace, not at newlines', () => {
   it('does not cross a newline', () => {
     expect(wordBoundaryForward(value, 8)).toBe(11);
     expect(wordBoundaryBackward(value, 8)).toBe(8);
+  });
+});
+
+describe('wrapWordVisualLines keeps each break space in the row it ends', () => {
+  const rows = (text: string, columns: number, caretCell?: number) =>
+    wrapWordVisualLines(text, columns, caretCell).map((line) => line.text);
+
+  it('keeps the break space of an exactly full row on that row', () => {
+    expect(rows('abcd efgh ij', 10)).toEqual(['abcd efgh ', 'ij']);
+  });
+
+  it('carries the last letter of a row-wide word down with its break space', () => {
+    expect(rows('abcdefghij next', 10)).toEqual(['abcdefghi', 'j next']);
+  });
+
+  it('hard-wraps a word longer than a row at the row width', () => {
+    expect(rows(`${'x'.repeat(25)} y`, 10)).toEqual(['x'.repeat(10), 'x'.repeat(10), 'xxxxx y']);
+  });
+
+  it('starts a word longer than a row on a fresh row only when that costs no extra row', () => {
+    expect(rows(`ab ${'x'.repeat(15)}`, 10)).toEqual(['ab xxxxxxx', 'x'.repeat(8)]);
+    expect(rows(`abcdefgh ${'x'.repeat(12)}`, 10)).toEqual(['abcdefgh ', 'x'.repeat(10), 'xx']);
+  });
+
+  it('measures wide characters in cells', () => {
+    const lines = wrapWordVisualLines('你好你好 世界', 10);
+    expect(lines.map((line) => [line.text, line.width])).toEqual([
+      ['你好你好 ', 9],
+      ['世界', 4],
+    ]);
+  });
+
+  it('ends a row at every newline and keeps an empty line', () => {
+    expect(wrapWordVisualLines('ab\n\ncd', 10).map((line) => [line.start, line.text])).toEqual([
+      [0, 'ab'],
+      [3, ''],
+      [4, 'cd'],
+    ]);
+  });
+
+  it('treats the caret cell as part of its word, not as a break', () => {
+    expect(rows('abcdefghij ', 10, 10)).toEqual(['abcdefghij', ' ']);
+    expect(rows('abc  def', 10, 3)).toEqual(['abc  def']);
+  });
+
+  it('keeps every row within the width, drops no character and leads no row with a space', () => {
+    const text =
+      "slugify must fold accented Latin letters to their base letters, so slugify('Crème Brûlée à la Carte') returns 'creme-brulee-a-la-carte' instead.";
+    for (let columns = 4; columns <= 40; columns += 1) {
+      const lines = wrapWordVisualLines(text, columns);
+      expect(lines.map((line) => line.text).join('')).toBe(text);
+      for (const line of lines) {
+        expect(line.width).toBeLessThanOrEqual(columns);
+        expect(line.text.startsWith(' ')).toBe(false);
+      }
+    }
   });
 });

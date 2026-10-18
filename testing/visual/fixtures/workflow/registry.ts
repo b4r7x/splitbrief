@@ -24,6 +24,7 @@ import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-
 import type { CheckpointId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
 import {
+  LONG_COMPOSER_DRAFT,
   VISUAL_FIXTURE_EPOCH,
   type CheckpointPredicate,
   type FixtureFactory,
@@ -73,6 +74,12 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         reviewKeysStore.requestComment();
         composerDraftStore.request(PLAN_CARD_COMMENT_DRAFT);
       },
+    });
+  }
+  if (projection.scenarioId === 'workflow-composer-long-draft') {
+    return () => ({
+      ...base(),
+      afterMount: () => composerDraftStore.request(LONG_COMPOSER_DRAFT),
     });
   }
   if (projection.scenarioId === 'workflow-plan-card-request-empty') {
@@ -403,6 +410,7 @@ const checkpointPredicates = [
     includesAll('Attached files · 2', 'design/receiving-flow.png'),
   ],
   [checkpointId('composer-outside-file'), includesAll('Attached files · 1', 'Planning…')],
+  [checkpointId('composer-long-draft'), includesAll('label printer.', 'Planning…')],
   [checkpointId('question-outside-file'), includesAll('Attached files · 1', 'Planning…')],
   [checkpointId('planning-path-notice'), includesAll('cannot open', 'Planning…')],
   [
