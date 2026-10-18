@@ -20,9 +20,9 @@ const XDG_BASE_DEFAULTS = {
 } as const;
 
 /**
- * An XDG base folder resolved the way OpenCode resolves it: a non-empty
- * variable replaces the default under `home`, and a missing folder there never
- * falls back to that default.
+ * An XDG base folder resolved the way OpenCode and Kilo Code resolve it: a
+ * non-empty variable replaces the default under `home`, and a missing folder
+ * there never falls back to that default.
  */
 export function xdgBaseDir(
   env: NodeJS.ProcessEnv,

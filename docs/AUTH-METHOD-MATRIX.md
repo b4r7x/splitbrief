@@ -42,7 +42,7 @@ Every tool can hold the planner and the implementer seat; the reviewer seat reus
 | `cursor` · `session` | none | macOS: real `HOME`/`USER` (keychain). Linux: live passthrough of the declared Cursor state paths | `CURSOR_API_KEY` |
 | `cursor` · `api-key` | none | `CURSOR_API_KEY` only | private `HOME`; nothing bridged |
 | `opencode` · `provider-dependent` | none | live passthrough of the OpenCode config and data folders your own OpenCode uses (`$XDG_CONFIG_HOME/opencode` and `$XDG_DATA_HOME/opencode`, or `~/.config/opencode` and `~/.local/share/opencode` when those variables are unset), **plus every `*_API_KEY` in the parent environment** | nothing |
-| `kilo-code` · `provider-dependent` | none | the tool's live state directory, **plus every `*_API_KEY`** | nothing |
+| `kilo-code` · `provider-dependent` | none | live passthrough of the Kilo Code config and data folders your own Kilo Code uses (`$XDG_CONFIG_HOME/kilo` and `$XDG_DATA_HOME/kilo`, or `~/.config/kilo` and `~/.local/share/kilo` when those variables are unset), and of the folders of older Kilo Code versions when they exist (`~/.kilocode`, and `$XDG_CONFIG_HOME/kilocode` or `~/.config/kilocode`), **plus every `*_API_KEY` in the parent environment** | nothing |
 | `copilot` · `session` | none | `GH_TOKEN` / `GITHUB_TOKEN` **and** a sealed copy of Copilot's credential files, simultaneously | nothing |
 | `command-code` · `session` | none | sealed copy of the tool's credential files | no credential env var exists |
 | `antigravity` · `session` | none | macOS: real `HOME`/`USER` (`host-account`), with no copied files. Linux: no credential bridge | no credential env var is accepted for this tool |

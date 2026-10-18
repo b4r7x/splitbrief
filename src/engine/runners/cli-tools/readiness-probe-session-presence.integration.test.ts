@@ -333,7 +333,8 @@ const ORACLE_TOOLS = {
   },
   'kilo-code': {
     argv: ['kilo', 'auth', 'list'],
-    stateFile: join('.local', 'share', 'kilo', 'auth.json'),
+    // Kilo Code reads `$XDG_DATA_HOME/kilo`, which `stubHostState` sets.
+    stateFile: join('xdg-data', 'kilo', 'auth.json'),
     report:
       '┌  Credentials \u001b[90m~/.local/share/kilo/auth.json\n│\n◝  GitHub Copilot \u001b[90moauth\n│\n└  1 credentials\n',
     facts: [{ provider: 'GitHub Copilot', source: 'oauth' }],
