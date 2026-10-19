@@ -412,6 +412,54 @@ describe('formatSeatIdentity', () => {
       identities[1],
     );
   });
+
+  it('names the route of a Kilo Code model the way it names an OpenCode route', () => {
+    const copilot = { kind: 'cli', tool: 'kilo-code', model: 'github-copilot/gpt-5.5' } as const;
+    const openai = { ...copilot, model: 'openai/gpt-5.5' } as const;
+    expect(formatSeatIdentity({ seat: copilot })).toBe(
+      'Kilo Code CLI · GPT-5.5 · via github-copilot',
+    );
+    expect(formatSeatIdentity({ seat: seatIdsOf(openai) })).toBe(
+      'Kilo Code CLI · GPT-5.5 · via openai',
+    );
+    expect(formatSeatCandidateIdentity(copilot)).toBe(
+      'Kilo Code CLI · GPT-5.5 · via github-copilot',
+    );
+    expect(formatShortSeatIdentity({ seat: copilot })).toBe('GPT-5.5 via github-copilot');
+    expect(formatSeatChangeIdentities({ seat: openai }, { seat: copilot })).toEqual({
+      from: 'Kilo Code CLI · GPT-5.5 · via openai',
+      to: 'Kilo Code CLI · GPT-5.5 · via github-copilot',
+    });
+    expect(formatSeatIdentity({ seat: { ...copilot, model: 'kilo/kilo-auto/free' } })).toBe(
+      'Kilo Code CLI · Kilo Auto Free · via kilo',
+    );
+  });
+
+  it('spells the route word as the picker route row does, lowercased', () => {
+    for (const tool of ['opencode', 'kilo-code'] as const) {
+      expect(formatSeatIdentity({ seat: { kind: 'cli', tool, model: 'OpenAI/gpt-5.5' } })).toMatch(
+        / · via openai$/,
+      );
+    }
+  });
+
+  it('keeps a Kilo Code model and its route when a narrow row drops the tool label', () => {
+    const identity = formatSeatIdentity({
+      seat: { kind: 'cli', tool: 'kilo-code', model: 'github-copilot/gpt-5.5' },
+    });
+    expect(cutSeatIdentity(identity, 30)).toBe('GPT-5.5 · via github-copilot');
+    expect(wrapSeatIdentity(identity, 24)).toEqual([
+      'Kilo Code CLI · GPT-5.5',
+      'via github-copilot',
+    ]);
+  });
+
+  it('names a tool that does not route by provider without a route word', () => {
+    expect(
+      formatSeatIdentity({ seat: { kind: 'cli', tool: 'cursor', model: 'openai/gpt-5.5' } }),
+    ).not.toContain('via ');
+  });
+
   it('names the tool and the model, separated once', () => {
     const identity = formatSeatIdentity({ seat: planner });
 

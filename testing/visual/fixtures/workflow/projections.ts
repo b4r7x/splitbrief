@@ -5957,6 +5957,32 @@ const projections = [
       }
     }),
   },
+  {
+    ...implementationProjection,
+    scenarioId: scenarioId('workflow-crew-kilo'),
+    config: {
+      planner: { kind: 'cli', tool: 'kilo-code', model: 'github-copilot/gpt-5.5' },
+      implementer: { kind: 'cli', tool: 'kilo-code', model: 'openai/gpt-5.5' },
+      reviewer: { kind: 'cli', tool: 'kilo-code', model: 'kilo/kilo-auto/free' },
+    },
+    events: implementationProjection.events.map((event): EngineEvent => {
+      switch (event.type) {
+        case 'task_started':
+          return { ...event, tool: 'kilo-code', model: 'openai/gpt-5.5', axes: [] };
+        case 'runner_call_started':
+        case 'runner_call_activity':
+          return {
+            ...event,
+            backendKind: 'cli',
+            runnerName: 'kilo-code',
+            model: 'openai/gpt-5.5',
+            axes: [],
+          };
+        default:
+          return event;
+      }
+    }),
+  },
   balanceSpentRecoveryProjection,
   modelRefusalProjection('workflow-recovery-route-signed-out', ROUTE_SIGNED_OUT_AUTH),
   modelRefusalProjection('workflow-recovery-model-not-listed', MODEL_NOT_LISTED_AUTH),

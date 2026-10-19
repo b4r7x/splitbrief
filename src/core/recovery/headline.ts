@@ -4,7 +4,8 @@ import { SOFT_SEP } from '../separators.js';
 import { formatResetAt } from './reset-clock.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { countNoun } from '../../utils/pluralize.js';
-import { formatAccountCause, formatNoCredential } from './account-cause.js';
+import { formatAccountCause } from './account-cause.js';
+import { formatNoCredential } from '../runners/route-auth.js';
 import type { SeatLineSpan } from '../crew/identity.js';
 import type { SeatSwitchCause } from '../schemas/workflow.js';
 

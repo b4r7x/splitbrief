@@ -21,11 +21,6 @@ export function formatAccountCause(cause: SeatAccountCause, tool: string): strin
   return `${ACCOUNT_CAUSE_WORDS[cause]} ${tool}`;
 }
 
-/** A model route whose provider the tool holds no credential for, as doctor and a halt name it. */
-export function formatNoCredential(tool: string, provider: string): string {
-  return `${tool} has no credential for ${provider}`;
-}
-
 export function accountCauseAdvice(
   input: Readonly<{ cause: Exclude<SeatAccountCause, 'auth'>; tool: string; seat: CrewSeatId }>,
 ): string {
