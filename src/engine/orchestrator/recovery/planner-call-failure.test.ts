@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { defaultCliAuthChannel, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { error } from '../../../utils/error.js';
+import { inputTooLargeRefusal } from '../../runners/input-limit.js';
 import { streamError } from '../../streaming/stream-errors.js';
+import { buildPlannerCallFailedRecoveryIssue } from './builders/planner.js';
 import {
   diagnosePlannerCallFailure,
   plannerCallHaltIssue,
@@ -299,5 +302,56 @@ describe('a model refusal on a planner-tier seat', () => {
       expect(failed.failure).toBe('call-failed');
       expect(plannerHaltRow(issue, failed)).toBe(failed.message);
     });
+  });
+});
+
+describe('a planner call the tool refused as too large', () => {
+  const runner = cliSeat('claude-code');
+  const task = makeTask({ id: 'T001', suggestedFiles: ['src/greet.ts'] });
+  const refused = error('input-too-large', 'Prompt is too long', {
+    error: { code: 'input-too-large', message: 'Prompt is too long' },
+  });
+
+  function haltFor(err: unknown) {
+    const diagnosis = diagnosePlannerCallFailure({
+      err,
+      label: 'Planner consult for T001 failed',
+      runner,
+      seat: 'plan',
+    });
+    const issue = buildPlannerCallFailedRecoveryIssue({
+      diagnosis,
+      task,
+      phase: 'implementing',
+      runner,
+      createdAt: '2026-10-19T12:00:00.000Z',
+    });
+    return { diagnosis, issue };
+  }
+
+  it('halts with no retry, because a retry sends the same prompt', () => {
+    const { diagnosis, issue } = haltFor(refused);
+
+    expect(diagnosis.failure).toBe('input-too-large');
+    expect(issue.reason).toBe('planner-call-failed');
+    expect(issue.message).toBe('Planner consult for T001 failed: the prompt is too large');
+    expect(issue.details).toContain('Claude Code CLI reported: Prompt is too long');
+    expect(issue.availableActions).not.toContain('retry-same-worker');
+    expect(issue.availableActions).toEqual(['skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('skip-current-task');
+    expect(issue.details.join('\n')).toContain('A retry sends the same prompt');
+    expect(plannerHaltRow(issue, diagnosis)).toBe(diagnosis.message);
+  });
+
+  it('names the figures a refusal carries', () => {
+    const { diagnosis, issue } = haltFor(inputTooLargeRefusal(5_000_000, 1_000_000));
+
+    expect(diagnosis.failure).toBe('input-too-large');
+    expect(issue.message).toBe('Planner consult for T001 failed: the prompt is too large');
+    expect(issue.details).toContain(
+      'The prompt is 5,000,000 characters; Claude Code CLI takes at most 1,000,000.',
+    );
+    expect(issue.facts).toMatchObject({ chars: 5_000_000, maxChars: 1_000_000 });
+    expect(issue.availableActions).not.toContain('retry-same-worker');
   });
 });

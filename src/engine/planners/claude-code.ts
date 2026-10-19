@@ -8,6 +8,7 @@ import { createPlannerCallContext } from './call-context.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import { createCommandAvailability } from '../availability.js';
 import { invokeClaudePlanner } from './claude-invoke.js';
+import { typedRunnerCallErrorCode } from '../implementers/pipeline/call-result.js';
 import { toTokenDelta } from '../calls/projection.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import {
@@ -173,6 +174,8 @@ export function createClaudeCodePlanner(opts: {
         callbacks.onSessionExpired?.(resumeId);
         throw err;
       }
+      // A session Claude refused as too long is refused again: the next call starts a fresh one.
+      if (typedRunnerCallErrorCode(err) === 'input-too-large') session.capture(null);
       callbackBuffer?.flush();
       throw err;
     }

@@ -4,10 +4,11 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeResearchingState, setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { saveState } from '../../core/state/persistence.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
+import { error } from '../../utils/error.js';
 import { createSteeringPort, deliverToRunningCall } from '../calls/steering.js';
 import { sessionResumeExpiredError } from '../session-expiry.js';
-import { askPlannerSession } from './planner-session.js';
+import { askPlannerSession, type PlannerSessionTurn } from './planner-session.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -120,5 +121,90 @@ describe('askPlannerSession steering', () => {
 
     expect(answer.result).toMatchObject({ value: { answer: 'guidance' } });
     expect(ports).toEqual([undefined]);
+  });
+});
+
+describe('askPlannerSession on a refused thread', () => {
+  const refused = () =>
+    error('input-too-large', 'Prompt is too long', {
+      error: { code: 'input-too-large', message: 'Prompt is too long' },
+    });
+  const call = (turns: PlannerSessionTurn[]) => ({
+    schema: z.object({ answer: z.string() }),
+    jsonSchema: { type: 'object' },
+    schemaName: 'answer',
+    compose: (turn: PlannerSessionTurn) => {
+      turns.push(turn);
+      return turn.onSession ? 'continue' : 'rebuild';
+    },
+  });
+
+  it('reissues the call once on a fresh session and keeps the new thread', async () => {
+    const ref = setupProject(dirs);
+    const state = { ...makeResearchingState(), plannerSessionId: 'S' };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const turns: PlannerSessionTurn[] = [];
+    let attempt = 0;
+    const planner = makePlanner();
+    planner.capabilities.supportsSessionResume = true;
+    planner.typedCall = (ctx) => ({
+      seat: ctx.seat,
+      typedOutput: 'strict-native',
+      canResume: true,
+      invoke: async () => {
+        attempt += 1;
+        // Claude Code reports "Prompt is too long" as a failed call, not a throw.
+        if (attempt === 1)
+          return makeRunnerCallResult({
+            status: 'failed',
+            text: '',
+            error: { code: 'input-too-large', message: 'Prompt is too long' },
+          });
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: JSON.stringify({ answer: 'ok' }),
+          nativeSessionId: 'S2',
+        });
+      },
+    });
+
+    const answer = await askPlannerSession({ ...ref, bus, state, planner }, call(turns));
+
+    expect(answer.result).toMatchObject({ value: { answer: 'ok' } });
+    expect(turns.map((turn) => turn.onSession)).toEqual([true, false]);
+    expect(turns[1]?.priorMessages).toBeDefined();
+    expect(loadState(ref)?.plannerSessionId).toBe('S2');
+    expect(answer.state.plannerSessionId).toBe('S2');
+    expect(events.filter((event) => event.type === 'warning')).toEqual([
+      expect.objectContaining({
+        category: 'planner',
+        code: 'planner_session_refused',
+        message: expect.stringContaining('refused the session as too long'),
+      }),
+    ]);
+  });
+
+  it('rethrows the refusal of a call that resumed no thread', async () => {
+    const ref = setupProject(dirs);
+    const state = makeResearchingState();
+    saveState(ref, state);
+    const { bus } = makeBusRecorder();
+    const turns: PlannerSessionTurn[] = [];
+    const planner = makePlanner();
+    planner.capabilities.supportsSessionResume = true;
+    planner.typedCall = (ctx) => ({
+      seat: ctx.seat,
+      typedOutput: 'strict-native',
+      canResume: true,
+      invoke: async () => {
+        throw refused();
+      },
+    });
+
+    await expect(
+      askPlannerSession({ ...ref, bus, state, planner }, call(turns)),
+    ).rejects.toMatchObject({ kind: 'input-too-large' });
+    expect(turns).toHaveLength(1);
   });
 });

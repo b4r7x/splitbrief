@@ -728,6 +728,12 @@ const checkpointPredicates = [
           'Tasks T002 and T003 depend on each other.',
         )(context)),
   ],
+  [
+    checkpointId('recovery-plan-input-too-large'),
+    (context) =>
+      includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)(context) &&
+      (context.viewport.cols < 80 || includesAll('A retry sends the same prompt.')(context)),
+  ],
   [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
   [checkpointId('recovery-review'), includesAll()],
   [checkpointId('recovery-model-pick'), includesAll('Pick another REVIEW model')],

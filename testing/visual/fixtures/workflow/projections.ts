@@ -81,7 +81,10 @@ import {
   buildPlanSessionHaltRecoveryIssue,
   buildPlannerCallFailedRecoveryIssue,
 } from '../../../../src/engine/orchestrator/recovery/builders/planner.js';
-import { diagnosePlannerCallFailure } from '../../../../src/engine/orchestrator/recovery/planner-call-failure.js';
+import {
+  diagnosePlannerCallFailure,
+  plannerHaltRow,
+} from '../../../../src/engine/orchestrator/recovery/planner-call-failure.js';
 import { consultFailureLabel } from '../../../../src/engine/orchestrator/task/retry.js';
 import {
   publishError,
@@ -3625,6 +3628,55 @@ const hintSeatRecoveryProjection: WorkflowFixtureProjection = {
   },
 };
 
+/**
+ * Claude Code on PLAN refused a brief's consult as too long, as it does live: its own words name
+ * no figures. A retry sends the same prompt, so the halt offers the other tools, Skip and End run.
+ */
+function planInputTooLargeDiagnosis() {
+  return diagnosePlannerCallFailure({
+    seat: 'plan',
+    err: error('runner-call-failed', 'Claude runner call failed: Prompt is too long', {
+      status: 'failed',
+      error: { code: 'input-too-large', message: 'Prompt is too long' },
+    }),
+    label: consultFailureLabel('plan', WORKFLOW_FIXTURE_TASK_ID),
+    runner: visualConfig().planner,
+  });
+}
+
+function planInputTooLargeRecoveryIssue(): RecoveryIssue {
+  return buildPlannerCallFailedRecoveryIssue({
+    id: 'rec_visual_plan_input_too_large',
+    diagnosis: planInputTooLargeDiagnosis(),
+    task: HALTED_TASK,
+    phase: 'escalating',
+    runner: visualConfig().planner,
+    details: consultHaltDetails(WORKFLOW_FIXTURE_TASK_ID, 'plan'),
+    seatSwap: plannerSeatSwap('plan', 'claude-code', ['claude-code', 'codex', 'opencode']),
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const planInputTooLargeRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-plan-input-too-large'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    const issue = planInputTooLargeRecoveryIssue();
+    return publishedEvents(FIXED_TS + 100, (bus) =>
+      publishError({
+        bus,
+        phase: issue.phase,
+        message: plannerHaltRow(issue, planInputTooLargeDiagnosis()),
+      }),
+    );
+  },
+  get resumeState() {
+    return haltedResumeState(planInputTooLargeRecoveryIssue());
+  },
+};
+
 const BALANCE_SWITCH_FALLBACK = { ...SEAT_FALLBACK, variant: 'high' } as const;
 const BALANCE_SWITCH_CONFIG = configWithSwitchedSeat(
   visualConfig({ implementer: { ...OPENCODE_BALANCE_SEAT, fallback: BALANCE_SWITCH_FALLBACK } }),
@@ -5910,6 +5962,7 @@ const projections = [
   modelRefusalProjection('workflow-recovery-model-not-listed', MODEL_NOT_LISTED_AUTH),
   modelRefusalProjection('workflow-recovery-model-refused', MODEL_REFUSED_AUTH),
   reviewModelRefusalProjection,
+  planInputTooLargeRecoveryProjection,
   balanceSeatSwitchProjection,
   stopSheetRecoveryProjection,
   buildConsultProjection,

@@ -3,6 +3,7 @@ import type { ResumeContextHolder } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { typedRunnerCallErrorCode } from '../implementers/pipeline/call-result.js';
 import { isSessionExpiredError } from '../session-expiry.js';
 import { publishWarning, publishWarningFromError } from './events.js';
 import { buildResumeContext } from './transcript/rebuild.js';
@@ -102,11 +103,11 @@ export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promis
 
 /**
  * Issues one planning call: a step's or a revision's. A call that resumed the planner's thread and
- * finds it expired runs once more, on a fresh session with the rebuilt transcript, as a continued
- * run would: the seat has already dropped the thread. Any other failure, and a failure of the call
- * issued again, is the caller's.
+ * finds it expired, or refused as too long, runs once more, on a fresh session with the rebuilt
+ * transcript, as a continued run would: the seat has already dropped the thread. Any other
+ * failure, and a failure of the call issued again, is the caller's.
  */
-export async function withExpiredSessionReissue<T>(opts: {
+export async function withFreshSessionReissue<T>(opts: {
   projectDir: string;
   sessionId: string;
   bus: EventBus;
@@ -122,13 +123,19 @@ export async function withExpiredSessionReissue<T>(opts: {
   try {
     return await opts.issue();
   } catch (err) {
-    if (!resumed || signal?.aborted || !isSessionExpiredError(err)) throw err;
+    const expired = isSessionExpiredError(err);
+    const refused = typedRunnerCallErrorCode(err) === 'input-too-large';
+    if (!resumed || signal?.aborted || !(expired || refused)) throw err;
     publishWarning({
       bus,
       phase: state.phase,
-      message:
-        'Planner session expired; the call runs again on a fresh session with the conversation so far.',
-      safety: { category: 'planner', code: 'planner_session_expired' },
+      message: expired
+        ? 'Planner session expired; the call runs again on a fresh session with the conversation so far.'
+        : 'Planner tool refused the session as too long; the call runs again on a fresh session with the conversation so far.',
+      safety: {
+        category: 'planner',
+        code: expired ? 'planner_session_expired' : 'planner_session_refused',
+      },
     });
     const rebuilt: ResumeContextHolder = { messages: [] };
     await applyRebuiltContext({

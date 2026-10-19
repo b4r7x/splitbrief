@@ -295,7 +295,7 @@ function consultContract(): string {
     plan: PLACEHOLDER_PLAN,
     task: PLACEHOLDER_TASK,
     revisions: [],
-    diff: "<the diff from the attempt's start snapshot to now>",
+    diffs: [{ path: '<file>', diff: "<the diff from the attempt's start snapshot to now>" }],
     failingOutput: ERROR_PLACEHOLDER,
     report: {
       status: 'done',

@@ -2492,6 +2492,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-plan-input-too-large',
+      title: "Workflow · PLAN refused a brief's consult as too long",
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'recovery-plan-input-too-large',
+        title: 'Planner input refusal recovery menu',
+        kind: 'question',
+        marker: 'Change PLAN tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-hint-seat',
       title: "Workflow · quota halt on a brief's hint",
       surface: screenSurface('workflow'),

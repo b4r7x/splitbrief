@@ -235,19 +235,22 @@ export function createCliPlanner(
             )
           : runOnce({ ...o, schema: { json: schema.json } });
     try {
-      return await finish(
-        await run({
-          prompt,
-          projectDir,
-          callbacks,
-          callContext,
-          threaded,
-          resumeId,
-          ...(opts.images !== undefined && { images: opts.images }),
-          signal,
-          sandboxEnv: environment,
-        }),
-      );
+      const result = await run({
+        prompt,
+        projectDir,
+        callbacks,
+        callContext,
+        threaded,
+        resumeId,
+        ...(opts.images !== undefined && { images: opts.images }),
+        signal,
+        sandboxEnv: environment,
+      });
+      // A thread the tool refused as too long is refused again: the next call starts a fresh one.
+      if (threaded && result.status !== 'completed' && result.error?.code === 'input-too-large') {
+        nativeSession.capture(null);
+      }
+      return await finish(result);
     } catch (err) {
       if (resumeId !== null && isSessionExpiredError(err)) {
         nativeSession.capture(null);

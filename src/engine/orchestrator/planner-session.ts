@@ -6,7 +6,7 @@ import type { SteeringPort } from '../calls/steering.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import { requestTyped, type RequestTypedResult } from '../runners/typed-output.js';
-import { withExpiredSessionReissue } from './resume-context.js';
+import { withFreshSessionReissue } from './resume-context.js';
 import { transitionAndSave } from './state-ops.js';
 
 /** What one typed call on the planner's own thread is built from. */
@@ -67,7 +67,7 @@ export async function askPlannerSession<T>(
     ctx.onStateChange?.(next);
   };
 
-  const result = await withExpiredSessionReissue({
+  const result = await withFreshSessionReissue({
     projectDir: ctx.projectDir,
     sessionId: ctx.sessionId,
     bus: ctx.bus,

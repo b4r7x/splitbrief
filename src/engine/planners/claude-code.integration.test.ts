@@ -193,6 +193,44 @@ describe('createClaudeCodePlanner planning', () => {
     expect(reportedSessionIds).toEqual(['sess-new']);
   });
 
+  it('drops a session the tool refused as too long, so the next call starts a fresh one', async () => {
+    const argvLog = join(shimDir, 'argv-log.txt');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        `printf '%s ' "$@" >> '${argvLog}'`,
+        `printf '\\n' >> '${argvLog}'`,
+        'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
+        `  printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: true, result: 'Prompt is too long', session_id: 'sess-old' })}'`,
+        '  exit 1',
+        'fi',
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new', result: 'fresh', usage: { input_tokens: 2, output_tokens: 2 } })}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+    const planner = await createTrustedClaudeCodePlanner({
+      authChannel: undefined,
+      initialSessionId: 'sess-old',
+    });
+    const callbacks = { onOutput: () => {} };
+
+    await expect(
+      callPlanner(planner, { prompt: 'refused', projectDir, callbacks }),
+    ).rejects.toMatchObject({ data: { error: { code: 'input-too-large' } } });
+    const rerun = await callPlanner(planner, { prompt: 'rerun', projectDir, callbacks });
+
+    expect(rerun.text).toBe('fresh');
+    const [refused, fresh] = readFileSync(argvLog, 'utf8').trim().split('\n');
+    expect(refused).toContain('--resume sess-old');
+    expect(fresh).not.toContain('--resume');
+  });
+
   it.each([false, true])('quarantines mismatched resume (init=%s)', async (withInit) => {
     const argvLog = join(shimDir, 'argv-log.txt');
     const shimPath = join(shimDir, 'claude');
