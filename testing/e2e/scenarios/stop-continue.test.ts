@@ -1,11 +1,14 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { STATE_FILE, sessionDir } from '../../../src/core/paths.js';
 import { readRunnerPids } from '../../../src/core/sessions/runner-pids.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEvent, EngineEventOf } from '../../../src/engine/events/types.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { checkoutEntries } from '#testing/helpers/checkout.js';
+import { spawnCli } from '../helpers/live-cli-harness.js';
 import { assertPlainStdout } from '../helpers/run-dir-assertions.js';
 import {
   applyRun,
@@ -169,5 +172,39 @@ describe('stop → continue → finish', { timeout: 240_000 }, () => {
     expect(finalState.attempt).toBe(0);
     expect(finalState.pendingRecovery).toBeUndefined();
     await expectAppliedOnce(target, killed.sessionId, checkoutAtStart);
+  });
+
+  it('names the blocker and the flag when a headless continue lacks --allow-repo-runners', async () => {
+    fixture = createStopContinueFixture();
+    const target = fixture;
+
+    const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
+    expect(parked.exitCode).toBe(0);
+    const parkedState = readFileSync(
+      join(sessionDir(target.projectDir, parked.sessionId), STATE_FILE),
+      'utf-8',
+    );
+
+    for (const mode of ['--plain', '--json']) {
+      const blocked = await spawnCli({
+        args: ['--import', 'tsx', 'src/cli.ts', 'continue', mode, '--project', target.projectDir],
+        stateHome: target.stateHome,
+        timeoutMs: 60_000,
+      });
+      expect(blocked.exitCode, blocked.stderr).toBe(1);
+      expect(blocked.stderr).toContain('Run readiness: blocked');
+      expect(blocked.stderr.split('Run readiness: blocked').length).toBe(2);
+      expect(blocked.stderr).toContain('BUILD could not start.');
+      expect(blocked.stderr).toContain('`splitbrief continue --allow-repo-runners`');
+      expect(blocked.stderr).toContain('Resolve the blockers above');
+      expect(blocked.stdout).toBe('');
+    }
+    expect(
+      readFileSync(join(sessionDir(target.projectDir, parked.sessionId), STATE_FILE), 'utf-8'),
+    ).toBe(parkedState);
+
+    const resumed = await continueRun(target);
+    expect(resumed.exitCode, resumed.stderr).toBe(0);
+    expectFinishedPlainRun(resumed.stdout);
   });
 });

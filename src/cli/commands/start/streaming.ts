@@ -1,9 +1,6 @@
 import { ensureHeadlessConfig, setupWorkflow } from '../../setup.js';
 import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrides/from-options.js';
-import {
-  formatReadinessBlockers,
-  serializeReadinessReportJson,
-} from '../../../core/readiness/format.js';
+import { serializeReadinessReportJson } from '../../../core/readiness/format.js';
 import { writeHeadlessJsonRecord } from '../../../engine/events/public-json.js';
 import { releasePreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
 import { resolveSelectedSkills } from '../../headless.js';
@@ -13,9 +10,8 @@ import type { RequiredFeatureDispatchArgs } from './types.js';
 
 /**
  * `--json` and `--plain` are two renderings of one headless run, so they share
- * this dispatch. Only the JSON rendering writes the readiness record on stdout:
- * the plain stream is one line per phase, so its blocker report goes to stderr
- * rather than nowhere — the thrown pointer tells the reader to resolve it.
+ * this dispatch. Only the JSON rendering writes the readiness record on stdout;
+ * `preparedExecutionOrThrow` prints a blocker report on stderr for both.
  */
 export async function runHeadlessStart(
   args: RequiredFeatureDispatchArgs & { mode: 'json' | 'plain' },
@@ -37,14 +33,12 @@ export async function runHeadlessStart(
     ...(initialInvocation !== undefined && { effectiveConfig: initialInvocation }),
     transport: 'headless',
     emitReadiness: (report) => {
-      if (mode !== 'json') {
-        if (report.counts.blocker > 0) process.stderr.write(`${formatReadinessBlockers(report)}\n`);
-        return;
+      if (mode === 'json') {
+        writeHeadlessJsonRecord({
+          type: 'readiness_report',
+          report: serializeReadinessReportJson(report),
+        });
       }
-      writeHeadlessJsonRecord({
-        type: 'readiness_report',
-        report: serializeReadinessReportJson(report),
-      });
     },
     ...(deps.prepareExecution !== undefined && { prepare: deps.prepareExecution }),
   });

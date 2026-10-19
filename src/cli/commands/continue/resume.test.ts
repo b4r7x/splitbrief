@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { resumeSavedSession } from './resume.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { writeConfig } from '../../../core/config/load/io.js';
@@ -193,4 +194,89 @@ describe('resume seat-change notice', () => {
       warnSpy.mockRestore();
     }
   });
+});
+
+describe('headless resume on a blocked run', () => {
+  const remediation =
+    'Use a system-installed command, or continue the run from the command line with `splitbrief continue --allow-repo-runners`.';
+
+  function blockedReport(projectDir: string): ReadinessReport {
+    return {
+      generatedAt: new Date().toISOString(),
+      projectDir,
+      status: 'blocked',
+      counts: { ok: 0, info: 0, warning: 0, blocker: 1 },
+      nextAction: { kind: 'fix-config', label: 'Fix config', reason: 'BUILD could not start.' },
+      sections: [
+        {
+          id: 'runners',
+          title: 'Runners',
+          checks: [
+            {
+              id: 'runners.preparation.implementer.default',
+              severity: 'blocker',
+              summary: 'BUILD could not start.',
+              fix: remediation,
+            },
+          ],
+        },
+      ],
+      metadata: {},
+    };
+  }
+
+  it.each([{ plain: true }, { json: true }])(
+    'prints the blocker and its fix on stderr before the error (%o)',
+    async (opts) => {
+      await withTempDir('resume-blocked', async (projectDir) => {
+        writeConfig(projectDir, makeConfig());
+        const out: string[] = [];
+        const err: string[] = [];
+        const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
+          out.push(String(chunk));
+          return true;
+        });
+        const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+          err.push(String(chunk));
+          return true;
+        });
+        const runHeadless = vi.fn(async () => {});
+        try {
+          await expect(
+            resumeSavedSession({
+              projectDir,
+              sessionId: 'blocked-resume',
+              state: createInitialState('blocked resume'),
+              opts,
+              deps: {
+                prepareExecution: async () => ({
+                  kind: 'blocked',
+                  report: blockedReport(projectDir),
+                }),
+                initStores: async () => {},
+                renderApp: async () => {},
+                runHeadless,
+                setupWorkflow: async () => ({
+                  projectDir,
+                  useFullscreen: false,
+                  useMouse: false,
+                  useHover: false,
+                }),
+              },
+            }),
+          ).rejects.toThrow(/Resolve the blocker above/);
+        } finally {
+          stdout.mockRestore();
+          stderr.mockRestore();
+        }
+        const errText = err.join('');
+        expect(errText).toContain('Run readiness: blocked (1 blocker)');
+        expect(errText).toContain('BUILD could not start.');
+        expect(errText).toContain('`splitbrief continue --allow-repo-runners`');
+        expect(errText.split('Run readiness: blocked').length).toBe(2);
+        expect(out.join('')).toBe('');
+        expect(runHeadless).not.toHaveBeenCalled();
+      });
+    },
+  );
 });

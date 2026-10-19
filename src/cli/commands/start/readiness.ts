@@ -195,9 +195,9 @@ export function assertNoLiveSessionForCli(projectDir: string): void {
 }
 
 /**
- * The stdout contract, not the terminal, decides whether the blocker report is
- * printed: withholding it on every headless run left `spec` telling the reader
- * to resolve blockers it had not printed.
+ * The thrown pointer tells the reader to resolve the blockers above it, so the report is always
+ * printed first. The stdout contract decides where: a `'structured'` stdout (`--json`, `--plain`)
+ * stays machine-readable, so its report goes to stderr.
  */
 export function preparedExecutionOrThrow<Execution = PreparedExecution>(
   outcome: PreparationOutcome<Execution>,
@@ -208,6 +208,7 @@ export function preparedExecutionOrThrow<Execution = PreparedExecution>(
       return outcome.execution;
     case 'blocked':
       if (stdout === 'prose') console.log(formatReadinessBlockers(outcome.report));
+      else process.stderr.write(`${formatReadinessBlockers(outcome.report)}\n`);
       throw cliError(readinessBlockerPointer(outcome.report), 1);
     case 'failed':
       throw cliError(toErrorMessage(outcome.error), 1);

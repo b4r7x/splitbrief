@@ -141,10 +141,35 @@ describe('start --plain', () => {
       expect(streams.rejection).not.toBeNull();
       expect((streams.rejection as Error).message).toContain('Run readiness blocked');
       expect(streams.stderr).toContain('Run readiness: blocked');
+      expect(streams.stderr.split('Run readiness: blocked').length).toBe(2);
       expect(streams.stderr).toContain('The configured runner could not be admitted.');
       expect(streams.stderr).not.toContain('runners.preparation.planner');
       expect(streams.stdout).not.toContain('The configured runner could not be admitted.');
       expect(streams.stdout).not.toContain('runners.preparation.planner');
+      expect(runHeadlessMock).not.toHaveBeenCalled();
+    } finally {
+      cleanupTempDir(projectDir);
+      delete (process.stdin as { isTTY?: boolean }).isTTY;
+    }
+  }, 30_000);
+
+  it('keeps --json stdout to the readiness record and prints the blockers on stderr', async () => {
+    const projectDir = project('start-json-blocked');
+    prepareExecutionMock.mockResolvedValueOnce({
+      kind: 'blocked',
+      report: blockedReport(projectDir),
+    });
+    try {
+      const streams = await startStreams(projectDir, ['--json', 'blocked feature']);
+
+      expect((streams.rejection as Error).message).toContain('Run readiness blocked');
+      const records = streams.stdout
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => JSON.parse(line) as { type: string });
+      expect(records.map((record) => record.type)).toEqual(['readiness_report']);
+      expect(streams.stderr.split('Run readiness: blocked').length).toBe(2);
+      expect(streams.stderr).toContain('The configured runner could not be admitted.');
       expect(runHeadlessMock).not.toHaveBeenCalled();
     } finally {
       cleanupTempDir(projectDir);

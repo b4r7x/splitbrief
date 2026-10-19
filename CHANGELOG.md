@@ -298,6 +298,7 @@
 - A warning or failure from a tool reads as the tool's own message in the activity rows, for example `Warn  provider.quota: Insufficient Balance`. Before, a code came first, for example `Warn  opencode-error: provider.quota: …`.
 - A brief that creates a file reads `create` on the closed run also after a retry or a Continue past its consult limit, not `modify`.
 - A minor or out-of-scope review finding reads as a note in the closed run, the review packet and `splitbrief review`. The closed run and the review packet read the review count as `0 blocking, 3 notes`.
+- `splitbrief continue --plain` or `--json` on a run that readiness blocks now prints the blockers and their fix on stderr, for example `splitbrief continue --allow-repo-runners`, instead of an error that points to blockers it did not show. `start --json` also prints the blockers on stderr.
 
 ## [0.1.0] - 2026-08-07
 
