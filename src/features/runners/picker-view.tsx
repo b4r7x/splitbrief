@@ -417,7 +417,7 @@ export function PickerView({
         items: rightRows,
         label: 'Models',
         getKey: (row) => row.id,
-        filterBy: rightRowMatches,
+        filterBy: (row, query) => rightRowMatches(row, query, catalog.currentItem?.id),
         initialIndex: catalog.initialRightIndex,
         resolveInitialIndex: catalog.resolveRightIndex,
         onLeftChange: actions.leftChange,

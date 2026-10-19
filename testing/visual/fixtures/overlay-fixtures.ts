@@ -1401,6 +1401,27 @@ const createOpencodeFilterFixture: FixtureFactory = () => ({
     for (const key of 'deepseek v4.1') await write.press(key);
   },
 });
+// A custom row has no display name: the filter finds it by the name the row shows, not its id.
+const createCustomFilterFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: OPENCODE_ROUTED_MODEL,
+          customModels: ['anthropic/claude-haiku-4-5'],
+        },
+      })();
+      seedOpencodeReady();
+    },
+    focus: OPENCODE_FOCUS,
+  }),
+  afterMount: async (write) => {
+    for (const key of 'claude haiku') await write.press(key);
+  },
+});
 // The launcher's read-only card is what the cursor opens on this row, so the
 // fixture parks there with nothing configured — the state the card guides.
 const createCustomCommandLauncherFixture: FixtureFactory = () =>
@@ -2456,6 +2477,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     createPlannerPickerAntigravityListedFixture,
   ],
   [scenarioId('overlay-picker-opencode-filter'), createOpencodeFilterFixture],
+  [scenarioId('overlay-picker-custom-filter'), createCustomFilterFixture],
   [scenarioId('overlay-planner-picker-cursor'), createPlannerPickerCursorFixture],
   [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
   [scenarioId('overlay-picker-custom-launcher'), createCustomCommandLauncherFixture],

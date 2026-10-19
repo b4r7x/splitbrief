@@ -4103,6 +4103,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-picker-custom-filter',
+        title: 'Overlay · planner picker · filter on the name a custom model row shows',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-planner-picker-cursor',
         title: 'Overlay · planner picker · Cursor Agent families',
         marker: PICKER_TITLE_MARKER,

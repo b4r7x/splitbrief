@@ -14,6 +14,7 @@ import {
   isExpandableRow,
   modelRowSave,
   rightRowActivation,
+  rightRowMatches,
   seatEffortDraft,
   type RouteAuthContext,
 } from './right-column-policy.js';
@@ -94,6 +95,32 @@ describe('rightRowActivation', () => {
         lunaVariants[0],
       ),
     ).toBe('expand');
+  });
+});
+
+describe('rightRowMatches', () => {
+  const modelRow = (model: ModelOption): RightRow => ({
+    kind: 'model',
+    model,
+    provenance: 'Custom',
+    section: 'Custom',
+    expanded: false,
+  });
+
+  it('finds a custom row by the name it shows, not only by its id', () => {
+    const row = modelRow({
+      id: 'anthropic/claude-haiku-4-5',
+      isCustom: true,
+      membership: 'custom',
+    });
+    expect(rightRowMatches(row, 'Claude Haiku', 'opencode')).toBe(true);
+    expect(rightRowMatches(row, 'haiku 4.5', 'opencode')).toBe(true);
+    expect(rightRowMatches(row, 'sonnet', 'opencode')).toBe(false);
+  });
+
+  it('finds a row by the label its tool gives the id, as the row shows it', () => {
+    const row = modelRow({ id: 'opusplan', isCustom: true, membership: 'custom' });
+    expect(rightRowMatches(row, 'Plan Mode', 'claude-code')).toBe(true);
   });
 });
 

@@ -9,6 +9,7 @@ import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
 import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { SOFT_SEP } from '../../core/separators.js';
+import { formatModelName } from '../../core/model-display.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { readPickerRunner } from './model-catalog/catalog.js';
@@ -235,14 +236,19 @@ export function confirmRow(
 
 /**
  * A merged row answers for every spelling it folded — provider prefixes and option
- * tags — so typing "openrouter" or "luna" still finds it.
+ * tags — so typing "openrouter" or "luna" still finds it. It answers for the name it
+ * shows too, which a row with no display name takes from its id under `providerId`.
  */
-export function rightRowMatches(row: RightRow, query: string): boolean {
+export function rightRowMatches(
+  row: RightRow,
+  query: string,
+  providerId: string | undefined,
+): boolean {
   const q = query.toLowerCase();
   const hits = (value: string | undefined): boolean => value?.toLowerCase().includes(q) === true;
   const hitsModel = (model: ModelOption): boolean =>
     hits(model.id) ||
-    hits(model.displayName) ||
+    hits(model.displayName ?? formatModelName(model.id, providerId)) ||
     (model.variants?.some(
       (variant) => hits(variant.fullId) || hits(variant.tag) || hits(variant.displayName),
     ) ??

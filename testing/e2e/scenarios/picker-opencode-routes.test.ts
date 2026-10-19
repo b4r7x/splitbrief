@@ -189,7 +189,62 @@ const CUSTOM_MODEL = 'anthropic/claude-haiku-4-5';
 const CUSTOM_SIGN_IN =
   'OpenCode CLI has no credential for anthropic — run opencode auth login anthropic before start';
 
+/** Opens the BUILD picker from Settings and moves to its model column. */
+async function openBuildPicker(screen: Screen): Promise<void> {
+  await moveTo(screen, '\x1b[B', /▌ BUILD/);
+  screen.write('\r');
+  await screen.shows('BUILD · tool, model, effort');
+  await screen.shows('DeepSeek V4.1 Flash', 30_000);
+  screen.write('\x1b[C');
+}
+
+/** Saves `CUSTOM_MODEL` on the BUILD seat through the picker's custom-model form. */
+async function addCustomModel(screen: Screen): Promise<void> {
+  // Settings shows the whole save message.
+  screen.write('/crew');
+  await screen.shows('▌ /crew  Who fills each seat');
+  screen.write('\r');
+  await screen.shows('Settings');
+  await openBuildPicker(screen);
+  await screen.shows(/▌ DeepSeek V4\.1 Flash/);
+  await moveTo(screen, '\x1b[A', /▌ \+ Add custom model…/);
+  screen.write('\r');
+  await screen.shows('Model id for OpenCode CLI');
+  screen.write(CUSTOM_MODEL);
+  await screen.shows(`› ${CUSTOM_MODEL}`);
+  screen.write('\r');
+}
+
 describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () => {
+  it('keeps a custom model row when the filter holds the name the row shows', async (context) => {
+    await withOpencodeHome(
+      'picker-custom-model-filter',
+      {
+        signedIn: { id: 'deepseek', name: 'DeepSeek' },
+        served: { id: 'deepseek-flash', providerID: 'deepseek' },
+        buildModel: 'deepseek/deepseek-flash',
+      },
+      async (screen) => {
+        await addCustomModel(screen);
+        await vi.waitFor(() => expect(screen.prose()).toContain('Saved BUILD · OpenCode CLI'), {
+          timeout: 10_000,
+        });
+        await openBuildPicker(screen);
+        await screen.shows(/▌ Claude Haiku 4\.5/);
+        screen.write('Claude Haiku 4.5');
+        await screen.shows('› Claude Haiku 4.5');
+
+        // The row stays in the Models box, not only in the byline under it.
+        const modelRows = screen
+          .text()
+          .split('\n')
+          .filter((line) => line.includes('│') && !line.includes('›'));
+        expect(modelRows.some((line) => line.includes('Claude Haiku 4.5'))).toBe(true);
+      },
+      (reason) => context.skip(reason),
+    );
+  });
+
   it('names an OpenRouter route by the account it runs through, beside that account sign-in', async (context) => {
     await withOpencodeHome(
       'picker-openrouter-route',
@@ -231,23 +286,7 @@ describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () =
           buildModel: 'deepseek/deepseek-flash',
         },
         async (screen, projectDir) => {
-          // Settings shows the whole save message.
-          screen.write('/crew');
-          await screen.shows('▌ /crew  Who fills each seat');
-          screen.write('\r');
-          await screen.shows('Settings');
-          await moveTo(screen, '\x1b[B', /▌ BUILD/);
-          screen.write('\r');
-          await screen.shows('BUILD · tool, model, effort');
-          await screen.shows('DeepSeek V4.1 Flash', 30_000);
-          screen.write('\x1b[C');
-          await screen.shows(/▌ DeepSeek V4\.1 Flash/);
-          await moveTo(screen, '\x1b[A', /▌ \+ Add custom model…/);
-          screen.write('\r');
-          await screen.shows('Model id for OpenCode CLI');
-          screen.write(CUSTOM_MODEL);
-          await screen.shows(`› ${CUSTOM_MODEL}`);
-          screen.write('\r');
+          await addCustomModel(screen);
 
           await vi.waitFor(() => expect(screen.prose()).toContain(CUSTOM_SIGN_IN), {
             timeout: 10_000,
