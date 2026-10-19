@@ -111,6 +111,7 @@
 - A save message on the home screen that names a sign-in step now shows whole, command included, on up to four rows, and stays long enough to read it. While it shows, the home screen keeps your crew and the count of more sessions in view.
 - A save message that wraps in Settings or Setup no longer starts its next row with a space.
 - End run on a run that stopped before its first brief no longer says that the files it wrote are still on disk.
+- In the model picker, typing the name a model row shows now finds that row, also for a custom model whose id is spelled differently, such as `anthropic/claude-haiku-4-5` shown as Claude Haiku 4.5.
 - A halt answered with **Skip task** (also after the brief wrote files), **Try again** with a note, **Fix again** with a note or **Send a correction** now shows one Recovery row, such as `Recovery  Skip task → skipped`, with your note after it. Before, one choice could show as two Recovery rows with another row between them.
 - The warning that names the files a halt or a skip took back now counts them correctly, such as `Restored 1 failing task change`, and no longer says "after recovery" before you choose one.
 - After you pick a new tool for a seat that halted, the screen no longer says `Finishing T<id>` and `Pause requested; no next brief will start`. When you save a setting that changes no seat while a brief runs or a halt waits, the screen no longer says this, and the run no longer stops at the end of the brief to check your tools again.
