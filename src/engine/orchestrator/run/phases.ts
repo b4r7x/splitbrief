@@ -15,8 +15,6 @@ export type RunPlanningPhasesOptions = {
   wctx: WorkflowContext;
   state: WorkflowState;
   savedState: WorkflowState | undefined;
-  phaseTimings: Record<string, number>;
-  startTime: number;
   setTrackedState: (s: WorkflowState) => void;
 };
 
@@ -30,7 +28,7 @@ function isStopped(state: WorkflowState): boolean {
 export async function runPlanningPhases(
   opts: RunPlanningPhasesOptions,
 ): Promise<PlanningPhaseResult> {
-  const { wctx, savedState, phaseTimings, startTime, setTrackedState } = opts;
+  const { wctx, savedState, setTrackedState } = opts;
   let { state } = opts;
   const { projectDir, workspaceDir, sessionId, config, planner } = wctx;
   const rewindPending = savedState?.rewindPending;
@@ -70,13 +68,7 @@ export async function runPlanningPhases(
       return { disposition: 'ready-for-tasks', state, tasks: state.tasks };
     }
     if (resume.kind === 'gate') {
-      const parked = await resumeParkedApproval({
-        wctx,
-        state,
-        setTrackedState,
-        phaseTimings,
-        startTime,
-      });
+      const parked = await resumeParkedApproval({ wctx, state, setTrackedState });
       if (parked !== null) return parked;
     }
   }
@@ -117,6 +109,5 @@ export async function runPlanningPhases(
     ...(rewindPending !== undefined && { rewindPending }),
   });
   setTrackedState(planning.state);
-  phaseTimings.planning = Date.now() - startTime;
   return planning;
 }

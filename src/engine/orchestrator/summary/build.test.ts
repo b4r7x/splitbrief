@@ -349,32 +349,6 @@ describe('buildSummary', () => {
     expect(summary.plannerModel).toBeUndefined();
     expect(summary.implementerModel).toBeUndefined();
   });
-
-  it('includes phaseTimings when provided', () => {
-    const timings = { planning: 10_000, implementing: 50_000, review: 5_000 };
-    const summary = buildSummary({
-      feature: 'with-timings',
-      state: makeState(),
-      startTime: Date.now() - 65_000,
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-      phaseTimings: timings,
-    });
-
-    expect(summary.phaseTimings).toEqual(timings);
-  });
-
-  it('omits phaseTimings when not provided', () => {
-    const summary = buildSummary({
-      feature: 'no-timings',
-      state: makeState(),
-      startTime: Date.now(),
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-    });
-
-    expect(summary.phaseTimings).toBeUndefined();
-  });
 });
 
 const SENTINEL = 'summary-breakdown-sentinel-90412';

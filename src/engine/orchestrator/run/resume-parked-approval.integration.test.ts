@@ -53,8 +53,6 @@ it('leaves a run parked at the old briefs gate to the planning session', async (
     }),
     state,
     setTrackedState: () => {},
-    phaseTimings: {},
-    startTime: Date.now(),
   });
 
   expect(result).toBeNull();
@@ -108,8 +106,6 @@ it('reopens a parked plan card and sends the correction typed at it to the plann
     wctx,
     state,
     setTrackedState: () => {},
-    phaseTimings: {},
-    startTime: Date.now(),
   });
 
   expect(typed.prompts).toHaveLength(1);

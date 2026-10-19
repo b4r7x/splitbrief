@@ -309,7 +309,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
                 : withReviewerCallPublishing(init.wctx.reviewer, callPublisher),
           };
           trackedState = init.state;
-          const phaseTimings: Record<string, number> = {};
 
           installQueueHandler({
             projectDir,
@@ -329,8 +328,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             wctx,
             state: init.state,
             savedState,
-            phaseTimings,
-            startTime,
             setTrackedState: trackState,
           });
           trackState(planning.state);
@@ -340,7 +337,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
               if (planning.outcome === 'failed') {
                 trackState(recordFailure(planning.state, 'Planning failed.'));
               }
-              result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
+              result = buildSummary({ ...summaryBase, state: planning.state });
               return;
             case 'ready-for-tasks':
               break;
@@ -349,7 +346,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           }
 
           if (opts.signal?.aborted) {
-            result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
+            result = buildSummary({ ...summaryBase, state: planning.state });
             return;
           }
 
@@ -358,7 +355,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             state: planning.state,
             planning,
             summaryBase,
-            phaseTimings,
             setTrackedState: trackState,
             setCurrentTask: (t) => {
               currentTask = t;

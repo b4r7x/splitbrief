@@ -56,7 +56,6 @@ export type SummaryBase = {
 type BuildSummaryOptions = SummaryBase & {
   state: BuildSummaryState & Pick<WorkflowState, 'phase' | 'currentTaskIndex'>;
   taskBreakdowns?: TaskTokenUsage[];
-  phaseTimings?: Record<string, number>;
   /**
    * The run's per-call usage records (`collectCallUsageEvidence`). A caller that
    * holds the event stream can supply them; otherwise the run's own session
@@ -130,7 +129,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     reviewerTool,
     reviewerModel,
     reviewerKind,
-    phaseTimings,
     projectDir,
     sessionId,
     pricingCache,
@@ -236,7 +234,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ...(reviewerTool !== undefined && { reviewerTool }),
     ...(reviewerModel !== undefined && { reviewerModel }),
     ...(reviewerKind !== undefined && { reviewerKind }),
-    phaseTimings,
     ...(evidenceSummary && { evidenceSummary }),
     ...(briefQuality && { briefQuality }),
     ...(driftSummary && { driftSummary }),

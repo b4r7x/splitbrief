@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
-import { activeTimeOf, readRunMarks, type RunMark } from './active-time.js';
+import { activeTimeOf, phaseTimesOf, readRunMarks, type RunMark } from './active-time.js';
 
 const at = (iso: string): number => Date.parse(iso);
 const mark = (type: string, iso: string, extra: Partial<RunMark> = {}): RunMark => ({
@@ -186,6 +186,154 @@ describe('activeTimeOf', () => {
   });
 });
 
+describe('phaseTimesOf', () => {
+  // The run S shape: planning, a stop inside the brief, a Continue in a new process, the review.
+  it('adds each phase across a stop and a Continue that picks up at the brief', () => {
+    const marks = [
+      mark('workflow_started', '2026-10-19T14:00:00.000Z', { phase: 'planning' }),
+      mark('tasks_planned', '2026-10-19T14:00:25.000Z', { phase: 'reviewing-plan' }),
+      mark('plan_approved', '2026-10-19T14:00:30.000Z', { phase: 'reviewing-plan' }),
+      mark('task_started', '2026-10-19T14:00:31.000Z', { phase: 'implementing' }),
+      mark('turn_interrupted', '2026-10-19T14:00:51.000Z', { phase: 'implementing' }),
+      mark('workflow_resumed', '2026-10-19T15:00:00.000Z', { phase: 'implementing' }),
+      mark('task_started', '2026-10-19T15:00:01.000Z', { phase: 'implementing' }),
+      mark('task_validating', '2026-10-19T15:00:40.000Z', { phase: 'validating-task' }),
+      mark('task_completed', '2026-10-19T15:00:45.000Z', { phase: 'implementing' }),
+      mark('review_started', '2026-10-19T15:00:46.000Z', { phase: 'final-review' }),
+      mark('workflow_complete', '2026-10-19T15:01:06.000Z', { phase: 'complete' }),
+      mark('snapshot_created', '2026-10-19T15:01:07.000Z', { phase: 'complete' }),
+    ];
+
+    expect(phaseTimesOf(marks)).toEqual({ planning: 31_000, implementing: 66_000, review: 20_000 });
+    expect(activeTimeOf(marks)).toBe(31_000 + 66_000 + 20_000);
+  });
+
+  // The run N shape: a halt before the final review, answered minutes later in the same process.
+  it('adds each phase across a halt that the same process continued', () => {
+    const marks = [
+      mark('workflow_started', '2026-10-19T14:19:25.000Z', { phase: 'planning' }),
+      mark('plan_approved', '2026-10-19T14:21:23.000Z', { phase: 'reviewing-plan' }),
+      mark('task_started', '2026-10-19T14:21:24.000Z', { phase: 'implementing' }),
+      mark('review_started', '2026-10-19T14:21:56.000Z', { phase: 'implementing' }),
+      mark('task_started', '2026-10-19T14:22:13.000Z', { phase: 'implementing' }),
+      mark('recovery_prompted', '2026-10-19T14:22:55.000Z', { phase: 'final-review' }),
+      mark('recovery_resolved', '2026-10-19T14:24:24.000Z', { phase: 'final-review' }),
+      mark('workflow_resumed', '2026-10-19T14:24:29.000Z', {
+        phase: 'final-review',
+        inProcess: true,
+      }),
+      mark('review_started', '2026-10-19T14:24:30.000Z', { phase: 'final-review' }),
+      mark('workflow_complete', '2026-10-19T14:24:56.000Z', { phase: 'complete' }),
+    ];
+
+    expect(phaseTimesOf(marks)).toEqual({
+      planning: 119_000,
+      implementing: 91_000,
+      review: 27_000,
+    });
+  });
+
+  // The LR7 run1 shape: Accept as is at a final-review halt, then Apply from the ready menu.
+  it('counts neither the ready menu nor the Apply after Accept as is', () => {
+    const marks = [
+      mark('workflow_started', '2026-10-19T14:25:00.000Z', { phase: 'planning' }),
+      mark('task_started', '2026-10-19T14:25:46.000Z', { phase: 'implementing' }),
+      mark('review_started', '2026-10-19T14:39:30.000Z', { phase: 'final-review' }),
+      mark('recovery_prompted', '2026-10-19T14:41:59.747Z', { phase: 'final-review' }),
+      mark('recovery_action_selected', '2026-10-19T14:46:30.512Z', { phase: 'final-review' }),
+      mark('recovery_resolved', '2026-10-19T14:46:30.602Z', { phase: 'complete' }),
+      mark('workflow_resumed', '2026-10-19T14:46:34.475Z', { phase: 'complete', inProcess: true }),
+      mark('workflow_config', '2026-10-19T14:46:34.480Z', { phase: 'complete' }),
+      mark('warning', '2026-10-19T14:46:35.729Z', { phase: 'complete' }),
+      mark('workspace_closed', '2026-10-19T14:48:01.272Z', { phase: 'complete' }),
+    ];
+
+    expect(phaseTimesOf(marks)).toEqual({
+      planning: 46_000,
+      implementing: 824_000,
+      review: 149_747,
+    });
+    expect(activeTimeOf(marks)).toBe(46_000 + 824_000 + 149_747);
+  });
+
+  // The LR5 c25 shape: an Apply in a new process halts part way and runs again in the same process.
+  it('counts no Apply that a new process runs on a ready run, nor its retry', () => {
+    const marks = [
+      mark('workflow_started', '2026-10-18T18:26:09.000Z', { phase: 'planning' }),
+      mark('task_started', '2026-10-18T18:27:00.000Z', { phase: 'implementing' }),
+      mark('review_started', '2026-10-18T18:39:36.000Z', { phase: 'final-review' }),
+      mark('workflow_complete', '2026-10-18T18:40:06.000Z', { phase: 'complete' }),
+      mark('workflow_resumed', '2026-10-18T18:40:44.415Z', { phase: 'complete' }),
+      mark('recovery_prompted', '2026-10-18T18:40:44.481Z', { phase: 'complete' }),
+      mark('workflow_resumed', '2026-10-18T18:40:55.795Z', { phase: 'complete', inProcess: true }),
+      mark('error', '2026-10-18T18:41:17.731Z', { phase: 'complete' }),
+      mark('workspace_closed', '2026-10-18T18:41:21.000Z', { phase: 'complete' }),
+    ];
+
+    expect(phaseTimesOf(marks)).toEqual({
+      planning: 51_000,
+      implementing: 756_000,
+      review: 30_000,
+    });
+    expect(activeTimeOf(marks)).toBe(51_000 + 756_000 + 30_000);
+  });
+
+  // Accept as is, then the Apply finds the checkout changed a file the run also changed and sends
+  // the run back to review in the same process, with no new resume.
+  it('counts the review that Apply sends the run back to after Accept as is', () => {
+    const marks = [
+      mark('workflow_started', '2026-10-19T14:00:00.000Z', { phase: 'planning' }),
+      mark('runner_call_started', '2026-10-19T14:00:01.000Z', { phase: 'planning' }),
+      mark('runner_call_started', '2026-10-19T14:01:00.000Z', { phase: 'implementing' }),
+      mark('runner_call_started', '2026-10-19T14:02:00.000Z', { phase: 'final-review' }),
+      mark('recovery_prompted', '2026-10-19T14:03:00.000Z', { phase: 'final-review' }),
+      mark('recovery_action_selected', '2026-10-19T14:05:00.000Z', { phase: 'final-review' }),
+      mark('recovery_resolved', '2026-10-19T14:05:00.100Z', { phase: 'complete' }),
+      mark('workflow_resumed', '2026-10-19T14:05:01.000Z', { phase: 'complete', inProcess: true }),
+      mark('planner_text', '2026-10-19T14:05:02.000Z', { phase: 'final-review' }),
+      mark('review_started', '2026-10-19T14:05:03.000Z', { phase: 'final-review' }),
+      mark('runner_call_started', '2026-10-19T14:05:04.000Z', { phase: 'final-review' }),
+      mark('runner_call_completed', '2026-10-19T14:06:34.000Z', { phase: 'final-review' }),
+      mark('review_completed', '2026-10-19T14:06:35.000Z', { phase: 'final-review' }),
+      mark('workflow_complete', '2026-10-19T14:06:35.100Z', { phase: 'complete' }),
+    ];
+
+    expect(phaseTimesOf(marks)).toEqual({
+      planning: 60_000,
+      implementing: 60_000,
+      review: 60_000 + 93_100,
+    });
+    expect(activeTimeOf(marks)).toBe(60_000 + 60_000 + 60_000 + 93_100);
+  });
+
+  it('leaves out what an End at rest writes days after a crashed process', () => {
+    const marks = [
+      mark('workflow_started', '2026-10-10T10:00:00.000Z', { phase: 'planning' }),
+      mark('task_started', '2026-10-10T10:01:00.000Z', { phase: 'implementing' }),
+      mark('runner_call_error', '2026-10-10T10:05:00.000Z', { phase: 'implementing' }),
+      mark('workspace_closed', '2026-10-13T10:05:00.020Z', { phase: 'implementing' }),
+      mark('workflow_cancelled', '2026-10-13T10:05:00.030Z', {
+        phase: 'implementing',
+        atRestFrom: at('2026-10-13T10:05:00.000Z'),
+      }),
+    ];
+
+    expect(phaseTimesOf(marks)).toEqual({ planning: MIN, implementing: 4 * MIN });
+  });
+
+  it('keeps the phase of the mark before a line that names none, and null for a run never started', () => {
+    const marks = [
+      mark('workflow_started', '2026-10-15T10:00:00.000Z', { phase: 'planning' }),
+      mark('warning', '2026-10-15T10:01:00.000Z'),
+      mark('task_started', '2026-10-15T10:02:00.000Z', { phase: 'implementing' }),
+      mark('workflow_complete', '2026-10-15T10:03:00.000Z'),
+    ];
+
+    expect(phaseTimesOf(marks)).toEqual({ planning: 2 * MIN, implementing: MIN });
+    expect(phaseTimesOf([mark('warning', '2026-10-15T10:00:00.000Z')])).toBeNull();
+  });
+});
+
 describe('readRunMarks', () => {
   let projectDir: string | undefined;
   afterEach(() => {
@@ -208,6 +356,7 @@ describe('readRunMarks', () => {
     const marks = readRunMarks(ref) ?? [];
 
     expect(activeTimeOf(marks)).toBe(15 * MIN);
+    expect(phaseTimesOf(marks)).toEqual({ implementing: 15 * MIN });
     const ended = [
       ...marks,
       mark('workflow_cancelled', '2026-09-16T08:05:00.000Z', {
@@ -250,6 +399,7 @@ describe('readRunMarks', () => {
       },
       { type: 'workflow_cancelled', ts: 1_757_000_009_000, atRestFrom: 1_757_000_008_000 },
     ]);
+    expect(phaseTimesOf(readRunMarks(ref) ?? [])).toEqual({});
   });
 
   it('has no marks without a log, or with a symlinked one', () => {

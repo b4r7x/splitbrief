@@ -48,7 +48,6 @@ export type RunTasksAndReviewOptions = {
   state: WorkflowState;
   planning: PlanningPhaseResult;
   summaryBase: SummaryBase;
-  phaseTimings: Record<string, number>;
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: (t: Pick<Task, 'suggestedFiles' | 'action'> | undefined) => void;
 };
@@ -275,13 +274,13 @@ async function recheckMergedCandidate(
 export async function runTasksAndReview(
   opts: RunTasksAndReviewOptions,
 ): Promise<{ summary: Summary; completed: boolean; state: WorkflowState }> {
-  const { phaseTimings, setTrackedState, setCurrentTask } = opts;
+  const { setTrackedState, setCurrentTask } = opts;
   const initialWctx = opts.wctx;
   const { summaryBase } = opts;
   let { state } = opts;
   const { callbacks } = initialWctx;
   const bail = () => ({
-    summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+    summary: buildSummary({ ...summaryBase, state }),
     completed: false,
     state,
   });
@@ -354,7 +353,6 @@ export async function runTasksAndReview(
     workspaceDir: runCodeDir(initialWctx.projectDir, state.workspace),
   };
 
-  const phaseStart = Date.now();
   let taskResult = await runTaskLoop({
     wctx,
     initialState: state,
@@ -378,15 +376,12 @@ export async function runTasksAndReview(
     state = taskResult.state;
   }
 
-  phaseTimings.implementing = Date.now() - phaseStart;
-
   if (wctx.signal?.aborted) {
     return {
       summary: buildSummary({
         ...summaryBase,
         state,
         taskBreakdowns: taskResult.taskBreakdowns,
-        phaseTimings,
       }),
       completed: false,
       state,
@@ -403,7 +398,6 @@ export async function runTasksAndReview(
         ...summaryBase,
         state,
         taskBreakdowns: taskResult.taskBreakdowns,
-        phaseTimings,
       }),
       completed: false,
       state,
@@ -418,7 +412,7 @@ export async function runTasksAndReview(
   });
 
   let taskBreakdowns = taskResult.taskBreakdowns;
-  const summaryNow = () => buildSummary({ ...summaryBase, state, taskBreakdowns, phaseTimings });
+  const summaryNow = () => buildSummary({ ...summaryBase, state, taskBreakdowns });
   const captureCandidate = async (): Promise<Record<string, string> | undefined> => {
     const workspace = state.workspace;
     return workspace !== undefined &&
@@ -515,7 +509,6 @@ export async function runTasksAndReview(
       ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),
       summaryBase,
       taskBreakdowns,
-      phaseTimings,
       setTrackedState,
       ...(wctx.context.skillsContext !== undefined && {
         skillsContext: wctx.context.skillsContext,

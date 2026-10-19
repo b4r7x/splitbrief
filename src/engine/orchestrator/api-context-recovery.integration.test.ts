@@ -307,7 +307,6 @@ async function review(opts: {
     state,
     planning: { disposition: 'ready-for-tasks', state, tasks },
     summaryBase: SUMMARY_BASE,
-    phaseTimings: {},
     setTrackedState: () => {},
     setCurrentTask: () => {},
   });

@@ -12,7 +12,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { runSeatIdentity } from '../../../core/providers/seat-identity.js';
-import { activeTimeOf, readRunMarks } from '../summary/active-time.js';
+import { activeTimeOf, phaseTimesOf, readRunMarks } from '../summary/active-time.js';
 import { buildSummary } from '../summary/build.js';
 
 export type SaveFinalSessionOpts = {
@@ -141,8 +141,14 @@ export function refreshSessionRow(ref: SessionRef, state: WorkflowState): void {
 export function saveFinalSession(opts: SaveFinalSessionOpts): void {
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
   const status = finalRunStatus(opts);
-  const activeTime = activeTimeOf(readRunMarks(ref) ?? []);
-  const summary = activeTime === null ? opts.summary : { ...opts.summary, activeTime };
+  const marks = readRunMarks(ref) ?? [];
+  const activeTime = activeTimeOf(marks);
+  const phaseTimings = phaseTimesOf(marks);
+  const summary = {
+    ...opts.summary,
+    ...(activeTime !== null && { activeTime }),
+    ...(phaseTimings !== null && { phaseTimings }),
+  };
   saveSummary(ref, sessionFor({ ...opts, summary }, status));
   if (status.kind === 'closed' && opts.active !== undefined) clearActiveReceipt(ref, opts.active);
 }

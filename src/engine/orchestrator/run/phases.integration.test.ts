@@ -221,7 +221,6 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerTool: 'claude-code',
         implementerTool: 'ollama',
       },
-      phaseTimings: {},
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
@@ -270,7 +269,6 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerTool: 'claude-code',
         implementerTool: 'ollama',
       },
-      phaseTimings: {},
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
@@ -337,7 +335,6 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerTool: 'claude-code',
         implementerTool: 'ollama',
       },
-      phaseTimings: {},
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
@@ -411,7 +408,6 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerTool: 'claude-code',
         implementerTool: 'ollama',
       },
-      phaseTimings: {},
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
@@ -493,7 +489,6 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         implementerTool: 'custom-cloud',
         implementerModel: 'deepseek-v4-flash',
       },
-      phaseTimings: {},
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
@@ -562,7 +557,6 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerTool: 'claude-code',
         implementerTool: 'ollama',
       },
-      phaseTimings: {},
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
@@ -620,8 +614,6 @@ describe('runPlanningPhases', () => {
       },
       state,
       savedState: undefined,
-      phaseTimings: {},
-      startTime: Date.now(),
       setTrackedState: vi.fn(),
     });
 
@@ -664,8 +656,6 @@ describe('runPlanningPhases', () => {
       },
       state: savedState,
       savedState,
-      phaseTimings: {},
-      startTime: Date.now(),
       setTrackedState: vi.fn(),
     });
 
@@ -736,8 +726,6 @@ describe('runPlanningPhases', () => {
         },
         state: savedState,
         savedState,
-        phaseTimings: {},
-        startTime: Date.now(),
         setTrackedState: vi.fn(),
       });
 
@@ -784,8 +772,6 @@ describe('runPlanningPhases', () => {
       },
       state: savedState,
       savedState,
-      phaseTimings: {},
-      startTime: Date.now(),
       setTrackedState: vi.fn(),
     });
 
@@ -843,8 +829,6 @@ describe('runPlanningPhases', () => {
         },
         state: savedState,
         savedState,
-        phaseTimings: {},
-        startTime: Date.now(),
         setTrackedState: vi.fn(),
       });
 
@@ -890,8 +874,6 @@ describe('runPlanningPhases', () => {
       },
       state: savedState,
       savedState,
-      phaseTimings: {},
-      startTime: Date.now(),
       setTrackedState: vi.fn(),
     });
 
@@ -961,8 +943,6 @@ describe('runPlanningPhases', () => {
         },
         state: savedState,
         savedState,
-        phaseTimings: {},
-        startTime: Date.now(),
         setTrackedState: vi.fn(),
       });
 
@@ -1032,8 +1012,6 @@ describe('runPlanningPhases', () => {
       },
       state: savedState,
       savedState,
-      phaseTimings: {},
-      startTime: Date.now(),
       setTrackedState: vi.fn(),
     });
 

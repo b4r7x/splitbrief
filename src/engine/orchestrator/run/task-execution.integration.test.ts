@@ -237,7 +237,6 @@ function runOptions(opts: {
         tasks: opts.state.tasks,
       },
       summaryBase: { ...SUMMARY_BASE, projectDir: opts.projectDir, sessionId: opts.sessionId },
-      phaseTimings: {} as Record<string, number>,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     },
@@ -1949,7 +1948,6 @@ describe('task execution review steering', () => {
           plannerTool: 'claude-code',
           implementerTool: 'ollama',
         },
-        phaseTimings: {},
         setTrackedState: vi.fn(),
         setCurrentTask: vi.fn(),
       });

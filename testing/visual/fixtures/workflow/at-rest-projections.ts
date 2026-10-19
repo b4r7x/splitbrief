@@ -1499,6 +1499,7 @@ const CLOSED_ENDED_EMPTY = record({
     skipped: 0,
     failed: 0,
     totalTime: 2_000,
+    activeTime: 2_000,
     phaseTimings: { planning: 1_000, implementing: 1_000 },
     taskBreakdown: [],
     changedFiles: [],

@@ -75,8 +75,6 @@ function setup(steer: string | undefined = CORRECTION) {
       wctx,
       state,
       setTrackedState: () => {},
-      phaseTimings: {},
-      startTime: Date.now(),
     });
   return { ref, wctx, run, prompts: typed.prompts, onApprovalNeeded, continuation };
 }
