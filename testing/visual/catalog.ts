@@ -618,21 +618,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-build-consult',
-      title: 'Workflow · planner consult during the build',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'build-consult',
-        title: 'The planner answers a consult on the running brief',
-        kind: 'implementation',
-        marker: 'answering the consult on T901',
-      },
-      elements: [
-        { id: 'header', title: 'Build progress' },
-        { id: 'transcript', title: 'Running brief' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-crew-kilo',
       title: 'Workflow · a Kilo Code crew on two routes of one model',
       surface: screenSurface('workflow'),
@@ -646,6 +631,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-build-consult',
+      title: 'Workflow · planner consult during the build',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'build-consult',
+        title: 'The planner answers a consult on the running brief',
+        kind: 'implementation',
+        marker: 'answering the consult on T901',
+      },
+      elements: [
+        { id: 'header', title: 'Build progress' },
+        { id: 'transcript', title: 'Running brief' },
       ],
     }),
     defineScenario({
@@ -1207,22 +1207,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-completed-orphan-rows',
-      title: 'Workflow · completed briefs retain run-level and boundary rows',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'completed-orphan-rows',
-        title: 'Earlier brief content stays above the live brief',
-        kind: 'implementation',
-        marker: '1/3 briefs passed',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Implementation transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-plan-check-missing-program',
       title: 'Workflow · a plan check whose test script calls a program that is not installed',
       surface: screenSurface('workflow'),
@@ -1236,6 +1220,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
         { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-completed-orphan-rows',
+      title: 'Workflow · completed briefs retain run-level and boundary rows',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'completed-orphan-rows',
+        title: 'Earlier brief content stays above the live brief',
+        kind: 'implementation',
+        marker: '1/3 briefs passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
       ],
     }),
     defineScenario({
@@ -2873,6 +2873,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-checks-missing-program',
+      title: 'Workflow · a required check that cannot run because a program is missing',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-checks-missing-program',
+        title: 'Required-checks recovery menu that says to install the program',
+        kind: 'question',
+        marker: 'Install what is missing',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-left-isolation',
       title: 'Workflow · an implementer that left its isolation directory',
       surface: screenSurface('workflow'),
@@ -2964,22 +2980,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Replayed transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-recovery-checks-missing-program',
-      title: 'Workflow · a required check that cannot run because a program is missing',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'recovery-checks-missing-program',
-        title: 'Required-checks recovery menu that says to install the program',
-        kind: 'question',
-        marker: 'Install what is missing',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'question-panel', title: 'Recovery menu panel' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
