@@ -551,7 +551,7 @@ describe('continueCommand', () => {
       {
         ...createInitialState('test-feature'),
         phase: 'implementing',
-        tasks: [makeTask({ id: 'T001' })],
+        tasks: [makeTask({ id: 'T001', status: 'failed' })],
         pendingRecovery: makeRecoveryIssue({
           availableActions: ['retry-same-worker', 'skip-current-task'],
           recommendedAction: 'retry-same-worker',
@@ -595,7 +595,11 @@ describe('continueCommand', () => {
     reactivateExistingSession({ projectDir, sessionId });
     saveState(
       { projectDir, sessionId },
-      makeWorkflowState({ phase: 'implementing', awaitingContinue: true }),
+      makeWorkflowState({
+        phase: 'implementing',
+        awaitingContinue: true,
+        tasks: [makeTask({ id: 'T001', status: 'in_progress' })],
+      }),
     );
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
