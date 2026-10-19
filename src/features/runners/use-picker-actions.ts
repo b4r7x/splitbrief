@@ -262,9 +262,9 @@ function runnerItemOf(item: PickerOption | undefined): RunnerPickerOption | unde
 }
 
 /**
- * The provider honesty note for a chosen variant, read the way its picker row
- * reads it: only a route that needs a sign-in names the login command that
- * unblocks the saved selection.
+ * The provider honesty note for a saved model, a route or a custom id, read the
+ * way its picker row reads it: only a route that needs a sign-in names the login
+ * command that unblocks the saved selection.
  */
 function needsSignInVariantNote(item: RunnerPickerOption, fullId: string): string | undefined {
   const toolId = includes(CLI_TOOL_IDS, item.id) ? item.id : undefined;
@@ -394,7 +394,6 @@ export function usePickerActions(opts: {
   const saveModelSelection = async (
     selection: RunnerPickerOption,
     modelId: string | null,
-    note?: string | undefined,
     effort?: string | null | undefined,
     effortChoices?: readonly string[] | undefined,
   ) => {
@@ -418,6 +417,7 @@ export function usePickerActions(opts: {
       effort,
       effortChoices,
     );
+    const note = modelId === null ? undefined : needsSignInVariantNote(selection, modelId);
     await commit(
       seat.config,
       seatSaved(seat.config),
@@ -464,7 +464,6 @@ export function usePickerActions(opts: {
           selection,
           model?.id ?? null,
           undefined,
-          undefined,
           model === null ? undefined : rowEffortLadder(catalog.rightRows, model.id),
         );
       });
@@ -473,13 +472,7 @@ export function usePickerActions(opts: {
       return reportFailure(async () => {
         const item = runnerItemOf(catalog.currentItem);
         if (item === undefined) return;
-        await saveModelSelection(
-          item,
-          fullId,
-          needsSignInVariantNote(item, fullId),
-          effort,
-          rowEffortLadder(catalog.rightRows, fullId),
-        );
+        await saveModelSelection(item, fullId, effort, rowEffortLadder(catalog.rightRows, fullId));
       });
     },
     confirmAuthMethod(method: CliAuthMethod | 'host-configured') {
@@ -567,7 +560,11 @@ export function usePickerActions(opts: {
           modelName,
           customModels: catalog.customModels,
         });
-        await commit(updated, seatSaved(updated));
+        await commit(
+          updated,
+          seatSaved(updated),
+          needsSignInVariantNote(customModelItem, modelName),
+        );
       });
     },
     openCustomModel(item: PickerOption) {

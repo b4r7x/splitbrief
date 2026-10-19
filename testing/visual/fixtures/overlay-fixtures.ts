@@ -1090,6 +1090,39 @@ const createOpencodeExpandedFixture: FixtureFactory = () =>
     },
     focus: OPENCODE_FOCUS,
   });
+/** One model through two accounts, OpenRouter (signed in) and DeepSeek: each route names its account. */
+const OPENROUTER_ROUTE = 'openrouter/deepseek/deepseek-v4.1-flash';
+const createOpencodeOpenRouterRouteFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedConfig({ planner: { kind: 'cli', tool: 'opencode', model: OPENROUTER_ROUTE } })();
+      publishVisualDiscovery({
+        cliTools: [
+          cliDetectionFor('ready', 'opencode', {
+            providerAuth: {
+              kind: 'read',
+              facts: [{ id: 'openrouter', provider: 'OpenRouter', source: 'stored' }],
+            },
+          }),
+        ],
+        cliModels: [
+          catalogAttempt({
+            tool: 'opencode',
+            outcome: {
+              kind: 'success',
+              value: [
+                { id: OPENROUTER_ROUTE, displayName: 'DeepSeek V4.1 Flash 1017' },
+                { id: 'deepseek/deepseek-v4.1-flash', displayName: 'DeepSeek V4.1 Flash' },
+              ],
+            },
+          }),
+        ],
+      });
+      pickerViewStore.expand(OPENROUTER_ROUTE, OPENROUTER_ROUTE);
+    },
+    focus: OPENCODE_FOCUS,
+  });
 const createOpencodeExpandedDraftedFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -1215,6 +1248,15 @@ const createPlannerPickerKiloFreeFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
     seed: seedKiloFreeRoutes,
+    focus: 'tool:kilo-code',
+  });
+const createPlannerPickerKiloRoutesFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedKiloConfirmed();
+      pickerViewStore.expand(KILO_ROUTED_MODEL, KILO_ROUTED_MODEL);
+    },
     focus: 'tool:kilo-code',
   });
 const createPlannerPickerMalformedFixture: FixtureFactory = () =>
@@ -2371,6 +2413,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],
   [scenarioId('overlay-picker-opencode-expanded'), createOpencodeExpandedFixture],
   [scenarioId('overlay-picker-opencode-expanded-drafted'), createOpencodeExpandedDraftedFixture],
+  [scenarioId('overlay-picker-openrouter-route'), createOpencodeOpenRouterRouteFixture],
   [scenarioId('overlay-picker-claude-effort'), createClaudeEffortFixture],
   [scenarioId('overlay-picker-claude-effort-set'), createClaudeEffortSetFixture],
   [scenarioId('overlay-picker-claude-effort-returned'), createClaudeEffortReturnedFixture],
@@ -2387,6 +2430,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-no-listing'), createPlannerPickerNoListingFixture],
   [scenarioId('overlay-planner-picker-kilo'), createPlannerPickerKiloFixture],
   [scenarioId('overlay-planner-picker-kilo-free'), createPlannerPickerKiloFreeFixture],
+  [scenarioId('overlay-planner-picker-kilo-routes'), createPlannerPickerKiloRoutesFixture],
   [scenarioId('overlay-planner-picker-malformed'), createPlannerPickerMalformedFixture],
   [scenarioId('overlay-planner-picker-command-failed'), createPlannerPickerCommandFailedFixture],
   [

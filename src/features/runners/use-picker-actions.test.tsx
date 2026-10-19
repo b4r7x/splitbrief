@@ -23,7 +23,7 @@ import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import type { CliAuthMethod } from '../../core/runners/cli-tool-catalog.js';
-import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
+import type { PickerSlot, SeatPickerRole } from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';
 import {
   INHERIT_PLANNER_OPTION_ID,
@@ -98,6 +98,28 @@ function ConfirmVariantProbe({
 
   useInput(() => {
     void actions.confirmProviderSelection(modelId, variant);
+  });
+
+  return <Text>{catalog.roleLabel}</Text>;
+}
+
+/** Saves a typed custom model for the seat or its fallback on the tool the picker opened on. */
+function CustomModelProbe({
+  role,
+  slot,
+  toolId,
+  modelName,
+}: {
+  role: SeatPickerRole;
+  slot: PickerSlot;
+  toolId: string;
+  modelName: string;
+}) {
+  const catalog = usePickerCatalog(role, slot, 0, toolId);
+  const actions = usePickerActions({ role, slot, catalog });
+
+  useInput(() => {
+    void actions.customModel(modelName);
   });
 
   return <Text>{catalog.roleLabel}</Text>;
@@ -973,6 +995,86 @@ describe('usePickerActions', () => {
       expect(await confirmed('ollama/llama3')).toMatch(
         / · OpenCode CLI has no credential for ollama — run opencode auth login ollama before start$/,
       );
+    });
+
+    const ANTHROPIC_SIGN_IN =
+      / · OpenCode CLI has no credential for anthropic — run opencode auth login anthropic before start$/;
+    const HAIKU = 'anthropic/claude-haiku-4-5';
+    const savedCustom = async (slot: PickerSlot, saved: () => unknown): Promise<string> => {
+      pickerViewStore.open({ kind: 'custom-model' });
+      const ui = renderFeature(
+        <CustomModelProbe role="planner" slot={slot} toolId="opencode" modelName={HAIKU} />,
+      );
+      await flushEffects();
+      ui.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(saved()).toBe(HAIKU);
+      });
+      ui.unmount();
+      return feedbackStore.get().message ?? '';
+    };
+    const onDeepSeekListing = (ids: readonly string[]) => {
+      seed(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        }),
+      );
+      signedInToDeepSeek();
+      listsModels(ids);
+    };
+
+    it('names the sign-in for a custom model typed for the seat', async () => {
+      onDeepSeekListing(['deepseek/deepseek-flash']);
+
+      const message = await savedCustom('seat', () => configStore.get().config?.planner.model);
+      expect(message).toMatch(ANTHROPIC_SIGN_IN);
+    });
+
+    it('names the sign-in for a custom model typed for the fallback', async () => {
+      onDeepSeekListing(['deepseek/deepseek-flash']);
+
+      const message = await savedCustom('fallback', () => {
+        const planner = configStore.get().config?.planner;
+        return planner?.kind === 'cli' ? planner.fallback?.model : undefined;
+      });
+      expect(message).toMatch(ANTHROPIC_SIGN_IN);
+    });
+
+    it('names the sign-in for a saved custom model row', async () => {
+      seed(
+        makeConfig({
+          planner: {
+            kind: 'cli',
+            tool: 'opencode',
+            model: 'deepseek/deepseek-flash',
+            customModels: [HAIKU],
+          },
+        }),
+      );
+      signedInToDeepSeek();
+      listsModels(['deepseek/deepseek-flash']);
+      const ui = renderFeature(
+        <ConfirmOnKeyProbe
+          role="planner"
+          selection={realPickerOption('planner', 'opencode')}
+          model={HAIKU}
+        />,
+      );
+      await flushEffects();
+      ui.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(configStore.get().config?.planner).toMatchObject({ model: HAIKU });
+      });
+      ui.unmount();
+
+      expect(feedbackStore.get().message).toMatch(ANTHROPIC_SIGN_IN);
+    });
+
+    it('adds no note for a custom model the listing serves', async () => {
+      onDeepSeekListing([HAIKU]);
+
+      const message = await savedCustom('seat', () => configStore.get().config?.planner.model);
+      expect(message).not.toContain('auth login');
     });
   });
 

@@ -31,8 +31,8 @@ describe('mergeProviderVariants', () => {
 
     expect(rows.map((row) => row.id)).toEqual(['kilo/kilo-auto/free', 'kilo/openrouter/free']);
     expect(rows.map((row) => row.variants?.map((variant) => variant.tag))).toEqual([
-      ['kilo-auto'],
-      ['openrouter'],
+      ['kilo'],
+      ['kilo'],
     ]);
   });
 
@@ -124,7 +124,7 @@ describe('mergeProviderVariants', () => {
       'kilo/openrouter/free',
       'kilo/anthropic/claude-opus-4.5',
     ]);
-    expect(rows[2]?.variants?.map((variant) => variant.tag)).toEqual(['anthropic']);
+    expect(rows[2]?.variants?.map((variant) => variant.tag)).toEqual(['kilo']);
   });
 
   it('gives a lone prefixed row a single provider variant', () => {

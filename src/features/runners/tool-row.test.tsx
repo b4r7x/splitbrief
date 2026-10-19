@@ -800,8 +800,12 @@ describe('runner row grammar', () => {
       id: 'github-copilot/gpt-5.6',
       contextLength: 128_000,
       variants: [
-        { fullId: 'github-copilot/gpt-5.6', providerPrefix: 'github-copilot', tag: 'copilot' },
-        { fullId: 'kilo/openrouter/gpt-5.6', providerPrefix: 'kilo/openrouter', tag: 'openrouter' },
+        {
+          fullId: 'github-copilot/gpt-5.6',
+          providerPrefix: 'github-copilot',
+          tag: 'github-copilot',
+        },
+        { fullId: 'kilo/openrouter/gpt-5.6', providerPrefix: 'kilo/openrouter', tag: 'kilo' },
       ],
     };
 
@@ -819,7 +823,7 @@ describe('runner row grammar', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('GPT-5.6');
       expect(frame).toContain('2 providers');
-      expect(frame).not.toContain('openrouter');
+      expect(frame).not.toContain('kilo');
       expect(frame).not.toContain('●');
       expect(frame).not.toContain('○');
       ui.unmount();
@@ -1151,16 +1155,20 @@ describe('runner row grammar', () => {
         id: 'github-copilot/gpt-5.6',
         contextLength: 128_000,
         variants: [
-          { fullId: 'github-copilot/gpt-5.6', providerPrefix: 'github-copilot', tag: 'copilot' },
+          {
+            fullId: 'github-copilot/gpt-5.6',
+            providerPrefix: 'github-copilot',
+            tag: 'github-copilot',
+          },
           {
             fullId: 'github-copilot/gpt-5.6-high',
             providerPrefix: 'github-copilot',
-            tag: 'copilot',
+            tag: 'github-copilot',
           },
           {
             fullId: 'kilo/openrouter/gpt-5.6',
             providerPrefix: 'kilo/openrouter',
-            tag: 'openrouter',
+            tag: 'kilo',
           },
         ],
       };

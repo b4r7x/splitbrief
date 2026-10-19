@@ -3,13 +3,15 @@ import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { bestMembership } from './membership.js';
 import { peelOptionSuffix } from './option-merge.js';
-import { routeAuthState } from '../../../core/runners/route-auth.js';
-import { compactProviderTag, modelIdUnderProvider, modelProviderPrefix } from './provider-axis.js';
+import { modelProviderAuthKey, routeAuthState } from '../../../core/runners/route-auth.js';
+import { modelIdUnderProvider, modelProviderPrefix } from './provider-axis.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 
 interface ProviderVariantSource {
   readonly row: ModelOption;
   readonly prefix: string;
+  /** The account the route runs through, the one its sign-in names: the route's label. */
+  readonly provider: string;
 }
 
 interface ProviderMergeContext {
@@ -24,7 +26,7 @@ function toVariant(source: ProviderVariantSource): ModelVariant {
   return {
     fullId: source.row.id,
     providerPrefix: source.prefix,
-    tag: compactProviderTag(source.prefix),
+    tag: source.provider,
     ...(source.row.displayName !== undefined ? { displayName: source.row.displayName } : {}),
     ...(source.row.membership === undefined ? {} : { membership: source.row.membership }),
     ...(source.row.isCustom ? { isCustom: true } : {}),
@@ -33,11 +35,10 @@ function toVariant(source: ProviderVariantSource): ModelVariant {
 
 function variantsOf(source: ProviderVariantSource): ModelVariant[] {
   if (source.row.variants === undefined) return [toVariant(source)];
-  const providerTag = compactProviderTag(source.prefix);
   return source.row.variants.map((variant) => ({
     ...variant,
     providerPrefix: source.prefix,
-    tag: variant.tag === '' ? providerTag : `${providerTag} · ${variant.tag}`,
+    tag: variant.tag === '' ? source.provider : `${source.provider} · ${variant.tag}`,
   }));
 }
 
@@ -145,17 +146,22 @@ export function mergeProviderVariants(
   const slots: MergeSlot[] = [];
   for (const row of models) {
     const prefix = modelProviderPrefix(row.id);
-    if (prefix === undefined) {
+    const provider = modelProviderAuthKey(row.id);
+    if (prefix === undefined || provider === undefined) {
       slots.push({ kind: 'row', row });
       continue;
     }
     const familyId = peelOptionSuffix(modelIdUnderProvider(row.id)).familyId;
     const existing = groups.get(familyId);
     if (existing !== undefined) {
-      existing.rest.push({ row, prefix });
+      existing.rest.push({ row, prefix, provider });
       continue;
     }
-    const slot: ProviderVariantGroup = { kind: 'group', first: { row, prefix }, rest: [] };
+    const slot: ProviderVariantGroup = {
+      kind: 'group',
+      first: { row, prefix, provider },
+      rest: [],
+    };
     groups.set(familyId, slot);
     slots.push(slot);
   }
