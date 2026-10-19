@@ -12,7 +12,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { RecentSessions } from './recent-sessions.js';
-import { getHomeLayout } from '../layout.js';
+import { getHomeLayout, RESTING_DOCK_ROWS } from '../layout.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 
 const FOCUS_BAR = '▌';
@@ -234,6 +234,8 @@ describe('RecentSessions', () => {
       rows: terminalRows,
       sessionCount: 2,
       sessionsFocused: false,
+      dockRows: RESTING_DOCK_ROWS,
+      noConfig: false,
     });
 
     const ui = renderFeature(
@@ -269,6 +271,8 @@ describe('RecentSessions', () => {
       rows: terminalRows,
       sessionCount: 3,
       sessionsFocused: true,
+      dockRows: RESTING_DOCK_ROWS,
+      noConfig: false,
     });
 
     const ui = renderFeature(

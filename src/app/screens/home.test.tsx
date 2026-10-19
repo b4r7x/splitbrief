@@ -44,6 +44,9 @@ import type {
 } from '../../engine/runners/prepared-execution.js';
 import { closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { getLogo } from '../../features/home/logo.js';
+import { formatNeedsSignInSaveFeedback } from '../../features/runners/picker-format.js';
+import { formatConfigSaveSuccess } from '../../stores/project/save-feedback.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { HomeScreen, type HomeScreenDeps } from './home.js';
 
 const prepareExecutionMock = vi.fn<(input: PrepareExecutionInput) => Promise<PreparationOutcome>>();
@@ -259,7 +262,11 @@ describe('HomeScreen', () => {
     const ui = renderHome();
     await flushEffects();
     const notice = 'No config. Setup saves .splitbrief/config.yaml.';
-    expect(stripAnsiStyles(ui.lastFrame() ?? '').split(notice)).toHaveLength(2);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame.split(notice)).toHaveLength(2);
+    const lines = frame.split('\n');
+    const column = (text: string) => lines.find((line) => line.includes(text))?.indexOf(text);
+    expect(column(notice)).toBe(column('skills:'));
     await configStore.save(makeConfig());
     await vi.waitFor(() => expect(ui.lastFrame() ?? '').not.toContain('No config.'));
     ui.unmount();
@@ -1602,6 +1609,54 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('recalled prompt');
     expect(frame).not.toContain(FOCUS_BAR);
+    ui.unmount();
+  });
+
+  it('keeps the crew block and the more row at 60x18 while a long draft and a four-row message show', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    await configStore.save(makeConfig());
+    seedSessions(8);
+    const ui = renderHome();
+    await flushEffects();
+    composerDraftStore.request(
+      'Keep the receiving flow as it is, but make the scanner screen show the last three pallets with their weights and the time each one was scanned. Read docs/specs/receiving/scanner-screen/pallet-weights.md before you start, and do not change the label printer.',
+    );
+    feedbackStore.setMessage(
+      [
+        formatConfigSaveSuccess('BUILD · OpenCode CLI · Claude Haiku 4.5 · via anthropic', {
+          ignoreRuleAdded: false,
+        }),
+        formatNeedsSignInSaveFeedback({ tool: 'opencode', provider: 'anthropic' }),
+      ].join(SOFT_SEP),
+    );
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('opencode auth login');
+    expect(frame).toContain('label printer.');
+    expect(frame).toContain('/crew to change');
+    expect(frame).toMatch(/\d+ more/);
+    ui.unmount();
+  });
+
+  it('keeps the more row at 80x24 under a long draft when the project has no config', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
+    configStore.load(projectDir);
+    seedSessions(12);
+    const ui = renderHome();
+    await flushEffects();
+    composerDraftStore.request(
+      'Keep the receiving flow as it is, but make the scanner screen show the last three pallets with their weights and the time each one was scanned. Read docs/specs/receiving/scanner-screen/pallet-weights.md before you start, and do not change the label printer.',
+    );
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('No config.');
+    expect(frame).toContain('label printer.');
+    const shownRows = frame.split('\n').filter((line) => /focus feature \d+/.test(line)).length;
+    const hidden = Number(/(\d+) more/.exec(frame)?.[1] ?? 0);
+    expect(shownRows).toBeGreaterThan(0);
+    expect(shownRows + hidden).toBe(12);
     ui.unmount();
   });
 

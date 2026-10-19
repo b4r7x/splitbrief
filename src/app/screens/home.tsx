@@ -23,6 +23,7 @@ import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { RecentSessions } from '../../features/home/components/recent-sessions.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
@@ -38,7 +39,8 @@ import {
   sessionSelectStore,
 } from '../../stores/navigation/session-select.js';
 import { borderStyleFor } from '../../lib/glyphs.js';
-import { getHomeLayout } from '../../features/home/layout.js';
+import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
+import { getHomeLayout, NO_CONFIG_NOTICE } from '../../features/home/layout.js';
 import { getLogo } from '../../features/home/logo.js';
 import { RECENT_SESSIONS_HINT } from '../../features/home/components/recent-sessions-list.js';
 import { useRecentSessionsFocus } from '../../features/home/use-recent-sessions-focus.js';
@@ -177,10 +179,11 @@ export function HomeScreen({
 }: HomeScreenProps) {
   const theme = useTheme();
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
-  const [{ cols, rows }, { sessions, totalCount }, { projectDir }] = useStores(
+  const [{ cols, rows }, { sessions, totalCount }, { projectDir }, dock] = useStores(
     terminalSizeStore,
     sessionsStore,
     configStore,
+    inputHeightStore,
   );
   const selectionError = sessionSelectStore.use((s) => s.error);
   const noConfig = configStore.use((state) => state.revision === null);
@@ -235,12 +238,16 @@ export function HomeScreen({
     rows,
     sessionCount: totalCount,
     sessionsFocused: false,
+    dockRows: dock.rows,
+    noConfig,
   });
   const focusedLayout = getHomeLayout({
     cols,
     rows,
     sessionCount: totalCount,
     sessionsFocused: true,
+    dockRows: dock.rows,
+    noConfig,
   });
   const hasRoomForSessions = preliminaryLayout.recentSessionLimit > 0;
   const canFocus = focusedLayout.recentSessionLimit > 0 && sessions.length > 0;
@@ -345,14 +352,18 @@ export function HomeScreen({
           <Box flexDirection="column" width={layout.width} height="100%">
             <Box flexDirection="column" flexGrow={1} overflowY="hidden" alignItems="center">
               <Box flexDirection="column" width={layout.width} gap={1} flexShrink={0}>
-                <Box flexDirection="column" alignItems="center" flexShrink={0}>
-                  <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
-                </Box>
+                {layout.showLogo && (
+                  <Box flexDirection="column" alignItems="center" flexShrink={0}>
+                    <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
+                  </Box>
+                )}
 
                 <HomeSeatBlock rows={rows} width={layout.width} />
 
                 {noConfig && (
-                  <Text color={theme.textDim}>No config. Setup saves .splitbrief/config.yaml.</Text>
+                  <Box paddingLeft={MARK_SLOT_CELLS}>
+                    <Text color={theme.textDim}>{NO_CONFIG_NOTICE}</Text>
+                  </Box>
                 )}
 
                 {hasRoomForSessions && (

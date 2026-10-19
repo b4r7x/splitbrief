@@ -1831,6 +1831,66 @@ describe('Composer attachment affordances', () => {
   });
 });
 
+describe('Composer home message', () => {
+  const SIGN_IN = 'run opencode auth login anthropic before start';
+  const SAVE_MESSAGE = `Saved BUILD · OpenCode CLI · Claude Haiku 4.5 · via anthropic to .splitbrief/config.yaml · OpenCode CLI has no credential for anthropic — ${SIGN_IN}`;
+
+  beforeEach(() => {
+    resetAllStores();
+    forceUnicodeGlyphs();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+  });
+
+  // Home is 76 cells wide at 80 columns.
+  function renderHome() {
+    return renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint="Describe your feature…"
+        homeHint="/help · /crew"
+        width={76}
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+      />,
+      { cols: 80, rows: 24 },
+    );
+  }
+
+  it('shows the whole save message, sign-in command included, above the box at 80 columns', async () => {
+    const ui = renderHome();
+    await flushEffects();
+    feedbackStore.setMessage(SAVE_MESSAGE);
+    await flushEffects();
+
+    const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const boxTop = rows.findIndex((row) => row.includes('╭'));
+    expect(
+      rows
+        .slice(0, boxTop)
+        .map((row) => row.trim())
+        .join(' '),
+    ).toBe(SAVE_MESSAGE);
+    expect(rows[boxTop + 1]).toContain('›');
+    ui.unmount();
+  });
+
+  it('gives the rows back to the hint when the message clears', async () => {
+    const ui = renderHome();
+    await flushEffects();
+    feedbackStore.setMessage(SAVE_MESSAGE);
+    await flushEffects();
+    feedbackStore.setMessage(null);
+    await flushEffects();
+
+    const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const boxTop = rows.findIndex((row) => row.includes('╭'));
+    expect(rows.slice(0, boxTop).map((row) => row.trim())).toEqual(['/help · /crew']);
+    ui.unmount();
+  });
+});
+
 describe('Composer draft requests', () => {
   const COPY: RuntimeCommandDef = {
     kind: 'arg',

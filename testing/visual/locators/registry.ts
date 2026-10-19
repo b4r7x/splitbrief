@@ -8,7 +8,12 @@ import {
   getProgressRows,
   WORKFLOW_GUTTER_X,
 } from '../../../src/features/workflow/layout/chrome-rows.js';
-import { getHomeLayout, homeConfigBlockRows } from '../../../src/features/home/layout.js';
+import { deriveHomeHintLines } from '../../../src/components/composer/home-hint.js';
+import {
+  getHomeLayout,
+  homeConfigBlockRows,
+  RESTING_DOCK_ROWS,
+} from '../../../src/features/home/layout.js';
 import { getLogoHeight } from '../../../src/features/home/logo.js';
 import {
   workflowFixtureProjections,
@@ -16,6 +21,7 @@ import {
   type WorkflowFixtureProjection,
 } from '../fixtures/workflow/projections.js';
 import { projectionChromeFacts } from '../fixtures/workflow/projection-chrome.js';
+import { homeFixtureFeedback } from '../fixtures/screen-fixtures.js';
 import type { Cell, CellGrid } from '../contracts/cells.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
 import type { LocatorContext, LocatorDefinition } from './types.js';
@@ -120,7 +126,7 @@ export const LOCATOR_REGISTRY: Readonly<Record<string, LocatorDefinition>> =
 
 function resolveHomeHeader(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
-  const layout = getHomeLayout({ cols, rows });
+  const layout = getHomeLayout({ cols, rows, dockRows: RESTING_DOCK_ROWS, noConfig: false });
   return CellRectSchema.parse({
     x: Math.floor((cols - layout.width) / 2),
     y: 0,
@@ -129,16 +135,32 @@ function resolveHomeHeader(context: LocatorContext): CellRect {
   });
 }
 
+// The crop is the dock the composer publishes to the home layout: its home rows over the box.
+// The box rows come from the frame; the home rows from the fixture's feedback, fitted as the
+// composer fits it.
 function resolveHomeComposer(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
-  const layout = getHomeLayout({ cols, rows });
-  const height = DEFAULT_INPUT_ROWS + 1;
-  return CellRectSchema.parse({
-    x: Math.floor((cols - layout.width) / 2),
-    y: rows - layout.inputBottomMargin - height,
+  const layout = getHomeLayout({ cols, rows, dockRows: RESTING_DOCK_ROWS, noConfig: false });
+  const x = Math.floor((cols - layout.width) / 2);
+  const boxBottom = rows - layout.inputBottomMargin - 1;
+  let boxTop = boxBottom;
+  while (boxTop > context.grid.rect.y && cellAt(context.grid, x, boxTop) !== '╭') boxTop -= 1;
+  if (cellAt(context.grid, x, boxTop) !== '╭') {
+    throw new Error('No home composer box is painted above the bottom margin');
+  }
+  const { feedbackLine } = deriveHomeHintLines({
+    active: true,
+    homeHint: '',
+    feedbackMessage: homeFixtureFeedback.get(context.scenario.id) ?? null,
     width: layout.width,
-    height,
+    dropEnabled: false,
   });
+  const height = (feedbackLine?.split('\n').length ?? 1) + boxBottom - boxTop + 1;
+  return CellRectSchema.parse({ x, y: boxBottom + 1 - height, width: layout.width, height });
+}
+
+function cellAt(grid: CellGrid, x: number, y: number): string | undefined {
+  return grid.cells[y - grid.rect.y]?.[x - grid.rect.x]?.grapheme;
 }
 
 function projectionFor(context: LocatorContext): WorkflowFixtureProjection {

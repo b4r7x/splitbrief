@@ -20,6 +20,7 @@ const SESSION_FAILED_SUFFIX = '" failed without a summary to display';
 const NO_VISION_PREFIX = `Cannot attach: ${CREW_SEAT_LABELS.plan} seat `;
 const NO_VISION_SUFFIX = ' cannot see images — /crew plan';
 const DROP_AFFORDANCE = `${SOFT_SEP}drop an image`;
+const FEEDBACK_MAX_ROWS = 4;
 
 export function noVisionFeedbackMessage(seatIdentity: string): string {
   return `${NO_VISION_PREFIX}${seatIdentity}${NO_VISION_SUFFIX}`;
@@ -62,10 +63,12 @@ export interface HomeHintLines {
   homeHintLine: string | null;
 }
 
-// The home row is one line: feedback takes it when there is any, otherwise the hint does.
-// A focused chat input paints no placeholder (segments.ts), so the drop affordance rides
-// the hint line — the one home row that renders while the box is live enough to take a drop.
-// It is the optional half of that line: it goes whole, or not at all, never clipped.
+// Feedback takes the home row when there is any, otherwise the hint does. Feedback wraps at
+// word boundaries onto up to FEEDBACK_MAX_ROWS rows, so a long save message keeps its sign-in
+// command; the hint is one row. A focused chat input paints no placeholder (segments.ts), so the
+// drop affordance rides the hint line — the one home row that renders while the box is live
+// enough to take a drop. It is the optional half of that line: it goes whole, or not at all,
+// never clipped.
 export function deriveHomeHintLines(opts: {
   active: boolean;
   homeHint: string | undefined;
@@ -81,7 +84,7 @@ export function deriveHomeHintLines(opts: {
     return {
       feedbackLine: fitFeedbackMessage(
         structureKnownFeedbackMessage(sanitizeTerminalDisplayText(feedbackMessage)),
-        width,
+        { width, maxRows: FEEDBACK_MAX_ROWS },
       ),
       homeHintLine: null,
     };

@@ -68,6 +68,18 @@ describe('feedbackStore', () => {
     expect(feedbackStore.get().isError).toBe(false);
   });
 
+  it('keeps a long message on screen long enough to read it', () => {
+    const long =
+      'Saved BUILD · OpenCode CLI · Claude Haiku 4.5 · via anthropic to .splitbrief/config.yaml · OpenCode CLI has no credential for anthropic — run opencode auth login anthropic before start';
+    feedbackStore.setMessage(long);
+
+    vi.advanceTimersByTime(10_000);
+    expect(feedbackStore.get().message).toBe(long);
+
+    vi.advanceTimersByTime(5_000);
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
   it('a later setError replaces a pending setMessage', () => {
     feedbackStore.setMessage('saved');
     feedbackStore.setError('Connection lost');
