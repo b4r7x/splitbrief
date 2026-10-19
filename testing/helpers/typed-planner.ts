@@ -181,17 +181,22 @@ export function scriptedTypedCall(script: Array<PlanResult | string | Error>): {
 }
 
 /**
- * The plan a planner mock that still scripts Task Briefs stands for: each brief a task, its tests
- * as test checks (one command check when it lists none), one criterion every task serves.
+ * The plan a planner mock that still scripts Task Briefs stands for: each brief a task, one test
+ * check on its first suggested file per test it lists (one command check when it lists none or
+ * suggests no file), one criterion every task serves.
  */
 export function planFromTasks(tasks: readonly Task[]): PlanProposal {
   const specs = tasks.map((task) => {
-    const tests = task.tests.map((value, index) => ({
-      id: `${task.id}-K${index + 1}`,
-      kind: 'test' as const,
-      value,
-      required: false,
-    }));
+    const file = task.suggestedFiles[0];
+    const tests =
+      file === undefined
+        ? []
+        : task.tests.map((_, index) => ({
+            id: `${task.id}-K${index + 1}`,
+            kind: 'test' as const,
+            value: file,
+            required: false,
+          }));
     return {
       id: task.id,
       title: task.title,

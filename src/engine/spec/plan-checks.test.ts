@@ -4,7 +4,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { PlanProposalSchema, type PlanProposal } from '../../core/schemas/plan.js';
-import { checkPlan, planRepairWarning, renderCheckNotes, type PlanTaskFit } from './plan-checks.js';
+import {
+  checkPlan,
+  planRepairWarning,
+  refusedCheckErrors,
+  renderCheckNotes,
+  type PlanTaskFit,
+} from './plan-checks.js';
 
 const projectDir = '/repo';
 const k2 = [{ id: 'K2', kind: 'test' as const, value: 'src/b.test.ts', required: true }];
@@ -342,6 +348,28 @@ describe('checkPlan', () => {
     ]);
   });
 
+  it('refuses a test check whose value is a command, and admits a test file a task writes later', () => {
+    const plan = makePlanProposal({
+      criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K2'] }],
+      tasks: [
+        makeTaskSpec({
+          suggestedFiles: ['src/hello.ts', 'src/not-yet-written.test.ts'],
+          checks: [
+            { id: 'K1', kind: 'test', value: 'npm test -- src/hello.test.ts', required: true },
+            { id: 'K2', kind: 'test', value: 'src/not-yet-written.test.ts', required: true },
+          ],
+        }),
+      ],
+    });
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
+      {
+        code: 'refused-check-command',
+        message:
+          'Check K1 is refused: a `test` check names one test file, and `npm test -- src/hello.test.ts` is not one file. Make it a `cmd` check that runs this command, or set its value to the test file.',
+      },
+    ]);
+  });
+
   it('refuses a criterion id used twice', () => {
     const plan = makePlanProposal({
       criteria: [
@@ -351,6 +379,23 @@ describe('checkPlan', () => {
     });
     expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
       { code: 'duplicate-criterion-id', message: 'Criterion id C1 is used twice.' },
+    ]);
+  });
+});
+
+describe('refusedCheckErrors', () => {
+  it('refuses a test check that holds a command', () => {
+    expect(
+      refusedCheckErrors(
+        [{ id: 'K5', kind: 'test', value: 'node --test tests/truncate.test.js' }],
+        true,
+      ),
+    ).toEqual([
+      {
+        code: 'refused-check-command',
+        message:
+          'Check K5 is refused: a `test` check names one test file, and `node --test tests/truncate.test.js` is not one file. Make it a `cmd` check that runs this command, or set its value to the test file.',
+      },
     ]);
   });
 });

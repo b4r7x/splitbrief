@@ -221,7 +221,7 @@ function planTwoBriefs(target: StopContinueFixture): void {
     title: 'Add the second module',
     intent: 'Add the second module beside the greeting.',
     criteria: ['C2'],
-    checks: [{ id: 'T002-K1', kind: 'test', value: 'SECOND === 2', required: true }],
+    checks: [{ id: 'T002-K1', kind: 'test', value: SECOND_FILE, required: true }],
     suggestedFiles: [GREET_FILE, SECOND_FILE],
     steps: [`Create \`${SECOND_FILE}\` exporting \`SECOND\`.`],
     dependsOn: ['T001'],
