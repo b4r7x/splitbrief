@@ -91,7 +91,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Screens**: `workflow`.
 - **Args**: none.
 - **Example**: `/home`
-- **Behavior**: Calls `routerStore.navigate({ to: 'home' })`. The home screen shows the prompt input and recent sessions.
+- **Behavior**: Calls `routerStore.navigate({ to: 'home' })`. The home screen shows the prompt input and recent sessions. While Apply writes to your checkout from this window, `/home` waits: the byline reads `Returns home when Apply finishes`, and a halted Apply keeps you on the run. In another window that has the run open, `/home` goes home at once.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; navigation wiring at `src/app/command-context.ts`.
 - **See also**: `/sessions`, `/quit`.
 

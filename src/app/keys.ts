@@ -20,6 +20,7 @@ import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
 import { SEAT_PICKER_OVERLAYS, type OverlayType } from '../core/navigation/types.js';
 import { requestQuit, requestStopNow, requestLeaveSession } from '../features/workflow/handlers.js';
+import { activeApply } from '../engine/orchestrator/session-lifecycle/shutdown.js';
 import { sessionSelectStore } from '../stores/navigation/session-select.js';
 import type { CopyOutcome } from '../lib/clipboard/clipboard.js';
 import { formatCopyResult } from '../core/runtime/commands/types.js';
@@ -250,7 +251,8 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
       const phase = stopStore.get().phase;
       const stopping =
         stoppedOrStopping() && phase !== 'parked' && phase !== 'ended' && phase !== 'failed';
-      if (quitUntil.current > Date.now() || stopping) {
+      // An Apply cannot be cut: the first press queues the quit behind it, and the byline says so.
+      if (quitUntil.current > Date.now() || stopping || activeApply() !== undefined) {
         clearQuitHint();
         deps.requestQuit(exitOnce);
         return;

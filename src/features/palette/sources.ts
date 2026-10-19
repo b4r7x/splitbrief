@@ -16,6 +16,7 @@ import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { WorkflowTask } from '../../stores/workflow/tasks.js';
+import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import type {
   PaletteAction,
   PaletteCommandItem,
@@ -62,6 +63,7 @@ export function buildPaletteSources({
         }),
         openRunAtRest: isOpenRunAtRest(routerStore.get()),
         applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
+        applying: activeApply() !== undefined,
       },
     }),
     skillItems: buildSkillItems(skills.available, skills.selected),

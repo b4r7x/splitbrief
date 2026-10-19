@@ -126,6 +126,7 @@ const previewPrepareExecution: HomeScreenDeps['prepareExecution'] = async (input
  * fixture state rather than a check of the machine.
  */
 const previewSessionSelect: SessionSelectDeps = {
+  applying: () => false,
   loadResumeState: (ref) => loadOwnerWorkflowState(inFixtureRoot(ref)),
   prepareResume: async ({ ref, state }) => ({
     kind: 'prepared',

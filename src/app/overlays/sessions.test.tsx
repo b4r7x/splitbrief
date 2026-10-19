@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,6 +17,10 @@ import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import type { Session } from '../../core/schemas/session.js';
 import { createInitialState } from '../../core/state/machine.js';
+import {
+  activeApply,
+  trackActiveApply,
+} from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { SessionsPicker } from './sessions.js';
 import { flushEffects, tick } from '#testing/helpers/ink.js';
 
@@ -263,6 +267,37 @@ describe('SessionsPicker', () => {
     expect(sessionSelectStore.get().error).toBeNull();
   });
 
+  it('refuses to open another run while Apply writes the run on screen', async () => {
+    writeSessionSummary(
+      tmp,
+      makeSession({ id: 'sess-other', feature: 'another run', status: 'open', summary: null }),
+    );
+    const onScreen = makeRunRecord({ status: { kind: 'running' } });
+    routerStore.init({ screen: 'workflow', run: onScreen, execution: { kind: 'at-rest' } });
+    const apply = Promise.withResolvers<void>();
+    void trackActiveApply(apply.promise);
+    onTestFinished(async () => {
+      apply.resolve();
+      await activeApply();
+    });
+
+    overlayStore.open('sessions');
+    const instance = render(<SessionsPicker />);
+    await tick(1);
+    await flushEffects();
+
+    instance.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain(
+        'Cannot open "another run": Apply is still writing to your checkout.',
+      );
+    });
+    const route = routerStore.get();
+    expect(route.screen === 'workflow' && route.run).toBe(onScreen);
+    expect(overlayStore.get().active).toBe('sessions');
+    instance.unmount();
+  });
+
   it('opens the selected run at rest, replayed, without preparing anything', async () => {
     const session = makeSession({
       id: 'sess-open-at-rest',
@@ -276,6 +311,7 @@ describe('SessionsPicker', () => {
     const instance = render(
       <SessionsPicker
         deps={{
+          applying: () => false,
           hydrateRun,
           loadResumeState: () => ({
             kind: 'loaded',

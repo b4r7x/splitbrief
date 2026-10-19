@@ -52,9 +52,28 @@ export async function shutdownWorkflow(opts: WithShutdownHandlersOpts): Promise<
 }
 
 let activeWorkflowShutdown: (() => Promise<void>) | undefined;
+let activeApplyRun: Promise<void> | undefined;
 
-export function awaitActiveWorkflowShutdown(): Promise<void> {
-  return activeWorkflowShutdown?.() ?? Promise.resolve();
+/**
+ * Registers this process's at-rest Apply until `run` settles. Apply cannot be cut safely, so
+ * shutdown waits for it. A second Apply joins the first rather than replacing it.
+ */
+export function trackActiveApply<T>(run: Promise<T>): Promise<T> {
+  const settled: Promise<void> = Promise.allSettled([activeApplyRun, run]).then(() => {
+    if (activeApplyRun === settled) activeApplyRun = undefined;
+  });
+  activeApplyRun = settled;
+  return run;
+}
+
+/** The at-rest Apply this process runs, resolving (never rejecting) once it settles; else `undefined`. */
+export function activeApply(): Promise<void> | undefined {
+  return activeApplyRun;
+}
+
+export async function awaitActiveWorkflowShutdown(): Promise<void> {
+  await activeApplyRun;
+  await activeWorkflowShutdown?.();
 }
 
 export async function withShutdownHandlers(

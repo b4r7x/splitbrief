@@ -7,7 +7,14 @@ import type { RunStatus, StopReason } from '../../core/sessions/run-status.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { ReviewPacketSummary } from '../../core/schemas/summary.js';
-import { atRestBriefMark, atRestComposer, atRestRailStages, recordPhase } from './at-rest.js';
+import { getRailStages } from '../../core/rail-stages.js';
+import {
+  applyRunning,
+  atRestBriefMark,
+  atRestComposer,
+  atRestRailStages,
+  recordPhase,
+} from './at-rest.js';
 import { openRunBylineParts } from './closed/byline.js';
 
 const PACKET: ReviewPacketSummary = {
@@ -285,6 +292,36 @@ describe('atRestRailStages on a run with a workspace', () => {
   });
 });
 
+function applyingRecord() {
+  return makeRunRecord({
+    status: { kind: 'running' },
+    hydration: {
+      kind: 'loaded',
+      state: makeWorkflowState({ phase: 'complete', reviewStatus: 'passed', workspace: WORKSPACE }),
+    },
+  });
+}
+
+describe('a run whose Apply is running', () => {
+  it('is the running record whose reviewed result waits for the checkout', () => {
+    expect(applyRunning(applyingRecord())).toBe(true);
+    expect(applyRunning(workspaceRecord({ kind: 'ready-to-apply', override: false }))).toBe(false);
+    expect(applyRunning(workspaceRecord({ kind: 'running' }, 'implementing'))).toBe(false);
+  });
+
+  it('marks Apply as the active stage after three done stages, as the live rail does', () => {
+    expect(atRestRailStages(applyingRecord())).toEqual([
+      { stage: 'plan', status: 'done' },
+      { stage: 'build', status: 'done' },
+      { stage: 'review', status: 'done' },
+      { stage: 'apply', status: 'active' },
+    ]);
+    expect(atRestRailStages(applyingRecord())).toEqual(
+      getRailStages('complete', { apply: 'active' }),
+    );
+  });
+});
+
 describe('atRestBriefMark', () => {
   it.each([
     [
@@ -317,6 +354,31 @@ describe('atRestComposer', () => {
       commandsOnly: true,
       placeholder: '/ for a command · tab for the result menu…',
     });
+  });
+
+  it('says Enter goes home when Apply finishes while this window applies the run', () => {
+    expect(atRestComposer(applyingRecord(), { queued: null })).toEqual({
+      continuable: false,
+      commandsOnly: true,
+      placeholder: '/ for a command · ⏎ for home when Apply finishes…',
+    });
+  });
+
+  it('says Enter goes home at once while another process applies the run', () => {
+    expect(atRestComposer(applyingRecord())).toEqual({
+      continuable: false,
+      commandsOnly: true,
+      placeholder: '/ for a command · ⏎ for home…',
+    });
+  });
+
+  it('promises no home once Ctrl+C queued a quit behind Apply', () => {
+    expect(atRestComposer(applyingRecord(), { queued: 'quit' }).placeholder).toBe(
+      '/ for a command…',
+    );
+    expect(atRestComposer(applyingRecord(), { queued: 'home' }).placeholder).toBe(
+      '/ for a command · ⏎ for home when Apply finishes…',
+    );
   });
 
   it('takes a correction from a run that can be picked up', () => {

@@ -853,6 +853,15 @@ const READY_TO_APPLY = record({
   ledger: READY_LEDGER,
 });
 
+/** The ready run while an Apply holds it: the record reads running, not ready. */
+const APPLYING = record({
+  sessionId: 'visual-at-rest-applying',
+  status: { kind: 'running' },
+  state: READY_TO_APPLY.hydration.state,
+  summary: workspaceSummary('visual-at-rest-applying'),
+  ledger: READY_LEDGER,
+});
+
 const CONTINUOUS_READY = record({
   sessionId: 'visual-continuous-transcript-ready',
   status: { kind: 'ready-to-apply', override: false },
@@ -2273,6 +2282,22 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-ready-to-apply',
     route: { record: READY_TO_APPLY, log: READY_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-applying',
+    route: { record: APPLYING, log: READY_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-applying-home-queued',
+    route: { record: APPLYING, log: READY_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-applying-quit-queued',
+    route: { record: APPLYING, log: READY_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-other-process-applying',
+    route: { record: APPLYING, log: READY_LOG },
   }),
   atRestProjection({
     id: 'workflow-ready-composer-focus',

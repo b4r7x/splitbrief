@@ -9,6 +9,7 @@ import { isLivePhase } from '../../../phases.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import {
+  APPLY_RUNNING_REFUSAL,
   APPLY_UNFINISHED_REFUSAL,
   formatApplyRestoreCounts,
   rejectRunFeedback,
@@ -24,6 +25,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       description: 'Open stop and session options',
       category: 'workflow',
       validScreens: ['workflow'],
+      guard: (c) => (c.applying ? 'Nothing to stop: Apply finishes on its own.' : undefined),
       handler: () => ctx.openOverlay('stop-sheet'),
     },
     {
@@ -33,8 +35,12 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       description: 'Continue a paused or stopped run',
       category: 'workflow',
       validScreens: ['workflow'],
-      guard: (c) =>
-        c.openRunAtRest || isLivePhase(c.phase) ? undefined : 'No run to resume in this phase',
+      guard: (c) => {
+        if (c.applying) return APPLY_RUNNING_REFUSAL;
+        return c.openRunAtRest || isLivePhase(c.phase)
+          ? undefined
+          : 'No run to resume in this phase';
+      },
       handler: () => {
         if (!ctx.resumeRun()) ctx.setFeedbackError('Nothing to resume.');
       },
@@ -47,8 +53,12 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       category: 'workflow',
       args: { kind: 'free', hint: 'correction' },
       validScreens: ['workflow'],
-      guard: (c) =>
-        c.openRunAtRest || isLivePhase(c.phase) ? undefined : 'No run to steer in this phase',
+      guard: (c) => {
+        if (c.applying) return APPLY_RUNNING_REFUSAL;
+        return c.openRunAtRest || isLivePhase(c.phase)
+          ? undefined
+          : 'No run to steer in this phase';
+      },
       handler: (args) => {
         const text = args?.trim() ?? '';
         if (text === '') {
@@ -66,6 +76,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       category: 'workflow',
       validScreens: ['workflow'],
       guard: (c) => {
+        if (c.applying) return APPLY_RUNNING_REFUSAL;
         if (c.applyUnfinished) return APPLY_UNFINISHED_REFUSAL;
         return c.openRunAtRest || isLivePhase(c.phase) ? undefined : 'No run to end in this phase';
       },
@@ -107,6 +118,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       category: 'workflow',
       args: { kind: 'closed', options: RUN_ACTIONS },
       validScreens: ['workflow'],
+      guard: (c) => (c.applying ? APPLY_RUNNING_REFUSAL : undefined),
       handler: async (args) => {
         const [action = '', confirmation] = (args ?? '')
           .trim()

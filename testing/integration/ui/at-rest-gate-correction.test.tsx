@@ -191,6 +191,7 @@ describe('a correction typed at a parked approval gate', () => {
         resumeState: savedState,
       });
       const sessionSelect: SessionSelectDeps = {
+        applying: () => false,
         loadResumeState: loadOwnerWorkflowState,
         prepareResume: async () => ({ kind: 'prepared', execution: prepared }),
         hydrateRun,

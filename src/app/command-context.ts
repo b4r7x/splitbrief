@@ -4,6 +4,7 @@ import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
 import {
   requestClearQueue,
   requestEndRun,
+  requestLeaveSession,
   requestQuit,
   requestResume,
   requestSteer,
@@ -68,6 +69,7 @@ import { createCommandContext } from '../core/runtime/commands/context-factory.j
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { acceptRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
 import { runApplyAtRest } from '../engine/orchestrator/apply/at-rest.js';
+import { activeApply } from '../engine/orchestrator/session-lifecycle/shutdown.js';
 import { undoApply } from '../engine/orchestrator/apply/restore.js';
 import { canUndoApply, type RunStatus } from '../core/sessions/run-status.js';
 import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
@@ -366,7 +368,9 @@ export function buildCommandContext({
     getSessionId: () => routeSessionId(route, projectDir),
     noActiveSession: appCommandContextError.noActiveSession,
     openOverlay: overlayStore.open,
-    navigateHome: () => routerStore.navigate({ to: 'home' }),
+    // Apply cannot be cut: a /home typed while it writes waits for it, as Esc does.
+    navigateHome: () =>
+      activeApply() === undefined ? routerStore.navigate({ to: 'home' }) : requestLeaveSession(),
     quit: () => requestQuit(exit),
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
@@ -486,8 +490,9 @@ export function useRuntimeCommands({
   const runtimeChainRef = useRef(Promise.resolve());
   const handleRuntimeCommand = (raw: string, from: Screen) => {
     const config = configStore.get().config;
-    runtimeChainRef.current = runtimeChainRef.current.then(() =>
-      executeRuntimeCommand(commands, raw, {
+    runtimeChainRef.current = runtimeChainRef.current.then(() => {
+      const applyBefore = activeApply();
+      const command = executeRuntimeCommand(commands, raw, {
         screen: from,
         phase,
         plannerSupportsImages: plannerSupportsImages(
@@ -496,9 +501,12 @@ export function useRuntimeCommands({
         ),
         openRunAtRest: isOpenRunAtRest(routerStore.get()),
         applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
+        applying: applyBefore !== undefined,
         onError: feedbackStore.setError,
-      }),
-    );
+      });
+      // A command that started an Apply reports it when Apply settles; the next command runs now.
+      return activeApply() === applyBefore ? command : undefined;
+    });
   };
   return {
     commands,

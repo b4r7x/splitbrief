@@ -246,6 +246,7 @@ describe('executeRuntimeCommand', () => {
       plannerSupportsImages: false,
       openRunAtRest: false,
       applyUnfinished: false,
+      applying: false,
       onError: (msg) => {
         errorMsg = msg;
       },

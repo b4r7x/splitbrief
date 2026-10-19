@@ -34,6 +34,8 @@ import {
   legendText,
   openRunBylineParts,
 } from '../../features/workflow/closed/byline.js';
+import { useSharedClock } from '../../hooks/use-shared-clock.js';
+import { departureStore } from '../../stores/workflow/departure.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { controlsStore } from '../../stores/ui/controls.js';
@@ -343,6 +345,11 @@ export function WorkflowScreen({
   // The at-rest byline carries no pip, so it opens on the text column and its budget is what is
   // left of the chrome row past the mark slot.
   const bylineWidth = Math.max(1, getChromeContentWidth(cols) - MARK_SLOT_CELLS);
+  // The record carries no Apply start, so the clock counts from when this screen first saw it.
+  const [applySince, setApplySince] = useState<number | null>(null);
+  useLayoutEffect(() => setApplySince(model.applying ? Date.now() : null), [model.applying]);
+  const now = useSharedClock({ active: model.applying });
+  const queuedDeparture = departureStore.use((state) => state?.kind ?? null);
   const byline =
     model.atRestRecord === undefined
       ? undefined
@@ -352,9 +359,16 @@ export function WorkflowScreen({
             status: model.atRestRecord.status,
             continuable: model.continuable,
             width: bylineWidth,
+            apply: model.applying
+              ? {
+                  elapsedMs: applySince === null ? 0 : Math.max(0, now - applySince),
+                  queued: queuedDeparture,
+                }
+              : undefined,
           });
   // A check running for this run owns Escape and says so on the byline, so the legend above the
-  // composer does not offer it for going home at the same time.
+  // composer does not offer it for going home at the same time. Neither does a quit queued behind
+  // Apply, which Escape no longer changes.
   const checking = preparationStore.use((state) => state.kind === 'checking');
   // A check that stopped covers this screen with the problem panel. The composer under it keeps its
   // draft but takes no keys, so the panel's own retry, back and scroll keys mean one thing each.
@@ -367,7 +381,7 @@ export function WorkflowScreen({
       : legendText({
           overflow: scrollAboveLabel !== '' || scrollBelowLabel !== '',
           width: getChromeContentWidth(cols),
-          canGoHome: !checking,
+          canGoHome: !checking && queuedDeparture !== 'quit',
         });
 
   return (

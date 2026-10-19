@@ -25,6 +25,9 @@ export function formatApplyRestoreCounts(result: {
 export const APPLY_UNFINISHED_REFUSAL =
   'Apply did not finish. Restore or retry Apply first, then end the run.';
 
+/** Why the commands that continue, end or settle a run refuse while its Apply writes the checkout. */
+export const APPLY_RUNNING_REFUSAL = 'Apply is still writing to your checkout.';
+
 /** What `/run reject confirm` did to the checkout, as the run's transcript records it. */
 export type RunRejectFacts = Readonly<{
   restored: readonly string[];

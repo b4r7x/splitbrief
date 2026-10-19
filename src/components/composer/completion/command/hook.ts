@@ -22,6 +22,7 @@ import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import type { CommandCompletionRow } from './menu.js';
 import { useCompletionSelection } from '../use-completion-selection.js';
 import { useCompletionNavigation } from '../use-completion-navigation.js';
+import { activeApply } from '../../../../engine/orchestrator/session-lifecycle/shutdown.js';
 
 interface UseCommandCompletionOptions {
   commands: RuntimeCommandDef[];
@@ -93,6 +94,7 @@ export function useCommandCompletion({
       }),
     openRunAtRest,
     applyUnfinished,
+    applying: activeApply() !== undefined,
   };
 
   const commandMode = isRuntimeCommandLine(value);

@@ -252,9 +252,9 @@ How a run stands is not a phase. It is derived once, by `deriveRunStatus` (`src/
 
 | Status | Meaning |
 |---|---|
-| `running` | A live process holds the run. |
+| `running` | A live process holds the run. An Apply that writes the run's result to the checkout holds it too, so the run reads `running` until that Apply finishes or halts. |
 | `open` | The run stopped. It carries `stop` and `resumeAt`. |
-| `ready-to-apply` | A worktree or staged-copy result has a passing review or an Accept as is override. It awaits Apply or Discard. `override` names the override. |
+| `ready-to-apply` | A worktree or staged-copy result has a passing review or an Accept as is override. It awaits Apply or Discard, and no process holds it. `override` names the override. |
 | `closed` | The run is over. Workspace outcomes are `applied`, `undone`, `discarded` and `ended`. An applied run reads `undone` after `/run reject confirm` undid its Apply; its state keeps `closed.as: 'applied'`. A passed checkout-mode run and an older passed run close as `complete`. |
 
 Continuation takes an open run. A ready run takes Apply or Discard, and a closed run takes nothing. A ready run has no pending recovery, interrupted step or Apply in progress. An `apply-conflict` or `apply-partial` halt leaves the run `open` and waiting for you on that halt. An unfinished Apply resumes at its Apply step.

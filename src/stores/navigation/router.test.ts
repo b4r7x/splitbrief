@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
-import { routerStore } from './router.js';
+import { isOpenRunAtRest, routerStore } from './router.js';
 import { feedbackStore } from '../ui/feedback.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
 import type { NavigateArgs } from './router.js';
+import type { RunStatus } from '../../core/sessions/run-status.js';
 
 function preparedExecution(feature: string): PreparedExecution {
   const sessionId = 'router-test-session';
@@ -161,6 +162,27 @@ describe('routerStore', () => {
     });
 
     expect(routerStore.get()).toBe(current);
+  });
+
+  it('offers an open run at rest to continue or end, and not one a live process holds', () => {
+    const atRest = (status: RunStatus) => {
+      routerStore.navigate({
+        to: 'workflow',
+        run: makeRunRecord({ status }),
+        execution: { kind: 'at-rest' },
+      });
+      return isOpenRunAtRest(routerStore.get());
+    };
+
+    expect(
+      atRest({
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+        resumeAt: { kind: 'apply' },
+      }),
+    ).toBe(true);
+    expect(atRest({ kind: 'running' })).toBe(false);
+    expect(atRest({ kind: 'closed', as: 'applied' })).toBe(false);
   });
 
   it('represents only prepared local workflow routes', () => {

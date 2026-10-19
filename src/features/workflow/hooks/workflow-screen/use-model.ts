@@ -8,7 +8,12 @@ import {
   SUMMARY_FILE,
   sessionDir,
 } from '../../../../core/paths.js';
-import { requestResume, rereadRunAtRest, setResumeHandler } from '../../handlers.js';
+import {
+  requestLeaveSession,
+  requestResume,
+  rereadRunAtRest,
+  setResumeHandler,
+} from '../../handlers.js';
 import { useInputMode } from '../use-input-mode.js';
 import { useRunContinue } from '../use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from '../use-run-loop.js';
@@ -16,6 +21,7 @@ import { createReviewInputHandler, type ReviewInputEffects } from '../../review-
 import { useWorkflowKeys } from '../use-keys.js';
 import { resolveInputHint } from '../../input-hints.js';
 import { continueRun } from '../../../../engine/orchestrator/run/continue.js';
+import { activeApply } from '../../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { skillsStore } from '../../../../stores/project/skills.js';
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
@@ -27,10 +33,11 @@ import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { recoveryNoticeStore } from '../../../../stores/workflow/recovery-notice.js';
 import { feedbackStore } from '../../../../stores/ui/feedback.js';
 import { stopStore } from '../../../../stores/workflow/stop.js';
+import { departureStore } from '../../../../stores/workflow/departure.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
 import { useStores } from '../../../../stores/use-stores.js';
-import { atRestComposer, atRestRailStages } from '../../at-rest.js';
+import { applyRunning, atRestComposer, atRestRailStages } from '../../at-rest.js';
 import { deriveSummaryView } from '../../closed/view-model.js';
 import { hydrateResume } from '../../resume-hydration.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
@@ -152,7 +159,15 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
 
   const parked = stopStore.use((s) => s.phase === 'parked');
 
-  const composer = atRestRecord === undefined ? null : atRestComposer(atRestRecord);
+  const queuedDeparture = departureStore.use((state) => state?.kind ?? null);
+  // The record reads `running` for any process that applies the run; only this process's Apply
+  // holds a departure back, so only it shows the wait.
+  const applying =
+    atRestRecord !== undefined && applyRunning(atRestRecord) && activeApply() !== undefined;
+  const composer =
+    atRestRecord === undefined
+      ? null
+      : atRestComposer(atRestRecord, applying ? { queued: queuedDeparture } : undefined);
   const closedView =
     atRestRecord === undefined ? null : deriveSummaryView({ record: atRestRecord });
   const closed = atRestRecord !== undefined && atRestRecord.status.kind === 'closed';
@@ -201,6 +216,8 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     promptPending,
     /** The run on screen, at rest; undefined while a local process is driving it. */
     atRestRecord,
+    /** Whether this process's Apply writes the run on screen at rest. */
+    applying,
     closed,
     closedView,
     railStages: railRecord === undefined ? undefined : atRestRailStages(railRecord),
@@ -208,12 +225,12 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     handleInput,
     handleRuntimeCommand: onRuntimeCommand,
     // A bare Enter does what the placeholder says it does: continues a run that can be continued,
-    // and goes home from one that cannot. A parked run continues as `/resume` does.
+    // and goes home from one that cannot, the way Esc does. A parked run continues as `/resume` does.
     onEmptySubmit:
       atRestRecord !== undefined
         ? composer?.continuable === true
           ? () => continueAtRest(plainUserMessage(''))
-          : () => routerStore.navigate({ to: 'home' })
+          : requestLeaveSession
         : parked
           ? () => requestResume(plainUserMessage(''))
           : undefined,

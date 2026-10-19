@@ -172,6 +172,32 @@ describe('stopMenuLayout', () => {
   });
 });
 
+describe('readStopMenuRows on a run another process holds', () => {
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  function openHeldRun(): void {
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ status: { kind: 'running' } }),
+      execution: { kind: 'at-rest' },
+    });
+  }
+
+  it('offers only the way back on a run another process holds, never Resume or End run', () => {
+    openHeldRun();
+
+    expect(readStopMenuRows()).toEqual([
+      {
+        id: 'leave',
+        label: 'Back to sessions',
+        consequence: 'return home; keep the run and draft',
+      },
+    ]);
+  });
+});
+
 describe('readStopMenuRows on a run ready to apply', () => {
   afterEach(() => {
     resetAllStores();

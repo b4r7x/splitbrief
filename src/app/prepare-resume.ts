@@ -4,6 +4,7 @@ import { hydrateRun, readRunHistory } from '../features/workflow/run-history.js'
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { SessionRef } from '../core/types/session-ref.js';
 import { prepareExecution } from '../engine/runners/prepare-execution/prepare-execution.js';
+import { activeApply } from '../engine/orchestrator/session-lifecycle/shutdown.js';
 import type { PreparationPolicy } from '../engine/runners/prepare-execution/types.js';
 import type { PreparationOutcome } from '../engine/runners/prepared-execution.js';
 import { closeApprovalPrompt, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
@@ -57,4 +58,5 @@ export const sessionSelectDeps: SessionSelectDeps = {
   hydrateRun,
   readRunHistory,
   cancelPendingApproval: closeApprovalPrompt,
+  applying: () => activeApply() !== undefined,
 };

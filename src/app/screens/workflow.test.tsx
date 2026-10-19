@@ -7,9 +7,10 @@ import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js'
 import { taskId } from '../../core/schemas/task.js';
 import { saveState } from '../../core/state/persistence.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
+import { departureStore } from '../../stores/workflow/departure.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -29,6 +30,11 @@ import {
 } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { WorkflowScreen } from './workflow.js';
+import { useRuntimeCommands } from '../command-context.js';
+import {
+  activeApply,
+  trackActiveApply,
+} from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -750,6 +756,7 @@ describe('WorkflowScreen showing a run at rest', () => {
         deps={{
           runWorkflow,
           sessionSelect: {
+            applying: () => false,
             loadResumeState: () => ({ kind: 'loaded', state }),
             prepareResume,
             hydrateRun: async () => {},
@@ -833,6 +840,7 @@ describe('WorkflowScreen showing a run at rest', () => {
         deps={{
           runWorkflow,
           sessionSelect: {
+            applying: () => false,
             loadResumeState: hydrateResume,
             prepareResume,
             hydrateRun: async () => {},
@@ -964,6 +972,7 @@ describe('WorkflowScreen showing a run at rest', () => {
         deps={{
           runWorkflow,
           sessionSelect: {
+            applying: () => false,
             loadResumeState: hydrateResume,
             prepareResume,
             hydrateRun: async () => {},
@@ -989,6 +998,15 @@ describe('WorkflowScreen showing a run at rest', () => {
     expect(composerFocused).not.toContain('Type a correction, or tab to choose an action…');
     ui.unmount();
   });
+
+  function holdApply(): void {
+    const apply = Promise.withResolvers<void>();
+    void trackActiveApply(apply.promise);
+    onTestFinished(async () => {
+      apply.resolve();
+      await activeApply();
+    });
+  }
 
   function readyRun(override = false, findings = ['missing null check']) {
     return openRun({
@@ -1027,6 +1045,110 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept');
     });
+    ui.unmount();
+  });
+
+  it('says Apply is writing and queues home behind it on a bare Enter', async () => {
+    const ready = readyRun();
+    routerStore.init({
+      screen: 'workflow',
+      run: { ...ready, status: { kind: 'running' } },
+      execution: { kind: 'at-rest' },
+    });
+    holdApply();
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('* Review -> * Apply');
+    expect(frame).toContain('Applying to your checkout · 0:00');
+    expect(frame).not.toContain('Show diff');
+
+    ui.stdin.write('\r');
+    await tick(30);
+
+    expect(routerStore.get().screen).toBe('workflow');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      'Applying to your checkout · Returns home when Apply finishes · 0:00',
+    );
+    ui.unmount();
+  });
+
+  it('goes home at once from a run another process applies, and says that process runs it', async () => {
+    const ready = readyRun();
+    routerStore.init({
+      screen: 'workflow',
+      run: { ...ready, status: { kind: 'running' } },
+      execution: { kind: 'at-rest' },
+    });
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Running in another process');
+    expect(frame).toContain('/ for a command · ⏎ for home…');
+    expect(frame).not.toContain('Applying to your checkout');
+    expect(frame).not.toContain('when Apply finishes');
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(routerStore.get().screen).toBe('home');
+    });
+    ui.unmount();
+  });
+
+  it('queues home behind Apply on a typed /home and says so', async () => {
+    const ready = readyRun();
+    routerStore.init({
+      screen: 'workflow',
+      run: { ...ready, status: { kind: 'running' } },
+      execution: { kind: 'at-rest' },
+    });
+    holdApply();
+    function ScreenWithCommands() {
+      const model = useRuntimeCommands({ exit: () => {}, phase: 'complete' });
+      return (
+        <WorkflowScreen
+          commands={model.commands}
+          onRuntimeCommand={(raw) => model.handleRuntimeCommand(raw, 'workflow')}
+        />
+      );
+    }
+
+    const ui = renderFeature(<ScreenWithCommands />);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      '/ for a command · ⏎ for home when Apply finishes…',
+    );
+    ui.stdin.write('/home');
+    await tick(20);
+    ui.stdin.write('\r');
+    await tick(30);
+
+    expect(routerStore.get().screen).toBe('workflow');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      'Applying to your checkout · Returns home when Apply finishes · 0:00',
+    );
+    ui.unmount();
+  });
+
+  it('promises neither Esc nor Enter for home once a quit waits behind Apply', async () => {
+    const ready = readyRun();
+    routerStore.init({
+      screen: 'workflow',
+      run: { ...ready, status: { kind: 'running' } },
+      execution: { kind: 'at-rest' },
+    });
+    holdApply();
+    departureStore.__testReset({ kind: 'quit', run: () => {} });
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Applying to your checkout · Quits when Apply finishes · 0:00');
+    expect(frame).toContain('/ for a command…');
+    expect(frame).not.toContain('for home');
+    expect(frame).not.toContain('esc home');
     ui.unmount();
   });
 

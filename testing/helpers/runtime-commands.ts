@@ -76,6 +76,7 @@ export function runCommandInTest(args: {
     plannerSupportsImages: true,
     openRunAtRest: args.openRunAtRest ?? false,
     applyUnfinished: args.applyUnfinished ?? false,
+    applying: false,
     onError: args.onError,
   });
 }

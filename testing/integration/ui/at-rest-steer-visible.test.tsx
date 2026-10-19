@@ -69,6 +69,7 @@ describe('a correction typed on a run at rest', () => {
       resumeState: savedState,
     });
     const sessionSelect: SessionSelectDeps = {
+      applying: () => false,
       loadResumeState: loadOwnerWorkflowState,
       prepareResume: async () => ({ kind: 'prepared', execution: prepared }),
       hydrateRun,
