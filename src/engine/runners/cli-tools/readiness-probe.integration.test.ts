@@ -213,6 +213,8 @@ async function probeOpencode(
     await mkdir(join(home, '.config', 'opencode'), { recursive: true });
     await writeFile(join(home, '.config', 'opencode', 'auth.json'), '{}');
     vi.stubEnv('HOME', home);
+    vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'));
+    vi.stubEnv('XDG_DATA_HOME', join(home, '.local', 'share'));
     const executable = await fakeOpencode(dir, options.oracleBody ?? 'process.exit(0);');
     return probeCliReadiness({
       tool: 'opencode',
@@ -935,6 +937,8 @@ async function probeOpencodeRelease(release: Readonly<{ versionLine: string; maj
     await mkdir(join(home, '.config', 'opencode'), { recursive: true });
     await writeFile(join(home, '.config', 'opencode', 'auth.json'), '{}');
     vi.stubEnv('HOME', home);
+    vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'));
+    vi.stubEnv('XDG_DATA_HOME', join(home, '.local', 'share'));
     const log = join(root, 'argv.log');
     const executable = await fakeOpencodeRelease(root, release, log);
     const probe = lookupCliReadinessProbe({ tool: 'opencode', role: 'planner' });
