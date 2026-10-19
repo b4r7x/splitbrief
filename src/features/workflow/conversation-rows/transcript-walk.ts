@@ -78,8 +78,8 @@ export type TranscriptWalkStep =
 // event (yielded before that event), or the end of the transcript; row-less events never split it.
 // A recovery folds the same way: its prompt or its selection opens the fold, and the selection,
 // the reset and the outcome of that issue join it until another row-producing event closes it.
-// Its seat switch, and a resume between its selection and its outcome, wait for the fold to
-// close, then follow the Recovery row they belong to in log order.
+// Its seat switch, a resume and a correction typed with the choice wait for the fold to close,
+// then follow the Recovery row they belong to in log order.
 // A prompt the error row before it already states opens nothing. A brief its recovery restarted
 // keeps the one header it opened with: the Recovery row already says it went back to pending.
 // A seat switch folds one matching reconciliation notice before the next run starts or resumes.
@@ -216,7 +216,7 @@ export function* walkTranscript(
         continue;
       }
       if (
-        event.type === 'workflow_resumed' &&
+        (event.type === 'workflow_resumed' || event.type === 'user_message') &&
         recovery !== null &&
         recovery.selected !== undefined &&
         recovery.resolved === undefined

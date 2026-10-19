@@ -3282,6 +3282,47 @@ const resolvedRetryRecoveryProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The halted brief was the last one and the person chose Skip task: the halt and the skip read as
+// one error and one Recovery row, the warning naming the file the skip took back follows it, and
+// the final review opens below them.
+const resolvedSkipRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-resolved-skip'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  get events(): EngineEvent[] {
+    const brief = { ...retriedBriefStart, total: 1 };
+    return [
+      { ...FIXTURE_TASKS_PLANNED, total: 1, tasks: FIXTURE_TASKS_PLANNED.tasks.slice(0, 1) },
+      ...publishedEvents(FIXED_TS + 100, (bus) => {
+        const issue = checkoutChangedRecoveryIssue;
+        const phase = 'implementing';
+        const recovery = { bus, phase, issue, action: 'skip-current-task' } as const;
+        bus.publish(brief);
+        publishError({ bus, phase, message: issue.message });
+        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue);
+        publishRecoveryActionSelected(recovery);
+        bus.publish({
+          type: 'task_skipped',
+          ts: FIXED_TS,
+          phase,
+          taskId: brief.taskId,
+          title: brief.title,
+          reason: `recovery ${issue.reason}: ${issue.message}`,
+        });
+        publishRecoveryResolved({ ...recovery, outcome: 'skipped-current-task' });
+        publishWarning({
+          bus,
+          phase,
+          message: `Restored 1 failing task change to the pre-task state: ${WORKFLOW_FIXTURE_REVIEW_FILE}`,
+        });
+        bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase: 'final-review' });
+        bus.publish(finalReviewStarted(FIXED_TS, BASE_PLANNER));
+      }),
+    ];
+  },
+};
+
 /**
  * Apply stopped part way and the person chose Re-run Apply. Apply settles the halt after the run
  * resumes, as a real run logs it; the transcript still reads one Recovery row, then the resume.
@@ -6292,6 +6333,7 @@ const projections = [
   leftIsolationInPlaceRecoveryProjection,
   checkoutChangedRecoveryProjection,
   resolvedRetryRecoveryProjection,
+  resolvedSkipRecoveryProjection,
   resolvedApplyRetryRecoveryProjection,
   implementationAfterRetryProjection,
   apiContextRecoveryProjection,

@@ -134,12 +134,14 @@ describe('runSingleTask — recovery', () => {
       }),
     });
     failBriefChecks();
+    const { bus, events } = makeBusRecorder();
     const wctx = await openRunWorkspace(
       makeWorkflowContext({
         projectDir,
         sessionId,
         isolation: makeWorktreeIsolation({ projectDir, sessionId }),
         implementer,
+        bus,
         config: makeConfig({
           workflow: { review: 'task' },
 
@@ -165,6 +167,22 @@ describe('runSingleTask — recovery', () => {
       'export const main = 0;\n',
     );
     expect(existsSync(join(wctx.workspaceDir, 'src/extra.ts'))).toBe(false);
+    // The halt names the restored files at once; no recovery has been chosen yet.
+    const restored = events.filter(
+      (event) => event.type === 'warning' && event.message.startsWith('Restored'),
+    );
+    expect(restored).toEqual([
+      expect.objectContaining({
+        message: expect.stringMatching(
+          /^Restored 2 failing task changes to the pre-task state: src\/extra\.ts, src\/main\.ts/,
+        ),
+      }),
+    ]);
+    const promptedAt = events.findIndex((event) => event.type === 'recovery_prompted');
+    expect(promptedAt).toBeGreaterThan(-1);
+    expect(
+      events.findIndex((event) => event.type === 'warning' && event.message.startsWith('Restored')),
+    ).toBeGreaterThan(promptedAt);
   });
 
   it("does not leak a skipped task's exhausted changes into the next task's validation", {

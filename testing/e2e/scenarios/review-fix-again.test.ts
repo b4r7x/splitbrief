@@ -1,7 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createElement, Fragment } from 'react';
-import { renderToString } from 'ink';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
@@ -10,12 +8,8 @@ import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
-import { ConversationRowView } from '../../../src/features/workflow/components/conversation-flow/row-view.js';
-import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
-import { getSections } from '../../../src/stores/workflow/actions/sections.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
-import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -24,6 +18,7 @@ import {
   readState,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 
 const RUN_TIMEOUT_MS = 150_000;
 
@@ -181,26 +176,6 @@ console.log('Implemented ' + title);
 `;
 }
 
-function transcriptText(events: Parameters<typeof addEvent>[0][]): string {
-  resetWorkflow();
-  for (const event of events) addEvent(event);
-  const { rows } = buildConversationRows({
-    sections: getSections(),
-    cols: 120,
-    viewportHeight: 200,
-    expandedDiffs: new Set(),
-    expandedActivityBatches: new Set(),
-    streaming: { taskId: null, lines: [], active: false },
-  });
-  return renderToString(
-    createElement(
-      Fragment,
-      null,
-      ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
-    ),
-  );
-}
-
 describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () => {
   it('sends the note to the reviewer, builds the fix brief it answers with, and records Fix again', async () => {
     fixture = createStopContinueFixture(() => '');
@@ -305,6 +280,10 @@ describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () 
 
     const transcript = transcriptText(events);
     expect(transcript).toContain('Recovery  Fix again');
+    expect(transcript.match(/Recovery {2}/g)).toHaveLength(1);
+    expect(transcript.split('\n').find((line) => line.includes('Recovery  Fix again'))).toContain(
+      'continued',
+    );
     expect(transcript).toContain(NOTE);
     expect(transcript).not.toContain('Send a correction');
   });

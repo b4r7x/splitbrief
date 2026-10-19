@@ -1093,7 +1093,7 @@ describe('initializeWorkflow — a task interrupted mid-gate', () => {
           .map((e) => e.message),
       ).toContainEqual(
         expect.stringMatching(
-          /^Restored 1 unfinished change\(s\) from the interrupted T001: src\/two\.ts\. The replaced bytes are in \.splitbrief\/sessions\/session-init-operator-edit\/reverted\//,
+          /^Restored 1 unfinished change from the interrupted T001: src\/two\.ts\. The replaced bytes are in \.splitbrief\/sessions\/session-init-operator-edit\/reverted\//,
         ),
       );
     });

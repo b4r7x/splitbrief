@@ -16,6 +16,7 @@ import {
   readState,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 
 const ALPHA_FILE = 'src/alpha.mjs';
 const alpha = makeTaskSpec({
@@ -134,8 +135,18 @@ describe('e2e: Skip on a planner-call halt', () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'warning',
-        message: expect.stringMatching(/^Restored 1 failing task change\(s\).*src\/alpha\.mjs/),
+        message: expect.stringMatching(
+          /^Restored 1 failing task change to the pre-task state: src\/alpha\.mjs/,
+        ),
       }),
     );
+    const lines = transcriptText(events).split('\n');
+    const recoveryRows = lines.filter((line) => line.includes('Recovery  '));
+    expect(recoveryRows).toHaveLength(1);
+    expect(recoveryRows[0]).toMatch(/Skip task.*skipped\s*$/);
+    const recoveryAt = lines.findIndex((line) => line.includes('Recovery  '));
+    expect(
+      lines.findIndex((line) => line.includes('Restored 1 failing task change')),
+    ).toBeGreaterThan(recoveryAt);
   });
 });

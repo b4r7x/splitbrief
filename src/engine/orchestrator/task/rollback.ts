@@ -2,6 +2,8 @@ import type { Task } from '../../../core/schemas/task.js';
 import { relative } from 'node:path';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { labelError } from '../../../utils/format-errors.js';
+import { pluralize } from '../../../utils/pluralize.js';
 import { publishWarning, publishWarningFromError } from '../events.js';
 import { inferTaskOwnChangedFiles } from '../changed-files-baseline.js';
 import type { WorkflowContext } from '../types.js';
@@ -10,13 +12,13 @@ import { restoreWorkspaceFiles } from '../isolation/entry-snapshot.js';
 /** The restore path runs before a WorkflowContext exists on resume, so it asks for only what it reads. */
 type RestoreContext = Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus'>;
 
+/** Takes the snapshot's files back and returns the warning that names them, or why it failed. */
 async function restoreSnapshotFiles(opts: {
   wctx: RestoreContext;
-  phase: WorkflowState['phase'];
   snapshot: ChangedFilesSnapshot;
-  restoredMessage: (restoredFiles: string[]) => string;
+  restoredMessage: (restoredFiles: string[], changes: string) => string;
   failureMessage: string;
-}): Promise<void> {
+}): Promise<string | undefined> {
   try {
     const { restoredFiles, savedTo } = await restoreWorkspaceFiles({
       ref: { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },
@@ -24,20 +26,23 @@ async function restoreSnapshotFiles(opts: {
       snapshot: opts.snapshot,
       files: undefined,
     });
-    if (restoredFiles.length > 0) {
-      const saved =
-        savedTo === undefined
-          ? ''
-          : `. The replaced bytes are in ${relative(opts.wctx.projectDir, savedTo)}`;
-      publishWarning({
-        bus: opts.wctx.bus,
-        phase: opts.phase,
-        message: `${opts.restoredMessage(restoredFiles)}${saved}`,
-      });
-    }
+    if (restoredFiles.length === 0) return undefined;
+    const saved =
+      savedTo === undefined
+        ? ''
+        : `. The replaced bytes are in ${relative(opts.wctx.projectDir, savedTo)}`;
+    return `${opts.restoredMessage(restoredFiles, pluralize(restoredFiles.length, 'change'))}${saved}`;
   } catch (err) {
-    publishWarningFromError({ bus: opts.wctx.bus, phase: opts.phase }, opts.failureMessage, err);
+    return labelError(opts.failureMessage, err);
   }
+}
+
+function publishRestoreWarning(
+  wctx: RestoreContext,
+  phase: WorkflowState['phase'],
+  warning: string | undefined,
+): void {
+  if (warning !== undefined) publishWarning({ bus: wctx.bus, phase, message: warning });
 }
 
 /** The saved task snapshot carries the writes recorded since the caller read it. */
@@ -52,43 +57,44 @@ function restoreTaskFilesFromSnapshot(
   opts: Omit<Parameters<typeof restoreSnapshotFiles>[0], 'snapshot'> & {
     taskStartSnapshot: ChangedFilesSnapshot;
   },
-): Promise<void> {
+): Promise<string | undefined> {
   return restoreSnapshotFiles({
     ...opts,
     snapshot: savedTaskSnapshot(opts.wctx, opts.taskStartSnapshot),
   });
 }
 
-/** Every file the brief changed since its task-start snapshot, across all its attempts, goes back. */
+/**
+ * Every file the brief changed since its task-start snapshot, across all its attempts, goes back.
+ * The caller publishes the returned warning where its own events allow it.
+ */
 export function restoreExhaustedTaskFiles(opts: {
   wctx: RestoreContext;
-  phase: WorkflowState['phase'];
   taskStartSnapshot: ChangedFilesSnapshot;
-}): Promise<void> {
+}): Promise<string | undefined> {
   return restoreTaskFilesFromSnapshot({
     wctx: opts.wctx,
-    phase: opts.phase,
     taskStartSnapshot: opts.taskStartSnapshot,
-    restoredMessage: (restoredFiles) =>
-      `Restored ${restoredFiles.length} failing task change(s) to the pre-task state after recovery: ${restoredFiles.join(', ')}`,
+    restoredMessage: (restoredFiles, changes) =>
+      `Restored ${restoredFiles.length} failing task ${changes} to the pre-task state: ${restoredFiles.join(', ')}`,
     failureMessage: 'Failed to restore failing task changes from the pre-task snapshot',
   });
 }
 
-export function restoreHookDeniedTaskFiles(opts: {
+export async function restoreHookDeniedTaskFiles(opts: {
   wctx: RestoreContext;
   phase: WorkflowState['phase'];
   taskStartSnapshot: ChangedFilesSnapshot;
   hook: 'pre_task' | 'pre_validation';
 }): Promise<void> {
-  return restoreTaskFilesFromSnapshot({
+  const warning = await restoreTaskFilesFromSnapshot({
     wctx: opts.wctx,
-    phase: opts.phase,
     taskStartSnapshot: opts.taskStartSnapshot,
-    restoredMessage: (restoredFiles) =>
-      `Restored ${restoredFiles.length} unvalidated task change(s) after ${opts.hook} denied: ${restoredFiles.join(', ')}`,
+    restoredMessage: (restoredFiles, changes) =>
+      `Restored ${restoredFiles.length} unvalidated task ${changes} after ${opts.hook} denied: ${restoredFiles.join(', ')}`,
     failureMessage: `Failed to restore denied ${opts.hook} task changes`,
   });
+  publishRestoreWarning(opts.wctx, opts.phase, warning);
 }
 
 /**
@@ -96,19 +102,19 @@ export function restoreHookDeniedTaskFiles(opts: {
  * snapshot returns to what it held then, so earlier attempts and earlier briefs keep their
  * results.
  */
-export function restoreAttemptFiles(opts: {
+export async function restoreAttemptFiles(opts: {
   wctx: RestoreContext;
   phase: WorkflowState['phase'];
   attemptSnapshot: ChangedFilesSnapshot;
 }): Promise<void> {
-  return restoreSnapshotFiles({
+  const warning = await restoreSnapshotFiles({
     wctx: opts.wctx,
-    phase: opts.phase,
     snapshot: opts.attemptSnapshot,
-    restoredMessage: (restoredFiles) =>
-      `Restored ${restoredFiles.length} change(s) from the failed attempt: ${restoredFiles.join(', ')}`,
+    restoredMessage: (restoredFiles, changes) =>
+      `Restored ${restoredFiles.length} ${changes} from the failed attempt: ${restoredFiles.join(', ')}`,
     failureMessage: 'Failed to restore the failed attempt changes from its start snapshot',
   });
+  publishRestoreWarning(opts.wctx, opts.phase, warning);
 }
 
 /**
@@ -140,15 +146,15 @@ export async function restoreInterruptedTaskFiles(opts: {
     return;
   }
   const snapshot = savedTaskSnapshot(wctx, taskStartSnapshot);
-  await restoreSnapshotFiles({
+  const warning = await restoreSnapshotFiles({
     wctx,
-    phase,
     snapshot: {
       ...snapshot,
       restoreFiles: [...new Set([...(snapshot.restoreFiles ?? []), ...ownFiles])],
     },
-    restoredMessage: (restoredFiles) =>
-      `Restored ${restoredFiles.length} unfinished change(s) from the interrupted ${task.id}: ${restoredFiles.join(', ')}`,
+    restoredMessage: (restoredFiles, changes) =>
+      `Restored ${restoredFiles.length} unfinished ${changes} from the interrupted ${task.id}: ${restoredFiles.join(', ')}`,
     failureMessage,
   });
+  publishRestoreWarning(wctx, phase, warning);
 }

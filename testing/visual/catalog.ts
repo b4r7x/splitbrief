@@ -3067,6 +3067,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-resolved-skip',
+      title: 'Workflow · a checkout halt on the last brief resolved with Skip task',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-resolved-skip',
+        title: 'Halt and Skip task folded into one Recovery row, the restore warning after it',
+        kind: 'implementation',
+        marker: 'Skip task',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-resolved-apply-retry',
       title: 'Workflow · an Apply halt resolved with Re-run Apply',
       surface: screenSurface('workflow'),

@@ -186,6 +186,168 @@ describe('walkTranscript', () => {
     });
   });
 
+  it('keeps one Recovery fold and shows the correction typed with the choice after it', () => {
+    const checksPrompted: EngineEventOf<'recovery_prompted'> = {
+      type: 'recovery_prompted',
+      ts: 1_000,
+      phase: 'final-review',
+      issueId: 'checks-1',
+      reason: 'required-checks-unrunnable',
+      headline: 'A required check could not run',
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['retry-same-worker', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+      resumeCommand: 'splitbrief continue',
+    };
+    const checksSelected: EngineEventOf<'recovery_action_selected'> = {
+      type: 'recovery_action_selected',
+      ts: 2_000,
+      phase: 'final-review',
+      issueId: checksPrompted.issueId,
+      reason: checksPrompted.reason,
+      action: 'retry-same-worker',
+    };
+    const correction: EngineEvent = {
+      type: 'user_message',
+      ts: 2_500,
+      phase: 'final-review',
+      text: 'Replace K1',
+    };
+    const checksResolved: EngineEventOf<'recovery_resolved'> = {
+      type: 'recovery_resolved',
+      ts: 3_000,
+      phase: 'final-review',
+      issueId: checksPrompted.issueId,
+      reason: checksPrompted.reason,
+      action: 'retry-same-worker',
+      outcome: 'continued',
+    };
+    const resumed: EngineEvent = { type: 'workflow_resumed', ts: 4_000, phase: 'final-review' };
+    const steps = [
+      ...walkTranscript(
+        groupEventsIntoSections([
+          checksPrompted,
+          checksSelected,
+          correction,
+          checksResolved,
+          resumed,
+        ]),
+      ),
+    ];
+
+    expect(steps).toEqual([
+      {
+        kind: 'recovery',
+        recovery: {
+          firstIndex: 0,
+          issueId: checksPrompted.issueId,
+          prompted: checksPrompted,
+          selected: checksSelected,
+          resolved: checksResolved,
+        },
+      },
+      { kind: 'event', event: correction, globalIndex: 2 },
+      { kind: 'event', event: resumed, globalIndex: 4 },
+    ]);
+  });
+
+  it('keeps one Recovery fold for each choice that resets or skips the last brief', () => {
+    const halt = (ts: number): EngineEvent => ({
+      type: 'error',
+      ts,
+      phase: 'implementing',
+      message: 'Your checkout changed under T001',
+    });
+    const checkoutPrompted = (issueId: string, ts: number): EngineEventOf<'recovery_prompted'> => ({
+      type: 'recovery_prompted',
+      ts,
+      phase: 'implementing',
+      issueId,
+      reason: 'checkout-changed',
+      taskId: taskId('T001'),
+      headline: 'Your checkout changed while T001 ran',
+      files: [],
+      affectedTaskIds: [],
+      availableActions: ['retry-same-worker', 'skip-current-task'],
+      recommendedAction: 'retry-same-worker',
+      resumeCommand: 'splitbrief continue',
+    });
+    const checkoutSelected = (
+      issueId: string,
+      action: 'retry-same-worker' | 'skip-current-task',
+      ts: number,
+    ): EngineEventOf<'recovery_action_selected'> => ({
+      type: 'recovery_action_selected',
+      ts,
+      phase: 'implementing',
+      issueId,
+      reason: 'checkout-changed',
+      action,
+    });
+    const checkoutResolved = (
+      issueId: string,
+      action: 'retry-same-worker' | 'skip-current-task',
+      outcome: 'retry-current-task' | 'skipped-current-task',
+      ts: number,
+    ): EngineEventOf<'recovery_resolved'> => ({
+      type: 'recovery_resolved',
+      ts,
+      phase: 'implementing',
+      issueId,
+      reason: 'checkout-changed',
+      action,
+      outcome,
+    });
+    const reset: EngineEvent = {
+      type: 'task_reset',
+      ts: 6_000,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+    };
+    const events: EngineEvent[] = [
+      makeTaskStart({ taskId: taskId('T001'), total: 1 }),
+      makeRunnerCallActivity({ ts: 2_000, callId: 'c1', taskId: taskId('T001') }),
+      halt(3_000),
+      checkoutPrompted('p1', 4_000),
+      checkoutSelected('p1', 'retry-same-worker', 5_000),
+      reset,
+      checkoutResolved('p1', 'retry-same-worker', 'retry-current-task', 7_000),
+      { type: 'workflow_resumed', ts: 8_000, phase: 'implementing' },
+      makeRunnerCallActivity({ ts: 9_000, callId: 'c2', taskId: taskId('T001') }),
+      halt(10_000),
+      checkoutPrompted('p2', 11_000),
+      checkoutSelected('p2', 'skip-current-task', 12_000),
+      {
+        type: 'task_skipped',
+        ts: 13_000,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        title: 'Test task',
+        reason: 'Skipped by you',
+      },
+      checkoutResolved('p2', 'skip-current-task', 'skipped-current-task', 14_000),
+      { type: 'workflow_resumed', ts: 15_000, phase: 'final-review' },
+      { type: 'review_started', ts: 16_000, phase: 'final-review', scope: 'final', tool: 'codex' },
+    ];
+    const recoveries = [...walkTranscript(groupEventsIntoSections(events))].flatMap((step) =>
+      step.kind === 'recovery' ? [step.recovery] : [],
+    );
+
+    expect(recoveries).toHaveLength(2);
+    expect(recoveries[0]).toMatchObject({
+      issueId: 'p1',
+      selected: events[4],
+      reset,
+      resolved: events[6],
+    });
+    expect(recoveries[1]).toMatchObject({
+      issueId: 'p2',
+      selected: events[11],
+      resolved: events[13],
+    });
+  });
+
   it('keeps halt deduplication across a steerable call change', () => {
     const halt: EngineEvent = {
       type: 'error',

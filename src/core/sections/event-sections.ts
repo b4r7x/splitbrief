@@ -216,13 +216,13 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
       });
       openTasks.set(ev.taskId, idx);
     } else if (isTaskResetEvent(ev)) {
-      abandonOpenTask(taskRanges, openTasks, ev.taskId, i);
+      abandonOpenTask(taskRanges, openTasks, ev.taskId, outcomeEnd(events, i));
     } else if (isTaskEndEvent(ev)) {
       const rangeIdx = openTasks.get(ev.taskId);
       if (rangeIdx != null) {
         const range = taskRanges[rangeIdx];
         if (!range) continue;
-        range.endIdx = i;
+        range.endIdx = outcomeEnd(events, i);
         range.endEvent = ev;
         range.abandoned = false;
         openTasks.delete(ev.taskId);
@@ -230,7 +230,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
         taskRanges.push({
           taskId: ev.taskId,
           startIdx: i,
-          endIdx: i,
+          endIdx: outcomeEnd(events, i),
           startEvent: ev,
           endEvent: ev,
           abandoned: false,
@@ -405,6 +405,11 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
   }
 
   return sections;
+}
+
+// A recovery that ends or resets a brief resolves right after it; its outcome closes that range.
+function outcomeEnd(events: readonly SectionableEvent[], index: number): number {
+  return events[index + 1]?.type === 'recovery_resolved' ? index + 1 : index;
 }
 
 function isBuildRow(event: SectionableEvent | undefined, hasReviewStage: boolean): boolean {

@@ -1082,6 +1082,12 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
       expect(restoreWarnings(events)).toEqual([expect.stringContaining('src/a.ts')]);
+      // The warning follows the Skip's outcome, so the transcript shows one Recovery row.
+      const resolvedAt = events.findIndex((event) => event.type === 'recovery_resolved');
+      expect(resolvedAt).toBeGreaterThan(-1);
+      expect(
+        events.findIndex((event) => event.type === 'warning' && event.message.startsWith(RESTORED)),
+      ).toBeGreaterThan(resolvedAt);
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
     });
 
