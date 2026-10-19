@@ -847,6 +847,29 @@ describe('runApply', { timeout: 60_000 }, () => {
       });
     });
 
+    it('a re-run that ends partial again leaves no cut temporary in the workspace, and the next re-run applies', async () => {
+      await withApplyRun({ 'b.txt': 'base b\n' }, { sessionId: SESSION_ID }, async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+        writeFileSync(join(run.ws, 'b.txt'), 'ours b\n');
+        const reviewed = await reviewedReadyState(run);
+        const healed = await failOn(run, 'b.txt');
+        expect((await apply(run, reviewed)).outcome).toBe('halted');
+        const temporary = '.a.txt.tmp.0123456789abcdef';
+        writeFileSync(join(run.dir, temporary), 'ours a\n');
+
+        expect((await apply(run, await choose(run, 'retry-same-worker'))).outcome).toBe('halted');
+        expect(existsSync(join(run.ws, temporary))).toBe(false);
+        healed();
+
+        const result = await apply(run, await choose(run, 'retry-same-worker'));
+
+        expect(result.outcome).toBe('applied');
+        expect(existsSync(join(run.dir, temporary))).toBe(false);
+        expect(read(run.dir, 'a.txt')).toBe('ours a\n');
+        expect(read(run.dir, 'b.txt')).toBe('ours b\n');
+      });
+    });
+
     it('a restore says how many replaced files it put back and created files it removed', async () => {
       await withApplyRun(
         { 'a.txt': 'base a\n', 'c.txt': 'base c\n' },

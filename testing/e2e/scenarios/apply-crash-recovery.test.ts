@@ -142,6 +142,35 @@ async function waitForFile(path: string, timeoutMs: number): Promise<boolean> {
 }
 
 /**
+ * Runs a CLI command that reaches Apply and kills its process group with SIGKILL at the cut.
+ */
+async function killApplyAt(target: StopContinueFixture, args: readonly string[], cut: ApplyCut) {
+  const armPath = join(target.tmpDir, 'arm-apply-block');
+  const blockedPath = join(target.tmpDir, 'apply-blocked');
+  writeBlockingPreload(target, armPath, blockedPath, cut);
+  rmSync(blockedPath, { force: true });
+  writeFileSync(armPath, '');
+  let pid: number | undefined;
+  const run = cli(target, args, {
+    timeoutMs: CLI_TIMEOUT_MS,
+    onSpawn: (spawned) => {
+      pid = spawned;
+    },
+  });
+  if (pid === undefined) throw new Error('the Apply CLI reported no pid to signal');
+  held = { pid, run };
+  const blocked = await waitForFile(blockedPath, BLOCK_WAIT_MS);
+  process.kill(-pid, 'SIGKILL');
+  const killed = await run;
+  held = undefined;
+  rmSync(armPath);
+  if (!blocked) {
+    throw new Error(`Apply never reached the ${cut} cut: ${killed.stderr}`);
+  }
+  expect(killed.exitCode).toBeNull();
+}
+
+/**
  * A real run that is ready to apply, then a headless Apply whose process group
  * is killed with SIGKILL between its `applying` record and its last checkout write.
  * With no original greeting the checkout has no `src` folder, so Apply makes it.
@@ -155,9 +184,6 @@ async function crashMidApply(
     mkdirSync(join(target.projectDir, 'src'));
     writeFileSync(target.greetPath, original);
   }
-  const armPath = join(target.tmpDir, 'arm-apply-block');
-  const blockedPath = join(target.tmpDir, 'apply-blocked');
-  writeBlockingPreload(target, armPath, blockedPath, cutAt);
 
   const started = await cli(target, ['start', 'smoke'], { timeoutMs: CLI_TIMEOUT_MS });
   expect(started.exitCode, started.stderr).toBe(0);
@@ -173,25 +199,7 @@ async function crashMidApply(
   );
   expect(existsSync(target.markerPath)).toBe(false);
 
-  writeFileSync(armPath, '');
-  let pid: number | undefined;
-  const run = cli(target, ['continue', sessionId, '--action', 'apply'], {
-    timeoutMs: CLI_TIMEOUT_MS,
-    onSpawn: (spawned) => {
-      pid = spawned;
-    },
-  });
-  if (pid === undefined) throw new Error('the Apply CLI reported no pid to signal');
-  held = { pid, run };
-  const blocked = await waitForFile(blockedPath, BLOCK_WAIT_MS);
-  process.kill(-pid, 'SIGKILL');
-  const killed = await run;
-  held = undefined;
-  rmSync(armPath);
-  if (!blocked) {
-    throw new Error(`Apply never reached the marker write: ${killed.stderr}`);
-  }
-  expect(killed.exitCode).toBeNull();
+  await killApplyAt(target, ['continue', sessionId, '--action', 'apply'], cutAt);
 
   const cut = readState(target, sessionId);
   const backupId = cut.applying?.backupId;
@@ -280,6 +288,29 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
       expect(existsSync(join(target.projectDir, 'src'))).toBe(false);
     },
   );
+
+  it('a second cut during the retry still retries to applied and leaves no temporary', async () => {
+    fixture = createStopContinueFixture(() => IMPLEMENTER_SCRIPT, { isolation: 'worktree' });
+    const target = fixture;
+    const { sessionId, backupId, workspacePath } = await crashMidApply(
+      target,
+      null,
+      'greet-cleanup',
+    );
+    await killApplyAt(target, ['continue', sessionId, '--action', 'retry'], 'marker-link');
+
+    const retried = await cli(target, ['continue', sessionId, '--action', 'retry'], {
+      timeoutMs: CLI_TIMEOUT_MS,
+    });
+    expect(retried.exitCode, retried.stderr).toBe(0);
+    expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
+    expect(readFileSync(target.markerPath, 'utf8')).toBe(MARKER_SOURCE);
+    const closed = readState(target, sessionId);
+    expect(closed.closed?.as).toBe('applied');
+    expect(closed.applied?.backupId).toBe(backupId);
+    expect(existsSync(workspacePath)).toBe(false);
+    expect(writeTemporaries(target)).toEqual([]);
+  });
 
   it('restores a checkout Apply made a folder in to no folder at all', async () => {
     fixture = createStopContinueFixture(() => IMPLEMENTER_SCRIPT, { isolation: 'worktree' });
