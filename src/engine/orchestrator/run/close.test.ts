@@ -15,16 +15,21 @@ import { sessionDir } from '../../../core/paths.js';
 import { writeRunPatch } from '../apply/patch.js';
 import { removeRunWorkspace } from '../isolation/remove-worktree.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
-import { closeRunIfOpen, endRunAtRest } from './close.js';
+import {
+  closedChangesSuffix,
+  closeRunIfOpen,
+  endRunAtRest,
+  filesStillOnDiskSuffix,
+} from './close.js';
 
 vi.mock('../apply/patch.js', () => ({ writeRunPatch: vi.fn() }));
 vi.mock('../isolation/remove-worktree.js', () => ({ removeRunWorkspace: vi.fn() }));
 
-let projectDir: string;
+let projectDir: string | undefined;
 
 afterEach(() => {
   vi.resetAllMocks();
-  cleanupTempDir(projectDir);
+  if (projectDir !== undefined) cleanupTempDir(projectDir);
 });
 
 describe('run closure during Apply', () => {
@@ -59,7 +64,7 @@ describe('run closure during Apply', () => {
           }),
         });
         saved = loadState(ref);
-        return join(sessionDir(projectDir, ref.sessionId), 'run.patch');
+        return join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch');
       });
       const { bus, events } = makeBusRecorder();
 
@@ -268,5 +273,58 @@ describe('endRunAtRest', () => {
     expect(loadState(ref)).toEqual(ended);
     expect(events.filter((event) => event.type === 'recovery_resolved')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
+  });
+});
+
+describe('the close line names files on disk only once a brief started in the checkout', () => {
+  const STILL_ON_DISK = ' The files it wrote are still on disk.';
+  const checkout: WorkflowState['workspace'] = {
+    kind: 'checkout',
+    path: '/project',
+    base: { snapshotId: 'base', head: null },
+  };
+  const worktree: WorkflowState['workspace'] = {
+    kind: 'worktree',
+    path: '/trees/run',
+    base: { snapshotId: 'base', head: null },
+  };
+  const planned = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
+  const built = [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })];
+
+  it.each([
+    ['a run that ended while it planned', { phase: 'planning' as const, tasks: [] }, ''],
+    ['a run that ended at its plan card', { phase: 'reviewing-plan' as const, tasks: planned }, ''],
+    [
+      'a run halted before its first brief started',
+      { phase: 'implementing' as const, tasks: planned },
+      '',
+    ],
+    [
+      'a checkout run halted before its first brief started',
+      { phase: 'implementing' as const, tasks: planned, workspace: checkout },
+      '',
+    ],
+    [
+      'a checkout run with a brief started',
+      { phase: 'implementing' as const, tasks: built, workspace: checkout },
+      STILL_ON_DISK,
+    ],
+    [
+      'an older run without a workspace with a brief started',
+      { phase: 'implementing' as const, tasks: built },
+      STILL_ON_DISK,
+    ],
+    [
+      'a worktree run with a brief started',
+      { phase: 'implementing' as const, tasks: built, workspace: worktree },
+      '',
+    ],
+  ])('%s', (_name, overrides, expected) => {
+    const state: WorkflowState = { ...createInitialState('Close line'), ...overrides };
+
+    expect(filesStillOnDiskSuffix(state)).toBe(expected);
+    expect(
+      closedChangesSuffix({ ...state, closed: { at: '2026-10-19T00:00:00.000Z', as: 'ended' } }),
+    ).toBe(expected);
   });
 });

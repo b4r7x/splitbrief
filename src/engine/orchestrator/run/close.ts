@@ -33,8 +33,13 @@ import { rejectRunSnapshot } from '../../snapshots/run/lifecycle.js';
 import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
 import { APPLY_UNFINISHED_REFUSAL } from '../../../core/runtime/commands/messages.js';
 
-export function filesStillOnDiskSuffix(workspace: WorkflowState['workspace']): string {
-  return workspace === undefined || workspace.kind === 'checkout'
+/**
+ * A run without a workspace, or a checkout run, writes the checkout itself, but only from its first
+ * brief on: a run that ended before any brief started wrote nothing.
+ */
+export function filesStillOnDiskSuffix(state: Pick<WorkflowState, 'workspace' | 'tasks'>): string {
+  const writesCheckout = state.workspace === undefined || state.workspace.kind === 'checkout';
+  return writesCheckout && state.tasks.some((task) => task.status !== 'pending')
     ? ' The files it wrote are still on disk.'
     : '';
 }
@@ -43,7 +48,7 @@ export function filesStillOnDiskSuffix(workspace: WorkflowState['workspace']): s
 export function closedChangesSuffix(state: WorkflowState): string {
   const patch = state.closed?.patch;
   return patch === undefined
-    ? filesStillOnDiskSuffix(state.workspace)
+    ? filesStillOnDiskSuffix(state)
     : ` Run changes not applied are saved in ${patch}; apply them with git apply.`;
 }
 
