@@ -235,7 +235,11 @@ export async function retryAndRecord(
   let state: WorkflowState =
     wctx.signal?.aborted === true
       ? opts.state
-      : transitionAndSave(wctx, opts.state, { type: 'COUNT_ATTEMPT', taskId: task.id });
+      : transitionAndSave(wctx, opts.state, {
+          type: 'COUNT_ATTEMPT',
+          taskId: task.id,
+          failure: initialError,
+        });
   if (!taskStartSnapshot) {
     try {
       taskStartSnapshot = await captureWorkspaceSnapshot(wctx.workspaceDir, wctx);

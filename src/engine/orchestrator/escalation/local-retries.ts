@@ -239,7 +239,11 @@ export async function runLocalRetries(
     if (haltFailure !== undefined && haltsLocalRetries(haltFailure.outcome)) {
       return { ...outcome, state };
     }
-    state = persistTransition(state, { type: 'COUNT_ATTEMPT', taskId: task.id });
+    state = persistTransition(state, {
+      type: 'COUNT_ATTEMPT',
+      taskId: task.id,
+      ...(outcome.result === undefined && { failure: lastError }),
+    });
     recordNoProgressCut(ctx, task, state, lastFailure);
     if (outcome.result === undefined && isAbortedOutcome(lastError, ctx.signal)) {
       return {

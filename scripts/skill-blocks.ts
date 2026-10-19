@@ -295,7 +295,15 @@ function consultContract(): string {
     plan: PLACEHOLDER_PLAN,
     task: PLACEHOLDER_TASK,
     revisions: [],
-    diffs: [{ path: '<file>', diff: "<the diff from the attempt's start snapshot to now>" }],
+    diffs: [{ path: '<file>', diff: "<the diff from the task's start to now>" }],
+    failedAttempts: [
+      {
+        attempt: 1,
+        taskId: PLACEHOLDER_TASK.id,
+        revision: 1,
+        line: '<the first error line of that attempt>',
+      },
+    ],
     failingOutput: ERROR_PLACEHOLDER,
     report: {
       status: 'done',

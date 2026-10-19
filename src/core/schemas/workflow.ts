@@ -153,6 +153,15 @@ export const ConsultRecordSchema = z.object({
 });
 export type ConsultRecord = z.infer<typeof ConsultRecordSchema>;
 
+/** One failed attempt of a lineage: the brief and revision it ran, and its first error line. */
+export const AttemptFailureSchema = z.object({
+  attempt: z.number().int().positive(),
+  taskId: TaskIdSchema,
+  revision: z.number().int(),
+  line: z.string(),
+});
+export type AttemptFailure = z.infer<typeof AttemptFailureSchema>;
+
 export const LineageRecordSchema = z.object({
   consults: nonnegativeInteger,
   attempts: nonnegativeInteger,
@@ -168,6 +177,9 @@ export const LineageRecordSchema = z.object({
   carriedFailure: z.string().optional(),
   corrections: z.array(z.string()).optional(),
   correctionImages: z.array(AttachmentSchema).optional(),
+  /** The task start of the lineage's first dispatch; kept only while one of its briefs is open. */
+  startSnapshot: ChangedFilesSnapshotSchema.optional(),
+  attemptFailures: z.array(AttemptFailureSchema).optional(),
 });
 export type LineageRecord = z.infer<typeof LineageRecordSchema>;
 

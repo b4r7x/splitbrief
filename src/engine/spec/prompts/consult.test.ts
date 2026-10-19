@@ -69,6 +69,7 @@ function consultInput(overrides: Partial<ConsultPromptInput> = {}): ConsultPromp
       { path: 'src/greet.ts', diff: '+export function greet(name: string) { return name; }' },
     ],
     failingOutput: 'Error: expected "hello" but received "hi"',
+    failedAttempts: [],
     report: {
       status: 'done',
       filesChanged: ['src/greet.ts'],
@@ -103,7 +104,7 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain('## Task T003 (revision 2)');
     expect(prompt).toContain('**Title**: Greet by name');
     expect(prompt).toContain('## Revision 1 · Greet at all');
-    expect(prompt).toContain('## Attempt Diff');
+    expect(prompt).toContain('## Task Diff');
     expect(prompt).toContain('+export function greet(name: string) { return name; }');
     expect(prompt).toContain('## Failing Output');
     expect(prompt).toContain('Error: expected "hello" but received "hi"');
@@ -149,6 +150,109 @@ describe('buildConsultPrompt', () => {
       expect(prompt).not.toContain('C-BODY');
     },
   );
+
+  it.each([
+    { form: 'resumed', overrides: { resumed: true } },
+    { form: 'full', overrides: {} },
+  ] satisfies { form: string; overrides: Partial<ConsultPromptInput> }[])(
+    'shows the files of an earlier attempt and one line per failed attempt, $form prompt',
+    ({ overrides }) => {
+      const prompt = buildConsultPrompt(
+        consultInput({
+          ...overrides,
+          diffs: [
+            { path: 'lib/cli/cli.js', diff: '+module.exports = run;' },
+            { path: 'test/cli.spec.js', diff: "+require('../lib/cli/cli');" },
+          ],
+          failedAttempts: [
+            {
+              attempt: 1,
+              taskId: taskId('T003'),
+              revision: 1,
+              line: 'check K1 did not pass (fail):',
+            },
+            {
+              attempt: 2,
+              taskId: taskId('T003'),
+              revision: 1,
+              line: 'Tool implementer exited without changing any files',
+            },
+          ],
+          failingOutput: 'Tool implementer exited without changing any files',
+        }),
+      );
+
+      expect(prompt).toContain('## Task Diff');
+      expect(prompt).toContain('the changes of all its attempts');
+      expect(prompt).toContain('+module.exports = run;');
+      expect(prompt).toContain("+require('../lib/cli/cli');");
+      expect(prompt).not.toContain('## Attempt Diff');
+      expect(prompt).toContain('## Failed Attempts');
+      expect(prompt).toContain('- Attempt 1 (T003 revision 1): check K1 did not pass (fail):');
+      expect(prompt).toContain(
+        '- Attempt 2 (T003 revision 1): Tool implementer exited without changing any files',
+      );
+      expect(prompt.indexOf('## Failed Attempts')).toBeLessThan(
+        prompt.indexOf('## Failing Output'),
+      );
+    },
+  );
+
+  it("names the parent's attempts and the subtask's own on a split subtask", () => {
+    const subtask = makeTask({ id: 'T005', parentId: taskId('T003'), status: 'failed' });
+    const prompt = buildConsultPrompt(
+      consultInput({
+        task: subtask,
+        failedAttempts: [
+          {
+            attempt: 1,
+            taskId: taskId('T003'),
+            revision: 2,
+            line: 'check K1 did not pass (fail):',
+          },
+          {
+            attempt: 2,
+            taskId: taskId('T005'),
+            revision: 1,
+            line: 'check K2 did not pass (fail):',
+          },
+        ],
+      }),
+    );
+
+    expect(prompt).toContain('- Attempt 1 (T003 revision 2): check K1 did not pass (fail):');
+    expect(prompt).toContain('- Attempt 2 (T005 revision 1): check K2 did not pass (fail):');
+  });
+
+  it('says plainly when the task changed no file and when no task start was recorded', () => {
+    const unchanged = buildConsultPrompt(consultInput({ diffs: [] }));
+    const unrecorded = buildConsultPrompt(consultInput({ diffs: null }));
+
+    expect(unchanged).toContain('This task has changed no file since it started.');
+    expect(unrecorded).toContain(
+      'No diff of this task is available. Read the files in the run workspace.',
+    );
+    expect(unrecorded).not.toContain('```diff');
+  });
+
+  it('shows no failed attempts to a decision confirm', () => {
+    const prompt = buildConsultPrompt(
+      consultInput({
+        reason: 'deviation',
+        failedAttempts: [
+          {
+            attempt: 1,
+            taskId: taskId('T003'),
+            revision: 2,
+            line: 'check K1 did not pass (fail):',
+          },
+        ],
+      }),
+    );
+
+    expect(prompt).toContain('## Task Diff');
+    expect(prompt).not.toContain('## Failed Attempts');
+  });
 
   it('caps the names of the files it leaves out with a count', () => {
     const diffs = Array.from({ length: 2002 }, (_, index) => ({
@@ -214,7 +318,7 @@ describe('buildConsultPrompt', () => {
       expect(prompt).toContain('## Plan');
       expect(prompt).toContain('**C1**: A greeting is returned');
       expect(prompt).toContain('## Task T003');
-      expect(prompt).toContain('## Attempt Diff');
+      expect(prompt).toContain('## Task Diff');
       expect(prompt).toContain('## Implementer Report');
       expect(prompt).toContain('Validation runs after a `confirm` answer');
       expect(prompt).toContain('its default keeps it');

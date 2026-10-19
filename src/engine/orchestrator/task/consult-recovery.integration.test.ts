@@ -238,8 +238,6 @@ describe('consult seat recovery', () => {
           task: otherTask,
           reason: 'failed',
           failingOutput: failed.error,
-          snapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
-          changedFiles: [],
         },
       );
       state = { ...state, currentTaskIndex: seat === 'review' ? 1 : 0 };

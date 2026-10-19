@@ -22,6 +22,7 @@ import type { Reviewer } from '../../reviewers/types.js';
 import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
 import { refusedCheckErrors } from '../../spec/plan-checks.js';
 import { buildConsultPrompt, type ConsultPromptInput } from '../../spec/prompts/consult.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { readChangeEntry } from '../approval/file-snapshots/entry.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
@@ -55,10 +56,6 @@ export type ConsultRequestInput = Readonly<{
   reason: ConsultReason;
   failingOutput: string;
   report?: ImplementerReport | null | undefined;
-  /** The attempt's start snapshot; with `changedFiles` it is the diff's before side. */
-  snapshot: ChangedFilesSnapshot;
-  /** The files the attempt changed since `snapshot`. */
-  changedFiles: readonly string[];
   /** Deviation only: the user answered the planner's question about the attempt's decisions. */
   answered?: boolean | undefined;
 }>;
@@ -149,7 +146,7 @@ function answerContract(
   };
 }
 
-async function attemptFileDiff(
+async function taskFileDiff(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
   file: string,
@@ -170,19 +167,28 @@ async function attemptFileDiff(
 }
 
 /**
- * The attempt's diff, rendered from its start snapshot and the files it changed: the side
- * recorded for the file at capture, or the commit the attempt started on, against what is on
- * disk now.
+ * The task's diff: what is on disk now against the lineage's start, the workspace when its
+ * first brief dispatched. It holds every attempt, revision and split subtask of the task.
+ * Null when no start is recorded (a task not dispatched yet, or an older state).
  */
-async function attemptDiff(
+async function taskDiff(
   projectDir: string,
-  snapshot: ChangedFilesSnapshot,
-  files: readonly string[],
+  state: WorkflowState,
+  task: Task,
   ref: SessionRef,
 ): Promise<ConsultPromptInput['diffs']> {
+  const start = state.lineages?.[lineageIdOf(task)]?.startSnapshot;
+  if (start === undefined) return null;
+  let files: string[];
+  try {
+    files = await getChangedFilesSinceSnapshot(projectDir, start);
+  } catch {
+    // The diff is context for the answer; a workspace that cannot be read must not stop the call.
+    return null;
+  }
   const diffs: { path: string; diff: string }[] = [];
   for (const file of files) {
-    const diff = await attemptFileDiff(projectDir, snapshot, file, ref);
+    const diff = await taskFileDiff(projectDir, start, file, ref);
     if (diff !== '') diffs.push({ path: file, diff });
   }
   return diffs;
@@ -204,6 +210,7 @@ function promptInput(
     task: input.task,
     revisions: lineage?.replacedParents ?? [],
     diffs,
+    failedAttempts: lineage?.attemptFailures ?? [],
     failingOutput: input.failingOutput,
     report: input.report ?? null,
     earlierConsults: lineage?.consultRecords ?? [],
@@ -292,7 +299,7 @@ export async function requestConsult(
   };
 
   const seat = consultSeat(input.task, input.reason);
-  const diffs = await attemptDiff(ctx.workspaceDir, input.snapshot, input.changedFiles, ref);
+  const diffs = await taskDiff(ctx.workspaceDir, ctx.state, input.task, ref);
   const prompt = promptInput(ctx.state, input, diffs, ctx.workspaceDir, seat);
   const contract = answerContract(
     input.task,

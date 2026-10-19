@@ -66,8 +66,6 @@ export async function confirmAttemptDecisions(opts: {
         reason: 'deviation',
         failingOutput: '',
         report: { ...report, decisions },
-        snapshot: opts.snapshot,
-        changedFiles: opts.changedFiles,
         answered,
       },
     );

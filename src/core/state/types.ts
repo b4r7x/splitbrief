@@ -110,7 +110,7 @@ export type StateAction =
     }
   | { type: 'CONFIRM_DECISIONS'; taskId: TaskId; decisions: { what: string; why: string }[] }
   | { type: 'RECORD_CORRECTION'; taskId: TaskId; text: string }
-  | { type: 'COUNT_ATTEMPT'; taskId: TaskId }
+  | { type: 'COUNT_ATTEMPT'; taskId: TaskId; failure?: string | undefined }
   | { type: 'COUNT_PLANNER_CALL' }
   | { type: 'CLEAR_CARRIED_FAILURE'; taskId: TaskId }
   | {

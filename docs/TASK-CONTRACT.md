@@ -221,7 +221,7 @@ any --[SKIP_TASK]--> skipped
 any --[RESET_TASK]--> pending
 ```
 
-The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), not on the individual task. The ladder's own counters live per lineage in `state.lineages` — `consults`, `attempts`, `consultAllowance`, `attemptAllowance`, `consultRecords`, `replacedParents`, `dispatchedRevision` — and the run's consult count in `state.plannerCalls` (the name stays; planner and review-seat consults share it).
+The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), not on the individual task. The ladder's own counters live per lineage in `state.lineages` — `consults`, `attempts`, `consultAllowance`, `attemptAllowance`, `consultRecords`, `replacedParents`, `dispatchedRevision`, `startSnapshot` (the task start for the consult's task diff, cleared when the lineage closes), `attemptFailures` (one bounded line per failed attempt) — and the run's consult count in `state.plannerCalls` (the name stays; planner and review-seat consults share it).
 
 ### Lifecycle guarantees
 

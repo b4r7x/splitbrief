@@ -431,7 +431,11 @@ export async function handleRetryAndEscalation(
     blocked = outcome.blocked;
     answer = outcome.answer;
     lastDiagnosis = outcome.diagnosis ?? lastError;
-    state = transitionAndSave(ctx, state, { type: 'COUNT_ATTEMPT', taskId: task.id });
+    state = transitionAndSave(ctx, state, {
+      type: 'COUNT_ATTEMPT',
+      taskId: task.id,
+      ...(outcome.result === undefined && { failure: lastError }),
+    });
     recordNoProgressCut(ctx, task, state, outcome.lastFailure);
     if (outcome.result) return { state, result: outcome.result };
     if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
@@ -486,8 +490,6 @@ export async function handleRetryAndEscalation(
         reason,
         failingOutput: lastError,
         report: blocked ?? null,
-        snapshot,
-        changedFiles,
       },
     );
     if ('error' in consult) throw consult.error;

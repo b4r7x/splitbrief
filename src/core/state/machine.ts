@@ -21,6 +21,7 @@ import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { insertTasksAfter, lineageIdOf } from './task-insert.js';
 import { transitionError } from './errors.js';
+import { truncateByChars } from '../../utils/truncate.js';
 
 /** The text a confirmed implementer decision contributes to the plan ledger. */
 export function decisionLedgerText(decision: { what: string; why: string }): string {
@@ -212,6 +213,19 @@ function withLineage(
   };
 }
 
+/** A lineage keeps its task start only while one of its briefs is still open. */
+function dropClosedLineageStart(state: WorkflowState, taskId: TaskId): WorkflowState {
+  const key = lineageKeyFor(state, taskId);
+  const lineage = state.lineages?.[key];
+  if (lineage?.startSnapshot === undefined) return state;
+  const open = state.tasks.some(
+    (t) => lineageIdOf(t) === key && !isTaskCompleted(t.status) && t.status !== 'skipped',
+  );
+  if (open) return state;
+  const { startSnapshot: _closedStart, ...closed } = lineage;
+  return { ...state, lineages: { ...state.lineages, [key]: closed } };
+}
+
 function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
   return {
     ...state,
@@ -318,8 +332,11 @@ export function transition(
     case 'RESUME_TASK':
       return { ...state, phase: 'implementing' };
 
-    case 'VALIDATION_PASS':
-      return advanceTask(state, taskStatusForCompletionMethod('local'));
+    case 'VALIDATION_PASS': {
+      const passed = advanceTask(state, taskStatusForCompletionMethod('local'));
+      const passedId = state.tasks[state.currentTaskIndex]?.id;
+      return passedId === undefined ? passed : dropClosedLineageStart(passed, passedId);
+    }
 
     case 'VALIDATION_FAIL':
       if (state.attempt < DEFAULT_LOCAL_RETRIES) {
@@ -338,11 +355,12 @@ export function transition(
         currentTaskIndex: nextOpenTaskIndex(withStatus, state.currentTaskIndex + 1),
         attempt: 0,
       };
-      if (withStatus.changedFilesBaseline === undefined) return skipped;
+      const closed = dropClosedLineageStart(skipped, action.taskId);
+      if (withStatus.changedFilesBaseline === undefined) return closed;
       // The skipped brief's task-start snapshot is no later brief's start.
       const { activeTaskSnapshot: _skippedTaskStart, ...baseline } =
         withStatus.changedFilesBaseline;
-      return { ...skipped, changedFilesBaseline: baseline };
+      return { ...closed, changedFilesBaseline: baseline };
     }
 
     case 'UPDATE_TASK_CODE': {
@@ -810,6 +828,23 @@ export function transition(
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
         ...lineage,
         attempts: lineage.attempts + 1,
+        ...(action.failure !== undefined && {
+          attemptFailures: [
+            ...(lineage.attemptFailures ?? []),
+            {
+              attempt: lineage.attempts + 1,
+              taskId: action.taskId,
+              revision: state.tasks.find((task) => task.id === action.taskId)?.revision ?? 1,
+              line: truncateByChars(
+                action.failure
+                  .split('\n')
+                  .map((line) => line.trim())
+                  .find((line) => line !== '') ?? '',
+                BOUNDS.consultAttemptLineChars,
+              ),
+            },
+          ],
+        }),
       }));
 
     case 'COUNT_PLANNER_CALL': {
@@ -875,6 +910,10 @@ export function transition(
           ...lineage.dispatchedRevision,
           [action.taskId]: state.tasks.find((task) => task.id === action.taskId)?.revision ?? 1,
         },
+        ...(lineage.startSnapshot === undefined &&
+          state.changedFilesBaseline?.activeTaskSnapshot !== undefined && {
+            startSnapshot: state.changedFilesBaseline.activeTaskSnapshot,
+          }),
       }));
 
     case 'RECORD_CHECK_RESULTS':

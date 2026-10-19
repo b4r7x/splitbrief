@@ -71,6 +71,7 @@
 - Show diff keeps less open on its own screen with its `Press q to return.` prompt, also when `LESS` or `PAGER` sets `-e`, `-E`, `-F`, `-m`, `-M` or `-X`.
 - **How long a run ran is stated once, when it closes.** The workflow header and sidebar no longer show a clock for the whole run. A closed run states how long it ran in its Run section, for example `Ran 1m 51s`. Time the run sat stopped, halted or at rest is left out, and time it waited on you while it ran counts. A run recorded before this release reads `Ran not recorded`.
 - Ctrl+Delete and Alt+Delete in the composer and other text fields delete the word after the caret, as in the plan.json editor. Before, they deleted the word before it.
+- When a brief fails again, the planner or reviewer now sees every change the brief made since it started and one line for each earlier failed attempt, not only the latest attempt.
 
 ### Removed
 
