@@ -38,7 +38,7 @@ import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { runPlanApproval } from '../planning/session.js';
-import { closeRunIfOpen, rejectCheckoutRun } from './close.js';
+import { closeRunIfOpen, filesStillOnDiskSuffix, rejectCheckoutRun } from './close.js';
 
 const removal = vi.hoisted(() => ({ patchExisted: [] as boolean[] }));
 vi.mock('../isolation/remove-worktree.js', async (importOriginal) => {
@@ -448,25 +448,17 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     expect(removal.patchExisted).toEqual([]);
   });
 
-  it('a checkout-mode run closes without a patch and says nothing is unapplied', async () => {
-    const projectDir = createTempDir('close-run-checkout-mode-');
-    dirs.push(projectDir);
-    const ref = { projectDir, sessionId: SESSION_ID };
-    ensureSessionDir(projectDir, SESSION_ID);
-    writeFileSync(join(projectDir, 'kept.ts'), 'edited in place\n');
-    const state: WorkflowState = {
-      ...createInitialState('Checkout run'),
-      phase: 'implementing',
-      workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head: null } },
-    };
-    saveState(ref, state);
+  it('a checkout run whose brief left files closes without a patch and says nothing is unapplied', async () => {
+    const { ref, state } = await checkoutRunInBrief();
     const { bus, events } = makeBusRecorder();
 
     const closure = await closeRunIfOpen({ ...ref, bus }, state);
 
     expect(closure.state.closed?.as).toBe('ended');
-    expect(existsSync(join(sessionDir(projectDir, SESSION_ID), 'run.patch'))).toBe(false);
-    expect(readFileSync(join(projectDir, 'kept.ts'), 'utf8')).toBe('edited in place\n');
+    expect(existsSync(join(sessionDir(ref.projectDir, SESSION_ID), 'run.patch'))).toBe(false);
+    expect(readFileSync(join(ref.projectDir, 'lib/lerp.mjs'), 'utf8')).toBe(
+      'export const lerp = 1;\n',
+    );
     expect(removal.patchExisted).toEqual([]);
     expect(
       events.some(
@@ -476,6 +468,41 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
           event.message.includes('nothing is unapplied and no run patch was written'),
       ),
     ).toBe(true);
+    expect(filesStillOnDiskSuffix(ref, closure.state)).toBe(
+      ' The files it wrote are still on disk.',
+    );
+  });
+
+  // A checkout brief that halted outside the consult bound had its files put back, while the
+  // ledger still booked its first attempt's files: End run said they were still on disk.
+  it('End run after a halted checkout brief had its files put back books none and claims none', async () => {
+    const { ref, state, task } = await checkoutRunInBrief();
+    writeEvidenceLedger(
+      ref,
+      recordLocalTaskEvidence({
+        ledger: createEvidenceLedger({
+          sessionId: SESSION_ID,
+          feature: state.feature,
+          tasks: [task],
+        }),
+        task,
+        status: 'failed',
+        changedFiles: ['lib/lerp.mjs', 'test/lerp.test.mjs'],
+      }),
+    );
+    rmSync(join(ref.projectDir, 'lib/lerp.mjs'));
+    rmSync(join(ref.projectDir, 'test'), { recursive: true });
+    const { bus, events } = makeBusRecorder();
+
+    const closure = await closeRunIfOpen({ ...ref, bus }, state);
+
+    expect(closure.state.closed?.as).toBe('ended');
+    expect(readEvidenceLedger(ref)?.tasks.find((entry) => entry.id === 'T001')).toMatchObject({
+      status: 'in_progress',
+      changedFiles: [],
+    });
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+    expect(filesStillOnDiskSuffix(ref, closure.state)).toBe('');
   });
 
   // RC6 run A: after `/run reject confirm` removed the run's files, the close said they were

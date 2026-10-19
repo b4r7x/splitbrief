@@ -279,7 +279,7 @@ export function createRecoveryDriver(
         // one summary, one receipt release, through the same path every other
         // ending takes.
         feedbackStore.setMessage(
-          `Run ${status.as === 'complete' ? 'closed' : 'ended'}.${filesStillOnDiskSuffix(result.state)}`,
+          `Run ${status.as === 'complete' ? 'closed' : 'ended'}.${filesStillOnDiskSuffix({ projectDir, sessionId }, result.state)}`,
         );
         return { shouldRun: false, state: result.state };
       }

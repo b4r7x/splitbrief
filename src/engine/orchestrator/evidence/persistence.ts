@@ -13,6 +13,7 @@ import {
   recordLocalTaskEvidence,
   recordRetryOrEscalationEvidence,
   recordSkippedTaskEvidence,
+  recordStoppedTaskEvidence,
 } from './task.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
@@ -129,12 +130,13 @@ export async function persistSkippedBriefFiles(opts: {
 
 /**
  * A run that closes inside a brief books what the brief left: the ledger books a brief when an
- * attempt ends, and a stop cuts the attempt before that. Without it the record would name fewer
- * files than the run's changes hold. An isolated workspace stays the run's until it closes, so it
- * is read as it is. A checkout is the user's once its run's process exits: that process records a
- * snapshot as it exits, and later edits and a reject change the checkout, so the brief's files are
- * then the ones that changed up to that snapshot. A process that died took no such snapshot, so
- * its checkout, like a live one, is read as it is.
+ * attempt ends, and a stop cuts the attempt before that, while a halt can put an attempt's booked
+ * files back. Without it the record would name other files than the run's changes hold. An
+ * isolated workspace stays the run's until it closes, so it is read as it is. A checkout is the
+ * user's once its run's process exits: that process records a snapshot as it exits, and later
+ * edits and a reject change the checkout, so the brief's files are then the ones that changed up
+ * to that snapshot. A process that died took no such snapshot, so its checkout, like a live one,
+ * is read as it is.
  */
 export async function persistStoppedBriefEvidence(
   ref: SessionRef,
@@ -152,10 +154,9 @@ export async function persistStoppedBriefEvidence(
       ? await changedSinceAtRest(ref, taskStart)
       : await getChangedFilesSinceSnapshot(workspace.path, taskStart);
   mutateEvidenceLedger(ref, (existing) =>
-    recordLocalTaskEvidence({
+    recordStoppedTaskEvidence({
       ledger: existing ?? getOrCreateLedger({ ref, state }),
       task,
-      status: 'in_progress',
       changedFiles,
     }),
   );

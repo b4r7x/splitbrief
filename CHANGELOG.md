@@ -299,6 +299,7 @@
 - A brief that creates a file reads `create` on the closed run also after a retry or a Continue past its consult limit, not `modify`.
 - A minor or out-of-scope review finding reads as a note in the closed run, the review packet and `splitbrief review`. The closed run and the review packet read the review count as `0 blocking, 3 notes`.
 - `splitbrief continue --plain` or `--json` on a run that readiness blocks now prints the blockers and their fix on stderr, for example `splitbrief continue --allow-repo-runners`, instead of an error that points to blockers it did not show. `start --json` also prints the blockers on stderr.
+- End run on a run that edits your checkout no longer says the files it wrote are still on disk, or that its changes are already there, after SPLITBRIEF put those files back.
 
 ## [0.1.0] - 2026-08-07
 
