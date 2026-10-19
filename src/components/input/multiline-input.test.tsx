@@ -278,7 +278,7 @@ describe('MultilineInput control-byte sanitization', () => {
   );
 });
 
-const BACKSPACE = '\x7f';
+const BACKSPACE = '\b';
 const DELETE = '\x1b[3~';
 const LEFT = '\x1b[D';
 const RIGHT = '\x1b[C';

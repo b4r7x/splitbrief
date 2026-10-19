@@ -63,6 +63,14 @@ describe('applyEditAction', () => {
       { value: 'line1\nline2', cursor: 5 },
     ],
     [
+      'word after the caret',
+      'delete-word-forward',
+      'foo bar baz',
+      3,
+      undefined,
+      { value: 'foo baz', cursor: 3 },
+    ],
+    [
       'delete forward',
       'delete-char-forward',
       `a${EMOJI}b`,
@@ -224,10 +232,6 @@ describe('applyEditAction', () => {
 
 describe('resolveEditAction', () => {
   const noMods = { ctrl: false, meta: false, super: false, backspace: false, delete: false };
-
-  it('maps raw terminal DEL to delete-char-backward', () => {
-    expect(resolveEditAction('\x7f', noMods)).toBe('delete-char-backward');
-  });
 
   it('returns null for ordinary input', () => {
     expect(resolveEditAction('a', noMods)).toBeNull();

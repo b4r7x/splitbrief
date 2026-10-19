@@ -1426,7 +1426,7 @@ describe('Composer image attach gate', () => {
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('[image #1][image #2]');
 
     // The caret sits after the second atom: one backspace takes all of it and nothing else.
-    ui.stdin.write('\x7f');
+    ui.stdin.write('\b');
     await flushEffects();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('[image #1]');
@@ -1677,7 +1677,7 @@ describe('Composer image attach gate', () => {
 });
 
 describe('Composer attachment affordances', () => {
-  const BACKSPACE = '\x7f';
+  const BACKSPACE = '\b';
   const HOME_LEGEND = '/help · /crew · /settings · ctrl+k commands';
 
   function attachment(id: string) {

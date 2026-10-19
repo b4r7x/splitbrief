@@ -6,12 +6,11 @@ import {
   indexAtDisplayColumn,
   nextGraphemeIndex,
   prevGraphemeIndex,
+  wordBoundaryForward,
   wrapVisualLines,
   wrapWordVisualLines,
 } from '../../core/editor/grapheme-motions.js';
 import { normalizeLineEndings, TAB_SIZE } from './segments.js';
-
-const RAW_BACKSPACE = '\x7f';
 
 export interface EditResult {
   value: string;
@@ -42,6 +41,13 @@ function deleteWordBackward(value: string, cursor: number): EditResult {
   return {
     value: value.slice(0, i) + value.slice(cursor),
     cursor: i,
+  };
+}
+
+function deleteWordForward(value: string, cursor: number): EditResult {
+  return {
+    value: value.slice(0, cursor) + value.slice(wordBoundaryForward(value, cursor)),
+    cursor,
   };
 }
 
@@ -149,9 +155,7 @@ export function resolveEditAction(
   input: string,
   key: { ctrl: boolean; meta: boolean; super: boolean; backspace: boolean; delete: boolean },
 ): EditAction {
-  const keyForEditing =
-    input === RAW_BACKSPACE && !key.backspace ? { ...key, backspace: true } : key;
-  return resolveTextEditingKeyAction(normalizeKeySignature({ input, key: keyForEditing }));
+  return resolveTextEditingKeyAction(normalizeKeySignature({ input, key }));
 }
 
 const editHandlers: Record<
@@ -159,6 +163,7 @@ const editHandlers: Record<
   (value: string, cursor: number, columns?: number) => EditResult
 > = {
   'delete-word-backward': deleteWordBackward,
+  'delete-word-forward': deleteWordForward,
   'delete-line-backward': deleteLineBackward,
   'move-line-start': moveToLineStart,
   'move-line-end': moveToLineEnd,

@@ -18,7 +18,7 @@ import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty
 const VIEWPORT = { cols: 100, rows: 30 };
 
 it.for([true, false])(
-  'deletes one character per backspace byte of one terminal read, fullscreen=%s',
+  'deletes one character per backspace byte of one terminal read and the word after the caret on Ctrl+Delete, fullscreen=%s',
   async (fullscreen, context) => {
     await withTempDir('composer-backspace-run', async (dir) => {
       const home = join(dir, 'home');
@@ -123,6 +123,13 @@ it.for([true, false])(
             await showsDraft('draft-x');
             child.write('\x7f\x7fQ');
             await showsDraft('draftQ');
+            child.write(' one two');
+            await vi.waitFor(() => expect(screen()).toContain('draftQ one two'), {
+              timeout: 10_000,
+            });
+            for (let step = 0; step < ' one two'.length; step++) child.write('\x1b[D');
+            child.write('\x1b[3;5~\x05');
+            await vi.waitFor(() => expect(screen()).toContain('draftQ two'), { timeout: 10_000 });
 
             child.write('\x03');
             await vi.waitFor(() => expect(screen()).toContain('Press ctrl+c again to quit'));

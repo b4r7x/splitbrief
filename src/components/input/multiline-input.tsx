@@ -17,7 +17,6 @@ import { sanitizePasteBody } from '../../lib/terminal/filtered-stdin/paste.js';
 import { SUPPORTED_IMAGE_EXTS } from '../../core/schemas/attachment.js';
 
 const MULTI_BYTE_SUPPRESS_MS = 50;
-const RAW_BACKSPACE = '\x7f';
 
 const FILE_DROP_EXT_PATTERN = new RegExp(`\\.(${SUPPORTED_IMAGE_EXTS.join('|')})$`, 'i');
 
@@ -120,24 +119,6 @@ function snapCaretOutOfAtoms(
   return index;
 }
 
-function useLatestInputSequence() {
-  const sequenceRef = useRef('');
-  const { internal_eventEmitter } = useStdin();
-
-  useEffect(() => {
-    function recordSequence(input: string) {
-      sequenceRef.current = input;
-    }
-
-    internal_eventEmitter.on('input', recordSequence);
-    return () => {
-      internal_eventEmitter.off('input', recordSequence);
-    };
-  }, [internal_eventEmitter]);
-
-  return sequenceRef;
-}
-
 interface MultilineInputProps extends ControlledMultilineInputProps {
   onChange: (value: string, edit: InputEdit) => void;
   onSubmit?: (value: string) => void;
@@ -187,7 +168,6 @@ export function MultilineInput({
   // Suppress rapid-fire key events after delete-line-backward (Cmd+Backspace
   // in non-Kitty terminals sends multiple raw bytes parsed as separate events)
   const suppressUntilRef = useRef(0);
-  const latestInputSequenceRef = useLatestInputSequence();
   const { stdin } = useStdin();
 
   const atomList = atoms ?? NO_ATOMS;
@@ -304,11 +284,7 @@ export function MultilineInput({
       }
     }
 
-    const editKey =
-      latestInputSequenceRef.current === RAW_BACKSPACE && key.delete && !key.backspace
-        ? { ...key, backspace: true, delete: false }
-        : key;
-    const action = resolveEditAction(input, editKey);
+    const action = resolveEditAction(input, key);
     const editResult = applyEditAction({
       action,
       value: currentValue,

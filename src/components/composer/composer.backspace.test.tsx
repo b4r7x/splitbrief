@@ -46,4 +46,29 @@ describe('Composer backspace bytes that share one terminal read', () => {
     await flushEffects();
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith(expected);
   });
+
+  it('deletes the word before the caret for kitty Alt+Backspace', async () => {
+    const onSubmit = vi.fn();
+    const ui = renderThroughFilteredStdin(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={(submission) => onSubmit(submission.message.text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+    ui.pressBytes('foo bar');
+    await flushEffects();
+    ui.pressBytes('\x1b[127;3u');
+    await flushEffects();
+    ui.pressBytes('X');
+    await flushEffects();
+    ui.pressBytes('\r');
+    await flushEffects();
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith('foo X');
+  });
 });
