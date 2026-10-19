@@ -1,7 +1,7 @@
 import type { Config } from '../../../../core/schemas/config.js';
 import type { Phase, RecoveryAction } from '../../../../core/schemas/enums.js';
 import { BOUNDS } from '../../../../core/pipeline-spec/bounds.js';
-import type { SeatSwitchRecord } from '../../../../core/schemas/workflow.js';
+import type { ReviewRecord, SeatSwitchRecord } from '../../../../core/schemas/workflow.js';
 import {
   routeNoCredential,
   routeRefusal,
@@ -54,13 +54,14 @@ import { inputTooLargeFigures } from '../../../runners/input-limit.js';
 import { inputTooLargeSentence } from './review-input.js';
 import { usageLimitAdvice } from '../../../runners/usage-limit.js';
 import {
-  finalReviewCapCause,
   formatRecoveryHeadline,
-  finalReviewFailedCause,
-  finalReviewUnverifiedCause,
   leftIsolationCause,
   repositoryChangedCause,
   retryExhaustedCause,
+  reviewCapCause,
+  reviewFailedCause,
+  reviewName,
+  reviewUnverifiedCause,
 } from '../../../../core/recovery/headline.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
@@ -1087,6 +1088,10 @@ export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   fixCycles?: number | undefined;
   /** Criteria no check could verify, when the review failed with nothing to fix. */
   unverified?: number | undefined;
+  /** The review that judged: a scheduled task review, or the final review when absent. */
+  scope?: ReviewRecord['scope'];
+  /** The brief a task review judged. */
+  afterTaskId?: TaskId | undefined;
 }
 
 /**
@@ -1126,6 +1131,8 @@ function buildNoVerdictReviewIssue(
     ],
     facts: compactFacts({
       reviewFailureKind: failure.kind,
+      reviewScope: opts.scope,
+      afterTaskId: opts.afterTaskId,
       ...(diagnostic === undefined ? {} : apiContextRecoveryFacts(diagnostic)),
     }),
     availableActions: actions,
@@ -1135,8 +1142,8 @@ function buildNoVerdictReviewIssue(
 }
 
 /**
- * The final review still reports blocking findings after the fix cycles ran out. The operator
- * can send them back through one more cycle with a correction of their own (`revise`).
+ * A review still reports blocking findings after the fix cycles ran out, or with nothing to fix.
+ * The operator can send them back through one more cycle with a correction of their own (`revise`).
  */
 export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions): RecoveryIssue {
   if (opts.failure !== undefined) return buildNoVerdictReviewIssue(opts, opts.failure);
@@ -1146,12 +1153,13 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
     opts.acceptAsIs === true ? 'accept-as-is' : undefined,
     'end-run',
   ]);
+  const review = reviewName(opts);
   const message =
     opts.fixCycles !== undefined
-      ? finalReviewCapCause(opts.fixCycles)
+      ? reviewCapCause(review, opts.fixCycles)
       : opts.unverified !== undefined
-        ? finalReviewUnverifiedCause(opts.unverified)
-        : finalReviewFailedCause(blocking);
+        ? reviewUnverifiedCause(review, opts.unverified)
+        : reviewFailedCause(review, blocking);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'build',
@@ -1165,6 +1173,8 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
       blocking,
       fixCycles: opts.fixCycles,
       unverified: opts.unverified,
+      reviewScope: opts.scope,
+      afterTaskId: opts.afterTaskId,
     }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions),

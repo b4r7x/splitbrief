@@ -894,6 +894,10 @@ const checkpointPredicates = [
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is', 'unverified criteria'),
   ],
   [
+    checkpointId('task-review-cap'),
+    includesAll('Review T904 failed after 2 fix cycles', WORKFLOW_FIXTURE_TEXT.reviewFailed),
+  ],
+  [
     checkpointId('recovery-checks-missing-program'),
     includesAll('mocha: command not found', 'Run the checks again'),
   ],
@@ -905,6 +909,10 @@ const checkpointPredicates = [
   [checkpointId('api-context'), includesAll(WORKFLOW_FIXTURE_TEXT.apiContext, 'Try again')],
   [checkpointId('review-context'), includesAll('Nothing was sent to REVIEW', 'Try again')],
   [checkpointId('review-call-failed'), includesAll('Review call timed out', 'Try again')],
+  [
+    checkpointId('task-review-call-failed'),
+    includesAll('Review T901 reached no verdict', 'Review T901 failed: ', 'Try again'),
+  ],
   [
     checkpointId('planning-claude-frames'),
     includesAll(WORKFLOW_FIXTURE_TEXT.planningReply, 'retry 2 of 10'),

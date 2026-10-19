@@ -15,6 +15,7 @@ import {
   type FinalReviewFailure,
   type FinalReviewResult,
 } from '../final-review.js';
+import { reviewName } from '../../../core/recovery/headline.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/review-input.js';
 import { reviewSeatDetails } from '../recovery/builders/details.js';
@@ -32,13 +33,13 @@ import type { TriageInput, TriageResult } from '../../../core/schemas/review.js'
 import type { ReviewOutcome } from '../../../core/review/verdict.js';
 import type { OrchestratorCallbacks, WorkflowContext } from '../types.js';
 
-function noVerdictFailure(review: FinalReviewResult): FinalReviewFailure | undefined {
+function noVerdictFailure(review: FinalReviewResult, name: string): FinalReviewFailure | undefined {
   if (review.failure !== undefined) return review.failure;
   if (review.reviewStatus === 'written') return undefined;
   return {
     kind: 'call-failed',
     code: REVIEW_UNAVAILABLE,
-    message: 'The final review reached no verdict, so nothing was judged.',
+    message: `${name} reached no verdict, so nothing was judged.`,
   };
 }
 
@@ -111,6 +112,8 @@ async function haltFailedReview(args: {
     ...(args.unverified !== undefined && { unverified: args.unverified }),
     ...(detail !== '' && { detail }),
     acceptAsIs: !scheduled && !redPending,
+    scope: scheduled ? 'task' : 'final',
+    ...(scheduled && { afterTaskId: args.state.review?.afterTaskId }),
   });
   publishError({
     bus: args.wctx.bus,
@@ -150,7 +153,10 @@ export async function haltVerdictlessReview(args: {
 }): Promise<WorkflowState | undefined> {
   const { wctx, setTrackedState } = args;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId, bus: wctx.bus };
-  const failure = noVerdictFailure(args.review);
+  const judged = scheduledTaskReview(args.state)
+    ? { scope: 'task' as const, afterTaskId: args.state.pendingScheduledReview?.afterTaskId }
+    : { scope: 'final' as const };
+  const failure = noVerdictFailure(args.review, reviewName(judged));
   const state = failure === undefined ? args.state : queueScheduledTriage(ref, args.state);
   if (failure?.kind === 'input-too-large') {
     const issue = buildReviewInputTooLargeRecoveryIssue({
@@ -191,6 +197,7 @@ export async function haltVerdictlessReview(args: {
     const issue = buildReviewFailedRecoveryIssue({
       phase: state.phase,
       failure,
+      ...judged,
       createdAt: nowIso(),
     });
     return raisePendingRecovery(ref, state, issue, setTrackedState);

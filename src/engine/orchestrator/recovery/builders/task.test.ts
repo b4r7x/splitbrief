@@ -4,6 +4,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
 import { formatRecoveryHeadline } from '../../../../core/recovery/headline.js';
+import { taskId } from '../../../../core/schemas/task.js';
 import { haltOf } from '../../../../core/recovery/halt.js';
 import type { SavedCatalog } from '../../../../core/discovery/catalog-read-merge.js';
 import { routeAuthState } from '../../../../core/runners/route-auth.js';
@@ -1355,6 +1356,73 @@ describe('buildReviewFailedRecoveryIssue', () => {
     expect(issue.availableActions).toEqual(['revise', 'end-run']);
     expect(issue.recommendedAction).toBe('revise');
     expectValidRecoveryIssue(issue);
+  });
+
+  it('names the final review at the fix-cycle cap', () => {
+    const issue = buildReviewFailedRecoveryIssue({
+      createdAt,
+      blocking: 1,
+      fixCycles: 2,
+      scope: 'final',
+    });
+
+    expect(issue.message).toBe('Final review failed after 2 fix cycles');
+    expect(formatRecoveryHeadline(issue)).toBe('Final review failed after 2 fix cycles');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('names the task review of the brief it judged, at the cap and with no fix work', () => {
+    const task = { scope: 'task', afterTaskId: taskId('T004') } as const;
+    const cap = buildReviewFailedRecoveryIssue({
+      createdAt,
+      phase: 'implementing',
+      blocking: 1,
+      fixCycles: 2,
+      ...task,
+    });
+    const blocking = buildReviewFailedRecoveryIssue({
+      createdAt,
+      phase: 'implementing',
+      blocking: 1,
+      ...task,
+    });
+    const unverified = buildReviewFailedRecoveryIssue({
+      createdAt,
+      phase: 'implementing',
+      blocking: 0,
+      unverified: 1,
+      ...task,
+    });
+
+    expect(cap.message).toBe('Review T004 failed after 2 fix cycles');
+    expect(formatRecoveryHeadline(cap)).toBe('Review T004 failed after 2 fix cycles');
+    expect(blocking.message).toBe('Review T004 failed with 1 blocking finding');
+    expect(formatRecoveryHeadline(blocking)).toBe('Review T004 failed with 1 blocking finding');
+    expect(unverified.message).toBe('Review T004 failed with 1 unverified criterion');
+    expect(formatRecoveryHeadline(unverified)).toBe(
+      'Review T004 failed with 1 unverified criterion',
+    );
+    for (const issue of [cap, blocking, unverified]) expectValidRecoveryIssue(issue);
+  });
+
+  it('names the task review that reached no verdict, and the final review unchanged', () => {
+    const failure = {
+      kind: 'call-failed',
+      code: 'exit-1',
+      message: 'Review T004 failed.',
+    } as const;
+    const task = buildReviewFailedRecoveryIssue({
+      createdAt,
+      phase: 'implementing',
+      failure,
+      scope: 'task',
+      afterTaskId: taskId('T004'),
+    });
+    const final = buildReviewFailedRecoveryIssue({ createdAt, failure, scope: 'final' });
+
+    expect(formatRecoveryHeadline(task)).toBe('Review T004 reached no verdict');
+    expect(formatRecoveryHeadline(final)).toBe('Final review reached no verdict');
+    for (const issue of [task, final]) expectValidRecoveryIssue(issue);
   });
 
   it('offers accept as is on a reviewed workspace', () => {

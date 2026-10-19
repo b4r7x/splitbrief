@@ -3000,6 +3000,42 @@ const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
+/** A scheduled task review still failed once the run's fix cycles ran out: it names its brief. */
+const taskReviewCapRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-task-review-cap'),
+  resumeState: makeImplState(
+    [
+      { ...HALTED_TASK, status: 'done' },
+      makeTask({
+        id: WORKFLOW_FIXTURE_FIX_TASK_ID,
+        title: WORKFLOW_FIXTURE_TEXT.reviewFixTask,
+        suggestedFiles: [WORKFLOW_FIXTURE_SECOND_FILE],
+        status: 'done',
+      }),
+    ],
+    {
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'implementing',
+      workspace: {
+        kind: 'checkout',
+        path: VISUAL_FIXTURE_PROJECT_DIR,
+        base: { snapshotId: 'visual-base', head: null },
+      },
+      pendingRecovery: buildReviewFailedRecoveryIssue({
+        id: 'rec_visual_task_review_cap',
+        blocking: 1,
+        fixCycles: 2,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+        createdAt: new Date(FIXED_TS).toISOString(),
+      }),
+    },
+  ),
+};
+
 /** The final review's required check runs a test script that calls a program not installed. */
 const checksMissingProgramRecoveryProjection: WorkflowFixtureProjection = {
   ...reviewFailedRecoveryProjection,
@@ -3135,6 +3171,28 @@ const reviewCallFailedRecoveryProjection: WorkflowFixtureProjection = {
     pendingRecovery: buildReviewFailedRecoveryIssue({
       id: 'rec_visual_review_call_failed',
       failure: { kind: 'call-failed', code: 'timeout', message: 'Review call timed out.' },
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
+};
+
+/** A scheduled task review whose call failed: the halt names the brief's review, not the final one. */
+const taskReviewCallFailedRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-task-review-call-failed'),
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    phase: 'implementing',
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      id: 'rec_visual_task_review_call_failed',
+      phase: 'implementing',
+      scope: 'task',
+      afterTaskId: WORKFLOW_FIXTURE_TASK_ID,
+      failure: {
+        kind: 'call-failed',
+        code: 'exit-1',
+        message: `Review ${WORKFLOW_FIXTURE_TASK_ID} failed: node exited with code 1: reviewer crashed`,
+      },
       createdAt: new Date(FIXED_TS).toISOString(),
     }),
   }),
@@ -6324,11 +6382,13 @@ const projections = [
   reviewFailedRecoveryProjection,
   reviewFixAgainProjection,
   reviewUnverifiedRecoveryProjection,
+  taskReviewCapRecoveryProjection,
   checksMissingProgramRecoveryProjection,
   applyConflictRecoveryProjection,
   resumedApplyPartialRecoveryProjection,
   reviewContextRecoveryProjection,
   reviewCallFailedRecoveryProjection,
+  taskReviewCallFailedRecoveryProjection,
   leftIsolationRecoveryProjection,
   leftIsolationInPlaceRecoveryProjection,
   checkoutChangedRecoveryProjection,

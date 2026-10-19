@@ -33,6 +33,7 @@ import type { ReviewVerdict, TriageResult } from '../../../core/schemas/review.j
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
+import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { runTasksAndReview } from './task-execution.js';
 
@@ -547,6 +548,36 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     expect(events.filter((event) => event.type === 'all_tasks_done')).toHaveLength(1);
   });
 
+  it('names the task review that reached no verdict, not the final review', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
+    ];
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: cadenceState(tasks, head),
+      review: () => {
+        throw new Error('reviewer exited with code 1');
+      },
+      onComplete: vi.fn(),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(result.completed).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    const halt = result.state.pendingRecovery;
+    if (halt === undefined) throw new Error('Missing halt');
+    expect(halt.reason).toBe('review-failed');
+    expect(formatRecoveryHeadline(halt)).toBe('Review T001 reached no verdict');
+    expect(halt.message).toMatch(/^Review T001 failed: /);
+    const errors = events.flatMap((event) => (event.type === 'error' ? [event.message] : []));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/^Review T001 failed: /);
+  });
+
   it('halts on the cap when a scheduled failure has no fix cycle left', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
@@ -574,7 +605,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     expect(result.state.reviewStatus).toBeUndefined();
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
-      message: 'Final review failed after 2 fix cycles',
+      message: 'Review T001 failed after 2 fix cycles',
     });
     expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
     expect(result.state.review?.scope).toBe('task');

@@ -5,6 +5,7 @@ import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
 import { namedFailures } from '../../../core/review/base-split.js';
+import { reviewName } from '../../../core/recovery/headline.js';
 import type {
   BriefRow,
   BriefRowState,
@@ -433,12 +434,7 @@ export function failedReviewViews(ledger: EvidenceLedger | null): FailedReviewVi
   return earlier
     .filter((review) => review.outcome === 'fail')
     .map((review) => ({
-      label:
-        review.scope === 'final'
-          ? 'Final review'
-          : review.afterTaskId === undefined
-            ? 'Task review'
-            : `Review ${review.afterTaskId}`,
+      label: reviewName(review),
       blocking: review.blocking.map((entry) => ({
         id: sanitizeTerminalDisplayText(entry.id),
         text: sanitizeTerminalDisplayText(entry.text),
