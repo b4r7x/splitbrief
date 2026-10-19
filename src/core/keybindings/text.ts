@@ -2,6 +2,7 @@ import type { NormalizedKeySignature } from './normalize.js';
 
 export type TextEditingKeyAction =
   | 'delete-word-backward'
+  | 'delete-word-forward'
   | 'delete-line-backward'
   | 'move-line-start'
   | 'move-line-end'
@@ -20,18 +21,19 @@ export function resolveTextEditingKeyAction(
     if (signature.key === 'e') return 'move-line-end';
     if (signature.key === 'b') return 'move-char-backward';
     if (signature.key === 'f') return 'move-char-forward';
-    if (signature.key === 'backspace' || signature.key === 'delete') {
-      return 'delete-word-backward';
-    }
+    if (signature.key === 'backspace') return 'delete-word-backward';
+    if (signature.key === 'delete') return 'delete-word-forward';
   }
 
-  if (signature.super && (signature.key === 'backspace' || signature.key === 'delete')) {
+  if (signature.super && signature.key === 'backspace') {
     return 'delete-line-backward';
   }
 
-  if (signature.alt && (signature.key === 'backspace' || signature.key === 'delete')) {
+  if (signature.alt && signature.key === 'backspace') {
     return 'delete-word-backward';
   }
+
+  if (signature.alt && signature.key === 'delete') return 'delete-word-forward';
 
   if (signature.key === 'backspace') return 'delete-char-backward';
   if (signature.key === 'delete') return 'delete-char-forward';

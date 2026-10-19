@@ -463,7 +463,7 @@ describe('WorkflowScreen chrome calibration', () => {
     const commentingFrame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(commentingFrame).toContain(`${listRowLead('active')}Request changes`);
     expect(commentingFrame).not.toContain(`${listRowLead('active')}Edit plan.json`);
-    ui.stdin.write('\x7f');
+    ui.stdin.write('\b');
     await flushEffects();
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
       `${listRowLead('active')}Edit plan.json`,

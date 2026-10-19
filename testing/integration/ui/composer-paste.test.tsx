@@ -157,7 +157,7 @@ describe('composer clipboard images', () => {
       ui.stdin.write('\u0016');
       await flushEffects();
       expect(ui.lastFrame()).toContain('left [image #1]typed fast [image #2]');
-      ui.stdin.write('\u007f');
+      ui.stdin.write('\b');
       await flushEffects();
       expect(ui.lastFrame()).not.toContain('[image #2]');
       ui.stdin.write(ENTER);
@@ -236,7 +236,7 @@ describe('composer clipboard images', () => {
         mimeType: 'image/png',
         sizeBytes: 1,
       });
-      ui.stdin.write('\u007f');
+      ui.stdin.write('\b');
       await flushEffects();
       expect(ui.lastFrame()).not.toContain('[image #1]');
       ui.stdin.write(ENTER);

@@ -696,11 +696,20 @@ describe('createFilteredStdin: one key per backspace byte', () => {
   }
 
   it.each([
-    ['three DEL bytes', '\x7f\x7f\x7f', ['\x7f', '\x7f', '\x7f']],
+    ['three DEL bytes', '\x7f\x7f\x7f', ['\b', '\b', '\b']],
     ['two BS bytes', '\b\b', ['\b', '\b']],
-    ['DEL bytes after text', 'abc\x7f\x7fd', ['abc', '\x7f', '\x7f', 'd']],
-    ['BS and DEL bytes mixed with text', 'x\b\x7fy\x7f', ['x', '\b', '\x7f', 'y', '\x7f']],
-  ])('reads %s as one key per backspace byte', (_label, chunk, keys) => {
+    ['DEL bytes after text', 'abc\x7f\x7fd', ['abc', '\b', '\b', 'd']],
+    ['BS and DEL bytes mixed with text', 'x\b\x7fy\x7f', ['x', '\b', '\b', 'y', '\b']],
+  ])('reads %s as one Backspace key per backspace byte', (_label, chunk, keys) => {
+    expect(readKeys(chunk)).toEqual(keys);
+  });
+
+  it.each([
+    ['kitty Backspace', '\x1b[127u', ['\x1b[8u']],
+    ['kitty Alt+Backspace', '\x1b[127;3u', ['\x1b[8;3u']],
+    ['kitty Ctrl+Backspace release', '\x1b[127;5:3u', ['\x1b[8;5:3u']],
+    ['Delete', '\x1b[3~', ['\x1b[3~']],
+  ])('reads %s with the Backspace codepoint Ink names backspace', (_label, chunk, keys) => {
     expect(readKeys(chunk)).toEqual(keys);
   });
 

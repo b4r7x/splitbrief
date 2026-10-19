@@ -160,7 +160,7 @@ describe('renderApp key input', () => {
           for (let read = stdin.read(); read !== null; read = stdin.read()) reads.push(read);
         });
         input.write('ab\x7f\x7f');
-        await vi.waitFor(() => expect(reads).toEqual(['ab', '\x7f', '\x7f']));
+        await vi.waitFor(() => expect(reads).toEqual(['ab', '\b', '\b']));
       } finally {
         inkExit.resolve();
         await rendering;

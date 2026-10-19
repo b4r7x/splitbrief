@@ -24,9 +24,11 @@ describe('resolveTextEditingKeyAction', () => {
 
   it('maps modifier deletion chords', () => {
     expect(resolve('', { meta: true, backspace: true })).toBe('delete-word-backward');
-    expect(resolve('', { ctrl: true, delete: true })).toBe('delete-word-backward');
-    expect(resolve('', { super: true, delete: true })).toBe('delete-line-backward');
-    expect(resolve('', { meta: true, delete: true })).toBe('delete-word-backward');
+    expect(resolve('', { ctrl: true, backspace: true })).toBe('delete-word-backward');
+    expect(resolve('', { super: true, backspace: true })).toBe('delete-line-backward');
+    expect(resolve('', { ctrl: true, delete: true })).toBe('delete-word-forward');
+    expect(resolve('', { meta: true, delete: true })).toBe('delete-word-forward');
+    expect(resolve('', { super: true, delete: true })).toBe('delete-char-forward');
   });
 
   it('returns null for unbound keys', () => {

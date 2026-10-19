@@ -13,6 +13,8 @@ import {
 } from './escape.js';
 
 const BACKSPACE_BYTE = /([\b\x7f])/;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: a kitty CSI-u key begins with ESC.
+const KITTY_BACKSPACE = /^\x1b\[127((?:;[\d:;]*)?u)$/;
 
 function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.ReadStream {
   Object.defineProperty(filtered, 'isTTY', {
@@ -86,11 +88,15 @@ export function createFilteredStdin(
 
   // Ink parses one read as one key unless an ESC starts the next one, so `\x7f\x7f` would reach a
   // text field as one unknown key and delete nothing. Each backspace byte is written as its own key.
+  // Ink names DEL and the kitty codepoint 127 `delete`, the name of the forward Delete key, so the
+  // Backspace key is written as BS and codepoint 8, which Ink names `backspace`.
   const writeKeyBytes = (bytes: Buffer) => {
     if (bytes.length === 0) return;
     const text = decoder.write(bytes);
     const keys = opts?.filterInput ? opts.filterInput(text) : text;
-    for (const key of keys.split(BACKSPACE_BYTE)) emitText(key);
+    for (const key of keys.split(BACKSPACE_BYTE)) {
+      emitText(key === '\x7f' ? '\b' : key.replace(KITTY_BACKSPACE, '\x1b[8$1'));
+    }
   };
 
   const resetPaste = () => {

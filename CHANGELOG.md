@@ -70,6 +70,7 @@
 - Home shows no recent-sessions section when there are none.
 - Show diff keeps less open on its own screen with its `Press q to return.` prompt, also when `LESS` or `PAGER` sets `-e`, `-E`, `-F`, `-m`, `-M` or `-X`.
 - **How long a run ran is stated once, when it closes.** The workflow header and sidebar no longer show a clock for the whole run. A closed run states how long it ran in its Run section, for example `Ran 1m 51s`. Time the run sat stopped, halted or at rest is left out, and time it waited on you while it ran counts. A run recorded before this release reads `Ran not recorded`.
+- Ctrl+Delete and Alt+Delete in the composer and other text fields delete the word after the caret, as in the plan.json editor. Before, they deleted the word before it.
 
 ### Removed
 
@@ -96,6 +97,7 @@
 - When a run continues into Apply, the header keeps Plan, Build and Review marked done and adds the Apply stage: `✗ Apply` while an Apply halt waits for you, and Apply as the current stage while Apply runs. Before, the header showed `○ Plan → ○ Build → ○ Review`, as if the run had not started.
 - After **Re-run Apply** or **Restore backup** on an Apply halt, the transcript shows one Recovery row, such as `Recovery  Re-run Apply → continued`, then `Run continued`. Before, it split the choice and its outcome into two Recovery rows and named **Re-run Apply** as *Try again*.
 - **Re-run Apply** finishes after an Apply was cut off and its re-run stopped part way. Before, the next **Re-run Apply** stopped with an error, and **Restore backup** followed by Apply could write leftover temporary files into your checkout.
+- Backspace in the plan.json editor deletes the character before the caret, and Alt+Backspace or Ctrl+Backspace the word before it, as in the composer. Before, they deleted forward.
 - Skip review no longer counts your note as an open finding: the Apply warning shows it once as your note, and a finding that ends with a period no longer shows two. A run whose final review passed after a skipped task review applies without asking for confirmation, and its Review stage shows a failed final review as failed.
 - When OpenCode or Kilo Code is signed in to other providers, a fallback on a model that the picker marks `needs sign-in` now shows `needs sign-in` in Settings › Fallback. A signed-out or out-of-quota seat no longer moves to it by itself and halts a second time.
 - The workflow sidebar keeps the OpenCode CLI name in a long seat identity: the tool, the model, and the route with its effort each take a row. On a short terminal each seat takes one row, and the crew never paints over the sidebar's bottom border.
