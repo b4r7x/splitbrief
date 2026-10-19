@@ -16,7 +16,6 @@ import type {
   WorkflowState,
 } from '../../../core/schemas/workflow.js';
 import {
-  isENOENT,
   processError,
   processOutputCapture,
   type ProcessOutputCapture,
@@ -33,7 +32,7 @@ import { failureKeys, type FailureKeys } from './extract-failure-keys.js';
 import type { ValidationResult } from './result.js';
 import { reviewerCommandRefusal } from './reviewer-command-policy.js';
 import { buildStageContext, planTestCheck } from './run.js';
-import { boundedOutputTail, runValidationStep } from './stage.js';
+import { boundedOutputTail, notRunnableReason, runValidationStep } from './stage.js';
 import { countCargoTests } from './test-failures.js';
 import type { ValidationCommandRunner } from './types.js';
 
@@ -53,6 +52,8 @@ export type CheckRunResult = {
   preExisting?: readonly string[] | undefined;
   /** The same command's re-run at the run base. */
   base?: { output: string; exitCode?: number | undefined } | undefined;
+  /** Not runnable because a program is missing (`notRunnableReason`): installing it is the fix. */
+  missingProgram?: true | undefined;
 } & (
   | {
       status: 'fail';
@@ -157,12 +158,13 @@ async function runTestCheck(
     command: planned.command,
     signal: opts.signal,
   });
-  if (result.missingExecutable !== undefined) {
+  if (result.notRunnable !== undefined) {
     return {
       checkId: check.id,
       status: 'not-runnable',
-      output: `${result.missingExecutable} not found`,
+      output: result.notRunnable,
       command: result.command,
+      missingProgram: true,
     };
   }
   // A test that ran shows in the visible counts; a cut-off output cannot show that none ran.
@@ -239,6 +241,16 @@ async function runCommandCheck(
       exitCode: 0,
     };
   } catch (err: unknown) {
+    const notRunnable = notRunnableReason(err, cmd);
+    if (notRunnable !== undefined) {
+      return {
+        checkId: check.id,
+        status: 'not-runnable',
+        output: notRunnable,
+        command: check.value,
+        missingProgram: true,
+      };
+    }
     if (processError.isExitCode(err)) {
       const capture = processOutputCapture(err.data);
       return {
@@ -261,14 +273,6 @@ async function runCommandCheck(
         ),
         command: check.value,
         timedOut: true,
-      };
-    }
-    if (isENOENT(err) || processError.isNotFound(err)) {
-      return {
-        checkId: check.id,
-        status: 'not-runnable',
-        output: `${cmd} not found`,
-        command: check.value,
       };
     }
     throw err;
@@ -321,6 +325,16 @@ async function runRenderCheck(
       complete: true,
     };
   } catch (err: unknown) {
+    const notRunnable = notRunnableReason(err, cmd);
+    if (notRunnable !== undefined) {
+      return {
+        checkId: check.id,
+        status: 'not-runnable',
+        output: notRunnable,
+        command,
+        missingProgram: true,
+      };
+    }
     if (processError.isExitCode(err)) {
       exitCode = err.data.code ?? 1;
       capture = processOutputCapture(err.data);
@@ -335,8 +349,6 @@ async function runRenderCheck(
         ),
         command,
       };
-    } else if (isENOENT(err) || processError.isNotFound(err)) {
-      return { checkId: check.id, status: 'not-runnable', output: `${cmd} not found`, command };
     } else {
       throw err;
     }

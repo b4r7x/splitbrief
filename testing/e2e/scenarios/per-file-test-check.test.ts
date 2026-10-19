@@ -247,4 +247,42 @@ describe('e2e: a plan with a per-file test check', () => {
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) expect(row).toMatchObject({ command: 'npm test -- test.js' });
   });
+
+  it('reads a required check whose test script calls a missing program as not run, naming that program', async () => {
+    const { run, state, events } = await runAlpha({
+      projectFiles: {
+        'package.json': `${JSON.stringify({
+          name: 'alpha',
+          private: true,
+          scripts: { test: 'splitbrief-missing-runner' },
+        })}\n`,
+      },
+      checks: [{ id: 'K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
+    });
+
+    const rows = events.filter(
+      (event) => event.type === 'full_suite' && event.id === 'K1' && event.status === 'not-run',
+    );
+    expect(rows.length, `${run.stdout}\n${run.stderr}`).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row).toMatchObject({ command: 'npm test -- src/alpha.test.mjs' });
+      if (row.type !== 'full_suite') continue;
+      expect(row.detail).toContain('splitbrief-missing-runner');
+      expect(row.detail).not.toContain('npm not found');
+    }
+    expect(state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'not-runnable' }]);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'recovery_prompted' && event.reason === 'required-checks-unrunnable',
+      ),
+    ).toHaveLength(1);
+    expect(state.pendingRecovery?.reason).toBe('required-checks-unrunnable');
+    expect(state.pendingRecovery?.message).toContain('K1: ');
+    expect(state.pendingRecovery?.message).toContain('splitbrief-missing-runner');
+    expect(state.pendingRecovery?.message).not.toContain('npm not found');
+    expect(state.pendingRecovery?.details).toContain(
+      'Install what is missing, then run the checks again.',
+    );
+  });
 });

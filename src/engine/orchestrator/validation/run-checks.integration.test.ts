@@ -138,10 +138,18 @@ describe('runChecks', () => {
           required: true,
         },
       ]);
-      for (const missing of [
-        processError.notFound('tsc'),
-        Object.assign(new Error('missing'), { code: 'ENOENT' }),
-      ]) {
+      const program = kind === 'cmd' ? 'tsc' : 'render';
+      for (const [missing, reason] of [
+        [Object.assign(new Error('missing'), { code: 'ENOENT' }), `${program} not found`],
+        [
+          processError.exitCode({
+            command: program,
+            code: 127,
+            stderr: 'sh: node: command not found\n',
+          }),
+          'sh: node: command not found',
+        ],
+      ] as const) {
         const results = await runChecks(
           ['K1'],
           options({
@@ -152,8 +160,29 @@ describe('runChecks', () => {
         );
 
         expect(results[0]?.status).toBe('not-runnable');
-        expect(results[0]?.output).toBe(`${kind === 'cmd' ? 'tsc' : 'render'} not found`);
+        expect(results[0]?.output).toBe(reason);
       }
+    },
+  );
+
+  it.each([
+    { kind: 'cmd', value: 'npm test' },
+    { kind: 'test', value: 'src/a.test.ts' },
+  ] as const)(
+    'reports a $kind check whose npm script calls a missing program as not runnable, naming that program',
+    { timeout: 60_000 },
+    async ({ kind, value }) => {
+      writeFileSync(
+        join(projectDir, 'package.json'),
+        JSON.stringify({ private: true, scripts: { test: 'splitbrief-missing-runner' } }),
+      );
+      const task = taskWith([{ id: 'K1', kind, value, required: true }]);
+
+      const [result] = await runChecks(['K1'], options({ task }));
+
+      expect(result?.status).toBe('not-runnable');
+      expect(result?.output).toContain('splitbrief-missing-runner');
+      expect(result?.output).not.toContain('npm not found');
     },
   );
 
@@ -344,14 +373,13 @@ describe('runChecks', () => {
     {
       source: 'configured',
       testCommand: 'missing-vitest run',
-      missing: processError.notFound('missing-vitest'),
-    },
-    {
-      source: 'configured',
-      testCommand: 'missing-vitest run',
       missing: Object.assign(new Error('spawn missing-vitest ENOENT'), { code: 'ENOENT' }),
     },
-    { source: 'detected', testCommand: undefined, missing: processError.notFound('npm') },
+    {
+      source: 'detected',
+      testCommand: undefined,
+      missing: Object.assign(new Error('spawn npm ENOENT'), { code: 'ENOENT' }),
+    },
   ])(
     'reports a test check whose $source executable is missing as not runnable, naming it',
     async ({ testCommand, missing }) => {
@@ -373,7 +401,7 @@ describe('runChecks', () => {
 
   it('halts a required test check whose executable is missing before the review, with no fix task', async () => {
     vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
-      processError.notFound('missing-vitest'),
+      Object.assign(new Error('spawn missing-vitest ENOENT'), { code: 'ENOENT' }),
     );
     const plan = makePlan([{ id: 'K-test', kind: 'test', value: 'src/a.test.ts', required: true }]);
     const planner = makePlanner({ typedCall: vi.fn() });

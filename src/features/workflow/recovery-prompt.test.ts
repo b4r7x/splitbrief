@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import type { RecoveryIssue, SwitchSeatOffer } from '../../core/schemas/recovery/schemas.js';
 import { taskId } from '../../core/schemas/task.js';
 import { glyph } from '../../lib/glyphs.js';
+import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../engine/orchestrator/recovery/builders/checks.js';
 import { buildCheckoutChangedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -195,6 +196,22 @@ describe('recovery prompt', () => {
 
     expect(visible).toContain('Seat down · Balance spent on OpenCode CLI');
     expect(visible).not.toContain('Usage limit');
+  });
+
+  it('keeps the install advice of a halt with six checks that miss a program', async () => {
+    const issue = buildRequiredChecksUnrunnableRecoveryIssue({
+      phase: 'final-review',
+      checks: ['K1', 'K2', 'K3', 'K4', 'K5', 'K6'].map((checkId) => ({
+        checkId,
+        output: 'sh: vitest: command not found',
+        missingProgram: true as const,
+      })),
+      createdAt: '2026-10-05T00:00:00.000Z',
+    });
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('Install what is missing, then run the checks again.');
   });
 
   it('states a quota halt once, in the clock the header uses', async () => {

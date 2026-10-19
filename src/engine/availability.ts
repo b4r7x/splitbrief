@@ -55,7 +55,7 @@ async function probeCommand(
     const { stdout } = await runCommand(command, ['--version'], { ...opts, label: 'probe' });
     return { available: true, version: parseVersion(stdout), reason: null };
   } catch (err) {
-    if (isENOENT(err) || processError.isNotFound(err)) {
+    if (isENOENT(err)) {
       return { available: false, version: null, reason: 'not installed' };
     }
     if (processError.isTimeout(err)) {

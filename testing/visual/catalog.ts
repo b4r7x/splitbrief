@@ -1223,6 +1223,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-plan-check-missing-program',
+      title: 'Workflow · a plan check whose test script calls a program that is not installed',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-check-missing-program',
+        title: 'A not-run plan check row with its command and the shell message',
+        kind: 'implementation',
+        marker: 'Plan check K4',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-planner-commands-refused',
       title: 'Workflow · a test command not taken from the planner',
       surface: screenSurface('workflow'),
@@ -2948,6 +2964,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-checks-missing-program',
+      title: 'Workflow · a required check that cannot run because a program is missing',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-checks-missing-program',
+        title: 'Required-checks recovery menu that says to install the program',
+        kind: 'question',
+        marker: 'Install what is missing',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
