@@ -58,6 +58,7 @@ function preparedResumeExecution(
   return {
     purpose: 'resume',
     config: parsePreparedConfig(makeConfig()),
+    sourceConfig: parsePreparedConfig(makeConfig()),
     preparationId: 'session-select-preparation',
     report: {
       generatedAt: '2026-08-04T00:00:00.000Z',

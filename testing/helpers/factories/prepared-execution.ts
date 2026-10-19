@@ -37,6 +37,7 @@ export function makePreparedExecution(input: {
   return {
     purpose: input.purpose ?? (input.resumeState === undefined ? 'new-workflow' : 'resume'),
     config,
+    sourceConfig: config,
     preparationId,
     report: {
       generatedAt: '2026-08-04T00:00:00.000Z',

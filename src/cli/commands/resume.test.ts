@@ -171,6 +171,7 @@ describe('resume command', () => {
             execution: {
               purpose: 'resume',
               config: parsePreparedConfig(input.effectiveConfig),
+              sourceConfig: parsePreparedConfig(input.effectiveConfig),
               preparationId: 'prepared-cli-resume',
               report: {
                 generatedAt: '2026-08-04T00:00:00.000Z',

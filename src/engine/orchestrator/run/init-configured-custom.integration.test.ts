@@ -96,6 +96,7 @@ function preparedExecution(
   return {
     purpose: 'new-workflow',
     config: input.config,
+    sourceConfig: input.config,
     preparationId: input.preparationId,
     report: readyReport(input.projectDir),
     gates: input.gates,

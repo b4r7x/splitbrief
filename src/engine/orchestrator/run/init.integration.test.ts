@@ -115,6 +115,7 @@ async function preparedTestExecution(
     execution: {
       purpose: 'new-workflow',
       config,
+      sourceConfig: config,
       preparationId,
       report: input.report ?? {
         generatedAt: new Date(0).toISOString(),

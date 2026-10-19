@@ -75,6 +75,8 @@ export type PreparedExecutionSession =
 export type PreparedExecution = Readonly<{
   purpose: 'new-workflow' | 'resume' | 'spec';
   config: PreparedConfig;
+  /** The config this preparation read, before it named the model each seat leaves to its tool. */
+  sourceConfig: PreparedConfig;
   preparationId: string;
   report: ReadinessReport;
   gates: ReadonlyArray<RunnerGate>;

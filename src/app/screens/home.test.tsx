@@ -126,6 +126,7 @@ function preparedExecution(input: PrepareExecutionInput): PreparedExecution {
   return {
     purpose: input.policy.purpose,
     config: input.effectiveConfig,
+    sourceConfig: input.effectiveConfig,
     preparationId: 'home-preparation',
     report,
     gates: [],
@@ -168,6 +169,7 @@ function preparedResumeExecution(
   return {
     purpose: 'resume',
     config: makeConfig(),
+    sourceConfig: makeConfig(),
     preparationId: 'home-resume-preparation',
     report: readinessReport(),
     gates: [],

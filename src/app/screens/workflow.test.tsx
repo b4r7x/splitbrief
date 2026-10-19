@@ -86,6 +86,7 @@ function preparedExecution(projectDir: string, feature: string): PreparedExecuti
   return {
     purpose: 'new-workflow',
     config: parsePreparedConfig(makeConfig()),
+    sourceConfig: parsePreparedConfig(makeConfig()),
     preparationId: 'workflow-screen-preparation',
     report: {
       generatedAt: '2026-08-04T00:00:00.000Z',

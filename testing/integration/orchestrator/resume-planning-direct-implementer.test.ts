@@ -113,6 +113,7 @@ describe('resume planning continuation with a direct-writing implementer', {
     const prepared: PreparedExecution = {
       purpose: 'resume',
       config,
+      sourceConfig: config,
       preparationId,
       report: {
         generatedAt: '2026-08-04T00:00:00.000Z',

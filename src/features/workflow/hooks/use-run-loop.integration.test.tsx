@@ -35,7 +35,10 @@ import { readWorkspaceRecord } from '../../../engine/orchestrator/isolation/rete
 import { createSnapshot } from '../../../engine/snapshots/create.js';
 import { readRunEvents } from '../../../engine/events/replay.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
-import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../engine/runners/prepared-execution.js';
 import { useInputMode } from './use-input-mode.js';
 import { useRunContinue } from './use-run-continue.js';
 import { useRunLoop } from './use-run-loop.js';
@@ -154,6 +157,7 @@ function preparedExecution(input: {
   sessionId?: string | undefined;
   resumeState?: WorkflowState | undefined;
   planner?: PlannerConfig | undefined;
+  implementer?: Config['implementer'] | undefined;
   workflow?: Partial<Config['workflow']> | undefined;
 }): PreparedExecution {
   const sessionId = input.sessionId ?? 'prepared-workflow-session';
@@ -168,6 +172,7 @@ function preparedExecution(input: {
         kind: 'agent',
         command: 'splitbrief-non-existent-planner-x7q9',
       },
+      ...(input.implementer !== undefined && { implementer: input.implementer }),
       ...(input.workflow !== undefined && { workflow: input.workflow }),
     }),
     preparationId: `workflow-hook-${sessionId}`,
@@ -1301,6 +1306,7 @@ describe('useRunLoop', () => {
       { ...createInitialState('add auth'), phase: 'implementing' },
     );
     const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    configStore.__testReset({ projectDir, config: prepared.config });
     const continueAtRest = vi.fn();
     const { promise: seatChanged, resolve: seatChangedNow } = Promise.withResolvers<void>();
     const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
@@ -1333,6 +1339,185 @@ describe('useRunLoop', () => {
     expect(overlayStore.get().active).toBe('none');
 
     inst.unmount();
+  });
+
+  describe('a save that changes no seat under a running brief', () => {
+    // Preparation names the model a seat leaves to its tool; the config it read keeps the seat as saved.
+    function preparedOnHostModel(sessionId: string, read: Config): PreparedExecution {
+      ensureSessionDir(projectDir, sessionId);
+      saveState(
+        { projectDir, sessionId },
+        { ...createInitialState('add auth'), phase: 'implementing' },
+      );
+      return {
+        ...preparedExecution({
+          projectDir,
+          feature: 'add auth',
+          sessionId,
+          implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' },
+        }),
+        sourceConfig: parsePreparedConfig(read),
+      };
+    }
+
+    /** The engine runs one brief until the save lands, then reaches the brief boundary. */
+    function briefUntilSaved() {
+      const { promise: saved, resolve: savedNow } = Promise.withResolvers<void>();
+      let pausedAtBoundary: boolean | undefined;
+      const engine: RunWorkflowFn = vi.fn(async (options) => {
+        await saved;
+        pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
+        if (pausedAtBoundary) await options.callbacks.onContinuationNeeded?.('', 'boundary', []);
+        return makeSummary();
+      });
+      return { engine, savedNow, pausedAtBoundary: () => pausedAtBoundary };
+    }
+
+    it('requests no pause for a seat left to its tool', async () => {
+      const seats = {
+        planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
+        implementer: { kind: 'cli', tool: 'codex' },
+      } as const;
+      const prepared = preparedOnHostModel('2026-10-19-unrelated-save-running', makeConfig(seats));
+      configStore.__testReset({ projectDir, config: makeConfig(seats) });
+      const continueAtRest = vi.fn();
+      const brief = briefUntilSaved();
+      const inst = renderHarness({ prepared, continueAtRest, runWorkflow: brief.engine });
+      await vi.waitFor(() => {
+        expect(brief.engine).toHaveBeenCalledTimes(1);
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+
+      configStore.__testReset({
+        projectDir,
+        config: makeConfig({ ...seats, workflow: { approve: 'none' } }),
+      });
+      const intentAfterSave = stopStore.get().intent;
+      brief.savedNow();
+      await vi.waitFor(() => {
+        expect(settledRun()).not.toBeNull();
+      });
+
+      expect(intentAfterSave).toBe('none');
+      expect(brief.pausedAtBoundary()).toBe(false);
+      expect(continueAtRest).not.toHaveBeenCalled();
+
+      inst.unmount();
+    });
+
+    it('requests no pause when Settings saves another key of a config whose seat is on auto', async () => {
+      const onAuto = makeConfig({
+        planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
+        implementer: { kind: 'cli', tool: 'codex', model: 'auto' },
+      });
+      const prepared = preparedOnHostModel('2026-10-19-unrelated-save-settings', onAuto);
+      writeConfig(projectDir, onAuto);
+      configStore.load(projectDir);
+      const continueAtRest = vi.fn();
+      const brief = briefUntilSaved();
+      const inst = renderHarness({ prepared, continueAtRest, runWorkflow: brief.engine });
+      await vi.waitFor(() => {
+        expect(brief.engine).toHaveBeenCalledTimes(1);
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+
+      const current = configStore.get().config;
+      if (current === null) throw new Error('expected a loaded config');
+      const saved = await configStore.save({
+        ...current,
+        workflow: { ...current.workflow, approve: 'none' },
+      });
+      const intentAfterSave = stopStore.get().intent;
+      brief.savedNow();
+      await vi.waitFor(() => {
+        expect(settledRun()).not.toBeNull();
+      });
+
+      expect(saved.kind).toBe('saved');
+      expect(intentAfterSave).toBe('none');
+      expect(brief.pausedAtBoundary()).toBe(false);
+      expect(continueAtRest).not.toHaveBeenCalled();
+
+      inst.unmount();
+    });
+  });
+
+  describe('a seat saved while the start check runs', () => {
+    // The preparation read BUILD on codex; Settings saved claude-code before the screen mounted the run.
+    function preparedOnCodex(sessionId: string): PreparedExecution {
+      ensureSessionDir(projectDir, sessionId);
+      saveState(
+        { projectDir, sessionId },
+        { ...createInitialState('add auth'), phase: 'implementing' },
+      );
+      return preparedExecution({
+        projectDir,
+        feature: 'add auth',
+        sessionId,
+        implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' },
+      });
+    }
+    const seatsSaved = {
+      planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
+      implementer: { kind: 'cli', tool: 'claude-code' },
+    } as const;
+
+    /** The engine runs one brief until the test lets it reach the brief boundary. */
+    function briefUntilBoundary() {
+      const { promise: reached, resolve: reachBoundary } = Promise.withResolvers<void>();
+      let pausedAtBoundary: boolean | undefined;
+      const engine: RunWorkflowFn = vi.fn(async (options) => {
+        await reached;
+        pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
+        if (pausedAtBoundary) await options.callbacks.onContinuationNeeded?.('', 'boundary', []);
+        return makeSummary();
+      });
+      return { engine, reachBoundary, pausedAtBoundary: () => pausedAtBoundary };
+    }
+
+    it('stops at the first brief boundary and continues on the saved seat', async () => {
+      const prepared = preparedOnCodex('2026-10-19-seat-saved-in-check');
+      configStore.__testReset({ projectDir, config: makeConfig(seatsSaved) });
+      const continueAtRest = vi.fn();
+      const brief = briefUntilBoundary();
+      const inst = renderHarness({ prepared, continueAtRest, runWorkflow: brief.engine });
+      await vi.waitFor(() => {
+        expect(brief.engine).toHaveBeenCalledTimes(1);
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+
+      brief.reachBoundary();
+      await vi.waitFor(() => {
+        expect(continueAtRest).toHaveBeenCalledTimes(1);
+      });
+
+      expect(brief.pausedAtBoundary()).toBe(true);
+      inst.unmount();
+    });
+
+    it('still stops for it after a later save that changes no seat', async () => {
+      const prepared = preparedOnCodex('2026-10-19-seat-saved-in-check-later');
+      configStore.__testReset({ projectDir, config: makeConfig(seatsSaved) });
+      const continueAtRest = vi.fn();
+      const brief = briefUntilBoundary();
+      const inst = renderHarness({ prepared, continueAtRest, runWorkflow: brief.engine });
+      await vi.waitFor(() => {
+        expect(brief.engine).toHaveBeenCalledTimes(1);
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+
+      configStore.__testReset({
+        projectDir,
+        config: makeConfig({ ...seatsSaved, workflow: { approve: 'none' } }),
+      });
+      brief.reachBoundary();
+      await vi.waitFor(() => {
+        expect(continueAtRest).toHaveBeenCalledTimes(1);
+      });
+
+      expect(brief.pausedAtBoundary()).toBe(true);
+      inst.unmount();
+    });
   });
 
   it('settles a boundary pause as today when no seat changed', async () => {
@@ -1753,6 +1938,196 @@ describe('useRunLoop', () => {
       expect(loadState(ref)?.mode).toBe('speckit');
       expect(loadState(ref)?.pendingRecovery).toBeUndefined();
       expect(errorMessages()).toEqual([expect.stringContaining('is not available')]);
+
+      inst.unmount();
+    });
+
+    it('announces no pause when the halt panel switches the halted seat', async () => {
+      const sessionId = '2026-10-19-halt-switch-no-pause';
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+      configStore.__testReset({ projectDir, config: prepared.config });
+      const run = recordedEngine({
+        1: async () => {
+          saveState(
+            prepared.session.ref,
+            makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+              pendingRecovery: makeRecoveryIssue({
+                reason: 'runner-usage-limit',
+                availableActions: [
+                  'retry-same-worker',
+                  'switch-seat',
+                  'skip-current-task',
+                  'end-run',
+                ],
+                recommendedAction: 'switch-seat',
+                switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+              }),
+            }),
+          );
+          return makeSummary();
+        },
+      });
+
+      const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+      await answerRecoveryPanel(captureRunner, 'switch');
+      await vi.waitFor(() => {
+        expect(overlayStore.get().active).toBe('implementer-picker');
+      });
+      // A run is `running` while its halt waits on the panel.
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      const intents: string[] = [];
+      const offStop = stopStore.subscribe(() => intents.push(stopStore.get().intent));
+      configStore.__testReset({
+        projectDir,
+        config: makeConfig({
+          planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
+          implementer: { kind: 'cli', tool: 'claude-code' },
+        }),
+      });
+      const intentAfterSave = stopStore.get().intent;
+      overlayStore.close();
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(2);
+      });
+      offStop();
+
+      expect(intentAfterSave).toBe('none');
+      expect(intents).not.toContain('pause-after-brief');
+      expect(run.entered[1]?.config.implementer).toMatchObject({
+        kind: 'cli',
+        tool: 'claude-code',
+      });
+
+      inst.unmount();
+    });
+
+    it('takes a seat saved while a halt waits at the first brief boundary after the halt is answered', async () => {
+      const sessionId = '2026-10-19-halt-settings-save';
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+      configStore.__testReset({ projectDir, config: prepared.config });
+      let pausedAtBoundary: boolean | undefined;
+      const run = recordedEngine({
+        1: async () => {
+          saveHaltedRun(sessionId);
+          return makeSummary();
+        },
+        2: async (options) => {
+          pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
+          return makeSummary();
+        },
+      });
+
+      const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+      await vi.waitFor(() => {
+        expect(controlsStore.get().inputMode).toBe('question');
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      // A save from Settings while the panel is open, not the panel's own swap.
+      configStore.__testReset({
+        projectDir,
+        config: makeConfig({
+          planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
+          implementer: { kind: 'cli', tool: 'codex' },
+        }),
+      });
+      await answerRecoveryPanel(captureRunner, 'retry');
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(2);
+      });
+
+      expect(pausedAtBoundary).toBe(true);
+
+      inst.unmount();
+    });
+
+    it('requests no pause when Settings saves another key while a halt waits and a seat is on auto', async () => {
+      const sessionId = '2026-10-19-unrelated-save-halt';
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const onAuto = makeConfig({
+        planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
+        implementer: { kind: 'cli', tool: 'codex', model: 'auto' },
+      });
+      writeConfig(projectDir, onAuto);
+      configStore.load(projectDir);
+      // Preparation names the model the seat leaves to its tool; the config it read keeps `auto`.
+      const prepared = {
+        ...preparedExecution({
+          projectDir,
+          feature: 'add auth',
+          sessionId,
+          implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' },
+        }),
+        sourceConfig: parsePreparedConfig(onAuto),
+      };
+      let pausedAtBoundary: boolean | undefined;
+      const run = recordedEngine({
+        1: async () => {
+          saveHaltedRun(sessionId);
+          return makeSummary();
+        },
+        2: async (options) => {
+          pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
+          return makeSummary();
+        },
+      });
+
+      const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+      await vi.waitFor(() => {
+        expect(controlsStore.get().inputMode).toBe('question');
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      const current = configStore.get().config;
+      if (current === null) throw new Error('expected a loaded config');
+      const saved = await configStore.save({
+        ...current,
+        workflow: { ...current.workflow, approve: 'none' },
+      });
+      await answerRecoveryPanel(captureRunner, 'retry');
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(2);
+      });
+
+      expect(saved.kind).toBe('saved');
+      expect(pausedAtBoundary).toBe(false);
+      expect(stopStore.get().intent).toBe('none');
+
+      inst.unmount();
+    });
+
+    it('requests no pause on entry when the preparation named the model a seat left to its tool', async () => {
+      const sessionId = '2026-10-19-host-model-entry';
+      const noModel = makeConfig({
+        planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
+        implementer: { kind: 'cli', tool: 'codex' },
+      });
+      // Preparation writes the tool's own selection into the prepared config of a seat with no model.
+      const prepared = {
+        ...preparedExecution({
+          projectDir,
+          feature: 'add auth',
+          sessionId,
+          implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' },
+        }),
+        sourceConfig: parsePreparedConfig(noModel),
+      };
+      configStore.__testReset({ projectDir, config: noModel });
+      let pausedAtBoundary: boolean | undefined;
+      const run = recordedEngine({
+        1: async (options) => {
+          pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
+          return makeSummary();
+        },
+      });
+
+      const inst = renderHarness({ prepared, runWorkflow: run.engine });
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(1);
+      });
+
+      expect(pausedAtBoundary).toBe(false);
+      expect(stopStore.get().intent).toBe('none');
 
       inst.unmount();
     });

@@ -135,6 +135,7 @@ async function prepareResume(input: PrepareExecutionInput) {
     execution: {
       purpose: 'resume' as const,
       config: input.effectiveConfig,
+      sourceConfig: input.effectiveConfig,
       preparationId: 'resume-preparation',
       report: readyReport(input.existingSession.projectDir),
       gates: [],

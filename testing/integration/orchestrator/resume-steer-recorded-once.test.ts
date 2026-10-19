@@ -124,6 +124,7 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
     const prepared: PreparedExecution = {
       purpose: 'resume',
       config,
+      sourceConfig: config,
       preparationId,
       report: {
         generatedAt: '2026-08-04T00:00:00.000Z',

@@ -53,25 +53,27 @@ function localExecution(feature: string): { kind: 'local'; prepared: PreparedExe
     sessionId,
     generation: '11111111-1111-4111-8111-111111111111',
   };
+  const config = parsePreparedConfig(
+    makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
+        model: 'test-planner',
+        apiBase: 'https://api.example.test/v1',
+        apiKey: 'test-key',
+        contextLength: 32_768,
+      },
+    }),
+  );
 
   return {
     kind: 'local',
     prepared: {
       purpose: 'new-workflow',
-      config: parsePreparedConfig(
-        makeConfig({
-          planner: {
-            kind: 'api',
-            provider: 'custom-endpoint',
-            service: 'custom-endpoint',
-            offering: 'payg',
-            model: 'test-planner',
-            apiBase: 'https://api.example.test/v1',
-            apiKey: 'test-key',
-            contextLength: 32_768,
-          },
-        }),
-      ),
+      config,
+      sourceConfig: config,
       preparationId,
       report: {
         generatedAt: '2026-08-04T00:00:00.000Z',

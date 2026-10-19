@@ -72,6 +72,7 @@ function preparedExecution(
   return {
     purpose: 'resume',
     config: parsePreparedConfig(makeConfig()),
+    sourceConfig: parsePreparedConfig(makeConfig()),
     preparationId: `resume-${sessionId}`,
     report: readyReport(),
     gates: [],
