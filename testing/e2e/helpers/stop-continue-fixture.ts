@@ -80,8 +80,8 @@ const PLAN_ANSWER = {
         intent: 'Add a standalone greeting helper plus the run marker constant beside it.',
         criteria: ['C1'],
         checks: [
-          { id: 'T001-K1', kind: 'test', value: "greet('a') === 'hello a'", required: true },
-          { id: 'T001-K2', kind: 'test', value: "greet('') === 'hello'", required: true },
+          { id: 'T001-K1', kind: 'test', value: GREET_FILE, required: true },
+          { id: 'T001-K2', kind: 'test', value: GREET_FILE, required: true },
         ],
         suggestedFiles: [GREET_FILE, MARKER_FILE],
         contextFiles: [],
@@ -533,7 +533,7 @@ function fixtureConfig(isolation?: IsolationStrategy): Config {
       // the brief fits: without this the run halts on context-overflow before the script runs.
       contextLength: 200_000,
     },
-    // The plan's `test` checks are prose; a command that exits 0 lets them run without a project test script.
+    // The plan's `test` checks name the greeting file; a command that exits 0 lets them run without a project test script.
     validation: { endChecks: false, testCommand: 'node --version' },
     workflow: {
       approve: 'none',

@@ -98,6 +98,8 @@ const scopeError =
   'Finding F1 is outside the task review scope and cannot be assigned to a fix task.';
 const refusedCheck =
   'Check T003-K1 is refused: `grep -F alpha src/alpha.mjs` runs a program outside the allowlist (grep).';
+const refusedTestCheck =
+  'Check T003-K2 is refused: a `test` check names one test file, and `node --test src/alpha-type.test.mjs` is not one file.';
 const rejectedDecision = { what: 'Exported beta as a number', why: 'A number is simpler.' };
 const rejectReason = 'Criterion C2 needs beta to be the string beta; keep the string.';
 
@@ -162,7 +164,10 @@ async function runCadence(needsFix: boolean, rejectDecision = false) {
   };
   const refusedFix = {
     ...fix,
-    checks: [{ id: 'T003-K1', kind: 'cmd', value: 'grep -F alpha src/alpha.mjs', required: true }],
+    checks: [
+      { id: 'T003-K1', kind: 'cmd', value: 'grep -F alpha src/alpha.mjs', required: true },
+      { id: 'T003-K2', kind: 'test', value: 'node --test src/alpha-type.test.mjs', required: true },
+    ],
     findingIds: ['F2'],
   };
   writeFileSync(
@@ -328,6 +333,7 @@ describe('e2e: task review cadence', () => {
     // A fix check the plan command policy refuses goes back to the reviewer and never becomes a
     // required check of the fix brief.
     expect(repair?.prompt).toContain(refusedCheck);
+    expect(repair?.prompt).toContain(refusedTestCheck);
     expect(JSON.stringify(state.tasks)).not.toContain('grep');
     const fixes = state.tasks.filter((task) => task.fix !== undefined);
     expect(fixes).toHaveLength(1);

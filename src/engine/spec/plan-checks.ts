@@ -7,6 +7,7 @@ import { topoSort } from '../../core/state/topo-sort.js';
 import { isPathConfined } from '../../lib/path-confinement.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { matches } from '../../utils/error.js';
+import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { countNoun, pluralize } from '../../utils/pluralize.js';
 import { protectedWriteClass } from '../orchestrator/approval/action-classifier.js';
 import { commandTextRefusal } from '../orchestrator/planning/sanitize-discovered-validation.js';
@@ -210,15 +211,26 @@ export function blocksPlan(error: PlanCheckError): boolean {
 }
 
 /**
- * The `cmd` checks the plan command policy refuses from their text alone: a plan's checks, the
- * checks of the fix tasks a review writes, and the checks of a consult's rewrite or split, so a
- * refused command never becomes a required check.
+ * The `cmd` and `test` checks the plan command policy refuses from their text alone: a plan's
+ * checks, the checks of the fix tasks a review writes, and the checks of a consult's rewrite or
+ * split, so a refused command, or a `test` check that holds more than one path, never becomes a
+ * required check.
  */
 export function refusedCheckErrors(
   checks: readonly Pick<TaskSpec['checks'][number], 'id' | 'kind' | 'value'>[],
   npmScriptsApproved: boolean,
 ): PlanCheckError[] {
   return checks.flatMap((check): PlanCheckError[] => {
+    if (check.kind === 'test') {
+      return parseShellCommand(check.value).length === 1
+        ? []
+        : [
+            {
+              code: 'refused-check-command',
+              message: `Check ${check.id} is refused: a \`test\` check names one test file, and \`${check.value}\` is not one file. Make it a \`cmd\` check that runs this command, or set its value to the test file.`,
+            },
+          ];
+    }
     if (check.kind !== 'cmd') return [];
     const refusal = commandTextRefusal(check.value, npmScriptsApproved);
     return refusal === null
