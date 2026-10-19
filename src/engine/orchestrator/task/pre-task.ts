@@ -7,17 +7,17 @@ import {
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
-import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { raisePendingRecovery } from '../state-ops.js';
 import { buildSnapshotFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { publishTaskStart, publishTaskSkipped, publishWarning, publishError } from '../events.js';
+import { publishTaskStart, publishWarning, publishError } from '../events.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { seatAxisWords } from '../../../core/runners/effort-channel.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-import { persistTaskEvidence } from '../evidence/persistence.js';
 import { buildRoutingEventFields } from './routing-fields.js';
 import { runsOnOwnFiles } from './stale-inputs.js';
+import { skipBrief } from './skip-brief.js';
 
 export type PreTaskResult =
   | { proceed: true; state: WorkflowState; taskStartSnapshot: ChangedFilesSnapshot }
@@ -34,6 +34,10 @@ export async function runPreTaskHooksAndPublish(opts: {
   const { wctx, task, index, totalTasks, setTrackedState } = opts;
   const { projectDir, workspaceDir, sessionId, config } = wctx;
   let state = opts.state;
+  // A brief that runs on its own files keeps its first task-start snapshot.
+  const activeTaskSnapshot = runsOnOwnFiles(state, task, wctx.continuation)
+    ? state.changedFilesBaseline?.activeTaskSnapshot
+    : undefined;
 
   if (wctx.config.hooks) {
     const preTaskPayload: EngineEvent = {
@@ -65,25 +69,15 @@ export async function runPreTaskHooksAndPublish(opts: {
         phase: state.phase,
         message: `pre_task blocked: ${pre.reason ?? 'hook denied'}`,
       });
-      publishTaskSkipped(
-        { bus: wctx.bus, phase: state.phase },
-        { taskId: task.id, title: task.title, reason: pre.reason ?? 'pre_task hook denied' },
-      );
-      state = transitionAndSave({ projectDir, sessionId }, state, {
-        type: 'SKIP_TASK',
-        taskId: task.id,
-      });
-      setTrackedState(state);
-      await persistTaskEvidence({
+      state = await skipBrief({
         wctx,
         state,
         task,
-        recordKind: 'skipped',
-        details: {
-          status: 'skipped',
-          reason: pre.reason ?? 'pre_task hook denied',
-        },
+        reason: pre.reason ?? 'pre_task hook denied',
+        skippedBy: 'pre_task',
+        taskStartSnapshot: activeTaskSnapshot,
       });
+      setTrackedState(state);
       return { proceed: false, state };
     }
   }
@@ -110,9 +104,7 @@ export async function runPreTaskHooksAndPublish(opts: {
     },
   );
 
-  // A brief that runs on its own files keeps its first task-start snapshot.
-  const activeTaskSnapshot = state.changedFilesBaseline?.activeTaskSnapshot;
-  if (activeTaskSnapshot !== undefined && runsOnOwnFiles(state, task, wctx.continuation)) {
+  if (activeTaskSnapshot !== undefined) {
     const taskStartSnapshot = {
       ...activeTaskSnapshot,
       restoreFiles: activeTaskSnapshot.restoreFiles ?? [],

@@ -303,11 +303,17 @@ export type RecordSkippedTaskEvidenceInput = {
   ledger: EvidenceLedger;
   task: Task;
   reason: string;
+  /** The brief's files still changed after its skip took the others back. */
+  keptFiles?: readonly string[] | undefined;
 };
 
 export function recordSkippedTaskEvidence(input: RecordSkippedTaskEvidenceInput): EvidenceLedger {
   const next = findOrSeed(input.ledger, input.task);
   next.status = 'skipped';
   next.method = 'skipped';
+  const keptFiles = input.keptFiles;
+  if (keptFiles !== undefined) {
+    next.changedFiles = next.changedFiles.filter((file) => keptFiles.includes(file));
+  }
   return upsertEvidenceTask(input.ledger, next);
 }

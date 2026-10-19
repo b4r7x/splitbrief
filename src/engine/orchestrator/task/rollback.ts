@@ -75,16 +75,19 @@ export function restoreExhaustedTaskFiles(opts: {
   });
 }
 
-export function restoreDeniedPreValidationFiles(opts: {
+export function restoreHookDeniedTaskFiles(opts: {
   wctx: RestoreContext;
   phase: WorkflowState['phase'];
   taskStartSnapshot: ChangedFilesSnapshot;
+  hook: 'pre_task' | 'pre_validation';
 }): Promise<void> {
   return restoreTaskFilesFromSnapshot({
-    ...opts,
+    wctx: opts.wctx,
+    phase: opts.phase,
+    taskStartSnapshot: opts.taskStartSnapshot,
     restoredMessage: (restoredFiles) =>
-      `Restored ${restoredFiles.length} unvalidated task change(s) after pre_validation denied: ${restoredFiles.join(', ')}`,
-    failureMessage: 'Failed to restore denied pre_validation task changes',
+      `Restored ${restoredFiles.length} unvalidated task change(s) after ${opts.hook} denied: ${restoredFiles.join(', ')}`,
+    failureMessage: `Failed to restore denied ${opts.hook} task changes`,
   });
 }
 

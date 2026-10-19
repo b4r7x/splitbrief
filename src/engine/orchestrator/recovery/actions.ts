@@ -33,16 +33,14 @@ import {
   publishRecoveryActionSelected,
   publishRecoveryResolved,
   publishSeatSwitched,
-  publishTaskSkipped,
 } from '../events.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { endRun } from '../run/close.js';
 import { haltCutApply } from '../apply/run.js';
 import { recordUserMessage } from '../transcript/user-message.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
-import { restoreExhaustedTaskFiles } from '../task/rollback.js';
+import { skipBrief } from '../task/skip-brief.js';
 import { runCodeDir } from '../kept-work.js';
-import { isConsultBoundReason } from './builders/consult.js';
 import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import { SeatAccountCauseSchema } from '../../../core/recovery/account-cause.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
@@ -594,29 +592,22 @@ async function applySkipCurrentTaskRecoveryAction(
   }
 
   let state = markRecoveryApplying(opts, issue);
-  // A consult-bound halt kept the brief's files for a Continue; skipping the brief takes them back.
-  const taskStartSnapshot = opts.state.changedFilesBaseline?.activeTaskSnapshot;
-  if (isConsultBoundReason(issue.reason) && taskStartSnapshot !== undefined) {
-    await restoreExhaustedTaskFiles({
-      wctx: {
-        projectDir: opts.projectDir,
-        sessionId: opts.sessionId,
-        bus: opts.bus,
-        workspaceDir: runCodeDir(opts.projectDir, opts.state.workspace),
-      },
-      phase: state.phase,
-      taskStartSnapshot,
-    });
-  }
-  state = transitionAndSave(
-    opts,
-    state,
-    {
-      type: 'SKIP_TASK',
-      taskId: target.id,
+  // A halt that kept the brief's files left them for a Continue or a Try again; skipping the
+  // brief takes them back.
+  state = await skipBrief({
+    wctx: {
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      bus: opts.bus,
+      workspaceDir: runCodeDir(opts.projectDir, opts.state.workspace),
     },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
+    state,
+    task: target,
+    reason,
+    skippedBy: 'recovery',
+    taskStartSnapshot: opts.state.changedFilesBaseline?.activeTaskSnapshot,
+    expectedRevision: state.stateRevision ?? 0,
+  });
   state = transitionAndSave(
     opts,
     state,
@@ -624,14 +615,6 @@ async function applySkipCurrentTaskRecoveryAction(
       type: 'RESOLVE_PENDING_RECOVERY',
     },
     { expectedRevision: state.stateRevision ?? 0 },
-  );
-  publishTaskSkipped(
-    { bus: opts.bus, phase: state.phase },
-    {
-      taskId: target.id,
-      title: target.title,
-      reason,
-    },
   );
   publishRecoveryResolved({
     bus: opts.bus,
