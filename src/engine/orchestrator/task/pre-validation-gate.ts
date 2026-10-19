@@ -3,11 +3,10 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { WorkflowContext } from '../types.js';
 import type { HookPayload } from '../../hooks/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
-import { publishTaskSkipped, publishWarning } from '../events.js';
-import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
-import { persistTaskEvidence } from '../evidence/persistence.js';
-import { restoreDeniedPreValidationFiles } from './rollback.js';
+import { publishWarning } from '../events.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import { withAttemptRestoreScope } from './restore-scope.js';
+import { skipBrief } from './skip-brief.js';
 
 export async function runPreValidationGate(opts: {
   wctx: Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus' | 'config'>;
@@ -47,33 +46,19 @@ export async function runPreValidationGate(opts: {
   state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });
   if (preVal.allow) return { proceed: true, state };
 
-  const reason = preVal.reason ?? 'pre_validation hook denied';
-  if (taskStartSnapshot !== null)
-    await restoreDeniedPreValidationFiles({
-      wctx,
-      phase: state.phase,
-      taskStartSnapshot,
-    });
   publishWarning({
     bus: wctx.bus,
     phase: state.phase,
     message: `pre_validation blocked: ${preVal.reason ?? 'hook denied'}`,
   });
-  publishTaskSkipped(
-    { bus: wctx.bus, phase: state.phase },
-    { taskId: task.id, title: task.title, reason },
-  );
-  state = transitionAndSave({ projectDir, sessionId }, state, {
-    type: 'SKIP_TASK',
-    taskId: task.id,
-  });
-  setTrackedState(state);
-  await persistTaskEvidence({
+  state = await skipBrief({
     wctx,
     state,
     task,
-    recordKind: 'skipped',
-    details: { status: 'skipped', reason },
+    reason: preVal.reason ?? 'pre_validation hook denied',
+    skippedBy: 'pre_validation',
+    taskStartSnapshot: taskStartSnapshot ?? undefined,
   });
+  setTrackedState(state);
   return { proceed: false, state };
 }

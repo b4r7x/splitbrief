@@ -546,7 +546,7 @@ Recovery actions:
 | `continue` | Grants extra allowance on `consult-bound-spent` or `planner-calls-spent` |
 | `accept-as-is` | Records an Accept as is override at final review. Workspace runs become ready to apply; checkout runs and older runs without a workspace close. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
 | `restore-backup` | Restores a partial Apply through its backup. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). |
-| `skip-current-task` | Records evidence, marks task `skipped`, advances index |
+| `skip-current-task` | Records evidence, restores the files the brief changed since its task-start snapshot, marks task `skipped`, advances index |
 | `end-run` | Uses the shared close path. Refuses an unfinished Apply: restore or retry Apply first. Unapplied workspace work stays in `run.patch`; a checkout-mode run writes no patch. The run closes as `ended` or `discarded`. See [Apply](#apply). |
 
 A *Needs you* halt allows `continue`, `retry-same-worker`, `revise`, `accept-as-is`, `restore-backup`, `skip-current-task` and `end-run`; a *Seat down* halt allows `retry-same-worker`, `switch-seat`, `retry-later` (with a reset only), `skip-current-task` and `end-run`. The retired actions of older files read through `RETIRED_RECOVERY_ACTIONS`: `revise-spec` as `revise`, `route-bigger-worker` as `retry-same-worker`, and `pause-run` and `planner-split-rebase` are dropped.

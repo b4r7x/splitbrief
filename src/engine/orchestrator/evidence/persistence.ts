@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import { publishError, publishWarningFromError } from '../events.js';
 import { raisePendingRecovery } from '../state-ops.js';
@@ -47,7 +47,7 @@ export async function persistTaskEvidence(opts: {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
   state: WorkflowState;
   task: Task;
-  recordKind: 'local' | 'retry' | 'skipped';
+  recordKind: 'local' | 'retry';
   details: {
     status: TaskStatus;
     method?: TaskCompletionMethod | undefined;
@@ -55,7 +55,6 @@ export async function persistTaskEvidence(opts: {
     durationMs?: number | undefined;
     initialChangedFiles?: string[] | undefined;
     escalated?: boolean | undefined;
-    reason?: string | undefined;
     changedFiles?: string[] | undefined;
   };
 }): Promise<void> {
@@ -74,24 +73,51 @@ export async function persistTaskEvidence(opts: {
           changedFiles: details.changedFiles,
         });
       }
-      if (recordKind === 'retry') {
-        return recordRetryOrEscalationEvidence({
-          ledger,
-          task,
-          status: details.status,
-          method: details.method,
-          retries: details.retries,
-          durationMs: details.durationMs,
-          escalated: details.escalated ?? false,
-          changedFiles: [...(details.initialChangedFiles ?? []), ...(details.changedFiles ?? [])],
-        });
-      }
-      return recordSkippedTaskEvidence({
+      return recordRetryOrEscalationEvidence({
         ledger,
         task,
-        reason: details.reason ?? 'skipped',
+        status: details.status,
+        method: details.method,
+        retries: details.retries,
+        durationMs: details.durationMs,
+        escalated: details.escalated ?? false,
+        changedFiles: [...(details.initialChangedFiles ?? []), ...(details.changedFiles ?? [])],
       });
     });
+  } catch (err) {
+    publishWarningFromError(
+      { bus: wctx.bus, phase: state.phase },
+      'failed to persist evidence ledger',
+      err,
+    );
+  }
+}
+
+/**
+ * A skip takes back the brief's files from its task-start snapshot, so the skipped brief answers
+ * only for the files still changed since then.
+ */
+export async function persistSkippedBriefFiles(opts: {
+  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus' | 'workspaceDir'>;
+  state: WorkflowState;
+  task: Task;
+  reason: string;
+  taskStartSnapshot: ChangedFilesSnapshot | undefined;
+}): Promise<void> {
+  const { wctx, state, task, taskStartSnapshot } = opts;
+  try {
+    const keptFiles =
+      taskStartSnapshot === undefined
+        ? undefined
+        : await getChangedFilesSinceSnapshot(wctx.workspaceDir, taskStartSnapshot);
+    mutateEvidenceLedger(wctx, (existing) =>
+      recordSkippedTaskEvidence({
+        ledger: existing ?? getOrCreateLedger({ ref: wctx, state }),
+        task,
+        reason: opts.reason,
+        keptFiles,
+      }),
+    );
   } catch (err) {
     publishWarningFromError(
       { bus: wctx.bus, phase: state.phase },

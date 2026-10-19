@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -33,6 +33,10 @@ import { enqueueUserMessage } from '../queue/submit.js';
 import { runTaskLoop } from './loop.js';
 import { createSnapshot } from '../../snapshots/create.js';
 import { ABSENT_INPUT_HASH } from './stale-inputs.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+import type { HooksConfig } from '../../../core/schemas/hooks.js';
 
 type Decision = { what: string; why: string };
 
@@ -225,6 +229,51 @@ function scriptedPlanner(answers: {
   return { planner, prompts };
 }
 
+/** A planner whose every call fails: the decision confirm and the stale consult halt the brief. */
+function failingPlanner() {
+  return makePlanner({
+    typedCall: consultCallAnswering(() => {
+      throw error('runner-call-failed', 'Planner escalation call failed', {
+        role: 'escalation',
+        status: 'failed',
+        error: { code: 'turn-failed', message: 'The planner process crashed.' },
+      });
+    }),
+  });
+}
+
+/** An implementer whose call `n` writes `files[n - 1]` and reports one decision of how. */
+function writingImplementer(files: readonly string[]) {
+  let calls = 0;
+  const attempt = async (opts: ImplementerOptions | RetryOptions) => {
+    const file = files[calls] ?? files[files.length - 1] ?? '';
+    calls += 1;
+    mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+    writeFileSync(join(opts.projectDir, file), `attempt ${calls}\n`);
+    return {
+      success: true,
+      output: 'implemented',
+      usage: { inputTokens: 10, outputTokens: 5 },
+      report: doneReport(calls === 1 ? [HOW] : [HOW_TOO], file),
+    };
+  };
+  return makeImplementer({ implement: vi.fn(attempt), retry: vi.fn(attempt) });
+}
+
+const RESTORED = 'Restored';
+
+function restoreWarnings(events: readonly EngineEvent[]): string[] {
+  return events.flatMap((event) =>
+    event.type === 'warning' && event.message.startsWith(RESTORED) ? [event.message] : [],
+  );
+}
+
+/** The files the run's record books against a brief. */
+function bookedFiles(projectDir: string, sessionId: string, taskId: string): string[] | undefined {
+  return readEvidenceLedger({ projectDir, sessionId })?.tasks.find((entry) => entry.id === taskId)
+    ?.changedFiles;
+}
+
 function isDecisionConfirm(prompt: string): boolean {
   return prompt.includes('deviation —');
 }
@@ -248,12 +297,16 @@ async function runLoop(opts: {
   callbacks?: ReturnType<typeof makeCallbacks>['callbacks'];
   bus: ReturnType<typeof makeBusRecorder>['bus'];
   signal?: AbortSignal;
+  hooks?: HooksConfig;
 }) {
   const wctx = await openRunWorkspace(
     makeWctx({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
-      config: makeNoValidationConfig({ workflow: { review: 'task' } }),
+      config: makeNoValidationConfig({
+        workflow: { review: 'task' },
+        ...(opts.hooks !== undefined && { hooks: opts.hooks }),
+      }),
       callbacks: opts.callbacks ?? makeCallbacks({ onPlannerReply: vi.fn() }).callbacks,
       planner: opts.planner,
       implementer: opts.implementer,
@@ -955,15 +1008,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW]]);
     const validator = scriptedValidator({});
-    const planner = makePlanner({
-      typedCall: consultCallAnswering(() => {
-        throw error('runner-call-failed', 'Planner escalation call failed', {
-          role: 'escalation',
-          status: 'failed',
-          error: { code: 'turn-failed', message: 'The planner process crashed.' },
-        });
-      }),
-    });
+    const planner = failingPlanner();
     const { bus } = makeBusRecorder();
 
     const result = await runLoop({
@@ -981,6 +1026,339 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeDefined();
     // The implementer attempt behind the failed confirmation still counts on the lineage.
     expect(result.state.lineages?.T001?.attempts).toBe(1);
+  });
+
+  const USER_FILE = 'src/mine.ts';
+  const USER_WORK = 'mine before the run\n';
+
+  /** The user's own change in the checkout before the run: no skip may touch it. */
+  function setupProjectWithUserWork() {
+    const project = setupProject();
+    mkdirSync(join(project.projectDir, 'src'), { recursive: true });
+    writeFileSync(join(project.projectDir, USER_FILE), USER_WORK);
+    return project;
+  }
+
+  describe('Skip on a halt outside the ladder', () => {
+    async function skip(
+      projectDir: string,
+      sessionId: string,
+      state: WorkflowState,
+      bus: ReturnType<typeof makeBusRecorder>['bus'],
+    ) {
+      expect(state.pendingRecovery?.availableActions).toContain('skip-current-task');
+      const applied = await applyRecoveryAction({
+        projectDir,
+        sessionId,
+        state,
+        action: 'skip-current-task',
+        bus,
+      });
+      expect(applied.ok).toBe(true);
+      return applied.state;
+    }
+
+    it("takes back the brief's file when the decision confirm failed", async () => {
+      const { projectDir, sessionId } = setupProjectWithUserWork();
+      const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+      const { bus, events } = makeBusRecorder();
+
+      const halted = await runLoop({
+        projectDir,
+        sessionId,
+        state: stateWithPlan([task]),
+        implementer: writingImplementer(['src/a.ts']),
+        validator: scriptedValidator({}),
+        planner: failingPlanner(),
+        bus,
+      });
+      expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(true);
+      expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual(['src/a.ts']);
+
+      const skipped = await skip(projectDir, sessionId, halted.state, bus);
+
+      expect(skipped.tasks[0]?.status).toBe('skipped');
+      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
+      expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
+      expect(restoreWarnings(events)).toEqual([expect.stringContaining('src/a.ts')]);
+      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
+    });
+
+    it('takes back the files of every attempt after a Try again', async () => {
+      const { projectDir, sessionId } = setupProjectWithUserWork();
+      const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', 'src/b.ts'] });
+      const implementer = writingImplementer(['src/a.ts', 'src/b.ts']);
+      const planner = failingPlanner();
+      const validator = scriptedValidator({});
+      const { bus, events } = makeBusRecorder();
+
+      const first = await runLoop({
+        projectDir,
+        sessionId,
+        state: stateWithPlan([task]),
+        implementer,
+        validator,
+        planner,
+        bus,
+      });
+      expect(first.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      const retried = await applyRecoveryAction({
+        projectDir,
+        sessionId,
+        state: first.state,
+        action: 'retry-same-worker',
+        bus,
+      });
+      expect(retried.ok).toBe(true);
+      const second = await runLoop({
+        projectDir,
+        sessionId,
+        state: retried.state,
+        implementer,
+        validator,
+        planner,
+        bus,
+      });
+      expect(second.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(true);
+      expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(true);
+
+      await skip(projectDir, sessionId, second.state, bus);
+
+      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
+      expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(false);
+      expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
+      expect(restoreWarnings(events)).toEqual([
+        expect.stringMatching(/src\/a\.ts.*src\/b\.ts|src\/b\.ts.*src\/a\.ts/),
+      ]);
+      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
+    });
+
+    it('restores nothing of the skipped brief when the next brief halts on its stale consult', async () => {
+      const { projectDir, sessionId } = setupProjectWithUserWork();
+      const first = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+      const next = makeTask({
+        id: 'T002',
+        suggestedFiles: ['src/d.ts'],
+        inputHashes: { 'src/c.ts': ABSENT_INPUT_HASH },
+      });
+      const implementer = writingImplementer(['src/a.ts']);
+      const planner = failingPlanner();
+      const validator = scriptedValidator({});
+      const { bus, events } = makeBusRecorder();
+
+      const halted = await runLoop({
+        projectDir,
+        sessionId,
+        state: stateWithPlan([first, next]),
+        implementer,
+        validator,
+        planner,
+        bus,
+      });
+      const skipped = await skip(projectDir, sessionId, halted.state, bus);
+      expect(restoreWarnings(events)).toHaveLength(1);
+      // The user writes the skipped brief's file and the next brief's input during the halt.
+      writeFileSync(join(projectDir, 'src/a.ts'), "the user's a\n");
+      writeFileSync(join(projectDir, 'src/c.ts'), "the user's c\n");
+
+      const stale = await runLoop({
+        projectDir,
+        sessionId,
+        state: skipped,
+        implementer,
+        validator,
+        planner,
+        bus,
+      });
+      expect(stale.state.pendingRecovery).toMatchObject({
+        reason: 'planner-call-failed',
+        taskId: 'T002',
+      });
+      expect(implementer.implement).toHaveBeenCalledTimes(1);
+
+      await skip(projectDir, sessionId, stale.state, bus);
+
+      expect(restoreWarnings(events)).toHaveLength(1);
+      expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe("the user's a\n");
+      expect(readFileSync(join(projectDir, 'src/c.ts'), 'utf-8')).toBe("the user's c\n");
+      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
+    });
+
+    it("gives back the user's own bytes of a file the user changed before the run", async () => {
+      const { projectDir, sessionId } = setupProjectWithUserWork();
+      const task = makeTask({ id: 'T001', suggestedFiles: [USER_FILE] });
+      const { bus, events } = makeBusRecorder();
+
+      const halted = await runLoop({
+        projectDir,
+        sessionId,
+        state: stateWithPlan([task]),
+        implementer: writingImplementer([USER_FILE]),
+        validator: scriptedValidator({}),
+        planner: failingPlanner(),
+        bus,
+      });
+      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe('attempt 1\n');
+
+      await skip(projectDir, sessionId, halted.state, bus);
+
+      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
+      expect(restoreWarnings(events)).toEqual([expect.stringContaining(USER_FILE)]);
+      expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
+    });
+  });
+
+  describe('a hook that denies the brief after an attempt', () => {
+    let trust: ReturnType<typeof useTrustHome>;
+    beforeEach(() => {
+      trust = useTrustHome('loop-decisions-hook-skip');
+    });
+    afterEach(() => trust.restore());
+
+    /** A trusted hook script; it reads the workspace from the hook payload on stdin. */
+    function trustedHooks(projectDir: string, event: keyof HooksConfig, script: string[]) {
+      const path = join(projectDir, `${event}.mjs`);
+      writeFileSync(
+        path,
+        ["let input = '';", 'for await (const c of process.stdin) input += c;', ...script, ''].join(
+          '\n',
+        ),
+      );
+      const hooks: HooksConfig = {
+        [event]: [
+          {
+            kind: 'command',
+            command: 'node',
+            args: [path],
+            timeout_ms: 30_000,
+            on_failure: 'block',
+          },
+        ],
+      };
+      markHooksConfigTrusted(projectDir, hooks);
+      return hooks;
+    }
+
+    it("takes back the brief's file when a pre_task hook denies its Try again", async () => {
+      const { projectDir, sessionId } = setupProjectWithUserWork();
+      // The check passes before the brief wrote its file and fails on the brief's edit.
+      const hooks = trustedHooks(projectDir, 'pre_task', [
+        "import { existsSync, readFileSync } from 'node:fs';",
+        "const file = JSON.parse(input).workspaceDir + '/src/a.ts';",
+        "if (existsSync(file) && readFileSync(file, 'utf8').startsWith('attempt')) process.exit(1);",
+      ]);
+      const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+      const implementer = writingImplementer(['src/a.ts']);
+      const planner = failingPlanner();
+      const validator = scriptedValidator({});
+      const { bus, events } = makeBusRecorder();
+
+      const first = await runLoop({
+        projectDir,
+        sessionId,
+        state: stateWithPlan([task]),
+        implementer,
+        validator,
+        planner,
+        bus,
+        hooks,
+      });
+      expect(first.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual(['src/a.ts']);
+      const retried = await applyRecoveryAction({
+        projectDir,
+        sessionId,
+        state: first.state,
+        action: 'retry-same-worker',
+        bus,
+      });
+      expect(retried.ok).toBe(true);
+
+      const second = await runLoop({
+        projectDir,
+        sessionId,
+        state: retried.state,
+        implementer,
+        validator,
+        planner,
+        bus,
+        hooks,
+      });
+
+      expect(second.state.tasks[0]?.status).toBe('skipped');
+      expect(implementer.implement).toHaveBeenCalledTimes(1);
+      expect(implementer.retry).not.toHaveBeenCalled();
+      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
+      expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
+      expect(restoreWarnings(events)).toEqual([expect.stringContaining('src/a.ts')]);
+      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
+    });
+
+    it('books none of the restored files when a pre_validation hook denies the brief', async () => {
+      const { projectDir, sessionId } = setupProjectWithUserWork();
+      const hooks = trustedHooks(projectDir, 'pre_validation', [
+        "console.log(JSON.stringify({ decision: 'deny', message: 'policy' }));",
+      ]);
+      const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', USER_FILE] });
+      const implementer = writingImplementer(['src/a.ts', USER_FILE]);
+      let calls = 0;
+      const planner = makePlanner({
+        typedCall: consultCallAnswering(() => {
+          calls += 1;
+          if (calls > 1) return confirm([HOW_TOO]);
+          throw error('runner-call-failed', 'Planner escalation call failed', {
+            role: 'escalation',
+            status: 'failed',
+            error: { code: 'turn-failed', message: 'The planner process crashed.' },
+          });
+        }),
+      });
+      const validator = scriptedValidator({});
+      const { bus, events } = makeBusRecorder();
+
+      const first = await runLoop({
+        projectDir,
+        sessionId,
+        state: stateWithPlan([task]),
+        implementer,
+        validator,
+        planner,
+        bus,
+        hooks,
+      });
+      expect(first.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual(['src/a.ts']);
+      const retried = await applyRecoveryAction({
+        projectDir,
+        sessionId,
+        state: first.state,
+        action: 'retry-same-worker',
+        bus,
+      });
+      expect(retried.ok).toBe(true);
+
+      const second = await runLoop({
+        projectDir,
+        sessionId,
+        state: retried.state,
+        implementer,
+        validator,
+        planner,
+        bus,
+        hooks,
+      });
+
+      expect(second.state.tasks[0]?.status).toBe('skipped');
+      expect(implementer.implement).toHaveBeenCalledTimes(2);
+      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
+      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
+      expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
+      expect(restoreWarnings(events)).toEqual([
+        expect.stringMatching(/src\/a\.ts.*src\/mine\.ts|src\/mine\.ts.*src\/a\.ts/),
+      ]);
+    });
   });
 
   it('stops without validation or a recovery when the run is stopped during the decision-confirm', async () => {

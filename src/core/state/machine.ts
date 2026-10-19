@@ -332,12 +332,17 @@ export function transition(
 
     case 'SKIP_TASK': {
       const withStatus = setTaskStatus(state, action.taskId, 'skipped');
-      return {
+      const skipped: WorkflowState = {
         ...withStatus,
         phase: 'implementing',
         currentTaskIndex: nextOpenTaskIndex(withStatus, state.currentTaskIndex + 1),
         attempt: 0,
       };
+      if (withStatus.changedFilesBaseline === undefined) return skipped;
+      // The skipped brief's task-start snapshot is no later brief's start.
+      const { activeTaskSnapshot: _skippedTaskStart, ...baseline } =
+        withStatus.changedFilesBaseline;
+      return { ...skipped, changedFilesBaseline: baseline };
     }
 
     case 'UPDATE_TASK_CODE': {

@@ -220,7 +220,7 @@ If a `pre_*` hook returns `decision: "deny"` (or fails with `on_failure: block`)
 
 `block` only meaningful on `pre_*` hooks. On `post_*` hooks, `block` is logged informationally — the action already happened.
 
-The aborted action is event-specific: `pre_task` and `pre_validation` mark the current task `skipped` (recording skipped evidence) and continue with the next task; `pre_planning` aborts the planner run; `pre_escalation` surfaces a recovery prompt named after the hook (reason `retry-exhausted`) instead of silently giving up.
+The aborted action is event-specific: `pre_task` and `pre_validation` take back the files the task wrote, mark the current task `skipped` (recording skipped evidence) and continue with the next task; `pre_planning` aborts the planner run; `pre_escalation` surfaces a recovery prompt named after the hook (reason `retry-exhausted`) instead of silently giving up.
 
 ### Per-scenario behavior
 
