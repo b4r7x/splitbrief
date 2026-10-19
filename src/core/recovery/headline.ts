@@ -27,19 +27,27 @@ function sentenceCase(reason: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** A final review that judged the run and found blockers, in the one wording every surface shares. */
-export function finalReviewFailedCause(blocking: number): string {
-  return `Final review failed with ${countNoun(blocking, 'blocking finding')}`;
+/** The review a halt names, in the transcript's words: a task review by the brief it judged. */
+export function reviewName(
+  review: Readonly<{ scope?: string | undefined; afterTaskId?: string | undefined }>,
+): string {
+  if (review.scope !== 'task') return 'Final review';
+  return review.afterTaskId === undefined ? 'Task review' : `Review ${review.afterTaskId}`;
 }
 
-/** A final review the fix-cycle cap stopped: the run has spent every cycle it may. */
-export function finalReviewCapCause(cycles: number): string {
-  return `Final review failed after ${countNoun(cycles, 'fix cycle')}`;
+/** A review that judged its scope and found blockers, in the one wording every surface shares. */
+export function reviewFailedCause(review: string, blocking: number): string {
+  return `${review} failed with ${countNoun(blocking, 'blocking finding')}`;
 }
 
-/** A final review that failed on claims no check could verify, with nothing for the planner to fix. */
-export function finalReviewUnverifiedCause(criteria: number): string {
-  return `Final review failed with ${countNoun(criteria, 'unverified criterion', 'unverified criteria')}`;
+/** A review the fix-cycle cap stopped: the run has spent every cycle it may. */
+export function reviewCapCause(review: string, cycles: number): string {
+  return `${review} failed after ${countNoun(cycles, 'fix cycle')}`;
+}
+
+/** A review that failed on claims no check could verify, with nothing for the planner to fix. */
+export function reviewUnverifiedCause(review: string, criteria: number): string {
+  return `${review} failed with ${countNoun(criteria, 'unverified criterion', 'unverified criteria')}`;
 }
 
 /** What stopped a retry-exhausted brief, in the one wording the transcript, the panel and the byline share. */
@@ -185,19 +193,23 @@ export function formatRecoveryHeadlineSpans(
       ];
     }
     case 'review-failed': {
-      // A final review halt names no brief: it judged the whole run, or it judged nothing.
+      // A task review halt names the brief it judged; a final review halt names no brief.
+      const review = reviewName({
+        scope: recoveryFactString(issue.facts, 'reviewScope'),
+        afterTaskId: recoveryFactString(issue.facts, 'afterTaskId'),
+      });
       const cycles = recoveryFactNumber(issue.facts, 'fixCycles');
-      if (cycles !== undefined) return [{ text: finalReviewCapCause(cycles) }];
+      if (cycles !== undefined) return [{ text: reviewCapCause(review, cycles) }];
       const unverified = recoveryFactNumber(issue.facts, 'unverified');
-      if (unverified !== undefined) return [{ text: finalReviewUnverifiedCause(unverified) }];
+      if (unverified !== undefined) return [{ text: reviewUnverifiedCause(review, unverified) }];
       const blocking = recoveryFactNumber(issue.facts, 'blocking');
-      if (blocking !== undefined) return [{ text: finalReviewFailedCause(blocking) }];
+      if (blocking !== undefined) return [{ text: reviewFailedCause(review, blocking) }];
       return [
         {
           text:
             recoveryFactString(issue.facts, 'reviewFailureKind') === undefined
-              ? 'Final review failed'
-              : 'Final review reached no verdict',
+              ? `${review} failed`
+              : `${review} reached no verdict`,
         },
       ];
     }

@@ -175,6 +175,35 @@ describe('formatRecoveryHeadline', () => {
       'Final review reached no verdict',
     );
     expect(review(undefined)).toBe('Final review failed');
+    expect(review({ reviewScope: 'final', blocking: 0, fixCycles: 2 })).toBe(
+      'Final review failed after 2 fix cycles',
+    );
+  });
+
+  it('names the task review of the brief it judged, never the final review', () => {
+    const review = (facts: RecoveryIssue['facts']): string =>
+      formatRecoveryHeadline(
+        makeRecoveryIssue({
+          reason: 'review-failed',
+          taskId: undefined,
+          taskTitle: undefined,
+          facts,
+          availableActions: ['revise', 'end-run'],
+          recommendedAction: 'revise',
+        }),
+      );
+    const task = { reviewScope: 'task', afterTaskId: 'T004' };
+
+    expect(review({ ...task, blocking: 1, fixCycles: 2 })).toBe(
+      'Review T004 failed after 2 fix cycles',
+    );
+    expect(review({ ...task, blocking: 1 })).toBe('Review T004 failed with 1 blocking finding');
+    expect(review({ ...task, blocking: 0, unverified: 1 })).toBe(
+      'Review T004 failed with 1 unverified criterion',
+    );
+    expect(review({ reviewScope: 'task', blocking: 2 })).toBe(
+      'Task review failed with 2 blocking findings',
+    );
   });
 
   it('names the task the issue carries', () => {

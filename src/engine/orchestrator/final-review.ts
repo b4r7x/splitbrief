@@ -19,6 +19,7 @@ import {
   sessionDir,
 } from '../../core/paths.js';
 import { CLI_TOOL_CATALOG, isCliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { reviewName } from '../../core/recovery/headline.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared-set.js';
 import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
 import { phaseStage } from '../../core/rail-stages.js';
@@ -971,10 +972,11 @@ export async function runFinalReviewPhase(opts: {
   } catch (err) {
     if (opts.signal?.aborted || isAbortError(err)) return interrupted();
     const seat = resolveReviewerRunner(config);
+    const failed = `${reviewName(reviewEvent)} failed`;
     const label =
       seat.source === 'configured'
-        ? `Final review failed (reviewer: ${getRunnerCatalogDisplayName(seat.runner)})`
-        : 'Final review failed';
+        ? `${failed} (reviewer: ${getRunnerCatalogDisplayName(seat.runner)})`
+        : failed;
     // The diagnosis is read off the error's own data, never off its wording, so
     // recovery keeps every missing section this review was refused for.
     const diagnostic = readApiContextDiagnostic(err);

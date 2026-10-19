@@ -2988,6 +2988,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-task-review-cap',
+      title: 'Workflow · a task review that failed after the run spent its fix cycles',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'task-review-cap',
+        title: 'Task-review cap recovery menu',
+        kind: 'question',
+        marker: 'Fix again',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-checks-missing-program',
       title: 'Workflow · a required check that cannot run because a program is missing',
       surface: screenSurface('workflow'),
@@ -3154,6 +3170,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'A review timeout offers Try again without a seat remedy',
         kind: 'question',
         marker: 'Review call timed out',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-task-review-call-failed',
+      title: 'Workflow · a task review call that reached no verdict',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'task-review-call-failed',
+        title: 'A failed task review call names that review and offers Try again',
+        kind: 'question',
+        marker: 'Review T901 reached no verdict',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

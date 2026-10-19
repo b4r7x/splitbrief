@@ -24,7 +24,7 @@ import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { deriveRunStatus, isAnsweredApplyRecovery } from '../core/sessions/run-status.js';
 import { continuesHeadless, formatResumeCommand } from '../core/recovery/resume-command.js';
-import { finalReviewFailedCause } from '../core/recovery/headline.js';
+import { reviewFailedCause, reviewName } from '../core/recovery/headline.js';
 import { haltOf, recoveryHaltLabel } from '../core/recovery/halt.js';
 import { formatResetAt } from '../core/recovery/reset-clock.js';
 import { cliError } from './errors.js';
@@ -172,7 +172,10 @@ function failIfFinalReviewFailed(
   if (state?.reviewStatus !== 'failed') return;
   const blocking = readSession({ projectDir, sessionId })?.summary?.review?.critical ?? 0;
   writeRecord({ type: 'final_review_failed', sessionId, blocking });
-  throw cliError(`${finalReviewFailedCause(blocking)}; see review.md`, 1);
+  throw cliError(
+    `${reviewFailedCause(reviewName({ scope: 'final' }), blocking)}; see review.md`,
+    1,
+  );
 }
 
 function failIfFinalReviewIncomplete(
