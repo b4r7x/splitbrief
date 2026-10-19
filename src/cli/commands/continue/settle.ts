@@ -33,7 +33,7 @@ export async function settleReadyRun(input: {
   if (action === 'discard') {
     const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
     if (closure.closedNow) finalize(closure.state);
-    process.stderr.write(`Run ${sessionId} discarded.${closedChangesSuffix(closure.state)}\n`);
+    process.stderr.write(`Run ${sessionId} discarded.${closedChangesSuffix(ref, closure.state)}\n`);
     return undefined;
   }
 

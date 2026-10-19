@@ -9,10 +9,13 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { readActive, reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { readSession } from '../../../core/sessions/io.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { sessionDir } from '../../../core/paths.js';
 import { writeRunPatch } from '../apply/patch.js';
+import { recordLocalTaskEvidence, recordSkippedTaskEvidence } from '../evidence/task.js';
 import { removeRunWorkspace } from '../isolation/remove-worktree.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import {
@@ -276,7 +279,7 @@ describe('endRunAtRest', () => {
   });
 });
 
-describe('the close line names files on disk only once a brief started in the checkout', () => {
+describe('the close line names files on disk only while the run left files in the checkout', () => {
   const STILL_ON_DISK = ' The files it wrote are still on disk.';
   const checkout: WorkflowState['workspace'] = {
     kind: 'checkout',
@@ -288,43 +291,133 @@ describe('the close line names files on disk only once a brief started in the ch
     path: '/trees/run',
     base: { snapshotId: 'base', head: null },
   };
-  const planned = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-  const built = [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })];
+  const first = makeTask({ id: 'T001' });
+  const second = makeTask({ id: 'T002' });
+  const planned = [first, second];
+  const built = [{ ...first, status: 'done' as const }, second];
+  const halted = [{ ...first, status: 'in_progress' as const }, second];
+  const passedThenHalted = [
+    { ...first, status: 'done' as const },
+    { ...second, status: 'in_progress' as const },
+  ];
+  const skipped = [{ ...first, status: 'skipped' as const }, second];
+  /** What the ledger books per brief: the files each one left in the checkout. */
+  type Booked = { done?: string[]; halted?: string[]; skipped?: string[]; second?: string[] };
+
+  function bookLedger(ref: { projectDir: string; sessionId: string }, booked: Booked): void {
+    let ledger = createEvidenceLedger({
+      sessionId: ref.sessionId,
+      feature: 'Close line',
+      tasks: planned,
+    });
+    if (booked.done !== undefined) {
+      ledger = recordLocalTaskEvidence({
+        ledger,
+        task: first,
+        status: 'done',
+        changedFiles: booked.done,
+      });
+    }
+    if (booked.halted !== undefined) {
+      ledger = recordLocalTaskEvidence({
+        ledger,
+        task: first,
+        status: 'in_progress',
+        changedFiles: booked.halted,
+      });
+    }
+    if (booked.skipped !== undefined) {
+      ledger = recordSkippedTaskEvidence({
+        ledger: recordLocalTaskEvidence({
+          ledger,
+          task: first,
+          status: 'failed',
+          changedFiles: ['src/first.ts'],
+        }),
+        task: first,
+        reason: 'skipped by the user',
+        keptFiles: booked.skipped,
+      });
+    }
+    if (booked.second !== undefined) {
+      ledger = recordLocalTaskEvidence({
+        ledger,
+        task: second,
+        status: 'in_progress',
+        changedFiles: booked.second,
+      });
+    }
+    writeEvidenceLedger(ref, ledger);
+  }
 
   it.each([
-    ['a run that ended while it planned', { phase: 'planning' as const, tasks: [] }, ''],
-    ['a run that ended at its plan card', { phase: 'reviewing-plan' as const, tasks: planned }, ''],
+    ['a run that ended while it planned', { phase: 'planning' as const, tasks: [] }, {}, ''],
+    [
+      'a run that ended at its plan card',
+      { phase: 'reviewing-plan' as const, tasks: planned },
+      {},
+      '',
+    ],
     [
       'a run halted before its first brief started',
       { phase: 'implementing' as const, tasks: planned },
+      {},
       '',
     ],
     [
       'a checkout run halted before its first brief started',
       { phase: 'implementing' as const, tasks: planned, workspace: checkout },
+      {},
       '',
     ],
     [
-      'a checkout run with a brief started',
+      'a checkout run whose passed brief left its files',
       { phase: 'implementing' as const, tasks: built, workspace: checkout },
+      { done: ['src/first.ts'] },
       STILL_ON_DISK,
+    ],
+    [
+      'a checkout run whose only brief halted and had its files put back',
+      { phase: 'implementing' as const, tasks: halted, workspace: checkout },
+      { halted: [] },
+      '',
+    ],
+    [
+      'a checkout run whose passed brief left files before a later brief had its files put back',
+      { phase: 'implementing' as const, tasks: passedThenHalted, workspace: checkout },
+      { done: ['src/first.ts'], second: [] },
+      STILL_ON_DISK,
+    ],
+    [
+      'a checkout run whose only started brief was skipped',
+      { phase: 'implementing' as const, tasks: skipped, workspace: checkout },
+      { skipped: [] },
+      '',
     ],
     [
       'an older run without a workspace with a brief started',
       { phase: 'implementing' as const, tasks: built },
+      {},
       STILL_ON_DISK,
     ],
     [
-      'a worktree run with a brief started',
+      'a worktree run whose passed brief left its files',
       { phase: 'implementing' as const, tasks: built, workspace: worktree },
+      { done: ['src/first.ts'] },
       '',
     ],
-  ])('%s', (_name, overrides, expected) => {
+  ])('%s', (_name, overrides, booked: Booked, expected) => {
+    projectDir = createTempDir('close-line-');
+    const ref = { projectDir, sessionId: 'close-line' };
+    bookLedger(ref, booked);
     const state: WorkflowState = { ...createInitialState('Close line'), ...overrides };
 
-    expect(filesStillOnDiskSuffix(state)).toBe(expected);
+    expect(filesStillOnDiskSuffix(ref, state)).toBe(expected);
     expect(
-      closedChangesSuffix({ ...state, closed: { at: '2026-10-19T00:00:00.000Z', as: 'ended' } }),
+      closedChangesSuffix(ref, {
+        ...state,
+        closed: { at: '2026-10-19T00:00:00.000Z', as: 'ended' },
+      }),
     ).toBe(expected);
   });
 });

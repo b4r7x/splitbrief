@@ -234,7 +234,9 @@ export async function continueCommand(
   // `end-run` is the one action that does not carry the run on: the close is
   // recorded and there is nothing left to re-enter.
   if (resumed.state.closed !== undefined) {
-    console.log(`Run ${sessionId} closed.${closedChangesSuffix(resumed.state)}`);
+    console.log(
+      `Run ${sessionId} closed.${closedChangesSuffix({ projectDir: opts.projectDir, sessionId }, resumed.state)}`,
+    );
     return;
   }
 

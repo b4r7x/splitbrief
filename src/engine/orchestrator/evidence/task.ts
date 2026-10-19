@@ -226,6 +226,22 @@ export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): Ev
   return upsertEvidenceTask(input.ledger, next);
 }
 
+/**
+ * A brief cut by a stop books the files it left, not every file an attempt booked: a halt that
+ * put an attempt's files back took them out of the run's changes.
+ */
+export function recordStoppedTaskEvidence(input: {
+  ledger: EvidenceLedger;
+  task: Task;
+  changedFiles: readonly string[];
+}): EvidenceLedger {
+  const next = findOrSeed(input.ledger, input.task);
+  next.status = 'in_progress';
+  next.changedFiles = next.changedFiles.filter((file) => input.changedFiles.includes(file));
+  for (const file of input.changedFiles) uniquePush(next.changedFiles, file);
+  return upsertEvidenceTask(input.ledger, next);
+}
+
 export type RecordRetryOrEscalationEvidenceInput = {
   ledger: EvidenceLedger;
   task: Task;

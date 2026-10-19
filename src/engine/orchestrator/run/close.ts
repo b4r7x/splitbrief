@@ -12,6 +12,7 @@ import { recordInterruptedCalls } from '../../calls/interrupted.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 import { writeRunPatch } from '../apply/patch.js';
 import { persistStoppedBriefEvidence } from '../evidence/persistence.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import {
   publishRecoveryActionSelected,
   publishRecoveryResolved,
@@ -34,21 +35,31 @@ import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/typ
 import { APPLY_UNFINISHED_REFUSAL } from '../../../core/runtime/commands/messages.js';
 
 /**
- * A run without a workspace, or a checkout run, writes the checkout itself, but only from its first
- * brief on: a run that ended before any brief started wrote nothing.
+ * Whether files the run wrote are still in the checkout. A checkout run's ledger books what each
+ * brief left, the close books the brief a stop cut, and a halt or a skip that put files back takes
+ * them out. An older run without a workspace has no such record: a brief that started stands in.
  */
-export function filesStillOnDiskSuffix(state: Pick<WorkflowState, 'workspace' | 'tasks'>): string {
-  const writesCheckout = state.workspace === undefined || state.workspace.kind === 'checkout';
-  return writesCheckout && state.tasks.some((task) => task.status !== 'pending')
-    ? ' The files it wrote are still on disk.'
-    : '';
+function runLeftFilesInCheckout(
+  ref: SessionRef,
+  state: Pick<WorkflowState, 'workspace' | 'tasks'>,
+): boolean {
+  if (state.workspace === undefined) return state.tasks.some((task) => task.status !== 'pending');
+  if (state.workspace.kind !== 'checkout') return false;
+  return readEvidenceLedger(ref)?.tasks.some((task) => task.changedFiles.length > 0) ?? false;
+}
+
+export function filesStillOnDiskSuffix(
+  ref: SessionRef,
+  state: Pick<WorkflowState, 'workspace' | 'tasks'>,
+): string {
+  return runLeftFilesInCheckout(ref, state) ? ' The files it wrote are still on disk.' : '';
 }
 
 /** The headless close line's tail: where the closed run's changes are. The run screen has its Patch row. */
-export function closedChangesSuffix(state: WorkflowState): string {
+export function closedChangesSuffix(ref: SessionRef, state: WorkflowState): string {
   const patch = state.closed?.patch;
   return patch === undefined
-    ? filesStillOnDiskSuffix(state)
+    ? filesStillOnDiskSuffix(ref, state)
     : ` Run changes not applied are saved in ${patch}; apply them with git apply.`;
 }
 
@@ -100,13 +111,7 @@ export async function closeRunIfOpen(
     if (!patchHandled) {
       patchHandled = true;
       const workspace = latest.workspace;
-      if (workspace?.kind === 'checkout') {
-        // A checkout run closes as discarded only after a reject put its changes back.
-        if (as === undefined) {
-          warning =
-            'This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written.';
-        }
-      } else if (workspace !== undefined) {
+      if (workspace !== undefined && workspace.kind !== 'checkout') {
         workspaceToRemove = workspace;
         if (existsSync(workspace.path)) {
           const patchPath = await writeRunPatch(scope, workspace);
@@ -129,6 +134,15 @@ export async function closeRunIfOpen(
     });
     if (result.kind === 'committed') {
       await persistStoppedBriefEvidence(scope, latest);
+      // A checkout run closes as discarded only after a reject put its changes back.
+      if (
+        latest.workspace?.kind === 'checkout' &&
+        as === undefined &&
+        runLeftFilesInCheckout(scope, latest)
+      ) {
+        warning =
+          'This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written.';
+      }
       if (warning !== undefined) warn(warning, result.state.phase);
       if (workspaceToRemove !== undefined) {
         await removeClosedRunWorkspace(scope, workspaceToRemove, result.state.phase);
