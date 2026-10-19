@@ -165,3 +165,82 @@ describe('validation output redaction', () => {
     expect((result.output ?? '').length).toBeLessThanOrEqual(4096);
   });
 });
+
+describe('a test command that cannot run', () => {
+  const step = (thrown: Error, cmd = 'npm', args = ['test']) =>
+    runValidationStep({
+      cmd,
+      args,
+      cwd: '.',
+      timeout: 1000,
+      runCommand: makeCommandRunner(thrown),
+      command: [cmd, ...args].join(' '),
+    });
+
+  it('names the program the script could not find when the command exits 127', async () => {
+    const result = await step(
+      processError.exitCode({
+        command: 'npm',
+        code: 127,
+        stderr: 'sh: mocha: command not found\n',
+        output: '> x@1.0.0 test\n> mocha\n',
+      }),
+    );
+
+    expect(result).toMatchObject({ passed: false, notRunnable: 'sh: mocha: command not found' });
+  });
+
+  it.each([
+    {
+      cmd: 'yarn',
+      args: ['test'],
+      stderr:
+        'warning package.json: No license field\n/bin/sh: splitbrief-missing-runner: command not found\nerror Command failed with exit code 127.\n',
+      reason: '/bin/sh: splitbrief-missing-runner: command not found',
+    },
+    {
+      cmd: 'bun',
+      args: ['run', 'test'],
+      stderr:
+        '$ splitbrief-missing-runner\n/bin/bash: splitbrief-missing-runner: command not found\nerror: script "test" exited with code 127\n',
+      reason: '/bin/bash: splitbrief-missing-runner: command not found',
+    },
+    {
+      cmd: 'npx',
+      args: ['--no-install', 'mocha'],
+      stderr: 'env: node: No such file or directory\n',
+      reason: 'env: node: No such file or directory',
+    },
+  ])(
+    'names the missing program, not the trailer line $cmd writes after it',
+    async ({ cmd, args, stderr, reason }) => {
+      const result = await step(
+        processError.exitCode({ command: cmd, code: 127, stderr }),
+        cmd,
+        args,
+      );
+
+      expect(result).toMatchObject({ passed: false, notRunnable: reason });
+    },
+  );
+
+  it('keeps the last stderr line when no line names a missing program', async () => {
+    const result = await step(
+      processError.exitCode({ command: 'npm', code: 127, stderr: 'first\nwrapper gave up\n' }),
+    );
+
+    expect(result).toMatchObject({ passed: false, notRunnable: 'wrapper gave up' });
+  });
+
+  it('names the exit code when a command exits 127 and prints nothing on stderr', async () => {
+    const result = await step(processError.exitCode({ command: 'npm', code: 127, stderr: '' }));
+
+    expect(result).toMatchObject({ passed: false, notRunnable: 'npm exited 127' });
+  });
+
+  it('names the program itself when it does not exist', async () => {
+    const result = await step(Object.assign(new Error('spawn npm ENOENT'), { code: 'ENOENT' }));
+
+    expect(result).toMatchObject({ passed: false, notRunnable: 'npm not found' });
+  });
+});

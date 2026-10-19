@@ -64,9 +64,6 @@ export async function runCommand(
       onClose: (code) => {
         const stdoutSnapshot = stdout.snapshot();
         const stderrSnapshot = stderr.snapshot();
-        if (code === 127) {
-          throw processError.notFound(command);
-        }
         if (code !== 0) {
           throw processError.exitCode({
             command,

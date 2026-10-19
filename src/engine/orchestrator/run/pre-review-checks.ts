@@ -37,7 +37,13 @@ export function classifyRequiredChecks(runs: readonly CheckRunResult[]): {
   const unrunnable: UnrunnableCheck[] = [];
   for (const run of runs) {
     if (run.status === 'fail') failed.push(run);
-    else if (run.status !== 'pass') unrunnable.push({ checkId: run.checkId, output: run.output });
+    else if (run.status !== 'pass') {
+      unrunnable.push({
+        checkId: run.checkId,
+        output: run.output,
+        ...(run.missingProgram === true && { missingProgram: true }),
+      });
+    }
   }
   return { failed, unrunnable };
 }

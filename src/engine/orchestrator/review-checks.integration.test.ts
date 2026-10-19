@@ -1387,7 +1387,9 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       const { outcome, events } = await reviewChecks(run, {
         plan: plan([['V1', 'npm test']]),
         answer: (command, at) =>
-          at === 'workspace' ? { red: NEW_RED } : { throws: processError.notFound(command) },
+          at === 'workspace'
+            ? { red: NEW_RED }
+            : { throws: Object.assign(new Error(`spawn ${command} ENOENT`), { code: 'ENOENT' }) },
       });
 
       expect(

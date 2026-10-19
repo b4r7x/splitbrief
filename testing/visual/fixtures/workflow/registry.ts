@@ -578,6 +578,7 @@ const checkpointPredicates = [
   [checkpointId('touched-not-suggested'), includesAll('also changed')],
   [checkpointId('plan-check-refused'), includesAll('Plan check K2', 'refused')],
   [checkpointId('plan-check-not-run'), includesAll('Plan check K4 · not')],
+  [checkpointId('plan-check-missing-program'), includesAll('Plan check K4 · npm test', 'mocha')],
   [
     checkpointId('completed-orphan-rows'),
     includesTranscript(
@@ -820,6 +821,10 @@ const checkpointPredicates = [
   [
     checkpointId('review-unverified'),
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is', 'unverified criteria'),
+  ],
+  [
+    checkpointId('recovery-checks-missing-program'),
+    includesAll('mocha: command not found', 'Run the checks again'),
   ],
   [checkpointId('left-isolation'), includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],

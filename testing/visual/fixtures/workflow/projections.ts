@@ -30,6 +30,7 @@ import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-se
 import { DEFAULT_LOCAL_RETRIES } from '../../../../src/core/pipeline-spec/retries.js';
 import { BOUNDS } from '../../../../src/core/pipeline-spec/bounds.js';
 import { buildConsultBoundRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/consult.js';
+import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/checks.js';
 import {
   buildApplyConflictRecoveryIssue,
   buildApplyPartialRecoveryIssue,
@@ -2994,6 +2995,28 @@ const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
       unverified: 6,
       phase: 'complete',
       acceptAsIs: true,
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
+};
+
+/** The final review's required check runs a test script that calls a program not installed. */
+const checksMissingProgramRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-checks-missing-program'),
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'final-review',
+    workspace: {
+      kind: 'checkout',
+      path: VISUAL_FIXTURE_PROJECT_DIR,
+      base: { snapshotId: 'visual-base', head: null },
+    },
+    pendingRecovery: buildRequiredChecksUnrunnableRecoveryIssue({
+      id: 'rec_visual_checks_missing_program',
+      phase: 'final-review',
+      checks: [{ checkId: 'K1', output: 'sh: mocha: command not found', missingProgram: true }],
       createdAt: new Date(FIXED_TS).toISOString(),
     }),
   }),
@@ -6229,6 +6252,15 @@ const projections = [
   touchedNotSuggestedProjection,
   planCheckRefusedProjection,
   planCheckNotRunProjection,
+  {
+    ...planCheckNotRunProjection,
+    scenarioId: scenarioId('workflow-plan-check-missing-program'),
+    events: planCheckNotRunProjection.events.map((event) =>
+      event.type === 'full_suite'
+        ? { ...event, command: 'npm test', detail: 'sh: mocha: command not found' }
+        : event,
+    ),
+  },
   completedOrphanRowsProjection,
   usageLimitRecoveryProjection,
   noFallbackRecoveryProjection,
@@ -6251,6 +6283,7 @@ const projections = [
   reviewFailedRecoveryProjection,
   reviewFixAgainProjection,
   reviewUnverifiedRecoveryProjection,
+  checksMissingProgramRecoveryProjection,
   applyConflictRecoveryProjection,
   resumedApplyPartialRecoveryProjection,
   reviewContextRecoveryProjection,

@@ -202,6 +202,20 @@ describe('runCommand', () => {
     });
   });
 
+  it('keeps the exit code and the output of a program that exits 127', {
+    timeout: 60_000,
+  }, async () => {
+    await expect(
+      runCommand(process.execPath, [
+        '-e',
+        'console.log("> mocha"); console.error("sh: mocha: command not found"); process.exit(127)',
+      ]),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      data: { code: 127, output: '> mocha\n', stderr: 'sh: mocha: command not found\n' },
+    });
+  });
+
   it('keeps failure evidence after the display character cap', async () => {
     const diagnostic = 'src/a.ts(3,3): error TS2322: Type mismatch.';
     const err = await runCommand('node', [

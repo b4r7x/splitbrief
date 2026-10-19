@@ -152,7 +152,7 @@ describe('pre-review checks', () => {
       now += 14_200;
       if (args.includes('workflow-y'))
         throw processError.exitCode({ command, code: 1, stderr: 'render failed' });
-      if (command === 'tsc') throw processError.notFound('tsc');
+      if (command === 'tsc') throw Object.assign(new Error('spawn tsc ENOENT'), { code: 'ENOENT' });
       return { stdout: 'ok', stderr: '', code: 0 };
     };
     const result = await runPreReviewChecks(
@@ -275,7 +275,11 @@ describe('pre-review checks', () => {
   });
 
   it.each([
-    processError.notFound('missing'),
+    processError.exitCode({
+      command: 'missing',
+      code: 127,
+      stderr: 'sh: missing: command not found\n',
+    }),
     Object.assign(new Error('missing'), { code: 'ENOENT' }),
   ])(
     'halts missing required command and render executables without planner repair, %s',
@@ -302,6 +306,10 @@ describe('pre-review checks', () => {
       expect(result.state.pendingRecovery).toMatchObject({ reason: 'required-checks-unrunnable' });
       expect(result.state.pendingRecovery?.message).toContain('K-command');
       expect(result.state.pendingRecovery?.message).toContain('K-render');
+      expect(result.state.pendingRecovery?.details).toContain(
+        'Install what is missing, then run the checks again.',
+      );
+      expect(result.state.pendingRecovery?.details.join('\n')).not.toContain('validation.render');
       expect(planner.typedCall).not.toHaveBeenCalled();
       expect(result.state.tasks).toEqual(state.tasks);
     },
@@ -309,7 +317,7 @@ describe('pre-review checks', () => {
 
   it('names the missing executable of a required test check in the halt', async () => {
     vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
-      processError.notFound('missing-vitest'),
+      Object.assign(new Error('spawn missing-vitest ENOENT'), { code: 'ENOENT' }),
     );
     const plan = makePlan([{ id: 'K1', kind: 'test', value: 'src/a.test.ts', required: true }]);
     const state = makeImplState([], { plan, phase: 'final-review' });
@@ -333,6 +341,9 @@ describe('pre-review checks', () => {
     expect(result.state.pendingRecovery?.message).toContain('K1: missing-vitest not found');
     expect(result.state.pendingRecovery?.details?.join('\n')).toContain(
       'K1: missing-vitest not found',
+    );
+    expect(result.state.pendingRecovery?.details).toContain(
+      'Install what is missing, then run the checks again.',
     );
     expect(errors.join('\n')).toContain('K1: missing-vitest not found');
   });
@@ -484,6 +495,7 @@ describe('pre-review checks', () => {
         { checkId: 'K3', status: 'not-runnable', output: 'no render' },
         { checkId: 'K4', status: 'refused', output: 'no' },
         { checkId: 'K5', status: 'unknown', output: 'no check' },
+        { checkId: 'K6', status: 'not-runnable', output: 'tsc not found', missingProgram: true },
       ]),
     ).toEqual({
       failed: [
@@ -501,6 +513,7 @@ describe('pre-review checks', () => {
         { checkId: 'K3', output: 'no render' },
         { checkId: 'K4', output: 'no' },
         { checkId: 'K5', output: 'no check' },
+        { checkId: 'K6', output: 'tsc not found', missingProgram: true },
       ],
     });
   });
@@ -509,7 +522,7 @@ describe('pre-review checks', () => {
     const issue = buildRequiredChecksUnrunnableRecoveryIssue({
       phase: 'final-review',
       checks: [
-        { checkId: 'K1', output: 'missing-vitest not found' },
+        { checkId: 'K1', output: 'missing-vitest not found', missingProgram: true },
         { checkId: 'K2', output: 'npm scripts are not approved by the plan' },
       ],
       createdAt: '2026-10-05T00:00:00.000Z',
@@ -518,8 +531,26 @@ describe('pre-review checks', () => {
     expect(issue.reason).toBe('required-checks-unrunnable');
     expect(issue.message).toContain('K1: missing-vitest not found');
     expect(issue.message).toContain('K2: npm scripts are not approved by the plan');
-    expect(issue.details.join('\n')).toContain('K1: missing-vitest not found');
+    expect(issue.details).toEqual([
+      'Install what is missing, then run the checks again.',
+      'A refused or not-runnable required check never becomes a fix task. Correct the check policy, validation.render or the registration, then run the checks again.',
+      'K1: missing-vitest not found',
+      'K2: npm scripts are not approved by the plan',
+    ]);
     expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
+  });
+
+  it('gives only the check advice when no required check misses a program', () => {
+    const issue = buildRequiredChecksUnrunnableRecoveryIssue({
+      phase: 'final-review',
+      checks: [{ checkId: 'K3', output: 'validation.render is not set' }],
+      createdAt: '2026-10-05T00:00:00.000Z',
+    });
+
+    expect(issue.details).toEqual([
+      'A refused or not-runnable required check never becomes a fix task. Correct the check policy, validation.render or the registration, then run the checks again.',
+      'K3: validation.render is not set',
+    ]);
   });
 });

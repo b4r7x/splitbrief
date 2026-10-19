@@ -13,7 +13,8 @@ import type { ValidationResult } from './result.js';
 import type { ValidationCommandRunner } from './types.js';
 
 export type ValidationStepResult = ValidationResult & {
-  missingExecutable?: string | undefined;
+  /** Why the command could not run: see `notRunnableReason`. */
+  notRunnable?: string | undefined;
   capture: ProcessOutputCapture;
 };
 
@@ -28,6 +29,25 @@ export function boundedOutputTail(text: string): string {
 
 function sanitizeTestOutput(text: string): string {
   return boundedOutputTail(truncateByTailLines(text, MAX_TEST_TAIL_LINES));
+}
+
+const MISSING_PROGRAM_LINE = /not found|No such file or directory/;
+
+/**
+ * Why a check's command could not run, or undefined when it ran. The program itself is missing
+ * (ENOENT), or it started and exited 127 because a program it calls is missing, as the shell of a
+ * package script does: the last stderr line with the shell's missing-program message names that
+ * program, past the trailer line a package manager such as yarn or bun writes after it.
+ */
+export function notRunnableReason(err: unknown, cmd: string): string | undefined {
+  if (isENOENT(err)) return `${cmd} not found`;
+  if (!processError.isExitCode(err) || err.data.code !== 127) return undefined;
+  const lines = err.data.stderr
+    .split('\n')
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+  const line = lines.findLast((part) => MISSING_PROGRAM_LINE.test(part)) ?? lines.at(-1);
+  return line === undefined ? `${cmd} exited 127` : boundedOutputTail(line);
 }
 
 /** Runs the command of a planner `test` check: a summary-last runner keeps its tail lines. */
@@ -60,13 +80,14 @@ export async function runValidationStep(opts: {
       exitCode: 0,
     };
   } catch (err: unknown) {
-    if (isENOENT(err) || processError.isNotFound(err)) {
+    const notRunnable = notRunnableReason(err, cmd);
+    if (notRunnable !== undefined) {
       return {
         passed: false,
         output: '',
         capture: { text: '', complete: true },
         command,
-        missingExecutable: cmd,
+        notRunnable,
       };
     }
     if (processError.isTimeout(err)) {
