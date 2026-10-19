@@ -90,6 +90,7 @@ function sessionSelectDeps(overrides: Partial<SessionSelectDeps> = {}): SessionS
       throw new Error('Resume preparation was not expected');
     },
     hydrateRun: async () => {},
+    applying: () => false,
     ...overrides,
   };
 }

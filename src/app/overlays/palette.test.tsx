@@ -99,6 +99,7 @@ function renderCommandPalette(): ReturnType<typeof render> {
           plannerSupportsImages: true,
           openRunAtRest: false,
           applyUnfinished: false,
+          applying: false,
           onError: feedbackStore.setError,
         })
       }
@@ -402,6 +403,7 @@ describe('CommandPaletteOverlay', () => {
             plannerSupportsImages: true,
             openRunAtRest: false,
             applyUnfinished: false,
+            applying: false,
             onError: feedbackStore.setError,
           })
         }

@@ -1,5 +1,15 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { plainUserMessage } from '../../core/types/user-input.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { STATE_FILE, sessionDir } from '../../core/paths.js';
+import type { WorkflowState } from '../../core/schemas/workflow.js';
+import {
+  activeApply,
+  trackActiveApply,
+} from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import {
   abortTurn,
   cancelBoundaryPause,
@@ -482,5 +492,101 @@ describe('safe departure', () => {
     });
     stopStore.park('mid-brief', null, null);
     expect(exit).not.toHaveBeenCalled();
+  });
+});
+
+describe('departure while this process applies the run at rest', () => {
+  const sessionId = 'applying-run';
+  const at = '2026-10-19T00:00:00.000Z';
+  let projectDir = '';
+  let settle: (state: WorkflowState) => Promise<void> = async () => {};
+
+  const readyState = (): WorkflowState =>
+    makeWorkflowState({
+      phase: 'complete',
+      reviewStatus: 'passed',
+      workspace: {
+        kind: 'staged-copy',
+        path: '/tmp/run-workspace',
+        base: { snapshotId: 'workspace-base', head: null },
+      },
+    });
+  const appliedState = (): WorkflowState => ({
+    ...readyState(),
+    applied: { at, backupId: 'backup-1', files: ['a.txt'] },
+    closed: { at, as: 'applied' },
+  });
+
+  function saveState(state: WorkflowState): void {
+    writeFileSync(join(sessionDir(projectDir, sessionId), STATE_FILE), JSON.stringify(state));
+  }
+
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.reset();
+    projectDir = createTempDir('handlers-apply');
+    mkdirSync(sessionDir(projectDir, sessionId), { recursive: true });
+    saveState(readyState());
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: { projectDir, sessionId }, status: { kind: 'running' } }),
+      execution: { kind: 'at-rest' },
+    });
+    const apply = Promise.withResolvers<void>();
+    void trackActiveApply(apply.promise);
+    settle = async (state) => {
+      saveState(state);
+      apply.resolve();
+      await activeApply();
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+  });
+
+  afterEach(async () => {
+    await settle(readyState());
+    clearAllHandlers();
+    stopStore.reset();
+    routerStore.reset();
+    cleanupTempDir(projectDir);
+  });
+
+  it('queues a quit until the Apply settles, then quits once', async () => {
+    const exit = vi.fn();
+
+    requestQuit(exit);
+    requestQuit(exit);
+    expect(exit).not.toHaveBeenCalled();
+
+    await settle(readyState());
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes home once the Apply settles with the run applied', async () => {
+    requestLeaveSession();
+    requestLeaveSession();
+    expect(routerStore.get().screen).toBe('workflow');
+
+    await settle(appliedState());
+    expect(routerStore.get().screen).toBe('home');
+  });
+
+  it('drops a queued home and stays on the run when the Apply did not apply it', async () => {
+    requestLeaveSession();
+
+    await settle(readyState());
+    expect(routerStore.get().screen).toBe('workflow');
+  });
+
+  it('lets a quit replace a queued home, and a later Esc changes nothing', async () => {
+    const exit = vi.fn();
+
+    requestLeaveSession();
+    requestQuit(exit);
+    requestLeaveSession();
+    expect(exit).not.toHaveBeenCalled();
+
+    await settle(readyState());
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(routerStore.get().screen).toBe('workflow');
   });
 });

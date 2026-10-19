@@ -206,6 +206,7 @@ function fixture(): { deps: AppInteractionDeps; ports: ReturnType<typeof makePor
       home: {
         prepareExecution: ports.homePrepare,
         sessionSelect: {
+          applying: () => false,
           loadResumeState: () => ({ kind: 'missing' }),
           prepareResume: ports.prepareResume,
           hydrateRun: ports.hydrateRun,

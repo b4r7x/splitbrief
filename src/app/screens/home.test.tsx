@@ -181,6 +181,7 @@ function preparedResumeExecution(
 const HOME_DEPS: HomeScreenDeps = {
   prepareExecution: prepareExecutionMock,
   sessionSelect: {
+    applying: () => false,
     loadResumeState: loadOwnerWorkflowState,
     prepareResume: async (input) => ({
       kind: 'prepared',

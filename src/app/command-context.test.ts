@@ -1,5 +1,6 @@
 import { createElement } from 'react';
-import { realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import {
@@ -10,12 +11,22 @@ import {
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { EngineEventOf } from '../engine/events/types.js';
+import type { AcceptRunResult } from '../core/runtime/commands/types.js';
+import type { WorkflowState } from '../core/schemas/workflow.js';
+import { STATE_FILE, sessionDir } from '../core/paths.js';
+import {
+  activeApply,
+  trackActiveApply,
+} from '../engine/orchestrator/session-lifecycle/shutdown.js';
+import { departureStore } from '../stores/workflow/departure.js';
+import { overlayStore } from '../stores/ui/overlay.js';
 import { taskId } from '../core/schemas/task.js';
 import {
   setClearQueueHandler,
@@ -140,6 +151,7 @@ describe('buildCommandContext', () => {
         plannerSupportsImages: false,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
         onError,
       },
     );
@@ -207,6 +219,7 @@ describe('buildCommandContext', () => {
       plannerSupportsImages: true,
       openRunAtRest: false,
       applyUnfinished: false,
+      applying: false,
       onError: () => {},
     });
     expect(feedbackStore.get().message).toBe(
@@ -226,6 +239,7 @@ describe('buildCommandContext', () => {
       plannerSupportsImages: true,
       openRunAtRest: false,
       applyUnfinished: false,
+      applying: false,
       onError: () => {},
     });
     expect(feedbackStore.get().message).toBe('Queue is empty');
@@ -241,6 +255,7 @@ describe('buildCommandContext', () => {
         plannerSupportsImages: true,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
         onError: () => {},
       });
       expect(feedbackStore.get().message).toBe(queueCopy({ seat: null, count }).clearFeedback);
@@ -876,6 +891,143 @@ describe('useRuntimeCommands', () => {
     expect(feedback.isError).toBe(true);
     expect(feedback.message).toContain('Unknown command');
     expect(feedback.message).toContain('/totally-unknown-xyz');
+    ui.unmount();
+  });
+});
+
+describe('useRuntimeCommands while Apply writes the run at rest', () => {
+  const sessionId = 'applying-run';
+  const at = '2026-10-19T00:00:00.000Z';
+  let model: ReturnType<typeof useRuntimeCommands> | undefined;
+  let held = Promise.withResolvers<AcceptRunResult>();
+
+  const readyState = (): WorkflowState =>
+    makeWorkflowState({
+      phase: 'complete',
+      reviewStatus: 'passed',
+      workspace: {
+        kind: 'staged-copy',
+        path: '/tmp/run-workspace',
+        base: { snapshotId: 'workspace-base', head: null },
+      },
+    });
+
+  function saveState(state: WorkflowState): void {
+    writeFileSync(join(sessionDir(projectDir, sessionId), STATE_FILE), JSON.stringify(state));
+  }
+
+  function Harness() {
+    model = useRuntimeCommands({
+      exit: () => {},
+      phase: 'complete',
+      createContext: () => ({
+        ...build(),
+        acceptRun: () => trackActiveApply(held.promise),
+      }),
+    });
+    return null;
+  }
+
+  async function settle(result: AcceptRunResult, state: WorkflowState): Promise<void> {
+    saveState(state);
+    held.resolve(result);
+    await activeApply();
+    await tick();
+  }
+
+  beforeEach(() => {
+    resetAllStores();
+    projectDir = createTempDir('commands-applying');
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    mkdirSync(sessionDir(projectDir, sessionId), { recursive: true });
+    saveState(readyState());
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({
+        ref: { projectDir, sessionId },
+        status: { kind: 'ready-to-apply', override: false },
+        hydration: { kind: 'loaded', state: readyState() },
+      }),
+      execution: { kind: 'at-rest' },
+    });
+    held = Promise.withResolvers<AcceptRunResult>();
+    onTestFinished(async () => {
+      held.resolve({ status: 'halted' });
+      await activeApply();
+    });
+  });
+
+  async function startApply() {
+    const ui = renderFeature(createElement(Harness));
+    await tick();
+    model?.handleRuntimeCommand('/run accept', 'workflow');
+    await tick();
+    expect(activeApply()).toBeDefined();
+    return ui;
+  }
+
+  it('runs the next command while Apply is still writing', async () => {
+    const ui = await startApply();
+
+    model?.handleRuntimeCommand('/help', 'workflow');
+    await tick();
+
+    expect(overlayStore.get().active).toBe('help');
+    ui.unmount();
+  });
+
+  it('queues /home behind Apply and goes home once Apply applies the run', async () => {
+    const ui = await startApply();
+
+    model?.handleRuntimeCommand('/home', 'workflow');
+    await tick();
+    expect(departureStore.get()?.kind).toBe('home');
+    expect(routerStore.get().screen).toBe('workflow');
+
+    await settle(
+      { status: 'applied', files: ['a.txt'] },
+      {
+        ...readyState(),
+        applied: { at, backupId: 'backup-1', files: ['a.txt'] },
+        closed: { at, as: 'applied' },
+      },
+    );
+    expect(routerStore.get().screen).toBe('home');
+    ui.unmount();
+  });
+
+  it('drops a queued /home and shows the halt when Apply stops part way', async () => {
+    const ui = await startApply();
+
+    model?.handleRuntimeCommand('/home', 'workflow');
+    await tick();
+    await settle({ status: 'halted' }, readyState());
+
+    expect(routerStore.get().screen).toBe('workflow');
+    expect(departureStore.get()).toBeNull();
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: 'Apply stopped; resolve it in the recovery menu.',
+    });
+    ui.unmount();
+  });
+
+  it.each([
+    ['/end', 'Apply is still writing to your checkout.'],
+    ['/resume', 'Apply is still writing to your checkout.'],
+    ['/steer use the other file', 'Apply is still writing to your checkout.'],
+    ['/run accept', 'Apply is still writing to your checkout.'],
+    ['/run reject confirm', 'Apply is still writing to your checkout.'],
+    ['/stop', 'Nothing to stop: Apply finishes on its own.'],
+  ])('refuses %s at once with one line', async (command, line) => {
+    const ui = await startApply();
+
+    model?.handleRuntimeCommand(command, 'workflow');
+    await tick();
+
+    expect(feedbackStore.get()).toMatchObject({ isError: true, message: line });
+    expect(overlayStore.get().active).toBe('none');
+    expect(routerStore.get().screen).toBe('workflow');
     ui.unmount();
   });
 });

@@ -1,4 +1,5 @@
-import { cpSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { cpSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { sessionDir } from '../../../src/core/paths.js';
 import { reactivateExistingSession } from '../../../src/core/sessions/active-pointer.js';
@@ -7,8 +8,56 @@ import { saveState } from '../../../src/core/state/persistence.js';
 import { applyBackupDir, writeApplyBackup } from '../../../src/engine/orchestrator/apply/backup.js';
 import { captureAcquisitionBaseline } from '../../../src/engine/orchestrator/approval/file-snapshots/entry.js';
 import { buildApplyPartialRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/apply.js';
+import { stagedWorkspaceRoot } from '../../../src/engine/orchestrator/isolation/retention.js';
 import { createSnapshot } from '../../../src/engine/snapshots/create.js';
+import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import type { StopContinueFixture } from './stop-continue-fixture.js';
+
+const FILES = ['a.txt', 'b.txt'];
+
+/**
+ * A staged-copy workspace whose run changed a.txt and b.txt from `before Apply` to `run result`,
+ * where a run keeps it: inside the session, so closing the run removes it.
+ */
+async function seedWorkspace(target: StopContinueFixture, ref: SessionRef) {
+  for (const file of FILES) writeFileSync(join(target.projectDir, file), 'before Apply\n');
+  await createSnapshot({ ...ref, phase: 'manual', name: 'baseline' });
+  const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
+  const copy = join(target.tmpDir, 'workspace');
+  cpSync(target.projectDir, copy, {
+    recursive: true,
+    filter: (path) => !['.git', '.splitbrief'].includes(basename(path)),
+  });
+  const root = stagedWorkspaceRoot(ref, `stage-${randomBytes(16).toString('hex')}`);
+  mkdirSync(root, { recursive: true });
+  const workspaceDir = join(root, 'workspace');
+  renameSync(copy, workspaceDir);
+  for (const file of FILES) writeFileSync(join(workspaceDir, file), 'run result\n');
+  const workspace = {
+    kind: 'staged-copy' as const,
+    path: workspaceDir,
+    base: { snapshotId: base.manifest.id, head: null },
+  };
+  return { files: FILES, workspaceDir, workspace };
+}
+
+function statePathOf(ref: SessionRef): string {
+  return join(sessionDir(ref.projectDir, ref.sessionId), 'state.json');
+}
+
+/** A reviewed run in a staged-copy fixture, ready to apply a.txt and b.txt. */
+export async function seedReadyRun(target: StopContinueFixture) {
+  const ref = { projectDir: target.projectDir, sessionId: 'ready-to-apply' };
+  const { files, workspaceDir, workspace } = await seedWorkspace(target, ref);
+  saveState(ref, {
+    ...createInitialState('Apply the run'),
+    phase: 'complete',
+    reviewStatus: 'passed',
+    workspace,
+  });
+  reactivateExistingSession(ref);
+  return { ref, files, workspaceDir, statePath: statePathOf(ref) };
+}
 
 /** A run in a staged-copy fixture whose Apply wrote a.txt and stopped before b.txt, partial or interrupted. */
 export async function seedApplyingRun(
@@ -17,16 +66,7 @@ export async function seedApplyingRun(
 ) {
   const ref = { projectDir: target.projectDir, sessionId: `applying-${kind}` };
   const at = '2026-10-11T00:00:00.000Z';
-  const files = ['a.txt', 'b.txt'];
-  for (const file of files) writeFileSync(join(target.projectDir, file), 'before Apply\n');
-  await createSnapshot({ ...ref, phase: 'manual', name: 'baseline' });
-  const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
-  const workspaceDir = join(target.tmpDir, 'workspace');
-  cpSync(target.projectDir, workspaceDir, {
-    recursive: true,
-    filter: (path) => !['.git', '.splitbrief'].includes(basename(path)),
-  });
-  for (const file of files) writeFileSync(join(workspaceDir, file), 'run result\n');
+  const { files, workspaceDir, workspace } = await seedWorkspace(target, ref);
   const backupId = `backup-${kind}`;
   const backupDir = applyBackupDir(ref.projectDir, ref.sessionId, backupId);
   const backup = await writeApplyBackup({
@@ -56,15 +96,10 @@ export async function seedApplyingRun(
     ...createInitialState('Recover Apply'),
     phase: 'complete',
     reviewStatus: 'passed',
-    workspace: {
-      kind: 'staged-copy',
-      path: workspaceDir,
-      base: { snapshotId: base.manifest.id, head: null },
-    },
+    workspace,
     applying: { at, backupId },
     ...(kind === 'partial' ? { pendingRecovery } : {}),
   });
   reactivateExistingSession(ref);
-  const statePath = join(sessionDir(ref.projectDir, ref.sessionId), 'state.json');
-  return { ref, files, workspaceDir, backupDir, backup, statePath };
+  return { ref, files, workspaceDir, backupDir, backup, statePath: statePathOf(ref) };
 }

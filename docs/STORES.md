@@ -69,6 +69,7 @@ src/stores/
 │   ├── operations/           # Active / last runner operation (state.ts, reducer.ts, …)
 │   ├── actions/              # Composite writes across sub-stores (event, load, hydrate, interrupt, resume, pause, reset, sections, wait)
 │   ├── stop.ts               # Stop/quit intent + termination phase (stopStore)
+│   ├── departure.ts          # Home or quit queued behind work that holds the screen (departureStore)
 │   ├── attachments.ts        # Pending prompt attachments
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
 │   ├── streaming-output.ts   # Live streamed runner output
@@ -233,6 +234,7 @@ routerStore.navigate({ to: 'home' });
 | `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, queuedMessageIds, steerableCall, startedAt, endedAt, durationMs, reason, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt }` — `plannerCall` is the call the phase is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it | internal writes via `actions.addEvent` / local cancel intent |
 | `operationsStore` | `workflow/operations/state.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
 | `stopStore` | `workflow/stop.ts` | `{ intent, phase, requestedAt, parked, error? }` — the run's stop intent and where its termination stands | `request(intent)`, phase marks (`markTerminating()`, `markSettling()`, `markForcing()`), `park()`, `resume(steer)`, `end()`, `fail()` |
+| `departureStore` | `workflow/departure.ts` | `{ kind: 'home' \| 'quit', run } \| null` — the one departure that waits for a stop's cleanup or an Apply to settle; a quit replaces a queued home | `queue(departure)`, `take()`, `reset()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()`, `toggleActivityBatch()` |
 | `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, renderedLineCount, … }` | `setReviewFile()`, `setReviewArtifact()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()`, `clearReviewIfOwner()`, plus brief source, path and confirm setters |
 | `attachmentsStore` | `workflow/attachments.ts` | `{ pending: Attachment[] }` | `add()`, `remove()`, `replacePendingImages()`, `drain()`, `peek()` — `attachImage()` / `detachImage()` / `listAttachments()` helpers |

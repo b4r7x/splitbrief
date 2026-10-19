@@ -26,7 +26,10 @@ vi.mock('../../engine/detection/service.js', () => ({
 vi.mock('../../lib/process/registry.js', () => ({
   killAllProcesses: lifecycleMocks.killAllProcesses,
 }));
-vi.mock('../../engine/orchestrator/session-lifecycle/shutdown.js', () => ({
+vi.mock('../../engine/orchestrator/session-lifecycle/shutdown.js', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../../engine/orchestrator/session-lifecycle/shutdown.js')
+  >()),
   awaitActiveWorkflowShutdown: lifecycleMocks.awaitActiveWorkflowShutdown,
 }));
 
@@ -152,6 +155,31 @@ describe('TUI cleanup', () => {
     await expect(createTuiCleanup({ restore })()).rejects.toBe(limitation);
 
     expect(lifecycleMocks.awaitActiveWorkflowShutdown).toHaveBeenCalledOnce();
+    expect(restore).toHaveBeenCalledOnce();
+  });
+
+  it('waits for an Apply this process runs, even one that fails, before it restores the terminal', async () => {
+    const shutdown = await vi.importActual<
+      typeof import('../../engine/orchestrator/session-lifecycle/shutdown.js')
+    >('../../engine/orchestrator/session-lifecycle/shutdown.js');
+    lifecycleMocks.awaitActiveWorkflowShutdown.mockImplementation(
+      shutdown.awaitActiveWorkflowShutdown,
+    );
+    const apply = Promise.withResolvers<void>();
+    const tracked = shutdown.trackActiveApply(apply.promise);
+    const restore = vi.fn();
+    let cleaned = false;
+
+    const cleanup = createTuiCleanup({ restore })().then(() => {
+      cleaned = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(cleaned).toBe(false);
+    expect(restore).not.toHaveBeenCalled();
+
+    apply.reject(new Error('apply failed'));
+    await expect(tracked).rejects.toThrow('apply failed');
+    await cleanup;
     expect(restore).toHaveBeenCalledOnce();
   });
 

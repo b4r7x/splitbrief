@@ -347,6 +347,7 @@ describe('buildPaletteSources session items', () => {
       onRuntimeCommand: noop,
       onSessionSelect: (selected, projectDir) =>
         handleSessionSelect(selected, projectDir, {
+          applying: () => false,
           loadResumeState: loadOwnerWorkflowState,
           prepareResume: async ({ ref, state }) => ({
             kind: 'prepared',
@@ -391,6 +392,7 @@ describe('buildPaletteSources session items', () => {
       onRuntimeCommand: noop,
       onSessionSelect: (selected, projectDir) =>
         handleSessionSelect(selected, projectDir, {
+          applying: () => false,
           loadResumeState: loadOwnerWorkflowState,
           prepareResume: async () => {
             throw new Error('Preparation should not run without saved state');

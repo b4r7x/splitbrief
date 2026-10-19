@@ -429,6 +429,43 @@ describe('openRunByline', () => {
     );
   });
 
+  it('says an Apply is writing to the checkout, with its clock and no key to continue', () => {
+    const parts = openRunBylineParts({
+      ...OPEN,
+      status: { kind: 'running' },
+      apply: { elapsedMs: 4_000, queued: null },
+    });
+    expect(joinedByline(parts)).toBe('Applying to your checkout · 0:04');
+    expect(parts[0]).toEqual({ text: 'Applying to your checkout', tone: 'accent' });
+  });
+
+  it.each([
+    ['home', 6_000, 'Applying to your checkout · Returns home when Apply finishes · 0:06'],
+    ['quit', 7_000, 'Applying to your checkout · Quits when Apply finishes · 0:07'],
+  ] as const)('says where a queued %s goes once the Apply finishes', (queued, elapsedMs, text) => {
+    expect(
+      openRunByline({ ...OPEN, status: { kind: 'running' }, apply: { elapsedMs, queued } }),
+    ).toBe(text);
+  });
+
+  it.each([
+    [null, 30, 'Applying to your check… · 0:07'],
+    ['quit', 40, 'Quits when Apply finishes · 0:07'],
+    ['home', 30, 'Returns home when Appl… · 0:07'],
+  ] as const)(
+    'keeps the clock on a narrow line and, with %s queued, says where it goes',
+    (queued, width, text) => {
+      expect(
+        openRunByline({
+          continuable: false,
+          width,
+          status: { kind: 'running' },
+          apply: { elapsedMs: 7_000, queued },
+        }),
+      ).toBe(text);
+    },
+  );
+
   it('keeps the halt name when a narrow line cannot hold its cause', () => {
     const status: RunStatus = {
       kind: 'open',

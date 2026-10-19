@@ -29,6 +29,7 @@ import {
   type CheckpointPredicate,
   type FixtureFactory,
   type FixtureRegistry,
+  type FixtureWrite,
 } from '../common.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
@@ -39,6 +40,11 @@ import { reviewKeysStore } from '../../../../src/stores/ui/review-keys.js';
 import { REVIEW_COMMENT_HINTS } from '../../../../src/features/workflow/prompt-rows/approval.js';
 import { formatCopyResult } from '../../../../src/core/runtime/commands/types.js';
 import { stopStore } from '../../../../src/stores/workflow/stop.js';
+import { departureStore } from '../../../../src/stores/workflow/departure.js';
+import {
+  activeApply,
+  trackActiveApply,
+} from '../../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import { overlayStore } from '../../../../src/stores/ui/overlay.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../src/lib/terminal/typeahead-grace.js';
 import {
@@ -218,6 +224,33 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         afterMount: async () => {
           const bus = createRecoveryBus({ ...record.ref, sink: () => {} });
           await endRunAtRest({ ...record.ref, bus }, saved, visualConfig());
+        },
+      };
+    };
+  }
+  if (projection.scenarioId.startsWith('workflow-at-rest-applying')) {
+    // The Apply this process runs, held open for the capture and settled at teardown. Esc goes
+    // through the screen's own keys; the preview stubs quitting, so the queued quit is seeded.
+    const afterMount =
+      projection.scenarioId === 'workflow-at-rest-applying-home-queued'
+        ? (write: FixtureWrite) => write.press('\u001b')
+        : projection.scenarioId === 'workflow-at-rest-applying-quit-queued'
+          ? () => departureStore.__testReset({ kind: 'quit', run: () => {} })
+          : undefined;
+    return () => {
+      const lifecycle = base();
+      const apply = Promise.withResolvers<void>();
+      return {
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          void trackActiveApply(apply.promise);
+        },
+        ...(afterMount !== undefined && { afterMount }),
+        teardown: async () => {
+          apply.resolve();
+          await activeApply();
+          departureStore.__testReset();
+          return lifecycle.teardown();
         },
       };
     };
@@ -688,6 +721,28 @@ const checkpointPredicates = [
   [checkpointId('at-rest-waiting'), includesAll()],
   [checkpointId('closed-complete'), includesAll()],
   [checkpointId('ready-to-apply'), includesAll()],
+  [
+    checkpointId('at-rest-applying'),
+    (context) =>
+      includesAll('Applying to your checkout', '● Apply')(context) &&
+      excludesAll('Ready to apply', 'Stopped at Apply', 'Pick Apply')(context),
+  ],
+  // A narrow byline keeps only where the queued departure goes, cut to the line.
+  [
+    checkpointId('at-rest-applying-home-queued'),
+    (context) => includesAll('Returns home')(context) && departureStore.get()?.kind === 'home',
+  ],
+  [
+    checkpointId('at-rest-applying-quit-queued'),
+    (context) => includesAll('Quits when')(context) && departureStore.get()?.kind === 'quit',
+  ],
+  // No Apply of this process holds the run, so nothing waits for it: Enter goes home at once.
+  [
+    checkpointId('at-rest-other-process-applying'),
+    (context) =>
+      includesAll('Running in another process', '● Apply', '⏎ for home…')(context) &&
+      excludesAll('Applying to your checkout', 'when Apply finishes', 'Ready to apply')(context),
+  ],
   [checkpointId('ready-composer-focus'), includesAll('Ready to apply')],
   [checkpointId('ready-empty-diff'), includesAll('Ready to apply')],
   [checkpointId('ready-override'), includesAll()],

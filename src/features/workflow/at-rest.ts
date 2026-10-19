@@ -7,8 +7,9 @@ import {
   type RailStageStatus,
 } from '../../core/rail-stages.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
-import type { StopReason } from '../../core/sessions/run-status.js';
+import { awaitsApply, type StopReason } from '../../core/sessions/run-status.js';
 import type { RouteData } from '../../stores/navigation/router.js';
+import type { DepartureKind } from '../../stores/workflow/departure.js';
 import { AT_REST_PLACEHOLDER } from './closed/byline.js';
 
 /**
@@ -79,6 +80,18 @@ export function routeBriefMark(route: RouteData): RailHalt | null {
 }
 
 /**
+ * A run a process holds while its reviewed result still waits for the checkout: Apply is writing it.
+ * The record says `running` for any process that holds the run, so the saved state tells Apply apart.
+ */
+export function applyRunning(record: RunRecord): boolean {
+  return (
+    record.status.kind === 'running' &&
+    record.hydration.kind === 'loaded' &&
+    awaitsApply(record.hydration.state)
+  );
+}
+
+/**
  * The Apply stage a workspace run wears on its header rail once its review passed. Before that the
  * rail shows Plan, Build and Review, as the live rail of the same run does. A run with no workspace,
  * one whose workspace is the checkout itself, or an ended run nothing can apply has no Apply stage.
@@ -88,6 +101,7 @@ export function applyStage(record: RunRecord): RailStageStatus | undefined {
   const workspace = record.hydration.state.workspace;
   if (workspace === undefined || workspace.kind === 'checkout') return undefined;
   const status = record.status;
+  if (applyRunning(record)) return 'active';
   if (status.kind === 'ready-to-apply') return 'pending';
   if (status.kind !== 'closed') return undefined;
   if (status.as === 'applied') return 'done';
@@ -106,8 +120,13 @@ export interface AtRestComposer {
 /**
  * What the composer of a run at rest takes. A run that can be picked up takes a correction and a
  * bare Enter; anything else takes commands only, so Enter never promises work that cannot happen.
+ * Behind this window's Apply, Enter queues home, which a queued quit already overrides; `apply` is
+ * absent when no Apply of this window writes the run, so Enter goes home at once.
  */
-export function atRestComposer(record: RunRecord): AtRestComposer {
+export function atRestComposer(
+  record: RunRecord,
+  apply?: Readonly<{ queued: DepartureKind | null }>,
+): AtRestComposer {
   const continuable = record.status.kind === 'open' && record.hydration.kind === 'loaded';
   return {
     continuable,
@@ -115,10 +134,14 @@ export function atRestComposer(record: RunRecord): AtRestComposer {
     placeholder:
       record.status.kind === 'ready-to-apply'
         ? AT_REST_PLACEHOLDER.ready
-        : !continuable
-          ? AT_REST_PLACEHOLDER.closed
-          : record.status.kind === 'open' && record.status.stop.on.kind === 'question'
-            ? AT_REST_PLACEHOLDER.inputRequired
-            : AT_REST_PLACEHOLDER.open,
+        : apply !== undefined
+          ? apply.queued === 'quit'
+            ? AT_REST_PLACEHOLDER.quitting
+            : AT_REST_PLACEHOLDER.applying
+          : !continuable
+            ? AT_REST_PLACEHOLDER.closed
+            : record.status.kind === 'open' && record.status.stop.on.kind === 'question'
+              ? AT_REST_PLACEHOLDER.inputRequired
+              : AT_REST_PLACEHOLDER.open,
   };
 }

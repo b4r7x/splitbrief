@@ -13,6 +13,8 @@ import {
   segmentsForRowText,
 } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
+import { formatElapsedClock } from '../../../utils/format-time.js';
+import type { DepartureKind } from '../../../stores/workflow/departure.js';
 import { stepWord, stopPoint } from '../stop/copy.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { separatedSpans } from '../conversation-rows/row-format/text.js';
@@ -132,6 +134,8 @@ export const AT_REST_PLACEHOLDER = {
   open: 'Type a correction…',
   inputRequired: 'Type your answer…',
   closed: `/ for a command${SOFT_SEP}⏎ for home…`,
+  applying: `/ for a command${SOFT_SEP}⏎ for home when Apply finishes…`,
+  quitting: '/ for a command…',
   ready: `/ for a command${SOFT_SEP}tab for the result menu…`,
 } as const;
 
@@ -146,14 +150,55 @@ const RUNNING_BYLINE = {
   action: '',
 };
 
+/** An Apply writing the run's result to the checkout: how long it has run, and what waits for it. */
+export interface ApplyByline {
+  elapsedMs: number;
+  queued: DepartureKind | null;
+}
+
+const QUEUED_AFTER_APPLY: Record<DepartureKind, string> = {
+  home: 'Returns home when Apply finishes',
+  quit: 'Quits when Apply finishes',
+};
+
+/**
+ * Apply has no safe cancel, so its byline offers no key; its clock proves it is alive. A line too
+ * narrow for every word keeps the clock and, once a key queued a departure, says where it goes.
+ */
+function applyByline(apply: ApplyByline, width: number): readonly ConversationRowSegment[] {
+  const clock = `${SOFT_SEP}${formatElapsedClock(apply.elapsedMs)}`;
+  const budget = Math.max(1, width - getTerminalCellWidth(clock));
+  const reason: ConversationRowSegment = {
+    text: 'Applying to your checkout',
+    tone: stateTone('running'),
+  };
+  const queued: ConversationRowSegment | null =
+    apply.queued === null ? null : { text: QUEUED_AFTER_APPLY[apply.queued], tone: 'textDim' };
+  const whole: ConversationRowSegment[] =
+    queued === null ? [reason] : [reason, { ...queued, text: `${SOFT_SEP}${queued.text}` }];
+  const fitted =
+    queued === null || getTerminalCellWidth(whole.map((span) => span.text).join('')) <= budget
+      ? whole
+      : [queued];
+  const words = truncateTerminalDisplayText(fitted.map((span) => span.text).join(''), budget);
+  return [...segmentsForRowText(fitted, words), { text: clock, tone: 'textDim' }];
+}
+
 /**
  * The row under the composer of a run at rest: where it stopped, then the one key that moves it.
  * A run nothing can pick up says why before it says where to go.
  */
 export function openRunBylineParts(
-  input: Readonly<{ status: RunStatus; continuable: boolean; width: number }>,
+  input: Readonly<{
+    status: RunStatus;
+    continuable: boolean;
+    width: number;
+    apply?: ApplyByline | undefined;
+  }>,
 ): readonly ConversationRowSegment[] {
   const { status, width } = input;
+  if (status.kind === 'running' && input.apply !== undefined)
+    return applyByline(input.apply, width);
   if (status.kind === 'running')
     return fitStatusByline(
       RUNNING_BYLINE.reason,

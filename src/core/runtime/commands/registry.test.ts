@@ -92,6 +92,7 @@ describe('createRuntimeCommands registry shape', () => {
         plannerSupportsImages: false,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBeTypeOf('string');
     expect(
@@ -100,6 +101,7 @@ describe('createRuntimeCommands registry shape', () => {
         plannerSupportsImages: true,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBeUndefined();
   });

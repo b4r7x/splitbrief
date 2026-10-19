@@ -216,6 +216,8 @@ export interface CommandGuardContext {
   openRunAtRest: boolean;
   /** The run on screen is at rest with an Apply that did not finish: End run refuses it. */
   applyUnfinished: boolean;
+  /** This process's Apply is writing the run on screen to the checkout; it cannot be cut. */
+  applying: boolean;
 }
 
 type CommandArgSpec =

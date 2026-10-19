@@ -156,6 +156,15 @@ export function readStopMenuRows(): StopRow[] {
     ];
   const route = routerStore.get();
   const atRest = route.screen === 'workflow' && route.execution.kind === 'at-rest';
+  // A process that holds the run is applying it or driving it: nothing here may continue or end it.
+  if (atRest && route.run.status.kind === 'running')
+    return [
+      {
+        id: 'leave',
+        label: 'Back to sessions',
+        consequence: 'return home; keep the run and draft',
+      },
+    ];
   if (stop.phase === 'parked' || stop.phase === 'ended' || atRest) {
     const closed = stop.phase === 'ended' || (atRest && route.run.status.kind === 'closed');
     // A ready run cannot be continued: Apply and Discard live in its result menu, and End run

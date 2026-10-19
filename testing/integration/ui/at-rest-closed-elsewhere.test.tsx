@@ -63,6 +63,7 @@ describe('a run at rest that another process closes', () => {
       stopStore.park('boundary', null, () => {});
 
       await handleSessionSelect(makeSession({ id: sessionId }), projectDir, {
+        applying: () => false,
         loadResumeState: loadOwnerWorkflowState,
         prepareResume: vi.fn(),
         hydrateRun,
@@ -129,6 +130,7 @@ describe('a run at rest that another process closes', () => {
 
     const runWorkflow = vi.fn();
     const sessionSelect: SessionSelectDeps = {
+      applying: () => false,
       loadResumeState: loadOwnerWorkflowState,
       prepareResume: vi.fn(),
       hydrateRun,

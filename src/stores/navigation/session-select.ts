@@ -7,6 +7,7 @@ import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { OverlayType } from '../../core/navigation/types.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
+import { APPLY_RUNNING_REFUSAL } from '../../core/runtime/commands/messages.js';
 import type { PreparationOutcome } from '../../engine/runners/prepared-execution.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
@@ -108,6 +109,8 @@ export interface SessionSelectDeps {
    */
   readRunHistory?: ((record: RunRecord) => Promise<() => void>) | undefined;
   cancelPendingApproval?: (() => void) | undefined;
+  /** Whether this process's Apply is writing the run on screen; a selection is refused meanwhile. */
+  applying: () => boolean;
 }
 
 function dismissOverlays(): void {
@@ -219,6 +222,10 @@ export async function handleSessionSelect(
   const route = routerStore.get();
   if (route.screen === 'workflow' && route.execution.kind === 'local') {
     setSelectionError(`Cannot open "${feature}": stop the run on screen first.`);
+    return;
+  }
+  if (deps.applying()) {
+    setSelectionError(`Cannot open "${feature}": ${APPLY_RUNNING_REFUSAL}`);
     return;
   }
 

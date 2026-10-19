@@ -99,6 +99,7 @@ function homeDeps(
   return {
     prepareExecution: prepare,
     sessionSelect: {
+      applying: () => false,
       loadResumeState: loadOwnerWorkflowState,
       prepareResume: async () => ({ kind: 'aborted' }),
       hydrateRun: async () => {},
@@ -313,6 +314,7 @@ describe('a resume checking its tools', () => {
 
   function continueDeps(prepareResume: SessionSelectDeps['prepareResume']): SessionSelectDeps {
     return {
+      applying: () => false,
       loadResumeState: () => ({ kind: 'loaded', state: RESUME_STATE }),
       prepareResume,
       hydrateRun: async () => {},

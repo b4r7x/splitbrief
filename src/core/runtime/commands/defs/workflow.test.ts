@@ -24,6 +24,7 @@ describe('/resume', () => {
         plannerSupportsImages: true,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBeUndefined();
     expect(
@@ -32,6 +33,7 @@ describe('/resume', () => {
         plannerSupportsImages: true,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBe('No run to resume in this phase');
   });
@@ -45,6 +47,7 @@ describe('/resume', () => {
         plannerSupportsImages: true,
         openRunAtRest: true,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBeUndefined();
     expect(
@@ -53,6 +56,7 @@ describe('/resume', () => {
         plannerSupportsImages: true,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBe('No run to resume in this phase');
   });
@@ -89,6 +93,7 @@ describe('/steer', () => {
         plannerSupportsImages: true,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBeUndefined();
     expect(
@@ -97,6 +102,7 @@ describe('/steer', () => {
         plannerSupportsImages: true,
         openRunAtRest: true,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBeUndefined();
     expect(
@@ -105,6 +111,7 @@ describe('/steer', () => {
         plannerSupportsImages: true,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBe('No run to steer in this phase');
   });
@@ -147,6 +154,7 @@ describe('/end', () => {
         plannerSupportsImages: true,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBeUndefined();
     expect(
@@ -155,6 +163,7 @@ describe('/end', () => {
         plannerSupportsImages: true,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBe('No run to end in this phase');
   });
@@ -168,6 +177,7 @@ describe('/end', () => {
         plannerSupportsImages: true,
         openRunAtRest: true,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBeUndefined();
     expect(
@@ -176,6 +186,7 @@ describe('/end', () => {
         plannerSupportsImages: true,
         openRunAtRest: false,
         applyUnfinished: false,
+        applying: false,
       }),
     ).toBe('No run to end in this phase');
   });
@@ -187,6 +198,7 @@ describe('/end', () => {
         plannerSupportsImages: true,
         openRunAtRest: true,
         applyUnfinished: true,
+        applying: false,
       }),
     ).toBe('Apply did not finish. Restore or retry Apply first, then end the run.');
   });

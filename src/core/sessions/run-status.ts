@@ -160,8 +160,8 @@ function seatToolWord(state: WorkflowState, seat: CrewSeatId): string {
 /**
  * How a run stands, from the state it saved and whether a process still holds it.
  * A passing review, or a failed one accepted as is, closes a run without a workspace or on the
- * checkout; a run with a worktree or staged copy becomes ready to apply, and Apply, Discard or End
- * close it. An Apply undone later leaves the run closed as undone. A halt still waiting for an
+ * checkout; a run with a worktree or staged copy becomes ready to apply once no process holds it
+ * (a process that holds it is applying it), and Apply, Discard or End close it. An Apply undone later leaves the run closed as undone. A halt still waiting for an
  * answer keeps either open.
  */
 export function deriveRunStatus(
@@ -176,14 +176,6 @@ export function deriveRunStatus(
     return { kind: 'closed', as: undone ? 'undone' : state.closed.as };
   }
   if (
-    awaitsApply(state) &&
-    state.pendingRecovery === undefined &&
-    state.interruptedStep === undefined &&
-    !applyUnfinished(state)
-  ) {
-    return { kind: 'ready-to-apply', override: state.reviewStatus !== 'passed' };
-  }
-  if (
     state.phase === 'complete' &&
     (state.reviewStatus === 'passed' || state.acceptedAsIs !== undefined) &&
     state.pendingRecovery === undefined &&
@@ -192,6 +184,14 @@ export function deriveRunStatus(
     return { kind: 'closed', as: 'complete' };
   }
   if (input.liveness === 'alive') return { kind: 'running' };
+  if (
+    awaitsApply(state) &&
+    state.pendingRecovery === undefined &&
+    state.interruptedStep === undefined &&
+    !applyUnfinished(state)
+  ) {
+    return { kind: 'ready-to-apply', override: state.reviewStatus !== 'passed' };
+  }
 
   const waiting = (on: WaitingOn): RunStatus => ({
     kind: 'open',

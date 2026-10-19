@@ -7,7 +7,7 @@ import { readRunHistory } from './run-history.js';
 import { hydrateResume } from './resume-hydration.js';
 import { configStore } from '../../stores/project/config.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
-import { routerStore } from '../../stores/navigation/router.js';
+import { routerStore, type RouteData } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -16,6 +16,8 @@ import type { CrewSeatId } from '../../core/crew/identity.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { markWorkflowResumed } from '../../stores/workflow/actions/resume.js';
 import { stopStore } from '../../stores/workflow/stop.js';
+import { departureStore, type Departure } from '../../stores/workflow/departure.js';
+import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import type {
   QueueClearResult,
   QueueHandler,
@@ -46,7 +48,6 @@ let pendingBoundaryPause = false;
 /** The seat changes saved under the running brief, keyed by seat: the revision each was seen at. */
 const pendingSeatChanges = new Map<CrewSeatId, string>();
 let steerUnsubscribe: (() => void) | undefined;
-let departure: { kind: 'home' | 'quit'; run: () => void } | null = null;
 let unsubscribeDeparture: (() => void) | undefined;
 let rereadAttempt = 0;
 
@@ -58,7 +59,7 @@ function setHandler<K extends keyof Handlers>(k: K, h: Handlers[K] | null): void
 export function clearAllHandlers(): void {
   unsubscribeDeparture?.();
   unsubscribeDeparture = undefined;
-  departure = null;
+  departureStore.reset();
   for (const k of Object.keys(handlers) as (keyof Handlers)[]) delete handlers[k];
   abortHandlers = [];
   pendingBoundaryInterrupt = false;
@@ -305,36 +306,72 @@ export function requestEndRun(): boolean {
   return requestCancel();
 }
 
-function requestDeparture(kind: 'home' | 'quit', run: () => void): void {
-  if (departure?.kind === 'quit' || departure?.kind === kind) return;
-  const origin = routerStore.get();
-  departure = { kind, run };
+/** Whether the screen moved to another run since the departure was asked for: it is stale then. */
+function leftOrigin(origin: RouteData): boolean {
+  const route = routerStore.get();
+  return (
+    origin.screen === 'workflow' &&
+    (route.screen !== 'workflow' ||
+      route.run.ref.projectDir !== origin.run.ref.projectDir ||
+      route.run.ref.sessionId !== origin.run.ref.sessionId)
+  );
+}
+
+function leave(departure: Departure | null): void {
+  try {
+    flushSessionDrafts();
+    departure?.run();
+  } catch (err) {
+    feedbackStore.setError(toErrorMessage(err));
+  }
+}
+
+function stopWaitingForStop(): void {
   unsubscribeDeparture?.();
+  unsubscribeDeparture = undefined;
+}
+
+/**
+ * Apply cannot be cut, so a departure asked for while this process applies waits for it. Once it
+ * settles a quit still quits; a home goes only to an applied run, so a halt never goes unseen.
+ */
+function departAfterApply(apply: Promise<void>, origin: RouteData): void {
+  void apply.then(() => {
+    const departure = departureStore.take();
+    if (departure === null || leftOrigin(origin)) return;
+    if (departure.kind === 'home' && origin.screen === 'workflow') {
+      try {
+        const status = readRunRecord(origin.run.ref).status;
+        if (status.kind !== 'closed' || status.as !== 'applied') return;
+      } catch (err) {
+        feedbackStore.setError(toErrorMessage(err));
+        return;
+      }
+    }
+    leave(departure);
+  });
+}
+
+function requestDeparture(kind: Departure['kind'], run: () => void): void {
+  const waiting = departureStore.get() !== null;
+  if (!departureStore.queue({ kind, run })) return;
+  const origin = routerStore.get();
+  const apply = activeApply();
+  if (apply !== undefined) {
+    if (!waiting) departAfterApply(apply, origin);
+    return;
+  }
+  stopWaitingForStop();
   const complete = () => {
     const phase = stopStore.get().phase;
-    const route = routerStore.get();
-    const changedSession =
-      origin.screen === 'workflow' &&
-      (route.screen !== 'workflow' ||
-        route.run.ref.projectDir !== origin.run.ref.projectDir ||
-        route.run.ref.sessionId !== origin.run.ref.sessionId);
-    if (phase === 'failed' || changedSession) {
-      unsubscribeDeparture?.();
-      unsubscribeDeparture = undefined;
-      departure = null;
+    if (phase === 'failed' || leftOrigin(origin)) {
+      stopWaitingForStop();
+      departureStore.reset();
       return;
     }
     if (phase !== 'parked' && phase !== 'ended') return;
-    unsubscribeDeparture?.();
-    unsubscribeDeparture = undefined;
-    const action = departure;
-    departure = null;
-    try {
-      flushSessionDrafts();
-      action?.run();
-    } catch (err) {
-      feedbackStore.setError(toErrorMessage(err));
-    }
+    stopWaitingForStop();
+    leave(departureStore.take());
   };
   unsubscribeDeparture = stopStore.subscribe(complete);
   // A boundary pause can still hold an engine promise. Drain it before leaving its screen.
@@ -342,16 +379,8 @@ function requestDeparture(kind: 'home' | 'quit', run: () => void): void {
     stopStore.request('stop-now');
     handlers.stop();
   } else if (!requestStopNow()) {
-    unsubscribeDeparture?.();
-    unsubscribeDeparture = undefined;
-    const action = departure;
-    departure = null;
-    try {
-      flushSessionDrafts();
-      action?.run();
-    } catch (err) {
-      feedbackStore.setError(toErrorMessage(err));
-    }
+    stopWaitingForStop();
+    leave(departureStore.take());
   }
   complete();
 }

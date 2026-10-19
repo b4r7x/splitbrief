@@ -506,8 +506,15 @@ describe('a run with a workspace', () => {
     });
   });
 
-  it('ready outranks liveness', () => {
-    expect(statusOf(passed(), 'alive')).toEqual({ kind: 'ready-to-apply', override: false });
+  it('a ready run a live process holds is running: its Apply is in progress', () => {
+    expect(statusOf(passed(), 'alive')).toEqual({ kind: 'running' });
+  });
+
+  it('a closed run stays closed while a live process still holds it', () => {
+    expect(statusOf(passed({ closed: { at: AT, as: 'applied' } }), 'alive')).toEqual({
+      kind: 'closed',
+      as: 'applied',
+    });
   });
 
   it('an interrupted step on a ready run reads open paused', () => {

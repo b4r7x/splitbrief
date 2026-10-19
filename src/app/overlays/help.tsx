@@ -30,6 +30,7 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { clamp } from '../../utils/math.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 
 const PANEL_DENSITY: OverlayDensity = 'roomy';
 // border, pad, title, blank, hint, pad, border — the panel is asked for a tight title, so the
@@ -103,6 +104,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
         }),
       openRunAtRest,
       applyUnfinished,
+      applying: activeApply() !== undefined,
     },
   });
   const shortcuts = getShortcutsForScreen(currentScreen, { inputMode });

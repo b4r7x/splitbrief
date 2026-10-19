@@ -130,6 +130,7 @@ describe('SessionPreparation', () => {
     const pending = Promise.withResolvers<PreparationOutcome>();
     let signal: AbortSignal | undefined;
     const deps: SessionSelectDeps = {
+      applying: () => false,
       hydrateRun: async () => {},
       loadResumeState: () => ({ kind: 'loaded', state }),
       prepareResume: (_input, attemptSignal) => {
@@ -162,6 +163,7 @@ describe('SessionPreparation', () => {
     const state = { ...createInitialState(record.feature), phase: 'implementing' as const };
     let approvalSettled = false;
     const deps: SessionSelectDeps = {
+      applying: () => false,
       hydrateRun: async () => {},
       loadResumeState: () => ({ kind: 'loaded', state }),
       prepareResume: async () => {
@@ -204,6 +206,7 @@ describe('SessionPreparation', () => {
       record,
       state,
       deps: {
+        applying: () => false,
         hydrateRun: async () => {},
         loadResumeState: () => ({ kind: 'loaded', state }),
         prepareResume: (_input, attemptSignal) => {
@@ -253,6 +256,7 @@ describe('SessionPreparation', () => {
       record,
       state,
       deps: {
+        applying: () => false,
         hydrateRun: async () => {},
         loadResumeState: () => ({ kind: 'loaded', state }),
         prepareResume,

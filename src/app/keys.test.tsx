@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Box, Text } from 'ink';
@@ -25,6 +25,10 @@ import { completionStore } from '../stores/ui/completion.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { cancelEscapeAction } from '../lib/terminal/escape-debounce.js';
 import * as handlers from '../features/workflow/handlers.js';
+import {
+  activeApply,
+  trackActiveApply,
+} from '../engine/orchestrator/session-lifecycle/shutdown.js';
 import { approvalPromptStore, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import { continueRunInPlace, sessionSelectStore } from '../stores/navigation/session-select.js';
 import { configStore } from '../stores/project/config.js';
@@ -190,6 +194,36 @@ describe('useAppKeys: Ctrl+C', () => {
     expect(abort).toHaveBeenCalledTimes(1);
     expect(stopStore.get()).toMatchObject({ intent: 'stop-now', phase: 'requested' });
     expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('queues the quit on the first press while this process applies the run, with no hint', async () => {
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord({ status: { kind: 'running' } }),
+      execution: { kind: 'at-rest' },
+    });
+    const apply = Promise.withResolvers<void>();
+    void trackActiveApply(apply.promise);
+    onTestFinished(async () => {
+      apply.resolve();
+      await activeApply();
+    });
+    const exit = vi.fn();
+    const deps = { requestQuit: vi.fn(), requestStopNow: vi.fn(), refreshSkills: vi.fn() };
+    function ApplyHarness() {
+      useAppKeys({ exit, deps });
+      return <Text>ready</Text>;
+    }
+    const ui = renderFeature(<ApplyHarness />);
+    await tick();
+
+    await writeCtrlC(ui);
+    await tick();
+
+    expect(deps.requestQuit).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
+    expect(deps.requestStopNow).not.toHaveBeenCalled();
+    expect(feedbackStore.get().message).not.toBe('Press ctrl+c again to quit');
     ui.unmount();
   });
 
@@ -907,6 +941,7 @@ describe('useAppKeys: ESC stop ladder', () => {
       record,
       state: resumeState,
       deps: {
+        applying: () => false,
         loadResumeState: () => ({ kind: 'loaded', state: resumeState }),
         prepareResume: () => pending.promise,
         hydrateRun: async () => {},
