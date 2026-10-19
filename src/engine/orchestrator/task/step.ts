@@ -43,12 +43,16 @@ import { resolveDependsOnFiles } from './resolve-deps.js';
 import { restoreExhaustedTaskFiles } from './rollback.js';
 import { handleFailedImplementation } from './implementation-failure.js';
 import { runBriefGate } from './brief-gate.js';
-import { inputHashesNow, inputsMovedUnexpectedly, taskInputFiles } from './stale-inputs.js';
+import {
+  inputHashesNow,
+  inputsMovedUnexpectedly,
+  runsOnOwnFiles,
+  taskInputFiles,
+} from './stale-inputs.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { consultSeat, requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { consultAttemptError, guidanceInstructions } from '../escalation/consult-guidance.js';
-import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
 
 function recordApprovalDenial(opts: {
@@ -154,11 +158,8 @@ async function refreshStaleTask(input: {
   if (lineage?.staleConsultedRevision[task.id] === revision) {
     return { kind: 'dispatch', state, task, guidance: undefined };
   }
-  const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
-  // A resumed attempt and a replay that carries a failure run on the brief's own files.
   if (
-    opts.wctx.continuation?.resumesAttempt(step, hashTaskBrief([task])) === true ||
-    lineage?.carriedFailure !== undefined ||
+    runsOnOwnFiles(state, task, opts.wctx.continuation) ||
     !inputsMovedUnexpectedly(
       opts.wctx.workspaceDir,
       task,
@@ -327,6 +328,9 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   if (opts.onTaskStartSnapshot !== undefined) {
     state = opts.onTaskStartSnapshot(state, taskStartSnapshot);
   }
+  // After its stale refresh and task-start snapshot: a Try again of this revision runs on its own files.
+  state = transitionAndSave(wctx, state, { type: 'RECORD_DISPATCH', taskId: task.id });
+  setTrackedState(state);
 
   const tokensBefore = { ...state.tokenUsage };
   if (wctx.signal?.aborted) return state;

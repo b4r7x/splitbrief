@@ -1,5 +1,9 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { TaskSpec } from '../../../core/schemas/plan.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
+import { lineageIdOf } from '../../../core/state/task-insert.js';
+import type { ContinuationHolder } from '../continuation.js';
 import { confinedReadFile } from '../../../lib/confined-fs.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 
@@ -63,4 +67,25 @@ export function inputsMovedUnexpectedly(
   const moved = movedInputFiles(task.inputHashes, inputHashesNow(projectDir, taskInputFiles(task)));
   const expected = new Set(earlierTasks.flatMap((earlier) => earlier.suggestedFiles));
   return moved.some((file) => !expected.has(file));
+}
+
+/**
+ * Whether the brief runs on its own files: it resumes its cut attempt, it replays carrying a
+ * failure, or its current revision already dispatched an attempt and runs again on Try again. The
+ * inputs that moved are then the brief's own output, not a change under it.
+ */
+export function runsOnOwnFiles(
+  state: WorkflowState,
+  task: Task,
+  continuation: ContinuationHolder | undefined,
+): boolean {
+  const lineage = state.lineages?.[lineageIdOf(task)];
+  return (
+    continuation?.resumesAttempt(
+      { kind: 'brief', taskId: task.id, attempt: state.attempt },
+      hashTaskBrief([task]),
+    ) === true ||
+    lineage?.carriedFailure !== undefined ||
+    lineage?.dispatchedRevision[task.id] === (task.revision ?? 1)
+  );
 }

@@ -8,7 +8,7 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { ContinuationHolder } from '../continuation.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import { lineageIdOf } from '../../../core/state/task-insert.js';
+import { runsOnOwnFiles } from './stale-inputs.js';
 
 const isPathEscape = matches('path-confined-escape');
 
@@ -87,9 +87,10 @@ function hasCode(task: Task): boolean {
 
 /**
  * A brief that resumes its cut attempt keeps the code it was dispatched with: the workspace now
- * also holds that attempt's own output, which is not the brief's input. A retry, and a Continue past
- * a consult bound that replays the brief on the files its last attempt left, keep the action the
- * brief was dispatched with: an anchor its own earlier attempt wrote is still the file it creates.
+ * also holds that attempt's own output, which is not the brief's input. A retry, and a brief that
+ * runs on its own files (`runsOnOwnFiles`: a Continue past a consult bound, a Try again of a
+ * dispatched revision), keep the action the brief was dispatched with: an anchor its own earlier
+ * attempt wrote is still the file it creates.
  */
 export async function refreshAndPersistCode(
   task: Task,
@@ -103,8 +104,7 @@ export async function refreshAndPersistCode(
     return { task, state };
   }
   const current = await refreshCurrentCode(task, workspaceDir);
-  const onOwnFiles =
-    entry === 'retry' || state.lineages?.[lineageIdOf(task)]?.carriedFailure !== undefined;
+  const onOwnFiles = entry === 'retry' || runsOnOwnFiles(state, task, ref.continuation);
   const refreshed = onOwnFiles ? { ...current, action: task.action } : current;
   if (hasCode(refreshed) || hasCode(task) || refreshed.action !== task.action) {
     state = transitionAndSave(ref, state, {

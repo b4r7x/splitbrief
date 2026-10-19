@@ -195,10 +195,20 @@ async function retryStaleTask(opts: Parameters<typeof runForTask>[0]): Promise<W
   return runForTask({ ...opts, task, state: retried.state });
 }
 
-/** The run's state again at the top of the same brief: the halt cleared, the task pending. */
+/**
+ * The run's state again at the top of the same brief, before its revision ran: the halt cleared,
+ * the task pending, no dispatch recorded. A revision that ran restarts on its own files.
+ */
 function redispatchState(state: WorkflowState, taskId: string): WorkflowState {
+  const lineages = Object.fromEntries(
+    Object.entries(state.lineages ?? {}).map(([key, lineage]) => {
+      const { [taskId]: _ran, ...dispatchedRevision } = lineage.dispatchedRevision;
+      return [key, { ...lineage, dispatchedRevision }];
+    }),
+  );
   return {
     ...state,
+    lineages,
     pendingRecovery: undefined,
     phase: 'implementing',
     currentTaskIndex: 0,
@@ -355,6 +365,74 @@ describe('runSingleTask — stale refresh', () => {
     writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
 
     const after = await runForTask({ projectDir, sessionId, task, state, planner });
+
+    expect(staleConsultsOf(after)).toHaveLength(1);
+  });
+
+  it('still consults the next brief after a halted brief that wrote its own files is skipped', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const halting = makeTask({
+      id: 'T001',
+      action: 'create',
+      suggestedFiles: ['src/a.ts'],
+      criteria: ['C1'],
+      inputHashes: inputHashesNow(projectDir, ['src/a.ts']),
+    });
+    const task = staleTask(projectDir);
+    const state = implementingState([halting, task, trailingTask()]);
+    // T001's decision-confirm stops the planner; T002's stale consult is answered.
+    const typed = consultCallAnswering((prompt) => {
+      if (prompt.includes('# Confirm reported decisions')) {
+        throw new Error('The planner process stopped unexpectedly.');
+      }
+      return guidanceAnswer('Read the new shared file first.');
+    });
+    const planner = makePlanner({ typedCall: typed });
+    const implementer = makeImplementer({
+      implement: async ({ projectDir: runDir }) => {
+        writeFileSync(join(runDir, 'src/a.ts'), 'export const a = 1;\n');
+        return {
+          success: true,
+          output: 'implemented',
+          report: {
+            status: 'done',
+            filesChanged: ['src/a.ts'],
+            touchedNotSuggested: [],
+            notes: null,
+            decisions: [{ what: 'Named the export a', why: 'The brief names none' }],
+          },
+        };
+      },
+    });
+    const halted = await runForTask({
+      projectDir,
+      sessionId,
+      task: halting,
+      state,
+      planner,
+      implementer,
+    });
+    expect(halted.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', taskId: 'T001' });
+
+    // The user edits T002's input during the halt, then skips T001.
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+    const skipped = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      config: makeConfig(),
+      bus: makeBusRecorder().bus,
+      state: halted,
+      action: 'skip-current-task',
+    });
+    if (!skipped.ok) throw new Error(skipped.message);
+
+    const after = await runForTask({
+      projectDir,
+      sessionId,
+      task: taskIn(skipped.state, 'T002'),
+      state: skipped.state,
+      planner,
+    });
 
     expect(staleConsultsOf(after)).toHaveLength(1);
   });

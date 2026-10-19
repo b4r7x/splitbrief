@@ -32,6 +32,7 @@ export type StateAction =
   | { type: 'BEGIN_IMPLEMENTATION' }
   | { type: 'START_TASK'; taskId: TaskId }
   | { type: 'TASK_SENT' }
+  | { type: 'RECORD_DISPATCH'; taskId: TaskId }
   | { type: 'RESUME_TASK' }
   | { type: 'VALIDATION_PASS' }
   | { type: 'VALIDATION_FAIL' }

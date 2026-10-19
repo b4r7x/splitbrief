@@ -62,7 +62,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 | `dependsOn` | `TNNN[]` | `dependsOn` |
 | `batch` | integer ≥ 1 | `batch` |
 
-`taskFromSpec` (`src/engine/spec/plan-tasks.ts`) fills every older required `Task` field from that table, so every engine path reads a plan task as a brief. `action` is `modify` when the first suggested file exists inside the project, otherwise `create`. SPLITBRIEF derives it again before each brief starts, because an earlier brief can create the file. A retry, and a Continue past a consult limit that replays the brief on the files its last attempt left, keep the action the brief started with: the file its own earlier attempt wrote does not make a `create` brief a `modify` brief. `constraints` is empty and `typeDefs` is `''`. `taskFromSpec` throws when a task names no suggested file, so it runs only after the checks pass. `protectedOperations.operation` accepts only `write`, because the protected-path confirmation matches `write <path>`. The schema spells every `suggestedFiles`, `contextFiles` and `protectedOperations` path as the write gate names a changed file (`./src/a.ts` and `src/../src/a.ts` are `src/a.ts`), so every check and every engine path compares one spelling. A question's `default` is non-empty, and one of its `choices` when it has choices.
+`taskFromSpec` (`src/engine/spec/plan-tasks.ts`) fills every older required `Task` field from that table, so every engine path reads a plan task as a brief. `action` is `modify` when the first suggested file exists inside the project, otherwise `create`. SPLITBRIEF derives it again before each brief starts, because an earlier brief can create the file. A retry, a Try again of a brief that already ran, and a Continue past a consult limit that replays the brief on the files its last attempt left keep the action the brief started with: the file its own earlier attempt wrote does not make a `create` brief a `modify` brief. `constraints` is empty and `typeDefs` is `''`. `taskFromSpec` throws when a task names no suggested file, so it runs only after the checks pass. `protectedOperations.operation` accepts only `write`, because the protected-path confirmation matches `write <path>`. The schema spells every `suggestedFiles`, `contextFiles` and `protectedOperations` path as the write gate names a changed file (`./src/a.ts` and `src/../src/a.ts` are `src/a.ts`), so every check and every engine path compares one spelling. A question's `default` is non-empty, and one of its `choices` when it has choices.
 
 ### Plan checks
 
@@ -221,7 +221,7 @@ any --[SKIP_TASK]--> skipped
 any --[RESET_TASK]--> pending
 ```
 
-The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), not on the individual task. The ladder's own counters live per lineage in `state.lineages` — `consults`, `attempts`, `consultAllowance`, `attemptAllowance`, `consultRecords`, `replacedParents` — and the run's consult count in `state.plannerCalls` (the name stays; planner and review-seat consults share it).
+The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), not on the individual task. The ladder's own counters live per lineage in `state.lineages` — `consults`, `attempts`, `consultAllowance`, `attemptAllowance`, `consultRecords`, `replacedParents`, `dispatchedRevision` — and the run's consult count in `state.plannerCalls` (the name stays; planner and review-seat consults share it).
 
 ### Lifecycle guarantees
 

@@ -84,7 +84,7 @@ describe('a correction during first-attempt checks', { timeout: 60_000 }, () => 
     expect(runCommand).toHaveBeenCalledTimes(1);
     expect(result.tasks[0]?.status).toBe('done');
     expect(result.currentTaskIndex).toBe(1);
-    expect(result.lineages?.T001).toBeUndefined();
+    expect(result.lineages?.T001).toMatchObject({ attempts: 0, consults: 0 });
     expect(result.attempt).toBe(0);
     expect(briefCorrections(result, task.id)).toEqual([]);
     expect(result.messageQueue).toEqual([]);
@@ -164,7 +164,7 @@ describe('a correction during first-attempt checks', { timeout: 60_000 }, () => 
           state.tasks[0]?.checkResults?.[0]?.status === 'pass',
       );
       expect(resumed).toMatchObject({ attempt: 0 });
-      expect(resumed?.lineages).toBeUndefined();
+      expect(resumed?.lineages?.T001).toMatchObject({ attempts: 0, consults: 0 });
       expect(result.pendingRecovery).toBeUndefined();
       expect(order).toEqual(['build', 'check 1', 'answer', 'check 2', 'completed']);
       expect(implement).toHaveBeenCalledTimes(1);
