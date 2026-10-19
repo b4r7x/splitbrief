@@ -13,7 +13,10 @@ import {
   inlineRunnerSecurityPosture,
   type ConfiguredCustomRunner,
 } from './custom-trust.js';
-import { inlineRunnerRefusal } from './prepare-execution/evaluate-candidate.js';
+import {
+  inlineRunnerRefusal,
+  REPO_LOCAL_RUNNER_REFUSAL,
+} from './prepare-execution/evaluate-candidate.js';
 import { admitCustomRunner } from './custom-launchability.js';
 import { checkRunnerTrust } from './trust.js';
 
@@ -147,12 +150,7 @@ export async function collectCustomRunnerConsentChecks(
   for (const candidate of found) {
     const runner = configuredRunner(input.config, candidate);
     if (runner.source === 'inline' && violations.has(candidate.trustLabel)) {
-      checks.push(
-        refusedCheck(candidate, input.interaction, {
-          reason: 'Configured command is outside the current trust policy.',
-          fix: 'Use a system-installed command, or pass --allow-repo-runners to run the repository-local one.',
-        }),
-      );
+      checks.push(refusedCheck(candidate, input.interaction, REPO_LOCAL_RUNNER_REFUSAL));
       continue;
     }
     const admission = await admitCustomRunner({

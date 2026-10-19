@@ -166,6 +166,48 @@ describe('evaluateCandidate policy denial remediation', () => {
   });
 });
 
+describe('evaluateCandidate on a repo-local command without the grant', () => {
+  it.each([
+    {
+      purpose: 'new-workflow',
+      fix: 'Use a system-installed command, or start the run from the command line with `splitbrief start --allow-repo-runners`.',
+    },
+    {
+      purpose: 'resume',
+      fix: 'Use a system-installed command, or continue the run from the command line with `splitbrief continue --allow-repo-runners`.',
+    },
+    {
+      purpose: 'spec',
+      fix: 'Use a system-installed command, or run `splitbrief spec --allow-repo-runners`.',
+    },
+    {
+      purpose: 'review',
+      fix: 'Use a system-installed command, or run `splitbrief review --allow-repo-runners`.',
+    },
+  ] as const)('names the command that grants it for $purpose', async ({ purpose, fix }) => {
+    const config = makeConfig({ planner: { kind: 'shell', command: './scripts/planner' } });
+    const candidate: RunnerCandidate = {
+      slot: { role: 'planner' },
+      runner: config.planner,
+      trustLabel: 'planner',
+    };
+    const base = preparationContext(config, notCalled('detectRunnerEvidence'));
+    const context: PreparationContext = {
+      ...base,
+      policy: { ...base.policy, purpose },
+      nativeTrustViolations: new Set(['planner']),
+    };
+
+    const result = await evaluateCandidate(candidate, context);
+
+    expect(result.kind).toBe('blocked');
+    expect(result.check).toMatchObject({
+      details: ['Configured command is outside the current trust policy.'],
+      fix,
+    });
+  });
+});
+
 describe('evaluateCandidate resolves a seat left on auto', () => {
   it('names the model the tool has selected on this host and carries it on the gate', async () => {
     const home = stubHome();

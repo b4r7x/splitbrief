@@ -212,6 +212,40 @@ describe('StartPreparationPanel', () => {
     ui.unmount();
   });
 
+  it.each([
+    { cols: 80, rows: 24 },
+    { cols: 60, rows: 18 },
+  ])('keeps a command in a fix on one row at $cols columns', async (viewport) => {
+    const blocker: ReadinessCheck = {
+      id: 'runners.preparation.planner',
+      severity: 'blocker',
+      summary: 'PLAN could not start.',
+      fix: 'Use a system-installed command, or continue the run from the command line with `splitbrief continue --allow-repo-runners`.',
+    };
+    const ui = renderPanel({ state: { kind: 'blocked', report: report([blocker]) } }, viewport);
+
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('`splitbrief continue --allow-repo-runners`.');
+    ui.unmount();
+  });
+
+  it('breaks a command wider than the row at its spaces, never inside the flag', async () => {
+    const blocker: ReadinessCheck = {
+      id: 'runners.preparation.planner',
+      severity: 'blocker',
+      summary: 'PLAN could not start.',
+      fix: 'Use a system-installed command, or continue the run from the command line with `splitbrief continue --allow-repo-runners`.',
+    };
+    const ui = renderPanel(
+      { state: { kind: 'blocked', report: report([blocker]) } },
+      { cols: 44, rows: 18 },
+    );
+
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('--allow-repo-runners`.');
+    ui.unmount();
+  });
+
   it('keeps the repair keys whole at 60x18 and scrolls the copy that does not fit', async () => {
     const readiness = report([
       availability({ state: 'unavailable', diagnostic: 'connection refused' }),

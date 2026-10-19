@@ -176,7 +176,7 @@ Run `npm rebuild better-sqlite3` in the SPLITBRIEF installation directory to res
 3. In CI or any headless run (`--json`), pass `--allow-repo-runners`. It grants that run only and persists nothing.
 4. If the command should not run, replace the runner in `.splitbrief/config.yaml`.
 
-Related refusals name their own cause: `does not exist on this machine`, `is not executable`, and `executable changed since this machine trusted it` (the receipt binds the executable's content digest). `Configured command is outside the current trust policy` is the separate, stricter rule for repo-local commands, which need `--allow-repo-runners` even interactively.
+Related refusals name their own cause: `does not exist on this machine`, `is not executable`, and `executable changed since this machine trusted it` (the receipt binds the executable's content digest). `Configured command is outside the current trust policy` is the separate, stricter rule for repo-local commands, which need `--allow-repo-runners` even interactively. A run you started with the flag keeps the grant when you stop it and continue it while SPLITBRIEF stays open. To continue it from a new SPLITBRIEF process, run `splitbrief continue --allow-repo-runners`.
 
 **Prevention:** A receipt is scoped to this checkout's canonical path and to a digest of the command, its argv, its declared environment references, and its watchdog thresholds. Editing any of those, or opening a second checkout, asks again by design.
 

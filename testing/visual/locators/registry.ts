@@ -87,6 +87,11 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
     rowsAbove: 1,
     rowsBelow: 3,
   },
+  'workflow:preparation-panel': {
+    kind: 'layout',
+    description: 'Preparation problem panel terminal bounds',
+    resolve: resolveFullFrame,
+  },
   'home:preparation-panel': {
     kind: 'layout',
     description: 'Preparation problem panel terminal bounds',
