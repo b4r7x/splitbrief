@@ -335,7 +335,7 @@ Every `shell` and `agent` runner named in `.splitbrief/config.yaml` — planner,
 
 The receipt is keyed to the canonical path of *this* checkout and to a digest of the command tuple, so it never travels inside a clone, never applies to a second checkout of the same repository, and stops applying the moment the command, its argv, its declared environment references, or its watchdog thresholds change. Replacing the executable on disk invalidates it too: the receipt stores the executable's content digest.
 
-A **repo-local** command needs `--allow-repo-runners` even in a terminal, because a receipt cannot bind files the checkout can change. The check reads the argv the way each program reads it (`src/core/trust/command-string-classification.ts`). A command is repo-local when:
+A **repo-local** command needs `--allow-repo-runners` even in a terminal, because a receipt cannot bind files the checkout can change. A run started with the flag keeps the grant when you stop it and continue it while SPLITBRIEF stays open; a new SPLITBRIEF process needs the flag again (`splitbrief continue --allow-repo-runners`). The check reads the argv the way each program reads it (`src/core/trust/command-string-classification.ts`). A command is repo-local when:
 
 - its executable, or a script, module or preload file it gives an interpreter, resolves inside the project. A relative script path always does, because the runner starts in the checkout.
 - it runs `python -c` or `python -m`, which put the working directory first on the import path.

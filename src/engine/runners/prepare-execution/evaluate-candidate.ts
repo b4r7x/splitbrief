@@ -48,7 +48,7 @@ import {
   type PreparationWarning,
   type RunnerCandidate,
 } from './runner-candidates.js';
-import type { PreparationContext, SlotEvaluation } from './types.js';
+import type { PreparationContext, PreparationPolicy, SlotEvaluation } from './types.js';
 
 const UNVERIFIED_AUTH_FIX =
   'Run SPLITBRIEF in a terminal to review the sign-in warning, or pass --allow-unverified-auth to start without confirming sign-in.';
@@ -446,6 +446,27 @@ function evaluateApi(
 const INLINE_RUNNER_GRANT_FIX =
   'Run SPLITBRIEF in a terminal and confirm the runner disclosure, or pass --allow-repo-runners to grant it for this run only.';
 
+const REPO_LOCAL_RUNNER_REASON = 'Configured command is outside the current trust policy.';
+
+/**
+ * A repo-local command runs only under the grant; a receipt cannot bind files the checkout changes.
+ * `doctor` takes no grant, so its refusal names the run that does.
+ */
+export const REPO_LOCAL_RUNNER_REFUSAL = {
+  reason: REPO_LOCAL_RUNNER_REASON,
+  fix: 'Use a system-installed command, or start or continue the run from the command line with --allow-repo-runners.',
+} as const;
+
+/** The command that grants a repo-local command, named for the command the user ran. */
+export const REPO_LOCAL_RUNNER_FIX: Readonly<Record<PreparationPolicy['purpose'], string>> = {
+  'new-workflow':
+    'Use a system-installed command, or start the run from the command line with `splitbrief start --allow-repo-runners`.',
+  resume:
+    'Use a system-installed command, or continue the run from the command line with `splitbrief continue --allow-repo-runners`.',
+  spec: 'Use a system-installed command, or run `splitbrief spec --allow-repo-runners`.',
+  review: 'Use a system-installed command, or run `splitbrief review --allow-repo-runners`.',
+};
+
 /**
  * A refused inline runner is usually untrusted, but it can also be absent or
  * changed. Naming which one is the difference between an actionable block and
@@ -503,7 +524,8 @@ async function evaluateCommand(
       check: blockedCheck(
         candidate.slot,
         candidate.runner.kind,
-        'Configured command is outside the current trust policy.',
+        REPO_LOCAL_RUNNER_REASON,
+        REPO_LOCAL_RUNNER_FIX[context.policy.purpose],
       ),
     };
   }

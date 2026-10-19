@@ -1,4 +1,5 @@
 import { loadOwnerWorkflowState } from '../core/state/resume-hydration.js';
+import { atRestResumePolicy } from '../features/workflow/resume-policy.js';
 import { hydrateRun, readRunHistory } from '../features/workflow/run-history.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { SessionRef } from '../core/types/session-ref.js';
@@ -46,11 +47,7 @@ export async function prepareSessionResume(
     effectiveConfig: config,
     resumeState: input.state,
     signal,
-    policy: {
-      ...interactivePreparationPolicy,
-      purpose: 'resume',
-      allowRepoRunners: false,
-    },
+    policy: atRestResumePolicy(input.ref),
   });
 }
 

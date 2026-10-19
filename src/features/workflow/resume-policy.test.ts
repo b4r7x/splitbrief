@@ -16,7 +16,7 @@ it('retains run permissions and resolves resumed seat labels from the current ca
     config: makeConfig({ planner: runner }),
     allowHooks: true,
   });
-  const policy = runResumePolicy(prepared);
+  const policy = runResumePolicy(prepared.runtime);
   modelCacheStore.hydrateDetection({
     providers: [],
     cliTools: [],

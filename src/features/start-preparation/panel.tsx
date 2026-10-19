@@ -71,6 +71,9 @@ function hardSplit(word: string, budget: number): string[] {
   return parts;
 }
 
+/** A command in backticks is one word, so a fix never breaks a command that fits a row. */
+const WORD = /`[^`\r\n]*`\S*|\S+/g;
+
 /**
  * Prose is wrapped here rather than by Ink so every row the scroller counts is exactly one line:
  * a diagnostic that wraps to four rows must cost four, or the fix under it scrolls out of reach.
@@ -79,7 +82,10 @@ function wrapText(text: string, budget: number): string[] {
   const width = Math.max(1, budget);
   const lines: string[] = [];
   let line = '';
-  for (const word of text.split(/\s+/).filter((part) => part !== '')) {
+  const words = (text.match(WORD) ?? []).flatMap((word) =>
+    getTerminalCellWidth(word) > width ? word.split(/\s+/).filter((part) => part !== '') : [word],
+  );
+  for (const word of words) {
     const candidate = line === '' ? word : `${line} ${word}`;
     if (getTerminalCellWidth(candidate) <= width) {
       line = candidate;

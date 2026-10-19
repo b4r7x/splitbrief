@@ -24,6 +24,11 @@ import { buildRepoChecks } from '../../../src/core/readiness/checks/repo.js';
 import { selectNextAction } from '../../../src/core/readiness/status.js';
 import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
 import type { PreparationOutcome } from '../../../src/engine/runners/prepared-execution.js';
+import {
+  REPO_LOCAL_RUNNER_FIX,
+  REPO_LOCAL_RUNNER_REFUSAL,
+} from '../../../src/engine/runners/prepare-execution/evaluate-candidate.js';
+import { blockedCheck } from '../../../src/engine/runners/prepare-execution/runner-candidates.js';
 import type { CliToolDetection, DetectedModel } from '../../../src/core/discovery/detection.js';
 import {
   nativeCliCatalogToDetectedModels,
@@ -911,6 +916,45 @@ function createWorkflowContinuingFixture(): FixtureLifecycle {
   };
 }
 
+/**
+ * Continuing a run whose repo-local planner command needs the grant this process does not hold. The
+ * check is the real preparation blocker, so the capture shows the fix line an operator reads.
+ */
+function createWorkflowContinueRepoRunnerBlockedFixture(): FixtureLifecycle {
+  const state = { ...createInitialState(CONTINUING_FEATURE), phase: 'planning' as const };
+  const workflow = createRouteFixture(() => ({
+    screen: 'workflow',
+    run: makeRunRecord({
+      ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: 'visual-repo-runner-blocked' },
+      feature: CONTINUING_FEATURE,
+      hydration: { kind: 'loaded', state },
+      status: {
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+        resumeAt: { kind: 'planner', call: 'plan' },
+      },
+    }),
+    execution: { kind: 'at-rest' },
+  }));
+  return {
+    setup: async (context) => {
+      await workflow.setup(context);
+      submitSettledCheck({
+        kind: 'blocked',
+        report: preparationReport([
+          blockedCheck(
+            { role: 'planner' },
+            'shell',
+            REPO_LOCAL_RUNNER_REFUSAL.reason,
+            REPO_LOCAL_RUNNER_FIX.resume,
+          ),
+        ]),
+      });
+    },
+    teardown: workflow.teardown,
+  };
+}
+
 function createCommandArgumentFixture(): FixtureLifecycle {
   const workflow = createWorkflowBaseFixture();
   return {
@@ -1170,6 +1214,10 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-attachment-not-text'), () => createOutsideAttachmentFailureFixture('not-text')],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
+  [
+    scenarioId('workflow-continue-repo-runner-blocked'),
+    createWorkflowContinueRepoRunnerBlockedFixture,
+  ],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('workflow-removed-command'), createRemovedCommandFixture],
   [scenarioId('setup-initial'), () => createSetupFixture()],

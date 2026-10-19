@@ -193,7 +193,9 @@ describe('spec command', () => {
     expect(stdout).toContain('Run readiness: blocked');
     expect(stdout).toContain('PLAN could not start.');
     expect(stdout).toContain('Configured command is outside the current trust policy.');
-    expect(stdout).toContain('Fix: Review the configured runner, then retry.');
+    expect(stdout).toContain(
+      'Fix: Use a system-installed command, or run `splitbrief spec --allow-repo-runners`.',
+    );
     expect(stdout).not.toContain('runners.preparation.planner');
   });
 

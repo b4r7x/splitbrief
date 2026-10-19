@@ -200,7 +200,7 @@ export function createRecoveryDriver(
       return {
         shouldRun: true,
         state,
-        switchSeat: { candidate: auto.candidate, policy: runResumePolicy(prepared) },
+        switchSeat: { candidate: auto.candidate, policy: runResumePolicy(prepared.runtime) },
       };
     }
 
@@ -246,7 +246,7 @@ export function createRecoveryDriver(
         return {
           shouldRun: true,
           state,
-          switchSeat: { candidate, policy: runResumePolicy(prepared) },
+          switchSeat: { candidate, policy: runResumePolicy(prepared.runtime) },
         };
       }
 

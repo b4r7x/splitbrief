@@ -2982,6 +2982,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-continue-repo-runner-blocked',
+      title: 'Workflow · a continue blocked by a repo-local runner',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'failure',
+        title: 'Repo-local planner needs the grant',
+        kind: 'failure',
+        marker: 'PLAN could not start',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+    }),
+    defineScenario({
       id: 'workflow-command-argument',
       title: 'Workflow · command argument completion',
       surface: screenSurface('workflow'),

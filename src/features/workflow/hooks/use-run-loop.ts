@@ -65,7 +65,7 @@ import { error } from '../../../utils/error.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildPromptCallbacks } from '../prompt-callbacks.js';
 import { createRecoveryDriver } from '../recovery-driver.js';
-import { runResumePolicy } from '../resume-policy.js';
+import { recordRunTerms, runResumePolicy } from '../resume-policy.js';
 import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';
@@ -121,6 +121,7 @@ export function useRunLoop({
 
   const startWorkflow = useEffectEvent(async (controller: AbortController) => {
     if (prepared === undefined) return;
+    recordRunTerms(prepared);
     retentionNoticeHandled.current = true;
     const { session } = prepared;
     // A fresh abort-handler scope per run: a superseded run's late pops (its
@@ -387,7 +388,7 @@ export function useRunLoop({
             existingSession: session.ref,
             feature: stateForRun.feature,
             effectiveConfig: preparedForRun.config,
-            policy: runResumePolicy(preparedForRun),
+            policy: runResumePolicy(preparedForRun.runtime),
             signal: controller.signal,
             resumeState: stateForRun,
           });
