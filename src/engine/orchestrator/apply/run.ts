@@ -23,7 +23,7 @@ import { removeClosedRunWorkspace } from '../run/close.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
 import { writeConfinedEntry } from '../approval/file-snapshots/entry.js';
-import { applyBackupDir } from './backup.js';
+import { applyBackupDir, readApplyBackup, removeApplyWriteTemporaries } from './backup.js';
 import { type ApplyConflict, type ApplyMerge, mergeApplyStates } from './merge.js';
 import { reconcileApplyBackup, restoreApplyBackup } from './restore.js';
 import {
@@ -169,6 +169,14 @@ export async function runApply(input: {
       outcome: 'halted',
       state: await haltCutApply(wctx, state, state.applying.backupId, setTrackedState),
     };
+  }
+  // A re-run first removes the temporaries the cut write left beside its files, so the capture
+  // never reads them as checkout files.
+  if (state.applying !== undefined) {
+    await removeApplyWriteTemporaries(
+      wctx.projectDir,
+      await readApplyBackup(wctx.projectDir, wctx.sessionId, state.applying.backupId),
+    );
   }
   const states = await captureApplyStates({
     projectDir: wctx.projectDir,
