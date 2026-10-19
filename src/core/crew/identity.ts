@@ -20,7 +20,13 @@ import {
 import type { EffortLevel, RunnerKind } from '../schemas/enums.js';
 import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../runners/seat-roles.js';
 import { SOFT_SEP } from '../separators.js';
-import { CLI_TOOL_CATALOG, isCliToolId } from '../runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  CLI_TOOL_IDS,
+  type CliToolId,
+  isCliToolId,
+} from '../runners/cli-tool-catalog.js';
+import { modelProviderAuthKey } from '../runners/route-auth.js';
 import {
   peelAxisTokensFromModelId,
   recordedAxisWords,
@@ -183,12 +189,21 @@ function modelName(
   return displayName || formatModelName(model, tool);
 }
 
-/** The provider an OpenCode route runs through, as `via <provider>`; two routes of one model differ only here. */
+/** A tool whose models are `<provider>/<model>` routes, signed in and billed per provider. */
+function routesByProvider(tool: CliToolId | undefined): boolean {
+  return tool !== undefined && CLI_TOOL_CATALOG[tool].auth.kind === 'provider-dependent';
+}
+
+/**
+ * The provider a route runs through, as `via <provider>`, the key the picker's route row and the
+ * sign-in state name; two routes of one model differ only here.
+ */
 function providerWord(seat: SeatIds, kind: RunnerKind | undefined): string | undefined {
-  const model = redactSecrets(sanitizeTerminalDisplayText(modelIdOf(seat, kind) ?? ''));
-  return cliVocabularyTool(seat.tool, kind) === 'opencode' && model.includes('/')
-    ? `via ${model.slice(0, model.indexOf('/'))}`
-    : undefined;
+  if (!routesByProvider(cliVocabularyTool(seat.tool, kind))) return undefined;
+  const provider = modelProviderAuthKey(
+    redactSecrets(sanitizeTerminalDisplayText(modelIdOf(seat, kind) ?? '')),
+  );
+  return provider === undefined ? undefined : `via ${provider}`;
 }
 
 function modelWord(
@@ -258,7 +273,7 @@ export function formatSeatChangeIdentities(
 }
 
 /**
- * The collapsed form names the model without its brand or axes. An OpenCode route keeps its
+ * The collapsed form names the model without its brand or axes. A provider route keeps its
  * provider, joined by a space because the middle dot already parts the seats on the line.
  */
 export function formatShortSeatIdentity(input: {
@@ -529,7 +544,7 @@ export function cutSeatIdentity(identity: string, budget: number): string {
 export function wrapSeatIdentity(identity: string, budget: number): string[] {
   if (getTerminalCellWidth(identity) <= budget) return [identity];
   const segments = identity.split(CREW_IDENTITY_SEPARATOR);
-  const providerIndex = opencodeProviderIndex(segments);
+  const providerIndex = routeProviderIndex(segments);
   if (
     providerIndex !== undefined &&
     getTerminalCellWidth(segments.slice(providerIndex - 1).join(CREW_IDENTITY_SEPARATOR)) > budget
@@ -556,8 +571,12 @@ export function wrapSeatIdentity(identity: string, budget: number): string[] {
   ].map((row) => cutSeatIdentity(row, budget));
 }
 
-function opencodeProviderIndex(segments: readonly string[]): number | undefined {
-  const toolIndex = segments.indexOf(toolWord({ tool: 'opencode' }, 'cli'));
+const ROUTED_TOOL_WORDS: readonly string[] = CLI_TOOL_IDS.filter(routesByProvider).map((tool) =>
+  toolWord({ tool }, 'cli'),
+);
+
+function routeProviderIndex(segments: readonly string[]): number | undefined {
+  const toolIndex = segments.findIndex((segment) => ROUTED_TOOL_WORDS.includes(segment));
   const providerIndex = toolIndex + 2;
   return toolIndex >= 0 && segments[providerIndex]?.startsWith('via ') ? providerIndex : undefined;
 }
@@ -566,7 +585,7 @@ function shedSegments(identity: string, budget: number): string {
   const segments = identity.split(CREW_IDENTITY_SEPARATOR);
   const width = (count: number): number =>
     getTerminalCellWidth(segments.slice(0, count).join(CREW_IDENTITY_SEPARATOR));
-  const providerIndex = opencodeProviderIndex(segments);
+  const providerIndex = routeProviderIndex(segments);
   const keepModel = providerIndex !== undefined && width(providerIndex + 1) > budget;
   if (keepModel) segments.splice(providerIndex - 2, 1);
   const minimum = keepModel ? providerIndex - 1 : 1;

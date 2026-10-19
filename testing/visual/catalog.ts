@@ -128,6 +128,7 @@ const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
   { id: 'home-empty', title: 'Home · empty project' },
   { id: 'home-no-config', title: 'Home · no config' },
   { id: 'home-opencode-routes', title: 'Home · same model on different OpenCode routes' },
+  { id: 'home-kilo-routes', title: 'Home · same model on different Kilo Code routes' },
   { id: 'home-reviewer', title: 'Home · reviewer seat configured' },
   { id: 'home-floor-collapsed', title: 'Home · one-token reviewer' },
   { id: 'home-cold', title: 'Home · detection still cold' },
@@ -629,6 +630,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Build progress' },
         { id: 'transcript', title: 'Running brief' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-crew-kilo',
+      title: 'Workflow · a Kilo Code crew on two routes of one model',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation',
+        title: 'Implementation with routed seats',
+        kind: 'implementation',
+        marker: 'Inspecting deterministic fixture contract',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
       ],
     }),
     defineScenario({

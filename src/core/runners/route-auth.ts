@@ -3,7 +3,6 @@ import type {
   CliProviderAuthFact,
   CliProviderAuthUnreadableReason,
 } from '../discovery/detection.js';
-import { formatNoCredential } from '../recovery/account-cause.js';
 import type { SavedCatalog } from '../discovery/catalog-read-merge.js';
 import { includes } from '../../utils/type-guards.js';
 import { CLI_TOOL_CATALOG, PROVIDER_ORACLE_TOOL_IDS, type CliToolId } from './cli-tool-catalog.js';
@@ -192,6 +191,11 @@ export function routeRefusal(auth: RouteAuthState): RouteRefusal {
 
 /** The word the picker route row and the Settings fallback note show for a route not signed in. */
 export const ROUTE_NEEDS_SIGN_IN = 'needs sign-in';
+
+/** A model route whose provider the tool holds no credential for, as doctor and a halt name it. */
+export function formatNoCredential(tool: string, provider: string): string {
+  return `${tool} has no credential for ${provider}`;
+}
 
 /**
  * The one sentence doctor, start, a halt and the picker use for a route with no credential. The
