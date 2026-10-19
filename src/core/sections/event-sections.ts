@@ -554,6 +554,8 @@ function settledStageSummary<TEvent extends SectionableEvent>(
 
 // A build row between two briefs joins the brief that closed before it; the build rows left before a
 // brief (the run start, a fix cycle's re-entry) join that brief. The tail after the last brief stays.
+// A consult on a brief before it starts opens its range, and so does the halt of a brief skipped
+// before it started, so that choice and its outcome stay in one section.
 function joinBuildRowsToBriefs<TEvent extends SectionableEvent>(
   events: TEvent[],
   taskRanges: TaskRange<TEvent>[],
@@ -570,14 +572,15 @@ function joinBuildRowsToBriefs<TEvent extends SectionableEvent>(
           event.type === 'review_started' ||
           (event.phase !== undefined && phaseStage(event.phase) === 'review'),
       );
-    const consultIdx = events.findIndex(
+    const neverStarted = events[range.startIdx]?.type === 'task_skipped';
+    const ownStartIdx = events.findIndex(
       (event, idx) =>
         idx >= gapStart &&
         idx < range.startIdx &&
-        event?.type === 'consult_answered' &&
-        event.taskId === range.taskId,
+        event?.taskId === range.taskId &&
+        (event.type === 'consult_answered' || (neverStarted && event.type === 'recovery_prompted')),
     );
-    const gapEnd = consultIdx >= 0 ? consultIdx : range.startIdx;
+    const gapEnd = ownStartIdx >= 0 ? ownStartIdx : range.startIdx;
     if (previous?.endEvent) {
       while (
         gapStart < gapEnd &&
@@ -588,8 +591,8 @@ function joinBuildRowsToBriefs<TEvent extends SectionableEvent>(
       }
       previous.endIdx = gapStart - 1;
     }
-    if (consultIdx >= 0) {
-      range.startIdx = consultIdx;
+    if (ownStartIdx >= 0) {
+      range.startIdx = ownStartIdx;
     }
     while (range.startIdx > gapStart && isBuildRow(events[range.startIdx - 1], hasReviewStage)) {
       range.startIdx--;

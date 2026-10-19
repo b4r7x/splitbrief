@@ -414,17 +414,18 @@ function includesTranscript(...markers: readonly string[]): CheckpointPredicate 
   };
 }
 
-// One recovery reads as one row: the choice and its outcome on the same Recovery line.
-function oneRecoveryRow(choice: string, outcome: string): CheckpointPredicate {
+// One recovery reads as one row: each choice and its outcome on its own Recovery line, in order.
+function recoveryRows(...expected: readonly (readonly string[])[]): CheckpointPredicate {
   return (context) => {
     const rows = workflowTranscriptText()
       .split('\n')
       .filter((line) => line.includes('Recovery  '));
     return (
       includesTranscript()(context) &&
-      rows.length === 1 &&
-      rows[0]?.includes(`Recovery  ${choice}`) === true &&
-      rows[0].includes(outcome)
+      rows.length === expected.length &&
+      expected.every((fragments, index) =>
+        fragments.every((fragment) => rows[index]?.includes(fragment) === true),
+      )
     );
   };
 }
@@ -516,7 +517,11 @@ const checkpointPredicates = [
   [checkpointId('implementation-retry'), includesAll('briefs passed')],
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
-  [checkpointId('recovery-resolved-skip'), oneRecoveryRow('Skip task', 'skipped')],
+  [checkpointId('recovery-resolved-skip'), recoveryRows(['Recovery  Skip task', 'skipped'])],
+  [
+    checkpointId('recovery-resolved-dependency-skip'),
+    recoveryRows(['Recovery  Skip task', 'skipped'], ['Recovery  Dependency blocked']),
+  ],
   [checkpointId('recovery-resolved-apply-retry'), includesAll('Run continued')],
   [checkpointId('review-fix'), includesAll()],
   [checkpointId('review-choosing-checks'), includesAll()],
@@ -888,7 +893,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('recovery-slash-list'), includesAll('/skills', 'tab fill')],
   [checkpointId('review-failed'), includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is')],
-  [checkpointId('review-fix-again'), oneRecoveryRow('Fix again', 'continued')],
+  [checkpointId('review-fix-again'), recoveryRows(['Recovery  Fix again', 'continued'])],
   [
     checkpointId('review-unverified'),
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is', 'unverified criteria'),
