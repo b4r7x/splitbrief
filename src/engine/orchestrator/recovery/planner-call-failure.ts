@@ -16,6 +16,8 @@ import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { nowIso } from '../../../utils/format-time.js';
+import { inputTooLargeFigures } from '../../runners/input-limit.js';
+import { inputTooLargeSentence } from './builders/review-input.js';
 import { runnerDefectRow, runnerHaltRow, toolReported } from './builders/task.js';
 import {
   buildPlannerCallFailedRecoveryIssue,
@@ -49,6 +51,8 @@ export type PlannerCallDiagnosis = Readonly<{
   words: string;
   /** When the quota comes back, when the tool's words named it. */
   resetsAt: Date | null;
+  /** The prompt's size and the tool's limit, when the tool refused the prompt as too large. */
+  inputSize?: ReturnType<typeof inputTooLargeFigures> | undefined;
   /** Present when the failure is a seat-down cause: what the one halt builder consumes. */
   seatDown?: PlannerSeatDownDiagnosis | undefined;
 }>;
@@ -90,6 +94,29 @@ export function diagnosePlannerCallFailure(
   // the route's credential listing which of the two it is.
   if (typedRunnerCallErrorCode(err) === 'missing-model') {
     return { failure: 'missing-model', message, tool, details, words: said, resetsAt: null };
+  }
+  // A prompt the tool refused as too large is refused again on a retry. Claude Code's refusal
+  // names no figures, so its own words stay the detail; a refusal that names the prompt's size
+  // states the size and the limit in their place.
+  if (typedRunnerCallErrorCode(err) === 'input-too-large') {
+    const inputSize = inputTooLargeFigures(typed ?? '');
+    const { chars } = inputSize;
+    return {
+      failure: 'input-too-large',
+      message: `${input.label}: the prompt is too large`,
+      tool,
+      details:
+        chars === null
+          ? details
+          : [
+              endSentence(
+                inputTooLargeSentence('The prompt', { chars, maxChars: inputSize.maxChars }, tool),
+              ),
+            ],
+      words: said,
+      resetsAt: null,
+      inputSize,
+    };
   }
   // The one classifier reads the tool's own words. A limit outranks the auth
   // check: its message must never earn login advice, because logging in does
@@ -142,6 +169,7 @@ export function diagnosePlannerCallFailure(
 export function plannerHaltRow(issue: RecoveryIssue, diagnosis: PlannerCallDiagnosis): string {
   switch (diagnosis.failure) {
     case 'call-failed':
+    case 'input-too-large':
       return diagnosis.message;
     case 'missing-model':
       return runnerDefectRow(issue, diagnosis.tool, diagnosis.words);

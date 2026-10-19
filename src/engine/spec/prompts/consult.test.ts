@@ -65,7 +65,9 @@ function consultInput(overrides: Partial<ConsultPromptInput> = {}): ConsultPromp
     plan,
     task: TASK,
     revisions: [REVISION],
-    diff: '+export function greet(name: string) { return name; }',
+    diffs: [
+      { path: 'src/greet.ts', diff: '+export function greet(name: string) { return name; }' },
+    ],
     failingOutput: 'Error: expected "hello" but received "hi"',
     report: {
       status: 'done',
@@ -121,6 +123,45 @@ describe('buildConsultPrompt', () => {
 
     expect(prompt).toContain('x'.repeat(BOUNDS.consultFailingOutputChars - 1));
     expect(prompt).not.toContain('x'.repeat(BOUNDS.consultFailingOutputChars));
+  });
+
+  it.each([
+    { form: 'deviation', overrides: { reason: 'deviation' } },
+    { form: 'resumed', overrides: { resumed: true } },
+    { form: 'full', overrides: {} },
+  ] satisfies { form: string; overrides: Partial<ConsultPromptInput> }[])(
+    'bounds the attempt diff and names the files it leaves out, $form prompt',
+    ({ overrides }) => {
+      const small = `diff --git a/src/a.ts b/src/a.ts\n${'+a'.repeat(480)}`;
+      const diffs = [
+        { path: 'src/a.ts', diff: small },
+        { path: 'src/big.json', diff: `+${'y'.repeat(5_000_000)}TAIL-OF-BIG-DIFF` },
+        { path: 'src/c.ts', diff: '+C-BODY' },
+      ];
+      const empty = buildConsultPrompt(consultInput({ ...overrides, diffs: [] }));
+      const prompt = buildConsultPrompt(consultInput({ ...overrides, diffs }));
+
+      expect(prompt.length).toBeLessThan(empty.length + BOUNDS.consultDiffChars + 1_000);
+      expect(prompt).toContain(small);
+      expect(prompt).toContain('src/big.json');
+      expect(prompt).toContain('src/c.ts');
+      expect(prompt).not.toContain('TAIL-OF-BIG-DIFF');
+      expect(prompt).not.toContain('C-BODY');
+    },
+  );
+
+  it('caps the names of the files it leaves out with a count', () => {
+    const diffs = Array.from({ length: 2002 }, (_, index) => ({
+      path: `src/generated/file-${index}.json`,
+      diff: `diff --git a/src/generated/file-${index}.json b/src/generated/file-${index}.json\n+${'z'.repeat(1_000)}`,
+    }));
+
+    const prompt = buildConsultPrompt(consultInput({ diffs }));
+
+    expect(prompt).toContain('src/generated/file-0.json');
+    expect(prompt).not.toContain('src/generated/file-2001.json');
+    expect(prompt).toMatch(/and [\d,]+ more/);
+    expect(prompt.length).toBeLessThan(BOUNDS.consultDiffChars + 20_000);
   });
 
   it('states the action contract, the criteria rule and the read-only call', () => {

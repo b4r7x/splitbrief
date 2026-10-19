@@ -8,6 +8,7 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
@@ -511,6 +512,51 @@ describe('requestConsult', () => {
 
     expect(planner.prompts[0]).toContain('-export const greet = "old";');
     expect(planner.prompts[0]).toContain('+export const greet = "new";');
+  });
+
+  it('bounds the attempt diff and names a file it leaves out', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(projectDir, 'src/data.json'),
+      `${'"row",\n'.repeat(300_000)}"END-OF-DATA"\n`,
+    );
+    writeFileSync(join(projectDir, 'src/greet.ts'), 'export const greet = "new";\n');
+    const { bus } = makeBusRecorder();
+    const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
+    const state = consultState();
+    saveState({ projectDir, sessionId }, state);
+
+    await requestConsult(
+      {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        bus,
+        config,
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+      },
+      {
+        task: state.tasks[0]!,
+        reason: 'failed',
+        failingOutput: 'boom',
+        snapshot: {
+          head: 'unused',
+          files: ['src/data.json', 'src/greet.ts'],
+          dirtyFileContents: {},
+          dirtyFileEntries: { 'src/data.json': null, 'src/greet.ts': null },
+        },
+        changedFiles: ['src/data.json', 'src/greet.ts'],
+      },
+    );
+
+    const prompt = planner.prompts[0] ?? '';
+    expect(prompt.length).toBeLessThan(BOUNDS.consultDiffChars + 20_000);
+    expect(prompt).toContain('src/data.json');
+    expect(prompt).toContain('src/greet.ts');
+    expect(prompt).not.toContain('END-OF-DATA');
   });
 
   it.each(['failed', 'stale'] as const)(

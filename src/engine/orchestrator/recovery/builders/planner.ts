@@ -26,12 +26,14 @@ export type PlannerSeatFailure =
   | 'unauthenticated'
   | 'usage-limit'
   | 'missing-model'
+  | 'input-too-large'
   | 'call-failed';
 
 const PLANNER_FAILURE_REASONS = {
   unauthenticated: 'runner-unauthenticated',
   'usage-limit': 'runner-usage-limit',
   'missing-model': 'planner-call-failed',
+  'input-too-large': 'planner-call-failed',
   'call-failed': 'planner-call-failed',
 } as const satisfies Record<PlannerSeatFailure, RecoveryReason>;
 
@@ -65,7 +67,8 @@ export interface PlannerCallFailureRecoveryOptions extends RecoveryBuilderBase {
  * A planner call that failed halts the run instead of ending it: the seat can be
  * re-issued, moved to another detected tool, or the run stopped on it. There is
  * no bigger profile to route to — the seat either runs again or it does not run —
- * and a task to skip only when the call was a brief's hint. A sign-out or a
+ * and a task to skip only when the call was a brief's hint. A prompt the tool
+ * refused as too large is not re-issued: a retry sends the same prompt. A sign-out or a
  * refusal the classifier named, or a model refusal on a route with no
  * credential, builds the one seat-down halt instead.
  */
@@ -107,8 +110,9 @@ export function buildPlannerCallFailedRecoveryIssue(
       ? undefined
       : modelRefusalHalt(opts.runner, modelRefusalKind, opts.seatSwap);
   const offer = modelRefusal === undefined ? switchSeatOffer(opts.seatSwap) : modelRefusal.offer;
+  const inputTooLarge = diagnosis.failure === 'input-too-large';
   const actions = haltActions(reason, [
-    'retry-same-worker',
+    inputTooLarge ? undefined : 'retry-same-worker',
     offer === undefined ? undefined : 'switch-seat',
     opts.task === undefined ? undefined : 'skip-current-task',
     'end-run',
@@ -127,14 +131,23 @@ export function buildPlannerCallFailedRecoveryIssue(
       ...(diagnosis.details ?? []),
       ...(modelRefusalKind === undefined ? [] : [refusalStopDetail(modelRefusalKind)]),
       ...(opts.details ?? []),
+      ...(inputTooLarge ? ['A retry sends the same prompt.'] : []),
     ],
     ...(resetsAt !== null && { resetAt: resetsAt.toISOString() }),
     ...(offer !== undefined && { switchSeat: offer }),
-    facts: compactFacts({ tool: diagnosis.tool, refusal: modelRefusalKind, ...opts.facts }),
+    facts: compactFacts({
+      tool: diagnosis.tool,
+      refusal: modelRefusalKind,
+      chars: diagnosis.inputSize?.chars ?? undefined,
+      maxChars: diagnosis.inputSize?.maxChars ?? undefined,
+      ...opts.facts,
+    }),
     availableActions: actions,
     recommendedAction: chooseRecommended(
       actions,
-      diagnosis.failure === 'usage-limit' || modelRefusal !== undefined ? ['switch-seat'] : [],
+      diagnosis.failure === 'usage-limit' || modelRefusal !== undefined || inputTooLarge
+        ? ['switch-seat']
+        : [],
     ),
     createdAt: opts.createdAt,
   });

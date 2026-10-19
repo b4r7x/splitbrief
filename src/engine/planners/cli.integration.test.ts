@@ -481,6 +481,48 @@ describe('createCliPlanner', () => {
     expect(fresh).not.toContain('codex-thread-gone');
   });
 
+  it('drops a codex thread the tool refused as too long, so the next call starts a fresh thread', async () => {
+    const argvLog = join(shimDir, 'argv.log');
+    const shimPath = join(shimDir, 'codex');
+    const refusal =
+      'Error: turn/start: turn/start failed: Input exceeds the maximum length of 1048576 characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":1048576,"actual_chars":1106026}';
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        `printf '%s ' "$@" >> '${argvLog}'`,
+        `printf '\\n' >> '${argvLog}'`,
+        'if [[ " $* " == *" resume "* ]]; then',
+        `  printf '%s\\n' '${refusal}' >&2`,
+        '  exit 1',
+        'fi',
+        `printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'codex-thread-new' })}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'fresh' } })}'`,
+        `printf '%s\\n' '${CODEX_TURN_COMPLETED}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+      'codex-thread-big',
+    );
+    const callbacks = { onOutput: vi.fn() };
+
+    await expect(callPlanner(planner, { projectDir, callbacks })).rejects.toMatchObject({
+      data: { error: { code: 'input-too-large' } },
+    });
+    const rerun = await callPlanner(planner, { projectDir, callbacks });
+
+    expect(rerun.text).toBe('fresh');
+    const [refused, fresh] = readFileSync(argvLog, 'utf8').trim().split('\n');
+    expect(refused).toContain('codex-thread-big');
+    expect(fresh).not.toContain(' resume ');
+    expect(fresh).not.toContain('codex-thread-big');
+  });
+
   it('rejects a resumed call whose returned Codex thread id differs, without a fresh attempt', async () => {
     const tasksMarkdown = `---
 id: T001

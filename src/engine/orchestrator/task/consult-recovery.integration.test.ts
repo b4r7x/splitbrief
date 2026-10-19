@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import {
@@ -381,4 +382,79 @@ describe('stale consult recovery', () => {
       );
     },
   );
+});
+
+describe('a plan consult the planner tool refuses as too long', () => {
+  it('halts with no retry and starts the next consult on a fresh session', async () => {
+    const ref = setupTaskProject();
+    const first = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'], criteria: [] });
+    const second = makeTask({ id: 'T002', suggestedFiles: ['src/other.ts'], criteria: [] });
+    const state: WorkflowState = {
+      ...makeImplStateWithMetadata([first, second]),
+      plannerSessionId: 'S',
+    };
+    saveState(ref, state);
+    const prompts: string[] = [];
+    let refuse = true;
+    const planner = makePlanner();
+    planner.capabilities.supportsSessionResume = true;
+    planner.typedCall = (ctx) => ({
+      seat: ctx.seat,
+      typedOutput: 'strict-native',
+      canResume: true,
+      invoke: async ({ prompt }) => {
+        prompts.push(prompt);
+        return refuse
+          ? makeRunnerCallResult({
+              status: 'failed',
+              text: '',
+              error: { code: 'input-too-large', message: 'Prompt is too long' },
+            })
+          : makeRunnerCallResult({ status: 'completed', text: JSON.stringify(guidanceConsult()) });
+      },
+    });
+    const { bus } = makeBusRecorder();
+    const wctx = makeTaskWorkflowContext({
+      ...ref,
+      config,
+      bus,
+      planner,
+      implementer: makeImplementer({ retry: vi.fn().mockResolvedValue(failed) }),
+    });
+
+    const halted = (await retryTask({ wctx, state, task: first, reason: 'failed' })).state;
+
+    expect(halted.pendingRecovery).toMatchObject({
+      reason: 'planner-call-failed',
+      seat: 'plan',
+      taskId: 'T001',
+      recommendedAction: 'skip-current-task',
+    });
+    expect(halted.pendingRecovery?.availableActions).not.toContain('retry-same-worker');
+    expect(halted.pendingRecovery?.details.join('\n')).toContain('A retry sends the same prompt');
+
+    const skipped = await applyRecoveryAction({
+      ...ref,
+      bus,
+      config,
+      state: halted,
+      action: 'skip-current-task',
+    });
+    expect(skipped.ok).toBe(true);
+    if (!skipped.ok) throw new Error(skipped.message);
+    refuse = false;
+    prompts.length = 0;
+    await retryTask({
+      wctx,
+      state: { ...skipped.state, currentTaskIndex: 1 },
+      task: second,
+      reason: 'failed',
+    });
+
+    expect(prompts.length).toBeGreaterThan(0);
+    for (const prompt of prompts) {
+      expect(prompt).toMatch(/^# Consult on a failing task$/m);
+      expect(prompt).toContain('T002');
+    }
+  });
 });

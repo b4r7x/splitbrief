@@ -120,7 +120,8 @@ function reasonContract(task: Task, reason: ConsultReason, answered: boolean) {
 
 /**
  * The answer contract of one consult. A rewrite or a split never brings in a `cmd` check that the
- * plan command policy refuses: the answer fails the schema and the seat gets its one repair.
+ * plan command policy refuses, or a `test` check whose value is not one test file: the answer
+ * fails the schema and the seat gets its one repair.
  */
 function answerContract(
   task: Task,
@@ -178,19 +179,19 @@ async function attemptDiff(
   snapshot: ChangedFilesSnapshot,
   files: readonly string[],
   ref: SessionRef,
-): Promise<string> {
-  const diffs: string[] = [];
+): Promise<ConsultPromptInput['diffs']> {
+  const diffs: { path: string; diff: string }[] = [];
   for (const file of files) {
     const diff = await attemptFileDiff(projectDir, snapshot, file, ref);
-    if (diff !== '') diffs.push(diff);
+    if (diff !== '') diffs.push({ path: file, diff });
   }
-  return diffs.join('\n');
+  return diffs;
 }
 
 function promptInput(
   state: WorkflowState,
   input: ConsultRequestInput,
-  diff: string,
+  diffs: ConsultPromptInput['diffs'],
   workspaceDir: string,
   seat: ConsultSeat,
 ): ConsultPromptInput {
@@ -202,7 +203,7 @@ function promptInput(
     plan: state.plan,
     task: input.task,
     revisions: lineage?.replacedParents ?? [],
-    diff,
+    diffs,
     failingOutput: input.failingOutput,
     report: input.report ?? null,
     earlierConsults: lineage?.consultRecords ?? [],
@@ -291,8 +292,8 @@ export async function requestConsult(
   };
 
   const seat = consultSeat(input.task, input.reason);
-  const diff = await attemptDiff(ctx.workspaceDir, input.snapshot, input.changedFiles, ref);
-  const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir, seat);
+  const diffs = await attemptDiff(ctx.workspaceDir, input.snapshot, input.changedFiles, ref);
+  const prompt = promptInput(ctx.state, input, diffs, ctx.workspaceDir, seat);
   const contract = answerContract(
     input.task,
     input.reason,

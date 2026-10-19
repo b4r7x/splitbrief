@@ -28,8 +28,8 @@ export type ConsultPromptInput = Readonly<{
   task: Task;
   /** The task's earlier revisions, oldest first; the current task travels as `task`. */
   revisions: readonly Task[];
-  /** The diff the attempt produced, from its snapshot to now. */
-  diff: string;
+  /** The diff the attempt produced, from its snapshot to now, one entry per changed file. */
+  diffs: readonly { path: string; diff: string }[];
   failingOutput: string;
   report: ImplementerReport | null;
   /** The answers earlier consults of this lineage gave. */
@@ -249,12 +249,42 @@ function reportLines(report: ImplementerReport | null): string[] {
   return ['## Implementer Report', fenced(detail)];
 }
 
+/** The names of the files a bounded diff leaves out, at most this many before a count. */
+const LEFT_OUT_NAMES = 20;
+
+/**
+ * The attempt's file diffs in order, each whole, until `BOUNDS.consultDiffChars` is full. A first
+ * file larger than the whole budget is cut to it. The files cut or left out are named, with a
+ * count past `LEFT_OUT_NAMES`, for the seat to read in the workspace.
+ */
+function diffLines(diffs: ConsultPromptInput['diffs']): string[] {
+  if (diffs.length === 0) return ['No diff was recorded for this attempt.'];
+  let used = 0;
+  const overflow = diffs.findIndex((entry) => {
+    used += entry.diff.length;
+    return used > BOUNDS.consultDiffChars;
+  });
+  const whole = overflow === -1 ? diffs.length : overflow;
+  const shown =
+    whole === 0
+      ? diffs.slice(0, 1).map((entry) => truncateByChars(entry.diff, BOUNDS.consultDiffChars))
+      : diffs.slice(0, whole).map((entry) => entry.diff);
+  const notShown = diffs.slice(whole).map((entry) => entry.path);
+  if (notShown.length === 0) return [fenced(shown.join('\n'), 'diff')];
+  const names = notShown.slice(0, LEFT_OUT_NAMES).map((path) => `\`${path}\``);
+  const more = notShown.length - names.length;
+  return [
+    fenced(shown.join('\n'), 'diff'),
+    `The diff stops at ${BOUNDS.consultDiffChars.toLocaleString('en-US')} characters. Not shown in full: ${names.join(', ')}${
+      more > 0 ? `, and ${more.toLocaleString('en-US')} more` : ''
+    }. Read these files in the run workspace.`,
+  ];
+}
+
 function attemptLines(input: ConsultPromptInput): string[] {
   return [
     '## Attempt Diff',
-    input.diff.trim() === ''
-      ? 'No diff was recorded for this attempt.'
-      : fenced(input.diff, 'diff'),
+    ...diffLines(input.diffs),
     ...(input.reason === 'deviation'
       ? []
       : [
