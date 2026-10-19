@@ -73,7 +73,7 @@ describe('restoreInterruptedTaskFiles', () => {
     expect(existsSync(join(workspaceDir, '.splitbrief'))).toBe(false);
     expect(events.filter((event) => event.type === 'warning')).toEqual([
       expect.objectContaining({
-        message: 'Restored 3 unfinished change(s) from the interrupted T002: a.ts, c.ts, d.ts',
+        message: 'Restored 3 unfinished changes from the interrupted T002: a.ts, c.ts, d.ts',
       }),
     ]);
   });
@@ -114,7 +114,7 @@ describe('restoreAttemptFiles', () => {
       events.flatMap((event) => (event.type === 'warning' ? [event.message] : [])),
     ).toContainEqual(
       expect.stringMatching(
-        /^Restored 2 change\(s\) from the failed attempt: a\.ts, c\.ts\. The replaced bytes are in \.splitbrief\/sessions\/attempt-rollback\/reverted\//,
+        /^Restored 2 changes from the failed attempt: a\.ts, c\.ts\. The replaced bytes are in \.splitbrief\/sessions\/attempt-rollback\/reverted\//,
       ),
     );
   });

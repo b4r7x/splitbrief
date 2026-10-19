@@ -796,6 +796,49 @@ describe('groupEventsIntoSections', () => {
       expect(requireSection(sections, 0, 'events').items).toEqual(events);
     });
 
+    it('keeps the outcome of the recovery that reset the brief in its range', () => {
+      const events = [
+        start('T002', 1),
+        at('recovery_prompted', { issueId: 'i1', taskId: 'T002' }),
+        at('recovery_action_selected', { issueId: 'i1', action: 'retry-same-worker' }),
+        at('task_reset', { taskId: 'T002' }),
+        at('recovery_resolved', { issueId: 'i1', outcome: 'retry-current-task' }),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections).toHaveLength(1);
+      expect(requireSection(sections, 0, 'events').items).toEqual(events);
+    });
+
+    it('keeps the outcome of the recovery that skipped the brief in its range', () => {
+      const events = [
+        start('T002', 1),
+        at('recovery_prompted', { issueId: 'i1', taskId: 'T002' }),
+        at('recovery_action_selected', { issueId: 'i1', action: 'skip-current-task' }),
+        makeTaskSkipped({ taskId: taskId('T002'), title: 'T002' }),
+        at('recovery_resolved', { issueId: 'i1', outcome: 'skipped-current-task' }),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections).toHaveLength(1);
+      const skipped = requireSection(sections, 0, 'completed-task');
+      expect(skipped.items).toEqual(events);
+      expect(skipped.summary.method).toBe('skipped');
+    });
+
+    it('keeps the outcome of the recovery that skipped a brief that never started', () => {
+      const events = [
+        at('recovery_prompted', { issueId: 'i1', taskId: 'T002' }),
+        at('recovery_action_selected', { issueId: 'i1', action: 'skip-current-task' }),
+        makeTaskSkipped({ taskId: taskId('T002'), title: 'T002' }),
+        at('recovery_resolved', { issueId: 'i1', outcome: 'skipped-current-task' }),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections).toHaveLength(1);
+      expect(requireSection(sections, 0, 'completed-task').items).toEqual(events);
+    });
+
     it('folds a run-level error between two tasks into the task that closed before it', () => {
       const runError = at('error', { message: 'run-level' });
       const events = [start('T001', 0), complete('T001'), runError, start('T002', 1)];

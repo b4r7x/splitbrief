@@ -6,7 +6,7 @@ import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { publishError, publishTaskValidating } from '../events.js';
+import { publishError, publishTaskValidating, publishWarning } from '../events.js';
 import { error } from '../../../utils/error.js';
 import {
   addUsageAndSave,
@@ -623,7 +623,10 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   }
   const halt = retry.state.pendingRecovery;
   if (!retry.completed && halt !== undefined && !isConsultBoundReason(halt.reason)) {
-    await restoreExhaustedTaskFiles({ wctx, phase: retry.state.phase, taskStartSnapshot });
+    const warning = await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
+    if (warning !== undefined) {
+      publishWarning({ bus: wctx.bus, phase: retry.state.phase, message: warning });
+    }
   }
   return retry.state;
 }

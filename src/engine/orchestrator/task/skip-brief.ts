@@ -6,27 +6,52 @@ import { transitionAndSave } from '../state-ops.js';
 import { persistSkippedBriefFiles } from '../evidence/persistence.js';
 import { restoreExhaustedTaskFiles, restoreHookDeniedTaskFiles } from './rollback.js';
 
+type SkipBriefOptions = {
+  wctx: Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus'>;
+  state: WorkflowState;
+  task: Task;
+  reason: string;
+  taskStartSnapshot: ChangedFilesSnapshot | undefined;
+  expectedRevision?: number | undefined;
+};
+
 /**
  * A skipped brief leaves no files behind: every file it changed since its task-start snapshot goes
  * back, and the ledger books on it only the files still changed. Without a snapshot no attempt of
  * the brief ran, so there is nothing to take back.
  */
-export async function skipBrief(opts: {
-  wctx: Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus'>;
-  state: WorkflowState;
-  task: Task;
-  reason: string;
-  skippedBy: 'recovery' | 'pre_task' | 'pre_validation';
-  taskStartSnapshot: ChangedFilesSnapshot | undefined;
-  expectedRevision?: number | undefined;
-}): Promise<WorkflowState> {
-  const { wctx, task, reason, skippedBy, taskStartSnapshot } = opts;
+export async function skipBrief(
+  opts: SkipBriefOptions & { skippedBy: 'pre_task' | 'pre_validation' },
+): Promise<WorkflowState> {
+  const { wctx, state, taskStartSnapshot, skippedBy } = opts;
   if (taskStartSnapshot !== undefined) {
-    const restore = { wctx, phase: opts.state.phase, taskStartSnapshot };
-    await (skippedBy === 'recovery'
-      ? restoreExhaustedTaskFiles(restore)
-      : restoreHookDeniedTaskFiles({ ...restore, hook: skippedBy }));
+    await restoreHookDeniedTaskFiles({
+      wctx,
+      phase: state.phase,
+      taskStartSnapshot,
+      hook: skippedBy,
+    });
   }
+  return recordSkip(opts);
+}
+
+/**
+ * The recovery Skip takes the brief's files back like any skip. It returns the restore warning
+ * for the caller to publish after the recovery outcome, so the choice and its outcome stay one row.
+ */
+export async function skipHaltedBrief(
+  opts: SkipBriefOptions,
+): Promise<{ state: WorkflowState; restoreWarning: string | undefined }> {
+  const { wctx, taskStartSnapshot } = opts;
+  const restoreWarning =
+    taskStartSnapshot === undefined
+      ? undefined
+      : await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
+  return { state: await recordSkip(opts), restoreWarning };
+}
+
+async function recordSkip(opts: SkipBriefOptions): Promise<WorkflowState> {
+  const { wctx, task, reason, taskStartSnapshot } = opts;
   await persistSkippedBriefFiles({ wctx, state: opts.state, task, reason, taskStartSnapshot });
   const state = transitionAndSave(
     wctx,

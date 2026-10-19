@@ -414,6 +414,21 @@ function includesTranscript(...markers: readonly string[]): CheckpointPredicate 
   };
 }
 
+// One recovery reads as one row: the choice and its outcome on the same Recovery line.
+function oneRecoveryRow(choice: string, outcome: string): CheckpointPredicate {
+  return (context) => {
+    const rows = workflowTranscriptText()
+      .split('\n')
+      .filter((line) => line.includes('Recovery  '));
+    return (
+      includesTranscript()(context) &&
+      rows.length === 1 &&
+      rows[0]?.includes(`Recovery  ${choice}`) === true &&
+      rows[0].includes(outcome)
+    );
+  };
+}
+
 function implementerMarkdown(label: string): CheckpointPredicate {
   return (context) => {
     if (!includesAll('briefs passed')(context) || !excludesAll('](file:')(context)) return false;
@@ -501,6 +516,7 @@ const checkpointPredicates = [
   [checkpointId('implementation-retry'), includesAll('briefs passed')],
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
+  [checkpointId('recovery-resolved-skip'), oneRecoveryRow('Skip task', 'skipped')],
   [checkpointId('recovery-resolved-apply-retry'), includesAll('Run continued')],
   [checkpointId('review-fix'), includesAll()],
   [checkpointId('review-choosing-checks'), includesAll()],
@@ -872,7 +888,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('recovery-slash-list'), includesAll('/skills', 'tab fill')],
   [checkpointId('review-failed'), includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is')],
-  [checkpointId('review-fix-again'), includesAll('Recovery  Fix again')],
+  [checkpointId('review-fix-again'), oneRecoveryRow('Fix again', 'continued')],
   [
     checkpointId('review-unverified'),
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is', 'unverified criteria'),

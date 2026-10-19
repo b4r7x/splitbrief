@@ -1,9 +1,6 @@
 import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { createElement, Fragment } from 'react';
-import { renderToString } from 'ink';
-import { ConversationRowView } from '../../../src/features/workflow/components/conversation-flow/row-view.js';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
@@ -11,13 +8,11 @@ import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-r
 import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
-import { getSections } from '../../../src/stores/workflow/actions/sections.js';
 import { operationsStore } from '../../../src/stores/workflow/operations/state.js';
 import {
   reviewActivityParts,
   reviewActivitySpans,
 } from '../../../src/features/workflow/display/phase-verb.js';
-import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -28,6 +23,7 @@ import {
   MARKER_FILE,
   MARKER_SOURCE,
 } from '../helpers/stop-continue-fixture.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 
 it('keeps both review attempts and their elapsed times after a CLI crash and continue', async () => {
   const target = createStopContinueFixture(
@@ -100,21 +96,7 @@ if (!existsSync(${JSON.stringify(started)})) {
     expect(attempts).toHaveLength(2);
     expect(attempts[0]).toMatchObject({ summary: { outcome: 'stopped' } });
     expect(attempts[1]).toMatchObject({ summary: { outcome: 'passed', rerunsBefore: 1 } });
-    const { rows } = buildConversationRows({
-      sections: getSections(),
-      cols: 120,
-      viewportHeight: 100,
-      expandedDiffs: new Set(),
-      expandedActivityBatches: new Set(),
-      streaming: { taskId: null, lines: [], active: false },
-    });
-    const text = renderToString(
-      createElement(
-        Fragment,
-        null,
-        ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
-      ),
-    );
+    const text = transcriptText(events);
     expect(text).toContain('Final review stopped');
     expect(text).toContain('Run continued');
     expect(text).toContain('Final review re-run passed');

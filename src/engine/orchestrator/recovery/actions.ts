@@ -33,13 +33,14 @@ import {
   publishRecoveryActionSelected,
   publishRecoveryResolved,
   publishSeatSwitched,
+  publishWarning,
 } from '../events.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { endRun } from '../run/close.js';
 import { haltCutApply } from '../apply/run.js';
 import { recordUserMessage } from '../transcript/user-message.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
-import { skipBrief } from '../task/skip-brief.js';
+import { skipHaltedBrief } from '../task/skip-brief.js';
 import { runCodeDir } from '../kept-work.js';
 import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import { SeatAccountCauseSchema } from '../../../core/recovery/account-cause.js';
@@ -591,30 +592,29 @@ async function applySkipCurrentTaskRecoveryAction(
     });
   }
 
-  let state = markRecoveryApplying(opts, issue);
+  const applying = markRecoveryApplying(opts, issue);
   // A halt that kept the brief's files left them for a Continue or a Try again; skipping the
   // brief takes them back.
-  state = await skipBrief({
+  const skipped = await skipHaltedBrief({
     wctx: {
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
       bus: opts.bus,
       workspaceDir: runCodeDir(opts.projectDir, opts.state.workspace),
     },
-    state,
+    state: applying,
     task: target,
     reason,
-    skippedBy: 'recovery',
     taskStartSnapshot: opts.state.changedFilesBaseline?.activeTaskSnapshot,
-    expectedRevision: state.stateRevision ?? 0,
+    expectedRevision: applying.stateRevision ?? 0,
   });
-  state = transitionAndSave(
+  const state = transitionAndSave(
     opts,
-    state,
+    skipped.state,
     {
       type: 'RESOLVE_PENDING_RECOVERY',
     },
-    { expectedRevision: state.stateRevision ?? 0 },
+    { expectedRevision: skipped.state.stateRevision ?? 0 },
   );
   publishRecoveryResolved({
     bus: opts.bus,
@@ -623,6 +623,9 @@ async function applySkipCurrentTaskRecoveryAction(
     action: opts.action,
     outcome: 'skipped-current-task',
   });
+  if (skipped.restoreWarning !== undefined) {
+    publishWarning({ bus: opts.bus, phase: state.phase, message: skipped.restoreWarning });
+  }
 
   return { ok: true, action: opts.action, issue, state, status: 'skipped-current-task' };
 }

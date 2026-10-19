@@ -136,7 +136,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       events.find(
         (e) =>
           e.type === 'warning' &&
-          e.message.includes('unvalidated task change(s) after pre_validation denied'),
+          e.message.includes('Restored 2 unvalidated task changes after pre_validation denied'),
       ),
     ).toBeDefined();
 
