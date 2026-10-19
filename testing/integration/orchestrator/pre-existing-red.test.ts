@@ -77,6 +77,7 @@ function preparedExecution(input: {
   return {
     purpose: 'new-workflow',
     config,
+    sourceConfig: config,
     preparationId,
     report: {
       generatedAt: '2026-08-04T00:00:00.000Z',

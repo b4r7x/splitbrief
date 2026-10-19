@@ -76,6 +76,7 @@ export function prepareWorkflowExecution({
   return {
     purpose: resumeState === undefined ? 'new-workflow' : 'resume',
     config: preparedConfig,
+    sourceConfig: preparedConfig,
     preparationId,
     report,
     gates,

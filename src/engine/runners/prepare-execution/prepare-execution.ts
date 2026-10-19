@@ -199,6 +199,7 @@ type AdmissionInput = Readonly<{
 
 type AdmittedRunners = Readonly<{
   config: PreparedConfig;
+  sourceConfig: PreparedConfig;
   preparationId: string;
   report: ReadinessReport;
   gates: readonly RunnerGate[];
@@ -340,7 +341,15 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
 
   return {
     kind: 'admitted',
-    admitted: { config: admittedConfig, preparationId, report, gates, deps, trustPersisted },
+    admitted: {
+      config: admittedConfig,
+      sourceConfig: config,
+      preparationId,
+      report,
+      gates,
+      deps,
+      trustPersisted,
+    },
   };
 }
 
@@ -384,7 +393,8 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
       sink,
     );
     if (admission.kind === 'blocked') return { kind: 'blocked', report: admission.report };
-    const { config, preparationId, report, gates, deps, trustPersisted } = admission.admitted;
+    const { config, sourceConfig, preparationId, report, gates, deps, trustPersisted } =
+      admission.admitted;
 
     let session: PreparedExecutionSession;
     if (resume) {
@@ -413,6 +423,7 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
       execution: {
         purpose: input.policy.purpose,
         config,
+        sourceConfig,
         preparationId,
         report,
         gates,

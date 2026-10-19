@@ -237,6 +237,7 @@ describe('start preparation', () => {
             execution: {
               purpose: 'new-workflow',
               config,
+              sourceConfig: config,
               preparationId: 'readiness-emission-failure',
               report,
               gates: [],

@@ -20,6 +20,7 @@ function preparedExecution(feature: string): PreparedExecution {
   return {
     purpose: 'resume',
     config: parsePreparedConfig(makeConfig()),
+    sourceConfig: parsePreparedConfig(makeConfig()),
     preparationId: 'router-test-preparation',
     report: {
       generatedAt: '2026-08-04T00:00:00.000Z',

@@ -215,6 +215,7 @@ async function runWorkflow(input: WorkflowTestOptions) {
     prepared: {
       purpose,
       config,
+      sourceConfig: config,
       preparationId,
       report: readyReport(projectDir),
       gates,
@@ -357,6 +358,7 @@ describe('runWorkflow — smoke', () => {
       prepared: {
         purpose: 'new-workflow',
         config,
+        sourceConfig: config,
         preparationId,
         report: readyReport(projectDir),
         gates: [

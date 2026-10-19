@@ -108,6 +108,7 @@ function prepared(id: string): Extract<PreparationOutcome, { kind: 'prepared' }>
     execution: {
       purpose: 'new-workflow',
       config,
+      sourceConfig: config,
       preparationId: `preparation-${id}`,
       report,
       gates: [],

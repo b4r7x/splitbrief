@@ -1,10 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { App, type AppProps } from '../../../src/app/root.js';
+import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
+import { createInitialState } from '../../../src/core/state/machine.js';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { CONFIG_RELATIVE_PATH } from '../../../src/core/config/load/document.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import { loadState } from '../../../src/core/state/persistence.js';
+import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
@@ -13,6 +17,25 @@ import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome as createTrustHome } from '#testing/helpers/trust-home.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { SessionRef } from '../../../src/core/types/session-ref.js';
+import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
+import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
+import type { RunWorkflowFn } from '../../../src/features/workflow/hooks/use-run-loop.js';
+import { preparationStore } from '../../../src/stores/navigation/preparation.js';
+import { routerStore } from '../../../src/stores/navigation/router.js';
+import { configStore } from '../../../src/stores/project/config.js';
+import { overlayStore } from '../../../src/stores/ui/overlay.js';
+import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
+import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { stopStore } from '../../../src/stores/workflow/stop.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { makeRunnerCallStarted } from '#testing/helpers/events/runner-call.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
+import { heldUntilAborted, openHaltedRun } from '../helpers/halted-run-screen.js';
 import {
   cli,
   continueWithCorrection,
@@ -47,18 +70,21 @@ const WRITE_BOTH_FILES = `mkdirSync('src', { recursive: true });
 
 /**
  * Codex refuses on its account; Claude builds. With `haltedCallWrote` codex writes both files
- * before it refuses, and Claude finds them done and writes nothing.
+ * before it refuses, and Claude finds them done and writes nothing. Every codex call waits while
+ * `codexHold` exists.
  */
 function installShims(
   binDir: string,
   codexCalls: string,
   claudeCalls: string,
   haltedCallWrote: boolean,
+  codexHold: string,
 ): void {
   writeFakeNodeCli(
     binDir,
     'codex',
-    `const { appendFileSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs');
+    `const { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs');
+while (existsSync(${JSON.stringify(codexHold)})) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
 const args = process.argv.slice(2);
 if (args[0] === '--version') {
   console.log('codex ${CLI_TOOL_CATALOG.codex.compatibility.testedVersion}');
@@ -112,25 +138,42 @@ if (args.includes('--input-format')) {
   );
 }
 
-async function codexHaltFixture(haltedCallWrote = false) {
-  fixture = createStopContinueFixture(() => '', { isolation: 'none' });
+const GUIDANCE = JSON.stringify({
+  answer: {
+    diagnosis: 'The tool refused on its account.',
+    action: 'guidance',
+    instructions: 'Write src/greet.ts and src/marker.ts.',
+    context: null,
+  },
+});
+
+/** The project with BUILD on codex and both tools detected, before any run starts. */
+async function codexSeatFixture(haltedCallWrote: boolean, implementerModel: string) {
+  fixture = createStopContinueFixture(() => '', {
+    isolation: 'none',
+    // Anchored to the heading line: the plan prompt's repo map quotes this line of the script.
+    consult: () =>
+      `(prompt) => /^# Consult on a failing task$/m.test(prompt) ? ${JSON.stringify(GUIDANCE)} : undefined`,
+  });
   const target = fixture;
   trustHome = createTrustHome('e2e-seat-switch-home');
   mkdirSync(join(trustHome.home, '.codex'), { recursive: true });
   writeFileSync(join(trustHome.home, '.codex', 'auth.json'), '{"fixture":true}\n');
+  writeFileSync(join(trustHome.home, '.codex', 'config.toml'), `model = "${PRIMARY_MODEL}"\n`);
   mkdirSync(join(trustHome.home, '.claude'), { recursive: true });
   writeFileSync(join(trustHome.home, '.claude', '.credentials.json'), '{"fixture":true}\n');
   const binDir = join(target.tmpDir, 'bin');
   mkdirSync(binDir);
   const codexCalls = join(target.tmpDir, 'codex-calls.jsonl');
   const claudeCalls = join(target.tmpDir, 'claude-calls.jsonl');
-  installShims(binDir, codexCalls, claudeCalls, haltedCallWrote);
+  const codexHold = join(target.tmpDir, 'codex-hold');
+  installShims(binDir, codexCalls, claudeCalls, haltedCallWrote, codexHold);
   restorePath = activateSafeCliShimPath(binDir);
 
   const config = loadConfig(target.projectDir).config;
   writeConfig(target.projectDir, {
     ...config,
-    implementer: { kind: 'cli', tool: 'codex', model: PRIMARY_MODEL, contextLength: 200_000 },
+    implementer: { kind: 'cli', tool: 'codex', model: implementerModel, contextLength: 200_000 },
   });
   expect(loadConfig(target.projectDir).config.implementer.fallback).toBeUndefined();
 
@@ -151,7 +194,14 @@ async function codexHaltFixture(haltedCallWrote = false) {
     "globalThis.fetch = async () => { throw new Error('Network disabled in seat switch E2E'); };\n",
   );
   vi.stubEnv('NODE_OPTIONS', `--import=${offlinePreload}`);
+  return { target, codexCalls, claudeCalls, codexHold };
+}
 
+async function codexHaltFixture(haltedCallWrote = false, implementerModel = PRIMARY_MODEL) {
+  const { target, codexCalls, claudeCalls } = await codexSeatFixture(
+    haltedCallWrote,
+    implementerModel,
+  );
   const options = { timeoutMs: 90_000, reapProjectDir: target.projectDir };
   const halted = await cli(target, ['start', 'smoke'], options);
   const sessions = readdirSync(sessionsRoot(target.projectDir));
@@ -312,5 +362,226 @@ describe('e2e: seat down after the brief wrote its files', { timeout: 240_000 },
     expect(await taskRetries(ref)).toEqual([]);
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
     expect(readFileSync(target.markerPath, 'utf8')).toBe(MARKER_SOURCE);
+  });
+});
+
+async function preparedResume(ref: SessionRef, state: WorkflowState): Promise<PreparedExecution> {
+  const outcome = await prepareExecution({
+    existingSession: ref,
+    feature: state.feature,
+    effectiveConfig: loadConfig(ref.projectDir).config,
+    resumeState: state,
+    signal: new AbortController().signal,
+    policy: {
+      purpose: 'resume',
+      interaction: 'headless',
+      allowRepoRunners: true,
+      allowHooks: false,
+      unverifiedAuth: 'allowed',
+    },
+  });
+  if (outcome.kind !== 'prepared') throw new Error(`the resume was not prepared: ${outcome.kind}`);
+  return outcome.execution;
+}
+
+describe('e2e: seat down switched from the recovery menu', { timeout: 150_000 }, () => {
+  it('moves BUILD to the picked tool without announcing a pause at the brief boundary', async () => {
+    const { target } = await codexHaltFixture();
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('Network disabled in seat switch E2E');
+    });
+    await trustDeclaredRunners({
+      projectDir: target.projectDir,
+      config: loadConfig(target.projectDir).config,
+    });
+    let engineCalls = 0;
+    const { screen, runWorkflow: engine } = await openHaltedRun(target, {
+      heading: 'Seat down',
+      prepare: ({ ref, state }) => preparedResume(ref, state),
+      // The first entry is the real engine, so the halt is raised in this process the way a run
+      // started on this screen raises it. Every later entry stays open for the test to read.
+      runWorkflow: (opts) => {
+        engineCalls += 1;
+        return engineCalls === 1 ? runWorkflow(opts) : heldUntilAborted(opts.signal);
+      },
+    });
+    const frame = () => stripAnsiStyles(screen.lastFrame());
+    const press = async (key: string) => {
+      screen.stdin.write(key);
+      await flushEffects();
+      await tick(100);
+    };
+    try {
+      await press('\u001B[A');
+      await press('\r');
+      await vi.waitFor(() => expect(frame()).toContain('Run continued'));
+      await vi.waitFor(() => expect(frame()).toContain('Change BUILD tool'), { timeout: 60_000 });
+      expect(engine).toHaveBeenCalledTimes(1);
+      expect(lifecycleStore.get().status).toBe('running');
+
+      await press('\r');
+      await vi.waitFor(() => expect(frame()).toContain('BUILD · tool, model, effort'));
+      // This screen opened without the startup detection, so the picker reads the tools now.
+      await press('\u0012');
+      await vi.waitFor(() => expect(frame()).toContain('Sonnet 5.5'), { timeout: 30_000 });
+
+      const intents: string[] = [];
+      const offStop = stopStore.subscribe(() => intents.push(stopStore.get().intent));
+      const firstFrame = screen.frames.length;
+      await press('\u001B[B');
+      await press('\r');
+      await press('\r');
+      await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(2), { timeout: 60_000 });
+      offStop();
+
+      expect(engine.mock.calls[1]?.[0].prepared.config.implementer).toMatchObject({
+        kind: 'cli',
+        tool: 'claude-code',
+      });
+      const shown = screen.frames.slice(firstFrame).map(stripAnsiStyles).join('\n');
+      expect(shown).not.toContain('Pause requested');
+      expect(shown).not.toContain('Finishing T001');
+      expect(intents).not.toContain('pause-after-brief');
+    } finally {
+      screen.unmount();
+    }
+  });
+});
+
+describe('e2e: a setting saved while the brief runs', { timeout: 150_000 }, () => {
+  it('announces no pause when the save changes no seat of a seat left to its tool', async () => {
+    const { target, halted } = await codexHaltFixture(false, 'auto');
+    expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('Network disabled in seat switch E2E');
+    });
+    await trustDeclaredRunners({
+      projectDir: target.projectDir,
+      config: loadConfig(target.projectDir).config,
+    });
+    const { screen, runWorkflow: engine } = await openHaltedRun(target, {
+      heading: 'Seat down',
+      prepare: ({ ref, state }) => preparedResume(ref, state),
+      // The retried brief starts its implementer call and keeps it open for the test to read.
+      runWorkflow: (opts) => {
+        opts.tuiSink?.(makeRunnerCallStarted({ ts: Date.now(), runnerName: 'codex' }));
+        return heldUntilAborted(opts.signal);
+      },
+    });
+    const frame = () => stripAnsiStyles(screen.lastFrame());
+    const press = async (key: string) => {
+      screen.stdin.write(key);
+      await flushEffects();
+      await tick(100);
+    };
+    try {
+      await press('\u001B[A');
+      await press('\r');
+      await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(frame()).toContain('Implementing…'));
+      expect(lifecycleStore.get().status).toBe('running');
+      // Preparation names the model codex keeps in its own config; the saved seat stays on auto.
+      expect(engine.mock.calls[0]?.[0].prepared.config.implementer).toMatchObject({
+        tool: 'codex',
+        model: PRIMARY_MODEL,
+      });
+      const current = configStore.get().config;
+      if (current === null) throw new Error('the screen loaded no config');
+      expect(current.implementer).toMatchObject({ tool: 'codex', model: 'auto' });
+
+      const intents: string[] = [];
+      const offStop = stopStore.subscribe(() => intents.push(stopStore.get().intent));
+      const firstFrame = screen.frames.length;
+      const saved = await configStore.save({
+        ...current,
+        workflow: { ...current.workflow, approve: 'none' },
+      });
+      await flushEffects();
+      await tick(200);
+      offStop();
+
+      expect(saved.kind).toBe('saved');
+      const shown = screen.frames.slice(firstFrame).map(stripAnsiStyles).join('\n');
+      expect(shown).not.toContain('Pause requested');
+      expect(shown).not.toContain('Finishing T001');
+      expect(intents).not.toContain('pause-after-brief');
+    } finally {
+      screen.unmount();
+    }
+  });
+});
+
+describe('e2e: a BUILD seat saved while the start check runs', { timeout: 150_000 }, () => {
+  it('builds from the first brief boundary on the seat saved during the check', async () => {
+    const { target, codexHold } = await codexSeatFixture(false, PRIMARY_MODEL);
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('Network disabled in seat switch E2E');
+    });
+    vi.stubEnv('XDG_STATE_HOME', target.stateHome);
+    const projectDir = await canonicalizeProjectDir({ project: target.projectDir });
+    // Home admits no command from the repository, so PLAN is a coding tool here.
+    const config = loadConfig(projectDir).config;
+    writeConfig(projectDir, {
+      ...config,
+      planner: { kind: 'cli', tool: 'claude-code', model: SWITCHED_MODEL, contextLength: 200_000 },
+    });
+    await trustDeclaredRunners({ projectDir, config: loadConfig(projectDir).config });
+    configStore.load(projectDir);
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    routerStore.init({ screen: 'home' });
+    // The first entry is the run the check prepared: it reaches its first brief boundary at once.
+    // The entry after it stays open for the test to read.
+    const runWorkflow = vi.fn<RunWorkflowFn>(async (opts) => {
+      if (runWorkflow.mock.calls.length > 1) return heldUntilAborted(opts.signal);
+      saveState(opts.prepared.session.ref, {
+        ...createInitialState(opts.prepared.runtime.feature),
+        phase: 'implementing',
+      });
+      if (!opts.sinks.consumeBoundaryPause?.()) return heldUntilAborted(opts.signal);
+      await opts.callbacks.onContinuationNeeded?.('', 'boundary', []);
+      return makeSummary();
+    });
+    const screen = renderFeature(createElement<AppProps>(App, { workflowDeps: { runWorkflow } }), {
+      cols: 120,
+      rows: 40,
+    });
+    const frame = () => stripAnsiStyles(screen.lastFrame());
+    try {
+      await flushEffects();
+      screen.stdin.write('smoke');
+      await vi.waitFor(() => expect(frame()).toContain('smoke'));
+      writeFileSync(codexHold, '');
+      screen.stdin.write('\r');
+      await vi.waitFor(() => expect(frame()).toContain('Checking tools'), { timeout: 30_000 });
+
+      screen.stdin.write('\u001B[44;5u');
+      await vi.waitFor(() => expect(overlayStore.get().active).toBe('settings'));
+      const current = configStore.get().config;
+      if (current === null) throw new Error('the screen loaded no config');
+      const saved = await configStore.save({
+        ...current,
+        implementer: {
+          kind: 'cli',
+          tool: 'claude-code',
+          model: SWITCHED_MODEL,
+          contextLength: 200_000,
+        },
+      });
+      expect(saved.kind).toBe('saved');
+      expect(preparationStore.get().kind).toBe('checking');
+      overlayStore.close();
+      rmSync(codexHold);
+
+      await vi.waitFor(() => expect(runWorkflow).toHaveBeenCalledTimes(2), { timeout: 60_000 });
+      expect(runWorkflow.mock.calls[0]?.[0].prepared.config.implementer).toMatchObject({
+        tool: 'codex',
+      });
+      expect(runWorkflow.mock.calls[1]?.[0].prepared.config.implementer).toMatchObject({
+        tool: 'claude-code',
+        model: SWITCHED_MODEL,
+      });
+    } finally {
+      screen.unmount();
+    }
   });
 });

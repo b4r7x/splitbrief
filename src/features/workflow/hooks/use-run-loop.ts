@@ -8,6 +8,7 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { resetMarkdownConversationRowsCache } from '../conversation-rows/markdown-rows.js';
 import { resetConversationRowsProjectionCache } from '../conversation-rows/projection-cache.js';
 import { resetEventBlockCache } from '../conversation-rows/block-cache.js';
@@ -236,18 +237,26 @@ export function useRunLoop({
 
     // A seat saved under the running brief is picked up at the next brief boundary: the run
     // stops itself there instead of parking, and continues the way a run at rest does, re-prepared
-    // from the saved config. The panel's own swap re-prepares at once and cancels the request.
-    const offConfig = configStore.subscribe(() => {
+    // from the saved config. A halt runs no brief, so a seat saved while it waits is read when the
+    // run re-enters. The saved seats are compared with the config the preparation read, not with
+    // the prepared one: preparation names the model a seat leaves to its tool. A seat saved while
+    // the preparation ran is then a change too.
+    let configOfRun = prepared.sourceConfig;
+    const requestSeatChanges = (): void => {
       const config = configStore.get().config;
-      if (config === null || lifecycleStore.get().status !== 'running') return;
+      if (config === null) return;
       const changed = seatIdentityChanges(
-        seatIdentitiesFromConfig(preparedForRun.config),
+        seatIdentitiesFromConfig(configOfRun),
         seatIdentitiesFromConfig(config),
       );
       if (changed.length > 0) {
         const revision = configStore.get().revision?.rawSha256 ?? '';
         for (const change of changed) requestSeatChangeAtBoundary(change.seat, revision);
       }
+    };
+    const offConfig = configStore.subscribe(() => {
+      if (lifecycleStore.get().status === 'running' && recoveryNoticeStore.get().issue === null)
+        requestSeatChanges();
     });
     let seatChangedAtBoundary = false;
     const promptCallbacks = buildPromptCallbacks({ inputMode, abortedRef, controller });
@@ -348,6 +357,7 @@ export function useRunLoop({
             prepare: prepareExecutionFn,
             onSeatSwapped: (swappedPrepared) => {
               preparedForRun = swappedPrepared;
+              configOfRun = swappedPrepared.config;
               configStore.refreshFromExecution(session.ref.projectDir, swappedPrepared.config);
               if (
                 swappedSeat !== undefined &&
@@ -418,6 +428,7 @@ export function useRunLoop({
           stop: () => streamingOutputStore.stopStreaming(),
         };
 
+        requestSeatChanges();
         const detectedContextLength = configStore.getDetectedContextLength();
         retentionNoticeHandled.current = false;
         await runWorkflowFn({

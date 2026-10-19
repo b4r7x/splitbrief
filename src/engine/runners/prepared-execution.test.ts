@@ -30,6 +30,7 @@ function executionWithSession(session: PreparedExecution['session']): PreparedEx
   return {
     purpose: 'new-workflow',
     config: parsePreparedConfig(createDefaultConfig()),
+    sourceConfig: parsePreparedConfig(createDefaultConfig()),
     preparationId: 'prepared-execution-test',
     report: {
       generatedAt: '2026-08-04T00:00:00.000Z',

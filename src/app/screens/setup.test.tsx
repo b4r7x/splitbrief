@@ -168,6 +168,7 @@ function preparedExecution(input: PrepareExecutionInput): PreparedExecution {
   return {
     purpose: 'new-workflow',
     config: input.effectiveConfig,
+    sourceConfig: input.effectiveConfig,
     preparationId: 'setup-preparation',
     report: readiness,
     gates: [],

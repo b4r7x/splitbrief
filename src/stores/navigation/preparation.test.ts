@@ -49,6 +49,7 @@ function prepared(active: ActiveSessionReceipt) {
   const execution: PreparedExecution = {
     purpose: 'resume',
     config: parsePreparedConfig(makeConfig()),
+    sourceConfig: parsePreparedConfig(makeConfig()),
     preparationId: `preparation-${active.generation}`,
     report: report(),
     gates: [],

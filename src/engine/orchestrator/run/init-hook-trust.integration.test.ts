@@ -145,6 +145,7 @@ async function initializeFromCaller(args: ReturnType<typeof makeInitArgs>) {
       prepared: {
         purpose: 'new-workflow',
         config,
+        sourceConfig: config,
         preparationId,
         report: {
           generatedAt: new Date(0).toISOString(),

@@ -1896,6 +1896,7 @@ describe('a seat left on auto', () => {
         effectiveModel: 'gpt-6-astra',
       }),
     );
+    expect(outcome.execution.sourceConfig.implementer).toMatchObject({ model: 'auto' });
     expect(config.implementer).toMatchObject({ model: 'auto' });
   });
 });
