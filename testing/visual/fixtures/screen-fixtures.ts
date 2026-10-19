@@ -11,6 +11,9 @@ import { skillsStore } from '../../../src/stores/project/skills.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { formatAttachmentFailure } from '../../../src/core/attachments/failure.js';
+import { SOFT_SEP } from '../../../src/core/separators.js';
+import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
+import { formatConfigSaveSuccess } from '../../../src/stores/project/save-feedback.js';
 import type { InputFileFailureReason } from '../../../src/core/attachments/resolve.js';
 import {
   CHECKING_TOOLS_STAGE,
@@ -1015,24 +1018,103 @@ function createLongDraftFixture(): FixtureLifecycle {
   };
 }
 
+const ATTACHMENT_FAILURE_DRAFTS: Record<InputFileFailureReason, { path: string; prompt: string }> =
+  {
+    'not-found': {
+      path: '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md',
+      prompt: 'use this brief',
+    },
+    'not-a-file': { path: '/Users/me/notes/product-planning/archive/', prompt: 'use this folder' },
+    'too-large': { path: '/Users/me/exports/receiving-dump.log', prompt: 'summarize this' },
+    unreadable: {
+      path: '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md',
+      prompt: 'use this brief',
+    },
+    'not-text': { path: '/Users/me/exports/archive.zip', prompt: 'read this archive' },
+  };
+
+function attachmentFailureMessage(reason: InputFileFailureReason): string {
+  return formatAttachmentFailure({
+    action: 'send',
+    reason,
+    path: ATTACHMENT_FAILURE_DRAFTS[reason].path,
+  });
+}
+
 function createOutsideAttachmentFailureFixture(reason: InputFileFailureReason): FixtureLifecycle {
   const home = createHomeFixture();
   return {
     setup: async (context) => {
       await home.setup(context);
-      const { path, prompt } =
-        reason === 'not-a-file'
-          ? { path: '/Users/me/notes/product-planning/archive/', prompt: 'use this folder' }
-          : reason === 'too-large'
-            ? { path: '/Users/me/exports/receiving-dump.log', prompt: 'summarize this' }
-            : reason === 'not-text'
-              ? { path: '/Users/me/exports/archive.zip', prompt: 'read this archive' }
-              : {
-                  path: '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md',
-                  prompt: 'use this brief',
-                };
+      const { path, prompt } = ATTACHMENT_FAILURE_DRAFTS[reason];
       composerDraftStore.request(`@${path} ${prompt}`);
-      feedbackStore.setError(formatAttachmentFailure({ action: 'send', reason, path }));
+      feedbackStore.setError(attachmentFailureMessage(reason));
+    },
+    teardown: home.teardown,
+  };
+}
+
+const SAVE_SIGN_IN_CONFIG = {
+  implementer: { kind: 'cli', tool: 'opencode', model: 'anthropic/claude-haiku-4-5' },
+} as const;
+
+// The message the BUILD picker saves for a custom model on a provider with no credential.
+const SAVE_SIGN_IN_MESSAGE = [
+  formatConfigSaveSuccess('BUILD · OpenCode CLI · Claude Haiku 4.5 · via anthropic', {
+    ignoreRuleAdded: false,
+  }),
+  formatNeedsSignInSaveFeedback({ tool: 'opencode', provider: 'anthropic' }),
+].join(SOFT_SEP);
+
+function setSaveSignInMessage(): void {
+  feedbackStore.setMessage(SAVE_SIGN_IN_MESSAGE);
+}
+
+// The feedback each home fixture leaves above the composer. The composer locator fits it as the
+// composer does, so the crop holds the message rows the home dock counts.
+export const homeFixtureFeedback: ReadonlyMap<string, string> = new Map([
+  ['home-attachment-not-found', attachmentFailureMessage('not-found')],
+  ['home-attachment-not-a-file', attachmentFailureMessage('not-a-file')],
+  ['home-attachment-too-large', attachmentFailureMessage('too-large')],
+  ['home-attachment-unreadable', attachmentFailureMessage('unreadable')],
+  ['home-attachment-not-text', attachmentFailureMessage('not-text')],
+  ['home-save-sign-in', SAVE_SIGN_IN_MESSAGE],
+  ['home-save-long-draft', SAVE_SIGN_IN_MESSAGE],
+]);
+
+function createSaveSignInFixture(): FixtureLifecycle {
+  const home = createHomeFixture({ config: SAVE_SIGN_IN_CONFIG });
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      setSaveSignInMessage();
+    },
+    teardown: home.teardown,
+  };
+}
+
+function createSaveLongDraftFixture(): FixtureLifecycle {
+  const home = createHomeFixture({ config: SAVE_SIGN_IN_CONFIG });
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      const { seedSessions } = await import('./overlay-fixtures.js');
+      seedSessions();
+      composerDraftStore.request(LONG_COMPOSER_DRAFT);
+      setSaveSignInMessage();
+    },
+    teardown: home.teardown,
+  };
+}
+
+function createNoConfigLongDraftFixture(): FixtureLifecycle {
+  const home = createHomeFixture({ noConfig: true });
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      const { seedSessions } = await import('./overlay-fixtures.js');
+      seedSessions();
+      composerDraftStore.request(LONG_COMPOSER_DRAFT);
     },
     teardown: home.teardown,
   };
@@ -1224,6 +1306,9 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => createOutsideAttachmentFailureFixture('unreadable'),
   ],
   [scenarioId('home-attachment-not-text'), () => createOutsideAttachmentFailureFixture('not-text')],
+  [scenarioId('home-save-sign-in'), createSaveSignInFixture],
+  [scenarioId('home-save-long-draft'), createSaveLongDraftFixture],
+  [scenarioId('home-no-config-long-draft'), createNoConfigLongDraftFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
   [
     scenarioId('workflow-continue-repo-runner-blocked'),

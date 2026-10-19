@@ -607,10 +607,13 @@ function ComposerInput({
     width: width ?? cols,
     dropEnabled: homeStatus === undefined && !disabled && supportsImages && commandsOnly !== true,
   });
+  const hintRows = feedbackLine?.split('\n').length ?? 1;
+  // Home plans its body around this height, so it counts the home row and its message rows.
+  const dockRows = (reserveHomeHint ? hintRows : 0) + visibleRows + 2;
 
   useEffect(() => {
-    inputHeightStore.setRows(visibleRows + 2);
-  }, [visibleRows]);
+    inputHeightStore.setRows(dockRows);
+  }, [dockRows]);
 
   // The app-level esc ladder decides between the stop sheet and a protected draft, and it reads
   // keys outside this component, so what is typed here has to be published.
@@ -627,11 +630,17 @@ function ComposerInput({
   return (
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
       {reserveHomeHint && (
-        <Box justifyContent="center" height={1}>
+        <Box flexDirection="column" alignItems="center" height={hintRows}>
           {feedbackLine !== null ? (
-            <Text color={feedbackIsError ? theme.error : theme.textDim} wrap="truncate-end">
-              {feedbackLine}
-            </Text>
+            feedbackLine.split('\n').map((row, index) => (
+              <Text
+                key={`${index}:${row}`}
+                color={feedbackIsError ? theme.error : theme.textDim}
+                wrap="truncate-end"
+              >
+                {row}
+              </Text>
+            ))
           ) : homeHintLine !== null ? (
             <Text color={theme.textDim} wrap="truncate-end">
               {homeHintLine}

@@ -48,9 +48,9 @@ function titleHead(fitted: string): string {
 
 describe('fitFeedbackMessage', () => {
   it('leaves short feedback unchanged', () => {
-    expect(fitFeedbackMessage('Cannot resume "alpha": missing state', 80)).toBe(
-      'Cannot resume "alpha": missing state',
-    );
+    expect(
+      fitFeedbackMessage('Cannot resume "alpha": missing state', { width: 80, maxRows: 1 }),
+    ).toBe('Cannot resume "alpha": missing state');
   });
 
   it('leaves normal structured feedback unchanged when it fits', () => {
@@ -61,7 +61,7 @@ describe('fitFeedbackMessage', () => {
           title: 'alpha',
           suffix: '": interrupted before it made progress — start it again.',
         },
-        80,
+        { width: 80, maxRows: 1 },
       ),
     ).toBe('Cannot resume "alpha": interrupted before it made progress — start it again.');
   });
@@ -73,7 +73,7 @@ describe('fitFeedbackMessage', () => {
         title: 'prosze pokaz mi ze to dziala po prostu zrob test nic wiecej nie chce od ciebie',
         suffix: '": interrupted before it made progress — start it again.',
       },
-      100,
+      { width: 100, maxRows: 1 },
     );
 
     expect(fitted.length).toBeLessThanOrEqual(100);
@@ -90,7 +90,7 @@ describe('fitFeedbackMessage', () => {
         title: '功能'.repeat(8),
         suffix: '" failed without a summary to display',
       },
-      55,
+      { width: 55, maxRows: 1 },
     );
 
     expect(fitted).toBe('Session "功能功能…" failed without a summary to display');
@@ -103,7 +103,7 @@ describe('fitFeedbackMessage', () => {
         title: 'very long title',
         suffix: '": interrupted before it made progress — start it again.',
       },
-      24,
+      { width: 24, maxRows: 1 },
     );
 
     expect(fitted.length).toBeLessThanOrEqual(24);
@@ -115,14 +115,14 @@ describe('fitFeedbackMessage', () => {
     const keptWidth = 5 + cells + 1;
 
     it('keeps the cluster whole when it fits before the ellipsis', () => {
-      const fitted = fitFeedbackMessage(source, keptWidth);
+      const fitted = fitFeedbackMessage(source, { width: keptWidth, maxRows: 1 });
 
       expect(fitted).toBe(`aaaaa${cluster}…`);
       expectWholeGraphemeCut(source, fitted, keptWidth);
     });
 
     it('cuts before the whole cluster when it does not fit', () => {
-      const fitted = fitFeedbackMessage(source, keptWidth - 1);
+      const fitted = fitFeedbackMessage(source, { width: keptWidth - 1, maxRows: 1 });
 
       expect(fitted).toBe('aaaaa…');
       expectWholeGraphemeCut(source, fitted, keptWidth - 1);
@@ -130,7 +130,10 @@ describe('fitFeedbackMessage', () => {
 
     it('keeps the cluster whole in a title when it fits before the ellipsis', () => {
       const width = PREFIX.length + SUFFIX.length + keptWidth;
-      const fitted = fitFeedbackMessage({ prefix: PREFIX, title: source, suffix: SUFFIX }, width);
+      const fitted = fitFeedbackMessage(
+        { prefix: PREFIX, title: source, suffix: SUFFIX },
+        { width, maxRows: 1 },
+      );
 
       expect(fitted).toBe(`${PREFIX}aaaaa${cluster}…${SUFFIX}`);
       expectWholeGraphemeCut(source, titleHead(fitted), keptWidth);
@@ -139,7 +142,10 @@ describe('fitFeedbackMessage', () => {
 
     it('cuts a title before the whole cluster when it does not fit', () => {
       const width = PREFIX.length + SUFFIX.length + keptWidth - 1;
-      const fitted = fitFeedbackMessage({ prefix: PREFIX, title: source, suffix: SUFFIX }, width);
+      const fitted = fitFeedbackMessage(
+        { prefix: PREFIX, title: source, suffix: SUFFIX },
+        { width, maxRows: 1 },
+      );
 
       expect(fitted).toBe(`${PREFIX}aaaaa…${SUFFIX}`);
       expectWholeGraphemeCut(source, titleHead(fitted), keptWidth - 1);
@@ -149,11 +155,15 @@ describe('fitFeedbackMessage', () => {
     it('never splits the cluster at any width', () => {
       const repeated = `${cluster}${cluster}a${cluster}${'z'.repeat(12)}`;
       for (let width = 2; width <= 12; width++) {
-        expectWholeGraphemeCut(repeated, fitFeedbackMessage(repeated, width), width);
+        expectWholeGraphemeCut(
+          repeated,
+          fitFeedbackMessage(repeated, { width, maxRows: 1 }),
+          width,
+        );
         const titleWidth = PREFIX.length + SUFFIX.length + width;
         const fitted = fitFeedbackMessage(
           { prefix: PREFIX, title: repeated, suffix: SUFFIX },
-          titleWidth,
+          { width: titleWidth, maxRows: 1 },
         );
         expectWholeGraphemeCut(repeated, titleHead(fitted), width);
       }
@@ -164,12 +174,52 @@ describe('fitFeedbackMessage', () => {
     const tabbed = `tab\there ${'x'.repeat(30)}`;
     const colored = `a\u001b[31mred\u001b[0m ${'x'.repeat(30)}`;
 
-    expect(fitFeedbackMessage(tabbed, 12)).toBe('tab\ther…');
-    expect(fitFeedbackMessage(colored, 12)).toBe('a\u001b[31mred\u001b[0m xxxxxx…');
+    expect(fitFeedbackMessage(tabbed, { width: 12, maxRows: 1 })).toBe('tab\ther…');
+    expect(fitFeedbackMessage(colored, { width: 12, maxRows: 1 })).toBe(
+      'a\u001b[31mred\u001b[0m xxxxxx…',
+    );
   });
 
   it('cuts at the first line break, which never fits one row', () => {
-    expect(fitFeedbackMessage('first\nsecond', 80)).toBe('first…');
-    expect(fitFeedbackMessage(`${E_ACUTE}\nsecond`, 80)).toBe(`${E_ACUTE}…`);
+    expect(fitFeedbackMessage('first\nsecond', { width: 80, maxRows: 1 })).toBe('first…');
+    expect(fitFeedbackMessage(`${E_ACUTE}\nsecond`, { width: 80, maxRows: 1 })).toBe(`${E_ACUTE}…`);
+  });
+
+  it('wraps a long message at word boundaries onto even rows, cutting nothing', () => {
+    const message = 'one two three four five six seven eight nine';
+
+    expect(fitFeedbackMessage(message, { width: 20, maxRows: 3 }).split('\n')).toEqual([
+      'one two three',
+      'four five six',
+      'seven eight nine',
+    ]);
+  });
+
+  it('keeps a message that fits one row on one row', () => {
+    expect(fitFeedbackMessage('one two three', { width: 20, maxRows: 3 })).toBe('one two three');
+  });
+
+  it('puts the ellipsis on the last allowed row only when the rows run out', () => {
+    const rows = fitFeedbackMessage('one two three four five six seven eight nine', {
+      width: 20,
+      maxRows: 2,
+    }).split('\n');
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toBe('one two three four');
+    expect(rows[1]?.endsWith('…')).toBe(true);
+    for (const row of rows) expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(20);
+  });
+
+  it('shrinks a known message title only when the whole message passes its rows', () => {
+    const message = { prefix: PREFIX, title: 'a b c d e f g h i j k l m n o p', suffix: SUFFIX };
+
+    expect(fitFeedbackMessage(message, { width: 20, maxRows: 3 }).replace(/\n/g, ' ')).toBe(
+      `${PREFIX}a b c d e f g h i j k l m n o p${SUFFIX}`,
+    );
+    const shrunk = fitFeedbackMessage(message, { width: 20, maxRows: 2 });
+    expect(shrunk.split('\n')).toHaveLength(2);
+    expect(shrunk.endsWith(SUFFIX)).toBe(true);
+    expect(shrunk).toContain('…');
   });
 });

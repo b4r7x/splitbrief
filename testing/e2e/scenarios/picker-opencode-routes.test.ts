@@ -228,7 +228,7 @@ describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () =
         buildModel: 'deepseek/deepseek-flash',
       },
       async (screen, projectDir) => {
-        // Settings shows the whole save message; the home row has room for one line only.
+        // Settings shows the whole save message.
         screen.write('/crew');
         await screen.shows('▌ /crew  Who fills each seat');
         screen.write('\r');

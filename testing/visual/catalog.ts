@@ -340,6 +340,53 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         elements: [{ id: 'composer', title: 'Draft and attachment feedback' }],
       }),
     ),
+    // A save message longer than one row wraps whole above the composer, sign-in command included.
+    defineScenario({
+      id: 'home-save-sign-in',
+      title: 'Home · a save message that names the sign-in step',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Whole save message above the composer',
+        kind: 'ready',
+        marker: 'opencode auth login',
+      },
+      elements: [
+        { id: 'hero', title: 'Home hero' },
+        { id: 'composer', title: 'Save message and feature composer' },
+      ],
+    }),
+    // The same message over a long draft: the logo and the session rows give way, the crew block
+    // and the more row stay.
+    defineScenario({
+      id: 'home-save-long-draft',
+      title: 'Home · a save message over a long draft and recent sessions',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Crew block and more row above the save message and the draft',
+        kind: 'ready',
+        marker: 'opencode auth login',
+      },
+      elements: [
+        { id: 'hero', title: 'Home hero' },
+        { id: 'composer', title: 'Save message and long draft' },
+      ],
+    }),
+    // No config over a long draft: the notice counts against the body, so the session list still
+    // ends on its more row.
+    defineScenario({
+      id: 'home-no-config-long-draft',
+      title: 'Home · no config over a long draft and recent sessions',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'No config notice and more row above the long draft',
+        kind: 'ready',
+        marker: 'label printer.',
+      },
+      elements: [{ id: 'composer', title: 'Feature composer' }],
+    }),
     defineScenario({
       id: 'home-recent-sessions',
       title: 'Home · session rows show their latest stop time',

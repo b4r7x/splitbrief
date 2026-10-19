@@ -63,7 +63,7 @@ describe('composer feedback', () => {
 
   it('preserves the failed-session suffix when the feature name contains quotes', async () => {
     feedbackStore.setError(
-      'Session "alpha "quoted" name with enough text to truncate" failed without a summary to display',
+      `Session "alpha ${'"quoted" name with enough text to truncate '.repeat(6)}" failed without a summary to display`,
     );
 
     const ui = renderDockedComposer({
@@ -79,9 +79,12 @@ describe('composer feedback', () => {
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Session "alpha');
-    expect(frame).toContain('" failed without a summary to display');
-    expect(frame).toContain('…');
+    const shown = frame
+      .split('\n')
+      .map((row) => row.trim())
+      .join(' ');
+    expect(shown).toContain('Session "alpha');
+    expect(shown).toContain('…" failed without a summary to display');
     expect(frame).not.toContain('Ready');
 
     ui.unmount();
@@ -89,7 +92,7 @@ describe('composer feedback', () => {
 
   it('preserves the resume suffix for wide-character titles in rendered output', async () => {
     feedbackStore.setError(
-      `Cannot resume "${'功能'.repeat(12)}": interrupted before it made progress — start it again.`,
+      `Cannot resume "${'功能'.repeat(80)}": interrupted before it made progress — start it again.`,
     );
 
     const ui = renderDockedComposer({
@@ -104,10 +107,12 @@ describe('composer feedback', () => {
     });
     await flushEffects();
 
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Cannot resume "');
-    expect(frame).toContain('": interrupted before it made progress — start it again.');
-    expect(frame).toContain('…');
+    const shown = (ui.lastFrame() ?? '')
+      .split('\n')
+      .map((row) => row.trim())
+      .join(' ');
+    expect(shown).toContain('Cannot resume "');
+    expect(shown).toContain('…": interrupted before it made progress — start it again.');
 
     ui.unmount();
   });

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { SOFT_SEP } from '../../core/separators.js';
+import { formatNeedsSignInSaveFeedback } from '../../features/runners/picker-format.js';
 import { configStore } from '../../stores/project/config.js';
+import { formatConfigSaveSuccess } from '../../stores/project/save-feedback.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import {
   deriveHomeHintLines,
   formatSubmissionFailure,
@@ -82,7 +86,9 @@ describe('deriveHomeHintLines', () => {
     const lines = deriveHomeHintLines({
       active: true,
       homeHint: HINT,
-      feedbackMessage: noVisionFeedbackMessage('cursor · a-very-long-model-identity'),
+      feedbackMessage: noVisionFeedbackMessage(
+        `cursor · ${'a-very-long-model-identity'.repeat(8)}`,
+      ),
       width: 60,
       dropEnabled: true,
     });
@@ -90,5 +96,45 @@ describe('deriveHomeHintLines', () => {
     // The seat name is what shrinks; the sentence that says what to do survives whole.
     expect(lines.feedbackLine).toContain('cannot see images — /crew plan');
     expect(lines.feedbackLine).toContain('…');
+  });
+
+  // Home is 108 cells wide at 120 columns, 76 at 80 and 56 at 60.
+  it.each([
+    [108, 2],
+    [76, 3],
+    [56, 4],
+  ])('shows the whole sign-in step of a save message at width %i on %i rows', (width, rows) => {
+    const message = [
+      formatConfigSaveSuccess('BUILD · OpenCode CLI · Claude Haiku 4.5 · via anthropic', {
+        ignoreRuleAdded: false,
+      }),
+      formatNeedsSignInSaveFeedback({ tool: 'opencode', provider: 'anthropic' }),
+    ].join(SOFT_SEP);
+
+    const { feedbackLine } = deriveHomeHintLines({
+      active: true,
+      homeHint: HINT,
+      feedbackMessage: message,
+      width,
+      dropEnabled: true,
+    });
+
+    const shown = feedbackLine?.split('\n') ?? [];
+    expect(shown).toHaveLength(rows);
+    for (const row of shown) expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(width);
+    expect(shown.join(' ')).toBe(message);
+    expect(shown.some((row) => row.includes('run opencode auth login anthropic'))).toBe(true);
+  });
+
+  it('keeps a short message on one row', () => {
+    expect(
+      deriveHomeHintLines({
+        active: true,
+        homeHint: HINT,
+        feedbackMessage: 'Attached: notes.md',
+        width: 56,
+        dropEnabled: true,
+      }).feedbackLine,
+    ).toBe('Attached: notes.md');
   });
 });

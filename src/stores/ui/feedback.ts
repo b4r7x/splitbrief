@@ -3,6 +3,8 @@ import { subscribeFeedbackErrors, subscribeFeedbackReset } from '../channels/fee
 
 const FEEDBACK_AUTO_CLEAR_MS = 3000;
 const FEEDBACK_ERROR_AUTO_CLEAR_MS = 5000;
+// About 200 words a minute: a message longer than its base hold stays until it can be read.
+const FEEDBACK_READ_MS_PER_CHAR = 60;
 
 interface FeedbackState {
   message: string | null;
@@ -20,27 +22,27 @@ const clearFeedback = () => {
   store.set({ message: null, isError: false });
 };
 
-const scheduleAutoClear = (ms: number) => {
-  clearTimer = setTimeout(clearFeedback, ms);
+const scheduleAutoClear = (ms: number, msg: string) => {
+  clearTimer = setTimeout(clearFeedback, Math.max(ms, msg.length * FEEDBACK_READ_MS_PER_CHAR));
 };
 
 const setError = (msg: string | null) => {
   clearTimeout(clearTimer);
   clearTimer = undefined;
-  if (msg) scheduleAutoClear(FEEDBACK_ERROR_AUTO_CLEAR_MS);
+  if (msg) scheduleAutoClear(FEEDBACK_ERROR_AUTO_CLEAR_MS, msg);
   store.set({ message: msg, isError: msg !== null });
 };
 
 const setMessage = (msg: string | null) => {
   clearTimeout(clearTimer);
   clearTimer = undefined;
-  if (msg) scheduleAutoClear(FEEDBACK_AUTO_CLEAR_MS);
+  if (msg) scheduleAutoClear(FEEDBACK_AUTO_CLEAR_MS, msg);
   store.set({ message: msg, isError: false });
 };
 
 const setTransientError = (msg: string) => {
   clearTimeout(clearTimer);
-  scheduleAutoClear(FEEDBACK_AUTO_CLEAR_MS);
+  scheduleAutoClear(FEEDBACK_AUTO_CLEAR_MS, msg);
   store.set({ message: msg, isError: true });
 };
 
