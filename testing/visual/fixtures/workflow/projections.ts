@@ -65,6 +65,7 @@ import {
   buildSeatDownIssue,
   buildLeftIsolationRecoveryIssue,
   buildCheckoutChangedRecoveryIssue,
+  buildDependencyBlockedRecoveryIssue,
   buildMissingModelRecoveryIssue,
   runnerDefectRow,
   runnerHaltRow,
@@ -3381,6 +3382,69 @@ const resolvedSkipRecoveryProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The person skipped the first brief, then took Skip task on the dependency halt of the second,
+// which never started: the halt, the choice and its outcome read as one Recovery row under the
+// second brief's skipped row.
+const resolvedDependencySkipRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-resolved-dependency-skip'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  get events(): EngineEvent[] {
+    const tasks = FIXTURE_TASKS_PLANNED.tasks.slice(0, 2);
+    const [first, second] = tasks;
+    if (first === undefined || second === undefined) throw new Error('Two fixture briefs expected');
+    const brief = { ...retriedBriefStart, total: 2 };
+    return [
+      { ...FIXTURE_TASKS_PLANNED, total: 2, tasks },
+      ...publishedEvents(FIXED_TS + 100, (bus) => {
+        const phase = 'implementing';
+        const checkout = checkoutChangedRecoveryIssue;
+        const skipFirst = { bus, phase, issue: checkout, action: 'skip-current-task' } as const;
+        bus.publish(brief);
+        publishError({ bus, phase, message: checkout.message });
+        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, checkout);
+        publishRecoveryActionSelected(skipFirst);
+        bus.publish({
+          type: 'task_skipped',
+          ts: FIXED_TS,
+          phase,
+          taskId: first.id,
+          title: first.title,
+          reason: `recovery ${checkout.reason}: ${checkout.message}`,
+        });
+        publishRecoveryResolved({ ...skipFirst, outcome: 'skipped-current-task' });
+        bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase });
+        const blocked = buildDependencyBlockedRecoveryIssue({
+          id: 'rec_visual_dependency_blocked',
+          task: makeTask({
+            id: second.id,
+            title: second.title,
+            suggestedFiles: [second.file],
+            dependsOn: [first.id],
+          }),
+          blockedByTasks: [{ ...HALTED_TASK, status: 'skipped' }],
+          createdAt: new Date(FIXED_TS).toISOString(),
+        });
+        const skipSecond = { bus, phase, issue: blocked, action: 'skip-current-task' } as const;
+        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, blocked);
+        publishRecoveryActionSelected(skipSecond);
+        bus.publish({
+          type: 'task_skipped',
+          ts: FIXED_TS,
+          phase,
+          taskId: second.id,
+          title: second.title,
+          reason: `recovery ${blocked.reason}: ${blocked.message}`,
+        });
+        publishRecoveryResolved({ ...skipSecond, outcome: 'skipped-current-task' });
+        bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase: 'final-review' });
+        bus.publish(finalReviewStarted(FIXED_TS, BASE_PLANNER));
+      }),
+    ];
+  },
+};
+
 /**
  * Apply stopped part way and the person chose Re-run Apply. Apply settles the halt after the run
  * resumes, as a real run logs it; the transcript still reads one Recovery row, then the resume.
@@ -6394,6 +6458,7 @@ const projections = [
   checkoutChangedRecoveryProjection,
   resolvedRetryRecoveryProjection,
   resolvedSkipRecoveryProjection,
+  resolvedDependencySkipRecoveryProjection,
   resolvedApplyRetryRecoveryProjection,
   implementationAfterRetryProjection,
   apiContextRecoveryProjection,

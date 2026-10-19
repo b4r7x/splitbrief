@@ -867,6 +867,29 @@ describe('groupEventsIntoSections', () => {
       ]);
       expect(requireSection(sections, 2, 'completed-task').startIndex).toBe(4);
     });
+
+    it('starts a brief skipped before it started at its halt, after a settled brief', () => {
+      const events = [
+        start('T001', 0),
+        at('recovery_prompted', { issueId: 'i1', taskId: 'T001' }),
+        at('recovery_action_selected', { issueId: 'i1', action: 'skip-current-task' }),
+        makeTaskSkipped({ taskId: taskId('T001'), title: 'T001' }),
+        at('recovery_resolved', { issueId: 'i1', outcome: 'skipped-current-task' }),
+        at('workflow_resumed'),
+        at('recovery_prompted', { issueId: 'i2', taskId: 'T002' }),
+        at('recovery_action_selected', { issueId: 'i2', action: 'skip-current-task' }),
+        makeTaskSkipped({ taskId: taskId('T002'), title: 'T002' }),
+        at('recovery_resolved', { issueId: 'i2', outcome: 'skipped-current-task' }),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual(['completed-task', 'completed-task']);
+      expect(requireSection(sections, 0, 'completed-task').items).toEqual(events.slice(0, 6));
+      const t002 = requireSection(sections, 1, 'completed-task');
+      expect(t002.summary.id).toBe('T002');
+      expect(t002.startIndex).toBe(6);
+      expect(t002.items).toEqual(events.slice(6));
+    });
   });
 
   it('handles multiple completed tasks in sequence', () => {

@@ -33,6 +33,27 @@ const plan = makePlanProposal({
   criteria: [{ id: 'C1', text: 'Alpha is the string alpha.', checkIds: ['T001-K1'] }],
   tasks: [alpha],
 });
+const BETA_FILE = 'src/beta.mjs';
+const dependentPlan = makePlanProposal({
+  summary: 'Add two values.',
+  decisions: [],
+  criteria: [
+    { id: 'C1', text: 'Alpha is the string alpha.', checkIds: ['T001-K1'] },
+    { id: 'C2', text: 'Beta is the string beta.', checkIds: ['T002-K1'] },
+  ],
+  tasks: [
+    alpha,
+    makeTaskSpec({
+      id: 'T002',
+      title: 'Add the beta value',
+      intent: 'Return the beta value.',
+      criteria: ['C2'],
+      dependsOn: [alpha.id],
+      suggestedFiles: [BETA_FILE],
+      checks: [{ id: 'T002-K1', kind: 'test', value: BETA_FILE, required: true }],
+    }),
+  ],
+});
 const decision = { what: 'Kept alpha in one module', why: 'The test imports it from there.' };
 
 let fixture: StopContinueFixture | undefined;
@@ -50,7 +71,7 @@ afterEach(() => {
 });
 
 /** A run whose planner fails the decision confirm, so the brief halts with its file written. */
-async function haltOnDecisionConfirm() {
+async function haltOnDecisionConfirm(planned = plan) {
   fixture = createStopContinueFixture(() => '');
   const target = fixture;
   restorePath = activateSafeCliShimPath(target.tmpDir);
@@ -62,7 +83,11 @@ async function haltOnDecisionConfirm() {
   vi.stubEnv('NODE_OPTIONS', `--import=${offlinePath}`);
   const plannerPath = join(target.tmpDir, 'planner.mjs');
   const implementerPath = join(target.tmpDir, 'implementer.mjs');
-  const passing = passingVerdict({ kind: 'final', taskIds: [alpha.id], criterionIds: ['C1'] });
+  const passing = passingVerdict({
+    kind: 'final',
+    taskIds: planned.tasks.map((task) => task.id),
+    criterionIds: planned.criteria.map((criterion) => criterion.id),
+  });
   writeFileSync(
     plannerPath,
     `const chunks = [];
@@ -75,7 +100,7 @@ if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final 
   process.stderr.write('The planner process crashed.\\n');
   process.exit(1);
 } else if (prompt.includes('# Plan the change')) {
-  answer = ${JSON.stringify({ result: plan })};
+  answer = ${JSON.stringify({ result: planned })};
 } else {
   throw new Error('Unexpected prompt: ' + prompt);
 }
@@ -148,5 +173,27 @@ describe('e2e: Skip on a planner-call halt', () => {
     expect(
       lines.findIndex((line) => line.includes('Restored 1 failing task change')),
     ).toBeGreaterThan(recoveryAt);
+  });
+
+  it('shows Skip task on the dependency halt of the next brief as one Recovery row', async () => {
+    const { target, sessionId } = await haltOnDecisionConfirm(dependentPlan);
+    const firstSkip = await cli(target, ['continue', sessionId, '--plain', '--action', 'skip']);
+    expect(firstSkip.exitCode, `${firstSkip.stdout}\n${firstSkip.stderr}`).toBe(1);
+    expect(readState(target, sessionId).pendingRecovery).toMatchObject({
+      reason: 'dependency-blocked',
+      taskId: 'T002',
+    });
+
+    const secondSkip = await cli(target, ['continue', sessionId, '--plain', '--action', 'skip']);
+
+    expect(secondSkip.exitCode, `${secondSkip.stdout}\n${secondSkip.stderr}`).toBe(0);
+    const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
+    const lines = transcriptText(events).split('\n');
+    const recoveryRows = lines.filter((line) => line.includes('Recovery  '));
+    expect(recoveryRows).toHaveLength(2);
+    expect(recoveryRows[1]).toMatch(/Dependency blocked.*Skip task.*skipped\s*$/);
+    const settledT002 = lines.findIndex((line) => /T002 Add the beta value .*skipped/.test(line));
+    expect(settledT002).toBeGreaterThan(lines.indexOf(recoveryRows[0] ?? ''));
+    expect(lines.indexOf(recoveryRows[1] ?? '')).toBeGreaterThan(settledT002);
   });
 });

@@ -3098,6 +3098,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-resolved-dependency-skip',
+      title: 'Workflow · a dependency halt after a skipped brief resolved with Skip task',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-resolved-dependency-skip',
+        title: 'Dependency halt and Skip task folded into one Recovery row under the skipped brief',
+        kind: 'implementation',
+        marker: 'Dependency blocked',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-resolved-apply-retry',
       title: 'Workflow · an Apply halt resolved with Re-run Apply',
       surface: screenSurface('workflow'),

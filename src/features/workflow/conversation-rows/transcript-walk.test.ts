@@ -3,7 +3,7 @@ import { groupEventsIntoSections } from '../../../core/sections/event-sections.j
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
-import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
+import { makeTaskComplete, makeTaskSkipped, makeTaskStart } from '#testing/helpers/events/task.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import {
   WORKSPACE_KEPT_CODE,
@@ -345,6 +345,51 @@ describe('walkTranscript', () => {
       issueId: 'p2',
       selected: events[11],
       resolved: events[13],
+    });
+  });
+
+  it('keeps one Recovery fold for Skip task on a brief that never started, after a settled brief', () => {
+    const blocked = {
+      issueId: 'dep-T002',
+      reason: 'dependency-blocked',
+      phase: 'implementing',
+    } as const;
+    const events: EngineEvent[] = [
+      makeTaskStart({ taskId: taskId('T001'), ts: 1_000 }),
+      makeTaskSkipped({ taskId: taskId('T001'), ts: 2_000 }),
+      { type: 'workflow_resumed', ts: 3_000, phase: 'implementing' },
+      {
+        ...blocked,
+        type: 'recovery_prompted',
+        ts: 4_000,
+        taskId: taskId('T002'),
+        headline: 'Dependency blocked on T002',
+        files: [],
+        affectedTaskIds: [taskId('T001'), taskId('T002')],
+        availableActions: ['skip-current-task', 'end-run'],
+        recommendedAction: 'skip-current-task',
+        resumeCommand: 'splitbrief continue',
+      },
+      { ...blocked, type: 'recovery_action_selected', ts: 5_000, action: 'skip-current-task' },
+      makeTaskSkipped({ taskId: taskId('T002'), ts: 6_000 }),
+      {
+        ...blocked,
+        type: 'recovery_resolved',
+        ts: 7_000,
+        action: 'skip-current-task',
+        outcome: 'skipped-current-task',
+      },
+    ];
+    const recoveries = [...walkTranscript(groupEventsIntoSections(events))].flatMap((step) =>
+      step.kind === 'recovery' ? [step.recovery] : [],
+    );
+
+    expect(recoveries).toHaveLength(1);
+    expect(recoveries[0]).toMatchObject({
+      issueId: 'dep-T002',
+      prompted: events[3],
+      selected: events[4],
+      resolved: events[6],
     });
   });
 
