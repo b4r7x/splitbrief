@@ -1,7 +1,7 @@
 import { Box } from 'ink';
 import { ThemeText as Text, useTheme } from './theme.js';
 import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
-import { wrapHard } from '../utils/wrap.js';
+import { wrapPathAware } from '../utils/wrap.js';
 
 export interface FeedbackNoticeLayout {
   readonly text: string;
@@ -21,7 +21,7 @@ export function layoutFeedbackNotice(
   if (feedback.message === null) return null;
   const clean = sanitizeTerminalDisplayText(feedback.message);
   if (feedback.isError) return { text: clean, isError: true, rows: 2 };
-  const text = wrapHard(clean, width);
+  const text = wrapPathAware(clean, width);
   return { text, isError: false, rows: 1 + text.split('\n').length };
 }
 

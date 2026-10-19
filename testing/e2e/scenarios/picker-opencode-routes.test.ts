@@ -44,6 +44,7 @@ async function withOpencodeHome(
   account: OpencodeAccount,
   drive: (screen: Screen, projectDir: string) => Promise<void>,
   skip: (reason: string) => void,
+  viewport = VIEWPORT,
 ): Promise<void> {
   await withTempDir(label, async (dir) => {
     const home = join(dir, 'home');
@@ -110,14 +111,14 @@ process.exit(1);`,
         argv: ['--import', 'tsx', '--import', offlinePath, 'src/cli.ts', '--project', projectDir],
         spawnOptions: {
           name: 'xterm-256color',
-          ...VIEWPORT,
+          ...viewport,
           cwd: fileURLToPath(new URL('../../../', import.meta.url)),
           env: { ...environment, XDG_STATE_HOME: join(dir, 'state') },
         },
       },
       async (child) => {
         const terminal = new XtermHeadless.Terminal({
-          ...VIEWPORT,
+          ...viewport,
           allowProposedApi: true,
           logLevel: 'off',
         });
@@ -125,7 +126,7 @@ process.exit(1);`,
         let didExit = false;
         const text = () =>
           Array.from(
-            { length: VIEWPORT.rows },
+            { length: viewport.rows },
             (_, row) =>
               terminal.buffer.active
                 .getLine(terminal.buffer.active.viewportY + row)
@@ -219,42 +220,57 @@ describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () =
     );
   });
 
-  it('adds the sign-in step to the save message of a custom model on a provider with no credential', async (context) => {
-    await withOpencodeHome(
-      'picker-custom-model-sign-in',
-      {
-        signedIn: { id: 'deepseek', name: 'DeepSeek' },
-        served: { id: 'deepseek-flash', providerID: 'deepseek' },
-        buildModel: 'deepseek/deepseek-flash',
-      },
-      async (screen, projectDir) => {
-        // Settings shows the whole save message.
-        screen.write('/crew');
-        await screen.shows('▌ /crew  Who fills each seat');
-        screen.write('\r');
-        await screen.shows('Settings');
-        await moveTo(screen, '\x1b[B', /▌ BUILD/);
-        screen.write('\r');
-        await screen.shows('BUILD · tool, model, effort');
-        await screen.shows('DeepSeek V4.1 Flash', 30_000);
-        screen.write('\x1b[C');
-        await screen.shows(/▌ DeepSeek V4\.1 Flash/);
-        await moveTo(screen, '\x1b[A', /▌ \+ Add custom model…/);
-        screen.write('\r');
-        await screen.shows('Model id for OpenCode CLI');
-        screen.write(CUSTOM_MODEL);
-        await screen.shows(`› ${CUSTOM_MODEL}`);
-        screen.write('\r');
+  it.for([VIEWPORT, { cols: 80, rows: 24 }])(
+    'adds the sign-in step to the save message of a custom model on a provider with no credential at $cols columns',
+    async (viewport, context) => {
+      await withOpencodeHome(
+        'picker-custom-model-sign-in',
+        {
+          signedIn: { id: 'deepseek', name: 'DeepSeek' },
+          served: { id: 'deepseek-flash', providerID: 'deepseek' },
+          buildModel: 'deepseek/deepseek-flash',
+        },
+        async (screen, projectDir) => {
+          // Settings shows the whole save message.
+          screen.write('/crew');
+          await screen.shows('▌ /crew  Who fills each seat');
+          screen.write('\r');
+          await screen.shows('Settings');
+          await moveTo(screen, '\x1b[B', /▌ BUILD/);
+          screen.write('\r');
+          await screen.shows('BUILD · tool, model, effort');
+          await screen.shows('DeepSeek V4.1 Flash', 30_000);
+          screen.write('\x1b[C');
+          await screen.shows(/▌ DeepSeek V4\.1 Flash/);
+          await moveTo(screen, '\x1b[A', /▌ \+ Add custom model…/);
+          screen.write('\r');
+          await screen.shows('Model id for OpenCode CLI');
+          screen.write(CUSTOM_MODEL);
+          await screen.shows(`› ${CUSTOM_MODEL}`);
+          screen.write('\r');
 
-        await vi.waitFor(() => expect(screen.prose()).toContain(CUSTOM_SIGN_IN), {
-          timeout: 10_000,
-        });
-        expect(screen.prose()).toContain('Saved BUILD · OpenCode CLI');
-        expect(readFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'utf8')).toContain(
-          `model: ${CUSTOM_MODEL}`,
-        );
-      },
-      (reason) => context.skip(reason),
-    );
-  });
+          await vi.waitFor(() => expect(screen.prose()).toContain(CUSTOM_SIGN_IN), {
+            timeout: 10_000,
+          });
+          expect(screen.prose()).toContain('Saved BUILD · OpenCode CLI');
+          expect(readFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'utf8')).toContain(
+            `model: ${CUSTOM_MODEL}`,
+          );
+
+          // Every wrapped row of the message starts in the column of its first row.
+          const rows = screen.text().split('\n');
+          const message = rows.slice(
+            rows.findIndex((row) => row.includes('Saved BUILD')),
+            rows.findIndex((row) => row.includes('before start')) + 1,
+          );
+          const indent = (row: string) => row.slice(row.indexOf('│') + 1).search(/\S/);
+          expect(message.length).toBeGreaterThan(1);
+          expect(message.map(indent)).toEqual(message.map(() => indent(message[0] ?? '')));
+          expect(message.some((row) => row.includes('.splitbrief/config.yaml'))).toBe(true);
+        },
+        (reason) => context.skip(reason),
+        viewport,
+      );
+    },
+  );
 });
