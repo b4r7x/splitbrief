@@ -347,6 +347,20 @@ describe('provider variant merge', () => {
     const row = models.find((model) => modelRowMatchesId(model, 'openai/gpt-x-luna'));
     expect(row?.variants).toHaveLength(2);
   });
+
+  it('names each route by the account it runs through, not by the model maker', () => {
+    const models = opencodeModels([
+      { id: 'openrouter/deepseek/deepseek-v4.1-flash' },
+      { id: 'deepseek/deepseek-v4.1-flash' },
+      { id: 'github-copilot/gpt-5.5' },
+    ]);
+
+    expect(models.map((model) => model.variants?.map((variant) => variant.tag))).toEqual([
+      ['openrouter'],
+      ['deepseek'],
+      ['github-copilot'],
+    ]);
+  });
 });
 
 describe('option family merge', () => {

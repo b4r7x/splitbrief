@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assemblePickerDescriptors, buildPickerOptions } from './options.js';
-import { compactProviderTag, modelBareId, modelProviderPrefix } from './provider-axis.js';
+import { modelBareId, modelProviderPrefix } from './provider-axis.js';
 import { modelProviderAuthKey } from '../../../core/runners/route-auth.js';
 
 describe('providerDependent flag', () => {
@@ -29,12 +29,6 @@ describe('model id provider resolution', () => {
     expect(modelProviderAuthKey('auto')).toBeUndefined();
     expect(modelProviderPrefix('auto')).toBeUndefined();
     expect(modelProviderAuthKey('starcoder2:7b')).toBeUndefined();
-  });
-
-  it('compacts the display tag to the last prefix segment', () => {
-    expect(compactProviderTag('kilo/openrouter')).toBe('openrouter');
-    expect(compactProviderTag('github-copilot')).toBe('copilot');
-    expect(compactProviderTag('opencode-go')).toBe('opencode-go');
   });
 
   it('keys merge groups on the final path segment across kilo and opencode shapes', () => {

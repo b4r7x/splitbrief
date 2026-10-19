@@ -397,7 +397,7 @@ describe('PickerView terminal panes', () => {
     const variant: ModelVariant = {
       fullId: 'kilo/openrouter/free',
       providerPrefix: 'kilo/openrouter',
-      tag: 'openrouter',
+      tag: 'kilo',
     };
     const model = { id: 'kilo/openrouter/free', variants: [variant] };
     const rows: RightRow[] = [

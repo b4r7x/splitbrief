@@ -3854,6 +3854,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-planner-picker-kilo-routes',
+        title: 'Overlay · planner picker · a Kilo model expanded to its routes',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-planner-picker-malformed',
         title: 'Overlay · planner picker · malformed probe output',
         marker: PICKER_TITLE_MARKER,
@@ -3936,6 +3941,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-picker-opencode-expanded-drafted',
         title: 'Overlay · planner picker · OpenCode axis drafted',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-openrouter-route',
+        title: 'Overlay · planner picker · an OpenRouter route named by its account',
         marker: PICKER_TITLE_MARKER,
       },
       {

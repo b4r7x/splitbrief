@@ -18,12 +18,3 @@ export function modelIdUnderProvider(id: string): string {
   const slash = id.indexOf('/');
   return slash > 0 ? id.slice(slash + 1) : id;
 }
-
-const PROVIDER_TAG_COMPACTIONS: Record<string, string> = { 'github-copilot': 'copilot' };
-
-/** Display tag for a provider prefix: its last segment, compacted for row width. */
-export function compactProviderTag(prefix: string): string {
-  const segments = prefix.split('/');
-  const last = segments[segments.length - 1] ?? prefix;
-  return PROVIDER_TAG_COMPACTIONS[last.toLowerCase()] ?? last;
-}
