@@ -1168,6 +1168,17 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     },
   ],
   [
+    scenarioId('home-kilo-routes'),
+    () =>
+      createHomeFixture({
+        config: {
+          planner: { kind: 'cli', tool: 'kilo-code', model: 'github-copilot/gpt-5.5' },
+          implementer: { kind: 'cli', tool: 'kilo-code', model: 'openai/gpt-5.5' },
+          reviewer: { kind: 'cli', tool: 'kilo-code', model: 'kilo/kilo-auto/free' },
+        },
+      }),
+  ],
+  [
     scenarioId('home-reviewer'),
     () =>
       createHomeFixture({
@@ -1199,17 +1210,6 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [
     scenarioId('home-attachment-not-found'),
     () => createOutsideAttachmentFailureFixture('not-found'),
-  ],
-  [
-    scenarioId('home-kilo-routes'),
-    () =>
-      createHomeFixture({
-        config: {
-          planner: { kind: 'cli', tool: 'kilo-code', model: 'github-copilot/gpt-5.5' },
-          implementer: { kind: 'cli', tool: 'kilo-code', model: 'openai/gpt-5.5' },
-          reviewer: { kind: 'cli', tool: 'kilo-code', model: 'kilo/kilo-auto/free' },
-        },
-      }),
   ],
   [
     scenarioId('home-attachment-not-a-file'),
