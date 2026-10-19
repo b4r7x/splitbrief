@@ -160,6 +160,8 @@ export const LineageRecordSchema = z.object({
   attemptAllowance: nonnegativeInteger,
   /** The revision whose stale guidance applied successfully, saved with its fresh input hashes. */
   staleConsultedRevision: z.record(z.string(), z.number().int()).default({}),
+  /** The revision that already dispatched an attempt; a Try again of it runs on its own files. */
+  dispatchedRevision: z.record(z.string(), z.number().int()).default({}),
   consultRecords: z.array(ConsultRecordSchema).default([]),
   replacedParents: z.array(TaskSchema).default([]),
   notes: z.array(z.string()).default([]),

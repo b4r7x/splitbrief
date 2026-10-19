@@ -126,6 +126,7 @@ describe('decision-confirm on the S6 shape', { timeout: 90_000 }, () => {
             consultAllowance: 2,
             attemptAllowance: 8,
             staleConsultedRevision: { [task.id]: 1 },
+            dispatchedRevision: {},
             consultRecords: [],
             replacedParents: [],
             notes: [],

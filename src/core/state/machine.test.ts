@@ -1049,6 +1049,7 @@ describe('consult and split state operations', () => {
       consultAllowance: 2,
       attemptAllowance: 8,
       staleConsultedRevision: {},
+      dispatchedRevision: {},
       consultRecords: [],
       replacedParents: [],
       notes: [],
@@ -1312,6 +1313,17 @@ describe('consult and split state operations', () => {
       { id: 'K1', status: 'pass' },
       { id: 'K2', status: 'pass' },
     ]);
+  });
+
+  it('RECORD_DISPATCH stamps the revision a brief dispatched, and an older lineage reads none', () => {
+    const state = implementationState([makeTask({ id: 'T002', revision: 2 })]);
+
+    const dispatched = transition(state, { type: 'RECORD_DISPATCH', taskId: taskId('T002') });
+    expect(dispatched.lineages?.T002?.dispatchedRevision).toEqual({ T002: 2 });
+
+    const { dispatchedRevision: _dropped, ...older } = dispatched.lineages?.T002 ?? {};
+    const parsed = WorkflowStateSchema.parse({ ...dispatched, lineages: { T002: older } });
+    expect(parsed.lineages?.T002?.dispatchedRevision).toEqual({});
   });
 
   it('SET_PENDING_REVIEW_COMMANDS replaces the list and clears an empty list', () => {

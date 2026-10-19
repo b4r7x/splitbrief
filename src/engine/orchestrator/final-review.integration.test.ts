@@ -1327,6 +1327,7 @@ describe('runFinalReviewPhase', () => {
           consultAllowance: 3,
           attemptAllowance: 2,
           staleConsultedRevision: {},
+          dispatchedRevision: {},
           consultRecords: [
             {
               reason: 'failed',

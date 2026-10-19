@@ -7,7 +7,6 @@ import {
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
-import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { buildSnapshotFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -18,7 +17,7 @@ import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
 import { buildRoutingEventFields } from './routing-fields.js';
-import { lineageIdOf } from '../../../core/state/task-insert.js';
+import { runsOnOwnFiles } from './stale-inputs.js';
 
 export type PreTaskResult =
   | { proceed: true; state: WorkflowState; taskStartSnapshot: ChangedFilesSnapshot }
@@ -111,17 +110,9 @@ export async function runPreTaskHooksAndPublish(opts: {
     },
   );
 
-  // A resumed attempt, and a Continue past a consult bound that replays the brief on the
-  // files its last attempt left, keep the brief's first task-start snapshot.
+  // A brief that runs on its own files keeps its first task-start snapshot.
   const activeTaskSnapshot = state.changedFilesBaseline?.activeTaskSnapshot;
-  if (
-    activeTaskSnapshot !== undefined &&
-    (state.lineages?.[lineageIdOf(task)]?.carriedFailure !== undefined ||
-      wctx.continuation?.resumesAttempt(
-        { kind: 'brief', taskId: task.id, attempt: state.attempt },
-        hashTaskBrief([task]),
-      ) === true)
-  ) {
+  if (activeTaskSnapshot !== undefined && runsOnOwnFiles(state, task, wctx.continuation)) {
     const taskStartSnapshot = {
       ...activeTaskSnapshot,
       restoreFiles: activeTaskSnapshot.restoreFiles ?? [],

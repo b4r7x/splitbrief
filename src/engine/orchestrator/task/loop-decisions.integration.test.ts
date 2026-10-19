@@ -74,6 +74,7 @@ function lineage(overrides: Partial<LineageRecord>): LineageRecord {
     consultAllowance: 2,
     attemptAllowance: 8,
     staleConsultedRevision: {},
+    dispatchedRevision: {},
     consultRecords: [],
     replacedParents: [],
     notes: [],
