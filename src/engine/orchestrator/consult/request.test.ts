@@ -21,7 +21,6 @@ import type { Task } from '../../../core/schemas/task.js';
 import { retryFailureLabel } from '../task/retry.js';
 import { consultSeat, requestConsult, thrownConsultSeat, type ConsultContext } from './request.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 
 const config = makeConfig();
 const dirs: string[] = [];
@@ -164,8 +163,23 @@ function fixState(): WorkflowState {
   };
 }
 
-function emptySnapshot(): ChangedFilesSnapshot {
-  return { head: 'unused', files: [], dirtyFileContents: {} };
+/** The state after T003's first dispatch at `startSnapshot` and one counted attempt per failure. */
+function startedAt(
+  state: WorkflowState,
+  startSnapshot: ChangedFilesSnapshot,
+  failures: readonly string[] = [],
+): WorkflowState {
+  let next = transition(
+    {
+      ...state,
+      changedFilesBaseline: { head: null, fingerprints: {}, activeTaskSnapshot: startSnapshot },
+    },
+    { type: 'RECORD_DISPATCH', taskId: taskId('T003') },
+  );
+  for (const failure of failures) {
+    next = transition(next, { type: 'COUNT_ATTEMPT', taskId: taskId('T003'), failure });
+  }
+  return next;
 }
 
 describe('requestConsult', () => {
@@ -184,7 +198,7 @@ describe('requestConsult', () => {
     chmodSync(join(workspaceDir, 'run.sh'), 0o755);
     const { bus } = makeBusRecorder();
     const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
-    const state = consultState();
+    const state = startedAt(consultState(), snapshot);
     saveState(ref, state);
     const task = state.tasks[0];
     if (task === undefined) throw new Error('missing consult task');
@@ -199,13 +213,7 @@ describe('requestConsult', () => {
         reviewer: planner.planner,
         state,
       },
-      {
-        task,
-        reason: 'failed',
-        failingOutput: 'boom',
-        snapshot,
-        changedFiles: await getChangedFilesSinceSnapshot(workspaceDir, snapshot),
-      },
+      { task, reason: 'failed', failingOutput: 'boom' },
     );
 
     expect(planner.prompts[0]).toContain('-before');
@@ -240,6 +248,8 @@ describe('requestConsult', () => {
       const file = 'src/greet.ts';
       for (const dir of [projectDir, workspaceDir]) mkdirSync(join(dir, 'src'));
       writeFileSync(join(projectDir, file), 'export const greeting = "checkout";\n');
+      writeFileSync(join(workspaceDir, file), 'export const greeting = "before";\n');
+      const startSnapshot = await captureWorkspaceSnapshot(workspaceDir, ref);
       writeFileSync(join(workspaceDir, file), 'export const greeting = "workspace";\n');
       const reply = 'Greet by first name only.';
       const task = makeTask({
@@ -249,7 +259,7 @@ describe('requestConsult', () => {
         revision: 1,
         criteria: ['C1'],
       });
-      const planned = { ...consultState(), tasks: [task] };
+      const planned = startedAt({ ...consultState(), tasks: [task] }, startSnapshot);
       let stopped = transition(
         { ...planned, tokenUsage: { ...planned.tokenUsage, plannerInput: 40, plannerOutput: 12 } },
         { type: 'SET_PLANNER_SESSION_ID', sessionId: 'native-q' },
@@ -296,12 +306,6 @@ describe('requestConsult', () => {
           task,
           reason: 'failed',
           failingOutput: 'missing greeting',
-          snapshot: {
-            head: 'unused',
-            files: [file],
-            dirtyFileContents: { [file]: 'export const greeting = "before";\n' },
-          },
-          changedFiles: [file],
         },
       );
 
@@ -359,8 +363,6 @@ describe('requestConsult', () => {
       task,
       reason: 'failed',
       failingOutput: 'first failure',
-      snapshot: emptySnapshot(),
-      changedFiles: [],
     });
     expect('answer' in first).toBe(true);
     expect(planner.prompts[0]).toContain('# Consult on a failing task');
@@ -374,8 +376,6 @@ describe('requestConsult', () => {
         task,
         reason: 'failed',
         failingOutput: 'second failure',
-        snapshot: emptySnapshot(),
-        changedFiles: [],
       },
     );
     expect('answer' in second).toBe(true);
@@ -420,8 +420,6 @@ describe('requestConsult', () => {
       task,
       reason: 'failed' as const,
       failingOutput: 'the failure',
-      snapshot: emptySnapshot(),
-      changedFiles: [],
     };
 
     await requestConsult(ctx, request);
@@ -457,8 +455,6 @@ describe('requestConsult', () => {
         task: state.tasks[0]!,
         reason: 'stale',
         failingOutput: 'stale failure',
-        snapshot: emptySnapshot(),
-        changedFiles: [],
       },
     );
 
@@ -471,85 +467,87 @@ describe('requestConsult', () => {
     expect(after.tokenUsage.plannerInput).toBe(10);
   });
 
-  it('renders the attempt diff from its snapshot and the files it changed', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src/greet.ts'), 'export const greet = "new";\n');
-    const { bus } = makeBusRecorder();
-    const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
-    const state = consultState();
-    saveState({ projectDir, sessionId }, state);
+  it.each([
+    { seat: 'plan', makeState: consultState },
+    { seat: 'review', makeState: fixState },
+  ])(
+    'shows the $seat seat every change since the task started and one line per failed attempt',
+    async ({ makeState }) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      const ref = { projectDir, sessionId };
+      const workspaceDir = createTempDir('consult-task-diff');
+      dirs.push(workspaceDir);
+      mkdirSync(join(workspaceDir, 'src'));
+      writeFileSync(join(workspaceDir, 'src/greet.ts'), 'export const greet = "old";\n');
+      const startSnapshot = await captureWorkspaceSnapshot(workspaceDir, ref);
+      writeFileSync(join(workspaceDir, 'src/greet.ts'), 'export const greet = "new";\n');
+      writeFileSync(join(workspaceDir, 'src/cli.ts'), 'export const cli = "attempt one";\n');
+      const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
+      const state = startedAt(makeState(), startSnapshot, [
+        'check K1 did not pass (fail): \n> mocha\nError: Cannot find module',
+        'Tool implementer exited without changing any files',
+      ]);
+      saveState(ref, state);
+      const { bus } = makeBusRecorder();
 
-    await requestConsult(
-      {
-        projectDir,
-        workspaceDir: projectDir,
-        sessionId,
-        bus,
-        config,
-        planner: planner.planner,
-        reviewer: planner.planner,
-        state,
-      },
-      {
-        task: state.tasks[0]!,
-        reason: 'failed',
-        failingOutput: 'boom',
-        snapshot: {
-          head: 'unused',
-          files: ['src/greet.ts'],
-          dirtyFileContents: {},
-          dirtyFileEntries: {
-            'src/greet.ts': {
-              base64: Buffer.from('export const greet = "old";\n').toString('base64'),
-              mode: 0o644,
-            },
-          },
+      const result = await requestConsult(
+        {
+          ...ref,
+          workspaceDir,
+          bus,
+          config,
+          planner: planner.planner,
+          reviewer: planner.planner,
+          state,
         },
-        changedFiles: ['src/greet.ts'],
-      },
-    );
+        {
+          task: state.tasks[0]!,
+          reason: 'failed',
+          failingOutput: 'Tool implementer exited without changing any files',
+        },
+      );
 
-    expect(planner.prompts[0]).toContain('-export const greet = "old";');
-    expect(planner.prompts[0]).toContain('+export const greet = "new";');
-  });
+      expect('answer' in result).toBe(true);
+      const prompt = planner.prompts[0] ?? '';
+      expect(prompt).toContain('## Task Diff');
+      expect(prompt).toContain('-export const greet = "old";');
+      expect(prompt).toContain('+export const greet = "new";');
+      expect(prompt).toContain('+export const cli = "attempt one";');
+      expect(prompt).toContain('- Attempt 1 (T003 revision 1): check K1 did not pass (fail):');
+      expect(prompt).toContain(
+        '- Attempt 2 (T003 revision 1): Tool implementer exited without changing any files',
+      );
+    },
+  );
 
-  it('bounds the attempt diff and names a file it leaves out', async () => {
+  it('bounds the task diff and names a file it leaves out', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    const ref = { projectDir, sessionId };
+    const workspaceDir = createTempDir('consult-task-diff-bound');
+    dirs.push(workspaceDir);
+    const startSnapshot = await captureWorkspaceSnapshot(workspaceDir, ref);
+    mkdirSync(join(workspaceDir, 'src'));
     writeFileSync(
-      join(projectDir, 'src/data.json'),
+      join(workspaceDir, 'src/data.json'),
       `${'"row",\n'.repeat(300_000)}"END-OF-DATA"\n`,
     );
-    writeFileSync(join(projectDir, 'src/greet.ts'), 'export const greet = "new";\n');
+    writeFileSync(join(workspaceDir, 'src/greet.ts'), 'export const greet = "new";\n');
     const { bus } = makeBusRecorder();
     const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
-    const state = consultState();
-    saveState({ projectDir, sessionId }, state);
+    const state = startedAt(consultState(), startSnapshot);
+    saveState(ref, state);
 
     await requestConsult(
       {
-        projectDir,
-        workspaceDir: projectDir,
-        sessionId,
+        ...ref,
+        workspaceDir,
         bus,
         config,
         planner: planner.planner,
         reviewer: planner.planner,
         state,
       },
-      {
-        task: state.tasks[0]!,
-        reason: 'failed',
-        failingOutput: 'boom',
-        snapshot: {
-          head: 'unused',
-          files: ['src/data.json', 'src/greet.ts'],
-          dirtyFileContents: {},
-          dirtyFileEntries: { 'src/data.json': null, 'src/greet.ts': null },
-        },
-        changedFiles: ['src/data.json', 'src/greet.ts'],
-      },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
     );
 
     const prompt = planner.prompts[0] ?? '';
@@ -557,6 +555,84 @@ describe('requestConsult', () => {
     expect(prompt).toContain('src/data.json');
     expect(prompt).toContain('src/greet.ts');
     expect(prompt).not.toContain('END-OF-DATA');
+    expect(prompt).toContain('The diff stops at 40,000 characters.');
+  });
+
+  it('consults on an older state that recorded no task start, with a plain line', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const { bus } = makeBusRecorder();
+    const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
+    const state = consultState();
+    saveState({ projectDir, sessionId }, state);
+
+    const result = await requestConsult(
+      {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        bus,
+        config,
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+      },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
+    );
+
+    expect('answer' in result).toBe(true);
+    expect(planner.prompts[0]).toContain(
+      'No diff of this task is available. Read the files in the run workspace.',
+    );
+    expect(planner.prompts[0]).not.toContain('## Failed Attempts');
+  });
+
+  it('diffs a rewritten task from its lineage start, not from the rewrite snapshot', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const ref = { projectDir, sessionId };
+    const workspaceDir = createTempDir('consult-rewrite-start');
+    dirs.push(workspaceDir);
+    mkdirSync(join(workspaceDir, 'src'));
+    writeFileSync(join(workspaceDir, 'src/greet.ts'), 'export const greeting = "before";\n');
+    const lineageStart = await captureWorkspaceSnapshot(workspaceDir, ref);
+    const started = startedAt(consultState(), lineageStart, ['check K1 did not pass']);
+    writeFileSync(join(workspaceDir, 'src/greet.ts'), 'export const greeting = "first";\n');
+    writeFileSync(join(workspaceDir, 'src/helper.ts'), 'export const helper = 1;\n');
+    const rewriteSnapshot = await captureWorkspaceSnapshot(workspaceDir, ref);
+    const rewritten = transition(started, {
+      type: 'REPLACE_TASK',
+      taskId: taskId('T003'),
+      task: makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'] }),
+    });
+    const state = transition(
+      {
+        ...rewritten,
+        changedFilesBaseline: { head: null, fingerprints: {}, activeTaskSnapshot: rewriteSnapshot },
+      },
+      { type: 'RECORD_DISPATCH', taskId: taskId('T003') },
+    );
+    writeFileSync(join(workspaceDir, 'src/greet.ts'), 'export const greeting = "second";\n');
+    const { bus } = makeBusRecorder();
+    const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
+    saveState(ref, state);
+
+    await requestConsult(
+      {
+        ...ref,
+        workspaceDir,
+        bus,
+        config,
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+      },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
+    );
+
+    const prompt = planner.prompts[0] ?? '';
+    expect(prompt).toContain('-export const greeting = "before";');
+    expect(prompt).toContain('+export const greeting = "second";');
+    expect(prompt).not.toContain('-export const greeting = "first";');
+    expect(prompt).toContain('+export const helper = 1;');
   });
 
   it.each(['failed', 'stale'] as const)(
@@ -588,8 +664,6 @@ describe('requestConsult', () => {
           task: state.tasks[0]!,
           reason,
           failingOutput: 'the failure',
-          snapshot: emptySnapshot(),
-          changedFiles: [],
         },
       );
 
@@ -629,8 +703,6 @@ describe('requestConsult', () => {
           task: state.tasks[0]!,
           reason,
           failingOutput: 'the failure',
-          snapshot: emptySnapshot(),
-          changedFiles: [],
         },
       );
 
@@ -672,8 +744,6 @@ describe('requestConsult', () => {
         task: subtask,
         reason: 'failed',
         failingOutput: 'the failure',
-        snapshot: emptySnapshot(),
-        changedFiles: [],
       },
     );
 
@@ -726,8 +796,6 @@ describe('requestConsult', () => {
         task: state.tasks[0]!,
         reason: 'failed',
         failingOutput: 'the failure',
-        snapshot: emptySnapshot(),
-        changedFiles: [],
       },
     );
     let settled = false;
@@ -819,8 +887,6 @@ describe('requestConsult seats', () => {
       task,
       reason,
       failingOutput: 'the fix check is still red',
-      snapshot: emptySnapshot(),
-      changedFiles: [],
       ...(reason === 'deviation' && {
         report: {
           status: 'done' as const,

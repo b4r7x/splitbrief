@@ -132,11 +132,6 @@ type StaleRefresh =
   | { kind: 'replaced'; state: WorkflowState }
   | { kind: 'dispatch'; state: WorkflowState; task: Task; guidance: string | undefined };
 
-/** An empty snapshot: a stale task has no attempt, so its consult carries no diff. */
-function noAttemptSnapshot(): ChangedFilesSnapshot {
-  return { head: '', files: [], dirtyFileContents: {} };
-}
-
 /**
  * The stale refresh before dispatch: when the brief's inputs moved under it since
  * the revision recorded their hashes, the task's seat is asked, with reason
@@ -195,8 +190,6 @@ async function refreshStaleTask(input: {
       task,
       reason: 'stale',
       failingOutput: `The task's inputs changed since the brief was compiled: ${files.join(', ')}`,
-      snapshot: noAttemptSnapshot(),
-      changedFiles: [],
     },
   );
   if ('error' in refreshed) throw refreshed.error;

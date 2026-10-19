@@ -10,6 +10,7 @@ import {
 import {
   WorkflowStateSchema,
   fixCyclesOf,
+  type ChangedFilesSnapshot,
   type LineageRecord,
   type QueuedMessage,
   type WorkflowState,
@@ -18,6 +19,7 @@ import { taskId, type Task } from '../schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
+import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { deriveRunStatus } from '../sessions/run-status.js';
 import { plainUserMessage } from '../types/user-input.js';
 
@@ -1324,6 +1326,88 @@ describe('consult and split state operations', () => {
     const { dispatchedRevision: _dropped, ...older } = dispatched.lineages?.T002 ?? {};
     const parsed = WorkflowStateSchema.parse({ ...dispatched, lineages: { T002: older } });
     expect(parsed.lineages?.T002?.dispatchedRevision).toEqual({});
+  });
+
+  it('COUNT_ATTEMPT records the first line of a failure, bounded, with the attempt and revision', () => {
+    let state = implementationState([makeTask({ id: 'T002', revision: 2 })]);
+
+    state = transition(state, {
+      type: 'COUNT_ATTEMPT',
+      taskId: taskId('T002'),
+      failure: '\ncheck K1 did not pass (fail): \n> mocha\nError: Cannot find module',
+    });
+    state = transition(state, { type: 'COUNT_ATTEMPT', taskId: taskId('T002') });
+    state = transition(state, {
+      type: 'COUNT_ATTEMPT',
+      taskId: taskId('T002'),
+      failure: 'y'.repeat(1_000),
+    });
+
+    const failures = state.lineages?.T002?.attemptFailures ?? [];
+    expect(state.lineages?.T002?.attempts).toBe(3);
+    expect(failures).toMatchObject([
+      { attempt: 1, taskId: 'T002', revision: 2, line: 'check K1 did not pass (fail):' },
+      { attempt: 3, taskId: 'T002', revision: 2 },
+    ]);
+    expect(failures[1]?.line.length).toBe(BOUNDS.consultAttemptLineChars);
+  });
+
+  describe('the task start of a lineage', () => {
+    const start: ChangedFilesSnapshot = { head: 'h1', files: [], dirtyFileContents: {} };
+    const later: ChangedFilesSnapshot = { head: 'h1', files: ['src/a.ts'], dirtyFileContents: {} };
+    const baseline = (activeTaskSnapshot: ChangedFilesSnapshot) => ({
+      head: 'h1',
+      fingerprints: {},
+      activeTaskSnapshot,
+    });
+
+    it('RECORD_DISPATCH keeps the first start across a rewrite and a split until the last brief passes', () => {
+      let state = implementationState([makeTask({ id: 'T002' }), makeTask({ id: 'T004' })], {
+        currentTaskIndex: 0,
+        changedFilesBaseline: baseline(start),
+      });
+
+      state = transition(state, { type: 'RECORD_DISPATCH', taskId: taskId('T002') });
+      expect(state.lineages?.T002?.startSnapshot).toEqual(start);
+
+      state = transition(
+        { ...state, changedFilesBaseline: baseline(later) },
+        { type: 'REPLACE_TASK', taskId: taskId('T002'), task: makeTask({ id: 'T002' }) },
+      );
+      state = transition(state, { type: 'RECORD_DISPATCH', taskId: taskId('T002') });
+      expect(state.lineages?.T002?.startSnapshot).toEqual(start);
+
+      state = transition(state, {
+        type: 'INSERT_TASKS',
+        parentId: taskId('T002'),
+        tasks: [makeTask({ id: 'T011' }), makeTask({ id: 'T012' })],
+      });
+      state = transition(state, { type: 'RECORD_DISPATCH', taskId: taskId('T011') });
+      state = transition(state, { type: 'VALIDATION_PASS' });
+      expect(state.lineages?.T002?.startSnapshot).toEqual(start);
+
+      state = transition(state, { type: 'RECORD_DISPATCH', taskId: taskId('T012') });
+      state = transition(state, { type: 'VALIDATION_PASS' });
+      expect(state.lineages?.T002).toBeDefined();
+      expect(state.lineages?.T002?.startSnapshot).toBeUndefined();
+      expect(WorkflowStateSchema.parse(JSON.parse(JSON.stringify(state))).lineages).toEqual(
+        state.lineages,
+      );
+    });
+
+    it('SKIP_TASK drops the start of the lineage it closes', () => {
+      let state = implementationState([makeTask({ id: 'T002' })], {
+        currentTaskIndex: 0,
+        changedFilesBaseline: baseline(start),
+      });
+
+      state = transition(state, { type: 'RECORD_DISPATCH', taskId: taskId('T002') });
+      expect(state.lineages?.T002?.startSnapshot).toEqual(start);
+      state = transition(state, { type: 'SKIP_TASK', taskId: taskId('T002') });
+
+      expect(state.lineages?.T002).toBeDefined();
+      expect(state.lineages?.T002?.startSnapshot).toBeUndefined();
+    });
   });
 
   it('SET_PENDING_REVIEW_COMMANDS replaces the list and clears an empty list', () => {

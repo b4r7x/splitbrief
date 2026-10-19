@@ -5,7 +5,7 @@ import type {
 } from '../../../core/schemas/consult.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
-import type { ConsultRecord } from '../../../core/schemas/workflow.js';
+import type { AttemptFailure, ConsultRecord } from '../../../core/schemas/workflow.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { truncateByChars } from '../../../utils/truncate.js';
@@ -28,8 +28,13 @@ export type ConsultPromptInput = Readonly<{
   task: Task;
   /** The task's earlier revisions, oldest first; the current task travels as `task`. */
   revisions: readonly Task[];
-  /** The diff the attempt produced, from its snapshot to now, one entry per changed file. */
-  diffs: readonly { path: string; diff: string }[];
+  /**
+   * The task's diff from its start to now, one entry per changed file: every attempt, revision
+   * and split subtask of its lineage. Null when no start is recorded.
+   */
+  diffs: readonly { path: string; diff: string }[] | null;
+  /** The lineage's failed attempts, oldest first, each with its first error line. */
+  failedAttempts: readonly AttemptFailure[];
   failingOutput: string;
   report: ImplementerReport | null;
   /** The answers earlier consults of this lineage gave. */
@@ -253,12 +258,14 @@ function reportLines(report: ImplementerReport | null): string[] {
 const LEFT_OUT_NAMES = 20;
 
 /**
- * The attempt's file diffs in order, each whole, until `BOUNDS.consultDiffChars` is full. A first
+ * The task's file diffs in order, each whole, until `BOUNDS.consultDiffChars` is full. A first
  * file larger than the whole budget is cut to it. The files cut or left out are named, with a
  * count past `LEFT_OUT_NAMES`, for the seat to read in the workspace.
  */
 function diffLines(diffs: ConsultPromptInput['diffs']): string[] {
-  if (diffs.length === 0) return ['No diff was recorded for this attempt.'];
+  if (diffs === null)
+    return ['No diff of this task is available. Read the files in the run workspace.'];
+  if (diffs.length === 0) return ['This task has changed no file since it started.'];
   let used = 0;
   const overflow = diffs.findIndex((entry) => {
     used += entry.diff.length;
@@ -283,11 +290,22 @@ function diffLines(diffs: ConsultPromptInput['diffs']): string[] {
 
 function attemptLines(input: ConsultPromptInput): string[] {
   return [
-    '## Attempt Diff',
+    '## Task Diff',
+    'What is on disk now against the start of this task: the changes of all its attempts, revisions and split subtasks, not only the latest attempt.',
     ...diffLines(input.diffs),
     ...(input.reason === 'deviation'
       ? []
       : [
+          ...(input.failedAttempts.length === 0
+            ? []
+            : [
+                '## Failed Attempts',
+                'Each failed attempt of this task, oldest first, with its first error line.',
+                ...input.failedAttempts.map(
+                  (failure) =>
+                    `- Attempt ${failure.attempt} (${failure.taskId} revision ${failure.revision}): ${failure.line}`,
+                ),
+              ]),
           '## Failing Output',
           fenced(truncateByChars(input.failingOutput, BOUNDS.consultFailingOutputChars)),
         ]),

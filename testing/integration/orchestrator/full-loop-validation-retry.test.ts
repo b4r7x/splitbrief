@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { RetryOptions, ImplementerOptions } from '../../../src/engine/implementers/types.js';
+import type { TypedCallContext } from '../../../src/engine/planners/types.js';
 import {
   REVIEW_FILE,
   REVIEW_JSON_FILE,
@@ -259,12 +260,23 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       typeDefs: 'export const loop: string',
     });
 
+    const consultPrompts: string[] = [];
+    const typedCall = typedCallPlanAndConsult(
+      () => planFromTasks([task]),
+      () => guidanceConsult('Use the from-retry marker from validate.mjs.'),
+      { inputTokens: 140, outputTokens: 90 },
+    );
     const planner = makePlanner({
-      typedCall: typedCallPlanAndConsult(
-        () => planFromTasks([task]),
-        () => guidanceConsult('Use the from-retry marker from validate.mjs.'),
-        { inputTokens: 140, outputTokens: 90 },
-      ),
+      typedCall: vi.fn((ctx: TypedCallContext) => {
+        const call = typedCall(ctx);
+        return {
+          ...call,
+          invoke: async (input: Parameters<typeof call.invoke>[0]) => {
+            if (/^# Consult/m.test(input.prompt)) consultPrompts.push(input.prompt);
+            return call.invoke(input);
+          },
+        };
+      }),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nThe consult produced a passing implementation.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
@@ -340,6 +352,16 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
 
     expect(retryKinds).toEqual(['local', 'consult']);
     expect(retryErrors[0]).toContain('check K-retry did not pass (fail)');
+    // The local retry wrote nothing: the consult still sees the first attempt's file and both failures.
+    expect(consultPrompts).toHaveLength(1);
+    expect(consultPrompts[0]).toContain('## Task Diff');
+    expect(consultPrompts[0]).toContain('+export const loop = "from-initial";');
+    expect(consultPrompts[0]).toContain(
+      '- Attempt 1 (T001 revision 1): check K-retry did not pass (fail)',
+    );
+    expect(consultPrompts[0]).toContain(
+      '- Attempt 2 (T001 revision 1): local retry still misses the expected marker',
+    );
     const taskRetries = events.filter(
       (event): event is Extract<EngineEvent, { type: 'task_retry' }> => event.type === 'task_retry',
     );
@@ -362,5 +384,118 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
       '### Verdict\n\npass',
     );
+  }, 90_000);
+
+  it('shows the failed consult-guided attempt to the next consult', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'sess-full-loop-second-consult';
+    const targetFile = 'src/loop.ts';
+    const retryKinds: string[] = [];
+    const task = makeTask({
+      id: 'T001',
+      action: 'create',
+      suggestedFiles: [targetFile],
+      title: 'Create a module that needs two consults',
+      description: 'Create a module that passes validation only after a second consult.',
+      implementationSteps: ['Create src/loop.ts with the retry marker export.'],
+      tests: ['node validate.mjs passes after the second consult'],
+      checks: [{ id: 'K-retry', kind: 'test', value: targetFile, required: true }],
+      scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
+      evidence: ['the second consult lists the failed guided attempt'],
+      typeDefs: 'export const loop: string',
+    });
+
+    const consultPrompts: string[] = [];
+    const typedCall = typedCallPlanAndConsult(
+      () => planFromTasks([task]),
+      () => guidanceConsult('Use the from-retry marker from validate.mjs.'),
+      { inputTokens: 140, outputTokens: 90 },
+    );
+    const planner = makePlanner({
+      typedCall: vi.fn((ctx: TypedCallContext) => {
+        const call = typedCall(ctx);
+        return {
+          ...call,
+          invoke: async (input: Parameters<typeof call.invoke>[0]) => {
+            if (/^# Consult/m.test(input.prompt)) consultPrompts.push(input.prompt);
+            return call.invoke(input);
+          },
+        };
+      }),
+      review: vi.fn().mockResolvedValue({
+        text: '# Final review\n\nThe second consult produced a passing implementation.\n\n### Verdict\npass',
+        usage: { inputTokens: 60, outputTokens: 30 },
+      }),
+    });
+
+    const implementer = makeImplementer({
+      capabilities: { writesFiles: 'direct' },
+      implement: vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
+        mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+        writeFileSync(join(opts.projectDir, targetFile), 'export const loop = "from-initial";\n');
+        return {
+          success: true,
+          output: 'created initial implementation',
+          usage: { inputTokens: 50, outputTokens: 20 },
+        };
+      }),
+      retry: vi.fn().mockImplementation(async (opts: RetryOptions) => {
+        retryKinds.push(opts.kind);
+        if (opts.kind === 'local' || retryKinds.length === 2) {
+          return {
+            success: false,
+            output: '',
+            error: `${opts.kind} retry still misses the expected marker`,
+            usage: { inputTokens: 25, outputTokens: 10 },
+          };
+        }
+        writeFileSync(join(opts.projectDir, targetFile), 'export const loop = "from-retry";\n');
+        return {
+          success: true,
+          output: 'fixed after the second consult',
+          usage: { inputTokens: 35, outputTokens: 15 },
+        };
+      }),
+    });
+
+    const config = makeConfig({
+      implementer: {
+        kind: 'agent',
+        command: 'node',
+        model: 'cheap-direct-agent',
+        contextLength: 4096,
+      },
+      validation: {
+        endChecks: true,
+        testCommand: 'node validate.mjs',
+      },
+      workflow: {
+        approve: 'none',
+        review: 'task',
+      },
+    });
+    await runTrackedWorkflow({
+      prepared: makePreparedExecution({
+        projectDir,
+        sessionId,
+        feature: 'run a second consult',
+        config,
+        gates: plannerCliGates,
+      }),
+      callbacks: makeCallbacks().callbacks,
+      sinks: TEST_WORKFLOW_SINKS,
+      _planner: planner,
+      _implementer: implementer,
+    });
+
+    expect(retryKinds).toEqual(['local', 'consult', 'consult']);
+    expect(consultPrompts).toHaveLength(2);
+    expect(consultPrompts[0]).not.toContain('- Attempt 3');
+    expect(consultPrompts[1]).toContain(
+      '- Attempt 3 (T001 revision 1): consult retry still misses the expected marker',
+    );
+    expect(
+      readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
+    ).toBe('export const loop = "from-retry";\n');
   }, 90_000);
 });
