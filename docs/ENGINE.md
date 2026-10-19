@@ -389,7 +389,7 @@ type Summary = {
 
   // Per-task breakdown
   taskBreakdown?: TaskTokenUsage[]
-  phaseTimings?: Record<string, number>   // phase name → ms
+  phaseTimings?: Record<string, number>   // planning / implementing / review → ms, read from session.jsonl
 
   // Spend
   costBreakdown?: {

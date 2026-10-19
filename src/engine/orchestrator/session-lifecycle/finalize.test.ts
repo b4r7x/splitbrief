@@ -98,7 +98,7 @@ describe('saveFinalSession', () => {
     expect(existsSync(activeFile(projectDir))).toBe(false);
   });
 
-  it('records how long the run ran from its log, and nothing without a log', () => {
+  it('records how long the run ran and its phase times from its log, and nothing without a log', () => {
     const projectDir = makeProjectDir();
     writeLog(projectDir, 'sess-ran', [
       ['workflow_started', '2026-10-15T10:00:00.000Z'],
@@ -119,10 +119,13 @@ describe('saveFinalSession', () => {
     save('sess-ran');
     save('sess-no-log');
 
-    expect(readSession({ projectDir, sessionId: 'sess-ran' })?.summary?.activeTime).toBe(90_000);
-    expect(readSession({ projectDir, sessionId: 'sess-no-log' })?.summary).not.toHaveProperty(
-      'activeTime',
-    );
+    expect(readSession({ projectDir, sessionId: 'sess-ran' })?.summary).toMatchObject({
+      activeTime: 90_000,
+      phaseTimings: { implementing: 90_000 },
+    });
+    const noLog = readSession({ projectDir, sessionId: 'sess-no-log' })?.summary;
+    expect(noLog).not.toHaveProperty('activeTime');
+    expect(noLog).not.toHaveProperty('phaseTimings');
   });
 
   it('records an open run with its stop reason and keeps the active session', () => {

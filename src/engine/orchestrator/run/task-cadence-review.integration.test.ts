@@ -155,7 +155,6 @@ function runOptions(opts: {
         plannerTool: 'claude-code',
         implementerTool: 'ollama',
       },
-      phaseTimings: {} as Record<string, number>,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     },

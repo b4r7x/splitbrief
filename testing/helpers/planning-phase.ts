@@ -252,8 +252,6 @@ export async function runOwnedPlanningPhase(dirs: string[], opts: OwnedRunOpts =
     wctx,
     state,
     savedState: undefined,
-    phaseTimings: {},
-    startTime: Date.now(),
     setTrackedState: (next) => {
       trackedState = next;
     },

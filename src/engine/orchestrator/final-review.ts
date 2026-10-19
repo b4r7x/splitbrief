@@ -311,7 +311,6 @@ export async function runFinalReviewPhase(opts: {
   continuation?: ContinuationHolder | undefined;
   summaryBase?: SummaryBase | undefined;
   taskBreakdowns?: TaskTokenUsage[] | undefined;
-  phaseTimings?: Record<string, number>;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
   skillsContext?: string | undefined;
   /** The integration re-check section when an Apply merge changed the reviewed candidate. */
@@ -342,7 +341,6 @@ export async function runFinalReviewPhase(opts: {
     metadata,
     summaryBase,
     taskBreakdowns,
-    phaseTimings,
   } = opts;
 
   state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, { keepUnsaved: true });
@@ -398,7 +396,6 @@ export async function runFinalReviewPhase(opts: {
 
   const finalReviewStart = Date.now();
   const interrupted = (): FinalReviewResult => {
-    if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
     publishReviewEvent(
       { bus, phase: state.phase },
       {
@@ -1042,8 +1039,6 @@ export async function runFinalReviewPhase(opts: {
     warnError('Failed to record final review evidence', err);
   }
 
-  if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
-
   const blockingFindings = verdict === null ? [] : blockingEntries(verdict.outcome);
   publishReviewEvent(
     { bus, phase: state.phase },
@@ -1077,7 +1072,6 @@ export async function runFinalReviewPhase(opts: {
           sessionId,
           state,
           taskBreakdowns,
-          ...(phaseTimings && { phaseTimings }),
         }),
         state,
         finalReviewStatus: writeStatus,

@@ -323,7 +323,6 @@ describe('runFinalReviewPhase', () => {
     );
 
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
-    const phaseTimings: Record<string, number> = {};
 
     const result = await runFinalReviewPhase({
       projectDir,
@@ -337,7 +336,6 @@ describe('runFinalReviewPhase', () => {
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
       taskBreakdowns: [] satisfies TaskTokenUsage[],
-      phaseTimings,
     });
 
     expect(result.reviewStatus).toBe('written');
@@ -376,7 +374,6 @@ describe('runFinalReviewPhase', () => {
     expect(completionsEvents[0]).not.toHaveProperty('axes');
     expect(events.filter((event) => event.type === 'planner_status')).toEqual([]);
 
-    expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
     const packetPath = join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
     expect(existsSync(packetPath)).toBe(true);
     const packet = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8')));
@@ -1535,7 +1532,6 @@ describe('runFinalReviewPhase', () => {
     });
 
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
-    const phaseTimings: Record<string, number> = {};
 
     const result = await runFinalReviewPhase({
       projectDir,
@@ -1549,7 +1545,6 @@ describe('runFinalReviewPhase', () => {
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
       taskBreakdowns: [],
-      phaseTimings,
     });
 
     const errorEvent = events.find((e) => e.type === 'error');
@@ -1560,7 +1555,6 @@ describe('runFinalReviewPhase', () => {
     const reviewPath = join(sessionDir(projectDir, sessionId), REVIEW_FILE);
     expect(existsSync(reviewPath)).toBe(false);
 
-    expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
     expect(completions).toEqual([]);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
     expect(loadState({ projectDir, sessionId })?.phase).toBe('final-review');
@@ -1717,7 +1711,6 @@ describe('runFinalReviewPhase', () => {
         },
       ),
     });
-    const phaseTimings: Record<string, number> = {};
 
     const result = await runFinalReviewPhase({
       projectDir,
@@ -1732,7 +1725,6 @@ describe('runFinalReviewPhase', () => {
       signal: controller.signal,
       summaryBase: SUMMARY_BASE,
       taskBreakdowns: [],
-      phaseTimings,
     });
 
     expect(result.reviewStatus).toBe('failed');
@@ -1745,11 +1737,10 @@ describe('runFinalReviewPhase', () => {
     ]);
     expect(reviewCompletions[0]).not.toHaveProperty('findings');
     expect(reviewCompletions[0]?.duration).toBeGreaterThanOrEqual(0);
-    expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(false);
   });
 
-  it('works without a phaseTimings map (metadata argument remains optional)', async () => {
+  it('works without the metadata argument', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 

@@ -303,6 +303,8 @@
 - End run on a run that edits your checkout no longer says the files it wrote are still on disk, or that its changes are already there, after SPLITBRIEF put those files back.
 - When a task review still fails after the run's fix cycles, has nothing left to fix, or reaches no verdict, the recovery panel and its error line name that review (for example `Review T004 failed after 2 fix cycles` or `Review T004 reached no verdict`) instead of the final review.
 - **Skip task** on a brief that a skipped dependency blocked now shows as one Recovery row under that brief, instead of two rows split around it.
+- A closed run's `Phases` row now counts the whole run, also after a stop and continue or a continue after a halt: planning is no longer dropped and the times are no longer only those of the last stretch. Runs closed by Apply, Discard or End run now show the row too.
+- `Ran` no longer counts the time on the result menu and the Apply after Accept as is, or after an Apply that stopped part way and ran again.
 
 ## [0.1.0] - 2026-08-07
 

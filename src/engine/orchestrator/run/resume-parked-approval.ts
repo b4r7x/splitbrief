@@ -11,10 +11,8 @@ export async function resumeParkedApproval(opts: {
   wctx: WorkflowContext;
   state: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
-  phaseTimings: Record<string, number>;
-  startTime: number;
 }): Promise<PlanningPhaseResult | null> {
-  const { wctx, state, setTrackedState, phaseTimings, startTime } = opts;
+  const { wctx, state, setTrackedState } = opts;
   if (!reopensPlanCard(state)) return null;
 
   let correction = wctx.continuation?.take({ kind: 'gate', gate: 'plan' })?.steer;
@@ -45,6 +43,5 @@ export async function resumeParkedApproval(opts: {
     state,
   );
   setTrackedState(approved.state);
-  phaseTimings.planning = Date.now() - startTime;
   return approved;
 }

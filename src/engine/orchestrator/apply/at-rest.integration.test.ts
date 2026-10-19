@@ -5,6 +5,7 @@ import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createDefaultConfig } from '../../../core/config/load/defaults.js';
+import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
 import { saveState } from '../../../core/state/persistence.js';
 import * as stagedProject from '../approval/staged-project.js';
@@ -105,6 +106,33 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
         await shutdown;
         expect(activeApply()).toBeUndefined();
         expect(readRunRecord(ref).status).toEqual({ kind: 'closed', as: 'applied' });
+      },
+    );
+  });
+
+  it('closes the applied run with the time it ran and the time of each stage', async () => {
+    await withApplyRun(
+      { 'a.txt': 'one\n' },
+      { sessionId: SESSION_ID, strategy: 'staged-copy' },
+      async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), 'two\n');
+        const start = applyAtRest(run);
+        const log = [
+          ['workflow_started', '2026-10-19T10:00:00.000Z', 'planning'],
+          ['task_started', '2026-10-19T10:01:00.000Z', 'implementing'],
+          ['review_started', '2026-10-19T10:03:00.000Z', 'final-review'],
+          ['workflow_complete', '2026-10-19T10:03:30.000Z', 'complete'],
+        ].map(([type, ts, phase]) => JSON.stringify({ kind: 'event', ts, type, phase, data: {} }));
+        writeFileSync(join(sessionDir(run.dir, run.sessionId), SESSION_LOG_FILE), log.join('\n'));
+
+        expect((await start()).outcome).toBe('applied');
+
+        const record = readRunRecord({ projectDir: run.dir, sessionId: run.sessionId });
+        expect(record.status).toEqual({ kind: 'closed', as: 'applied' });
+        expect(record.summary).toMatchObject({
+          activeTime: 210_000,
+          phaseTimings: { planning: 60_000, implementing: 120_000, review: 30_000 },
+        });
       },
     );
   });
