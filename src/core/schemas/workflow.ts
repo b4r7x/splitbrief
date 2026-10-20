@@ -18,7 +18,7 @@ import {
 } from './review.js';
 import { REVIEW_CYCLE_CAP } from '../pipeline-spec/review.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
-import { CONSULT_REASONS, CONSULT_SEATS, ConsultAnswerSchema } from './consult.js';
+import { CONSULT_REASONS, CONSULT_SEATS, ResolvedConsultAnswerSchema } from './consult.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema, SeatSwapCandidateSchema } from './recovery/schemas.js';
 import { StepCutSchema, StepRefSchema } from './run-step.js';
@@ -147,7 +147,7 @@ export const ConsultRecordSchema = z.object({
   at: z.string(),
   taskId: TaskIdSchema,
   revision: z.number().int(),
-  answer: ConsultAnswerSchema,
+  answer: ResolvedConsultAnswerSchema,
   /** The seat that answered; an older record without one was a planner consult. */
   seat: z.enum(CONSULT_SEATS).optional(),
 });

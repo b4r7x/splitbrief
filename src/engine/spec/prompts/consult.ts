@@ -1,7 +1,8 @@
-import type {
-  ConsultReason,
-  ConsultSeat,
-  ImplementerReport,
+import {
+  reportedDecisionId,
+  type ConsultReason,
+  type ConsultSeat,
+  type ImplementerReport,
 } from '../../../core/schemas/consult.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
@@ -99,7 +100,7 @@ function decisionConfirmContract(answered: boolean): string {
   return `You are the run's planner. This call confirms the new decisions in the implementer's report before validation. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
 
 Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": … } }\`. \`answer.diagnosis\` states your assessment in one or two sentences. Answer with exactly one of these actions:
-- \`confirm\` with the exact \`decisions\` list you accept. Accept changes of how that keep every criterion. Accept every decision that carries out an operator instruction: the user made that decision. Accept a change that the user's answer keeps. The accepted entries extend the plan's confirmed decisions ledger. A reported decision you leave out or reword is rejected: SPLITBRIEF sends the attempt back to the implementer with your diagnosis, so the diagnosis says what the retry must change. An empty list rejects every reported decision.
+- \`confirm\` with \`decisionIds\`: the ids (\`d1\`, \`d2\`, …) of the reported decisions you accept. Accept changes of how that keep every criterion. Accept every decision that carries out an operator instruction: the user made that decision. Accept a change that the user's answer keeps. The accepted decisions extend the plan's confirmed decisions ledger in the implementer's words. A reported decision whose id you leave out is rejected: SPLITBRIEF sends the attempt back to the implementer with your diagnosis, so the diagnosis says what the retry must change. An empty \`decisionIds\` list rejects every reported decision.
 - \`ask-user\` with \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null). Any other change of what is built is \`ask-user\`. Never ask about a decision that an operator instruction or an earlier answer already settles. A question that concerns an operator instruction quotes it, and its default keeps it.${
     answered
       ? `
@@ -252,8 +253,12 @@ function reportLines(report: ImplementerReport | null): string[] {
             .map((entry) => `${entry.file}${entry.reason === '' ? '' : ` (${entry.reason})`}`)
             .join(', ') || 'none'
         }\nDecisions: ${
-          report.decisions.map((decision) => `${decision.what} — ${decision.why}`).join('; ') ||
-          'none'
+          report.decisions
+            .map(
+              (decision, index) =>
+                `${reportedDecisionId(index)}: ${decision.what} — ${decision.why}`,
+            )
+            .join('; ') || 'none'
         }\nNotes: ${report.notes ?? 'none'}`;
   return ['## Implementer Report', fenced(detail)];
 }

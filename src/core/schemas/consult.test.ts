@@ -12,6 +12,8 @@ import {
   ImplementerReportSchema,
   STALE_CONSULT_ANSWER_JSON_SCHEMA,
   StaleConsultAnswerSchema,
+  acceptedDecisions,
+  reportedDecisionId,
 } from './consult.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from './plan.js';
 
@@ -100,10 +102,7 @@ describe.each([
   ['AnsweredDeviationConsultAnswerSchema', AnsweredDeviationConsultAnswerSchema, true],
 ] as const)('%s', (_name, schema, takesGuidance) => {
   const takes = (value: unknown): boolean => schema.safeParse(value).success;
-  const confirm = answer({
-    action: 'confirm',
-    decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
-  });
+  const confirm = answer({ action: 'confirm', decisionIds: ['d1'] });
 
   it(`takes confirm and ask-user, and guidance only once the user answered (${takesGuidance})`, () => {
     expect(takes(confirm)).toBe(true);
@@ -185,9 +184,39 @@ describe('typed seat contracts', () => {
     const variant = variantFor(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'confirm');
     expect(variant).toBeDefined();
     expect(variant?.additionalProperties).toBe(false);
+    expect(JSON.stringify(variant)).not.toContain('"default"');
     expect(variantFor(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'split-task')).toBeUndefined();
     expect(variantFor(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'guidance')).toBeUndefined();
     expect(variantFor(ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'guidance')).toBeDefined();
+  });
+});
+
+describe('confirm decisions', () => {
+  it('names the accepted reported decisions by id and reads an answer without ids as accepting none', () => {
+    expect(ConsultAnswerSchema.parse(answer({ action: 'confirm', decisionIds: ['d2'] }))).toEqual(
+      answer({ action: 'confirm', decisionIds: ['d2'] }),
+    );
+    const textOnly = answer({
+      action: 'confirm',
+      decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
+    });
+    expect(ConsultAnswerSchema.parse(textOnly)).toEqual(
+      answer({ action: 'confirm', decisionIds: [] }),
+    );
+  });
+
+  it('accepts the reported decisions whose ids the confirm names, in the reported words', () => {
+    const reported = [
+      { what: 'Used node:crypto', why: 'It is standard' },
+      { what: 'Kept the --json flag', why: 'The criterion needs it' },
+      { what: 'Renamed the helper', why: 'The name was taken' },
+    ];
+    expect(reported.map((_, index) => reportedDecisionId(index))).toEqual(['d1', 'd2', 'd3']);
+    expect(acceptedDecisions(reported, ['d3', 'd1', 'd9', 'D2'])).toEqual([
+      reported[0],
+      reported[2],
+    ]);
+    expect(acceptedDecisions(reported, [])).toEqual([]);
   });
 });
 

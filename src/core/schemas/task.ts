@@ -30,7 +30,10 @@ export function isTaskCompleted(status: Task['status']): boolean {
   return status === 'done' || status === 'escalated';
 }
 
-/** A settled brief never runs again: it passed, or the user skipped it. Only `RESET_TASK` reopens it. */
+/**
+ * A settled brief never runs again: it passed, or the user skipped it. Only `RESET_TASK` and a
+ * reject that put back its files (`RECORD_REJECT`) reopen it.
+ */
 export function isTaskSettled(status: Task['status']): boolean {
   return isTaskCompleted(status) || status === 'skipped';
 }

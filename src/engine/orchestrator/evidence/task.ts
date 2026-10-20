@@ -10,7 +10,11 @@ import type {
   EvidenceTask,
 } from '../../../core/schemas/evidence.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
-import { findOrSeed, upsertEvidenceTask } from '../../../core/evidence/ledger-state.js';
+import {
+  findOrSeed,
+  recomputeValidationSummary,
+  upsertEvidenceTask,
+} from '../../../core/evidence/ledger-state.js';
 import { uniquePush } from '../../../utils/collections.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { loadState } from '../../../core/state/persistence.js';
@@ -130,6 +134,29 @@ export function recordApiRevertEvidence(input: {
         },
       };
     }),
+  };
+}
+
+/**
+ * A reject put `removed` back, so no brief books them any more. A brief that booked one takes its
+ * status from `tasks`, the state after the reject: a passed brief it reopened is pending again.
+ */
+export function recordRejectEvidence(input: {
+  ledger: EvidenceLedger;
+  removed: readonly string[];
+  tasks: readonly Task[];
+}): EvidenceLedger {
+  const tasks = input.ledger.tasks.map((entry) => {
+    const changedFiles = entry.changedFiles.filter((file) => !input.removed.includes(file));
+    if (changedFiles.length === entry.changedFiles.length) return entry;
+    const status = input.tasks.find((task) => task.id === entry.id)?.status ?? entry.status;
+    return { ...entry, status, changedFiles };
+  });
+  return {
+    ...input.ledger,
+    tasks,
+    validationSummary: recomputeValidationSummary(tasks),
+    generatedAt: nowIso(),
   };
 }
 

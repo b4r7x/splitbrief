@@ -6,7 +6,7 @@ import type {
   SeatSwitchRecord,
 } from '../schemas/workflow.js';
 import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
-import type { ConsultAnswer, ConsultReason, ConsultSeat } from '../schemas/consult.js';
+import type { ConsultReason, ConsultSeat, ResolvedConsultAnswer } from '../schemas/consult.js';
 import type { CrewSeatId } from '../crew/identity.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { Plan } from '../schemas/plan.js';
@@ -85,8 +85,11 @@ export type StateAction =
       kept?: readonly string[];
     }
   | { type: 'RESUME_STEP' }
-  /** A reject put back these paths: the stop no longer keeps them. */
-  | { type: 'RECORD_REJECT'; removed: readonly string[] }
+  /**
+   * A reject put back these paths: the stop no longer keeps them, and each brief in `booked` (the
+   * briefs that booked one of them) that passed is open again.
+   */
+  | { type: 'RECORD_REJECT'; removed: readonly string[]; booked: readonly TaskId[] }
   | {
       type: 'RESTORE_BRIEF_PARK';
       step: Extract<StepRef, { kind: 'brief' }>;
@@ -104,7 +107,7 @@ export type StateAction =
       taskId: TaskId;
       revision: number;
       reason: ConsultReason;
-      answer: ConsultAnswer;
+      answer: ResolvedConsultAnswer;
       /** The seat that answered. */
       seat: ConsultSeat;
     }

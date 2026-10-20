@@ -343,6 +343,8 @@
 - A closed run whose final review ran but returned no verdict says `final review no verdict` instead of `final review not run`.
 - The phase times of a closed run add up to its `Ran` time.
 - With `review: task`, a required check that cannot run (for example, a test runner that is not installed) now stops the run with *Required checks cannot run* and tells you what to install. Before, the task review failed and offered *Fix again*, and each try cost a review.
+- A decision the planner accepts in its own words no longer counts as rejected and no longer costs a retry.
+- After a reject that leaves some of your edits in place, continuing the run builds again each brief whose files the reject put back, and the closed run lists only files that are on disk. This is also true when the run was halted on a later brief or on the final review: the halt ends, and continuing the run builds that brief again.
 
 ## [0.1.0] - 2026-08-07
 

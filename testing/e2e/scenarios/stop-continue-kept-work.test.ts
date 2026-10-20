@@ -236,19 +236,24 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     });
     const starts = events.flatMap((event) => (event.type === 'task_started' ? [event.ts] : []));
     const stop = events.find((event) => event.type === 'turn_interrupted');
-    const done = events.find((event) => event.type === 'task_completed');
+    const doneAt = events.findIndex((event) => event.type === 'task_completed');
+    const done = events[doneAt];
+    const beforeDone = events[doneAt - 1];
     const [firstStart, secondStart] = starts;
     if (
       firstStart === undefined ||
       secondStart === undefined ||
       stop === undefined ||
+      beforeDone === undefined ||
       done?.type !== 'task_completed'
     ) {
       throw new Error('expected a brief stopped once and completed after Continue');
     }
-    const worked = stop.ts - firstStart + (done.ts - secondStart);
-    expect(done.duration).toBeGreaterThanOrEqual(worked - 200);
-    expect(done.duration).toBeLessThan(done.ts - firstStart);
+    // The pass reads the brief's time after the event before it and before it publishes its own,
+    // so the second stretch ends between those two events.
+    const firstStretch = stop.ts - firstStart;
+    expect(done.duration).toBeGreaterThanOrEqual(firstStretch + (beforeDone.ts - secondStart));
+    expect(done.duration).toBeLessThanOrEqual(firstStretch + (done.ts - secondStart));
     await hydrateRun(readRunRecord({ projectDir: target.projectDir, sessionId: parked.sessionId }));
     const brief = groupEventsIntoSections(eventsStore.get().events).find(
       (section) => section.type === 'completed-task',
@@ -418,7 +423,7 @@ const CONFIRM_ANSWER = {
   answer: {
     diagnosis: 'The user asked for the default export.',
     action: 'confirm',
-    decisions: [DEFAULT_EXPORT_DECISION],
+    decisionIds: ['d1'],
   },
 };
 

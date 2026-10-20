@@ -92,7 +92,7 @@ describe('decision-confirm on the S6 shape', { timeout: 90_000 }, () => {
               answer: {
                 diagnosis: 'A change of how.',
                 action: 'confirm',
-                decisions: [DECISION],
+                decisionIds: ['d1'],
               },
             }
           : guidanceConsult();

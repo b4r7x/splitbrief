@@ -161,12 +161,13 @@ function scriptedValidator(
   return { formatChangedFiles: vi.fn().mockResolvedValue(undefined), checkRuns };
 }
 
-function confirm(decisions: readonly Decision[]): ConsultAnswer {
+/** A confirm that accepts the reported decisions with these ids (`d1`, `d2`, …). */
+function confirm(decisionIds: readonly string[]): ConsultAnswer {
   return {
     answer: {
       diagnosis: 'A change of how; every criterion stays.',
       action: 'confirm',
-      decisions: [...decisions],
+      decisionIds: [...decisionIds],
     },
   };
 }
@@ -330,7 +331,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const implementer = decidingImplementer([[HOW], [HOW], [HOW]]);
     const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
     const { planner, prompts } = scriptedPlanner({
-      confirm: () => confirm([HOW]),
+      confirm: () => confirm(['d1']),
       consult: guidance,
     });
     const { bus, events } = makeBusRecorder();
@@ -379,7 +380,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW], [HOW, HOW_TOO]]);
     const validator = scriptedValidator({ T001: [TS_ERROR, null] });
-    const confirmations = [[HOW], [HOW_TOO]];
+    const confirmations = [['d1'], ['d1']];
     const { planner, prompts } = scriptedPlanner({
       confirm: () => confirm(confirmations.shift() ?? []),
     });
@@ -398,8 +399,8 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(result.status).toBe('complete');
     const asked = prompts.filter(isDecisionConfirm);
     expect(asked).toHaveLength(2);
-    expect(asked[1]).toContain(HOW_TOO.what);
-    expect(asked[1]).not.toContain(`Decisions: ${HOW.what}`);
+    expect(asked[1]).toContain(`Decisions: d1: ${HOW_TOO.what}`);
+    expect(asked[1]).not.toContain(`d1: ${HOW.what}`);
     expect(result.state.plan?.decisions).toEqual([
       { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
       { text: `${HOW_TOO.what} — ${HOW_TOO.why}`, taskId: 'T001' },
@@ -414,7 +415,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const validator = scriptedValidator({});
     const diagnosis = 'Dropping the --json flag breaks the accepted outcome; keep the flag.';
     const { planner, prompts } = scriptedPlanner({
-      confirm: () => ({ answer: { diagnosis, action: 'confirm', decisions: [] } }),
+      confirm: () => ({ answer: { diagnosis, action: 'confirm', decisionIds: [] } }),
     });
     const { bus, events } = makeBusRecorder();
 
@@ -449,13 +450,12 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(result.state.plan?.decisions).toEqual([]);
   });
 
-  it('rejects a reported decision the confirm rewords, and keeps the reworded text out of the ledger', async () => {
+  it('rejects a reported decision whose id the confirm leaves out, and keeps it out of the ledger', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[WHAT], []]);
     const validator = scriptedValidator({});
-    const reworded = { what: 'Kept the --json flag', why: 'The criterion needs it' };
-    const { planner } = scriptedPlanner({ confirm: () => confirm([reworded]) });
+    const { planner } = scriptedPlanner({ confirm: () => confirm(['d2']) });
     const { bus, events } = makeBusRecorder();
 
     const result = await runLoop({
@@ -487,7 +487,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW, HOW_TOO]]);
     const validator = scriptedValidator({});
-    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm([HOW, HOW_TOO]) });
+    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm(['d1', 'd2']) });
     const { bus, events } = makeBusRecorder();
 
     const result = await runLoop({
@@ -567,7 +567,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     // fails typecheck; the one local retry passes. This is T005 of a real run.
     const implementer = decidingImplementer([[WHAT], [HOW], [HOW]]);
     const validator = scriptedValidator({ T001: [TS_ERROR, null] });
-    const confirms = [askUser, guideAnswer, () => confirm([HOW])];
+    const confirms = [askUser, guideAnswer, () => confirm(['d1'])];
     const { planner, prompts } = scriptedPlanner({
       confirm: () => (confirms.shift() ?? askUser)(),
     });
@@ -699,7 +699,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW]]);
     const validator = scriptedValidator({});
-    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm([HOW]) });
+    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm(['d1']) });
     const { bus, events } = makeBusRecorder();
 
     // An older session saved the retired run-wide counter as spent; it no longer bounds a brief.
@@ -945,7 +945,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       }),
     });
     const validator = scriptedValidator({});
-    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm([HOW]) });
+    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm(['d1']) });
 
     const result = await runLoop({
       projectDir,
@@ -1316,7 +1316,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const planner = makePlanner({
         typedCall: consultCallAnswering(() => {
           calls += 1;
-          if (calls > 1) return confirm([HOW_TOO]);
+          if (calls > 1) return confirm(['d1']);
           throw error('runner-call-failed', 'Planner escalation call failed', {
             role: 'escalation',
             status: 'failed',

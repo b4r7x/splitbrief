@@ -23,6 +23,7 @@ import {
   recordApiApplyEvidence,
   recordApiRevertEvidence,
   recordedApiCreatedPaths,
+  recordRejectEvidence,
 } from './task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -219,6 +220,33 @@ describe('recordSkippedTaskEvidence', () => {
     const updated = recordSkippedTaskEvidence({ ledger, task, reason: 'dep failed' });
     expect(updated.tasks[0]?.status).toBe('skipped');
     expect(updated.tasks[0]?.checks).toEqual([]);
+  });
+});
+
+describe('recordRejectEvidence', () => {
+  it('drops the files a reject put back and gives each brief that booked one its status', () => {
+    const first = makeTask({ id: 'T001', status: 'done' });
+    const second = makeTask({ id: 'T002', status: 'done' });
+    const ledger = [
+      { task: first, changedFiles: ['src/a.ts', 'src/b.ts'] },
+      { task: second, changedFiles: ['src/c.ts'] },
+    ].reduce(
+      (next, { task, changedFiles }) =>
+        recordLocalTaskEvidence({ ledger: next, task, status: 'done', changedFiles }),
+      createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [first, second] }),
+    );
+
+    const updated = recordRejectEvidence({
+      ledger,
+      removed: ['src/b.ts'],
+      tasks: [{ ...first, status: 'pending' }, second],
+    });
+
+    expect(updated.tasks.map((entry) => [entry.id, entry.status, entry.changedFiles])).toEqual([
+      ['T001', 'pending', ['src/a.ts']],
+      ['T002', 'done', ['src/c.ts']],
+    ]);
+    expect(updated.validationSummary).toMatchObject({ passed: 1 });
   });
 });
 

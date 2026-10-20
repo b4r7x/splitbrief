@@ -1108,25 +1108,21 @@ describe('requestConsult seats', () => {
     expect(seen.at(-1)?.lineages?.T003?.consultRecords.at(-1)?.seat).toBe('plan');
   });
 
-  it('applies and counts only the reported decisions a confirm accepts, in the implementer words', async () => {
+  it('applies and counts the reported decisions a confirm names by id, in the implementer words', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
-    const exact = { what: 'Used node:crypto', why: 'It is standard' };
+    const crypto = { what: 'Used node:crypto', why: 'It is standard' };
     const escaped = { what: 'Wrote the range as \\u0300-\\u036f escapes', why: 'They are exact' };
-    const reworded = { what: 'Kept the --json flag', why: 'The criterion needs it' };
-    const omitted = { what: 'Renamed the helper', why: 'The name was taken' };
-    const confirmed = [
-      exact,
-      { what: 'Wrote the range as ̀-ͯ escapes', why: 'They are exact' },
-      { what: 'Kept the --json output flag', why: 'The criterion needs it' },
-    ];
+    const flag = { what: 'Kept the --json flag', why: 'The criterion needs it' };
+    const renamed = { what: 'Renamed the helper', why: 'The name was taken' };
     const planner = consultPlanner(
       [
         {
           text: JSON.stringify({
             answer: {
-              diagnosis: 'Two keep the criteria.',
+              diagnosis:
+                'The node:crypto change and the kept --json output flag keep the criteria.',
               action: 'confirm',
-              decisions: confirmed,
+              decisionIds: ['d1', 'd3'],
             },
           }),
         },
@@ -1143,7 +1139,7 @@ describe('requestConsult seats', () => {
       filesChanged: [],
       touchedNotSuggested: [],
       notes: null,
-      decisions: [exact, escaped, reworded, omitted],
+      decisions: [crypto, escaped, flag, renamed],
     };
 
     const result = await requestConsult(
@@ -1151,9 +1147,13 @@ describe('requestConsult seats', () => {
       { ...request(state.tasks[0]!, 'deviation'), report },
     );
 
-    expect('answer' in result && result.answer.answer).toMatchObject({
+    expect(planner.prompts[0]).toContain(
+      `Decisions: d1: ${crypto.what} — ${crypto.why}; d2: ${escaped.what} — ${escaped.why}; d3: ${flag.what} — ${flag.why}; d4: ${renamed.what} — ${renamed.why}`,
+    );
+    expect('answer' in result && result.answer.answer).toEqual({
+      diagnosis: 'The node:crypto change and the kept --json output flag keep the criteria.',
       action: 'confirm',
-      decisions: [exact, escaped],
+      decisions: [crypto, flag],
     });
     expect(events.events.find((event) => event.type === 'consult_answered')).toMatchObject({
       action: 'confirm',
@@ -1161,7 +1161,41 @@ describe('requestConsult seats', () => {
       rejectedCount: 2,
     });
     expect(seen.at(-1)?.lineages?.T003?.consultRecords.at(-1)?.answer.answer).toMatchObject({
-      decisions: confirmed,
+      action: 'confirm',
+      decisions: [crypto, flag],
+    });
+  });
+
+  it('accepts no decision from a confirm that names no id, and counts every reported one rejected', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const crypto = { what: 'Used node:crypto', why: 'It is standard' };
+    const planner = consultPlanner(
+      [
+        {
+          text: JSON.stringify({
+            answer: { diagnosis: 'It keeps the criteria.', action: 'confirm', decisions: [crypto] },
+          }),
+        },
+      ],
+      true,
+    );
+    const state = consultState();
+    saveState({ projectDir, sessionId }, state);
+    const events = makeBusRecorder();
+    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, planner.planner, []);
+
+    const result = await requestConsult(
+      { ...ctx, bus: events.bus },
+      request(state.tasks[0]!, 'deviation'),
+    );
+
+    expect('answer' in result && result.answer.answer).toMatchObject({
+      action: 'confirm',
+      decisions: [],
+    });
+    expect(events.events.find((event) => event.type === 'consult_answered')).toMatchObject({
+      decisionCount: 0,
+      rejectedCount: 1,
     });
   });
 
@@ -1171,11 +1205,7 @@ describe('requestConsult seats', () => {
       [
         {
           text: JSON.stringify({
-            answer: {
-              diagnosis: 'Nothing was reported.',
-              action: 'confirm',
-              decisions: [{ what: 'Used node:crypto', why: 'It is standard' }],
-            },
+            answer: { diagnosis: 'Nothing was reported.', action: 'confirm', decisionIds: ['d1'] },
           }),
         },
       ],
