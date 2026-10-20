@@ -7,6 +7,7 @@ import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js'
 import { loadState } from '../../../src/core/state/persistence.js';
 import { readSessionLogWithDiagnostics } from '../../../src/core/sessions/log-reader.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
@@ -21,6 +22,7 @@ import {
   MARKER_SOURCE,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -126,4 +128,21 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100,
       data: expect.objectContaining({ switchId: state?.seatSwitches?.[0]?.switchId }),
     }),
   ]);
+  const { events } = await readRunEvents(ref);
+  const lines = transcriptText(events, 41)
+    .split('\n')
+    .map((line) => line.trim());
+  const switchAt = lines.indexOf('BUILD  OpenAI Codex CLI · GPT-5 Codex');
+  expect(switchAt).toBeGreaterThan(-1);
+  expect(lines[switchAt + 1]).toMatch(/^\S+ OpenAI Codex CLI · GPT-6\.1-Sol$/);
+  expect(lines[switchAt + 2]).toBe('high · automatic fallback');
+  const narrow = transcriptText(events, 34)
+    .split('\n')
+    .map((line) => line.trim());
+  const narrowAt = narrow.indexOf('BUILD  OpenAI Codex CLI');
+  expect(narrowAt).toBeGreaterThan(-1);
+  expect(narrow[narrowAt + 1]).toBe('GPT-5 Codex');
+  expect(narrow[narrowAt + 2]).toMatch(/^\S+ OpenAI Codex CLI$/);
+  expect(narrow[narrowAt + 3]).toBe('GPT-6.1-Sol · high');
+  expect(narrow[narrowAt + 4]).toBe('automatic fallback');
 });

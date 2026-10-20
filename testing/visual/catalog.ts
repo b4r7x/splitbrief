@@ -2722,7 +2722,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-seat-switched',
       title: 'Workflow · BUILD seat moved automatically to its fallback',
       surface: screenSurface('workflow'),
-      viewports: WIDE_VIEWPORTS,
+      viewports: [
+        ...WIDE_VIEWPORTS,
+        viewport({ cols: 64, rows: 20 }),
+        viewport({ cols: 56, rows: 18 }),
+      ],
       checkpoint: [
         {
           id: 'seat-switched',
