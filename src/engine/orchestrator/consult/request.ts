@@ -14,12 +14,14 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
 import { decisionLedgerText, rejectedDecisions } from '../../../core/state/machine.js';
+import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import type { EventBus } from '../../events/types.js';
 import type { Planner } from '../../planners/types.js';
 import type { Reviewer } from '../../reviewers/types.js';
 import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
+import { orderChangedFiles } from '../../change-detection.js';
 import { refusedCheckErrors } from '../../spec/plan-checks.js';
 import { buildConsultPrompt, type ConsultPromptInput } from '../../spec/prompts/consult.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
@@ -168,7 +170,8 @@ async function taskFileDiff(
 
 /**
  * The task's diff: what is on disk now against the lineage's start, the workspace when its
- * first brief dispatched. It holds every attempt, revision and split subtask of the task.
+ * first brief dispatched. It holds every attempt, revision and split subtask of the task. The
+ * brief's own files are diffed, in the brief's order; every other changed file is only named.
  * Null when no start is recorded (a task not dispatched yet, or an older state).
  */
 async function taskDiff(
@@ -176,7 +179,7 @@ async function taskDiff(
   state: WorkflowState,
   task: Task,
   ref: SessionRef,
-): Promise<ConsultPromptInput['diffs']> {
+): Promise<ConsultPromptInput['taskDiff']> {
   const start = state.lineages?.[lineageIdOf(task)]?.startSnapshot;
   if (start === undefined) return null;
   let files: string[];
@@ -186,18 +189,19 @@ async function taskDiff(
     // The diff is context for the answer; a workspace that cannot be read must not stop the call.
     return null;
   }
+  const briefFiles = files.filter((file) => isInDeclaredSet(file, task.suggestedFiles));
   const diffs: { path: string; diff: string }[] = [];
-  for (const file of files) {
+  for (const file of orderChangedFiles(briefFiles, task.suggestedFiles)) {
     const diff = await taskFileDiff(projectDir, start, file, ref);
     if (diff !== '') diffs.push({ path: file, diff });
   }
-  return diffs;
+  return { diffs, otherFiles: files.filter((file) => !briefFiles.includes(file)) };
 }
 
 function promptInput(
   state: WorkflowState,
   input: ConsultRequestInput,
-  diffs: ConsultPromptInput['diffs'],
+  taskDiff: ConsultPromptInput['taskDiff'],
   workspaceDir: string,
   seat: ConsultSeat,
 ): ConsultPromptInput {
@@ -209,7 +213,7 @@ function promptInput(
     plan: state.plan,
     task: input.task,
     revisions: lineage?.replacedParents ?? [],
-    diffs,
+    taskDiff,
     failedAttempts: lineage?.attemptFailures ?? [],
     failingOutput: input.failingOutput,
     report: input.report ?? null,
@@ -299,8 +303,8 @@ export async function requestConsult(
   };
 
   const seat = consultSeat(input.task, input.reason);
-  const diffs = await taskDiff(ctx.workspaceDir, ctx.state, input.task, ref);
-  const prompt = promptInput(ctx.state, input, diffs, ctx.workspaceDir, seat);
+  const diff = await taskDiff(ctx.workspaceDir, ctx.state, input.task, ref);
+  const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir, seat);
   const contract = answerContract(
     input.task,
     input.reason,

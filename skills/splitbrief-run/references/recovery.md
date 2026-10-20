@@ -72,7 +72,7 @@ When a bound is spent, halt as needs you and keep the work. Ask: continue with a
 Continuing grants 1 more consult and 4 more attempts, or 5 more planner decisions, and replays the brief as a retry with the last failing output.
 <!-- /generated -->
 
-The consult input includes the plan, task revisions, the task diff since the task started (every attempt, not only the latest), one line per failed attempt, the latest exact errors, report, earlier consults and other task statuses.
+The consult input includes the plan, task revisions, the task diff since the task started (every attempt, not only the latest: the diff of the brief's own files, and the names of the other files the task changed: the first 20, then a count of the rest), one line per failed attempt, the latest exact errors, report, earlier consults and other task statuses.
 Use this typed engine contract. Register no render checks despite their presence in the engine schema.
 
 <!-- generated: consult-contract -->
@@ -109,11 +109,13 @@ Use this typed engine contract. Register no render checks despite their presence
 
     ## Task Diff
 
-    What is on disk now against the start of this task: the changes of all its attempts, revisions and split subtasks, not only the latest attempt.
+    What is on disk now against the start of this task, for the files of this brief: the changes of all its attempts, revisions and split subtasks, not only the latest attempt.
 
     ```diff
     <the diff from the task's start to now>
     ```
+
+    This task also changed other files, not shown here: `<other changed file>`. Read these files in the run workspace.
 
     ## Failed Attempts
 

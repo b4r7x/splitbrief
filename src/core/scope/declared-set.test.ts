@@ -40,6 +40,16 @@ describe('matchesScopeEntry', () => {
       }
     }
   });
+
+  it('licenses a path with a space by its exact name', () => {
+    expect(matchesScopeEntry('docs/User Guide.md', 'docs/User Guide.md')).toBe(true);
+    expect(matchesScopeEntry('./src/a b/c.ts', 'src/a b/c.ts')).toBe(true);
+    expect(matchesScopeEntry('docs/User Guide.txt', 'docs/User Guide.md')).toBe(false);
+    const subject = task({ suggestedFiles: ['my notes.txt'] });
+    expect(undeclaredFiles(['my notes.txt', 'other notes.txt'], subject)).toEqual([
+      'other notes.txt',
+    ]);
+  });
 });
 
 describe('scopeEntryPatterns', () => {

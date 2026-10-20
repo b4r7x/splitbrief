@@ -65,9 +65,12 @@ function consultInput(overrides: Partial<ConsultPromptInput> = {}): ConsultPromp
     plan,
     task: TASK,
     revisions: [REVISION],
-    diffs: [
-      { path: 'src/greet.ts', diff: '+export function greet(name: string) { return name; }' },
-    ],
+    taskDiff: {
+      diffs: [
+        { path: 'src/greet.ts', diff: '+export function greet(name: string) { return name; }' },
+      ],
+      otherFiles: [],
+    },
     failingOutput: 'Error: expected "hello" but received "hi"',
     failedAttempts: [],
     report: {
@@ -139,8 +142,12 @@ describe('buildConsultPrompt', () => {
         { path: 'src/big.json', diff: `+${'y'.repeat(5_000_000)}TAIL-OF-BIG-DIFF` },
         { path: 'src/c.ts', diff: '+C-BODY' },
       ];
-      const empty = buildConsultPrompt(consultInput({ ...overrides, diffs: [] }));
-      const prompt = buildConsultPrompt(consultInput({ ...overrides, diffs }));
+      const empty = buildConsultPrompt(
+        consultInput({ ...overrides, taskDiff: { diffs: [], otherFiles: [] } }),
+      );
+      const prompt = buildConsultPrompt(
+        consultInput({ ...overrides, taskDiff: { diffs, otherFiles: [] } }),
+      );
 
       expect(prompt.length).toBeLessThan(empty.length + BOUNDS.consultDiffChars + 1_000);
       expect(prompt).toContain(small);
@@ -160,10 +167,13 @@ describe('buildConsultPrompt', () => {
       const prompt = buildConsultPrompt(
         consultInput({
           ...overrides,
-          diffs: [
-            { path: 'lib/cli/cli.js', diff: '+module.exports = run;' },
-            { path: 'test/cli.spec.js', diff: "+require('../lib/cli/cli');" },
-          ],
+          taskDiff: {
+            diffs: [
+              { path: 'lib/cli/cli.js', diff: '+module.exports = run;' },
+              { path: 'test/cli.spec.js', diff: "+require('../lib/cli/cli');" },
+            ],
+            otherFiles: [],
+          },
           failedAttempts: [
             {
               attempt: 1,
@@ -225,14 +235,52 @@ describe('buildConsultPrompt', () => {
   });
 
   it('says plainly when the task changed no file and when no task start was recorded', () => {
-    const unchanged = buildConsultPrompt(consultInput({ diffs: [] }));
-    const unrecorded = buildConsultPrompt(consultInput({ diffs: null }));
+    const unchanged = buildConsultPrompt(consultInput({ taskDiff: { diffs: [], otherFiles: [] } }));
+    const unrecorded = buildConsultPrompt(consultInput({ taskDiff: null }));
 
     expect(unchanged).toContain('This task has changed no file since it started.');
     expect(unrecorded).toContain(
       'No diff of this task is available. Read the files in the run workspace.',
     );
     expect(unrecorded).not.toContain('```diff');
+  });
+
+  it('shows the diff of the brief files whole and only names the other changed files', () => {
+    const otherFiles = Array.from(
+      { length: 300 },
+      (_, index) => `data/fixtures/item-${String(index).padStart(3, '0')}.txt`,
+    );
+    const prompt = buildConsultPrompt(
+      consultInput({
+        taskDiff: {
+          diffs: [{ path: 'scripts/gen-fixtures.js', diff: '+GEN-FIXTURES-BODY' }],
+          otherFiles,
+        },
+      }),
+    );
+
+    expect(prompt).toContain('for the files of this brief');
+    expect(prompt).toContain('+GEN-FIXTURES-BODY');
+    expect(prompt).not.toContain('The diff stops');
+    expect(prompt).toContain(
+      'This task also changed other files, not shown here: `data/fixtures/item-000.txt`',
+    );
+    expect(prompt).toContain('`data/fixtures/item-019.txt`, and 280 more.');
+    expect(prompt).not.toContain('data/fixtures/item-020.txt');
+    expect(prompt).toContain('Read these files in the run workspace.');
+  });
+
+  it('says in one line that the brief files did not change and still names the others', () => {
+    const prompt = buildConsultPrompt(
+      consultInput({ taskDiff: { diffs: [], otherFiles: ['data/a.txt', 'data/b.txt'] } }),
+    );
+
+    expect(prompt).toContain('The files of this brief have no change since this task started.');
+    expect(prompt).toContain(
+      'This task also changed other files, not shown here: `data/a.txt`, `data/b.txt`. Read these files in the run workspace.',
+    );
+    expect(prompt).not.toContain('```diff');
+    expect(prompt).not.toContain('This task has changed no file since it started.');
   });
 
   it('shows no failed attempts to a decision confirm', () => {
@@ -260,7 +308,7 @@ describe('buildConsultPrompt', () => {
       diff: `diff --git a/src/generated/file-${index}.json b/src/generated/file-${index}.json\n+${'z'.repeat(1_000)}`,
     }));
 
-    const prompt = buildConsultPrompt(consultInput({ diffs }));
+    const prompt = buildConsultPrompt(consultInput({ taskDiff: { diffs, otherFiles: [] } }));
 
     expect(prompt).toContain('src/generated/file-0.json');
     expect(prompt).not.toContain('src/generated/file-2001.json');
