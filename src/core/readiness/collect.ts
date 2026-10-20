@@ -116,12 +116,17 @@ export function applyRunnerPreparationChecks(
   report: ReadinessReport,
   runnerChecks: readonly ReadinessCheck[],
 ): ReadinessReport {
+  // A seat verdict that carries a readiness check as one of its warnings (a route with no
+  // credential) supersedes that check, so one fact is reported and counted once.
+  const restated = new Set(runnerChecks.flatMap((check) => check.metadata?.warnings ?? []));
   const sections = report.sections.map((section) =>
     section.id === 'runners'
       ? {
           ...section,
           checks: [
-            ...section.checks.filter((check) => !CLI_READINESS_CHECK_IDS.has(check.id)),
+            ...section.checks.filter(
+              (check) => !CLI_READINESS_CHECK_IDS.has(check.id) && !restated.has(check.id),
+            ),
             ...runnerChecks,
           ],
         }

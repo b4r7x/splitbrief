@@ -362,7 +362,6 @@ async function withPreparationPreflights(options: {
   const runnerChecks = collected.report.sections
     .filter((section) => section.id === 'runners')
     .flatMap((section) => section.checks);
-  const collectedCheckIds = new Set(runnerChecks.map((check) => check.id));
   const cliReadinessChecks = runnerChecks.filter((check) => CLI_READINESS_CHECK_IDS.has(check.id));
   const argVectorChecks = await collectArgVectorPreflightChecks({
     config,
@@ -395,13 +394,9 @@ async function withPreparationPreflights(options: {
             sameRunnerCause(check.runnerCause, admission.runnerCause),
         ),
     ),
-    // The consent replay reports every shell and agent seat, so admission adds the others;
-    // a route check the live probe already reported is not repeated.
+    // The consent replay reports every shell and agent seat, so admission adds the others.
     ...admissionChecks.filter(
-      (check) =>
-        check.metadata?.kind !== 'shell' &&
-        check.metadata?.kind !== 'agent' &&
-        !collectedCheckIds.has(check.id),
+      (check) => check.metadata?.kind !== 'shell' && check.metadata?.kind !== 'agent',
     ),
     ...argVectorChecks,
     ...consentChecks,

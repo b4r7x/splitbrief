@@ -184,7 +184,7 @@ describe('readiness formatting', () => {
   });
 
   it('promises start can continue only when every configured CLI runner is gated', () => {
-    const reportWith = (state: 'ready' | 'unverified') =>
+    const reportWith = (auth: 'authenticated' | 'unknown') =>
       buildReadinessReport({
         projectDir: '/tmp/project',
         config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
@@ -200,18 +200,66 @@ describe('readiness formatting', () => {
           dirtyFiles: ['src/edited.ts'],
           untrackedFiles: [],
         },
-        cliReadiness: [deriveCliReadiness(cliReadinessFactsFor(state, 'claude-code'))],
+        cliReadiness: [
+          deriveCliReadiness({ ...cliReadinessFactsFor('ready', 'claude-code'), auth }),
+        ],
       });
 
-    const gated = formatReadinessReport(reportWith('ready'));
+    const gated = formatReadinessReport(reportWith('authenticated'));
     expect(gated).toContain('Run readiness: ready with warnings (0 blockers, 1 warning)');
     expect(gated).not.toContain('headless start would be refused');
 
-    const ungated = formatReadinessReport(reportWith('unverified'));
+    const ungated = formatReadinessReport(reportWith('unknown'));
     expect(ungated).toContain(
       'headless start would be refused; use --allow-unverified-auth or complete verification — interactive start proceeds',
     );
-    expect(ungated).toContain('Fix: Verify Claude Code CLI against tested version');
+  });
+
+  it('names a headless refusal only for a sign-in the start gate cannot verify', () => {
+    const reportFor = (
+      runner: Parameters<typeof makeConfig>[0],
+      facts: Parameters<typeof deriveCliReadiness>[0],
+    ) =>
+      buildReadinessReport({
+        projectDir: '/tmp/project',
+        config: makeConfig(runner),
+        configLoad: {
+          state: 'loaded',
+          path: '/tmp/project/.splitbrief/config.yaml',
+          warnings: [],
+        },
+        packageScripts: { packageJsonExists: true, scripts: { test: 'vitest run' } },
+        repo: { isGitRepo: true, hasCommits: true, dirtyFiles: [], untrackedFiles: [] },
+        cliReadiness: [deriveCliReadiness(facts)],
+        cliRoutes: {
+          seatModels: new Map(),
+          catalogs: [{ tool: 'opencode', models: [{ id: 'ollama/llama3' }] }],
+        },
+      });
+    const refusal = 'headless start would be refused';
+
+    // OpenCode stores no credential and calls the Ollama set up in its own config: start admits it.
+    const configRouted = reportFor(
+      {
+        planner: { kind: 'cli', tool: 'opencode', model: 'ollama/llama3' },
+        implementer: { kind: 'cli', tool: 'opencode', model: 'ollama/llama3' },
+      },
+      {
+        ...cliReadinessFactsFor('unauthenticated', 'opencode'),
+        authChannel: 'provider-dependent',
+        providerAuth: { kind: 'empty' },
+      },
+    );
+    expect(configRouted.status).not.toBe('blocked');
+    expect(formatReadinessReport(configRouted)).not.toContain(refusal);
+
+    const signInUnknown = reportFor(
+      { planner: { kind: 'cli', tool: 'claude-code' } },
+      { ...cliReadinessFactsFor('ready', 'claude-code'), auth: 'unknown' },
+    );
+    expect(formatReadinessReport(signInUnknown)).toContain(
+      'No trusted readiness identity for claude-code: headless start would be refused; use --allow-unverified-auth',
+    );
   });
 
   it("a non-blocked report's output contains no `Start blocked:` line", () => {
@@ -230,7 +278,9 @@ describe('readiness formatting', () => {
         dirtyFiles: ['src/edited.ts'],
         untrackedFiles: [],
       },
-      cliReadiness: [deriveCliReadiness(cliReadinessFactsFor('unverified', 'claude-code'))],
+      cliReadiness: [
+        deriveCliReadiness({ ...cliReadinessFactsFor('ready', 'claude-code'), auth: 'unknown' }),
+      ],
     });
 
     expect(report.status).not.toBe('blocked');

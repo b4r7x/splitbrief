@@ -5,6 +5,7 @@ import type {
   ReadinessReport,
   ReadinessSection,
 } from './types.js';
+import { isUnverifiedAuth } from '../discovery/runner-evidence.js';
 import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import {
   cliReadinessCheckId,
@@ -51,15 +52,16 @@ export function flattenReadinessChecks(sections: ReadinessSection[]): ReadinessC
 }
 
 /**
- * Readiness checks for configured CLI runners whose probe did not reach
- * `ready`. Only a `ready` probe yields a trusted start gate, so a run started
- * with any of these has no trusted executable identity and the orchestrator
- * refuses it at init. Start must refuse here instead — even when the check is
- * only a warning — and each check already carries the tool's remediation.
+ * Readiness checks for configured CLI runners that a headless start refuses
+ * unless `--allow-unverified-auth` is passed: the probe found the tool usable,
+ * but no check proved its sign-in. An interactive start discloses them instead.
  */
 export function ungatedCliReadinessChecks(report: ReadinessReport): ReadinessCheck[] {
   return flattenReadinessChecks(report.sections).filter(
-    (check) => CLI_READINESS_CHECK_IDS.has(check.id) && check.metadata?.status !== 'ready',
+    (check) =>
+      CLI_READINESS_CHECK_IDS.has(check.id) &&
+      check.metadata?.status === 'unverified' &&
+      isUnverifiedAuth(check.metadata.auth),
   );
 }
 

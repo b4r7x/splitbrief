@@ -381,14 +381,21 @@ async function evaluateCli(
       ),
     };
   }
+  // The seat starts, but every call on a route with no credential is refused: the seat reads
+  // ready with warnings, and the warning code names the readiness route check it restates.
   const routeCheck = routeSignInCheck(candidate.slot, routeOf(evidence));
+  if (routeCheck !== undefined) {
+    warnings.push({ code: routeCheck.id, message: routeCheck.summary });
+  }
   return {
     kind: 'admitted',
     check:
       warnings.length > 0
-        ? warningCheck(candidate.slot, candidate.runner.kind, warnings, details)
+        ? {
+            ...warningCheck(candidate.slot, candidate.runner.kind, warnings, details),
+            ...(routeCheck !== undefined && { fix: routeCheck.fix }),
+          }
         : admittedCheck(candidate.slot, candidate.runner.kind, details),
-    ...(routeCheck !== undefined && { routeCheck }),
     gate: {
       kind: 'cli',
       slot: candidate.slot,

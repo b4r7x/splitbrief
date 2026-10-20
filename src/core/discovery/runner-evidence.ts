@@ -223,6 +223,11 @@ export function admitStart(options: StartAdmissionOptions): StartAdmission {
   return { kind: 'admitted' };
 }
 
+/** The sign-in fact a headless start refuses unless unverified auth was allowed. */
+export function isUnverifiedAuth(auth: unknown): auth is 'unknown' {
+  return auth === 'unknown';
+}
+
 /**
  * `unknown` is the honest steady state for a session credential no cheap check
  * can verify: a local status read or bridged-state presence proves a
@@ -242,7 +247,7 @@ function admitAuthentication(options: StartAdmissionOptions): StartAdmission | n
   const { auth } = options.evidence;
   if (auth === 'verified' || auth === 'not-required') return null;
   if (auth === 'missing' && options.route.kind === 'configured') return null;
-  if (auth !== 'unknown') {
+  if (!isUnverifiedAuth(auth)) {
     return { kind: 'denied', reason: { kind: 'authentication', fact: auth } };
   }
   if (options.interaction === 'interactive') {

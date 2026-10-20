@@ -392,22 +392,38 @@ describe('e2e: a BUILD route with no credential', { timeout: 240_000 }, () => {
     expect(() => readFileSync(claudeCalls)).toThrow();
   });
 
-  it('doctor reports the route as not signed in, once, with its sign-in step', async () => {
+  it('doctor reports BUILD as ready with warnings, with the route sign-in step once', async () => {
     const { target } = await routeFixture();
 
     const human = await cli(target, ['doctor'], { timeoutMs: 60_000 });
     const out = stripVTControlCharacters(human.stdout);
-    expect(out, human.stderr).toContain(`warning  ${ROUTE_WARNING}`);
-    expect(out).toContain(`Fix: ${SIGN_IN_FIX}`);
+    expect(out, human.stderr).toContain('warning  BUILD is ready with warnings.');
+    expect(out).not.toContain('BUILD is ready to start.');
     expect(out.split(ROUTE_WARNING)).toHaveLength(2);
+    expect(out.split(`Fix: ${SIGN_IN_FIX}`)).toHaveLength(2);
 
     const json = await cli(target, ['doctor'], { timeoutMs: 60_000, json: true });
     const record = JSON.parse(json.stdout.trim()) as {
-      report: { checks: { id: string; summary: string; remediation?: string }[] };
+      report: {
+        checks: {
+          id: string;
+          severity: string;
+          summary: string;
+          details?: string[];
+          remediation?: string;
+        }[];
+      };
     };
-    const routeChecks = record.report.checks.filter((check) => check.summary === ROUTE_WARNING);
+    const routeChecks = record.report.checks.filter(
+      (check) => check.summary === ROUTE_WARNING || check.details?.includes(ROUTE_WARNING),
+    );
     expect(routeChecks).toEqual([
-      expect.objectContaining({ id: 'runners.route.implementer.default' }),
+      expect.objectContaining({
+        id: 'runners.preparation.implementer.default',
+        severity: 'warning',
+        summary: 'BUILD is ready with warnings.',
+        remediation: SIGN_IN_FIX,
+      }),
     ]);
   });
 });
@@ -491,6 +507,24 @@ describe('e2e: a local-only OpenCode that stores no credential', { timeout: 240_
       );
     },
   );
+
+  it('doctor does not say that a start without the TUI would be refused', async () => {
+    const { target } = await routeFixture({ localOnly: true });
+    // PLAN on the same OpenCode, so no other seat blocks the report and hides its advisory.
+    writeConfig(target.projectDir, {
+      ...loadConfig(target.projectDir).config,
+      planner: { kind: 'cli', tool: 'opencode', model: LOCAL_MODEL },
+    });
+
+    const human = await cli(target, ['doctor'], { timeoutMs: 60_000 });
+    const out = stripVTControlCharacters(human.stdout);
+    expect(out, human.stderr).toMatch(/^Run readiness: ready/m);
+    expect(out).toContain(
+      'OpenCode CLI is installed, trusted, compatible, and stores no credential',
+    );
+    expect(out).not.toContain('headless start would be refused');
+    expect(out).not.toContain('--allow-unverified-auth');
+  });
 
   it.each([
     { label: 'saved', savedList: true, projectModel: false },
