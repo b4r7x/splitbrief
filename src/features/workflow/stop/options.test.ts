@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, onTestFinished } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -9,6 +9,10 @@ import { stopStore } from '../../../stores/workflow/stop.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { taskId } from '../../../core/schemas/task.js';
+import {
+  activeApply,
+  trackActiveApply,
+} from '../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import {
   makeReviewFixInsertedEvents,
   makeTaskComplete,
@@ -279,6 +283,17 @@ describe('readStopMenuRows during an unfinished Apply', () => {
     });
 
     expect(readStopMenuRows().map((row) => row.id)).toEqual(['stop-now']);
+  });
+
+  it('offers neither Stop now nor End run while this process applies the run live', async () => {
+    const apply = Promise.withResolvers<void>();
+    void trackActiveApply(apply.promise);
+    onTestFinished(async () => {
+      apply.resolve();
+      await activeApply();
+    });
+
+    expect(readStopMenuRows().map((row) => row.id)).toEqual(['leave']);
   });
 });
 

@@ -12,6 +12,7 @@ import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { wrappedProseSegments } from '../conversation-rows/row-format/text.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { activeApply } from '../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { changedFileCount } from '../closed/projections.js';
 import { stopKeptFiles } from './copy.js';
 
@@ -156,8 +157,9 @@ export function readStopMenuRows(): StopRow[] {
     ];
   const route = routerStore.get();
   const atRest = route.screen === 'workflow' && route.execution.kind === 'at-rest';
-  // A process that holds the run is applying it or driving it: nothing here may continue or end it.
-  if (atRest && route.run.status.kind === 'running')
+  // A process that holds the run is applying it or driving it, and this process's Apply cannot be
+  // cut: nothing here may continue, stop or end it.
+  if ((atRest && route.run.status.kind === 'running') || activeApply() !== undefined)
     return [
       {
         id: 'leave',

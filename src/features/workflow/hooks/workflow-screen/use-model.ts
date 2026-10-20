@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent } from 'react';
+import { useEffect, useEffectEvent, useSyncExternalStore } from 'react';
 import { existsSync, watchFile, unwatchFile, type Stats } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -21,7 +21,10 @@ import { createReviewInputHandler, type ReviewInputEffects } from '../../review-
 import { useWorkflowKeys } from '../use-keys.js';
 import { resolveInputHint } from '../../input-hints.js';
 import { continueRun } from '../../../../engine/orchestrator/run/continue.js';
-import { activeApply } from '../../../../engine/orchestrator/session-lifecycle/shutdown.js';
+import {
+  activeApply,
+  onActiveApplyChange,
+} from '../../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { skillsStore } from '../../../../stores/project/skills.js';
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
@@ -37,7 +40,7 @@ import { departureStore } from '../../../../stores/workflow/departure.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
 import { useStores } from '../../../../stores/use-stores.js';
-import { applyRunning, atRestComposer, atRestRailStages } from '../../at-rest.js';
+import { applyComposer, atRestComposer, atRestRailStages } from '../../at-rest.js';
 import { deriveSummaryView } from '../../closed/view-model.js';
 import { hydrateResume } from '../../resume-hydration.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
@@ -161,13 +164,14 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
 
   const queuedDeparture = departureStore.use((state) => state?.kind ?? null);
   // The record reads `running` for any process that applies the run; only this process's Apply
-  // holds a departure back, so only it shows the wait.
-  const applying =
-    atRestRecord !== undefined && applyRunning(atRestRecord) && activeApply() !== undefined;
+  // holds a departure back, so only it shows the wait, live or at rest.
+  const applying = useSyncExternalStore(onActiveApplyChange, () => activeApply() !== undefined);
   const composer =
-    atRestRecord === undefined
-      ? null
-      : atRestComposer(atRestRecord, applying ? { queued: queuedDeparture } : undefined);
+    atRestRecord !== undefined
+      ? atRestComposer(atRestRecord, applying ? { queued: queuedDeparture } : undefined)
+      : applying
+        ? applyComposer(queuedDeparture)
+        : null;
   const closedView =
     atRestRecord === undefined ? null : deriveSummaryView({ record: atRestRecord });
   const closed = atRestRecord !== undefined && atRestRecord.status.kind === 'closed';
@@ -216,7 +220,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     promptPending,
     /** The run on screen, at rest; undefined while a local process is driving it. */
     atRestRecord,
-    /** Whether this process's Apply writes the run on screen at rest. */
+    /** Whether this process's Apply writes the run on screen. */
     applying,
     closed,
     closedView,
@@ -231,9 +235,11 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
         ? composer?.continuable === true
           ? () => continueAtRest(plainUserMessage(''))
           : requestLeaveSession
-        : parked
-          ? () => requestResume(plainUserMessage(''))
-          : undefined,
+        : applying
+          ? requestLeaveSession
+          : parked
+            ? () => requestResume(plainUserMessage(''))
+            : undefined,
     inputHint,
     commandsOnly: composer?.commandsOnly ?? false,
     questionEpoch: inputMode.questionEpoch,

@@ -3172,6 +3172,39 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'transcript', title: 'Implementation transcript' },
       ],
     }),
+    // The Re-run Apply above, while it writes: live, in the process that drives the run.
+    defineScenario({
+      id: 'workflow-live-applying',
+      title: 'Workflow · a live Re-run Apply while it writes to the checkout',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'live-applying',
+        title: 'Live Apply running',
+        kind: 'implementation',
+        marker: 'Applying to your checkout',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-live-applying-home-queued',
+      title: 'Workflow · Esc during a live Apply waits for it before going home',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'live-applying-home-queued',
+        title: 'Home queued behind a live Apply',
+        kind: 'implementation',
+        marker: 'Returns home',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
     // The same halt read back later: the transcript rows the halt wrote and the byline naming it.
     defineScenario({
       id: 'workflow-at-rest-left-isolation',

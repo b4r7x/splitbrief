@@ -135,13 +135,20 @@ export function atRestComposer(
       record.status.kind === 'ready-to-apply'
         ? AT_REST_PLACEHOLDER.ready
         : apply !== undefined
-          ? apply.queued === 'quit'
-            ? AT_REST_PLACEHOLDER.quitting
-            : AT_REST_PLACEHOLDER.applying
+          ? applyComposer(apply.queued).placeholder
           : !continuable
             ? AT_REST_PLACEHOLDER.closed
             : record.status.kind === 'open' && record.status.stop.on.kind === 'question'
               ? AT_REST_PLACEHOLDER.inputRequired
               : AT_REST_PLACEHOLDER.open,
+  };
+}
+
+/** The composer behind this process's Apply, live or at rest: commands only, Enter queues home. */
+export function applyComposer(queued: DepartureKind | null): AtRestComposer {
+  return {
+    continuable: false,
+    commandsOnly: true,
+    placeholder: queued === 'quit' ? AT_REST_PLACEHOLDER.quitting : AT_REST_PLACEHOLDER.applying,
   };
 }

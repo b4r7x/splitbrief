@@ -20,6 +20,8 @@ import {
   buildApplyPartialRecoveryIssue,
 } from '../recovery/builders/apply.js';
 import { removeClosedRunWorkspace } from '../run/close.js';
+import { heldLiveness } from '../run/liveness.js';
+import { trackActiveApply } from '../session-lifecycle/shutdown.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
 import { writeConfinedEntry } from '../approval/file-snapshots/entry.js';
@@ -94,12 +96,31 @@ export async function haltCutApply(
   );
 }
 
-export async function runApply(input: {
+type ApplyInput = {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
   state: WorkflowState;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
   overrideConfirmed?: boolean | undefined;
-}): Promise<ApplyResult> {
+};
+
+/**
+ * Every Apply, live or at rest, is this process's active Apply until it settles. An Apply that
+ * sends the run back to review hands it on; any other end also ends the run, so it stays active
+ * until the run releases its liveness, and a queued departure or a shutdown never cuts the run's
+ * last writes.
+ */
+export function runApply(input: ApplyInput): Promise<ApplyResult> {
+  const applying = applyRun(input);
+  void trackActiveApply(
+    applying.then(
+      (result) => (result.outcome === 'review' ? undefined : heldLiveness(input.wctx)),
+      () => heldLiveness(input.wctx),
+    ),
+  );
+  return applying;
+}
+
+async function applyRun(input: ApplyInput): Promise<ApplyResult> {
   const { wctx, setTrackedState } = input;
   let { state } = input;
   let retrying = false;

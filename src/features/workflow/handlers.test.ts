@@ -622,4 +622,12 @@ describe('departure while this process applies the run at rest', () => {
     expect(exit).toHaveBeenCalledTimes(1);
     expect(routerStore.get().screen).toBe('workflow');
   });
+
+  it('keeps a home queued behind the Apply when the run loop that drove it tears down', async () => {
+    requestLeaveSession();
+    clearAllHandlers();
+
+    await settle(appliedState());
+    expect(routerStore.get().screen).toBe('home');
+  });
 });

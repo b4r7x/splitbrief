@@ -53,22 +53,36 @@ export async function shutdownWorkflow(opts: WithShutdownHandlersOpts): Promise<
 
 let activeWorkflowShutdown: (() => Promise<void>) | undefined;
 let activeApplyRun: Promise<void> | undefined;
+const activeApplyListeners = new Set<() => void>();
+
+function setActiveApplyRun(run: Promise<void> | undefined): void {
+  activeApplyRun = run;
+  for (const listener of activeApplyListeners) listener();
+}
 
 /**
- * Registers this process's at-rest Apply until `run` settles. Apply cannot be cut safely, so
- * shutdown waits for it. A second Apply joins the first rather than replacing it.
+ * Registers this process's Apply until `run` settles. Apply cannot be cut safely, so shutdown
+ * waits for it. A second Apply joins the first rather than replacing it.
  */
 export function trackActiveApply<T>(run: Promise<T>): Promise<T> {
   const settled: Promise<void> = Promise.allSettled([activeApplyRun, run]).then(() => {
-    if (activeApplyRun === settled) activeApplyRun = undefined;
+    if (activeApplyRun === settled) setActiveApplyRun(undefined);
   });
-  activeApplyRun = settled;
+  setActiveApplyRun(settled);
   return run;
 }
 
-/** The at-rest Apply this process runs, resolving (never rejecting) once it settles; else `undefined`. */
+/** The Apply this process runs, resolving (never rejecting) once it settles; else `undefined`. */
 export function activeApply(): Promise<void> | undefined {
   return activeApplyRun;
+}
+
+/** Calls `listener` each time this process starts or ends an Apply; returns the unsubscribe. */
+export function onActiveApplyChange(listener: () => void): () => void {
+  activeApplyListeners.add(listener);
+  return () => {
+    activeApplyListeners.delete(listener);
+  };
 }
 
 export async function awaitActiveWorkflowShutdown(): Promise<void> {

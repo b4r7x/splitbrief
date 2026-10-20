@@ -1545,4 +1545,45 @@ describe('WorkflowScreen when the final review passes', () => {
     for (const frame of ui.frames) expect(header(frame)).not.toContain('done');
     ui.unmount();
   });
+
+  it('says Apply is writing while Re-run Apply writes live after an Apply halt', async () => {
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    navigatePreparedWorkflow(projectDir, 'live apply');
+    const apply = Promise.withResolvers<void>();
+    onTestFinished(async () => {
+      apply.resolve();
+      await activeApply();
+    });
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_resumed',
+        ts: FIXED_TS,
+        phase: 'complete',
+        inProcess: true,
+      });
+      await trackActiveApply(apply.promise);
+      return makeSummary({ feature: 'live apply' });
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 120, rows: 40 },
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Applying to your checkout · 0:00');
+    });
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain('/ for a command · ⏎ for home when Apply finishes…');
+    expect(frame).toContain('esc home');
+    expect(frame).not.toContain('esc stop options');
+    const route = routerStore.get();
+    expect(route.screen === 'workflow' && route.execution.kind).toBe('local');
+
+    apply.resolve();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).not.toContain('Applying to your checkout');
+    });
+    ui.unmount();
+  });
 });
