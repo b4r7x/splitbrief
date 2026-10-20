@@ -41,11 +41,11 @@ import {
   setQueueHandler,
   setResumeHandler,
   clearAllHandlers,
-  cancelBoundaryPause,
   consumeBoundaryInterrupt,
   consumeBoundaryPause,
-  consumeSeatChange,
+  landBoundaryPause,
   requestSeatChangeAtBoundary,
+  spendSeatChange,
 } from '../handlers.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
@@ -72,9 +72,37 @@ import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';
 import type { UseRunContinueResult } from './use-run-continue.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { CrewSeatId } from '../../../core/crew/identity.js';
+import { assertNever } from '../../../utils/type-guards.js';
 
 export type RunWorkflowFn = typeof runWorkflow;
 export type PrepareExecutionFn = typeof prepareExecution;
+
+/**
+ * The config a seat swap builds on: the saved seats, so a seat saved on another role while the
+ * halt waits is kept, with the halted seat as the run has it, the tool the swap leaves.
+ */
+function swapBaseConfig(saved: Config, run: Config, seat: CrewSeatId): Config {
+  switch (seat) {
+    case 'plan':
+      return { ...saved, planner: run.planner };
+    case 'review':
+      return { ...saved, reviewer: run.reviewer ?? run.planner };
+    case 'build': {
+      const { implementerProfiles: _savedProfiles, ...seats } = saved;
+      return {
+        ...seats,
+        implementer: run.implementer,
+        ...(run.implementerProfiles !== undefined && {
+          implementerProfiles: run.implementerProfiles,
+        }),
+      };
+    }
+    default:
+      return assertNever(seat);
+  }
+}
 
 function isWorkflowAborted(controller: AbortController, ref: { current: boolean }): boolean {
   return controller.signal.aborted || ref.current;
@@ -249,22 +277,20 @@ export function useRunLoop({
         seatIdentitiesFromConfig(configOfRun),
         seatIdentitiesFromConfig(config),
       );
-      if (changed.length > 0) {
-        const revision = configStore.get().revision?.rawSha256 ?? '';
-        for (const change of changed) requestSeatChangeAtBoundary(change.seat, revision);
-      }
+      if (changed.length > 0) requestSeatChangeAtBoundary();
     };
     const offConfig = configStore.subscribe(() => {
       if (lifecycleStore.get().status === 'running' && recoveryNoticeStore.get().issue === null)
         requestSeatChanges();
     });
-    let seatChangedAtBoundary = false;
+    let seatChangedAtBoundary: 'continue' | 'stop' | undefined;
     const promptCallbacks = buildPromptCallbacks({ inputMode, abortedRef, controller });
     const callbacks: OrchestratorCallbacks = {
       ...promptCallbacks,
       onContinuationNeeded: async (partial, at, kept) => {
-        if (at === 'boundary' && consumeSeatChange()) {
-          seatChangedAtBoundary = true;
+        const landed = at === 'boundary' ? landBoundaryPause() : 'park';
+        if (landed !== 'park') {
+          seatChangedAtBoundary = landed;
           controller.abort();
           return plainUserMessage('');
         }
@@ -286,6 +312,7 @@ export function useRunLoop({
         if (stateForRun?.pendingRecovery !== undefined && !staleHalt) {
           const promptPendingRecovery = createRecoveryDriver({
             prepared: preparedForRun,
+            configOfRun,
             inputMode,
             abortedRef,
             retentionNoticeHandled,
@@ -342,15 +369,16 @@ export function useRunLoop({
         // tool that can no longer run cannot block the move away from it.
         if (switchSeat !== undefined && stateForRun !== undefined) {
           const swappedSeat = stateForRun.pendingRecovery?.switchSeat?.seat;
-          // The revision the swap is about to write against: a manual change to the same seat
-          // recorded at a newer one is not this swap's own and must win, so it is left standing.
-          const swapRevision = configStore.get().revision?.rawSha256 ?? '';
+          const savedConfig = configStore.get().config;
           const swapped = await applyOfferedSeatSwap({
             choice: switchSeat,
             projectDir: session.ref.projectDir,
             sessionId: session.ref.sessionId,
             bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }),
-            config: preparedForRun.config,
+            config:
+              savedConfig === null || swappedSeat === undefined
+                ? preparedForRun.config
+                : swapBaseConfig(savedConfig, preparedForRun.config, swappedSeat),
             prepared: preparedForRun,
             savedState: stateForRun,
             signal: controller.signal,
@@ -359,12 +387,8 @@ export function useRunLoop({
               preparedForRun = swappedPrepared;
               configOfRun = swappedPrepared.config;
               configStore.refreshFromExecution(session.ref.projectDir, swappedPrepared.config);
-              if (
-                swappedSeat !== undefined &&
-                consumeSeatChange({ seat: swappedSeat, configRevision: swapRevision })
-              ) {
-                cancelBoundaryPause();
-              }
+              // The swap prepared from the saved config, so it took every seat saved before it.
+              if (swappedSeat !== undefined) spendSeatChange();
             },
           });
           switchSeat = undefined;
@@ -392,12 +416,23 @@ export function useRunLoop({
 
         // A run started here was prepared to allocate its session, and that preparation starts a
         // session only once. Every later entry continues the session, so it is admitted again as a
-        // resume before it re-enters the engine.
-        if (preparedForRun.purpose === 'new-workflow' && stateForRun !== undefined) {
+        // resume before it re-enters the engine. A seat saved since the run was prepared is
+        // admitted here on any re-entry, from the saved config, so the run continues on it.
+        const savedConfig = configStore.get().config;
+        const seatsSaved =
+          savedConfig !== null &&
+          seatIdentityChanges(
+            seatIdentitiesFromConfig(configOfRun),
+            seatIdentitiesFromConfig(savedConfig),
+          ).length > 0;
+        if (
+          stateForRun !== undefined &&
+          (preparedForRun.purpose === 'new-workflow' || seatsSaved)
+        ) {
           const reprepared = await prepareExecutionFn({
             existingSession: session.ref,
             feature: stateForRun.feature,
-            effectiveConfig: preparedForRun.config,
+            effectiveConfig: seatsSaved ? savedConfig : preparedForRun.config,
             policy: runResumePolicy(preparedForRun.runtime),
             signal: controller.signal,
             resumeState: stateForRun,
@@ -420,6 +455,11 @@ export function useRunLoop({
             return;
           }
           preparedForRun = reprepared.execution;
+          // The saved seats are taken now, so a change requested for them is spent.
+          if (seatsSaved) {
+            configOfRun = reprepared.execution.sourceConfig;
+            spendSeatChange();
+          }
         }
 
         const storeStreamingSink: StreamingSink = {
@@ -454,7 +494,7 @@ export function useRunLoop({
         if (abortedRef.current) return;
         if (controller.signal.aborted) {
           if (stopStore.get().intent === 'end-run') await finishStoppedRun();
-          else if (seatChangedAtBoundary) {
+          else if (seatChangedAtBoundary === 'continue') {
             stopStore.reset();
             continueAtRest?.(await settleRun(session.ref, false));
           } else await settleRun(session.ref, true);

@@ -264,6 +264,8 @@ An automatic switch that resolves a recovery shows two transcript blocks. The fi
 
 A switch does not write the session's `seats.json`. The next resume reconciles `seats.json` against the config before it publishes `workflow_resumed`. The engine checks each changed seat against the `seat_switched` events since the last `workflow_started` or `workflow_resumed`. If the latest switch for that seat records the current config, the engine records nothing. A config change between runs is recorded as a `seat_switched` event with the cause `crew changed`: the transcript shows one seat row, and the review packet lists it under Recovery Decisions.
 
+A seat saved in Settings or with `/crew` while the halt waits is used when the run goes on, also after you open the run again: Try again or a correction runs the halted step on it, recorded as `crew changed`. Change <SEAT> tool switches the seat to the row you take in its picker, the saved one included; Escape keeps the halt and the saved seat. A seat saved on another role stays as saved.
+
 History replay reads the recorded `auto` field. Switch rows that still need the cause use `formatSeatSwitchCause` in `src/core/recovery/headline.ts`; folded Recovery rows use the prompted headline.
 
 An abort, a refused admission or a conflict keeps the halt pending. A conflict reads `config changed meanwhile · the halt stays`. A project with no `config.yaml` has no revision to check. Its switch commits with no file write, and the switched config travels in memory.

@@ -17,6 +17,7 @@ import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome as createTrustHome } from '#testing/helpers/trust-home.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
@@ -198,7 +199,7 @@ async function codexSeatFixture(haltedCallWrote: boolean, implementerModel: stri
 }
 
 async function codexHaltFixture(haltedCallWrote = false, implementerModel = PRIMARY_MODEL) {
-  const { target, codexCalls, claudeCalls } = await codexSeatFixture(
+  const { target, codexCalls, claudeCalls, codexHold } = await codexSeatFixture(
     haltedCallWrote,
     implementerModel,
   );
@@ -207,7 +208,7 @@ async function codexHaltFixture(haltedCallWrote = false, implementerModel = PRIM
   const sessions = readdirSync(sessionsRoot(target.projectDir));
   expect(sessions).toHaveLength(1);
   const sessionId = sessions[0] ?? '';
-  return { target, halted, sessionId, codexCalls, claudeCalls, options };
+  return { target, halted, sessionId, codexCalls, claudeCalls, codexHold, options };
 }
 
 function recordedCalls(callsPath: string): unknown[] {
@@ -443,6 +444,336 @@ describe('e2e: seat down switched from the recovery menu', { timeout: 150_000 },
       expect(shown).not.toContain('Finishing T001');
       expect(intents).not.toContain('pause-after-brief');
     } finally {
+      screen.unmount();
+    }
+  });
+
+  it.each([
+    ['BUILD', (current: Config) => claudeOnBuild(current), ['\r', '\r']],
+    [
+      'REVIEW',
+      (current: Config): Config => ({
+        ...current,
+        reviewer: { kind: 'cli', tool: 'codex', model: PRIMARY_MODEL },
+      }),
+      ['\u001B[B', '\r', '\r'],
+    ],
+  ] as const)(
+    'starts the next brief with no pause when a %s seat saved under the brief is taken by the swap',
+    async (_label, save, keys) => {
+      const { target, codexHold } = await codexHaltFixture();
+      vi.stubGlobal('fetch', async () => {
+        throw new Error('Network disabled in seat switch E2E');
+      });
+      await trustDeclaredRunners({
+        projectDir: target.projectDir,
+        config: loadConfig(target.projectDir).config,
+      });
+      let engineCalls = 0;
+      const { screen, runWorkflow: engine } = await openHaltedRun(target, {
+        heading: 'Seat down',
+        prepare: ({ ref, state }) => preparedResume(ref, state),
+        runWorkflow: (opts) => {
+          engineCalls += 1;
+          return engineCalls === 1 ? runWorkflow(opts) : heldUntilAborted(opts.signal);
+        },
+      });
+      const frame = () => stripAnsiStyles(screen.lastFrame());
+      const press = async (key: string) => {
+        screen.stdin.write(key);
+        await flushEffects();
+        await tick(100);
+      };
+      try {
+        // Try again: the retried codex call waits on the hold, so the brief runs while the seat is saved.
+        writeFileSync(codexHold, '');
+        await press('\u001B[A');
+        await press('\r');
+        await vi.waitFor(() => expect(frame()).toContain('Run continued'));
+        expect(engine).toHaveBeenCalledTimes(1);
+        const current = configStore.get().config;
+        if (current === null) throw new Error('the screen loaded no config');
+        const saved = await configStore.save(save(current));
+        expect(saved.kind).toBe('saved');
+        await vi.waitFor(() => expect(frame()).toContain('Pause requested'));
+        rmSync(codexHold);
+
+        // The same brief halts with Seat down on BUILD, and Change BUILD tool takes a row.
+        await vi.waitFor(() => expect(frame()).toContain('Change BUILD tool'), { timeout: 60_000 });
+        await press('\r');
+        await vi.waitFor(() => expect(frame()).toContain('BUILD · tool, model, effort'));
+        await press('\u0012');
+        await vi.waitFor(() => expect(frame()).toContain('claude-opus-5-5'), { timeout: 30_000 });
+        for (const key of keys) await press(key);
+        await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(2), { timeout: 60_000 });
+        await tick(200);
+
+        const run = engine.mock.calls[1]?.[0].prepared.config;
+        expect(run?.implementer).toMatchObject({ kind: 'cli', tool: 'claude-code' });
+        expect(run?.reviewer).toEqual(configStore.get().config?.reviewer);
+        // The swap took every seat saved under the brief: no pause waits at its boundary.
+        expect(stopStore.get().intent).toBe('none');
+        expect(lifecycleStore.get().status).toBe('running');
+        expect(frame()).not.toContain('Pause requested');
+      } finally {
+        screen.unmount();
+      }
+    },
+  );
+});
+
+/** Claude Code saved on BUILD: the tool the halt offers. */
+function claudeOnBuild(current: Config): Config {
+  return {
+    ...current,
+    implementer: {
+      kind: 'cli',
+      tool: 'claude-code',
+      model: SWITCHED_MODEL,
+      contextLength: 200_000,
+    },
+  };
+}
+
+describe('e2e: a seat saved while the Seat down halt waits', { timeout: 150_000 }, () => {
+  /** The CLI halt opened on the screen, with `save` written while the halt waits. */
+  async function haltWithSavedSeat(
+    save: (current: Config) => Config = claudeOnBuild,
+    engineFn: RunWorkflowFn = runWorkflow,
+  ) {
+    const { target, sessionId, codexCalls, claudeCalls } = await codexHaltFixture();
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('Network disabled in seat switch E2E');
+    });
+    await trustDeclaredRunners({
+      projectDir: target.projectDir,
+      config: loadConfig(target.projectDir).config,
+    });
+    const { screen, runWorkflow: engine } = await openHaltedRun(target, {
+      heading: 'Seat down',
+      prepare: ({ ref, state }) => preparedResume(ref, state),
+      runWorkflow: engineFn,
+    });
+    const frame = () => stripAnsiStyles(screen.lastFrame());
+    const press = async (key: string) => {
+      screen.stdin.write(key);
+      await flushEffects();
+      await tick(100);
+    };
+    const intents: string[] = [];
+    const offStop = stopStore.subscribe(() => intents.push(stopStore.get().intent));
+    const firstFrame = screen.frames.length;
+    const current = configStore.get().config;
+    if (current === null) throw new Error('the screen loaded no config');
+    const saved = await configStore.save(save(current));
+    expect(saved.kind).toBe('saved');
+    await flushEffects();
+    const ref = { projectDir: target.projectDir, sessionId };
+    /** What the run did after the save: it ran once, on the saved seat, and passed its brief. */
+    const expectRanOnSavedSeat = async () => {
+      await vi.waitFor(
+        () => {
+          const now = loadState(ref);
+          const seen = { halt: now?.pendingRecovery?.reason, codex: recordedCalls(codexCalls) };
+          expect(now?.phase, JSON.stringify(seen)).toBe('complete');
+        },
+        { timeout: 60_000 },
+      );
+      offStop();
+      const state = loadState(ref);
+      expect(engine).toHaveBeenCalledTimes(1);
+      expect(engine.mock.calls[0]?.[0].prepared.config.implementer).toMatchObject({
+        kind: 'cli',
+        tool: 'claude-code',
+        model: SWITCHED_MODEL,
+      });
+      expect(state?.pendingRecovery).toBeUndefined();
+      expect(state?.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
+      expect(recordedCalls(codexCalls)).toEqual([{ model: PRIMARY_MODEL }]);
+      expect(recordedCalls(claudeCalls)).toEqual([
+        { model: SWITCHED_MODEL, prompt: expect.stringContaining(GREET_FILE) },
+      ]);
+      const shown = screen.frames.slice(firstFrame).map(stripAnsiStyles).join('\n');
+      expect(shown).not.toContain('Pause requested');
+      expect(shown).not.toContain('Finishing T001');
+      expect(intents).not.toContain('pause-after-brief');
+      const { events } = await readRunEvents(ref);
+      const switches = events.filter((event) => event.type === 'seat_switched');
+      return { state, switches };
+    };
+    /** Change BUILD tool, then `keys` take a Claude Code model row in the picker. */
+    const pickClaudeInPicker = async (keys: readonly string[]) => {
+      await press('\r');
+      await vi.waitFor(() => expect(frame()).toContain('BUILD · tool, model, effort'));
+      // This screen opened without the startup detection, so the picker reads the tools now.
+      await press('\u0012');
+      // The saved seat already reads Sonnet 5.5, so wait for a model row of the refreshed list.
+      await vi.waitFor(() => expect(frame()).toContain('claude-opus-5-5'), { timeout: 30_000 });
+      for (const key of keys) await press(key);
+      await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
+    };
+    /** Change BUILD tool, then the picker closed with Escape and no row taken. */
+    const closePickerWithNoPick = async () => {
+      await press('\r');
+      await vi.waitFor(() => expect(frame()).toContain('BUILD · tool, model, effort'));
+      await press('\u001B');
+      await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
+      await vi.waitFor(() => expect(frame()).toContain('Change BUILD tool'));
+    };
+    const shownSinceSave = () => screen.frames.slice(firstFrame).map(stripAnsiStyles).join('\n');
+    return {
+      screen,
+      press,
+      engine,
+      expectRanOnSavedSeat,
+      pickClaudeInPicker,
+      closePickerWithNoPick,
+      shownSinceSave,
+    };
+  }
+
+  it('runs Try again on the saved seat and passes the brief with no second halt', async () => {
+    const { screen, press, expectRanOnSavedSeat } = await haltWithSavedSeat();
+    try {
+      await press('\u001B[A');
+      await press('\r');
+      const { state, switches } = await expectRanOnSavedSeat();
+      // A seat saved outside the halt is the user's crew change, logged once and not a switch.
+      expect(switches).toEqual([
+        expect.objectContaining({ seat: 'build', cause: 'crew-changed', auto: false }),
+      ]);
+      expect(state?.seatSwitches).toBeUndefined();
+    } finally {
+      screen.unmount();
+    }
+  });
+
+  it('switches to the saved tool when Change BUILD tool takes its row', async () => {
+    const { screen, expectRanOnSavedSeat, pickClaudeInPicker } = await haltWithSavedSeat();
+    try {
+      // The picker opens on the saved Sonnet row; ⏎ opens its effort and ⏎ takes the row.
+      await pickClaudeInPicker(['\r', '\r']);
+      const { state, switches } = await expectRanOnSavedSeat();
+      expect(switches).toEqual([
+        expect.objectContaining({ seat: 'build', cause: 'runner-usage-limit', auto: false }),
+      ]);
+      expect(state?.seatSwitches).toEqual([
+        expect.objectContaining({ seat: 'build', cause: 'runner-usage-limit', auto: false }),
+      ]);
+    } finally {
+      screen.unmount();
+    }
+  });
+
+  it('keeps the halt when the picker closes with no pick, and Try again runs the saved seat', async () => {
+    const { screen, press, engine, expectRanOnSavedSeat, closePickerWithNoPick } =
+      await haltWithSavedSeat();
+    try {
+      await closePickerWithNoPick();
+      expect(engine).not.toHaveBeenCalled();
+
+      await press('\u001B[A');
+      await press('\r');
+      const { state, switches } = await expectRanOnSavedSeat();
+      expect(switches).toEqual([
+        expect.objectContaining({ seat: 'build', cause: 'crew-changed', auto: false }),
+      ]);
+      expect(state?.seatSwitches).toBeUndefined();
+    } finally {
+      screen.unmount();
+    }
+  });
+
+  it('shows no switch warning when the picker closes with no pick on a saved tool the halt does not offer', async () => {
+    const codexOnAuto = (current: Config): Config => ({
+      ...current,
+      implementer: { kind: 'cli', tool: 'codex', model: 'auto', contextLength: 200_000 },
+    });
+    const { screen, engine, closePickerWithNoPick, shownSinceSave } = await haltWithSavedSeat(
+      codexOnAuto,
+      (opts) => heldUntilAborted(opts.signal),
+    );
+    try {
+      await closePickerWithNoPick();
+      await tick(200);
+
+      expect(engine).not.toHaveBeenCalled();
+      expect(shownSinceSave()).not.toContain('Could not switch');
+      expect(configStore.get().config?.implementer).toMatchObject({ tool: 'codex', model: 'auto' });
+    } finally {
+      screen.unmount();
+    }
+  });
+
+  it('keeps the halt when Escape closes the picker after Ctrl+D removed a custom model, and Try again runs the saved seat', async () => {
+    const claudeWithCustomModels = (current: Config): Config => ({
+      ...current,
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: SWITCHED_MODEL,
+        contextLength: 200_000,
+        customModels: ['my-a', 'my-b'],
+      },
+    });
+    const { screen, press, engine, expectRanOnSavedSeat, shownSinceSave } =
+      await haltWithSavedSeat(claudeWithCustomModels);
+    const frame = () => stripAnsiStyles(screen.lastFrame());
+    try {
+      await press('\r');
+      await vi.waitFor(() => expect(frame()).toContain('BUILD · tool, model, effort'));
+      await press('\u001B[C');
+      for (let moves = 0; moves < 20 && !/\| \| My B/.test(frame()); moves += 1) {
+        await press('\u001B[B');
+      }
+      expect(frame()).toMatch(/\| \| My B/);
+      await press('\u0004');
+      await vi.waitFor(() =>
+        expect(configStore.get().config?.implementer).toMatchObject({ customModels: ['my-a'] }),
+      );
+      expect(overlayStore.get().active).toBe('implementer-picker');
+      await press('\u001B');
+      await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
+      await vi.waitFor(() => expect(frame()).toContain('Change BUILD tool'));
+      await tick(200);
+      expect(engine).not.toHaveBeenCalled();
+      expect(shownSinceSave()).not.toContain('Could not switch');
+
+      await press('\u001B[A');
+      await press('\r');
+      const { state, switches } = await expectRanOnSavedSeat();
+      expect(switches).toEqual([
+        expect.objectContaining({ seat: 'build', cause: 'crew-changed', auto: false }),
+      ]);
+      expect(state?.seatSwitches).toBeUndefined();
+    } finally {
+      screen.unmount();
+    }
+  });
+
+  it('keeps a REVIEW seat saved under the BUILD halt when Change BUILD tool picks another tool', async () => {
+    const codexOnReview = (current: Config): Config => ({
+      ...current,
+      reviewer: { kind: 'cli', tool: 'codex', model: PRIMARY_MODEL },
+    });
+    const { screen, engine, pickClaudeInPicker } = await haltWithSavedSeat(codexOnReview, (opts) =>
+      heldUntilAborted(opts.signal),
+    );
+    const frame = () => stripAnsiStyles(screen.lastFrame());
+    try {
+      await pickClaudeInPicker(['\u001B[B', '\r', '\r']);
+      await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(1), { timeout: 60_000 });
+
+      const run = engine.mock.calls[0]?.[0].prepared.config;
+      expect(run?.implementer).toMatchObject({ kind: 'cli', tool: 'claude-code' });
+      expect(run?.reviewer).toMatchObject({ kind: 'cli', tool: 'codex', model: PRIMARY_MODEL });
+      expect(configStore.get().config?.reviewer).toMatchObject({ kind: 'cli', tool: 'codex' });
+
+      overlayStore.open('settings');
+      await vi.waitFor(() => expect(frame()).toMatch(/REVIEW[^\n]*Codex/));
+      expect(frame()).toMatch(/BUILD[^\n]*Claude Code/);
+    } finally {
+      overlayStore.close();
       screen.unmount();
     }
   });

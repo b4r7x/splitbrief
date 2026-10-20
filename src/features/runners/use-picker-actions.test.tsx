@@ -701,6 +701,67 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 
+  it('marks the picker as having taken a row when a confirmation saves the seat and closes it', async () => {
+    overlayStore.open('planner-picker');
+    const ui = renderFeature(
+      <ConfirmOnKeyProbe role="planner" selection={realPickerOption('planner', 'codex')} />,
+    );
+    await flushEffects();
+    expect(pickerViewStore.get().committed).toBe(false);
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
+    expect(pickerViewStore.get().committed).toBe(true);
+    ui.unmount();
+  });
+
+  it('marks the picker as having taken a row when a local connection saves the seat and closes it', async () => {
+    overlayStore.open('planner-picker');
+    const ui = renderFeature(
+      <LocalConnectionProbe
+        role="planner"
+        save={{
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          apiKey: undefined,
+          model: 'modelA',
+        }}
+        onSeat={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('s');
+
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
+    expect(pickerViewStore.get().committed).toBe(true);
+    ui.unmount();
+  });
+
+  it('takes no row when Ctrl+D removes a custom model: the seat is saved and the picker stays open', async () => {
+    seed(
+      makeConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'claude-code',
+          model: 'my-a',
+          customModels: ['my-a', 'my-b'],
+        },
+      }),
+    );
+    overlayStore.open('planner-picker');
+
+    const ui = renderFeature(<DeleteOnKeyProbe role="planner" modelId="my-b" />);
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(configStore.get().config?.planner).toMatchObject({ customModels: ['my-a'] });
+    });
+    expect(overlayStore.get().active).toBe('planner-picker');
+    expect(pickerViewStore.get().committed).toBe(false);
+    ui.unmount();
+  });
+
   it('opens the full catalog when the browse action fires', async () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
     seed(config);
