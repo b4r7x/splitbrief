@@ -342,6 +342,62 @@ describe('createImplementerBase — extracted-code pipeline', () => {
     expect(written).toContain('export const e = 5');
   });
 
+  it('refuses a create brief response that would discard the code its anchor already holds', async () => {
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    const sibling = `${Array.from({ length: 6 }, (_, i) => `export const v${i} = ${i};`).join('\n')}\n`;
+    writeFileSync(join(projectDir, 'src/calc.ts'), sibling);
+
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nexport const sub = (a, b) => a - b;\n```',
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/calc.ts'], action: 'create' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toContain('keeps 1 of 6');
+    expect(readFileSync(join(projectDir, 'src/calc.ts'), 'utf-8')).toBe(sibling);
+  });
+
+  it('applies a create brief patch to the code its anchor already holds', async () => {
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/calc.ts'), 'export const add = (a, b) => a + b;\n');
+
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\n<<<<<<< SEARCH\nexport const add = (a, b) => a + b;\n=======\nexport const add = (a, b) => a + b;\nexport const sub = (a, b) => a - b;\n>>>>>>> REPLACE\n```',
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/calc.ts'], action: 'create' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(projectDir, 'src/calc.ts'), 'utf-8')).toBe(
+      'export const add = (a, b) => a + b;\nexport const sub = (a, b) => a - b;\n',
+    );
+  });
+
   it('writes the response for a modify task whose target does not exist', async () => {
     const invoke = vi.fn().mockResolvedValue(
       makeRunnerCallResult({

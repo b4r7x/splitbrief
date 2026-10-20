@@ -266,6 +266,46 @@ function contextCodeLines(task: Task, tokens?: number | undefined): string[] {
   ]);
 }
 
+/**
+ * The brief's code goes in whenever the brief carries it, whatever its action: `currentCode` is
+ * set only when the workspace holds the anchor (`refreshCurrentCode`). A bundle answer carries
+ * complete files, so every captured target goes in whole: a formatter that cut one would ask for a
+ * rewrite of code the model never saw. A prompt that does not fit is refused by the call's own
+ * budget, with its figures, rather than trimmed to be admitted. A direct writer edits the files
+ * where they live and reads them itself, so it gets only the context code.
+ */
+function insertTaskCode(
+  sections: string[],
+  opts: {
+    task: Task;
+    context: ProjectContext;
+    contextLength?: number | undefined;
+    languageContext?: LanguageContext | undefined;
+    writesFiles: ImplementerWriteMode;
+    outputContract?: BuildOutputContract | undefined;
+  },
+): void {
+  const { task, contextLength, writesFiles } = opts;
+  if (opts.outputContract === 'file-bundle-v1') {
+    insertCodeContext(sections, task);
+  } else if (writesFiles === 'direct') {
+    insertCodeContextSection(sections, contextCodeLines(task));
+  } else if (task.currentCode || task.currentCodeByFile || task.contextCodeByFile) {
+    const budget = contextLength
+      ? computeTokenBudget({
+          system: formatImplementerSystemPreamble(
+            opts.languageContext ?? buildLanguageContext(undefined),
+            writesFiles,
+            opts.context.dir,
+          ),
+          taskBody: sections.join('\n'),
+          contextLength,
+        })
+      : undefined;
+    insertCodeContext(sections, task, budget);
+  }
+}
+
 export function formatTaskPrompt(opts: {
   task: Task;
   context: ProjectContext;
@@ -280,36 +320,13 @@ export function formatTaskPrompt(opts: {
   const {
     task,
     context,
-    contextLength,
-    languageContext,
     writesFiles = 'extracted-code',
     outputContract,
     plan,
     inPlace = false,
   } = opts;
-  const ctx = languageContext ?? buildLanguageContext(undefined);
   const sections = buildTaskSections(task, context, writesFiles, outputContract, plan, inPlace);
-
-  // A bundle answer carries complete files, so every captured target goes in
-  // whole: a formatter that cut one would ask for a rewrite of code the model
-  // never saw. A prompt that does not fit is refused by the call's own budget,
-  // with its figures, rather than trimmed to be admitted. A direct writer edits
-  // the files where they live and reads them itself, so it gets only the context code.
-  if (outputContract === 'file-bundle-v1') {
-    insertCodeContext(sections, task);
-  } else if (writesFiles === 'direct') {
-    insertCodeContextSection(sections, contextCodeLines(task));
-  } else if (task.action === 'modify' || task.currentCodeByFile || task.contextCodeByFile) {
-    const budget = contextLength
-      ? computeTokenBudget({
-          system: formatImplementerSystemPreamble(ctx, writesFiles, context.dir),
-          taskBody: sections.join('\n'),
-          contextLength,
-        })
-      : undefined;
-    insertCodeContext(sections, task, budget);
-  }
-
+  insertTaskCode(sections, { ...opts, writesFiles });
   return sections.join('\n');
 }
 
@@ -331,33 +348,15 @@ export function formatRetryPrompt(opts: {
     context,
     error,
     attempt,
-    contextLength,
-    languageContext,
     writesFiles = 'extracted-code',
     outputContract,
     plan,
     inPlace = false,
   } = opts;
-  const ctx = languageContext ?? buildLanguageContext(undefined);
   const framing = framingForAttempt(attempt);
   const sections = buildTaskSections(task, context, writesFiles, outputContract, plan, inPlace);
 
   sections.unshift(framing, '', 'Error from previous attempt:', error, '');
-
-  if (outputContract === 'file-bundle-v1') {
-    insertCodeContext(sections, task);
-  } else if (writesFiles === 'direct') {
-    insertCodeContextSection(sections, contextCodeLines(task));
-  } else if (task.currentCode || task.currentCodeByFile || task.contextCodeByFile) {
-    const budget = contextLength
-      ? computeTokenBudget({
-          system: formatImplementerSystemPreamble(ctx, writesFiles, context.dir),
-          taskBody: sections.join('\n'),
-          contextLength,
-        })
-      : undefined;
-    insertCodeContext(sections, task, budget);
-  }
-
+  insertTaskCode(sections, { ...opts, writesFiles });
   return sections.join('\n');
 }

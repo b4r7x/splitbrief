@@ -580,7 +580,7 @@ A commit, a branch switch or a pull in your checkout does not halt the brief: a 
 
 ### Symptom: Implementer keeps failing with "refusing to overwrite"
 
-**Likely cause:** For a modify task, the extracted-code branch refuses a marker-less response that would replace the whole file while keeping less than half of its (at least five) non-empty lines — a model that answered with prose plus one fenced function instead of the complete file. The file is left untouched and the task fails, so the damage cannot compound across retries.
+**Likely cause:** When the file already exists, the extracted-code branch refuses a marker-less response that would replace the whole file while keeping less than half of its (at least five) non-empty lines — a model that answered with prose plus one fenced function instead of the complete file. The file is left untouched and the task fails, so the damage cannot compound across retries.
 
 **Fix:**
 1. Read the failure message: it states the kept-of-had line counts and carries a literal SEARCH/REPLACE template.

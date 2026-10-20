@@ -12,6 +12,8 @@ import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { findOrSeed, upsertEvidenceTask } from '../../../core/evidence/ledger-state.js';
 import { uniquePush } from '../../../utils/collections.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { loadState } from '../../../core/state/persistence.js';
+import { lineageIdOf } from '../../../core/state/task-insert.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -132,7 +134,9 @@ export function recordApiRevertEvidence(input: {
 
 /**
  * A missing or unreadable receipt proves no ownership, so capture remains fail-closed. A receipt
- * written in the run workspace proves what the task created there.
+ * written in the run workspace proves what the task's lineage created there: the task itself, a
+ * split parent the lineage replaced, or a sibling of its split. A brief keeps `create` for every
+ * file its lineage created (`lineageAnchorAction`).
  */
 export function recordedApiCreatedPaths(
   ref: SessionRef,
@@ -140,10 +144,13 @@ export function recordedApiCreatedPaths(
   workspacePath: string,
 ): string[] {
   try {
-    return provenCreatedPaths(
-      readEvidenceLedger(ref)?.tasks.find((entry) => entry.id === task.id),
-      workspacePath,
-    );
+    const state = loadState(ref);
+    const lineage = lineageIdOf(task);
+    const siblings = (state?.tasks ?? []).filter((brief) => lineageIdOf(brief) === lineage);
+    const parents = state?.lineages?.[lineage]?.replacedParents ?? [];
+    const ids = new Set([task, ...siblings, ...parents].map((brief) => brief.id));
+    const entries = readEvidenceLedger(ref)?.tasks.filter((entry) => ids.has(entry.id)) ?? [];
+    return [...new Set(entries.flatMap((entry) => provenCreatedPaths(entry, workspacePath)))];
   } catch {
     return [];
   }

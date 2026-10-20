@@ -264,6 +264,27 @@ describe('formatTaskPrompt', () => {
     expect(retry).toContain('### Current Code — src/health.test.ts');
   });
 
+  it('renders the anchor code for a create anchor the workspace already holds, and none for a new one', () => {
+    const held = makeTask({
+      action: 'create',
+      suggestedFiles: ['src/calc.mjs'],
+      currentCode: 'export const add = (a, b) => a + b;\n',
+    });
+
+    for (const prompt of [
+      formatTaskPrompt({ task: held, context, outputContract: 'legacy-code-v1' }),
+      formatTaskPrompt({ task: held, context, contextLength: 8192 }),
+    ]) {
+      expect(prompt).toContain('### Current Code');
+      expect(prompt).toContain('export const add = (a, b) => a + b;');
+    }
+
+    const fresh = makeTask({ action: 'create', suggestedFiles: ['src/calc.mjs'] });
+    expect(
+      formatTaskPrompt({ task: fresh, context, outputContract: 'legacy-code-v1' }),
+    ).not.toContain('### Current Code');
+  });
+
   it('carries context files whole under a read-only heading, for a new file and a bundle', () => {
     const task = makeTask({
       action: 'create',

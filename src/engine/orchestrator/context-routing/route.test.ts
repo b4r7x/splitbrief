@@ -585,6 +585,26 @@ describe('routeTaskToImplementerProfile', () => {
     expect(decision.rejected[0]?.reason).toContain('current code truncated');
   });
 
+  it('refuses a create brief the same way when the anchor code it carries would be cut', () => {
+    const task = makeTask({
+      action: 'create',
+      currentCode: Array.from({ length: 1200 }, (_, i) => `export const value${i} = ${i};`).join(
+        '\n',
+      ),
+    });
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [shellProfile('small-local', 2000)],
+    });
+
+    expect(decision.fit).toBe('overflow');
+    expect(decision.rejected).toMatchObject([
+      { profile: 'small-local', fit: 'overflow', currentCodeTruncated: true },
+    ]);
+  });
+
   it('sizes a direct writer on the prompt it is sent, which carries no current code', () => {
     const task = makeTask({
       action: 'modify',

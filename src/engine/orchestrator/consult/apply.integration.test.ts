@@ -1,13 +1,13 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
@@ -25,6 +25,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/validation-fixtures.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
+import { refreshAndPersistCode } from '../task/refresh-code.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import { applyConsultAnswer, type ConsultApplyContext } from './apply.js';
 import {
@@ -705,5 +706,265 @@ describe('applyConsultAnswer', () => {
     ).rejects.toMatchObject({ kind: 'consult-apply-task-missing' });
     expect(states.at(-1)?.tasks.map((saved) => saved.id)).toEqual(['T003']);
     expect(events.filter((event) => event.type === 'tasks_inserted')).toHaveLength(0);
+  });
+});
+
+describe('a consult on a brief that created its files', () => {
+  const FRESH = 'export const fresh = 1;\n';
+
+  function createTask(suggestedFiles: Task['suggestedFiles'] = ['src/fresh.ts']): Task {
+    return makeTask({
+      id: 'T003',
+      action: 'create',
+      suggestedFiles,
+      criteria: ['C1', 'C2'],
+      status: 'failed',
+    });
+  }
+
+  /**
+   * The lineage start is recorded at the brief's first dispatch; attempt 1 then writes `files`.
+   * The current attempt starts on them, so its restore keeps them.
+   */
+  async function startedLineage(
+    projectDir: string,
+    sessionId: string,
+    task: Task,
+    files: Record<string, string>,
+  ): Promise<{
+    ctx: ConsultApplyContext;
+    states: WorkflowState[];
+    attempt: ChangedFilesSnapshot;
+  }> {
+    const { ctx, states } = contextFor(projectDir, sessionId, task);
+    const start = await getChangedFilesSnapshot(projectDir);
+    const state = transition(
+      {
+        ...ctx.state,
+        changedFilesBaseline: { head: null, fingerprints: {}, activeTaskSnapshot: start },
+      },
+      { type: 'RECORD_DISPATCH', taskId: task.id },
+    );
+    saveState({ projectDir, sessionId }, state);
+    for (const [file, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(projectDir, file)), { recursive: true });
+      writeFileSync(join(projectDir, file), content);
+    }
+    return { ctx: { ...ctx, state }, states, attempt: await getChangedFilesSnapshot(projectDir) };
+  }
+
+  async function dispatch(projectDir: string, sessionId: string, task: Task): Promise<Task> {
+    const state = loadState({ projectDir, sessionId });
+    if (state === null) throw new Error('no saved state');
+    return (
+      await refreshAndPersistCode(task, { projectDir, sessionId }, state, projectDir, 'dispatch')
+    ).task;
+  }
+
+  it('a rewrite that keeps the anchor keeps create, also at its dispatch', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = createTask();
+    const { ctx, attempt } = await startedLineage(projectDir, sessionId, task, {
+      'src/fresh.ts': FRESH,
+    });
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      rewrite(
+        makeTaskSpec({ id: 'T003', criteria: ['C1', 'C2'], suggestedFiles: ['src/fresh.ts'] }),
+      ),
+      attempt,
+    );
+
+    if (result.action !== 'rewrite-task') throw new Error(`expected rewrite, got ${result.action}`);
+    expect(result.task.action).toBe('create');
+    const dispatched = await dispatch(projectDir, sessionId, result.task);
+    expect(dispatched.action).toBe('create');
+    expect(dispatched.currentCode).toBe(FRESH);
+  });
+
+  it('a split into an implementation child and a test child keeps create for both files the parent created', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = createTask(['src/fresh.ts', 'src/fresh.test.ts']);
+    const { ctx, attempt } = await startedLineage(projectDir, sessionId, task, {
+      'src/fresh.ts': FRESH,
+      'src/fresh.test.ts': 'import "./fresh";\n',
+    });
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      split([
+        makeTaskSpec({ id: 'T003', criteria: ['C1'], suggestedFiles: ['src/fresh.ts'] }),
+        makeTaskSpec({
+          id: 'T004',
+          criteria: ['C2'],
+          suggestedFiles: ['src/fresh.test.ts'],
+          dependsOn: ['T003'],
+        }),
+      ]),
+      attempt,
+    );
+
+    if (result.action !== 'split-task') throw new Error(`expected split, got ${result.action}`);
+    expect(result.tasks.map((child) => child.action)).toEqual(['create', 'create']);
+    const testChild = result.tasks[1];
+    if (testChild === undefined) throw new Error('the split saved no test child');
+    expect((await dispatch(projectDir, sessionId, testChild)).action).toBe('create');
+  });
+
+  it('a rewrite onto a later file the brief created keeps create', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = createTask(['src/fresh.ts', 'src/fresh.test.ts']);
+    const { ctx, attempt } = await startedLineage(projectDir, sessionId, task, {
+      'src/fresh.ts': FRESH,
+      'src/fresh.test.ts': 'import "./fresh";\n',
+    });
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      rewrite(
+        makeTaskSpec({ id: 'T003', criteria: ['C1', 'C2'], suggestedFiles: ['src/fresh.test.ts'] }),
+      ),
+      attempt,
+    );
+
+    if (result.action !== 'rewrite-task') throw new Error(`expected rewrite, got ${result.action}`);
+    expect(result.task.action).toBe('create');
+  });
+
+  it('an empty file the brief created keeps create after a rewrite and at its dispatch', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = createTask(['pkg/__init__.py']);
+    const { ctx, attempt } = await startedLineage(projectDir, sessionId, task, {
+      'pkg/__init__.py': '',
+    });
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      rewrite(
+        makeTaskSpec({ id: 'T003', criteria: ['C1', 'C2'], suggestedFiles: ['pkg/__init__.py'] }),
+      ),
+      attempt,
+    );
+
+    if (result.action !== 'rewrite-task') throw new Error(`expected rewrite, got ${result.action}`);
+    expect(result.task.action).toBe('create');
+    expect((await dispatch(projectDir, sessionId, result.task)).action).toBe('create');
+  });
+
+  it('a split child keeps create for the anchor its sibling created after the split', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = createTask();
+    const { ctx, attempt } = await startedLineage(projectDir, sessionId, task, {
+      'src/fresh.ts': FRESH,
+    });
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      split([
+        makeTaskSpec({ id: 'T003', criteria: ['C1'], suggestedFiles: ['src/fresh.ts'] }),
+        makeTaskSpec({
+          id: 'T004',
+          criteria: ['C2'],
+          suggestedFiles: ['src/later.ts'],
+          dependsOn: ['T003'],
+        }),
+      ]),
+      attempt,
+    );
+
+    if (result.action !== 'split-task') throw new Error(`expected split, got ${result.action}`);
+    const [first, second] = result.tasks;
+    if (first === undefined || second === undefined) throw new Error('the split saved no children');
+    expect((await dispatch(projectDir, sessionId, first)).action).toBe('create');
+    writeFileSync(join(projectDir, 'src/later.ts'), 'export const later = 1;\n');
+    expect((await dispatch(projectDir, sessionId, second)).action).toBe('create');
+  });
+
+  it.each(['rewrite', 'split'] as const)(
+    'a %s onto a file the checkout held before the task reads modify',
+    async (kind) => {
+      const { projectDir, sessionId } = setupRepo(dirs);
+      const task = createTask();
+      const { ctx, attempt } = await startedLineage(projectDir, sessionId, task, {
+        'src/fresh.ts': FRESH,
+      });
+      const answer =
+        kind === 'rewrite'
+          ? rewrite(
+              makeTaskSpec({
+                id: 'T003',
+                criteria: ['C1', 'C2'],
+                suggestedFiles: ['src/greet.ts'],
+              }),
+            )
+          : split([
+              makeTaskSpec({ id: 'T003', criteria: ['C1'], suggestedFiles: ['src/greet.ts'] }),
+              makeTaskSpec({ id: 'T004', criteria: ['C2'], suggestedFiles: ['src/context.ts'] }),
+            ]);
+
+      const result = await applyConsultAnswer(ctx, task, answer, attempt);
+
+      const actions =
+        result.action === 'rewrite-task'
+          ? [result.task.action]
+          : result.action === 'split-task'
+            ? result.tasks.map((child) => child.action)
+            : [];
+      expect(actions).toEqual(kind === 'rewrite' ? ['modify'] : ['modify', 'modify']);
+    },
+  );
+
+  it.each([
+    ['an uncommitted file of the user', 'src/notes.ts', ''],
+    ['a git-ignored file of the user', 'local/settings.ts', 'local/\n'],
+  ])(
+    'a rewrite onto %s that was there when the lineage started reads modify',
+    async (_label, file, ignore) => {
+      const { projectDir, sessionId } = setupRepo(dirs);
+      writeFileSync(join(projectDir, '.gitignore'), ignore);
+      mkdirSync(dirname(join(projectDir, file)), { recursive: true });
+      writeFileSync(join(projectDir, file), 'export const mine = 1;\n');
+      const task = createTask();
+      const { ctx, attempt } = await startedLineage(projectDir, sessionId, task, {
+        'src/fresh.ts': FRESH,
+      });
+
+      const result = await applyConsultAnswer(
+        ctx,
+        task,
+        rewrite(makeTaskSpec({ id: 'T003', criteria: ['C1', 'C2'], suggestedFiles: [file] })),
+        attempt,
+      );
+
+      if (result.action !== 'rewrite-task')
+        throw new Error(`expected rewrite, got ${result.action}`);
+      expect(result.task.action).toBe('modify');
+    },
+  );
+
+  it('a lineage with no recorded start reads the workspace', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = createTask();
+    writeFileSync(join(projectDir, 'src/fresh.ts'), FRESH);
+    const attempt = await getChangedFilesSnapshot(projectDir);
+    const { ctx } = contextFor(projectDir, sessionId, task);
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      rewrite(
+        makeTaskSpec({ id: 'T003', criteria: ['C1', 'C2'], suggestedFiles: ['src/fresh.ts'] }),
+      ),
+      attempt,
+    );
+
+    if (result.action !== 'rewrite-task') throw new Error(`expected rewrite, got ${result.action}`);
+    expect(result.task.action).toBe('modify');
   });
 });

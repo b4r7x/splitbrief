@@ -20,7 +20,6 @@ function refuseImplausibleRewrite(opts: {
   baseline: string | null;
   candidate: string;
 }): string | undefined {
-  if (opts.task.action !== 'modify') return undefined;
   if (opts.baseline === null || hasApplicablePatch(opts.candidate)) return undefined;
   const had = countNonEmptyLines(opts.baseline);
   const kept = countNonEmptyLines(opts.candidate);
