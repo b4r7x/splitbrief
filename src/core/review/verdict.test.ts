@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import type { ReviewVerdict, TriageInput } from '../schemas/review.js';
 import { taskId } from '../schemas/task.js';
 import type { ReviewRecord } from '../schemas/workflow.js';
@@ -8,6 +9,7 @@ import {
   reviewFindingCounts,
   reviewOutcomeOf,
   type ReviewScope,
+  reviewsAgain,
   verdictCoverageErrors,
 } from './verdict.js';
 
@@ -412,5 +414,83 @@ describe('findingInReviewScope', () => {
     const candidate = finding({ ...entry, checkIds: ['K1'] });
     expect(findingInReviewScope(candidate, taskScope)).toBe(entry.included);
     expect(findingInReviewScope(candidate, scope)).toBe(true);
+  });
+});
+
+describe('reviewsAgain', () => {
+  const judged = (overrides: Partial<ReviewRecord> = {}): ReviewRecord => ({
+    scope: 'task',
+    afterTaskId: taskId('T002'),
+    cycle: 2,
+    verdict: makeVerdict(),
+    outcome: 'fail',
+    verification: [],
+    at: '2026-10-20T10:00:00.000Z',
+    ...overrides,
+  });
+  const pendingTriage = {
+    inputs: [
+      {
+        id: 'U1',
+        kind: 'defect' as const,
+        source: 'user' as const,
+        text: 'Rename beta',
+        file: null,
+      },
+    ],
+  };
+  const fixCycles = { used: 2, allowance: 3, notes: [] };
+
+  it.each([
+    {
+      name: 'a pending correction on this task review',
+      overrides: {},
+      kind: 'task' as const,
+      anchor: 'T002',
+      again: true,
+    },
+    {
+      name: 'a task review of another brief',
+      overrides: {},
+      kind: 'task' as const,
+      anchor: 'T003',
+      again: false,
+    },
+    {
+      name: 'the final review after a task review',
+      overrides: {},
+      kind: 'final' as const,
+      anchor: undefined,
+      again: false,
+    },
+    {
+      name: 'a review of an earlier cycle',
+      overrides: { cycle: 1 },
+      kind: 'task' as const,
+      anchor: 'T002',
+      again: false,
+    },
+    {
+      name: 'a pending correction on the final review',
+      overrides: { scope: 'final' as const, afterTaskId: undefined },
+      kind: 'final' as const,
+      anchor: undefined,
+      again: true,
+    },
+    {
+      name: 'an older record without a scope',
+      overrides: { scope: undefined, afterTaskId: undefined },
+      kind: 'final' as const,
+      anchor: undefined,
+      again: true,
+    },
+  ])('answers $again for $name', ({ overrides, kind, anchor, again }) => {
+    const state = makeImplState([], { review: judged(overrides), pendingTriage, fixCycles });
+    expect(reviewsAgain(state, kind, anchor)).toBe(again);
+  });
+
+  it('answers false when nothing is pending', () => {
+    const state = makeImplState([], { review: judged(), fixCycles });
+    expect(reviewsAgain(state, 'task', 'T002')).toBe(false);
   });
 });

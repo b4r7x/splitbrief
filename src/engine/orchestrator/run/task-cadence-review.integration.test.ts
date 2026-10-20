@@ -2,7 +2,7 @@ import { plainUserMessage } from '../../../core/types/user-input.js';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -40,14 +40,20 @@ import { runTasksAndReview } from './task-execution.js';
 let dirs: string[] = [];
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
 
-function setupProject(): { projectDir: string; sessionId: string; head: string } {
+function setupProject(files?: Record<string, string>): {
+  projectDir: string;
+  sessionId: string;
+  head: string;
+} {
   const { projectDir, sessionId } = setupGitSessionProject({
     prefix: 'task-cadence-review',
     sessionId: 'sess-cadence',
+    files,
   });
   dirs.push(projectDir);
   const head = execSync('git rev-parse HEAD', {
@@ -331,6 +337,173 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     expect(result.state.fixCycles?.used ?? 0).toBe(0);
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
   });
+
+  it('halts a task review on a required check whose program is missing, then runs the review once it is installed', async () => {
+    const missing = 'splitbrief-missing-runner';
+    const { projectDir, sessionId, head } = setupProject({
+      'package.json': `${JSON.stringify({ name: 'cadence', private: true, scripts: { test: missing } })}\n`,
+    });
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
+    ];
+    const state = cadenceState(tasks, head, {
+      plan: {
+        summary: 'Two briefs, the first checked by the test script',
+        decisions: [],
+        criteria: [
+          { id: 'C1', text: 'The first brief works', checkIds: ['K1'] },
+          { id: 'C2', text: 'The second brief works', checkIds: [] },
+        ],
+        checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+        validation: null,
+      },
+    });
+    const onComplete = vi.fn();
+    const { events, reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state,
+      review: (prompt) => {
+        const verdict = passingReviewVerdict(prompt);
+        return {
+          ...verdict,
+          criteria: verdict.criteria.map((criterion) =>
+            criterion.id === 'C1'
+              ? { ...criterion, status: 'unverified' as const, evidence: 'K1 did not run' }
+              : criterion,
+          ),
+        };
+      },
+      onComplete,
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(result.completed).toBe(false);
+    expect(reviewPrompts).toHaveLength(0);
+    const halt = result.state.pendingRecovery;
+    if (halt === undefined) throw new Error('Missing halt');
+    expect(halt.reason).toBe('required-checks-unrunnable');
+    expect(halt.message).toMatch(/^Required checks cannot run: K1: /);
+    expect(halt.details).toContain('Install what is missing, then run the checks again.');
+    expect(halt.availableActions).toEqual(['retry-same-worker', 'end-run']);
+    const errors = events.flatMap((event) => (event.type === 'error' ? [event] : []));
+    expect(errors.map((event) => event.code)).toEqual(['required_checks_unrunnable']);
+    expect(events.some((event) => event.type === 'review_started')).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'pending']);
+
+    const bin = join(projectDir, '.bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, missing), '#!/bin/sh\nexit 0\n');
+    chmodSync(join(bin, missing), 0o755);
+    vi.stubEnv('PATH', `${bin}:${process.env['PATH'] ?? ''}`);
+    const retried = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: result.state,
+      action: 'retry-same-worker',
+      bus: options.wctx.bus,
+    });
+    if (!retried.ok) throw new Error(retried.message);
+    const continued = runOptions({
+      projectDir,
+      sessionId,
+      state: retried.state,
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete,
+    });
+    const completed = await runTasksAndReview(continued.options);
+
+    expect(completed.completed).toBe(true);
+    expect(continued.reviewPrompts).toHaveLength(3);
+    expect(continued.reviewPrompts[0]).toContain('Task ids: T001\nCriterion ids: C1');
+    expect(completed.state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { route: 'task', review: 'task' as const, failsFrom: 2 },
+    { route: 'final', review: 'end' as const, failsFrom: 1 },
+  ])(
+    'gives the $route review a Fix again note while a required check still fails',
+    async ({ review, failsFrom }) => {
+      const { projectDir, sessionId, head } = setupProject({
+        'package.json': `${JSON.stringify({ name: 'cadence', private: true, scripts: { test: 'test ! -f src/beta.ts' } })}\n`,
+      });
+      const tasks = [
+        makeTask({
+          id: 'T001',
+          suggestedFiles: ['src/alpha.ts'],
+          criteria: ['C1'],
+          checks: [{ id: 'T001-K1', kind: 'cmd', value: 'npm test', required: true }],
+        }),
+        makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
+      ];
+      const config = makeNoValidationConfig({ workflow: { review } });
+      const pendingIds = (prompt: string) => [
+        ...new Set(
+          [...(prompt.split('## Pending Inputs')[1] ?? '').matchAll(/\*\*([PUA]\d+)\*\*/g)].map(
+            (match) => match[1] ?? '',
+          ),
+        ),
+      ];
+      const rejectPending = (prompt: string) =>
+        pendingIds(prompt).map((findingId) => ({ findingId, reason: 'not a defect' }));
+      const onComplete = vi.fn();
+      const first = runOptions({
+        projectDir,
+        sessionId,
+        state: cadenceState(tasks, head, { fixCycles: { used: 2, allowance: 2, notes: [] } }),
+        review: (prompt, call) =>
+          call < failsFrom
+            ? passingReviewVerdict(prompt)
+            : failedReviewVerdict(prompt, 'Beta breaks alpha', { taskId: 'T002' }),
+        triage: (prompt) => ({
+          fixTasks: failedReviewVerdict(prompt, 'Beta breaks alpha', { taskId: 'T002' }).fixTasks,
+          rejected: rejectPending(prompt),
+          verify: [],
+          ask: null,
+        }),
+        onComplete,
+        config,
+      });
+
+      const halted = await runTasksAndReview(first.options);
+
+      expect(halted.state.pendingRecovery?.reason).toBe('review-failed');
+      expect(halted.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['P1']);
+      const retried = await applyRecoveryAction({
+        projectDir,
+        sessionId,
+        state: halted.state,
+        action: 'revise',
+        comment: plainUserMessage('Also rename beta'),
+        bus: first.options.wctx.bus,
+      });
+      if (!retried.ok) throw new Error(retried.message);
+      const second = runOptions({
+        projectDir,
+        sessionId,
+        state: retried.state,
+        review: (prompt) => passingReviewVerdict(prompt),
+        triage: (prompt) => ({
+          fixTasks: [],
+          rejected: rejectPending(prompt),
+          verify: [],
+          ask: null,
+        }),
+        onComplete,
+        config,
+      });
+
+      await runTasksAndReview(second.options);
+
+      expect(pendingIds(second.reviewPrompts[0] ?? '')).toEqual(['P1', 'U2']);
+      expect(second.reviewPrompts[0]).toContain('Also rename beta');
+    },
+  );
 
   it('triages a scheduled failure into an appended fix task and stays implementing', async () => {
     const { projectDir, sessionId, head } = setupProject();

@@ -1,6 +1,6 @@
 import { isTaskCompleted, type TaskId } from '../../../core/schemas/task.js';
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
-import { blockingRedInputs, reviewOutcomeOf } from '../../../core/review/verdict.js';
+import { blockingRedInputs, reviewOutcomeOf, reviewsAgain } from '../../../core/review/verdict.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
@@ -23,6 +23,7 @@ import { plannerCallHaltIssue, plannerHaltRow } from '../recovery/planner-call-f
 import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
 import { applyTriage, startFixCycle } from '../triage.js';
+import { runPreReview } from './pre-review-checks.js';
 import {
   raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
@@ -381,7 +382,6 @@ export async function runScheduledReview(args: {
     });
     setTrackedState(state);
   }
-  let reviewAgain = false;
   for (;;) {
     const answered = await answerPendingReviewQuestion({
       wctx,
@@ -393,8 +393,8 @@ export async function runScheduledReview(args: {
     if (answered !== undefined) {
       state = answered.state;
       if (answered.stopped) return { state, status: 'stopped' };
-      reviewAgain = true;
     }
+    const reviewAgain = reviewsAgain(state, 'task', anchor);
     const review = await runFinalReviewPhase({
       projectDir: wctx.projectDir,
       workspaceDir: wctx.workspaceDir,
@@ -414,12 +414,16 @@ export async function runScheduledReview(args: {
       }),
       scope: 'task',
       ...(anchor !== undefined && { afterTaskId: anchor }),
+      ...(!reviewAgain && {
+        preReview: (s: WorkflowState) =>
+          runPreReview({ wctx, state: s, setTrackedState, scope: 'task' }),
+      }),
       reviewChecks: !reviewAgain,
       setTrackedState,
     });
     state = review.state;
     setTrackedState(state);
-    if (wctx.signal?.aborted) return { state, status: 'stopped' };
+    if (wctx.signal?.aborted || review.preReview === 'stopped') return { state, status: 'stopped' };
 
     const halted = await haltVerdictlessReview({ wctx, state, setTrackedState, review });
     if (halted !== undefined) return { state: halted, status: 'stopped' };
@@ -442,7 +446,6 @@ export async function runScheduledReview(args: {
     });
     state = followed.state;
     if (followed.stopped) return { state, status: 'stopped' };
-    reviewAgain = followed.reviewAgain;
-    if (!reviewAgain) return { state, status: 'continue' };
+    if (!followed.reviewAgain) return { state, status: 'continue' };
   }
 }

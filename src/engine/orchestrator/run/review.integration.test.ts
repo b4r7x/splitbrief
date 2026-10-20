@@ -624,6 +624,7 @@ describe('runScheduledReview saved recovery', () => {
     const state: WorkflowState = {
       ...scheduledReviewState(),
       review: pendingReview().review,
+      fixCycles: pendingReview().fixCycles,
       pendingTriage: {
         inputs: [],
         question: { question: 'Change the API?', whyOnlyUserCanAnswer: 'The API is public.' },
