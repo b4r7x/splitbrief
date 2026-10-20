@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   briefAfter,
   selectRunningBrief,
+  selectSeatChangePoint,
   selectTaskListView,
   taskRowLabel,
   taskTargetLabel,
@@ -580,5 +581,48 @@ describe('selectTaskListView', () => {
 
     expect(view.total).toBe(2);
     expect(view.unannounced).toBe(0);
+  });
+});
+
+describe('selectSeatChangePoint', () => {
+  const briefs = (first: 'pending' | 'in_progress' | 'done' | 'escalated') => ({
+    tasks: [
+      { id: 'T001', title: 'first', status: first },
+      { id: 'T002', title: 'second', status: 'pending' as const },
+    ],
+    currentTask: 1,
+    totalTasks: 2,
+  });
+
+  it('waits on the running brief', () => {
+    tasksStore.__testReset(briefs('in_progress'));
+    expect(selectSeatChangePoint(tasksStore.get(), 'implementing')).toEqual({
+      after: 'brief',
+      taskId: 'T001',
+    });
+  });
+
+  it('waits on the brief the run finished and has not handed on from', () => {
+    tasksStore.__testReset(briefs('escalated'));
+    expect(selectSeatChangePoint(tasksStore.get(), 'implementing')).toEqual({
+      after: 'brief',
+      taskId: 'T001',
+    });
+  });
+
+  it('waits on the next brief while the plan is made, planned briefs or not', () => {
+    tasksStore.__testReset();
+    expect(selectSeatChangePoint(tasksStore.get(), 'planning')).toEqual({ after: 'next-brief' });
+    tasksStore.__testReset({ ...briefs('pending'), currentTask: 0 });
+    expect(selectSeatChangePoint(tasksStore.get(), 'reviewing-plan')).toEqual({
+      after: 'next-brief',
+    });
+  });
+
+  it('waits on a fix brief or the next run in the final review, past the last finished brief', () => {
+    tasksStore.__testReset(briefs('done'));
+    expect(selectSeatChangePoint(tasksStore.get(), 'final-review')).toEqual({
+      after: 'fix-brief-or-next-run',
+    });
   });
 });

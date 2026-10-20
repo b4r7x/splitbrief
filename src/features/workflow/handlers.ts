@@ -44,13 +44,6 @@ const handlers: Partial<Handlers> = {};
 let abortHandlers: AbortHandler[] = [];
 let pendingBoundaryInterrupt = false;
 let pendingBoundaryPause = false;
-/**
- * The operator's own Pause after this brief, apart from the pause a seat change asks for: a seat
- * change that is taken drops only its own pause.
- */
-let pauseAskedByOperator = false;
-/** A seat was saved under the running brief and is not yet taken by a re-preparation. */
-let seatChangePending = false;
 let steerUnsubscribe: (() => void) | undefined;
 let unsubscribeDeparture: (() => void) | undefined;
 let rereadAttempt = 0;
@@ -70,8 +63,7 @@ export function clearAllHandlers(): void {
   abortHandlers = [];
   pendingBoundaryInterrupt = false;
   pendingBoundaryPause = false;
-  pauseAskedByOperator = false;
-  seatChangePending = false;
+  stopStore.markSeatChange(false);
   clearPendingSteer();
 }
 
@@ -122,66 +114,46 @@ export function consumeBoundaryInterrupt(): boolean {
   return pending;
 }
 
-function armBoundaryPause(): void {
+export function requestBoundaryPause(): void {
   stopStore.request('pause-after-brief');
   pendingBoundaryPause = true;
 }
 
-export function requestBoundaryPause(): void {
-  pauseAskedByOperator = true;
-  armBoundaryPause();
-}
-
+/** The engine stops at a brief boundary for the operator's pause or for a seat change. */
 export function consumeBoundaryPause(): boolean {
   const pending = pendingBoundaryPause;
   pendingBoundaryPause = false;
-  return pending;
+  return pending || stopStore.get().seatChange;
 }
 
 export function cancelBoundaryPause(): void {
   pendingBoundaryPause = false;
-  pauseAskedByOperator = false;
-  seatChangePending = false;
-  stopStore.reset();
+  stopStore.cancelPause();
 }
 
 /**
- * A seat changed under the running brief: the run pauses at the next brief boundary and
- * is re-prepared from the saved config there, so the next brief starts on the new seat.
+ * A seat changed under the running run: the run stops at the next brief boundary and is
+ * re-prepared from the saved config there, so the brief after it starts on the new seat.
  */
 export function requestSeatChangeAtBoundary(): void {
-  armBoundaryPause();
-  seatChangePending = true;
+  stopStore.markSeatChange(true);
 }
 
-/**
- * A re-preparation or a seat swap took every saved seat, so the seat change is spent. The
- * pause it asked for goes with it; a pause the operator asked for stays.
- */
+/** A re-preparation or a seat swap took every saved seat, so the seat change is spent. */
 export function spendSeatChange() {
-  if (!consumeSeatChange()) return;
-  if (pauseAskedByOperator) return;
-  pendingBoundaryPause = false;
-  stopStore.reset();
+  stopStore.markSeatChange(false);
 }
 
 /**
- * The run reached the brief boundary its pause asked for. `park` when no seat changed: the run
- * parks there as the operator asked. With a seat change the run stops to be re-prepared on the
- * saved seats: it `continue`s at once, or `stop`s at rest when the operator asked for the pause.
+ * The run reached a brief boundary it stops at. `park` when no seat changed: the run parks there
+ * as the operator asked. With a seat change the run stops to be re-prepared on the saved seats:
+ * it `continue`s at once, or `stop`s at rest when the operator asked for the pause too.
  */
 export function landBoundaryPause(): 'park' | 'continue' | 'stop' {
-  const asked = pauseAskedByOperator;
-  pauseAskedByOperator = false;
-  if (!consumeSeatChange()) return 'park';
-  return asked ? 'stop' : 'continue';
-}
-
-/** Consumes the pending seat change: whether a seat was saved under the running brief. */
-export function consumeSeatChange(): boolean {
-  const pending = seatChangePending;
-  seatChangePending = false;
-  return pending;
+  const { intent, seatChange } = stopStore.get();
+  if (!seatChange) return 'park';
+  spendSeatChange();
+  return intent === 'pause-after-brief' ? 'stop' : 'continue';
 }
 
 // A stop that has nothing to stop is not announced: the byline would report a run terminating
@@ -196,8 +168,6 @@ export function requestStopNow(): boolean {
   // Announce before calling a handler: an already-idle operation may settle synchronously.
   stopStore.request(state.intent === 'end-run' ? 'end-run' : 'stop-now');
   pendingBoundaryPause = false;
-  pauseAskedByOperator = false;
-  seatChangePending = false;
   if (handlers.stop) handlers.stop();
   else if (!abortTurn()) requestBoundaryInterrupt();
   return true;

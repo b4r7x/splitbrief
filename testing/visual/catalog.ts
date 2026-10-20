@@ -3490,6 +3490,67 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-planning-seat-change',
+      title: 'Workflow · a seat saved while the plan is made',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'planning-seat-change',
+        title: 'Planning goes on and the legend names when the seat changes',
+        kind: 'planning',
+        marker: 'Seat changes after the next brief',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-plan-card-seat-change',
+      title: 'Workflow · a seat saved while the plan card waits',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-card-seat-change',
+        title: 'The plan card keeps waiting for an answer',
+        kind: 'review',
+        marker: 'Waiting for your answer',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-seat-change',
+      title: 'Workflow · a seat saved under the running brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-seat-change',
+        title: 'The brief runs on and the legend names when the seat changes',
+        kind: 'implementation',
+        marker: 'Seat changes after',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-final-review-seat-change',
+      title: 'Workflow · a seat saved in the final review',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'final-review-seat-change',
+        title: 'The review runs on and the legend names a fix brief or the next run',
+        kind: 'implementation',
+        marker: 'Seat changes after a fix brief',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-check-long-command',
       title: 'Workflow · a reviewer check with a command longer than the byline',
       surface: screenSurface('workflow'),
@@ -4067,6 +4128,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-settings-saved-route-sign-in',
         title: 'Overlay · settings · a saved route with no credential',
         marker: 'has no credential for opencode',
+      },
+      {
+        id: 'overlay-settings-seat-saved-final-review',
+        title: 'Overlay · settings · a seat saved in the final review',
+        marker: 'seat changes after a fix brief',
       },
       {
         id: 'overlay-settings-approve-checks-ask',

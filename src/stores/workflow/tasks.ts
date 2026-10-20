@@ -2,6 +2,7 @@ import { createStore, storeBase } from '../create-store.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import type { Phase, TaskStatus } from '../../core/schemas/enums.js';
 import { isImplementerPhase } from '../../core/phases.js';
+import type { SeatChangePoint } from '../../core/crew/seats.js';
 import { taskStatusForCompletionMethod } from '../../core/task-completion.js';
 import { BOUNDS } from '../../core/pipeline-spec/bounds.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -167,6 +168,24 @@ export function selectRunningBrief(state: TasksState, phase: Phase): RunningBrie
     (current?.status === 'pending' && isImplementerPhase(phase));
   if (current === undefined || !onIt) return { current: null, next: null };
   return { current, next: state.tasks[index + 1] ?? null };
+}
+
+/** The brief the run last finished and has not yet handed on from. */
+export function selectFinishedBrief(state: TasksState): WorkflowTask | null {
+  const focused = state.tasks[state.currentTask - 1];
+  return focused !== undefined && (focused.status === 'done' || focused.status === 'escalated')
+    ? focused
+    : null;
+}
+
+/**
+ * Where a seat saved now takes over: after the brief that runs or just finished, else after the
+ * next brief. The final review has no brief left, so only a fix brief or the next run takes it.
+ */
+export function selectSeatChangePoint(state: TasksState, phase: Phase): SeatChangePoint {
+  if (phase === 'final-review') return { after: 'fix-brief-or-next-run' };
+  const brief = selectRunningBrief(state, phase).current ?? selectFinishedBrief(state);
+  return brief === null ? { after: 'next-brief' } : { after: 'brief', taskId: brief.id };
 }
 
 /** The brief that follows a named one, which is what a boundary pause is holding back. */

@@ -130,7 +130,8 @@ function awaitAbort(options: EngineOptions): Promise<void> {
 function stopAsked(): Promise<void> {
   return new Promise((resolve) => {
     const off = stopStore.subscribe(() => {
-      if (stopStore.get().intent === 'none') return;
+      const { intent, seatChange } = stopStore.get();
+      if (intent === 'none' && !seatChange) return;
       off();
       resolve();
     });

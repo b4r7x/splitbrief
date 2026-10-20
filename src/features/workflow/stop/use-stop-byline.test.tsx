@@ -11,6 +11,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { requestBoundaryPause, requestSeatChangeAtBoundary } from '../handlers.js';
 import { useStopByline } from './use-stop-byline.js';
 
 function Lead() {
@@ -19,6 +20,17 @@ function Lead() {
       {useStopByline()
         ?.parts.map((part) => part.text)
         .join('') ?? 'none'}
+    </Text>
+  );
+}
+
+function LeadAndHint() {
+  const byline = useStopByline();
+  return (
+    <Text>
+      {byline === null
+        ? 'none'
+        : `${byline.parts.map((part) => part.text).join('')}|${byline.hint}`}
     </Text>
   );
 }
@@ -100,6 +112,61 @@ describe('useStopByline', () => {
     const ui = renderFeature(<Lead />);
 
     expect(ui.lastFrame().trim()).toBe('Finishing T003');
+    ui.unmount();
+  });
+
+  it('a seat saved while the plan is made keeps the run status and names when it changes', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    requestSeatChangeAtBoundary();
+    const ui = renderFeature(<LeadAndHint />);
+
+    expect(ui.lastFrame().trim()).toBe('|Seat changes after the next brief');
+    ui.unmount();
+  });
+
+  it('a seat saved under a running brief names that brief and claims no finish', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    tasksStore.__testReset({
+      tasks: [
+        { id: 'T001', title: 'first', status: 'in_progress' },
+        { id: 'T002', title: 'second', status: 'pending' },
+      ],
+      currentTask: 1,
+      totalTasks: 2,
+    });
+    requestSeatChangeAtBoundary();
+    const ui = renderFeature(<LeadAndHint />);
+
+    expect(ui.lastFrame().trim()).toBe('|Seat changes after T001');
+    ui.unmount();
+  });
+
+  it('a seat saved in the final review names a fix brief or the next run, with no brief left', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'final-review' });
+    tasksStore.__testReset({
+      tasks: [{ id: 'T001', title: 'first', status: 'done' }],
+      currentTask: 1,
+      totalTasks: 1,
+    });
+    requestSeatChangeAtBoundary();
+    const ui = renderFeature(<LeadAndHint />);
+
+    expect(ui.lastFrame().trim()).toBe('|Seat changes after a fix brief or at the next run');
+    ui.unmount();
+  });
+
+  it('the operator pause keeps its own words beside a seat change', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    tasksStore.__testReset({
+      tasks: [{ id: 'T001', title: 'first', status: 'in_progress' }],
+      currentTask: 1,
+      totalTasks: 1,
+    });
+    requestBoundaryPause();
+    requestSeatChangeAtBoundary();
+    const ui = renderFeature(<LeadAndHint />);
+
+    expect(ui.lastFrame().trim()).toBe('Finishing T001|Pause requested; no next brief will start');
     ui.unmount();
   });
 });

@@ -7,7 +7,7 @@ import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { CONFIG_RELATIVE_PATH } from '../../../src/core/config/load/document.js';
-import { sessionsRoot } from '../../../src/core/paths.js';
+import { sessionDir, sessionsRoot } from '../../../src/core/paths.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
@@ -33,6 +33,7 @@ import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRunnerCallStarted } from '#testing/helpers/events/runner-call.js';
+import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
@@ -495,7 +496,7 @@ describe('e2e: seat down switched from the recovery menu', { timeout: 150_000 },
         if (current === null) throw new Error('the screen loaded no config');
         const saved = await configStore.save(save(current));
         expect(saved.kind).toBe('saved');
-        await vi.waitFor(() => expect(frame()).toContain('Pause requested'));
+        await vi.waitFor(() => expect(frame()).toContain('Seat changes after T001'));
         rmSync(codexHold);
 
         // The same brief halts with Seat down on BUILD, and Change BUILD tool takes a row.
@@ -512,9 +513,9 @@ describe('e2e: seat down switched from the recovery menu', { timeout: 150_000 },
         expect(run?.implementer).toMatchObject({ kind: 'cli', tool: 'claude-code' });
         expect(run?.reviewer).toEqual(configStore.get().config?.reviewer);
         // The swap took every seat saved under the brief: no pause waits at its boundary.
-        expect(stopStore.get().intent).toBe('none');
+        expect(stopStore.get()).toMatchObject({ intent: 'none', seatChange: false });
         expect(lifecycleStore.get().status).toBe('running');
-        expect(frame()).not.toContain('Pause requested');
+        expect(frame()).not.toContain('Seat changes after');
       } finally {
         screen.unmount();
       }
@@ -843,6 +844,8 @@ describe('e2e: a setting saved while the brief runs', { timeout: 150_000 }, () =
 });
 
 describe('e2e: a BUILD seat saved while the start check runs', { timeout: 150_000 }, () => {
+  // The seat waits through the plan card and the first brief, which read `Finishing the run` and
+  // `Pause requested; no next brief will start` while the run went on.
   it('builds from the first brief boundary on the seat saved during the check', async () => {
     const { target, codexHold } = await codexSeatFixture(false, PRIMARY_MODEL);
     vi.stubGlobal('fetch', async () => {
@@ -860,14 +863,22 @@ describe('e2e: a BUILD seat saved while the start check runs', { timeout: 150_00
     configStore.load(projectDir);
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     routerStore.init({ screen: 'home' });
-    // The first entry is the run the check prepared: it reaches its first brief boundary at once.
-    // The entry after it stays open for the test to read.
+    // The first entry is the run the check prepared: its plan card waits for an answer, its first
+    // brief runs until the test has read it, and then it reaches its first brief boundary. The
+    // entry after it stays open for the test to read.
+    const { promise: briefRead, resolve: briefReadNow } = Promise.withResolvers<void>();
     const runWorkflow = vi.fn<RunWorkflowFn>(async (opts) => {
       if (runWorkflow.mock.calls.length > 1) return heldUntilAborted(opts.signal);
-      saveState(opts.prepared.session.ref, {
+      const { ref } = opts.prepared.session;
+      saveState(ref, {
         ...createInitialState(opts.prepared.runtime.feature),
         phase: 'implementing',
       });
+      const planPath = join(sessionDir(ref.projectDir, ref.sessionId), 'plan.md');
+      writeFileSync(planPath, '# Plan\n\nGreet the user\n');
+      await opts.callbacks.onApprovalNeeded('plan', planPath, []);
+      opts.tuiSink?.(makeTaskStart({ total: 2 }));
+      await briefRead;
       if (!opts.sinks.consumeBoundaryPause?.()) return heldUntilAborted(opts.signal);
       await opts.callbacks.onContinuationNeeded?.('', 'boundary', []);
       return makeSummary();
@@ -901,7 +912,19 @@ describe('e2e: a BUILD seat saved while the start check runs', { timeout: 150_00
       expect(saved.kind).toBe('saved');
       expect(preparationStore.get().kind).toBe('checking');
       overlayStore.close();
+      const firstFrame = screen.frames.length;
       rmSync(codexHold);
+
+      await vi.waitFor(() => expect(frame()).toContain('Greet the user'), { timeout: 60_000 });
+      await vi.waitFor(() => expect(frame()).toContain('Waiting for your answer'));
+      screen.stdin.write('approve');
+      await vi.waitFor(() => expect(frame()).toContain('> approve'));
+      screen.stdin.write('\r');
+      await vi.waitFor(() => expect(frame()).toContain('Seat changes after T001'));
+      const shown = screen.frames.slice(firstFrame).map(stripAnsiStyles).join('\n');
+      expect(shown).not.toContain('Finishing');
+      expect(shown).not.toContain('Pause requested');
+      briefReadNow();
 
       await vi.waitFor(() => expect(runWorkflow).toHaveBeenCalledTimes(2), { timeout: 60_000 });
       expect(runWorkflow.mock.calls[0]?.[0].prepared.config.implementer).toMatchObject({

@@ -59,6 +59,7 @@ function applyStop(stop: FixtureStopState): void {
   stopStore.__testReset({
     intent: stop.intent,
     phase: stop.phase,
+    seatChange: stop.seatChange ?? false,
     requestedAt: Date.now(),
     parked: stop.parked === undefined ? null : { kept: [], ...stop.parked, resolve: null },
   });
@@ -956,6 +957,13 @@ const checkpointPredicates = [
   [checkpointId('implementation-silent-bare'), includesAll('Implementing…', 'No output for')],
   [checkpointId('review-check-running'), includesAll('Review · Reviewer check V2')],
   [checkpointId('review-pause-requested'), includesAll('Review · Reviewer check V2')],
+  [checkpointId('planning-seat-change'), includesAll('Planning…')],
+  [checkpointId('plan-card-seat-change'), planCardReady],
+  [checkpointId('implementation-seat-change'), includesAll(WORKFLOW_FIXTURE_TEXT.implementation)],
+  [
+    checkpointId('final-review-seat-change'),
+    includesAll('3/3 briefs passed', 'Review · OpenAI Codex CLI'),
+  ],
   [checkpointId('review-check-long-command'), includesAll('Reviewer check V2 · npx vitest')],
   [checkpointId('review-checks-approve'), includesAll('Run all', 'Skip all', 'V1')],
   [checkpointId('review-checks-skipped'), includesAll('not\u00a0run V1, V2')],

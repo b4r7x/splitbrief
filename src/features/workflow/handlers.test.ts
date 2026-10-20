@@ -151,12 +151,19 @@ describe('requestBoundaryPause', () => {
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
   });
 
-  it('spending a seat change drops only the pause the seat change asked for', () => {
+  it('a seat change asks the engine for the boundary and arms no pause of the operator', () => {
+    requestSeatChangeAtBoundary();
+
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', seatChange: true });
+    expect(consumeBoundaryPause()).toBe(true);
+  });
+
+  it('spending a seat change leaves no boundary to stop at', () => {
     requestSeatChangeAtBoundary();
     spendSeatChange();
 
     expect(consumeBoundaryPause()).toBe(false);
-    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', seatChange: false });
   });
 
   it('spending a seat change keeps the pause the operator asked for', () => {
@@ -169,16 +176,28 @@ describe('requestBoundaryPause', () => {
     expect(landBoundaryPause()).toBe('park');
   });
 
+  it('keep running withdraws only the operator pause, and the seat change still waits', () => {
+    requestBoundaryPause();
+    requestSeatChangeAtBoundary();
+    cancelBoundaryPause();
+
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', seatChange: true });
+    expect(landBoundaryPause()).toBe('continue');
+  });
+
   it('lands the boundary pause as a park, a continue on the saved seats, or a stop the operator asked for', () => {
     requestBoundaryPause();
     expect(landBoundaryPause()).toBe('park');
 
+    stopStore.__testReset();
     requestSeatChangeAtBoundary();
     expect(landBoundaryPause()).toBe('continue');
+    expect(stopStore.get().seatChange).toBe(false);
 
     requestBoundaryPause();
     requestSeatChangeAtBoundary();
     expect(landBoundaryPause()).toBe('stop');
+    expect(stopStore.get()).toMatchObject({ intent: 'pause-after-brief', seatChange: false });
   });
 });
 

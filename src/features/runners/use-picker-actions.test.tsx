@@ -21,10 +21,12 @@ import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { tasksStore } from '../../stores/workflow/tasks.js';
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import type { CliAuthMethod } from '../../core/runners/cli-tool-catalog.js';
 import type { PickerSlot, SeatPickerRole } from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import {
   INHERIT_PLANNER_OPTION_ID,
   noFallbackOption,
@@ -598,7 +600,9 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 
-  it('says a seat saved under a running brief lands after it', async () => {
+  // The save said `seat changes after this brief` while the plan was made and in the final review,
+  // where no brief runs: the words now come from the one place the composer legend reads.
+  const saveBuildSeatUnderRun = async (phase: Phase): Promise<string> => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
     seed(config);
     const prepared = makePreparedExecution({
@@ -612,7 +616,7 @@ describe('usePickerActions', () => {
       run: makeRunRecord({ ref: prepared.session.ref }),
       execution: { kind: 'local', prepared },
     });
-    lifecycleStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ phase });
 
     const ui = renderFeature(
       <ConfirmOnKeyProbe role="implementer" selection={realPickerOption('implementer', 'codex')} />,
@@ -621,12 +625,46 @@ describe('usePickerActions', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(feedbackStore.get().message).toBe(
-        `${CREW_SEAT_LABELS.build} seat changes after this brief`,
-      );
+      expect(feedbackStore.get().message).not.toBeNull();
     });
     expect(configStore.get().config?.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
     ui.unmount();
+    return feedbackStore.get().message ?? '';
+  };
+
+  it('says a seat saved under a running brief lands after that brief', async () => {
+    tasksStore.__testReset({
+      tasks: [
+        { id: 'T001', title: 'first', status: 'in_progress' },
+        { id: 'T002', title: 'second', status: 'pending' },
+      ],
+      currentTask: 1,
+      totalTasks: 2,
+    });
+
+    expect(await saveBuildSeatUnderRun('implementing')).toBe(
+      `${CREW_SEAT_LABELS.build} seat changes after T001`,
+    );
+  });
+
+  it('says a seat saved while the plan is made lands after the next brief', async () => {
+    tasksStore.__testReset();
+
+    expect(await saveBuildSeatUnderRun('planning')).toBe(
+      `${CREW_SEAT_LABELS.build} seat changes after the next brief`,
+    );
+  });
+
+  it('says a seat saved in the final review lands after a fix brief or at the next run', async () => {
+    tasksStore.__testReset({
+      tasks: [{ id: 'T001', title: 'first', status: 'done' }],
+      currentTask: 1,
+      totalTasks: 1,
+    });
+
+    expect(await saveBuildSeatUnderRun('final-review')).toBe(
+      `${CREW_SEAT_LABELS.build} seat changes after a fix brief or at the next run`,
+    );
   });
 
   it('leaves the review seat inherited when the pre-selected row is confirmed in Setup', async () => {

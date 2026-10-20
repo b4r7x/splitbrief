@@ -5,7 +5,9 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import {
   briefAfter,
+  selectFinishedBrief,
   selectRunningBrief,
+  selectSeatChangePoint,
   selectTaskListView,
   tasksStore,
 } from '../../../stores/workflow/tasks.js';
@@ -23,11 +25,7 @@ export function useStopByline(): StopByline | null {
   const brief = selectRunningBrief(tasks, phase);
   // A pause armed on a brief outlives it: once the brief finishes, the run's own position still
   // names it until the boundary suite hands it on, so a finished slot is what it is finishing.
-  const focused = tasks.tasks[tasks.currentTask - 1];
-  const finishedTaskId =
-    focused !== undefined && (focused.status === 'done' || focused.status === 'escalated')
-      ? focused.id
-      : null;
+  const finishedTaskId = selectFinishedBrief(tasks)?.id ?? null;
   const questionPending = controlsStore.use((s) => s.inputMode === 'question');
   const suiteStage = operationsStore.use((s) => s.suiteStage ?? null);
   // A stop that ended the run loop settles it at rest, and the record it re-read says where it
@@ -43,6 +41,7 @@ export function useStopByline(): StopByline | null {
   return stopByline({
     intent: stop.intent,
     phase: stop.phase,
+    seatChange: stop.seatChange ? selectSeatChangePoint(tasks, phase) : null,
     workflowPhase: phase,
     parked: stop.parked,
     currentTaskId: brief.current?.id ?? null,
