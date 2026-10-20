@@ -183,6 +183,36 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'home-palette-prefill-draft',
+      title: 'Home · a palette command filled in over a typed draft',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'The /crew prefill stands in front of the draft',
+        kind: 'ready',
+        marker: 'tab fill',
+      },
+      elements: [
+        { id: 'composer', title: 'Feature composer' },
+        { id: 'completion', title: 'Command argument menu' },
+      ],
+    }),
+    defineScenario({
+      id: 'home-palette-prefill-cleared',
+      title: 'Home · the draft back after the palette command is cleared',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'The typed draft is back in the composer',
+        kind: 'ready',
+        marker: 'as it is',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
+    defineScenario({
       id: 'home-draft-long',
       title: 'Home · a draft longer than one row',
       surface: screenSurface('home'),

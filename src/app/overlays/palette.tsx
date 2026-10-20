@@ -121,7 +121,7 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
     commandPaletteMruStore.record(item.id);
     overlayStore.close();
     if (item.action.kind === 'prefill') {
-      composerDraftStore.request(item.action.text);
+      composerDraftStore.requestCommand(item.action.text);
       return;
     }
     try {

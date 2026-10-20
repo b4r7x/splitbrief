@@ -37,10 +37,15 @@ export interface InputAtom {
 }
 
 /** The change an input event made to `value`, as a range replacement rather than a new string. */
-export interface InputEdit {
+export interface InputRange {
   start: number;
   end: number;
   text: string;
+}
+
+export interface InputEdit extends InputRange {
+  /** Where the caret stood when the input event arrived. */
+  caret: number;
 }
 
 const NO_ATOMS: readonly InputAtom[] = [];
@@ -48,7 +53,7 @@ const NO_ATOMS: readonly InputAtom[] = [];
 // Every key this component handles rewrites one contiguous span, so the change can be recovered as
 // a range instead of guessed from a whole-string diff. Where several ranges would produce the same
 // string (deleting one of two adjacent atoms), the caret the edit left behind picks between them.
-export function resolveInputEdit(previous: string, next: string, cursor: number): InputEdit {
+export function resolveInputEdit(previous: string, next: string, cursor: number): InputRange {
   const limit = Math.min(previous.length, next.length);
   let prefix = 0;
   while (prefix < limit && previous[prefix] === next[prefix]) prefix += 1;
@@ -87,7 +92,7 @@ function rebuilds(
   );
 }
 
-export function expandEditOverAtoms(atoms: readonly InputAtom[], edit: InputEdit): InputEdit {
+export function expandEditOverAtoms(atoms: readonly InputAtom[], edit: InputRange): InputRange {
   let start = edit.start;
   let end = edit.end;
   for (const atom of atoms) {
@@ -193,10 +198,10 @@ export function MultilineInput({
   const commit = (nextValue: string, nextCursor: number) => {
     const currentValue = valueRef.current;
     const currentCursor = cursorRef.current;
-    const edit = expandEditOverAtoms(
-      atomList,
-      resolveInputEdit(currentValue, nextValue, nextCursor),
-    );
+    const edit: InputEdit = {
+      ...expandEditOverAtoms(atomList, resolveInputEdit(currentValue, nextValue, nextCursor)),
+      caret: currentCursor,
+    };
     const merged = currentValue.slice(0, edit.start) + edit.text + currentValue.slice(edit.end);
     const caret = edit.start + edit.text.length;
     const nextCursorIndex = snapCaretOutOfAtoms(

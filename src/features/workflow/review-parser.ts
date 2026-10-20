@@ -295,12 +295,12 @@ export function createReviewInputHandler(
           const steerable = lifecycle.steerableCall?.seat === seat;
           const result = await effects.enqueue(message, phase);
           if (!result) {
-            composerDraftStore.requestDocument(document);
+            composerDraftStore.requestPrepend(document);
             feedbackStore.setError('Cannot queue message: no active workflow.');
           } else if (result.status === 'rejected') {
-            // The submission was refused: the draft the composer just cleared comes back, so a
-            // rejection never loses what the operator typed.
-            composerDraftStore.requestDocument(document);
+            // The submission was refused: it comes back in front of whatever the composer holds
+            // now, so a rejection loses neither what was sent nor what was typed since.
+            composerDraftStore.requestPrepend(document);
             feedbackStore.setError(result.message);
           } else if (seat !== null) {
             feedbackStore.setMessage(queueCopy({ seat, taskId, steerable }).feedback);
