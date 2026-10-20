@@ -29,9 +29,13 @@ export function scopeEntryPatterns(entry: string): string[] {
   return trimmed.length > 0 && !/\s/.test(trimmed) ? [trimmed] : [];
 }
 
-/** `file` matches `entry` when any pattern the entry licenses equals it or globs it. */
+/**
+ * `file` matches `entry` when the entry names it exactly (a path with a space, `docs/User Guide.md`,
+ * licenses no pattern) or when any pattern the entry licenses equals it or globs it.
+ */
 export function matchesScopeEntry(file: string, entry: string): boolean {
   const normalized = normalizeProjectRelativePath(file);
+  if (!isScopePlaceholder(entry) && normalized === normalizeProjectRelativePath(entry)) return true;
   return scopeEntryPatterns(entry).some((pattern) =>
     matchesGlob(normalized, normalizeProjectRelativePath(pattern)),
   );

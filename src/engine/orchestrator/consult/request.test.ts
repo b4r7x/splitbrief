@@ -124,11 +124,19 @@ function splitAnswer(nativeSessionId: string | null): ScriptedConsult {
   };
 }
 
-function consultState(): WorkflowState {
+function consultState(suggestedFiles?: Task['suggestedFiles']): WorkflowState {
   return {
     ...transition(createInitialState('greet people'), { type: 'START' }),
     phase: 'validating-task',
-    tasks: [makeTask({ id: 'T003', status: 'failed', revision: 1, criteria: ['C1'] })],
+    tasks: [
+      makeTask({
+        id: 'T003',
+        status: 'failed',
+        revision: 1,
+        criteria: ['C1'],
+        ...(suggestedFiles !== undefined && { suggestedFiles }),
+      }),
+    ],
     currentTaskIndex: 0,
     attempt: 1,
     plan: {
@@ -155,11 +163,20 @@ const FIX: NonNullable<Task['fix']> = {
   ],
 };
 
-function fixState(): WorkflowState {
+function fixState(suggestedFiles?: Task['suggestedFiles']): WorkflowState {
   const state = consultState();
   return {
     ...state,
-    tasks: [makeTask({ id: 'T003', status: 'failed', revision: 1, criteria: ['C1'], fix: FIX })],
+    tasks: [
+      makeTask({
+        id: 'T003',
+        status: 'failed',
+        revision: 1,
+        criteria: ['C1'],
+        fix: FIX,
+        ...(suggestedFiles !== undefined && { suggestedFiles }),
+      }),
+    ],
   };
 }
 
@@ -198,7 +215,7 @@ describe('requestConsult', () => {
     chmodSync(join(workspaceDir, 'run.sh'), 0o755);
     const { bus } = makeBusRecorder();
     const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
-    const state = startedAt(consultState(), snapshot);
+    const state = startedAt(consultState(['edit.txt', 'gone.txt', 'run.sh']), snapshot);
     saveState(ref, state);
     const task = state.tasks[0];
     if (task === undefined) throw new Error('missing consult task');
@@ -483,7 +500,7 @@ describe('requestConsult', () => {
       writeFileSync(join(workspaceDir, 'src/greet.ts'), 'export const greet = "new";\n');
       writeFileSync(join(workspaceDir, 'src/cli.ts'), 'export const cli = "attempt one";\n');
       const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
-      const state = startedAt(makeState(), startSnapshot, [
+      const state = startedAt(makeState(['src/greet.ts', 'src/cli.ts']), startSnapshot, [
         'check K1 did not pass (fail): \n> mocha\nError: Cannot find module',
         'Tool implementer exited without changing any files',
       ]);
@@ -520,7 +537,7 @@ describe('requestConsult', () => {
     },
   );
 
-  it('bounds the task diff and names a file it leaves out', async () => {
+  it('bounds the diff of the brief files and names a file it leaves out', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const ref = { projectDir, sessionId };
     const workspaceDir = createTempDir('consult-task-diff-bound');
@@ -534,7 +551,7 @@ describe('requestConsult', () => {
     writeFileSync(join(workspaceDir, 'src/greet.ts'), 'export const greet = "new";\n');
     const { bus } = makeBusRecorder();
     const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
-    const state = startedAt(consultState(), startSnapshot);
+    const state = startedAt(consultState(['src/data.json', 'src/greet.ts']), startSnapshot);
     saveState(ref, state);
 
     await requestConsult(
@@ -556,6 +573,116 @@ describe('requestConsult', () => {
     expect(prompt).toContain('src/greet.ts');
     expect(prompt).not.toContain('END-OF-DATA');
     expect(prompt).toContain('The diff stops at 40,000 characters.');
+  });
+
+  it('shows the brief file whole behind many large generated files and only names those', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const ref = { projectDir, sessionId };
+    const workspaceDir = createTempDir('consult-brief-files');
+    dirs.push(workspaceDir);
+    const startSnapshot = await captureWorkspaceSnapshot(workspaceDir, ref);
+    mkdirSync(join(workspaceDir, 'data'));
+    mkdirSync(join(workspaceDir, 'scripts'));
+    for (let index = 0; index < 120; index += 1) {
+      writeFileSync(
+        join(workspaceDir, `data/item-${String(index).padStart(3, '0')}.txt`),
+        `GENERATED-ROW\n${'x'.repeat(1_000)}\n`,
+      );
+    }
+    writeFileSync(join(workspaceDir, 'scripts/gen.js'), 'export const generate = "brief";\n');
+    const { bus } = makeBusRecorder();
+    const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
+    const state = startedAt(consultState(['scripts/gen.js']), startSnapshot);
+    saveState(ref, state);
+
+    await requestConsult(
+      {
+        ...ref,
+        workspaceDir,
+        bus,
+        config,
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+      },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
+    );
+
+    const prompt = planner.prompts[0] ?? '';
+    expect(prompt).toContain('+export const generate = "brief";');
+    expect(prompt).not.toContain('GENERATED-ROW');
+    expect(prompt).not.toContain('The diff stops');
+    expect(prompt).toContain(
+      'This task also changed other files, not shown here: `data/item-000.txt`',
+    );
+    expect(prompt).toContain('and 100 more. Read these files in the run workspace.');
+  });
+
+  it('says the brief files did not change and names the files the task changed', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const ref = { projectDir, sessionId };
+    const workspaceDir = createTempDir('consult-brief-unchanged');
+    dirs.push(workspaceDir);
+    mkdirSync(join(workspaceDir, 'src'));
+    writeFileSync(join(workspaceDir, 'src/greet.ts'), 'export const greet = "same";\n');
+    const startSnapshot = await captureWorkspaceSnapshot(workspaceDir, ref);
+    writeFileSync(join(workspaceDir, 'src/other.ts'), 'export const OTHER_BODY = 1;\n');
+    const { bus } = makeBusRecorder();
+    const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
+    const state = startedAt(consultState(['src/greet.ts']), startSnapshot);
+    saveState(ref, state);
+
+    await requestConsult(
+      {
+        ...ref,
+        workspaceDir,
+        bus,
+        config,
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+      },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
+    );
+
+    const prompt = planner.prompts[0] ?? '';
+    expect(prompt).toContain('The files of this brief have no change since this task started.');
+    expect(prompt).toContain(
+      'This task also changed other files, not shown here: `src/other.ts`. Read these files in the run workspace.',
+    );
+    expect(prompt).not.toContain('OTHER_BODY');
+  });
+
+  it('shows the diff of a brief file with a space in its path', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const ref = { projectDir, sessionId };
+    const workspaceDir = createTempDir('consult-brief-space');
+    dirs.push(workspaceDir);
+    const startSnapshot = await captureWorkspaceSnapshot(workspaceDir, ref);
+    mkdirSync(join(workspaceDir, 'docs'));
+    writeFileSync(join(workspaceDir, 'docs/User Guide.md'), 'SPACE-BODY\n');
+    const { bus } = makeBusRecorder();
+    const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
+    const state = startedAt(consultState(['docs/User Guide.md']), startSnapshot);
+    saveState(ref, state);
+
+    await requestConsult(
+      {
+        ...ref,
+        workspaceDir,
+        bus,
+        config,
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+      },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
+    );
+
+    const prompt = planner.prompts[0] ?? '';
+    expect(prompt).toContain('+SPACE-BODY');
+    expect(prompt).not.toContain('The files of this brief have no change');
+    expect(prompt).not.toContain('not shown here');
   });
 
   it('consults on an older state that recorded no task start, with a plain line', async () => {
@@ -632,7 +759,10 @@ describe('requestConsult', () => {
     expect(prompt).toContain('-export const greeting = "before";');
     expect(prompt).toContain('+export const greeting = "second";');
     expect(prompt).not.toContain('-export const greeting = "first";');
-    expect(prompt).toContain('+export const helper = 1;');
+    expect(prompt).not.toContain('+export const helper = 1;');
+    expect(prompt).toContain(
+      'This task also changed other files, not shown here: `src/helper.ts`.',
+    );
   });
 
   it.each(['failed', 'stale'] as const)(

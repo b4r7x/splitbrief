@@ -29,10 +29,14 @@ export type ConsultPromptInput = Readonly<{
   /** The task's earlier revisions, oldest first; the current task travels as `task`. */
   revisions: readonly Task[];
   /**
-   * The task's diff from its start to now, one entry per changed file: every attempt, revision
-   * and split subtask of its lineage. Null when no start is recorded.
+   * The task's change from its start to now: every attempt, revision and split subtask of its
+   * lineage. `diffs` holds one entry per changed file of the brief, `otherFiles` names every
+   * other changed file. Null when no start is recorded.
    */
-  diffs: readonly { path: string; diff: string }[] | null;
+  taskDiff: Readonly<{
+    diffs: readonly { path: string; diff: string }[];
+    otherFiles: readonly string[];
+  }> | null;
   /** The lineage's failed attempts, oldest first, each with its first error line. */
   failedAttempts: readonly AttemptFailure[];
   failingOutput: string;
@@ -254,18 +258,24 @@ function reportLines(report: ImplementerReport | null): string[] {
   return ['## Implementer Report', fenced(detail)];
 }
 
-/** The names of the files a bounded diff leaves out, at most this many before a count. */
+/** The names of the files a diff does not show, at most this many before a count. */
 const LEFT_OUT_NAMES = 20;
 
+/** The first `LEFT_OUT_NAMES` paths, then a count of the rest. */
+function namedFiles(paths: readonly string[]): string {
+  const names = paths.slice(0, LEFT_OUT_NAMES).map((path) => `\`${path}\``);
+  const more = paths.length - names.length;
+  return `${names.join(', ')}${more > 0 ? `, and ${more.toLocaleString('en-US')} more` : ''}`;
+}
+
 /**
- * The task's file diffs in order, each whole, until `BOUNDS.consultDiffChars` is full. A first
+ * The brief's file diffs in order, each whole, until `BOUNDS.consultDiffChars` is full. A first
  * file larger than the whole budget is cut to it. The files cut or left out are named, with a
  * count past `LEFT_OUT_NAMES`, for the seat to read in the workspace.
  */
-function diffLines(diffs: ConsultPromptInput['diffs']): string[] {
-  if (diffs === null)
-    return ['No diff of this task is available. Read the files in the run workspace.'];
-  if (diffs.length === 0) return ['This task has changed no file since it started.'];
+function briefDiffLines(diffs: readonly { path: string; diff: string }[]): string[] {
+  if (diffs.length === 0)
+    return ['The files of this brief have no change since this task started.'];
   let used = 0;
   const overflow = diffs.findIndex((entry) => {
     used += entry.diff.length;
@@ -278,21 +288,34 @@ function diffLines(diffs: ConsultPromptInput['diffs']): string[] {
       : diffs.slice(0, whole).map((entry) => entry.diff);
   const notShown = diffs.slice(whole).map((entry) => entry.path);
   if (notShown.length === 0) return [fenced(shown.join('\n'), 'diff')];
-  const names = notShown.slice(0, LEFT_OUT_NAMES).map((path) => `\`${path}\``);
-  const more = notShown.length - names.length;
   return [
     fenced(shown.join('\n'), 'diff'),
-    `The diff stops at ${BOUNDS.consultDiffChars.toLocaleString('en-US')} characters. Not shown in full: ${names.join(', ')}${
-      more > 0 ? `, and ${more.toLocaleString('en-US')} more` : ''
-    }. Read these files in the run workspace.`,
+    `The diff stops at ${BOUNDS.consultDiffChars.toLocaleString('en-US')} characters. Not shown in full: ${namedFiles(notShown)}. Read these files in the run workspace.`,
+  ];
+}
+
+/** The brief's file diffs, then one line naming the other files the task changed. */
+function diffLines(taskDiff: ConsultPromptInput['taskDiff']): string[] {
+  if (taskDiff === null)
+    return ['No diff of this task is available. Read the files in the run workspace.'];
+  const { diffs, otherFiles } = taskDiff;
+  if (diffs.length === 0 && otherFiles.length === 0)
+    return ['This task has changed no file since it started.'];
+  return [
+    ...briefDiffLines(diffs),
+    ...(otherFiles.length === 0
+      ? []
+      : [
+          `This task also changed other files, not shown here: ${namedFiles(otherFiles)}. Read these files in the run workspace.`,
+        ]),
   ];
 }
 
 function attemptLines(input: ConsultPromptInput): string[] {
   return [
     '## Task Diff',
-    'What is on disk now against the start of this task: the changes of all its attempts, revisions and split subtasks, not only the latest attempt.',
-    ...diffLines(input.diffs),
+    'What is on disk now against the start of this task, for the files of this brief: the changes of all its attempts, revisions and split subtasks, not only the latest attempt.',
+    ...diffLines(input.taskDiff),
     ...(input.reason === 'deviation'
       ? []
       : [

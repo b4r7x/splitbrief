@@ -295,7 +295,10 @@ function consultContract(): string {
     plan: PLACEHOLDER_PLAN,
     task: PLACEHOLDER_TASK,
     revisions: [],
-    diffs: [{ path: '<file>', diff: "<the diff from the task's start to now>" }],
+    taskDiff: {
+      diffs: [{ path: '<brief file>', diff: "<the diff from the task's start to now>" }],
+      otherFiles: ['<other changed file>'],
+    },
     failedAttempts: [
       {
         attempt: 1,
