@@ -365,8 +365,9 @@ export function readPickerRunner(
   config: Config,
   role: ActiveRunnerRole,
   slot: PickerSlot,
+  profile: string | undefined,
 ): RunnerConfig | undefined {
-  if (slot === 'seat') return readActiveRunner({ config, role });
+  if (slot === 'seat') return readActiveRunner({ config, role, profile });
   const fallback = seatFallback(config, role);
   return fallback === undefined ? undefined : fallbackRunner(fallback);
 }

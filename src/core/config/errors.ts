@@ -129,6 +129,10 @@ export const configError = {
       `Default implementer profile "${defaultName}" is not defined.`,
       { defaultName },
     ),
+  implementerProfileNotFound: (profile: string) =>
+    error('config-profile-not-found', `Implementer profile "${profile}" is not defined.`, {
+      profile,
+    }),
 } as const;
 
 export function configErrorDiagnosticState(err: unknown): ReadinessDiagnosticStateId | undefined {

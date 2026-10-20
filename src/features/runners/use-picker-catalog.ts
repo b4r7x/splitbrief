@@ -192,6 +192,7 @@ export function usePickerCatalog(
   const effortDraft = pickerViewStore.use((s) => s.effortDraft);
   const authDraft = pickerViewStore.use((s) => s.authDraft);
   const browseCatalog = pickerViewStore.use((s) => s.browseCatalog);
+  const profile = pickerViewStore.use((s) => s.profile);
 
   const [{ cliTools, providers, providerOutcomes, cliCatalogOutcomes, refresh }] =
     useStores(detectionStore);
@@ -203,7 +204,7 @@ export function usePickerCatalog(
     setUncontrolledItemId(null);
   }
 
-  const runnerConfig = readPickerRunner(config, lane, slot);
+  const runnerConfig = readPickerRunner(config, lane, slot, profile);
 
   const rawItems = buildPickerOptions(
     role,

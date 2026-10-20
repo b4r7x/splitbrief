@@ -21,7 +21,6 @@ import {
 } from '../../core/config/accessors/runner-config.js';
 import { EFFORT_LEVELS, type EffortLevel } from '../../core/schemas/enums.js';
 import { includes } from '../../utils/type-guards.js';
-import { updateDefaultImplementerConfig } from '../../core/config/accessors/implementer-profiles.js';
 import type { RunnerPickerOption } from './model-catalog/options.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { fallbackRunner, seatFallback } from '../../core/crew/fallback.js';
@@ -267,22 +266,29 @@ export interface ImplementerSelectionInput {
   effort?: string | null | undefined;
   /** The chosen model's own effort ladder. Absent means unknown — never a reason to clear. */
   effortChoices?: readonly string[] | undefined;
+  /** The BUILD profile the save lands on; absent is the default profile. */
+  profile?: string | undefined;
 }
 
 export function commitImplementerSelection(input: ImplementerSelectionInput): SeatCommitResult {
   let notice: string | undefined;
   let kept: string | undefined;
   const parse = (value: unknown) => ImplementerConfigSchema.parse(value);
-  const updated = updateDefaultImplementerConfig(input.config, (existing) => {
-    const committed = commitRunnerSelection({
-      ...input,
-      role: 'implementer',
-      existing,
-      parse,
-    });
-    notice = committed.notice;
-    kept = committed.kept;
-    return committed.runner;
+  const updated = updateActiveRunner({
+    config: input.config,
+    role: 'implementer',
+    profile: input.profile,
+    updater: (existing) => {
+      const committed = commitRunnerSelection({
+        ...input,
+        role: 'implementer',
+        existing,
+        parse,
+      });
+      notice = committed.notice;
+      kept = committed.kept;
+      return committed.runner;
+    },
   });
   return {
     config: updated,
@@ -347,15 +353,20 @@ export interface CommitCustomCommandInput {
   role: SeatPickerRole;
   command: string;
   kind: 'shell' | 'agent';
+  profile?: string | undefined;
 }
 
 export function commitCustomCommand(input: CommitCustomCommandInput): Config {
   const { config, command, kind } = input;
   const lane = seatPickerLane(input.role);
   if (lane === 'implementer') {
-    return updateDefaultImplementerConfig(config, (existing) =>
-      buildRunnerConfig('implementer', { kind, command, existing, model: existing.model }),
-    );
+    return updateActiveRunner({
+      config,
+      role: 'implementer',
+      profile: input.profile,
+      updater: (existing) =>
+        buildRunnerConfig('implementer', { kind, command, existing, model: existing.model }),
+    });
   }
   return updatePlannerTier(config, lane, (existing) =>
     buildRunnerConfig(lane, { kind, command, existing }),
@@ -368,6 +379,7 @@ export interface CommitCustomModelInput {
   selection: RunnerPickerOption;
   modelName: string;
   customModels: string[];
+  profile?: string | undefined;
 }
 
 export function commitCustomModel(input: CommitCustomModelInput): Config {
@@ -385,16 +397,24 @@ export function commitCustomModel(input: CommitCustomModelInput): Config {
   };
 
   if (lane === 'implementer') {
-    return updateDefaultImplementerConfig(config, (existing) =>
-      buildRunnerConfig('implementer', { ...opts, existing }),
-    );
+    return updateActiveRunner({
+      config,
+      role: 'implementer',
+      profile: input.profile,
+      updater: (existing) => buildRunnerConfig('implementer', { ...opts, existing }),
+    });
   }
   return updatePlannerTier(config, lane, (existing) =>
     buildRunnerConfig(lane, { ...opts, existing }),
   );
 }
 
-export function removeCustomModel(config: Config, role: SeatPickerRole, modelId: string): Config {
+export function removeCustomModel(
+  config: Config,
+  role: SeatPickerRole,
+  modelId: string,
+  profile?: string | undefined,
+): Config {
   const lane = seatPickerLane(role);
   if (lane !== 'implementer') {
     return updatePlannerTier(config, lane, (existing) => {
@@ -404,21 +424,26 @@ export function removeCustomModel(config: Config, role: SeatPickerRole, modelId:
       return omitModel(existing, filtered);
     });
   }
-  return updateDefaultImplementerConfig(config, (existing) => {
-    const current = existing.customModels ?? [];
-    const filtered = current.filter((m) => m !== modelId);
-    if (existing.model !== modelId) {
-      return { ...existing, customModels: filtered };
-    }
-    const fallbackModel = filtered[0];
-    if (fallbackModel !== undefined) {
-      return { ...existing, model: fallbackModel, customModels: filtered };
-    }
-    if (existing.kind !== 'cli') {
-      return { ...existing, customModels: filtered };
-    }
-    const { model: _model, ...rest } = existing;
-    return { ...rest, customModels: filtered };
+  return updateActiveRunner({
+    config,
+    role: 'implementer',
+    profile,
+    updater: (existing) => {
+      const current = existing.customModels ?? [];
+      const filtered = current.filter((m) => m !== modelId);
+      if (existing.model !== modelId) {
+        return { ...existing, customModels: filtered };
+      }
+      const fallbackModel = filtered[0];
+      if (fallbackModel !== undefined) {
+        return { ...existing, model: fallbackModel, customModels: filtered };
+      }
+      if (existing.kind !== 'cli') {
+        return { ...existing, customModels: filtered };
+      }
+      const { model: _model, ...rest } = existing;
+      return { ...rest, customModels: filtered };
+    },
   });
 }
 

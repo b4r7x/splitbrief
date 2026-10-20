@@ -1089,3 +1089,83 @@ it('keeps the custom models of the BUILD seat saved under the halt when Change B
     screen.unmount();
   }
 });
+
+it('moves only the halted BUILD profile to the custom model typed in the halt picker', {
+  timeout: 150_000,
+}, async () => {
+  const { target, claudeCalls } = await codexSeatFixture(false, PRIMARY_MODEL);
+  const big = {
+    kind: 'cli',
+    tool: 'claude-code',
+    model: SWITCHED_MODEL,
+    contextLength: 1_000_000,
+  } as const;
+  const small = {
+    kind: 'cli',
+    tool: 'codex',
+    model: PRIMARY_MODEL,
+    contextLength: 200_000,
+  } as const;
+  writeConfig(target.projectDir, {
+    ...loadConfig(target.projectDir).config,
+    implementer: big,
+    implementerProfiles: { default: 'big', profiles: { big, small } },
+  });
+  const options = { timeoutMs: 90_000, reapProjectDir: target.projectDir };
+  const halted = await cli(target, ['start', 'smoke'], options);
+  expect(halted.stderr).toContain('Seat down (runner-usage-limit)');
+  const ref = {
+    projectDir: target.projectDir,
+    sessionId: readdirSync(sessionsRoot(target.projectDir))[0] ?? '',
+  };
+  expect(loadState(ref)?.pendingRecovery?.selectedImplementerProfile).toBe('small');
+  vi.stubGlobal('fetch', async () => {
+    throw new Error('Network disabled in seat switch E2E');
+  });
+  await trustDeclaredRunners({
+    projectDir: target.projectDir,
+    config: loadConfig(target.projectDir).config,
+  });
+  const { screen } = await openHaltedRun(target, {
+    heading: 'Seat down',
+    prepare: ({ ref, state }) => preparedResume(ref, state),
+    runWorkflow,
+  });
+  const frame = () => stripAnsiStyles(screen.lastFrame());
+  const press = async (key: string) => {
+    screen.stdin.write(key);
+    await flushEffects();
+    await tick(100);
+  };
+  try {
+    await press('\r');
+    await vi.waitFor(() => expect(frame()).toContain('BUILD · tool, model, effort'));
+    await press('\u0012');
+    await vi.waitFor(() => expect(frame()).toContain('claude-opus-5-5'), { timeout: 30_000 });
+    // The picker opens on the offered tool's models; a query no model matches leaves the
+    // custom-model row, and ⏎ on it opens the custom model entry.
+    for (const key of 'my-a') await press(key);
+    await vi.waitFor(() => expect(frame()).toContain('Add custom model'));
+    await press('\r');
+    await vi.waitFor(() => expect(frame()).toContain('Model id for Claude Code CLI'));
+    for (const key of 'my-a') await press(key);
+    await press('\r');
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
+
+    await vi.waitFor(() => expect(loadState(ref)?.phase).toBe('complete'), { timeout: 60_000 });
+    expect(recordedCalls(claudeCalls)).toEqual([
+      { model: 'my-a', prompt: expect.stringContaining(GREET_FILE) },
+    ]);
+    const profiles = loadConfig(target.projectDir).config.implementerProfiles;
+    expect(profiles?.default).toBe('big');
+    expect(profiles?.profiles.big).toEqual(big);
+    expect(profiles?.profiles.small).toEqual({
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'my-a',
+      customModels: ['my-a'],
+    });
+  } finally {
+    screen.unmount();
+  }
+});

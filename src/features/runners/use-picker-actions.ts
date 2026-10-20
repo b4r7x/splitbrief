@@ -38,7 +38,6 @@ import {
   readActiveRunner,
   updateActiveRunner,
 } from '../../core/config/accessors/active-runner.js';
-import { updateDefaultImplementerConfig } from '../../core/config/accessors/implementer-profiles.js';
 import { detectProviderCatalog } from '../../engine/providers/catalog-detection.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
@@ -146,10 +145,11 @@ export const defaultPickerEffectDeps: PickerEffectDeps = {
 function seatOwnRunner(
   config: Config,
   role: ActiveRunnerRole,
+  profile: string | undefined,
 ): PlannerConfig | ImplementerConfig | undefined {
   if (role === 'planner') return config.planner;
   if (role === 'reviewer') return config.reviewer;
-  return readActiveRunner({ config, role: 'implementer' });
+  return readActiveRunner({ config, role: 'implementer', profile });
 }
 
 /**
@@ -180,6 +180,7 @@ function writeSeatAuthChannel(
   config: Config,
   role: ActiveRunnerRole,
   method: CliAuthMethod | 'host-configured',
+  profile: string | undefined,
 ): Config {
   switch (role) {
     case 'planner':
@@ -200,6 +201,7 @@ function writeSeatAuthChannel(
       return updateActiveRunner({
         config,
         role: 'implementer',
+        profile,
         updater: (existing) =>
           existing.kind === 'cli' ? applyCliAuthChoice(existing, method) : existing,
       });
@@ -230,8 +232,13 @@ function changesRunningSeat(before: Config, after: Config): boolean {
  * catalog label and every axis the saved block carries, so a level the tool cannot spell, which
  * the commit dropped, is never announced.
  */
-function savedSeatIdentity(saved: Config, role: ActiveRunnerRole, slot: PickerSlot): string {
-  const runner = readPickerRunner(saved, role, slot);
+function savedSeatIdentity(
+  saved: Config,
+  role: ActiveRunnerRole,
+  slot: PickerSlot,
+  profile: string | undefined,
+): string {
+  const runner = readPickerRunner(saved, role, slot, profile);
   if (runner === undefined) {
     throw error('picker-invalid-fallback', 'Saved fallback has no CLI runner', { role });
   }
@@ -308,10 +315,11 @@ export function usePickerActions(opts: {
   const config = configStore.useConfig();
   const view = pickerViewStore.use((s) => s.view);
   const preservedLeftIndex = pickerViewStore.use((s) => s.preservedLeftIndex);
+  const profile = pickerViewStore.use((s) => s.profile);
   const saveInFlight = useRef(false);
 
   const seatSaved = (updated: Config) =>
-    `${catalog.roleLabel}${slot === 'fallback' ? ' fallback' : ''}${SOFT_SEP}${savedSeatIdentity(updated, seatRole, slot)}`;
+    `${catalog.roleLabel}${slot === 'fallback' ? ' fallback' : ''}${SOFT_SEP}${savedSeatIdentity(updated, seatRole, slot, profile)}`;
 
   // A notice is news the save does not carry, so it joins the save line rather than replacing it.
   const commit = async (updated: Config, subject: string, notice?: string | undefined) => {
@@ -380,6 +388,7 @@ export function usePickerActions(opts: {
       case 'implementer':
         return commitImplementerSelection({
           config,
+          profile,
           selection,
           model,
           effort,
@@ -412,7 +421,7 @@ export function usePickerActions(opts: {
         )
       ) {
         feedbackStore.setError(
-          `${catalog.roleLabel} runs ${savedSeatIdentity(config, seatRole, 'seat')} now${SOFT_SEP}choose another tool or model`,
+          `${catalog.roleLabel} runs ${savedSeatIdentity(config, seatRole, 'seat', profile)} now${SOFT_SEP}choose another tool or model`,
         );
         return;
       }
@@ -484,7 +493,7 @@ export function usePickerActions(opts: {
     confirmAuthMethod(method: CliAuthMethod | 'host-configured') {
       return reportFailure(async () => {
         await commit(
-          writeSeatAuthChannel(config, seatRole, method),
+          writeSeatAuthChannel(config, seatRole, method, profile),
           `${catalog.roleLabel} auth${SOFT_SEP}${AUTH_METHOD_WORDS[method]}`,
         );
       });
@@ -497,7 +506,7 @@ export function usePickerActions(opts: {
       // Back on the current tool, the ladder reads the saved level again.
       if (item.id !== catalog.currentItem?.id) {
         pickerViewStore.setBrowseCatalog(false);
-        const runner = readPickerRunner(config, seatRole, slot);
+        const runner = readPickerRunner(config, seatRole, slot, profile);
         pickerViewStore.setEffortDraft(
           item.isCurrent === true && runner !== undefined
             ? seatConfiguredEffort({
@@ -520,7 +529,7 @@ export function usePickerActions(opts: {
           feedbackStore.setError(`${item.id} belongs to the planner. Remove it from the planner.`);
           return;
         }
-        const updated = removeCustomModel(config, seatRole, item.id);
+        const updated = removeCustomModel(config, seatRole, item.id, profile);
         const result = await deps.saveConfig(updated);
         if (reportConfigSaveFailure(result)) return;
         feedbackStore.setMessage(`Removed custom model: ${item.id}`);
@@ -542,6 +551,7 @@ export function usePickerActions(opts: {
           role: seatRole,
           command: cmd,
           kind: view.intendedKind,
+          profile,
         });
         await commit(updated, seatSaved(updated));
       });
@@ -565,6 +575,7 @@ export function usePickerActions(opts: {
           selection: customModelItem,
           modelName,
           customModels: catalog.customModels,
+          profile,
         });
         await commit(
           updated,
@@ -594,11 +605,12 @@ export function useLocalConnectionActions(
 ): LocalConnectionActions {
   const seatRole: ActiveRunnerRole = seatPickerLane(role);
   const config = configStore.useConfig();
+  const profile = pickerViewStore.use((s) => s.profile);
   const roleLabel = CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]];
 
   return {
     seat(provider: ApiProviderId): LocalConnectionSeat {
-      const own = seatOwnRunner(config, seatRole);
+      const own = seatOwnRunner(config, seatRole, profile);
       const configured = own?.kind === 'api' && own.provider === provider ? own : undefined;
       return {
         apiBase: configured?.apiBase ?? getKnownProviderBaseURL(provider),
@@ -619,12 +631,16 @@ export function useLocalConnectionActions(
         // The seat's own block, so a saved REVIEW address never lands on the planner.
         const updated =
           seatRole === 'implementer'
-            ? updateDefaultImplementerConfig(config, (existing) =>
-                dropClearedImplementerToken(
-                  buildRunnerConfig('implementer', { ...opts, existing }),
-                  input.apiKey,
-                ),
-              )
+            ? updateActiveRunner({
+                config,
+                role: 'implementer',
+                profile,
+                updater: (existing) =>
+                  dropClearedImplementerToken(
+                    buildRunnerConfig('implementer', { ...opts, existing }),
+                    input.apiKey,
+                  ),
+              })
             : updateActiveRunner({
                 config,
                 role: seatRole,
@@ -638,7 +654,7 @@ export function useLocalConnectionActions(
         if (reportConfigSaveFailure(result)) return;
         feedbackStore.setMessage(
           formatConfigSaveSuccess(
-            `${roleLabel}${SOFT_SEP}${savedSeatIdentity(updated, seatRole, 'seat')}`,
+            `${roleLabel}${SOFT_SEP}${savedSeatIdentity(updated, seatRole, 'seat', profile)}`,
             result,
           ),
         );
