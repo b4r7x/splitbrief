@@ -28,14 +28,42 @@ export interface StopState {
   phase: StopPhase;
   requestedAt: number | null;
   parked: StopParked | null;
+  /**
+   * A seat was saved under the running run and is not taken yet: the run is re-prepared on it at
+   * the next brief boundary and goes on. It is no stop, so it never sets the intent.
+   */
+  seatChange: boolean;
   error?: string;
 }
 
-const initial: StopState = { intent: 'none', phase: 'idle', requestedAt: null, parked: null };
+const initial: StopState = {
+  intent: 'none',
+  phase: 'idle',
+  requestedAt: null,
+  parked: null,
+  seatChange: false,
+};
 const store = createStore<StopState>(initial);
 
+// A pause after this brief waits at the boundary a seat change waits on; a stop, an End run or a
+// quit takes the run down before it, and the seat is read again when the run re-enters.
 function request(intent: Exclude<StopIntent, 'none'>): void {
-  store.set((s) => ({ intent, phase: 'requested', requestedAt: Date.now(), parked: s.parked }));
+  store.set((s) => ({
+    intent,
+    phase: 'requested',
+    requestedAt: Date.now(),
+    parked: s.parked,
+    seatChange: intent === 'pause-after-brief' && s.seatChange,
+  }));
+}
+
+function markSeatChange(pending: boolean): void {
+  store.set((s) => ({ ...s, seatChange: pending }));
+}
+
+/** The operator takes back a pause after this brief; a seat change it waited beside still waits. */
+function cancelPause(): void {
+  store.set((s) => ({ ...initial, seatChange: s.seatChange }));
 }
 
 function fail(message: string): void {
@@ -83,6 +111,8 @@ function __testReset(next?: Partial<StopState>): void {
 export const stopStore = {
   ...storeBase(store),
   request,
+  markSeatChange,
+  cancelPause,
   markTerminating,
   markSettling,
   fail,

@@ -28,6 +28,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BRAILLE_SPINNER_FRAMES, glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
+import { clearAllHandlers, requestSeatChangeAtBoundary } from '../handlers.js';
 import { InputFooter } from './input-footer.js';
 
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
@@ -1113,6 +1114,37 @@ describe('InputFooter', () => {
     expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, ' · ').replace('\u001b[39m', ''));
     expect(ui.lastFrame()).toContain(paint(defaultTheme.text, 'Disk full'));
     ui.unmount();
+  });
+
+  // A seat saved during the plan card read `Finishing the run` where the card waited for an answer.
+  it('a seat saved while the plan card waits keeps the wait on the byline', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    requestSeatChangeAtBoundary();
+    const ui = renderFeature(<InputFooter width={120} waiting />);
+    const frame = stripAnsiStyles(ui.lastFrame());
+
+    expect(frame).toContain(`${glyph('statusPending')} Waiting for your answer`);
+    expect(frame).not.toContain('Finishing');
+    expect(frame).not.toContain('Pause requested');
+    ui.unmount();
+    clearAllHandlers();
+  });
+
+  it('a seat saved under a running brief keeps the live status and claims no finish', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    tasksStore.__testReset({
+      tasks: [{ id: 'T001', title: 'first', status: 'in_progress' }],
+      currentTask: 1,
+      totalTasks: 1,
+    });
+    requestSeatChangeAtBoundary();
+    const ui = renderFeature(<InputFooter width={120} />);
+    const frame = stripAnsiStyles(ui.lastFrame());
+
+    expect(frame).toContain('Implementing…');
+    expect(frame).not.toContain('Finishing');
+    ui.unmount();
+    clearAllHandlers();
   });
 
   it('paints waiting with warning', () => {

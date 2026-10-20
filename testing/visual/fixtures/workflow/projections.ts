@@ -210,6 +210,7 @@ interface FixtureStreaming {
 export interface FixtureStopState {
   readonly intent: StopIntent;
   readonly phase: StopPhase;
+  readonly seatChange?: boolean;
   readonly parked?: {
     readonly kind: StopParkKind;
     readonly taskId: string;
@@ -5556,6 +5557,33 @@ const reviewPauseRequestedProjection: WorkflowFixtureProjection = {
   stop: { intent: 'pause-after-brief', phase: 'requested' },
 };
 
+// A seat saved under the run: the run goes on and the legend names the brief the seat waits for.
+const SEAT_CHANGE_STOP: FixtureStopState = { intent: 'none', phase: 'idle', seatChange: true };
+
+const planningSeatChangeProjection: WorkflowFixtureProjection = {
+  ...planningProjection,
+  scenarioId: scenarioId('workflow-planning-seat-change'),
+  stop: SEAT_CHANGE_STOP,
+};
+
+const planCardSeatChangeProjection: WorkflowFixtureProjection = {
+  ...planCardProjection,
+  scenarioId: scenarioId('workflow-plan-card-seat-change'),
+  stop: SEAT_CHANGE_STOP,
+};
+
+const implementationSeatChangeProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-implementation-seat-change'),
+  stop: SEAT_CHANGE_STOP,
+};
+
+const finalReviewSeatChangeProjection: WorkflowFixtureProjection = {
+  ...finalReviewProjection,
+  scenarioId: scenarioId('workflow-final-review-seat-change'),
+  stop: SEAT_CHANGE_STOP,
+};
+
 const reviewCorrectedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-review-corrected'),
   feature: WORKFLOW_FEATURE,
@@ -6547,6 +6575,10 @@ const projections = [
   reviewCheckRunningProjection,
   reviewRenderRunningProjection,
   reviewPauseRequestedProjection,
+  planningSeatChangeProjection,
+  planCardSeatChangeProjection,
+  implementationSeatChangeProjection,
+  finalReviewSeatChangeProjection,
   reviewCheckLongCommandProjection,
   reviewChecksApproveProjection,
   reviewChecksSkippedProjection,

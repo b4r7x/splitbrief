@@ -60,6 +60,7 @@ describe('a run at rest that another process closes', () => {
       const sessionId = 'another-run';
       saveState({ projectDir, sessionId }, createInitialState('Another run'));
       stopStore.request('pause-after-brief');
+      stopStore.markSeatChange(true);
       stopStore.park('boundary', null, () => {});
 
       await handleSessionSelect(makeSession({ id: sessionId }), projectDir, {
@@ -75,6 +76,7 @@ describe('a run at rest that another process closes', () => {
         phase: 'idle',
         requestedAt: null,
         parked: null,
+        seatChange: false,
       });
     },
   );

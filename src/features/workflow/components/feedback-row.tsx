@@ -56,8 +56,16 @@ export function FeedbackRow({
   // every token it names is whole. The leading is spent before the keys are fitted.
   const legendWidth = cols - 1 - KEY_LEGEND_LEADING.length;
   const runningHint = running ? fitKeyLegend(RUNNING_LEGEND, legendWidth) : '';
+  // A seat change stops nothing, so the run keeps the keys it answers to after the seat's words.
   const stopHint =
-    stopped === null || stopped.hint === '' ? '' : fitKeyLegend(stopped.hint, legendWidth);
+    stopped === null || stopped.hint === ''
+      ? ''
+      : fitKeyLegend(
+          stopped.parts.length === 0 && runningHint !== ''
+            ? `${stopped.hint}${SOFT_SEP}${RUNNING_LEGEND}`
+            : stopped.hint,
+          legendWidth,
+        );
 
   // The footer keeps the transcript's grammar: a mark in the mark slot — the legend's pointer, the
   // byline's pip, the composer's border — and every word on the text column its chevron opens on.

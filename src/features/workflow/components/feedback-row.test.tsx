@@ -12,6 +12,8 @@ import { REVIEW_HINT } from '../review-commands.js';
 import { KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { formatCopyResult } from '../../../core/runtime/commands/types.js';
+import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { clearAllHandlers, requestSeatChangeAtBoundary } from '../handlers.js';
 import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
 
 describe('FeedbackRow', () => {
@@ -20,6 +22,7 @@ describe('FeedbackRow', () => {
   });
 
   afterEach(() => {
+    clearAllHandlers();
     resetAllStores();
   });
 
@@ -256,6 +259,24 @@ describe('FeedbackRow', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('Queued for PLAN · ctrl+⏎ sends now');
+    ui.unmount();
+  });
+
+  it('names when a saved seat changes, and keeps the keys a running build answers to', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    tasksStore.__testReset({
+      tasks: [{ id: 'T001', title: 'first', status: 'in_progress' }],
+      currentTask: 1,
+      totalTasks: 1,
+    });
+    requestSeatChangeAtBoundary();
+
+    const ui = renderFeature(<FeedbackRow />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame.trim()).toBe(`${KEY_LEGEND_LEADING}Seat changes after T001 · ${RUNNING_LEGEND}`);
+    expect(frame).not.toContain('Pause requested');
     ui.unmount();
   });
 });

@@ -84,7 +84,9 @@ export function InputFooter({
     s.screen === 'workflow' && s.execution.kind === 'at-rest' ? s.run.status.kind : null,
   );
   const taskListView = selectTaskListView(tasks);
-  const stopped = useStopByline();
+  const stopByline = useStopByline();
+  // A seat change has no lead of its own: the run it waits beside keeps the byline.
+  const stopped = stopByline !== null && stopByline.parts.length > 0 ? stopByline : null;
   const config = configStore.useConfig();
   const displayNames = useCrewDisplayNames(config);
   const reviewer = configuredReviewerRunner(config);

@@ -6,6 +6,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { selectSeatChangePoint, tasksStore } from '../../stores/workflow/tasks.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import {
   formatConfigSaveSuccess,
@@ -24,6 +25,7 @@ import {
   PLANNER_INHERITANCE,
 } from '../../core/crew/identity.js';
 import { seatFallback } from '../../core/crew/fallback.js';
+import { seatChangeWords } from '../../core/crew/seats.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 
@@ -323,7 +325,10 @@ export function usePickerActions(opts: {
       feedbackStore.setMessage(
         [
           changesRunningSeat(config, updated)
-            ? `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat changes after this brief`
+            ? seatChangeWords(
+                `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat`,
+                selectSeatChangePoint(tasksStore.get(), lifecycleStore.get().phase),
+              )
             : formatConfigSaveSuccess(subject, result),
           ...(notice === undefined ? [] : [notice]),
         ].join(SOFT_SEP),

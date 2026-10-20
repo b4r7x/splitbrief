@@ -27,7 +27,19 @@ describe('stopStore', () => {
       phase: 'idle',
       requestedAt: null,
       parked: null,
+      seatChange: false,
     });
+  });
+
+  it('a seat change waits beside a pause and goes with a stop', () => {
+    stopStore.markSeatChange(true);
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', seatChange: true });
+
+    stopStore.request('pause-after-brief');
+    expect(stopStore.get()).toMatchObject({ intent: 'pause-after-brief', seatChange: true });
+
+    stopStore.request('stop-now');
+    expect(stopStore.get()).toMatchObject({ intent: 'stop-now', seatChange: false });
   });
 
   it('walks requested → terminating → forcing → ended', () => {

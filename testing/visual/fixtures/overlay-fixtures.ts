@@ -36,7 +36,11 @@ import { ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
 import { deriveRunStatus, type RunStatus } from '../../../src/core/sessions/run-status.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { SOFT_SEP } from '../../../src/core/separators.js';
-import { formatSeatIdentity, type CrewSeatId } from '../../../src/core/crew/identity.js';
+import {
+  CREW_SEAT_LABELS,
+  formatSeatIdentity,
+  type CrewSeatId,
+} from '../../../src/core/crew/identity.js';
 import { deriveFallbackRows } from '../../../src/core/crew/fallback.js';
 import { deriveCrewRows } from '../../../src/core/crew/rows.js';
 import { crewActivate, fallbackActivate } from '../../../src/features/crew/rows.js';
@@ -57,6 +61,7 @@ import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { markWorkflowPaused } from '../../../src/stores/workflow/actions/pause.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
+import { seatChangeWords } from '../../../src/core/crew/seats.js';
 import {
   formatConfigSaveSuccess,
   reportConfigSaveFailure,
@@ -1085,6 +1090,16 @@ const createSettingsSavedRouteSignInFixture: FixtureFactory = () => ({
         }),
         formatNeedsSignInSaveFeedback({ tool: 'opencode', provider: 'opencode' }),
       ].join(SOFT_SEP),
+    );
+  },
+});
+// A BUILD seat saved in the final review: no brief is left, so the notice names a fix brief or
+// the next run, in the words the composer legend uses.
+const createSettingsSeatSavedFinalReviewFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({ overlay: 'settings', focus: 'seat:build' }),
+  afterMount: () => {
+    feedbackStore.setMessage(
+      seatChangeWords(`${CREW_SEAT_LABELS.build} seat`, { after: 'fix-brief-or-next-run' }),
     );
   },
 });
@@ -2482,6 +2497,10 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-end-checks-off'), createSettingsEndChecksOffFixture],
   [scenarioId('overlay-settings-saved'), createSettingsSavedFixture],
   [scenarioId('overlay-settings-saved-route-sign-in'), createSettingsSavedRouteSignInFixture],
+  [
+    scenarioId('overlay-settings-seat-saved-final-review'),
+    createSettingsSeatSavedFinalReviewFixture,
+  ],
   [scenarioId('overlay-settings-approve-checks-ask'), createSettingsApproveChecksAskFixture],
   [scenarioId('overlay-settings-isolation-checkout'), createSettingsIsolationCheckoutFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],

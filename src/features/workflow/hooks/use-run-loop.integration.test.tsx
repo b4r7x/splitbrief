@@ -61,7 +61,6 @@ import { toolRowFocus } from '../../../core/navigation/types.js';
 import { configStore } from '../../../stores/project/config.js';
 import {
   abortTurn,
-  consumeSeatChange,
   requestBoundaryPause,
   requestStopNow,
   requestCancel,
@@ -683,7 +682,7 @@ describe('useRunLoop', () => {
       readConfigDocument(projectDir).revision?.rawSha256,
     );
     expect(configStore.save).not.toHaveBeenCalled();
-    expect(consumeSeatChange()).toBe(false);
+    expect(stopStore.get().seatChange).toBe(false);
     expect(stopStore.get().intent).toBe('none');
     await vi.waitFor(() => expect(settledRun()?.status.kind).toBe('ready-to-apply'));
     inst.unmount();
@@ -1394,7 +1393,7 @@ describe('useRunLoop', () => {
       projectDir,
       config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
     });
-    expect(stopStore.get().intent).toBe('pause-after-brief');
+    expect(stopStore.get()).toMatchObject({ intent: 'none', seatChange: true });
 
     seatChangedNow();
     await vi.waitFor(() => {
@@ -2166,7 +2165,7 @@ describe('useRunLoop', () => {
       });
       lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
       configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
-      expect(stopStore.get().intent).toBe('pause-after-brief');
+      expect(stopStore.get()).toMatchObject({ intent: 'none', seatChange: true });
       savedNow();
       await answerRecoveryPanel(captureRunner, 'retry');
       await vi.waitFor(() => {
@@ -2557,7 +2556,7 @@ describe('useRunLoop', () => {
           });
           lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
           configStore.__testReset({ projectDir, config: savedUnderBrief });
-          expect(stopStore.get().intent).toBe('pause-after-brief');
+          expect(stopStore.get()).toMatchObject({ intent: 'none', seatChange: true });
           savedNow();
           await openHaltPicker(halt.captureRunner);
           halt.inst.stdin.write('\r');

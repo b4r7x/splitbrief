@@ -2,6 +2,7 @@ import type { StepCut, StepRef } from '../../../core/schemas/run-step.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { seatChangeWords, type SeatChangePoint } from '../../../core/crew/seats.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
@@ -17,6 +18,8 @@ const PARKED_HINT = `⏎ resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to se
 export interface StopBylineInput {
   readonly intent: StopIntent;
   readonly phase: StopPhase;
+  /** Where a seat saved under the run takes over; the run goes on to it without a pause. */
+  readonly seatChange?: SeatChangePoint | null;
   readonly workflowPhase: Phase;
   readonly parked: {
     readonly kind: StopParkKind;
@@ -48,6 +51,7 @@ export interface StopBylineInput {
 
 export interface StopByline {
   readonly tone: StateTone;
+  /** Empty when no stop is under way: the run's own status keeps the byline, the hint speaks. */
   readonly parts: readonly ConversationRowSegment[];
   /** The lead's clock, kept whole when the byline cuts the lead to its width. */
   readonly clock?: string | undefined;
@@ -179,7 +183,12 @@ export function stopByline(input: StopBylineInput): StopByline | null {
   };
   const name = subject(input);
 
-  if (input.intent === 'none') return null;
+  // A seat change stops nothing: the run goes on and only says where the saved seat takes over.
+  // A run at rest has its record to speak for it.
+  if (input.intent === 'none') {
+    if (input.seatChange == null || input.record != null) return null;
+    return byline([], seatChangeWords('Seat', input.seatChange));
+  }
 
   if (input.phase === 'failed')
     return byline(

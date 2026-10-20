@@ -4,6 +4,7 @@ import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import { runnerBillingPosture, type RunnerBillingPosture } from '../runners/runner-billing.js';
 import type { Config } from '../schemas/config.js';
+import { assertNever } from '../../utils/type-guards.js';
 import { CREW_SEAT_LABELS, formatSeatIdentity, type CrewSeatId } from './identity.js';
 
 export const CREW_SEAT_ROLES: Readonly<Record<CrewSeatId, ActiveRunnerRole>> = {
@@ -89,4 +90,27 @@ export function crewCliTools(config: Config): ReadonlySet<string> {
       ...(runner.fallback === undefined ? [] : [runner.fallback.tool]),
     ]),
   );
+}
+
+/**
+ * Where a seat saved under a running run takes over. The run re-reads its seats only at the
+ * boundary after a brief, so with no brief left the change waits for a fix brief or the next run.
+ */
+export type SeatChangePoint =
+  | Readonly<{ after: 'brief'; taskId: string }>
+  | Readonly<{ after: 'next-brief' }>
+  | Readonly<{ after: 'fix-brief-or-next-run' }>;
+
+/** The one wording of a waiting seat change, for the save notice and the composer legend. */
+export function seatChangeWords(subject: string, point: SeatChangePoint): string {
+  switch (point.after) {
+    case 'brief':
+      return `${subject} changes after ${point.taskId}`;
+    case 'next-brief':
+      return `${subject} changes after the next brief`;
+    case 'fix-brief-or-next-run':
+      return `${subject} changes after a fix brief or at the next run`;
+    default:
+      return assertNever(point);
+  }
 }

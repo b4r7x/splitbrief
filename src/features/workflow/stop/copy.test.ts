@@ -635,3 +635,66 @@ describe('stopPoint', () => {
     expect(stopPoint(step, cut)).toBe(expected);
   });
 });
+
+// A seat saved under a running brief read `Finishing the run` and `Pause requested; no next brief
+// will start`, while the run went on with no pause.
+describe('a seat change', () => {
+  it('names the brief it waits on, leaving the byline to the run', () => {
+    expect(stopByline(input({ seatChange: { after: 'brief', taskId: 'T002' } }))).toEqual({
+      tone: 'warning',
+      parts: [],
+      hint: 'Seat changes after T002',
+    });
+  });
+
+  it('waits on the next brief while the plan is made', () => {
+    expect(
+      stopByline(
+        input({
+          seatChange: { after: 'next-brief' },
+          workflowPhase: 'planning',
+          currentTaskId: null,
+          nextTaskId: null,
+        }),
+      )?.hint,
+    ).toBe('Seat changes after the next brief');
+  });
+
+  it('waits on a fix brief or the next run in the final review, with no brief left', () => {
+    expect(
+      stopByline(
+        input({
+          seatChange: { after: 'fix-brief-or-next-run' },
+          workflowPhase: 'final-review',
+          currentTaskId: null,
+          nextTaskId: null,
+        }),
+      )?.hint,
+    ).toBe('Seat changes after a fix brief or at the next run');
+  });
+
+  it('gives way to the operator pause, whose words still say no next brief starts', () => {
+    expect(
+      stopByline(
+        input({
+          seatChange: { after: 'brief', taskId: 'T002' },
+          intent: 'pause-after-brief',
+          phase: 'requested',
+        }),
+      ),
+    ).toEqual({
+      tone: 'warning',
+      hint: 'Pause requested; no next brief will start',
+      parts: [
+        { text: 'Finishing', tone: 'warning' },
+        { text: ' T002', tone: 'text' },
+      ],
+    });
+  });
+
+  it('says nothing once the run is at rest: its record speaks for it', () => {
+    expect(
+      stopByline(input({ seatChange: { after: 'next-brief' }, record: makeRunRecord() })),
+    ).toBeNull();
+  });
+});
