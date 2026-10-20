@@ -1,4 +1,5 @@
 import { ThemeText as Text, useTheme } from './theme.js';
+import { SOFT_SEP } from '../core/separators.js';
 
 export function ScrollIndicator({
   show,
@@ -6,13 +7,13 @@ export function ScrollIndicator({
   count,
 }: {
   show: boolean;
-  direction: 'up' | 'down';
+  direction: 'up' | 'down' | 'both';
   count?: number;
 }) {
   const t = useTheme();
   if (!show) return null;
-  if (direction === 'down' && count !== undefined) {
-    return <Text color={t.scrollIndicator}> ↓ {count} more</Text>;
-  }
-  return <Text color={t.scrollIndicator}> {direction === 'up' ? '↑' : '↓'} more</Text>;
+  const down = count === undefined ? '↓ more' : `↓ ${count} more`;
+  const text =
+    direction === 'up' ? '↑ more' : direction === 'down' ? down : `↑ more${SOFT_SEP}${down}`;
+  return <Text color={t.scrollIndicator}> {text}</Text>;
 }

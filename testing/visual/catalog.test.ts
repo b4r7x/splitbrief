@@ -68,6 +68,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-recovery-route-signed-out', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-model-not-listed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-model-refused', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-recovery-consult-bound', ['120x40', '80x24', '60x18', '140x16', '140x14', '140x12']],
   ['workflow-recovery-plan-input-too-large', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-review-model-not-listed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-switched', ['120x40', '80x24', '60x18', '160x45', '64x20', '56x18']],

@@ -4,6 +4,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { stateTone } from '../../core/theme/state-tone.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { PromptBody } from './components/prompt-body.js';
 import { QuestionPrompt } from './components/question-prompt.js';
 import {
@@ -466,6 +467,36 @@ describe('promptBodyRows', () => {
       kind: 'facts-line',
       text: '  worker w',
     });
+  });
+
+  it('counts the cut lines on the headline when the panel has room for the headline only', () => {
+    const prompt = 'recovery needed · halt\n\nresets 17:00\ntask T901\nfiles src/a.ts';
+
+    expect(clipPromptBodyRows(promptBodyRows(prompt, BODY_WIDTH), 1)).toEqual([
+      expect.objectContaining({ kind: 'headline', mark: '… 3 more lines' }),
+    ]);
+    const withActions = `${prompt}\n\n[r]  retry same worker\n[a]  abort`;
+    expect(clipPromptBodyRows(promptBodyRows(withActions, BODY_WIDTH), 3)).toEqual([
+      expect.objectContaining({ kind: 'headline', mark: '… 3 more lines' }),
+      expect.objectContaining({ kind: 'action', key: 'r' }),
+      expect.objectContaining({ kind: 'action', key: 'a' }),
+    ]);
+  });
+
+  it('counts one cut line in the singular', () => {
+    const prompt = 'recovery needed · halt\n\nresult.tasks: Required';
+
+    expect(clipPromptBodyRows(promptBodyRows(prompt, BODY_WIDTH), 1)).toEqual([
+      expect.objectContaining({ kind: 'headline', mark: '… 1 more line' }),
+    ]);
+  });
+
+  it('keeps the count on a headline too long for its row and cuts the headline instead', () => {
+    const prompt = `recovery needed · ${'a long halt headline '.repeat(6)}\n\nresets 17:00\ntask T901`;
+    const [row] = renderedPromptBodyRows(prompt, 1);
+
+    expect(row).toMatch(/^recovery needed · a long halt.*… 2 more lines$/);
+    expect(getTerminalCellWidth(row ?? '')).toBeLessThanOrEqual(BODY_WIDTH);
   });
 
   it('leaves a prompt that fits its panel untouched', () => {

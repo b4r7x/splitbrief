@@ -9,7 +9,7 @@ import {
   type PromptBodyLine,
 } from '../prompt-body-rows.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
-import { passHeadlinePrefix, type PromptRow } from '../recovery-prompt.js';
+import { FACT_INDENT, passHeadlinePrefix, type PromptRow } from '../recovery-prompt.js';
 import { TextSpans } from '../../../components/text-spans.js';
 
 type Theme = ReturnType<typeof useTheme>;
@@ -62,6 +62,19 @@ function renderHeadline(
   );
 }
 
+// The cut mark rides after the first row's text and keeps its cells: a long headline gives way.
+function withMark(node: ReactNode, mark: string | undefined, key: string, t: Theme): ReactNode {
+  if (mark === undefined) return node;
+  return (
+    <Box key={key} flexDirection="row">
+      <Box flexShrink={1}>{node}</Box>
+      <Box flexShrink={0}>
+        <Text color={t.textDim}>{`${FACT_INDENT}${mark}`}</Text>
+      </Box>
+    </Box>
+  );
+}
+
 function renderPromptRows(rows: PromptBodyLine[], width: number, t: Theme): ReactNode[] {
   const halfWidth = Math.floor(width / 2);
   const nodes: ReactNode[] = [];
@@ -73,22 +86,31 @@ function renderPromptRows(rows: PromptBodyLine[], width: number, t: Theme): Reac
       case 'blank':
         nodes.push(<Text key={key()}> </Text>);
         break;
-      case 'message-line':
+      case 'message-line': {
+        const rowKey = key();
         nodes.push(
-          <Text key={key()} wrap="truncate" color={t.text}>
-            {row.text === '' ? (
-              ' '
-            ) : row.parts === undefined ? (
-              row.text
-            ) : (
-              <TextSpans parts={row.parts} />
-            )}
-          </Text>,
+          withMark(
+            <Text key={rowKey} wrap="truncate" color={t.text}>
+              {row.text === '' ? (
+                ' '
+              ) : row.parts === undefined ? (
+                row.text
+              ) : (
+                <TextSpans parts={row.parts} />
+              )}
+            </Text>,
+            row.mark,
+            rowKey,
+            t,
+          ),
         );
         break;
-      case 'headline':
-        nodes.push(renderHeadline(row.row, key(), t));
+      }
+      case 'headline': {
+        const rowKey = key();
+        nodes.push(withMark(renderHeadline(row.row, rowKey, t), row.mark, rowKey, t));
         break;
+      }
       case 'facts-line':
         nodes.push(
           <Text key={key()} wrap="truncate" color={t.textDim}>

@@ -5,6 +5,10 @@ import { taskId } from '../../core/schemas/task.js';
 import { glyph } from '../../lib/glyphs.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../engine/orchestrator/recovery/builders/checks.js';
 import { buildCheckoutChangedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
+import { buildApplyPartialRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
+import { formatTruncatedList } from '../../core/formatting.js';
+import { SOFT_SEP } from '../../core/separators.js';
+import { elidePathMiddle, getTerminalCellWidth } from '../../utils/display-text.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -141,6 +145,64 @@ it.each([
 it('names every file in the question-mode prompt, which has no panel width', () => {
   expect(formatRecoveryPrompt(makeRecoveryIssue({ files: LONG_PATHS }))).toContain(
     `Files ${LONG_PATHS.join(' · ')}\n`,
+  );
+});
+
+/** The Files row fit as it was first written: it builds and measures the whole row for each count. */
+function rowPerCountFit(files: string[], room: number): string {
+  for (let shown = files.length; shown >= 1; shown--) {
+    const text = formatTruncatedList(files, shown);
+    if (getTerminalCellWidth(text) <= room) return text;
+  }
+  const tail = files.length > 1 ? `${SOFT_SEP}+${files.length - 1} more` : '';
+  return `${elidePathMiddle(files[0] ?? '', room - getTerminalCellWidth(tail))}${tail}`;
+}
+
+function filesRow(issue: RecoveryIssue, width: number): string | undefined {
+  return recoveryPromptSummaryRows(issue, width)
+    .flatMap((row) => (row.kind === 'facts' ? row.items : []))
+    .find((item) => item.startsWith('Files '));
+}
+
+it('fits the Files row the same way as a fit that measures the whole row for each count', () => {
+  const parts = ['src', 'lib', 'データ', 'über', '📁 assets', 'a', 'item-0042.json', 'widget.tsx'];
+  let seed = 7;
+  const next = (bound: number) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % bound;
+  };
+  for (let sample = 0; sample < 300; sample++) {
+    const files = Array.from({ length: 1 + next(40) }, () =>
+      Array.from({ length: 1 + next(5) }, () => parts[next(parts.length)]).join('/'),
+    );
+    const width = 12 + next(130);
+    const room = width - getTerminalCellWidth('  Files ');
+    expect(filesRow(makeRecoveryIssue({ files }), width)).toBe(
+      `Files ${rowPerCountFit(files, room)}`,
+    );
+  }
+});
+
+it('fits the Files row of an Apply cut off with 2000 files left in well under a second', () => {
+  const files = Array.from(
+    { length: 2001 },
+    (_, index) =>
+      `data/set-${String(Math.floor(index / 50)).padStart(2, '0')}/item-${String(index % 50).padStart(3, '0')}.json`,
+  );
+  const issue = buildApplyPartialRecoveryIssue({
+    backupId: 'backup-1',
+    backupDir: '/tmp/backup-1',
+    createdAt: '2026-10-19T09:30:33.000Z',
+    written: [files[0] ?? ''],
+    files,
+    failedFile: files[1] ?? '',
+    cause: 'interrupted',
+  });
+  const started = performance.now();
+  const row = filesRow(issue, 128);
+  expect(performance.now() - started).toBeLessThan(1000);
+  expect(row).toBe(
+    'Files data/set-00/item-001.json · data/set-00/item-002.json · data/set-00/item-003.json · +1997 more',
   );
 });
 

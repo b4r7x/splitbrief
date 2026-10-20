@@ -16,11 +16,11 @@ import type { StopContinueFixture } from './stop-continue-fixture.js';
 const FILES = ['a.txt', 'b.txt'];
 
 /**
- * A staged-copy workspace whose run changed a.txt and b.txt from `before Apply` to `run result`,
+ * A staged-copy workspace whose run changed `files` from `before Apply` to `run result`,
  * where a run keeps it: inside the session, so closing the run removes it.
  */
-async function seedWorkspace(target: StopContinueFixture, ref: SessionRef) {
-  for (const file of FILES) writeFileSync(join(target.projectDir, file), 'before Apply\n');
+async function seedWorkspace(target: StopContinueFixture, ref: SessionRef, files: string[]) {
+  for (const file of files) writeFileSync(join(target.projectDir, file), 'before Apply\n');
   await createSnapshot({ ...ref, phase: 'manual', name: 'baseline' });
   const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
   const copy = join(target.tmpDir, 'workspace');
@@ -32,13 +32,13 @@ async function seedWorkspace(target: StopContinueFixture, ref: SessionRef) {
   mkdirSync(root, { recursive: true });
   const workspaceDir = join(root, 'workspace');
   renameSync(copy, workspaceDir);
-  for (const file of FILES) writeFileSync(join(workspaceDir, file), 'run result\n');
+  for (const file of files) writeFileSync(join(workspaceDir, file), 'run result\n');
   const workspace = {
     kind: 'staged-copy' as const,
     path: workspaceDir,
     base: { snapshotId: base.manifest.id, head: null },
   };
-  return { files: FILES, workspaceDir, workspace };
+  return { files, workspaceDir, workspace };
 }
 
 function statePathOf(ref: SessionRef): string {
@@ -48,7 +48,7 @@ function statePathOf(ref: SessionRef): string {
 /** A reviewed run in a staged-copy fixture, ready to apply a.txt and b.txt. */
 export async function seedReadyRun(target: StopContinueFixture) {
   const ref = { projectDir: target.projectDir, sessionId: 'ready-to-apply' };
-  const { files, workspaceDir, workspace } = await seedWorkspace(target, ref);
+  const { files, workspaceDir, workspace } = await seedWorkspace(target, ref, FILES);
   saveState(ref, {
     ...createInitialState('Apply the run'),
     phase: 'complete',
@@ -59,14 +59,19 @@ export async function seedReadyRun(target: StopContinueFixture) {
   return { ref, files, workspaceDir, statePath: statePathOf(ref) };
 }
 
-/** A run in a staged-copy fixture whose Apply wrote a.txt and stopped before b.txt, partial or interrupted. */
+/**
+ * A run in a staged-copy fixture whose Apply wrote the first file and stopped before the second,
+ * partial or interrupted; a.txt and b.txt unless `runFiles` names others.
+ */
 export async function seedApplyingRun(
   target: StopContinueFixture,
   kind: 'partial' | 'interrupted',
+  runFiles: string[] = FILES,
 ) {
   const ref = { projectDir: target.projectDir, sessionId: `applying-${kind}` };
   const at = '2026-10-11T00:00:00.000Z';
-  const { files, workspaceDir, workspace } = await seedWorkspace(target, ref);
+  const { files, workspaceDir, workspace } = await seedWorkspace(target, ref, runFiles);
+  const [writtenFile = '', failedFile = ''] = files;
   const backupId = `backup-${kind}`;
   const backupDir = applyBackupDir(ref.projectDir, ref.sessionId, backupId);
   const backup = await writeApplyBackup({
@@ -82,14 +87,14 @@ export async function seedApplyingRun(
     ),
   });
   if (backup.kind !== 'written') throw new Error('fixture checkout changed before Apply');
-  writeFileSync(join(target.projectDir, 'a.txt'), 'run result\n');
+  writeFileSync(join(target.projectDir, writtenFile), 'run result\n');
   const pendingRecovery = buildApplyPartialRecoveryIssue({
     backupId,
     backupDir,
     createdAt: at,
-    written: ['a.txt'],
+    written: [writtenFile],
     files,
-    failedFile: 'b.txt',
+    failedFile,
     cause: 'fixture write interrupted',
   });
   saveState(ref, {

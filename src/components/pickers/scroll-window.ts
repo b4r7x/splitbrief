@@ -69,7 +69,7 @@ export function windowSlice<T>(opts: { items: T[]; selectedIndex: number; window
 }
 
 export type ListDisplaySlot<T> =
-  | { kind: 'indicator'; direction: 'up' | 'down' }
+  | { kind: 'indicator'; direction: 'up' | 'down' | 'both' }
   | { kind: 'header'; itemIndex: number; section: string }
   | { kind: 'gap'; itemIndex: number }
   | { kind: 'before'; itemIndex: number }
@@ -187,7 +187,7 @@ function computeContentWindow(opts: {
       contentRows: 1,
       scrollOffset,
       showScrollUp: scrollOffset > 0,
-      showScrollDown: scrollOffset === 0 && totalSlots > 1,
+      showScrollDown: scrollOffset + 1 < totalSlots,
     };
   }
 
@@ -285,9 +285,15 @@ export function computeListDisplayWindow<T>(opts: ListDisplayWindowInput<T>) {
   });
   const content = trimEdgeDecorations(slots.slice(scrollOffset, scrollOffset + contentRows));
   const visibleSlots: ListDisplaySlot<T>[] = [];
-  if (showScrollUp) visibleSlots.push({ kind: 'indicator', direction: 'up' });
-  visibleSlots.push(...content);
-  if (showScrollDown) visibleSlots.push({ kind: 'indicator', direction: 'down' });
+  // A 2-row window has one row for its marks, so a window that hides slots on both sides names
+  // both on that row.
+  if (showScrollUp && showScrollDown && rowBudget === 2) {
+    visibleSlots.push({ kind: 'indicator', direction: 'both' }, ...content);
+  } else {
+    if (showScrollUp) visibleSlots.push({ kind: 'indicator', direction: 'up' });
+    visibleSlots.push(...content);
+    if (showScrollDown) visibleSlots.push({ kind: 'indicator', direction: 'down' });
+  }
 
   return {
     rowBudget,

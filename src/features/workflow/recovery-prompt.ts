@@ -604,12 +604,18 @@ function formatSubjectLines(issue: RecoveryIssue, width: number): string[] {
 
 /**
  * The Files row is one row: the whole names that fit, then `+N more` as one unit. A first name
- * that does not fit beside its count is shortened the way the brief rows shorten a path.
+ * that does not fit beside its count is shortened the way the brief rows shorten a path. Each name
+ * is measured once, so a halt with thousands of files fits its row in one pass on every render.
  */
 function fitFileList(files: string[], room: number): string {
-  for (let shown = files.length; shown >= 1; shown--) {
-    const text = formatTruncatedList(files, shown);
-    if (getTerminalCellWidth(text) <= room) return text;
+  const separator = getTerminalCellWidth(SOFT_SEP);
+  const widths = files.map((file) => getTerminalCellWidth(file));
+  let visible = widths.reduce((sum, width) => sum + width, separator * (files.length - 1));
+  for (const [index, width] of [...widths.entries()].reverse()) {
+    const hidden = files.length - index - 1;
+    const tail = hidden > 0 ? separator + getTerminalCellWidth(`+${hidden} more`) : 0;
+    if (visible + tail <= room) return formatTruncatedList(files, index + 1);
+    visible -= width + separator;
   }
   const tail = files.length > 1 ? `${SOFT_SEP}+${files.length - 1} more` : '';
   return `${elidePathMiddle(files[0] ?? '', room - getTerminalCellWidth(tail))}${tail}`;

@@ -153,7 +153,7 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
                 key={`indicator-${slot.direction}-${i}`}
                 show
                 direction={slot.direction}
-                {...(showRemainingCount && slot.direction === 'down'
+                {...(showRemainingCount && slot.direction !== 'up'
                   ? { count: remainingBelow }
                   : {})}
               />
