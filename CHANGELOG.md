@@ -324,6 +324,7 @@
 - `splitbrief doctor` no longer says a seat is ready to start when its model has no sign-in. The seat reads ready with warnings, and the warning is counted once.
 - `splitbrief doctor` no longer says that a start without the TUI would be refused for an OpenCode that uses the providers set up in its own config.
 - A seat switch after a Seat down halt, automatic or chosen by you, keeps the seat's time limit. A switch to another model of the same tool also keeps the tool's idle limits, context length, temperature, arguments, output format, sign-in method and custom models. A custom model you add in the seat picker during the halt stays in `config.yaml` after the switch.
+- After the planner rewrote or split a brief, the Ready line, the closed run and its Files list count every file the run changed, including the files of the earlier attempts, also when you end the run before the brief finishes or between the parts of a split brief; the review sees those files too.
 
 ## [0.1.0] - 2026-08-07
 

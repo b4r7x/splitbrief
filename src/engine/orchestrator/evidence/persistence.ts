@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import type { Task, TaskId } from '../../../core/schemas/task.js';
+import { isTaskSettled, type Task, type TaskId } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import { publishError, publishWarningFromError } from '../events.js';
@@ -11,9 +11,11 @@ import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence
 import {
   recordApiApplyEvidence,
   recordLocalTaskEvidence,
+  recordRemainderEvidence,
   recordRetryOrEscalationEvidence,
   recordSkippedTaskEvidence,
   recordStoppedTaskEvidence,
+  unbookedFiles,
 } from './task.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
@@ -28,6 +30,7 @@ import { checkSessionLockStatus } from '../../../core/sessions/lockfile-status.j
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { briefInFlight } from '../../../core/state/selectors.js';
 import { changedSinceAtRest } from '../../snapshots/run/rest-changes.js';
+import { lineageIdOf } from '../../../core/state/task-insert.js';
 
 export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState }): EvidenceLedger {
   const { ref, state } = opts;
@@ -96,7 +99,8 @@ export async function persistTaskEvidence(opts: {
 
 /**
  * A skip takes back the brief's files from its task-start snapshot, so the skipped brief answers
- * only for the files still changed since then.
+ * only for the files still changed since then, plus its lineage's remainder when the skip closes
+ * the lineage.
  */
 export async function persistSkippedBriefFiles(opts: {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus' | 'workspaceDir'>;
@@ -104,6 +108,7 @@ export async function persistSkippedBriefFiles(opts: {
   task: Task;
   reason: string;
   taskStartSnapshot: ChangedFilesSnapshot | undefined;
+  remainderFiles: readonly string[];
 }): Promise<void> {
   const { wctx, state, task, taskStartSnapshot } = opts;
   try {
@@ -117,6 +122,7 @@ export async function persistSkippedBriefFiles(opts: {
         task,
         reason: opts.reason,
         keptFiles,
+        remainderFiles: opts.remainderFiles,
       }),
     );
   } catch (err) {
@@ -136,30 +142,64 @@ export async function persistSkippedBriefFiles(opts: {
  * user's once its run's process exits: that process records a snapshot as it exits, and later
  * edits and a reject change the checkout, so the brief's files are then the ones that changed up
  * to that snapshot. A process that died took no such snapshot, so its checkout, like a live one,
- * is read as it is.
+ * is read as it is. The close ends every lineage that is still open, also between two of its
+ * briefs, so each one books its remainder (`closingLineageBrief`): the files changed since it
+ * started that no other brief of the run booked.
  */
 export async function persistStoppedBriefEvidence(
   ref: SessionRef,
   state: WorkflowState,
 ): Promise<void> {
-  const task = briefInFlight(state);
-  const taskStart = state.changedFilesBaseline?.activeTaskSnapshot;
   const workspace = state.workspace;
-  if (task === undefined || taskStart === undefined || workspace === undefined) return;
-  if (!existsSync(workspace.path)) return;
-  const changedFiles =
+  if (workspace === undefined || !existsSync(workspace.path)) return;
+  const atRest =
     workspace.kind === 'checkout' &&
     checkSessionLockStatus({ sessionDir: sessionDir(ref.projectDir, ref.sessionId) }).kind ===
-      'exited'
-      ? await changedSinceAtRest(ref, taskStart)
-      : await getChangedFilesSinceSnapshot(workspace.path, taskStart);
-  mutateEvidenceLedger(ref, (existing) =>
-    recordStoppedTaskEvidence({
-      ledger: existing ?? getOrCreateLedger({ ref, state }),
-      task,
-      changedFiles,
-    }),
-  );
+      'exited';
+  const changedSince = (snapshot: ChangedFilesSnapshot) =>
+    atRest
+      ? changedSinceAtRest(ref, snapshot)
+      : getChangedFilesSinceSnapshot(workspace.path, snapshot);
+  const inFlight = briefInFlight(state);
+  const taskStart = state.changedFilesBaseline?.activeTaskSnapshot;
+  if (inFlight !== undefined && taskStart !== undefined) {
+    const changedFiles = await changedSince(taskStart);
+    mutateEvidenceLedger(ref, (existing) =>
+      recordStoppedTaskEvidence({
+        ledger: existing ?? getOrCreateLedger({ ref, state }),
+        task: inFlight,
+        changedFiles,
+      }),
+    );
+  }
+  for (const [key, lineage] of Object.entries(state.lineages ?? {})) {
+    const owner = closingLineageBrief(state, key, inFlight);
+    if (lineage.startSnapshot === undefined || owner === undefined) continue;
+    const files = unbookedFiles(ref, owner, await changedSince(lineage.startSnapshot));
+    mutateEvidenceLedger(ref, (existing) =>
+      recordRemainderEvidence({
+        ledger: existing ?? getOrCreateLedger({ ref, state }),
+        task: owner,
+        files,
+      }),
+    );
+  }
+}
+
+/**
+ * The brief that books an open lineage's remainder when the run closes: the brief in flight when
+ * it belongs to the lineage, else the lineage's last settled brief. A stop between two split
+ * children leaves no brief of the lineage in flight.
+ */
+function closingLineageBrief(
+  state: WorkflowState,
+  key: string,
+  inFlight: Task | undefined,
+): Task | undefined {
+  if (inFlight !== undefined && lineageIdOf(inFlight) === key) return inFlight;
+  return state.tasks
+    .filter((task) => lineageIdOf(task) === key && isTaskSettled(task.status))
+    .at(-1);
 }
 
 /**

@@ -8,7 +8,10 @@ import { ensureSessionDir } from '../../../../core/paths-io.js';
 import { isInternalGitStatusPath } from '../../../../core/paths.js';
 import { getCurrentDiff } from '../../../../lib/git/diff.js';
 import { getGitStatus } from '../../../../lib/git/files.js';
-import { getChangedFilesSnapshot } from '../../approval/file-snapshots/capture.js';
+import {
+  getChangedFilesSinceSnapshot,
+  getChangedFilesSnapshot,
+} from '../../approval/file-snapshots/capture.js';
 import { captureTaskReviewChanges } from '../review-capture.js';
 import { resolveRunReviewScope } from './run-scope.js';
 
@@ -41,7 +44,8 @@ describe('resolveRunReviewScope with Apply-merged paths', () => {
       ref: p.ref,
       workspaceDir: p.projectDir,
       task: p.task,
-      taskStartSnapshot,
+      since: taskStartSnapshot,
+      files: await getChangedFilesSinceSnapshot(p.projectDir, taskStartSnapshot),
     });
     writeFileSync(join(p.projectDir, file), merged);
     const workspaceDiff = await getCurrentDiff(
@@ -82,7 +86,8 @@ describe('resolveRunReviewScope with symlinks', () => {
       ref: p.ref,
       workspaceDir: p.projectDir,
       task: p.task,
-      taskStartSnapshot,
+      since: taskStartSnapshot,
+      files: await getChangedFilesSinceSnapshot(p.projectDir, taskStartSnapshot),
     });
     const base = {
       ref: p.ref,

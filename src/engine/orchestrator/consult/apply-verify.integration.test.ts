@@ -263,6 +263,7 @@ describe('applyConsultAnswer verify', () => {
       action: 'completed',
       task: expect.objectContaining({ id: 'T003', status: 'done' }),
       durationMs: expect.any(Number),
+      bookedFiles: [],
     });
     expect(validator.formatChangedFiles).toHaveBeenCalledWith(
       expect.objectContaining({ task, phase: 'escalating', changedFiles: ['src/greet.ts'] }),

@@ -213,13 +213,21 @@ function withLineage(
   };
 }
 
+/** Whether a brief of the lineage `key`, other than `exceptId`, is still open. */
+export function lineageHasOpenBrief(
+  tasks: readonly Task[],
+  key: TaskId,
+  exceptId?: TaskId,
+): boolean {
+  return tasks.some((t) => lineageIdOf(t) === key && t.id !== exceptId && !isTaskSettled(t.status));
+}
+
 /** A lineage keeps its task start only while one of its briefs is still open. */
 function dropClosedLineageStart(state: WorkflowState, taskId: TaskId): WorkflowState {
   const key = lineageKeyFor(state, taskId);
   const lineage = state.lineages?.[key];
   if (lineage?.startSnapshot === undefined) return state;
-  const open = state.tasks.some((t) => lineageIdOf(t) === key && !isTaskSettled(t.status));
-  if (open) return state;
+  if (lineageHasOpenBrief(state.tasks, key)) return state;
   const { startSnapshot: _closedStart, ...closed } = lineage;
   return { ...state, lineages: { ...state.lineages, [key]: closed } };
 }

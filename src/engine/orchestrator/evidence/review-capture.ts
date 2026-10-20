@@ -10,7 +10,6 @@ import {
   sameChangeEntry,
   type ChangeEntry,
 } from '../approval/file-snapshots/entry.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
 import { entryStoreDir } from '../isolation/entry-snapshot.js';
 
@@ -24,16 +23,17 @@ function serialized(entry: ChangeEntry): ReviewFileEntry {
   };
 }
 
+/** The review's record of the files a brief booked, each from its content at `since`. */
 export async function captureTaskReviewChanges(opts: {
   ref: SessionRef;
   workspaceDir: string;
   task: Task;
-  taskStartSnapshot: ChangedFilesSnapshot;
+  since: ChangedFilesSnapshot;
+  files: readonly string[];
 }): Promise<void> {
-  const files = await getChangedFilesSinceSnapshot(opts.workspaceDir, opts.taskStartSnapshot);
   const briefHash = hashTaskBrief([opts.task]);
   const changes: ReviewChange[] = [];
-  for (const file of files) {
+  for (const file of opts.files) {
     const identity = {
       taskId: opts.task.id,
       briefHash,
@@ -42,7 +42,7 @@ export async function captureTaskReviewChanges(opts: {
     try {
       const before = await entryToRestore(
         opts.workspaceDir,
-        opts.taskStartSnapshot,
+        opts.since,
         file,
         entryStoreDir(opts.ref),
       );
