@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { createInitialState } from '../../../core/state/machine.js';
+import { saveState } from '../../../core/state/persistence.js';
+import { captureBundleBaseline } from '../../implementers/bundle-baseline.js';
 import {
   createEvidenceLedger,
   findOrSeed,
@@ -9,6 +12,7 @@ import {
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { evidenceLedgerPath, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { EvidenceLedgerSchema, type EvidenceLedger } from '../../../core/schemas/evidence.js';
+import { taskId } from '../../../core/schemas/task.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import {
   checkEntries,
@@ -598,5 +602,97 @@ describe('recordedApiCreatedPaths', () => {
 
     expect(recordedApiCreatedPaths(ref, task, '/tmp/workspace-a')).toEqual(['src/a.ts']);
     expect(recordedApiCreatedPaths(ref, task, '/tmp/workspace-b')).toEqual([]);
+  });
+
+  it('proves the file a split parent created for its child, so an api seat is not refused', async () => {
+    const parent = makeTask({ id: 'T003', action: 'create', suggestedFiles: ['src/a.ts'] });
+    const child = makeTask({
+      id: 'T004',
+      parentId: taskId('T003'),
+      action: 'create',
+      suggestedFiles: ['src/a.ts'],
+    });
+    const other = makeTask({ id: 'T005', action: 'create', suggestedFiles: ['src/a.ts'] });
+    const ref = { projectDir, sessionId: 'sess-1' };
+    writeEvidenceLedger(
+      ref,
+      recordApiApplyEvidence({
+        ledger: createEvidenceLedger({
+          sessionId: ref.sessionId,
+          feature: 'feat',
+          tasks: [parent],
+        }),
+        task: parent,
+        workspacePath: projectDir,
+        result: application('create'),
+      }),
+    );
+    saveState(ref, {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [child, other],
+      lineages: {
+        T003: {
+          consults: 1,
+          attempts: 2,
+          consultAllowance: 1,
+          attemptAllowance: 6,
+          staleConsultedRevision: {},
+          dispatchedRevision: { T003: 1 },
+          consultRecords: [],
+          replacedParents: [parent],
+          notes: [],
+        },
+      },
+    });
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/a.ts'), 'export const a = 1;\n');
+
+    const createdByThisTask = recordedApiCreatedPaths(ref, child, projectDir);
+
+    expect(createdByThisTask).toEqual(['src/a.ts']);
+    expect(recordedApiCreatedPaths(ref, other, projectDir)).toEqual([]);
+    expect(
+      await captureBundleBaseline({ projectDir, task: child, createdByThisTask }),
+    ).toMatchObject({ kind: 'captured', baselines: [{ path: 'src/a.ts', operation: 'modify' }] });
+  });
+
+  it('proves the file a sibling of its split created, and no file of another lineage', async () => {
+    const sibling = makeTask({
+      id: 'T004',
+      parentId: taskId('T003'),
+      action: 'create',
+      suggestedFiles: ['src/a.ts'],
+      status: 'done',
+    });
+    const child = makeTask({
+      id: 'T005',
+      parentId: taskId('T003'),
+      action: 'create',
+      suggestedFiles: ['src/a.ts'],
+    });
+    const other = makeTask({ id: 'T006', action: 'create', suggestedFiles: ['src/a.ts'] });
+    const ref = { projectDir, sessionId: 'sess-1' };
+    writeEvidenceLedger(
+      ref,
+      recordApiApplyEvidence({
+        ledger: createEvidenceLedger({
+          sessionId: ref.sessionId,
+          feature: 'feat',
+          tasks: [sibling],
+        }),
+        task: sibling,
+        workspacePath: projectDir,
+        result: application('create'),
+      }),
+    );
+    saveState(ref, {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [sibling, child, other],
+    });
+
+    expect(recordedApiCreatedPaths(ref, child, projectDir)).toEqual(['src/a.ts']);
+    expect(recordedApiCreatedPaths(ref, other, projectDir)).toEqual([]);
   });
 });

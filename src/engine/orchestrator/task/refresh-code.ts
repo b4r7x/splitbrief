@@ -1,5 +1,7 @@
-import type { Task } from '../../../core/schemas/task.js';
+import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { lineageIdOf } from '../../../core/state/task-insert.js';
+import { checkIgnoredPaths } from '../../../lib/git/files.js';
 import { confinedExists, confinedReadFileAsync } from '../../../lib/confined-fs.js';
 import { assertPathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
 import { matches } from '../../../utils/error.js';
@@ -8,6 +10,8 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { ContinuationHolder } from '../continuation.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
+import { entryToRestore } from '../approval/file-snapshots/restore.js';
+import { entryStoreDir } from '../isolation/entry-snapshot.js';
 import { runsOnOwnFiles } from './stale-inputs.js';
 
 const isPathEscape = matches('path-confined-escape');
@@ -45,6 +49,29 @@ async function readContextCode(task: Task, projectDir: string): Promise<Record<s
     remaining = Math.max(0, remaining - content.length);
   }
   return codeByFile;
+}
+
+/**
+ * The action a brief takes on its anchor: `create` when the anchor was absent when the brief's
+ * lineage started (`LineageRecord.startSnapshot`), so a file the lineage wrote stays `create` for a
+ * rewrite, for every split child and at each dispatch. An anchor the workspace does not hold is
+ * `create`. Before the lineage's first dispatch no start is recorded, and the workspace decides; it
+ * also decides for a git-ignored anchor, which no snapshot records.
+ */
+export async function lineageAnchorAction(
+  ref: SessionRef,
+  state: WorkflowState,
+  lineageId: TaskId,
+  anchor: string,
+  workspaceDir: string,
+): Promise<Task['action']> {
+  const action = anchorAction(anchor, workspaceDir);
+  const start = state.lineages?.[lineageId]?.startSnapshot;
+  if (action === 'create' || start === undefined) return action;
+  const before = await entryToRestore(workspaceDir, start, anchor, entryStoreDir(ref));
+  if (before.kind !== 'absent') return 'modify';
+  const ignored = await checkIgnoredPaths(start.ignoreProjectDir ?? workspaceDir, [anchor]);
+  return ignored.length > 0 ? 'modify' : 'create';
 }
 
 /**
@@ -90,7 +117,7 @@ function hasCode(task: Task): boolean {
  * also holds that attempt's own output, which is not the brief's input. A retry, and a brief that
  * runs on its own files (`runsOnOwnFiles`: a Continue past a consult bound, a Try again of a
  * dispatched revision), keep the action the brief was dispatched with: an anchor its own earlier
- * attempt wrote is still the file it creates.
+ * attempt wrote is still the file it creates. Any other dispatch takes `lineageAnchorAction`.
  */
 export async function refreshAndPersistCode(
   task: Task,
@@ -105,7 +132,18 @@ export async function refreshAndPersistCode(
   }
   const current = await refreshCurrentCode(task, workspaceDir);
   const onOwnFiles = entry === 'retry' || runsOnOwnFiles(state, task, ref.continuation);
-  const refreshed = onOwnFiles ? { ...current, action: task.action } : current;
+  const refreshed = {
+    ...current,
+    action: onOwnFiles
+      ? task.action
+      : await lineageAnchorAction(
+          ref,
+          state,
+          lineageIdOf(task),
+          task.suggestedFiles[0],
+          workspaceDir,
+        ),
+  };
   if (hasCode(refreshed) || hasCode(task) || refreshed.action !== task.action) {
     state = transitionAndSave(ref, state, {
       type: 'UPDATE_TASK_CODE',

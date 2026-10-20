@@ -12,7 +12,7 @@ import type {
 } from '../../../core/schemas/workflow.js';
 import { dueCriterionIds } from '../../../core/review/verdict.js';
 import { briefCorrections } from '../../../core/state/machine.js';
-import { insertTasks } from '../../../core/state/task-insert.js';
+import { insertTasks, lineageIdOf } from '../../../core/state/task-insert.js';
 import { error } from '../../../utils/error.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
@@ -23,6 +23,7 @@ import { waitForPlannerReply } from '../planning/call-loop.js';
 import { recordBriefCorrection, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
 import { restoreAttemptFiles } from '../task/rollback.js';
+import { lineageAnchorAction } from '../task/refresh-code.js';
 import { runBriefGate } from '../task/brief-gate.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import { checkRegistry } from '../validation/run-checks.js';
@@ -146,6 +147,21 @@ async function applyGuardQuestion(
 }
 
 /**
+ * A rewrite or a split child continues the lineage of `earlier`, the brief it replaces: a file that
+ * lineage created stays `create`, though the workspace holds its output.
+ */
+async function continuedTask(ctx: ConsultApplyContext, task: Task, earlier: Task): Promise<Task> {
+  const action = await lineageAnchorAction(
+    ctx,
+    ctx.state,
+    lineageIdOf(earlier),
+    task.suggestedFiles[0],
+    ctx.workspaceDir,
+  );
+  return { ...task, action };
+}
+
+/**
  * Rewrites the task in place; `attempt` is the current attempt's start snapshot, or
  * null when no attempt ran and there is nothing to roll back.
  */
@@ -164,7 +180,7 @@ async function applyRewrite(
     {
       type: 'REPLACE_TASK',
       taskId: task.id,
-      task: taskFromSpec(action.task, ctx.workspaceDir),
+      task: await continuedTask(ctx, taskFromSpec(action.task, ctx.workspaceDir), task),
     },
   );
   ctx.onStateChange?.(state);
@@ -184,8 +200,10 @@ async function applySplit(
   if (attempt !== null) {
     await restoreAttemptFiles({ wctx: ctx, phase: ctx.state.phase, attemptSnapshot: attempt });
   }
-  const inserted = insertTasks(action.tasks, ctx.state.tasks, (spec) =>
-    taskFromSpec(spec, ctx.workspaceDir),
+  const inserted = await Promise.all(
+    insertTasks(action.tasks, ctx.state.tasks, (spec) => taskFromSpec(spec, ctx.workspaceDir)).map(
+      (child) => continuedTask(ctx, child, task),
+    ),
   );
   const state = transitionAndSave(
     { projectDir: ctx.projectDir, sessionId: ctx.sessionId },

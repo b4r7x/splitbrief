@@ -22,11 +22,6 @@ export async function applyCode(
     return { success: false, error: toErrorMessage(err) };
   }
 
-  if (task.action === 'create') {
-    await writeConfinedSecureFileAsync(projectDir, task.suggestedFiles[0], code);
-    return { success: true };
-  }
-
   let existing: string;
   try {
     existing = await readFile(filePath, 'utf-8');
