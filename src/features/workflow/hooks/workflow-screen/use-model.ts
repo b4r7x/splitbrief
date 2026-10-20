@@ -8,6 +8,8 @@ import {
   SUMMARY_FILE,
   sessionDir,
 } from '../../../../core/paths.js';
+import { checkSessionLiveness } from '../../../../core/sessions/lockfile.js';
+import { LOCKFILE_PING_INTERVAL_MS } from '../../../../engine/orchestrator/run/heartbeat.js';
 import {
   requestLeaveSession,
   requestResume,
@@ -106,8 +108,15 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
       watchFile(file, { persistent: false, interval: 100 }, changed);
     }
     if (existsSync(join(directory, STATE_FILE))) refresh();
+    // An owner killed without its exit handler changes no file, so the screen asks for it itself.
+    const ownerCheck = setInterval(() => {
+      const current = routerStore.get();
+      if (current.screen !== 'workflow' || current.run.status.kind !== 'running') return;
+      if (!checkSessionLiveness(directory).alive) refresh();
+    }, LOCKFILE_PING_INTERVAL_MS);
     return () => {
       controller.abort();
+      clearInterval(ownerCheck);
       for (const file of files) unwatchFile(file, changed);
     };
   }, [atRestProjectDir, atRestSessionId]);

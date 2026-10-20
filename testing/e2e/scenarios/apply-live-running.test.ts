@@ -4,6 +4,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, expect, it, vi } from 'vitest';
 import { loadConfig } from '../../../src/core/config/load/io.js';
+import { createInitialState } from '../../../src/core/state/machine.js';
+import { saveState } from '../../../src/core/state/persistence.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
@@ -60,14 +62,22 @@ syncBuiltinESMExports();
   return preload;
 }
 
-// A run cut off inside Apply is continued and Re-run Apply runs live, in the process that drives
-// the run. While it writes, the byline says so with its clock, and Escape waits for it rather than
-// offering a stop.
-it('says Apply is writing while a live Re-run Apply writes, and Esc goes home only once it finishes', async () => {
-  const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
-  fixture = target;
-  const { ref } = await seedApplyingRun(target, 'interrupted');
-  home = useTrustHome('apply-live-home');
+interface HeldCli {
+  screen: () => string;
+  write: (keys: string) => void;
+  waitForText: (text: string) => Promise<void>;
+}
+
+/**
+ * Continues the run cut off inside Apply, takes Re-run Apply, and hands the screen on once the
+ * Re-run Apply is held writing b.txt. The hold is released when `drive` returns or throws.
+ */
+async function rerunApplyWhileHeld<T>(
+  target: StopContinueFixture,
+  ref: { sessionId: string },
+  homeDir: string,
+  drive: (cli: HeldCli, release: () => void) => Promise<T>,
+): Promise<T> {
   await trustDeclaredRunners({
     projectDir: target.projectDir,
     config: loadConfig(target.projectDir).config,
@@ -94,7 +104,7 @@ it('says Apply is writing while a live Re-run Apply writes, and Esc goes home on
         name: 'xterm-256color',
         ...viewport,
         cwd: resolve(import.meta.dirname, '../../..'),
-        env: { ...safeChildEnvironment(home.home), XDG_STATE_HOME: target.stateHome },
+        env: { ...safeChildEnvironment(homeDir), XDG_STATE_HOME: target.stateHome },
       },
     },
     async (child) => {
@@ -114,8 +124,9 @@ it('says Apply is writing while a live Re-run Apply writes, and Esc goes home on
         ).join('\n');
       const data = child.onData((chunk) => terminal.write(chunk));
       const exit = child.onExit((event) => exited.resolve(event));
-      const waitForText = (text: string) =>
-        vi.waitFor(() => expect(screen()).toContain(text), { timeout: 30_000 });
+      const waitForText = async (text: string) => {
+        await vi.waitFor(() => expect(screen()).toContain(text), { timeout: 30_000 });
+      };
       try {
         await waitForText('Needs you · Apply stopped part way');
         await delay(PROMPT_TYPEAHEAD_GRACE_MS);
@@ -124,22 +135,11 @@ it('says Apply is writing while a live Re-run Apply writes, and Esc goes home on
           timeout: 30_000,
         });
         await waitForText('Applying to your checkout');
-        const applying = screen();
-        child.write('\x1b');
-        await delay(PROMPT_TYPEAHEAD_GRACE_MS);
-        child.write('\x1b');
-        await delay(1_000);
-        const held = screen();
-        const heldState = readState(target, ref.sessionId);
-        rmSync(holdPath);
-        await vi.waitFor(
-          () => {
-            expect(screen()).toContain('Describe your feature');
-            expect(screen()).toContain('applied');
-          },
-          { timeout: 30_000 },
-        );
-        return { applying, held, heldState };
+        return {
+          value: await drive({ screen, write: (keys) => child.write(keys), waitForText }, () =>
+            rmSync(holdPath),
+          ),
+        };
       } finally {
         rmSync(holdPath, { force: true });
         await terminatePtyProcessGroup(child, exited.promise);
@@ -149,8 +149,41 @@ it('says Apply is writing while a live Re-run Apply writes, and Esc goes home on
       }
     },
   );
-  if (!('applying' in result)) throw new Error(result.reason);
-  const { applying, held, heldState } = result;
+  if (!('value' in result)) throw new Error(result.reason);
+  return result.value;
+}
+
+// A run cut off inside Apply is continued and Re-run Apply runs live, in the process that drives
+// the run. While it writes, the byline says so with its clock, and Escape waits for it rather than
+// offering a stop.
+it('says Apply is writing while a live Re-run Apply writes, and Esc goes home only once it finishes', async () => {
+  const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
+  fixture = target;
+  const { ref } = await seedApplyingRun(target, 'interrupted');
+  home = useTrustHome('apply-live-home');
+  const { applying, held, heldState } = await rerunApplyWhileHeld(
+    target,
+    ref,
+    home.home,
+    async ({ screen, write }, release) => {
+      const applying = screen();
+      write('\x1b');
+      await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+      write('\x1b');
+      await delay(1_000);
+      const held = screen();
+      const heldState = readState(target, ref.sessionId);
+      release();
+      await vi.waitFor(
+        () => {
+          expect(screen()).toContain('Describe your feature');
+          expect(screen()).toContain('applied');
+        },
+        { timeout: 30_000 },
+      );
+      return { applying, held, heldState };
+    },
+  );
 
   expect(applying).toContain('/ for a command · ⏎ for home when Apply finishes…');
   expect(applying).not.toContain('esc stop options');
@@ -165,4 +198,40 @@ it('says Apply is writing while a live Re-run Apply writes, and Esc goes home on
   expect(heldState.closed).toBeUndefined();
   expect(readState(target, ref.sessionId).closed).toMatchObject({ as: 'applied' });
   expect(readFileSync(join(target.projectDir, 'b.txt'), 'utf8')).toBe('run result\n');
+});
+
+// Nothing can stop Apply, so a pick in the sessions list names Apply as the reason it refuses,
+// not the run on screen.
+it('names Apply when the sessions list refuses a pick while a live Re-run Apply writes', async () => {
+  const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
+  fixture = target;
+  const { ref } = await seedApplyingRun(target, 'interrupted');
+  saveState(
+    { projectDir: target.projectDir, sessionId: 'other-run' },
+    createInitialState('Another run'),
+  );
+  home = useTrustHome('apply-live-home');
+  const refused = await rerunApplyWhileHeld(
+    target,
+    ref,
+    home.home,
+    async ({ screen, write, waitForText }) => {
+      write('/sessions');
+      await waitForText('/sessions');
+      await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+      write('\r');
+      await waitForText('Sessions · 2');
+      await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+      write('Another');
+      await waitForText('▌ ◌ Another run');
+      await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+      write('\r');
+      await waitForText('Cannot open "Another run"');
+      return screen();
+    },
+  );
+
+  expect(refused).toContain('Apply is still writing to your checkout. Cannot open "Another run".');
+  expect(refused).not.toContain('Stop the run on screen first');
+  expect(refused).toContain('Sessions · 2');
 });

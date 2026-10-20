@@ -220,13 +220,14 @@ export async function handleSessionSelect(
 ): Promise<void> {
   // The reason leads: the panel cuts a long hint at its end, so a long run name loses its tail.
   const cannotOpen = `Cannot open "${oneLineDisplayText(session.feature)}".`;
+  // Apply has no stop, so while it writes it is the reason, even under a run this process drives.
+  if (deps.applying()) {
+    setSelectionError(`${APPLY_RUNNING_REFUSAL} ${cannotOpen}`);
+    return;
+  }
   const route = routerStore.get();
   if (route.screen === 'workflow' && route.execution.kind === 'local') {
     setSelectionError(`Stop the run on screen first. ${cannotOpen}`);
-    return;
-  }
-  if (deps.applying()) {
-    setSelectionError(`${APPLY_RUNNING_REFUSAL} ${cannotOpen}`);
     return;
   }
 
