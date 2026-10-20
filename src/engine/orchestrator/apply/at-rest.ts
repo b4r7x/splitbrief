@@ -1,12 +1,9 @@
-import type { Config } from '../../../core/schemas/config.js';
 import { acquireLiveness } from '../run/liveness.js';
 import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
 import { trackActiveApply } from '../session-lifecycle/shutdown.js';
 import { runApply } from './run.js';
 
-type AtRestApplyInput = Omit<Parameters<typeof runApply>[0], 'setTrackedState'> & {
-  config: Config;
-};
+type AtRestApplyInput = Omit<Parameters<typeof runApply>[0], 'setTrackedState'>;
 
 async function applyHoldingLiveness(
   input: AtRestApplyInput,
@@ -22,7 +19,7 @@ async function applyHoldingLiveness(
       result.outcome === 'applied' ||
       (result.outcome === 'halted' && result.state !== input.state)
     ) {
-      finalizeRunAtRest({ ref: input.wctx, config: input.config, state: result.state });
+      finalizeRunAtRest({ ref: input.wctx, state: result.state });
     }
     return result;
   } finally {

@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -46,6 +46,7 @@ describe('run closure during Apply', () => {
       mkdirSync(workspacePath);
       const state: WorkflowState = {
         ...createInitialState('Apply races with closure'),
+        ...RUN_CREW,
         phase: 'complete',
         reviewStatus: 'passed',
         workspace: {
@@ -73,7 +74,7 @@ describe('run closure during Apply', () => {
 
       await expect(
         action === 'end-run'
-          ? endRunAtRest({ ...ref, bus }, state, makeConfig())
+          ? endRunAtRest({ ...ref, bus }, state)
           : closeRunIfOpen({ ...ref, bus }, state, 'discarded'),
       ).rejects.toThrow('Restore or retry Apply first');
 
@@ -97,6 +98,7 @@ describe('endRunAtRest', () => {
     const ref = { projectDir, sessionId: 'closed-applying' };
     const state: WorkflowState = {
       ...createInitialState('Closed during Apply'),
+      ...RUN_CREW,
       applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
       closed: { at: '2026-10-11T00:00:01.000Z', as: 'ended' },
     };
@@ -104,7 +106,7 @@ describe('endRunAtRest', () => {
     const saved = loadState(ref);
     const { bus, events } = makeBusRecorder();
 
-    await expect(endRunAtRest({ ...ref, bus }, state, makeConfig())).resolves.toMatchObject({
+    await expect(endRunAtRest({ ...ref, bus }, state)).resolves.toMatchObject({
       closedNow: false,
     });
 
@@ -117,6 +119,7 @@ describe('endRunAtRest', () => {
     const ref = { projectDir, sessionId: 'apply-recovery' };
     const state: WorkflowState = {
       ...createInitialState('Partial Apply'),
+      ...RUN_CREW,
       applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
       pendingRecovery: makeRecoveryIssue({
         reason: 'apply-partial',
@@ -139,7 +142,7 @@ describe('endRunAtRest', () => {
     projectDir = createTempDir('end-run-applying-');
     const ref = { projectDir, sessionId: 'applying-run' };
     reactivateExistingSession(ref);
-    const stale = createInitialState('Interrupted Apply');
+    const stale = { ...createInitialState('Interrupted Apply'), ...RUN_CREW };
     saveState(ref, {
       ...stale,
       applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
@@ -147,7 +150,7 @@ describe('endRunAtRest', () => {
     const saved = loadState(ref);
     const { bus, events } = makeBusRecorder();
 
-    await expect(endRunAtRest({ ...ref, bus }, stale, makeConfig())).rejects.toThrow(
+    await expect(endRunAtRest({ ...ref, bus }, stale)).rejects.toThrow(
       'Restore or retry Apply first',
     );
 
@@ -163,6 +166,7 @@ describe('endRunAtRest', () => {
     reactivateExistingSession(ref);
     const state: WorkflowState = {
       ...createInitialState('End a stopped run'),
+      ...RUN_CREW,
       phase: 'implementing',
       awaitingContinue: true,
     };
@@ -170,7 +174,7 @@ describe('endRunAtRest', () => {
     const { bus, events } = makeBusRecorder();
     const before = Date.now();
 
-    const closure = await endRunAtRest({ ...ref, bus }, state, makeConfig());
+    const closure = await endRunAtRest({ ...ref, bus }, state);
 
     expect(closure.closedNow).toBe(true);
     expect(closure.state.closed?.as).toBe('ended');
@@ -195,6 +199,7 @@ describe('endRunAtRest', () => {
     mkdirSync(workspacePath);
     const state: WorkflowState = {
       ...createInitialState('End a ready run'),
+      ...RUN_CREW,
       phase: 'complete',
       reviewStatus: 'passed',
       workspace: {
@@ -209,7 +214,7 @@ describe('endRunAtRest', () => {
     );
     const { bus, events } = makeBusRecorder();
 
-    const closure = await endRunAtRest({ ...ref, bus }, state, makeConfig());
+    const closure = await endRunAtRest({ ...ref, bus }, state);
 
     expect(closure.closedNow).toBe(true);
     expect(closure.state.closed).toMatchObject({
@@ -226,6 +231,7 @@ describe('endRunAtRest', () => {
     const ref = { projectDir, sessionId: 'closed-run' };
     const state: WorkflowState = {
       ...createInitialState('An ended run'),
+      ...RUN_CREW,
       phase: 'implementing',
       closed: { as: 'ended', at: '2026-10-11T00:00:00.000Z' },
     };
@@ -233,7 +239,7 @@ describe('endRunAtRest', () => {
     const saved = loadState(ref);
     const { bus, events } = makeBusRecorder();
 
-    const closure = await endRunAtRest({ ...ref, bus }, state, makeConfig());
+    const closure = await endRunAtRest({ ...ref, bus }, state);
 
     expect(closure.closedNow).toBe(false);
     expect(closure.state).toEqual(saved);
@@ -250,6 +256,7 @@ describe('endRunAtRest', () => {
     });
     const state: WorkflowState = {
       ...createInitialState('End a halted run'),
+      ...RUN_CREW,
       phase: 'escalating',
       tasks: [makeTask({ id: 'T001', status: 'failed' })],
       pendingRecovery: issue,
@@ -257,7 +264,7 @@ describe('endRunAtRest', () => {
     saveState(ref, state);
     const { bus, events } = makeBusRecorder();
 
-    const closure = await endRunAtRest({ ...ref, bus }, state, makeConfig());
+    const closure = await endRunAtRest({ ...ref, bus }, state);
 
     expect(closure.closedNow).toBe(true);
     expect(closure.state.closed?.as).toBe('ended');
@@ -271,7 +278,7 @@ describe('endRunAtRest', () => {
     expect(readActive(projectDir)).toBeNull();
 
     const ended = loadState(ref);
-    const again = await endRunAtRest({ ...ref, bus }, state, makeConfig());
+    const again = await endRunAtRest({ ...ref, bus }, state);
     expect(again.closedNow).toBe(false);
     expect(loadState(ref)).toEqual(ended);
     expect(events.filter((event) => event.type === 'recovery_resolved')).toHaveLength(1);
@@ -410,7 +417,11 @@ describe('the close line names files on disk only while the run left files in th
     projectDir = createTempDir('close-line-');
     const ref = { projectDir, sessionId: 'close-line' };
     bookLedger(ref, booked);
-    const state: WorkflowState = { ...createInitialState('Close line'), ...overrides };
+    const state: WorkflowState = {
+      ...createInitialState('Close line'),
+      ...RUN_CREW,
+      ...overrides,
+    };
 
     expect(filesStillOnDiskSuffix(ref, state)).toBe(expected);
     expect(

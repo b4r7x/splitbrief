@@ -4,6 +4,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
@@ -44,7 +45,7 @@ describe('End run at rest', () => {
     ensureSessionDir(projectDir, ref.sessionId);
     const startedAt = Date.now() - 60_000;
     const state = {
-      ...transition(createInitialState('End at rest'), { type: 'START' }),
+      ...transition({ ...createInitialState('End at rest'), ...RUN_CREW }, { type: 'START' }),
       startedAt: new Date(startedAt).toISOString(),
     };
     saveState(ref, state);
@@ -91,7 +92,10 @@ describe('End run at rest', () => {
     execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
     const ref = { projectDir, sessionId: 'end-before-resume' };
     ensureSessionDir(projectDir, ref.sessionId);
-    saveState(ref, transition(createInitialState('End before Resume'), { type: 'START' }));
+    saveState(
+      ref,
+      transition({ ...createInitialState('End before Resume'), ...RUN_CREW }, { type: 'START' }),
+    );
     const record = readRunRecord(ref);
     if (record === null) throw new Error('missing run record');
     routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
@@ -115,6 +119,7 @@ describe('End run at rest', () => {
     reactivateExistingSession(ref);
     saveState(ref, {
       ...createInitialState('End a halted run'),
+      ...RUN_CREW,
       phase: 'escalating',
       tasks: [makeTask({ id: 'T001', status: 'failed' })],
       pendingRecovery: makeRecoveryIssue({
@@ -166,7 +171,10 @@ describe('/resume and /end on a run at rest at a gate', () => {
     execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
     const ref = { projectDir, sessionId: 'gate-at-rest' };
     ensureSessionDir(projectDir, ref.sessionId);
-    const started = transition(createInitialState('Gate at rest'), { type: 'START' });
+    const started = transition(
+      { ...createInitialState('Gate at rest'), ...RUN_CREW },
+      { type: 'START' },
+    );
     const atGate = { ...started, phase: 'reviewing-spec' as const };
     saveState(ref, atGate);
     const record = readRunRecord(ref);

@@ -6,6 +6,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
@@ -58,7 +59,7 @@ describe('a run at rest that another process closes', () => {
     'clears the previous local stop when opening a run through %s',
     async (history) => {
       const sessionId = 'another-run';
-      saveState({ projectDir, sessionId }, createInitialState('Another run'));
+      saveState({ projectDir, sessionId }, { ...createInitialState('Another run'), ...RUN_CREW });
       stopStore.request('pause-after-brief');
       stopStore.markSeatChange(true);
       stopStore.park('boundary', null, () => {});
@@ -83,7 +84,11 @@ describe('a run at rest that another process closes', () => {
 
   it('refreshes a changed session log without resetting the local stop', async () => {
     const ref = { projectDir, sessionId: 'parked-log-refresh' };
-    saveState(ref, { ...createInitialState('Keep the local stop'), phase: 'planning' });
+    saveState(ref, {
+      ...createInitialState('Keep the local stop'),
+      ...RUN_CREW,
+      phase: 'planning',
+    });
     const config = makeConfig();
     configStore.__testReset({ config, projectDir });
     terminalSizeStore.__testReset({ ...VIEWPORT, isSmall: false });
@@ -126,7 +131,7 @@ describe('a run at rest that another process closes', () => {
   it('paints closed without input, drops its stop options and lists it as ended', async () => {
     const sessionId = 'closed-elsewhere-session';
     const feature = 'add a word counter';
-    const savedState = { ...createInitialState(feature), phase: 'planning' as const };
+    const savedState = { ...createInitialState(feature), ...RUN_CREW, phase: 'planning' as const };
     saveState({ projectDir, sessionId }, savedState);
     const config = makeConfig();
 
@@ -165,7 +170,6 @@ describe('a run at rest that another process closes', () => {
     await endRunAtRest(
       { projectDir, sessionId, bus: createRecoveryBus({ projectDir, sessionId, sink: () => {} }) },
       savedState,
-      config,
     );
 
     await vi.waitFor(() => {
@@ -190,7 +194,11 @@ describe('a run at rest that another process closes', () => {
   it('shows a run this screen drives, closed elsewhere, as it stands now and keeps its transcript', async () => {
     const sessionId = 'closed-elsewhere-local';
     const ref = { projectDir, sessionId };
-    const savedState = { ...createInitialState('add a word counter'), phase: 'planning' as const };
+    const savedState = {
+      ...createInitialState('add a word counter'),
+      ...RUN_CREW,
+      phase: 'planning' as const,
+    };
     saveState(ref, savedState);
     const config = makeConfig();
     const prepared = makePreparedExecution({
@@ -221,7 +229,6 @@ describe('a run at rest that another process closes', () => {
     await endRunAtRest(
       { projectDir, sessionId, bus: createRecoveryBus({ projectDir, sessionId, sink: () => {} }) },
       savedState,
-      config,
     );
     continuation?.handleResume();
 

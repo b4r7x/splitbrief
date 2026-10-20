@@ -17,6 +17,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import {
   makeBusRecorder,
   makeCallbacks,
@@ -107,6 +108,7 @@ async function openWorkspaceRun(strategy: 'worktree' | 'staged-copy') {
   writeFileSync(join(workspaceDir, 'assets/logo.bin'), BINARY);
   const state: WorkflowState = {
     ...createInitialState('Close a workspace run'),
+    ...RUN_CREW,
     phase: 'implementing',
     workspace: {
       kind: opened.kind,
@@ -136,6 +138,7 @@ async function checkoutRunInBrief() {
   const task = makeTask({ id: 'T001', title: 'Lerp', suggestedFiles: ['lib/lerp.mjs'] });
   const state: WorkflowState = {
     ...createInitialState('Checkout run'),
+    ...RUN_CREW,
     phase: 'implementing',
     workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head: null } },
     tasks: [{ ...task, status: 'in_progress' }],
@@ -408,7 +411,7 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     saveState(ref, stopped);
 
     const closure = await closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, stopped);
-    const summary = finalizeRunAtRest({ ref, config: createDefaultConfig(), state: closure.state });
+    const summary = finalizeRunAtRest({ ref, state: closure.state });
 
     const patch = readFileSync(
       join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'),
@@ -438,7 +441,11 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     dirs.push(projectDir);
     const ref = { projectDir, sessionId: SESSION_ID };
     ensureSessionDir(projectDir, SESSION_ID);
-    const state = { ...createInitialState('Checkout run'), phase: 'implementing' as const };
+    const state = {
+      ...createInitialState('Checkout run'),
+      ...RUN_CREW,
+      phase: 'implementing' as const,
+    };
     saveState(ref, state);
 
     const closure = await closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, state);

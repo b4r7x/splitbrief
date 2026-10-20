@@ -15,6 +15,11 @@ import { CREW_SEAT_IDS, CREW_SEAT_LABELS, sameSeatIds, seatIdsOf } from '../crew
 import type { CrewSeatId, SeatIds } from '../crew/identity.js';
 import { deriveCrewSeats } from '../crew/seats.js';
 import { RUNNER_KINDS } from '../schemas/enums.js';
+import type { WorkflowState } from '../schemas/workflow.js';
+import { resolveCliModel } from '../providers/automatic-model.js';
+import { resolveAutoModel } from '../providers/model-selection.js';
+import type { SeatIdentity } from '../providers/seat-identity.js';
+import { sessionError } from '../sessions/errors.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR, SEATS_FILE } from '../paths.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { confinedReadFile, confinedWriteFile } from '../../lib/confined-fs.js';
@@ -39,6 +44,11 @@ export const SeatIdentitiesSchema = z.object({
    * and records written before the runner kind was kept carry ids without one.
    */
   ids: z.object({ plan: SeatIdsSchema, build: SeatIdsSchema, review: SeatIdsSchema }).optional(),
+  /**
+   * Whether the review seat followed PLAN (no reviewer of its own), which the ids cannot say: a
+   * reviewer set to the planner's tool and model has the same ids. Records written before it have none.
+   */
+  reviewFollowsPlan: z.boolean().optional(),
 });
 
 export type SeatIdentities = z.infer<typeof SeatIdentitiesSchema>;
@@ -70,6 +80,7 @@ export function seatIdentitiesFromConfig(
       build: seatIdsOf(build.runner),
       review: seatIdsOf(review.runner),
     },
+    reviewFollowsPlan: review.source === 'planner',
   };
 }
 
@@ -175,10 +186,70 @@ export function reconcileSeatIdentities(
   const missingKinds = recorded?.ids !== undefined && idsLackKind(recorded.ids);
   const switchCount = loadState(ref)?.seatSwitches?.length ?? 0;
   const orderChanged = recorded !== null && recorded.switchCount !== switchCount;
+  const followChanged =
+    recorded !== null && recorded.reviewFollowsPlan !== current.reviewFollowsPlan;
   // A record written before the ids, or their kinds, were kept gains them without a notice, so
-  // the next move is named on both sides; a catalog label that changed is re-spelled the same way.
-  if (changes.length > 0 || relabelled || missingIds || missingKinds || orderChanged) {
+  // the next move is named on both sides; a catalog label that changed is re-spelled the same way,
+  // and so is a review seat that starts or stops following PLAN on the same tool and model.
+  if (
+    changes.length > 0 ||
+    relabelled ||
+    missingIds ||
+    missingKinds ||
+    orderChanged ||
+    followChanged
+  ) {
     writeSeatIdentities(ref, current);
   }
   return changes;
+}
+
+function recordedModel(seat: SeatIds): string | undefined {
+  return seat.kind === 'api'
+    ? resolveAutoModel(seat.model, seat.tool)
+    : resolveCliModel(seat.model, seat.tool);
+}
+
+/**
+ * The crew a run ran with, for its closed record: the seats of its latest pass, never the config
+ * saved since. The planner holds the review seat when the record says it followed PLAN. A record
+ * written before that was kept reads it as following PLAN only when both seats are the same and
+ * the run started without a reviewer. A record written before seat ids were kept reads the seats
+ * the state saved at the run's start.
+ */
+export function recordedSeatIdentity(ref: SessionRef, state: WorkflowState): SeatIdentity {
+  const record = readSeatIdentities(ref);
+  if (record?.ids === undefined) {
+    if (state.plannerTool === undefined || state.implementerTool === undefined) {
+      throw sessionError.invalidData(ref.sessionId, 'the run recorded no crew');
+    }
+    return {
+      plannerTool: state.plannerTool,
+      plannerModel: state.plannerModel,
+      plannerKind: state.plannerKind,
+      implementerTool: state.implementerTool,
+      implementerModel: state.implementerModel,
+      implementerKind: state.implementerKind,
+      reviewerTool: state.reviewerTool,
+      reviewerModel: state.reviewerModel,
+      reviewerKind: state.reviewerKind,
+    };
+  }
+  const ids = record.ids;
+  const reviewFollowsPlan =
+    record.reviewFollowsPlan ??
+    (state.reviewerTool === undefined && sameSeatIds(ids.review, ids.plan));
+  return {
+    plannerTool: ids.plan.tool,
+    plannerModel: recordedModel(ids.plan),
+    plannerKind: ids.plan.kind,
+    implementerTool: ids.build.tool,
+    implementerModel: recordedModel(ids.build),
+    implementerKind: ids.build.kind,
+    ...(!reviewFollowsPlan && {
+      reviewerTool: ids.review.tool,
+      reviewerModel: recordedModel(ids.review),
+      reviewerKind: ids.review.kind,
+    }),
+  };
 }

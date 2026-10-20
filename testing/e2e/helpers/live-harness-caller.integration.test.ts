@@ -8,7 +8,7 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { MATRIX_TIERS, type ReleaseMatrixRun, runReleaseMatrixRow } from './live-harness.js';
 
@@ -146,6 +146,7 @@ describe('release matrix row caller', () => {
       saveState(
         ref,
         makeWorkflowState({
+          ...RUN_CREW,
           phase: 'complete',
           reviewStatus: 'passed',
           tasks: [makeTask({ status: 'done', suggestedFiles: [artifact.path] })],

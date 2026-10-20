@@ -9,7 +9,7 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeImplState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -101,7 +101,7 @@ function saveInterrupted(options: EngineOptions) {
     source: 'user',
     cut: 'mid-step',
   });
-  return finalizeEndedRun({ ref, active, config: options.prepared.config, state: saved });
+  return finalizeEndedRun({ ref, active, state: saved });
 }
 
 function waitingEngine(
@@ -150,11 +150,12 @@ function passFinalReview(options: EngineOptions) {
     phase: passed.phase,
     review: 'passed',
   });
-  return finalizeEndedRun({ ref, active, config: options.prepared.config, state: passed });
+  return finalizeEndedRun({ ref, active, state: passed });
 }
 
 function finalReviewState(): WorkflowState {
   return makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+    ...RUN_CREW,
     phase: 'final-review',
     currentTaskIndex: 1,
   });
@@ -180,7 +181,9 @@ describe('run-loop stop completion', () => {
     cleanupTempDir(projectDir);
   });
 
-  function prepare(state = transition(createInitialState('stop fixture'), { type: 'START' })) {
+  function prepare(
+    state = transition({ ...createInitialState('stop fixture'), ...RUN_CREW }, { type: 'START' }),
+  ) {
     const sessionId = 'stop-session';
     const ref = { projectDir, sessionId };
     ensureSessionDir(projectDir, sessionId);
@@ -233,6 +236,7 @@ describe('run-loop stop completion', () => {
   it('keeps an unfinished Apply recovery active when live End run is refused', async () => {
     const prepared = prepare({
       ...createInitialState('Partial Apply'),
+      ...RUN_CREW,
       applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
       pendingRecovery: makeRecoveryIssue({
         reason: 'apply-partial',
@@ -269,6 +273,7 @@ describe('run-loop stop completion', () => {
         await cleanup.promise;
         const state: WorkflowState = {
           ...createInitialState('Apply starts during stop'),
+          ...RUN_CREW,
           applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
           pendingRecovery: makeRecoveryIssue({
             reason: 'apply-partial',
@@ -366,7 +371,7 @@ describe('run-loop stop completion', () => {
 
   it('stops a real runWorkflow waiting on its persisted planner question without answering it', async () => {
     const state: WorkflowState = {
-      ...transition(createInitialState('question fixture'), { type: 'START' }),
+      ...transition({ ...createInitialState('question fixture'), ...RUN_CREW }, { type: 'START' }),
       pendingPlannerConversation: {
         call: 'plan',
         text: '1. Which module? (default: src/a.ts)',
@@ -498,6 +503,7 @@ describe('run-loop stop completion', () => {
   it('stops the recovery prompt without entering the engine', async () => {
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task], {
+      ...RUN_CREW,
       pendingRecovery: buildContextOverflowRecoveryIssue({
         task,
         phase: 'implementing',

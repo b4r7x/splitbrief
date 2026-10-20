@@ -5,11 +5,14 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
+import { factSpans, runRows } from '../../../src/features/workflow/closed/copy.js';
+import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
@@ -91,7 +94,7 @@ if (args.includes('--input-format')) {
 }
 
 describe('e2e: the review tool refuses its input as too long', { timeout: 240_000 }, () => {
-  it('halts with Skip review and End run, no Try again, and Skip review makes the run ready to apply', async () => {
+  it('halts with Skip review and End run, no Try again, Skip review makes the run ready to apply, and the ended run says its review got no verdict', async () => {
     fixture = createStopContinueFixture(() => IMPLEMENTER_SCRIPT, { isolation: 'worktree' });
     const target = fixture;
     trustHome = useTrustHome('e2e-review-refused-home');
@@ -160,5 +163,14 @@ describe('e2e: the review tool refuses its input as too long', { timeout: 240_00
     expect(ready.acceptedAsIs?.findings).toEqual([issue?.message]);
     expect(ready.acceptedAsIs?.note).toBe('Fixtures too big.');
     expect(existsSync(join(target.projectDir, GREET_FILE))).toBe(false);
+
+    const ended = await cli(target, ['continue', sessionId, '--action', 'end-run']);
+    expect(ended.exitCode, ended.stderr).toBe(0);
+    const view = deriveSummaryView({ record: readRunRecord({ projectDir, sessionId }) });
+    if (view === null) throw new Error('the ended run has no closed view');
+    const review = runRows(view).find((row) => row.label === 'Review');
+    expect(review?.segments.flatMap(factSpans).map((span) => span.text)).toEqual([
+      'final review no verdict',
+    ]);
   });
 });

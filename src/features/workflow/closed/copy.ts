@@ -123,7 +123,7 @@ export function runRows(view: SummaryView): RunRow[] {
       { text: view.ran === null ? 'not recorded' : formatTime(view.ran), tone: 'textDim' },
     ],
   });
-  const phases = phaseSegments(view.phases);
+  const phases = phaseSegments(view.phases, view.ran);
   if (phases.length > 0) rows.push({ label: 'Phases', segments: phases });
   rows.push({ label: 'Session', segments: sessionSegments(view.run) });
   return rows;
@@ -131,12 +131,14 @@ export function runRows(view: SummaryView): RunRow[] {
 
 /**
  * The closed run reads the final review's record. A run that reviewed each task can still end before
- * its final review, so the absence names that review.
+ * its final review, so the absence names that review; a final review that ran without a verdict says so.
  */
-export const FINAL_REVIEW_NOT_RUN = 'final review not run';
+export function unwrittenReviewText(review: Exclude<ReviewView, { kind: 'written' }>): string {
+  return review.kind === 'failed' ? 'final review no verdict' : 'final review not run';
+}
 
 function reviewSegments(review: ReviewView): CopySegment[] {
-  if (review.kind !== 'written') return [{ text: FINAL_REVIEW_NOT_RUN, tone: 'textDim' }];
+  if (review.kind !== 'written') return [{ text: unwrittenReviewText(review), tone: 'textDim' }];
   const segments: CopySegment[] = [];
   const verdict = verdictSegment(review.verdict);
   if (verdict !== null) segments.push(verdict);
@@ -254,11 +256,24 @@ function scopeSegments(scope: ScopeView): CopySegment[] {
   ];
 }
 
-/** One phase would only restate the `Ran` row above it. */
-function phaseSegments(phases: SummaryView['phases']): CopySegment[] {
+/**
+ * One phase would only restate the `Ran` row above it. The whole seconds of `Ran` are split by
+ * largest remainder, so the phases add up to it where flooring each alone would lose up to a second each.
+ */
+function phaseSegments(phases: SummaryView['phases'], ran: number | null): CopySegment[] {
   if (phases.length < 2) return [];
-  return phases.map((timing) => ({
-    text: `${timing.phase} ${formatTime(timing.ms)}`,
+  const seconds = (ms: number) => Math.floor(ms / 1000);
+  const whole = seconds(ran ?? phases.reduce((sum, timing) => sum + timing.ms, 0));
+  const short = whole - phases.reduce((sum, timing) => sum + seconds(timing.ms), 0);
+  const roundedUp = new Set(
+    phases
+      .map((timing, index) => ({ index, remainder: timing.ms % 1000 }))
+      .sort((left, right) => right.remainder - left.remainder)
+      .slice(0, Math.max(0, short))
+      .map((entry) => entry.index),
+  );
+  return phases.map((timing, index) => ({
+    text: `${timing.phase} ${formatTime((seconds(timing.ms) + (roundedUp.has(index) ? 1 : 0)) * 1000)}`,
     tone: 'textDim',
   }));
 }

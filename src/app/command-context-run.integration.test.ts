@@ -14,7 +14,7 @@ import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
-import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { STATE_FILE, sessionDir } from '../core/paths.js';
@@ -76,7 +76,12 @@ function openAtRest(projectDir: string, state: WorkflowState): void {
 function readyRun(run: ApplyRun): void {
   openAtRest(
     run.dir,
-    makeWorkflowState({ phase: 'complete', reviewStatus: 'passed', workspace: run.workspace }),
+    makeWorkflowState({
+      ...RUN_CREW,
+      phase: 'complete',
+      reviewStatus: 'passed',
+      workspace: run.workspace,
+    }),
   );
 }
 
@@ -251,7 +256,10 @@ describe('/run on a run without a workspace', () => {
 
   it('keeps the run snapshot ledger behaviour', async () => {
     projectDir = createTempDir('run-command-old');
-    openAtRest(projectDir, makeWorkflowState({ phase: 'complete', reviewStatus: 'failed' }));
+    openAtRest(
+      projectDir,
+      makeWorkflowState({ ...RUN_CREW, phase: 'complete', reviewStatus: 'failed' }),
+    );
     vi.mocked(lifecycle.acceptRunSnapshot).mockResolvedValueOnce({
       snapshotId: 'snap-1',
       isFirstSnapshot: false,
@@ -274,7 +282,10 @@ describe('/run on a run without a workspace', () => {
 
   it('refuses /run on a run whose state cannot be read instead of falling back to the snapshot ledger', async () => {
     projectDir = createTempDir('run-command-unreadable');
-    openAtRest(projectDir, makeWorkflowState({ phase: 'complete', reviewStatus: 'passed' }));
+    openAtRest(
+      projectDir,
+      makeWorkflowState({ ...RUN_CREW, phase: 'complete', reviewStatus: 'passed' }),
+    );
     writeFileSync(join(sessionDir(projectDir, SESSION_ID), STATE_FILE), '{ not json');
     const ctx = build();
 
@@ -286,7 +297,10 @@ describe('/run on a run without a workspace', () => {
 
   it('refuses rejection of a closed older run before reading its snapshot ledger', async () => {
     projectDir = createTempDir('run-command-old-closed');
-    openAtRest(projectDir, makeWorkflowState({ phase: 'complete', reviewStatus: 'passed' }));
+    openAtRest(
+      projectDir,
+      makeWorkflowState({ ...RUN_CREW, phase: 'complete', reviewStatus: 'passed' }),
+    );
 
     expect(await build().rejectRun()).toEqual({
       status: 'unavailable',
@@ -317,6 +331,7 @@ describe('/run on a checkout run', () => {
     openAtRest(
       projectDir,
       makeWorkflowState({
+        ...RUN_CREW,
         ...state,
         workspace: {
           kind: 'checkout',
@@ -347,6 +362,7 @@ describe('/run on a checkout run', () => {
     openAtRest(
       projectDir,
       makeWorkflowState({
+        ...RUN_CREW,
         phase: 'implementing',
         workspace: {
           kind: 'checkout',
@@ -441,6 +457,7 @@ describe('/run on a checkout run', () => {
     openAtRest(
       projectDir,
       makeWorkflowState({
+        ...RUN_CREW,
         phase: 'implementing',
         workspace: {
           kind: 'checkout',

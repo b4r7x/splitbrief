@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { buildCommandContext } from '../../../app/command-context.js';
@@ -49,6 +49,7 @@ describe('Apply halt activity', () => {
       });
       const config = makeConfig();
       const state = makeWorkflowState({
+        ...RUN_CREW,
         startedAt: '2026-10-15T14:00:00.000Z',
         phase: 'complete',
         reviewStatus: 'passed',
@@ -62,7 +63,7 @@ describe('Apply halt activity', () => {
       const readyAt = Date.parse('2026-10-15T14:26:00.000Z');
       const haltedAt = Date.parse('2026-10-15T14:36:00.000Z');
       const clock = vi.spyOn(Date, 'now').mockReturnValue(readyAt);
-      finalizeRunAtRest({ ref, config, state });
+      finalizeRunAtRest({ ref, state });
       expect(readSession(ref)?.completedAt).toBe(readyAt);
       sessionsStore.load(projectDir);
       clock.mockReturnValue(haltedAt);
@@ -94,7 +95,7 @@ describe('Apply halt activity', () => {
         expect(sessionsStore.get().sessions[0]?.completedAt).toBe(haltedAt);
       } else {
         await expect(
-          settleReadyRun({ ...ref, state, action: 'apply', config, json: false }),
+          settleReadyRun({ ...ref, state, action: 'apply', json: false }),
         ).rejects.toMatchObject({ exitCode: 1 });
       }
 
@@ -112,7 +113,7 @@ describe('Apply halt activity', () => {
       if (saved === null) throw new Error('Missing halted state');
       clock.mockReturnValue(haltedAt + 60_000);
       await expect(
-        settleReadyRun({ ...ref, state: saved, action: 'apply', config, json: false }),
+        settleReadyRun({ ...ref, state: saved, action: 'apply', json: false }),
       ).rejects.toMatchObject({ exitCode: 1 });
       expect(readSession(ref)?.completedAt).toBe(haltedAt);
     },

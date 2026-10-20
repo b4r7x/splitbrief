@@ -194,7 +194,6 @@ export async function continueCommand(
     const closure = await endRunAtRest(
       { projectDir: opts.projectDir, sessionId, bus },
       hydrated.state,
-      resolveRunConfig({ projectDir: opts.projectDir, opts }),
     ).catch((err: unknown) => {
       if (!endRunError.isApplying(err)) throw err;
       writeRecord({ type: 'error', message: err.message });
@@ -213,7 +212,6 @@ export async function continueCommand(
       sessionId,
       state: hydrated.state,
       action: action.action,
-      config: resolveRunConfig({ projectDir: opts.projectDir, opts }),
       json: opts.json === true,
     });
     if (next === undefined) return;

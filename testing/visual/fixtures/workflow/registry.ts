@@ -7,7 +7,6 @@ import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js'
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
 import { endRunAtRest } from '../../../../src/engine/orchestrator/run/close.js';
 import { createRecoveryBus } from '../../../../src/engine/orchestrator/recovery/bus.js';
-import { visualConfig } from '../screen-fixtures.js';
 import { saveState } from '../../../../src/core/state/persistence.js';
 import { writeEvidenceLedger } from '../../../../src/core/evidence/ledger-storage.js';
 import { WORKFLOW_STATE_VERSION } from '../../../../src/core/schemas/workflow.js';
@@ -224,7 +223,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         },
         afterMount: async () => {
           const bus = createRecoveryBus({ ...record.ref, sink: () => {} });
-          await endRunAtRest({ ...record.ref, bus }, saved, visualConfig());
+          await endRunAtRest({ ...record.ref, bus }, saved);
         },
       };
     };
@@ -804,6 +803,7 @@ const checkpointPredicates = [
   [checkpointId('closed-ended-empty'), includesAll()],
   [checkpointId('closed-ended-workspace'), includesAll('run.patch')],
   [checkpointId('closed-ended-review'), includesAll()],
+  [checkpointId('closed-review-no-verdict'), includesAll('final review no verdict')],
   [checkpointId('closed-ended-review-workspace'), includesAll('run.patch')],
   [checkpointId('closed-seat-moved'), includesAll()],
   [checkpointId('closed-mixed-workers'), includesAll('visual-closed-mixed-workers')],

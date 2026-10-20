@@ -3,7 +3,9 @@ import { join, relative } from 'node:path';
 import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
+import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionDir } from '../../../src/core/paths.js';
+import { readSession } from '../../../src/core/sessions/io.js';
 import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
@@ -11,7 +13,7 @@ import { WORKSPACE_KEPT_CODE } from '../../../src/core/sessions/workspace-notice
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import { briefRowParts, filesRows } from '../../../src/features/workflow/closed/copy.js';
+import { briefRowParts, crewLine, filesRows } from '../../../src/features/workflow/closed/copy.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { walkTranscript } from '../../../src/features/workflow/conversation-rows/transcript-walk.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
@@ -60,6 +62,41 @@ async function workspaceNotices(ref: SessionRef) {
           : [],
     );
   return { logged: notices(events), shown: notices(shown) };
+}
+
+/** Saves another BUILD model, as a Settings save while the run waits does. */
+function saveAnotherBuildModel(target: StopContinueFixture): void {
+  const config = loadConfig(target.projectDir).config;
+  if (config.implementer.kind !== 'agent') throw new Error('the fixture BUILD seat is an agent');
+  writeConfig(target.projectDir, {
+    ...config,
+    implementer: { ...config.implementer, model: 'swapped' },
+  });
+}
+
+/** The closed record names the BUILD model the run used, not the one saved after it. */
+function expectRecordedBuildSeat(ref: SessionRef): void {
+  expect(readSession(ref)?.summary?.implementerModel).toBe('fixture');
+  const view = deriveSummaryView({ record: readRunRecord(ref) });
+  if (view === null) throw new Error('the closed run has no closed view');
+  const crew = crewLine(view, 200)
+    .map((span) => span.text)
+    .join('');
+  expect(crew).toContain('BUILD Fixture');
+  expect(crew).not.toContain('Swapped');
+}
+
+/** Saves a REVIEW seat set to the PLAN seat's own tool, as a pick of that tool in the REVIEW picker does. */
+function saveReviewerAsPlanner(target: StopContinueFixture): void {
+  const config = loadConfig(target.projectDir).config;
+  writeConfig(target.projectDir, { ...config, reviewer: config.planner });
+}
+
+/** The REVIEW span of the closed run's crew line. */
+function closedReviewSpan(ref: SessionRef): string | undefined {
+  const view = deriveSummaryView({ record: readRunRecord(ref) });
+  if (view === null) throw new Error('the closed run has no closed view');
+  return crewLine(view, 200).find((span) => span.seat === 'review')?.text;
 }
 
 afterEach(async () => {
@@ -257,10 +294,15 @@ describe('headless End run', { timeout: 240_000 }, () => {
     if (workspace === undefined) throw new Error('the parked run has no workspace');
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
+    saveAnotherBuildModel(target);
 
     const applied = await cli(target, ['continue', parked.sessionId, '--action', 'apply']);
 
     expect(applied.exitCode, applied.stderr).toBe(0);
+    expectRecordedBuildSeat({ projectDir: target.projectDir, sessionId: parked.sessionId });
+    expect(closedReviewSpan({ projectDir: target.projectDir, sessionId: parked.sessionId })).toBe(
+      'REVIEW = PLAN',
+    );
     expect(
       deriveRunStatus({ state: readState(target, parked.sessionId), liveness: 'not-alive' }),
     ).toEqual({ kind: 'closed', as: 'applied' });
@@ -272,6 +314,23 @@ describe('headless End run', { timeout: 240_000 }, () => {
     expect(notices.logged).toContain(WORKSPACE_KEPT_CODE);
     expect(notices.shown).not.toContain(WORKSPACE_KEPT_CODE);
     expect(notices.shown).toContain('workspace_closed');
+  });
+
+  it('names a REVIEW seat set to the PLAN tool as its own seat after Apply, not = PLAN', async () => {
+    fixture = createStopContinueFixture();
+    const target = fixture;
+    saveReviewerAsPlanner(target);
+    const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
+    expect(parked.exitCode).toBe(0);
+    const resumed = await continueRun(target);
+    expect(resumed.exitCode, resumed.stderr).toBe(0);
+
+    const applied = await cli(target, ['continue', parked.sessionId, '--action', 'apply']);
+
+    expect(applied.exitCode, applied.stderr).toBe(0);
+    const review = closedReviewSpan({ projectDir: target.projectDir, sessionId: parked.sessionId });
+    expect(review).toMatch(/^REVIEW /);
+    expect(review).not.toBe('REVIEW = PLAN');
   });
 
   it('discards a ready run through End run and keeps its files out of the checkout', async () => {
@@ -286,10 +345,12 @@ describe('headless End run', { timeout: 240_000 }, () => {
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     const ready = readState(target, parked.sessionId);
     expect(deriveRunStatus({ state: ready, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    saveAnotherBuildModel(target);
 
     const ended = await cli(target, ['continue', parked.sessionId, '--action', 'end-run']);
 
     expect(ended.exitCode, ended.stderr).toBe(0);
+    expectRecordedBuildSeat({ projectDir: target.projectDir, sessionId: parked.sessionId });
     const closed = readState(target, parked.sessionId).closed;
     expect(closed?.as).toBe('discarded');
     if (closed?.patch === undefined) throw new Error('the discarded run has no patch');

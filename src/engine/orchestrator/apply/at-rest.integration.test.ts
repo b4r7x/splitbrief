@@ -2,9 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
-import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import { createDefaultConfig } from '../../../core/config/load/defaults.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
 import { saveState } from '../../../core/state/persistence.js';
@@ -41,6 +40,7 @@ function holdStep<A extends unknown[], R>(
 
 function applyAtRest(run: ApplyRun) {
   const state = makeWorkflowState({
+    ...RUN_CREW,
     phase: 'complete',
     reviewStatus: 'passed',
     workspace: run.workspace,
@@ -50,7 +50,6 @@ function applyAtRest(run: ApplyRun) {
     runApplyAtRest({
       wctx: { projectDir: run.dir, sessionId: run.sessionId, bus: makeBusRecorder().bus },
       state,
-      config: createDefaultConfig(),
     });
 }
 

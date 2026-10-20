@@ -263,6 +263,15 @@ describe('outcomeLineSpans', () => {
     ).toContain('final review not run · scope not checked');
   });
 
+  it('reads a final review that returned no verdict as no verdict', () => {
+    const view = makeView({ outcome: { kind: 'needs-attention' }, review: { kind: 'failed' } });
+    expect(
+      outcomeLineSpans(view, WIDE)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain('final review no verdict');
+  });
+
   it('reads a run stopped inside a brief as a fraction, a brief and what survived', () => {
     expect(
       outcomeLineSpans(endedInBuild(), WIDE)

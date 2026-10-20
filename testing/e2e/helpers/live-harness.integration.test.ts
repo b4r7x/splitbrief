@@ -6,8 +6,7 @@ import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { stagedWorkspaceRoot } from '../../../src/engine/orchestrator/isolation/retention.js';
 import { createSnapshot } from '../../../src/engine/snapshots/create.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { applyLiveRun, copyLiveArtifacts } from './live-harness.js';
 
@@ -23,6 +22,7 @@ describe('live run Apply', () => {
       saveState(
         ref,
         makeWorkflowState({
+          ...RUN_CREW,
           phase: 'complete',
           reviewStatus: 'passed',
           workspace: {
@@ -33,7 +33,7 @@ describe('live run Apply', () => {
         }),
       );
       expect(existsSync(join(projectDir, 'src/live-easy.ts'))).toBe(false);
-      await applyLiveRun({ ...ref, config: makeConfig() });
+      await applyLiveRun(ref);
       expect(readFileSync(join(projectDir, 'src/live-easy.ts'), 'utf-8')).toBe(artifact);
       const state = loadState(ref);
       if (state === null) throw new Error('missing applied state');
@@ -59,13 +59,9 @@ describe('live run Apply', () => {
   it('rejects a missing or unfinished run before evaluating an artifact', async () => {
     await withTempDir('live-not-ready', async (projectDir) => {
       const ref = { projectDir, sessionId: 'test-not-ready' };
-      await expect(applyLiveRun({ ...ref, config: makeConfig() })).rejects.toThrow(
-        /no saved state/,
-      );
-      saveState(ref, makeWorkflowState({ phase: 'planning' }));
-      await expect(applyLiveRun({ ...ref, config: makeConfig() })).rejects.toThrow(
-        /ready-to-apply.*open/,
-      );
+      await expect(applyLiveRun(ref)).rejects.toThrow(/no saved state/);
+      saveState(ref, makeWorkflowState({ ...RUN_CREW, phase: 'planning' }));
+      await expect(applyLiveRun(ref)).rejects.toThrow(/ready-to-apply.*open/);
       expect(existsSync(join(projectDir, 'src/live-easy.ts'))).toBe(false);
     });
   });
@@ -79,6 +75,7 @@ describe('live run Apply', () => {
       saveState(
         ref,
         makeWorkflowState({
+          ...RUN_CREW,
           phase: 'complete',
           reviewStatus: 'failed',
           acceptedAsIs: { at: new Date().toISOString(), findings: ['review failed'] },
@@ -89,9 +86,7 @@ describe('live run Apply', () => {
           },
         }),
       );
-      await expect(applyLiveRun({ ...ref, config: makeConfig() })).rejects.toThrow(
-        /outcome is needs-confirmation/,
-      );
+      await expect(applyLiveRun(ref)).rejects.toThrow(/outcome is needs-confirmation/);
       expect(loadState(ref)?.applied).toBeUndefined();
       expect(existsSync(workspace)).toBe(true);
     });

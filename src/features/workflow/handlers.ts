@@ -5,7 +5,6 @@ import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { addTuiEvent } from './tui-sink.js';
 import { readRunHistory } from './run-history.js';
 import { hydrateResume } from './resume-hydration.js';
-import { configStore } from '../../stores/project/config.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { routerStore, type RouteData } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -256,8 +255,6 @@ export async function rereadRunAtRest(ref: SessionRef, signal?: AbortSignal): Pr
 export function requestEndRun(): boolean {
   const route = routerStore.get();
   if (route.screen === 'workflow' && route.execution.kind === 'at-rest') {
-    const config = configStore.get().config;
-    if (config === null) return false;
     try {
       const record = readRunRecord(route.run.ref);
       if (record.status.kind === 'running') return false;
@@ -270,7 +267,7 @@ export function requestEndRun(): boolean {
       stopStore.request('end-run');
       const finish = async (): Promise<void> => {
         const bus = createRecoveryBus({ ...record.ref, sink: addTuiEvent });
-        await endRunAtRest({ ...record.ref, bus }, hydrated.state, config);
+        await endRunAtRest({ ...record.ref, bus }, hydrated.state);
         routerStore.updateRun({ run: readRunRecord(record.ref), execution: { kind: 'at-rest' } });
         stopStore.end();
         sessionsStore.refresh();

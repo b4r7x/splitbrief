@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs';
 import { relative } from 'node:path';
-import type { Config } from '../../../core/schemas/config.js';
 import { applyUnfinished, deriveRunStatus } from '../../../core/sessions/run-status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
@@ -247,11 +246,10 @@ export async function endRun(
 export async function endRunAtRest(
   scope: SessionRef & { bus: EventBus },
   state: WorkflowState,
-  config: Config,
 ): Promise<{ state: WorkflowState; closedNow: boolean }> {
   const atRestFrom = Date.now();
   await recordInterruptedCalls(scope, rebaseOnPersistedWorkflowState(scope, state));
   const closure = await endRun(scope, state, atRestFrom);
-  finalizeRunAtRest({ ref: scope, config, state: closure.state });
+  finalizeRunAtRest({ ref: scope, state: closure.state });
   return closure;
 }
