@@ -394,7 +394,7 @@ function consultTable(): string {
     'Successful stale guidance records fresh input hashes and marks the revision in one transition. A rewrite records hashes on its new revision.',
     "An answered stale guard question records fresh input hashes and sends the operator's answer as guidance on the first attempt.",
     'A hand-back with new decisions gets one decision-confirm before validation: confirm (how) or ask-user (what).',
-    'A decision the confirm leaves out or rewords is rejected. The attempt retries with the diagnosis and never validates.',
+    'The confirm names the accepted decisions by id (d1, d2, …). A decision whose id it leaves out is rejected. The attempt retries with the diagnosis and never validates.',
     "Decision-confirm runs at most once per attempt, bounded by the brief's attempts.",
     'It spends no run counter, never a lineage consult or a planner decision.',
     'A failed or malformed confirm answer warns, leaves the decisions out of the ledger and validates. It never pauses.',

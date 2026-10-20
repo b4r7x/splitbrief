@@ -35,7 +35,7 @@ import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { failedReviewVerdict } from '#testing/helpers/typed-planner.js';
+import { failedReviewVerdict, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { runCommandInTest } from '#testing/helpers/runtime-commands.js';
@@ -171,6 +171,67 @@ if (existsSync(${JSON.stringify(countPath)})) {
 `;
 }
 
+/**
+ * Logs each call's brief to `calls.log`. T001 writes its files. T002 writes its own file, and its
+ * first call holds (under `t002-holding`, where a stop waits for it) until a stop ends it.
+ */
+function briefLoggingImplementer(checkoutDir: string): string {
+  const tmpDir = join(checkoutDir, '..');
+  const holding = join(tmpDir, 't002-holding', MARKER_FILE);
+  return `import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+const brief = Buffer.concat(chunks).toString('utf-8').includes('Add the second module') ? 'T002' : 'T001';
+appendFileSync(${JSON.stringify(join(tmpDir, 'calls.log'))}, brief + '\\n');
+mkdirSync('src', { recursive: true });
+if (brief === 'T001') {
+  writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
+  writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
+} else {
+  writeFileSync(${JSON.stringify(SECOND_FILE)}, ${JSON.stringify(SECOND_SOURCE)});
+  if (!existsSync(${JSON.stringify(holding)})) {
+    writeFileSync(${JSON.stringify(join(tmpDir, 'implementer-hold.pid'))}, String(process.pid));
+    mkdirSync(dirname(${JSON.stringify(holding)}), { recursive: true });
+    writeFileSync(${JSON.stringify(holding)}, '');
+    const deadline = Date.now() + 60_000;
+    while (!existsSync(${JSON.stringify(join(tmpDir, 'release-implementer'))}) && Date.now() < deadline) {
+      await delay(50);
+    }
+    writeFileSync(${JSON.stringify(join(tmpDir, 'implementer-hold-exited'))}, '');
+  }
+}
+`;
+}
+
+/**
+ * Logs each call's brief to `calls.log`. T001 writes its files. T002 writes its own file, and its
+ * first call also adds a branch to the checkout, so the run halts `checkout-changed` on T002.
+ */
+function haltingLoggingImplementer(checkoutDir: string): string {
+  const tmpDir = join(checkoutDir, '..');
+  const halted = join(tmpDir, 't002-halted');
+  return `import { spawnSync } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+const brief = Buffer.concat(chunks).toString('utf-8').includes('Add the second module') ? 'T002' : 'T001';
+appendFileSync(${JSON.stringify(join(tmpDir, 'calls.log'))}, brief + '\\n');
+mkdirSync('src', { recursive: true });
+if (brief === 'T001') {
+  writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
+  writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
+} else {
+  if (!existsSync(${JSON.stringify(halted)})) {
+    writeFileSync(${JSON.stringify(halted)}, '');
+    spawnSync('git', ['-C', ${JSON.stringify(checkoutDir)}, 'branch', ${JSON.stringify(ESCAPED_BRANCH)}]);
+  }
+  writeFileSync(${JSON.stringify(SECOND_FILE)}, ${JSON.stringify(SECOND_SOURCE)});
+}
+`;
+}
+
 /** The transcript of the run on screen, one trimmed line per row. */
 function transcriptText(): string {
   const { rows } = buildConversationRows({
@@ -242,6 +303,24 @@ function scriptReviews(target: StopContinueFixture, reviews: string): void {
       reviews,
     ),
   );
+}
+
+/** A final review that passes both briefs of `planTwoBriefs`. */
+function passBothBriefs(target: StopContinueFixture): void {
+  const plannerPath = join(target.projectDir, 'tools', 'planner.mjs');
+  const script = readFileSync(plannerPath, 'utf8');
+  const line = /^const REVIEW = (.*);$/m.exec(script);
+  if (line === null) throw new Error('the fixture planner names no REVIEW');
+  const review = JSON.stringify({
+    tasks: ['T001', 'T002'].map((id) => ({ id, plan: 'met', note: '' })),
+    criteria: ['C1', 'C2'].map((id) => ({ id, status: 'pass', evidence: '' })),
+    findings: [],
+    fixTasks: [],
+    rejected: [],
+    verify: [],
+    ask: null,
+  });
+  writeFileSync(plannerPath, script.replace(line[0], `const REVIEW = ${JSON.stringify(review)};`));
 }
 
 function openRun(target: StopContinueFixture) {
@@ -616,7 +695,11 @@ else {
     const open = readRunRecord(ref);
     expect(open.status.kind).toBe('open');
     expect(loadState(ref)?.interruptedStep).not.toHaveProperty('kept');
-    expect(parkedBylineText(open, [SECOND_FILE])).toBe('Stopped at T002');
+    expect(loadState(ref)?.tasks.map((task) => [task.id, task.status])).toEqual([
+      ['T001', 'pending'],
+      ['T002', 'in_progress'],
+    ]);
+    expect(parkedBylineText(open, [SECOND_FILE])).toBe('Stopped before T001');
     const whole = `Rejected Removed 2 created files. 1 file left as you changed it: ${GREET_FILE}. The replaced files are saved in ${first.savedTo}. The run stays open, so you can reject it again.`;
     expect(formatRejectRunMessage(runRejectFacts(first))).toBe(whole.slice('Rejected '.length));
     expect(transcriptText().replace(/\s+/g, ' ')).toContain(whole);
@@ -661,11 +744,134 @@ else {
       outcomeLineSpans(view, 120)
         .map((span) => span.text)
         .join(''),
-    ).toBe('Discarded · 1/2 briefs passed · removed 3 created files');
-    expect(view.files.changed).toEqual([GREET_FILE, MARKER_FILE, SECOND_FILE]);
-    expect([...view.files.partial]).toEqual([SECOND_FILE]);
+    ).toBe('Discarded · 0/2 briefs passed · removed 3 created files');
+    // The first reject already put back the marker and the second module, so the run no longer
+    // lists them, and T001 is open again.
+    expect(view.files.changed).toEqual([GREET_FILE]);
+    expect([...view.files.partial]).toEqual([]);
     expect(readFileSync(join(target.projectDir, 'later-user.txt'), 'utf8')).toBe(
       'later user file\n',
     );
+  });
+
+  // A partial reject put back T001's marker but left it passed, so Continue never built it again
+  // and the closed run listed the marker that was no longer on disk.
+  it('builds again a passed brief whose files a partial reject put back, and lists only files on disk', {
+    timeout: 240_000,
+  }, async () => {
+    // The user's edit moved T001's input, so its new attempt asks the planner first. The plan
+    // prompt quotes this script in its repo map, so only a title at a line start is the consult.
+    fixture = createStopContinueFixture(briefLoggingImplementer, {
+      isolation: 'none',
+      consult: () =>
+        `(prompt) => /^# Consult on a failing task/m.test(prompt) ? ${JSON.stringify(
+          JSON.stringify(guidanceConsult('Keep the brief as it is.')),
+        )} : undefined`,
+    });
+    planTwoBriefs(fixture);
+    passBothBriefs(fixture);
+    const target = fixture;
+    try {
+      const parked = await startAndSignal(target, 'SIGINT', join(target.tmpDir, 't002-holding'));
+      expect(parked.exitCode).toBe(130);
+    } finally {
+      await endImplementerHold(target);
+    }
+    const { ref, commands } = openRun(target);
+    writeFileSync(target.greetPath, 'later user edit\n');
+    resetWorkflow();
+
+    expect(await commands.rejectRun()).toMatchObject({
+      status: 'rejected',
+      deletedPaths: [MARKER_FILE, SECOND_FILE],
+      conflictedPaths: [GREET_FILE],
+    });
+    expect(loadState(ref)?.tasks.map((task) => [task.id, task.status])).toEqual([
+      ['T001', 'pending'],
+      ['T002', 'in_progress'],
+    ]);
+    const open = readRunRecord(ref);
+    expect(open.status).toMatchObject({
+      kind: 'open',
+      resumeAt: { kind: 'brief', taskId: 'T001', attempt: 0 },
+    });
+    expect(parkedBylineText(open, [])).toBe('Stopped before T001');
+
+    const continued = await cli(target, ['continue', ref.sessionId], { timeoutMs: 120_000 });
+
+    expect(continued.exitCode, continued.stderr).toBe(0);
+    expect(readFileSync(join(target.tmpDir, 'calls.log'), 'utf8').trim().split('\n')).toEqual([
+      'T001',
+      'T002',
+      'T001',
+      'T002',
+    ]);
+    const closed = readRunRecord(ref);
+    expect(closed.status).toMatchObject({ kind: 'closed', as: 'complete' });
+    const view = deriveSummaryView({ record: closed });
+    if (view === null) throw new Error('the completed run left no closed view');
+    expect(view.files.changed).toEqual([GREET_FILE, MARKER_FILE, SECOND_FILE]);
+    for (const file of view.files.changed ?? []) {
+      expect(existsSync(join(target.projectDir, file)), file).toBe(true);
+    }
+    expect(view.briefs.passed).toBe(2);
+  });
+
+  // A partial reject on a halted run moved the run back to T001 but kept the halt on T002, so
+  // Retry and Skip were refused and Continue started no work.
+  it('clears the halt when a partial reject reopens an earlier brief, and continuing builds that brief', {
+    timeout: 240_000,
+  }, async () => {
+    fixture = createStopContinueFixture(haltingLoggingImplementer, {
+      isolation: 'none',
+      consult: () =>
+        `(prompt) => /^# Consult on a failing task/m.test(prompt) ? ${JSON.stringify(
+          JSON.stringify(guidanceConsult('Keep the brief as it is.')),
+        )} : undefined`,
+    });
+    planTwoBriefs(fixture);
+    passBothBriefs(fixture);
+    const target = fixture;
+    const halted = await cli(target, ['start', 'smoke']);
+    expect(halted.exitCode, halted.stderr).toBe(1);
+    expect(halted.stderr).toContain('Needs you (checkout-changed)');
+    const { ref, commands } = openRun(target);
+    expect(loadState(ref)?.pendingRecovery?.taskId).toBe('T002');
+    writeFileSync(target.greetPath, 'later user edit\n');
+    resetWorkflow();
+
+    expect(await commands.rejectRun()).toMatchObject({
+      status: 'rejected',
+      deletedPaths: [MARKER_FILE],
+      conflictedPaths: [GREET_FILE],
+    });
+    const state = loadState(ref);
+    expect(state?.pendingRecovery).toBeUndefined();
+    expect(state?.tasks[0]?.status).toBe('pending');
+    const open = readRunRecord(ref);
+    expect(open.status).toMatchObject({
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+      resumeAt: { kind: 'brief', taskId: 'T001', attempt: 0 },
+    });
+    expect(parkedBylineText(open, [])).toBe('Stopped before T001');
+    // The reject is not a recovery action: the user chose none, so no row says the halt continued.
+    const { events } = await readRunEvents(ref);
+    expect(events.filter((e) => e.type === 'recovery_resolved')).toEqual([]);
+
+    const continued = await cli(target, ['continue', ref.sessionId], { timeoutMs: 120_000 });
+
+    expect(continued.exitCode, continued.stderr).toBe(0);
+    expect(readFileSync(join(target.tmpDir, 'calls.log'), 'utf8').trim().split('\n')).toEqual([
+      'T001',
+      'T002',
+      'T001',
+      'T002',
+    ]);
+    const closed = readRunRecord(ref);
+    expect(closed.status).toMatchObject({ kind: 'closed', as: 'complete' });
+    const view = deriveSummaryView({ record: closed });
+    if (view === null) throw new Error('the completed run left no closed view');
+    expect(view.briefs.passed).toBe(2);
   });
 });

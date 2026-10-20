@@ -1,4 +1,4 @@
-import { readdirSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
@@ -39,14 +39,10 @@ const ALPHA_FILES = {
   'src/alpha.test.mjs':
     "import { strict as assert } from 'node:assert';\nimport { alpha } from './alpha.mjs';\nassert.equal(alpha, 'alpha');\n",
 };
-// The first attempt reports `kept`, which PLAN confirms in other words. The retry reports
-// `escaped`, whose text holds a JSON escape that PLAN returns as the character it encodes.
+// The attempt reports `kept`. PLAN accepts it by its id and restates it in other words.
 const kept = { what: 'Kept alpha in one module', why: 'The test imports it from there.' };
 const keptReworded = { what: 'Kept the alpha value in one module', why: kept.why };
-const escaped = { what: 'Matched the range \\u0300-\\u036f', why: 'The brief names it.' };
-const escapedDecoded = { what: 'Matched the range ̀-ͯ', why: escaped.why };
-const rejectReason = 'The wording changed; report the decision again.';
-const confirmReason = 'The range is the one the brief names.';
+const confirmReason = 'Keeping the alpha value in one module is a change of how.';
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -88,13 +84,17 @@ async function runDecisionConfirms() {
   const plannerPath = join(target.tmpDir, 'planner.mjs');
   const implementerPath = join(target.tmpDir, 'implementer.mjs');
   const passing = passingVerdict({ kind: 'final', taskIds: [alpha.id], criterionIds: ['C1'] });
-  const confirms = [
-    { answer: { diagnosis: rejectReason, action: 'confirm', decisions: [keptReworded] } },
-    { answer: { diagnosis: confirmReason, action: 'confirm', decisions: [escapedDecoded] } },
-  ];
+  const confirm = {
+    answer: {
+      diagnosis: confirmReason,
+      action: 'confirm',
+      decisionIds: ['d1'],
+      decisions: [keptReworded],
+    },
+  };
   writeFileSync(
     plannerPath,
-    `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+    `import { existsSync, writeFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
@@ -102,11 +102,9 @@ let answer;
 if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final Implementation Review')) {
   answer = ${JSON.stringify(passing)};
 } else if (prompt.includes('Confirm reported decisions')) {
-  const asked = existsSync(${JSON.stringify(confirmsPath)})
-    ? readFileSync(${JSON.stringify(confirmsPath)}, 'utf8').length
-    : 0;
-  appendFileSync(${JSON.stringify(confirmsPath)}, 'x');
-  answer = ${JSON.stringify(confirms)}[asked];
+  if (existsSync(${JSON.stringify(confirmsPath)})) throw new Error('A second decision confirm');
+  writeFileSync(${JSON.stringify(confirmsPath)}, prompt);
+  answer = ${JSON.stringify(confirm)};
 } else if (prompt.includes('# Plan the change')) {
   answer = ${JSON.stringify({ result: plan })};
 } else {
@@ -117,26 +115,21 @@ process.stdout.write(JSON.stringify(answer));
   );
   writeFileSync(
     implementerPath,
-    `import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+    `import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 for await (const _chunk of process.stdin);
-const attempt = existsSync(${JSON.stringify(attemptsPath)})
-  ? readFileSync(${JSON.stringify(attemptsPath)}, 'utf8').length
-  : 0;
 appendFileSync(${JSON.stringify(attemptsPath)}, 'x');
 for (const [file, source] of Object.entries(${JSON.stringify(ALPHA_FILES)})) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, source);
 }
-// The retry keeps the first attempt's files, so each attempt marks its own change.
-appendFileSync('src/alpha.mjs', '// attempt ' + attempt + '\\n');
 console.log('Implemented T001');
 console.log(JSON.stringify({
   status: 'done',
   filesChanged: ${JSON.stringify(Object.keys(ALPHA_FILES))},
   touchedNotSuggested: [],
   notes: null,
-  decisions: [${JSON.stringify([kept, escaped])}[Math.min(attempt, 1)]],
+  decisions: [${JSON.stringify(kept)}],
 }));
 `,
   );
@@ -157,14 +150,22 @@ console.log(JSON.stringify({
   const sessionId = sessions[0];
   if (sessionId === undefined) throw new Error('Missing session');
   const replay = await readRunEvents({ projectDir: target.projectDir, sessionId });
-  return { state: readState(target, sessionId), events: replay.events };
+  return {
+    state: readState(target, sessionId),
+    events: replay.events,
+    confirmPrompt: readFileSync(confirmsPath, 'utf8'),
+    attempts: readFileSync(attemptsPath, 'utf8').length,
+  };
 }
 
 describe('e2e: decision confirm ledger', () => {
-  it('keeps a reworded decision out of the ledger and records a confirmed one in the implementer words', async () => {
-    const { state, events } = await runDecisionConfirms();
+  it('accepts a decision PLAN names by id in other words, with no rejected row and no retry, and records the implementer words', async () => {
+    const { state, events, confirmPrompt, attempts } = await runDecisionConfirms();
 
     expect(state.phase).toBe('complete');
+    expect(confirmPrompt).toContain(`Decisions: d1: ${kept.what} — ${kept.why}`);
+    expect(attempts).toBe(1);
+    expect(events.some((event) => event.type === 'task_retry')).toBe(false);
     expect(
       events
         .filter((event) => event.type === 'consult_answered')
@@ -173,19 +174,12 @@ describe('e2e: decision confirm ledger', () => {
             ? { decisionCount: event.decisionCount, rejectedCount: event.rejectedCount }
             : null,
         ),
-    ).toEqual([
-      { decisionCount: 0, rejectedCount: 1 },
-      { decisionCount: 1, rejectedCount: 0 },
-    ]);
+    ).toEqual([{ decisionCount: 1, rejectedCount: 0 }]);
     const rows = transcriptRows(events);
-    expect(rows).toContainEqual(
-      expect.stringContaining(`PLAN rejected 1 decision for T001 · ${rejectReason}`),
-    );
+    expect(rows.filter((row) => row.includes('PLAN rejected'))).toEqual([]);
     expect(rows).toContainEqual(
       expect.stringContaining(`PLAN confirmed 1 decision for T001 · ${confirmReason}`),
     );
-    expect(state.plan?.decisions).toEqual([
-      { text: `${escaped.what} — ${escaped.why}`, taskId: 'T001' },
-    ]);
+    expect(state.plan?.decisions).toEqual([{ text: `${kept.what} — ${kept.why}`, taskId: 'T001' }]);
   });
 });

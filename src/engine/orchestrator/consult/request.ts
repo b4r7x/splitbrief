@@ -3,17 +3,18 @@ import {
   CONSULT_ANSWER_JSON_SCHEMA,
   DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
   STALE_CONSULT_ANSWER_JSON_SCHEMA,
+  acceptedDecisions,
   consultAnswerSchemaFor,
   type ConsultAnswer,
   type ConsultReason,
   type ConsultSeat,
   type ImplementerReport,
+  type ResolvedConsultAnswer,
 } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
-import { decisionLedgerText, rejectedDecisions } from '../../../core/state/machine.js';
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
@@ -63,7 +64,7 @@ export type ConsultRequestInput = Readonly<{
 }>;
 
 export type ConsultOutcome =
-  | Readonly<{ answer: ConsultAnswer }>
+  | Readonly<{ answer: ResolvedConsultAnswer }>
   | Readonly<{ error: SeatProtocolError }>;
 
 /** What one seat-trouble-wrapped consult attempt produced: an answer, or the error to rethrow. */
@@ -229,7 +230,7 @@ function publishAnswer(
   ctx: ConsultContext,
   state: WorkflowState,
   input: ConsultRequestInput,
-  answer: ConsultAnswer,
+  answer: ResolvedConsultAnswer,
   seat: ConsultSeat,
 ): void {
   publishConsultAnswered(
@@ -252,43 +253,19 @@ function publishAnswer(
         decisionCount: answer.answer.decisions.length,
         rejectedCount:
           input.report?.status === 'done'
-            ? rejectedDecisions(input.report.decisions, answer.answer.decisions).length
+            ? input.report.decisions.length - answer.answer.decisions.length
             : 0,
       }),
     },
   );
 }
 
-/** A JSON escape the planner may decode in a decision text it reads back from the report. */
-const JSON_ESCAPE = /\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})/g;
-
-function decodedLedgerText(decision: { what: string; why: string }): string {
-  return decisionLedgerText(decision).replace(JSON_ESCAPE, (sequence) =>
-    JSON.parse(`"${sequence}"`),
-  );
-}
-
-/**
- * The reported decisions a confirm accepts, in the implementer's own words. The planner reads
- * them as text and can return an escape the implementer wrote, such as `\u0300`, as its
- * character, so both sides compare decoded. A decision the confirm leaves out or rewords is not
- * accepted, and a decision nobody reported never is.
- */
-function acceptedDecisions(
-  report: ImplementerReport | null | undefined,
-  confirmed: readonly { what: string; why: string }[],
-): { what: string; why: string }[] {
-  if (report?.status !== 'done') return [];
-  const accepted = new Set(confirmed.map(decodedLedgerText));
-  return report.decisions.filter((decision) => accepted.has(decodedLedgerText(decision)));
-}
-
 /**
  * Asks the consult seat about one task and records its answer: the reviewer for a fix
  * task's repair, the planner for the rest (`consultSeat`). The planner continues its
  * session; the reviewer holds none and reads the full prompt. Deviation and stale
- * requests spend no consult allowance; both seats share the rest. A confirm comes back with
- * only the reported decisions it accepts, so the ledger and the counts never hold a reworded one.
+ * requests spend no consult allowance; both seats share the rest. A confirm names the reported
+ * decisions it accepts by id, and comes back with those decisions in the implementer's words.
  */
 export async function requestConsult(
   ctx: ConsultContext,
@@ -401,7 +378,20 @@ export async function requestConsult(
     return { error: answer.result.error };
   }
 
-  const consulted = answer.result.value;
+  const seatAnswer = answer.result.value.answer;
+  const consulted: ResolvedConsultAnswer =
+    seatAnswer.action === 'confirm'
+      ? {
+          answer: {
+            diagnosis: seatAnswer.diagnosis,
+            action: 'confirm',
+            decisions:
+              input.report?.status === 'done'
+                ? acceptedDecisions(input.report.decisions, seatAnswer.decisionIds)
+                : [],
+          },
+        }
+      : { answer: seatAnswer };
   apply(
     transitionAndSave(ref, state, {
       type: 'RECORD_CONSULT',
@@ -416,17 +406,7 @@ export async function requestConsult(
   if (input.reason !== 'deviation' && input.reason !== 'stale') {
     apply(transitionAndSave(ref, state, { type: 'COUNT_PLANNER_CALL' }));
   }
-  // The record keeps the seat's own words; a confirm applies only the reported decisions it accepts.
-  const applied: ConsultAnswer =
-    consulted.answer.action === 'confirm'
-      ? {
-          answer: {
-            ...consulted.answer,
-            decisions: acceptedDecisions(input.report, consulted.answer.decisions),
-          },
-        }
-      : consulted;
-  publishAnswer(ctx, state, input, applied, seat);
+  publishAnswer(ctx, state, input, consulted, seat);
   if (seat === 'plan') apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
-  return { answer: applied };
+  return { answer: consulted };
 }

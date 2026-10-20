@@ -1,4 +1,4 @@
-import type { ConsultAnswer, ConsultSeat } from '../../../core/schemas/consult.js';
+import type { ConsultSeat, ResolvedConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
@@ -51,11 +51,11 @@ export type ConsultApplyContext = Readonly<{
   onStateChange?: ((state: WorkflowState) => void) | undefined;
 }>;
 
-type RewriteAction = ConsultAnswer['answer'] & { action: 'rewrite-task' };
-type SplitAction = ConsultAnswer['answer'] & { action: 'split-task' };
-type VerifyAction = ConsultAnswer['answer'] & { action: 'verify' };
-type AskUserAction = ConsultAnswer['answer'] & { action: 'ask-user' };
-type ConfirmAction = ConsultAnswer['answer'] & { action: 'confirm' };
+type RewriteAction = ResolvedConsultAnswer['answer'] & { action: 'rewrite-task' };
+type SplitAction = ResolvedConsultAnswer['answer'] & { action: 'split-task' };
+type VerifyAction = ResolvedConsultAnswer['answer'] & { action: 'verify' };
+type AskUserAction = ResolvedConsultAnswer['answer'] & { action: 'ask-user' };
+type ConfirmAction = ResolvedConsultAnswer['answer'] & { action: 'confirm' };
 
 /** What the answer did, with the task or tasks it left behind. */
 export type ConsultApplyOutcome =
@@ -449,7 +449,7 @@ async function applyAskUser(
 export async function applyConsultAnswer(
   ctx: ConsultApplyContext,
   task: Task,
-  answer: ConsultAnswer,
+  answer: ResolvedConsultAnswer,
   attempt: ChangedFilesSnapshot | null,
 ): Promise<ConsultApplyOutcome> {
   const action = answer.answer;

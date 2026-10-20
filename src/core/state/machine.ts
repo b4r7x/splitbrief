@@ -28,18 +28,6 @@ export function decisionLedgerText(decision: { what: string; why: string }): str
   return `${decision.what} — ${decision.why}`;
 }
 
-/**
- * The reported decisions a confirm does not accept, matched by ledger text: an entry the confirm
- * leaves out or rewrites is rejected.
- */
-export function rejectedDecisions<T extends { what: string; why: string }>(
-  reported: readonly T[],
-  confirmed: readonly { what: string; why: string }[],
-): T[] {
-  const accepted = new Set(confirmed.map(decisionLedgerText));
-  return reported.filter((decision) => !accepted.has(decisionLedgerText(decision)));
-}
-
 const anytimeActions = [
   'CLOSE_RUN',
   'RECORD_WORKSPACE',
@@ -629,12 +617,57 @@ export function transition(
       };
 
     case 'RECORD_REJECT': {
+      // A brief that passed and had files put back is open again, so Continue builds it again. It
+      // starts over: no earlier dispatch of it runs it on its own files.
+      const reopened = state.tasks
+        .filter((task) => action.booked.includes(task.id) && isTaskCompleted(task.status))
+        .map((task) => task.id);
       const step = state.interruptedStep;
-      if (step?.kept === undefined) return state;
+      if (reopened.length === 0 && step?.kept === undefined) return state;
+      const reopenedState: WorkflowState = {
+        ...state,
+        tasks: state.tasks.map((task) =>
+          reopened.includes(task.id) ? { ...task, status: 'pending' } : task,
+        ),
+        ...(state.lineages !== undefined && {
+          lineages: Object.fromEntries(
+            Object.entries(state.lineages).map(([key, lineage]) => [
+              key,
+              {
+                ...lineage,
+                dispatchedRevision: Object.fromEntries(
+                  Object.entries(lineage.dispatchedRevision).filter(
+                    ([id]) => !includes(reopened, id),
+                  ),
+                ),
+              },
+            ]),
+          ),
+        }),
+      };
+      const first = state.tasks.findIndex((task) => reopened.includes(task.id));
+      const firstId = reopened[0];
+      // The run moves back before the step it stopped or halted on, so a halt there is over.
+      if (firstId !== undefined && first < state.currentTaskIndex) {
+        return {
+          ...reopenedState,
+          phase: 'implementing',
+          currentTaskIndex: first,
+          attempt: 0,
+          pendingRecovery: undefined,
+          interruptedStep: {
+            step: { kind: 'brief', taskId: firstId, attempt: 0 },
+            source: step?.source ?? 'user',
+            cut: 'boundary',
+            at: step?.at ?? now.toISOString(),
+          },
+        };
+      }
+      if (step?.kept === undefined) return reopenedState;
       const removed = new Set(action.removed);
       const { kept: before, ...rest } = step;
       const kept = before.filter((file) => !removed.has(file));
-      return { ...state, interruptedStep: kept.length > 0 ? { ...rest, kept } : rest };
+      return { ...reopenedState, interruptedStep: kept.length > 0 ? { ...rest, kept } : rest };
     }
 
     case 'RESUME_STEP':

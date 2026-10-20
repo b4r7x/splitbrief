@@ -360,7 +360,9 @@ export function consultCallAnswering(
 }
 
 /** A guidance consult answer; the default answer for a ladder that consults but never lands. */
-export function guidanceConsult(instructions = 'Try a different approach.'): ConsultAnswer {
+export function guidanceConsult(instructions = 'Try a different approach.'): {
+  answer: Extract<ConsultAnswer['answer'], { action: 'guidance' }>;
+} {
   return {
     answer: {
       diagnosis: 'The attempt failed',

@@ -405,11 +405,15 @@ describe('transition', () => {
       { type: 'INTERRUPT_STEP', step, source: 'user', cut: 'mid-step', kept: ['a.ts', 'b.ts'] },
     );
 
-    const partly = transition(stopped, { type: 'RECORD_REJECT', removed: ['a.ts', 'c.ts'] });
+    const partly = transition(stopped, {
+      type: 'RECORD_REJECT',
+      removed: ['a.ts', 'c.ts'],
+      booked: [],
+    });
     expect(partly.interruptedStep).toMatchObject({ step, cut: 'mid-step', kept: ['b.ts'] });
     expect(partly.awaitingContinue).toBe(true);
 
-    const all = transition(partly, { type: 'RECORD_REJECT', removed: ['b.ts'] });
+    const all = transition(partly, { type: 'RECORD_REJECT', removed: ['b.ts'], booked: [] });
     expect(all.interruptedStep).toMatchObject({ step, cut: 'mid-step' });
     expect(all.interruptedStep).not.toHaveProperty('kept');
     expect(deriveRunStatus({ state: all, liveness: 'not-alive' })).toMatchObject({
@@ -420,7 +424,126 @@ describe('transition', () => {
     );
 
     const unstopped = createInitialState('feat');
-    expect(transition(unstopped, { type: 'RECORD_REJECT', removed: ['a.ts'] })).toBe(unstopped);
+    expect(transition(unstopped, { type: 'RECORD_REJECT', removed: ['a.ts'], booked: [] })).toBe(
+      unstopped,
+    );
+  });
+
+  it('RECORD_REJECT reopens each passed brief whose files a reject put back, and the run waits before the first', () => {
+    const step = { kind: 'brief', taskId: taskId('T003'), attempt: 1 } as const;
+    const dispatched = [taskId('T002'), taskId('T003')].reduce<WorkflowState>(
+      (state, id) => transition(state, { type: 'RECORD_DISPATCH', taskId: id }),
+      {
+        ...createInitialState('feat'),
+        phase: 'implementing',
+        tasks: [
+          makeTask({ id: 'T001', status: 'done' }),
+          makeTask({ id: 'T002', status: 'escalated' }),
+          makeTask({ id: 'T003', status: 'in_progress' }),
+        ],
+        currentTaskIndex: 2,
+        attempt: 1,
+      },
+    );
+    const stopped = transition(dispatched, {
+      type: 'INTERRUPT_STEP',
+      step,
+      source: 'user',
+      cut: 'mid-step',
+      kept: ['c.ts'],
+    });
+
+    const next = transition(stopped, {
+      type: 'RECORD_REJECT',
+      removed: ['b.ts', 'c.ts'],
+      booked: [taskId('T002'), taskId('T003')],
+    });
+
+    expect(next.tasks.map((task) => [task.id, task.status])).toEqual([
+      ['T001', 'done'],
+      ['T002', 'pending'],
+      ['T003', 'in_progress'],
+    ]);
+    expect(next).toMatchObject({ phase: 'implementing', currentTaskIndex: 1, attempt: 0 });
+    expect(next.lineages?.T002?.dispatchedRevision).toEqual({});
+    expect(next.lineages?.T003?.dispatchedRevision).toEqual({ T003: 1 });
+    expect(next.interruptedStep).toEqual({
+      step: { kind: 'brief', taskId: 'T002', attempt: 0 },
+      source: 'user',
+      cut: 'boundary',
+      at: stopped.interruptedStep?.at,
+    });
+    expect(deriveRunStatus({ state: next, liveness: 'not-alive' })).toMatchObject({
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+      resumeAt: { kind: 'brief', taskId: 'T002', attempt: 0 },
+    });
+  });
+
+  it.each([
+    {
+      halt: 'a halted brief',
+      phase: 'escalating',
+      currentTaskIndex: 1,
+      issue: makeRecoveryIssue({ taskId: taskId('T002'), affectedTaskIds: [taskId('T002')] }),
+    },
+    {
+      halt: 'a failed final review',
+      phase: 'complete',
+      currentTaskIndex: 2,
+      issue: makeRecoveryIssue({
+        reason: 'review-failed',
+        phase: 'complete',
+        taskId: undefined,
+        affectedTaskIds: [],
+      }),
+    },
+  ] as const)(
+    'RECORD_REJECT that reopens a brief before $halt clears the halt, and the run waits before the brief',
+    ({ phase, currentTaskIndex, issue }) => {
+      const halted: WorkflowState = {
+        ...createInitialState('feat'),
+        phase,
+        tasks: [
+          makeTask({ id: 'T001', status: 'done' }),
+          makeTask({ id: 'T002', status: 'in_progress' }),
+        ],
+        currentTaskIndex,
+        attempt: 3,
+        pendingRecovery: issue,
+      };
+
+      const next = transition(halted, {
+        type: 'RECORD_REJECT',
+        removed: ['a.ts'],
+        booked: [taskId('T001')],
+      });
+
+      expect(next.pendingRecovery).toBeUndefined();
+      expect(next).toMatchObject({ phase: 'implementing', currentTaskIndex: 0, attempt: 0 });
+      expect(next.interruptedStep).toMatchObject({
+        step: { kind: 'brief', taskId: 'T001', attempt: 0 },
+        source: 'user',
+        cut: 'boundary',
+      });
+      expect(deriveRunStatus({ state: next, liveness: 'not-alive' })).toMatchObject({
+        stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+        resumeAt: { kind: 'brief', taskId: 'T001', attempt: 0 },
+      });
+    },
+  );
+
+  it('RECORD_REJECT that reopens no brief before the halt keeps the halt', () => {
+    const issue = makeRecoveryIssue({ taskId: taskId('T001'), affectedTaskIds: [taskId('T001')] });
+    const halted: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'escalating',
+      tasks: [makeTask({ id: 'T001', status: 'in_progress' })],
+      pendingRecovery: issue,
+    };
+
+    const next = transition(halted, { type: 'RECORD_REJECT', removed: ['a.ts'], booked: [] });
+
+    expect(next.pendingRecovery).toBe(issue);
   });
 
   it('INTERRUPT_STEP records a pause between briefs as a boundary cut', () => {

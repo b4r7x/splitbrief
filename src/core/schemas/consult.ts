@@ -41,7 +41,19 @@ const AskUserActionSchema = z.object({
 
 const deviationDecision = z.object({ what: z.string(), why: z.string() });
 
+/**
+ * A confirm names the reported decisions it accepts by id. An answer without ids accepts none, so
+ * every reported decision is rejected and the attempt retries. The missing key is read in parsing,
+ * not as a JSON Schema `default`, so the contract a strict seat gets keeps the key required.
+ */
 const ConfirmActionSchema = z.object({
+  ...diagnosis,
+  action: z.literal('confirm'),
+  decisionIds: z.preprocess((ids) => ids ?? [], z.array(z.string())),
+});
+
+/** A confirm resolved against its report: the decisions it accepted, in the reported words. */
+const ConfirmedDecisionsSchema = z.object({
   ...diagnosis,
   action: z.literal('confirm'),
   decisions: z.array(deviationDecision),
@@ -58,6 +70,30 @@ export const ConsultAnswerSchema = z.object({
   ]),
 });
 export type ConsultAnswer = z.infer<typeof ConsultAnswerSchema>;
+
+/** The consult answer SPLITBRIEF applies and records: a confirm carries its accepted decisions. */
+export const ResolvedConsultAnswerSchema = z.object({
+  answer: z.union([
+    GuidanceActionSchema,
+    RewriteTaskActionSchema,
+    SplitTaskActionSchema,
+    VerifyActionSchema,
+    AskUserActionSchema,
+    ConfirmedDecisionsSchema,
+  ]),
+});
+export type ResolvedConsultAnswer = z.infer<typeof ResolvedConsultAnswerSchema>;
+
+/** The id a consult shows for the reported decision at `index`: `d1`, `d2`, … */
+export function reportedDecisionId(index: number): string {
+  return `d${index + 1}`;
+}
+
+/** The reported decisions whose ids a confirm names. Every other reported decision is rejected. */
+export function acceptedDecisions<T>(reported: readonly T[], ids: readonly string[]): T[] {
+  const named = new Set(ids);
+  return reported.filter((_, index) => named.has(reportedDecisionId(index)));
+}
 
 /**
  * The answer schema of one consult. A deviation consult takes `guidance` only once the user

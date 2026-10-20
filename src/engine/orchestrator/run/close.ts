@@ -11,7 +11,8 @@ import { recordInterruptedCalls } from '../../calls/interrupted.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 import { writeRunPatch } from '../apply/patch.js';
 import { persistStoppedBriefEvidence } from '../evidence/persistence.js';
-import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { recordRejectEvidence } from '../evidence/task.js';
+import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import {
   publishRecoveryActionSelected,
   publishRecoveryResolved,
@@ -164,8 +165,9 @@ export async function closeRunIfOpen(
 /**
  * `/run reject confirm` on a run that wrote the checkout: puts back the run's recorded changes and
  * records the reject. A checkout run that the reject left nothing of closes as discarded. One that
- * kept files the user changed stays open for another reject, and its stop no longer keeps the files
- * the reject put back. An older run without a workspace record only records the reject.
+ * kept files the user changed stays open: no brief books the files the reject put back, and each
+ * passed brief that had booked one is open again, so Continue builds it again. An older run
+ * without a workspace record only records the reject.
  */
 export async function rejectCheckoutRun(
   scope: SessionRef & { bus: EventBus },
@@ -181,10 +183,21 @@ export async function rejectCheckoutRun(
   if (result.conflictedPaths.length === 0 && result.missingSnapshotFiles.length === 0) {
     return { result, closure: await closeRunIfOpen(scope, state, 'discarded') };
   }
-  transitionAndSave(scope, rebaseOnPersistedWorkflowState(scope, state), {
+  const removed = [...result.restoredPaths, ...result.deletedPaths];
+  const ledger = readEvidenceLedger(scope);
+  const booked = (ledger?.tasks ?? [])
+    .filter((entry) => entry.changedFiles.some((file) => removed.includes(file)))
+    .map((entry) => entry.id);
+  const next = transitionAndSave(scope, rebaseOnPersistedWorkflowState(scope, state), {
     type: 'RECORD_REJECT',
-    removed: [...result.restoredPaths, ...result.deletedPaths],
+    removed,
+    booked,
   });
+  if (ledger !== null && booked.length > 0) {
+    mutateEvidenceLedger(scope, (latest) =>
+      recordRejectEvidence({ ledger: latest ?? ledger, removed, tasks: next.tasks }),
+    );
+  }
   return { result, closure: null };
 }
 
