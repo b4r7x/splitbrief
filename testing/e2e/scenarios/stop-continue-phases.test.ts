@@ -14,6 +14,15 @@ import {
 
 let fixture: StopContinueFixture | undefined;
 
+/** The whole seconds a closed row spells, as `formatTime` writes them (`1h 2m 3s`, `2m 10s`, `9s`). */
+function shownSeconds(text: string): number {
+  const units = { h: 3600, m: 60, s: 1 } as const;
+  return [...text.matchAll(/(\d+)([hms])/g)].reduce(
+    (sum, [, value, unit]) => sum + Number(value) * units[unit as keyof typeof units],
+    0,
+  );
+}
+
 afterEach(async () => {
   if (fixture !== undefined) {
     await endImplementerHold(fixture);
@@ -22,7 +31,7 @@ afterEach(async () => {
   fixture = undefined;
 });
 
-it('counts planning and the whole brief in the closed Phases row after a stop and a Continue', {
+it('counts planning and the whole brief in the closed Phases row after a stop and a Continue, and its parts add up to Ran', {
   timeout: 240_000,
 }, async () => {
   fixture = createStopContinueFixture(undefined, { isolation: 'none' });
@@ -39,6 +48,10 @@ it('counts planning and the whole brief in the closed Phases row after a stop an
   const phases = runRows(view).find((row) => row.label === 'Phases');
   const rowText = phases?.segments.flatMap((fact) => factSpans(fact).map((span) => span.text));
   expect(rowText?.[0]).toMatch(/^planning /);
+  const ran = runRows(view).find((row) => row.label === 'Ran');
+  const ranText = ran?.segments.flatMap((fact) => factSpans(fact).map((span) => span.text)) ?? [];
+  const parts = (rowText ?? []).map((text) => shownSeconds(text.replace(/^\S+ /, '')));
+  expect(parts.reduce((sum, value) => sum + value, 0)).toBe(shownSeconds(ranText.join('')));
 
   const { events } = await readRunEvents(ref);
   const completed = events.find((event) => event.type === 'task_completed');

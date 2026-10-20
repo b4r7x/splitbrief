@@ -38,3 +38,6 @@ export function makeLegacyV3State(feature = 'legacy-feature'): WorkflowState {
 export function makeWorkflowState(overrides: Partial<WorkflowState> = {}): WorkflowState {
   return { ...createInitialState('feat'), ...overrides };
 }
+
+/** The seats a started run saves in its state; a run that closes names them. */
+export const RUN_CREW = { plannerTool: 'claude-code', implementerTool: 'codex' } as const;

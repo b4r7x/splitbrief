@@ -2337,6 +2337,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-closed-review-no-verdict',
+      title: 'Workflow · ended after a final review that returned no verdict',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-review-no-verdict',
+        title: 'Ended review without a verdict',
+        kind: 'failure',
+        marker: 'visual-closed-review-no-verdict',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-ended-review-workspace',
       title: 'Workflow · a worktree run ended after a failed review',
       surface: screenSurface('workflow'),

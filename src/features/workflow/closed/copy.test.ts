@@ -157,6 +157,12 @@ describe('runRows', () => {
     expect(segmentsFor(view, 'Packet')).toBeUndefined();
   });
 
+  it('reads a final review that returned no verdict as no verdict', () => {
+    expect(segmentsFor(makeView({ review: { kind: 'failed' } }), 'Review')).toEqual([
+      { text: 'final review no verdict', tone: 'textDim' },
+    ]);
+  });
+
   it('spells absence with one word each', () => {
     const view = endedInPlanning();
     expect(segmentsFor(view, 'Review')).toEqual([
@@ -254,6 +260,23 @@ describe('runRows', () => {
     ]);
     const one = makeView({ phases: [{ phase: 'planning', ms: 170_000 }] });
     expect(runRows(one).some((row) => row.label === 'Phases')).toBe(false);
+  });
+
+  it('splits the whole seconds of Ran across the phases, so they add up to it', () => {
+    const view = makeView({
+      ran: 130_199,
+      phases: [
+        { phase: 'planning', ms: 19_672 },
+        { phase: 'implementing', ms: 72_714 },
+        { phase: 'review', ms: 37_813 },
+      ],
+    });
+    expect(segmentsFor(view, 'Ran')).toEqual([{ text: '2m 10s', tone: 'textDim' }]);
+    expect(segmentsFor(view, 'Phases')).toEqual([
+      { text: 'planning 19s', tone: 'textDim' },
+      { text: 'implementing 1m 13s', tone: 'textDim' },
+      { text: 'review 38s', tone: 'textDim' },
+    ]);
   });
 
   it('states how long the run ran, and says so when the record never kept it', () => {

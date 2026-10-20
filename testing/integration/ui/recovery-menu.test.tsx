@@ -7,7 +7,7 @@ import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
-import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
@@ -49,6 +49,7 @@ describe('recovery menu and composer keyboard ownership', () => {
       saveState(
         ref,
         makeWorkflowState({
+          ...RUN_CREW,
           phase: 'implementing',
           pendingRecovery: makeRecoveryIssue({
             reason: 'runner-usage-limit',
@@ -118,6 +119,7 @@ describe('recovery menu and composer keyboard ownership', () => {
     saveState(
       ref,
       makeWorkflowState({
+        ...RUN_CREW,
         phase: 'researching',
         pendingRecovery: makeRecoveryIssue({
           reason: 'planner-call-failed',
@@ -190,6 +192,7 @@ describe('recovery menu and composer keyboard ownership', () => {
       saveState(
         ref,
         makeWorkflowState({
+          ...RUN_CREW,
           phase: 'final-review',
           pendingRecovery: makeRecoveryIssue({
             reason: 'review-failed',

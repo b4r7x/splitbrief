@@ -192,6 +192,18 @@ describe('reconcileSeatIdentities', () => {
     });
   });
 
+  it('re-records a review seat that stopped following the planner for the same tool and model', () => {
+    const ref = session('seats-review-follow');
+    recordSeatIdentities(ref, makeConfig());
+    expect(readSeatIdentities(ref)?.reviewFollowsPlan).toBe(true);
+    const ownReviewer = makeConfig({ reviewer: { kind: 'cli', tool: 'claude-code' } });
+
+    expect(reconcileSeatIdentities(ref, ownReviewer)).toEqual([]);
+
+    expect(readSeatIdentities(ref)?.reviewFollowsPlan).toBe(false);
+    expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(ownReviewer));
+  });
+
   it('adds the ids to a record written before them, without reporting a change', () => {
     const ref = session('seats-reconcile-upgrade');
     const config = makeConfig();

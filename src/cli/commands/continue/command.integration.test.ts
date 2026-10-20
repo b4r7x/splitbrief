@@ -17,7 +17,7 @@ import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { readSession } from '../../../core/sessions/io.js';
 import { readActive, reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
@@ -245,7 +245,12 @@ describe('continueCommand', () => {
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
     saveState(
       { projectDir, sessionId },
-      { ...createInitialState('test-feature'), phase: 'complete', reviewStatus: 'passed' },
+      {
+        ...createInitialState('test-feature'),
+        ...RUN_CREW,
+        phase: 'complete',
+        reviewStatus: 'passed',
+      },
     );
 
     await expect(continueCommand(sessionId, { projectDir, json: true }, deps)).rejects.toThrow(
@@ -300,6 +305,7 @@ describe('continueCommand', () => {
       { projectDir, sessionId },
       {
         ...createInitialState('test-feature'),
+        ...RUN_CREW,
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001' })],
         pendingRecovery: makeRecoveryIssue({}),
@@ -348,6 +354,7 @@ describe('continueCommand', () => {
         { projectDir, sessionId },
         {
           ...createInitialState('test-feature'),
+          ...RUN_CREW,
           phase: testCase.phase,
           tasks: [makeTask({ id: 'T001' })],
           pendingRecovery: makeRecoveryIssue(testCase.issue),
@@ -376,6 +383,7 @@ describe('continueCommand', () => {
       { projectDir, sessionId },
       {
         ...createInitialState('catalog names'),
+        ...RUN_CREW,
         phase: 'implementing',
         tasks: [makeTask()],
         pendingRecovery: makeRecoveryIssue({
@@ -434,6 +442,7 @@ describe('continueCommand', () => {
       { projectDir, sessionId },
       {
         ...createInitialState('test-feature'),
+        ...RUN_CREW,
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001' })],
         pendingRecovery: makeRecoveryIssue({
@@ -485,6 +494,7 @@ describe('continueCommand', () => {
       { projectDir, sessionId },
       {
         ...createInitialState('test-feature'),
+        ...RUN_CREW,
         phase: 'final-review',
         tasks: [makeTask({ id: 'T001', status: 'done' })],
         currentTaskIndex: 1,
@@ -550,6 +560,7 @@ describe('continueCommand', () => {
       { projectDir, sessionId },
       {
         ...createInitialState('test-feature'),
+        ...RUN_CREW,
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001', status: 'failed' })],
         pendingRecovery: makeRecoveryIssue({
@@ -596,6 +607,7 @@ describe('continueCommand', () => {
     saveState(
       { projectDir, sessionId },
       makeWorkflowState({
+        ...RUN_CREW,
         phase: 'implementing',
         awaitingContinue: true,
         tasks: [makeTask({ id: 'T001', status: 'in_progress' })],
@@ -635,7 +647,7 @@ describe('continueCommand', () => {
     makeSessionDir(projectDir, sessionId);
     saveState(
       { projectDir, sessionId },
-      makeWorkflowState({ closed: { as: 'ended', at: '2025-04-01T00:00:00.000Z' } }),
+      makeWorkflowState({ ...RUN_CREW, closed: { as: 'ended', at: '2025-04-01T00:00:00.000Z' } }),
     );
 
     await expect(
@@ -657,7 +669,10 @@ describe('continueCommand', () => {
       const projectDir = makeTmpProject();
       const sessionId = '2025-04-01-retry-without-recovery';
       makeSessionDir(projectDir, sessionId);
-      saveState({ projectDir, sessionId }, makeWorkflowState({ phase: 'implementing' }));
+      saveState(
+        { projectDir, sessionId },
+        makeWorkflowState({ ...RUN_CREW, phase: 'implementing' }),
+      );
 
       await expect(
         continueCommand(
@@ -683,6 +698,7 @@ describe('continueCommand', () => {
       { projectDir, sessionId },
       {
         ...createInitialState('test-feature'),
+        ...RUN_CREW,
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001' })],
         workspace: {
@@ -726,6 +742,7 @@ describe('continueCommand', () => {
       { projectDir, sessionId },
       {
         ...createInitialState('test-feature'),
+        ...RUN_CREW,
         phase: 'complete',
         tasks: [makeTask({ id: 'T001' })],
         pendingRecovery: makeRecoveryIssue({
@@ -760,6 +777,7 @@ describe('continueCommand', () => {
       { projectDir, sessionId },
       {
         ...createInitialState('test-feature'),
+        ...RUN_CREW,
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001' })],
         pendingRecovery: makeRecoveryIssue({ status: 'awaiting-user' }),
@@ -785,6 +803,7 @@ describe('continueCommand', () => {
       { projectDir, sessionId },
       {
         ...createInitialState('test-feature'),
+        ...RUN_CREW,
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001' })],
         pendingRecovery: makeRecoveryIssue({
@@ -951,6 +970,7 @@ describe('continueCommand --action apply|discard|end-run', () => {
     saveState(
       { projectDir: run.dir, sessionId: SESSION_ID },
       makeWorkflowState({
+        ...RUN_CREW,
         phase: 'complete',
         reviewStatus: 'passed',
         workspace: run.workspace,
@@ -1167,7 +1187,12 @@ describe('continueCommand --action apply|discard|end-run', () => {
       writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
       saveState(
         { projectDir, sessionId },
-        { ...createInitialState('test-feature'), phase: 'implementing', tasks: [makeTask()] },
+        {
+          ...createInitialState('test-feature'),
+          ...RUN_CREW,
+          phase: 'implementing',
+          tasks: [makeTask()],
+        },
       );
 
       await expect(

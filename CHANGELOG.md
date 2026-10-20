@@ -330,6 +330,9 @@
 - The model picker's key legend now says what Esc does: collapse a row, clear the filter or close the picker.
 - While Re-run Apply writes to your checkout, picking a run from Sessions, the palette or home now says Apply is still writing to your checkout instead of asking you to stop the run on screen.
 - A second window on a run no longer keeps saying Running in another process after that process is killed; it shows the run as it stands within a few seconds.
+- After Apply, Discard or End run, a closed run names the crew that ran it, not the crew saved in Settings since.
+- A closed run whose final review ran but returned no verdict says `final review no verdict` instead of `final review not run`.
+- The phase times of a closed run add up to its `Ran` time.
 
 ## [0.1.0] - 2026-08-07
 

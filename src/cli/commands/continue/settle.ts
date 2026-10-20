@@ -1,4 +1,3 @@
-import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { runApplyAtRest } from '../../../engine/orchestrator/apply/at-rest.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
@@ -14,10 +13,9 @@ export async function settleReadyRun(input: {
   sessionId: string;
   state: WorkflowState;
   action: 'apply' | 'discard';
-  config: Config;
   json: boolean;
 }): Promise<WorkflowState | undefined> {
-  const { projectDir, sessionId, state, action, config, json } = input;
+  const { projectDir, sessionId, state, action, json } = input;
   const ref = { projectDir, sessionId };
   const bus = createRecoveryBus({
     projectDir,
@@ -27,7 +25,7 @@ export async function settleReadyRun(input: {
     },
   });
   const finalize = (state: WorkflowState): void => {
-    finalizeRunAtRest({ ref, config, state });
+    finalizeRunAtRest({ ref, state });
   };
 
   if (action === 'discard') {
@@ -37,7 +35,7 @@ export async function settleReadyRun(input: {
     return undefined;
   }
 
-  const result = await runApplyAtRest({ wctx: { projectDir, sessionId, bus }, state, config });
+  const result = await runApplyAtRest({ wctx: { projectDir, sessionId, bus }, state });
   switch (result.outcome) {
     case 'applied':
       process.stderr.write(`Applied ${countNoun(result.files.length, 'file')} to your checkout.\n`);

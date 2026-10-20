@@ -8,10 +8,9 @@ import {
 } from '../../../core/sessions/active-pointer.js';
 import { readSession, rowFor, saveSummary } from '../../../core/sessions/io.js';
 import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run-status.js';
-import type { Config } from '../../../core/schemas/config.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
-import { runSeatIdentity } from '../../../core/providers/seat-identity.js';
+import { recordedSeatIdentity } from '../../../core/state/seats.js';
 import { activeTimeOf, phaseTimesOf, readRunMarks } from '../summary/active-time.js';
 import { buildSummary } from '../summary/build.js';
 
@@ -63,13 +62,12 @@ export function finalizeEndedRun(
   input: Readonly<{
     ref: SessionRef;
     active?: ActiveSessionReceipt | undefined;
-    config: Config;
     state: WorkflowState;
     modelCache?: ModelCacheAccessor | undefined;
   }>,
 ): Summary {
-  const { ref, state, config } = input;
-  const ident = runSeatIdentity(config);
+  const { ref, state } = input;
+  const ident = recordedSeatIdentity(ref, state);
   const summary = buildSummary({
     feature: state.feature,
     startTime: Date.parse(state.startedAt) || Date.now(),
@@ -101,7 +99,7 @@ export function finalizeEndedRun(
 
 /** A run settled at rest — no live loop holds its receipt — clears the active session only while it is this run's. */
 export function finalizeRunAtRest(
-  input: Readonly<{ ref: SessionRef; config: Config; state: WorkflowState }>,
+  input: Readonly<{ ref: SessionRef; state: WorkflowState }>,
 ): Summary {
   const active = readActiveRecord(input.ref.projectDir);
   const receipt =

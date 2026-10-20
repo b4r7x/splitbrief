@@ -230,8 +230,8 @@ async function liveSessionFailureReason(ref: SessionRef): Promise<string | null>
   return liveRunFailureReason({ state: loadState(ref), events });
 }
 
-export async function applyLiveRun(opts: SessionRef & { config: Config }): Promise<Summary> {
-  const { projectDir, sessionId, config } = opts;
+export async function applyLiveRun(opts: SessionRef): Promise<Summary> {
+  const { projectDir, sessionId } = opts;
   const ref = { projectDir, sessionId };
   const state = loadState(ref);
   if (state === null) {
@@ -252,7 +252,7 @@ export async function applyLiveRun(opts: SessionRef & { config: Config }): Promi
         ((await liveSessionFailureReason(ref)) ?? ''),
     );
   }
-  return finalizeRunAtRest({ ref, config, state: result.state });
+  return finalizeRunAtRest({ ref, state: result.state });
 }
 
 export async function executeLiveWorkflow(opts: {
@@ -305,11 +305,7 @@ export async function executeLiveWorkflow(opts: {
     sinks: opts.sinks ?? TEST_WORKFLOW_SINKS,
   });
   opts.signal.throwIfAborted();
-  const summary = await applyLiveRun({
-    projectDir: opts.projectDir,
-    sessionId,
-    config: opts.effectiveConfig,
-  });
+  const summary = await applyLiveRun({ projectDir: opts.projectDir, sessionId });
   return { summary, sessionId };
 }
 

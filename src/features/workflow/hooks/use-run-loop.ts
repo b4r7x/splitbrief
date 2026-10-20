@@ -256,7 +256,6 @@ export function useRunLoop({
       finalizeEndedRun({
         ref: session.ref,
         active: preparedForRun.session.active,
-        config: preparedForRun.config,
         state: next,
         modelCache: modelCacheStore,
       });
@@ -345,7 +344,6 @@ export function useRunLoop({
               finalizeEndedRun({
                 ref: preparedForRun.session.ref,
                 active: preparedForRun.session.active,
-                config: preparedForRun.config,
                 state: closedState,
                 modelCache: modelCacheStore,
               });

@@ -23,8 +23,10 @@ import {
   saveFinalSession,
 } from './finalize.js';
 import { readSession } from '../../../core/sessions/io.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
+import { writeSeatIdentities } from '../../../core/state/seats.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 
 let dirs: string[] = [];
 
@@ -306,29 +308,112 @@ describe('reopenSessionRecord', () => {
 });
 
 describe('finalizeEndedRun seat identity', () => {
-  it('persists the seat kinds beside their tools in the ending summary', () => {
+  it('names the crew the run recorded, not the crew saved now', () => {
     const projectDir = makeProjectDir();
-    const sessionId = 'sess-ended-kinds';
-
-    finalizeEndedRun({
-      ref: { projectDir, sessionId },
-      config: makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code', model: 'opus' },
-        implementer: { kind: 'api', provider: 'ollama', model: 'qwen2.5-coder:7b' },
-        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
-      }),
-      state: { ...createInitialState('feat'), phase: 'implementing' },
+    const ref = { projectDir, sessionId: 'sess-ended-kinds' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    writeSeatIdentities(ref, {
+      plan: 'Claude Code · Opus',
+      build: 'Ollama · qwen2.5-coder:7b',
+      review: 'OpenAI Codex CLI · gpt-5',
+      ids: {
+        plan: { tool: 'claude-code', model: 'opus', axes: [], kind: 'cli' },
+        build: { tool: 'ollama', model: 'qwen2.5-coder:7b', axes: [], kind: 'api' },
+        review: { tool: 'codex', model: 'gpt-5', axes: [], kind: 'cli' },
+      },
     });
 
-    const session = readSession({ projectDir, sessionId });
-    expect(session?.summary).toMatchObject({
+    finalizeEndedRun({ ref, state: { ...createInitialState('feat'), phase: 'implementing' } });
+
+    expect(readSession(ref)?.summary).toMatchObject({
       plannerTool: 'claude-code',
+      plannerModel: 'opus',
       plannerKind: 'cli',
       implementerTool: 'ollama',
+      implementerModel: 'qwen2.5-coder:7b',
       implementerKind: 'api',
       reviewerTool: 'codex',
+      reviewerModel: 'gpt-5',
       reviewerKind: 'cli',
     });
+  });
+
+  it('leaves the review seat to the planner when an older record kept one seat for both and the run had no reviewer', () => {
+    const projectDir = makeProjectDir();
+    const ref = { projectDir, sessionId: 'sess-planner-reviews' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const plan = { tool: 'claude-code', model: 'auto', axes: [], kind: 'cli' } as const;
+    writeSeatIdentities(ref, {
+      plan: 'Claude Code',
+      build: 'Claude Code · Haiku',
+      review: 'Claude Code',
+      ids: { plan, build: { ...plan, model: 'haiku' }, review: plan },
+    });
+
+    finalizeRunAtRest({ ref, state: { ...createInitialState('feat'), phase: 'implementing' } });
+
+    const summary = readSession(ref)?.summary;
+    expect(summary).toMatchObject({ plannerTool: 'claude-code', implementerModel: 'haiku' });
+    expect(summary?.plannerModel).toBeUndefined();
+    expect(summary?.reviewerTool).toBeUndefined();
+  });
+
+  it('names the reviewer of an older record that kept one seat for both when the run started with a reviewer', () => {
+    const projectDir = makeProjectDir();
+    const ref = { projectDir, sessionId: 'sess-older-own-reviewer' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const plan = { tool: 'claude-code', model: 'opus', axes: [], kind: 'cli' } as const;
+    writeSeatIdentities(ref, {
+      plan: 'Claude Code · Opus',
+      build: 'Claude Code · Haiku',
+      review: 'Claude Code · Opus',
+      ids: { plan, build: { ...plan, model: 'haiku' }, review: plan },
+    });
+
+    finalizeRunAtRest({
+      ref,
+      state: {
+        ...createInitialState('feat'),
+        phase: 'implementing',
+        reviewerTool: 'claude-code',
+        reviewerModel: 'opus',
+        reviewerKind: 'cli',
+      },
+    });
+
+    expect(readSession(ref)?.summary).toMatchObject({
+      reviewerTool: 'claude-code',
+      reviewerModel: 'opus',
+      reviewerKind: 'cli',
+    });
+  });
+
+  it('reads the seats an older record kept in its state', () => {
+    const projectDir = makeProjectDir();
+    const ref = { projectDir, sessionId: 'sess-older-record' };
+
+    finalizeRunAtRest({
+      ref,
+      state: {
+        ...createInitialState('feat'),
+        phase: 'implementing',
+        plannerTool: 'claude-code',
+        plannerModel: 'opus',
+        plannerKind: 'cli',
+        implementerTool: 'codex',
+        implementerModel: 'gpt-5',
+        implementerKind: 'cli',
+      },
+    });
+
+    const summary = readSession(ref)?.summary;
+    expect(summary).toMatchObject({
+      plannerTool: 'claude-code',
+      plannerModel: 'opus',
+      implementerTool: 'codex',
+      implementerModel: 'gpt-5',
+    });
+    expect(summary?.reviewerTool).toBeUndefined();
   });
 });
 
@@ -344,9 +429,9 @@ describe('finalizeEndedRun after a live End', () => {
 
     finalizeEndedRun({
       ref,
-      config: makeConfig(),
       state: {
         ...createInitialState('feat'),
+        ...RUN_CREW,
         phase: 'planning',
         closed: { at: '2026-10-15T10:11:00.000Z', as: 'ended' },
       },
@@ -359,6 +444,7 @@ describe('finalizeEndedRun after a live End', () => {
 describe('finalizeRunAtRest', () => {
   const ended = (): WorkflowState => ({
     ...createInitialState('feat'),
+    ...RUN_CREW,
     phase: 'implementing',
     closed: { at: '2026-09-01T00:00:00.000Z', as: 'ended' },
   });
@@ -368,7 +454,7 @@ describe('finalizeRunAtRest', () => {
     const ref = { projectDir, sessionId: 'sess-at-rest' };
     reactivateExistingSession(ref);
 
-    finalizeRunAtRest({ ref, config: makeConfig(), state: ended() });
+    finalizeRunAtRest({ ref, state: ended() });
 
     expect(readSession(ref)?.status).toBe('ended');
     expect(existsSync(activeFile(projectDir))).toBe(false);
@@ -380,12 +466,13 @@ describe('finalizeRunAtRest', () => {
     reactivateExistingSession(ref);
     const state: WorkflowState = {
       ...createInitialState('feat'),
+      ...RUN_CREW,
       phase: 'complete',
       reviewStatus: 'failed',
       acceptedAsIs: { at: '2026-09-01T00:00:00.000Z', findings: ['F1'] },
       workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head: null } },
     };
-    finalizeRunAtRest({ ref, config: makeConfig(), state });
+    finalizeRunAtRest({ ref, state });
     expect(readSession(ref)?.status).toBe('complete');
     expect(state.reviewStatus).toBe('failed');
     expect(existsSync(activeFile(projectDir))).toBe(false);
@@ -405,7 +492,7 @@ describe('finalizeRunAtRest', () => {
       ],
     ]);
 
-    finalizeRunAtRest({ ref, config: makeConfig(), state: ended() });
+    finalizeRunAtRest({ ref, state: ended() });
 
     expect(readSession(ref)?.summary?.activeTime).toBe(5 * 60_000);
   });
@@ -416,7 +503,6 @@ describe('finalizeRunAtRest', () => {
 
     finalizeRunAtRest({
       ref: { projectDir, sessionId: 'sess-at-rest' },
-      config: makeConfig(),
       state: ended(),
     });
 

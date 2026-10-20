@@ -1602,6 +1602,23 @@ const CLOSED_ENDED_REVIEW = record({
   },
 });
 
+/** A run ended on the halt of a final review that ran and returned no verdict. */
+const REVIEW_NO_VERDICT_SESSION = 'visual-closed-review-no-verdict';
+const CLOSED_REVIEW_NO_VERDICT = record({
+  sessionId: REVIEW_NO_VERDICT_SESSION,
+  status: { kind: 'closed', as: 'ended' },
+  state: CLOSED_ENDED_REVIEW.hydration.state,
+  summary: {
+    ...READY_SUMMARY,
+    reviewPacket: { ...ENDED_REVIEW_PACKET, finalReviewStatus: 'failed' },
+  },
+  ledger: {
+    ...READY_LEDGER,
+    sessionId: REVIEW_NO_VERDICT_SESSION,
+    finalReview: { path: packetMarkdownPath(REVIEW_NO_VERDICT_SESSION), status: 'failed' },
+  },
+});
+
 /** A real run's close: a worktree run ended on its failed-review halt, the result in run.patch. */
 const ENDED_REVIEW_WORKSPACE_SESSION = 'visual-ended-review-workspace';
 const CLOSED_ENDED_REVIEW_WORKSPACE = record({
@@ -2384,6 +2401,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: CLOSED_ENDED_WORKSPACE, log: ENDED_WORKSPACE_LOG },
   }),
   atRestProjection({ id: 'workflow-closed-ended-review', route: { record: CLOSED_ENDED_REVIEW } }),
+  atRestProjection({
+    id: 'workflow-closed-review-no-verdict',
+    route: { record: CLOSED_REVIEW_NO_VERDICT },
+  }),
   atRestProjection({
     id: 'workflow-closed-ended-review-workspace',
     route: { record: CLOSED_ENDED_REVIEW_WORKSPACE },

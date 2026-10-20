@@ -172,15 +172,11 @@ async function acceptRun(
   if (state.workspace?.kind !== 'checkout' && record.status.kind !== 'ready-to-apply') {
     return { status: 'unavailable', message: 'Run is not ready to apply.' };
   }
-  const config = configStore.get().config;
-  if (config === null) {
-    return { status: 'unavailable', message: 'Apply requires a project configuration.' };
-  }
   const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
   if (state.workspace?.kind === 'checkout') {
     const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state);
     if (closure.closedNow) {
-      finalizeRunAtRest({ ref: record.ref, config, state: closure.state });
+      finalizeRunAtRest({ ref: record.ref, state: closure.state });
       sessionsStore.refresh();
     }
     return { status: 'ended' };
@@ -188,7 +184,6 @@ async function acceptRun(
   const result = await runApplyAtRest({
     wctx: { projectDir, sessionId, bus },
     state,
-    config,
     overrideConfirmed: confirm,
   });
   if (result.outcome === 'halted') {
@@ -222,22 +217,18 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
   if (record.status.kind === 'closed') {
     return { status: 'undone', ...(await undoApply(record.ref, state)) };
   }
-  const config = configStore.get().config;
-  if (config === null) {
-    return { status: 'unavailable', message: 'Discard requires a project configuration.' };
-  }
   const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
   if (state.workspace?.kind === 'checkout') {
     const { result, closure } = await rejectCheckoutRun({ projectDir, sessionId, bus }, state);
     if (closure?.closedNow === true) {
-      finalizeRunAtRest({ ref: record.ref, config, state: closure.state });
+      finalizeRunAtRest({ ref: record.ref, state: closure.state });
       sessionsStore.refresh();
     }
     return result;
   }
   const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
   if (closure.closedNow) {
-    finalizeRunAtRest({ ref: record.ref, config, state: closure.state });
+    finalizeRunAtRest({ ref: record.ref, state: closure.state });
     sessionsStore.refresh();
   }
   return { status: 'discarded' };

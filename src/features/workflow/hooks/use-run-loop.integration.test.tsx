@@ -16,7 +16,7 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeImplState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Implementer } from '../../../engine/implementers/types.js';
@@ -254,6 +254,7 @@ function errorMessages(): string[] {
 /** A run halted on a brief whose panel offers a retry, saved where the loop reads it back. */
 function saveHaltedRun(sessionId: string): WorkflowState {
   const halted = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+    ...RUN_CREW,
     pendingRecovery: makeRecoveryIssue(),
   });
   saveState({ projectDir, sessionId }, halted);
@@ -263,6 +264,7 @@ function saveHaltedRun(sessionId: string): WorkflowState {
 /** A run whose BUILD seat halted Seat down, its panel offering Try again and a move to Claude Code. */
 function saveSeatDownHalt(sessionId: string): WorkflowState {
   const halted = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+    ...RUN_CREW,
     pendingRecovery: makeRecoveryIssue({
       reason: 'runner-usage-limit',
       seat: 'build',
@@ -384,6 +386,7 @@ describe('useRunLoop', () => {
       const state = await saveRetainedRun(
         sessionId,
         makeImplState([], {
+          ...RUN_CREW,
           ...(outcome === 'halt' && { pendingRecovery: makeRecoveryIssue() }),
           ...(outcome === 'failure' && {
             lastFailure: {
@@ -432,7 +435,7 @@ describe('useRunLoop', () => {
   it('does not publish additional retention notices when the same halt is reopened twice', async () => {
     const sessionId = 'retained-halt-reopened-twice';
     const ref = { projectDir, sessionId };
-    const initial = makeImplState([makeTask({ id: 'T001', status: 'failed' })]);
+    const initial = makeImplState([makeTask({ id: 'T001', status: 'failed' })], RUN_CREW);
     ensureSessionDir(projectDir, sessionId);
     saveState(ref, initial);
     const prepared = preparedExecution({
@@ -501,6 +504,7 @@ describe('useRunLoop', () => {
       const state = await saveRetainedRun(
         sessionId,
         makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+          ...RUN_CREW,
           pendingRecovery: makeRecoveryIssue({
             ...(correction
               ? {
@@ -699,6 +703,7 @@ describe('useRunLoop', () => {
       variant: 'high',
     };
     const state = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+      ...RUN_CREW,
       pendingRecovery: makeRecoveryIssue({
         reason: 'runner-usage-limit',
         availableActions: ['switch-seat', 'end-run'],
@@ -804,6 +809,7 @@ describe('useRunLoop', () => {
     const sessionId = '2026-08-14-resume-reset';
     const resume: WorkflowState = {
       ...createInitialState('add auth'),
+      ...RUN_CREW,
       phase: 'reviewing-spec',
     };
     const prepared = preparedExecution({
@@ -844,7 +850,7 @@ describe('useRunLoop', () => {
       projectDir,
       feature: 'new session',
       sessionId: '2026-08-14-missing-resume',
-      resumeState: createInitialState('new session'),
+      resumeState: { ...createInitialState('new session'), ...RUN_CREW },
     });
 
     const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
@@ -866,7 +872,7 @@ describe('useRunLoop', () => {
       projectDir,
       feature: 'invalid session',
       sessionId,
-      resumeState: createInitialState('invalid session'),
+      resumeState: { ...createInitialState('invalid session'), ...RUN_CREW },
     });
     writeFileSync(
       join(sessionDir(projectDir, sessionId), 'state.json'),
@@ -948,7 +954,7 @@ describe('useRunLoop', () => {
       createdAt: '2026-04-28T12:00:00.000Z',
     });
     const closed: WorkflowState = {
-      ...makeImplState([task]),
+      ...makeImplState([task], RUN_CREW),
       pendingRecovery: { ...issue, status: 'applying', selectedAction: 'end-run' },
     };
     saveState({ projectDir, sessionId }, closed);
@@ -1107,7 +1113,11 @@ describe('useRunLoop', () => {
   ] as const)(
     'carries the typed continuation into the re-entered run as a steer and records it as a user message',
     async ({ phase, sessionId, text }) => {
-      const resume: WorkflowState = { ...createInitialState('add auth'), phase };
+      const resume: WorkflowState = {
+        ...createInitialState('add auth'),
+        ...RUN_CREW,
+        phase,
+      };
       saveState({ projectDir, sessionId }, resume);
 
       const captureRunner: HarnessProps['captureRunner'] = { current: null };
@@ -1148,7 +1158,11 @@ describe('useRunLoop', () => {
 
   it('re-enters with no steer and no new row when no text was typed', async () => {
     const sessionId = '2024-01-01-empty-continue';
-    const resume: WorkflowState = { ...createInitialState('add auth'), phase: 'planning' };
+    const resume: WorkflowState = {
+      ...createInitialState('add auth'),
+      ...RUN_CREW,
+      phase: 'planning',
+    };
     saveState({ projectDir, sessionId }, resume);
 
     const captureRunner: HarnessProps['captureRunner'] = { current: null };
@@ -1189,6 +1203,7 @@ describe('useRunLoop', () => {
     ];
     const resume: WorkflowState = {
       ...createInitialState('add auth'),
+      ...RUN_CREW,
       phase: 'planning',
       pendingPlannerConversation: {
         call: 'plan',
@@ -1313,6 +1328,7 @@ describe('useRunLoop', () => {
       const sessionId = `taskless-${seat}-retry-correction`;
       const halted: WorkflowState = {
         ...createInitialState('add auth'),
+        ...RUN_CREW,
         phase,
         pendingRecovery: makeRecoveryIssue({
           reason: 'runner-usage-limit',
@@ -1370,7 +1386,7 @@ describe('useRunLoop', () => {
     ensureSessionDir(projectDir, sessionId);
     saveState(
       { projectDir, sessionId },
-      { ...createInitialState('add auth'), phase: 'implementing' },
+      { ...createInitialState('add auth'), ...RUN_CREW, phase: 'implementing' },
     );
     const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
     configStore.__testReset({ projectDir, config: prepared.config });
@@ -1413,7 +1429,7 @@ describe('useRunLoop', () => {
     ensureSessionDir(projectDir, sessionId);
     saveState(
       { projectDir, sessionId },
-      { ...createInitialState('add auth'), phase: 'implementing' },
+      { ...createInitialState('add auth'), ...RUN_CREW, phase: 'implementing' },
     );
     const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
     configStore.__testReset({ projectDir, config: prepared.config });
@@ -1453,7 +1469,7 @@ describe('useRunLoop', () => {
       ensureSessionDir(projectDir, sessionId);
       saveState(
         { projectDir, sessionId },
-        { ...createInitialState('add auth'), phase: 'implementing' },
+        { ...createInitialState('add auth'), ...RUN_CREW, phase: 'implementing' },
       );
       return {
         ...preparedExecution({
@@ -1554,7 +1570,7 @@ describe('useRunLoop', () => {
       ensureSessionDir(projectDir, sessionId);
       saveState(
         { projectDir, sessionId },
-        { ...createInitialState('add auth'), phase: 'implementing' },
+        { ...createInitialState('add auth'), ...RUN_CREW, phase: 'implementing' },
       );
       return preparedExecution({
         projectDir,
@@ -1631,7 +1647,7 @@ describe('useRunLoop', () => {
     ensureSessionDir(projectDir, sessionId);
     saveState(
       { projectDir, sessionId },
-      { ...createInitialState('add auth'), phase: 'implementing' },
+      { ...createInitialState('add auth'), ...RUN_CREW, phase: 'implementing' },
     );
     const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
     const continueAtRest = vi.fn();
@@ -1690,7 +1706,7 @@ describe('useRunLoop', () => {
     ensureSessionDir(projectDir, sessionId);
     saveState(
       { projectDir, sessionId },
-      { ...createInitialState('add auth'), phase: 'implementing' },
+      { ...createInitialState('add auth'), ...RUN_CREW, phase: 'implementing' },
     );
 
     const captureRunner: HarnessProps['captureRunner'] = { current: null };
@@ -1731,6 +1747,7 @@ describe('useRunLoop', () => {
     const sessionId = '2026-09-21-stale-file-halt';
     ensureSessionDir(projectDir, sessionId);
     const halted = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+      ...RUN_CREW,
       pendingRecovery: makeRecoveryIssue({
         reason: 'user-edit-conflict',
         files: ['src/reverted.ts'],
@@ -1824,6 +1841,7 @@ describe('useRunLoop', () => {
           saveState(
             ref,
             makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+              ...RUN_CREW,
               phase: 'final-review',
               pendingRecovery: buildRequiredChecksUnrunnableRecoveryIssue({
                 phase: 'final-review',
@@ -1862,6 +1880,7 @@ describe('useRunLoop', () => {
       const ref = { projectDir, sessionId };
       ensureSessionDir(projectDir, sessionId);
       const halted = makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+        ...RUN_CREW,
         phase: 'final-review',
         pendingRecovery: buildRequiredChecksUnrunnableRecoveryIssue({
           phase: 'final-review',
@@ -1902,6 +1921,7 @@ describe('useRunLoop', () => {
           saveState(
             ref,
             makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+              ...RUN_CREW,
               phase: 'final-review',
               pendingRecovery: buildRequiredChecksUnrunnableRecoveryIssue({
                 phase: 'final-review',
@@ -1973,6 +1993,7 @@ describe('useRunLoop', () => {
           saveState(
             ref,
             makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+              ...RUN_CREW,
               mode: 'speckit',
               pendingRecovery: makeRecoveryIssue({
                 reason: 'runner-usage-limit',
@@ -2046,6 +2067,7 @@ describe('useRunLoop', () => {
           saveState(
             prepared.session.ref,
             makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+              ...RUN_CREW,
               pendingRecovery: makeRecoveryIssue({
                 reason: 'runner-usage-limit',
                 availableActions: [

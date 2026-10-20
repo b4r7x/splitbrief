@@ -130,7 +130,7 @@ it.each([false, true])(
       } finally {
         settled.resolve();
       }
-      return finalizeEndedRun({ ref, active: prepared.session.active, config, state: finalState });
+      return finalizeEndedRun({ ref, active: prepared.session.active, state: finalState });
     };
     routerStore.init({
       screen: 'workflow',
