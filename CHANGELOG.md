@@ -323,6 +323,7 @@
 - Text you type on home and do not send is still there when you come back from a run, also when a command from the palette stood in front of it.
 - `splitbrief doctor` no longer says a seat is ready to start when its model has no sign-in. The seat reads ready with warnings, and the warning is counted once.
 - `splitbrief doctor` no longer says that a start without the TUI would be refused for an OpenCode that uses the providers set up in its own config.
+- A seat switch after a Seat down halt, automatic or chosen by you, keeps the seat's time limit. A switch to another model of the same tool also keeps the tool's idle limits, context length, temperature, arguments, output format, sign-in method and custom models. A custom model you add in the seat picker during the halt stays in `config.yaml` after the switch.
 
 ## [0.1.0] - 2026-08-07
 

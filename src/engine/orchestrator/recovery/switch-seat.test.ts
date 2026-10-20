@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { ConfigSchema } from '../../../core/schemas/config.js';
+import { type Config, ConfigSchema } from '../../../core/schemas/config.js';
 import { seatRunnerValue } from './actions.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import { selectedProfileFromDecision } from '../task/routing.js';
@@ -337,5 +337,127 @@ describe('configWithSwitchedSeat', () => {
 
     expect(switched?.reviewer?.fallback).toEqual({ tool: 'codex' });
     expect(switched?.planner).toEqual(config.planner);
+  });
+
+  describe.each(['plan', 'build', 'review'] as const)('%s seat timeout', (seat) => {
+    it.each([
+      { name: 'automatic', auto: true },
+      { name: 'manual', auto: false },
+    ])('keeps the seat timeout across the $name switch', ({ auto }) => {
+      const runner = {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'opus',
+        timeout: 1_800_000,
+        idleKillMs: 600_000,
+        fallback: { tool: 'codex' },
+      } as const;
+      const config = makeConfig({ planner: runner, implementer: runner, reviewer: runner });
+
+      const switched = configWithSwitchedSeat(config, seat, { tool: 'codex' }, undefined, auto);
+
+      if (switched === null) throw new Error('expected a switch');
+      expect(seatRunnerValue(switched, seat, undefined)).toMatchObject({
+        tool: 'codex',
+        timeout: 1_800_000,
+      });
+      expect(seatRunnerValue(switched, seat, undefined)).not.toHaveProperty('idleKillMs');
+    });
+  });
+
+  describe.each(['plan', 'build', 'review'] as const)('%s seat on the same tool', (seat) => {
+    it.each([
+      { name: 'automatic', auto: true },
+      { name: 'manual', auto: false },
+    ])("keeps the tool's settings and takes the chosen model on the $name switch", ({ auto }) => {
+      const runner = {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'opus',
+        effort: 'high',
+        authChannel: 'session',
+        args: ['--verbose'],
+        outputFormat: 'stream-json',
+        customModels: ['opus-preview'],
+        contextLength: 200_000,
+        timeout: 1_800_000,
+        idleWarnMs: 300_000,
+        idleKillMs: 900_000,
+        fallback: { tool: 'claude-code', model: 'sonnet' },
+      } satisfies Config['planner'];
+      const config = makeConfig({ planner: runner, implementer: runner, reviewer: runner });
+
+      const switched = configWithSwitchedSeat(
+        config,
+        seat,
+        { tool: 'claude-code', model: 'sonnet' },
+        undefined,
+        auto,
+      );
+
+      if (switched === null) throw new Error('expected a switch');
+      const { effort: _effort, fallback: _fallback, ...settings } = runner;
+      expect(seatRunnerValue(switched, seat, undefined)).toEqual({
+        ...settings,
+        model: 'sonnet',
+        fallback: auto
+          ? { tool: 'claude-code', model: 'opus', effort: 'high' }
+          : { tool: 'claude-code', model: 'sonnet' },
+      });
+    });
+  });
+
+  it('keeps the seat timeout when an automatic switch leaves an API seat', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        model: 'small',
+        contextLength: 8_000,
+        timeout: 900_000,
+        fallback: { tool: 'opencode' },
+      },
+    });
+
+    const switched = configWithSwitchedSeat(config, 'build', { tool: 'opencode' }, undefined, true);
+
+    expect(switched?.implementer).toEqual({ kind: 'cli', tool: 'opencode', timeout: 900_000 });
+  });
+
+  describe.each(['plan', 'build', 'review'] as const)('%s seat saved under the halt', (seat) => {
+    const halted = {
+      kind: 'cli',
+      tool: 'codex',
+      model: 'gpt-5-codex',
+      timeout: 1_800_000,
+      fallback: { tool: 'claude-code' },
+    } satisfies Config['planner'];
+    const saved = {
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'my-model',
+      customModels: ['my-model'],
+      timeout: 1_800_000,
+      fallback: { tool: 'opencode' },
+    } satisfies Config['planner'];
+
+    it.each([
+      { name: 'automatic', auto: true, fallback: { tool: 'codex', model: 'gpt-5-codex' } },
+      { name: 'manual', auto: false, fallback: { tool: 'opencode' } },
+    ])('keeps the saved custom models on the $name switch', ({ auto, fallback }) => {
+      const config = makeConfig({ planner: halted, implementer: halted, reviewer: halted });
+
+      const switched = configWithSwitchedSeat(
+        config,
+        seat,
+        { tool: 'claude-code', model: 'my-model' },
+        undefined,
+        auto,
+        { seat: saved },
+      );
+
+      if (switched === null) throw new Error('expected a switch');
+      expect(seatRunnerValue(switched, seat, undefined)).toEqual({ ...saved, fallback });
+    });
   });
 });

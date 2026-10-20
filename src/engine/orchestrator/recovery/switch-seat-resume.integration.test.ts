@@ -12,7 +12,9 @@ import {
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { writeConfig } from '../../../core/config/load/io.js';
+import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
+import { buildRunnerConfig } from '../../../core/config/runtime/build-runner.js';
+import type { Config } from '../../../core/schemas/config.js';
 import { readConfigDocument } from '../../../core/config/load/document.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
@@ -27,6 +29,7 @@ import type { ResumeContextHolder } from '../types.js';
 import { initializeWorkflow } from '../run/init.js';
 import { createRecoveryBus } from './bus.js';
 import { switchSeatAndPrepareResume } from './switch-seat-resume.js';
+import { seatRunnerValue } from './actions.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -150,4 +153,100 @@ describe('recorded seat switch reconciliation', () => {
     expect(reconcileSeatIdentities(ref, result.config)).toEqual([]);
     expect(reconcileSeatIdentities(ref, config).map((change) => change.seat)).toEqual([seat]);
   });
+});
+
+describe('a seat saved in the halt picker', () => {
+  it.each([
+    { seat: 'build', tool: 'codex', prior: [] },
+    { seat: 'build', tool: 'claude-code', prior: ['opus-preview'] },
+    { seat: 'plan', tool: 'codex', prior: [] },
+    { seat: 'review', tool: 'codex', prior: [] },
+  ] as const)(
+    'keeps the custom model typed for the $seat seat on $tool when the seat moves',
+    async ({ seat, tool, prior }) => {
+      const projectDir = createTempDir('switch-seat-picker-save');
+      dirs.push(projectDir);
+      const ref = { projectDir, sessionId: 'picker-save' };
+      ensureSessionDir(projectDir, ref.sessionId);
+      const halted = {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'opus',
+        customModels: ['opus-preview'],
+        timeout: 1_800_000,
+        fallback: { tool: 'codex' },
+      } as const satisfies Config['planner'];
+      const config = makeConfig({
+        planner: { ...halted, customModels: [...halted.customModels] },
+        implementer: { ...halted, customModels: [...halted.customModels] },
+        reviewer: { ...halted, customModels: [...halted.customModels] },
+      });
+      writeConfig(projectDir, config);
+      recordSeatIdentities(ref, config);
+      const picked = {
+        kind: 'cli' as const,
+        tool,
+        model: 'my-model',
+        customModels: [...prior, 'my-model'],
+        existing: config.planner,
+      };
+      writeConfig(
+        projectDir,
+        seat === 'build'
+          ? { ...config, implementer: buildRunnerConfig('implementer', picked) }
+          : seat === 'plan'
+            ? { ...config, planner: buildRunnerConfig('planner', picked) }
+            : { ...config, reviewer: buildRunnerConfig('reviewer', picked) },
+      );
+      const candidate = { tool, model: 'my-model' };
+      const task = makeTask();
+      const state = makeImplState([task], {
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'runner-usage-limit',
+          taskId: task.id,
+          availableActions: ['switch-seat'],
+          recommendedAction: 'switch-seat',
+          switchSeat: { seat, candidates: [{ tool: 'codex' }, { tool: 'claude-code' }] },
+        }),
+      });
+      saveState(ref, state);
+
+      const result = await switchSeatAndPrepareResume({
+        ...ref,
+        state,
+        config,
+        candidate,
+        bus: createRecoveryBus({ ...ref, sink: () => {} }),
+        signal: new AbortController().signal,
+        policy: {
+          purpose: 'resume',
+          interaction: 'interactive',
+          allowRepoRunners: false,
+          allowHooks: false,
+          unverifiedAuth: 'denied',
+        },
+        prepare: async (input) => ({
+          kind: 'prepared',
+          execution: makePreparedExecution({
+            ...ref,
+            feature: state.feature,
+            config: input.effectiveConfig,
+            purpose: 'resume',
+          }),
+        }),
+      });
+
+      if (result.kind !== 'switched') throw new Error('Expected seat switch');
+      const expected = {
+        kind: 'cli',
+        tool,
+        model: 'my-model',
+        customModels: [...prior, 'my-model'],
+        timeout: 1_800_000,
+        fallback: { tool: 'codex' },
+      };
+      expect(seatRunnerValue(result.config, seat, undefined)).toEqual(expected);
+      expect(seatRunnerValue(loadConfig(projectDir).config, seat, undefined)).toEqual(expected);
+    },
+  );
 });

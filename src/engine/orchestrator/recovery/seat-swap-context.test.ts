@@ -8,7 +8,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { buildSeatDownIssue, switchSeatOffer } from './builders/task.js';
-import { loadSeatSwapContext, readSeatFallbackOfRecord } from './seat-swap-context.js';
+import { loadSeatSwapContext, readSeatOfRecord } from './seat-swap-context.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 
 const evidence = vi.hoisted(() => ({ detectRunnerEvidence: vi.fn() }));
@@ -74,7 +74,7 @@ describe('loadSeatSwapContext', () => {
     const config = makeConfig();
     writeConfig(projectDir, config);
     writeFileSync(configPath(projectDir), 'version: 3\nplanner:\n  kind: cli\n  tool: invalid\n');
-    expect(readSeatFallbackOfRecord({ projectDir, seat: 'build', config })).toEqual({
+    expect(readSeatOfRecord({ projectDir, seat: 'build', config })).toEqual({
       kind: 'read-failed',
     });
   });
