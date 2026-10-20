@@ -28,7 +28,7 @@ import { resolveModelDisplayName } from '../../../engine/providers/model/display
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { uniqueSorted } from '../../../utils/collections.js';
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { oneLineDisplayText, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';
 import { briefInFlight } from '../../../core/state/selectors.js';
 import { taskTargetParts } from '../../../stores/workflow/tasks.js';
@@ -436,8 +436,8 @@ export function failedReviewViews(ledger: EvidenceLedger | null): FailedReviewVi
     .map((review) => ({
       label: reviewName(review),
       blocking: review.blocking.map((entry) => ({
-        id: sanitizeTerminalDisplayText(entry.id),
-        text: sanitizeTerminalDisplayText(entry.text),
+        id: oneLineDisplayText(entry.id),
+        text: oneLineDisplayText(entry.text),
       })),
     }));
 }

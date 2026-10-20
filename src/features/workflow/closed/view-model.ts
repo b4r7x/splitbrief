@@ -4,7 +4,7 @@ import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { RunCheckpoint, RunRecord } from '../../../core/sessions/run-record.js';
 import { canUndoApply, type RunStatus } from '../../../core/sessions/run-status.js';
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { oneLineDisplayText, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { atRestRailStages } from '../at-rest.js';
 import {
@@ -146,7 +146,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
   return {
     outcome: { kind: outcomeKind },
     run: {
-      feature: sanitizeTerminalDisplayText(summary.feature),
+      feature: oneLineDisplayText(summary.feature),
       sessionId,
     },
     rail: atRestRailStages(record),

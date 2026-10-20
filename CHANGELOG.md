@@ -309,6 +309,7 @@
 - `splitbrief start --plain`, `continue --plain` and `resume --plain` now print why a run failed on stderr, just before `Workflow failed`. Before, they only pointed to error output that was not shown.
 - Taking a command from the palette no longer loses the text you had typed: the draft comes back whole once you send, run or clear the command, also when you hold Backspace. Text you type after that command is kept as well, below the draft, when you pick another command or leave the run and come back. A message the run cannot take now comes back in front of what you typed since, instead of replacing it.
 - A halt's Files row now lists the brief's files, not only the first one.
+- The closed run block keeps the words of a task or a review finding written on two lines apart.
 
 ## [0.1.0] - 2026-08-07
 
