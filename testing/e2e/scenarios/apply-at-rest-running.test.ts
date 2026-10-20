@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -11,6 +12,8 @@ import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, expect, it, vi } from 'vitest';
+import { sessionDir } from '../../../src/core/paths.js';
+import { sessionLockfilePath } from '../../../src/core/sessions/lockfile-status.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { acquireLiveness } from '../../../src/engine/orchestrator/run/liveness.js';
@@ -348,5 +351,61 @@ it('goes home at once from a run another process applies, and names that process
     expect(readState(target, ready.ref.sessionId).closed).toBeUndefined();
   } finally {
     await release();
+  }
+});
+
+it('leaves "Running in another process" once that process dies without a word on disk', async () => {
+  const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
+  fixture = target;
+  const ready = await seedReadyRun(target);
+  const offline = join(target.tmpDir, 'offline.mjs');
+  writeFileSync(
+    offline,
+    "globalThis.fetch = async () => { throw new Error('Network disabled in Apply E2E'); };\n",
+  );
+  // Another window holds the run while its Apply writes, then is killed (Force Quit, kill -9):
+  // no exit handler runs, so nothing on disk says it stopped.
+  const heldPath = join(target.tmpDir, 'held');
+  const holderScript = join(target.tmpDir, 'holder.mts');
+  writeFileSync(
+    holderScript,
+    `import { writeFileSync } from 'node:fs';
+import { acquireLiveness } from ${JSON.stringify(resolve(import.meta.dirname, '../../../src/engine/orchestrator/run/liveness.ts'))};
+await acquireLiveness(${JSON.stringify({ ...ready.ref, feature: 'Apply the run' })});
+writeFileSync(${JSON.stringify(heldPath)}, String(process.pid));
+setInterval(() => {}, 1000);
+`,
+  );
+  const holder = spawn(process.execPath, ['--import', 'tsx', holderScript], {
+    cwd: resolve(import.meta.dirname, '../../..'),
+    stdio: 'ignore',
+  });
+  const holderExited = new Promise<void>((done) => holder.once('exit', () => done()));
+  try {
+    await vi.waitFor(() => expect(existsSync(heldPath)).toBe(true), { timeout: 30_000 });
+    const lockPath = sessionLockfilePath(sessionDir(ready.ref.projectDir, ready.ref.sessionId));
+    const { owned, killedLock, after } = await openRunFromSessions(
+      target,
+      ['--import', offline],
+      async ({ screen, waitForText }) => {
+        await waitForText('Running in another process');
+        const owned = screen();
+        holder.kill('SIGKILL');
+        await holderExited;
+        const killedLock = readFileSync(lockPath, 'utf8');
+        await waitForText('Ready to apply');
+        return { owned, killedLock, after: screen() };
+      },
+    );
+    expect(owned).toContain('/ for a command · ⏎ for home…');
+    // The window saw the dead owner by itself: the lockfile still names it, unchanged.
+    expect(readFileSync(lockPath, 'utf8')).toBe(killedLock);
+    expect(JSON.parse(killedLock)).not.toHaveProperty('exitedAt');
+    expect(after).not.toContain('Running in another process');
+    expect(after).toContain('Show diff');
+    expect(readState(target, ready.ref.sessionId).closed).toBeUndefined();
+  } finally {
+    holder.kill('SIGKILL');
+    await holderExited;
   }
 });

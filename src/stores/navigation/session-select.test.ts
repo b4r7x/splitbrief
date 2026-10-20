@@ -276,6 +276,31 @@ describe('handleSessionSelect', () => {
     expect(overlayStore.get().active).toBe('sessions');
     expect(sessionSelectStore.get().error).toContain('another run');
   });
+
+  it('names Apply, not a stop, while a live Re-run Apply of the run on screen writes', async () => {
+    const currentState = { ...createInitialState('re-run apply'), phase: 'complete' as const };
+    const currentPrepared = preparedResumeExecution(tmp, 'current-applying', currentState);
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord({ ref: currentPrepared.session.ref }),
+      execution: { kind: 'local', prepared: currentPrepared },
+    });
+    const exactRoute = routerStore.get();
+    const selected = makeSession({ id: 'resume-other', feature: 'another run', status: 'open' });
+    const hydrateRun = vi.fn(async () => {});
+
+    await handleSessionSelect(
+      selected,
+      tmp,
+      sessionSelectDeps({ hydrateRun, applying: () => true }),
+    );
+
+    expect(hydrateRun).not.toHaveBeenCalled();
+    expect(routerStore.get()).toBe(exactRoute);
+    expect(sessionSelectStore.get().error).toBe(
+      'Apply is still writing to your checkout. Cannot open "another run".',
+    );
+  });
 });
 
 describe('handleSessionSelect with a history read in flight', () => {

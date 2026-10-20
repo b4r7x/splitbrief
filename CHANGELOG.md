@@ -328,6 +328,8 @@
 - The model picker no longer lists a custom model you added for one tool under another tool, so picking, adding or deleting a custom model acts only on the tool it belongs to.
 - In the model picker, Esc on an expanded row now collapses it and keeps what you typed in the filter.
 - The model picker's key legend now says what Esc does: collapse a row, clear the filter or close the picker.
+- While Re-run Apply writes to your checkout, picking a run from Sessions, the palette or home now says Apply is still writing to your checkout instead of asking you to stop the run on screen.
+- A second window on a run no longer keeps saying Running in another process after that process is killed; it shows the run as it stands within a few seconds.
 
 ## [0.1.0] - 2026-08-07
 

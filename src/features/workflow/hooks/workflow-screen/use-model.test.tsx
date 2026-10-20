@@ -13,6 +13,10 @@ import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js'
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import { saveState } from '../../../../core/state/persistence.js';
+import { sessionDir } from '../../../../core/paths.js';
+import { writeLockfile } from '../../../../core/sessions/lockfile.js';
+import { HEARTBEAT_STALENESS_MS } from '../../../../core/sessions/lockfile-status.js';
+import { LOCKFILE_PING_INTERVAL_MS } from '../../../../engine/orchestrator/run/heartbeat.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
 import { feedbackStore } from '../../../../stores/ui/feedback.js';
@@ -279,5 +283,58 @@ describe('useWorkflowScreen continuing a run stopped at Apply', () => {
     await tick();
     expect(requireModel(capture).applying).toBe(false);
     ui.unmount();
+  });
+});
+
+// Another process owns the run on screen. When that owner stops answering without a word on disk
+// (killed, or hung), no watched file changes, so only the screen's own check can see it.
+describe('useWorkflowScreen at rest on a run another process owns', () => {
+  let projectDir = '';
+
+  beforeEach(async () => {
+    resetAllStores();
+    clearAllHandlers();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    projectDir = createTempDir('use-model-owner-gone');
+    const ref = { projectDir, sessionId: 'owned-elsewhere' };
+    saveState(ref, makeWorkflowState({ phase: 'implementing' }));
+    await writeLockfile(sessionDir(projectDir, ref.sessionId), {
+      pid: process.pid,
+      startTimeMs: 0,
+      lastAliveMs: Date.now(),
+      sessionId: ref.sessionId,
+      feature: 'owned elsewhere',
+    });
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord({ ref, status: { kind: 'running' } }),
+      execution: { kind: 'at-rest' },
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    clearAllHandlers();
+    cleanupTempDir(projectDir);
+    projectDir = '';
+  });
+
+  it('reads the run again once its owner stops answering, with no file change', async () => {
+    const capture: { current: Model | null } = { current: null };
+    const seeded = routerStore.get();
+    const ui = renderFeature(<Harness capture={capture} />);
+    // The mount read sees the owner alive.
+    await vi.waitFor(() => expect(routerStore.get()).not.toBe(seeded));
+    const statusKind = () => {
+      const route = routerStore.get();
+      return route.screen === 'workflow' ? route.run.status.kind : undefined;
+    };
+    expect(statusKind()).toBe('running');
+
+    vi.advanceTimersByTime(HEARTBEAT_STALENESS_MS + LOCKFILE_PING_INTERVAL_MS);
+
+    await vi.waitFor(() => expect(statusKind()).toBe('open'));
+    ui.unmount();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
