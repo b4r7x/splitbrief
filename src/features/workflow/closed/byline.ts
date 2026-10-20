@@ -165,7 +165,7 @@ const QUEUED_AFTER_APPLY: Record<DepartureKind, string> = {
  * Apply has no safe cancel, so its byline offers no key; its clock proves it is alive. A line too
  * narrow for every word keeps the clock and, once a key queued a departure, says where it goes.
  */
-function applyByline(apply: ApplyByline, width: number): readonly ConversationRowSegment[] {
+export function applyByline(apply: ApplyByline, width: number): readonly ConversationRowSegment[] {
   const clock = `${SOFT_SEP}${formatElapsedClock(apply.elapsedMs)}`;
   const budget = Math.max(1, width - getTerminalCellWidth(clock));
   const reason: ConversationRowSegment = {

@@ -61,9 +61,11 @@ function setHandler<K extends keyof Handlers>(k: K, h: Handlers[K] | null): void
 }
 
 export function clearAllHandlers(): void {
+  // Only a departure that waits on this run's stop goes with it. One queued behind an Apply stays:
+  // the Apply delivers it once it settles.
+  if (unsubscribeDeparture !== undefined) departureStore.reset();
   unsubscribeDeparture?.();
   unsubscribeDeparture = undefined;
-  departureStore.reset();
   for (const k of Object.keys(handlers) as (keyof Handlers)[]) delete handlers[k];
   abortHandlers = [];
   pendingBoundaryInterrupt = false;

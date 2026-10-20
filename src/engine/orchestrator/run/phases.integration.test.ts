@@ -1068,4 +1068,72 @@ describe('runPlanningPhases', () => {
       expect(asked).toEqual(['plan']);
     },
   );
+
+  it('Re-run Apply after an Apply conflict is the active Apply while it runs', async () => {
+    const { activeApply } = await import('../session-lifecycle/shutdown.js');
+    const { applyRecoveryAction } = await import('../recovery/actions.js');
+    const { buildApplyConflictRecoveryIssue } = await import('../recovery/builders/apply.js');
+    const actual = await vi.importActual<typeof import('../apply/run.js')>('../apply/run.js');
+    const { projectDir, sessionId } = setupProject();
+    const planner = makePlanner();
+    const halted: WorkflowState = {
+      ...makeImplState([makePassingTask('T001')]),
+      phase: 'complete',
+      reviewStatus: 'passed',
+      workspace: {
+        kind: 'worktree',
+        path: join(projectDir, 'ws'),
+        base: { snapshotId: 'workspace-base', head: null },
+      },
+      pendingRecovery: buildApplyConflictRecoveryIssue({
+        conflicts: [{ path: 'a.txt', kind: 'text' }],
+        workspacePath: join(projectDir, 'ws'),
+        createdAt: new Date().toISOString(),
+      }),
+    };
+    saveState({ projectDir, sessionId }, halted);
+    const rerun = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: halted,
+      action: 'retry-same-worker',
+      bus: makeBusRecorder().bus,
+    });
+    if (!rerun.ok) throw new Error(rerun.message);
+    const savedState = rerun.state;
+    expect(savedState.pendingRecovery).toBeUndefined();
+    let activeWhileRunning: Promise<unknown> | undefined;
+    vi.mocked(runApply).mockImplementationOnce((input) => {
+      const applying = actual.runApply(input);
+      activeWhileRunning = activeApply();
+      return applying;
+    });
+
+    const phases = runPlanningPhases({
+      wctx: {
+        projectDir,
+        workspaceDir: join(projectDir, 'ws'),
+        sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        config: makeNoValidationConfig({ workflow: {} }),
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        planner,
+        reviewer: planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state: savedState,
+      savedState,
+      setTrackedState: vi.fn(),
+    });
+    await expect(phases).rejects.toThrow('Snapshot manifest not found');
+
+    expect(activeWhileRunning).toBeInstanceOf(Promise);
+    await activeWhileRunning;
+    expect(activeApply()).toBeUndefined();
+  });
 });

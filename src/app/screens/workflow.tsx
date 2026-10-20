@@ -30,6 +30,7 @@ import {
 import { closedTranscriptBlock } from '../../features/workflow/closed/block.js';
 import { closedHeader } from '../../features/workflow/closed/header.js';
 import {
+  applyByline,
   bylineParts,
   legendText,
   openRunBylineParts,
@@ -342,29 +343,32 @@ export function WorkflowScreen({
         ]
       : undefined;
 
-  // The at-rest byline carries no pip, so it opens on the text column and its budget is what is
-  // left of the chrome row past the mark slot.
+  // The at-rest and Apply bylines carry no pip, so they open on the text column and their budget is
+  // what is left of the chrome row past the mark slot.
   const bylineWidth = Math.max(1, getChromeContentWidth(cols) - MARK_SLOT_CELLS);
   // The record carries no Apply start, so the clock counts from when this screen first saw it.
   const [applySince, setApplySince] = useState<number | null>(null);
   useLayoutEffect(() => setApplySince(model.applying ? Date.now() : null), [model.applying]);
   const now = useSharedClock({ active: model.applying });
   const queuedDeparture = departureStore.use((state) => state?.kind ?? null);
+  const apply = model.applying
+    ? {
+        elapsedMs: applySince === null ? 0 : Math.max(0, now - applySince),
+        queued: queuedDeparture,
+      }
+    : undefined;
   const byline =
     model.atRestRecord === undefined
-      ? undefined
+      ? apply === undefined
+        ? undefined
+        : applyByline(apply, bylineWidth)
       : model.closedView !== null
         ? bylineParts(model.closedView, bylineWidth)
         : openRunBylineParts({
             status: model.atRestRecord.status,
             continuable: model.continuable,
             width: bylineWidth,
-            apply: model.applying
-              ? {
-                  elapsedMs: applySince === null ? 0 : Math.max(0, now - applySince),
-                  queued: queuedDeparture,
-                }
-              : undefined,
+            apply,
           });
   // A check running for this run owns Escape and says so on the byline, so the legend above the
   // composer does not offer it for going home at the same time. Neither does a quit queued behind
@@ -376,7 +380,7 @@ export function WorkflowScreen({
     (state) => state.kind === 'blocked' || state.kind === 'failed',
   );
   const legend =
-    model.atRestRecord === undefined
+    model.atRestRecord === undefined && !model.applying
       ? model.inputHint
       : legendText({
           overflow: scrollAboveLabel !== '' || scrollBelowLabel !== '',
@@ -464,7 +468,9 @@ export function WorkflowScreen({
               model.inputMode.mode !== 'normal' || model.promptPending || checksCardOpen
             }
             buildBlockShown={progressRows > 0}
-            keepPlaceholderWhileFocused={recoveryPromptOpen || model.atRestRecord !== undefined}
+            keepPlaceholderWhileFocused={
+              recoveryPromptOpen || model.atRestRecord !== undefined || model.applying
+            }
             {...(recoveryPromptOpen
               ? {
                   menuFocused: recoveryMenuFocused,

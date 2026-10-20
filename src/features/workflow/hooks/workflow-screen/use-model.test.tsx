@@ -2,7 +2,7 @@ import { plainUserMessage } from '../../../../core/types/user-input.js';
 import { useEffect } from 'react';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { Text } from 'ink';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -21,6 +21,11 @@ import { addEvent } from '../../../../stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../../stores/workflow/actions/hydrate.js';
 import { recoveryNoticeStore } from '../../../../stores/workflow/recovery-notice.js';
 import { stopStore } from '../../../../stores/workflow/stop.js';
+import { departureStore } from '../../../../stores/workflow/departure.js';
+import {
+  activeApply,
+  trackActiveApply,
+} from '../../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { Rail } from '../../components/rail.js';
 import { clearAllHandlers } from '../../handlers.js';
 import { useWorkflowScreen } from './use-model.js';
@@ -243,6 +248,36 @@ describe('useWorkflowScreen continuing a run stopped at Apply', () => {
     await tick();
     expect(requireModel(capture).railStages).toBeUndefined();
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('statusFailed')} Apply`);
+    ui.unmount();
+  });
+
+  it('reads the live run as applying while its Apply writes, and Enter queues home behind it', async () => {
+    const capture: { current: Model | null } = { current: null };
+    const ui = renderFeature(<RailHarness capture={capture} />);
+    await tick();
+    expect(requireModel(capture).applying).toBe(false);
+
+    const apply = Promise.withResolvers<void>();
+    void trackActiveApply(apply.promise);
+    onTestFinished(async () => {
+      apply.resolve();
+      await activeApply();
+    });
+    await tick();
+
+    const model = requireModel(capture);
+    expect(model.atRestRecord).toBeUndefined();
+    expect(model.applying).toBe(true);
+    expect(model.inputHint).toBe('/ for a command · ⏎ for home when Apply finishes…');
+    expect(model.commandsOnly).toBe(true);
+    model.onEmptySubmit?.();
+    expect(departureStore.get()?.kind).toBe('home');
+    expect(routerStore.get().screen).toBe('workflow');
+
+    apply.resolve();
+    await activeApply();
+    await tick();
+    expect(requireModel(capture).applying).toBe(false);
     ui.unmount();
   });
 });

@@ -3543,6 +3543,27 @@ const resolvedApplyRetryRecoveryProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The same Re-run Apply while it writes. The registry holds this process's Apply open.
+const liveApplyingProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-live-applying'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  get events(): EngineEvent[] {
+    return [...resolvedApplyRetryRecoveryProjection.events];
+  },
+};
+
+const liveApplyingHomeQueuedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-live-applying-home-queued'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  get events(): EngineEvent[] {
+    return [...resolvedApplyRetryRecoveryProjection.events];
+  },
+};
+
 // The retried brief passed and the next one runs: the halt belongs to the brief it stopped, so it
 // stays in that brief's retained body beneath its completed heading.
 const implementationAfterRetryProjection: WorkflowFixtureProjection = {
@@ -6504,6 +6525,8 @@ const projections = [
   resolvedSkipRecoveryProjection,
   resolvedDependencySkipRecoveryProjection,
   resolvedApplyRetryRecoveryProjection,
+  liveApplyingProjection,
+  liveApplyingHomeQueuedProjection,
   implementationAfterRetryProjection,
   apiContextRecoveryProjection,
   planSeatRecoveryProjection,

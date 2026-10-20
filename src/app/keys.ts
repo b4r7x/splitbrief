@@ -270,7 +270,12 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
   });
 
   const escapePress = (input: string): { immediate: () => void; deferred: () => void } | null => {
-    if ((route.screen === 'workflow' && route.execution.kind === 'at-rest') || stoppedOrStopping())
+    // An Apply cannot be cut, live or at rest: Escape queues home behind it, never a stop.
+    if (
+      (route.screen === 'workflow' && route.execution.kind === 'at-rest') ||
+      stoppedOrStopping() ||
+      activeApply() !== undefined
+    )
       return { immediate: goHome, deferred: goHome };
     if (stopSheetReachable())
       return {

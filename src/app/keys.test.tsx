@@ -38,6 +38,7 @@ import { Composer } from '../components/composer/composer.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { reviewKeysStore } from '../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../stores/workflow/recovery-notice.js';
+import { departureStore } from '../stores/workflow/departure.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)
@@ -1030,6 +1031,35 @@ describe('useAppKeys: ESC stop ladder', () => {
     expect(overlayStore.get().active).toBe('none');
     expect(abort).not.toHaveBeenCalled();
     expect(lifecycleStore.get().cancelled).toBe(false);
+    expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('esc queues home behind an Apply this process runs live, and neither stops nor opens the sheet', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
+    const apply = Promise.withResolvers<void>();
+    void trackActiveApply(apply.promise);
+    onTestFinished(async () => {
+      apply.resolve();
+      await activeApply();
+    });
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+
+    await writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+    await writeKey(ui, '\x1b\x1b');
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+
+    expect(departureStore.get()?.kind).toBe('home');
+    expect(overlayStore.get().active).toBe('none');
+    expect(abort).not.toHaveBeenCalled();
+    expect(stopStore.get().intent).toBe('none');
+    expect(routerStore.get().screen).toBe('workflow');
     expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });

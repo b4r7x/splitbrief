@@ -31,6 +31,8 @@ import { applyBackupDir, readApplyBackup, writeApplyBackup } from './backup.js';
 import * as merge from './merge.js';
 import { restoreApplyBackup } from './restore.js';
 import { runApply } from './run.js';
+import { acquireLiveness } from '../run/liveness.js';
+import { activeApply } from '../session-lifecycle/shutdown.js';
 import { readWorkspaceRecord } from '../isolation/retention.js';
 import { captureReviewedCandidate } from './states.js';
 
@@ -897,6 +899,57 @@ describe('runApply', { timeout: 60_000 }, () => {
           expect(said).not.toContain('put back 2');
         },
       );
+    });
+  });
+
+  it('is the active Apply while it writes, and until the run it applies releases its liveness', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+      const actualStaged = await vi.importActual<typeof import('../approval/staged-project.js')>(
+        '../approval/staged-project.js',
+      );
+      const writing = Promise.withResolvers<void>();
+      const hold = Promise.withResolvers<void>();
+      vi.mocked(stagedProject.promoteStagedChanges).mockImplementationOnce(async (input) => {
+        writing.resolve();
+        await hold.promise;
+        return actualStaged.promoteStagedChanges(input);
+      });
+      const releaseLiveness = await acquireLiveness({
+        projectDir: run.dir,
+        sessionId: run.sessionId,
+        feature: 'apply',
+      });
+
+      const applying = apply(run);
+      await writing.promise;
+      const active = activeApply();
+      expect(active).toBeInstanceOf(Promise);
+      hold.resolve();
+      expect((await applying).outcome).toBe('applied');
+      expect(activeApply()).toBe(active);
+
+      await releaseLiveness();
+      await active;
+      expect(activeApply()).toBeUndefined();
+    });
+  });
+
+  it('stops being the active Apply once it sends the run back to review, while the run goes on', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+      writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'three', 'four', 'FIVE'));
+      const releaseLiveness = await acquireLiveness({
+        projectDir: run.dir,
+        sessionId: run.sessionId,
+        feature: 'apply',
+      });
+
+      expect((await apply(run)).outcome).toBe('review');
+      await new Promise(setImmediate);
+
+      expect(activeApply()).toBeUndefined();
+      await releaseLiveness();
     });
   });
 });

@@ -228,11 +228,15 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       };
     };
   }
-  if (projection.scenarioId.startsWith('workflow-at-rest-applying')) {
+  if (
+    projection.scenarioId.startsWith('workflow-at-rest-applying') ||
+    projection.scenarioId.startsWith('workflow-live-applying')
+  ) {
     // The Apply this process runs, held open for the capture and settled at teardown. Esc goes
     // through the screen's own keys; the preview stubs quitting, so the queued quit is seeded.
     const afterMount =
-      projection.scenarioId === 'workflow-at-rest-applying-home-queued'
+      projection.scenarioId === 'workflow-at-rest-applying-home-queued' ||
+      projection.scenarioId === 'workflow-live-applying-home-queued'
         ? (write: FixtureWrite) => write.press('\u001b')
         : projection.scenarioId === 'workflow-at-rest-applying-quit-queued'
           ? () => departureStore.__testReset({ kind: 'quit', run: () => {} })
@@ -756,6 +760,20 @@ const checkpointPredicates = [
   [
     checkpointId('at-rest-applying-quit-queued'),
     (context) => includesAll('Quits when')(context) && departureStore.get()?.kind === 'quit',
+  ],
+  // A live Apply reads the same as one at rest, and Esc opens no session options over it.
+  [
+    checkpointId('live-applying'),
+    (context) =>
+      includesAll('Applying to your checkout')(context) &&
+      excludesAll('esc stop options', 'Stop now', 'End run')(context),
+  ],
+  [
+    checkpointId('live-applying-home-queued'),
+    (context) =>
+      includesAll('Returns home')(context) &&
+      excludesAll('Session options', 'Stop now', 'End run')(context) &&
+      departureStore.get()?.kind === 'home',
   ],
   // No Apply of this process holds the run, so nothing waits for it: Enter goes home at once.
   [

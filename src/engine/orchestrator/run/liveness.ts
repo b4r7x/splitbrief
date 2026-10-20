@@ -1,4 +1,5 @@
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import { sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { warnError } from '../../../lib/warn.js';
@@ -20,14 +21,35 @@ const workflowLivenessError = {
     ),
 };
 
-// Every run writes a liveness lockfile + heartbeat so checkSessionLiveness can see an
-// in-flight run and refuse a concurrent resume/continue.
-export async function acquireLiveness(opts: {
+type LivenessOpts = {
   projectDir: string;
   sessionId: string;
   feature: string;
   signal?: AbortSignal | undefined;
-}): Promise<() => Promise<void>> {
+};
+
+const heldRuns = new Map<string, Promise<void>>();
+
+/** Settles once this process releases the run's liveness; `undefined` while it holds none. */
+export function heldLiveness(ref: SessionRef): Promise<void> | undefined {
+  return heldRuns.get(sessionDir(ref.projectDir, ref.sessionId));
+}
+
+// Every run writes a liveness lockfile + heartbeat so checkSessionLiveness can see an
+// in-flight run and refuse a concurrent resume/continue.
+export async function acquireLiveness(opts: LivenessOpts): Promise<() => Promise<void>> {
+  const release = await lockLiveness(opts);
+  const dir = sessionDir(opts.projectDir, opts.sessionId);
+  const held = Promise.withResolvers<void>();
+  heldRuns.set(dir, held.promise);
+  return async () => {
+    await release();
+    if (heldRuns.get(dir) === held.promise) heldRuns.delete(dir);
+    held.resolve();
+  };
+}
+
+async function lockLiveness(opts: LivenessOpts): Promise<() => Promise<void>> {
   const dir = sessionDir(opts.projectDir, opts.sessionId);
   ensureSessionDir(opts.projectDir, opts.sessionId);
   let status: SessionLivenessStatus;
