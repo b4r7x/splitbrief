@@ -388,12 +388,84 @@ describe('promptBodyRows', () => {
     expect(clipped).toHaveLength(7);
     expect(clipped.filter((row) => row.kind === 'action')).toHaveLength(4);
     expect(clipped[0]?.kind).toBe('headline');
-    expect(clipped[1]).toMatchObject({ kind: 'facts-line' });
+    expect(clipped[1]).toEqual({ kind: 'facts-line', text: '  … 4 more lines' });
     expect(clipped[2]?.kind).toBe('blank');
 
     const rendered = renderedPromptBodyRows(prompt, 7);
     expect(rendered.some((row) => row.includes('a    abort'))).toBe(true);
-    expect(rendered.some((row) => row.includes('resets 17:00'))).toBe(true);
+    expect(rendered.some((row) => row.includes('… 4 more lines'))).toBe(true);
+  });
+
+  it('marks the facts a panel cuts above its action rows on the last kept fact row', () => {
+    const prompt = [
+      'recovery needed · Ollama hit its usage limit.',
+      '',
+      'resets 17:00',
+      'task T901 · Project deterministic workflow activity',
+      'files src/a.ts',
+      'worker local-fixture',
+      '',
+      '[r]  retry same worker',
+      '[a]  abort',
+    ].join('\n');
+    const clipped = clipPromptBodyRows(promptBodyRows(prompt, BODY_WIDTH), 7);
+
+    expect(clipped).toEqual([
+      expect.objectContaining({ kind: 'headline' }),
+      { kind: 'facts-line', text: '  resets 17:00' },
+      { kind: 'facts-line', text: '  task T901 · Project deterministic workflow activity' },
+      { kind: 'facts-line', text: '  … 2 more lines' },
+      { kind: 'blank' },
+      expect.objectContaining({ kind: 'action', key: 'r' }),
+      expect.objectContaining({ kind: 'action', key: 'a' }),
+    ]);
+  });
+
+  it('marks the bottom rows a summary with no action rows loses, and keeps its headline', () => {
+    const summary = recoveryPromptSummaryRows(
+      makeRecoveryIssue({
+        message: 'T901 failed',
+        details: [
+          'Last error: activity.ts(42,18): error TS2339',
+          'Attempts: 4',
+          'Implementer said: one',
+        ],
+      }),
+      BODY_WIDTH,
+    );
+    const rows = promptBodyRows(summary, BODY_WIDTH);
+    const clipped = clipPromptBodyRows(rows, 4);
+
+    expect(rows.length).toBeGreaterThan(4);
+    expect(clipped).toHaveLength(4);
+    expect(clipped[0]?.kind).toBe('headline');
+    expect(clipped.slice(1, 3).every((row) => row.kind === 'facts-line')).toBe(true);
+    expect(clipped[3]).toEqual({
+      kind: 'facts-line',
+      text: `  … ${rows.filter((row) => row.kind === 'facts-line').length - 2} more lines`,
+    });
+  });
+
+  it('gives up the blank under the headline before it cuts a fact', () => {
+    const prompt = 'recovery needed · halt\n\nresets 17:00\ntask T901\nfiles src/a.ts';
+    const clipped = clipPromptBodyRows(promptBodyRows(prompt, BODY_WIDTH), 3);
+
+    expect(clipped.at(-1)).toEqual({ kind: 'facts-line', text: '  … 2 more lines' });
+    expect(clipPromptBodyRows(promptBodyRows(prompt, BODY_WIDTH), 4)).toEqual([
+      expect.objectContaining({ kind: 'headline' }),
+      { kind: 'facts-line', text: '  resets 17:00' },
+      { kind: 'facts-line', text: '  task T901' },
+      { kind: 'facts-line', text: '  files src/a.ts' },
+    ]);
+    const four = 'recovery needed · halt\n\nresets 17:00\ntask T901\nfiles src/a.ts\nworker w';
+    expect(clipPromptBodyRows(promptBodyRows(four, BODY_WIDTH), 4).at(-1)).toEqual({
+      kind: 'facts-line',
+      text: '  … 2 more lines',
+    });
+    expect(clipPromptBodyRows(promptBodyRows(four, BODY_WIDTH), 5).at(-1)).toEqual({
+      kind: 'facts-line',
+      text: '  worker w',
+    });
   });
 
   it('leaves a prompt that fits its panel untouched', () => {
