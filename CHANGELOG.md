@@ -321,6 +321,8 @@
 - In a narrow terminal, the row that shows a seat moving to another tool or model no longer leaves its arrow at the end of a line or alone on a line; when the old and the new seat do not fit on one line, the arrow and the new tool and model start their own line.
 - Saving a seat during a run no longer says the run is finishing or that no next brief will start, and the plan card keeps Waiting for your answer. Settings and the key legend now say the same thing about when the seat changes: after the running brief, after the next brief while the plan is made, or after a fix brief or at the next run during the final review.
 - Text you type on home and do not send is still there when you come back from a run, also when a command from the palette stood in front of it.
+- `splitbrief doctor` no longer says a seat is ready to start when its model has no sign-in. The seat reads ready with warnings, and the warning is counted once.
+- `splitbrief doctor` no longer says that a start without the TUI would be refused for an OpenCode that uses the providers set up in its own config.
 
 ## [0.1.0] - 2026-08-07
 

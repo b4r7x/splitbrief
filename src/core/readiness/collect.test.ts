@@ -21,6 +21,7 @@ import { initConfig } from '../config/load/io.js';
 import { createDefaultConfig } from '../config/load/defaults.js';
 import { configPath } from '../config/load/document.js';
 import { flattenReadinessChecks } from './status.js';
+import type { ReadinessCheck } from './types.js';
 
 vi.mock('../../lib/git/files.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/git/files.js')>()),
@@ -295,6 +296,36 @@ describe('preparation readiness projection', () => {
     } finally {
       cleanupTempDir(projectDir);
     }
+  });
+
+  it('reports a route check once when the seat verdict carries it as a warning', () => {
+    const route: ReadinessCheck = {
+      id: 'runners.route.implementer.default',
+      severity: 'warning',
+      summary: 'BUILD: OpenCode CLI has no credential for ollama-cloud.',
+    };
+    const seat: ReadinessCheck = {
+      id: 'runners.preparation.implementer.default',
+      severity: 'warning',
+      summary: 'BUILD is ready with warnings.',
+      details: [route.summary],
+      metadata: { role: 'implementer', kind: 'cli', warnings: [route.id] },
+    };
+    const prepared = applyRunnerPreparationChecks(
+      {
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        projectDir: '/tmp/project',
+        status: 'ready-with-warnings',
+        counts: { ok: 0, info: 0, warning: 1, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'ready' },
+        sections: [{ id: 'runners', title: 'Runners', checks: [route] }],
+        metadata: {},
+      },
+      [seat],
+    );
+
+    expect(flattenReadinessChecks(prepared.sections)).toEqual([seat]);
+    expect(prepared.counts.warning).toBe(1);
   });
 });
 

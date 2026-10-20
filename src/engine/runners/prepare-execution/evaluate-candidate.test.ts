@@ -351,11 +351,17 @@ describe('evaluateCandidate on a model route with no credential', () => {
 
     expect(result.kind).toBe('admitted');
     if (result.kind !== 'admitted') return;
-    expect(result.routeCheck).toMatchObject({
-      id: 'runners.route.implementer.default',
+    expect(result.check).toEqual({
+      id: 'runners.preparation.implementer.default',
       severity: 'warning',
-      summary: 'BUILD: OpenCode CLI has no credential for ollama-cloud.',
+      summary: 'BUILD is ready with warnings.',
+      details: ['BUILD: OpenCode CLI has no credential for ollama-cloud.'],
       fix: 'Run `opencode auth login ollama-cloud`, or choose another model in Settings > Crew > BUILD.',
+      metadata: {
+        role: 'implementer',
+        kind: 'cli',
+        warnings: ['runners.route.implementer.default'],
+      },
     });
   });
 
@@ -365,7 +371,7 @@ describe('evaluateCandidate on a model route with no credential', () => {
 
     expect(result.kind).toBe('admitted');
     if (result.kind !== 'admitted') return;
-    expect(result.routeCheck).toBeUndefined();
+    expect(result.check).toMatchObject({ severity: 'ok', summary: 'BUILD is ready to start.' });
   });
 });
 
@@ -432,7 +438,7 @@ describe('evaluateCandidate on a local-only OpenCode seat', () => {
 
     expect(result.kind).toBe('admitted');
     if (result.kind !== 'admitted') return;
-    expect(result.routeCheck).toBeUndefined();
+    expect(result.check).toMatchObject({ severity: 'ok', summary: 'BUILD is ready to start.' });
     expect(result.gate).toMatchObject({ kind: 'cli', tool: 'opencode' });
   });
 
