@@ -44,7 +44,7 @@ process.exit(1);`,
       let stopHeartbeat: (() => void) | undefined;
       try {
         const state: WorkflowState = {
-          ...createInitialState('Add a greeting'),
+          ...createInitialState('Add a greeting,\nas one task'),
           workspace: {
             kind: 'worktree',
             path: join(tmpDir, 'workspace'),
@@ -73,7 +73,7 @@ process.exit(1);`,
         expect(output).toContain(`Status:   ${word}`);
         expect(output).not.toContain('Phase:');
         expect(output).not.toContain('awaiting continue');
-        expect(output).toContain('Feature:  Add a greeting');
+        expect(output).toContain('Feature:  Add a greeting, as one task');
         expect(readFileSync(gitCalls, 'utf8')).toContain('rev-parse');
       } finally {
         if (stopHeartbeat !== undefined) {

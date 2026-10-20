@@ -42,6 +42,12 @@ describe('stageSummaryRow', () => {
       },
     });
   });
+  it('keeps the words of a task written on two lines apart in the Plan heading', () => {
+    expect(
+      stageSummaryRow({ stage: 'plan', feature: 'Add fixtures,\nas one task', duration: 1_000 })
+        .state.headingParts.title,
+    ).toEqual({ text: 'Add fixtures, as one task', tone: 'text' });
+  });
   it.each([
     ['a process exit', 'exit', 'at least 3.0s'],
     ['your stop', 'stop', '3.0s'],

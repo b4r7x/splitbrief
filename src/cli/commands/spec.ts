@@ -16,7 +16,7 @@ import { cliError, withCliErrors } from '../errors.js';
 import { PLAN_FILE, PLAN_JSON_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
-import { stripTerminalControls } from '../../utils/display-text.js';
+import { oneLineDisplayText, stripTerminalControls } from '../../utils/display-text.js';
 import {
   PLAN_ANSWER_JSON_SCHEMA,
   PlanAnswerSchema,
@@ -185,7 +185,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         throw cause;
       }
       console.log(
-        `Planning feature: ${stripTerminalControls(feature)} (planner: ${getRunnerDisplayName(config.planner)})\n`,
+        `Planning feature: ${oneLineDisplayText(feature)} (planner: ${getRunnerDisplayName(config.planner)})\n`,
       );
 
       const ref = { projectDir, sessionId };

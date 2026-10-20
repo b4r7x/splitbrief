@@ -17,6 +17,7 @@ import { skillsStore } from '../../stores/project/skills.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { WorkflowTask } from '../../stores/workflow/tasks.js';
 import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
+import { oneLineDisplayText } from '../../utils/display-text.js';
 import type {
   PaletteAction,
   PaletteCommandItem,
@@ -165,7 +166,7 @@ function buildSessionItems(
 ): PaletteSources['sessionItems'] {
   return sessions.slice(0, 10).map((s) => ({
     id: s.id,
-    feature: s.feature,
+    feature: oneLineDisplayText(s.feature),
     status: sessionStatusWord(s),
     action: async () => {
       await onSessionSelect(s, projectDir);

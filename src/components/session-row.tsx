@@ -5,7 +5,7 @@ import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
 import type { Session } from '../core/schemas/session.js';
 import { getSessionStatusDisplay } from '../core/sessions/display.js';
-import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
+import { oneLineDisplayText } from '../utils/display-text.js';
 import { useSharedClock } from '../hooks/use-shared-clock.js';
 
 export type SessionRowCursor =
@@ -58,7 +58,7 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps)
   const iconColor = display.color;
   const now = useSharedClock({ active: true });
   const time = formatRelativeTime(session.completedAt ?? session.startedAt, now);
-  const feature = sanitizeTerminalDisplayText(session.feature);
+  const feature = oneLineDisplayText(session.feature);
   const selected = isSelected(cursor);
   const bg = selected ? t.selectionBg : undefined;
   const row = (

@@ -530,6 +530,28 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
+  it('keeps the words of a task written on two lines apart on its session row', async () => {
+    const session = makeSession({
+      id: 'sess-two-lines',
+      feature: 'Add fixtures,\nas one task',
+      status: 'open',
+      summary: null,
+    });
+    saveSummary({ projectDir: projectDir, sessionId: session.id }, session);
+    sessionsStore.load(projectDir);
+
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    await write(instance, 'fixtures');
+    await tick(1);
+    await tick(1);
+
+    expect(instance.lastFrame() ?? '').toContain('Add fixtures, as one task');
+    instance.unmount();
+  });
+
   it('custom items from config appear in results when searched', async () => {
     const baseConfig = makeConfig();
     configStore.__testReset({

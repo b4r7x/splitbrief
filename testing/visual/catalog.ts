@@ -3898,6 +3898,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · command palette',
         marker: 'Type a command…',
       },
+      {
+        id: 'overlay-command-palette-session-task',
+        title: 'Overlay · command palette session row of a task written on several lines',
+        marker: 'Add generated JSON',
+      },
     ],
   }),
   skills: overlayGroup({
@@ -4519,6 +4524,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-sessions',
         title: 'Overlay · session rows show their latest stop time',
         marker: 'Sessions',
+      },
+      {
+        id: 'overlay-sessions-refused-applying',
+        title: 'Overlay · a pick refused while Apply writes names the reason first',
+        marker: 'Apply is still writing',
       },
     ],
   }),

@@ -11,6 +11,8 @@ import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, expect, it, vi } from 'vitest';
+import { createInitialState } from '../../../src/core/state/machine.js';
+import { saveState } from '../../../src/core/state/persistence.js';
 import { acquireLiveness } from '../../../src/engine/orchestrator/run/liveness.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
@@ -261,6 +263,58 @@ it('keeps the run screen on a typed /home while Apply writes, then goes home onc
   expect(held).toContain('Returns home when Apply finishes');
   expect(exitedEarly).toBe(false);
   expectApplied(target, ready.ref.sessionId);
+});
+
+it('names the whole reason first when the sessions list refuses a pick while Apply writes', async () => {
+  const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
+  fixture = target;
+  await seedReadyRun(target);
+  const holdPath = join(target.tmpDir, 'hold-apply');
+  const blockedPath = join(target.tmpDir, 'apply-blocked');
+  writeFileSync(holdPath, '');
+  const preload = writeBlockingPreload(target, holdPath, blockedPath);
+  const refused = await openRunFromSessions(
+    target,
+    ['--import', preload],
+    async ({ screen, write, waitForText }) => {
+      try {
+        await waitForText('Ready to apply');
+        await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+        write('\r');
+        await vi.waitFor(() => expect(existsSync(blockedPath), screen()).toBe(true), {
+          timeout: 30_000,
+        });
+        await waitForText('Applying to your checkout');
+        saveState(
+          { projectDir: target.projectDir, sessionId: 'long-task' },
+          createInitialState(
+            'Add generated JSON data fixtures, as one task:\n\n- Add `scripts/gen-json.js` (CommonJS) that writes them',
+          ),
+        );
+        write('/sessions');
+        await waitForText('/sessions');
+        await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+        write('\r');
+        await waitForText('Sessions · 2');
+        await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+        // Where the cursor starts depends on when an Apply heartbeat refreshes the list, so the
+        // filter selects the long task by its text.
+        write('fixtures');
+        await waitForText('▌ ◌ Add generated JSON');
+        await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+        write('\r');
+        await waitForText('Cannot open "Add generated JSON');
+        return screen();
+      } finally {
+        rmSync(holdPath, { force: true });
+      }
+    },
+  );
+  expect(refused).toContain(
+    'Apply is still writing to your checkout. Cannot open "Add generated JSON data',
+  );
+  expect(refused).toContain('Add generated JSON data fixtures, as one task: - Add');
+  expect(refused).toContain('Sessions · 2');
 });
 
 it('goes home at once from a run another process applies, and names that process', async () => {

@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { App } from '../../../app/root.js';
 import { initStores } from '../../bootstrap/init.js';
 import { loadRememberedCatalog } from '../../bootstrap/discovery.js';
-import { stripTerminalControls } from '../../../utils/display-text.js';
+import { oneLineDisplayText } from '../../../utils/display-text.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
 import { hydrateRun } from '../../../features/workflow/run-history.js';
@@ -127,7 +127,7 @@ export async function resumeSavedSession(args: {
   // The cursor points one past the last brief once every brief has settled.
   const position = Math.min(state.currentTaskIndex + 1, state.tasks.length);
   console.log(
-    `Resuming: ${stripTerminalControls(state.feature)} (phase: ${state.phase}, task ${position}/${state.tasks.length})`,
+    `Resuming: ${oneLineDisplayText(state.feature)} (phase: ${state.phase}, task ${position}/${state.tasks.length})`,
   );
   const renderOptions = await deps.setupWorkflow(opts);
   await deps.initStores(projectDir, opts);
