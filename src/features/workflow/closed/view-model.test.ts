@@ -1033,6 +1033,41 @@ describe('review', () => {
     });
   });
 
+  it('keeps the lines of an earlier failed review finding apart on its one row', () => {
+    const view = derive(readySummary(), {
+      ledger: {
+        ...makeLedger([]),
+        reviews: [
+          {
+            scope: 'final',
+            cycle: 0,
+            outcome: 'fail',
+            blocking: [
+              {
+                id: 'P1',
+                text: 'No task changed it.\nRequired check K1 did not pass (fail)',
+              },
+            ],
+            at: '2026-09-14T00:00:00.000Z',
+          },
+          {
+            scope: 'final',
+            cycle: 1,
+            outcome: 'pass',
+            blocking: [],
+            at: '2026-09-14T00:01:00.000Z',
+          },
+        ],
+      },
+    });
+    expect(view.failedReviews).toEqual([
+      {
+        label: 'Final review',
+        blocking: [{ id: 'P1', text: 'No task changed it. Required check K1 did not pass (fail)' }],
+      },
+    ]);
+  });
+
   it('is not run when the record carries no review at all', () => {
     expect(derive(makeSummary()).review).toEqual({ kind: 'not-run' });
   });
@@ -1139,5 +1174,12 @@ describe('checkpoint, phases and pass-through', () => {
     expect(view.run.feature).toBe('add validation');
     expect(view.files.changed).toEqual(['src/a.ts']);
     expect(view.briefs.rows[0]?.title).toBe('wire it up');
+  });
+
+  it('keeps the words of a multi-line task apart on its one row', () => {
+    const view = derive(
+      makeSummary({ feature: 'Add data fixtures, as one task:\n\n- Add a generator' }),
+    );
+    expect(view.run.feature).toBe('Add data fixtures, as one task: - Add a generator');
   });
 });
