@@ -6,6 +6,7 @@ import {
   truncateTerminalDisplayText,
   segmentsForRowText,
 } from '../../utils/display-text.js';
+import { countNoun } from '../../utils/pluralize.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { wrapHard } from '../../utils/wrap.js';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
@@ -26,8 +27,14 @@ const ACTION_ROW_PREFIX = /^\[(.+?)\]\s*/;
 
 export type PromptBodyLine =
   | { kind: 'blank' }
-  | { kind: 'message-line'; text: string; parts?: readonly ConversationRowSegment[] }
-  | { kind: 'headline'; row: Extract<PromptRow, { kind: 'headline' }> }
+  | {
+      kind: 'message-line';
+      text: string;
+      parts?: readonly ConversationRowSegment[];
+      /** The cut mark this first row carries when the panel has no row for it. */
+      mark?: string;
+    }
+  | { kind: 'headline'; row: Extract<PromptRow, { kind: 'headline' }>; mark?: string }
   | { kind: 'facts-line'; text: string }
   | { kind: 'facts-grid-pair'; left: string; right: string }
   | { kind: 'action'; key: string; keyWidth: number; text: string; recommended: boolean }
@@ -232,10 +239,10 @@ export function promptBodyRows(
  * What a panel too short for its prompt keeps: the headline that says what
  * happened and every action row, because a halt whose choices are scrolled off
  * screen is a halt the operator cannot answer. Blank rows give way first, then
- * facts from the bottom; the last kept fact row says how many lines are cut, so
- * no text leaves the panel unmarked unless the panel has room for the headline
- * only. Above action rows the last slot stays blank so the facts do not run into
- * the keys.
+ * facts from the bottom; the last kept fact row says how many lines are cut, and
+ * with no room for a fact row the headline carries that count, so no text leaves
+ * the panel unmarked. Above action rows the last slot stays blank so the facts do
+ * not run into the keys.
  */
 export function clipPromptBodyRows(
   rows: readonly PromptBodyLine[],
@@ -253,16 +260,20 @@ export function clipPromptBodyRows(
   const room = available - gap.length;
   if (facts.length <= room) return [...head, ...facts, ...gap, ...tail];
   const kept = facts.slice(0, Math.max(0, room - 1));
-  const cut: PromptBodyLine[] =
-    room > 0
-      ? [
-          {
-            kind: 'facts-line',
-            text: `${FACT_INDENT}${ELLIPSIS} ${facts.length - kept.length} more lines`,
-          },
-        ]
-      : [];
-  return [...head, ...kept, ...cut, ...gap, ...tail];
+  const mark = `${ELLIPSIS} ${countNoun(facts.length - kept.length, 'more line')}`;
+  if (room > 0) {
+    return [
+      ...head,
+      ...kept,
+      { kind: 'facts-line', text: `${FACT_INDENT}${mark}` },
+      ...gap,
+      ...tail,
+    ];
+  }
+  const [first] = head;
+  const marked =
+    first?.kind === 'headline' || first?.kind === 'message-line' ? [{ ...first, mark }] : head;
+  return [...marked, ...tail];
 }
 
 export function countPromptBodyRows(prompt: string | readonly PromptRow[], width: number): number {

@@ -99,15 +99,23 @@ export function RecoveryMenu({
     actions.findIndex((item) => item.action === recommended),
   );
   const innerWidth = Math.max(1, width - 4);
-  const innerHeight = Math.max(1, clampedBoxRows - 2);
   const summary = recoveryPromptSummaryRows(issue, innerWidth);
   const summaryRows = countPromptBodyRows(summary, innerWidth);
   const minimumListRows = Math.min(4, Math.max(actions.length, 1));
+  // A short panel keeps its content before its chrome: the headline (it carries the cut mark when
+  // it is the only summary row), the selected action with one mark row that names every side
+  // hiding actions, and the legend. Then the border, a second summary row for the mark, the other
+  // actions, and the divider, in that order.
+  const listFloor = Math.min(2, minimumListRows);
+  const framed = clampedBoxRows >= 1 + listFloor + 1 + 2;
+  const innerHeight = Math.max(1, clampedBoxRows - (framed ? 2 : 0));
+  const besideList = innerHeight - listFloor - 1;
   const summaryHeight = Math.min(
     Math.max(1, summaryRows),
-    Math.max(1, innerHeight - minimumListRows - 2),
+    Math.max(1, Math.min(2, besideList), innerHeight - minimumListRows - 2),
   );
-  const listBudget = Math.max(1, innerHeight - summaryHeight - 2);
+  const divided = innerHeight - summaryHeight - minimumListRows - 1 > 0;
+  const listBudget = Math.max(1, innerHeight - summaryHeight - 1 - (divided ? 1 : 0));
 
   // Every action resolves the prompt, `switch-seat` included: the driver answers it by opening
   // the seat's own picker on the offered tool, which is the one place a seat's tool and model are
@@ -163,17 +171,17 @@ export function RecoveryMenu({
       flexDirection="column"
       width={width}
       height={Math.max(2, clampedBoxRows)}
-      borderStyle={borderStyleFor('single')}
-      borderColor={focused ? t.accent : t.border}
-      borderDimColor={!focused}
-      paddingX={1}
+      {...(framed && {
+        borderStyle: borderStyleFor('single'),
+        borderColor: focused ? t.accent : t.border,
+        borderDimColor: !focused,
+      })}
+      paddingX={framed ? 1 : 2}
       overflow="hidden"
       flexShrink={0}
     >
       <PromptBody prompt={summary} height={summaryHeight} width={innerWidth} />
-      {innerHeight > summaryHeight && (
-        <Text color={t.border}>{'─'.repeat(Math.max(1, innerWidth))}</Text>
-      )}
+      {divided && <Text color={t.border}>{'─'.repeat(Math.max(1, innerWidth))}</Text>}
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
         <ActionList
           actions={actions}

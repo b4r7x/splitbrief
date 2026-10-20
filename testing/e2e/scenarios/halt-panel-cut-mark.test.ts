@@ -56,16 +56,22 @@ afterEach(() => {
   fixture = undefined;
 });
 
+/** Runs the fixture until its brief spends its consults and opens the halt on the run screen. */
+async function openConsultHalt() {
+  fixture = createStopContinueFixture(blockedImplementerScript, {
+    consult: guidingConsult,
+  });
+  const halted = await cli(fixture, ['start', 'smoke']);
+  expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+
+  const opened = await openHaltedRun(fixture, { heading: 'Needs you' });
+  ui = opened.screen;
+  return opened;
+}
+
 describe('e2e: a halt panel too short for its text', () => {
   it('marks a detail over the cap with …, the cut lines at 80x24, and keeps the actions and the legend', async () => {
-    fixture = createStopContinueFixture(blockedImplementerScript, {
-      consult: guidingConsult,
-    });
-    const halted = await cli(fixture, ['start', 'smoke']);
-    expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
-
-    const opened = await openHaltedRun(fixture, { heading: 'Needs you' });
-    ui = opened.screen;
+    const opened = await openConsultHalt();
     expect(opened.state.pendingRecovery).toMatchObject({
       reason: 'consult-bound-spent',
       details: expect.arrayContaining([
@@ -90,4 +96,42 @@ describe('e2e: a halt panel too short for its text', () => {
     expect(frame).toContain('End run');
     expect(frame).toContain('↑↓ select · ⏎ confirm');
   });
+
+  it('marks the cut lines and the hidden actions at every height from 16 down to 12 rows', async () => {
+    const opened = await openConsultHalt();
+
+    for (const rows of [16, 15, 14, 13, 12]) {
+      terminalSizeStore.__testReset({ cols: 140, rows, isSmall: true });
+      await flushEffects();
+      const frame = stripAnsiStyles(opened.screen.lastFrame());
+
+      expect(frame, `140x${rows}`).toContain('Needs you');
+      expect(frame, `140x${rows}`).toMatch(/… \d+ more lines/);
+      expect(frame, `140x${rows}`).toContain('Continue recommended');
+      expectHiddenActionsMarked(frame, `140x${rows}`);
+      expect(frame, `140x${rows}`).toContain('↑↓ select · ⏎ confirm');
+    }
+  });
+
+  it('keeps the selected action and marks the actions on both sides after one ↓ press', async () => {
+    const opened = await openConsultHalt();
+    opened.screen.stdin.write('\u001b[B');
+    await flushEffects();
+
+    for (const rows of [16, 15, 14, 13, 12]) {
+      terminalSizeStore.__testReset({ cols: 140, rows, isSmall: true });
+      await flushEffects();
+      const frame = stripAnsiStyles(opened.screen.lastFrame());
+
+      expect(frame, `140x${rows}`).toMatch(/s\s+Skip task/);
+      expectHiddenActionsMarked(frame, `140x${rows}`);
+      expect(frame, `140x${rows}`).toContain('↑↓ select · ⏎ confirm');
+    }
+  });
 });
+
+/** Continue, Skip task and End run: each one off screen sits behind a mark on its side. */
+function expectHiddenActionsMarked(frame: string, label: string): void {
+  if (!/c\s+Continue/.test(frame)) expect(frame, label).toContain('↑ more');
+  if (!/a\s+End run/.test(frame)) expect(frame, label).toContain('↓ more');
+}

@@ -157,6 +157,25 @@ describe('computeListDisplayWindow', () => {
       'indicator',
     ]);
   });
+
+  it('names every hidden side in a 2-row window, on one row when both sides hide items', () => {
+    const shapes = [0, 1, 2, 3].map((selectedIndex) =>
+      computeListDisplayWindow({
+        items: ['a', 'b', 'c', 'd'],
+        selectedIndex,
+        rowBudget: 2,
+      }).visibleSlots.map((slot) =>
+        slot.kind === 'indicator' ? slot.direction : slot.kind === 'item' ? slot.item : slot.kind,
+      ),
+    );
+
+    expect(shapes).toEqual([
+      ['a', 'down'],
+      ['both', 'b'],
+      ['both', 'c'],
+      ['up', 'd'],
+    ]);
+  });
 });
 
 describe('totalSlots', () => {

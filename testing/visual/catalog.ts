@@ -2895,6 +2895,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-recovery-consult-bound',
       title: 'Workflow · a brief that used its consult allowance',
       surface: screenSurface('workflow'),
+      viewports: [
+        ...REQUIRED_VIEWPORTS,
+        viewport({ cols: 140, rows: 16 }),
+        viewport({ cols: 140, rows: 14 }),
+        viewport({ cols: 140, rows: 12 }),
+      ],
       checkpoint: {
         id: 'consult-bound',
         title: 'Consult-bound recovery menu',

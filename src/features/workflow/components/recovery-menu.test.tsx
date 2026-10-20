@@ -12,7 +12,15 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
+import { clampWorkflowPromptRows } from '../layout/rect.js';
 import { RecoveryMenu } from './recovery-menu.js';
+import type { RecoveryAction } from '../../../core/schemas/enums.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import {
+  getRecoveryPromptActions,
+  recoveryActionKey,
+  recoveryMenuLabel,
+} from '../recovery-prompt.js';
 
 afterEach(() => composerLiveStore.reset());
 
@@ -479,5 +487,140 @@ it('marks the halt text an 80x24 panel cuts and keeps every action and the legen
   expect(rows.some((row) => row.includes('Try again'))).toBe(true);
   expect(rows.some((row) => row.includes('End run'))).toBe(true);
   expect(rows.at(-2)).toContain('↑↓ select · ⏎ confirm');
+  ui.unmount();
+});
+
+function panelBoxRows(terminalRows: number): number {
+  // A one-line composer takes three rows; the panel takes every row the screen chrome leaves.
+  return clampWorkflowPromptRows({
+    rows: terminalRows,
+    inputRows: 3,
+    promptRows: Number.MAX_SAFE_INTEGER,
+  });
+}
+
+async function mountPanel(issue: RecoveryIssue, terminalRows: number) {
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={issue}
+      width={getChromeContentWidth(140)}
+      clampedBoxRows={panelBoxRows(terminalRows)}
+      focused
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  return ui;
+}
+
+function frameRows(ui: ReturnType<typeof renderFeature>): string[] {
+  return stripAnsiStyles(ui.lastFrame()).split('\n');
+}
+
+function actionShown(rows: readonly string[], issue: RecoveryIssue, action: RecoveryAction) {
+  const label = recoveryMenuLabel(action, issue).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const row = new RegExp(`\\b${recoveryActionKey(action)}\\s+${label}`);
+  return rows.some((text) => row.test(text));
+}
+
+/** Every action the list hides sits behind a `↑ more` or `↓ more` mark on its side. */
+function expectHiddenActionsMarked(rows: readonly string[], issue: RecoveryIssue): void {
+  const shown = getRecoveryPromptActions(issue).map((action) => actionShown(rows, issue, action));
+  const first = shown.indexOf(true);
+  expect(first, rows.join('\n')).toBeGreaterThanOrEqual(0);
+  if (first > 0)
+    expect(
+      rows.some((row) => row.includes('↑ more')),
+      rows.join('\n'),
+    ).toBe(true);
+  if (shown.lastIndexOf(true) < shown.length - 1) {
+    expect(
+      rows.some((row) => row.includes('↓ more')),
+      rows.join('\n'),
+    ).toBe(true);
+  }
+}
+
+function consultBoundIssue() {
+  return makeRecoveryIssue({
+    reason: 'consult-bound-spent',
+    message: 'T901 used its consult allowance after 5 attempts',
+    details: [
+      'Last diagnosis: Implementer is blocked on a locale table',
+      'Consults: 2 of 2',
+      'Attempts: 5',
+    ],
+    availableActions: ['continue', 'skip-current-task', 'end-run'],
+    recommendedAction: 'continue',
+  });
+}
+
+it.each([12, 13, 14, 15, 16])(
+  'keeps the headline, the cut mark, the recommended action, the hidden-action marks and the legend at 140x%s',
+  async (terminalRows) => {
+    const issue = consultBoundIssue();
+    const ui = await mountPanel(issue, terminalRows);
+    const rows = frameRows(ui);
+    expect(rows).toHaveLength(panelBoxRows(terminalRows));
+    expect(rows.some((row) => row.includes('T901 used its consult allowance'))).toBe(true);
+    expect(rows.some((row) => /… \d+ more lines/.test(row))).toBe(true);
+    expect(rows.some((row) => row.includes('Continue recommended'))).toBe(true);
+    expectHiddenActionsMarked(rows, issue);
+    expect(rows.some((row) => row.includes('↑↓ select · ⏎ confirm'))).toBe(true);
+    ui.unmount();
+  },
+);
+
+it.each([12, 13, 14, 15, 16])(
+  'keeps the selected action and marks every hidden action after one ↓ press at 140x%s',
+  async (terminalRows) => {
+    const issue = consultBoundIssue();
+    const ui = await mountPanel(issue, terminalRows);
+    ui.stdin.write('\u001b[B');
+    await flushEffects();
+    const rows = frameRows(ui);
+    expect(rows).toHaveLength(panelBoxRows(terminalRows));
+    expect(actionShown(rows, issue, 'skip-current-task'), rows.join('\n')).toBe(true);
+    expectHiddenActionsMarked(rows, issue);
+    expect(rows.some((row) => row.includes('↑↓ select · ⏎ confirm'))).toBe(true);
+    ui.unmount();
+  },
+);
+
+it.each([12, 13, 14, 15, 16])(
+  'marks both sides around a recommended action in the middle of the list at 140x%s',
+  async (terminalRows) => {
+    const issue = { ...seatSwapIssue(), details: ['Resets 17:00', 'Attempts: 3', 'Tool: claude'] };
+    const ui = await mountPanel(issue, terminalRows);
+    const rows = frameRows(ui);
+    expect(rows).toHaveLength(panelBoxRows(terminalRows));
+    expect(rows.some((row) => row.includes('Seat down'))).toBe(true);
+    expect(rows.some((row) => /… \d+ more lines/.test(row))).toBe(true);
+    expect(actionShown(rows, issue, 'switch-seat'), rows.join('\n')).toBe(true);
+    expect(rows.some((row) => row.includes('recommended'))).toBe(true);
+    expectHiddenActionsMarked(rows, issue);
+    expect(rows.some((row) => row.includes('↑↓ select · ⏎ confirm'))).toBe(true);
+    ui.unmount();
+  },
+);
+
+it.each([12, 14])('counts one cut line in the singular at 140x%s', async (terminalRows) => {
+  const issue = makeRecoveryIssue({
+    reason: 'seat-protocol-error',
+    seat: 'plan',
+    message: 'The planner answered twice without matching its contract',
+    details: ['result.tasks: Required'],
+    availableActions: ['retry-same-worker', 'end-run'],
+    recommendedAction: 'retry-same-worker',
+    files: [],
+    affectedTaskIds: [],
+    taskId: undefined,
+    taskTitle: undefined,
+  });
+  const ui = await mountPanel(issue, terminalRows);
+  const frame = frameRows(ui).join('\n');
+  expect(frame).toContain('… 1 more line');
+  expect(frame).not.toContain('1 more lines');
   ui.unmount();
 });
