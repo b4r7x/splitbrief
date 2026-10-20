@@ -1,4 +1,4 @@
-import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
+import { isTaskSettled, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
@@ -131,8 +131,8 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     if (wctx.signal?.aborted) return { state, taskBreakdowns, status: 'stopped' };
     const task = state.tasks[i];
     if (!task) continue;
-    // A fix cycle starts at its first appended brief; briefs that already passed are not re-run.
-    if (isTaskCompleted(task.status)) continue;
+    // A fix cycle starts at its first appended brief; a brief that passed or was skipped is not re-run.
+    if (isTaskSettled(task.status)) continue;
 
     const depGate = await checkDependencyGate({
       wctx,
