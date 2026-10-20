@@ -6,13 +6,13 @@ import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { getSections } from '../../../src/stores/workflow/actions/sections.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 
-/** The transcript a replayed run paints, as plain text at 120 columns. */
-export function transcriptText(events: Parameters<typeof addEvent>[0][]): string {
+/** The transcript a replayed run paints, as plain text at `cols` columns. */
+export function transcriptText(events: Parameters<typeof addEvent>[0][], cols = 120): string {
   resetWorkflow();
   for (const event of events) addEvent(event);
   const { rows } = buildConversationRows({
     sections: getSections(),
-    cols: 120,
+    cols,
     viewportHeight: 200,
     expandedDiffs: new Set(),
     expandedActivityBatches: new Set(),

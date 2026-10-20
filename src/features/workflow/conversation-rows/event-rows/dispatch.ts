@@ -112,11 +112,13 @@ export function eventRowBlock(options: {
       return recoveryCardBlock(
         keyPrefix,
         [
-          ...recoveryActionSegments(event),
-          { text: ' ', tone: 'textDim' },
-          { text: 'blocked', tone: stateTone('failed') },
-          { text: ': ', tone: 'textDim' },
-          { text: event.message, tone: 'textDim' },
+          [
+            ...recoveryActionSegments(event),
+            { text: ' ', tone: 'textDim' },
+            { text: 'blocked', tone: stateTone('failed') },
+            { text: ': ', tone: 'textDim' },
+            { text: event.message, tone: 'textDim' },
+          ],
         ],
         ctx.width,
         stateTone('failed'),
@@ -694,13 +696,10 @@ export function recoveryRowBlock(
   if (recovery.automaticSwitch !== undefined) {
     const { diagnostics } = recovery;
     return compositeBlock(keyPrefix, [
-      wholeSegmentsBlock(
+      recoveryCardBlock(
         keyPrefix,
         [
-          [
-            { text: 'Recovery  ', tone: stateTone('passed') },
-            ...recoveryHeadlineSegments(recovery.prompted),
-          ],
+          recoveryHeadlineSegments(recovery.prompted),
           [
             { text: `${arrowSep()}continued on fallback`, tone: 'textDim' },
             ...(diagnostics.length === 0
@@ -714,7 +713,7 @@ export function recoveryRowBlock(
           ],
         ],
         width,
-        'card',
+        stateTone('passed'),
       ),
       expanded
         ? wrappedTextBlock({
@@ -735,36 +734,47 @@ export function recoveryRowBlock(
     resolved === undefined ? null : recoveryOutcomeWords(resolved.outcome, recovery),
   ].filter((part): part is string => part !== null);
   const done = chosen === undefined ? [] : recoveryActionSegments(chosen, recovery.seatSwitch);
-  if (done.length > 0 && outcome.length > 0) {
-    done.push({ text: `${arrowSep()}${outcome.join(', ')}`, tone: 'textDim' });
-  }
+  const result: ConversationRowSegment[] =
+    done.length > 0 && outcome.length > 0
+      ? [{ text: `${arrowSep()}${outcome.join(', ')}`, tone: 'textDim' }]
+      : [];
   // The prompt panel carries the clock; the row names what happened, once.
   const halt =
     prompted === undefined || recovery.haltAlreadyShown ? [] : recoveryHeadlineSegments(prompted);
   return recoveryCardBlock(
     keyPrefix,
     [
-      ...halt,
-      ...(halt.length > 0 && done.length > 0 ? [{ text: SOFT_SEP, tone: 'textDim' as const }] : []),
-      ...done,
+      [
+        ...halt,
+        ...(halt.length > 0 && done.length > 0
+          ? [{ text: SOFT_SEP, tone: 'textDim' as const }]
+          : []),
+        ...done,
+      ],
+      result,
     ],
     width,
     resolved === undefined ? stateTone('attention') : recoveryResolvedTone(resolved.outcome),
   );
 }
 
+// Each chunk moves to the next row whole, so `→ skipped` never splits from its arrow.
 function recoveryCardBlock(
   keyPrefix: string,
-  value: ConversationRowSegment[],
+  [first, ...rest]: readonly [
+    readonly ConversationRowSegment[],
+    ...(readonly ConversationRowSegment[])[],
+  ],
   width: number,
   tone: ConversationRowTone,
 ): ConversationRowBlock | null {
-  return wrappedSegmentsBlock({
+  const empty = first.length === 0 && rest.every((chunk) => chunk.length === 0);
+  return wholeSegmentsBlock(
     keyPrefix,
-    segments: [{ text: value.length === 0 ? 'Recovery' : 'Recovery  ', tone }, ...value],
+    [[{ text: empty ? 'Recovery' : 'Recovery  ', tone }, ...first], ...rest],
     width,
-    kind: 'card',
-  });
+    'card',
+  );
 }
 
 function recoveryActionSegments(
