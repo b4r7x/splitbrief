@@ -23,7 +23,11 @@ import {
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { deriveRunStatus, isAnsweredApplyRecovery } from '../core/sessions/run-status.js';
-import { continuesHeadless, formatResumeCommand } from '../core/recovery/resume-command.js';
+import {
+  continueRunCommand,
+  continuesHeadless,
+  formatResumeCommand,
+} from '../core/recovery/resume-command.js';
 import { reviewFailedCause, reviewName } from '../core/recovery/headline.js';
 import { haltOf, recoveryHaltLabel } from '../core/recovery/halt.js';
 import { formatResetAt } from '../core/recovery/reset-clock.js';
@@ -31,6 +35,11 @@ import { cliError } from './errors.js';
 import { applyCommand, discardCommand, readyToApplyMessage } from './sessions/resolve.js';
 import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
+import {
+  SIGNAL_EXIT_CODE,
+  type TerminationSignal,
+  withSignalHandlers,
+} from '../engine/orchestrator/signals.js';
 import { boundEngineEventForConsumer } from '../engine/events/bound.js';
 
 function buildNoopSinks() {
@@ -74,7 +83,7 @@ export function emitRecoveryAndFailIfPending({
     !conversation.answered &&
     state?.pendingRecovery === undefined
   ) {
-    const resumeCommand = `splitbrief continue ${sessionId}`;
+    const resumeCommand = continueRunCommand(sessionId);
     const message =
       conversation.text.trim() ||
       conversation.questions
@@ -142,7 +151,7 @@ export function emitRecoveryAndFailIfPending({
  * A run with a reviewed result in its workspace is ready to apply, whether the review passed or the
  * operator accepted it as is: that is a finished headless run, not a failed review.
  */
-function emitReadyToApply(
+export function emitReadyToApply(
   state: WorkflowState | null,
   sessionId: string,
   writeRecord: RecordWriter,
@@ -213,7 +222,7 @@ export function failIfSessionFailed(
 // that ended the task loop, an operator ending the run — saves the session open or
 // ended, without a pendingRecovery and without a failed stop reason, so the guards
 // above miss it. A user-requested abort never reaches here: the signal check in
-// runHeadless returns first, keeping SIGINT/SIGTERM at exit 0.
+// runHeadless returns first, with the signal's own exit code.
 function failIfSessionInterrupted(
   projectDir: string,
   sessionId: string,
@@ -301,6 +310,34 @@ function headlessResumePolicy(
   };
 }
 
+/**
+ * Runs `work` under the headless stop. The first SIGINT, SIGTERM or SIGHUP aborts the signal
+ * `work` gets; work that cannot be cut, such as Apply, ignores it and finishes. The process
+ * then exits with the code the shell gives that signal, unless `work` throws.
+ */
+export async function withHeadlessStop<T>(
+  work: (signal: AbortSignal) => Promise<T>,
+): Promise<{ stopped: boolean; value: T }> {
+  const controller = new AbortController();
+  let first: TerminationSignal | undefined;
+  const { value } = await withSignalHandlers(
+    (signal) => {
+      first ??= signal;
+      controller.abort();
+    },
+    () => work(controller.signal),
+  );
+  if (first !== undefined) process.exitCode = SIGNAL_EXIT_CODE[first];
+  return { stopped: first !== undefined, value };
+}
+
+/** The stderr line a run stopped by a signal leaves: how to carry it on. */
+export function writeRunStopped(sessionId: string): void {
+  process.stderr.write(
+    `Run ${sessionId} stopped. Continue with: ${continueRunCommand(sessionId)}\n`,
+  );
+}
+
 export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   const { plain, selectedSkills, _planner, _implementer } = options;
   const projectDir = options.prepared.session.ref.projectDir;
@@ -330,12 +367,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   // The handlers are installed before the pending-halt preflight: the preflight
   // reads state and may stop, and an operator's interrupt must still land while
   // it does.
-  const abortController = new AbortController();
-  const onSignal = () => abortController.abort();
-  process.on('SIGINT', onSignal);
-  process.on('SIGTERM', onSignal);
-
-  try {
+  const { stopped } = await withHeadlessStop(async (signal) => {
     // An explicit `switch` with nothing to switch to is a usage error, named for
     // the word the operator would have to add to the config.
     if (options.onSeatDown === 'switch' && !configDeclaresFallback(options.prepared.config)) {
@@ -368,7 +400,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
           config: prepared.config,
           prepared,
           savedState: before,
-          signal: abortController.signal,
+          signal,
           ...(options._prepare !== undefined && { prepare: options._prepare }),
         });
         if (swapped !== undefined) {
@@ -408,7 +440,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
         sinks: buildNoopSinks(),
         modelCache: modelCacheStore,
         drainPendingAttachments: () => attachmentsStore.drain(),
-        signal: abortController.signal,
+        signal,
         ...(plain === true && {
           plain: true,
           tuiSink: (event) => {
@@ -427,10 +459,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
         },
       });
 
-      if (abortController.signal.aborted) {
-        await publishHandoffNotice(loadOwnedState({ projectDir, sessionId }));
-        return;
-      }
+      if (signal.aborted) return;
 
       // Another seat went down with its own intent: take it and re-enter. The loop
       // ends when no automatic intent is pending.
@@ -438,12 +467,15 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
       const next = loadOwnedState({ projectDir, sessionId });
       if (next?.pendingRecovery?.switchSeat?.auto === undefined) break;
     }
-  } finally {
-    process.removeListener('SIGINT', onSignal);
-    process.removeListener('SIGTERM', onSignal);
-  }
+  });
 
-  if (abortController.signal.aborted) return;
+  if (stopped) {
+    const state = loadOwnedState({ projectDir, sessionId });
+    await publishHandoffNotice(state);
+    if (state !== null && deriveRunStatus({ state, liveness: 'not-alive' }).kind === 'open')
+      writeRunStopped(sessionId);
+    return;
+  }
 
   const finalState = loadOwnedState({ projectDir, sessionId });
   await publishHandoffNotice(finalState);

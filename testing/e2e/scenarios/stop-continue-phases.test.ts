@@ -37,7 +37,7 @@ it('counts planning and the whole brief in the closed Phases row after a stop an
   fixture = createStopContinueFixture(undefined, { isolation: 'none' });
   const target = fixture;
   const stopped = await startAndSignal(target, 'SIGINT', target.projectDir);
-  expect(stopped.exitCode).toBe(0);
+  expect(stopped.exitCode).toBe(130);
   const continued = await continueRun(target);
   expect(continued.exitCode, continued.stderr).toBe(0);
 

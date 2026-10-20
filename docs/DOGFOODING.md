@@ -158,7 +158,8 @@ The brief runs in the run's isolation worktree, so the marker the test waits on 
 testing/e2e/scenarios/stop-continue.test.ts   (sequential e2e project, 240 s per case)
   1. spawn  node --import tsx src/cli.ts start --plain --allow-repo-runners --project <fixture> "smoke"
   2. wait   until src/marker.ts appears under <stateHome>/splitbrief/trees (<= 75 s)
-  3. kill   the process group with SIGINT; expect exit 0; state.json: interruptedStep.cut === 'mid-step',
+  3. kill   the process group with SIGINT (a second case: SIGTERM); expect exit 130 (143) and the stderr line
+            `Run <id> stopped. Continue with: splitbrief continue <id>`; state.json: interruptedStep.cut === 'mid-step',
             task T001 in_progress, no pendingRecovery, and src/greet.ts not in the project
   4. spawn  node --import tsx src/cli.ts continue --plain --allow-repo-runners --project <fixture>
   5. assert assertPlainStdout, plus the lines `task T001: done (no gates)`, `review: passed`, `done: 1 tasks`

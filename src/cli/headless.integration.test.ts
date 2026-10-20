@@ -42,14 +42,20 @@ import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factor
 
 // The two terminal guards read state and session after the run; skipping the run
 // itself is what makes them reachable without driving a whole workflow.
-const skipTheRun: { enabled: boolean } = { enabled: false };
+// `signal` arrives while the skipped run would be running.
+const skipTheRun: { enabled: boolean; signal?: 'SIGINT' | 'SIGTERM' | undefined } = {
+  enabled: false,
+};
 vi.mock('../engine/orchestrator/run/workflow.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../engine/orchestrator/run/workflow.js')>();
   const { trackWorkflow } = await import('#testing/helpers/tracked-workflow.js');
   return {
     ...actual,
-    runWorkflow: async (opts: Parameters<typeof actual.runWorkflow>[0]) =>
-      skipTheRun.enabled ? undefined : trackWorkflow(actual.runWorkflow, opts),
+    runWorkflow: async (opts: Parameters<typeof actual.runWorkflow>[0]) => {
+      if (!skipTheRun.enabled) return trackWorkflow(actual.runWorkflow, opts);
+      if (skipTheRun.signal !== undefined) process.emit(skipTheRun.signal, skipTheRun.signal);
+      return undefined;
+    },
   };
 });
 
@@ -503,6 +509,8 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
   afterEach(async () => {
     await settleTrackedWorkflows();
     skipTheRun.enabled = false;
+    skipTheRun.signal = undefined;
+    process.exitCode = undefined;
     stderrSpy.mockRestore();
     stdoutSpy.mockRestore();
     for (const d of dirs) cleanupTempDir(d);
@@ -713,6 +721,29 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
       { type: 'error', message: `Session ${sessionId} ended with status failed.` },
     ]);
   });
+
+  it.each([
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+  ] as const)(
+    'a %s stops the run resumably, names the continue command and exits %i',
+    async (signal, code) => {
+      const { projectDir, sessionId } = seedFinishedSession(`signal-${signal}`, {
+        phase: 'implementing',
+      });
+      skipTheRun.signal = signal;
+
+      await runHeadless({
+        prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'finish me' }),
+      });
+
+      expect(process.exitCode).toBe(code);
+      expect(stderrSpy.mock.calls.map(([chunk]: [unknown]) => String(chunk))).toEqual([
+        `Run ${sessionId} stopped. Continue with: splitbrief continue ${sessionId}\n`,
+      ]);
+      expect(records()).toEqual([]);
+    },
+  );
 
   it('a stopped run with no recorded failure does not report a failure', async () => {
     const { projectDir, sessionId } = seedFinishedSession('stopped', { phase: 'implementing' });

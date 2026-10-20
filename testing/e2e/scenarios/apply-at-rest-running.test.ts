@@ -14,6 +14,7 @@ import XtermHeadless from '@xterm/headless';
 import { afterEach, expect, it, vi } from 'vitest';
 import { sessionDir } from '../../../src/core/paths.js';
 import { sessionLockfilePath } from '../../../src/core/sessions/lockfile-status.js';
+import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { acquireLiveness } from '../../../src/engine/orchestrator/run/liveness.js';
@@ -22,6 +23,8 @@ import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
+import { spawnCli } from '../helpers/live-cli-harness.js';
 import { seedReadyRun } from '../helpers/applying-run.js';
 import {
   createStopContinueFixture,
@@ -408,4 +411,55 @@ setInterval(() => {}, 1000);
     holder.kill('SIGKILL');
     await holderExited;
   }
+});
+
+it('finishes a headless Apply a SIGTERM reaches, exits 143 and leaves the run not running', async () => {
+  const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
+  fixture = target;
+  const ready = await seedReadyRun(target);
+  // A real run records its crew at start; the closed record names it.
+  saveState(ready.ref, { ...readState(target, ready.ref.sessionId), ...RUN_CREW });
+  const holdPath = join(target.tmpDir, 'hold-apply');
+  const blockedPath = join(target.tmpDir, 'apply-blocked');
+  writeFileSync(holdPath, '');
+  const preload = writeBlockingPreload(target, holdPath, blockedPath);
+  let pid: number | undefined;
+  const run = spawnCli({
+    args: [
+      '--import',
+      preload,
+      '--import',
+      'tsx',
+      'src/cli.ts',
+      'continue',
+      ready.ref.sessionId,
+      '--action',
+      'apply',
+      '--plain',
+      '--project',
+      target.projectDir,
+    ],
+    stateHome: target.stateHome,
+    timeoutMs: 60_000,
+    onSpawn: (spawned) => {
+      pid = spawned;
+    },
+  });
+  await vi.waitFor(() => expect(existsSync(blockedPath)).toBe(true), { timeout: 60_000 });
+  if (pid === undefined) throw new Error('the CLI reported no pid to signal');
+  process.kill(pid, 'SIGTERM');
+  await delay(500);
+  rmSync(holdPath);
+
+  const outcome = await run;
+
+  expect(outcome.exitCode, outcome.stderr).toBe(143);
+  expect(outcome.stderr.split('\n')).toContain('Applied 2 files to your checkout.');
+  expectApplied(target, ready.ref.sessionId);
+  const lock = readFileSync(
+    sessionLockfilePath(sessionDir(ready.ref.projectDir, ready.ref.sessionId)),
+    'utf8',
+  );
+  expect(JSON.parse(lock).exitedAt).toBeTypeOf('number');
+  expect(readRunRecord(ready.ref).status.kind).toBe('closed');
 });

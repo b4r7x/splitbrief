@@ -587,7 +587,7 @@ else {
     const target = fixture;
     try {
       const parked = await startAndSignal(target, 'SIGINT', join(target.tmpDir, 't002-holding'));
-      expect(parked.exitCode).toBe(0);
+      expect(parked.exitCode).toBe(130);
     } finally {
       await endImplementerHold(target);
     }

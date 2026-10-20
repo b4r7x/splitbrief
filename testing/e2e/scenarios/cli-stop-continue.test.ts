@@ -147,7 +147,7 @@ describe('stop a CLI implementer call → continue', { timeout: 240_000 }, () =>
     const target = await codexFixture();
 
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     expect(readState(target, parked.sessionId).interruptedStep?.cut).toBe('mid-step');
     const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
 

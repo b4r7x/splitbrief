@@ -73,6 +73,8 @@
 - Ctrl+Delete and Alt+Delete in the composer and other text fields delete the word after the caret, as in the plan.json editor. Before, they deleted the word before it.
 - When a brief fails again, the planner or reviewer now sees every change the brief made since it started and one line for each earlier failed attempt, not only the latest attempt.
 - With `review: task`, each task review first runs again the required checks of the briefs it covers and of the criteria due at that review. A later brief that breaks an earlier brief's check is now found at that task review, not only at the final review. A run takes longer by these checks.
+- `continue --action restore` says how many files it put back in your checkout, works without a terminal, and leaves the run ready to apply.
+- A headless run stopped by Ctrl+C, SIGTERM or a closed terminal exits with code 130, 143 or 129 and prints the command that continues it.
 
 ### Removed
 
@@ -317,6 +319,8 @@
 - A list two rows high now marks both sides when it hides items above and below.
 - An expanded diff that hides one line now reads `1 more line`, not `1 more lines`.
 - After a Seat down halt on one of several implementer profiles, the tool and model you pick in the BUILD picker, and a custom model you type there, go to the profile that halted. Your default implementer profile stays as it was, and picking its tool and model for the halted profile no longer reads as a cancelled change.
+- A headless run with `--plain` now says on stderr when the planner takes no images and an attached image was not sent.
+- A headless Apply that gets a stop signal finishes its work, and other windows no longer show the run as running.
 - A halt panel after an Apply that stopped with many files left paints at once and answers the arrow keys at once.
 - When the sessions list cannot open a run, the message now shows the reason first. A task written on several lines now reads with spaces wherever it shows on one line: the sessions list, the command palette, the Plan heading of the run, `splitbrief status`, and the resume and `splitbrief spec` lines.
 - A brief that created a file still reads `create` after the planner rewrites or splits it, for every file it created, also an empty file.

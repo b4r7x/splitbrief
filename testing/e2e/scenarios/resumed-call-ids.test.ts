@@ -14,7 +14,7 @@ it('records distinct runner calls when another CLI process continues a stopped b
   const target = createStopContinueFixture(undefined, { isolation: 'none' });
   try {
     const stopped = await startAndSignal(target, 'SIGINT', target.projectDir);
-    expect(stopped.exitCode, stopped.stdout).toBe(0);
+    expect(stopped.exitCode, stopped.stdout).toBe(130);
     const ref = { projectDir: target.projectDir, sessionId: stopped.sessionId };
     const before = (await readRunEvents(ref)).events.filter(
       (event): event is EngineEventOf<'runner_call_started'> =>

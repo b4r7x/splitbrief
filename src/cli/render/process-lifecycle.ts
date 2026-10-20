@@ -4,14 +4,7 @@ import { killAllProcesses } from '../../lib/process/registry.js';
 import { restoreTerminalControl } from '../../lib/terminal/control.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { teardownStores } from '../bootstrap/init.js';
-
-const SIGNAL_EXIT_CODE: Record<TerminationSignal, number> = {
-  SIGINT: 130,
-  SIGTERM: 143,
-  SIGHUP: 129,
-};
-
-type TerminationSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP';
+import { SIGNAL_EXIT_CODE, type TerminationSignal } from '../../engine/orchestrator/signals.js';
 
 interface RestoreTerminalOptions {
   fullscreen: boolean;

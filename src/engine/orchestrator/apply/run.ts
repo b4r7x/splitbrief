@@ -41,6 +41,7 @@ import { writeApply } from './write.js';
 type ApplyResult =
   | { outcome: 'applied'; state: WorkflowState; files: string[] }
   | { outcome: 'halted'; state: WorkflowState }
+  | { outcome: 'restored'; state: WorkflowState; files: string[] }
   | { outcome: 'review'; state: WorkflowState }
   | { outcome: 'needs-confirmation'; state: WorkflowState };
 
@@ -173,7 +174,7 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
       } else {
         createBusTextHandler({ bus: wctx.bus, phase: state.phase })(message);
       }
-      return { outcome: 'halted', state };
+      return { outcome: 'restored', state, files: restored.restored };
     }
     retrying = true;
   }

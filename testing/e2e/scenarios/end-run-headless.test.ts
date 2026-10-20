@@ -147,7 +147,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     const target = fixture;
     const checkoutAtStart = checkoutEntries(target.projectDir);
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     const parkedState = readState(target, parked.sessionId);
     expect(parkedState.pendingRecovery).toBeUndefined();
     const workspace = parkedState.workspace;
@@ -183,7 +183,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     fixture = createStopContinueFixture();
     const target = fixture;
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
     const record = readRunRecord(ref);
     await hydrateRun(record);
@@ -221,7 +221,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
       fixture = createStopContinueFixture();
       const target = fixture;
       const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-      expect(parked.exitCode).toBe(0);
+      expect(parked.exitCode).toBe(130);
       const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
       const record = readRunRecord(ref);
       const workspace = readState(target, parked.sessionId).workspace;
@@ -289,7 +289,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     fixture = createStopContinueFixture();
     const target = fixture;
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     const workspace = readState(target, parked.sessionId).workspace;
     if (workspace === undefined) throw new Error('the parked run has no workspace');
     const resumed = await continueRun(target);
@@ -321,7 +321,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     const target = fixture;
     saveReviewerAsPlanner(target);
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
 
@@ -338,7 +338,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
     const target = fixture;
     const checkoutAtStart = checkoutEntries(target.projectDir);
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     expect(readState(target, parked.sessionId).pendingRecovery).toBeUndefined();
 
     const resumed = await continueRun(target);

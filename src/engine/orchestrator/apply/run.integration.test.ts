@@ -750,7 +750,7 @@ describe('runApply', { timeout: 60_000 }, () => {
 
             const result = await apply(run, await choose(run, 'restore-backup'));
 
-            expect(result.outcome).toBe('halted');
+            expect(result).toMatchObject({ outcome: 'restored', files: [] });
             expect(read(run.dir, 'a.txt')).toBe('base a\n');
             expect(read(run.dir, 'b.txt')).toBe('base b\n');
             const state = savedState(run);
@@ -781,7 +781,7 @@ describe('runApply', { timeout: 60_000 }, () => {
 
           const result = await apply(run, await choose(run, 'restore-backup'));
 
-          expect(result.outcome).toBe('halted');
+          expect(result).toMatchObject({ outcome: 'restored', files: ['b.txt'] });
           expect(read(run.dir, 'a.txt')).toBe('base a\n');
           expect(read(run.dir, 'b.txt')).toBe('base b\n');
           expect(read(run.dir, 'c.txt')).toBe('base c\n');

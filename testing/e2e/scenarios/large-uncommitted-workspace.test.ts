@@ -31,7 +31,7 @@ describe('a worktree run over a large uncommitted file', { timeout: 240_000 }, (
     writeFileSync(join(target.projectDir, 'large.bin'), large);
 
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     const parkedState = readState(target, parked.sessionId);
     expect(parkedState.workspace?.kind).toBe('worktree');
     expect(parkedState.interruptedStep?.cut).toBe('mid-step');

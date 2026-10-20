@@ -104,6 +104,25 @@ describe('attachRunSinks — stdout sinks', () => {
     ]);
   });
 
+  it('writes one plain stderr line when the planner drops images it cannot take', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const out = publishThroughSinks('sinks-plain-attachments', { headless: true, plain: true }, [
+      STARTED,
+      {
+        type: 'planner_attachments_dropped',
+        ts: STARTED.ts + 1,
+        phase: 'planning',
+        count: 2,
+        reason: 'unsupported-backend',
+      },
+    ]);
+
+    expect(out).toBe('phase: planning\n');
+    expect(stderr.mock.calls.map(([chunk]) => chunk)).toEqual([
+      '2 images dropped: the planner takes no images.\n',
+    ]);
+  });
+
   it('strips terminal controls from plain warnings on stderr', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const out = publishThroughSinks(

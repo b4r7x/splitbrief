@@ -17,7 +17,8 @@ async function applyHoldingLiveness(
     const result = await runApply(input);
     if (
       result.outcome === 'applied' ||
-      (result.outcome === 'halted' && result.state !== input.state)
+      ((result.outcome === 'halted' || result.outcome === 'restored') &&
+        result.state !== input.state)
     ) {
       finalizeRunAtRest({ ref: input.wctx, state: result.state });
     }
