@@ -765,6 +765,43 @@ describe('event row dispatch', () => {
     ]);
   });
 
+  it('keeps the arrow and the outcome on one row at 60 columns', () => {
+    const recorded = {
+      ts: 0,
+      phase: 'implementing',
+      issueId: 'issue',
+      reason: 'dependency-blocked',
+      action: 'skip-current-task',
+    } as const;
+    const block = recoveryRowBlock(
+      'recovery',
+      {
+        firstIndex: 0,
+        issueId: 'issue',
+        prompted: {
+          type: 'recovery_prompted',
+          ts: 0,
+          phase: 'implementing',
+          issueId: 'issue',
+          reason: 'dependency-blocked',
+          headline: 'Dependency blocked on T902',
+          availableActions: ['skip-current-task'],
+          files: [],
+          affectedTaskIds: [],
+          recommendedAction: 'skip-current-task',
+          resumeCommand: 'splitbrief resume',
+        },
+        selected: { ...recorded, type: 'recovery_action_selected' },
+        resolved: { ...recorded, type: 'recovery_resolved', outcome: 'skipped-current-task' },
+      },
+      60,
+    );
+    expect(block?.createRows(0, block.rowCount).map(rowText)).toEqual([
+      'Recovery  Dependency blocked on T902 · Skip task',
+      `${arrowSep().trimStart()}skipped`,
+    ]);
+  });
+
   it.each([
     [true, 0, 0, 'success'],
     [false, 1, 0, 'error'],
