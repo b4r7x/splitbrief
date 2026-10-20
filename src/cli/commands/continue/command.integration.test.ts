@@ -27,6 +27,18 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { parseContinueActionOption } from '../../options.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { saveDetectionCache } from '../../../engine/detection/cache.js';
+import * as entry from '../../../engine/orchestrator/approval/file-snapshots/entry.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { readyToApplyMessage } from '../../sessions/resolve.js';
+import { readLockfile } from '../../../core/sessions/lockfile.js';
+
+vi.mock('../../../engine/orchestrator/approval/file-snapshots/entry.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import('../../../engine/orchestrator/approval/file-snapshots/entry.js')
+    >();
+  return { ...actual, writeConfinedEntryOrLink: vi.fn(actual.writeConfinedEntryOrLink) };
+});
 
 type HeadlessRun = {
   feature: string;
@@ -733,41 +745,6 @@ describe('continueCommand', () => {
     expect(headlessRuns).toHaveLength(0);
   });
 
-  it('answers a partial Apply with --action restore: the run re-enters to restore the backup', async () => {
-    const projectDir = makeTmpProject();
-    const sessionId = '2025-04-01-action-restore';
-    const sessDir = makeSessionDir(projectDir, sessionId);
-    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
-    saveState(
-      { projectDir, sessionId },
-      {
-        ...createInitialState('test-feature'),
-        ...RUN_CREW,
-        phase: 'complete',
-        tasks: [makeTask({ id: 'T001' })],
-        pendingRecovery: makeRecoveryIssue({
-          reason: 'apply-partial',
-          phase: 'complete',
-          status: 'awaiting-user',
-          availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
-          recommendedAction: 'retry-same-worker',
-        }),
-      },
-    );
-
-    await continueCommand(
-      sessionId,
-      { projectDir, json: true, action: parseContinueActionOption('restore') },
-      deps,
-    );
-
-    const resumed = headlessRuns.find((run) => run.sessionId === sessionId);
-    expect(resumed?.state?.pendingRecovery).toMatchObject({
-      status: 'applying',
-      selectedAction: 'restore-backup',
-    });
-  });
-
   it('exits 1 on --action restore when the halt is not a partial Apply', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-action-restore-blocked';
@@ -997,7 +974,7 @@ describe('continueCommand --action apply|discard|end-run', () => {
     };
   }
 
-  function settle(run: ApplyRun, action: 'apply' | 'discard'): Promise<void> {
+  function settle(run: ApplyRun, action: 'apply' | 'discard' | 'restore'): Promise<void> {
     return continueCommand(
       SESSION_ID,
       { projectDir: run.dir, json: true, action: parseContinueActionOption(action) },
@@ -1027,6 +1004,36 @@ describe('continueCommand --action apply|discard|end-run', () => {
       expect(readSession({ projectDir: run.dir, sessionId: SESSION_ID })?.apply).toBe('applied');
       expect(headlessRuns).toHaveLength(0);
       expect(renderRuns).toHaveLength(0);
+    });
+  });
+
+  it('finishes an Apply a SIGTERM reaches, records the exit and exits 143', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
+      saveReady(run);
+      const actual = await vi.importActual<typeof entry>(
+        '../../../engine/orchestrator/approval/file-snapshots/entry.js',
+      );
+      vi.mocked(entry.writeConfinedEntryOrLink).mockImplementationOnce(async (...args) => {
+        process.emit('SIGTERM', 'SIGTERM');
+        return actual.writeConfinedEntryOrLink(...args);
+      });
+      const output = captureOutput();
+      let exitCode: typeof process.exitCode;
+
+      try {
+        await settle(run, 'apply');
+      } finally {
+        output.restore();
+        exitCode = process.exitCode;
+        process.exitCode = undefined;
+      }
+
+      expect(exitCode).toBe(143);
+      expect(output.stderr()).toBe('Applied 1 file to your checkout.\n');
+      expect(read(run.dir, 'b.txt')).toBe('created by the run\n');
+      expect(loadState({ projectDir: run.dir, sessionId: SESSION_ID })?.closed?.as).toBe('applied');
+      expect(readLockfile(sessionDir(run.dir, SESSION_ID))?.exitedAt).toBeTypeOf('number');
     });
   });
 
@@ -1095,6 +1102,63 @@ describe('continueCommand --action apply|discard|end-run', () => {
       expect(renderRuns).toHaveLength(0);
     });
   });
+
+  it.each([
+    { edited: undefined, said: 'Restored 1 file in your checkout.', a: FIVE },
+    { edited: 'mine a\n', said: 'Restored 0 files in your checkout.', a: 'mine a\n' },
+  ])(
+    'restores a partial Apply at rest and says how many files it put back (checkout edited: $edited)',
+    async ({ edited, said, a }) => {
+      await withApplyRun(
+        { 'a.txt': FIVE, 'b.txt': 'base b\n' },
+        { sessionId: SESSION_ID },
+        async (run) => {
+          writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+          writeFileSync(join(run.ws, 'b.txt'), 'ours b\n');
+          saveReady(run);
+          const actual = await vi.importActual<typeof entry>(
+            '../../../engine/orchestrator/approval/file-snapshots/entry.js',
+          );
+          vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(
+            async (root, path, ...rest) => {
+              if (root === run.dir && path === 'b.txt') throw new Error('disk full');
+              return actual.writeConfinedEntryOrLink(root, path, ...rest);
+            },
+          );
+          const halted = captureOutput();
+          try {
+            await expect(settle(run, 'apply')).rejects.toMatchObject({ exitCode: 1 });
+          } finally {
+            halted.restore();
+            vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(
+              actual.writeConfinedEntryOrLink,
+            );
+          }
+          expect(read(run.dir, 'a.txt')).toBe('ours a\n');
+          if (edited !== undefined) writeFileSync(join(run.dir, 'a.txt'), edited);
+          const output = captureOutput();
+
+          try {
+            await settle(run, 'restore');
+          } finally {
+            output.restore();
+          }
+
+          expect(output.stderr()).toContain(`${said}\n${readyToApplyMessage(SESSION_ID)}\n`);
+          if (edited !== undefined)
+            expect(output.stderr()).toContain('left as you changed them: a.txt');
+          expect(read(run.dir, 'a.txt')).toBe(a);
+          expect(read(run.dir, 'b.txt')).toBe('base b\n');
+          const state = loadState({ projectDir: run.dir, sessionId: SESSION_ID });
+          expect(state && deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe(
+            'ready-to-apply',
+          );
+          expect(headlessRuns).toHaveLength(0);
+          expect(renderRuns).toHaveLength(0);
+        },
+      );
+    },
+  );
 
   it('says no patch was written when the run workspace is already gone', async () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {

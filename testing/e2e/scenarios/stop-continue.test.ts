@@ -84,33 +84,42 @@ async function expectAppliedOnce(
 }
 
 describe('stop → continue → finish', { timeout: 240_000 }, () => {
-  it('parks a brief cut by SIGINT and continues it to a passing review', async () => {
-    fixture = createStopContinueFixture();
-    const target = fixture;
-    const checkoutAtStart = checkoutEntries(target.projectDir);
+  it.each([
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+  ] as const)(
+    'parks a brief cut by %s, exits %i and continues it to a passing review',
+    async (signal, code) => {
+      fixture = createStopContinueFixture();
+      const target = fixture;
+      const checkoutAtStart = checkoutEntries(target.projectDir);
 
-    const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-    expect(parked.exitCode).toBe(0);
+      const parked = await startAndSignal(target, signal, target.isolationTreesDir);
+      expect(parked.exitCode, parked.stderr).toBe(code);
+      expect(parked.stderr.split('\n')).toContain(
+        `Run ${parked.sessionId} stopped. Continue with: splitbrief continue ${parked.sessionId}`,
+      );
 
-    const parkedState = readState(target, parked.sessionId);
-    expect(parkedState.interruptedStep?.cut).toBe('mid-step');
-    expect(parkedState.tasks[0]?.status).toBe('in_progress');
-    expect(parkedState.pendingRecovery).toBeUndefined();
-    const parkedAttempt = parkedState.attempt;
-    // The stopped brief keeps its partial in the run workspace; the checkout never saw it.
-    expectStoppedWorkInWorkspace(target, checkoutAtStart);
+      const parkedState = readState(target, parked.sessionId);
+      expect(parkedState.interruptedStep?.cut).toBe('mid-step');
+      expect(parkedState.tasks[0]?.status).toBe('in_progress');
+      expect(parkedState.pendingRecovery).toBeUndefined();
+      const parkedAttempt = parkedState.attempt;
+      // The stopped brief keeps its partial in the run workspace; the checkout never saw it.
+      expectStoppedWorkInWorkspace(target, checkoutAtStart);
 
-    const resumed = await continueRun(target);
-    expect(resumed.exitCode, resumed.stderr).toBe(0);
-    expectFinishedPlainRun(resumed.stdout);
+      const resumed = await continueRun(target);
+      expect(resumed.exitCode, resumed.stderr).toBe(0);
+      expectFinishedPlainRun(resumed.stdout);
 
-    const finalState = readState(target, parked.sessionId);
-    expect(finalState.tasks[0]?.status).toBe('done');
-    expect(finalState.attempt).toBe(parkedAttempt);
-    expect(finalState.pendingRecovery).toBeUndefined();
+      const finalState = readState(target, parked.sessionId);
+      expect(finalState.tasks[0]?.status).toBe('done');
+      expect(finalState.attempt).toBe(parkedAttempt);
+      expect(finalState.pendingRecovery).toBeUndefined();
 
-    await expectAppliedOnce(target, parked.sessionId, checkoutAtStart);
-  });
+      await expectAppliedOnce(target, parked.sessionId, checkoutAtStart);
+    },
+  );
 
   it('restarts a brief killed by SIGKILL from its task-start snapshot', async () => {
     fixture = createStopContinueFixture();
@@ -179,7 +188,7 @@ describe('stop → continue → finish', { timeout: 240_000 }, () => {
     const target = fixture;
 
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     const parkedState = readFileSync(
       join(sessionDir(target.projectDir, parked.sessionId), STATE_FILE),
       'utf-8',

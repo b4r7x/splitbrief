@@ -240,7 +240,9 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
       timeoutMs: CLI_TIMEOUT_MS,
     });
     expect(restored.exitCode, restored.stderr).toBe(0);
-    expect(restored.stderr).toContain(readyToApplyMessage(sessionId));
+    expect(restored.stderr).toContain(
+      `Restored 1 file in your checkout.\n${readyToApplyMessage(sessionId)}`,
+    );
     expect(readFileSync(target.greetPath, 'utf8')).toBe(ORIGINAL_GREET);
     expect(existsSync(target.markerPath)).toBe(false);
     expect(writeTemporaries(target)).toEqual([]);
@@ -321,6 +323,7 @@ describe('Apply killed mid-write', { timeout: 240_000 }, () => {
       timeoutMs: CLI_TIMEOUT_MS,
     });
     expect(restored.exitCode, restored.stderr).toBe(0);
+    expect(restored.stderr.split('\n')).toContain('Restored 1 file in your checkout.');
     expect(existsSync(join(target.projectDir, 'src'))).toBe(false);
     const said = await plannerTexts(target, sessionId);
     expect(said).toContain('Restored Apply backup: removed 1 created file');

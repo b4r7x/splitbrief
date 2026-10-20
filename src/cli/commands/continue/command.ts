@@ -216,6 +216,24 @@ export async function continueCommand(
     });
     if (next === undefined) return;
     resumed = { state: next };
+  } else if (action?.action === 'restore-backup') {
+    // The answered restore is finished by Apply at rest, so it reports what it put back the way
+    // Apply reports what it wrote, and the run is then ready to apply.
+    const answered = await applyPendingRecoveryAction({
+      sessionId,
+      state: hydrated.state,
+      action,
+      opts,
+    });
+    const next = await settleReadyRun({
+      projectDir: opts.projectDir,
+      sessionId,
+      state: answered.state,
+      action: 'apply',
+      json: opts.json === true,
+    });
+    if (next === undefined) return;
+    resumed = { state: next };
   } else {
     assertResumeTerminal(opts);
     resumed =

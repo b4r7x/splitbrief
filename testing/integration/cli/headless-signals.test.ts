@@ -33,6 +33,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     stderrSpy.mockRestore();
     stdoutSpy.mockRestore();
     vi.clearAllMocks();
+    process.exitCode = undefined;
     for (const d of dirs) cleanupTempDir(d);
     dirs = [];
   });
@@ -72,7 +73,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
   it('aborts the workflow on SIGINT and records the session as interrupted, not failed', async () => {
     const { projectDir, sessionId } = setupSignalProject();
     const implement = vi.fn().mockImplementation(async () => {
-      process.emit('SIGINT');
+      process.emit('SIGINT', 'SIGINT');
       return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
     });
     const implementer = makeImplementer({ implement });
@@ -98,7 +99,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
   it('stops the run on SIGTERM the same way', async () => {
     const { projectDir, sessionId } = setupSignalProject();
     const implement = vi.fn().mockImplementation(async () => {
-      process.emit('SIGTERM');
+      process.emit('SIGTERM', 'SIGTERM');
       return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
     });
     const implementer = makeImplementer({ implement });
@@ -129,7 +130,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
       return true;
     });
     const implement = vi.fn().mockImplementation(async () => {
-      process.emit('SIGINT');
+      process.emit('SIGINT', 'SIGINT');
       return { success: false, output: '', error: 'broken code', usage: null };
     });
     const implementer = makeImplementer({ implement });
@@ -169,7 +170,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
   it('leaves a broken-pipe guard on stdout and stderr so a closed consumer cannot crash the run', async () => {
     const { projectDir, sessionId } = setupSignalProject();
     const implement = vi.fn().mockImplementation(async () => {
-      process.emit('SIGINT');
+      process.emit('SIGINT', 'SIGINT');
       return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
     });
     const implementer = makeImplementer({ implement });

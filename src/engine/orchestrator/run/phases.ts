@@ -61,6 +61,7 @@ export async function runPlanningPhases(
         case 'needs-confirmation':
           return { disposition: 'terminal', state: applied.state, outcome: 'input-required' };
         case 'halted':
+        case 'restored':
           return { disposition: 'terminal', state: applied.state, outcome: 'halted' };
       }
     }

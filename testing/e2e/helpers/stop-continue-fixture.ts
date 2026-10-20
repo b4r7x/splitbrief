@@ -300,7 +300,7 @@ export function startAndSignal(
   target: StopContinueFixture,
   signal: NodeJS.Signals,
   markerDir: string,
-): Promise<{ exitCode: number | null; stdout: string; sessionId: string }> {
+): Promise<{ exitCode: number | null; stdout: string; stderr: string; sessionId: string }> {
   return signalWhenMarked(target, ['start', 'smoke'], START_TIMEOUT_MS, signal, markerDir);
 }
 
@@ -309,7 +309,7 @@ export function continueAndSignal(
   target: StopContinueFixture,
   signal: NodeJS.Signals,
   markerDir: string,
-): Promise<{ exitCode: number | null; stdout: string; sessionId: string }> {
+): Promise<{ exitCode: number | null; stdout: string; stderr: string; sessionId: string }> {
   return signalWhenMarked(target, ['continue'], CONTINUE_TIMEOUT_MS, signal, markerDir);
 }
 
@@ -319,7 +319,7 @@ async function signalWhenMarked(
   timeoutMs: number,
   signal: NodeJS.Signals,
   markerDir: string,
-): Promise<{ exitCode: number | null; stdout: string; sessionId: string }> {
+): Promise<{ exitCode: number | null; stdout: string; stderr: string; sessionId: string }> {
   let groupPid: number | undefined;
   const run = cli(target, args, {
     timeoutMs,
@@ -337,7 +337,7 @@ async function signalWhenMarked(
   if (sessionId === null) {
     throw new Error(`the interrupted run left no active session: ${outcome.stderr}`);
   }
-  return { exitCode: outcome.exitCode, stdout: outcome.stdout, sessionId };
+  return { exitCode: outcome.exitCode, stdout: outcome.stdout, stderr: outcome.stderr, sessionId };
 }
 
 export function continueRun(target: StopContinueFixture): ReturnType<typeof spawnCli> {

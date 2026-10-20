@@ -57,7 +57,7 @@ describe('live paths: stop, continue, end', { timeout: 3 * LIVE_PATHS_TIMEOUT_MS
       probe: (ref) => buildCallState(ref) !== null,
       what: 'a live BUILD call',
     });
-    expect(stopped.exitCode, stopped.stderr).toBe(0);
+    expect(stopped.exitCode, stopped.stderr).toBe(130);
     const ref = { projectDir, sessionId: stopped.sessionId };
     const parked = readRunState(ref);
     expect(deriveRunStatus({ state: parked, liveness: 'not-alive' }).kind).toBe('open');
@@ -115,7 +115,7 @@ describe('live paths: stop, continue, end', { timeout: 3 * LIVE_PATHS_TIMEOUT_MS
         },
         what: `BUILD writing slugify into the workspace ${FEATURE_FILE}`,
       });
-      expect(stopped.exitCode, stopped.stderr).toBe(0);
+      expect(stopped.exitCode, stopped.stderr).toBe(130);
       const ref = { projectDir, sessionId: stopped.sessionId };
       const parked = readRunState(ref);
       expect(deriveRunStatus({ state: parked, liveness: 'not-alive' }).kind).toBe('open');

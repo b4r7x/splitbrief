@@ -58,7 +58,7 @@ describe('e2e: a checkout-mode run stopped by SIGINT and continued in place', ()
     const target = fixture;
 
     const parked = await startAndSignal(target, 'SIGINT', target.projectDir);
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
 
     const parkedState = readState(target, parked.sessionId);
     expect(parkedState.workspace?.kind).toBe('checkout');

@@ -6,7 +6,13 @@ import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycl
 import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { cliError } from '../../errors.js';
-import { emitRecoveryAndFailIfPending, recordWriterFor } from '../../headless.js';
+import {
+  emitReadyToApply,
+  emitRecoveryAndFailIfPending,
+  recordWriterFor,
+  withHeadlessStop,
+  writeRunStopped,
+} from '../../headless.js';
 
 export async function settleReadyRun(input: {
   projectDir: string;
@@ -35,15 +41,28 @@ export async function settleReadyRun(input: {
     return undefined;
   }
 
-  const result = await runApplyAtRest({ wctx: { projectDir, sessionId, bus }, state });
+  // Apply has no stop: a signal lets it finish and write its exit record, then the process exits.
+  const { stopped, value: result } = await withHeadlessStop(() =>
+    runApplyAtRest({ wctx: { projectDir, sessionId, bus }, state }),
+  );
   switch (result.outcome) {
     case 'applied':
       process.stderr.write(`Applied ${countNoun(result.files.length, 'file')} to your checkout.\n`);
+      return undefined;
+    case 'restored':
+      process.stderr.write(
+        `Restored ${countNoun(result.files.length, 'file')} in your checkout.\n`,
+      );
+      emitReadyToApply(result.state, sessionId, recordWriterFor(!json));
       return undefined;
     case 'review':
       process.stderr.write(
         `Your checkout changed files run ${sessionId} changed too; the merged result goes through its checks and review again.\n`,
       );
+      if (stopped) {
+        writeRunStopped(sessionId);
+        return undefined;
+      }
       return result.state;
     case 'needs-confirmation':
       throw cliError(

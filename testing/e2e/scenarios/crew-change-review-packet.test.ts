@@ -117,7 +117,7 @@ it('lists a BUILD seat changed between stop and continue in the review packet wi
   vi.stubEnv('NODE_OPTIONS', `--import=${offline}`);
 
   const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
-  expect(parked.exitCode).toBe(0);
+  expect(parked.exitCode).toBe(130);
   const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
 
   // What `/crew build` saves: the BUILD block in config.yaml, on another model.

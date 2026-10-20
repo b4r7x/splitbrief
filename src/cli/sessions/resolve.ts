@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { sessionDir } from '../../core/paths.js';
 import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../../core/schemas/workflow.js';
+import { continueRunCommand } from '../../core/recovery/resume-command.js';
 import { cliError } from '../errors.js';
 
 export function assertSessionExists(projectDir: string, sessionId: string): void {
@@ -14,11 +15,11 @@ export function assertSessionExists(projectDir: string, sessionId: string): void
 }
 
 export function applyCommand(sessionId: string): string {
-  return `splitbrief continue ${sessionId} --action apply`;
+  return `${continueRunCommand(sessionId)} --action apply`;
 }
 
 export function discardCommand(sessionId: string): string {
-  return `splitbrief continue ${sessionId} --action discard`;
+  return `${continueRunCommand(sessionId)} --action discard`;
 }
 
 export function readyToApplyMessage(sessionId: string): string {

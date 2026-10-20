@@ -105,6 +105,23 @@ describe('e2e: start @file attachments', () => {
     expect(readFileSync(fixture.greetPath, 'utf8')).toBe(GREET_SOURCE);
   });
 
+  it('says on stderr under --plain that a planner which takes no images dropped the image', async () => {
+    const path = join(realpathSync(fixture.tmpDir), 'sketch.png');
+    writeFileSync(
+      path,
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    );
+
+    const run = await cli(fixture, ['start', 'smoke', `@${path}`]);
+    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+    expect(run.stdout.split('\n')).toContain(`attached files: ${path} (image)`);
+    expect(run.stderr.split('\n')).toContain('1 image dropped: the planner takes no images.');
+    expect(run.stdout).toContain('done: 1 tasks');
+  });
+
   it('keeps @word and @scope/pkg inside the feature as text without attaching files', async () => {
     const feature = 'Implement @word in comments and upgrade @scope/pkg';
     const run = await cli(fixture, ['start', feature]);

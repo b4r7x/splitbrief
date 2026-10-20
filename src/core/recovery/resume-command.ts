@@ -1,6 +1,11 @@
 import type { RecoveryIssue, SeatSwapCandidate } from '../schemas/recovery/schemas.js';
 import { recoveryActionLabel } from './action-label.js';
 
+/** The command that carries a stopped run on. */
+export function continueRunCommand(sessionId: string): string {
+  return `splitbrief continue ${sessionId}`;
+}
+
 /**
  * The one line an operator can paste to carry on from a halt. Only the actions
  * `splitbrief continue` can take name themselves; every other recommendation is
@@ -11,9 +16,9 @@ export function formatResumeCommand(sessionId: string, issue: RecoveryIssue): st
   const flag = continueAction(issue);
   if (flag === undefined) {
     const label = recoveryActionLabel(issue.recommendedAction, issue);
-    return `splitbrief continue ${sessionId}, then choose ${label} in the recovery panel`;
+    return `${continueRunCommand(sessionId)}, then choose ${label} in the recovery panel`;
   }
-  return `splitbrief continue ${sessionId} --action ${flag}`;
+  return `${continueRunCommand(sessionId)} --action ${flag}`;
 }
 
 /** A line that names its action runs headless too; the recovery panel needs the TUI. */

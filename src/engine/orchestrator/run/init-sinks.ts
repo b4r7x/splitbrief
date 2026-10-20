@@ -1,5 +1,6 @@
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import { boundEngineEventForConsumer } from '../../events/bound.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
@@ -52,6 +53,12 @@ export function attachRunSinks(input: AttachRunSinksInput): EventBus {
     if (opts.plain === true) {
       unsubs.push(
         bus.subscribe((event) => {
+          if (event.type === 'planner_attachments_dropped') {
+            process.stderr.write(
+              `${countNoun(event.count, 'image')} dropped: the planner takes no images.\n`,
+            );
+            return;
+          }
           if (event.type !== 'warning' && event.type !== 'info') return;
           const bounded = boundEngineEventForConsumer(event, 'stdout-text');
           if (bounded.type === 'warning' || bounded.type === 'info')

@@ -186,7 +186,7 @@ async function acceptRun(
     state,
     overrideConfirmed: confirm,
   });
-  if (result.outcome === 'halted') {
+  if (result.outcome === 'halted' || result.outcome === 'restored') {
     sessionsStore.refresh();
     return { status: 'halted' };
   }

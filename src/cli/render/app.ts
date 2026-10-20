@@ -21,6 +21,7 @@ import {
   installTerminalOutputErrorGuard,
   isBrokenOutputError,
 } from '../../lib/terminal/control.js';
+import type { TerminationSignal } from '../../engine/orchestrator/signals.js';
 import {
   resumeTerminalAfterEditor,
   setActiveTerminalHandover,
@@ -55,8 +56,6 @@ interface RenderOptions {
    */
   unmountSignal?: AbortSignal | undefined;
 }
-
-type TerminationSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP';
 
 const diagnosticLog = createLogger('diagnostics');
 const BACKGROUND_QUERY_TIMEOUT_MS = 300;

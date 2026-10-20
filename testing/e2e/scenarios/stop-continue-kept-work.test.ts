@@ -200,7 +200,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     const target = fixture;
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     expect(readState(target, parked.sessionId).interruptedStep?.kept).toEqual([
       GREET_FILE,
       MARKER_FILE,
@@ -274,7 +274,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     const correction = 'The two files look right. Keep them as they are.';
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
 
     const resumed = await continueWithCorrection(target, parked.sessionId, correction);
     expect(resumed.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
@@ -298,7 +298,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     const correction = 'Trim the name before the greeting.';
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
 
     const resumed = await continueWithCorrection(target, parked.sessionId, correction);
     expect(resumed.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
@@ -318,9 +318,9 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     const target = fixture;
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     const parkedAgain = await continueAndSignal(target, 'SIGINT', signalDir(target, 1));
-    expect(parkedAgain.exitCode).toBe(0);
+    expect(parkedAgain.exitCode).toBe(130);
     expect(parkedAgain.sessionId).toBe(parked.sessionId);
     expect(readState(target, parked.sessionId).interruptedStep?.cut).toBe('mid-step');
 
@@ -345,7 +345,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     const target = fixture;
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     expect(readState(target, parked.sessionId).interruptedStep?.kept).toEqual([MARKER_FILE]);
 
     const resumed = await continueRun(target);
@@ -370,7 +370,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     const target = fixture;
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
     // The stop cut the brief before it wrote a file: it kept nothing, and says so by saying nothing.
     expect(readState(target, parked.sessionId).interruptedStep).toMatchObject({
       step: { kind: 'brief', taskId: 'T001' },
@@ -508,7 +508,7 @@ describe('a correction on a stopped run reaches the plan seat', { timeout: 240_0
     const target = fixture;
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
 
     const asked: PlannerConversation[] = [];
     const resumed = await continueWithCorrection(
@@ -550,7 +550,7 @@ describe('a correction on a stopped run reaches the plan seat', { timeout: 240_0
     const target = fixture;
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-    expect(parked.exitCode).toBe(0);
+    expect(parked.exitCode).toBe(130);
 
     const asked: PlannerConversation[] = [];
     const resumed = await continueWithCorrection(
@@ -597,7 +597,7 @@ describe('a correction on a stopped run reaches the plan seat', { timeout: 240_0
       const target = fixture;
 
       const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-      expect(parked.exitCode).toBe(0);
+      expect(parked.exitCode).toBe(130);
 
       const asked: PlannerConversation[] = [];
       const resumed = await continueWithCorrection(
