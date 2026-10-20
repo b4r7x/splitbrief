@@ -63,6 +63,81 @@ it('moves the whole destination identity after the arrow at 80 columns', () => {
   ]);
 });
 
+it.each([
+  [62, ['via opencode-go', 'high · automatic fallback']],
+  [63, ['via opencode-go', 'high · automatic fallback']],
+  [64, ['via opencode-go', 'high · automatic fallback']],
+  [65, ['via opencode-go · high', 'automatic fallback']],
+])('keeps the arrow with the destination identity at %i columns', (width, [end, last]) => {
+  const rows = eventRows({
+    event: {
+      type: 'seat_switched',
+      ts: 0,
+      phase: 'implementing',
+      seat: 'build',
+      from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+      cause: 'runner-usage-limit',
+      auto: true,
+      configRevision: 'revision',
+    },
+    globalIndex: 0,
+    expanded: false,
+    causeInRecovery: true,
+    ctx: { width, viewportRows: 24, streaming },
+  });
+  expect(rows.map(rowText)).toEqual([
+    'BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek',
+    `${glyph('connectorHandoff')} OpenCode CLI · DeepSeek V4.1 Flash · ${end}`,
+    last,
+  ]);
+});
+
+it.each([
+  [
+    55,
+    { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+    { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+    [
+      'BUILD  OpenCode CLI · DeepSeek V4.1 Flash',
+      'via deepseek',
+      `${glyph('connectorHandoff')} OpenCode CLI · DeepSeek V4.1 Flash`,
+      'via opencode-go · high · automatic fallback',
+    ],
+  ],
+  [
+    34,
+    { tool: 'codex', model: 'gpt-5-codex' },
+    { tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+    [
+      'BUILD  OpenAI Codex CLI',
+      'GPT-5 Codex',
+      `${glyph('connectorHandoff')} OpenAI Codex CLI`,
+      'GPT-6.1-Sol · high',
+      'automatic fallback',
+    ],
+  ],
+] as const)('starts the destination on its own row at %i columns', (width, from, to, expected) => {
+  const rows = eventRows({
+    event: {
+      type: 'seat_switched',
+      ts: 0,
+      phase: 'implementing',
+      seat: 'build',
+      from,
+      to,
+      cause: 'runner-usage-limit',
+      auto: true,
+      configRevision: 'revision',
+    },
+    globalIndex: 0,
+    expanded: false,
+    causeInRecovery: true,
+    ctx: { width, viewportRows: 24, streaming },
+  });
+  expect(rows.map(rowText)).toEqual(expected);
+});
+
 it.each([true, false])('names both same-name switch endpoints with auto=%s', (auto) => {
   const rows = eventRows({
     event: {

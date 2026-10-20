@@ -70,7 +70,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-recovery-model-refused', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-plan-input-too-large', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-review-model-not-listed', ['120x40', '80x24', '60x18', '160x45']],
-  ['workflow-seat-switched', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-seat-switched', ['120x40', '80x24', '60x18', '160x45', '64x20', '56x18']],
   ['workflow-seat-switched-manual', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-spent-b2-replay', ['200x50', '60x18']],
   ['workflow-recovery-fallback-used', ['120x40', '80x24', '60x18', '160x45']],
@@ -212,7 +212,9 @@ describe('visual catalog', () => {
     expect(scenario?.viewports).toEqual(
       id === 'workflow-recovery-no-fallback' || id === 'workflow-recovery-fallback-not-installed'
         ? REQUIRED_VIEWPORTS
-        : WIDE_VIEWPORTS,
+        : id === 'workflow-seat-switched'
+          ? [...WIDE_VIEWPORTS, viewport({ cols: 64, rows: 20 }), viewport({ cols: 56, rows: 18 })]
+          : WIDE_VIEWPORTS,
     );
     expect(scenario?.checkpoints[0]?.marker).toBe(marker);
   });

@@ -318,6 +318,7 @@
 - When you pick Re-run Apply after an Apply halt, the run screen now shows `Applying to your checkout` with its clock. Esc now waits for Apply to finish and then goes home; it no longer offers Stop now or End run.
 - The drift warning for a brief that changed none of its files names every file of that brief, not only the first.
 - A halt panel marks every shortened line with the same `…`.
+- In a narrow terminal, the row that shows a seat moving to another tool or model no longer leaves its arrow at the end of a line or alone on a line; when the old and the new seat do not fit on one line, the arrow and the new tool and model start their own line.
 
 ## [0.1.0] - 2026-08-07
 
