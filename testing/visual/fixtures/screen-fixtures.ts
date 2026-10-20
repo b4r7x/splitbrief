@@ -996,6 +996,23 @@ function createSkillsCompletionFixture(): FixtureLifecycle {
   };
 }
 
+// The user takes /crew from the palette over a typed draft; `cleared` then deletes the filled-in
+// command, and the draft comes back.
+function createPalettePrefillFixture(cleared: boolean): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      composerDraftStore.request('keep the scanner screen as it is');
+    },
+    teardown: home.teardown,
+    afterMount: async (write) => {
+      for (const key of ['\x0b', 'crew', '\r']) await write.press(key);
+      if (cleared) for (const _ of '/crew ') await write.press('\b');
+    },
+  };
+}
+
 function createDraftPathFixture(): FixtureLifecycle {
   const home = createHomeFixture();
   return {
@@ -1283,6 +1300,8 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
   [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
+  [scenarioId('home-palette-prefill-draft'), () => createPalettePrefillFixture(false)],
+  [scenarioId('home-palette-prefill-cleared'), () => createPalettePrefillFixture(true)],
   [scenarioId('home-draft-path'), createDraftPathFixture],
   [scenarioId('home-draft-long'), createLongDraftFixture],
   [scenarioId('home-reference-completion'), createReferenceCompletionFixture],

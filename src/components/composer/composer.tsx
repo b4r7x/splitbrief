@@ -276,20 +276,27 @@ function ComposerInput({
           edit.end <= paste.at ? paste.at + edit.text.length - (edit.end - edit.start) : edit.start;
       }
     }
-    draft.applyEdit(edit);
+    // The draft a command stood over is back. The caret goes to the side the delete moves away
+    // from, so a held Backspace or Delete stops at the draft's edge instead of eating into it.
+    if (draft.applyEdit(edit)) {
+      if (edit.caret >= edit.end) setCaretSeed({ epoch: inputEpoch + 1, index: 0 });
+      bumpEpoch();
+    }
   };
   const setText = (next: string) => {
     for (const paste of pasteQueueRef.current) paste.request.controller.abort();
     pasteQueueRef.current = [];
     setImagePaste(null);
     noteEdit();
-    draft.setText(next);
+    if (draft.setText(next)) bumpEpoch();
   };
   const { clearDraft } = useDraftSync({
     mode,
     questionEpoch,
     actions: {
       setDocument: draft.replaceDocument,
+      holdDocument: draft.holdDocument,
+      prependDocument: draft.prependDocument,
       insertImage: insertDraftImage,
       resetHistory,
       bumpEpoch,

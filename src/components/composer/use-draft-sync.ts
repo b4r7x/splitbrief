@@ -9,6 +9,8 @@ import { assertNever } from '../../utils/type-guards.js';
 
 interface ComposerDraftActions {
   setDocument: (document: DraftDocument) => void;
+  holdDocument: (front: DraftDocument) => void;
+  prependDocument: (front: DraftDocument) => void;
   insertImage: (attachment: Attachment) => void;
   resetHistory: () => void;
   bumpEpoch: () => void;
@@ -30,6 +32,12 @@ function applyComposerDraft(request: ComposerDraftRequest, actions: ComposerDraf
   switch (request.kind) {
     case 'document':
       actions.setDocument(request.document);
+      break;
+    case 'command':
+      actions.holdDocument(request.document);
+      break;
+    case 'prepend':
+      actions.prependDocument(request.document);
       break;
     case 'image':
       actions.insertImage(request.attachment);

@@ -105,7 +105,7 @@ On `turn_interrupted` or `workflow_cancelled`, the operations reducer clears eve
 - **commandPaletteMruStore** -- most-recently-used entries for the command palette.
 - **projectFilesStore** -- refresh invalidation tick for project-file completion; the composer owns the async file read and local suggestion list.
 - **pickerViewStore** -- the seat picker's sub-view, preserved left index, expanded model, option draft and text draft. See [The picker view state](#picker-view-state).
-- **composerDraftStore** -- a one-shot draft request (`{ epoch, value }`) aimed at the composer. Code outside the composer -- the palette's prefill of an `arg` command, a visual fixture -- sets the draft only through this store, never by reaching into the composer.
+- **composerDraftStore** -- a one-shot draft request (`{ epoch, value }`) aimed at the composer. Code outside the composer -- the palette's prefill of an `arg` command, a visual fixture -- sets the draft only through this store, never by reaching into the composer. The palette uses `requestCommand()`: the composer holds the draft the command replaces and puts it back once the composer is empty again (the command was sent or cleared). Text added to the command is never dropped: a second `requestCommand()` joins the edited command onto the held draft on its own line, and a workflow session saves the held draft with that command below it to `draft.json`; a command that still reads as it was filled in is not saved, even after an edit that put its text back. A send the queue refuses comes back through `requestPrepend()`: in front of what the composer holds now, joined on a new line, so neither the refused text nor the draft is lost.
 
 ### Project -- `src/stores/project/`
 

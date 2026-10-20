@@ -222,7 +222,7 @@ routerStore.navigate({ to: 'home' });
 | `projectFilesStore` | `ui/project-files.ts` | `{ refreshEpoch: number }` invalidation tick; the composer owns file-list reads and local list state | `requestRefresh()` |
 | `completionStore` | `ui/completion.ts` | `{ open: boolean }` | `setOpen()` |
 | `hoverStore` | `ui/hover.ts` | `number \| null` — the hovered row index | `set()`, `clear()` |
-| `composerDraftStore` | `ui/composer-draft.ts` | the pending draft request (a document or an image) | `request()`, `requestDocument()`, `requestImage()`, `clear()` |
+| `composerDraftStore` | `ui/composer-draft.ts` | the pending draft request (a document, a command filled in over the draft, a refused send put back in front of the draft, or an image) | `request()`, `requestCommand()`, `requestDocument()`, `requestPrepend()`, `requestImage()`, `clear()` |
 | `composerLiveStore` | `ui/composer-live.ts` | `{ empty, text, document }` | `setDraft()` |
 | `reviewKeysStore` | `ui/review-keys.ts` | `{ commenting: boolean, requested: boolean }` — `requested` holds a change request that Request changes opened, also while its draft is empty | `setCommenting()`, `requestComment()`, `endComment()` |
 | `pickerViewStore` | `ui/picker-view.ts` | `{ view, preservedLeftIndex, expandedModelId, optionDraftId, … }` | `open()`, `close()`, `expand()`, `collapse()`, `setOptionDraftId()`, `setEffortDraft()`, `setAuthDraft()`, `setDraft()`, `setBrowseCatalog()` |

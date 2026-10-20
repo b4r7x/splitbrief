@@ -94,6 +94,99 @@ describe('unsent session composer draft', () => {
     restored.unmount();
   });
 
+  it('keeps the draft behind a filled-in command when the session is left', async () => {
+    open('one');
+    const ui = renderFeature(
+      <Composer
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        commands={[]}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    composerDraftStore.requestDocument(document);
+    await flushEffects();
+    composerDraftStore.requestCommand('/copy ');
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('/copy');
+
+    routerStore.navigate({ to: 'home' });
+    ui.unmount();
+    await flushEffects();
+    expect(readSessionDraft({ projectDir, sessionId: 'one' })).toEqual(document);
+  });
+
+  it('keeps the text typed after a filled-in command, under the draft, when the session is left', async () => {
+    open('one');
+    const composer = () => (
+      <Composer
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        commands={[]}
+        onRuntimeCommand={() => {}}
+      />
+    );
+    const ui = renderFeature(composer());
+    await flushEffects();
+    composerDraftStore.requestDocument(document);
+    await flushEffects();
+    composerDraftStore.requestCommand('/steer ');
+    await flushEffects();
+    ui.stdin.write('stop touching the header');
+    await flushEffects();
+
+    routerStore.navigate({ to: 'home' });
+    ui.unmount();
+    await flushEffects();
+    const kept: DraftDocument = {
+      version: 1,
+      parts: [
+        ...document.parts.slice(0, 2),
+        { kind: 'text', text: 'after\n/steer stop touching the header' },
+      ],
+    };
+    expect(readSessionDraft({ projectDir, sessionId: 'one' })).toEqual(kept);
+
+    open('one');
+    const restored = renderFeature(composer());
+    await flushEffects();
+    expect(restored.lastFrame()).toContain('[image #1]');
+    expect(restored.lastFrame()).toContain('/steer stop touching the header');
+    restored.unmount();
+  });
+
+  it('keeps only the draft behind a command edited back to its prefill when the session is left', async () => {
+    open('one');
+    const ui = renderFeature(
+      <Composer
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        commands={[]}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    composerDraftStore.requestDocument(document);
+    await flushEffects();
+    composerDraftStore.requestCommand('/steer ');
+    await flushEffects();
+    ui.stdin.write('x');
+    await flushEffects();
+    ui.stdin.write('\b');
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('/steer');
+    expect(ui.lastFrame()).not.toContain('/steer x');
+
+    routerStore.navigate({ to: 'home' });
+    ui.unmount();
+    await flushEffects();
+    expect(readSessionDraft({ projectDir, sessionId: 'one' })).toEqual(document);
+  });
+
   it('keeps typed edits with their session when switching a mounted composer', async () => {
     open('one');
     const ui = renderFeature(

@@ -2,6 +2,7 @@ import { queueCopy } from '../../features/workflow/queue-copy.js';
 import { phaseStage } from '../../core/rail-stages.js';
 import { beforeEach, afterEach, describe, it, expect } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -27,10 +28,16 @@ import type {
   RuntimeCommandDef,
 } from '../../core/runtime/commands/types.js';
 import { flushEffects, tick } from '#testing/helpers/ink.js';
+import {
+  type FilteredStdinHarness,
+  renderThroughFilteredStdin,
+} from '#testing/helpers/filtered-stdin-harness.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { glyph } from '../../lib/glyphs.js';
+import { Composer } from '../../components/composer/composer.js';
+import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { CommandPaletteOverlay } from './palette.js';
 
 async function write(instance: ReturnType<typeof render>, chars: string): Promise<void> {
@@ -87,23 +94,52 @@ function createTestCommands(): RuntimeCommandDef[] {
   return createRuntimeCommands(ctx);
 }
 
+function runCommand(commands: RuntimeCommandDef[], raw: string) {
+  return executeRuntimeCommand(commands, raw, {
+    screen: routerStore.get().screen,
+    phase: lifecycleStore.get().phase,
+    plannerSupportsImages: true,
+    openRunAtRest: false,
+    applyUnfinished: false,
+    applying: false,
+    onError: feedbackStore.setError,
+  });
+}
+
 function renderCommandPalette(): ReturnType<typeof render> {
   const commands = createTestCommands();
   return render(
     <CommandPaletteOverlay
       commands={commands}
-      onRuntimeCommand={(raw) =>
-        executeRuntimeCommand(commands, raw, {
-          screen: routerStore.get().screen,
-          phase: lifecycleStore.get().phase,
-          plannerSupportsImages: true,
-          openRunAtRest: false,
-          applyUnfinished: false,
-          applying: false,
-          onError: feedbackStore.setError,
-        })
-      }
+      onRuntimeCommand={(raw) => runCommand(commands, raw)}
     />,
+  );
+}
+
+// The home composer stays mounted under the palette, as the layout keeps it, and takes no keys
+// while an overlay covers it.
+function HomeUnderPalette({ commands }: { commands: RuntimeCommandDef[] }) {
+  const active = overlayStore.use((s) => s.active);
+  return (
+    <Box flexDirection="column">
+      <Composer
+        commands={commands}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={() => {}}
+        onRuntimeCommand={(raw) => {
+          void runCommand(commands, raw);
+        }}
+        disabled={active !== 'none'}
+      />
+      {active === 'command-palette' && (
+        <CommandPaletteOverlay
+          commands={commands}
+          onRuntimeCommand={(raw) => runCommand(commands, raw)}
+        />
+      )}
+    </Box>
   );
 }
 
@@ -1003,5 +1039,136 @@ describe('CommandPaletteOverlay', () => {
     expect(paletteResultRows(instance.lastFrame() ?? '')).toHaveLength(1);
     expect(narrowed).toBe(browsing);
     instance.unmount();
+  });
+});
+
+describe('CommandPaletteOverlay over a typed draft', () => {
+  const DRAFT = 'keep this draft';
+  const CTRL_A = '\u0001';
+  const FORWARD_DELETE = '\u001b[3~';
+  let mounted: FilteredStdinHarness | undefined;
+
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = undefined;
+  });
+
+  async function press(ui: FilteredStdinHarness, bytes: string): Promise<void> {
+    ui.pressBytes(bytes);
+    await flushEffects();
+  }
+
+  async function prefillCrewOverDraft(): Promise<FilteredStdinHarness> {
+    overlayStore.reset();
+    const ui = renderThroughFilteredStdin(<HomeUnderPalette commands={createTestCommands()} />, {
+      cols: 120,
+      rows: 40,
+    });
+    mounted = ui;
+    await flushEffects();
+    await press(ui, DRAFT);
+    expect(composerLiveStore.get().text).toBe(DRAFT);
+
+    overlayStore.open('command-palette');
+    await flushEffects();
+    await press(ui, '/crew');
+    await press(ui, ENTER);
+    expect(overlayStore.get().active).toBe('none');
+    expect(composerLiveStore.get().text).toBe('/crew ');
+    return ui;
+  }
+
+  it('brings the draft back once the filled-in command is sent', async () => {
+    const ui = await prefillCrewOverDraft();
+
+    await press(ui, ENTER);
+
+    expect(overlayStore.get().active).toBe('planner-picker');
+    expect(composerLiveStore.get().text).toBe(DRAFT);
+  });
+
+  it('brings the draft back once the filled-in command is cleared', async () => {
+    const ui = await prefillCrewOverDraft();
+
+    for (let i = 0; i < '/crew '.length; i++) await press(ui, BACKSPACE);
+    await flushEffects();
+
+    expect(composerLiveStore.get().text).toBe(DRAFT);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(DRAFT);
+  });
+
+  it('brings the draft back once Esc closes the argument menu', async () => {
+    const ui = await prefillCrewOverDraft();
+
+    await press(ui, ESC);
+    await tick(80);
+    await flushEffects();
+
+    expect(composerLiveStore.get().text).toBe(DRAFT);
+  });
+
+  it('keeps the whole draft when Backspace repeats past the cleared command', async () => {
+    const ui = await prefillCrewOverDraft();
+
+    for (let i = 0; i < '/crew '.length + 3; i++) await press(ui, BACKSPACE);
+
+    expect(composerLiveStore.get().text).toBe(DRAFT);
+  });
+
+  it('keeps the whole draft when forward delete repeats past the cleared command', async () => {
+    const ui = await prefillCrewOverDraft();
+
+    await press(ui, CTRL_A);
+    for (let i = 0; i < '/crew '.length + 3; i++) await press(ui, FORWARD_DELETE);
+
+    expect(composerLiveStore.get().text).toBe(DRAFT);
+  });
+
+  it('keeps the whole draft when the caret move and the clearing deletes arrive in one read', async () => {
+    const ui = await prefillCrewOverDraft();
+
+    await press(ui, CTRL_A + FORWARD_DELETE.repeat('/crew '.length));
+    for (let i = 0; i < 3; i++) await press(ui, FORWARD_DELETE);
+
+    expect(composerLiveStore.get().text).toBe(DRAFT);
+  });
+
+  async function pickCrewAgain(ui: FilteredStdinHarness): Promise<void> {
+    overlayStore.open('command-palette');
+    await flushEffects();
+    await press(ui, '/crew');
+    await press(ui, ENTER);
+    expect(composerLiveStore.get().text).toBe('/crew ');
+  }
+
+  it('keeps the text typed after a command when a second command is picked over it', async () => {
+    const ui = await prefillCrewOverDraft();
+    await press(ui, 'plan now');
+    await pickCrewAgain(ui);
+
+    for (let i = 0; i < '/crew '.length; i++) await press(ui, BACKSPACE);
+
+    expect(composerLiveStore.get().text).toBe(`${DRAFT}\n/crew plan now`);
+  });
+
+  it('brings back only the draft when a second command is picked over an untouched one', async () => {
+    const ui = await prefillCrewOverDraft();
+    await pickCrewAgain(ui);
+
+    for (let i = 0; i < '/crew '.length; i++) await press(ui, BACKSPACE);
+
+    expect(composerLiveStore.get().text).toBe(DRAFT);
+  });
+
+  it('brings back only the draft when a second command is picked over one edited back to its prefill', async () => {
+    const ui = await prefillCrewOverDraft();
+    await press(ui, 'x');
+    await press(ui, BACKSPACE);
+    expect(composerLiveStore.get().text).toBe('/crew ');
+    await pickCrewAgain(ui);
+
+    for (let i = 0; i < '/crew '.length; i++) await press(ui, BACKSPACE);
+
+    expect(composerLiveStore.get().text).toBe(DRAFT);
   });
 });

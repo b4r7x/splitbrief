@@ -671,6 +671,6 @@ describe('attachment transport', () => {
       openExternalEditor: async () => {},
     }).handleInput(original);
     expect(enqueue).toHaveBeenCalledExactlyOnceWith(original, 'implementing');
-    expect(composerDraftStore.get().request).toMatchObject({ kind: 'document', document });
+    expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', document });
   });
 });

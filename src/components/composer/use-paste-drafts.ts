@@ -1,6 +1,8 @@
+import { isDeepStrictEqual } from 'node:util';
 import { useRef, useState } from 'react';
 import {
   createDraftDocument,
+  draftLength,
   insertDraftImage,
   normalizeDraftDocument,
   replaceDraftRange,
@@ -11,7 +13,7 @@ import {
   expandEditOverAtoms,
   resolveInputEdit,
   type InputAtom,
-  type InputEdit,
+  type InputRange,
 } from '../input/multiline-input.js';
 
 const PASTE_LINE_THRESHOLD = 4;
@@ -162,18 +164,47 @@ interface DraftState {
   folds: DraftFold[];
 }
 
+/** The draft a command stands in front of, and the command as it was filled in. */
+interface DraftHold {
+  draft: DraftState;
+  front: DraftDocument;
+}
+
+/** `front` on its own line above `back`, folds kept; either one alone when the other is empty. */
+function joinDrafts(front: DraftState, back: DraftState): DraftState {
+  if (draftLength(front.document) === 0) return back;
+  if (draftLength(back.document) === 0) return front;
+  const joint = [...front.document.parts, { kind: 'text' as const, text: '\n' }];
+  const next = replaceDraftRange(back.document, { start: 0, end: 0 }, joint);
+  const folds = shiftFolds(back.folds, { start: 0, end: 0 }, next.caret);
+  return { document: next.document, folds: [...front.folds, ...folds] };
+}
+
 interface PasteDrafts {
   document: DraftDocument;
   view: DraftView;
-  applyEdit: (edit: InputEdit) => void;
-  setText: (value: string) => void;
+  /** True when the edit emptied the box and the held draft came back in its place. */
+  applyEdit: (edit: InputRange) => boolean;
+  setText: (value: string) => boolean;
   /** A whole new draft — recall, restore, clear. Its markers belong to the draft they came from. */
   replaceDocument: (document: DraftDocument) => void;
+  /**
+   * A command in front of the draft: the draft is held, whole, and comes back the moment the box
+   * is empty again, however it got there. An earlier command the box edited joins the held draft
+   * on its own line.
+   */
+  holdDocument: (front: DraftDocument) => void;
+  /** Text put back in front of the draft, joined on a new line, so neither one is lost. */
+  prependDocument: (front: DraftDocument) => void;
   insertImage: (attachment: Attachment, at: number) => number;
 }
 
 export function usePasteDrafts(options?: {
   initialDocument: () => DraftDocument;
+  /**
+   * The draft to keep: while a command stands in front of a held draft, that draft with the edited
+   * command joined below it.
+   */
   onDocumentChange: (document: DraftDocument) => void;
 }): PasteDrafts {
   const [state, setState] = useState<DraftState>(() => ({
@@ -181,15 +212,28 @@ export function usePasteDrafts(options?: {
     folds: [],
   }));
   const currentState = useRef(state);
-  const updateState = (next: DraftState) => {
+  const holdRef = useRef<DraftHold | null>(null);
+  // What the box would leave if its command went: the held draft, with the edited command below
+  // it. A box that still reads as the command did joins nothing.
+  const keptDraft = (box: DraftState): DraftState => {
+    const hold = holdRef.current;
+    if (hold === null) return box;
+    return isDeepStrictEqual(box.document, hold.front) ? hold.draft : joinDrafts(hold.draft, box);
+  };
+  const updateState = (proposed: DraftState): boolean => {
+    const hold = holdRef.current;
+    const released = hold !== null && draftLength(proposed.document) === 0;
+    if (released) holdRef.current = null;
+    const next = released ? hold.draft : proposed;
     currentState.current = next;
-    options?.onDocumentChange(next.document);
+    options?.onDocumentChange(keptDraft(next).document);
     setState(next);
+    return released && draftLength(next.document) > 0;
   };
   const foldIdRef = useRef(0);
   const view = buildDraftView(state.document, state.folds);
 
-  const applyEdit = (edit: InputEdit) => {
+  const applyEdit = (edit: InputRange) => {
     const inserted = Array.from(edit.text).length;
     const lineCount = pasteLineCount(edit.text);
     const foldId = lineCount >= PASTE_LINE_THRESHOLD ? `paste-${foldIdRef.current++}` : undefined;
@@ -207,7 +251,7 @@ export function usePasteDrafts(options?: {
       folds.push({ id: foldId, start, end: start + inserted, lineCount });
       folds.sort((a, b) => a.start - b.start);
     }
-    updateState({ document: next.document, folds });
+    return updateState({ document: next.document, folds });
   };
 
   return {
@@ -216,7 +260,16 @@ export function usePasteDrafts(options?: {
     applyEdit,
     setText: (value) =>
       applyEdit(expandEditOverAtoms(view.atoms, resolveInputEdit(view.text, value, value.length))),
-    replaceDocument: (document) => updateState({ document, folds: [] }),
+    replaceDocument: (document) => {
+      updateState({ document, folds: [] });
+    },
+    holdDocument: (front) => {
+      holdRef.current = { draft: keptDraft(currentState.current), front };
+      updateState({ document: front, folds: [] });
+    },
+    prependDocument: (front) => {
+      updateState(joinDrafts({ document: front, folds: [] }, currentState.current));
+    },
     insertImage: (attachment, at) => {
       const current = currentState.current;
       const offset = draftOffsetAt(buildDraftView(current.document, current.folds), at);
