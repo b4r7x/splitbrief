@@ -1808,6 +1808,42 @@ describe('runFinalReviewPhase', () => {
     expect(drift.findings).toEqual([]);
   });
 
+  it('names every file of a two-file brief that changed none of them', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const { reviewer, prompts } = makeReviewer();
+    const task = makeTask({
+      id: 'T001',
+      suggestedFiles: ['src/a.ts', 'src/b.ts'],
+      status: 'done',
+    });
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/other.ts'), 'export const other = true;\n');
+    await recordPromotion({ projectDir, sessionId, task, path: 'src/other.ts' });
+
+    await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([task], runStartHead),
+      reviewer,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    const message = 'Task T001 reached done but src/a.ts, src/b.ts were not changed.';
+    const drift = events.find((event) => event.type === 'drift_report');
+    expect(drift?.type === 'drift_report' ? drift.findings : []).toContainEqual(
+      expect.objectContaining({ code: 'missing_expected_file', taskId: 'T001', message }),
+    );
+    expect(prompts.join('\n')).toContain(message);
+  });
+
   it('fails the review instead of guessing the run boundary when state has no run-start baseline', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);

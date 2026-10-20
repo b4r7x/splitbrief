@@ -131,21 +131,24 @@ describe('analyzeBriefDrift', () => {
     expect(report.passed).toBe(false);
   });
 
-  it('errors when a failed task leaves a changed file matching its primary glob', () => {
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/failed/*.ts'], status: 'failed' });
+  it('names the changed files of a failed task, not its first suggested file', () => {
+    const task = makeTask({
+      id: 'T001',
+      suggestedFiles: ['src/a.ts', 'src/failed/*.ts'],
+      status: 'failed',
+    });
     const report = analyzeBriefDrift({
       tasks: [task],
       changedFiles: ['src/failed/matched.ts'],
       preRunChangedFiles: [],
     });
 
-    expect(report.findings).toContainEqual(
-      expect.objectContaining({
-        code: 'failed_task_with_diff',
-        taskId: 'T001',
-        file: 'src/failed/*.ts',
-      }),
-    );
+    expect(report.findings).toContainEqual({
+      severity: 'error',
+      code: 'failed_task_with_diff',
+      taskId: 'T001',
+      message: 'Failed task T001 left changes in src/failed/matched.ts.',
+    });
   });
 
   it('excludes the planner-written root tasks.md from the drift universe', () => {
@@ -246,7 +249,7 @@ describe('analyzeBriefDrift', () => {
     const finding = report.findings.find((f) => f.code === 'missing_expected_file');
     expect(finding?.severity).toBe('warning');
     expect(finding?.taskId).toBe('T001');
-    expect(finding?.file).toBe('src/a.ts');
+    expect(finding?.message).toBe('Task T001 reached done but src/a.ts was not changed.');
   });
 
   it('emits no missing_expected_file when the completed task file is in the changed universe', () => {

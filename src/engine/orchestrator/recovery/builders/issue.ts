@@ -7,6 +7,7 @@ import type {
 } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
+import { truncateByChars } from '../../../../utils/truncate.js';
 
 export const MAX_SUMMARY_LENGTH = 320;
 
@@ -24,9 +25,7 @@ export interface TaskRecoveryContext {
 }
 
 export function summarizeText(input: string): string {
-  const normalized = input.trim().replace(/\s+/g, ' ');
-  if (normalized.length <= MAX_SUMMARY_LENGTH) return normalized;
-  return `${normalized.slice(0, MAX_SUMMARY_LENGTH - 3)}...`;
+  return truncateByChars(input.trim().replace(/\s+/g, ' '), MAX_SUMMARY_LENGTH);
 }
 
 export function buildRecoveryIssueId(opts: {

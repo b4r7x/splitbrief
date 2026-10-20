@@ -93,24 +93,22 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
         severity: 'warning',
         code: 'missing_expected_file',
         taskId: task.id,
-        file: task.suggestedFiles[0],
-        message: `Task ${task.id} reached ${task.status} but ${task.suggestedFiles[0]} was not changed.`,
+        message: `Task ${task.id} reached ${task.status} but ${task.suggestedFiles.join(', ')} ${task.suggestedFiles.length === 1 ? 'was' : 'were'} not changed.`,
       });
     }
   }
 
   for (const task of input.tasks) {
-    if (
-      task.status === 'failed' &&
-      task.suggestedFiles[0] &&
-      changedFiles.some((file) => isInDeclaredSet(file, task.suggestedFiles))
-    ) {
+    const left =
+      task.status === 'failed'
+        ? changedFiles.filter((file) => isInDeclaredSet(file, task.suggestedFiles))
+        : [];
+    if (left.length > 0) {
       findings.push({
         severity: 'error',
         code: 'failed_task_with_diff',
         taskId: task.id,
-        file: task.suggestedFiles[0],
-        message: `Failed task ${task.id} left changes in ${task.suggestedFiles[0]}.`,
+        message: `Failed task ${task.id} left changes in ${left.join(', ')}.`,
       });
     }
   }

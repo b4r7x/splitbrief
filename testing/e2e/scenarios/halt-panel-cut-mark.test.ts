@@ -57,7 +57,7 @@ afterEach(() => {
 });
 
 describe('e2e: a halt panel too short for its text', () => {
-  it('marks the cut lines at 80x24 and keeps the actions and the legend', async () => {
+  it('marks a detail over the cap with …, the cut lines at 80x24, and keeps the actions and the legend', async () => {
     fixture = createStopContinueFixture(blockedImplementerScript, {
       consult: guidingConsult,
     });
@@ -72,6 +72,14 @@ describe('e2e: a halt panel too short for its text', () => {
         expect.stringContaining('Last diagnosis: Implementer is blocked: greet.ts needs'),
       ]),
     });
+
+    const diagnosis = opened.state.pendingRecovery?.details.find((line) =>
+      line.startsWith('Last diagnosis: '),
+    );
+    expect(diagnosis?.endsWith('…')).toBe(true);
+    const wide = stripAnsiStyles(opened.screen.lastFrame());
+    expect(wide).toContain(diagnosis?.slice(diagnosis.lastIndexOf(' ') + 1));
+    expect(wide).not.toContain('...');
 
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     await flushEffects();
