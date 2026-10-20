@@ -310,6 +310,7 @@
 - Taking a command from the palette no longer loses the text you had typed: the draft comes back whole once you send, run or clear the command, also when you hold Backspace. Text you type after that command is kept as well, below the draft, when you pick another command or leave the run and come back. A message the run cannot take now comes back in front of what you typed since, instead of replacing it.
 - A halt's Files row now lists the brief's files, not only the first one.
 - The closed run block keeps the words of a task or a review finding written on two lines apart.
+- A seat you save in Settings or with `/crew` while a run waits on a halt is now used when the run goes on, and the other seats you saved stay as saved.
 
 ## [0.1.0] - 2026-08-07
 

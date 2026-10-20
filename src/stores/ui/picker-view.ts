@@ -22,6 +22,8 @@ export interface PickerViewState {
   authDraft: CliAuthMethod | 'host-configured' | null;
   draft: string | null;
   browseCatalog: boolean;
+  /** Set when the picker takes a row: it saved the seat and closes. Escape and Ctrl+D never set it. */
+  committed: boolean;
 }
 
 const initial: PickerViewState = {
@@ -33,6 +35,7 @@ const initial: PickerViewState = {
   authDraft: null,
   draft: null,
   browseCatalog: false,
+  committed: false,
 };
 
 const store = createStore<PickerViewState>(initial);
@@ -105,6 +108,10 @@ function setBrowseCatalog(browseCatalog: boolean) {
   store.set((s) => (s.browseCatalog === browseCatalog ? s : { ...s, browseCatalog }));
 }
 
+function setCommitted(committed: boolean) {
+  store.set((s) => (s.committed === committed ? s : { ...s, committed }));
+}
+
 export const pickerViewStore = {
   ...storeBase(store),
   open,
@@ -116,4 +123,5 @@ export const pickerViewStore = {
   setAuthDraft,
   setDraft,
   setBrowseCatalog,
+  setCommitted,
 };

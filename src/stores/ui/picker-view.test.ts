@@ -16,6 +16,7 @@ describe('pickerViewStore', () => {
       authDraft: null,
       draft: null,
       browseCatalog: false,
+      committed: false,
     });
   });
 
@@ -35,6 +36,21 @@ describe('pickerViewStore', () => {
     pickerViewStore.setBrowseCatalog(true);
 
     expect(pickerViewStore.get()).toBe(browsing);
+  });
+
+  it('starts with no row taken, remembers a take, and keeps the same state when nothing changes', () => {
+    expect(pickerViewStore.get().committed).toBe(false);
+
+    pickerViewStore.setCommitted(true);
+    const taken = pickerViewStore.get();
+    pickerViewStore.setCommitted(true);
+
+    expect(pickerViewStore.get()).toBe(taken);
+    expect(taken.committed).toBe(true);
+
+    pickerViewStore.setCommitted(false);
+
+    expect(pickerViewStore.get().committed).toBe(false);
   });
 
   it('preserves the left index a sub-view was opened from', () => {
@@ -134,6 +150,7 @@ describe('pickerViewStore', () => {
     pickerViewStore.expand('gpt-5.6-luna');
     pickerViewStore.setDraft('ollama/llama4');
     pickerViewStore.setBrowseCatalog(true);
+    pickerViewStore.setCommitted(true);
 
     pickerViewStore.reset();
 
@@ -146,6 +163,7 @@ describe('pickerViewStore', () => {
       authDraft: null,
       draft: null,
       browseCatalog: false,
+      committed: false,
     });
   });
 });

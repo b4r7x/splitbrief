@@ -6,6 +6,7 @@ import {
   toolRowFocus,
   type OverlayType,
 } from '../../core/navigation/types.js';
+import type { Config } from '../../core/schemas/config.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { StepRef } from '../../core/schemas/run-step.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
@@ -72,6 +73,8 @@ interface PromptPendingRecoveryArgs {
 
 interface RecoveryDriverOptions {
   prepared: PreparedExecution;
+  /** The config the run's seats were prepared from: a seat picker closed on its seat is a cancel. */
+  configOfRun: Config;
   inputMode: UseInputModeResult;
   abortedRef: { current: boolean };
   retentionNoticeHandled: { current: boolean };
@@ -95,14 +98,17 @@ function openRecoveryNotice(issue: RecoveryIssue, at: StepRef): void {
   });
 }
 
-/** Resolves once the picker has closed, or the run is aborted while it is open. */
-function overlayClosed(overlay: OverlayType, signal: AbortSignal): Promise<void> {
+/**
+ * Resolves once the picker has closed, or the run is aborted while it is open, with whether
+ * the picker took a row. The flag is read at the close itself: the picker's unmount resets it.
+ */
+function overlayClosed(overlay: OverlayType, signal: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     let unsubscribe = (): void => {};
     const settle = (): void => {
       unsubscribe();
       signal.removeEventListener('abort', settle);
-      resolve();
+      resolve(pickerViewStore.get().committed);
     };
     unsubscribe = overlayStore.subscribe(() => {
       if (overlayStore.get().active !== overlay) settle();
@@ -112,9 +118,8 @@ function overlayClosed(overlay: OverlayType, signal: AbortSignal): Promise<void>
   });
 }
 
-/** The seat as the config of record has it now; a seat that runs no CLI tool cannot be swapped. */
-function seatOfRecord(seat: CrewSeatId): SeatSwapCandidate | undefined {
-  const config = configStore.get().config;
+/** The seat as a config has it; a seat that runs no CLI tool cannot be swapped. */
+function seatIn(config: Config | null, seat: CrewSeatId): SeatSwapCandidate | undefined {
   if (config === null) return undefined;
   const runner = readActiveRunner({ config, role: CREW_SEAT_ROLES[seat] });
   if (runner.kind !== 'cli') return undefined;
@@ -129,16 +134,19 @@ function seatOfRecord(seat: CrewSeatId): SeatSwapCandidate | undefined {
 /**
  * The chosen candidate is preselected in the seat's own picker, the one place a
  * seat's model and effort are chosen: the picker opens on its tool row with its
- * model and effort drafted. The picker writes the config of record and the swap
- * is read back from it; a picker closed on the seat it opened on — same tool,
- * model, effort and variant — is a cancelled swap.
+ * model and effort drafted. A row the picker takes is saved to the config of record,
+ * and the swap is read back from it. A picker closed with no row taken (Escape, also
+ * after Ctrl+D saved a deleted custom model) is a cancelled swap, and so is a take of
+ * the seat the run was prepared on — same tool, model, effort and variant. A take of
+ * the seat a save under the halt already chose is a swap.
  */
 async function pickSwappedSeat(
   seat: CrewSeatId,
   candidate: SeatSwapCandidate,
+  configOfRun: Config,
   signal: AbortSignal,
 ): Promise<SeatSwapCandidate | undefined> {
-  const before = seatOfRecord(seat);
+  const before = seatIn(configOfRun, seat);
   const overlay = seatPickerOverlayFor(CREW_SEAT_ROLES[seat]);
   if (candidate.model !== undefined) {
     pickerViewStore.expand(
@@ -147,9 +155,10 @@ async function pickSwappedSeat(
       candidate.effort ?? candidate.variant ?? null,
     );
   }
+  pickerViewStore.setCommitted(false);
   overlayStore.open(overlay, toolRowFocus(candidate.tool));
-  await overlayClosed(overlay, signal);
-  const after = seatOfRecord(seat);
+  if (!(await overlayClosed(overlay, signal))) return undefined;
+  const after = seatIn(configStore.get().config, seat);
   if (after === undefined) return undefined;
   if (before !== undefined && sameSeatCandidate(after, before)) return undefined;
   return after;
@@ -174,7 +183,15 @@ async function pickSwappedSeat(
 export function createRecoveryDriver(
   opts: RecoveryDriverOptions,
 ): (args: PromptPendingRecoveryArgs) => Promise<PendingRecoveryResult> {
-  const { prepared, inputMode, abortedRef, retentionNoticeHandled, sink, setInlineResume } = opts;
+  const {
+    prepared,
+    configOfRun,
+    inputMode,
+    abortedRef,
+    retentionNoticeHandled,
+    sink,
+    setInlineResume,
+  } = opts;
   const { ref } = prepared.session;
   const { projectDir, sessionId } = ref;
   const config = prepared.config;
@@ -236,7 +253,12 @@ export function createRecoveryDriver(
           openRecoveryNotice(issue, at);
           return null;
         }
-        const candidate = await pickSwappedSeat(offer.seat, offered, controller.signal);
+        const candidate = await pickSwappedSeat(
+          offer.seat,
+          offered,
+          configOfRun,
+          controller.signal,
+        );
         if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
         if (candidate === undefined) {
           openRecoveryNotice(issue, at);

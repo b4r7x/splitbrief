@@ -28,7 +28,12 @@ import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../../engine/orch
 import { writeConfig } from '../../../core/config/load/io.js';
 import { readConfigDocument } from '../../../core/config/load/document.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
+import {
+  cliDetectionFor,
+  cliDetectionsFor,
+  rememberDetectedTools,
+} from '#testing/helpers/factories/detection.js';
+import { detectionStore } from '../../../stores/project/detection.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
 import { createRunIsolation } from '../../../engine/orchestrator/isolation/create.js';
 import { readWorkspaceRecord } from '../../../engine/orchestrator/isolation/retention.js';
@@ -58,7 +63,6 @@ import {
   abortTurn,
   consumeSeatChange,
   requestBoundaryPause,
-  requestSeatChangeAtBoundary,
   requestStopNow,
   requestCancel,
   requestEndRun,
@@ -142,6 +146,28 @@ function renderHarness(props: HarnessProps) {
     execution: { kind: 'local', prepared: props.prepared },
   });
   return render(<Harness {...props} />);
+}
+
+/** The BUILD seat's picker the way the router mounts it: only while its overlay is open. */
+function BuildSeatPicker() {
+  const open = overlayStore.use((s) => s.active === 'implementer-picker');
+  return open ? <ToolModelPicker slot="seat" role="implementer" /> : null;
+}
+
+/** The loop with the real BUILD seat picker beside it, so a halt's picker takes keys. */
+function renderHarnessWithPicker(props: HarnessProps) {
+  routerStore.init({
+    screen: 'workflow',
+    run: makeRunRecord({ ref: props.prepared.session.ref }),
+    execution: { kind: 'local', prepared: props.prepared },
+  });
+  terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+  return render(
+    <Box flexDirection="column">
+      <Harness {...props} />
+      <BuildSeatPicker />
+    </Box>,
+  );
 }
 
 /** The run the loop handed back to the screen: the same route, at rest, with a fresh record. */
@@ -233,6 +259,47 @@ function saveHaltedRun(sessionId: string): WorkflowState {
   });
   saveState({ projectDir, sessionId }, halted);
   return halted;
+}
+
+/** A run whose BUILD seat halted Seat down, its panel offering Try again and a move to Claude Code. */
+function saveSeatDownHalt(sessionId: string): WorkflowState {
+  const halted = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+    pendingRecovery: makeRecoveryIssue({
+      reason: 'runner-usage-limit',
+      seat: 'build',
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+    }),
+  });
+  saveState({ projectDir, sessionId }, halted);
+  return halted;
+}
+
+/** The config a Settings save writes while the halt waits: the BUILD seat moved to Codex. */
+const CODEX_SEAT_SAVED = makeConfig({
+  planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
+  implementer: { kind: 'cli', tool: 'codex' },
+});
+
+/** The config with the BUILD seat on Claude Code, the tool the Seat down halt offers. */
+const CLAUDE_CODE_SEAT_SAVED = makeConfig({
+  planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
+  implementer: { kind: 'cli', tool: 'claude-code' },
+});
+
+/** The engine entry after a halt, recording what would stop it at its first brief boundary. */
+function engineEntryAfterHalt() {
+  let seen: { intent: string; pausedAtBoundary: boolean | undefined; steer: string | undefined };
+  const engine: RunWorkflowFn = async (options) => {
+    seen = {
+      intent: stopStore.get().intent,
+      pausedAtBoundary: options.sinks.consumeBoundaryPause?.(),
+      steer: options.steer?.text,
+    };
+    return makeSummary();
+  };
+  return { engine, seen: () => seen };
 }
 
 async function answerRecoveryPanel(
@@ -662,6 +729,7 @@ describe('useRunLoop', () => {
       projectDir,
       config: { ...config, implementer: { kind: 'cli', ...candidate } },
     });
+    pickerViewStore.setCommitted(true);
     overlayStore.close();
     await vi.waitFor(() => expect(run.returned()).toBe(1));
     expect(configStore.get().config?.implementer).toMatchObject({
@@ -1341,6 +1409,45 @@ describe('useRunLoop', () => {
     inst.unmount();
   });
 
+  it('stays paused at the brief boundary the operator asked for when a seat changed under the same brief', async () => {
+    const sessionId = '2026-10-19-seat-change-operator-pause';
+    ensureSessionDir(projectDir, sessionId);
+    saveState(
+      { projectDir, sessionId },
+      { ...createInitialState('add auth'), phase: 'implementing' },
+    );
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    configStore.__testReset({ projectDir, config: prepared.config });
+    const continueAtRest = vi.fn();
+    const { promise: seatChanged, resolve: seatChangedNow } = Promise.withResolvers<void>();
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      await seatChanged;
+      options.sinks.consumeBoundaryPause?.();
+      await options.callbacks.onContinuationNeeded?.('', 'boundary', []);
+      return makeSummary();
+    });
+
+    const inst = renderHarness({ prepared, continueAtRest, runWorkflow: runWorkflowStub });
+    await vi.waitFor(() => {
+      expect(runWorkflowStub).toHaveBeenCalledTimes(1);
+    });
+    lifecycleStore.__testReset({ phase: 'implementing' });
+    requestBoundaryPause();
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
+    });
+
+    seatChangedNow();
+    await vi.waitFor(() => {
+      expect(settledRun()).not.toBeNull();
+    });
+    expect(continueAtRest).not.toHaveBeenCalled();
+    expect(stopStore.get()).toMatchObject({ intent: 'pause-after-brief', phase: 'parked' });
+
+    inst.unmount();
+  });
+
   describe('a save that changes no seat under a running brief', () => {
     // Preparation names the model a seat leaves to its tool; the config it read keeps the seat as saved.
     function preparedOnHostModel(sessionId: string, read: Config): PreparedExecution {
@@ -1544,19 +1651,6 @@ describe('useRunLoop', () => {
     expect(stopStore.get().phase).toBe('parked');
 
     inst.unmount();
-  });
-
-  it('consumes a boundary seat change per seat and only against the revision the swap wrote', () => {
-    requestSeatChangeAtBoundary('build', 'r1');
-    requestSeatChangeAtBoundary('plan', 'r2');
-    // A swap of build that wrote against a different revision is a newer manual change to
-    // the same seat: its own entry is left standing, and the manual change wins.
-    expect(consumeSeatChange({ seat: 'build', configRevision: 'r0' })).toBe(false);
-    // Another seat's entry is consumed on its own, against its own revision.
-    expect(consumeSeatChange({ seat: 'plan', configRevision: 'r2' })).toBe(true);
-    // build's entry was left standing, so the bare boundary consume still finds it.
-    expect(consumeSeatChange()).toBe(true);
-    expect(consumeSeatChange()).toBe(false);
   });
 
   it('keeps the drafted model and effort when the swap opens the picker, and Escape leaves with no change', async () => {
@@ -1915,6 +2009,7 @@ describe('useRunLoop', () => {
           implementer: { kind: 'cli', tool: 'claude-code' },
         }),
       });
+      pickerViewStore.setCommitted(true);
       overlayStore.close();
       await vi.waitFor(() => {
         expect(run.returned()).toBe(2);
@@ -1986,6 +2081,7 @@ describe('useRunLoop', () => {
         }),
       });
       const intentAfterSave = stopStore.get().intent;
+      pickerViewStore.setCommitted(true);
       overlayStore.close();
       await vi.waitFor(() => {
         expect(run.returned()).toBe(2);
@@ -2002,21 +2098,143 @@ describe('useRunLoop', () => {
       inst.unmount();
     });
 
-    it('takes a seat saved while a halt waits at the first brief boundary after the halt is answered', async () => {
-      const sessionId = '2026-10-19-halt-settings-save';
+    it.each([
+      ['Try again', 'retry', undefined],
+      ['a correction', 'use the new helper', 'use the new helper'],
+    ])(
+      'runs %s on a seat saved while a Seat down halt waits, with no boundary pause',
+      async (_answer, typed, steer) => {
+        const sessionId = '2026-10-19-halt-settings-save';
+        const captureRunner: HarnessProps['captureRunner'] = { current: null };
+        const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+        configStore.__testReset({ projectDir, config: prepared.config });
+        const requests: PrepareExecutionInput[] = [];
+        const reentry = engineEntryAfterHalt();
+        const run = recordedEngine({
+          1: async () => {
+            saveSeatDownHalt(sessionId);
+            return makeSummary();
+          },
+          2: reentry.engine,
+        });
+
+        const inst = renderHarness({
+          prepared,
+          captureRunner,
+          runWorkflow: run.engine,
+          prepareExecution: reprepareSameSession(requests),
+        });
+        await vi.waitFor(() => {
+          expect(controlsStore.get().inputMode).toBe('question');
+        });
+        lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+        // A save from Settings while the panel is open, not the panel's own swap.
+        configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
+        await answerRecoveryPanel(captureRunner, typed);
+        await vi.waitFor(() => {
+          expect(run.returned()).toBe(2);
+        });
+
+        expect(requests).toEqual([expect.objectContaining({ effectiveConfig: CODEX_SEAT_SAVED })]);
+        expect(run.entered[1]?.config.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
+        expect(reentry.seen()).toEqual({ pausedAtBoundary: false, intent: 'none', steer });
+
+        inst.unmount();
+      },
+    );
+
+    it('runs Try again on a seat saved under the running brief that then halted, with no boundary pause', async () => {
+      const sessionId = '2026-10-19-brief-save-then-halt';
       const captureRunner: HarnessProps['captureRunner'] = { current: null };
       const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
       configStore.__testReset({ projectDir, config: prepared.config });
-      let pausedAtBoundary: boolean | undefined;
+      const { promise: saved, resolve: savedNow } = Promise.withResolvers<void>();
+      const reentry = engineEntryAfterHalt();
+      const run = recordedEngine({
+        // The brief is running when the seat is saved, then it halts Seat down before its boundary.
+        1: async () => {
+          await saved;
+          saveSeatDownHalt(sessionId);
+          return makeSummary();
+        },
+        2: reentry.engine,
+      });
+
+      const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+      await vi.waitFor(() => {
+        expect(run.entered).toHaveLength(1);
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
+      expect(stopStore.get().intent).toBe('pause-after-brief');
+      savedNow();
+      await answerRecoveryPanel(captureRunner, 'retry');
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(2);
+      });
+
+      expect(run.entered[1]?.config.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
+      expect(reentry.seen()).toMatchObject({ pausedAtBoundary: false, intent: 'none' });
+
+      inst.unmount();
+    });
+
+    it('runs Try again on a seat saved while the Seat down halt of a run continued at rest waits', async () => {
+      const sessionId = '2026-10-19-at-rest-halt-save';
+      ensureSessionDir(projectDir, sessionId);
+      const halted = saveSeatDownHalt(sessionId);
+      const prepared = preparedExecution({
+        projectDir,
+        feature: halted.feature,
+        sessionId,
+        resumeState: halted,
+      });
+      configStore.__testReset({ projectDir, config: prepared.config });
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const requests: PrepareExecutionInput[] = [];
+      const reentry = engineEntryAfterHalt();
+      const run = recordedEngine({ 1: reentry.engine });
+
+      const inst = renderHarness({
+        prepared,
+        captureRunner,
+        runWorkflow: run.engine,
+        prepareExecution: reprepareSameSession(requests),
+      });
+      await vi.waitFor(() => {
+        expect(controlsStore.get().inputMode).toBe('question');
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
+      await answerRecoveryPanel(captureRunner, 'retry');
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(1);
+      });
+
+      expect(requests).toEqual([
+        expect.objectContaining({
+          effectiveConfig: CODEX_SEAT_SAVED,
+          policy: expect.objectContaining({ purpose: 'resume' }),
+        }),
+      ]);
+      expect(run.entered[0]?.config.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
+      expect(reentry.seen()).toMatchObject({ pausedAtBoundary: false, intent: 'none' });
+
+      inst.unmount();
+    });
+
+    it('switches the halted seat when the picker takes the tool a save under the halt already chose', async () => {
+      const sessionId = '2026-10-19-halt-save-then-switch-same';
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+      configStore.__testReset({ projectDir, config: prepared.config });
+      const reentry = engineEntryAfterHalt();
       const run = recordedEngine({
         1: async () => {
-          saveHaltedRun(sessionId);
+          saveSeatDownHalt(sessionId);
           return makeSummary();
         },
-        2: async (options) => {
-          pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
-          return makeSummary();
-        },
+        2: reentry.engine,
       });
 
       const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
@@ -2024,22 +2242,339 @@ describe('useRunLoop', () => {
         expect(controlsStore.get().inputMode).toBe('question');
       });
       lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
-      // A save from Settings while the panel is open, not the panel's own swap.
-      configStore.__testReset({
-        projectDir,
-        config: makeConfig({
-          planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
-          implementer: { kind: 'cli', tool: 'codex' },
-        }),
+      configStore.__testReset({ projectDir, config: CLAUDE_CODE_SEAT_SAVED });
+      await answerRecoveryPanel(captureRunner, 'switch');
+      await vi.waitFor(() => {
+        expect(overlayStore.get().active).toBe('implementer-picker');
       });
-      await answerRecoveryPanel(captureRunner, 'retry');
+      // The picker opens on the offered tool, which the save already chose; taking its row
+      // writes the seat again.
+      configStore.__testReset({ projectDir, config: CLAUDE_CODE_SEAT_SAVED });
+      pickerViewStore.setCommitted(true);
+      overlayStore.close();
       await vi.waitFor(() => {
         expect(run.returned()).toBe(2);
       });
 
-      expect(pausedAtBoundary).toBe(true);
+      expect(run.entered[1]?.config.implementer).toMatchObject({
+        kind: 'cli',
+        tool: 'claude-code',
+      });
+      expect(loadState(prepared.session.ref)?.seatSwitches).toEqual([
+        expect.objectContaining({
+          seat: 'build',
+          toSeat: { tool: 'claude-code' },
+          cause: 'runner-usage-limit',
+        }),
+      ]);
 
       inst.unmount();
+    });
+
+    it.each([
+      ['the offered tool', CLAUDE_CODE_SEAT_SAVED, 'claude-code'],
+      ['a tool the halt does not offer', CODEX_SEAT_SAVED, 'codex'],
+    ])(
+      'keeps the halt when the picker closes with no pick after a save of %s under it, and Try again runs on it',
+      async (_saved, savedConfig, tool) => {
+        const sessionId = '2026-10-19-halt-save-then-picker-escape';
+        const captureRunner: HarnessProps['captureRunner'] = { current: null };
+        const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+        configStore.__testReset({ projectDir, config: prepared.config });
+        const requests: PrepareExecutionInput[] = [];
+        const reentry = engineEntryAfterHalt();
+        const run = recordedEngine({
+          1: async () => {
+            saveSeatDownHalt(sessionId);
+            return makeSummary();
+          },
+          2: reentry.engine,
+        });
+
+        const inst = renderHarness({
+          prepared,
+          captureRunner,
+          runWorkflow: run.engine,
+          prepareExecution: reprepareSameSession(requests),
+        });
+        await vi.waitFor(() => {
+          expect(controlsStore.get().inputMode).toBe('question');
+        });
+        lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+        configStore.__testReset({ projectDir, config: savedConfig });
+        await answerRecoveryPanel(captureRunner, 'switch');
+        await vi.waitFor(() => {
+          expect(overlayStore.get().active).toBe('implementer-picker');
+        });
+        // Escape closes the picker and writes nothing.
+        overlayStore.close();
+        await answerRecoveryPanel(captureRunner, 'retry');
+        await vi.waitFor(() => {
+          expect(run.returned()).toBe(2);
+        });
+
+        expect(requests).toEqual([expect.objectContaining({ effectiveConfig: savedConfig })]);
+        expect(run.entered[1]?.config.implementer).toMatchObject({ kind: 'cli', tool });
+        expect(loadState(prepared.session.ref)?.seatSwitches ?? []).toEqual([]);
+        expect(
+          eventsStore
+            .get()
+            .events.filter(
+              (event) => event.type === 'warning' && event.message.includes('Could not switch'),
+            ),
+        ).toEqual([]);
+
+        inst.unmount();
+      },
+    );
+
+    it('keeps a REVIEW seat saved under a BUILD halt when Change BUILD tool picks another tool', async () => {
+      const sessionId = '2026-10-19-halt-review-save-then-switch';
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+      configStore.__testReset({ projectDir, config: prepared.config });
+      const planner = { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' } as const;
+      const reviewer = { kind: 'cli', tool: 'codex' } as const;
+      const reentry = engineEntryAfterHalt();
+      const run = recordedEngine({
+        1: async () => {
+          saveSeatDownHalt(sessionId);
+          return makeSummary();
+        },
+        2: reentry.engine,
+      });
+
+      const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+      await vi.waitFor(() => {
+        expect(controlsStore.get().inputMode).toBe('question');
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      configStore.__testReset({ projectDir, config: makeConfig({ planner, reviewer }) });
+      await answerRecoveryPanel(captureRunner, 'switch');
+      await vi.waitFor(() => {
+        expect(overlayStore.get().active).toBe('implementer-picker');
+      });
+      configStore.__testReset({
+        projectDir,
+        config: makeConfig({
+          planner,
+          reviewer,
+          implementer: { kind: 'cli', tool: 'claude-code' },
+        }),
+      });
+      pickerViewStore.setCommitted(true);
+      overlayStore.close();
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(2);
+      });
+
+      expect(run.entered[1]?.config.implementer).toMatchObject({ tool: 'claude-code' });
+      expect(run.entered[1]?.config.reviewer).toMatchObject(reviewer);
+      expect(configStore.get().config?.reviewer).toMatchObject(reviewer);
+
+      inst.unmount();
+    });
+
+    it.each([
+      ['Try again', 'retry'],
+      ['Change BUILD tool', 'switch'],
+    ])(
+      'keeps the pause the operator asked for when %s takes a seat saved under the same brief',
+      async (_answer, typed) => {
+        const sessionId = '2026-10-19-pause-save-halt';
+        const captureRunner: HarnessProps['captureRunner'] = { current: null };
+        const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+        configStore.__testReset({ projectDir, config: prepared.config });
+        const { promise: saved, resolve: savedNow } = Promise.withResolvers<void>();
+        const reentry = engineEntryAfterHalt();
+        const run = recordedEngine({
+          1: async () => {
+            await saved;
+            saveSeatDownHalt(sessionId);
+            return makeSummary();
+          },
+          2: reentry.engine,
+        });
+
+        const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+        await vi.waitFor(() => {
+          expect(run.entered).toHaveLength(1);
+        });
+        lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+        requestBoundaryPause();
+        configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
+        savedNow();
+        await answerRecoveryPanel(captureRunner, typed);
+        if (typed === 'switch') {
+          await vi.waitFor(() => {
+            expect(overlayStore.get().active).toBe('implementer-picker');
+          });
+          configStore.__testReset({ projectDir, config: CLAUDE_CODE_SEAT_SAVED });
+          pickerViewStore.setCommitted(true);
+          overlayStore.close();
+        }
+        await vi.waitFor(() => {
+          expect(run.returned()).toBe(2);
+        });
+
+        expect(reentry.seen()).toMatchObject({
+          intent: 'pause-after-brief',
+          pausedAtBoundary: true,
+        });
+
+        inst.unmount();
+      },
+    );
+
+    describe('the halt picker with its keys', () => {
+      const planner = { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' } as const;
+      const claudeWithCustomModels = makeConfig({
+        planner,
+        implementer: { kind: 'cli', tool: 'claude-code', customModels: ['my-a', 'my-b'] },
+      });
+
+      afterEach(() => {
+        detectionStore.reset();
+        pickerViewStore.reset();
+      });
+
+      /** A run whose first pass halts Seat down on BUILD, rendered with the real BUILD picker. */
+      function haltWithPicker(sessionId: string, beforeHalt?: Promise<void>) {
+        const captureRunner: HarnessProps['captureRunner'] = { current: null };
+        const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+        configStore.__testReset({ projectDir, config: prepared.config });
+        detectionStore.setDetection({
+          cliTools: [cliDetectionFor('ready', 'claude-code')],
+          providers: [],
+        });
+        const reentry = engineEntryAfterHalt();
+        const continueAtRest = vi.fn();
+        const run = recordedEngine({
+          1: async () => {
+            await beforeHalt;
+            saveSeatDownHalt(sessionId);
+            return makeSummary();
+          },
+          2: reentry.engine,
+        });
+        const inst = renderHarnessWithPicker({
+          prepared,
+          captureRunner,
+          runWorkflow: run.engine,
+          continueAtRest,
+        });
+        return { captureRunner, prepared, reentry, continueAtRest, run, inst };
+      }
+
+      async function openHaltPicker(
+        captureRunner: NonNullable<HarnessProps['captureRunner']>,
+      ): Promise<void> {
+        await answerRecoveryPanel(captureRunner, 'switch');
+        await vi.waitFor(() => {
+          expect(overlayStore.get().active).toBe('implementer-picker');
+        });
+        await tick(100);
+      }
+
+      function switchWarnings(): string[] {
+        return eventsStore
+          .get()
+          .events.flatMap((event) =>
+            event.type === 'warning' && event.message.includes('Could not switch')
+              ? [event.message]
+              : [],
+          );
+      }
+
+      it('switches the seat when the picker takes a row and closes', async () => {
+        const halt = haltWithPicker('2026-10-19-halt-picker-take');
+        await vi.waitFor(() => {
+          expect(controlsStore.get().inputMode).toBe('question');
+        });
+        lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+        configStore.__testReset({ projectDir, config: CLAUDE_CODE_SEAT_SAVED });
+        await openHaltPicker(halt.captureRunner);
+        // The picker unmounts when its overlay closes; the take is still read as a take.
+        halt.inst.stdin.write('\r');
+        await tick(100);
+        halt.inst.stdin.write('\r');
+        await vi.waitFor(() => {
+          expect(halt.run.returned()).toBe(2);
+        });
+
+        expect(halt.run.entered[1]?.config.implementer).toMatchObject({ tool: 'claude-code' });
+        expect(loadState(halt.prepared.session.ref)?.seatSwitches).toEqual([
+          expect.objectContaining({ seat: 'build', cause: 'runner-usage-limit' }),
+        ]);
+
+        halt.inst.unmount();
+      });
+
+      it('keeps the halt when Escape closes the picker after Ctrl+D deleted a custom model', async () => {
+        const halt = haltWithPicker('2026-10-19-halt-picker-delete');
+        await vi.waitFor(() => {
+          expect(controlsStore.get().inputMode).toBe('question');
+        });
+        lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+        configStore.__testReset({ projectDir, config: claudeWithCustomModels });
+        await openHaltPicker(halt.captureRunner);
+        // Up twice from the focused row lands on the last custom model, My B.
+        halt.inst.stdin.write('\u001B[A');
+        await tick(60);
+        halt.inst.stdin.write('\u001B[A');
+        await tick(60);
+        halt.inst.stdin.write('\u0004');
+        await vi.waitFor(() => {
+          expect(configStore.get().config?.implementer).toMatchObject({ customModels: ['my-a'] });
+        });
+        expect(overlayStore.get().active).toBe('implementer-picker');
+        halt.inst.stdin.write('\u001B');
+        await vi.waitFor(() => {
+          expect(overlayStore.get().active).toBe('none');
+        });
+        await vi.waitFor(() => {
+          expect(controlsStore.get().inputMode).toBe('question');
+        });
+        await tick(100);
+
+        expect(halt.run.entered).toHaveLength(1);
+        expect(loadState(halt.prepared.session.ref)?.seatSwitches ?? []).toEqual([]);
+        expect(switchWarnings()).toEqual([]);
+
+        halt.inst.unmount();
+      });
+
+      it.each([
+        ['BUILD', CODEX_SEAT_SAVED],
+        ['REVIEW', makeConfig({ planner, reviewer: { kind: 'cli', tool: 'codex' } })],
+      ])(
+        'starts the next brief with no pause when a %s seat saved under the brief is taken by the swap',
+        async (_seat, savedUnderBrief) => {
+          const { promise: saved, resolve: savedNow } = Promise.withResolvers<void>();
+          const halt = haltWithPicker('2026-10-19-brief-save-halt-swap', saved);
+          await vi.waitFor(() => {
+            expect(halt.run.entered).toHaveLength(1);
+          });
+          lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+          configStore.__testReset({ projectDir, config: savedUnderBrief });
+          expect(stopStore.get().intent).toBe('pause-after-brief');
+          savedNow();
+          await openHaltPicker(halt.captureRunner);
+          halt.inst.stdin.write('\r');
+          await tick(100);
+          halt.inst.stdin.write('\r');
+          await vi.waitFor(() => {
+            expect(halt.run.returned()).toBe(2);
+          });
+
+          expect(halt.run.entered[1]?.config.implementer).toMatchObject({ tool: 'claude-code' });
+          expect(halt.run.entered[1]?.config.reviewer).toEqual(savedUnderBrief.reviewer);
+          expect(halt.reentry.seen()).toMatchObject({ intent: 'none', pausedAtBoundary: false });
+          expect(halt.continueAtRest).not.toHaveBeenCalled();
+
+          halt.inst.unmount();
+        },
+      );
     });
 
     it('requests no pause when Settings saves another key while a halt waits and a seat is on auto', async () => {

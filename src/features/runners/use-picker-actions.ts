@@ -328,6 +328,7 @@ export function usePickerActions(opts: {
           ...(notice === undefined ? [] : [notice]),
         ].join(SOFT_SEP),
       );
+      pickerViewStore.setCommitted(true);
       overlayStore.close();
     } finally {
       saveInFlight.current = false;
@@ -636,6 +637,7 @@ export function useLocalConnectionActions(
             result,
           ),
         );
+        pickerViewStore.setCommitted(true);
         overlayStore.close();
       });
     },

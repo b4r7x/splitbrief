@@ -86,6 +86,7 @@ it('restores the whole refused recovery draft when the question prompt is re-arm
   const controller = new AbortController();
   const driver = createRecoveryDriver({
     prepared,
+    configOfRun: prepared.sourceConfig,
     inputMode: capture.current,
     abortedRef: { current: false },
     retentionNoticeHandled: { current: true },
@@ -160,6 +161,7 @@ it('runs a slash command typed under a recovery menu and never takes one as the 
   const applied: string[] = [];
   const driver = createRecoveryDriver({
     prepared,
+    configOfRun: prepared.sourceConfig,
     inputMode: capture.current,
     abortedRef: { current: false },
     retentionNoticeHandled: { current: true },

@@ -17,12 +17,14 @@ import {
   consumeBoundaryInterrupt,
   consumeBoundaryPause,
   createAbortHandlerScope,
+  landBoundaryPause,
   requestBoundaryPause,
   requestEndRun,
   requestQuit,
   requestLeaveSession,
   setStopHandler,
   requestResume,
+  requestSeatChangeAtBoundary,
   requestSteer,
   requestStopNow,
   requestClearQueue,
@@ -30,6 +32,7 @@ import {
   setCancelHandler,
   setClearQueueHandler,
   setResumeHandler,
+  spendSeatChange,
 } from './handlers.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../stores/workflow/events.js';
@@ -146,6 +149,36 @@ describe('requestBoundaryPause', () => {
 
     expect(consumeBoundaryPause()).toBe(false);
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+  });
+
+  it('spending a seat change drops only the pause the seat change asked for', () => {
+    requestSeatChangeAtBoundary();
+    spendSeatChange();
+
+    expect(consumeBoundaryPause()).toBe(false);
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+  });
+
+  it('spending a seat change keeps the pause the operator asked for', () => {
+    requestBoundaryPause();
+    requestSeatChangeAtBoundary();
+    spendSeatChange();
+
+    expect(stopStore.get().intent).toBe('pause-after-brief');
+    expect(consumeBoundaryPause()).toBe(true);
+    expect(landBoundaryPause()).toBe('park');
+  });
+
+  it('lands the boundary pause as a park, a continue on the saved seats, or a stop the operator asked for', () => {
+    requestBoundaryPause();
+    expect(landBoundaryPause()).toBe('park');
+
+    requestSeatChangeAtBoundary();
+    expect(landBoundaryPause()).toBe('continue');
+
+    requestBoundaryPause();
+    requestSeatChangeAtBoundary();
+    expect(landBoundaryPause()).toBe('stop');
   });
 });
 

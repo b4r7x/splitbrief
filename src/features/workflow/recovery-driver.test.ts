@@ -108,8 +108,8 @@ function makeInputMode(answers: string[]): {
 }
 
 /**
- * Drives the seat picker the driver opened for a swap: writes `implementer` to the config of
- * record as the picker would, or leaves it alone, and closes the overlay.
+ * Drives the seat picker the driver opened for a swap: takes a row that writes `implementer` to
+ * the config of record as the picker would, or takes none, and closes the overlay.
  */
 async function closeSeatPicker(
   prepared: PreparedExecution,
@@ -123,6 +123,7 @@ async function closeSeatPicker(
       projectDir: prepared.session.ref.projectDir,
       config: makeConfig({ planner: { kind: 'agent', command: 'test-planner' }, implementer }),
     });
+    pickerViewStore.setCommitted(true);
   }
   overlayStore.close();
 }
@@ -135,6 +136,7 @@ function runDriver(
 ): ReturnType<ReturnType<typeof createRecoveryDriver>> {
   const promptPendingRecovery = createRecoveryDriver({
     prepared,
+    configOfRun: prepared.sourceConfig,
     inputMode,
     abortedRef: { current: false },
     retentionNoticeHandled: { current: false },
@@ -194,6 +196,7 @@ describe('createRecoveryDriver', () => {
     let cancelQuestion = (): void => {};
     const promptPendingRecovery = createRecoveryDriver({
       prepared,
+      configOfRun: prepared.sourceConfig,
       inputMode: {
         ...inputMode,
         setQuestionMode: () =>
@@ -586,6 +589,7 @@ describe('createRecoveryDriver', () => {
     let cancelQuestion = (): void => {};
     const promptPendingRecovery = createRecoveryDriver({
       prepared,
+      configOfRun: prepared.sourceConfig,
       inputMode: {
         ...inputMode,
         setQuestionMode: () =>
@@ -680,6 +684,7 @@ describe('createRecoveryDriver', () => {
         implementer: { kind: 'agent', command: 'test-implementer', model: 'test-model' },
       }),
     });
+    pickerViewStore.setCommitted(true);
     overlayStore.close();
     const result = await pending;
 
