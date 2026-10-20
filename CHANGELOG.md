@@ -316,6 +316,8 @@
 - When the sessions list cannot open a run, the message now shows the reason first. A task written on several lines now reads with spaces wherever it shows on one line: the sessions list, the command palette, the Plan heading of the run, `splitbrief status`, and the resume and `splitbrief spec` lines.
 - A brief that created a file still reads `create` after the planner rewrites or splits it, for every file it created, also an empty file.
 - When you pick Re-run Apply after an Apply halt, the run screen now shows `Applying to your checkout` with its clock. Esc now waits for Apply to finish and then goes home; it no longer offers Stop now or End run.
+- The drift warning for a brief that changed none of its files names every file of that brief, not only the first.
+- A halt panel marks every shortened line with the same `…`.
 
 ## [0.1.0] - 2026-08-07
 

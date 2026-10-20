@@ -469,7 +469,7 @@ describe('the diagnosis a halt persists', () => {
 
     const detail = issue.details.find((line) => line.startsWith('Missing: '));
     expect(detail).toHaveLength(MAX_SUMMARY_LENGTH);
-    expect(detail?.endsWith('...')).toBe(true);
+    expect(detail?.endsWith('…')).toBe(true);
     expect(JSON.parse(factString(issue, 'apiContextMissingSectionsJson'))).toEqual(missingSections);
 
     const roundTripped = RecoveryIssueSchema.parse(JSON.parse(JSON.stringify(issue)));
