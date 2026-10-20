@@ -62,7 +62,9 @@ import {
 import { routerStore } from '../../stores/navigation/router.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import {
+  loadHomeDraft,
   loadSessionDraft,
+  saveHomeDraft,
   saveSessionDraft,
   flushSessionDrafts,
 } from '../../stores/ui/session-drafts.js';
@@ -220,7 +222,12 @@ function ComposerInput({
   const [restoredDraft] = useState(() => {
     try {
       return {
-        document: sessionRef === null ? createDraftDocument('') : loadSessionDraft(sessionRef),
+        document:
+          sessionRef !== null
+            ? loadSessionDraft(sessionRef)
+            : currentScreen === 'home'
+              ? loadHomeDraft(projectDir)
+              : createDraftDocument(''),
         error: null,
       };
     } catch (error) {
@@ -237,6 +244,7 @@ function ComposerInput({
     initialDocument: () => restoredDraft.document,
     onDocumentChange: (document) => {
       if (sessionRef !== null) saveSessionDraft(sessionRef, document);
+      else if (currentScreen === 'home') saveHomeDraft(projectDir, document);
     },
   });
   useEffect(

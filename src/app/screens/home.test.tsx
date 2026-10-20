@@ -357,6 +357,37 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
+  it('keeps a home draft whose start was refused, and takes it with a run that starts', async () => {
+    prepareExecutionMock.mockResolvedValueOnce({ kind: 'aborted' });
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('start this feature');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
+      SESSION_FILTER_WAIT_MS,
+    );
+    await flushEffects();
+    ui.unmount();
+
+    const kept = renderHome();
+    await flushEffects();
+    expect(kept.lastFrame()).toContain('start this feature');
+    kept.stdin.write(ENTER);
+    await vi.waitFor(
+      () => expect(routerStore.get().screen).toBe('workflow'),
+      SESSION_FILTER_WAIT_MS,
+    );
+    kept.unmount();
+
+    routerStore.navigate({ to: 'home' });
+    const back = renderHome();
+    await flushEffects();
+    expect(back.lastFrame()).not.toContain('start this feature');
+    back.unmount();
+  });
+
   it('names all three seats on the wake card in the words the workflow header uses', async () => {
     configStore.__testReset({
       projectDir,

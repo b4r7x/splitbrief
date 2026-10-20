@@ -30,6 +30,8 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
+import { saveHomeDraft } from '../../stores/ui/session-drafts.js';
+import { createDraftDocument } from '../../core/composer/document.js';
 import { useStores } from '../../stores/use-stores.js';
 import type { Session } from '../../core/schemas/session.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
@@ -216,6 +218,8 @@ export function HomeScreen({
       });
     },
     onPrepared: (execution) => {
+      // The composer keeps a sent request for a start that is refused; a run that starts takes it.
+      saveHomeDraft(configStore.get().projectDir, createDraftDocument(''));
       routerStore.navigate({
         to: 'workflow',
         run: readRunRecord(execution.session.ref),
