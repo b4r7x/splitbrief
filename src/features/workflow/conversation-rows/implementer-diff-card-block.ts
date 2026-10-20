@@ -6,6 +6,7 @@ import { compositeBlock, wholeSegmentsBlock, wrappedSegmentsBlock } from './row-
 import type { CardBodyLineInput } from './row-format/card-block.js';
 import { ELLIPSIS, truncateTerminalDisplayTextMiddle } from '../../../utils/display-text.js';
 import { sanitizeRowDisplayText } from './row-format/text.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import { wrapWidthFor } from './row-markers.js';
 
 export const COLLAPSE_HINT = 'ctrl+d to collapse';
@@ -90,7 +91,7 @@ export function implementerExpandedDiffCardBlock(
   }));
   if (remaining > 0) {
     const hintSegments: ConversationRowSegment[] = [
-      { text: `${ELLIPSIS} ${remaining} more lines`, tone: 'textDim' },
+      { text: `${ELLIPSIS} ${countNoun(remaining, 'more line')}`, tone: 'textDim' },
       { text: SOFT_SEP, tone: 'textDim' },
       { text: COLLAPSE_HINT, tone: 'textDim' },
     ];
