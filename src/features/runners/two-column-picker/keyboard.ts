@@ -1,5 +1,5 @@
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
-import type { CycleOutcome } from './types.js';
+import type { CycleOutcome, EscapeAction } from './types.js';
 import { isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
 
 function stepIndex<T>(items: T[], from: number, direction: 1 | -1): number {
@@ -47,6 +47,20 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
   onCollapse?: (() => void) | undefined;
 }
 
+/** The key handler acts on this decision and the key line names it. */
+export function escapeAction(state: {
+  isExpanded: boolean;
+  leftActive: boolean;
+  rightActive: boolean;
+  leftFilter: string;
+  rightFilter: string;
+}): EscapeAction {
+  if (state.isExpanded) return 'collapse';
+  if (state.leftActive && state.leftFilter !== '') return 'clear-left';
+  if (state.rightActive && state.rightFilter !== '') return 'clear-right';
+  return 'cancel';
+}
+
 export function handleKeyboardInput<L extends FilterableItem, R extends { id: string }>(
   input: string,
   key: {
@@ -65,22 +79,22 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   ctx: KeyboardContext<L, R>,
 ): void {
   if (key.escape) {
-    if (ctx.leftActive && ctx.leftFilter !== '') {
-      ctx.setLeftFilter(() => '');
-      ctx.resetRight(ctx.setLeftIndex(0));
-      return;
+    switch (escapeAction(ctx)) {
+      case 'collapse':
+        ctx.onCollapse?.();
+        return;
+      case 'clear-left':
+        ctx.setLeftFilter(() => '');
+        ctx.resetRight(ctx.setLeftIndex(0));
+        return;
+      case 'clear-right':
+        ctx.setRightFilter(() => '');
+        ctx.setRightIndex(ctx.rightVirtualCount);
+        return;
+      case 'cancel':
+        ctx.onCancel();
+        return;
     }
-    if (ctx.rightActive && ctx.rightFilter !== '') {
-      ctx.setRightFilter(() => '');
-      ctx.setRightIndex(ctx.rightVirtualCount);
-      return;
-    }
-    if (ctx.isExpanded) {
-      ctx.onCollapse?.();
-      return;
-    }
-    ctx.onCancel();
-    return;
   }
 
   if (key.ctrl && input === 'd') {

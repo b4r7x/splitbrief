@@ -4,7 +4,7 @@ import { filterByFields, type FilterableItem } from '../../../components/pickers
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { clampIndex } from '../../../utils/indexing.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { handleKeyboardInput } from './keyboard.js';
+import { escapeAction, handleKeyboardInput } from './keyboard.js';
 import type {
   CycleOutcome,
   LeftColumnProps,
@@ -298,6 +298,13 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     selectedLeftKey,
     terminalPane,
     isDisabled,
+    escape: escapeAction({
+      isExpanded: rightProps.isExpanded ?? false,
+      leftActive: activeColumn === 'left',
+      rightActive,
+      leftFilter: leftCol.filter,
+      rightFilter: rightCol.filter,
+    }),
     isOnCustomItem: rightActive && isOnVirtual,
     currentRightIsCustom,
     moveLeft,

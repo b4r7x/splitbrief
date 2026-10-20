@@ -91,6 +91,9 @@ export interface ColumnState<T> {
   currentItem: T | undefined;
 }
 
+/** What Esc does next, in the column that holds the keys. */
+export type EscapeAction = 'collapse' | 'clear-left' | 'clear-right' | 'cancel';
+
 export interface TwoColumnNavState<L, R> {
   activeColumn: 'left' | 'right';
   left: ColumnState<L>;
@@ -101,6 +104,7 @@ export interface TwoColumnNavState<L, R> {
   isDisabled: boolean;
   isOnCustomItem: boolean;
   currentRightIsCustom: boolean;
+  escape: EscapeAction;
   moveLeft: (direction: 1 | -1) => void;
   moveRight: (direction: 1 | -1) => void;
   activateLeft: (index: number) => void;

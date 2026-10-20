@@ -739,6 +739,34 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 
+  it("saves a custom model typed on another tool without the seat tool's custom models", async () => {
+    seed(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: 'team-model', customModels: ['team-model'] },
+      }),
+    );
+    detectionStore.setDetection({
+      cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
+      providers: [],
+    });
+    pickerViewStore.open({ kind: 'custom-model' });
+
+    const ui = renderFeature(
+      <CustomModelProbe role="planner" slot="seat" toolId="claude-code" modelName="claude-new" />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(configStore.get().config?.planner).toMatchObject({ tool: 'claude-code' });
+    });
+    expect(configStore.get().config?.planner).toMatchObject({
+      model: 'claude-new',
+      customModels: ['claude-new'],
+    });
+    ui.unmount();
+  });
+
   it('marks the picker as having taken a row when a confirmation saves the seat and closes it', async () => {
     overlayStore.open('planner-picker');
     const ui = renderFeature(

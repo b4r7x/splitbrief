@@ -325,6 +325,9 @@
 - `splitbrief doctor` no longer says that a start without the TUI would be refused for an OpenCode that uses the providers set up in its own config.
 - A seat switch after a Seat down halt, automatic or chosen by you, keeps the seat's time limit. A switch to another model of the same tool also keeps the tool's idle limits, context length, temperature, arguments, output format, sign-in method and custom models. A custom model you add in the seat picker during the halt stays in `config.yaml` after the switch.
 - After the planner rewrote or split a brief, the Ready line, the closed run and its Files list count every file the run changed, including the files of the earlier attempts, also when you end the run before the brief finishes or between the parts of a split brief; the review sees those files too.
+- The model picker no longer lists a custom model you added for one tool under another tool, so picking, adding or deleting a custom model acts only on the tool it belongs to.
+- In the model picker, Esc on an expanded row now collapses it and keeps what you typed in the filter.
+- The model picker's key legend now says what Esc does: collapse a row, clear the filter or close the picker.
 
 ## [0.1.0] - 2026-08-07
 

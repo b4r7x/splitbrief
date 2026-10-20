@@ -239,7 +239,13 @@ export function usePickerCatalog(
     includes(CREW_SEAT_IDS, seatAxisSeat) &&
     CREW_SEAT_ROLES[seatAxisSeat] === lane;
 
-  const customModels = slot === 'fallback' ? [] : (runnerConfig?.customModels ?? []);
+  // The custom list belongs to the tool of the seat's runner, inherited or not: offered
+  // on a tool the cursor is merely visiting, a pick, an add or a Ctrl+D would act on
+  // ids that tool cannot run.
+  const customModelsOf = (item: PickerOption | undefined): string[] =>
+    slot === 'seat' && item !== undefined && isCurrentRunner(item, runnerConfig)
+      ? (runnerConfig?.customModels ?? [])
+      : [];
 
   const defaultItemId = items[initialLeftIdx]?.id ?? items[0]?.id;
   const ownedItemId =
@@ -281,6 +287,7 @@ export function usePickerCatalog(
     const auth = authOf(item);
     const toolCatalog = toolCatalogOf(item);
     const tool = toolIdOf(item);
+    const customModels = customModelsOf(item);
     const models = buildRightModels({
       role: lane,
       customModels,
@@ -374,7 +381,7 @@ export function usePickerCatalog(
     toolCatalog: toolCatalogOf(currentItem),
     currentCommand,
     currentCommandKind,
-    customModels,
+    customModels: customModelsOf(currentItem),
     discovery,
     browseCatalog,
     effortDraft,

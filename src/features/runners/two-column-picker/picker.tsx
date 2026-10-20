@@ -17,6 +17,7 @@ import { SingleColumnPicker } from '../../../components/pickers/single-column.js
 import { ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
 import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
 import type {
+  EscapeAction,
   LeftColumnProps,
   RightColumnProps,
   RightSectionProps,
@@ -93,6 +94,13 @@ const VISIBLE_ROWS_CAP = 18;
 
 type PickerHintKind = 'terminal' | 'expanded' | 'default';
 
+const ESCAPE_HINTS: Record<EscapeAction, string> = {
+  collapse: 'esc collapse',
+  'clear-left': 'esc clear',
+  'clear-right': 'esc clear',
+  cancel: 'esc cancel',
+};
+
 function getHint(input: {
   kind: PickerHintKind;
   terminalVerb: string | undefined;
@@ -101,6 +109,7 @@ function getHint(input: {
     isDisabled: boolean;
     isOnCustomItem: boolean;
     currentRightIsCustom: boolean;
+    escape: EscapeAction;
   };
   hasRefresh: boolean;
   maxVisible: number;
@@ -108,10 +117,11 @@ function getHint(input: {
   expandedHint?: string | undefined;
 }): string {
   const { kind, nav, hasRefresh, maxVisible } = input;
+  const escapeHint = ESCAPE_HINTS[nav.escape];
   if (maxVisible <= 0) {
-    return `Terminal too short${SOFT_SEP}esc cancel`;
+    return `Terminal too short${SOFT_SEP}${escapeHint}`;
   }
-  const fitHint = (action: string, escapeHint: string, columns: boolean): string => {
+  const fitHint = (action: string, columns: boolean): string => {
     const navigation = [...(columns ? ['←→ column'] : []), '↑↓ select'];
     const selectOnly = navigation.filter((hint) => hint !== '↑↓ select');
     const extras = [
@@ -130,7 +140,7 @@ function getHint(input: {
   };
   if (kind === 'terminal') {
     const verb = input.terminalVerb ?? 'select';
-    return fitHint(`⏎ ${verb}`, 'esc cancel', false);
+    return fitHint(`⏎ ${verb}`, false);
   }
   if (kind === 'expanded') {
     // The launcher is pinned above the expansion and answers for itself, so the
@@ -138,16 +148,16 @@ function getHint(input: {
     const lead = nav.isOnCustomItem ? '⏎ add custom' : (input.expandedHint ?? '⏎ choose route');
     // An empty lead is a row with no verb of its own; it drops its slot rather
     // than opening the line with a separator that reads as a missing key.
-    return fitHint(lead, 'esc collapse', true);
+    return fitHint(lead, true);
   }
   if (nav.isOnCustomItem) {
-    return fitHint('⏎ add custom', 'esc cancel', true);
+    return fitHint('⏎ add custom', true);
   }
   // A disabled tool row takes neither → nor ⏎, so the hint offers only the keys that act on it.
   if (nav.activeColumn === 'left' && nav.isDisabled) {
-    return fitHint('', 'esc cancel', false);
+    return fitHint('', false);
   }
-  return fitHint('⏎ confirm', 'esc cancel', true);
+  return fitHint('⏎ confirm', true);
 }
 
 /**
