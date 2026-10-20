@@ -131,9 +131,10 @@ function transcriptRows(events: EngineEvent[]): string[] {
 
 /**
  * `needsFix`: the T001 review fails with fix work whose first answer is refused. `rejectDecision`:
- * T002's first attempt reports a decision that PLAN rejects.
+ * T002's first attempt reports a decision that PLAN rejects. `testCommand` runs the test checks.
+ * A review marks every criterion unverified when its prompt shows a check that did not run.
  */
-async function runCadence(needsFix: boolean, rejectDecision = false) {
+async function startCadence(needsFix: boolean, rejectDecision: boolean, testCommand: string) {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
   restorePath = activateSafeCliShimPath(target.tmpDir);
@@ -200,6 +201,13 @@ if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final 
     answer.fixTasks = repair
       ? [${JSON.stringify({ ...fix, findingIds: ['F2'] })}]
       : [${JSON.stringify(invalidFix)}, ${JSON.stringify(refusedFix)}];
+  }
+  if (prompt.includes('not-runnable')) {
+    answer.criteria = answer.criteria.map((criterion) => ({
+      ...criterion,
+      status: 'unverified',
+      evidence: 'A required check did not run.',
+    }));
   }
 } else if (prompt.includes('Confirm reported decisions')) {
   kind = 'decision-confirm';
@@ -285,14 +293,28 @@ if (reports) {
     planner: { ...config.planner, args: [plannerPath] },
     implementer: { ...config.implementer, args: [implementerPath] },
     workflow: { ...config.workflow, review: 'task', approve: 'none' },
-    validation: { ...config.validation, testCommand: 'node --test' },
+    validation: { ...config.validation, testCommand },
   });
   const run = await cli(target, ['start', 'smoke']);
-  expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
   const sessions = readdirSync(sessionsRoot(target.projectDir));
   expect(sessions).toHaveLength(1);
   const sessionId = sessions[0];
   if (sessionId === undefined) throw new Error('Missing session');
+  const calls: Array<{ kind: string; taskId?: string; prompt?: string; answer?: ReviewAnswer }> =
+    readFileSync(callsPath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+  return { run, calls, fixStatePath, target, sessionId };
+}
+
+async function runCadence(needsFix: boolean, rejectDecision = false) {
+  const { run, calls, fixStatePath, target, sessionId } = await startCadence(
+    needsFix,
+    rejectDecision,
+    'node --test',
+  );
+  expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
   const state = readState(target, sessionId);
   expect(state.phase).toBe('complete');
   expect(state.tasks.every((task) => task.status === 'done')).toBe(true);
@@ -301,11 +323,6 @@ if (reports) {
   expect(
     readFileSync(join(sessionsRoot(target.projectDir), sessionId, SESSION_LOG_FILE), 'utf8'),
   ).not.toBe('');
-  const calls: Array<{ kind: string; taskId?: string; prompt?: string; answer?: ReviewAnswer }> =
-    readFileSync(callsPath, 'utf8')
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line));
   return { state, events: replay.events, calls, fixStatePath, target, sessionId };
 }
 
@@ -484,6 +501,35 @@ describe('e2e: task review cadence', () => {
     expect(readFileSync(join(target.projectDir, 'src/beta.mjs'), 'utf8')).toBe(
       "export const beta = 'beta';\n",
     );
+  });
+
+  it('halts the task review on a test check whose program is missing, not on a failed review', async () => {
+    const { run, calls, target, sessionId } = await startCadence(
+      false,
+      false,
+      'splitbrief-missing-runner',
+    );
+    const state = readState(target, sessionId);
+    const replay = await readRunEvents({ projectDir: target.projectDir, sessionId });
+    expect(
+      calls.map((call) => call.kind),
+      `${run.stdout}\n${run.stderr}`,
+    ).toEqual(['plan', 'implement']);
+    expect(state.pendingRecovery).toMatchObject({
+      reason: 'required-checks-unrunnable',
+      availableActions: ['retry-same-worker', 'end-run'],
+    });
+    expect(state.pendingRecovery?.message).toMatch(/^Required checks cannot run: T001-K1: /);
+    expect(state.pendingRecovery?.message).toContain('splitbrief-missing-runner');
+    expect(state.pendingRecovery?.details).toContain(
+      'Install what is missing, then run the checks again.',
+    );
+    expect(state.tasks.map((task) => task.status)).toEqual(['done', 'pending']);
+    const errors = replay.events.flatMap((event) =>
+      event.type === 'error' ? [event.message] : [],
+    );
+    expect(errors).toEqual([state.pendingRecovery?.message]);
+    expect(replay.events.some((event) => event.type === 'review_started')).toBe(false);
   });
 
   it('records task review pairs between briefs and the final pair before workflow completion', async () => {

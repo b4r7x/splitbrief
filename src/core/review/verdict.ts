@@ -1,6 +1,6 @@
 import type { ReviewVerdict, TriageInput, TriageResult } from '../schemas/review.js';
 import { isTaskCompleted } from '../schemas/task.js';
-import type { ReviewRecord, WorkflowState } from '../schemas/workflow.js';
+import { fixCyclesOf, type ReviewRecord, type WorkflowState } from '../schemas/workflow.js';
 import { countNoun } from '../../utils/pluralize.js';
 
 export type Finding = ReviewVerdict['findings'][number];
@@ -24,6 +24,25 @@ export function reviewScopeFor(state: WorkflowState, kind: 'final' | 'task'): Re
     taskIds: state.tasks.filter((task) => isTaskCompleted(task.status)).map((task) => task.id),
     criterionIds: dueCriterionIds(state),
   };
+}
+
+/**
+ * A correction or an answer is pending on the review this cycle already judged: that review runs
+ * again on the same candidate, without running its checks first.
+ */
+export function reviewsAgain(
+  state: WorkflowState,
+  kind: ReviewScope['kind'],
+  afterTaskId?: string,
+): boolean {
+  const review = state.review;
+  return (
+    state.pendingTriage !== undefined &&
+    review !== undefined &&
+    (review.scope ?? 'final') === kind &&
+    review.afterTaskId === afterTaskId &&
+    review.cycle === fixCyclesOf(state).used
+  );
 }
 
 export function findingInReviewScope(finding: Finding, scope: ReviewScope): boolean {

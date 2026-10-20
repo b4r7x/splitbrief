@@ -289,10 +289,31 @@ process.stdout.write(${JSON.stringify(JSON.stringify(passingVerdict({ kind: 'tas
               .trim()
               .split('\n')
               .map((line) => CheckCallSchema.parse(JSON.parse(line)));
-            expect(checkCalls.map((call) => call.buildCalls)).toEqual([1, 1, 2, 2, 2, 2]);
+            expect(checkCalls.map((call) => call.buildCalls)).toEqual([1, 1, 2, 2, 2, 2, 2, 2]);
             expect(
               log.filter((entry) => entry.kind === 'event' && entry.type === 'checks_run'),
-            ).toHaveLength(3);
+            ).toHaveLength(4);
+            const completedIndex = log.findIndex(
+              (entry) => entry.kind === 'event' && entry.type === 'task_completed',
+            );
+            const taskReviewIndex = log.findIndex(
+              (entry) => entry.kind === 'event' && entry.type === 'review_started',
+            );
+            expect(log[taskReviewIndex]).toMatchObject({ data: { scope: 'task' } });
+            expect(
+              log
+                .slice(completedIndex, taskReviewIndex)
+                .filter((entry) => entry.kind === 'event' && entry.type === 'checks_run'),
+            ).toMatchObject([
+              {
+                data: {
+                  results: [
+                    { id: 'T001-K1', status: 'pass' },
+                    { id: 'T001-K2', status: 'pass' },
+                  ],
+                },
+              },
+            ]);
             expect(readdirSync(sessionsRoot(target.projectDir))).toEqual([sessionId]);
             child.write('\x11');
             await expect

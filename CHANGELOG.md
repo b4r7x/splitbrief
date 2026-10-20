@@ -72,6 +72,7 @@
 - **How long a run ran is stated once, when it closes.** The workflow header and sidebar no longer show a clock for the whole run. A closed run states how long it ran in its Run section, for example `Ran 1m 51s`. Time the run sat stopped, halted or at rest is left out, and time it waited on you while it ran counts. A run recorded before this release reads `Ran not recorded`.
 - Ctrl+Delete and Alt+Delete in the composer and other text fields delete the word after the caret, as in the plan.json editor. Before, they deleted the word before it.
 - When a brief fails again, the planner or reviewer now sees every change the brief made since it started and one line for each earlier failed attempt, not only the latest attempt.
+- With `review: task`, each task review first runs again the required checks of the briefs it covers and of the criteria due at that review. A later brief that breaks an earlier brief's check is now found at that task review, not only at the final review. A run takes longer by these checks.
 
 ### Removed
 
@@ -336,6 +337,7 @@
 - After Apply, Discard or End run, a closed run names the crew that ran it, not the crew saved in Settings since.
 - A closed run whose final review ran but returned no verdict says `final review no verdict` instead of `final review not run`.
 - The phase times of a closed run add up to its `Ran` time.
+- With `review: task`, a required check that cannot run (for example, a test runner that is not installed) now stops the run with *Required checks cannot run* and tells you what to install. Before, the task review failed and offered *Fix again*, and each try cost a review.
 
 ## [0.1.0] - 2026-08-07
 

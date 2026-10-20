@@ -6,6 +6,7 @@ import {
 } from './review.js';
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
+import { reviewsAgain } from '../../../core/review/verdict.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { WorkflowContext } from '../types.js';
@@ -471,11 +472,7 @@ export async function runTasksAndReview(
       state = answered.state;
       if (answered.stopped) return stopHere();
     }
-    const reviewAgain =
-      state.pendingTriage !== undefined &&
-      state.review !== undefined &&
-      state.review.scope !== 'task' &&
-      state.review.cycle === fixCyclesOf(state).used;
+    const reviewAgain = reviewsAgain(state, 'final');
     const recheck = reviewAgain
       ? { state, failures: [], notRun: [], inputs: [], unrunnable: [] }
       : await recheckMergedCandidate({ wctx, state, setTrackedState });

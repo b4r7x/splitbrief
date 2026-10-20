@@ -79,19 +79,34 @@ describe('runTaskLoop brief checks', { timeout: 120_000 }, () => {
     expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
   });
 
-  it("runs each brief's own checks after it at workflow.review 'task', and no reviewer check", async () => {
+  it("runs each brief's own checks after it and the covered required checks again at each task review at workflow.review 'task', and no reviewer check", async () => {
     const { result, commands, events } = await runTwoBriefs('task');
 
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
-    expect(commands).toEqual(['tsc --noEmit', 'tsc --noEmit']);
+    // T001 gate K1, T001 review K1, T002 gate K2, T002 review K1 and K2.
+    expect(commands).toEqual(Array(5).fill('tsc --noEmit'));
     expect(
       events.flatMap((event) =>
         event.type === 'checks_run' ? [[event.taskId, event.results.map((r) => r.id)]] : [],
       ),
     ).toEqual([
       ['T001', ['K1']],
+      ['T001', ['K1']],
+      ['T002', ['K2']],
+      ['T001', ['K1']],
       ['T002', ['K2']],
     ]);
-    expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
+    expect(
+      events.flatMap((event) =>
+        event.type === 'full_suite' ? [[event.moment, event.id, event.status]] : [],
+      ),
+    ).toEqual([
+      ['plan', 'K1', 'running'],
+      ['plan', 'K1', 'done'],
+      ['plan', 'K1', 'running'],
+      ['plan', 'K1', 'done'],
+      ['plan', 'K2', 'running'],
+      ['plan', 'K2', 'done'],
+    ]);
   });
 });

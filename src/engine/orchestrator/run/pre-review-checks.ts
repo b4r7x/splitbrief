@@ -4,6 +4,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
+import { reviewScopeFor, type ReviewScope } from '../../../core/review/verdict.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -105,6 +106,8 @@ export type RunPreReviewChecksOptions = {
   bus: EventBus;
   phase: Phase;
   npmScriptsApproved: boolean;
+  /** The review the checks come before; a task review runs only the required checks it covers. */
+  scope?: ReviewScope['kind'] | undefined;
   signal?: AbortSignal | undefined;
   runCommand?: ValidationCommandRunner | undefined;
 };
@@ -119,14 +122,27 @@ export type PreReviewChecks = Readonly<{
 }>;
 
 /**
- * The candidate verification the final review runs first: every check of the combined task and
- * run registry. Checks are recorded on their declaring task (plan checks on the last task). Only
- * required checks decide check defects and unrunnable halts.
+ * The candidate verification a review runs first. The final review runs every check of the
+ * combined task and run registry; a task review runs the required checks of its briefs and due
+ * criteria. Checks are recorded on their declaring task (plan checks on the last task the review
+ * covers). Only required checks decide check defects and unrunnable halts.
  */
 export async function runPreReviewChecks(
   opts: RunPreReviewChecksOptions,
 ): Promise<PreReviewChecks> {
   const registry = checkRegistry({ plan: opts.state.plan, tasks: opts.state.tasks });
+  const scope = reviewScopeFor(opts.state, opts.scope ?? 'final');
+  const covered = new Set([
+    ...opts.state.tasks
+      .filter((task) => scope.taskIds.includes(task.id))
+      .flatMap((task) => (task.checks ?? []).map((check) => check.id)),
+    ...(opts.state.plan?.criteria ?? [])
+      .filter((criterion) => scope.criterionIds.includes(criterion.id))
+      .flatMap((criterion) => criterion.checkIds),
+  ]);
+  const checks = [...registry.values()].filter(
+    (check) => scope.kind === 'final' || (check.required && covered.has(check.id)),
+  );
   const checkOptions: RunChecksOptions = {
     plan: opts.state.plan,
     tasks: opts.state.tasks,
@@ -144,7 +160,7 @@ export async function runPreReviewChecks(
   const notices = { bus: opts.bus, phase: opts.phase };
   const prepare = createCheckRunner(checkOptions);
   const runs: CheckRunResult[] = [];
-  for (const check of registry.values()) {
+  for (const check of checks) {
     throwIfAborted(opts.signal);
     const prepared = prepare(check);
     const identity = planCheckRow(check.id, prepared.command, check);
@@ -175,7 +191,7 @@ export async function runPreReviewChecks(
     workspaceDir: opts.workspaceDir,
   });
   let state = opts.state;
-  const lastTaskId = state.tasks.at(-1)?.id;
+  const lastTaskId = scope.taskIds.at(-1);
   for (const task of state.tasks) {
     const owned = runs.filter(
       (run) =>
@@ -225,6 +241,7 @@ export async function runPreReview(args: {
   state: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
   inputs?: readonly TriageInput[] | undefined;
+  scope?: ReviewScope['kind'] | undefined;
 }): Promise<PreReviewResult> {
   const { wctx, setTrackedState } = args;
   let state = args.state;
@@ -237,6 +254,7 @@ export async function runPreReview(args: {
     bus: wctx.bus,
     phase: state.phase,
     npmScriptsApproved: planApprovesNpmScripts({ config: wctx.config, state }),
+    scope: args.scope,
     ...(wctx.signal !== undefined && { signal: wctx.signal }),
   });
   state = checks.state;
