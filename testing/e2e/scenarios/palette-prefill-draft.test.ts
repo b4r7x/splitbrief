@@ -3,17 +3,23 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import XtermHeadless from '@xterm/headless';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writeConfig } from '../../../src/core/config/load/io.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, withTempDir } from '#testing/helpers/temp-dir.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
+import {
+  cli,
+  createStopContinueFixture,
+  escapingImplementerScript,
+  type StopContinueFixture,
+} from '../helpers/stop-continue-fixture.js';
 
 const DRAFT = 'keep the scanner screen as it is';
 
@@ -184,6 +190,128 @@ describe('e2e: a command taken from the palette over a typed home draft', {
         );
         if (result) context.skip(result.reason);
       });
+    },
+  );
+});
+
+describe('e2e: a typed home draft while a run is opened from the recent sessions', {
+  timeout: 180_000,
+}, () => {
+  const viewport = { cols: 100, rows: 30 };
+  let fixture: StopContinueFixture | undefined;
+
+  afterEach(() => {
+    if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
+    fixture = undefined;
+  });
+
+  it.for([{ held: false }, { held: true }] as const)(
+    'brings the draft back on home after the run is left (command held: $held)',
+    async ({ held }, context) => {
+      fixture = createStopContinueFixture(escapingImplementerScript);
+      const target = fixture;
+      const halted = await cli(target, ['start', 'smoke']);
+      expect(halted.exitCode, halted.stderr).toBe(1);
+
+      const home = join(target.tmpDir, 'home');
+      const binDir = join(target.tmpDir, 'bin');
+      mkdirSync(home);
+      mkdirSync(binDir);
+      for (const tool of Object.values(CLI_TOOL_CATALOG)) {
+        writeFakeNodeCli(binDir, tool.command, 'process.exit(1);');
+      }
+      const offlinePath = join(target.tmpDir, 'offline.mjs');
+      writeFileSync(
+        offlinePath,
+        "globalThis.fetch = async () => { throw new Error('Offline home draft E2E'); };\n",
+      );
+      const result = await runWithPtyChild(
+        {
+          requirement: process.env.SPLITBRIEF_REQUIRE_PTY === '1' ? 'required' : 'optional',
+          argv: [
+            '--import',
+            'tsx',
+            '--import',
+            offlinePath,
+            'src/cli.ts',
+            '--project',
+            target.projectDir,
+          ],
+          spawnOptions: {
+            name: 'xterm-256color',
+            ...viewport,
+            cwd: fileURLToPath(new URL('../../../', import.meta.url)),
+            env: { ...safeChildEnvironment(home, [binDir]), XDG_STATE_HOME: target.stateHome },
+          },
+        },
+        async (child) => {
+          const terminal = new XtermHeadless.Terminal({
+            ...viewport,
+            allowProposedApi: true,
+            logLevel: 'off',
+          });
+          const exited = Promise.withResolvers<PtyExitEvent>();
+          let didExit = false;
+          const text = () =>
+            Array.from(
+              { length: viewport.rows },
+              (_, row) =>
+                terminal.buffer.active
+                  .getLine(terminal.buffer.active.viewportY + row)
+                  ?.translateToString(true) ?? '',
+            ).join('\n');
+          const shows = (expected: string | RegExp, timeout = 10_000) =>
+            vi.waitFor(
+              () =>
+                typeof expected === 'string'
+                  ? expect(text()).toContain(expected)
+                  : expect(text()).toMatch(expected),
+              { timeout },
+            );
+          const dataListener = child.onData((data) => terminal.write(data));
+          const exitListener = child.onExit((event) => {
+            didExit = true;
+            exited.resolve(event);
+          });
+          try {
+            await shows('Describe your feature', 30_000);
+            await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+
+            child.write(DRAFT);
+            await shows(`› ${DRAFT}`);
+            if (held) {
+              child.write('\x0b');
+              await shows('Type a command…');
+              child.write('crew');
+              await shows(/▌ \/crew/);
+              child.write('\r');
+              await shows(/│ › \/crew\s+│/);
+              expect(text()).not.toContain(DRAFT);
+            }
+
+            child.write('\x12');
+            await shows('↑↓ select · ⏎ open');
+            await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+            child.write('\r');
+            await shows('Needs you');
+            await delay(PROMPT_TYPEAHEAD_GRACE_MS);
+
+            child.write('\x1b');
+            await shows('Recent sessions');
+            await shows(new RegExp(`│ ›\\s+${DRAFT}\\s+│`));
+            expect(text()).not.toMatch(/› \/crew/);
+          } finally {
+            try {
+              if (!didExit) await terminatePtyProcessGroup(child, exited.promise);
+            } finally {
+              dataListener.dispose();
+              exitListener.dispose();
+              terminal.dispose();
+            }
+          }
+        },
+      );
+      if (result) context.skip(result.reason);
     },
   );
 });

@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
@@ -7,6 +8,7 @@ import { createDraftDocument } from '../../core/composer/document.js';
 import { readSessionDraft, writeSessionDraft } from '../../core/sessions/draft.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { configStore } from '../../stores/project/config.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { flushSessionDrafts } from '../../stores/ui/session-drafts.js';
 import { Composer } from './composer.js';
@@ -298,5 +300,82 @@ describe('unsent session composer draft', () => {
     await flushEffects();
     expect(onRuntimeCommand).toHaveBeenCalledWith('/quit');
     ui.unmount();
+  });
+});
+
+describe('unsent home composer draft', () => {
+  let projectDir: string;
+  let mounted: ReturnType<typeof renderFeature>[];
+  beforeEach(() => {
+    mounted = [];
+    resetAllStores();
+    projectDir = createTempDir('home-draft-');
+    configStore.__testReset({ projectDir });
+  });
+  afterEach(() => {
+    for (const ui of mounted) ui.unmount();
+    cleanupTempDir(projectDir);
+  });
+
+  const home = () => (
+    <Composer
+      currentScreen="home"
+      mode="normal"
+      hint=""
+      submitKeepsDraft
+      commands={[]}
+      onRuntimeCommand={() => {}}
+    />
+  );
+
+  function mountHome() {
+    const ui = renderFeature(home());
+    mounted.push(ui);
+    return ui;
+  }
+
+  async function leaveForRunAndReturn(ui: ReturnType<typeof renderFeature>) {
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord({ ref: { projectDir, sessionId: 'one' } }),
+      execution: { kind: 'at-rest' },
+    });
+    ui.unmount();
+    await flushEffects();
+    routerStore.navigate({ to: 'home' });
+    const back = mountHome();
+    await flushEffects();
+    return back;
+  }
+
+  it('comes back when home mounts again after a run was opened, for its own project only', async () => {
+    const ui = mountHome();
+    await flushEffects();
+    ui.stdin.write('Home draft keep this');
+    await flushEffects();
+
+    const back = await leaveForRunAndReturn(ui);
+    expect(back.lastFrame()).toContain('Home draft keep this');
+    back.unmount();
+
+    configStore.__testReset({ projectDir: join(projectDir, 'other') });
+    const other = mountHome();
+    await flushEffects();
+    expect(other.lastFrame()).not.toContain('Home draft keep this');
+    other.unmount();
+  });
+
+  it('keeps the draft behind a command taken from the palette, not the command', async () => {
+    const ui = mountHome();
+    await flushEffects();
+    ui.stdin.write('Home draft keep this');
+    await flushEffects();
+    composerDraftStore.requestCommand('/crew ');
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('/crew'));
+
+    const back = await leaveForRunAndReturn(ui);
+    expect(back.lastFrame()).toContain('Home draft keep this');
+    expect(back.lastFrame()).not.toContain('/crew');
+    back.unmount();
   });
 });

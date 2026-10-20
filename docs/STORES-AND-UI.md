@@ -100,7 +100,7 @@ On `turn_interrupted` or `workflow_cancelled`, the operations reducer clears eve
 - **controlsStore** -- sidebar visibility, input mode echo.
 - **terminalSizeStore** -- reactive terminal cols/rows, subscribes to resize events.
 - **inputHeightStore** -- current composer height in rows.
-- **composerLiveStore** -- whether the composer is empty right now. Session draft persistence lives in `src/stores/ui/session-drafts.ts`, backed by each session’s `draft.json`; departure flushes pending writes before leaving or quitting.
+- **composerLiveStore** -- whether the composer is empty right now. Session draft persistence lives in `src/stores/ui/session-drafts.ts`, backed by each session’s `draft.json`; departure flushes pending writes before leaving or quitting. The same module keeps the home composer's unsent draft in memory, one per project, with no file.
 - **inputHistoryStore** -- command history with disk persistence.
 - **commandPaletteMruStore** -- most-recently-used entries for the command palette.
 - **projectFilesStore** -- refresh invalidation tick for project-file completion; the composer owns the async file read and local suggestion list.
