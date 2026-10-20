@@ -180,6 +180,15 @@ describe('implementer_generate_done diff card', () => {
     expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
   });
 
+  it('counts one hidden diff line in the singular', () => {
+    const diff = Array.from({ length: 13 }, (_, index) => `+ line ${index + 1}`).join('\n');
+    const text = rowsFor(implementerDoneEvent({ diff, linesAdded: 13, linesRemoved: 0 }), true)
+      .map(rowText)
+      .join('\n');
+
+    expect(text).toContain('… 1 more line ·');
+  });
+
   it('keeps the merged overflow hint on a single row at width 48', () => {
     const width = 48;
     const diff = Array.from({ length: 47 }, (_, index) => `+ line ${index + 1}`).join('\n');

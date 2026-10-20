@@ -314,6 +314,7 @@
 - In a narrow terminal, a Recovery row no longer leaves its arrow at the end of a line with the outcome, such as **skipped**, alone on the next line.
 - A halt panel too short for its text now says how many lines it cuts instead of dropping them without a mark, and keeps the selected action in view with `↑ more` or `↓ more` for each side that hides other actions.
 - A list two rows high now marks both sides when it hides items above and below.
+- An expanded diff that hides one line now reads `1 more line`, not `1 more lines`.
 - A halt panel after an Apply that stopped with many files left paints at once and answers the arrow keys at once.
 - When the sessions list cannot open a run, the message now shows the reason first. A task written on several lines now reads with spaces wherever it shows on one line: the sessions list, the command palette, the Plan heading of the run, `splitbrief status`, and the resume and `splitbrief spec` lines.
 - A brief that created a file still reads `create` after the planner rewrites or splits it, for every file it created, also an empty file.
