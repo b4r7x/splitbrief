@@ -30,6 +30,11 @@ export function isTaskCompleted(status: Task['status']): boolean {
   return status === 'done' || status === 'escalated';
 }
 
+/** A settled brief never runs again: it passed, or the user skipped it. Only `RESET_TASK` reopens it. */
+export function isTaskSettled(status: Task['status']): boolean {
+  return isTaskCompleted(status) || status === 'skipped';
+}
+
 export function formatTaskId(n: number): TaskId {
   return taskId(`T${String(n).padStart(3, '0')}`);
 }

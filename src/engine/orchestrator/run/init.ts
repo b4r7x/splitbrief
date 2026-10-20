@@ -9,7 +9,7 @@ import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import { isTaskCompleted, type TaskId } from '../../../core/schemas/task.js';
+import { isTaskCompleted, isTaskSettled, type TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
 import type { Reviewer } from '../../reviewers/types.js';
@@ -667,7 +667,7 @@ async function settleStaleHalt(args: {
 /**
  * A run written before the task index followed skipped briefs can point at a brief that already
  * passed while another one ran. The brief that ran is the one to continue: the first in progress,
- * else the first not passed. The next save persists the corrected index and cut step.
+ * else the first not settled. The next save persists the corrected index and cut step.
  */
 function realignPassedTaskIndex(bus: EventBus, state: WorkflowState): WorkflowState {
   if (!isImplementerPhase(state.phase)) return state;
@@ -675,7 +675,7 @@ function realignPassedTaskIndex(bus: EventBus, state: WorkflowState): WorkflowSt
   if (stale === undefined || !isTaskCompleted(stale.status)) return state;
   const inProgress = state.tasks.findIndex((t) => t.status === 'in_progress');
   const index =
-    inProgress >= 0 ? inProgress : state.tasks.findIndex((t) => !isTaskCompleted(t.status));
+    inProgress >= 0 ? inProgress : state.tasks.findIndex((t) => !isTaskSettled(t.status));
   const task = state.tasks[index];
   if (task === undefined) return state;
   const cut = state.interruptedStep;

@@ -1034,6 +1034,24 @@ describe('transition', () => {
       4,
     );
   });
+
+  it('passing a brief advances past a brief the user skipped', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      tasks: [
+        makeTask({ id: 'T001', status: 'in_progress' }),
+        makeTask({ id: 'T002', status: 'skipped' }),
+        makeTask({ id: 'T003' }),
+      ],
+      currentTaskIndex: 0,
+    };
+
+    const next = transition(state, { type: 'VALIDATION_PASS' });
+
+    expect(next.currentTaskIndex).toBe(2);
+    expect(next.tasks.map((task) => task.status)).toEqual(['done', 'skipped', 'pending']);
+  });
 });
 
 describe('consult and split state operations', () => {
@@ -1730,6 +1748,22 @@ describe('fix cycles, review and triage records', () => {
     const next = transition(state, { type: 'QUEUE_TRIAGE', inputs });
 
     expect(next.pendingTriage).toEqual({ inputs });
+  });
+
+  it('START_FIX_CYCLE starts at the fix brief, never at a brief the user skipped', () => {
+    const state = failedReviewState({
+      tasks: [
+        makeTask({ id: 'T001', status: 'skipped' }),
+        makeTask({ id: 'T002', status: 'done' }),
+        makeTask({ id: 'T003' }),
+      ],
+      currentTaskIndex: 3,
+    });
+
+    const next = transition(state, { type: 'START_FIX_CYCLE' });
+
+    expect(next.currentTaskIndex).toBe(2);
+    expect(next.tasks.map((task) => task.status)).toEqual(['skipped', 'done', 'pending']);
   });
 });
 

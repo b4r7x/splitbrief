@@ -9,7 +9,7 @@ import {
   type LineageRecord,
   type WorkflowState,
 } from '../schemas/workflow.js';
-import { isTaskCompleted, type Task, type TaskId } from '../schemas/task.js';
+import { isTaskCompleted, isTaskSettled, type Task, type TaskId } from '../schemas/task.js';
 import type { TriageInput } from '../schemas/review.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
@@ -218,9 +218,7 @@ function dropClosedLineageStart(state: WorkflowState, taskId: TaskId): WorkflowS
   const key = lineageKeyFor(state, taskId);
   const lineage = state.lineages?.[key];
   if (lineage?.startSnapshot === undefined) return state;
-  const open = state.tasks.some(
-    (t) => lineageIdOf(t) === key && !isTaskCompleted(t.status) && t.status !== 'skipped',
-  );
+  const open = state.tasks.some((t) => lineageIdOf(t) === key && !isTaskSettled(t.status));
   if (open) return state;
   const { startSnapshot: _closedStart, ...closed } = lineage;
   return { ...state, lineages: { ...state.lineages, [key]: closed } };
@@ -242,9 +240,9 @@ function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
   };
 }
 
-/** The next brief the task loop runs: a passed brief after `from` is skipped, never current. */
+/** The next brief the task loop runs: a settled brief after `from` is passed over, never current. */
 function nextOpenTaskIndex(state: WorkflowState, from: number): number {
-  const index = state.tasks.findIndex((t, i) => i >= from && !isTaskCompleted(t.status));
+  const index = state.tasks.findIndex((t, i) => i >= from && !isTaskSettled(t.status));
   return index >= 0 ? index : state.tasks.length;
 }
 

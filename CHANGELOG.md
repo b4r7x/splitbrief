@@ -305,6 +305,7 @@
 - **Skip task** on a brief that a skipped dependency blocked now shows as one Recovery row under that brief, instead of two rows split around it.
 - A closed run's `Phases` row now counts the whole run, also after a stop and continue or a continue after a halt: planning is no longer dropped and the times are no longer only those of the last stretch. Runs closed by Apply, Discard or End run now show the row too.
 - `Ran` no longer counts the time on the result menu and the Apply after Accept as is, or after an Apply that stopped part way and ran again.
+- A brief you skipped no longer runs again when the final review fails and starts its fixes. The closed record keeps it as skipped, and Apply leaves its work out.
 
 ## [0.1.0] - 2026-08-07
 

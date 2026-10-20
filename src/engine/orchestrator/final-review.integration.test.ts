@@ -12,11 +12,14 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
   makeCallbacks,
+  makeCopyingIsolation,
+  makeImplementer,
   makePlanner,
   makeBusRecorder,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import {
   planFromTasks,
   passingReviewVerdict,
@@ -56,6 +59,8 @@ import { appendReviewChanges } from '../../core/evidence/review-changes.js';
 import { readConfinedEntry } from './approval/file-snapshots/entry.js';
 import { enqueueUserMessage } from './queue/submit.js';
 import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
+import { runTasksAndReview } from './run/task-execution.js';
+import { createValidator } from './validation/run.js';
 
 let dirs: string[] = [];
 
@@ -2166,4 +2171,108 @@ describe('review record', () => {
     expect(record.cycle).toBe(2);
     expect(result.state.review?.cycle).toBe(2);
   });
+
+  it('runs only the fix brief after a failed review, never a brief the user skipped', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const ref = { projectDir, sessionId };
+    const savedState = transition(
+      persistReadyExecutionState(ref, {
+        ...allTasksDoneState(
+          [
+            makeTask({ id: 'T001', status: 'skipped', suggestedFiles: ['src/skipped.ts'] }),
+            makeTask({ id: 'T002', status: 'done' }),
+          ],
+          runStartHead,
+        ),
+        currentTaskIndex: 2,
+      }),
+      { type: 'ALL_DONE' },
+    );
+    saveState(ref, savedState);
+    const { reviewer } = makeReviewer((prompt) =>
+      failedReviewVerdict(prompt, 'src/alpha.ts is missing'),
+    );
+    const implementer = makeImplementer();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        isolation: makeCopyingIsolation(ref),
+        config: makeNoValidationConfig({ workflow: {} }),
+        callbacks: makeCallbacks().callbacks,
+        bus,
+        planner: reviewer,
+        reviewer,
+        context: defaultContext,
+        implementer,
+        createImplementer: vi.fn().mockReturnValue(implementer),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state: savedState,
+      planning: { disposition: 'ready-for-tasks', state: savedState, tasks: savedState.tasks },
+      summaryBase: SUMMARY_BASE,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(events.find((event) => event.type === 'review_fix_started')).toMatchObject({
+      taskIds: ['T003'],
+    });
+    const starts = events.flatMap((event) => (event.type === 'task_started' ? [event.taskId] : []));
+    expect(starts).toEqual(['T003']);
+    expect(result.state.tasks.map((task) => [task.id, task.status])).toEqual([
+      ['T001', 'skipped'],
+      ['T002', 'done'],
+      ['T003', 'done'],
+    ]);
+  }, 90_000);
+
+  it('passes over a brief the user skipped after the brief it runs', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const ref = { projectDir, sessionId };
+    const savedState = persistReadyExecutionState(
+      ref,
+      allTasksDoneState(
+        [makeTask({ id: 'T001' }), makeTask({ id: 'T002', status: 'skipped' })],
+        runStartHead,
+      ),
+    );
+    const { reviewer } = makeReviewer();
+    const implementer = makeImplementer();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        isolation: makeCopyingIsolation(ref),
+        config: makeNoValidationConfig({ workflow: {} }),
+        callbacks: makeCallbacks().callbacks,
+        bus,
+        planner: reviewer,
+        reviewer,
+        context: defaultContext,
+        implementer,
+        createImplementer: vi.fn().mockReturnValue(implementer),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state: savedState,
+      planning: { disposition: 'ready-for-tasks', state: savedState, tasks: savedState.tasks },
+      summaryBase: SUMMARY_BASE,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const starts = events.flatMap((event) => (event.type === 'task_started' ? [event.taskId] : []));
+    expect(starts).toEqual(['T001']);
+    expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'skipped']);
+  }, 90_000);
 });

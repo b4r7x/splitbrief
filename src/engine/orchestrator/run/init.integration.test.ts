@@ -1305,6 +1305,39 @@ describe('initializeWorkflow — a cut step that names a passed brief', () => {
       ).toContain('The saved run pointed at T002, which already passed; continuing at T003.');
     });
   });
+
+  it('continues at the first open brief, not at a brief the user skipped', async () => {
+    await withTempDir('splitbrief-init-stale-skipped', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/passed.ts': 'passed' });
+      const feature = 'continue past a skipped brief';
+      const events: EngineEvent[] = [];
+
+      const { init, tracked } = await initializeTestWorkflow({
+        projectDir,
+        sessionId: 'session-init-stale-skipped',
+        feature,
+        eventSink: (event) => events.push(event),
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'implementing',
+          tasks: [
+            makeTask({ id: 'T001', status: 'done', suggestedFiles: ['src/passed.ts'] }),
+            makeTask({ id: 'T002', status: 'skipped', suggestedFiles: ['src/skipped.ts'] }),
+            makeTask({ id: 'T003', status: 'pending', suggestedFiles: ['src/open.ts'] }),
+          ],
+          currentTaskIndex: 0,
+        },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(tracked.current).toMatchObject({ currentTaskIndex: 2 });
+      expect(
+        events
+          .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
+          .map((e) => e.message),
+      ).toContain('The saved run pointed at T001, which already passed; continuing at T003.');
+    });
+  });
 });
 
 describe('initializeWorkflow — seat record', () => {
