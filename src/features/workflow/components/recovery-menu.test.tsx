@@ -11,6 +11,7 @@ import { listRowLead } from '../../../components/list-row.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { RecoveryMenu } from './recovery-menu.js';
 
 afterEach(() => composerLiveStore.reset());
@@ -448,4 +449,35 @@ it('preserves the action whole-word cut and seat tone at width 30', () => {
   expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, '…'));
   ui.unmount();
   chalk.level = colorLevel;
+});
+
+it('marks the halt text an 80x24 panel cuts and keeps every action and the legend', async () => {
+  // The whole middle of an 80x24 workflow screen: the most rows the panel can take.
+  const panelRowsAt80x24 = 16;
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={makeRecoveryIssue({
+        message: 'T901 failed after 4 attempts',
+        details: [
+          "Last error: src/features/workflow/display/activity.ts(42,18): error TS2339: Property 'stop' does not exist on type 'Projection'.",
+          'Attempts: 4',
+          `Implementer said: ${'activity.ts reads projection.stop, but Projection has no stop field. '.repeat(4)}I changed nothing.`,
+        ],
+      })}
+      width={getChromeContentWidth(80)}
+      clampedBoxRows={panelRowsAt80x24}
+      focused
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  const rows = stripAnsiStyles(ui.lastFrame()).split('\n');
+  const separator = rows.findIndex((row) => row.includes('──────'));
+  expect(rows).toHaveLength(panelRowsAt80x24);
+  expect(rows[separator - 1]).toMatch(/^[│|] {3}… \d+ more lines +[│|]$/);
+  expect(rows.some((row) => row.includes('Try again'))).toBe(true);
+  expect(rows.some((row) => row.includes('End run'))).toBe(true);
+  expect(rows.at(-2)).toContain('↑↓ select · ⏎ confirm');
+  ui.unmount();
 });

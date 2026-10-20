@@ -312,6 +312,7 @@
 - The closed run block keeps the words of a task or a review finding written on two lines apart.
 - A seat you save in Settings or with `/crew` while a run waits on a halt is now used when the run goes on, and the other seats you saved stay as saved.
 - In a narrow terminal, a Recovery row no longer leaves its arrow at the end of a line with the outcome, such as **skipped**, alone on the next line.
+- A halt panel too short for its text now says how many lines it cuts instead of dropping them without a mark.
 
 ## [0.1.0] - 2026-08-07
 

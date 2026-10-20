@@ -1,5 +1,6 @@
 import { SOFT_SEP } from '../../core/separators.js';
 import {
+  ELLIPSIS,
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
@@ -230,8 +231,10 @@ export function promptBodyRows(
 /**
  * What a panel too short for its prompt keeps: the headline that says what
  * happened and every action row, because a halt whose choices are scrolled off
- * screen is a halt the operator cannot answer. Facts are what gives way, from
- * the bottom, and the last kept slot stays blank so the facts do not run into
+ * screen is a halt the operator cannot answer. Blank rows give way first, then
+ * facts from the bottom; the last kept fact row says how many lines are cut, so
+ * no text leaves the panel unmarked unless the panel has room for the headline
+ * only. Above action rows the last slot stays blank so the facts do not run into
  * the keys.
  */
 export function clipPromptBodyRows(
@@ -241,13 +244,25 @@ export function clipPromptBodyRows(
   if (height <= 0) return [];
   if (rows.length <= height) return [...rows];
   const actionStart = rows.findIndex((row) => row.kind === 'action');
-  if (actionStart <= 0) return rows.slice(0, height);
+  const factEnd = actionStart <= 0 ? rows.length : actionStart;
   const head = rows.slice(0, 1);
-  const tail = rows.slice(actionStart).slice(0, Math.max(0, height - head.length));
-  const facts = rows.slice(1, actionStart).filter((row) => row.kind !== 'blank');
-  const room = height - head.length - tail.length;
-  const kept = room > 1 ? [...facts.slice(0, room - 1), BLANK_ROW] : facts.slice(0, room);
-  return [...head, ...kept, ...tail];
+  const tail = rows.slice(factEnd).slice(0, Math.max(0, height - head.length));
+  const facts = rows.slice(1, factEnd).filter((row) => row.kind !== 'blank');
+  const available = height - head.length - tail.length;
+  const gap = tail.length > 0 && available > 1 ? [BLANK_ROW] : [];
+  const room = available - gap.length;
+  if (facts.length <= room) return [...head, ...facts, ...gap, ...tail];
+  const kept = facts.slice(0, Math.max(0, room - 1));
+  const cut: PromptBodyLine[] =
+    room > 0
+      ? [
+          {
+            kind: 'facts-line',
+            text: `${FACT_INDENT}${ELLIPSIS} ${facts.length - kept.length} more lines`,
+          },
+        ]
+      : [];
+  return [...head, ...kept, ...cut, ...gap, ...tail];
 }
 
 export function countPromptBodyRows(prompt: string | readonly PromptRow[], width: number): number {

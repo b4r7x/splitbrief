@@ -2862,8 +2862,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'retry-exhausted',
         title: 'Retry-exhausted recovery menu',
         kind: 'question',
-        // The headline is the one line the panel keeps at 60x18, where the row budget
-        // leaves room for the actions and nothing else.
+        // At 60x18 the panel keeps the headline, the Task row and a mark that counts the cut lines.
         marker: 'Needs you · T901 failed',
       },
       elements: [
@@ -2880,7 +2879,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'consult-bound',
         title: 'Consult-bound recovery menu',
         kind: 'question',
-        // The headline is the one line the panel keeps at 60x18.
+        // At 60x18 the panel keeps the headline, the Task row and a mark that counts the cut lines.
         marker: 'Needs you · T901 used its consult allowance',
       },
       elements: [
