@@ -416,6 +416,51 @@ describe('createRecoveryDriver', () => {
     expect(recoveryNoticeStore.get().issue).toBeNull();
   });
 
+  it("swaps a halted named BUILD profile onto the default profile's own seat", async () => {
+    const big = {
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'sonnet',
+      contextLength: 200_000,
+    } as const;
+    const profiled = (small: { kind: 'cli'; tool: 'codex' | 'claude-code'; model: string }) =>
+      makeConfig({
+        planner: { kind: 'agent', command: 'test-planner' },
+        implementer: big,
+        implementerProfiles: { default: 'big', profiles: { big, small } },
+      });
+    const { prepared: base, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+      recommendedAction: 'switch-seat',
+      selectedImplementerProfile: 'small',
+      switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+    });
+    const prepared = {
+      ...base,
+      sourceConfig: profiled({ kind: 'cli', tool: 'codex', model: 'gpt-5-codex' }),
+    };
+    const { inputMode } = makeInputMode(['switch-seat', 'end']);
+
+    const pending = runDriver(prepared, state, inputMode);
+    await vi.waitFor(() => {
+      expect(overlayStore.get().active).toBe('implementer-picker');
+    });
+    configStore.__testReset({
+      projectDir: prepared.session.ref.projectDir,
+      config: profiled({ kind: 'cli', tool: 'claude-code', model: 'sonnet' }),
+    });
+    pickerViewStore.setCommitted(true);
+    overlayStore.close();
+    const result = await pending;
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.switchSeat?.candidate).toEqual({ tool: 'claude-code', model: 'sonnet' });
+    }
+  });
+
   it('takes the automatic intent at once, with no panel question and no picker', async () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',

@@ -118,10 +118,17 @@ function overlayClosed(overlay: OverlayType, signal: AbortSignal): Promise<boole
   });
 }
 
-/** The seat as a config has it; a seat that runs no CLI tool cannot be swapped. */
-function seatIn(config: Config | null, seat: CrewSeatId): SeatSwapCandidate | undefined {
+/**
+ * The seat as a config has it, on the BUILD profile the halt named; a seat that runs no CLI
+ * tool cannot be swapped.
+ */
+function seatIn(
+  config: Config | null,
+  seat: CrewSeatId,
+  profile: string | undefined,
+): SeatSwapCandidate | undefined {
   if (config === null) return undefined;
-  const runner = readActiveRunner({ config, role: CREW_SEAT_ROLES[seat] });
+  const runner = readActiveRunner({ config, role: CREW_SEAT_ROLES[seat], profile });
   if (runner.kind !== 'cli') return undefined;
   return {
     tool: runner.tool,
@@ -138,15 +145,17 @@ function seatIn(config: Config | null, seat: CrewSeatId): SeatSwapCandidate | un
  * and the swap is read back from it. A picker closed with no row taken (Escape, also
  * after Ctrl+D saved a deleted custom model) is a cancelled swap, and so is a take of
  * the seat the run was prepared on — same tool, model, effort and variant. A take of
- * the seat a save under the halt already chose is a swap.
+ * the seat a save under the halt already chose is a swap. A BUILD halt names the profile
+ * that failed: the picker saves to it, and the swap is read from it.
  */
 async function pickSwappedSeat(
   seat: CrewSeatId,
   candidate: SeatSwapCandidate,
   configOfRun: Config,
   signal: AbortSignal,
+  profile: string | undefined,
 ): Promise<SeatSwapCandidate | undefined> {
-  const before = seatIn(configOfRun, seat);
+  const before = seatIn(configOfRun, seat, profile);
   const overlay = seatPickerOverlayFor(CREW_SEAT_ROLES[seat]);
   if (candidate.model !== undefined) {
     pickerViewStore.expand(
@@ -156,9 +165,10 @@ async function pickSwappedSeat(
     );
   }
   pickerViewStore.setCommitted(false);
+  pickerViewStore.setProfile(profile);
   overlayStore.open(overlay, toolRowFocus(candidate.tool));
   if (!(await overlayClosed(overlay, signal))) return undefined;
-  const after = seatIn(configStore.get().config, seat);
+  const after = seatIn(configStore.get().config, seat, profile);
   if (after === undefined) return undefined;
   if (before !== undefined && sameSeatCandidate(after, before)) return undefined;
   return after;
@@ -258,6 +268,7 @@ export function createRecoveryDriver(
           offered,
           configOfRun,
           controller.signal,
+          offer.seat === 'build' ? issue.selectedImplementerProfile : undefined,
         );
         if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
         if (candidate === undefined) {

@@ -1,7 +1,10 @@
 import {
+  readImplementerProfileConfig,
   resolveImplementerProfiles,
   updateDefaultImplementerConfig,
+  updateNamedImplementerConfig,
 } from './implementer-profiles.js';
+import { configError } from '../errors.js';
 import { resolveReviewerRunner } from './reviewer-runner.js';
 import type { ActiveRunnerRole } from '../../runners/seat-roles.js';
 import type { Config } from '../../schemas/config.js';
@@ -25,6 +28,8 @@ interface ActiveRunnerSource {
 export interface ReadActiveRunnerInput {
   readonly config: Config;
   readonly role: ActiveRunnerRole;
+  /** The BUILD profile the implementer seat names; absent is the default profile. */
+  readonly profile?: string | undefined;
 }
 
 export type UpdateActiveRunnerInput =
@@ -36,6 +41,7 @@ export type UpdateActiveRunnerInput =
   | {
       readonly config: Config;
       readonly role: 'implementer';
+      readonly profile?: string | undefined;
       readonly updater: (existing: ImplementerConfig) => ImplementerConfig;
     }
   | {
@@ -57,6 +63,18 @@ function resolveActiveRunnerSource(input: ReadActiveRunnerInput): ActiveRunnerSo
     return {
       runner: reviewer.runner,
       sourcePath: reviewer.source === 'planner' ? 'planner' : 'reviewer',
+    };
+  }
+
+  if (input.profile !== undefined) {
+    const runner = readImplementerProfileConfig(input.config, input.profile);
+    if (runner === undefined) throw configError.implementerProfileNotFound(input.profile);
+    return {
+      runner,
+      sourcePath:
+        input.config.implementerProfiles === undefined
+          ? 'implementer'
+          : `implementerProfiles.profiles.${input.profile}`,
     };
   }
 
@@ -98,7 +116,12 @@ export function updateActiveRunner(input: UpdateActiveRunnerInput): Config {
     };
   }
 
-  return updateDefaultImplementerConfig(input.config, input.updater);
+  if (input.profile === undefined) {
+    return updateDefaultImplementerConfig(input.config, input.updater);
+  }
+  const updated = updateNamedImplementerConfig(input.config, input.profile, input.updater);
+  if (updated === null) throw configError.implementerProfileNotFound(input.profile);
+  return updated;
 }
 
 export function clearReviewerSeat(config: Config): Config {
