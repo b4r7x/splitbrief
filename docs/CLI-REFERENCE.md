@@ -863,6 +863,8 @@ done: 3 tasks
 
 Everything else the run emits is dropped — including `recovery_required`, which is a `--json` record. A halt no one is there to answer ends the plain stream: the failing task's `failed` line is the last line written, there is no `review:` or `done:` line, and the command exits 1. The halt itself is not silent — stderr carries the block below in both headless renderings.
 
+Warnings and notes go to stderr, one line each. When a run fails, stderr carries its cause just before `Error: Workflow failed — see the error output above.`
+
 `--plain` cannot be combined with `--json`.
 
 ### Pending recovery in a headless run

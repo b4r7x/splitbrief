@@ -306,6 +306,7 @@
 - A closed run's `Phases` row now counts the whole run, also after a stop and continue or a continue after a halt: planning is no longer dropped and the times are no longer only those of the last stretch. Runs closed by Apply, Discard or End run now show the row too.
 - `Ran` no longer counts the time on the result menu and the Apply after Accept as is, or after an Apply that stopped part way and ran again.
 - A brief you skipped no longer runs again when the final review fails and starts its fixes. The closed record keeps it as skipped, and Apply leaves its work out.
+- `splitbrief start --plain`, `continue --plain` and `resume --plain` now print why a run failed on stderr, just before `Workflow failed`. Before, they only pointed to error output that was not shown.
 
 ## [0.1.0] - 2026-08-07
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Command } from 'commander';
 import {
@@ -26,7 +26,12 @@ import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  planFromTasks,
+  typedCallAnswering,
+  typedCallFromTasks,
+} from '#testing/helpers/typed-planner.js';
+import { sessionsRoot } from '../../../src/core/paths.js';
 import { PLAIN_LINE } from '../../e2e/helpers/run-dir-assertions.js';
 
 const mocks = vi.hoisted(() => ({
@@ -144,6 +149,63 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
       // `readiness_report` the JSON rendering opens with, and not a terminal
       // `error` / `recovery_required` record either.
       expect(isNdjsonRecord(line)).toBe(false);
+    }
+  });
+
+  it('prints the cause of a failed workflow on stderr before the pointer to it', async () => {
+    const tmp = getStartCommandTmp();
+    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false, approve: 'none' });
+
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdout.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderr.push(String(chunk));
+      return true;
+    });
+
+    // A file where the session's snapshot folder belongs makes the run
+    // baseline impossible, so the workflow throws after planning.
+    const planner = makePlanner({
+      typedCall: typedCallAnswering(() => {
+        const root = sessionsRoot(tmp);
+        const [sessionId = ''] = readdirSync(root);
+        writeFileSync(join(root, sessionId, 'snapshots'), 'not a folder\n', 'utf-8');
+        return planFromTasks([makeTask({ id: 'T001', suggestedFiles: [TARGET_FILE] })]);
+      }),
+    });
+
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program, {
+      ...fakeDeps,
+      runHeadless: (options) =>
+        runHeadless({ ...options, _planner: planner, _implementer: makeImplementer() }),
+    });
+
+    await expect(
+      program.parseAsync([
+        'node',
+        'splitbrief',
+        'start',
+        '--plain',
+        'fail after planning',
+        '--project',
+        tmp,
+      ]),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: 'Workflow failed — see the error output above.',
+    });
+
+    expect(stderr).toContain(
+      'The run baseline snapshot could not be initialized; workspace acquisition stopped.\n',
+    );
+    for (const line of stdout.join('').trimEnd().split('\n').filter(Boolean)) {
+      expect(line).toMatch(PLAIN_LINE);
     }
   });
 
