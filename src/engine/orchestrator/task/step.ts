@@ -558,7 +558,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     if (commitResult.completed) {
       state = commitResult.state;
       setTrackedState(state);
-      opts.onTaskAcceptedFiles?.(taskChangedFiles);
+      opts.onTaskAcceptedFiles?.(commitResult.bookedFiles);
       recordTaskUsage({
         task,
         method: 'local',
@@ -584,7 +584,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
           method: 'local',
           retries: 0,
           durationMs: commitResult.durationMs,
-          changedFiles: taskChangedFiles,
+          changedFiles: commitResult.bookedFiles,
         },
       });
       return state;

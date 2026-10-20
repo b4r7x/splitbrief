@@ -4,6 +4,8 @@ import type { WorkflowContext } from '../types.js';
 import { publishTaskSkipped } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { persistSkippedBriefFiles } from '../evidence/persistence.js';
+import { captureTaskReviewChanges } from '../evidence/review-capture.js';
+import { lineageRemainder } from './booking.js';
 import { restoreExhaustedTaskFiles, restoreHookDeniedTaskFiles } from './rollback.js';
 
 type SkipBriefOptions = {
@@ -17,8 +19,9 @@ type SkipBriefOptions = {
 
 /**
  * A skipped brief leaves no files behind: every file it changed since its task-start snapshot goes
- * back, and the ledger books on it only the files still changed. Without a snapshot no attempt of
- * the brief ran, so there is nothing to take back.
+ * back, and the ledger books on it only the files still changed and, when the skip closes the
+ * brief's lineage, the lineage's remainder. Without a snapshot no attempt of the brief ran, so
+ * there is nothing to take back.
  */
 export async function skipBrief(
   opts: SkipBriefOptions & { skippedBy: 'pre_task' | 'pre_validation' },
@@ -52,7 +55,31 @@ export async function skipHaltedBrief(
 
 async function recordSkip(opts: SkipBriefOptions): Promise<WorkflowState> {
   const { wctx, task, reason, taskStartSnapshot } = opts;
-  await persistSkippedBriefFiles({ wctx, state: opts.state, task, reason, taskStartSnapshot });
+  // Read before the transition: the skip that closes the lineage drops its start.
+  const lineage = await lineageRemainder({
+    ref: wctx,
+    workspaceDir: wctx.workspaceDir,
+    state: opts.state,
+    task,
+  });
+  const remainderFiles = lineage?.files ?? [];
+  await persistSkippedBriefFiles({
+    wctx,
+    state: opts.state,
+    task,
+    reason,
+    taskStartSnapshot,
+    remainderFiles,
+  });
+  if (lineage !== undefined && remainderFiles.length > 0) {
+    await captureTaskReviewChanges({
+      ref: wctx,
+      workspaceDir: wctx.workspaceDir,
+      task,
+      since: lineage.since,
+      files: remainderFiles,
+    });
+  }
   const state = transitionAndSave(
     wctx,
     opts.state,

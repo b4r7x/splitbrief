@@ -33,7 +33,10 @@ import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
 import type { Check } from '../../core/schemas/task.js';
 import { saveState } from '../../core/state/persistence.js';
 import { applyConsultAnswer } from './consult/apply.js';
-import { getChangedFilesSnapshot } from './approval/file-snapshots/capture.js';
+import {
+  getChangedFilesSinceSnapshot,
+  getChangedFilesSnapshot,
+} from './approval/file-snapshots/capture.js';
 import { captureTaskReviewChanges } from './evidence/review-capture.js';
 import { getOrCreateLedger } from './evidence/persistence.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
@@ -86,7 +89,8 @@ async function completeTask(
     ref: p.ref,
     workspaceDir: p.projectDir,
     task,
-    taskStartSnapshot,
+    since: taskStartSnapshot,
+    files: await getChangedFilesSinceSnapshot(p.projectDir, taskStartSnapshot),
   });
   // A passed task leaves its evidence ledger, which the review packet requires.
   writeEvidenceLedger(p.ref, getOrCreateLedger({ ref: p.ref, state: makeImplState([task]) }));
@@ -376,7 +380,8 @@ describe('final review task completion provenance', () => {
         ref: p.ref,
         workspaceDir: p.projectDir,
         task: p.task,
-        taskStartSnapshot,
+        since: taskStartSnapshot,
+        files: await getChangedFilesSinceSnapshot(p.projectDir, taskStartSnapshot),
       });
     };
     await capture(() => chmodSync(join(p.projectDir, file), 0o755));

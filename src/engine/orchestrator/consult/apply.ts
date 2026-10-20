@@ -62,7 +62,7 @@ export type ConsultApplyOutcome =
   | Readonly<{ action: 'guidance'; instructions: string; context: string | null }>
   | Readonly<{ action: 'rewrite-task'; task: Task }>
   | Readonly<{ action: 'split-task'; tasks: Task[] }>
-  | Readonly<{ action: 'completed'; task: Task; durationMs: number }>
+  | Readonly<{ action: 'completed'; task: Task; durationMs: number; bookedFiles: string[] }>
   | Readonly<{ action: 'correction'; answer: string }>
   | Readonly<{ action: 'confirm'; decisions: ConfirmAction['decisions'] }>
   | Readonly<{ action: 'failed'; reason: string }>
@@ -303,7 +303,12 @@ async function applyVerify(
   }
   ctx.onStateChange?.(commit.state);
   const completed = commit.state.tasks.find((candidate) => candidate.id === task.id) ?? task;
-  return { action: 'completed', task: completed, durationMs: commit.durationMs };
+  return {
+    action: 'completed',
+    task: completed,
+    durationMs: commit.durationMs,
+    bookedFiles: commit.bookedFiles,
+  };
 }
 
 /**

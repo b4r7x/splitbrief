@@ -16,6 +16,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { sessionDir } from '../../../core/paths.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { captureTaskReviewChanges } from './review-capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { appendReviewChanges, readReviewChanges } from '../../../core/evidence/review-changes.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
@@ -227,7 +228,13 @@ describe('captureTaskReviewChanges from an entry snapshot (no git)', () => {
     symlinkSync('run.sh', join(dir, 'new-link'));
     const task = makeTask({ id: 'T001', action: 'modify', suggestedFiles: ['edit.txt'] });
 
-    await captureTaskReviewChanges({ ref, workspaceDir: dir, task, taskStartSnapshot });
+    await captureTaskReviewChanges({
+      ref,
+      workspaceDir: dir,
+      task,
+      since: taskStartSnapshot,
+      files: await getChangedFilesSinceSnapshot(dir, taskStartSnapshot),
+    });
 
     const changes = new Map(
       (readReviewChanges(ref)?.changes ?? []).map((change) => [change.path, change]),
@@ -283,7 +290,13 @@ describe('captureTaskReviewChanges from a git workspace', () => {
     rmSync(join(dir, 'removed'));
     const task = makeTask({ id: 'T001', action: 'modify', suggestedFiles: ['src/cli.js'] });
 
-    await captureTaskReviewChanges({ ref, workspaceDir: dir, task, taskStartSnapshot });
+    await captureTaskReviewChanges({
+      ref,
+      workspaceDir: dir,
+      task,
+      since: taskStartSnapshot,
+      files: await getChangedFilesSinceSnapshot(dir, taskStartSnapshot),
+    });
 
     const changes = Object.fromEntries(
       (readReviewChanges(ref)?.changes ?? []).map((change) => [

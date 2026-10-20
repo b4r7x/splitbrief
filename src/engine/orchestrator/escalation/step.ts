@@ -324,7 +324,7 @@ async function runRetryStepAttempt(
         method,
         attempts,
         durationMs: commitResult.durationMs,
-        ...(actualChangedFiles.length > 0 && { changedFiles: actualChangedFiles }),
+        ...(commitResult.bookedFiles.length > 0 && { changedFiles: commitResult.bookedFiles }),
         ...(resultTool !== undefined && { tool: resultTool }),
         ...(resultModel !== undefined && { model: resultModel }),
       },

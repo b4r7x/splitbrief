@@ -1,4 +1,5 @@
-import type { Task } from '../../../core/schemas/task.js';
+import type { Task, TaskId } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import type { CheckRunResult } from '../validation/run-checks.js';
 import type {
@@ -132,6 +133,39 @@ export function recordApiRevertEvidence(input: {
   };
 }
 
+/** The ids of a brief's lineage: the brief, its split siblings and the parents the lineage replaced. */
+function lineageBriefIds(state: WorkflowState | null, task: Task): Set<TaskId> {
+  const lineage = lineageIdOf(task);
+  const siblings = (state?.tasks ?? []).filter((brief) => lineageIdOf(brief) === lineage);
+  const parents = state?.lineages?.[lineage]?.replacedParents ?? [];
+  return new Set([task, ...siblings, ...parents].map((brief) => brief.id));
+}
+
+/**
+ * The files of `changed` that no other brief of the run booked. A lineage's start delta also
+ * holds the files of every brief that ran while the lineage was open, such as a fix brief
+ * between two split children, and those briefs book their own files.
+ */
+export function unbookedFiles(ref: SessionRef, task: Task, changed: readonly string[]): string[] {
+  const booked = new Set(
+    (readEvidenceLedger(ref)?.tasks ?? [])
+      .filter((entry) => entry.id !== task.id)
+      .flatMap((entry) => entry.changedFiles),
+  );
+  return changed.filter((file) => !booked.has(file));
+}
+
+/** Books `files` on the task besides the files it booked, and keeps its status. */
+export function recordRemainderEvidence(input: {
+  ledger: EvidenceLedger;
+  task: Task;
+  files: readonly string[];
+}): EvidenceLedger {
+  const next = findOrSeed(input.ledger, input.task);
+  for (const file of input.files) uniquePush(next.changedFiles, file);
+  return upsertEvidenceTask(input.ledger, next);
+}
+
 /**
  * A missing or unreadable receipt proves no ownership, so capture remains fail-closed. A receipt
  * written in the run workspace proves what the task's lineage created there: the task itself, a
@@ -144,11 +178,7 @@ export function recordedApiCreatedPaths(
   workspacePath: string,
 ): string[] {
   try {
-    const state = loadState(ref);
-    const lineage = lineageIdOf(task);
-    const siblings = (state?.tasks ?? []).filter((brief) => lineageIdOf(brief) === lineage);
-    const parents = state?.lineages?.[lineage]?.replacedParents ?? [];
-    const ids = new Set([task, ...siblings, ...parents].map((brief) => brief.id));
+    const ids = lineageBriefIds(loadState(ref), task);
     const entries = readEvidenceLedger(ref)?.tasks.filter((entry) => ids.has(entry.id)) ?? [];
     return [...new Set(entries.flatMap((entry) => provenCreatedPaths(entry, workspacePath)))];
   } catch {
@@ -328,6 +358,8 @@ export type RecordSkippedTaskEvidenceInput = {
   reason: string;
   /** The brief's files still changed after its skip took the others back. */
   keptFiles?: readonly string[] | undefined;
+  /** The files of its lineage no other brief booked, when the skip closes the lineage. */
+  remainderFiles?: readonly string[] | undefined;
 };
 
 export function recordSkippedTaskEvidence(input: RecordSkippedTaskEvidenceInput): EvidenceLedger {
@@ -338,5 +370,6 @@ export function recordSkippedTaskEvidence(input: RecordSkippedTaskEvidenceInput)
   if (keptFiles !== undefined) {
     next.changedFiles = next.changedFiles.filter((file) => keptFiles.includes(file));
   }
+  for (const file of input.remainderFiles ?? []) uniquePush(next.changedFiles, file);
   return upsertEvidenceTask(input.ledger, next);
 }

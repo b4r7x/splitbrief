@@ -534,7 +534,7 @@ export async function handleRetryAndEscalation(
           method: 'consulted',
           attempts,
           durationMs: applied.durationMs,
-          ...(changedFiles.length > 0 && { changedFiles: [...changedFiles] }),
+          ...(applied.bookedFiles.length > 0 && { changedFiles: applied.bookedFiles }),
         },
       };
     }

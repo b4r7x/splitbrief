@@ -36,7 +36,10 @@ import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { awaitsApply } from '../../core/sessions/run-status.js';
 import type { Planner } from '../planners/types.js';
-import { getChangedFilesSnapshot } from './approval/file-snapshots/capture.js';
+import {
+  getChangedFilesSinceSnapshot,
+  getChangedFilesSnapshot,
+} from './approval/file-snapshots/capture.js';
 import { captureTaskReviewChanges } from './evidence/review-capture.js';
 import { getOrCreateLedger } from './evidence/persistence.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
@@ -84,7 +87,13 @@ async function completeTask(
   const taskStartSnapshot = await getChangedFilesSnapshot(ref.projectDir);
   for (const [path, text] of Object.entries(writes))
     writeFileSync(join(ref.projectDir, path), text);
-  await captureTaskReviewChanges({ ref, workspaceDir: ref.projectDir, task, taskStartSnapshot });
+  await captureTaskReviewChanges({
+    ref,
+    workspaceDir: ref.projectDir,
+    task,
+    since: taskStartSnapshot,
+    files: await getChangedFilesSinceSnapshot(ref.projectDir, taskStartSnapshot),
+  });
   writeEvidenceLedger(ref, getOrCreateLedger({ ref, state: makeImplState([task]) }));
 }
 

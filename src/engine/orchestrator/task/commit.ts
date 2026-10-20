@@ -11,6 +11,8 @@ import { transitionAndSave } from '../state-ops.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import { readBriefWorkedMs } from './worked-time.js';
+import { lineageRemainder } from './booking.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 
 type ValidateCommitOptions = {
   task: Task;
@@ -50,10 +52,14 @@ export function touchedNotSuggestedFiles(opts: {
   return opts.taskChangedFiles.filter((file) => !isInDeclaredSet(file, suggested));
 }
 
-/** A completion carries the brief's duration: one log read for its event and its ledger entry. */
+/**
+ * A completion carries the brief's duration: one log read for its event and its ledger entry. It
+ * also carries the files the brief books: its own, and its lineage's remainder when it is the
+ * lineage's last open brief.
+ */
 type CommitResult =
   | { state: WorkflowState; completed: false }
-  | { state: WorkflowState; completed: true; durationMs: number };
+  | { state: WorkflowState; completed: true; durationMs: number; bookedFiles: string[] };
 
 export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Promise<CommitResult> {
   const {
@@ -78,6 +84,18 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
   }
 
   const durationMs = await readBriefWorkedMs({ projectDir, sessionId }, task.id);
+  // Read before the transition: the pass that closes the lineage drops its start.
+  const lineage = await lineageRemainder({
+    ref: { projectDir, sessionId },
+    workspaceDir: opts.workspaceDir,
+    state,
+    task,
+  });
+  const ownFiles =
+    opts.taskStartSnapshot === null
+      ? []
+      : await getChangedFilesSinceSnapshot(opts.workspaceDir, opts.taskStartSnapshot);
+  const bookedFiles = [...new Set([...ownFiles, ...(lineage?.files ?? [])])];
   const nextState = transitionAndSave({ projectDir, sessionId }, state, {
     type: transitionType,
   });
@@ -108,14 +126,16 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
       files: touchedNotSuggested,
     });
   }
-  if (opts.taskStartSnapshot !== null) {
+  const since = lineage?.since ?? opts.taskStartSnapshot;
+  if (since !== null) {
     await captureTaskReviewChanges({
       ref: { projectDir, sessionId },
       workspaceDir: opts.workspaceDir,
       task,
-      taskStartSnapshot: opts.taskStartSnapshot,
+      since,
+      files: bookedFiles,
     });
   }
 
-  return { state: nextState, completed: true, durationMs };
+  return { state: nextState, completed: true, durationMs, bookedFiles };
 }
