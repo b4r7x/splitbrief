@@ -9,6 +9,7 @@ import { assertNever } from '../../utils/type-guards.js';
 import { wrapHard } from '../../utils/wrap.js';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
 import {
+  FACT_INDENT,
   FAILED_REVIEW_MARKER,
   isActionRowLine,
   passHeadlinePrefix,
@@ -32,7 +33,6 @@ export type PromptBodyLine =
   | { kind: 'note'; text: string };
 
 const BLANK_ROW: PromptBodyLine = { kind: 'blank' };
-const FACT_INDENT = '  ';
 
 function clean(text: string, multiline = false): string {
   return sanitizeTerminalDisplayText(text, { preserveLineBreaks: multiline });

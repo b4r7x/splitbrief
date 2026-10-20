@@ -100,7 +100,7 @@ export function RecoveryMenu({
   );
   const innerWidth = Math.max(1, width - 4);
   const innerHeight = Math.max(1, clampedBoxRows - 2);
-  const summary = recoveryPromptSummaryRows(issue);
+  const summary = recoveryPromptSummaryRows(issue, innerWidth);
   const summaryRows = countPromptBodyRows(summary, innerWidth);
   const minimumListRows = Math.min(4, Math.max(actions.length, 1));
   const summaryHeight = Math.min(

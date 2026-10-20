@@ -29,6 +29,7 @@ import {
   type RecoveryActionChoiceContext,
 } from '../../core/recovery/action-label.js';
 import { formatTruncatedList } from '../../core/formatting.js';
+import { elidePathMiddle, getTerminalCellWidth } from '../../utils/display-text.js';
 import {
   readRecoveryContext,
   recoveryContextCauseWords,
@@ -41,6 +42,10 @@ import type { ConversationRowSegment } from './conversation-rows/types.js';
 import { separatedSpans } from './conversation-rows/row-format/text.js';
 
 const ACTION_ORDER = RECOVERY_ACTIONS;
+
+/** The indent every fact row of a prompt panel starts with. */
+export const FACT_INDENT = '  ';
+const FILES_LABEL = 'Files ';
 
 const BOUND_REASONS: ReadonlySet<RecoveryIssue['reason']> = new Set([
   'consult-bound-spent',
@@ -395,7 +400,8 @@ function seatLevelRetrySeat(issue: RecoveryIssue): CrewSeatId | undefined {
     : undefined;
 }
 
-function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
+/** `width` is the panel's text width; the Files row fits it on one row. */
+function buildRecoveryPromptRows(issue: RecoveryIssue, width: number): PromptRow[] {
   const actions = getRecoveryPromptActions(issue);
   const context: RecoveryActionChoiceContext = {
     reason: issue.reason,
@@ -406,7 +412,7 @@ function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
     haltedTool: recoveryFactString(issue.facts, 'tool'),
   };
   const recommended = resolveRecommendedAction(issue, actions);
-  const facts = [...formatSubjectLines(issue), ...formatDetailLines(issue)];
+  const facts = [...formatSubjectLines(issue, width), ...formatDetailLines(issue)];
 
   const parts = formatRecoveryHeaderParts(issue);
   const rows: PromptRow[] = [
@@ -453,13 +459,17 @@ export function promptRowsToString(rows: readonly PromptRow[]): string {
     .trimEnd();
 }
 
+/** The question-mode key of the halt; it has no panel width, so its Files row names every file. */
 export function formatRecoveryPrompt(issue: RecoveryIssue): string {
-  return promptRowsToString(buildRecoveryPromptRows(issue));
+  return promptRowsToString(buildRecoveryPromptRows(issue, Number.POSITIVE_INFINITY));
 }
 
-/** The issue and its facts for the picker; action rows are rendered as real selectable rows. */
-export function recoveryPromptSummaryRows(issue: RecoveryIssue): PromptRow[] {
-  const rows = buildRecoveryPromptRows(issue).filter(
+/**
+ * The issue and its facts for the picker at the panel's text width; action rows are rendered as
+ * real selectable rows.
+ */
+export function recoveryPromptSummaryRows(issue: RecoveryIssue, width: number): PromptRow[] {
+  const rows = buildRecoveryPromptRows(issue, width).filter(
     (row): row is Exclude<PromptRow, { kind: 'action' } | { kind: 'note' }> =>
       row.kind !== 'action' && row.kind !== 'note',
   );
@@ -579,14 +589,30 @@ export function recoveryHeadlineParts(issue: RecoveryIssue): ConversationRowSegm
   );
 }
 
-function formatSubjectLines(issue: RecoveryIssue): string[] {
+function formatSubjectLines(issue: RecoveryIssue, width: number): string[] {
   const lines: string[] = [];
   if (issue.reason === 'review-input-too-large') lines.push(issue.message);
   if (issue.taskId && issue.taskTitle) lines.push(`Task ${issue.taskId} · ${issue.taskTitle}`);
-  if (issue.files.length > 0) lines.push(`Files ${formatMiddotList(issue.files, 3)}`);
+  if (issue.files.length > 0) {
+    const room = width - getTerminalCellWidth(FACT_INDENT) - getTerminalCellWidth(FILES_LABEL);
+    lines.push(`${FILES_LABEL}${fitFileList(issue.files, room)}`);
+  }
   const affected = issue.affectedTaskIds.filter((taskId) => taskId !== issue.taskId);
   if (affected.length > 0) lines.push(`Affected ${formatMiddotList(affected, 3)}`);
   return lines;
+}
+
+/**
+ * The Files row is one row: the whole names that fit, then `+N more` as one unit. A first name
+ * that does not fit beside its count is shortened the way the brief rows shorten a path.
+ */
+function fitFileList(files: string[], room: number): string {
+  for (let shown = files.length; shown >= 1; shown--) {
+    const text = formatTruncatedList(files, shown);
+    if (getTerminalCellWidth(text) <= room) return text;
+  }
+  const tail = files.length > 1 ? `${SOFT_SEP}+${files.length - 1} more` : '';
+  return `${elidePathMiddle(files[0] ?? '', room - getTerminalCellWidth(tail))}${tail}`;
 }
 
 /**

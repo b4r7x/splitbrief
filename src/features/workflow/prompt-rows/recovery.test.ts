@@ -17,7 +17,7 @@ describe('getRecoveryPromptRows', () => {
   ])('measures the rendered summary at %s columns', (cols, width, rows) => {
     const issue = makeRecoveryIssue();
     expect(getRecoveryPromptRows(issue, cols)).toBe(rows);
-    expect(countPromptBodyRows(recoveryPromptSummaryRows(issue), width)).toBe(rows - 7);
+    expect(countPromptBodyRows(recoveryPromptSummaryRows(issue, width), width)).toBe(rows - 7);
   });
 
   it.each([

@@ -2890,6 +2890,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-many-files',
+      title: 'Workflow · a halt on a brief with many long paths',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'many-files',
+        title: 'Retry-exhausted menu whose Files row keeps one row',
+        kind: 'question',
+        marker: 'Needs you · T901 failed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-consult-bound-note',
       title: 'Workflow · a note typed beside the consult-bound menu',
       surface: screenSurface('workflow'),

@@ -39,6 +39,7 @@ const trailingControlSummary = recoveryPromptSummaryRows(
     affectedTaskIds: [],
     details: ['abcdefghijklmnopqr   \u001b[0m'],
   }),
+  20,
 );
 
 function frameRows(frame: string): string[] {
@@ -133,7 +134,7 @@ describe('promptBodyRows', () => {
       details: [],
       message: 'Provider refused request\n  try another tool',
     });
-    const prompt = recoveryPromptSummaryRows(issue);
+    const prompt = recoveryPromptSummaryRows(issue, width);
     const headline = {
       kind: 'headline',
       row: {
@@ -156,6 +157,7 @@ describe('promptBodyRows', () => {
 
     const withFacts = recoveryPromptSummaryRows(
       makeRecoveryIssue({ ...issue, files: ['src/example.ts'], details: ['Validation: npm test'] }),
+      width,
     );
     expect(promptBodyRows(withFacts, width)).toEqual([
       headline,
@@ -163,8 +165,7 @@ describe('promptBodyRows', () => {
       { kind: 'facts-line', text: '    try another tool' },
       ...(width === 20
         ? [
-            { kind: 'facts-line', text: '  Files ' },
-            { kind: 'facts-line', text: '  src/example.ts' },
+            { kind: 'facts-line', text: '  Files …/example.ts' },
             { kind: 'facts-line', text: '  Last check npm ' },
             { kind: 'facts-line', text: '  test' },
           ]
@@ -173,7 +174,7 @@ describe('promptBodyRows', () => {
             { kind: 'facts-line', text: '  Last check npm test' },
           ]),
     ]);
-    expect(countPromptBodyRows(withFacts, width)).toBe(width === 20 ? 7 : 5);
+    expect(countPromptBodyRows(withFacts, width)).toBe(width === 20 ? 6 : 5);
   });
 
   it.each([20, 76])('drops empty recovery fact lines at width %s', (width) => {
@@ -189,6 +190,7 @@ describe('promptBodyRows', () => {
         affectedTaskIds: [],
         details: ['First\n\nsecond'],
       }),
+      width,
     );
     const rows = promptBodyRows(prompt, width);
     const facts = rows.filter((row) => row.kind === 'facts-line');
@@ -233,7 +235,10 @@ describe('promptBodyRows', () => {
       { message: 'Provider refused request\n\n  try another tool   \n  ', details: [] },
       { message: `${headline}   `, details: [] },
     ]) {
-      const prompt = recoveryPromptSummaryRows(makeRecoveryIssue({ ...issue, ...overrides }));
+      const prompt = recoveryPromptSummaryRows(
+        makeRecoveryIssue({ ...issue, ...overrides }),
+        width,
+      );
       const rows = promptBodyRows(prompt, width);
       expect(rows.map(project)).toEqual(
         promptBodyRows(promptRowsToString(prompt), width).map(project),

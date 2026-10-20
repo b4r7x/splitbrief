@@ -634,7 +634,6 @@ export function buildDependencyBlockedRecoveryIssue(
     ...(opts.blockedByTasks ?? []).map((task) => task.id),
   ]);
   const affectedTaskIds = uniqueSortedIds([opts.task.id, ...blockedByTaskIds]);
-  const blockedFiles = (opts.blockedByTasks ?? []).map((task) => task.suggestedFiles[0]);
   const actions = haltActions('dependency-blocked', ['skip-current-task', 'end-run']);
 
   return createRecoveryIssue({
@@ -643,10 +642,7 @@ export function buildDependencyBlockedRecoveryIssue(
     reason: 'dependency-blocked',
     phase,
     task: opts.task,
-    files: uniqueSorted([opts.task.suggestedFiles[0], ...blockedFiles], {
-      trim: true,
-      nonEmpty: true,
-    }),
+    files: uniqueSorted([opts.task, ...(opts.blockedByTasks ?? [])].flatMap(taskFiles)),
     affectedTaskIds,
     message: `${opts.task.id} is blocked by dependency status`,
     details: [dependencyDetail(blockedByTaskIds, opts.blockedByTasks ?? [])],

@@ -68,7 +68,7 @@ export function consultHaltDetails(taskId: TaskId, seat: ConsultSeat): string[] 
 export function taskFiles(task: Task): string[] {
   return uniqueSorted(
     [
-      task.suggestedFiles[0],
+      ...task.suggestedFiles,
       ...(task.scope?.inBounds ?? []).flatMap(scopePathPatterns),
       ...(task.scope?.approvedOutOfBounds ?? []).flatMap(scopePathPatterns),
     ],

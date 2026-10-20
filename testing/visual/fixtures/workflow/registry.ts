@@ -883,6 +883,7 @@ const checkpointPredicates = [
   [checkpointId('plan-activity'), includesAll('src/core/crew/identity.ts')],
   [checkpointId('retry-exhausted'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
   [checkpointId('consult-bound'), includesAll(WORKFLOW_FIXTURE_TEXT.consultBound)],
+  [checkpointId('many-files'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
   [
     checkpointId('consult-bound-note'),
     includesAll('Continue with the typed correction', CONSULT_BOUND_NOTE),
