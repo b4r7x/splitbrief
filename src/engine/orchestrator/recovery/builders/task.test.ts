@@ -1025,6 +1025,34 @@ describe('buildDependencyBlockedRecoveryIssue', () => {
     expect(issue.recommendedAction).toBe('skip-current-task');
     expectValidRecoveryIssue(issue);
   });
+
+  it('names every file of the blocked brief and of its dependency, with their scope paths', () => {
+    const dependency = makeTask({
+      id: 'T018',
+      suggestedFiles: ['lib/clamp.js', 'test.js'],
+      status: 'skipped',
+    });
+    const task = makeTask({
+      id: 'T019',
+      suggestedFiles: ['lib/range.js', 'test/range.test.js'],
+      scope: { inBounds: ['Keep `lib/index.js` in sync.'] },
+      dependsOn: ['T018'],
+    });
+
+    const issue = buildDependencyBlockedRecoveryIssue({
+      createdAt,
+      task,
+      blockedByTasks: [dependency],
+    });
+
+    expect(issue.files).toEqual([
+      'lib/clamp.js',
+      'lib/index.js',
+      'lib/range.js',
+      'test.js',
+      'test/range.test.js',
+    ]);
+  });
 });
 
 describe('buildRecipeInvalidRecoveryIssue', () => {

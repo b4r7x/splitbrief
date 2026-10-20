@@ -74,7 +74,7 @@ it('builds a context cause from its recorded seat, with dim separators', () => {
       apiContextCause: 'input-budget',
     },
   });
-  expect(recoveryPromptSummaryRows(issue)[0]).toMatchObject({
+  expect(recoveryPromptSummaryRows(issue, 120)[0]).toMatchObject({
     parts: [
       { text: 'Seat down', tone: 'warning' },
       { text: ' · ', tone: 'textDim' },
@@ -88,10 +88,10 @@ it('builds a context cause from its recorded seat, with dim separators', () => {
 
 it('keeps the default summary at seven rows at width 30 and five at width 120', () => {
   const issue = makeRecoveryIssue();
-  const rows = recoveryPromptSummaryRows(issue);
+  const rows = recoveryPromptSummaryRows(issue, 30);
   expect(rows.at(-1)?.kind).toBe('facts');
   expect(countPromptBodyRows(rows, 30)).toBe(7);
-  expect(countPromptBodyRows(rows, 120)).toBe(5);
+  expect(countPromptBodyRows(recoveryPromptSummaryRows(issue, 120), 120)).toBe(5);
   expect(
     promptBodyRows(rows, 30)
       .filter((row) => row.kind === 'facts-line')
@@ -103,6 +103,45 @@ it('keeps the default summary at seven rows at width 30 and five at width 120', 
     '  npm test failed in ',
     '  src/auth/session.test.ts',
   ]);
+});
+
+const LONG_PATHS = [
+  'src/features/workflow/conversation-rows/row-format/recovery-detail.ts',
+  'src/features/workflow/conversation-rows/row-format/recovery-header.ts',
+  'src/features/workflow/conversation-rows/row-format/recovery-legend.ts',
+  'src/features/workflow/conversation-rows/row-format/recovery-prompt.ts',
+  'src/features/workflow/conversation-rows/row-format/recovery-scroll.ts',
+];
+
+it.each([
+  [
+    76,
+    ['src/auth/session.ts', 'src/auth/session.test.ts', 'src/auth/token-store.ts'],
+    '  Files src/auth/session.ts · src/auth/session.test.ts · +1 more',
+  ],
+  [
+    30,
+    ['src/auth/session.ts', 'src/auth/session.test.ts', 'src/auth/token-store.ts'],
+    '  Files …/session.ts · +2 more',
+  ],
+  [76, LONG_PATHS, '  Files src/…/conversation-rows/row-format/recovery-detail.ts · +4 more'],
+  [116, LONG_PATHS, `  Files ${LONG_PATHS[0]} · +4 more`],
+])('keeps the Files row on one row at width %s', (width, files, filesRow) => {
+  const issue = makeRecoveryIssue({ files });
+  const rows = promptBodyRows(recoveryPromptSummaryRows(issue, width), width);
+  const facts = rows.flatMap((row) => (row.kind === 'facts-line' ? [row.text] : []));
+  expect(facts.filter((text) => text.includes('Files') || text.includes('more'))).toEqual([
+    filesRow,
+  ]);
+  expect(rows).toHaveLength(
+    countPromptBodyRows(recoveryPromptSummaryRows(makeRecoveryIssue(), width), width),
+  );
+});
+
+it('names every file in the question-mode prompt, which has no panel width', () => {
+  expect(formatRecoveryPrompt(makeRecoveryIssue({ files: LONG_PATHS }))).toContain(
+    `Files ${LONG_PATHS.join(' · ')}\n`,
+  );
 });
 
 it('carries the action seat and consequence before formatting the label', () => {
@@ -153,7 +192,7 @@ it('preserves the canonical retry cause when an old message starts with its seat
     attempts: 3,
     facts: {},
   });
-  expect(recoveryPromptSummaryRows(issue)[0]).toMatchObject({
+  expect(recoveryPromptSummaryRows(issue, 120)[0]).toMatchObject({
     text: 'Needs you · T001 failed after 3 attempts',
     parts: [
       { text: 'Needs you', tone: 'warning' },

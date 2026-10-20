@@ -139,6 +139,7 @@ describe('PromptBody', () => {
         message: 'REVIEW answer needs repair',
         attempts: undefined,
       }),
+      100,
     );
     const ui = render(<PromptBody prompt={prompt} height={20} width={100} />);
     expect(ui.lastFrame()).toContain(paint(defaultTheme.warning, label).replace('\u001b[39m', ''));
@@ -166,6 +167,7 @@ describe('PromptBody', () => {
         affectedTaskIds: [],
         details: ['First\n\nsecond'],
       }),
+      76,
     );
     const ui = render(
       <PromptBody prompt={prompt} height={countPromptBodyRows(prompt, 76)} width={76} />,
@@ -199,6 +201,7 @@ describe('PromptBody', () => {
           affectedTaskIds: [],
           details: ['abcdefghijklmnopqr   \u001b[0m'],
         }),
+        20,
       );
       const height = countPromptBodyRows(prompt, 20);
       const ui = renderFeature(
@@ -247,6 +250,7 @@ describe('PromptBody', () => {
           details: [],
           affectedTaskIds: [],
         }),
+        width,
       );
       const height = countPromptBodyRows(prompt, width);
       expect(height).toBe(width === 30 ? 5 : 2);
@@ -321,6 +325,7 @@ describe('PromptBody', () => {
         message: 'REVIEW \u001b[31mred\u001b[0m sk-abcdefghijklmnopqrstuvwxyz',
         attempts: undefined,
       }),
+      100,
     );
     const ui = render(<PromptBody prompt={prompt} height={20} width={100} />);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(

@@ -16,7 +16,10 @@ export function getRecoveryPromptRows(issue: RecoveryIssue, cols: number): numbe
     MIN_TEXT_WIDTH,
     getChromeContentWidth(cols) - RECOVERY_PROMPT_HORIZONTAL_CHROME,
   );
-  const summaryRows = Math.max(1, countPromptBodyRows(recoveryPromptSummaryRows(issue), width));
+  const summaryRows = Math.max(
+    1,
+    countPromptBodyRows(recoveryPromptSummaryRows(issue, width), width),
+  );
   const actionRows = Math.max(1, getRecoveryPromptActions(issue).length);
   return (
     RECOVERY_PROMPT_BORDER_ROWS +

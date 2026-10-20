@@ -2920,6 +2920,49 @@ const consultBoundRecoveryProjection: WorkflowFixtureProjection = {
   resumeState: haltedResumeState(consultBoundRecoveryIssue),
 };
 
+/** The retry-exhausted halt on a brief whose files are many and long. */
+const MANY_FILES_TASK = makeTask({
+  id: WORKFLOW_FIXTURE_TASK_ID,
+  title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+  status: 'in_progress',
+  suggestedFiles: [
+    'src/features/workflow/display/activity.ts',
+    'src/features/workflow/display/projection/stop-projection.ts',
+    'src/features/workflow/display/projection/stop-projection.test.ts',
+    'src/features/workflow/conversation-rows/row-format/activity-row.ts',
+    'src/features/workflow/conversation-rows/row-format/activity-row.test.ts',
+  ],
+});
+
+const manyFilesRecoveryIssue = buildRetryExhaustedRecoveryIssue({
+  id: 'rec_visual_many_files',
+  task: MANY_FILES_TASK,
+  phase: 'escalating',
+  validationSummary: FIXTURE_TYPECHECK_ERROR,
+  attempts: 4,
+  maxAttempts: 3,
+  allowRetryOverride: true,
+  selectedImplementerProfile: 'default',
+  handBack:
+    'activity.ts reads projection.stop, but Projection has no stop field. I did not know its type, so I changed nothing.',
+  createdAt: new Date(FIXED_TS).toISOString(),
+});
+
+const manyFilesRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-many-files'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_CREW,
+  resumeState: makeImplState([MANY_FILES_TASK], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: manyFilesRecoveryIssue.phase,
+    pendingRecovery: manyFilesRecoveryIssue,
+  }),
+};
+
 const reviewFailedRecoveryIssue = buildReviewFailedRecoveryIssue({
   id: 'rec_visual_review_failed',
   blocking: 4,
@@ -6431,6 +6474,7 @@ const projections = [
   fallbackNotInstalledRecoveryProjection,
   retryExhaustedRecoveryProjection,
   consultBoundRecoveryProjection,
+  manyFilesRecoveryProjection,
   {
     ...consultBoundRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-consult-bound-note'),

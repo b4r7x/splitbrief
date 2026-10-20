@@ -224,6 +224,19 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
     expectValidRecoveryIssue(hint);
     expectValidRecoveryIssue(review);
   });
+
+  it('names every file of a brief with no scope patterns, not only the first', () => {
+    const issue = buildPlannerCallFailedRecoveryIssue({
+      diagnosis: { failure: 'input-too-large', message: 'Prompt is too long' },
+      task: makeTask({ id: 'T001', suggestedFiles: ['lib/clamp.js', 'test.js'] }),
+      phase: 'escalating',
+      runner: plannerRunner,
+      seatSwap: plannerSeatSwap,
+      createdAt,
+    });
+
+    expect(issue.files).toEqual(['lib/clamp.js', 'test.js']);
+  });
 });
 
 describe('the planner-output halts', () => {
