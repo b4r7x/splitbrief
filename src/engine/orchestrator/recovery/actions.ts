@@ -11,7 +11,7 @@ import {
 import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import { sameSeatCandidate, type CrewSeatId } from '../../../core/crew/identity.js';
 import { configWithSwitchedSeat, seatCandidateOfRunner } from './switch-seat.js';
-import { readSeatFallbackOfRecord } from './seat-swap-context.js';
+import { readSeatOfRecord } from './seat-swap-context.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
@@ -760,7 +760,7 @@ export function planSwitchSeatRecoveryAction(
   }
 
   const auto = offer.auto !== undefined && sameSeatCandidate(offer.auto.candidate, chosen);
-  const record = readSeatFallbackOfRecord({
+  const record = readSeatOfRecord({
     projectDir: opts.projectDir,
     config: opts.config,
     seat: offer.seat,

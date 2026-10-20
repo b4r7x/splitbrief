@@ -2,11 +2,9 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { loadConfig } from '../../../core/config/load/io.js';
 import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
-import {
-  fallbackBlockedReason,
-  seatFallback,
-  type SeatFallback,
-} from '../../../core/crew/fallback.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
+import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
+import { fallbackBlockedReason } from '../../../core/crew/fallback.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
@@ -29,22 +27,27 @@ function currentSeatTool(runner: SeatRunner): string {
   return runner.kind === 'cli' ? runner.tool : '';
 }
 
-type SeatFallbackReadResult =
+type SeatOfRecordReadResult =
   | Readonly<{
       kind: 'read';
-      fallback: SeatFallback | undefined;
+      seat: RunnerConfig | undefined;
       configRevision: string | undefined;
     }>
   | Readonly<{ kind: 'read-failed' }>;
 
-export function readSeatFallbackOfRecord(
+/**
+ * The halted seat as `config.yaml` has it now: a save under the halt, such as a custom model the
+ * seat's picker added, is on it and the run config does not have it. A project with no config
+ * file reads the run config.
+ */
+export function readSeatOfRecord(
   input: Readonly<{
     projectDir: string;
     seat: CrewSeatId;
     config: Config;
     implementerProfile?: string | undefined;
   }>,
-): SeatFallbackReadResult {
+): SeatOfRecordReadResult {
   let loaded: ReturnType<typeof loadConfig>;
   try {
     loaded = loadConfig(input.projectDir);
@@ -52,11 +55,11 @@ export function readSeatFallbackOfRecord(
     return { kind: 'read-failed' };
   }
   const configOfRecord = loaded.revision === null ? input.config : loaded.config;
-  const fallback =
+  const seat =
     input.seat === 'build'
-      ? readImplementerProfileConfig(configOfRecord, input.implementerProfile)?.fallback
-      : seatFallback(configOfRecord, CREW_SEAT_ROLES[input.seat]);
-  return { kind: 'read', fallback, configRevision: loaded.revision?.rawSha256 };
+      ? readImplementerProfileConfig(configOfRecord, input.implementerProfile)
+      : readActiveRunner({ config: configOfRecord, role: CREW_SEAT_ROLES[input.seat] });
+  return { kind: 'read', seat, configRevision: loaded.revision?.rawSha256 };
 }
 
 /** A credential listing the halt could not read; the route then reads as `unknown`. */
@@ -141,8 +144,8 @@ export async function loadSeatSwapContext(
     tool: cli.tool,
     ready: cli.diagnostic.state === 'ready',
   }));
-  const record = readSeatFallbackOfRecord(input);
-  const fallback = record.kind === 'read' ? record.fallback : undefined;
+  const record = readSeatOfRecord(input);
+  const fallback = record.kind === 'read' ? record.seat?.fallback : undefined;
   const configRevision = record.kind === 'read' ? record.configRevision : undefined;
   const fallbackReadFailed = record.kind === 'read-failed' ? true : undefined;
   let blockedReason: string | undefined;

@@ -83,9 +83,21 @@ interface GenerationParams {
   variant?: string | undefined;
 }
 
-interface RunnerTarget {
+export interface RunnerTarget {
   kind: RunnerKind;
   id?: string | undefined;
+}
+
+export interface CarriedSeatSettings {
+  timeout?: number;
+  contextLength?: number;
+  temperature?: number;
+  customModels?: string[];
+  idleWarnMs?: number;
+  idleKillMs?: number;
+  args?: string[];
+  outputFormat?: OutputFormat;
+  authChannel?: CliAuthChannelId;
 }
 
 type TargetState = 'new' | 'same' | 'changed';
@@ -130,17 +142,45 @@ function destinationValue<T>(
   return requested === source ? undefined : requested;
 }
 
-function resolveGenerationParams(opts: BuildRunnerOpts, target: RunnerTarget): GenerationParams {
-  const ex = opts.existing;
+/**
+ * The settings a rebuilt seat keeps from the runner it replaces: `timeout` on every
+ * rebuild, the tool's own settings only while the target stays the same. The caller
+ * chooses the model, effort, variant and fallback.
+ */
+export function carriedSeatSettings(
+  existing: PlannerConfig | ImplementerConfig | undefined,
+  target: RunnerTarget,
+): CarriedSeatSettings {
+  const same = existingAtTarget({ existing }, target);
+  const subprocess = same?.kind === 'api' ? undefined : same;
+  return {
+    ...(existing?.timeout !== undefined && { timeout: existing.timeout }),
+    ...(same?.contextLength !== undefined && { contextLength: same.contextLength }),
+    ...(same?.temperature !== undefined && { temperature: same.temperature }),
+    ...(same?.customModels !== undefined && { customModels: same.customModels }),
+    ...(subprocess?.idleWarnMs !== undefined && { idleWarnMs: subprocess.idleWarnMs }),
+    ...(subprocess?.idleKillMs !== undefined && { idleKillMs: subprocess.idleKillMs }),
+    ...(subprocess?.args !== undefined && { args: subprocess.args }),
+    ...(subprocess?.outputFormat !== undefined && { outputFormat: subprocess.outputFormat }),
+    ...(same?.kind === 'cli' &&
+      same.authChannel !== undefined && { authChannel: same.authChannel }),
+  };
+}
+
+function resolveGenerationParams(
+  opts: BuildRunnerOpts,
+  target: RunnerTarget,
+  carried: CarriedSeatSettings,
+): GenerationParams {
   const sameTarget = existingAtTarget(opts, target);
   const state = targetState(opts, target);
 
   return {
     model: opts.model ?? sameTarget?.model,
-    contextLength: opts.contextLength ?? sameTarget?.contextLength,
-    temperature: opts.temperature ?? sameTarget?.temperature,
-    timeout: opts.timeout ?? ex?.timeout,
-    customModels: opts.customModels ?? sameTarget?.customModels,
+    contextLength: opts.contextLength ?? carried.contextLength,
+    temperature: opts.temperature ?? carried.temperature,
+    timeout: opts.timeout ?? carried.timeout,
+    customModels: opts.customModels ?? carried.customModels,
     effort: state === 'changed' ? undefined : (opts.effort ?? sameTarget?.effort),
     variant: state === 'changed' ? undefined : (opts.variant ?? sameTarget?.variant),
   };
@@ -170,17 +210,12 @@ function assertModelPresent(
 
 function resolveWatchdogs(
   opts: BuildRunnerOpts,
-  target: RunnerTarget,
+  carried: CarriedSeatSettings,
 ): Pick<BuildRunnerOpts, 'idleWarnMs' | 'idleKillMs'> {
-  const existing = existingAtTarget(opts, target);
-  const idleWarnMs =
-    opts.idleWarnMs ??
-    (existing !== undefined && 'idleWarnMs' in existing ? existing.idleWarnMs : undefined);
-  const idleKillMs =
-    opts.idleKillMs ??
-    (existing !== undefined && 'idleKillMs' in existing ? existing.idleKillMs : undefined);
-
-  return { idleWarnMs, idleKillMs };
+  return {
+    idleWarnMs: opts.idleWarnMs ?? carried.idleWarnMs,
+    idleKillMs: opts.idleKillMs ?? carried.idleKillMs,
+  };
 }
 
 function spreadWatchdogs(watchdogs: ReturnType<typeof resolveWatchdogs>): Record<string, unknown> {
@@ -281,8 +316,8 @@ function buildCliConfig(
   }
 
   const target = { kind: 'cli' as const, id: tool };
-  const existing = existingAtTarget(opts, target);
-  const gen = resolveGenerationParams(opts, target);
+  const carried = carriedSeatSettings(opts.existing, target);
+  const gen = resolveGenerationParams(opts, target, carried);
   const modelPolicy = getCliModelPolicy(tool, runnerRoleForActiveRole(role));
   const modelViolation = cliModelPolicyViolations(modelPolicy, gen)[0];
   if (modelViolation !== undefined) {
@@ -295,20 +330,16 @@ function buildCliConfig(
       modelViolation.message,
     );
   }
-  const args = opts.args ?? (existing?.kind === 'cli' ? existing.args : undefined);
-  const outputFormat =
-    opts.outputFormat ?? (existing?.kind === 'cli' ? existing.outputFormat : undefined);
-  const state = targetState(opts, target);
-  const authChannel =
-    opts.authChannel ??
-    (state === 'same' && existing?.kind === 'cli' ? existing.authChannel : undefined);
+  const args = opts.args ?? carried.args;
+  const outputFormat = opts.outputFormat ?? carried.outputFormat;
+  const authChannel = opts.authChannel ?? carried.authChannel;
   const config: Record<string, unknown> = {
     kind: 'cli',
     tool,
     ...(authChannel !== undefined && { authChannel }),
     ...(args !== undefined && { args }),
     ...(outputFormat !== undefined && { outputFormat }),
-    ...spreadWatchdogs(resolveWatchdogs(opts, target)),
+    ...spreadWatchdogs(resolveWatchdogs(opts, carried)),
     ...spreadGenParams(gen),
     ...spreadFallback(opts.existing),
   };
@@ -350,7 +381,7 @@ function buildApiConfig(
     opts.existing !== undefined && 'apiKey' in opts.existing ? opts.existing.apiKey : undefined;
   const requestedApiKey = destinationValue(state, opts.apiKey, sourceApiKey);
   const existingApiKey = state === 'same' ? getExistingApiKey(opts.existing, provider) : undefined;
-  const gen = resolveGenerationParams(opts, target);
+  const gen = resolveGenerationParams(opts, target, carriedSeatSettings(opts.existing, target));
   assertModelPresent(role, 'api', gen.model);
   const apiKey = requestedApiKey ?? existingApiKey;
   const service =
@@ -385,13 +416,10 @@ function buildCommandConfig(
 
   const target = { kind, id: command };
   const existing = existingAtTarget(opts, target);
-  const gen = resolveGenerationParams(opts, target);
-  const args =
-    opts.args ??
-    (existing?.kind === 'shell' || existing?.kind === 'agent' ? existing.args : undefined);
-  const outputFormat =
-    opts.outputFormat ??
-    (existing?.kind === 'shell' || existing?.kind === 'agent' ? existing.outputFormat : undefined);
+  const carried = carriedSeatSettings(opts.existing, target);
+  const gen = resolveGenerationParams(opts, target, carried);
+  const args = opts.args ?? carried.args;
+  const outputFormat = opts.outputFormat ?? carried.outputFormat;
   const capabilities =
     targetState(opts, target) === 'changed'
       ? undefined
@@ -404,7 +432,7 @@ function buildCommandConfig(
     ...(args !== undefined && { args }),
     ...(outputFormat !== undefined && { outputFormat }),
     ...(capabilities !== undefined && { capabilities }),
-    ...spreadWatchdogs(resolveWatchdogs(opts, target)),
+    ...spreadWatchdogs(resolveWatchdogs(opts, carried)),
     ...spreadGenParams(gen),
     ...spreadFallback(opts.existing),
   };

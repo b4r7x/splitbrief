@@ -12,6 +12,7 @@ import type { CrewSeatId } from '../../../core/crew/identity.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import { runnerEffortChannel } from '../../../core/runners/effort-channel.js';
+import { carriedSeatSettings } from '../../../core/config/runtime/build-runner.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 /**
@@ -26,12 +27,12 @@ function configWithSwitchedBuildSeat(
   implementerProfile: string | undefined,
   candidate: SeatSwapCandidate,
   auto: boolean,
-  fallbackOfRecord: Pick<RunnerConfig, 'fallback'> | undefined,
+  record: SeatRecord | undefined,
 ): Config | null {
   const existing = readImplementerProfileConfig(config, implementerProfile);
   if (existing === undefined) return null;
   const parsed = ImplementerConfigSchema.safeParse(
-    switchedRunner(existing, candidate, auto, fallbackOfRecord),
+    switchedRunner(existing, candidate, auto, record),
   );
   if (!parsed.success) return null;
   const update = () => parsed.data;
@@ -40,12 +41,20 @@ function configWithSwitchedBuildSeat(
     : updateNamedImplementerConfig(config, implementerProfile, update);
 }
 
+/** The halted seat as `config.yaml` has it, read when the halt is answered. */
+type SeatRecord = Readonly<{ seat: RunnerConfig | undefined }>;
+
+/**
+ * The moved seat keeps the settings and the declared fallback of the seat of record, so a save
+ * under the halt survives the move. An automatic move names the seat the run leaves as its fallback.
+ */
 function switchedRunner(
   existing: RunnerConfig,
   candidate: SeatSwapCandidate,
   auto: boolean,
-  fallbackOfRecord: Pick<RunnerConfig, 'fallback'> | undefined,
+  record: SeatRecord | undefined,
 ) {
+  const ofRecord = record === undefined ? existing : record.seat;
   const channel = runnerEffortChannel(existing);
   const fallback = auto
     ? existing.kind === 'cli'
@@ -62,11 +71,10 @@ function switchedRunner(
             }),
         }
       : undefined
-    : fallbackOfRecord === undefined
-      ? existing.fallback
-      : fallbackOfRecord.fallback;
+    : ofRecord?.fallback;
   return {
     kind: 'cli',
+    ...carriedSeatSettings(ofRecord, { kind: 'cli', id: candidate.tool }),
     ...candidate,
     ...(fallback !== undefined && { fallback }),
   };
@@ -78,6 +86,7 @@ function switchedRunner(
  * seat's own schema, so a tool id the seat cannot host is rejected here rather
  * than at the runner factory. `implementerProfile` names the build profile
  * that failed; a name the profile table does not carry is rejected too.
+ * `record` is that seat as `config.yaml` has it; with no record the run's seat stands for it.
  *
  * The runner itself is rebuilt by the caller — `createPlanner` /
  * `createImplementer` / `createReviewer` all demand the preparation authority
@@ -89,27 +98,21 @@ export function configWithSwitchedSeat(
   candidate: SeatSwapCandidate,
   implementerProfile?: string | undefined,
   auto = false,
-  fallbackOfRecord?: Pick<RunnerConfig, 'fallback'> | undefined,
+  record?: SeatRecord | undefined,
 ): Config | null {
   switch (seat) {
     case 'plan': {
       const parsed = PlannerConfigSchema.safeParse(
-        switchedRunner(config.planner, candidate, auto, fallbackOfRecord),
+        switchedRunner(config.planner, candidate, auto, record),
       );
       return parsed.success ? { ...config, planner: parsed.data } : null;
     }
     case 'build': {
-      return configWithSwitchedBuildSeat(
-        config,
-        implementerProfile,
-        candidate,
-        auto,
-        fallbackOfRecord,
-      );
+      return configWithSwitchedBuildSeat(config, implementerProfile, candidate, auto, record);
     }
     case 'review': {
       const parsed = ReviewerConfigSchema.safeParse(
-        switchedRunner(config.reviewer ?? config.planner, candidate, auto, fallbackOfRecord),
+        switchedRunner(config.reviewer ?? config.planner, candidate, auto, record),
       );
       return parsed.success ? { ...config, reviewer: parsed.data } : null;
     }

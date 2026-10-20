@@ -939,3 +939,153 @@ describe('e2e: a BUILD seat saved while the start check runs', { timeout: 150_00
     }
   });
 });
+
+it('keeps the BUILD seat timeout in config.yaml when switch-seat moves the seat, and the run goes on', {
+  timeout: 240_000,
+}, async () => {
+  const { target, codexCalls, claudeCalls } = await codexSeatFixture(false, PRIMARY_MODEL);
+  const config = loadConfig(target.projectDir).config;
+  writeConfig(target.projectDir, {
+    ...config,
+    implementer: { ...config.implementer, timeout: 1_800_000 },
+  });
+  const configPath = join(target.projectDir, CONFIG_RELATIVE_PATH);
+  expect(readFileSync(configPath, 'utf8')).toMatch(/^\s+timeout: 1800000$/m);
+  const options = { timeoutMs: 90_000, reapProjectDir: target.projectDir };
+  const halted = await cli(target, ['start', 'smoke'], options);
+  expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+  expect(halted.stderr).toContain('Seat down (runner-usage-limit)');
+  const sessionId = readdirSync(sessionsRoot(target.projectDir))[0] ?? '';
+
+  const switched = await cli(
+    target,
+    ['continue', sessionId, '--action', `switch-seat:claude-code:${SWITCHED_MODEL}`],
+    options,
+  );
+
+  expect(switched.exitCode, `${switched.stdout}\n${switched.stderr}`).toBe(0);
+  expect(switched.stderr).toContain(`BUILD seat recorded in ${CONFIG_RELATIVE_PATH}`);
+  expect(readFileSync(configPath, 'utf8')).toMatch(/^\s+timeout: 1800000$/m);
+  expect(loadConfig(target.projectDir).config.implementer).toMatchObject({
+    kind: 'cli',
+    tool: 'claude-code',
+    model: SWITCHED_MODEL,
+    timeout: 1_800_000,
+  });
+  expect(switched.stdout).toContain('task T001: done');
+  expect(loadState({ projectDir: target.projectDir, sessionId })?.phase).toBe('complete');
+  expect(recordedCalls(codexCalls)).toEqual([{ model: PRIMARY_MODEL }]);
+  expect(recordedCalls(claudeCalls)).toEqual([
+    { model: SWITCHED_MODEL, prompt: expect.stringContaining(GREET_FILE) },
+  ]);
+});
+
+it('keeps the BUILD seat idle limit in config.yaml when its fallback moves it to another model of its tool', {
+  timeout: 240_000,
+}, async () => {
+  const { target, codexCalls, claudeCalls } = await codexSeatFixture(false, 'gpt-5.1-codex');
+  const config = loadConfig(target.projectDir).config;
+  const implementer = config.implementer;
+  if (implementer.kind !== 'cli') throw new Error('expected a cli BUILD seat');
+  writeConfig(target.projectDir, {
+    ...config,
+    implementer: {
+      ...implementer,
+      idleKillMs: 900_000,
+      fallback: { tool: 'codex', model: PRIMARY_MODEL },
+    },
+  });
+  const configPath = join(target.projectDir, CONFIG_RELATIVE_PATH);
+  expect(readFileSync(configPath, 'utf8')).toMatch(/^\s+idle_kill_ms: 900000$/m);
+
+  const options = { timeoutMs: 90_000, reapProjectDir: target.projectDir };
+  const halted = await cli(target, ['start', 'smoke'], options);
+
+  const sessionId = readdirSync(sessionsRoot(target.projectDir))[0] ?? '';
+  const state = loadState({ projectDir: target.projectDir, sessionId });
+  expect(halted.stderr).toContain('Seat down (runner-usage-limit)');
+  expect(state?.seatSwitches).toEqual([
+    expect.objectContaining({ seat: 'build', cause: 'runner-usage-limit', auto: true }),
+  ]);
+  expect(recordedCalls(codexCalls)).toEqual([{ model: 'gpt-5.1-codex' }, { model: PRIMARY_MODEL }]);
+  expect(existsSync(claudeCalls)).toBe(false);
+  expect(readFileSync(configPath, 'utf8')).toMatch(/^\s+idle_kill_ms: 900000$/m);
+  expect(loadConfig(target.projectDir).config.implementer).toEqual({
+    kind: 'cli',
+    tool: 'codex',
+    model: PRIMARY_MODEL,
+    contextLength: 200_000,
+    idleKillMs: 900_000,
+    fallback: { tool: 'codex', model: 'gpt-5.1-codex' },
+  });
+});
+
+it('keeps the custom models of the BUILD seat saved under the halt when Change BUILD tool moves the seat to it', {
+  timeout: 150_000,
+}, async () => {
+  const { target, sessionId, claudeCalls } = await codexHaltFixture();
+  vi.stubGlobal('fetch', async () => {
+    throw new Error('Network disabled in seat switch E2E');
+  });
+  await trustDeclaredRunners({
+    projectDir: target.projectDir,
+    config: loadConfig(target.projectDir).config,
+  });
+  const { screen } = await openHaltedRun(target, {
+    heading: 'Seat down',
+    prepare: ({ ref, state }) => preparedResume(ref, state),
+    runWorkflow,
+  });
+  const frame = () => stripAnsiStyles(screen.lastFrame());
+  const press = async (key: string) => {
+    screen.stdin.write(key);
+    await flushEffects();
+    await tick(100);
+  };
+  try {
+    const current = configStore.get().config;
+    if (current === null) throw new Error('the screen loaded no config');
+    const saved = await configStore.save({
+      ...current,
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: SWITCHED_MODEL,
+        contextLength: 200_000,
+        customModels: ['my-a'],
+      },
+    });
+    expect(saved.kind).toBe('saved');
+    await flushEffects();
+
+    await press('\r');
+    await vi.waitFor(() => expect(frame()).toContain('BUILD · tool, model, effort'));
+    await press('\u0012');
+    await vi.waitFor(() => expect(frame()).toContain('claude-opus-5-5'), { timeout: 30_000 });
+    // The picker opens on the saved Sonnet row; ⏎ opens its effort and ⏎ takes the row.
+    await press('\r');
+    await press('\r');
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
+
+    const ref = { projectDir: target.projectDir, sessionId };
+    await vi.waitFor(() => expect(loadState(ref)?.phase).toBe('complete'), { timeout: 60_000 });
+    expect(loadState(ref)?.seatSwitches).toEqual([
+      expect.objectContaining({ seat: 'build', cause: 'runner-usage-limit', auto: false }),
+    ]);
+    expect(recordedCalls(claudeCalls)).toEqual([
+      { model: SWITCHED_MODEL, prompt: expect.stringContaining(GREET_FILE) },
+    ]);
+    expect(readFileSync(join(target.projectDir, CONFIG_RELATIVE_PATH), 'utf8')).toMatch(
+      /^\s+custom_models:\n\s+- my-a$/m,
+    );
+    expect(loadConfig(target.projectDir).config.implementer).toMatchObject({
+      kind: 'cli',
+      tool: 'claude-code',
+      model: SWITCHED_MODEL,
+      contextLength: 200_000,
+      customModels: ['my-a'],
+    });
+  } finally {
+    screen.unmount();
+  }
+});
