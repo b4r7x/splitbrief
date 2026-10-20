@@ -313,6 +313,7 @@
 - A seat you save in Settings or with `/crew` while a run waits on a halt is now used when the run goes on, and the other seats you saved stay as saved.
 - In a narrow terminal, a Recovery row no longer leaves its arrow at the end of a line with the outcome, such as **skipped**, alone on the next line.
 - A halt panel too short for its text now says how many lines it cuts instead of dropping them without a mark.
+- When the sessions list cannot open a run, the message now shows the reason first. A task written on several lines now reads with spaces wherever it shows on one line: the sessions list, the command palette, the Plan heading of the run, `splitbrief status`, and the resume and `splitbrief spec` lines.
 
 ## [0.1.0] - 2026-08-07
 

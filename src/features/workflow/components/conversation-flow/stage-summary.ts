@@ -8,7 +8,7 @@ import { countNoun } from '../../../../utils/pluralize.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { formatStageLabel } from '../../../../core/phase-display.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
-import { sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
+import { oneLineDisplayText } from '../../../../utils/display-text.js';
 
 export function stageSummaryRow(summary: StageSummary): {
   state: Extract<TaskSummaryState, { kind: 'stage' }>;
@@ -17,17 +17,16 @@ export function stageSummaryRow(summary: StageSummary): {
     summary.stage === 'review' && summary.endUnknown === true
       ? `at least ${formatDuration(summary.duration)}`
       : formatDuration(summary.duration);
-  const title = sanitizeTerminalDisplayText(
+  const title =
     summary.stage === 'plan'
-      ? summary.feature
+      ? oneLineDisplayText(summary.feature)
       : summary.outcome === 'passed' || summary.outcome === 'passed-with-notes'
         ? 'passed'
         : summary.outcome === 'no-verdict'
           ? 'no verdict'
           : summary.outcome === 'stopped'
             ? 'stopped'
-            : '',
-  );
+            : '';
   const headingParts: Extract<TaskSummaryState, { kind: 'stage' }>['headingParts'] = {
     id: stageHeadingParts(summary),
     title:

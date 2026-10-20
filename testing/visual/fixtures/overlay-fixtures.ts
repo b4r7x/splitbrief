@@ -30,6 +30,7 @@ import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js'
 import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
 import type { CostBreakdown, Summary } from '../../../src/core/schemas/summary.js';
 import type { EvidenceLedger } from '../../../src/core/schemas/evidence.js';
+import type { Session } from '../../../src/core/schemas/session.js';
 import { type Task, taskId } from '../../../src/core/schemas/task.js';
 import { ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
 import { deriveRunStatus, type RunStatus } from '../../../src/core/sessions/run-status.js';
@@ -42,6 +43,7 @@ import { crewActivate, fallbackActivate } from '../../../src/features/crew/rows.
 import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
+import { trackActiveApply } from '../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { editorStore } from '../../../src/stores/ui/editor.js';
@@ -357,6 +359,22 @@ export function seedSessions(): void {
     writeFileSync(join(dir, 'summary.json'), JSON.stringify(item));
   }
   sessionsStore.__testReset({ sessions, totalCount: sessions.length });
+}
+
+/** The sessions of `seedSessions` with a newest open run whose task is written on several lines. */
+function seedLongTaskSession(): Session {
+  seedSessions();
+  const session = makeSession({
+    id: 'visual-session-long-task',
+    feature:
+      'Add generated JSON data fixtures, as one task:\n\n- Add `scripts/gen-json.js` (CommonJS) that writes them',
+    startedAt: VISUAL_FIXTURE_EPOCH - 60_000,
+    status: 'open',
+    stop: 'stopped',
+  });
+  const sessions = [session, ...sessionsStore.get().sessions];
+  sessionsStore.__testReset({ sessions, totalCount: sessions.length });
+  return session;
 }
 
 function seedEditor(plan = makePlanProposal({ summary: 'Add greeting helper' })): void {
@@ -889,6 +907,15 @@ const createPaletteFixture: FixtureFactory = () =>
     underlyingScreen: 'workflow',
     seed: seedSkills,
   });
+const createPaletteSessionTaskFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'command-palette',
+    seed: () => {
+      seedLongTaskSession();
+    },
+  }),
+  afterMount: (write) => write('fixtures'),
+});
 const createSkillsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'skills', seed: seedSkills });
 const createSkillsEmptyFixture: FixtureFactory = () => createOverlayFixture({ overlay: 'skills' });
@@ -1873,6 +1900,32 @@ const createParkedFirstBriefStopMenuFixture: FixtureFactory = () =>
   });
 const createSessionsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'sessions', seed: seedSessions });
+
+/** Apply holds this process while the newest run, a long multi-line task, is picked: the pick is refused. */
+const createSessionsRefusedApplyingFixture: FixtureFactory = () => {
+  const apply = Promise.withResolvers<void>();
+  const base = createOverlayFixture({
+    overlay: 'sessions',
+    seed: () => {
+      const session = seedLongTaskSession();
+      const dir = join(sessionsRoot(VISUAL_FIXTURE_PROJECT_DIR), session.id);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'summary.json'), JSON.stringify(session));
+    },
+  });
+  return {
+    ...base,
+    setup: async (context) => {
+      await base.setup(context);
+      void trackActiveApply(apply.promise);
+    },
+    teardown: async () => {
+      apply.resolve();
+      await base.teardown();
+    },
+    afterMount: (write) => write('\r'),
+  };
+};
 const USAGE_TS = 1_783_958_400_000;
 
 /**
@@ -2400,6 +2453,7 @@ const createEditorNotSavedFixture: FixtureFactory = () => ({
 export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-help'), createHelpFixture],
   [scenarioId('overlay-command-palette'), createPaletteFixture],
+  [scenarioId('overlay-command-palette-session-task'), createPaletteSessionTaskFixture],
   [scenarioId('overlay-skills'), createSkillsEmptyFixture],
   [scenarioId('overlay-skills-list'), createSkillsFixture],
   [scenarioId('overlay-settings'), createSettingsFixture],
@@ -2787,6 +2841,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     () => createOverlayFixture({ overlay: 'stop-sheet', underlyingScreen: 'workflow' }),
   ],
   [scenarioId('overlay-sessions'), createSessionsFixture],
+  [scenarioId('overlay-sessions-refused-applying'), createSessionsRefusedApplyingFixture],
   [scenarioId('overlay-usage-details'), createUsageDetailsFixture],
   [scenarioId('overlay-usage-details-legacy'), createUsageDetailsLegacyFixture],
   [scenarioId('overlay-usage-details-api-twin'), createUsageDetailsApiTwinFixture],

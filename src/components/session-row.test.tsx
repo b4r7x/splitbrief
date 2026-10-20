@@ -154,6 +154,16 @@ describe('SessionRow', () => {
     expect(frame).toMatch(/… 1m ago|… just now/);
   });
 
+  it('keeps the words of a multi-line task apart on its one row', () => {
+    const feature = 'Add data fixtures, as one task:\n\n- Add a generator';
+    const frame = frameOf(
+      <Box width={100}>
+        <SessionRow session={makeSession({ feature, startedAt: Date.now() })} />
+      </Box>,
+    );
+    expect(frame).toContain('Add data fixtures, as one task: - Add a generator');
+  });
+
   it('keeps a focused row on one line and does not shift columns when selected', () => {
     const longFeature = 'a-very-long-feature-name-that-would-overflow-a-narrow-body';
     const session = makeSession({ feature: longFeature, startedAt: Date.now() });

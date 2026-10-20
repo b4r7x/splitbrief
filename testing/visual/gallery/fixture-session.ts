@@ -34,6 +34,7 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { detachImage, listAttachments } from '../../../src/stores/workflow/attachments.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { selectRunningBrief, tasksStore } from '../../../src/stores/workflow/tasks.js';
+import { activeApply } from '../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import {
   CheckpointDefinitionSchema,
@@ -126,7 +127,7 @@ const previewPrepareExecution: HomeScreenDeps['prepareExecution'] = async (input
  * fixture state rather than a check of the machine.
  */
 const previewSessionSelect: SessionSelectDeps = {
-  applying: () => false,
+  applying: () => activeApply() !== undefined,
   loadResumeState: (ref) => loadOwnerWorkflowState(inFixtureRoot(ref)),
   prepareResume: async ({ ref, state }) => ({
     kind: 'prepared',

@@ -151,6 +151,16 @@ describe('status command', () => {
     expect(out).toContain('Status:   stopped');
   });
 
+  it('keeps the words of a task written on two lines apart on its Feature line', async () => {
+    writeActiveSession(tmp, '2026-10-19-two-lines', 'Add fixtures,\nas one task');
+
+    await runStatus([]);
+
+    expect(stripVTControlCharacters(captureOutput())).toContain(
+      'Feature:  Add fixtures, as one task',
+    );
+  });
+
   it('names the last brief, not one past it, once every brief has settled', async () => {
     writeActiveSession(tmp, '2026-09-21-all-settled', 'all settled', {
       phase: 'final-review',

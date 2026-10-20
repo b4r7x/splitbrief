@@ -441,6 +441,15 @@ describe('spec command — reporting', () => {
     expect(line).not.toContain('\u009b');
   });
 
+  it('reads a feature written on two lines with a space on the pre-planning line', async () => {
+    await runSpec(['Add a greeting\n- with a test']);
+
+    const line = loggedOutput()
+      .split('\n')
+      .find((l) => l.startsWith('Planning feature:'));
+    expect(line).toContain('Planning feature: Add a greeting - with a test (planner:');
+  });
+
   it('lists plan.json, plan.md and tasks.md with absolute paths that exist on disk', async () => {
     await runSpec(['add health endpoint']);
 

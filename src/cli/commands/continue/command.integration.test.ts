@@ -861,6 +861,26 @@ describe('continueCommand', () => {
     expect(resumeLine).not.toContain('pwned');
   });
 
+  it('keeps the words of a task written on two lines apart on the resume status line', async () => {
+    const projectDir = makeTmpProject();
+    const sessDir = makeSessionDir(projectDir, '2025-04-01-two-lines');
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-two-lines' });
+    writeState(sessDir, 'implementing', { feature: 'Add fixtures,\nas one task' });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    let logged: string[] = [];
+    try {
+      await continueCommand('2025-04-01-two-lines', { projectDir }, deps);
+    } finally {
+      logged = logSpy.mock.calls.map((call) => call.join(' '));
+      logSpy.mockRestore();
+    }
+
+    expect(logged.find((line) => line.includes('Resuming:'))).toContain(
+      'Resuming: Add fixtures, as one task (phase:',
+    );
+  });
+
   it('names the last brief, not one past it, when a run resumes after every brief settled', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-all-settled');

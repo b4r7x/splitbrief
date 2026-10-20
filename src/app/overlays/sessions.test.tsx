@@ -22,7 +22,7 @@ import {
   trackActiveApply,
 } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { SessionsPicker } from './sessions.js';
-import { flushEffects, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 
 let tmp: string;
 
@@ -257,7 +257,7 @@ describe('SessionsPicker', () => {
     instance.stdin.write('\r');
     await vi.waitFor(() => {
       const current = instance.lastFrame() ?? '';
-      expect(current).toContain('stop the run on screen first');
+      expect(current).toContain('Stop the run on screen first.');
     });
 
     expect(routerStore.get().screen).toBe('workflow');
@@ -289,7 +289,7 @@ describe('SessionsPicker', () => {
     instance.stdin.write('\r');
     await vi.waitFor(() => {
       expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain(
-        'Cannot open "another run": Apply is still writing to your checkout.',
+        'Apply is still writing to your checkout. Cannot open "another run".',
       );
     });
     const route = routerStore.get();
@@ -297,6 +297,77 @@ describe('SessionsPicker', () => {
     expect(overlayStore.get().active).toBe('sessions');
     instance.unmount();
   });
+
+  it.each([
+    {
+      refusal: 'the run on screen',
+      reason: 'Stop the run on screen first.',
+      onScreen: () =>
+        routerStore.init({
+          screen: 'workflow',
+          run: makeRunRecord(),
+          execution: {
+            kind: 'local',
+            prepared: makePreparedExecution({
+              projectDir: tmp,
+              sessionId: 'sess-local-run',
+              feature: 'a local run',
+              config: makeConfig(),
+            }),
+          },
+        }),
+      applying: false,
+    },
+    {
+      refusal: 'Apply',
+      reason: 'Apply is still writing to your checkout.',
+      onScreen: () => {},
+      applying: true,
+    },
+  ])(
+    'shows the whole reason when $refusal refuses a pick of a long task at 140x45',
+    async ({ reason, onScreen, applying }) => {
+      terminalSizeStore.__testReset({ cols: 140, rows: 45, isSmall: false });
+      writeSessionSummary(
+        tmp,
+        makeSession({
+          id: 'sess-long',
+          feature:
+            'Add generated JSON data fixtures, as one task:\n\n- Add `scripts/gen-json.js` (CommonJS) that writes them',
+          status: 'open',
+          summary: null,
+        }),
+      );
+      onScreen();
+      overlayStore.open('sessions');
+      const instance = renderFeature(
+        <SessionsPicker
+          deps={{
+            applying: () => applying,
+            hydrateRun: async () => {
+              throw new Error('a refused pick opens nothing');
+            },
+            loadResumeState: () => ({ kind: 'missing' }),
+            prepareResume: async () => {
+              throw new Error('a refused pick prepares nothing');
+            },
+          }}
+        />,
+        { cols: 140, rows: 45 },
+      );
+      await tick(1);
+      await flushEffects();
+
+      instance.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(instance.lastFrame())).toContain(reason);
+      });
+      expect(sessionSelectStore.get().error).toBe(
+        `${reason} Cannot open "Add generated JSON data fixtures, as one task: - Add \`scripts/gen-json.js\` (CommonJS) that writes them".`,
+      );
+      instance.unmount();
+    },
+  );
 
   it('opens the selected run at rest, replayed, without preparing anything', async () => {
     const session = makeSession({

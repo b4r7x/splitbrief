@@ -10,7 +10,7 @@ import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { APPLY_RUNNING_REFUSAL } from '../../core/runtime/commands/messages.js';
 import type { PreparationOutcome } from '../../engine/runners/prepared-execution.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
+import { oneLineDisplayText } from '../../utils/display-text.js';
 import { createStore, storeBase } from '../create-store.js';
 import { skillsStore } from '../project/skills.js';
 import { feedbackStore } from '../ui/feedback.js';
@@ -218,14 +218,15 @@ export async function handleSessionSelect(
   projectDir: string,
   deps: SessionSelectDeps,
 ): Promise<void> {
-  const feature = sanitizeTerminalDisplayText(session.feature);
+  // The reason leads: the panel cuts a long hint at its end, so a long run name loses its tail.
+  const cannotOpen = `Cannot open "${oneLineDisplayText(session.feature)}".`;
   const route = routerStore.get();
   if (route.screen === 'workflow' && route.execution.kind === 'local') {
-    setSelectionError(`Cannot open "${feature}": stop the run on screen first.`);
+    setSelectionError(`Stop the run on screen first. ${cannotOpen}`);
     return;
   }
   if (deps.applying()) {
-    setSelectionError(`Cannot open "${feature}": ${APPLY_RUNNING_REFUSAL}`);
+    setSelectionError(`${APPLY_RUNNING_REFUSAL} ${cannotOpen}`);
     return;
   }
 
