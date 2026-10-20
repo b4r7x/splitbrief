@@ -457,6 +457,46 @@ describe('usePickerCatalog', () => {
     ui.unmount();
   });
 
+  it.each([
+    { role: 'planner', runner: 'its own runner' },
+    { role: 'reviewer', runner: 'the runner inherited from the planner' },
+  ] as const)(
+    "lists the $role seat's custom models only on the tool of $runner",
+    async ({ role }) => {
+      configStore.__testReset({
+        projectDir: '/tmp/project',
+        config: makeConfig({
+          planner: { kind: 'cli', tool: 'codex', model: 'auto', customModels: ['team-model'] },
+        }),
+      });
+      seedDetections();
+      let catalog: ReturnType<typeof usePickerCatalog> | undefined;
+      function SeatProbe({ toolId }: { toolId: string }) {
+        catalog = usePickerCatalog(role, 'seat', 0, toolId);
+        return <Text>seat</Text>;
+      }
+
+      const ui = renderFeature(<SeatProbe toolId="claude-code" />);
+      try {
+        await flushEffects();
+        expect(catalog?.currentItem?.modelCapability.allowsCustom).toBe(true);
+        expect(rowModels(catalog?.rightRows ?? []).map((model) => model.id)).not.toContain(
+          'team-model',
+        );
+        expect(catalog?.customModels).toEqual([]);
+
+        ui.rerender(<SeatProbe toolId="codex" />);
+        await flushEffects();
+        expect(
+          rowModels(catalog?.rightRows ?? []).find((model) => model.id === 'team-model')?.isCustom,
+        ).toBe(true);
+        expect(catalog?.customModels).toEqual(['team-model']);
+      } finally {
+        ui.unmount();
+      }
+    },
+  );
+
   it('marks no CLI row current for an API implementer that reuses the CLI id', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',

@@ -245,6 +245,82 @@ describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () =
     );
   });
 
+  it('lists a custom model only under the tool it was added for', async (context) => {
+    await withOpencodeHome(
+      'picker-custom-model-other-tool',
+      {
+        signedIn: { id: 'deepseek', name: 'DeepSeek' },
+        served: { id: 'deepseek-flash', providerID: 'deepseek' },
+        buildModel: 'deepseek/deepseek-flash',
+      },
+      async (screen) => {
+        await addCustomModel(screen);
+        await vi.waitFor(() => expect(screen.prose()).toContain('Saved BUILD · OpenCode CLI'), {
+          timeout: 10_000,
+        });
+        await openBuildPicker(screen);
+        await screen.shows(/▌ Claude Haiku 4\.5 +Custom/);
+
+        // The Models cursor leaves its row once the Tools column holds the keys.
+        screen.write('\x1b[D');
+        await vi.waitFor(() => expect(screen.text()).not.toMatch(/▌ Claude Haiku 4\.5/), {
+          timeout: 10_000,
+        });
+        screen.write('antigravity');
+        await screen.shows(/▌ Google Antigravity CLI/);
+        await screen.shows(/│ +auto +/);
+        expect(screen.text()).not.toContain('Claude Haiku 4.5');
+        expect(screen.text()).not.toContain('Custom');
+      },
+      (reason) => context.skip(reason),
+    );
+  });
+
+  it('collapses the expanded row on esc and keeps the query typed in the Models column', async (context) => {
+    await withOpencodeHome(
+      'picker-filter-expanded-esc',
+      {
+        signedIn: { id: 'openrouter', name: 'OpenRouter' },
+        served: {
+          id: 'deepseek/deepseek-v4.1-flash',
+          providerID: 'openrouter',
+          variants: [{ id: 'low' }, { id: 'high' }],
+        },
+        buildModel: 'openrouter/deepseek/deepseek-v4.1-flash',
+      },
+      async (screen, projectDir) => {
+        const configPath = join(projectDir, '.splitbrief', 'config.yaml');
+        const savedConfig = readFileSync(configPath, 'utf8');
+        screen.write('/crew build');
+        await screen.shows('/crew build');
+        screen.write('\r');
+        await screen.shows('BUILD · tool, model, effort');
+        await screen.shows(/DeepSeek V4\.1 Flash +▾/, 30_000);
+        screen.write('\x1b[C');
+        await screen.shows(/▌ DeepSeek V4\.1 Flash/);
+        screen.write('deepseek');
+        await screen.shows('› deepseek');
+        await screen.shows(/▌ DeepSeek V4\.1 Flash/);
+        screen.write('\r');
+        await screen.shows(/└─ openrouter/);
+        await screen.shows('esc collapse');
+
+        screen.write('\x1b');
+        await vi.waitFor(() => expect(screen.text()).not.toMatch(/└─ openrouter/), {
+          timeout: 10_000,
+        });
+        expect(screen.text()).toContain('› deepseek');
+        expect(screen.text()).toMatch(/▌ DeepSeek V4\.1 Flash/);
+        expect(screen.text()).toContain('esc clear');
+
+        screen.write('\r');
+        await screen.shows(/└─ openrouter/);
+        expect(readFileSync(configPath, 'utf8')).toBe(savedConfig);
+      },
+      (reason) => context.skip(reason),
+    );
+  });
+
   it('names an OpenRouter route by the account it runs through, beside that account sign-in', async (context) => {
     await withOpencodeHome(
       'picker-openrouter-route',

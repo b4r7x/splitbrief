@@ -287,6 +287,54 @@ describe('TwoColumnPicker expandable right rows', () => {
     expect(cancels).toHaveLength(0);
   });
 
+  it('collapses the expanded row on escape and keeps the typed query', async () => {
+    const confirms: string[] = [];
+    const ui = mount(
+      <LiveExpandingRows onExpand={() => {}} onConfirm={(id) => confirms.push(id)} />,
+    );
+    await flushEffects();
+
+    ui.stdin.write('luna');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('esc collapse');
+    expect(ui.lastFrame()).toContain('>openrouter route');
+
+    ui.stdin.write('\u001B');
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).not.toContain('openrouter route');
+    expect(frame).toContain('luna');
+    expect(frame).not.toContain('Solo Model');
+    expect(frame).toContain('>GPT-5.6 Luna');
+
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(confirms).toEqual([]);
+    expect(ui.lastFrame()).toContain('>openrouter route');
+  });
+
+  it('names in the key line what escape does next', async () => {
+    const ui = mount(<LiveExpandingRows onExpand={() => {}} onConfirm={() => {}} />);
+    const press = async (keys: string, legend: string) => {
+      ui.stdin.write(keys);
+      await flushEffects();
+      expect(ui.lastFrame()).toContain(legend);
+    };
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('esc cancel');
+
+    await press('luna', 'esc clear');
+    await press('\r', 'esc collapse');
+    await press(LEFT, 'esc collapse');
+    await press('\u001B', 'esc cancel');
+    expect(ui.lastFrame()).not.toContain('openrouter route');
+    await press('al', 'esc clear');
+    await press('\u001B', 'esc cancel');
+  });
+
   it('maintains fixed slot order for hint keys across default, expanded, and terminal-pane states', async () => {
     const KEYS = ['←→', '↑↓', '⏎', 'esc'] as const;
     const [k0, k1, k2, k3] = KEYS;
