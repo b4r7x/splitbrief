@@ -188,10 +188,15 @@ function failIfFinalReviewIncomplete(
   throw cliError('Final review did not pass — workflow is incomplete.', 1);
 }
 
-function failIfSessionFailed(
+/**
+ * `cause` is the last error the run published under `--plain`, where no NDJSON
+ * record carries it; it is printed here, once, so the pointer below is true.
+ */
+export function failIfSessionFailed(
   state: WorkflowState | null,
   sessionId: string,
   writeRecord: RecordWriter,
+  cause: string | undefined,
 ): void {
   if (state === null) return;
   const status = deriveRunStatus({ state, liveness: 'not-alive' });
@@ -200,6 +205,7 @@ function failIfSessionFailed(
     type: 'error',
     message: `Session ${sessionId} ended with status failed.`,
   });
+  if (cause !== undefined) process.stderr.write(`${cause}\n`);
   throw cliError('Workflow failed — see the error output above.', 1);
 }
 
@@ -301,6 +307,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   const sessionId = options.prepared.session.ref.sessionId;
   installTerminalOutputErrorGuard();
   const writeRecord = recordWriterFor(plain === true);
+  let lastError: string | undefined;
   const publishHandoffNotice = async (state: WorkflowState | null): Promise<void> => {
     if (state === null) return;
     await publishRetainedWorkspaceNotice({
@@ -394,6 +401,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
         }
       }
 
+      lastError = undefined;
       await runWorkflow({
         prepared,
         headless: true,
@@ -401,7 +409,14 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
         modelCache: modelCacheStore,
         drainPendingAttachments: () => attachmentsStore.drain(),
         signal: abortController.signal,
-        ...(plain === true && { plain: true }),
+        ...(plain === true && {
+          plain: true,
+          tuiSink: (event) => {
+            if (event.type !== 'error') return;
+            const bounded = boundEngineEventForConsumer(event, 'stdout-text');
+            if (bounded.type === 'error') lastError = bounded.message;
+          },
+        }),
         selectedSkills,
         _planner,
         _implementer,
@@ -439,6 +454,6 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   if (status?.kind === 'closed' && status.as === 'complete') return;
   failIfFinalReviewFailed(finalState, projectDir, sessionId, writeRecord);
   failIfFinalReviewIncomplete(finalState, sessionId, writeRecord);
-  failIfSessionFailed(finalState, sessionId, writeRecord);
+  failIfSessionFailed(finalState, sessionId, writeRecord, lastError);
   failIfSessionInterrupted(projectDir, sessionId, writeRecord);
 }

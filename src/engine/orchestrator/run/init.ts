@@ -121,7 +121,7 @@ export type RunWorkflowOptions = {
   headless?: boolean | undefined;
   /** `--plain`: the run's single stdout sink renders text instead of NDJSON. */
   plain?: boolean | undefined;
-  /** Optional TUI event sink — bridges engine events to React stores. Supplied by the React workflow layer. */
+  /** Optional caller-owned sink on the run's bus. The React workflow layer bridges engine events to its stores through it; `runHeadless` under `--plain` keeps the last `error` event from it as the cause of a failed run. */
   tuiSink?: EventSink | undefined;
   /** Test-only: an externally owned bus (the e2e harness supplies one). */
   eventBus?: EventBus | undefined;
