@@ -1,13 +1,13 @@
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Box, useInput } from 'ink';
 import { RuleHeader } from '../../../../components/rule-header.js';
 import { borderStyleFor, glyph } from '../../../../lib/glyphs.js';
 import { listRowLead } from '../../../../components/list-row.js';
+import { RowZone } from '../../../../components/pickers/row-zone.js';
+import { withMark } from '../prompt-body.js';
 import { closeApprovalPrompt } from '../../../../stores/approval-prompt/prompt.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
-import { registerMouseZone } from '../../../../lib/terminal/mouse-zones.js';
-import { readConversationScrollSnapshot } from '../../layout/snapshot.js';
 import {
   CONFIRM_NUDGE,
   CONFIRM_QUESTION,
@@ -22,7 +22,6 @@ import {
   approvalTitle,
   fitConfirmPanel,
   getApprovalConfirmLabel,
-  getConfirmOptionZones,
   getConfirmOptions,
   isIrreversibleActionClass,
 } from '../../prompt-rows/approval.js';
@@ -75,15 +74,17 @@ export function ConfirmApprovalPrompt({
   // A page that gives the panel no region gives it the terminal.
   const boxRows = Math.min(promptRows, clampedBoxRows ?? rows);
   const fit = fitConfirmPanel({
+    actionClass: request.actionClass,
     actionDescription: request.actionDescription,
     cols,
-    promptRows,
     boxRows,
   });
   const irreversible = isIrreversibleActionClass(request.actionClass);
   const options = getConfirmOptions(request.actionClass);
   const keyWidth = approvalKeyColumnWidth(options);
   const tone = irreversible ? t.error : t.warning;
+  const title = approvalTitle(request.actionClass);
+  const mark = `${ELLIPSIS} ${countNoun(fit.hidden, 'more line')}`;
 
   const takeRow = (key: string): void => {
     if (key === 'r') {
@@ -163,57 +164,41 @@ export function ConfirmApprovalPrompt({
     { isActive },
   );
 
-  useEffect(() => {
-    if (!isActive || confirmStep !== 'choose') return;
-    const { contentRect } = readConversationScrollSnapshot();
-    const boxTop = contentRect.top + contentRect.height;
-    const zones = getConfirmOptionZones({
-      boxTop,
-      cols,
-      promptRows,
-      boxRows,
-      actionClass: request.actionClass,
-      actionDescription: request.actionDescription,
-    });
-    const cleanups = zones.map((zone) =>
-      registerMouseZone({
-        id: `confirm-option-${zone.key}`,
-        left: zone.left,
-        right: zone.right,
-        top: zone.top,
-        bottom: zone.bottom,
-        z: PROMPT_ZONE_Z,
-        onClick: () => takeRow(zone.key),
-      }),
-    );
-    return () => {
-      for (const cleanup of cleanups) cleanup();
-    };
-  }, [isActive, confirmStep, cols, rows, promptRows, boxRows, request]);
-
   return (
     <Box
       flexDirection="column"
-      borderStyle={borderStyleFor('bold')}
-      borderColor={irreversible ? t.error : t.border}
-      paddingX={1}
+      {...(fit.framed && {
+        borderStyle: borderStyleFor('bold'),
+        borderColor: irreversible ? t.error : t.border,
+      })}
+      paddingX={fit.framed ? 1 : 2}
       height={boxRows}
       width="100%"
       overflow="hidden"
       flexShrink={0}
     >
-      <Text color={tone}>{approvalTitle(request.actionClass)}</Text>
+      {fit.title &&
+        (fit.hidden > 0 && !fit.markRow ? (
+          withMark(
+            <Text wrap="truncate" color={tone}>
+              {title}
+            </Text>,
+            mark,
+            'title',
+            t,
+          )
+        ) : (
+          <Text color={tone}>{title}</Text>
+        ))}
       {fit.gaps.title && <Text> </Text>}
-      <Text>{getApprovalConfirmLabel(request.actionClass)}</Text>
-      <Text bold>{fit.subject.join('\n')}</Text>
-      {fit.hidden > 0 && (
-        <Text color={t.textDim}>{`${ELLIPSIS} ${countNoun(fit.hidden, 'more line')}`}</Text>
-      )}
+      {fit.label && <Text>{getApprovalConfirmLabel(request.actionClass)}</Text>}
+      {fit.subject.length > 0 && <Text bold>{fit.subject.join('\n')}</Text>}
+      {fit.hidden > 0 && fit.markRow && <Text color={t.textDim}>{mark}</Text>}
       {/* Every gate wears the same heavy rule, so weight alone cannot tell an irreversible one apart —
           and it has to be told apart, because `y` is the primary key on one panel and a refused key on
           the other. The banded warning is the silhouette no other gate has, and it is shape, not hue, so
           it survives a terminal with the colour stripped out. */}
-      {irreversible ? (
+      {irreversible && fit.note ? (
         <RuleHeader
           label={IRREVERSIBLE_NOTE}
           width={approvalTextWidth(cols)}
@@ -223,27 +208,42 @@ export function ConfirmApprovalPrompt({
       {fit.gaps.options && <Text> </Text>}
       {confirmStep === 'choose' ? (
         <>
-          {options.map((option, index) => {
-            const active = index === selectedIndex;
-            return (
-              <Text key={option.key}>
-                <Text color={active ? t.accent : t.textDim}>
-                  {listRowLead(active ? 'active' : 'default')}
+          <Box flexDirection="column" flexShrink={0}>
+            {options.slice(0, fit.options).map((option, index) => {
+              const active = index === selectedIndex;
+              const row = (
+                <Text key={option.key}>
+                  <Text color={active ? t.accent : t.textDim}>
+                    {listRowLead(active ? 'active' : 'default')}
+                  </Text>
+                  <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
+                  {'   '}
+                  <Text color={active ? t.accent : t.text}>
+                    {approvalOptionLabelText({ option, keyWidth, width: approvalTextWidth(cols) })}
+                  </Text>
                 </Text>
-                <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
-                {'   '}
-                <Text color={active ? t.accent : t.text}>
-                  {approvalOptionLabelText({ option, keyWidth, width: approvalTextWidth(cols) })}
-                </Text>
-              </Text>
-            );
-          })}
+              );
+              return isActive ? (
+                <RowZone
+                  key={option.key}
+                  zoneId={`confirm-option-${option.key}`}
+                  z={PROMPT_ZONE_Z}
+                  onActivate={() => takeRow(option.key)}
+                >
+                  {row}
+                </RowZone>
+              ) : (
+                row
+              );
+            })}
+          </Box>
           <Box flexGrow={1} minHeight={fit.gaps.legend ? 1 : 0} />
-          {nudged ? (
-            <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, approvalTextWidth(cols))}</Text>
-          ) : (
-            <Text color={t.textDim}>{fitKeyLegend(CHOOSE_HINTS, approvalTextWidth(cols))}</Text>
-          )}
+          {fit.legend &&
+            (nudged ? (
+              <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, approvalTextWidth(cols))}</Text>
+            ) : (
+              <Text color={t.textDim}>{fitKeyLegend(CHOOSE_HINTS, approvalTextWidth(cols))}</Text>
+            ))}
         </>
       ) : (
         <>
@@ -255,7 +255,7 @@ export function ConfirmApprovalPrompt({
           </Box>
           <Text color={t.textDim}>{CONFIRM_REASON_OPTIONAL}</Text>
           <Box flexGrow={1} minHeight={fit.gaps.legend ? 1 : 0} />
-          <Text color={t.textDim}>{CONFIRM_REASON_HINTS}</Text>
+          {fit.legend && <Text color={t.textDim}>{CONFIRM_REASON_HINTS}</Text>}
         </>
       )}
     </Box>

@@ -1455,6 +1455,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-approval-confirm',
       title: 'Workflow · destructive confirm gate',
       surface: screenSurface('workflow'),
+      viewports: [
+        ...REQUIRED_VIEWPORTS,
+        viewport({ cols: 120, rows: 16 }),
+        viewport({ cols: 120, rows: 14 }),
+        viewport({ cols: 120, rows: 12 }),
+      ],
       checkpoint: {
         id: 'approval-confirm',
         title: 'Confirm gate',
@@ -1471,6 +1477,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-approval-confirm-secret',
       title: 'Workflow · CI or secret file confirm gate',
       surface: screenSurface('workflow'),
+      viewports: [
+        ...REQUIRED_VIEWPORTS,
+        viewport({ cols: 120, rows: 16 }),
+        viewport({ cols: 120, rows: 14 }),
+        viewport({ cols: 120, rows: 12 }),
+      ],
       checkpoint: {
         id: 'approval-confirm-secret',
         title: 'Secret file confirm gate',

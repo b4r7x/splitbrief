@@ -63,7 +63,12 @@ function renderHeadline(
 }
 
 // The cut mark rides after the first row's text and keeps its cells: a long headline gives way.
-function withMark(node: ReactNode, mark: string | undefined, key: string, t: Theme): ReactNode {
+export function withMark(
+  node: ReactNode,
+  mark: string | undefined,
+  key: string,
+  t: Theme,
+): ReactNode {
   if (mark === undefined) return node;
   return (
     <Box key={key} flexDirection="row">

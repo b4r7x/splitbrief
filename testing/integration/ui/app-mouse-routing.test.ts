@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { wireAppMouse } from '../../../src/app/mouse.js';
-import type { FilteredStdin, MouseEvent } from '../../../src/lib/terminal/filtered-stdin/types.js';
+import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones, registerMouseZone } from '../../../src/lib/terminal/mouse-zones.js';
 import { ROW_ZONE_Z_OVERLAY, ROW_ZONE_Z_SCREEN } from '../../../src/components/pickers/row-zone.js';
 import { PROMPT_ZONE_Z } from '../../../src/features/workflow/components/approval-prompt.js';
@@ -44,30 +44,6 @@ const WORKFLOW_ROUTE = {
 afterAll(() => {
   cleanupTempDir(PROJECT_DIR);
 });
-
-function createMockFilteredStdin() {
-  let listener: ((event: MouseEvent) => void) | undefined;
-  return {
-    filtered: {
-      stdin: process.stdin as unknown as NodeJS.ReadStream,
-      onMouse: (next: (event: MouseEvent) => void) => {
-        listener = next;
-        return () => {
-          listener = undefined;
-        };
-      },
-      activate: () => {},
-      isPasteActive: () => false,
-      disable: () => {},
-    } satisfies FilteredStdin,
-    emit: (event: MouseEvent) => listener?.(event),
-  };
-}
-
-function pointerEvent(type: MouseEvent['type'], x: number, y: number): MouseEvent {
-  const button = type === 'wheel-up' ? 64 : type === 'wheel-down' ? 65 : type === 'move' ? 3 : 0;
-  return { type, x, y, button, shift: false, meta: false, ctrl: false };
-}
 
 function makePendingApprovalRequest(): TieredApprovalRequest {
   return {

@@ -43,6 +43,9 @@ import type {
   PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
 import { closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { CONFIRM_PHRASE, type TieredApprovalResponse } from '../../core/approval/types.js';
+import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
+import { wireAppMouse } from '../mouse.js';
 import { getLogo } from '../../features/home/logo.js';
 import { formatNeedsSignInSaveFeedback } from '../../features/runners/picker-format.js';
 import { formatConfigSaveSuccess } from '../../stores/project/save-feedback.js';
@@ -1177,6 +1180,75 @@ describe('HomeScreen', () => {
     pending.resolve({ kind: 'aborted' });
     await flushEffects();
     ui.unmount();
+  });
+
+  describe('a click on the runner trust panel', () => {
+    async function openTrustPanel() {
+      terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
+      const answer = Promise.withResolvers<TieredApprovalResponse>();
+      prepareExecutionMock.mockImplementation(async (input) => {
+        const onTieredApproval = input.policy.onTieredApproval;
+        if (!onTieredApproval) throw new Error('Expected the interactive approval callback.');
+        answer.resolve(
+          await onTieredApproval({
+            tier: 'confirm',
+            actionClass: 'runner_trust',
+            actionDescription:
+              'Executable: "tools/review-bot"\nArguments: "--diff"\nContract: direct\nWorking directory: Project directory\nStaging: None\nEnvironment names: "REVIEW_BOT_TOKEN"\nEnvironment access: Declared environment references only\nFilesystem: Not an OS sandbox; the process can access files available to the current user\nNetwork: Network access is not restricted\nResult: Reviewed workspace diff; it writes directly into the project directory\n\nExact confirmation stores an owner-only reusable receipt.',
+            phase: 'planning',
+          }),
+        );
+        return { kind: 'aborted' };
+      });
+      const mouse = createMockFilteredStdin();
+      const disposeMouse = wireAppMouse(mouse.filtered);
+      const ui = renderHome();
+      await flushEffects();
+      ui.stdin.write('custom tool approval');
+      await flushEffects();
+      ui.stdin.write(ENTER);
+      await vi.waitFor(
+        () => expect(ui.lastFrame() ?? '').toContain('Deny'),
+        SESSION_FILTER_WAIT_MS,
+      );
+      await flushEffects();
+      const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      const rowOf = (text: string) => lines.findIndex((line) => line.includes(text)) + 1;
+      let settled: TieredApprovalResponse | undefined;
+      void answer.promise.then((response) => {
+        settled = response;
+      });
+      return {
+        settled: () => settled,
+        rowOf,
+        click: (row: number) => mouse.emit(pointerEvent('press', 10, row)),
+        close: () => {
+          disposeMouse();
+          ui.unmount();
+        },
+      };
+    }
+
+    it.each([
+      ['y   Confirm', { decision: 'confirm', phrase: CONFIRM_PHRASE }],
+      ['x   Deny', { decision: 'deny', reason: 'user_denied' }],
+    ])('on the painted %s row takes that row', async (row, expected) => {
+      const panel = await openTrustPanel();
+      panel.click(panel.rowOf(row));
+      await vi.waitFor(() => expect(panel.settled()).toMatchObject(expected), 1000);
+      panel.close();
+    });
+
+    it('on the blank row or the legend does nothing', async () => {
+      const panel = await openTrustPanel();
+      panel.click(panel.rowOf('x   Deny') + 1);
+      panel.click(panel.rowOf('↑↓ select'));
+      await tick(20);
+      expect(panel.settled()).toBeUndefined();
+      panel.click(panel.rowOf('x   Deny'));
+      await vi.waitFor(() => expect(panel.settled()).toMatchObject({ decision: 'deny' }), 1000);
+      panel.close();
+    });
   });
 });
 
