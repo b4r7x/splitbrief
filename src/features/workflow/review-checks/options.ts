@@ -14,6 +14,7 @@ export interface ReviewChecksRow {
 }
 
 export const REVIEW_CHECKS_CARD_LEGEND = '↑↓ select · ⏎ confirm · tab type a message';
+export const REVIEW_CHECKS_COMPOSER_HINT = 'Choose an action above, or tab to type a message…';
 
 export const REVIEW_CHECKS_ROWS: readonly ReviewChecksRow[] = [
   {

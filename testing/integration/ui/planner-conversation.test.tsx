@@ -399,7 +399,9 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
     await key('src/auth.ts');
     const answering = stripAnsiStyles(screen.lastFrame());
-    expect(answering.indexOf('src/auth.ts')).toBeLessThan(answering.indexOf('New instruction'));
+    expect(answering.indexOf('src/auth.ts')).toBeLessThan(
+      answering.indexOf('Answer the question above…'),
+    );
     expect(answering).not.toContain('Write an answer');
     await key('\u001b[B');
     expect(questionPromptStore.get().focus).toBe('composer');

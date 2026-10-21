@@ -36,6 +36,7 @@ export const STOP_SHEET_TITLE = 'Stop options';
 export const STOP_SHEET_FOOTER = 'Changes and draft stay.';
 export const STOP_SHEET_LEGEND = '↑↓ select · ⏎ confirm · esc stop · tab close';
 export const STOP_SHEET_PARKED_LEGEND = '↑↓ select · ⏎ confirm · esc back · tab close';
+export const STOP_SHEET_COMPOSER_HINT = 'Choose an action above…';
 
 /** A wrapped consequence hangs in from its label, so a continuation never reads as another row. */
 const CONSEQUENCE_HANG = '  ';

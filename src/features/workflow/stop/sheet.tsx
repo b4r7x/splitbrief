@@ -5,6 +5,7 @@ import { borderStyleFor } from '../../../lib/glyphs.js';
 import { listRowLead } from '../../../components/list-row.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
+import { slashHandoffPending } from '../slash-handoff.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -75,6 +76,7 @@ export function StopSheet({
     // The run keeps going behind the sheet and the middle row comes and goes with the running
     // brief, so the cursor is pinned to its row id rather than to a slot End run can slide into.
     keyOf: (row) => row.id,
+    shouldHandleInput: () => !slashHandoffPending(),
     onSelect: (row) => {
       overlayStore.close();
       performStop(row.id);

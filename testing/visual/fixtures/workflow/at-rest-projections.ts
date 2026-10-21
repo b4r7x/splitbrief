@@ -2322,6 +2322,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: READY_TO_APPLY, log: READY_LOG },
   }),
   atRestProjection({
+    id: 'workflow-ready-slash-command',
+    route: { record: READY_TO_APPLY, log: READY_LOG },
+  }),
+  atRestProjection({
     id: 'workflow-ready-empty-diff',
     route: {
       record: record({

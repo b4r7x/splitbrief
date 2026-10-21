@@ -149,12 +149,7 @@ export function correctionActionFor(issue: RecoveryIssue): RecoveryAction | unde
 }
 
 /** The composer placeholder on an open halt names what the focused side takes. */
-export function recoveryComposerHint(
-  issue: RecoveryIssue,
-  menuFocused: boolean,
-  stopMenuOpen: boolean,
-): string {
-  if (stopMenuOpen) return 'Choose an action above…';
+export function recoveryComposerHint(issue: RecoveryIssue, menuFocused: boolean): string {
   const correction = correctionActionFor(issue) !== undefined;
   if (menuFocused)
     return correction
