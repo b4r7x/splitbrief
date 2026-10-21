@@ -16,6 +16,11 @@ vi.mock('../../detection/runner-evidence.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../detection/runner-evidence.js')>()),
   ...evidence,
 }));
+const live = vi.hoisted(() => ({ detectAvailableCliTools: vi.fn() }));
+vi.mock('../../detection/detect.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../detection/detect.js')>()),
+  ...live,
+}));
 
 let dirs: string[] = [];
 
@@ -55,6 +60,7 @@ afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
   evidence.detectRunnerEvidence.mockReset();
+  live.detectAvailableCliTools.mockReset();
 });
 
 async function projectWithRememberedTools(
@@ -386,6 +392,7 @@ describe('loadSeatSwapContext', () => {
       from: { tool: 'codex' },
       candidates: [{ tool: 'claude-code', model: 'sonnet', effort: 'high' }],
     });
+    expect(live.detectAvailableCliTools).not.toHaveBeenCalled();
   });
 
   it('offers an unverified fallback and never duplicates its bare detection', async () => {
@@ -416,6 +423,9 @@ describe('loadSeatSwapContext', () => {
   it('names why a declared fallback is not offered', async () => {
     const projectDir = await projectWithRememberedTools('seat-swap-fallback-blocked', [
       cliDetectionFor('ready', 'codex'),
+      cliDetectionFor('unauthenticated', 'claude-code'),
+    ]);
+    live.detectAvailableCliTools.mockResolvedValue([
       cliDetectionFor('unauthenticated', 'claude-code'),
     ]);
 
@@ -468,6 +478,9 @@ describe('loadSeatSwapContext', () => {
         },
       });
       const fallback = { tool: 'opencode', model: 'ollama/llama3' };
+      live.detectAvailableCliTools.mockResolvedValue([
+        cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+      ]);
 
       const context = await loadSeatSwapContext({
         modelCache: undefined,
@@ -529,6 +542,7 @@ describe('loadSeatSwapContext', () => {
       cliDetectionFor('ready', 'codex'),
       cliDetectionFor('unavailable', 'claude-code'),
     ]);
+    live.detectAvailableCliTools.mockResolvedValue([cliDetectionFor('unavailable', 'claude-code')]);
 
     const context = await loadSeatSwapContext({
       modelCache: undefined,
@@ -541,5 +555,115 @@ describe('loadSeatSwapContext', () => {
     });
 
     expect(context?.fallbackBlockedReason).toBe('not installed');
+  });
+  describe('a fallback the last readiness pass has no ready row for is confirmed live', () => {
+    const runner = { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } } as const;
+
+    async function contextIn(projectDir: string) {
+      return loadSeatSwapContext({
+        modelCache: undefined,
+        projectDir,
+        seat: 'build',
+        runner,
+        config: makeConfig({ implementer: runner }),
+      });
+    }
+
+    it('offers the fallback a live check finds ready when the project remembers no detection', async () => {
+      const projectDir = createTempDir('seat-swap-fallback-live-ready');
+      dirs.push(projectDir);
+      live.detectAvailableCliTools.mockResolvedValue([cliDetectionFor('ready', 'claude-code')]);
+
+      const context = await contextIn(projectDir);
+
+      expect(context?.fallbackBlockedReason).toBeUndefined();
+      expect(context?.detectedTools[0]?.tool).toBe('claude-code');
+      expect(switchSeatOffer(context)).toEqual({
+        seat: 'build',
+        from: { tool: 'codex' },
+        candidates: [{ tool: 'claude-code' }],
+      });
+    });
+
+    it('offers the fallback a live check finds ready over a stale row that saw it missing', async () => {
+      const projectDir = await projectWithRememberedTools('seat-swap-fallback-live-stale', [
+        cliDetectionFor('ready', 'codex'),
+        cliDetectionFor('unavailable', 'claude-code'),
+      ]);
+      live.detectAvailableCliTools.mockResolvedValue([cliDetectionFor('ready', 'claude-code')]);
+
+      const context = await contextIn(projectDir);
+
+      expect(context?.fallbackBlockedReason).toBeUndefined();
+      expect(switchSeatOffer(context)?.candidates).toEqual([{ tool: 'claude-code' }]);
+    });
+
+    it('checks only the fallback tool, on the default sign-in channel, and calls a missing one not installed', async () => {
+      const projectDir = createTempDir('seat-swap-fallback-live-missing');
+      dirs.push(projectDir);
+      live.detectAvailableCliTools.mockResolvedValue([
+        cliDetectionFor('unavailable', 'claude-code'),
+      ]);
+
+      const context = await contextIn(projectDir);
+
+      expect(live.detectAvailableCliTools).toHaveBeenCalledTimes(1);
+      expect(live.detectAvailableCliTools).toHaveBeenCalledWith({
+        projectDir,
+        tools: ['claude-code'],
+        authChannels: { 'claude-code': 'session' },
+      });
+      expect(context?.fallbackBlockedReason).toBe('not installed');
+      expect(switchSeatOffer(context)).toBeUndefined();
+    });
+
+    describe("a fallback on a provider only the tool's own config declares", () => {
+      const fallback = { tool: 'opencode', model: 'ollama/llama3' };
+      const configRunner = { kind: 'cli', tool: 'codex', fallback } as const;
+
+      async function haltWithNoCredential(name: string) {
+        const projectDir = createTempDir(name);
+        dirs.push(projectDir);
+        live.detectAvailableCliTools.mockResolvedValue([
+          cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+        ]);
+        const context = await loadSeatSwapContext({
+          modelCache: undefined,
+          projectDir,
+          seat: 'build',
+          runner: configRunner,
+          config: makeConfig({ implementer: configRunner }),
+        });
+        return { projectDir, context };
+      }
+
+      it('offers it when the fresh model list serves its model', async () => {
+        evidence.detectRunnerEvidence.mockResolvedValue({
+          providerAuth: { kind: 'empty' },
+          catalog: { kind: 'success', value: [{ id: 'ollama/llama3' }] },
+        });
+
+        const { projectDir, context } = await haltWithNoCredential('seat-swap-fallback-live-route');
+
+        expect(evidence.detectRunnerEvidence).toHaveBeenCalledTimes(1);
+        expect(evidence.detectRunnerEvidence).toHaveBeenCalledWith(
+          expect.objectContaining({ projectDir, includeCatalog: true, catalogNamesProject: true }),
+        );
+        expect(context?.fallbackBlockedReason).toBeUndefined();
+        expect(switchSeatOffer(context)?.candidates).toEqual([fallback]);
+      });
+
+      it('names why it does not take it when the fresh model list cannot be read', async () => {
+        evidence.detectRunnerEvidence.mockResolvedValue({
+          providerAuth: { kind: 'empty' },
+          catalog: { kind: 'command-failed', cause: 'exit 1' },
+        });
+
+        const { context } = await haltWithNoCredential('seat-swap-fallback-live-route-unread');
+
+        expect(context?.fallbackBlockedReason).toBe('unauthenticated');
+        expect(switchSeatOffer(context)).toBeUndefined();
+      });
+    });
   });
 });

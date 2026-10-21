@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
@@ -39,6 +39,17 @@ const PARTIAL = 'export const seat = 0;';
 const COMPLETE = 'export const seat = 1;';
 const BALANCE_MESSAGE = 'Insufficient Balance (request_id: 021cfcdf-894e-4f9c-8e1b-85ac99f6a0fe)';
 const BALANCE_LINE = `provider.quota: ${BALANCE_MESSAGE}`;
+/** `opencode auth list --standalone --format json` with a credential for the fallback's provider. */
+const AUTH_LISTING = JSON.stringify([
+  { id: 'opencode', name: 'OpenCode Zen', connections: [{ type: 'credential' }] },
+]);
+/** A fallback on a provider the project's own `opencode.json` sets up, with no credential stored. */
+const PROJECT_MODEL = 'ollama/llama3';
+const PROJECT_OPENCODE_JSON = JSON.stringify({
+  provider: { ollama: { npm: '@ai-sdk/openai-compatible', models: { llama3: {} } } },
+});
+/** `opencode api GET /api/model`: the project's providers only when the read names the project. */
+const PROJECT_LISTING = JSON.stringify({ data: [{ id: 'llama3', providerID: 'ollama' }] });
 
 const RESUME_POLICY: Extract<PreparationPolicy, { purpose: 'resume' }> = {
   purpose: 'resume',
@@ -64,6 +75,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await settleTrackedWorkflows();
+  vi.unstubAllEnvs();
   while (restores.length > 0) restores.pop()?.();
   if (originalPath === undefined) delete process.env.PATH;
   else process.env.PATH = originalPath;
@@ -90,10 +102,13 @@ function writeAgentShim(dir: string): void {
 }
 
 /** The fallback seat: an OpenCode CLI that answers on its JSON protocol. */
-function writeOpencodeSuccessShim(dir: string): void {
+function writeOpencodeSuccessShim(dir: string, authListing: string): void {
   writeExecutable(join(dir, 'opencode'), [
     '#!/bin/bash',
     'if [[ " $* " == *" --version "* ]]; then printf \'opencode 2.0.14\\n\'; exit 0; fi',
+    `if [[ "$1" == "auth" ]]; then printf '%s\\n' '${authListing}'; exit 0; fi`,
+    `if [[ "$1" == "api" && "$5" == x-opencode-directory:* ]]; then printf '%s\\n' '${PROJECT_LISTING}'; exit 0; fi`,
+    `if [[ "$1" == "api" ]]; then printf '%s\\n' '{"data":[]}'; exit 0; fi`,
     'mkdir -p src',
     `printf '%s\\n' '${COMPLETE}' > src/seat.ts`,
     `printf '%s\\n' '{"type":"text","timestamp":1,"sessionID":"ses_seat","part":{"type":"text","text":"implemented"}}'`,
@@ -116,6 +131,15 @@ function writeOpencodeFailureShim(dir: string): void {
     `printf '%s\\n' '${envelope}'`,
     'exit 1',
   ]);
+}
+
+/** The live readiness check reads the shim's answers, never the operator's own tool state. */
+function isolateHome(): void {
+  const home = createTempDir('seat-down-switch-home');
+  dirs.push(home);
+  vi.stubEnv('HOME', home);
+  vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'));
+  vi.stubEnv('XDG_DATA_HOME', join(home, '.local', 'share'));
 }
 
 function seatTask(): Task {
@@ -148,17 +172,25 @@ interface SeatDownRun {
  * the provider's balance line, with a declared `fallback` and a remembered
  * readiness snapshot that lists it.
  */
-async function runToFirstSeatDown(opencode: 'success' | 'fail'): Promise<SeatDownRun> {
+async function runToFirstSeatDown(
+  opencode: 'success' | 'fail',
+  detection: 'remembered' | 'none' = 'remembered',
+  route: 'gateway' | 'project-provider' = 'gateway',
+): Promise<SeatDownRun> {
   const projectDir = createTempDir(`seat-down-switch-${opencode}`);
   dirs.push(projectDir);
-  createTestGitRepo(projectDir, { '.gitignore': '.splitbrief/\n' });
+  createTestGitRepo(projectDir, {
+    '.gitignore': '.splitbrief/\n',
+    ...(route === 'project-provider' && { 'opencode.json': PROJECT_OPENCODE_JSON }),
+  });
   const sessionId = `sess-seat-down-${opencode}`;
 
   const shimDir = createTempDir(`seat-down-shim-${opencode}`);
   dirs.push(shimDir);
   writeAgentShim(shimDir);
-  if (opencode === 'success') writeOpencodeSuccessShim(shimDir);
-  else writeOpencodeFailureShim(shimDir);
+  if (opencode === 'success') {
+    writeOpencodeSuccessShim(shimDir, route === 'gateway' ? AUTH_LISTING : '[]');
+  } else writeOpencodeFailureShim(shimDir);
   restores.push(prependPath(shimDir));
 
   const config = makeConfig({
@@ -167,16 +199,20 @@ async function runToFirstSeatDown(opencode: 'success' | 'fail'): Promise<SeatDow
       command: AGENT_COMMAND,
       model: 'agent-model',
       contextLength: 4096,
-      fallback: { tool: 'opencode', model: FALLBACK_MODEL },
+      fallback: { tool: 'opencode', model: route === 'gateway' ? FALLBACK_MODEL : PROJECT_MODEL },
     },
     validation: { endChecks: false, testCommand: 'noop' },
     workflow: { approve: 'none' },
   });
   writeConfigYamlText(projectDir, YAML.stringify(config));
-  await rememberDetectedTools(projectDir, [
-    cliDetectionFor('ready', 'opencode'),
-    cliDetectionFor('ready', 'claude-code'),
-  ]);
+  if (detection === 'remembered') {
+    await rememberDetectedTools(projectDir, [
+      cliDetectionFor('ready', 'opencode'),
+      cliDetectionFor('ready', 'claude-code'),
+    ]);
+  } else {
+    isolateHome();
+  }
 
   const prepared = makePreparedExecution({
     projectDir,
@@ -330,6 +366,46 @@ describe('a spent implementer switches to its declared fallback', { timeout: 90_
     expect(summary.implementerTool).toBe('opencode');
     expect(resumed.some((event) => event.type === 'workflow_complete')).toBe(true);
     expect(readFileSync(join(workspace.path, TARGET), 'utf8')).toContain(COMPLETE);
+  });
+
+  it('switches on the auto intent when the project remembers no detection', async () => {
+    const run = await runToFirstSeatDown('success', 'none');
+
+    expect(existsSync(join(run.projectDir, SPLITBRIEF_DIR, 'detection-cache.json'))).toBe(false);
+    expect(run.halted.pendingRecovery?.reason).toBe('runner-usage-limit');
+    expect(run.halted.pendingRecovery?.switchSeat?.auto?.candidate).toEqual({
+      tool: 'opencode',
+      model: FALLBACK_MODEL,
+    });
+
+    const { swapped } = await applyAutoSwitch(run);
+    expect(swapped.state.seatSwitches?.[0]?.auto).toBe(true);
+
+    const { summary } = await continueRun({
+      prepared: swapped.prepared,
+      savedState: swapped.state,
+    });
+    expect(summary.completedByLocal).toBe(1);
+    expect(summary.failed).toBe(0);
+    expect(summary.implementerTool).toBe('opencode');
+  });
+
+  it("switches to a fallback on a provider only the project's opencode.json sets up, with no credential and no remembered detection", async () => {
+    const run = await runToFirstSeatDown('success', 'none', 'project-provider');
+
+    expect(run.halted.pendingRecovery?.reason).toBe('runner-usage-limit');
+    expect(run.halted.pendingRecovery?.switchSeat?.auto?.candidate).toEqual({
+      tool: 'opencode',
+      model: PROJECT_MODEL,
+    });
+
+    const { swapped } = await applyAutoSwitch(run);
+    const { summary } = await continueRun({
+      prepared: swapped.prepared,
+      savedState: swapped.state,
+    });
+    expect(summary.completedByLocal).toBe(1);
+    expect(summary.implementerTool).toBe('opencode');
   });
 
   it('a second seat-down carries no auto intent', async () => {

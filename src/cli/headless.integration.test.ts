@@ -1234,6 +1234,110 @@ describe('runHeadless — the seat-down policy and the record', () => {
     expect(loadConfig(projectDir).config.implementer).toMatchObject({ tool: 'opencode' });
   });
 
+  it('takes the declared fallback on a real BUILD halt when the project remembers no detection', async () => {
+    skipTheRun.enabled = false;
+    const projectDir = createHeadlessGitProject('headless-switch-no-cache');
+    dirs.push(projectDir);
+    const home = createTempDir('headless-switch-no-cache-home');
+    dirs.push(home);
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'));
+    vi.stubEnv('XDG_DATA_HOME', join(home, '.local', 'share'));
+    const shimDir = createTempDir('headless-switch-no-cache-shim');
+    dirs.push(shimDir);
+    const listing = JSON.stringify([
+      { id: 'opencode-go', name: 'OpenCode Go', connections: [{ type: 'credential' }] },
+    ]);
+    writeFileSync(
+      join(shimDir, 'opencode'),
+      [
+        '#!/bin/bash',
+        'if [[ " $* " == *" --version "* ]]; then printf \'opencode 2.0.14\\n\'; exit 0; fi',
+        `if [[ "$1" == "auth" ]]; then printf '%s\\n' '${listing}'; exit 0; fi`,
+        'exit 1',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+    const restorePath = prependPath(shimDir);
+    const sessionId = 'sess-switch-no-cache';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    writeConfig(
+      projectDir,
+      makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: 'deepseek/deepseek-flash',
+          fallback: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
+        },
+        workflow: { isolation: 'staged-copy', approve: 'none' },
+        validation: { endChecks: false, testCommand: 'true' },
+      }),
+    );
+    const state = makeImplState([
+      makeTask({
+        id: 'T001',
+        action: 'create',
+        suggestedFiles: ['fallback.txt'],
+        scope: { inBounds: ['fallback.txt'] },
+      }),
+    ]);
+    saveState(ref, state);
+    const prepared = preparedHeadlessExecution({
+      ...ref,
+      feature: state.feature,
+      resumeState: state,
+    });
+    const implementer = makeImplementer({
+      implement: vi.fn<Implementer['implement']>(async (input) => {
+        if (input.config.implementer.model === 'deepseek/deepseek-flash') {
+          return {
+            success: false,
+            output: '',
+            error: 'provider.quota: Insufficient Balance',
+            outcome: 'usage-limit',
+          };
+        }
+        writeFileSync(join(input.projectDir, 'fallback.txt'), 'fallback work\n');
+        return { success: true, output: 'done' };
+      }),
+    });
+
+    try {
+      await runHeadless({
+        prepared,
+        _planner: makePlanner(),
+        _implementer: implementer,
+        onSeatDown: 'switch',
+        _prepare: async (input) => ({
+          kind: 'prepared',
+          execution: makePreparedExecution({
+            ...ref,
+            feature: state.feature,
+            config: input.effectiveConfig,
+            resumeState: input.resumeState,
+            active: reactivateExistingSession(ref),
+          }),
+        }),
+      });
+    } finally {
+      restorePath();
+      vi.unstubAllEnvs();
+    }
+
+    const switched = records().flatMap((record) =>
+      record.type === 'event' && record.data.type === 'seat_switched' ? [record.data] : [],
+    );
+    expect(switched).toHaveLength(1);
+    expect(switched[0]).toMatchObject({
+      seat: 'build',
+      auto: true,
+      to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
+    });
+  });
+
   it('applies the declared fallback automatically and records the switch', async () => {
     const { projectDir, sessionId, state } = seedAutoSwitchSession('headless-auto-switch');
     const prepared = preparedHeadlessExecution({

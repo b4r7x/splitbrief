@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isMap, parseDocument } from 'yaml';
@@ -80,15 +80,20 @@ ${body(target)}`,
   return { target, callsPath };
 }
 
-async function runFixture(target: StopContinueFixture) {
-  const cliTools = await detectAvailableCliTools({
-    projectDir: target.projectDir,
-    tools: ['codex'],
-    authChannels: { codex: 'session' },
-    role: 'implementer',
-  });
-  expect(cliTools[0]?.diagnostic.state).toBe('ready');
-  await rememberDetectedTools(target.projectDir, cliTools);
+async function runFixture(
+  target: StopContinueFixture,
+  detection: 'remembered' | 'none' = 'remembered',
+) {
+  if (detection === 'remembered') {
+    const cliTools = await detectAvailableCliTools({
+      projectDir: target.projectDir,
+      tools: ['codex'],
+      authChannels: { codex: 'session' },
+      role: 'implementer',
+    });
+    expect(cliTools[0]?.diagnostic.state).toBe('ready');
+    await rememberDetectedTools(target.projectDir, cliTools);
+  }
   const offlinePreload = join(target.tmpDir, 'offline.mjs');
   writeFileSync(
     offlinePreload,
@@ -196,6 +201,41 @@ ${BUILD_REPLY}`,
     ]);
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
     expect(readFileSync(join(target.projectDir, '.gitignore'))).toEqual(gitignore);
+  });
+
+  it('switches BUILD to its fallback when the project remembers no detection', async () => {
+    const { target, callsPath } = codexFixture(
+      () => `if (model === ${JSON.stringify(PRIMARY_MODEL)}) {
+  console.log(JSON.stringify({ type: 'error', message: 'Insufficient Balance' }));
+  process.exit(1);
+}
+if (model !== ${JSON.stringify(FALLBACK_MODEL)}) throw new Error('Unexpected model: ' + model);
+${BUILD_REPLY}`,
+    );
+    const config = loadConfig(target.projectDir).config;
+    writeConfig(target.projectDir, {
+      ...config,
+      implementer: {
+        kind: 'cli',
+        tool: 'codex',
+        model: PRIMARY_MODEL,
+        contextLength: 200_000,
+        fallback: { tool: 'codex', model: FALLBACK_MODEL },
+      },
+    });
+    expect(existsSync(join(target.projectDir, '.splitbrief', 'detection-cache.json'))).toBe(false);
+
+    const { run, state } = await runFixture(target, 'none');
+
+    expect(
+      run.exitCode,
+      `${run.stdout}\n${run.stderr}\n${JSON.stringify(state?.pendingRecovery, null, 2)}`,
+    ).toBe(0);
+    expect(state?.phase).toBe('complete');
+    expect(state?.seatSwitches).toEqual([
+      expect.objectContaining({ seat: 'build', cause: 'runner-usage-limit', auto: true }),
+    ]);
+    expect(recordedCalls(callsPath)).toEqual([{ model: PRIMARY_MODEL }, { model: FALLBACK_MODEL }]);
   });
 
   it('switches inherited REVIEW using PLAN fallback and preserves the planner YAML bytes', async () => {

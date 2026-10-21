@@ -4,18 +4,30 @@ import { loadConfig } from '../../../core/config/load/io.js';
 import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
-import { fallbackBlockedReason } from '../../../core/crew/fallback.js';
+import {
+  fallbackBlockedReason,
+  fallbackRunner,
+  type SeatFallback,
+} from '../../../core/crew/fallback.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 import { classifyHaltSignature } from '../../../core/pipeline-spec/halts.js';
-import { PROVIDER_ORACLE_TOOL_IDS } from '../../../core/runners/cli-tool-catalog.js';
+import {
+  defaultCliAuthChannel,
+  PROVIDER_ORACLE_TOOL_IDS,
+} from '../../../core/runners/cli-tool-catalog.js';
 import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
 import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 import { includes } from '../../../utils/type-guards.js';
 import { loadRememberedSnapshot, type DetectionCacheSnapshot } from '../../detection/cache.js';
 import { cliSeatDiscoveryContext } from '../../detection/cli-context.js';
-import { savedRouteCatalog } from '../../detection/route-catalog.js';
+import { detectAvailableCliTools } from '../../detection/detect.js';
+import {
+  freshRouteCatalog,
+  routeReadsCatalog,
+  savedRouteCatalog,
+} from '../../detection/route-catalog.js';
 import { detectRunnerEvidence } from '../../detection/runner-evidence.js';
 import type { DetectedSeatTool, SeatSwapContext } from './builders/task.js';
 import { seatCandidateOfRunner } from './switch-seat.js';
@@ -113,11 +125,72 @@ async function haltRouteAuth(
 }
 
 /**
+ * Why the halt would not take the declared fallback, or `undefined` when it would. The remembered
+ * row decides when it takes the fallback or saw the tool ready. A missing or not-ready row that
+ * refuses it is checked live once, on the channel a fresh config names: the pass may be absent (a
+ * headless project, a fresh clone) or older than the tool's install or sign-in. A route that then
+ * waits on the tool's model list reads it fresh once, as the switch's own preparation does.
+ */
+async function fallbackDecision(
+  input: Readonly<{
+    projectDir: string;
+    seat: CrewSeatId;
+    config: Config;
+    fallback: SeatFallback;
+    remembered: DetectionCacheSnapshot | null;
+  }>,
+): Promise<string | undefined> {
+  const { fallback, remembered } = input;
+  const row = remembered?.cliTools.find((cli) => cli.tool === fallback.tool);
+  let catalog: SavedCatalog | undefined = savedRouteCatalog(
+    remembered,
+    fallback.tool,
+    fallback.model,
+  );
+  const blocked = fallbackBlockedReason(fallback, row, catalog);
+  const runner = fallbackRunner(fallback);
+  if (blocked === undefined || row?.diagnostic.state === 'ready' || runner?.kind !== 'cli') {
+    return blocked;
+  }
+  const [live] = await detectAvailableCliTools({
+    projectDir: input.projectDir,
+    tools: [runner.tool],
+    authChannels: { [runner.tool]: defaultCliAuthChannel(runner.tool).id },
+  });
+  const state = live?.diagnostic.state;
+  if (
+    (state === 'ready' || state === 'unauthenticated') &&
+    routeReadsCatalog(
+      routeAuthState({
+        tool: runner.tool,
+        model: runner.model,
+        providerAuth: live?.providerAuth,
+        catalog,
+      }),
+    )
+  ) {
+    catalog = await freshRouteCatalog(new Map(), runner.tool, () =>
+      detectRunnerEvidence({
+        context: cliSeatDiscoveryContext({
+          role: runnerRoleForActiveRole(CREW_SEAT_ROLES[input.seat]),
+          runner,
+          config: input.config,
+        }),
+        projectDir: input.projectDir,
+        includeCatalog: true,
+        catalogNamesProject: true,
+      }),
+    );
+  }
+  return fallbackBlockedReason(fallback, live, catalog);
+}
+
+/**
  * The swap offer a seat-down halt carries: the seat, the identity it was on, and
  * every CLI tool the last readiness pass remembered. A CLI seat always gets a
- * context, so its route's meaning reaches the halt with nothing else detected. A declared fallback the pass
- * saw ready or unverified leads the rows with its own model and effort; one it
- * cannot run is not offered, and the halt names why. `switchSeatOffer` narrows
+ * context, so its route's meaning reaches the halt with nothing else detected. A declared fallback
+ * the pass saw ready or unverified, or a live check confirms, leads the rows with its own model
+ * and effort; one it cannot run is not offered, and the halt names why. `switchSeatOffer` narrows
  * the rest to the ready ones and drops the offer when nothing is available.
  */
 export async function loadSeatSwapContext(
@@ -135,7 +208,8 @@ export async function loadSeatSwapContext(
 ): Promise<SeatSwapContext | undefined> {
   // A halt holds no discovery context — the run is stopping, not detecting — so
   // the snapshot is read for what it remembers; only a model refusal re-reads its
-  // route's credential and model catalog (`haltRouteAuth`). The offer is a suggestion the
+  // route's credential and model catalog (`haltRouteAuth`), and only a fallback the snapshot
+  // would refuse is checked live (`fallbackDecision`). The offer is a suggestion the
   // operator confirms; the seat is re-prepared from scratch when they take it.
   const remembered = await loadRememberedSnapshot(input.projectDir);
   const rememberedTools = remembered?.cliTools ?? [];
@@ -151,12 +225,13 @@ export async function loadSeatSwapContext(
   const fallbackReadFailed = record.kind === 'read-failed' ? true : undefined;
   let blockedReason: string | undefined;
   if (fallback !== undefined) {
-    const detection = rememberedTools.find((cli) => cli.tool === fallback.tool);
-    blockedReason = fallbackBlockedReason(
+    blockedReason = await fallbackDecision({
+      projectDir: input.projectDir,
+      seat: input.seat,
+      config: input.config,
       fallback,
-      detection,
-      savedRouteCatalog(remembered, fallback.tool, fallback.model),
-    );
+      remembered,
+    });
     if (blockedReason === undefined) {
       detectedTools = [
         {
