@@ -99,8 +99,8 @@ export async function persistTaskEvidence(opts: {
 
 /**
  * A skip takes back the brief's files from its task-start snapshot, so the skipped brief answers
- * only for the files still changed since then, plus its lineage's remainder when the skip closes
- * the lineage.
+ * only for the files still changed since then, plus the unbooked files of its lineage that it
+ * books (`lineageRemainder`).
  */
 export async function persistSkippedBriefFiles(opts: {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus' | 'workspaceDir'>;

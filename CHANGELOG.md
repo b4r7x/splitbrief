@@ -354,6 +354,7 @@
 - A seat that goes down now moves to its declared fallback when the fallback tool is installed and can call the fallback's model, also in a headless run, a fresh clone or CI, and for a model on a provider set up only in the tool's own config. Before, the halt called the fallback not installed or not signed in until SPLITBRIEF had checked the tools once on the home screen.
 - A slash command typed while the result menu, a halt menu, the stop menu, the reviewer checks card or a planner question holds the keys now goes to the composer and runs. Enter no longer applies the run or picks an action by accident.
 - The composer hint now says what the focused menu takes, and no longer contradicts the menu's own key legend.
+- After the planner splits a brief, a file that the first attempt wrote stays with the part that names it. With task review the passing part shows no false "not changed" warning, and after End run between the parts a finished file no longer reads as partial. Before, every such file went to the part that finished last.
 
 ## [0.1.0] - 2026-08-07
 

@@ -20,6 +20,7 @@ import { includes } from '../../utils/type-guards.js';
 import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { insertTasksAfter, lineageIdOf } from './task-insert.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../scope/declared-set.js';
 import { transitionError } from './errors.js';
 import { truncateByChars } from '../../utils/truncate.js';
 
@@ -211,6 +212,21 @@ export function lineageHasOpenBrief(
   exceptId?: TaskId,
 ): boolean {
   return tasks.some((t) => lineageIdOf(t) === key && t.id !== exceptId && !isTaskSettled(t.status));
+}
+
+/**
+ * The files of a lineage's `unbooked` changes that a settling brief books: the ones its declared
+ * set names, or every one when it closes the lineage. A file two briefs name goes to the first to
+ * settle, because it is booked from then on.
+ */
+export function lineageFilesToBook(
+  brief: Task,
+  closesLineage: boolean,
+  unbooked: readonly string[],
+): string[] {
+  if (closesLineage) return [...unbooked];
+  const declared = taskDeclaredPatterns(brief);
+  return unbooked.filter((file) => isInDeclaredSet(file, declared));
 }
 
 /** A lineage keeps its task start only while one of its briefs is still open. */

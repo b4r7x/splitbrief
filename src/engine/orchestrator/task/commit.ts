@@ -54,8 +54,8 @@ export function touchedNotSuggestedFiles(opts: {
 
 /**
  * A completion carries the brief's duration: one log read for its event and its ledger entry. It
- * also carries the files the brief books: its own, and its lineage's remainder when it is the
- * lineage's last open brief.
+ * also carries the files the brief books: its own, and the unbooked files of its lineage that it
+ * names or, as the lineage's last open brief, all of them.
  */
 type CommitResult =
   | { state: WorkflowState; completed: false }
