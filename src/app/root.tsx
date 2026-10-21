@@ -1,4 +1,5 @@
 import { useApp, useInput } from 'ink';
+import { useEffect } from 'react';
 import { isConfiguredKeyDebugEnabled, logSplitbriefParsedKey } from '../core/key-debug.js';
 import { AppProvider } from './provider.js';
 import { Router } from './router.js';
@@ -9,6 +10,13 @@ import { routerStore } from '../stores/navigation/router.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { useStores } from '../stores/use-stores.js';
+import { sessionSelectStore } from '../stores/navigation/session-select.js';
+import { feedbackStore } from '../stores/ui/feedback.js';
+import { APPLY_RUNNING_REFUSAL } from '../core/runtime/commands/messages.js';
+import {
+  activeApply,
+  onActiveApplyChange,
+} from '../engine/orchestrator/session-lifecycle/shutdown.js';
 
 import type { WorkflowScreenDeps } from '../features/workflow/hooks/workflow-screen/use-model.js';
 import type { HomeScreenDeps } from './screens/home.js';
@@ -35,6 +43,15 @@ export interface AppInteractionDeps {
   readonly listProjectFiles: typeof listProjectFiles;
 }
 
+/** A refusal that says Apply is still writing is false once Apply ends, so it leaves every surface then. */
+function clearApplyRefusals(): void {
+  if (activeApply() !== undefined) return;
+  if (feedbackStore.get().message?.startsWith(APPLY_RUNNING_REFUSAL)) feedbackStore.reset();
+  if (sessionSelectStore.get().error?.startsWith(APPLY_RUNNING_REFUSAL)) {
+    sessionSelectStore.clearError();
+  }
+}
+
 export interface AppProps {
   readonly workflowDeps?: WorkflowScreenDeps | undefined;
   readonly interactionDeps?: AppInteractionDeps | undefined;
@@ -54,6 +71,7 @@ export function App({ workflowDeps, interactionDeps }: AppProps = {}) {
   });
   useAppKeys({ exit, deps: interactionDeps?.keys });
   useAppMouse();
+  useEffect(() => onActiveApplyChange(clearApplyRefusals), []);
   useInput((input, key) => logSplitbriefParsedKey(input, key), {
     isActive: isConfiguredKeyDebugEnabled(),
   });

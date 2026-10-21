@@ -372,6 +372,7 @@
 - Trusting a configured runner no longer asks for a reason that was never kept. Before, the panel offered "Confirm with a reason" and the terminal asked why you trust the runner.
 - A command that takes an argument, picked in the command palette over the result menu, a halt menu, the reviewer checks card or a planner question, now goes to the composer and takes your typing, and keys pressed in the palette no longer answer a halt behind it. Before, Enter could apply the run, run the reviewer checks or send the default answer, and a letter or Enter in the palette could skip a task or end the run.
 - A run that becomes ready to apply names each seat in the sidebar with the effort, thinking and speed it ran at, as the open run does. Before, a Claude Code, Codex, OpenCode, Copilot, Kilo Code or Command Code seat showed only its tool and model there, as if it ran at the tool's default.
+- When Apply finishes, a message that says Apply is still writing now goes away at once, in the footer, in Sessions and in the recent runs on home. Before, the footer could keep it for up to a minute after the run closed, Sessions kept it until you closed the panel, and the recent runs on home could still show it later.
 
 ## [0.1.0] - 2026-08-07
 
