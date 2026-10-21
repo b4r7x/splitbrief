@@ -464,7 +464,7 @@ When the `Ctrl+O` external editor is used instead, `VISUAL` takes precedence ove
 
 ### A run at rest
 
-The workflow screen is also the run's home at rest. An open run takes a correction; bare Enter continues it. A ready run uses [the result menu](./FEATURES.md#run-result-menu), with Tab switching focus. Its composer takes slash commands. A closed run also takes slash commands; bare Enter goes home. Escape leaves a run at rest for home without opening the stop menu.
+The workflow screen is also the run's home at rest. An open run takes a correction; bare Enter continues it. A ready run uses [the result menu](./FEATURES.md#run-result-menu), with Tab switching focus. Its composer takes slash commands; a `/` typed while the menu holds the keys moves to the composer. The same holds for a halt menu, the stop menu, the reviewer checks card and a planner question. A closed run also takes slash commands; bare Enter goes home. Escape leaves a run at rest for home without opening the stop menu.
 
 ---
 

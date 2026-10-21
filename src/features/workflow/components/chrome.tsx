@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import type { DraftSubmission } from '../../../core/composer/submission.js';
-import { Box } from 'ink';
+import { Box, useInput } from 'ink';
 import type { RuntimeCommandDef } from '../../../core/runtime/commands/types.js';
 import type { InputMode } from '../../../core/navigation/types.js';
 import { Composer, type ComposerBoxHints } from '../../../components/composer/composer.js';
@@ -23,6 +23,8 @@ import {
   selectScheduledReview,
 } from '../../../stores/workflow/operations/state.js';
 import { requestSteer } from '../handlers.js';
+import { composerDraftStore } from '../../../stores/ui/composer-draft.js';
+import { settleSlashHandoff, startSlashHandoff } from '../slash-handoff.js';
 
 export function WorkflowHeader({
   scrollAboveLabel = '',
@@ -83,6 +85,7 @@ export function WorkflowFooter({
   buildBlockShown = false,
   menuFocused = false,
   onToggleMenu,
+  onTakeKeys,
   keepPlaceholderWhileFocused,
   questionPanelFocused = false,
   onReturnToQuestion,
@@ -116,6 +119,8 @@ export function WorkflowFooter({
   onReturnToQuestion?: (() => void) | undefined;
   menuFocused?: boolean | undefined;
   onToggleMenu?: (() => void) | undefined;
+  /** Lets go of the panel that holds the keys, so a typed slash command goes to the composer. */
+  onTakeKeys?: (() => void) | undefined;
   /** The placeholder names what the composer takes on either side of the menu toggle, so focus keeps it. */
   keepPlaceholderWhileFocused?: boolean | undefined;
   readClipboardImage?: typeof readSystemClipboardImage | undefined;
@@ -142,6 +147,17 @@ export function WorkflowFooter({
     reviewing,
     taskId,
     steerableSeat,
+  });
+  // A slash typed while a panel holds the keys is a command: the panel lets go and the composer takes
+  // the whole read, so a pasted `/settings` arrives in one piece.
+  useInput((input) => {
+    if (onTakeKeys === undefined || !input.startsWith('/')) return;
+    startSlashHandoff();
+    onTakeKeys();
+    composerDraftStore.requestCommand(input);
+  });
+  useEffect(() => {
+    settleSlashHandoff();
   });
   const footer = (
     <Box flexDirection="column" paddingX={WORKFLOW_GUTTER_X}>

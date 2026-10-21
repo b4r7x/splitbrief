@@ -7,6 +7,7 @@ import { fitKeyLegend } from '../../../core/key-legend.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { stopMenuLayout } from '../stop/options.js';
+import { slashHandoffPending } from '../slash-handoff.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import {
   RESULT_MENU_LEGEND,
@@ -57,6 +58,7 @@ function ResultMenuBody({
     items: rows,
     isActive: focused,
     keyOf: (row) => row.id,
+    shouldHandleInput: () => !slashHandoffPending(),
     onSelect: (row) => {
       if (row.id === 'apply' && override) {
         onConfirmingChange(true);

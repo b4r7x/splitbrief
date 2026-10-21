@@ -1002,14 +1002,7 @@ describe('recovery prompt', () => {
           : ['skip-current-task', 'end-run'],
       };
 
-      expect(recoveryComposerHint(issue, menuFocused, false)).toBe(hint);
-    },
-  );
-
-  it.each([true, false])(
-    'omits the Tab promise while the stop sheet is open (menu focused %s)',
-    (menuFocused) => {
-      expect(recoveryComposerHint(baseIssue, menuFocused, true)).toBe('Choose an action above…');
+      expect(recoveryComposerHint(issue, menuFocused)).toBe(hint);
     },
   );
 });

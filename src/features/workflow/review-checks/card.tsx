@@ -9,6 +9,7 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { pluralize } from '../../../utils/pluralize.js';
 import { oneLineDisplayText, segmentsForRowText } from '../../../utils/display-text.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
+import { slashHandoffPending } from '../slash-handoff.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { closeReviewChecksPrompt } from '../../../stores/review-checks-prompt/prompt.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
@@ -56,7 +57,7 @@ export function ReviewChecksCard({
     items: REVIEW_CHECKS_ROWS,
     isActive: focused,
     keyOf: (row) => row.id,
-    shouldHandleInput: () => Date.now() >= graceUntil,
+    shouldHandleInput: () => Date.now() >= graceUntil && !slashHandoffPending(),
     onSelect: (row) => closeReviewChecksPrompt(row.id),
   });
 

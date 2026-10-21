@@ -1610,7 +1610,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'question-panel', title: 'Question panel' },
-        { id: 'composer', title: 'New instruction' },
+        { id: 'composer', title: 'Workflow composer' },
       ],
     }),
     defineScenario({
@@ -2053,6 +2053,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Composer holds the keyboard',
         kind: 'ready',
         marker: 'tab back to the actions',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-ready-slash-command',
+      title: 'Workflow · a slash command typed over the result menu',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-slash-command',
+        title: 'Composer takes the slash command',
+        kind: 'ready',
+        marker: '/settings',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

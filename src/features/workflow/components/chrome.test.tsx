@@ -1,5 +1,5 @@
 import type { DraftSubmission } from '../../../core/composer/submission.js';
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { Text } from 'ink';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
@@ -240,6 +240,34 @@ describe('WorkflowFooter', () => {
     const ui = renderFooter();
     await flushEffects();
     expect(ui.lastFrame()).toContain('Message BUILD · read when its call ends…');
+    ui.unmount();
+  });
+
+  it('hands a slash typed over a panel to the composer, the whole chunk at once', async () => {
+    const onTakeKeys = vi.fn();
+    const { cols, rows } = terminalSizeStore.get();
+    const ui = renderFeature(
+      <WorkflowFooter
+        handleInput={() => {}}
+        onRuntimeCommand={() => {}}
+        commands={[]}
+        mode="normal"
+        inputHint=""
+        disabled
+        onTakeKeys={onTakeKeys}
+      />,
+      { cols, rows },
+    );
+    await flushEffects();
+
+    ui.stdin.write('x');
+    await flushEffects();
+    expect(onTakeKeys).not.toHaveBeenCalled();
+
+    ui.stdin.write('/settings');
+    await flushEffects();
+    expect(onTakeKeys).toHaveBeenCalledTimes(1);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/settings');
     ui.unmount();
   });
 

@@ -62,6 +62,7 @@ const { composerLiveStore } = await import('../../stores/ui/composer-live.js');
 const { stopStore } = await import('../../stores/workflow/stop.js');
 const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
 const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
+const { openReviewChecksPrompt } = await import('../../stores/review-checks-prompt/prompt.js');
 
 const FIXED_TS = 1_783_958_400_000;
 const SHIFT_ENTER = '\x1b[13;2u';
@@ -934,7 +935,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
-  it('hints at the panel alone on a halt that takes no typed correction', async () => {
+  function renderDependencyBlockedHalt(onRuntimeCommand = vi.fn()) {
     const issue = makeRecoveryIssue({
       reason: 'dependency-blocked',
       phase: 'implementing',
@@ -966,10 +967,10 @@ describe('WorkflowScreen showing a run at rest', () => {
       },
     }));
 
-    const ui = renderFeature(
+    return renderFeature(
       <WorkflowScreen
         commands={[]}
-        onRuntimeCommand={vi.fn()}
+        onRuntimeCommand={onRuntimeCommand}
         deps={{
           runWorkflow,
           sessionSelect: {
@@ -981,6 +982,10 @@ describe('WorkflowScreen showing a run at rest', () => {
         }}
       />,
     );
+  }
+
+  it('hints at the panel alone on a halt that takes no typed correction', async () => {
+    const ui = renderDependencyBlockedHalt();
     await flushEffects();
 
     ui.stdin.write('\r');
@@ -997,6 +1002,80 @@ describe('WorkflowScreen showing a run at rest', () => {
     const composerFocused = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(composerFocused).toContain('Tab to choose an action…');
     expect(composerFocused).not.toContain('Type a correction, or tab to choose an action…');
+    ui.unmount();
+  });
+
+  it('runs a slash command typed over a halt menu without taking its letter keys', async () => {
+    const onRuntimeCommand = vi.fn();
+    const ui = renderDependencyBlockedHalt(onRuntimeCommand);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+
+    for (const key of '/settings') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('tab back to the actions');
+    ui.unmount();
+  });
+
+  it('takes no halt letter read in the same stdin dispatch as the slash', async () => {
+    const onRuntimeCommand = vi.fn();
+    const ui = renderDependencyBlockedHalt(onRuntimeCommand);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+
+    ui.stdin.write('/');
+    ui.stdin.write('s');
+    await flushEffects();
+    await tick(30);
+    ui.stdin.write('\b');
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Skip task');
+    expect(frame).toContain('tab back to the actions');
+    ui.unmount();
+  });
+
+  it('runs only the slash command typed over the stop sheet above a halt menu', async () => {
+    const onRuntimeCommand = vi.fn();
+    const ui = renderDependencyBlockedHalt(onRuntimeCommand);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    overlayStore.open('stop-sheet');
+    await flushEffects();
+
+    for (const key of '/settings') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    await flushEffects();
+    expect(onRuntimeCommand.mock.calls).toEqual([['/settings']]);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Skip task');
+    expect(frame).toContain('tab back to the actions');
     ui.unmount();
   });
 
@@ -1286,6 +1365,115 @@ describe('WorkflowScreen showing a run at rest', () => {
         isError: false,
       });
     });
+    ui.unmount();
+  });
+
+  it('runs a slash command typed while the result menu holds the keys, never Apply', async () => {
+    readyRun();
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />);
+    await flushEffects();
+
+    ui.stdin.write('/settings');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    expect(onRuntimeCommand).not.toHaveBeenCalledWith('/run accept');
+    ui.unmount();
+  });
+
+  it('gives the composer each key of a slash command typed one by one over the result menu', async () => {
+    readyRun();
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />);
+    await flushEffects();
+
+    for (const key of '/settings') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/settings');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    expect(onRuntimeCommand).not.toHaveBeenCalledWith('/run accept');
+    ui.unmount();
+  });
+
+  it('does not confirm the result menu on an Enter read in the same stdin dispatch as the slash', async () => {
+    readyRun();
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />);
+    await flushEffects();
+
+    ui.stdin.write('/');
+    ui.stdin.write('\r');
+    await flushEffects();
+    await tick(30);
+    ui.stdin.write('\b');
+    await flushEffects();
+
+    expect(onRuntimeCommand).not.toHaveBeenCalled();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('tab back to the actions');
+    ui.unmount();
+  });
+
+  it('runs a slash command typed over Apply as is without asking to apply', async () => {
+    readyRun(true);
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />);
+    await flushEffects();
+
+    ui.stdin.write('/settings');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Apply with 1 open finding?');
+    expect(onRuntimeCommand).not.toHaveBeenCalledWith('/run accept confirm');
+    ui.unmount();
+  });
+
+  it('runs only the slash command typed over the stop sheet above the result menu, never Apply', async () => {
+    readyRun();
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />);
+    await flushEffects();
+    overlayStore.open('stop-sheet');
+    await flushEffects();
+
+    for (const key of '/settings') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    await flushEffects();
+    expect(onRuntimeCommand.mock.calls).toEqual([['/settings']]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('tab back to the actions');
+    ui.unmount();
+  });
+
+  it('names the result menu in the placeholder while it holds the keys, and the composer after Tab', async () => {
+    readyRun();
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const menuFocused = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(menuFocused).toContain('Choose an action above, or tab to type a command…');
+    expect(menuFocused).not.toContain('tab for the result menu');
+
+    ui.stdin.write('\t');
+    await flushEffects();
+    const composerFocused = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(composerFocused).toContain('/ for a command · tab for the result menu…');
+    expect(composerFocused).not.toContain('Choose an action above');
     ui.unmount();
   });
 
@@ -1584,6 +1772,298 @@ describe('WorkflowScreen when the final review passes', () => {
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame())).not.toContain('Applying to your checkout');
     });
+    ui.unmount();
+  });
+});
+
+describe('WorkflowScreen handing a slash command from a live panel to the composer', () => {
+  let projectDir = '';
+  const brief = taskId('T001');
+
+  beforeEach(() => {
+    resetAllStores();
+    projectDir = createTempDir('workflow-panel-slash');
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    runWorkflow.mockReset();
+  });
+
+  afterEach(() => {
+    resetAllStores();
+    if (projectDir) cleanupTempDir(projectDir);
+  });
+
+  function startBrief(opts: RunWorkflowOptions): void {
+    publishEvent(opts, {
+      type: 'workflow_started',
+      ts: FIXED_TS,
+      phase: 'implementing',
+      feature: 'panel slash',
+    });
+    publishEvent(opts, {
+      type: 'task_started',
+      ts: FIXED_TS + 1,
+      phase: 'implementing',
+      taskId: brief,
+      title: 'Panel brief',
+      index: 0,
+      total: 1,
+      file: 'src/a.ts',
+      action: 'modify',
+      tool: 'opencode',
+      model: 'panel-model',
+    });
+  }
+
+  function openChecksCard(answers: unknown[]): void {
+    navigatePreparedWorkflow(projectDir, 'panel slash');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'final-review',
+        feature: 'panel slash',
+      });
+      void openReviewChecksPrompt({
+        scope: 'final',
+        commands: [{ id: 'V1', command: 'npm test', reason: 'The tests cover the change.' }],
+      }).then((answer) => answers.push(answer));
+      return pendingWorkflow();
+    });
+  }
+
+  function askPlannerQuestion(replies: unknown[]): void {
+    navigatePreparedWorkflow(projectDir, 'panel slash');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'researching',
+        feature: 'panel slash',
+      });
+      void opts.callbacks
+        .onPlannerReply?.({
+          call: 'research',
+          text: '',
+          questions: [
+            {
+              id: 'scope',
+              type: 'choice',
+              text: 'Which module should change?',
+              options: ['src/auth.ts', 'src/session.ts'],
+              default: 'src/auth.ts',
+            },
+          ],
+          answers: [],
+          answered: false,
+        })
+        .then((reply) => replies.push(reply));
+      return pendingWorkflow();
+    });
+  }
+
+  async function typeSlashSettings(ui: ReturnType<typeof renderFeature>): Promise<void> {
+    for (const key of '/settings') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    ui.stdin.write('\r');
+  }
+
+  it('runs a slash command typed over the stop sheet and names the sheet in the placeholder', async () => {
+    navigatePreparedWorkflow(projectDir, 'panel slash');
+    runWorkflow.mockImplementation(async (opts) => {
+      startBrief(opts);
+      return pendingWorkflow();
+    });
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Message BUILD on T001');
+    });
+
+    overlayStore.open('stop-sheet');
+    await flushEffects();
+    const sheetOpen = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(sheetOpen).toContain('Stop options');
+    expect(sheetOpen).toContain('Choose an action above…');
+    expect(sheetOpen).not.toContain('Message BUILD on T001');
+
+    await typeSlashSettings(ui);
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    expect(stopStore.get().intent).toBe('none');
+    ui.unmount();
+  });
+
+  it('does not stop on an Enter read in the same stdin dispatch as a slash typed over the stop sheet', async () => {
+    navigatePreparedWorkflow(projectDir, 'panel slash');
+    runWorkflow.mockImplementation(async (opts) => {
+      startBrief(opts);
+      return pendingWorkflow();
+    });
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Message BUILD on T001');
+    });
+    overlayStore.open('stop-sheet');
+    await flushEffects();
+
+    ui.stdin.write('/');
+    ui.stdin.write('\r');
+    await flushEffects();
+    await tick(30);
+
+    expect(stopStore.get().intent).toBe('none');
+    expect(overlayStore.get().active).not.toBe('stop-sheet');
+    ui.unmount();
+  });
+
+  it('runs a slash command typed over the reviewer checks card and names the card in the placeholder', async () => {
+    const answers: unknown[] = [];
+    openChecksCard(answers);
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    const cardFocused = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(cardFocused).toContain('Choose an action above, or tab to type a message…');
+    expect(cardFocused).not.toContain('Message REVIEW');
+
+    await typeSlashSettings(ui);
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    await flushEffects();
+    expect(answers).toEqual([]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
+    ui.unmount();
+  });
+
+  it('does not run the reviewer checks on an Enter read in the same stdin dispatch as the slash', async () => {
+    const answers: unknown[] = [];
+    openChecksCard(answers);
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+
+    ui.stdin.write('/');
+    ui.stdin.write('\r');
+    await flushEffects();
+    await tick(30);
+    ui.stdin.write('\b');
+    await flushEffects();
+
+    expect(answers).toEqual([]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
+    ui.unmount();
+  });
+
+  it('runs a slash command typed over the planner question without answering it', async () => {
+    const replies: unknown[] = [];
+    askPlannerQuestion(replies);
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+
+    await typeSlashSettings(ui);
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    await flushEffects();
+    expect(replies).toEqual([]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
+    ui.unmount();
+  });
+
+  it('names the planner question in the placeholder while it holds the keys, and the instruction past its last row', async () => {
+    askPlannerQuestion([]);
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    const panelFocused = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(panelFocused).toContain('Answer the question above…');
+    expect(panelFocused).not.toContain('New instruction');
+
+    for (const key of ['\x1b[B', '\x1b[B', '\x1b[B']) {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    const composerFocused = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(composerFocused).toContain('New instruction — replaces these questions…');
+    expect(composerFocused).not.toContain('Answer the question above…');
+    ui.unmount();
+  });
+
+  it('runs only the slash command typed over the stop sheet above the reviewer checks card', async () => {
+    const answers: unknown[] = [];
+    openChecksCard(answers);
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    overlayStore.open('stop-sheet');
+    await flushEffects();
+
+    await typeSlashSettings(ui);
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    await flushEffects();
+    expect(onRuntimeCommand.mock.calls).toEqual([['/settings']]);
+    expect(answers).toEqual([]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
+    ui.unmount();
+  });
+
+  it('runs only the slash command typed over the stop sheet above the planner question', async () => {
+    const replies: unknown[] = [];
+    askPlannerQuestion(replies);
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    overlayStore.open('stop-sheet');
+    await flushEffects();
+
+    await typeSlashSettings(ui);
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
+    });
+    await flushEffects();
+    expect(onRuntimeCommand.mock.calls).toEqual([['/settings']]);
+    expect(replies).toEqual([]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
     ui.unmount();
   });
 });

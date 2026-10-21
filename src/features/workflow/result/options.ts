@@ -22,6 +22,7 @@ export interface ResultMenuInput {
 
 export const RESULT_MENU_LEGEND = '↑↓ select · ⏎ confirm · tab type a command';
 export const RESULT_MENU_UNFOCUSED_LEGEND = 'tab back to the actions';
+export const RESULT_MENU_COMPOSER_HINT = 'Choose an action above, or tab to type a command…';
 
 export function resultMenuRows(input: ResultMenuInput): ResultRow[] {
   if (input.confirming) {

@@ -352,6 +352,8 @@
 - While a halt waits on a named BUILD profile, `/crew build` changes that profile, and *Try again* runs the brief on the seat you saved. Before, the save went to the default profile.
 - When a brief does not fit the BUILD profile it was moved to, the halt names that profile, so `/crew build` changes it and *Try again* runs the brief on the new seat. Before, *Try again* raised the same halt each time.
 - A seat that goes down now moves to its declared fallback when the fallback tool is installed and can call the fallback's model, also in a headless run, a fresh clone or CI, and for a model on a provider set up only in the tool's own config. Before, the halt called the fallback not installed or not signed in until SPLITBRIEF had checked the tools once on the home screen.
+- A slash command typed while the result menu, a halt menu, the stop menu, the reviewer checks card or a planner question holds the keys now goes to the composer and runs. Enter no longer applies the run or picks an action by accident.
+- The composer hint now says what the focused menu takes, and no longer contradicts the menu's own key legend.
 
 ## [0.1.0] - 2026-08-07
 

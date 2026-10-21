@@ -2,12 +2,22 @@ import { plainUserMessage } from '../../core/types/user-input.js';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Box } from 'ink';
 import { StopMenu } from '../../features/workflow/stop/menu.js';
-import { readStopMenuRows, stopMenuLayout } from '../../features/workflow/stop/options.js';
+import {
+  readStopMenuRows,
+  STOP_SHEET_COMPOSER_HINT,
+  stopMenuLayout,
+} from '../../features/workflow/stop/options.js';
 import { ResultMenu } from '../../features/workflow/result/menu.js';
-import { resultMenuHeight } from '../../features/workflow/result/options.js';
+import {
+  RESULT_MENU_COMPOSER_HINT,
+  resultMenuHeight,
+} from '../../features/workflow/result/options.js';
 import { resultMenuStore } from '../../stores/workflow/result-menu.js';
 import { ReviewChecksCard } from '../../features/workflow/review-checks/card.js';
-import { reviewChecksCardLayout } from '../../features/workflow/review-checks/options.js';
+import {
+  REVIEW_CHECKS_COMPOSER_HINT,
+  reviewChecksCardLayout,
+} from '../../features/workflow/review-checks/options.js';
 import { reviewChecksPromptStore } from '../../stores/review-checks-prompt/prompt.js';
 import { showRunDiff } from '../../features/workflow/result/show-diff.js';
 import { changedFileCount } from '../../features/workflow/closed/projections.js';
@@ -379,6 +389,38 @@ export function WorkflowScreen({
   const covered = preparationStore.use(
     (state) => state.kind === 'blocked' || state.kind === 'failed',
   );
+  const questionPanelFocused = structuredQuestion && questionState.focus !== 'composer';
+  // The panel that holds the keys lets go of them for a typed slash command. The stop sheet covers
+  // the panel below it, so closing the sheet releases that panel too and Enter reaches the composer.
+  const below = recoveryPromptOpen
+    ? {
+        focused: recoveryMenuFocused,
+        release: () => setRecoveryFocus({ key: recoveryFocusKey, menu: false }),
+      }
+    : ready !== undefined
+      ? {
+          focused: resultMenuFocused,
+          release: () => setResultFocus({ key: resultFocusKey, menu: false }),
+        }
+      : checksRequest !== null
+        ? {
+            focused: checksCardFocused,
+            release: () => setChecksFocus({ request: checksRequest, menu: false }),
+          }
+        : structuredQuestion && questionState.focus === 'menu'
+          ? { focused: true, release: () => questionPromptStore.setFocus('composer') }
+          : undefined;
+  const takeKeys =
+    covered || model.promptPending
+      ? undefined
+      : stopMenuOpen
+        ? () => {
+            overlayStore.close();
+            below?.release();
+          }
+        : model.hasOverlay || !below?.focused
+          ? undefined
+          : below.release;
   const legend =
     model.atRestRecord === undefined && !model.applying
       ? model.inputHint
@@ -451,15 +493,23 @@ export function WorkflowScreen({
             commands={commands}
             mode={model.inputMode.mode}
             inputHint={
-              recoveryPromptOpen && recoveryIssue !== null
-                ? recoveryComposerHint(recoveryIssue, recoveryMenuFocused, stopMenuOpen)
-                : structuredQuestion
-                  ? 'New instruction — replaces these questions…'
-                  : plannerQuestions !== undefined
-                    ? model.inputMode.hint
-                    : model.inputHint
+              stopMenuOpen
+                ? STOP_SHEET_COMPOSER_HINT
+                : recoveryPromptOpen && recoveryIssue !== null
+                  ? recoveryComposerHint(recoveryIssue, recoveryMenuFocused)
+                  : resultMenuFocused
+                    ? RESULT_MENU_COMPOSER_HINT
+                    : checksCardFocused
+                      ? REVIEW_CHECKS_COMPOSER_HINT
+                      : questionPanelFocused
+                        ? 'Answer the question above…'
+                        : structuredQuestion
+                          ? 'New instruction — replaces these questions…'
+                          : plannerQuestions !== undefined
+                            ? model.inputMode.hint
+                            : model.inputHint
             }
-            questionPanelFocused={structuredQuestion && questionState.focus !== 'composer'}
+            questionPanelFocused={questionPanelFocused}
             onReturnToQuestion={structuredQuestion ? returnToQuestion : undefined}
             questionEpoch={model.questionEpoch}
             feedbackHint={legend}
@@ -493,6 +543,7 @@ export function WorkflowScreen({
                       },
                     }
                   : {})}
+            onTakeKeys={takeKeys}
             onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
             {...(byline !== undefined && { byline })}
             {...(reviewArtifact !== null

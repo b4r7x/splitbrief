@@ -10,6 +10,7 @@ import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
+import { slashHandoffPending } from '../slash-handoff.js';
 import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
 import { PromptBody } from './prompt-body.js';
 import {
@@ -128,11 +129,13 @@ export function RecoveryMenu({
     initialIndex: initialAction,
     isActive: focused,
     keyOf: (item) => item.action,
+    shouldHandleInput: () => !slashHandoffPending(),
     onSelect: chooseAction,
   });
 
   useInput(
     (input, key) => {
+      if (slashHandoffPending()) return;
       // A letter is the row's own key; one that matches no offered row does nothing.
       if (input.length === 1 && !key.ctrl && !key.meta) {
         const letter = input.toLowerCase();
