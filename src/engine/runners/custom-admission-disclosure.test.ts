@@ -64,7 +64,7 @@ afterEach(() => {
 });
 
 describe('prepareCustomRunnerAdmission', () => {
-  it('requires one exact interactive confirmation, persists a receipt, and returns the re-admitted token', async () => {
+  it('admits on the exact phrase with no reason, persists a receipt, and returns the re-admitted token', async () => {
     const projectDir = createTempDir('custom-admission-interactive-project');
     const stateDir = createTempDir('custom-admission-interactive-state');
     directories.push(projectDir, stateDir);
@@ -77,11 +77,7 @@ describe('prepareCustomRunnerAdmission', () => {
         taskId: taskId('T001'),
         onTieredApproval: async (request) => {
           requests.push(request);
-          return {
-            decision: 'confirm',
-            phrase: CONFIRM_PHRASE,
-            reason: 'I reviewed this command.',
-          };
+          return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: '' };
         },
       }),
     );
@@ -121,14 +117,6 @@ describe('prepareCustomRunnerAdmission', () => {
           decision: 'confirm' as const,
           phrase: 'I agree',
           reason: 'Reviewed.',
-        }),
-      },
-      {
-        name: 'blank reason',
-        respond: async () => ({
-          decision: 'confirm' as const,
-          phrase: CONFIRM_PHRASE,
-          reason: '   ',
         }),
       },
     ];

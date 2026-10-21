@@ -64,6 +64,20 @@ describe('confirm gate keys and legends', () => {
     ]);
   });
 
+  it('offers a runner trust no reason row, and keeps it on every protected write', () => {
+    expect(getConfirmOptions('runner_trust').map((option) => option.key)).toEqual(['y', 'x']);
+    for (const actionClass of [
+      'write_out_of_scope',
+      'package_change',
+      'sensitive_change',
+      'destructive',
+    ] as const) {
+      expect(getConfirmOptions(actionClass).map((option) => option.label)).toContain(
+        'Confirm with a reason',
+      );
+    }
+  });
+
   it('teaches ⏎ as confirm and esc as deny on both steps', () => {
     expect(CONFIRM_HINT).toEqual({ key: '⏎', verb: 'confirm' });
     expect(CONFIRM_REASON_HINTS).toBe('⏎ confirm · esc deny');

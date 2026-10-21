@@ -41,10 +41,7 @@ export async function promptCustomRunnerDisclosure(
   try {
     const phrase = await prompt(`Type ${CONFIRM_PHRASE} to trust this exact configured runner: `);
     if (phrase.trim() !== CONFIRM_PHRASE) return deny('Configured runner trust was not confirmed.');
-
-    const reason = await prompt('Why do you trust this runner? ');
-    if (reason.trim().length === 0) return deny('Configured runner trust requires a reason.');
-    return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: reason.trim() };
+    return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: '' };
   } catch {
     return deny('Configured runner trust prompt was cancelled.');
   }

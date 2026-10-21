@@ -1032,10 +1032,10 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ### Symptom: `invalid_confirm_phrase` — the confirmation rejected my input
 
-**Likely cause:** The engine requires every confirmation response to carry the literal phrase `I confirm` (capital I, space, lowercase confirm) and a non-empty reason. The TUI supplies both for you once you make the keyed gesture, so this error means the response came from somewhere else: the configured-runner trust prompt, or a custom `onTieredApproval` callback that sent a different phrase or an empty reason.
+**Likely cause:** The engine requires every confirmation response to carry the literal phrase `I confirm` (capital I, space, lowercase confirm) and a non-empty reason. The TUI supplies both for you once you make the keyed gesture, so this error means the response came from somewhere else: a custom `onTieredApproval` callback that sent a different phrase or an empty reason. The runner trust prompt never raises this error: an answer without the exact phrase leaves the runner untrusted (see *Project config declares a shell runner command that this machine has not trusted*).
 
 **Fix:**
-1. In the TUI, press Enter (destructive class) or `y` (every other protected class). Press `r` first if you want to record a reason. Escape denies.
+1. In the TUI, press Enter (destructive class) or `y` (every other protected class). On a protected write, press `r` first if you want to record a reason. Escape denies.
 2. In a custom callback, return `{ decision: 'confirm', phrase: CONFIRM_PHRASE, reason }` with `reason` non-empty.
 
 **Prevention:** Import `CONFIRM_PHRASE` from `src/core/approval/types.ts` rather than retyping the literal.

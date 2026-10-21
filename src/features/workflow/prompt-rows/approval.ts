@@ -245,12 +245,12 @@ export function getConfirmPrimaryKey(actionClass: ActionClass): string {
   return isIrreversibleActionClass(actionClass) ? '' : 'y';
 }
 
+// A runner trust stores a receipt of the exact runner and nothing else, so it asks for no reason.
 export function getConfirmOptions(actionClass: ActionClass): ReadonlyArray<ApprovalOption> {
-  return [
-    { key: getConfirmPrimaryKey(actionClass), label: 'Confirm' },
-    { key: 'r', label: 'Confirm with a reason' },
-    { key: 'x', label: 'Deny' },
-  ];
+  const confirm = { key: getConfirmPrimaryKey(actionClass), label: 'Confirm' };
+  const deny = { key: 'x', label: 'Deny' };
+  if (actionClass === 'runner_trust') return [confirm, deny];
+  return [confirm, { key: 'r', label: 'Confirm with a reason' }, deny];
 }
 
 /**
@@ -450,6 +450,7 @@ function getConfirmRows(actionClass: ActionClass, actionDescription: string, col
       wrappedRows(fitKeyLegend(CHOOSE_HINTS, width), width),
       wrappedRows(fitKeyLegend(CONFIRM_NUDGE, width), width),
     );
+  if (!options.some((option) => option.key === 'r')) return BORDER_ROWS + chooseStepRows;
   const reasonStepRows =
     subjectRows +
     wrappedRows(CONFIRM_QUESTION, width) +

@@ -6,9 +6,9 @@ import {
 } from './custom-runner-prompts.js';
 
 describe('custom runner CLI prompts', () => {
-  it('shows the canonical disclosure and returns an exact confirmed response with a reason', async () => {
+  it('shows the canonical disclosure and confirms on the exact phrase alone', async () => {
     const rendered: string[] = [];
-    const answers = [CONFIRM_PHRASE, 'I reviewed the executable and its declared environment.'];
+    const questions: string[] = [];
 
     const response = await promptCustomRunnerDisclosure({
       request: {
@@ -18,22 +18,22 @@ describe('custom runner CLI prompts', () => {
         phase: 'planning',
       },
       options: {
-        prompt: async () => answers.shift() ?? '',
+        prompt: async (question) => {
+          questions.push(question);
+          return CONFIRM_PHRASE;
+        },
         write: (text) => rendered.push(text),
       },
     });
 
-    expect(response).toEqual({
-      decision: 'confirm',
-      phrase: CONFIRM_PHRASE,
-      reason: 'I reviewed the executable and its declared environment.',
-    });
+    expect(response).toMatchObject({ decision: 'confirm', phrase: CONFIRM_PHRASE });
+    expect(questions).toEqual([`Type ${CONFIRM_PHRASE} to trust this exact configured runner: `]);
     expect(rendered.join('')).toContain('Canonical configured-runner disclosure');
   });
 
   it.each([
-    ['a different confirmation phrase', ['I agree', 'Reviewed.']],
-    ['a blank confirmation reason', [CONFIRM_PHRASE, '  ']],
+    ['a different confirmation phrase', ['I agree']],
+    ['a blank answer', ['  ']],
   ] as const)('fails closed for %s', async (_label, answers) => {
     let answerIndex = 0;
     const response = await promptCustomRunnerDisclosure({
