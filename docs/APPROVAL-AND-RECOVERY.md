@@ -415,7 +415,7 @@ Apply has no safe cancel, so an Apply that runs in this window keeps the run scr
 
 The wait applies only to an Apply that runs in this window. Another window that opens the run while this one applies it shows Apply as the current stage, the byline `Running in another process` and the placeholder `/ for a command · ⏎ for home…`: there, Esc, a bare Enter and `/home` go home at once, and the Apply in the first window goes on.
 
-Other commands run at once while this window's Apply writes. The command palette, `/help` and `/` completion do not offer `/stop`, `/resume`, `/steer`, `/end` or `/run`. A typed `/resume`, `/steer`, `/end` or `/run` reports `Apply is still writing to your checkout.`, and the sessions list opens no run until Apply finishes. Nothing can stop Apply: `/stop` reports `Nothing to stop: Apply finishes on its own.` and opens no session options.
+Other commands run at once while this window's Apply writes. The command palette, `/help` and `/` completion do not offer `/stop`, `/resume`, `/steer`, `/end` or `/run`. A typed `/resume`, `/steer`, `/end` or `/run` reports `Apply is still writing to your checkout.`, and the sessions list opens no run until Apply finishes. When Apply finishes, that message leaves the footer and the sessions list at once. Nothing can stop Apply: `/stop` reports `Nothing to stop: Apply finishes on its own.` and opens no session options.
 
 ## Partial Apply recovery
 
