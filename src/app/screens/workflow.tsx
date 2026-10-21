@@ -92,6 +92,7 @@ import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { formatSubmissionFailure } from '../../components/composer/home-hint.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 
@@ -397,9 +398,13 @@ export function WorkflowScreen({
   const covered = preparationStore.use(
     (state) => state.kind === 'blocked' || state.kind === 'failed',
   );
+  // An overlay, a pending prompt or the problem panel holds the keys. Then neither the composer nor
+  // a panel on this screen reads them.
+  const keysHeldAbove = model.hasOverlay || model.promptPending || covered;
   const questionPanelFocused = structuredQuestion && questionState.focus !== 'composer';
-  // The panel that holds the keys lets go of them for a typed slash command. The stop sheet covers
-  // the panel below it, so closing the sheet releases that panel too and Enter reaches the composer.
+  // The panel that holds the keys lets go of them for a command requested into the composer, typed
+  // as a slash or picked in the palette. The stop sheet covers the panel below it, so closing the
+  // sheet releases that panel too and Enter reaches the composer.
   const below = recoveryPromptOpen
     ? {
         focused: recoveryMenuFocused,
@@ -429,6 +434,12 @@ export function WorkflowScreen({
         : model.hasOverlay || !below?.focused
           ? undefined
           : below.release;
+  const commandRequest = composerDraftStore.use((state) =>
+    state.request?.kind === 'command' ? state.request.epoch : null,
+  );
+  useLayoutEffect(() => {
+    if (commandRequest !== null) takeKeys?.();
+  }, [commandRequest]);
   const legend =
     model.atRestRecord === undefined && !model.applying
       ? model.inputHint
@@ -467,9 +478,7 @@ export function WorkflowScreen({
                   files={changedFiles}
                   confirming={confirming}
                   onConfirmingChange={setConfirming}
-                  focused={
-                    resultMenuFocused && !model.hasOverlay && !model.promptPending && !covered
-                  }
+                  focused={resultMenuFocused && !keysHeldAbove}
                   onFocusChange={(menu) => setResultFocus({ key: resultFocusKey, menu })}
                   onCommand={model.handleRuntimeCommand}
                   onShowDiff={() => {
@@ -480,9 +489,7 @@ export function WorkflowScreen({
                 <ReviewChecksCard
                   request={checksRequest}
                   height={promptBoxRows}
-                  focused={
-                    checksCardFocused && !model.hasOverlay && !model.promptPending && !covered
-                  }
+                  focused={checksCardFocused && !keysHeldAbove}
                   onFocusChange={(menu) => setChecksFocus({ request: checksRequest, menu })}
                 />
               ) : undefined
@@ -551,7 +558,7 @@ export function WorkflowScreen({
                       },
                     }
                   : {})}
-            onTakeKeys={takeKeys}
+            panelHoldsKeys={takeKeys !== undefined}
             onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
             {...(byline !== undefined && { byline })}
             {...(reviewArtifact !== null
@@ -562,7 +569,7 @@ export function WorkflowScreen({
                 }
               : {})}
             reviewEpoch={model.inputMode.mode === 'review' ? reviewOwnerToken : undefined}
-            disabled={model.hasOverlay || model.promptPending || covered}
+            disabled={keysHeldAbove}
           />
         </Box>
       }
@@ -609,7 +616,7 @@ export function WorkflowScreen({
             width={getChromeContentWidth(cols)}
             clampedBoxRows={promptBoxRows}
             recoveryIssue={recoveryPromptOpen ? recoveryIssue : null}
-            recoveryMenuFocused={recoveryMenuFocused}
+            recoveryMenuFocused={recoveryMenuFocused && !keysHeldAbove}
             onRecoveryFocusChange={(menuFocused) => {
               setRecoveryFocus({ key: recoveryFocusKey, menu: menuFocused });
             }}
@@ -618,7 +625,7 @@ export function WorkflowScreen({
             planner={
               structuredQuestion
                 ? {
-                    disabled: model.hasOverlay || model.promptPending || covered,
+                    disabled: keysHeldAbove,
                     onAnswer: answerQuestion,
                     onCompose: composeAnswer,
                     onPrevious: () => questionPromptStore.previous(),
