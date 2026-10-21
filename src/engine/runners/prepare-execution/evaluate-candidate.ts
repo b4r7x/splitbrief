@@ -474,6 +474,8 @@ export const REPO_LOCAL_RUNNER_FIX: Readonly<Record<PreparationPolicy['purpose']
   review: 'Use a system-installed command, or run `splitbrief review --allow-repo-runners`.',
 };
 
+const RUNNER_KIND_WITH_ARTICLE = { shell: 'a shell', agent: 'an agent' } as const;
+
 /**
  * A refused inline runner is usually untrusted, but it can also be absent or
  * changed. Naming which one is the difference between an actionable block and
@@ -484,15 +486,16 @@ export function inlineRunnerRefusal(
   kind: 'shell' | 'agent',
 ): Readonly<{ reason: string; fix: string }> {
   const status = admission.kind === 'denied' ? admission.status : 'untrusted';
+  const declared = `Project config declares ${RUNNER_KIND_WITH_ARTICLE[kind]} runner command`;
   switch (status) {
     case 'missing':
       return {
-        reason: `Project config declares a ${kind} runner command that does not exist on this machine.`,
+        reason: `${declared} that does not exist on this machine.`,
         fix: 'Install the command or correct its path in .splitbrief/config.yaml, then retry.',
       };
     case 'non-executable':
       return {
-        reason: `Project config declares a ${kind} runner command that is not executable.`,
+        reason: `${declared} that is not executable.`,
         fix: 'Make the command executable or correct its path in .splitbrief/config.yaml, then retry.',
       };
     case 'drifted':
@@ -502,7 +505,7 @@ export function inlineRunnerRefusal(
       };
     default:
       return {
-        reason: `Project config declares a ${kind} runner command that this machine has not trusted.`,
+        reason: `${declared} that this machine has not trusted.`,
         fix: INLINE_RUNNER_GRANT_FIX,
       };
   }
