@@ -29,7 +29,13 @@ export function ConversationTranscriptRows({
             key={rowValue.key}
             row={rowValue}
             lifecycle={
-              isActive ? 'live' : rowValue.kind === 'task-header' ? (restMark ?? 'active') : 'done'
+              isActive
+                ? 'live'
+                : rowValue.kind !== 'task-header'
+                  ? 'done'
+                  : rowValue.key === activeTaskHeaderKey
+                    ? (restMark ?? 'active')
+                    : 'cancelled'
             }
             focused={focusedTranscriptIndex === index}
           />

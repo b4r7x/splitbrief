@@ -28,6 +28,7 @@ import { scenarioId } from '#testing/visual/contracts/identifiers.js';
 
 const QUEUED_MARK = glyph('statusPending');
 const LIVE_MARK = glyph('statusInProgress');
+const STOPPED_MARK = glyph('statusCancelled');
 const FOCUS_MARK = glyph('liveBar');
 const COMPLETED_HEADER = 'Completed';
 
@@ -260,7 +261,7 @@ describe('ConversationFlow', () => {
   });
 
   it.each([false, true])(
-    'keeps an abandoned header in progress with a following brief=%s',
+    'marks a reset attempt stopped, and only the brief the run is on live, with a following brief=%s',
     (following) => {
       const first = makeTaskStart({ title: 'Abandoned brief' });
       const next = makeTaskStart({ taskId: taskId('T002'), title: 'Running brief' });
@@ -282,20 +283,90 @@ describe('ConversationFlow', () => {
         20,
         120,
       );
-      lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
-      ui.rerender(<ConversationFlow height={20} conversationWidth={120} contentWidth={120} />);
-      const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-      expect(lines.find((line) => line.includes('Abandoned brief'))).toContain(`${LIVE_MARK} T001`);
-      if (following) {
-        expect(lines.find((line) => line.includes('Running brief'))).toContain(`${LIVE_MARK} T002`);
+      for (const status of ['running', 'paused'] as const) {
+        lifecycleStore.__testReset({ status, phase: 'implementing' });
+        ui.rerender(<ConversationFlow height={20} conversationWidth={120} contentWidth={120} />);
+        const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+        expect(lines.find((line) => line.includes('Abandoned brief'))).toContain(
+          `${STOPPED_MARK} T001`,
+        );
+        if (following) {
+          expect(lines.find((line) => line.includes('Running brief'))).toContain(
+            `${LIVE_MARK} T002`,
+          );
+        }
       }
-      lifecycleStore.__testReset({ status: 'paused', phase: 'implementing' });
+      ui.unmount();
+    },
+  );
+
+  it.each(['running', 'paused'] as const)(
+    'keeps the one header of a brief its recovery restarted live while the run is %s',
+    (status) => {
+      const brief = makeTaskStart({ title: 'Restarted brief' });
+      const ui = renderConversation(
+        [
+          brief,
+          { type: 'task_reset', ts: 1, phase: 'implementing', taskId: brief.taskId },
+          brief,
+          makeRunnerCallActivity({
+            phase: 'implementing',
+            role: 'implementer',
+            taskId: brief.taskId,
+          }),
+        ],
+        20,
+        120,
+      );
+      lifecycleStore.__testReset({ status, phase: 'implementing' });
       ui.rerender(<ConversationFlow height={20} conversationWidth={120} contentWidth={120} />);
-      expect(
-        stripAnsiStyles(ui.lastFrame() ?? '')
-          .split('\n')
-          .find((line) => line.includes('Abandoned brief')),
-      ).toContain(`${LIVE_MARK} T001`);
+      const headers = stripAnsiStyles(ui.lastFrame() ?? '')
+        .split('\n')
+        .filter((line) => line.includes('Restarted brief'));
+      expect(headers).toHaveLength(1);
+      expect(headers[0]).toContain(`${LIVE_MARK} T001`);
+      ui.unmount();
+    },
+  );
+
+  // A partial reject stopped T002, sent T001 back, and the run went on in the same window.
+  it.each(['running', 'paused'] as const)(
+    'marks the stopped attempt of a brief that runs again stopped while the run is %s',
+    (status) => {
+      const t001 = makeTaskStart({ title: 'First brief' });
+      const t002 = makeTaskStart({ taskId: taskId('T002'), title: 'Second brief', index: 1 });
+      const ui = renderConversation(
+        [
+          t001,
+          makeTaskComplete({ taskId: t001.taskId }),
+          t002,
+          makeRunnerCallActivity({
+            phase: 'implementing',
+            role: 'implementer',
+            taskId: t002.taskId,
+          }),
+          { type: 'turn_interrupted', ts: 1, phase: 'implementing' },
+          { type: 'workflow_resumed', ts: 2, phase: 'implementing' },
+          t001,
+          makeTaskComplete({ taskId: t001.taskId }),
+          t002,
+          makeRunnerCallActivity({
+            phase: 'implementing',
+            role: 'implementer',
+            taskId: t002.taskId,
+          }),
+        ],
+        40,
+        120,
+      );
+      lifecycleStore.__testReset({ status, phase: 'implementing' });
+      ui.rerender(<ConversationFlow height={40} conversationWidth={120} contentWidth={120} />);
+      const headers = stripAnsiStyles(ui.lastFrame() ?? '')
+        .split('\n')
+        .filter((line) => line.includes('Second brief'));
+      expect(headers).toHaveLength(2);
+      expect(headers[0]).toContain(`${STOPPED_MARK} T002`);
+      expect(headers[1]).toContain(`${LIVE_MARK} T002`);
       ui.unmount();
     },
   );

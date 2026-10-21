@@ -360,6 +360,7 @@
 - A run that is ready to apply names the crew that built it in the header and the sidebar, also while an Apply halt waits and after you save another crew in Settings or open the run again. Before, it named the crew saved in Settings.
 - After you reject part of a checkout run and continue it in the same window, the transcript shows each block once, also when the planner split a brief into parts. Before, blocks repeated and rows painted over each other until you opened the run again.
 - With task reviews on, the heading of a final review counts the same fix cycles as the halt below it, also for the review Apply starts when your checkout changed a file the run also changed. Before, the heading could read "after 1 fix cycle" while the halt read "after 4 fix cycles".
+- An earlier attempt of a brief that the run stopped or redid now shows the stop mark `×`, so only the brief the run works on shows as in progress. Before, the earlier attempt showed the same in-progress mark as the live brief.
 
 ## [0.1.0] - 2026-08-07
 
