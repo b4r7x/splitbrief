@@ -28,6 +28,7 @@ import { streamingOutputStore } from '../../../stores/workflow/streaming-output.
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { pointerEvent } from '#testing/helpers/mouse-zones.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 
@@ -145,11 +146,6 @@ function dispatchWorkflowPointer(event: MouseEvent): void {
     return;
   }
   if (event.type === 'press') handleWorkflowMousePress(event);
-}
-
-function pointerEvent(type: MouseEvent['type'], x: number, y: number): MouseEvent {
-  const button = type === 'wheel-up' ? 64 : type === 'wheel-down' ? 65 : type === 'move' ? 3 : 0;
-  return { type, x, y, button, shift: false, meta: false, ctrl: false };
 }
 
 describe('workflow pointer handling', () => {

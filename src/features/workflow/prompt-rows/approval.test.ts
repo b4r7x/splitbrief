@@ -11,6 +11,7 @@ import {
   fitConfirmPanel,
   getApprovalConfirmLabel,
   getConfirmOptions,
+  getApprovalPromptRows,
   getConfirmPrimaryKey,
   getReviewDocumentPromptRows,
   reviewArtifactForPhase,
@@ -91,20 +92,122 @@ describe('confirm gate keys and legends', () => {
 
 describe('fitConfirmPanel', () => {
   const actionDescription = ['A: one', `B: ${'word '.repeat(30).trim()}`, 'C: three'].join('\n');
+  const request = {
+    tier: 'confirm',
+    actionClass: 'runner_trust',
+    actionDescription,
+    phase: 'planning',
+  } as const;
+  const fullRows = getApprovalPromptRows({ status: 'pending', request, resolve: () => {} }, 60);
+  const fitIn = (boxRows: number) =>
+    fitConfirmPanel({ actionClass: 'runner_trust', actionDescription, cols: 60, boxRows });
 
-  it('sheds blank rows first, top down', () => {
-    expect(fitConfirmPanel({ actionDescription, cols: 60, promptRows: 20, boxRows: 18 })).toEqual({
-      gaps: { title: false, options: false, legend: true },
+  it('sheds blank rows first, keeping the one above the options longest', () => {
+    expect(fitIn(fullRows - 1)).toMatchObject({
+      framed: true,
+      gaps: { title: false, options: true, legend: true },
+    });
+    expect(fitIn(fullRows - 2)).toMatchObject({
+      framed: true,
+      gaps: { title: false, options: true, legend: false },
       subject: expect.arrayContaining(['A: one', 'C: three']),
+      hidden: 0,
+    });
+    expect(fitIn(fullRows - 3)).toMatchObject({
+      framed: true,
+      gaps: { title: false, options: false, legend: false },
       hidden: 0,
     });
   });
 
-  it('then cuts whole lines from the bottom, counts them and keeps the blank above the options', () => {
-    const fit = fitConfirmPanel({ actionDescription, cols: 60, promptRows: 20, boxRows: 15 });
-    expect(fit.subject).toEqual(['A: one']);
-    expect(fit.hidden).toBe(4);
-    expect(fit.gaps).toEqual({ title: false, options: true, legend: false });
+  it('then drops the border, before any text', () => {
+    expect(fitIn(fullRows - 5)).toMatchObject({
+      framed: false,
+      title: true,
+      gaps: { title: false, options: false, legend: false },
+      label: true,
+      subject: expect.arrayContaining(['A: one', 'C: three']),
+      hidden: 0,
+      options: 2,
+      legend: true,
+    });
+  });
+
+  it('drops the irreversible note, then the label, and keeps the file over both', () => {
+    const destructive = (boxRows: number) =>
+      fitConfirmPanel({
+        actionClass: 'destructive',
+        actionDescription: '.splitbrief/state.json',
+        cols: 120,
+        boxRows,
+      });
+    expect(destructive(8)).toMatchObject({ framed: false, note: true, label: true, hidden: 0 });
+    expect(destructive(7)).toMatchObject({ note: false, label: true, hidden: 0 });
+    expect(destructive(6)).toMatchObject({
+      note: false,
+      label: false,
+      subject: ['.splitbrief/state.json'],
+      hidden: 1,
+      markRow: false,
+      gaps: { options: false, legend: false },
+    });
+  });
+
+  it('drops the label before any disclosure line and lets the title count it', () => {
+    expect(fitIn(9)).toMatchObject({
+      label: false,
+      subject: expect.arrayContaining(['A: one', 'C: three']),
+      hidden: 1,
+      markRow: false,
+    });
+  });
+
+  it('cuts whole lines from the bottom, counts them on a row under them, and keeps a blank row above the options', () => {
+    expect(fitIn(8)).toMatchObject({
+      title: true,
+      label: true,
+      subject: ['A: one'],
+      hidden: 4,
+      markRow: true,
+      gaps: { options: true, legend: false },
+      options: 2,
+      legend: true,
+    });
+  });
+
+  it('lets the title carry the count when a count row and its blank row leave no line, and gives a free row to the label', () => {
+    expect(fitIn(6)).toMatchObject({
+      label: true,
+      subject: ['A: one'],
+      hidden: 4,
+      markRow: false,
+      gaps: { options: false, legend: false },
+    });
+  });
+
+  it('gives the last free row to the first line, lets the title carry the count, then drops the legend before the title', () => {
+    expect(fitIn(5)).toMatchObject({
+      label: false,
+      subject: ['A: one'],
+      hidden: 5,
+      markRow: false,
+      legend: true,
+    });
+    expect(fitIn(4)).toMatchObject({
+      title: true,
+      label: false,
+      subject: [],
+      hidden: 6,
+      markRow: false,
+      options: 2,
+      legend: true,
+    });
+    expect(fitIn(3)).toMatchObject({ title: true, hidden: 6, options: 2, legend: false });
+  });
+
+  it('drops the title last and paints only the option rows the region holds', () => {
+    expect(fitIn(2)).toMatchObject({ title: false, options: 2, legend: false });
+    expect(fitIn(1)).toMatchObject({ title: false, options: 1, legend: false });
   });
 });
 

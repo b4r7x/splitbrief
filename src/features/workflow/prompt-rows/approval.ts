@@ -297,168 +297,172 @@ export function approvalOptionLabelText(input: {
   return approvalOptionLabelLines(input).join(`\n${indent}`);
 }
 
-export const APPROVAL_OPTION_FIRST_ROW_OFFSET = 4;
-
-/** The blank rows the confirm panel paints: two above the options, one below them. */
-const PROMPT_SPACER_ROWS = 3;
-
-export interface ConfirmPanelFit {
-  /** The blank rows kept: under the title, above the options, above the legend. */
-  gaps: { title: boolean; options: boolean; legend: boolean };
-  subject: string[];
-  hidden: number;
+function approvalOptionRows(options: ReadonlyArray<ApprovalOption>, width: number): number[] {
+  const keyWidth = approvalKeyColumnWidth(options);
+  return options.map((option) => approvalOptionLabelLines({ option, keyWidth, width }).length);
 }
 
-/**
- * What a region shorter than the panel takes from it. The blank rows go first, top down: a clipped
- * panel loses its bottom border and its legend — the two things the reader cannot answer the gate
- * without. Past the blanks the disclosure gives way from the bottom, a whole line at a time, because
- * its first lines name what runs. The last kept row counts the cut rows of text, as
- * `clipPromptBodyRows` does, and the blank above the options comes back so that count does not run
- * into the keys.
- */
-export function fitConfirmPanel(input: {
-  actionDescription: string;
-  cols: number;
-  promptRows: number;
-  boxRows: number;
-}): ConfirmPanelFit {
-  const width = approvalTextWidth(input.cols);
-  const lines = formatApprovalActionDescription(input.actionDescription)
-    .split('\n')
-    .map((line) => wrapPathAwareText(line, width).split('\n'));
-  const shed = Math.min(Math.max(0, input.promptRows - input.boxRows), PROMPT_SPACER_ROWS);
-  const overflow = input.promptRows - input.boxRows - PROMPT_SPACER_ROWS;
-  if (overflow <= 0) {
-    const gaps = { title: shed < 1, options: shed < 2, legend: shed < 3 };
-    return { gaps, subject: lines.flat(), hidden: 0 };
-  }
-  const rows = lines.flat();
-  const room = rows.length - overflow - 2;
-  const kept: string[] = [];
-  for (const line of lines) {
-    if (kept.length > 0 && kept.length + line.length > room) break;
-    kept.push(...line);
-  }
-  while (kept.length > 1 && kept.at(-1)?.trim() === '') kept.pop();
+interface ConfirmPanelRows {
+  title: number;
+  label: number;
+  note: number;
+  options: number[];
+  /** The rows that answer: the option rows, or the reason step above its legend, if taller. */
+  answer: number;
+  /** The taller legend: the choose step's or the reason step's. */
+  legend: number;
+  /** The taller step under the options gap: the options and the legend, or the reason step. */
+  core: number;
+}
+
+function confirmPanelRows(actionClass: ActionClass, cols: number): ConfirmPanelRows {
+  const width = approvalTextWidth(cols);
+  const options = getConfirmOptions(actionClass);
+  const optionRows = approvalOptionRows(options, width);
+  const chooseLegend = Math.max(
+    wrappedRows(fitKeyLegend(CHOOSE_HINTS, width), width),
+    wrappedRows(fitKeyLegend(CONFIRM_NUDGE, width), width),
+  );
+  const chooseAnswer = optionRows.reduce((rows, optionRow) => rows + optionRow, 0);
+  const reason = options.some((option) => option.key === 'r');
+  const reasonAnswer = reason
+    ? wrappedRows(CONFIRM_QUESTION, width) + 1 + wrappedRows(CONFIRM_REASON_OPTIONAL, width)
+    : 0;
+  const reasonLegend = reason ? wrappedRows(CONFIRM_REASON_HINTS, width) : 0;
   return {
-    gaps: { title: false, options: true, legend: false },
-    subject: kept,
-    hidden: rows.slice(kept.length).filter((row) => row.trim() !== '').length,
+    title: wrappedRows(approvalTitle(actionClass), width),
+    label: wrappedRows(getApprovalConfirmLabel(actionClass), width),
+    note: isIrreversibleActionClass(actionClass) ? wrappedRows(IRREVERSIBLE_NOTE, width) : 0,
+    options: optionRows,
+    answer: Math.max(chooseAnswer, reasonAnswer),
+    legend: Math.max(chooseLegend, reasonLegend),
+    core: Math.max(chooseAnswer + chooseLegend, reasonAnswer + reasonLegend),
   };
 }
 
-export interface PromptOptionZone {
-  key: string;
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
+export interface ConfirmPanelFit {
+  framed: boolean;
+  title: boolean;
+  /** The blank rows kept: under the title, above the options, above the legend. */
+  gaps: { title: boolean; options: boolean; legend: boolean };
+  label: boolean;
+  subject: string[];
+  /** The cut rows of text, counted on their own row or, with no row for it, after the title. */
+  hidden: number;
+  markRow: boolean;
+  note: boolean;
+  /** How many option rows paint, from the first. */
+  options: number;
+  legend: boolean;
+}
+
+/**
+ * What a region of `boxRows` keeps of the panel. The option rows are the answer and the title is
+ * what the answer decides, so they stay longest. A framed panel gives way first by its blank rows:
+ * the one under the title, then the one above the legend, then the one above the options, so the
+ * facts run into the keys last. A framed panel with no spare row has no blank row. A region too
+ * short for the framed panel without its blank rows drops the border and is filled in this order:
+ * the option rows, the title, the legend, the disclosure, the label, the irreversible note, the
+ * blank row above the options, the blank row above the legend. The label restates the title, so
+ * it gives way before any disclosure line. The disclosure gives way from the bottom, a whole line
+ * at a time, because the first lines name what runs. A row under the kept lines counts the cut
+ * rows, with a blank row under it, as `clipPromptBodyRows` keeps the facts off the keys. With
+ * fewer than three rows for the text, or with every disclosure line in view and only the label
+ * cut, the title carries the count, so no row holds the count alone. A row the whole lines leave
+ * free goes to the label. A region too short for the option rows and the title drops the title,
+ * then the option rows that do not fit, so no row paints or answers outside the region. The reason
+ * step takes the option rows' place and keeps its legend on the same terms.
+ */
+export function fitConfirmPanel(input: {
+  actionClass: ActionClass;
+  actionDescription: string;
+  cols: number;
+  boxRows: number;
+}): ConfirmPanelFit {
+  const width = approvalTextWidth(input.cols);
+  const rows = confirmPanelRows(input.actionClass, input.cols);
+  const lines = formatApprovalActionDescription(input.actionDescription)
+    .split('\n')
+    .map((line) => wrapPathAwareText(line, width).split('\n'));
+  const subjectRows = lines.flat();
+  const factRows = rows.label + subjectRows.length;
+  const spare = input.boxRows - BORDER_ROWS - rows.title - rows.note - rows.core - factRows;
+  if (spare >= 0) {
+    return {
+      framed: true,
+      title: true,
+      gaps: { title: spare >= 3, options: spare >= 1, legend: spare >= 2 },
+      label: true,
+      subject: subjectRows,
+      hidden: 0,
+      markRow: false,
+      note: true,
+      options: rows.options.length,
+      legend: true,
+    };
+  }
+  const optionRows = rows.options.reduce((total, optionRow) => total + optionRow, 0);
+  // The reason step replaces the option rows, so a taller one keeps its rows too.
+  let room = input.boxRows - (rows.answer - optionRows);
+  let options = 0;
+  for (const optionRow of rows.options) {
+    if (optionRow > room) break;
+    room -= optionRow;
+    options += 1;
+  }
+  const title = room >= rows.title;
+  if (title) room -= rows.title;
+  const legend = room >= rows.legend;
+  if (legend) room -= rows.legend;
+  const textRoom = Math.max(0, room);
+  // A count on its own row keeps a blank row under it, so it does not run into the options.
+  const countRow = subjectRows.length > textRoom && textRoom >= 3;
+  const lineRoom = countRow ? textRoom - 2 : textRoom;
+  const subject: string[] = [];
+  for (const line of lines) {
+    if (subject.length + line.length > lineRoom) break;
+    subject.push(...line);
+  }
+  while (subject.at(-1)?.trim() === '') subject.pop();
+  const label = rows.label <= lineRoom - subject.length;
+  const hidden =
+    (label ? 0 : rows.label) +
+    subjectRows.slice(subject.length).filter((row) => row.trim() !== '').length;
+  const markRow = countRow && hidden > 0 && (label || subject.length > 0);
+  room -= (label ? rows.label : 0) + subject.length + (markRow ? 1 : 0);
+  const note = room - (markRow ? 1 : 0) >= rows.note;
+  if (note) room -= rows.note;
+  return {
+    framed: false,
+    title,
+    gaps: { title: false, options: room >= 1, legend: room >= 2 },
+    label,
+    subject,
+    hidden,
+    markRow,
+    note,
+    options,
+    legend,
+  };
 }
 
 export function approvalSubjectRowCount(actionDescription: string, cols: number): number {
   return pathAwareRows(formatApprovalActionDescription(actionDescription), approvalTextWidth(cols));
 }
 
-function approvalOptionRowCount(
-  options: ReadonlyArray<ApprovalOption>,
-  width: number,
-  keyWidth: number,
-): number {
-  return options.reduce(
-    (rows, option) => rows + approvalOptionLabelLines({ option, keyWidth, width }).length,
-    0,
-  );
-}
-
-export function getApprovalOptionZones(input: {
-  boxTop: number;
-  cols: number;
-  promptRows: number;
-  subjectRows: number;
-  options: ReadonlyArray<ApprovalOption>;
-  leadShed: number;
-}): PromptOptionZone[] {
-  const width = approvalTextWidth(input.cols);
-  const keyWidth = approvalKeyColumnWidth(input.options);
-  const left = 1;
-  const right = Math.max(1, input.cols);
-  const boxBottom = input.boxTop + input.promptRows - 1;
-  const zones: PromptOptionZone[] = [];
-  let offset = APPROVAL_OPTION_FIRST_ROW_OFFSET + input.subjectRows - input.leadShed;
-  for (const option of input.options) {
-    const optionRows = approvalOptionLabelLines({ option, keyWidth, width }).length;
-    const top = input.boxTop + offset;
-    const bottom = top + optionRows - 1;
-    offset += optionRows;
-    if (bottom > boxBottom) break;
-    zones.push({ key: option.key, left, right, top, bottom });
-  }
-  return zones;
-}
-
-export function confirmSubjectRowCount(input: {
-  actionClass: ActionClass;
-  actionDescription: string;
-  cols: number;
-}): number {
-  const { actionClass, actionDescription, cols } = input;
-  const width = approvalTextWidth(cols);
-  return (
-    wrappedRows(getApprovalConfirmLabel(actionClass), width) +
-    approvalSubjectRowCount(actionDescription, cols) +
-    (isIrreversibleActionClass(actionClass) ? wrappedRows(IRREVERSIBLE_NOTE, width) : 0)
-  );
-}
-
-export function getConfirmOptionZones(input: {
-  boxTop: number;
-  cols: number;
-  promptRows: number;
-  boxRows: number;
-  actionClass: ActionClass;
-  actionDescription: string;
-}): PromptOptionZone[] {
-  const { gaps, subject, hidden } = fitConfirmPanel(input);
-  return getApprovalOptionZones({
-    boxTop: input.boxTop,
-    cols: input.cols,
-    promptRows: input.boxRows,
-    subjectRows:
-      confirmSubjectRowCount(input) -
-      approvalSubjectRowCount(input.actionDescription, input.cols) +
-      subject.length +
-      (hidden > 0 ? 1 : 0),
-    options: getConfirmOptions(input.actionClass),
-    leadShed: (gaps.title ? 0 : 1) + (gaps.options ? 0 : 1),
-  });
-}
-
 function getConfirmRows(actionClass: ActionClass, actionDescription: string, cols: number): number {
-  const width = approvalTextWidth(cols);
-  const options = getConfirmOptions(actionClass);
-  const subjectRows =
-    wrappedRows(approvalTitle(actionClass), width) +
+  const rows = confirmPanelRows(actionClass, cols);
+  return (
+    BORDER_ROWS +
+    rows.title +
     1 +
-    confirmSubjectRowCount({ actionClass, actionDescription, cols }) +
-    1;
-  const chooseStepRows =
-    subjectRows +
-    approvalOptionRowCount(options, width, approvalKeyColumnWidth(options)) +
+    rows.label +
+    approvalSubjectRowCount(actionDescription, cols) +
+    rows.note +
     1 +
-    Math.max(
-      wrappedRows(fitKeyLegend(CHOOSE_HINTS, width), width),
-      wrappedRows(fitKeyLegend(CONFIRM_NUDGE, width), width),
-    );
-  if (!options.some((option) => option.key === 'r')) return BORDER_ROWS + chooseStepRows;
-  const reasonStepRows =
-    subjectRows +
-    wrappedRows(CONFIRM_QUESTION, width) +
-    1 +
-    wrappedRows(CONFIRM_REASON_OPTIONAL, width) +
-    1 +
-    wrappedRows(CONFIRM_REASON_HINTS, width);
-  return BORDER_ROWS + Math.max(chooseStepRows, reasonStepRows);
+    rows.core +
+    1
+  );
 }
 
 export function getApprovalPromptRows(state: ApprovalPromptState, cols: number): number {

@@ -450,6 +450,48 @@ describe('short-viewport clamp on the confirm panel', () => {
     await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
+
+  it('keeps the file over the label and lets the title count the cut label', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const pending = openApprovalPrompt(makeConfirmRequest('.env.local', 'sensitive_change'));
+    const ui = render(<ApprovalPrompt clampedBoxRows={6} />);
+    await tick(PAST_GRACE);
+
+    const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
+    expect(lines).toHaveLength(6);
+    expect(lines[0]).toContain(approvalTitle('sensitive_change'));
+    expect(lines[0]).toContain('… 1 more line');
+    expect(lines[1]).toContain('.env.local');
+    expect(lines.join('\n')).not.toContain('CI or secret file write');
+    expect(lines.at(-1)).toContain(CHOOSE_HINTS);
+
+    ui.stdin.write(ESC);
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
+    ui.unmount();
+  });
+
+  it('keeps the reason input in view and drops the reason legend when the region holds no legend', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const pending = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
+    const ui = render(<ApprovalPrompt clampedBoxRows={4} />);
+    await tick(PAST_GRACE);
+    expect(stripColor(ui.lastFrame())).not.toContain(CHOOSE_HINTS);
+
+    ui.stdin.write('r');
+    await tick(20);
+    const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toContain(approvalTitle('package_change'));
+    expect(lines[1]).toBe(`  ${CONFIRM_QUESTION}`);
+    expect(lines[2]?.startsWith(`  ${glyph('prompt')} `)).toBe(true);
+    expect(lines[3]).toBe(`  ${CONFIRM_REASON_OPTIONAL}`);
+    expect(lines.join('\n')).not.toContain(CONFIRM_REASON_HINTS);
+
+    ui.stdin.write('pin');
+    ui.stdin.write(ENTER);
+    await expect(pending).resolves.toMatchObject({ decision: 'confirm', reason: 'pin' });
+    ui.unmount();
+  });
 });
 
 const TRUST_DISCLOSURE = [
@@ -472,11 +514,35 @@ describe('runner trust panel', () => {
     terminalSizeStore.reset();
   });
 
-  it.each([
-    // The cut rows hold one blank row, which the count leaves out.
-    { cols: 60, rows: 18, lastSubjectRow: /… 7 more lines/ },
-    { cols: 80, rows: 24, lastSubjectRow: /Exact confirmation stores/ },
-  ])(
+  it('drops the border and the label before a disclosure line in 60 x 18, and keeps the title and the options', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    const ui = renderFeature(<ApprovalPrompt />, { cols: 60, rows: 18 });
+    const pending = openApprovalPrompt(makeConfirmRequest(TRUST_DISCLOSURE, 'runner_trust'));
+    await tick(PAST_GRACE);
+
+    const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
+    expect(lines).toHaveLength(18);
+    expect(lines[0]).toContain(approvalTitle('runner_trust'));
+    const frame = lines.join('\n');
+    expect(frame).not.toContain('+---');
+    expect(frame).toContain('Arguments: "--diff" "--strict"');
+    expect(frame).toContain('Network: Network access is not restricted');
+    expect(frame).not.toContain('Exact confirmation stores');
+    // The label restates the title, so it goes before any disclosure line.
+    expect(frame).not.toContain('runner command from the project config');
+    // The count keeps a blank row between it and the options.
+    const confirmRow = lines.findIndex((line) => line.includes('y   Confirm'));
+    expect(lines[confirmRow - 1]?.trim()).toBe('');
+    expect(lines[confirmRow - 2]).toContain('… 5 more lines');
+    expect(lines[confirmRow + 1]).toContain('x   Deny');
+    expect(lines.at(-1)).toContain(CHOOSE_HINTS);
+
+    ui.stdin.write(ESC);
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
+    ui.unmount();
+  });
+
+  it.each([{ cols: 80, rows: 24, lastSubjectRow: /Exact confirmation stores/ }])(
     'fits an unclamped panel in $cols x $rows and keeps the subject and the options',
     async ({ cols, rows, lastSubjectRow }) => {
       terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 120 });
@@ -506,7 +572,7 @@ describe('runner trust panel', () => {
     },
   );
 
-  it('sheds disclosure lines from the bottom once a clamped panel has no blank rows left', async () => {
+  it('drops the border, then sheds disclosure lines from the bottom, in a clamped panel', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const ui = render(<ApprovalPrompt clampedBoxRows={12} />);
     const pending = openApprovalPrompt(makeConfirmRequest(TRUST_DISCLOSURE, 'runner_trust'));
@@ -519,9 +585,11 @@ describe('runner trust panel', () => {
     expect(frame).toContain('Executable:');
     expect(frame).toContain('Arguments:');
     expect(frame).not.toContain('Exact confirmation stores');
-    expect(frame).toContain('… 8 more lines');
+    const confirmRow = lines.findIndex((line) => line.includes('y   Confirm'));
+    expect(lines[confirmRow - 1]?.trim()).toBe('');
+    expect(lines[confirmRow - 2]).toContain('… 6 more lines');
     expect(frame).toContain('x   Deny');
-    expect(lines.at(-2)).toContain(CHOOSE_HINTS);
+    expect(lines.at(-1)).toContain(CHOOSE_HINTS);
 
     ui.stdin.write(ESC);
     await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });

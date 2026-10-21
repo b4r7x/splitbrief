@@ -3,13 +3,22 @@ import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { CONFIRM_PHRASE, type TieredApprovalRequest } from '../../../src/core/approval/types.js';
-import { CONFIRM_REASON_UNSTATED } from '../../../src/features/workflow/prompt-rows/approval.js';
+import {
+  CONFIRM_PHRASE,
+  type TieredApprovalRequest,
+  type TieredApprovalResponse,
+} from '../../../src/core/approval/types.js';
+import {
+  CONFIRM_REASON_UNSTATED,
+  approvalTitle,
+} from '../../../src/features/workflow/prompt-rows/approval.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { mountWorkflowScreen } from '#testing/helpers/workflow-screen.js';
+import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
+import { wireAppMouse } from '../../../src/app/mouse.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -152,5 +161,115 @@ describe('WorkflowScreen key ownership', () => {
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} j`);
 
     ui.unmount();
+  });
+
+  describe('a click on the confirm panel', () => {
+    const trustRequest: TieredApprovalRequest = {
+      tier: 'confirm',
+      actionClass: 'runner_trust',
+      actionDescription: 'Executable: "tools/review-bot"\nArguments: "--diff"',
+      phase: 'planning',
+    };
+
+    async function openPanel(rows: number, request: TieredApprovalRequest) {
+      const mouse = createMockFilteredStdin();
+      const disposeMouse = wireAppMouse(mouse.filtered);
+      const ui = mountWorkflow(rows);
+      await tick(20);
+      let settled: TieredApprovalResponse | undefined;
+      void openApprovalPrompt(request).then((response) => {
+        settled = response;
+      });
+      await tick(PAST_GRACE);
+      await flushEffects();
+      const lines = () => stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      const rowOf = (text: string) => lines().findIndex((line) => line.includes(text)) + 1;
+      // The panel sits between the header rule and the rule above the composer.
+      const panelRows = () => {
+        const rules = lines().flatMap((line, index) => (/^-{40,}$/.test(line) ? [index] : []));
+        const [top = 0, bottom = 0] = rules;
+        return Array.from({ length: bottom - top - 1 }, (_, offset) => top + offset + 2);
+      };
+      return {
+        settled: () => settled,
+        rowOf,
+        panelRows,
+        click: (row: number) => mouse.emit(pointerEvent('press', 10, row)),
+        close: () => {
+          disposeMouse();
+          ui.unmount();
+        },
+      };
+    }
+
+    it.each([
+      ['y   Confirm', { decision: 'confirm', phrase: CONFIRM_PHRASE }],
+      ['x   Deny', { decision: 'deny', reason: 'user_denied' }],
+    ])('on the painted %s row takes that row', async (row, expected) => {
+      const panel = await openPanel(24, trustRequest);
+      panel.click(panel.rowOf(row));
+      await vi.waitFor(() => expect(panel.settled()).toMatchObject(expected), 1000);
+      panel.close();
+    });
+
+    it('on the blank row or the legend does nothing', async () => {
+      const panel = await openPanel(24, trustRequest);
+      panel.click(panel.rowOf('x   Deny') + 1);
+      panel.click(panel.rowOf('↑↓ select'));
+      await tick(20);
+      expect(panel.settled()).toBeUndefined();
+      panel.click(panel.rowOf('x   Deny'));
+      await vi.waitFor(() => expect(panel.settled()).toMatchObject({ decision: 'deny' }), 1000);
+      panel.close();
+    });
+
+    describe.each([12, 14, 16])('in a 120x%i terminal', (rows) => {
+      const cases = [
+        ['runner trust', trustRequest, ['y   Confirm', 'x   Deny']],
+        [
+          'package manifest',
+          confirmRequest(),
+          ['y   Confirm', 'r   Confirm with a reason', 'x   Deny'],
+        ],
+      ] as const;
+
+      it.each(cases)(
+        'paints the %s title and every option, and only an option row answers',
+        async (_, request, options) => {
+          const panel = await openPanel(rows, request);
+          const optionRows = options.map(panel.rowOf);
+          expect(optionRows).not.toContain(0);
+          const titleRow = panel.rowOf(approvalTitle(request.actionClass));
+          expect(panel.panelRows()).toContain(titleRow);
+          panel.click(titleRow);
+          for (const row of panel.panelRows()) {
+            if (!optionRows.includes(row)) panel.click(row);
+          }
+          await tick(20);
+          expect(panel.settled()).toBeUndefined();
+          expect(options.map(panel.rowOf)).toEqual(optionRows);
+          panel.click(panel.rowOf('y   Confirm'));
+          await vi.waitFor(
+            () =>
+              expect(panel.settled()).toMatchObject({
+                decision: 'confirm',
+                phrase: CONFIRM_PHRASE,
+              }),
+            1000,
+          );
+          panel.close();
+        },
+      );
+
+      it.each(cases)('denies on the %s Deny row', async (_, request) => {
+        const panel = await openPanel(rows, request);
+        panel.click(panel.rowOf('x   Deny'));
+        await vi.waitFor(
+          () => expect(panel.settled()).toEqual({ decision: 'deny', reason: 'user_denied' }),
+          1000,
+        );
+        panel.close();
+      });
+    });
   });
 });
