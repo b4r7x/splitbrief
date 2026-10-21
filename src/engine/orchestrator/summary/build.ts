@@ -42,12 +42,15 @@ export type SummaryBase = {
   plannerTool: string;
   plannerModel?: string;
   plannerKind?: RunnerKind;
+  plannerAxes?: readonly string[];
   implementerTool: string;
   implementerModel?: string;
   implementerKind?: RunnerKind;
+  implementerAxes?: readonly string[];
   reviewerTool?: string;
   reviewerModel?: string;
   reviewerKind?: RunnerKind;
+  reviewerAxes?: readonly string[];
   projectDir?: string;
   sessionId?: string;
   pricingCache?: ModelCacheAccessor | undefined;
@@ -123,12 +126,15 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     plannerTool,
     plannerModel,
     plannerKind,
+    plannerAxes,
     implementerTool,
     implementerModel,
     implementerKind,
+    implementerAxes,
     reviewerTool,
     reviewerModel,
     reviewerKind,
+    reviewerAxes,
     projectDir,
     sessionId,
     pricingCache,
@@ -228,12 +234,15 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     plannerTool,
     plannerModel,
     ...(plannerKind !== undefined && { plannerKind }),
+    ...(plannerAxes !== undefined && { plannerAxes }),
     implementerTool,
     implementerModel,
     ...(implementerKind !== undefined && { implementerKind }),
+    ...(implementerAxes !== undefined && { implementerAxes }),
     ...(reviewerTool !== undefined && { reviewerTool }),
     ...(reviewerModel !== undefined && { reviewerModel }),
     ...(reviewerKind !== undefined && { reviewerKind }),
+    ...(reviewerAxes !== undefined && { reviewerAxes }),
     ...(evidenceSummary && { evidenceSummary }),
     ...(briefQuality && { briefQuality }),
     ...(driftSummary && { driftSummary }),

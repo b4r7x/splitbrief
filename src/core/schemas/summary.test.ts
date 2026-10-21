@@ -80,6 +80,25 @@ describe('SummarySchema seat identity kinds', () => {
     });
   });
 
+  it('keeps the axis words each seat ran at through a round trip', () => {
+    const parsed = SummarySchema.parse(
+      makeSummary({
+        plannerTool: 'claude-code',
+        plannerAxes: ['high'],
+        implementerTool: 'codex',
+        implementerAxes: ['low'],
+        reviewerTool: 'opencode',
+        reviewerAxes: [],
+      }),
+    );
+
+    expect(parsed).toMatchObject({
+      plannerAxes: ['high'],
+      implementerAxes: ['low'],
+      reviewerAxes: [],
+    });
+  });
+
   it('reads a legacy summary with no kinds as unknown, never as a default kind', () => {
     const parsed = SummarySchema.parse(
       makeSummary({ plannerTool: 'claude-code', implementerTool: 'opencode' }),
@@ -88,6 +107,8 @@ describe('SummarySchema seat identity kinds', () => {
     expect(parsed).not.toHaveProperty('plannerKind');
     expect(parsed).not.toHaveProperty('implementerKind');
     expect(parsed).not.toHaveProperty('reviewerKind');
+    expect(parsed).not.toHaveProperty('plannerAxes');
+    expect(parsed).not.toHaveProperty('implementerAxes');
   });
 
   it('rejects a persisted kind outside the runner kinds', () => {

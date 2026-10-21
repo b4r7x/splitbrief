@@ -853,6 +853,21 @@ const READY_TO_APPLY = record({
   ledger: READY_LEDGER,
 });
 
+/** The ready run whose reviewer ran Codex at a set effort, so its recorded crew names the effort. */
+const READY_CREW_SAVED = record({
+  sessionId: 'visual-ready-crew-saved',
+  status: READY_TO_APPLY.status,
+  state: READY_TO_APPLY.hydration.state,
+  summary: {
+    ...workspaceSummary('visual-ready-crew-saved'),
+    reviewerTool: 'codex',
+    reviewerModel: READY_REVIEW.model,
+    reviewerKind: 'cli',
+    reviewerAxes: ['high'],
+  },
+  ledger: { ...READY_LEDGER, sessionId: 'visual-ready-crew-saved' },
+});
+
 /** The ready run while an Apply holds it: the record reads running, not ready. */
 const APPLYING = record({
   sessionId: 'visual-at-rest-applying',
@@ -2323,7 +2338,7 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   {
     ...atRestProjection({
       id: 'workflow-ready-crew-saved',
-      route: { record: READY_TO_APPLY, log: READY_LOG },
+      route: { record: READY_CREW_SAVED, log: READY_LOG },
     }),
     sidebarVisible: true,
   },

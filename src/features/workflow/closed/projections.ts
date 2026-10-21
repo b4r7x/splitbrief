@@ -37,12 +37,17 @@ import { taskTargetParts } from '../../../stores/workflow/tasks.js';
 function seatView(input: {
   tool: string | undefined;
   model: string | undefined;
+  axes?: readonly string[] | undefined;
   role: ActiveRunnerRole;
   kind: RunnerKind | undefined;
 }): SeatView {
-  const { tool, model, role, kind } = input;
+  const { tool, model, axes, role, kind } = input;
   if (tool === undefined) return { kind: 'unset' };
-  const seat = { tool, ...(model !== undefined && { model }) };
+  const seat = {
+    tool,
+    ...(model !== undefined && { model }),
+    ...(axes !== undefined && { axes }),
+  };
   const displayName =
     model === undefined
       ? undefined
@@ -74,6 +79,7 @@ export function plannerSeatView(summary: Summary): SeatView {
   return seatView({
     tool,
     model: summary.plannerModel,
+    axes: summary.plannerAxes,
     role: 'planner',
     kind: tool === undefined ? undefined : recordedSeatKind(summary, tool),
   });
@@ -103,6 +109,7 @@ export function buildSeatView(summary: Summary): SeatView {
     seatView({
       tool: implementerTool,
       model: summary.implementerModel,
+      axes: summary.implementerAxes,
       role: 'implementer',
       kind: implementerTool === undefined ? undefined : recordedSeatKind(summary, implementerTool),
     })
@@ -172,6 +179,7 @@ export function reviewSeatView(summary: Summary): SeatView {
     return seatView({
       tool: summary.reviewerTool,
       model: summary.reviewerModel,
+      axes: summary.reviewerAxes,
       role: 'reviewer',
       kind: recordedSeatKind(summary, summary.reviewerTool),
     });

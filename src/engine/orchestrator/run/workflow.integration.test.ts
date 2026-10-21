@@ -2103,6 +2103,56 @@ describe('runWorkflow — recovery resume', () => {
     // attributed to it: the breakdown follows the state, not the identity.
     expect(summary.costBreakdown?.providerCosts?.['custom-endpoint']).toBeUndefined();
   });
+
+  it('keeps the effort each seat runs at in the summary of the run', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'sess-run-axes';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+
+    const task = makeTask({ id: 'T001' });
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task,
+      validationSummary: 'tsc failed',
+      attempts: 1,
+      maxAttempts: 2,
+      createdAt: '2026-04-29T00:00:00.000Z',
+    });
+    const savedState = transition(implementingState([task]), {
+      type: 'SET_PENDING_RECOVERY',
+      issue,
+    });
+    saveState({ projectDir, sessionId }, savedState);
+
+    const { callbacks } = makeCallbacks();
+    const summary = await runWorkflow({
+      feature: 'feat',
+      projectDir,
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'medium' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex', effort: 'low' },
+        validation: { endChecks: false, testCommand: 'noop' },
+        workflow: { approve: 'none' },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      savedState,
+      sessionId,
+      _planner: makePlanner({
+        isAvailable: async () => {
+          throw new Error(
+            'availability should not be checked while pending recovery is unresolved',
+          );
+        },
+      }),
+      _reviewer: { review: vi.fn(), typedCall: vi.fn() },
+    });
+
+    expect(summary.plannerAxes).toEqual(['high']);
+    expect(summary.implementerAxes).toEqual(['medium']);
+    expect(summary.reviewerAxes).toEqual(['low']);
+  });
 });
 
 describe('runWorkflow — a run still in flight when its test ends', () => {

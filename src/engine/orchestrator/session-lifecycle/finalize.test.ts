@@ -338,6 +338,31 @@ describe('finalizeEndedRun seat identity', () => {
     });
   });
 
+  it('keeps the axis words each recorded seat ran at', () => {
+    const projectDir = makeProjectDir();
+    const ref = { projectDir, sessionId: 'sess-ended-axes' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    writeSeatIdentities(ref, {
+      plan: 'Claude Code CLI · Opus 5.5 · high',
+      build: 'Claude Code CLI · Sonnet 5.5 · medium',
+      review: 'OpenAI Codex CLI · GPT-5 · low',
+      ids: {
+        plan: { tool: 'claude-code', model: 'opus', axes: ['high'], kind: 'cli' },
+        build: { tool: 'claude-code', model: 'sonnet', axes: ['medium'], kind: 'cli' },
+        review: { tool: 'codex', model: 'gpt-5', axes: ['low'], kind: 'cli' },
+      },
+      reviewFollowsPlan: false,
+    });
+
+    finalizeEndedRun({ ref, state: { ...createInitialState('feat'), phase: 'implementing' } });
+
+    expect(readSession(ref)?.summary).toMatchObject({
+      plannerAxes: ['high'],
+      implementerAxes: ['medium'],
+      reviewerAxes: ['low'],
+    });
+  });
+
   it('leaves the review seat to the planner when an older record kept one seat for both and the run had no reviewer', () => {
     const projectDir = makeProjectDir();
     const ref = { projectDir, sessionId: 'sess-planner-reviews' };
@@ -447,6 +472,8 @@ describe('finalizeEndedRun seat identity', () => {
       implementerModel: 'gpt-5',
     });
     expect(summary?.reviewerTool).toBeUndefined();
+    expect(summary).not.toHaveProperty('plannerAxes');
+    expect(summary).not.toHaveProperty('implementerAxes');
   });
 });
 

@@ -476,6 +476,29 @@ describe('seats', () => {
     ]);
   });
 
+  it('names a recorded seat with the axis words it ran at, as the live crew rows do', () => {
+    const view = derive(
+      makeSummary({
+        plannerTool: 'claude-code',
+        plannerModel: 'opus',
+        plannerAxes: ['high'],
+        implementerTool: 'claude-code',
+        implementerModel: 'sonnet',
+        implementerAxes: ['medium'],
+        reviewerTool: 'codex',
+        reviewerModel: 'gpt-5',
+        reviewerAxes: ['low'],
+      }),
+    );
+    expect(view.seats.plan).toEqual({
+      kind: 'named',
+      short: 'Opus 5.5',
+      full: 'Claude Code CLI · Opus 5.5 · high',
+    });
+    expect(view.seats.build).toMatchObject({ full: 'Claude Code CLI · Sonnet 5.5 · medium' });
+    expect(view.seats.review).toMatchObject({ full: expect.stringMatching(/ · low$/) });
+  });
+
   it('shortens each seat with the formatter the live rail uses', () => {
     const view = derive(
       makeSummary({

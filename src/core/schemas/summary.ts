@@ -239,12 +239,16 @@ export const SummarySchema = z.object({
   plannerTool: z.string().optional(),
   plannerModel: z.string().optional(),
   plannerKind: RunnerKindSchema.optional(),
+  /** The axis words the seat ran at (effort, thinking, fast). Absent on older records. */
+  plannerAxes: z.array(z.string()).readonly().optional(),
   implementerTool: z.string().optional(),
   implementerModel: z.string().optional(),
   implementerKind: RunnerKindSchema.optional(),
+  implementerAxes: z.array(z.string()).readonly().optional(),
   reviewerTool: z.string().optional(),
   reviewerModel: z.string().optional(),
   reviewerKind: RunnerKindSchema.optional(),
+  reviewerAxes: z.array(z.string()).readonly().optional(),
   phaseTimings: z.record(z.string(), z.number()).optional(),
   mode: WorkflowModeSchema.optional(),
   evidenceSummary: z
