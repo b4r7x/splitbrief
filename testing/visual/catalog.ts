@@ -1977,6 +1977,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-ready-crew-saved',
+      title: 'Workflow · a ready run after another crew was saved',
+      surface: screenSurface('workflow'),
+      viewports: [...WIDE_VIEWPORTS, viewport({ cols: 200, rows: 50 })],
+      checkpoint: {
+        id: 'ready-crew-saved',
+        title: 'Ready to apply, named by the crew that built it',
+        kind: 'ready',
+        marker: 'Ready to apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-applying',
       title: 'Workflow · a ready run while its Apply writes to the checkout',
       surface: screenSurface('workflow'),

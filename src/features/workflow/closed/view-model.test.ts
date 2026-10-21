@@ -440,6 +440,7 @@ describe('seats', () => {
     expect(view.seats.plan).toEqual({
       kind: 'named',
       short: 'Sonnet 4',
+      full: 'Claude Code CLI · Claude Sonnet 4',
     });
   });
 
@@ -455,10 +456,12 @@ describe('seats', () => {
     expect(view.seats.plan).toEqual({
       kind: 'named',
       short: 'Opus 5.5',
+      full: 'Claude Code CLI · Opus 5.5',
     });
     expect(view.seats.build).toEqual({
       kind: 'named',
       short: 'Sonnet 5.5',
+      full: 'Claude Code CLI · Sonnet 5.5',
     });
     const spans = crewLine(view, 200);
     expect(spans.map((span) => span.text).join('')).toBe(
@@ -606,6 +609,7 @@ describe('seats', () => {
     expect(view.seats.plan).toEqual({
       kind: 'named',
       short: 'GPT-5',
+      full: 'opencode · GPT-5',
     });
   });
 
@@ -632,6 +636,7 @@ describe('seats', () => {
     expect(view.seats.plan).toEqual({
       kind: 'named',
       short: 'Sonnet',
+      full: 'claude-code · Sonnet',
     });
   });
 
@@ -657,6 +662,7 @@ describe('seats', () => {
     expect(view.seats.plan).toEqual({
       kind: 'named',
       short: 'Sonnet 5.5',
+      full: 'Claude Code CLI · Sonnet 5.5',
     });
   });
 
@@ -687,7 +693,11 @@ describe('seats', () => {
     );
 
     // The API kind alone reads `Sonnet`; an ambiguous name reads the merged catalog's alias.
-    expect(view.seats.plan).toEqual({ kind: 'named', short: 'Sonnet 5.5' });
+    expect(view.seats.plan).toEqual({
+      kind: 'named',
+      short: 'Sonnet 5.5',
+      full: 'Claude Code CLI · Sonnet 5.5',
+    });
   });
 
   it('names a moved API seat literally when its name is a CLI tool id', () => {

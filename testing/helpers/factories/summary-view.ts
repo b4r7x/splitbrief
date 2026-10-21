@@ -14,8 +14,8 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
     },
     rail: getRailStages('complete'),
     seats: {
-      plan: { kind: 'named', short: 'claude-sonnet-4' },
-      build: { kind: 'named', short: 'qwen2.5-coder:7b' },
+      plan: { kind: 'named', short: 'claude-sonnet-4', full: 'Claude Code CLI · claude-sonnet-4' },
+      build: { kind: 'named', short: 'qwen2.5-coder:7b', full: 'Ollama · qwen2.5-coder:7b' },
       review: { kind: 'inherits' },
     },
     briefs: {

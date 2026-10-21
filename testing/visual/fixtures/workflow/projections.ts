@@ -20,6 +20,7 @@ import type { SeatSwitchRecord, WorkflowState } from '../../../../src/core/schem
 import type { ConsultSeat } from '../../../../src/core/schemas/consult.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeRunRecord } from '../../../helpers/factories/run-record.js';
+import { makeSummary } from '../../../helpers/factories/summary.js';
 import { SessionLogEventEntrySchema } from '../../../../src/core/schemas/session-log.js';
 import { engineEventFromLogEntry } from '../../../../src/engine/events/replay.js';
 import { makeReviewFixInsertedEvents } from '../../../helpers/events/task.js';
@@ -256,6 +257,8 @@ export interface WorkflowFixtureProjection {
    */
   readonly resumedRun?: { readonly events: readonly EngineEvent[]; readonly halt: RecoveryIssue };
   readonly summary?: Readonly<Summary>;
+  /** The record of the run this live screen continues, as the run screen carries it from rest. */
+  readonly continuedFrom?: RunRecord;
   readonly stop?: FixtureStopState;
   /** Set when the scenario shows a run that is not moving; the screen mounts no runner. */
   readonly atRest?: FixtureAtRestRoute;
@@ -3103,30 +3106,53 @@ const checksMissingProgramRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
+const applyConflictIssue = buildApplyConflictRecoveryIssue({
+  conflicts: [
+    { path: 'src/cli.js', kind: 'mode' },
+    { path: 'docs/readme.md', kind: 'symlink' },
+  ],
+  workspacePath: '.splitbrief/worktrees/visual/workspace',
+  createdAt: new Date(FIXED_TS).toISOString(),
+});
+
+const applyConflictState = makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+  feature: WORKFLOW_FEATURE,
+  startedAt: RESUMED_RUN_STARTED_AT,
+  phase: 'complete',
+  reviewStatus: 'passed',
+  workspace: {
+    kind: 'worktree',
+    path: '.splitbrief/worktrees/visual/workspace',
+    base: { snapshotId: 'visual-base', head: null },
+  },
+  pendingRecovery: applyConflictIssue,
+});
+
 /**
  * A run continued onto its Apply halt: the review passed, so the rail marks Apply and not the
- * review, as the same run at rest does.
+ * review, as the same run at rest does. It was built on another crew than the one saved today, so
+ * the header names the crew that built it while the halt waits.
  */
 const applyConflictRecoveryProjection: WorkflowFixtureProjection = {
   ...reviewFailedRecoveryProjection,
   scenarioId: scenarioId('workflow-recovery-apply-conflict'),
-  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+  resumeState: applyConflictState,
+  continuedFrom: makeRunRecord({
+    ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: VISUAL_WORKFLOW_SESSION_ID },
     feature: WORKFLOW_FEATURE,
     startedAt: RESUMED_RUN_STARTED_AT,
-    phase: 'complete',
-    reviewStatus: 'passed',
-    workspace: {
-      kind: 'worktree',
-      path: '.splitbrief/worktrees/visual/workspace',
-      base: { snapshotId: 'visual-base', head: null },
+    hydration: { kind: 'loaded', state: applyConflictState },
+    status: {
+      kind: 'open',
+      stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: applyConflictIssue } },
+      resumeAt: { kind: 'apply' },
     },
-    pendingRecovery: buildApplyConflictRecoveryIssue({
-      conflicts: [
-        { path: 'src/cli.js', kind: 'mode' },
-        { path: 'docs/readme.md', kind: 'symlink' },
-      ],
-      workspacePath: '.splitbrief/worktrees/visual/workspace',
-      createdAt: new Date(FIXED_TS).toISOString(),
+    summary: makeSummary({
+      feature: WORKFLOW_FEATURE,
+      plannerTool: 'claude-code',
+      plannerModel: 'opus',
+      implementerTool: 'claude-code',
+      implementerModel: 'haiku',
     }),
   }),
 };

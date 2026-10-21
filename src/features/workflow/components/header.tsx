@@ -4,9 +4,6 @@ import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -21,7 +18,8 @@ import { haltedIssue } from '../../../core/sessions/run-status.js';
 import { formatResetNote } from '../../../core/recovery/reset-clock.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
-import { measureRailCells, Rail } from './rail.js';
+import { Rail } from './rail.js';
+import { useRailCells } from '../hooks/use-rail-cells.js';
 
 interface HeaderProps {
   railForm?: RailForm | undefined;
@@ -72,14 +70,7 @@ export function Header({
   stages,
   seatLine: givenSeatLine,
 }: HeaderProps) {
-  const [{ cols }, lifecycle, tasks, eventsState, recoveryNotice] = useStores(
-    terminalSizeStore,
-    lifecycleStore,
-    tasksStore,
-    eventsStore,
-    recoveryNoticeStore,
-  );
-  const { phase, status, cancelled } = lifecycle;
+  const [{ cols }, recoveryNotice] = useStores(terminalSizeStore, recoveryNoticeStore);
   const config = configStore.use((s) => s.config);
   const savedHalt = routerStore.use((state) =>
     state.screen === 'workflow' && state.execution.kind === 'at-rest'
@@ -87,18 +78,7 @@ export function Header({
       : null,
   );
   const displayNames = useCrewDisplayNames(config);
-  const railCells = measureRailCells({
-    phase,
-    status,
-    cancelled,
-    form: railForm ?? 'B',
-    cols,
-    tasks,
-    events: eventsState.events,
-    recoveryAt: recoveryNotice.at,
-    buildBlockShown,
-    ...(stages !== undefined && { stages }),
-  });
+  const railCells = useRailCells({ form: railForm, buildBlockShown, stages });
 
   // The room does not depend on the line, so the first pass measures it, the
   // line is cut to it, and the second pass lays the bar out around what fits.

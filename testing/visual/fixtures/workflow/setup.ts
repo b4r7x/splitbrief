@@ -116,6 +116,9 @@ async function setupProjection(
     projection.resumeState,
     projection.config,
   ).setup(context);
+  if (projection.continuedFrom !== undefined) {
+    routerStore.updateRun({ run: projection.continuedFrom });
+  }
   if (projection.review !== undefined) {
     const filePath = getReviewFilePath(projection.review);
     await mkdir(dirname(filePath), { recursive: true });

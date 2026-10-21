@@ -30,6 +30,8 @@ import { formatStageLabel } from '../../../core/phase-display.js';
 import { getActiveRailStage, railStageSeat, type RailHalt } from '../../../core/rail-stages.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { routeBriefMark } from '../at-rest.js';
+import { seatIdentityWord } from '../closed/copy.js';
+import type { RecordedCrew } from '../closed/view-model.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import {
   getSidebarFooterBudget,
@@ -52,6 +54,8 @@ import { wrapHard } from '../../../utils/wrap.js';
 interface SidebarProps {
   width: number;
   height?: number | undefined;
+  /** The crew the run's record names (`recordedCrew`); without it the crew is today's. */
+  recordedCrew?: RecordedCrew | undefined;
 }
 
 interface SeatRows {
@@ -270,7 +274,7 @@ function taskHasStatusTail(task: WorkflowTask): boolean {
   return task.status === 'escalated' || task.status === 'failed' || task.status === 'skipped';
 }
 
-export function Sidebar({ width, height }: SidebarProps) {
+export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
   const tooShortForBorder = height !== undefined && height < 2;
   const t = useTheme();
   const view = tasksStore.use(selectTaskListView);
@@ -294,9 +298,13 @@ export function Sidebar({ width, height }: SidebarProps) {
     seats.map((seat) => ({
       seat,
       rows:
-        seat.id === 'review' && seat.source === 'planner'
-          ? [PLANNER_INHERITANCE.mark]
-          : toRows(formatSeatIdentity({ seat: seat.runner, displayName: displayNames?.[seat.id] })),
+        recordedCrew !== undefined
+          ? toRows(seatIdentityWord(recordedCrew[seat.id]))
+          : seat.id === 'review' && seat.source === 'planner'
+            ? [PLANNER_INHERITANCE.mark]
+            : toRows(
+                formatSeatIdentity({ seat: seat.runner, displayName: displayNames?.[seat.id] }),
+              ),
     }));
   const countFooterRows = (crew: readonly SeatRows[]): number =>
     crew.reduce((total, { rows }) => total + rows.length, outcomeRows.length);

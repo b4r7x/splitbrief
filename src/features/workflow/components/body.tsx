@@ -3,6 +3,7 @@ import { Box } from 'ink';
 import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import { ConversationFlow } from './conversation-flow/flow.js';
 import { Sidebar } from './sidebar.js';
+import type { RecordedCrew } from '../closed/view-model.js';
 import { ReviewView } from './review-view.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 import { REVIEW_MIN_ROWS, WORKFLOW_SIDEBAR_GAP } from '../layout/rect.js';
@@ -18,6 +19,7 @@ export function WorkflowBody({
   onScrollAbove,
   onScrollBelow,
   transcriptTail,
+  recordedCrew,
 }: {
   showSidebar: boolean;
   sidebarWidth: number;
@@ -29,6 +31,8 @@ export function WorkflowBody({
   onScrollBelow?: (label: string) => void;
   /** Blocks that follow the last event the run wrote; a closed run's ledger is the only one. */
   transcriptTail?: readonly ConversationRowBlock[] | undefined;
+  /** The crew the run's record names; the sidebar names it instead of today's crew. */
+  recordedCrew?: RecordedCrew | undefined;
 }) {
   // A region too short to seat a document row gets the conversation instead: the frame would paint
   // an empty box over the approval panel it is meant to explain.
@@ -52,7 +56,13 @@ export function WorkflowBody({
       paddingLeft={showSidebar ? WORKFLOW_GUTTER_X : 0}
       paddingRight={WORKFLOW_GUTTER_X}
     >
-      {showSidebar && <Sidebar width={sidebarWidth} height={contentHeight} />}
+      {showSidebar && (
+        <Sidebar
+          width={sidebarWidth}
+          height={contentHeight}
+          {...(recordedCrew !== undefined && { recordedCrew })}
+        />
+      )}
       {showSidebar && <Box width={WORKFLOW_SIDEBAR_GAP} flexShrink={0} />}
       <Box flexDirection="column" flexGrow={1} minWidth={0} overflow="hidden">
         {showReview ? (

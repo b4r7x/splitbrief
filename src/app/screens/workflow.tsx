@@ -38,7 +38,7 @@ import {
   type WorkflowScreenDeps,
 } from '../../features/workflow/hooks/workflow-screen/use-model.js';
 import { closedTranscriptBlock } from '../../features/workflow/closed/block.js';
-import { closedHeader } from '../../features/workflow/closed/header.js';
+import { recordedCrewHeader } from '../../features/workflow/closed/header.js';
 import {
   applyByline,
   bylineParts,
@@ -67,6 +67,7 @@ import {
   WORKFLOW_GUTTER_X,
 } from '../../features/workflow/layout/chrome-rows.js';
 import { BuildProgressBlock } from '../../features/workflow/components/build-progress.js';
+import { useRailCells } from '../../features/workflow/hooks/use-rail-cells.js';
 import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows/workflow.js';
 import {
   reviewArtifactForPhase,
@@ -221,8 +222,8 @@ export function WorkflowScreen({
   };
 
   // A closed run's account is the block at the end of its transcript: it names the crew that ran
-  // and the briefs that landed. The sidebar would answer both again from today's config, so the
-  // closed presentation takes the whole width instead of contradicting itself in a column.
+  // and the briefs that landed. The sidebar would answer both again in a column, so the closed
+  // presentation takes the whole width instead.
   const sidebarWanted = sidebarVisible && !model.closed;
   const sidebarWidth = getWorkflowSidebarWidth({
     cols,
@@ -339,8 +340,15 @@ export function WorkflowScreen({
   // The closed run's ledger is the tail of its own transcript: one scroller, the verdict below the
   // last event the run wrote. The header names the crew that ran it, so the block names it only
   // when the line could not afford all three seats.
-  const closedChrome =
-    model.closedView === null ? null : closedHeader({ view: model.closedView, cols });
+  const railCells = useRailCells({
+    form: railForm,
+    buildBlockShown: progressRows > 0,
+    stages: model.railStages,
+  });
+  const crewChrome =
+    model.crewRecord === undefined
+      ? null
+      : recordedCrewHeader({ record: model.crewRecord, railCells, cols });
   const transcriptTail =
     model.closed && model.atRestRecord !== undefined
       ? [
@@ -348,7 +356,7 @@ export function WorkflowScreen({
             view: model.closedView,
             width: contentWidth,
             theme,
-            crewNamed: closedChrome?.crewNamed ?? false,
+            crewNamed: crewChrome?.crewNamed ?? false,
           }),
         ]
       : undefined;
@@ -438,7 +446,7 @@ export function WorkflowScreen({
           railForm={railForm}
           buildBlockShown={progressRows > 0}
           {...(model.railStages !== undefined && { stages: model.railStages })}
-          {...(closedChrome !== null && { seatLine: closedChrome.seatLine })}
+          {...(crewChrome !== null && { seatLine: crewChrome.seatLine })}
         >
           {progressRows > 0 && <BuildProgressBlock cols={cols} />}
         </WorkflowHeader>
@@ -569,6 +577,7 @@ export function WorkflowScreen({
         onScrollAbove={setScrollAboveLabel}
         onScrollBelow={setScrollBelowLabel}
         {...(transcriptTail !== undefined && { transcriptTail })}
+        {...(crewChrome !== null && { recordedCrew: crewChrome.seats })}
       />
       <Box
         height={stopMenuOpen || resultMenuOpen || checksCardOpen ? 0 : promptBoxRows}
