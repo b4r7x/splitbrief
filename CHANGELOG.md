@@ -364,6 +364,7 @@
 - The refusal for an `agent` runner from the project config now reads "an agent runner command". Before, it read "a agent runner command".
 - The panel that asks you to trust a `shell` or `agent` runner from the project config is now titled "Trust and run a configured runner:" and names the runner command. Before, it was titled "Network access:" and labelled "confirm file write".
 - The *Apply as is* confirmation lists each open finding on one row, so a finding written on two lines no longer covers the card title. Before, its second line pushed over the title.
+- `splitbrief start` over a run that is still running tells you to stop it, then run `splitbrief continue <id>`. Before, it told you to run `splitbrief resume`, which refuses a running run.
 
 ## [0.1.0] - 2026-08-07
 

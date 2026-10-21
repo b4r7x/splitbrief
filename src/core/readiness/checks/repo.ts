@@ -1,6 +1,7 @@
 import { countNoun } from '../../../utils/pluralize.js';
 import type { InProgressGitOp } from '../../../lib/git/repository.js';
 import { revertedDir } from '../../paths.js';
+import { stillActiveFix } from '../../sessions/errors.js';
 import type { IsolationStrategy } from '../../schemas/enums.js';
 import type { SessionRef } from '../../types/session-ref.js';
 import type { ReadinessCheck } from '../types.js';
@@ -97,9 +98,7 @@ export function buildRepoChecks(
       summary: repo.activeSessionLive
         ? `Active session ${repo.activeSession} is still live.`
         : `Stale active session marker ${repo.activeSession} can be cleared.`,
-      fix: repo.activeSessionLive
-        ? 'Run `splitbrief resume` or clear .splitbrief/active after confirming the session is not live.'
-        : undefined,
+      fix: repo.activeSessionLive ? stillActiveFix(repo.activeSession) : undefined,
       nextAction: repo.activeSessionLive ? 'clean-or-isolate-repo' : undefined,
       metadata: { sessionId: repo.activeSession, live: repo.activeSessionLive === true },
     });
