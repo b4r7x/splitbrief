@@ -461,6 +461,38 @@ describe('createRecoveryDriver', () => {
     }
   });
 
+  it('swaps to the seat the run was opened on when the halted call ran on another seat', async () => {
+    const saved = { kind: 'cli', tool: 'claude-code', model: 'haiku' } as const;
+    const { prepared: base, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: {
+        seat: 'build',
+        from: { tool: 'antigravity', model: 'gemini-nonexistent-9' },
+        candidates: [{ tool: 'codex' }],
+      },
+    });
+    const prepared = {
+      ...base,
+      sourceConfig: makeConfig({
+        planner: { kind: 'agent', command: 'test-planner' },
+        implementer: saved,
+      }),
+    };
+    const { inputMode } = makeInputMode(['switch-seat', 'end']);
+
+    const pending = runDriver(prepared, state, inputMode);
+    await closeSeatPicker(prepared, saved);
+    const result = await pending;
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.switchSeat?.candidate).toEqual({ tool: 'claude-code', model: 'haiku' });
+    }
+  });
+
   it('takes the automatic intent at once, with no panel question and no picker', async () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
@@ -583,6 +615,44 @@ describe('createRecoveryDriver', () => {
     expect(result.shouldRun).toBe(false);
     expect(result.state?.closed?.as).toBe('ended');
   });
+
+  it.each([
+    { label: 'no model', seat: { kind: 'cli', tool: 'claude-code' } as const },
+    { label: 'auto', seat: { kind: 'cli', tool: 'claude-code', model: 'auto' } as const },
+  ])(
+    'keeps the halt when the picker takes the seat that left its model to the tool ($label)',
+    async ({ seat }) => {
+      const { prepared: base, state } = setupSession({
+        reason: 'runner-usage-limit',
+        message: 'T001 hit the implementer usage limit',
+        availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+        recommendedAction: 'switch-seat',
+        switchSeat: {
+          seat: 'build',
+          from: { tool: 'claude-code', model: 'opus' },
+          candidates: [{ tool: 'claude-code' }],
+        },
+      });
+      const planner = { kind: 'agent', command: 'test-planner' } as const;
+      const prepared = {
+        ...base,
+        config: makeConfig({
+          planner,
+          implementer: { kind: 'cli', tool: 'claude-code', model: 'opus' },
+        }),
+        sourceConfig: makeConfig({ planner, implementer: seat }),
+      };
+      const { inputMode, feedbackAtPrompt } = makeInputMode(['switch-seat', 'end']);
+
+      const pending = runDriver(prepared, state, inputMode);
+      await closeSeatPicker(prepared, seat);
+      const result = await pending;
+
+      expect(feedbackAtPrompt).toHaveLength(2);
+      expect(result.shouldRun).toBe(false);
+      expect(result.state?.closed?.as).toBe('ended');
+    },
+  );
 
   it('takes the tool the pressed row named, not the first one offered', async () => {
     const { prepared, state } = setupSession({

@@ -41,7 +41,11 @@ describe('seatProtocolHaltIssue', () => {
     });
 
     expect(issue.seat).toBe('review');
-    expect(issue.switchSeat).toEqual({ seat: 'review', candidates: [{ tool: 'codex' }] });
+    expect(issue.switchSeat).toEqual({
+      seat: 'review',
+      from: { tool: 'claude-code' },
+      candidates: [{ tool: 'codex' }],
+    });
   });
 
   it('swaps the review seat when a reviewer block declares it', async () => {
@@ -54,6 +58,10 @@ describe('seatProtocolHaltIssue', () => {
     });
 
     expect(issue.seat).toBe('review');
-    expect(issue.switchSeat).toEqual({ seat: 'review', candidates: [{ tool: 'claude-code' }] });
+    expect(issue.switchSeat).toEqual({
+      seat: 'review',
+      from: { tool: 'codex' },
+      candidates: [{ tool: 'claude-code' }],
+    });
   });
 });

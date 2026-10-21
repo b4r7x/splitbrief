@@ -41,10 +41,12 @@ export const SeatSwapAutoSchema = z
 /**
  * The seat-swap offer a `runner-usage-limit` issue carries when other ready
  * tools exist. Absent — never present-but-empty — when the machine has none.
+ * `from` is the seat the halted call ran on; a halt saved before it was recorded has none.
  */
 export const SwitchSeatOfferSchema = z
   .object({
     seat: z.enum(CREW_SEAT_IDS),
+    from: SeatSwapCandidateSchema.optional(),
     candidates: z.array(SeatSwapCandidateSchema).min(1),
     auto: SeatSwapAutoSchema.optional(),
   })

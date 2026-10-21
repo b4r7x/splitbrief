@@ -139,6 +139,7 @@ describe('loadSeatSwapContext', () => {
     expect(context).toEqual({
       seat: 'build',
       currentTool: 'codex',
+      from: { tool: 'codex' },
       detectedTools: [
         { tool: 'codex', ready: true },
         { tool: 'claude-code', ready: true },
@@ -147,6 +148,7 @@ describe('loadSeatSwapContext', () => {
     });
     expect(switchSeatOffer(context)).toEqual({
       seat: 'build',
+      from: { tool: 'codex' },
       candidates: [{ tool: 'claude-code' }],
     });
   });
@@ -183,7 +185,11 @@ describe('loadSeatSwapContext', () => {
     });
 
     expect(context?.currentTool).toBe('');
-    expect(switchSeatOffer(context)).toEqual({ seat: 'build', candidates: [{ tool: 'codex' }] });
+    expect(switchSeatOffer(context)).toEqual({
+      seat: 'build',
+      from: { tool: 'ollama', model: 'qwen2.5-coder:7b' },
+      candidates: [{ tool: 'codex' }],
+    });
   });
 
   it('offers no other tool when the project has no remembered detection, and keeps the route', async () => {
@@ -201,6 +207,7 @@ describe('loadSeatSwapContext', () => {
     expect(context).toEqual({
       seat: 'build',
       currentTool: 'codex',
+      from: { tool: 'codex' },
       detectedTools: [],
       routeAuth: { kind: 'unchecked' },
     });
@@ -376,6 +383,7 @@ describe('loadSeatSwapContext', () => {
     });
     expect(switchSeatOffer(context)).toEqual({
       seat: 'build',
+      from: { tool: 'codex' },
       candidates: [{ tool: 'claude-code', model: 'sonnet', effort: 'high' }],
     });
   });

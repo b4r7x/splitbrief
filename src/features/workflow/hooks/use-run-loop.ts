@@ -383,7 +383,7 @@ export function useRunLoop({
             prepare: prepareExecutionFn,
             onSeatSwapped: (swappedPrepared) => {
               preparedForRun = swappedPrepared;
-              configOfRun = swappedPrepared.config;
+              configOfRun = swappedPrepared.sourceConfig;
               configStore.refreshFromExecution(session.ref.projectDir, swappedPrepared.config);
               // The swap prepared from the saved config, so it took every seat saved before it.
               if (swappedSeat !== undefined) spendSeatChange();
@@ -401,12 +401,10 @@ export function useRunLoop({
           const pending = stateForRun.pendingRecovery;
           const spent = pending?.switchSeat;
           if (pending !== undefined && spent?.auto !== undefined) {
+            const { auto: _auto, ...unattended } = spent;
             stateForRun = {
               ...stateForRun,
-              pendingRecovery: {
-                ...pending,
-                switchSeat: { seat: spent.seat, candidates: spent.candidates },
-              },
+              pendingRecovery: { ...pending, switchSeat: unattended },
             };
             continue;
           }

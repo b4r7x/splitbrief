@@ -537,15 +537,22 @@ function claudeOnBuild(current: Config): Config {
 }
 
 describe('e2e: a seat saved while the Seat down halt waits', { timeout: 150_000 }, () => {
-  /** The CLI halt opened on the screen, with `save` written while the halt waits. */
+  /**
+   * The CLI halt opened on the screen, with `save` written while the halt waits: on the open
+   * screen, or to the config file before the run is opened again.
+   */
   async function haltWithSavedSeat(
     save: (current: Config) => Config = claudeOnBuild,
     engineFn: RunWorkflowFn = runWorkflow,
+    savedBeforeOpen = false,
   ) {
     const { target, sessionId, codexCalls, claudeCalls } = await codexHaltFixture();
     vi.stubGlobal('fetch', async () => {
       throw new Error('Network disabled in seat switch E2E');
     });
+    if (savedBeforeOpen) {
+      writeConfig(target.projectDir, save(loadConfig(target.projectDir).config));
+    }
     await trustDeclaredRunners({
       projectDir: target.projectDir,
       config: loadConfig(target.projectDir).config,
@@ -564,11 +571,13 @@ describe('e2e: a seat saved while the Seat down halt waits', { timeout: 150_000 
     const intents: string[] = [];
     const offStop = stopStore.subscribe(() => intents.push(stopStore.get().intent));
     const firstFrame = screen.frames.length;
-    const current = configStore.get().config;
-    if (current === null) throw new Error('the screen loaded no config');
-    const saved = await configStore.save(save(current));
-    expect(saved.kind).toBe('saved');
-    await flushEffects();
+    if (!savedBeforeOpen) {
+      const current = configStore.get().config;
+      if (current === null) throw new Error('the screen loaded no config');
+      const saved = await configStore.save(save(current));
+      expect(saved.kind).toBe('saved');
+      await flushEffects();
+    }
     const ref = { projectDir: target.projectDir, sessionId };
     /** What the run did after the save: it ran once, on the saved seat, and passed its brief. */
     const expectRanOnSavedSeat = async () => {
@@ -657,6 +666,32 @@ describe('e2e: a seat saved while the Seat down halt waits', { timeout: 150_000 
       const { state, switches } = await expectRanOnSavedSeat();
       expect(switches).toEqual([
         expect.objectContaining({ seat: 'build', cause: 'runner-usage-limit', auto: false }),
+      ]);
+      expect(state?.seatSwitches).toEqual([
+        expect.objectContaining({ seat: 'build', cause: 'runner-usage-limit', auto: false }),
+      ]);
+    } finally {
+      screen.unmount();
+    }
+  });
+
+  it('switches from the halted seat to the seat saved before the run was opened again', async () => {
+    const { screen, expectRanOnSavedSeat, pickClaudeInPicker } = await haltWithSavedSeat(
+      claudeOnBuild,
+      runWorkflow,
+      true,
+    );
+    try {
+      await pickClaudeInPicker(['\r', '\r']);
+      const { state, switches } = await expectRanOnSavedSeat();
+      expect(switches).toEqual([
+        expect.objectContaining({
+          seat: 'build',
+          from: expect.objectContaining({ tool: 'codex', model: PRIMARY_MODEL }),
+          to: expect.objectContaining({ tool: 'claude-code', model: SWITCHED_MODEL }),
+          cause: 'runner-usage-limit',
+          auto: false,
+        }),
       ]);
       expect(state?.seatSwitches).toEqual([
         expect.objectContaining({ seat: 'build', cause: 'runner-usage-limit', auto: false }),

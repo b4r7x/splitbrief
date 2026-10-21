@@ -2349,6 +2349,56 @@ describe('useRunLoop', () => {
       },
     );
 
+    it('switches the halted seat when the picker takes a tool the halt does not offer', async () => {
+      const sessionId = '2026-10-21-halt-picker-outside-offer';
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+      configStore.__testReset({ projectDir, config: prepared.config });
+      const reentry = engineEntryAfterHalt();
+      const run = recordedEngine({
+        1: async () => {
+          saveSeatDownHalt(sessionId);
+          return makeSummary();
+        },
+        2: reentry.engine,
+      });
+
+      const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+      await vi.waitFor(() => {
+        expect(controlsStore.get().inputMode).toBe('question');
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      await answerRecoveryPanel(captureRunner, 'switch');
+      await vi.waitFor(() => {
+        expect(overlayStore.get().active).toBe('implementer-picker');
+      });
+      // The halt offers Claude Code; the picker takes Codex.
+      configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
+      pickerViewStore.setCommitted(true);
+      overlayStore.close();
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(2);
+      });
+
+      expect(run.entered[1]?.config.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
+      expect(loadState(prepared.session.ref)?.seatSwitches).toEqual([
+        expect.objectContaining({
+          seat: 'build',
+          toSeat: { tool: 'codex' },
+          cause: 'runner-usage-limit',
+        }),
+      ]);
+      const events = eventsStore.get().events;
+      expect(events.filter((event) => event.type === 'recovery_action_failed')).toEqual([]);
+      expect(
+        events.filter(
+          (event) => event.type === 'warning' && event.message.includes('Could not switch'),
+        ),
+      ).toEqual([]);
+
+      inst.unmount();
+    });
+
     it('keeps a REVIEW seat saved under a BUILD halt when Change BUILD tool picks another tool', async () => {
       const sessionId = '2026-10-19-halt-review-save-then-switch';
       const captureRunner: HarnessProps['captureRunner'] = { current: null };

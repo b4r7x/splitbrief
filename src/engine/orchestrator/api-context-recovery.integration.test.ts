@@ -767,10 +767,12 @@ describe('a REVIEW seat out of quota', () => {
 
     expect(follows.issue?.switchSeat).toEqual({
       seat: 'review',
+      from: { tool: 'codex' },
       candidates: [{ tool: 'claude-code' }],
     });
     expect(own.issue?.switchSeat).toEqual({
       seat: 'review',
+      from: { tool: 'codex' },
       candidates: [{ tool: 'claude-code' }],
     });
   });
