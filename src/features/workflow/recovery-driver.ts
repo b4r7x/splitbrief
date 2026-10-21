@@ -73,7 +73,7 @@ interface PromptPendingRecoveryArgs {
 
 interface RecoveryDriverOptions {
   prepared: PreparedExecution;
-  /** The config the run's seats were prepared from: a seat picker closed on its seat is a cancel. */
+  /** The config the run's seats were prepared from: it names the halted seat when the halt does not. */
   configOfRun: Config;
   inputMode: UseInputModeResult;
   abortedRef: { current: boolean };
@@ -144,18 +144,19 @@ function seatIn(
  * model and effort drafted. A row the picker takes is saved to the config of record,
  * and the swap is read back from it. A picker closed with no row taken (Escape, also
  * after Ctrl+D saved a deleted custom model) is a cancelled swap, and so is a take of
- * the seat the run was prepared on — same tool, model, effort and variant. A take of
- * the seat a save under the halt already chose is a swap. A BUILD halt names the profile
- * that failed: the picker saves to it, and the swap is read from it.
+ * a `kept` seat: the seat the halted call ran on — same tool, model, effort and
+ * variant — or the configured seat it was prepared from, which may leave its model to
+ * the tool. A take of the seat a save under the halt already chose is a swap, also
+ * after the run is opened again. A BUILD halt names the profile that failed: the picker
+ * saves to it, and the swap is read from it.
  */
 async function pickSwappedSeat(
   seat: CrewSeatId,
   candidate: SeatSwapCandidate,
-  configOfRun: Config,
+  kept: SeatSwapCandidate[],
   signal: AbortSignal,
   profile: string | undefined,
 ): Promise<SeatSwapCandidate | undefined> {
-  const before = seatIn(configOfRun, seat, profile);
   const overlay = seatPickerOverlayFor(CREW_SEAT_ROLES[seat]);
   if (candidate.model !== undefined) {
     pickerViewStore.expand(
@@ -170,7 +171,7 @@ async function pickSwappedSeat(
   if (!(await overlayClosed(overlay, signal))) return undefined;
   const after = seatIn(configStore.get().config, seat, profile);
   if (after === undefined) return undefined;
-  if (before !== undefined && sameSeatCandidate(after, before)) return undefined;
+  if (kept.some((seatKept) => sameSeatCandidate(after, seatKept))) return undefined;
   return after;
 }
 
@@ -263,12 +264,29 @@ export function createRecoveryDriver(
           openRecoveryNotice(issue, at);
           return null;
         }
+        const profile = offer.seat === 'build' ? issue.selectedImplementerProfile : undefined;
+        const configured = seatIn(configOfRun, offer.seat, profile);
+        // A halt saved before the offer recorded its seat has no `from`: the run's config names it.
+        const ranOn = offer.from ?? configured;
+        const kept: SeatSwapCandidate[] = [];
+        if (ranOn !== undefined) kept.push(ranOn);
+        // Preparation names the model a configured seat leaves to its tool: when the prepared
+        // seat is the one the call ran on, the configured seat is that seat too.
+        const preparedSeat = seatIn(config, offer.seat, profile);
+        if (
+          configured !== undefined &&
+          preparedSeat !== undefined &&
+          ranOn !== undefined &&
+          sameSeatCandidate(preparedSeat, ranOn)
+        ) {
+          kept.push(configured);
+        }
         const candidate = await pickSwappedSeat(
           offer.seat,
           offered,
-          configOfRun,
+          kept,
           controller.signal,
-          offer.seat === 'build' ? issue.selectedImplementerProfile : undefined,
+          profile,
         );
         if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
         if (candidate === undefined) {

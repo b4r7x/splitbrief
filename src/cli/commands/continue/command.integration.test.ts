@@ -495,6 +495,46 @@ describe('continueCommand', () => {
     expect(headlessRuns).toHaveLength(1);
   });
 
+  it('names the halted seat as the seat left when a save under the halt moved the config', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2026-10-21-switch-after-save';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('test-feature'),
+        ...RUN_CREW,
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001' })],
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'runner-usage-limit',
+          seat: 'build',
+          availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
+          recommendedAction: 'switch-seat',
+          switchSeat: {
+            seat: 'build',
+            from: { tool: 'codex' },
+            candidates: [{ tool: 'claude-code' }],
+          },
+        }),
+      },
+    );
+    // A `/crew` save while the halt waits moves the BUILD seat to OpenCode.
+    writeConfig(projectDir, makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } }));
+
+    await continueCommand(
+      sessionId,
+      { projectDir, json: true, action: parseContinueActionOption('switch-seat:claude-code') },
+      deps,
+    );
+
+    expect(loadState({ projectDir, sessionId })?.seatSwitches).toEqual([
+      expect.objectContaining({ fromSeat: { tool: 'codex' }, toSeat: { tool: 'claude-code' } }),
+    ]);
+    expect(headlessRuns).toHaveLength(1);
+  });
+
   it('gives an inherited final review its own reviewer block after a seat switch', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-review-limit';

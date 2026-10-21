@@ -98,6 +98,59 @@ function prepareReturning(outcome: PreparationOutcome) {
 }
 
 describe('switchSeatAndPrepareResume', () => {
+  it('names the seat the halted call ran on, not the seat the config holds now', async () => {
+    const halted = { tool: 'antigravity', model: 'gemini-nonexistent-9' };
+    const candidate = { tool: 'codex' };
+    const ref = setup('from-halted-seat', true, {
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'haiku' } }),
+      switchSeat: { seat: 'build', from: halted, candidates: [candidate] },
+    });
+    const { bus, events } = makeBusRecorder();
+    const result = await switchSeatAndPrepareResume({
+      ...ref,
+      candidate,
+      bus,
+      signal: new AbortController().signal,
+      policy: RESUME_POLICY,
+      prepare: async (input) => preparedFor(input.effectiveConfig),
+    });
+    expect(result.kind).toBe('switched');
+    expect(result.state.seatSwitches?.[0]?.fromSeat).toEqual(halted);
+    expect(events.filter((event) => event.type === 'seat_switched')).toEqual([
+      expect.objectContaining({ from: halted, to: candidate }),
+    ]);
+  });
+
+  it('switches to a tool the halt did not offer when the picker took it', async () => {
+    const candidate = { tool: 'codex', model: 'gpt-6-luna' };
+    const ref = setup('picker-not-offered', true, {
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet' } }),
+      switchSeat: {
+        seat: 'build',
+        from: { tool: 'claude-code', model: 'sonnet' },
+        candidates: [{ tool: 'opencode' }],
+      },
+    });
+    const { bus, events } = makeBusRecorder();
+    const result = await switchSeatAndPrepareResume({
+      ...ref,
+      candidate,
+      bus,
+      signal: new AbortController().signal,
+      policy: RESUME_POLICY,
+      prepare: async (input) => preparedFor(input.effectiveConfig),
+    });
+    expect(result.kind).toBe('switched');
+    expect(loadConfig(ref.projectDir).config.implementer).toMatchObject({
+      kind: 'cli',
+      ...candidate,
+    });
+    expect(events.map((event) => event.type)).not.toContain('recovery_action_failed');
+    expect(events.filter((event) => event.type === 'seat_switched')).toEqual([
+      expect.objectContaining({ cause: 'runner-usage-limit', auto: false, to: candidate }),
+    ]);
+  });
+
   it('uses the preparation catalog for the saved fallback switch labels', async () => {
     const candidate = { tool: 'codex', model: 'gpt-6-luna' };
     const ref = setup('catalog-fallback-resume', true, {

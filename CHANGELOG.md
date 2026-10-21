@@ -346,6 +346,8 @@
 - A decision the planner accepts in its own words no longer counts as rejected and no longer costs a retry.
 - After a reject that leaves some of your edits in place, continuing the run builds again each brief whose files the reject put back, and the closed run lists only files that are on disk. This is also true when the run was halted on a later brief or on the final review: the halt ends, and continuing the run builds that brief again.
 - A build seat that times out or is cut for silence twice in a row on one brief now stops as *Seat down*, on every seat kind, API seats included, and the halt can move the seat to another ready tool. Before, the timeouts used up the brief's retries and planner consults, and the run stopped as a failed brief.
+- After a *Seat down* halt, a tool and model you saved for the seat while the run waited are taken when you pick them in **Change BUILD tool** (or PLAN or REVIEW), also after you open the run again. Before, picking the saved row counted as no change, and the halt asked again.
+- In **Change BUILD tool** (or PLAN or REVIEW), picking a ready tool that the halt did not list now moves the seat, and the switch names the seat the halted call ran on. Before, the run said it could not switch and kept the halt.
 
 ## [0.1.0] - 2026-08-07
 

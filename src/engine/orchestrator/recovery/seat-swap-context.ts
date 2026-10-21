@@ -18,6 +18,7 @@ import { cliSeatDiscoveryContext } from '../../detection/cli-context.js';
 import { savedRouteCatalog } from '../../detection/route-catalog.js';
 import { detectRunnerEvidence } from '../../detection/runner-evidence.js';
 import type { DetectedSeatTool, SeatSwapContext } from './builders/task.js';
+import { seatCandidateOfRunner } from './switch-seat.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 
 type SeatRunner = Config['planner'] | Config['implementer'] | NonNullable<Config['reviewer']>;
@@ -181,6 +182,7 @@ export async function loadSeatSwapContext(
     ...(input.modelCache !== undefined && { modelCache: input.modelCache }),
     currentTool,
     ...(input.runner.model !== undefined && { currentModel: input.runner.model }),
+    from: seatCandidateOfRunner(input.runner),
     detectedTools,
     ...(fallback !== undefined && { fallback }),
     ...(blockedReason !== undefined && { fallbackBlockedReason: blockedReason }),

@@ -156,6 +156,8 @@ export type SeatSwapContext = Readonly<{
   seat: CrewSeatId;
   currentTool: string;
   currentModel?: string | undefined;
+  /** The seat the halted call ran on, as the offer records it. */
+  from?: SeatSwapCandidate | undefined;
   modelCache?: ModelCacheAccessor | undefined;
   detectedTools: readonly DetectedSeatTool[];
   fallback?: SeatSwapCandidate | undefined;
@@ -204,7 +206,11 @@ export function switchSeatOffer(context: SeatSwapContext | undefined): SwitchSea
     });
   }
   if (candidates.length === 0) return undefined;
-  return { seat: context.seat, candidates };
+  return {
+    seat: context.seat,
+    ...(context.from !== undefined && { from: context.from }),
+    candidates,
+  };
 }
 
 function seatHostableTools(seat: CrewSeatId): readonly string[] {
@@ -225,6 +231,7 @@ function modelRefusalSeatOffer(context: SeatSwapContext | undefined): SwitchSeat
   }
   return {
     seat: context.seat,
+    ...(context.from !== undefined && { from: context.from }),
     candidates: [...(offer?.candidates ?? []), { tool: context.currentTool }],
   };
 }
