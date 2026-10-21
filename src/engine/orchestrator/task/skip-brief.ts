@@ -19,8 +19,8 @@ type SkipBriefOptions = {
 
 /**
  * A skipped brief leaves no files behind: every file it changed since its task-start snapshot goes
- * back, and the ledger books on it only the files still changed and, when the skip closes the
- * brief's lineage, the lineage's remainder. Without a snapshot no attempt of the brief ran, so
+ * back, and the ledger books on it only the files still changed and the unbooked files of its
+ * lineage that it books (`lineageRemainder`). Without a snapshot no attempt of the brief ran, so
  * there is nothing to take back.
  */
 export async function skipBrief(
