@@ -13,7 +13,7 @@ import { runSeatIdentity } from '../../core/providers/seat-identity.js';
 import type { Config } from '../../core/schemas/config.js';
 import { ZERO_TOKEN_USAGE } from '../../core/schemas/tokens.js';
 import type { UsageDetailsInput } from './usage-details-model.js';
-import { deriveUsageDetails, formatUsageMoney } from './usage-details-model.js';
+import { deriveUsageDetails, formatUsageMoney, statesAmount } from './usage-details-model.js';
 
 /** Saved runs keep their saved rates; live runs price the calls they actually recorded. */
 export function usageDetailsForRun(input: {
@@ -74,7 +74,9 @@ export function readCostText(): string | null {
     }),
   );
   const amount = formatUsageMoney(view.money);
-  if (view.money.kind === 'estimate') return `${amount} (catalog estimate)`;
+  if (view.money.kind === 'estimate' && statesAmount(view.money)) {
+    return `${amount} (catalog estimate)`;
+  }
   if (view.money.kind === 'legacy') return `${amount} (legacy estimate; rates not recorded)`;
   return amount;
 }

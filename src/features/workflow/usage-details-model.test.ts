@@ -190,18 +190,81 @@ describe('usage details money', () => {
         requestEstimate: {
           amount: null,
           currency: 'USD' as const,
-          basis: 'catalog-estimate' as const,
+          basis: 'unavailable' as const,
           completeness: 'unavailable' as const,
           knownSubtotal: 0,
           reasons: ['unpriced-model' as const],
-          items: [],
+          items: [
+            {
+              callId: 'c1',
+              role: 'planner' as const,
+              usageBoundary: 'single-request' as const,
+              amount: null,
+              knownSubtotal: 0,
+              completeness: 'unavailable' as const,
+              reasons: ['unpriced-model' as const],
+              billing: { posture: 'unknown' as const, basis: 'unknown' as const },
+              rates: {
+                source: 'unpriced' as const,
+                provider: 'claude-code',
+                model: 'haiku',
+                inputPer1M: 0,
+                outputPer1M: 0,
+                capturedAt: 1_700_000_000_000,
+              },
+            },
+          ],
         },
       }),
     };
 
     expect(facts(unpriced, 'money:amount')).toEqual(['not estimated']);
     expect(facts(unpriced, 'money:reasons')).toEqual(['model has no published rate']);
+    expect(facts(unpriced, 'rates:0')).toEqual(['haiku', 'no published rate', '1 request']);
+    expect(rows(unpriced).find((row) => row.key === 'money:amount')?.tone).toBe('textDim');
+    expect(rows(unpriced).some((row) => row.key === 'money:note')).toBe(false);
     for (const text of texts(unpriced)) expect(text).not.toContain('$0.00');
+  });
+
+  it('calls a partly priced amount a catalog estimate', () => {
+    const partial = {
+      tokenUsage: usage({ plannerInput: 1_000_000 }),
+      costBreakdown: breakdown({
+        requestEstimate: {
+          amount: null,
+          currency: 'USD' as const,
+          basis: 'catalog-estimate' as const,
+          completeness: 'partial' as const,
+          knownSubtotal: 1,
+          reasons: ['missing-cache-rate' as const],
+          items: [
+            {
+              callId: 'c1',
+              role: 'planner' as const,
+              usageBoundary: 'single-request' as const,
+              amount: null,
+              knownSubtotal: 1,
+              completeness: 'partial' as const,
+              reasons: ['missing-cache-rate' as const],
+              billing: { posture: 'api-metered' as const, basis: 'enforced-channel' as const },
+              rates: {
+                source: 'models-dev' as const,
+                provider: 'acme',
+                model: 'metered-model',
+                inputPer1M: 1,
+                outputPer1M: 10,
+                capturedAt: 1_700_000_000_000,
+              },
+            },
+          ],
+        },
+      }),
+    };
+
+    expect(facts(partial, 'money:amount')).toEqual(['$1.00 + unknown']);
+    expect(facts(partial, 'money:note')).toEqual([
+      'Catalog estimate from the rates below, not a confirmed amount.',
+    ]);
   });
 
   it('does not claim subscription billing from catalog metadata alone', () => {

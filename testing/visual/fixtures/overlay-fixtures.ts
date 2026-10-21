@@ -2339,12 +2339,77 @@ const USAGE_LEGACY_BREAKDOWN: CostBreakdown = {
   hasPricedUsage: true,
 };
 
+/** Two subscription CLI seats: nothing has a published rate, so nothing is estimated. */
+const USAGE_UNPRICED_BREAKDOWN: CostBreakdown = {
+  actualPlannerCost: 0,
+  actualImplementerCost: 0,
+  totalActualCost: 0,
+  hasUnpricedUsage: true,
+  requestEstimate: {
+    amount: null,
+    currency: 'USD',
+    basis: 'unavailable',
+    completeness: 'unavailable',
+    knownSubtotal: 0,
+    reasons: ['unpriced-model'],
+    items: (
+      [
+        ['call-planner-1', 'planner', 'claude-code', 'haiku'],
+        ['call-planner-2', 'planner', 'claude-code', 'haiku'],
+        ['call-review-1', 'review', 'antigravity', 'gemini-3-pro'],
+      ] as const
+    ).map(([callId, role, provider, model]) => ({
+      callId,
+      role,
+      usageBoundary: 'single-request' as const,
+      amount: null,
+      knownSubtotal: 0,
+      completeness: 'unavailable' as const,
+      reasons: ['unpriced-model' as const],
+      billing: { posture: 'unknown' as const, basis: 'unknown' as const },
+      rates: {
+        source: 'unpriced' as const,
+        provider,
+        model,
+        inputPer1M: 0,
+        outputPer1M: 0,
+        capturedAt: VISUAL_PUBLISHED_AT,
+      },
+    })),
+  },
+  providerRunMetadata: {
+    'cli:claude-code': {
+      service: 'claude-code',
+      offering: 'coding-subscription',
+      normalizedEndpoint: 'cli:claude-code',
+      billing: 'unknown',
+      asOf: '',
+      billingAttribution: { posture: 'unknown', basis: 'unknown' },
+    },
+    'cli:antigravity': {
+      service: 'antigravity',
+      offering: 'coding-subscription',
+      normalizedEndpoint: 'cli:antigravity',
+      billing: 'unknown',
+      asOf: '',
+      billingAttribution: { posture: 'unknown', basis: 'unknown' },
+    },
+  },
+};
+
 const createUsageDetailsFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'usage-details',
     seed: seedUsageCounters,
     underlyingScreen: 'workflow',
     workflowRoute: usageRoute(USAGE_PRICED_BREAKDOWN),
+  });
+const createUsageDetailsUnpricedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'usage-details',
+    seed: seedUsageCounters,
+    underlyingScreen: 'workflow',
+    workflowRoute: usageRoute(USAGE_UNPRICED_BREAKDOWN),
   });
 const createUsageDetailsLegacyFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -2863,6 +2928,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-sessions-refused-applying'), createSessionsRefusedApplyingFixture],
   [scenarioId('overlay-usage-details'), createUsageDetailsFixture],
   [scenarioId('overlay-usage-details-legacy'), createUsageDetailsLegacyFixture],
+  [scenarioId('overlay-usage-details-unpriced'), createUsageDetailsUnpricedFixture],
   [scenarioId('overlay-usage-details-api-twin'), createUsageDetailsApiTwinFixture],
   [scenarioId('overlay-usage-context-insufficient'), createUsageContextFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
