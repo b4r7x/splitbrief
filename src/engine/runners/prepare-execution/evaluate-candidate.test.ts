@@ -13,7 +13,7 @@ import { cliAuthRemediation } from '../../../core/schemas/readiness.js';
 import { runnerDiscoveryContextKey } from '../../detection/runner-evidence.js';
 import { getSplitbriefPath } from '../../../core/paths.js';
 import { saveDetectionCache } from '../../detection/cache.js';
-import { evaluateCandidate } from './evaluate-candidate.js';
+import { evaluateCandidate, inlineRunnerRefusal } from './evaluate-candidate.js';
 import type { RunnerCandidate } from './runner-candidates.js';
 import type { PreparationContext, PrepareExecutionDependencies } from './types.js';
 
@@ -518,5 +518,18 @@ describe('evaluateCandidate on a local-only OpenCode seat', () => {
       details: expect.arrayContaining(['OpenCode CLI is not signed in.']),
       runnerCause: { tool: 'opencode', cause: 'unauthenticated' },
     });
+  });
+});
+
+describe('inlineRunnerRefusal', () => {
+  it.each([
+    ['shell', 'a shell runner command'],
+    ['agent', 'an agent runner command'],
+  ] as const)('names %s with its article in every refusal', (kind, phrase) => {
+    const reasons = (['missing', 'non-executable', 'untrusted'] as const).map(
+      (status) => inlineRunnerRefusal({ kind: 'denied', status }, kind).reason,
+    );
+
+    for (const reason of reasons) expect(reason).toContain(`declares ${phrase} that`);
   });
 });
