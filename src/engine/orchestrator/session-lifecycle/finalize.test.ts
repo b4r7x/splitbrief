@@ -388,6 +388,39 @@ describe('finalizeEndedRun seat identity', () => {
     });
   });
 
+  it('keeps the brief each BUILD seat built, with its retries and profile', () => {
+    const projectDir = makeProjectDir();
+    const ref = { projectDir, sessionId: 'sess-two-build-seats' };
+    const brief = { method: 'local', implementerTokens: 10, escalationTokens: 0 } as const;
+    const taskBreakdowns = [
+      {
+        ...brief,
+        taskId: makeTask({ id: 'T001' }).id,
+        taskTitle: 'First',
+        retryCount: 2,
+        tool: 'claude-code',
+        model: 'haiku',
+        implementerProfile: 'quick',
+      },
+      {
+        ...brief,
+        taskId: makeTask({ id: 'T002' }).id,
+        taskTitle: 'Second',
+        retryCount: 0,
+        tool: 'antigravity',
+        model: 'auto',
+        implementerProfile: 'default',
+      },
+    ];
+
+    finalizeRunAtRest({
+      ref,
+      state: { ...createInitialState('feat'), ...RUN_CREW, phase: 'implementing', taskBreakdowns },
+    });
+
+    expect(readSession(ref)?.summary?.taskBreakdown).toMatchObject(taskBreakdowns);
+  });
+
   it('reads the seats an older record kept in its state', () => {
     const projectDir = makeProjectDir();
     const ref = { projectDir, sessionId: 'sess-older-record' };

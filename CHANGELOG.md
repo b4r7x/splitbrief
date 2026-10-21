@@ -356,6 +356,7 @@
 - The composer hint now says what the focused menu takes, and no longer contradicts the menu's own key legend.
 - After the planner splits a brief, a file that the first attempt wrote stays with the part that names it. With task review the passing part shows no false "not changed" warning, and after End run between the parts a finished file no longer reads as partial. Before, every such file went to the part that finished last.
 - A halt now counts the attempts on the brief the same way the transcript does: after two timeouts it reads `after 2 attempts` and `Attempts: 2/8`, and a brief that failed every retry names all its attempts. A failed planner consult states no attempt count, since it is not an attempt on the brief. Before, the halt said `after 1 attempt` and `Attempts: 1/1`.
+- A closed run you open again from Sessions names every BUILD seat that built its briefs, with retry counts and profile names. Before, it named only the last seat.
 
 ## [0.1.0] - 2026-08-07
 

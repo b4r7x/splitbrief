@@ -83,6 +83,7 @@ export function finalizeEndedRun(
     projectDir: ref.projectDir,
     sessionId: ref.sessionId,
     ...(input.modelCache !== undefined && { pricingCache: input.modelCache }),
+    ...(state.taskBreakdowns !== undefined && { taskBreakdowns: state.taskBreakdowns }),
     state,
   });
   saveFinalSession({
