@@ -174,7 +174,7 @@ describe('TwoColumnPicker', () => {
             getKey: (model) => model.id,
             renderRow: (model) => <Text>{model.displayName}</Text>,
             isExpanded: true,
-            expandedHint: () => 'space cycle · ⏎ confirm',
+            enterHint: () => 'space cycle · ⏎ confirm',
           }}
           preview={() =>
             'Unreadable model list · ctrl+r will not help; add a custom model or report the output'
@@ -1281,7 +1281,7 @@ describe('TwoColumnPicker', () => {
           getKey: (m) => m.id,
           renderRow: (m) => <Text>{m.displayName}</Text>,
           isExpanded: true,
-          expandedHint: () => undefined,
+          enterHint: () => undefined,
           customRow: { onSelect: () => {} },
         }}
         onConfirm={() => {}}
@@ -1315,7 +1315,7 @@ describe('TwoColumnPicker', () => {
           getKey: (m) => m.id,
           renderRow: (m) => <Text>{m.displayName}</Text>,
           isExpanded: true,
-          expandedHint: () => 'space cycle · ⏎ confirm',
+          enterHint: () => 'space cycle · ⏎ confirm',
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
