@@ -61,6 +61,7 @@ Hooks whose sole consumer is inside one feature folder. Example from `features/w
 | `use-review-content.ts` | Async file read via `AbortController`-cancelled `fs.readFile` + line-count sync to `reviewStore`. |
 | `use-mouse-scroll.ts` | Workflow-owned mouse-wheel handlers for conversation/review scroll. App-level dispatch decides when workflow may receive wheel events. |
 | `use-mouse-pointer.ts` | Workflow-owned hit testing for rail, brief, and conversation rows. App-level dispatch owns overlays, non-workflow screens, and prompt gating. |
+| `use-rail-cells.ts` | The cells the header rail paints, so the header and the screen fit a seat line to the same room. |
 | `use-keys.ts` | Workflow-only keyboard: conversation/review scroll and diff/activity expansion. Mounted only when `screen === 'workflow'`. |
 | `workflow-screen/use-model.ts` | `useWorkflowScreen()` and `WorkflowScreenDeps` — the screen model the page `app/screens/workflow.tsx` reads. |
 | `workflow-screen/use-inline-edit.ts` | `useWorkflowInlineEdit()` — the external-edit handoff: consumes the Ctrl+O request and runs the review-parser handoff. |

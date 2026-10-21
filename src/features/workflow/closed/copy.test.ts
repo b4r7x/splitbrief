@@ -325,7 +325,7 @@ describe('crewLine', () => {
     const view = makeView({
       seats: {
         ...makeView().seats,
-        review: { kind: 'named', short: 'gpt-5-codex' },
+        review: { kind: 'named', short: 'gpt-5-codex', full: 'custom-endpoint · gpt-5-codex' },
       },
     });
     expect(

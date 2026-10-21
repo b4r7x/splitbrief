@@ -286,13 +286,21 @@ function sessionSegments(run: SummaryView['run']): CopySegment[] {
  * The crew line the header would paint, laid out to whatever the Run block can spare. The summary
  * has names on record rather than runner blocks, so it enters the layout half directly.
  */
-export function crewLine(view: SummaryView, budget: number): readonly SeatLineSpan[] {
+export function crewLine(
+  view: Pick<SummaryView, 'seats'>,
+  budget: number,
+): readonly SeatLineSpan[] {
   return formatCollapsedSeatSpansFromIdentities({
     plan: seatWord(view.seats.plan),
     build: seatWord(view.seats.build),
     review: view.seats.review.kind === 'inherits' ? null : seatWord(view.seats.review),
     budget,
   });
+}
+
+/** A seat as the sidebar crew names it: a named seat with its tool, like the live crew rows. */
+export function seatIdentityWord(seat: SeatView): string {
+  return seat.kind === 'named' ? seat.full : seatWord(seat);
 }
 
 function seatWord(seat: SeatView): string {

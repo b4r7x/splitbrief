@@ -3,7 +3,7 @@ import type { BriefQualitySummary, ReviewVerdict, Summary } from '../../../core/
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { RunCheckpoint, RunRecord } from '../../../core/sessions/run-record.js';
-import { canUndoApply, type RunStatus } from '../../../core/sessions/run-status.js';
+import { awaitsApply, canUndoApply, type RunStatus } from '../../../core/sessions/run-status.js';
 import { oneLineDisplayText, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { atRestRailStages } from '../at-rest.js';
@@ -24,7 +24,12 @@ import {
 export type SummaryOutcomeKind = 'complete' | 'needs-attention' | 'ended' | 'applied' | 'discarded';
 
 export type SeatView =
-  | Readonly<{ kind: 'named'; short: string }>
+  | Readonly<{
+      kind: 'named';
+      short: string;
+      /** The seat with its tool, the way the live crew rows name it. */
+      full: string;
+    }>
   | Readonly<{ kind: 'inherits' }>
   | Readonly<{ kind: 'mixed'; profiles: readonly string[] }>
   | Readonly<{
@@ -35,6 +40,8 @@ export type SeatView =
       contiguous: boolean;
     }>
   | Readonly<{ kind: 'unset' }>;
+
+export type RecordedCrew = Readonly<{ plan: SeatView; build: SeatView; review: SeatView }>;
 
 export type BriefRowState = 'local' | 'escalated' | 'failed' | 'skipped' | 'stopped' | 'pending';
 
@@ -91,7 +98,7 @@ export interface SummaryView {
     sessionId: string;
   }>;
   rail: RailStageState[];
-  seats: Readonly<{ plan: SeatView; build: SeatView; review: SeatView }>;
+  seats: RecordedCrew;
   briefs: Readonly<{
     total: number;
     passed: number;
@@ -150,11 +157,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
       sessionId,
     },
     rail: atRestRailStages(record),
-    seats: {
-      plan: plannerSeatView(summary),
-      build: buildSeatView(summary),
-      review: reviewSeatView(summary),
-    },
+    seats: seatsOf(summary),
     briefs: {
       total: summary.totalTasks,
       passed: summary.completedByLocal,
@@ -179,6 +182,27 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
           },
     phases: phaseTimings(summary),
     ran: summary.activeTime ?? null,
+  };
+}
+
+/**
+ * The crew a run names from its record. A closed run and a run whose reviewed result waits for
+ * Apply will not build again, so they name the crew that built them. Any other run names the crew
+ * it will build on when it continues, which is today's: null.
+ */
+export function recordedCrew(record: RunRecord): RecordedCrew | null {
+  if (record.summary === null) return null;
+  const built =
+    record.status.kind === 'closed' ||
+    (record.hydration.kind === 'loaded' && awaitsApply(record.hydration.state));
+  return built ? seatsOf(record.summary) : null;
+}
+
+function seatsOf(summary: Summary): RecordedCrew {
+  return {
+    plan: plannerSeatView(summary),
+    build: buildSeatView(summary),
+    review: reviewSeatView(summary),
   };
 }
 

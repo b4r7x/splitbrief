@@ -195,6 +195,10 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     record.status.resumeAt.kind === 'apply'
       ? record
       : undefined);
+  // A local run's record is the snapshot it continued from. It names the crew while the live run is
+  // still at Apply; once Apply sends the run back to review it builds again on today's seats.
+  const crewRecord =
+    atRestRecord ?? (local !== undefined && phase === 'complete' ? record : undefined);
 
   const resumeAtRest = useEffectEvent(continueAtRest);
   useEffect(() => {
@@ -233,6 +237,8 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     applying,
     closed,
     closedView,
+    /** The record whose crew the header and the sidebar name, when `recordedCrew` says it has one. */
+    crewRecord,
     railStages: railRecord === undefined ? undefined : atRestRailStages(railRecord),
     continuable: composer?.continuable ?? false,
     handleInput,

@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
+import { buildApplyConflictRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { taskId } from '../../core/schemas/task.js';
@@ -43,6 +44,8 @@ import { workflowCommands } from '../../core/runtime/commands/defs/workflow.js';
 import { hydrateResume } from '../../features/workflow/resume-hydration.js';
 import { listRowLead } from '../../components/list-row.js';
 import { glyph } from '../../lib/glyphs.js';
+import { arrowSep } from '../../core/separators.js';
+import { saveFinalSession } from '../../engine/orchestrator/session-lifecycle/finalize.js';
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
@@ -111,6 +114,32 @@ function preparedExecution(projectDir: string, feature: string): PreparedExecuti
       allowHooks: false,
     },
   };
+}
+
+/** The record of a run that planned on Opus and moved its build from Haiku to auto. */
+function builtOnOtherCrew(): Summary {
+  const brief = {
+    method: 'local',
+    implementerTokens: 1,
+    escalationTokens: 0,
+    retryCount: 0,
+  } as const;
+  return makeSummary({
+    feature: 'ready run',
+    plannerTool: 'claude-code',
+    plannerModel: 'opus',
+    implementerTool: 'antigravity',
+    implementerModel: 'auto',
+    taskBreakdown: [
+      { ...brief, taskId: taskId('T001'), taskTitle: 'First', tool: 'claude-code', model: 'haiku' },
+      { ...brief, taskId: taskId('T002'), taskTitle: 'Second', tool: 'antigravity', model: 'auto' },
+    ],
+  });
+}
+
+/** The crew saved after that run built: BUILD on Sonnet. */
+function sonnetBuildConfig() {
+  return makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet' } });
 }
 
 function navigatePreparedWorkflow(projectDir: string, feature: string): void {
@@ -1128,6 +1157,231 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
+  it('names the crew that built a ready run, not the crew saved since', async () => {
+    configStore.__testReset({ config: sonnetBuildConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 160, rows: 40 });
+    const ready = readyRun();
+    routerStore.init({
+      screen: 'workflow',
+      run: { ...ready, summary: builtOnOtherCrew() },
+      execution: { kind: 'at-rest' },
+    });
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
+      cols: 160,
+      rows: 40,
+    });
+    await flushEffects();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const build = `Haiku 5.5${arrowSep()}auto`;
+    expect(lines[0]).toContain(`PLAN Opus 5.5 · BUILD ${build}`);
+    // The header and the sidebar crew both name it.
+    expect(lines.filter((line) => line.includes(build))).toHaveLength(2);
+    expect(lines.join('\n')).not.toContain('Sonnet');
+    ui.unmount();
+  });
+
+  it('names the crew a stopped run will build on when it continues', async () => {
+    configStore.__testReset({ config: sonnetBuildConfig(), projectDir });
+    openRun({ summary: builtOnOtherCrew() });
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const header = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
+    expect(header).toContain('BUILD Sonnet 5.5');
+    expect(header).not.toContain('Haiku');
+    ui.unmount();
+  });
+
+  /**
+   * A worktree run whose Apply halted on a binary conflict, built on another crew than the one
+   * saved today, on the screen at rest. The at-rest watcher reads the record back from disk, so
+   * the run's summary is there too.
+   */
+  function applyHaltRun() {
+    configStore.__testReset({ config: sonnetBuildConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 160, rows: 40 });
+    const workspacePath = join(projectDir, 'run-workspace');
+    const workspace = {
+      kind: 'worktree' as const,
+      path: workspacePath,
+      base: { snapshotId: 'b', head: null },
+    };
+    const halt = () =>
+      makeWorkflowState({
+        phase: 'complete',
+        reviewStatus: 'passed',
+        workspace,
+        pendingRecovery: buildApplyConflictRecoveryIssue({
+          conflicts: [{ path: 'assets/logo.png', kind: 'binary' }],
+          workspacePath,
+          createdAt: '2026-10-21T00:00:00.000Z',
+        }),
+      });
+    const halted = halt();
+    const issue = halted.pendingRecovery;
+    if (issue === undefined) throw new Error('expected the Apply halt');
+    const record = openRun({
+      status: {
+        kind: 'open',
+        stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
+        resumeAt: { kind: 'apply' },
+      },
+      hydration: { kind: 'loaded', state: halted },
+      summary: builtOnOtherCrew(),
+    });
+    const save = (state: typeof halted) => {
+      saveState(record.ref, state);
+      saveFinalSession({
+        ...record.ref,
+        feature: 'ready run',
+        startTime: FIXED_TS,
+        summary: builtOnOtherCrew(),
+        state,
+      });
+    };
+    save(halted);
+    const base = preparedExecution(projectDir, 'ready run');
+    const prepareResume = vi.fn(async () => ({
+      kind: 'prepared' as const,
+      execution: {
+        ...base,
+        purpose: 'resume' as const,
+        config: parsePreparedConfig(sonnetBuildConfig()),
+        sourceConfig: parsePreparedConfig(sonnetBuildConfig()),
+        session: { ...base.session, ref: record.ref },
+        runtime: { ...base.runtime, resumeState: halted },
+      },
+    }));
+    const ui = renderFeature(
+      <WorkflowScreen
+        commands={[]}
+        onRuntimeCommand={vi.fn()}
+        deps={{
+          runWorkflow,
+          sessionSelect: {
+            applying: () => false,
+            loadResumeState: hydrateResume,
+            prepareResume,
+            hydrateRun: async () => {},
+          },
+        }}
+      />,
+      { cols: 160, rows: 40 },
+    );
+    return { ui, workspace, halt, save };
+  }
+
+  /** ⏎ on the at-rest byline continues the run onto its halt panel; ⏎ again takes Re-run Apply. */
+  async function rerunApply(ui: ReturnType<typeof applyHaltRun>['ui']) {
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Re-run Apply');
+    });
+    await flushEffects();
+    const route = routerStore.get();
+    expect(route.screen === 'workflow' && route.execution.kind).toBe('local');
+    return () => {
+      ui.stdin.write('\r');
+    };
+  }
+
+  it('names the crew that built a run while you decide its Apply halt, and when Re-run Apply halts again', async () => {
+    const reApply = Promise.withResolvers<void>();
+    const { ui, halt, save } = applyHaltRun();
+    runWorkflow.mockImplementation(async () => {
+      await reApply.promise;
+      save(halt());
+      return builtOnOtherCrew();
+    });
+    const build = `Haiku 5.5${arrowSep()}auto`;
+    const expectRecordedCrew = () => {
+      const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      expect(lines[0]).toContain(`PLAN Opus 5.5 · BUILD ${build}`);
+      // The header and the sidebar crew both name it.
+      expect(lines.filter((line) => line.includes(build))).toHaveLength(2);
+      expect(lines.join('\n')).not.toContain('Sonnet');
+    };
+    await flushEffects();
+    expectRecordedCrew();
+
+    const takeRerun = await rerunApply(ui);
+    expectRecordedCrew();
+
+    takeRerun();
+    await vi.waitFor(() => {
+      expect(runWorkflow).toHaveBeenCalledTimes(1);
+    });
+    reApply.resolve();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Re-run Apply');
+    });
+    await flushEffects();
+    expectRecordedCrew();
+    for (const frame of ui.frames) expect(stripAnsiStyles(frame)).not.toContain('Sonnet');
+    ui.unmount();
+  });
+
+  it('names the crew it builds on once Re-run Apply sends the merged result back to review', async () => {
+    const reviewing = Promise.withResolvers<void>();
+    const stop = Promise.withResolvers<void>();
+    const { ui, workspace, save } = applyHaltRun();
+    const review = makeWorkflowState({
+      phase: 'final-review',
+      workspace,
+      applyReview: { merged: [], failures: [] },
+    });
+    // The engine as Apply drives it when the resolved workspace no longer matches the reviewed one.
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_resumed',
+        ts: FIXED_TS,
+        phase: 'complete',
+        inProcess: true,
+      });
+      save(review);
+      publishEvent(opts, {
+        type: 'planner_text',
+        ts: FIXED_TS,
+        phase: 'final-review',
+        text: 'The merged result goes through its checks and the review again before Apply.',
+      });
+      reviewing.resolve();
+      await stop.promise;
+      return builtOnOtherCrew();
+    });
+    // The crew the header names, and the BUILD seat of the sidebar crew.
+    const crew = () => {
+      const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      const header = lines[0] ?? '';
+      const sidebar = lines.slice(1).find((line) => line.includes('BUILD')) ?? '';
+      return {
+        header: header.slice(header.indexOf('PLAN ')).trim(),
+        build: /BUILD\s+(.+?)\s*[|│]/.exec(sidebar)?.[1],
+      };
+    };
+    await flushEffects();
+    (await rerunApply(ui))();
+    await reviewing.promise;
+    await flushEffects();
+    const live = crew();
+    expect(live).toEqual({
+      header: 'PLAN auto · BUILD Sonnet 5.5 · REVIEW = PLAN',
+      build: 'Claude Code CLI · Sonnet 5.5',
+    });
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Haiku');
+
+    stop.resolve();
+    await vi.waitFor(() => {
+      const route = routerStore.get();
+      expect(route.screen === 'workflow' && route.execution.kind).toBe('at-rest');
+    });
+    await flushEffects();
+    // The same review state at rest names the same crew.
+    expect(crew()).toEqual(live);
+    ui.unmount();
+  });
+
   it('says Apply is writing and queues home behind it on a bare Enter', async () => {
     const ready = readyRun();
     routerStore.init({
@@ -1731,6 +1985,45 @@ describe('WorkflowScreen when the final review passes', () => {
       `${rail}${railConnectorString()}${glyph('stagePending')} Apply`,
     );
     for (const frame of ui.frames) expect(header(frame)).not.toContain('done');
+    ui.unmount();
+  });
+
+  it('names the crew that built the run once it is ready to apply, not the crew saved since', async () => {
+    configStore.__testReset({ config: sonnetBuildConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    navigatePreparedWorkflow(projectDir, 'ready run');
+    runWorkflow.mockImplementation(async (opts) => {
+      const state = makeWorkflowState({
+        phase: 'complete',
+        reviewStatus: 'passed',
+        workspace: {
+          kind: 'worktree',
+          path: join(projectDir, 'run-workspace'),
+          base: { snapshotId: 'workspace-base', head: null },
+        },
+      });
+      saveState(opts.prepared.session.ref, state);
+      const summary = builtOnOtherCrew();
+      saveFinalSession({
+        ...opts.prepared.session.ref,
+        feature: 'ready run',
+        startTime: FIXED_TS,
+        summary,
+        state,
+      });
+      return summary;
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 120, rows: 40 },
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Ready to apply');
+    });
+    const header = stripAnsiStyles(ui.lastFrame()).split('\n')[0] ?? '';
+    expect(header).toContain(`BUILD Haiku 5.5${arrowSep()}auto`);
+    expect(header).not.toContain('Sonnet');
     ui.unmount();
   });
 

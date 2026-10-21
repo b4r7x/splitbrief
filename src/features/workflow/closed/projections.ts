@@ -16,7 +16,7 @@ import type {
   SeatView,
   SummaryView,
 } from './view-model.js';
-import { formatShortSeatIdentity } from '../../../core/crew/identity.js';
+import { formatSeatIdentity, formatShortSeatIdentity } from '../../../core/crew/identity.js';
 import {
   getProviderDisplayName,
   getRunnerIdentityDisplayName,
@@ -50,6 +50,7 @@ function seatView(input: {
   return {
     kind: 'named',
     short: formatShortSeatIdentity({ seat, displayName, kind }),
+    full: formatSeatIdentity({ seat, displayName, kind }),
   };
 }
 

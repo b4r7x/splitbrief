@@ -1048,8 +1048,7 @@ const READY_LOG: readonly EngineEvent[] = [
       action: savedAction(READY_TO_APPLY.hydration.state, brief.id),
       index,
       total: READY_LEDGER.tasks.length,
-      tool: 'ollama',
-      model: 'qwen2.5-coder:7b',
+      ...READY_BUILD,
     },
     {
       type: 'task_completed',
@@ -1060,8 +1059,7 @@ const READY_LOG: readonly EngineEvent[] = [
       method: 'local',
       retries: brief.retries,
       duration: brief.durationMs,
-      tool: 'ollama',
-      model: 'qwen2.5-coder:7b',
+      ...READY_BUILD,
     },
   ]),
   {
@@ -2301,6 +2299,13 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-ready-to-apply',
     route: { record: READY_TO_APPLY, log: READY_LOG },
   }),
+  {
+    ...atRestProjection({
+      id: 'workflow-ready-crew-saved',
+      route: { record: READY_TO_APPLY, log: READY_LOG },
+    }),
+    sidebarVisible: true,
+  },
   atRestProjection({
     id: 'workflow-at-rest-applying',
     route: { record: APPLYING, log: READY_LOG },
