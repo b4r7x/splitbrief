@@ -21,7 +21,6 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { processError } from '../../lib/process/errors.js';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
@@ -1444,7 +1443,7 @@ describe('createCliImplementer (timeout surfacing)', () => {
     timeout: 50,
   };
 
-  it('surfaces a tiny-timeout slow command as processError.timeout, not a generic abort', async () => {
+  it('returns a tiny-timeout slow command as a timed-out call, not a generic abort', async () => {
     const shimPath = join(shimDir, 'opencode');
     writeFileSync(shimPath, '#!/bin/bash\ncat > /dev/null\nsleep 5\n', 'utf8');
     chmodSync(shimPath, 0o755);
@@ -1452,21 +1451,17 @@ describe('createCliImplementer (timeout surfacing)', () => {
 
     const implementer = createCliImplementer(opencodeImplementer);
 
-    let thrown: unknown;
-    try {
-      await implementer.implement({
-        task: makeTask(),
-        projectDir,
-        config,
-        context: { ...defaultContext, dir: projectDir },
-        onOutput: () => {},
-      });
-    } catch (err) {
-      thrown = err;
-    }
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
 
-    expect(processError.isTimeout(thrown)).toBe(true);
-    expect((thrown as Error).message).not.toMatch(/operation was aborted/i);
+    expect(result).toMatchObject({ success: false, outcome: 'timeout' });
+    expect(result.error).toMatch(/timed out after/);
+    expect(result.error).not.toMatch(/operation was aborted/i);
   });
 });
 

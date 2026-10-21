@@ -58,6 +58,8 @@ import { extractLastJsonObject } from '../../runners/typed-output.js';
 import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { isRecord } from '../../../utils/type-guards.js';
+import { processError } from '../../../lib/process/errors.js';
+import { isApiDeadlineError } from '../../providers/api-deadlines.js';
 import {
   checkoutChanges,
   formatCheckoutChanges,
@@ -657,6 +659,8 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         success: false,
         output,
         error,
+        ...((processError.isTimeout(err) || isApiDeadlineError(err)) && { outcome: 'timeout' }),
+        ...(processError.isIdleTimeout(err) && { outcome: 'no-progress-cut' }),
       };
     }
 

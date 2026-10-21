@@ -25,6 +25,16 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { CliImplementerConfig } from '../../../core/schemas/implementer-config.js';
+import type { Implementer } from '../../implementers/types.js';
+import { createCliImplementer } from '../../implementers/cli.js';
+import { createShellImplementer } from '../../implementers/shell.js';
+import { createApiImplementer } from '../../implementers/api.js';
+import { runTaskLoop } from './loop.js';
+import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -501,5 +511,143 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
 
     expect(retry.mock.calls[0]?.[0]?.error).toBe(error);
     expect(next.pendingRecovery?.reason).not.toBe('approval-promotion-conflict');
+  });
+});
+
+describe('runTaskLoop — a seat that times out twice on one brief is a seat-down halt', () => {
+  const shimDirs: string[] = [];
+  let restorePath: (() => void) | undefined;
+
+  afterEach(() => {
+    restorePath?.();
+    restorePath = undefined;
+    vi.unstubAllGlobals();
+    while (shimDirs.length > 0) cleanupTempDir(shimDirs.pop() as string);
+  });
+
+  async function runUntilHalt(config: Config, implementer: Implementer) {
+    const { projectDir, sessionId } = setupProject();
+    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode', 'claude-code']));
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      implementer,
+      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+      bus,
+      config,
+    });
+    const { state } = await runTaskLoop({
+      wctx,
+      initialState: implementingState([makeTask({ id: 'T001' })]),
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+    return { state, events };
+  }
+
+  it('halts a cli seat as runner-timeout-repeated and offers the seat switch', async () => {
+    const shimDir = createTempDir('timeout-halt-shim');
+    shimDirs.push(shimDir);
+    writeFileSync(join(shimDir, 'opencode'), '#!/bin/bash\ncat > /dev/null\nsleep 5\n', {
+      mode: 0o755,
+    });
+    restorePath = prependPath(shimDir);
+    const seat: CliImplementerConfig = {
+      kind: 'cli',
+      tool: 'opencode',
+      authChannel: 'provider-dependent',
+      contextLength: 8192,
+      timeout: 300,
+    };
+    const config = makeConfig({
+      implementer: seat,
+      validation: { endChecks: false, testCommand: 'noop' },
+    });
+
+    const { state } = await runUntilHalt(
+      config,
+      createCliImplementer(seat, {
+        trustedCli: trustedShimGate({ dir: shimDir, tool: 'opencode' }),
+      }),
+    );
+
+    expect(state.pendingRecovery).toMatchObject({
+      reason: 'runner-timeout-repeated',
+      taskId: 'T001',
+    });
+    expect(state.pendingRecovery?.availableActions).toContain('switch-seat');
+  });
+
+  it('halts a shell seat as runner-timeout-repeated', async () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'shell',
+        command: '/bin/sleep',
+        args: ['10'],
+        timeout: 300,
+        model: 'test',
+        contextLength: 8192,
+        outputFormat: 'text',
+      },
+      validation: { endChecks: false, testCommand: 'noop' },
+    });
+
+    const { state } = await runUntilHalt(config, createShellImplementer(config));
+
+    expect(state.pendingRecovery).toMatchObject({
+      reason: 'runner-timeout-repeated',
+      taskId: 'T001',
+    });
+    expect(state.pendingRecovery?.availableActions).toContain('switch-seat');
+  });
+
+  it('halts a shell seat cut twice for silence as runner-timeout-repeated', async () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'shell',
+        command: '/bin/sleep',
+        args: ['10'],
+        idleWarnMs: 200,
+        idleKillMs: 300,
+        model: 'test',
+        contextLength: 8192,
+        outputFormat: 'text',
+      },
+      validation: { endChecks: false, testCommand: 'noop' },
+    });
+
+    const { state, events } = await runUntilHalt(config, createShellImplementer(config));
+
+    expect(state.pendingRecovery).toMatchObject({
+      reason: 'runner-timeout-repeated',
+      taskId: 'T001',
+    });
+    expect(state.pendingRecovery?.availableActions).toContain('switch-seat');
+    expect(events.some((event) => event.type === 'no_progress_cut')).toBe(true);
+  });
+
+  it('halts an api seat whose deadline passes twice as runner-timeout-repeated', async () => {
+    vi.stubGlobal(
+      'fetch',
+      withLocalCatalog(
+        ['qwen2.5-coder:7b'],
+        (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = (init as RequestInit | undefined)?.signal;
+            signal?.addEventListener('abort', () => reject(signal.reason));
+          }),
+      ),
+    );
+    const base = makeConfig({ validation: { endChecks: false, testCommand: 'noop' } });
+    const config: Config = { ...base, implementer: { ...base.implementer, timeout: 300 } };
+
+    const { state } = await runUntilHalt(config, createApiImplementer(config));
+
+    expect(state.pendingRecovery).toMatchObject({
+      reason: 'runner-timeout-repeated',
+      taskId: 'T001',
+    });
+    expect(state.pendingRecovery?.availableActions).toContain('switch-seat');
   });
 });

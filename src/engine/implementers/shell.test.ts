@@ -120,13 +120,14 @@ describe('shell implementer', () => {
     ).rejects.toThrow(/command not found|ENOENT/);
   });
 
-  it('throws a timeout error when the shell command outlives the configured timeout', async () => {
+  it('returns a timed-out call when the shell command outlives the configured timeout', async () => {
     const config = makeConfig({ command: '/bin/sleep', args: ['10'], timeout: 200 });
     const task = makeTask();
 
-    await expect(
-      implementTask(task, { projectDir, config, context, onOutput: () => {} }),
-    ).rejects.toThrow(/timed out/);
+    const result = await implementTask(task, { projectDir, config, context, onOutput: () => {} });
+
+    expect(result).toMatchObject({ success: false, outcome: 'timeout' });
+    expect(result.error).toMatch(/timed out/);
   });
 
   it('successful code extraction from stdout with fenced code', async () => {

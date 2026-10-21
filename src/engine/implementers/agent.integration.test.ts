@@ -82,7 +82,7 @@ describe('agent implementer', () => {
     expect(result.error).toContain('without changing any files');
   });
 
-  it('throws on timeout', async () => {
+  it('returns a timed-out call on timeout', async () => {
     const config = makeConfig({
       command: 'node',
       args: ['-e', 'setInterval(() => {}, 1000)'],
@@ -90,15 +90,16 @@ describe('agent implementer', () => {
     });
 
     const implementer = createAgentImplementer(config);
-    await expect(
-      implementer.implement({
-        task: makeTask(),
-        projectDir: testDir,
-        config,
-        context: { ...context, dir: testDir },
-        onOutput: () => {},
-      }),
-    ).rejects.toThrow(/timed out/);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir: testDir,
+      config,
+      context: { ...context, dir: testDir },
+      onOutput: () => {},
+    });
+
+    expect(result).toMatchObject({ success: false, outcome: 'timeout' });
+    expect(result.error).toMatch(/timed out/);
   });
 
   it('aborts an in-flight spawned process when the signal fires', async () => {

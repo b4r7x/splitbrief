@@ -15,7 +15,7 @@ import { isRecord } from '../../../utils/type-guards.js';
 export const ABORTED_OUTCOME_TEXT = 'Aborted';
 
 export function defaultShouldThrow(err: unknown): boolean {
-  return processError.isNotFound(err) || processError.isTimeout(err);
+  return processError.isNotFound(err);
 }
 
 function implementerRunnerName(config: ImplementerOptions['config']['implementer']): string {
