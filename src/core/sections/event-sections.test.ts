@@ -368,6 +368,107 @@ describe('groupEventsIntoSections', () => {
     });
   });
 
+  // A planner split T001 into T003 and T004 on its consult; the task review of T003 ran while T004
+  // waited on a halt, and T004 ran again after its reset.
+  it('gives a split brief, each of its parts and each review one section, every row in one of them', () => {
+    const at = (type: string, phase: Phase, ts: number, fields: Record<string, unknown> = {}) => ({
+      type,
+      ts,
+      phase,
+      ...fields,
+    });
+    const start = (id: string, index: number, ts: number) =>
+      makeTaskStart({ ts, taskId: taskId(id), title: id, index });
+    const complete = (id: string, ts: number) => makeTaskComplete({ ts, taskId: taskId(id) });
+    const taskReview = (after: string, ts: number, verdict: string) => [
+      at('full_suite', 'implementing', ts, {
+        status: 'done',
+        command: 'npm test',
+        moment: 'plan',
+        passed: true,
+      }),
+      at('checks_run', 'implementing', ts, {
+        taskId: after,
+        results: [{ id: 'K-1', status: 'pass' }],
+      }),
+      at('review_started', 'implementing', ts + 1, { scope: 'task', afterTaskId: after }),
+      at('review_completed', 'implementing', ts + 2, {
+        scope: 'task',
+        afterTaskId: after,
+        verdict,
+        duration: 1,
+      }),
+    ];
+    const events = [
+      at('workflow_started', 'planning', 1_000, { feature: 'Add two small things' }),
+      at('tasks_planned', 'planning', 1_100, { tasks: [], total: 2 }),
+      at('plan_approved', 'reviewing-plan', 1_200),
+      at('tasks_planned', 'implementing', 1_300, { tasks: [], total: 2 }),
+      start('T001', 0, 2_000),
+      at('runner_call_activity', 'implementing', 2_100, { taskId: 'T001', role: 'implementer' }),
+      at('task_escalating', 'implementing', 2_200, { taskId: 'T001' }),
+      at('consult_answered', 'implementing', 2_300, { taskId: 'T001' }),
+      at('tasks_planned', 'implementing', 2_400, { tasks: [], total: 3 }),
+      at('tasks_inserted', 'implementing', 2_400, { parentId: 'T001', taskIds: ['T003', 'T004'] }),
+      start('T003', 0, 3_000),
+      at('consult_answered', 'implementing', 3_100, { taskId: 'T003' }),
+      complete('T003', 3_200),
+      start('T004', 1, 4_000),
+      at('task_escalating', 'implementing', 4_100, { taskId: 'T004' }),
+      at('recovery_prompted', 'implementing', 4_200, { taskId: 'T004' }),
+      ...taskReview('T003', 4_300, 'pass-with-notes'),
+      at('recovery_action_selected', 'implementing', 4_400),
+      at('task_reset', 'implementing', 4_500, { taskId: 'T004' }),
+      at('recovery_resolved', 'implementing', 4_500),
+      at('workflow_resumed', 'implementing', 4_600),
+      at('tasks_planned', 'implementing', 4_600, { tasks: [], total: 3 }),
+      start('T004', 1, 5_000),
+      complete('T004', 5_100),
+      ...taskReview('T004', 5_200, 'pass-with-notes'),
+      start('T002', 2, 6_000),
+      complete('T002', 6_100),
+      ...taskReview('T002', 6_200, 'pass'),
+      at('full_suite', 'final-review', 7_000, {
+        status: 'done',
+        command: 'npm test',
+        moment: 'pre-review',
+        passed: true,
+      }),
+      at('review_started', 'final-review', 7_001, { scope: 'final' }),
+      at('review_completed', 'final-review', 7_002, {
+        scope: 'final',
+        verdict: 'pass',
+        duration: 1,
+      }),
+    ];
+
+    const sections = groupEventsIntoSections(events);
+
+    expect(
+      sections.flatMap((section) => section.items.map((_, i) => section.startIndex + i)),
+    ).toEqual(events.map((_, i) => i));
+    expect(
+      sections.map((section) =>
+        section.type === 'completed-task'
+          ? section.summary.id
+          : section.type === 'settled-stage' && section.summary.stage === 'review'
+            ? `review ${section.summary.afterTaskId ?? 'final'}`
+            : section.type === 'settled-stage'
+              ? section.summary.stage
+              : section.type,
+      ),
+    ).toEqual([
+      'plan',
+      'events',
+      'T003',
+      'T004',
+      'review T004',
+      'T002',
+      'review T002',
+      'review final',
+    ]);
+  });
+
   it('keeps a running task review outside its completed brief in the live tail', () => {
     const tail: EngineEvent[] = [
       {
@@ -1113,6 +1214,43 @@ describe('groupEventsIntoSections', () => {
       const t009 = requireSection(sections, 1, 'active-task');
       expect(t009.items).toEqual(events.slice(2));
       expect(t009.startIndex).toBe(2);
+    });
+
+    // A partial reject at Apply reverts T001 and publishes only `run_rejected`, so the stopped T002
+    // attempt never ends before T001 runs again in the same window.
+    it('ends a stopped brief that never ended once another brief starts, so each row has one section', () => {
+      const t002Activity = row('runner_call_activity', 'implementing', { taskId: 'T002' });
+      const rejected = { type: 'run_rejected', ts: 1 };
+      const resumed = row('workflow_resumed', 'implementing');
+      const consult = row('consult_answered', 'implementing', { taskId: 'T001' });
+      const events = [
+        start('T001', 0),
+        complete('T001'),
+        start('T002', 1),
+        t002Activity,
+        row('turn_interrupted', 'implementing'),
+        rejected,
+        resumed,
+        consult,
+        start('T001', 0),
+        complete('T001'),
+        start('T002', 1),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(
+        sections.flatMap((section) => section.items.map((_, i) => section.startIndex + i)),
+      ).toEqual(events.map((_, i) => i));
+      expect(sections.map((section) => section.type)).toEqual([
+        'completed-task',
+        'events',
+        'events',
+        'completed-task',
+        'active-task',
+      ]);
+      expect(sections[1]?.items).toEqual(events.slice(2, 4));
+      expect(sections[2]?.items).toEqual([events[4], rejected]);
+      expect(requireSection(sections, 3, 'completed-task').items).toEqual(events.slice(6, 10));
     });
   });
 

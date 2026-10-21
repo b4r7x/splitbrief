@@ -2083,6 +2083,53 @@ describe('buildConversationRows', () => {
     ui.unmount();
   });
 
+  it('paints each row once after a partial reject reruns an earlier brief in the same window', () => {
+    const t001 = taskId('T001');
+    const t002 = taskId('T002');
+    const events: EngineEvent[] = [
+      makeTaskStart({ ts: 1_000, taskId: t001, title: 'Add clamp', index: 0 }),
+      makeTaskComplete({ ts: 2_000, taskId: t001 }),
+      makeTaskStart({ ts: 3_000, taskId: t002, title: 'Add lerp', index: 1 }),
+      makeRunnerCallActivity({ ts: 3_100, taskId: t002, callId: 'build-T002' }),
+      { type: 'turn_interrupted', ts: 3_200, phase: 'implementing', source: 'user' },
+      {
+        type: 'run_rejected',
+        ts: 4_000,
+        restored: ['clamp.js'],
+        removed: ['lerp.js'],
+        conflicted: [],
+        missing: 0,
+      },
+      { type: 'workflow_resumed', ts: 5_000, phase: 'implementing', inProcess: true },
+      makeRunnerCallActivity('planner-read', { ts: 5_100, taskId: t001, callId: 'plan-T001' }),
+      {
+        type: 'consult_answered',
+        ts: 5_200,
+        phase: 'implementing',
+        taskId: t001,
+        seat: 'plan',
+        reason: 'failed',
+        action: 'guidance',
+        diagnosis: 'Restore the clamp helper.',
+        newTaskIds: null,
+      },
+      makeTaskStart({ ts: 6_000, taskId: t001, title: 'Add clamp', index: 0 }),
+      makeRunnerCallActivity({ ts: 6_100, taskId: t001, callId: 'build-T001' }),
+      makeTaskComplete({ ts: 7_000, taskId: t001 }),
+      makeTaskStart({ ts: 8_000, taskId: t002, title: 'Add lerp', index: 1 }),
+    ];
+    const { rows } = buildConversationRows({
+      sections: groupEventsIntoSections(events),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 120,
+      viewportHeight: 40,
+      streaming,
+    });
+    const keys = rows.map((row) => row.key);
+    expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual([]);
+  });
+
   it('gives a settled brief one file list and one duration', () => {
     const report = JSON.stringify({
       status: 'done',
