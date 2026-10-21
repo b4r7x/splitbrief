@@ -1155,7 +1155,7 @@ describe('HomeScreen', () => {
       if (!onTieredApproval) throw new Error('Expected the interactive approval callback.');
       await onTieredApproval({
         tier: 'confirm',
-        actionClass: 'network',
+        actionClass: 'runner_trust',
         actionDescription: 'Run the configured custom tool',
         phase: 'planning',
       });

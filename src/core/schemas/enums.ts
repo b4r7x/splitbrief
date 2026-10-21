@@ -220,7 +220,7 @@ const ACTION_CLASSES = [
   'validation',
   'write_out_of_scope',
   'destructive',
-  'network',
+  'runner_trust',
   'package_change',
   'sensitive_change',
 ] as const;

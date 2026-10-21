@@ -89,7 +89,7 @@ describe('prepareCustomRunnerAdmission', () => {
     expect(requests).toEqual([
       expect.objectContaining({
         tier: 'confirm',
-        actionClass: 'network',
+        actionClass: 'runner_trust',
         phase: 'planning',
         taskId: taskId('T001'),
       }),

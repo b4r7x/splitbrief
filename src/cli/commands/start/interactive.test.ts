@@ -226,7 +226,7 @@ describe('runInteractiveStart', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const request: TieredApprovalRequest = {
       tier: 'confirm',
-      actionClass: 'network',
+      actionClass: 'runner_trust',
       actionDescription: 'Run the configured shell planner',
       phase: 'planning',
     };

@@ -138,7 +138,7 @@ describe('spec command', () => {
     if (onTieredApproval === undefined) throw new Error('expected interactive disclosure callback');
     const disclosure = await onTieredApproval({
       tier: 'confirm',
-      actionClass: 'network',
+      actionClass: 'runner_trust',
       actionDescription: 'Review configured runner disclosure',
       phase: 'planning',
     });

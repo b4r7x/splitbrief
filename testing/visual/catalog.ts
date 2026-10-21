@@ -311,6 +311,19 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
     }),
+    // The trust panel a declared `shell` or `agent` runner opens on its first start.
+    defineScenario({
+      id: 'home-preparation-runner-trust',
+      title: 'Home · trust a configured runner',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'review',
+        title: 'Runner trust panel',
+        kind: 'review',
+        marker: 'Trust and run a configured runner:',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Runner trust panel' }],
+    }),
     defineScenario({
       id: 'home-draft-image',
       title: 'Home · a draft with images at the caret',

@@ -55,16 +55,16 @@ describe('buildRejectionContext', () => {
         {
           ts: '2026-01-01T00:01:00.000Z',
           tier: 'confirm' as const,
-          actionClass: 'network' as const,
-          actionDescription: 'curl example.com',
-          reason: 'no network allowed',
+          actionClass: 'package_change' as const,
+          actionDescription: 'write package.json',
+          reason: 'no new dependencies',
         },
       ],
     };
     expect(buildRejectionContext(ledger)).toBe(
       'Previous rejections:\n' +
         '- [sticky] destructive: rm -rf build (reason: out of scope)\n' +
-        '- [confirm] network: curl example.com (reason: no network allowed)\n',
+        '- [confirm] package_change: write package.json (reason: no new dependencies)\n',
     );
   });
 });

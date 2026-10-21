@@ -170,7 +170,7 @@ describe('SessionPreparation', () => {
       prepareResume: async () => {
         await openApprovalPrompt({
           tier: 'confirm',
-          actionClass: 'network',
+          actionClass: 'runner_trust',
           actionDescription: 'Approve the configured runner for this resume',
           phase: 'implementing',
         });

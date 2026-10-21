@@ -34,7 +34,7 @@ function runTurn(opts: RunOpts = {}) {
 describe('runPlanningPhase — planner rejection context', () => {
   const feature = 'implement audited API sync';
   const rejectionSummary =
-    '[sticky] network: fetch https://api.example.com/audit (reason: user denied network access)';
+    '[sticky] sensitive_change: write .github/workflows/audit.yml (reason: user denied the CI change)';
 
   async function runSeededPlanning(opts: {
     workflow: Partial<Config['workflow']>;

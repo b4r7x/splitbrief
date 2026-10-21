@@ -37,7 +37,7 @@ The card shows `plan.md` and offers four rows: **Approve plan and start the buil
 
 ## Protected-path confirmation
 
-**Two prompts, in sequence, never one.** Approving the plan and confirming a protected write are different questions. The card names the step it releases (`Approve plan and start the build`, `reviewDocumentOptions`, `src/features/workflow/prompt-rows/approval.ts`). The confirmation that may follow during the build names the operation and the path — the title is a sentence (`Change a package manifest:`, `Change a CI or secret file:`, `Destructive action:`), not a class name.
+**Two prompts, in sequence, never one.** Approving the plan and confirming a protected write are different questions. The card names the step it releases (`Approve plan and start the build`, `reviewDocumentOptions`, `src/features/workflow/prompt-rows/approval.ts`). The confirmation that may follow during the build names the operation and the path — the title is a sentence (`Change a package manifest:`, `Change a CI or secret file:`, `Destructive action:`), not a class name. The panel that asks to trust a `shell` or `agent` runner from the project config uses the same layout under its own title, `Trust and run a configured runner:` (class `runner_trust`, which no write produces).
 
 The attempt gate detects protected changes after the implementer writes inside the run workspace. It runs before validation, not before a direct writer's filesystem operation. A denial restores that file from the attempt snapshot inside the workspace.
 

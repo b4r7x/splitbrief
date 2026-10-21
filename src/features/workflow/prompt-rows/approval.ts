@@ -25,7 +25,7 @@ export function approvalTitle(actionClass: ActionClass): string {
   if (actionClass === 'package_change') return 'Change a package manifest:';
   if (actionClass === 'destructive') return 'Destructive action:';
   if (actionClass === 'sensitive_change') return 'Change a CI or secret file:';
-  if (actionClass === 'network') return 'Network access:';
+  if (actionClass === 'runner_trust') return 'Trust and run a configured runner:';
   return "Write outside the brief's declared files:";
 }
 
@@ -230,6 +230,7 @@ export function getApprovalConfirmLabel(actionClass: ActionClass): string {
   if (actionClass === 'destructive') return 'control-plane file write';
   if (actionClass === 'package_change') return 'package manifest write';
   if (actionClass === 'sensitive_change') return 'CI or secret file write';
+  if (actionClass === 'runner_trust') return 'runner command from the project config';
   return 'confirm file write';
 }
 

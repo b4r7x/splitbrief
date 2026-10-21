@@ -344,8 +344,8 @@ describe('run-loop stop completion', () => {
         } else {
           await options.callbacks.onTieredApproval?.({
             tier: 'confirm',
-            actionClass: 'network',
-            actionDescription: 'connect',
+            actionClass: 'package_change',
+            actionDescription: 'package.json',
             phase: 'researching',
           });
         }

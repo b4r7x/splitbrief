@@ -7,6 +7,8 @@ import {
   REVIEW_DOCUMENT_HINTS,
   CHOOSE_HINTS,
   approvalKeyColumnWidth,
+  approvalTitle,
+  getApprovalConfirmLabel,
   getConfirmOptions,
   getConfirmPrimaryKey,
   getReviewDocumentPromptRows,
@@ -23,6 +25,23 @@ describe('review gate legends', () => {
 
   it('names only the keys live while a comment is being typed', () => {
     expect(REVIEW_COMMENT_HINTS).toBe('⏎ send · esc back');
+  });
+});
+
+describe('confirm gate title and label', () => {
+  it.each([
+    [
+      'runner_trust',
+      'Trust and run a configured runner:',
+      'runner command from the project config',
+    ],
+    ['package_change', 'Change a package manifest:', 'package manifest write'],
+    ['sensitive_change', 'Change a CI or secret file:', 'CI or secret file write'],
+    ['destructive', 'Destructive action:', 'control-plane file write'],
+    ['write_out_of_scope', "Write outside the brief's declared files:", 'confirm file write'],
+  ] as const)('names what a %s request approves', (actionClass, title, label) => {
+    expect(approvalTitle(actionClass)).toBe(title);
+    expect(getApprovalConfirmLabel(actionClass)).toBe(label);
   });
 });
 
