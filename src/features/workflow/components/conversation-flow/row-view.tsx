@@ -54,7 +54,10 @@ function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number
   );
 }
 
-/** `cancelled` and `failed` mark a brief left in progress on a run at rest, as its rail marks it. */
+/**
+ * `cancelled` and `failed` mark a brief left in progress on a run at rest, as its rail marks it;
+ * `cancelled` also marks an earlier attempt the run stopped or redid.
+ */
 export type RowLifecycle = 'live' | 'active' | 'queued' | 'done' | 'cancelled' | 'failed';
 
 function alignLeadingWithinWidth(content: string, width: number): string {
