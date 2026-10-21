@@ -30,7 +30,6 @@ import { invokeCliAdapter } from '../../../src/engine/runners/invoke-cli-adapter
 import { CLI_PROMPT_SENTINEL } from '../../../src/engine/runners/cli-tools/candidate-contract.js';
 import { resolveCliExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 import type { CliStartGate } from '../../../src/engine/runners/start-gate.js';
-import { processError } from '../../../src/lib/process/errors.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTestGitRepo, startConflictingMerge } from '#testing/helpers/git.js';
@@ -719,19 +718,14 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     const timeoutImplementer = createCliImplementer(implementerConfig(toolId, { timeout: 50 }), {
       trustedCli: fixture.trustedGate,
     });
-    let timeoutThrown: unknown;
-    try {
-      await timeoutImplementer.implement({
-        task: makeTask({ suggestedFiles: ['src/contract.ts'] }),
-        projectDir: fixture.projectDir,
-        config: makeConfig({ implementer: implementerConfig(toolId, { timeout: 50 }) }),
-        context: { ...defaultContext, dir: fixture.projectDir },
-        onOutput: () => {},
-      });
-    } catch (err) {
-      timeoutThrown = err;
-    }
-    expect(processError.isTimeout(timeoutThrown)).toBe(true);
+    const result = await timeoutImplementer.implement({
+      task: makeTask({ suggestedFiles: ['src/contract.ts'] }),
+      projectDir: fixture.projectDir,
+      config: makeConfig({ implementer: implementerConfig(toolId, { timeout: 50 }) }),
+      context: { ...defaultContext, dir: fixture.projectDir },
+      onOutput: () => {},
+    });
+    expect(result).toMatchObject({ success: false, outcome: 'timeout' });
   }, 60_000);
 
   it('stages the declared file inside a conflicted repository', async () => {

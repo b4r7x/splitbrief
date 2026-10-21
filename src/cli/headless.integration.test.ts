@@ -5,7 +5,9 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
+import { createCliImplementer } from '../engine/implementers/cli.js';
 import { settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import {
   createHeadlessGitProject,
@@ -1157,6 +1159,80 @@ describe('runHeadless — the seat-down policy and the record', () => {
       }
     },
   );
+
+  it('halts a build seat that times out twice as Seat down and does not switch it on its own', async () => {
+    skipTheRun.enabled = false;
+    const projectDir = createHeadlessGitProject('headless-timeout-repeated');
+    dirs.push(projectDir);
+    const shimDir = createTempDir('headless-timeout-shim');
+    dirs.push(shimDir);
+    writeFileSync(join(shimDir, 'opencode'), '#!/bin/bash\ncat > /dev/null\nsleep 5\n', {
+      mode: 0o755,
+    });
+    const restorePath = prependPath(shimDir);
+    const sessionId = 'sess-timeout-repeated';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const seat = {
+      kind: 'cli',
+      tool: 'opencode',
+      authChannel: 'provider-dependent',
+      contextLength: 8192,
+      timeout: 300,
+      fallback: { tool: 'claude-code' },
+    } as const;
+    writeConfig(
+      projectDir,
+      makeConfig({
+        implementer: seat,
+        workflow: { isolation: 'staged-copy', approve: 'none' },
+        validation: { endChecks: false, testCommand: 'true' },
+      }),
+    );
+    const state = makeImplState([makeTask({ id: 'T001' })]);
+    saveState(ref, state);
+    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode', 'claude-code']));
+    const prepared = preparedHeadlessExecution({
+      ...ref,
+      feature: state.feature,
+      resumeState: state,
+    });
+
+    try {
+      await expect(
+        runHeadless({
+          prepared,
+          _planner: makePlanner(),
+          _implementer: createCliImplementer(seat, {
+            trustedCli: trustedShimGate({ dir: shimDir, tool: 'opencode' }),
+          }),
+          onSeatDown: 'switch',
+          _prepare: async (input) => ({
+            kind: 'prepared',
+            execution: makePreparedExecution({
+              ...ref,
+              feature: state.feature,
+              config: input.effectiveConfig,
+              resumeState: input.resumeState,
+              active: reactivateExistingSession(ref),
+            }),
+          }),
+        }),
+      ).rejects.toMatchObject({ exitCode: 1 });
+    } finally {
+      restorePath();
+    }
+
+    expect(records()).toContainEqual(
+      expect.objectContaining({
+        type: 'recovery_required',
+        halt: 'seat-down',
+        reason: 'runner-timeout-repeated',
+      }),
+    );
+    expect(stdoutChunks.join('')).not.toContain('seat_switched');
+    expect(loadConfig(projectDir).config.implementer).toMatchObject({ tool: 'opencode' });
+  });
 
   it('applies the declared fallback automatically and records the switch', async () => {
     const { projectDir, sessionId, state } = seedAutoSwitchSession('headless-auto-switch');

@@ -595,7 +595,7 @@ describe('configured custom runner factory behavior', () => {
     const implementer = await createImplementer(config, {
       customRuntime: factoryRuntime(fixture, 'interactive'),
     });
-    const call = implementer.implement({
+    const result = await implementer.implement({
       task: makeTask({ suggestedFiles: ['src/factory-timeout.ts'] }),
       projectDir: fixture.projectDir,
       config,
@@ -603,7 +603,7 @@ describe('configured custom runner factory behavior', () => {
       onOutput: () => {},
     });
 
-    await expect(call).rejects.toSatisfy(processError.isTimeout);
+    expect(result).toMatchObject({ success: false, outcome: 'timeout' });
     expect(existsSync(fixture.legacyMarker)).toBe(false);
   });
 

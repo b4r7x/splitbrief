@@ -675,7 +675,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: two consecutive timeouts halted my run
 
-**Likely cause:** The implementer hit a limit twice in a row on the same brief. A `cli`, `shell` or `agent` seat has no default limit, so this halt follows an opt-in `timeout` or `idleKillMs` on the seat, or the role total of an `api` seat (`TIMEOUTS.implementerMs`, 20 minutes, for BUILD; 10 for REVIEW). A second consecutive timeout or idle cut on one brief raises the recovery issue `runner-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or consulting the planner, because handing an unfinishable brief to the planner only spends planner money on the same defect.
+**Likely cause:** The implementer hit a limit twice in a row on the same brief. A `cli`, `shell` or `agent` seat has no default limit, so this halt follows an opt-in `timeout` or `idleKillMs` on the seat, or the role total of an `api` seat (`TIMEOUTS.implementerMs`, 20 minutes, for BUILD). A second consecutive timeout or idle cut on one brief raises the recovery issue `runner-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or consulting the planner, because handing an unfinishable brief to the planner only spends planner money on the same defect.
 
 **Fix:**
 1. Read the issue's details: they carry the tool's own last message, the attempt count, and the implementer profile that was selected.
