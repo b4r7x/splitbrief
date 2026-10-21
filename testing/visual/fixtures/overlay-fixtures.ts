@@ -32,7 +32,7 @@ import type { CostBreakdown, Summary } from '../../../src/core/schemas/summary.j
 import type { EvidenceLedger } from '../../../src/core/schemas/evidence.js';
 import type { Session } from '../../../src/core/schemas/session.js';
 import { type Task, taskId } from '../../../src/core/schemas/task.js';
-import { ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
+import { type TokenUsage, ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
 import { deriveRunStatus, type RunStatus } from '../../../src/core/sessions/run-status.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { SOFT_SEP } from '../../../src/core/separators.js';
@@ -1947,7 +1947,7 @@ const USAGE_TS = 1_783_958_400_000;
  * A run read back from disk, so its money is the breakdown the engine recorded at the rates the
  * calls actually ran at — the only place a per-request estimate and its rate provenance exist.
  */
-function usageRoute(costBreakdown: CostBreakdown): () => RouteData {
+function usageRoute(costBreakdown: CostBreakdown, tokenUsage: TokenUsage): () => RouteData {
   return () => ({
     screen: 'workflow',
     run: makeRunRecord({
@@ -1958,7 +1958,7 @@ function usageRoute(costBreakdown: CostBreakdown): () => RouteData {
         stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
         resumeAt: { kind: 'planner', call: 'tasks' },
       },
-      summary: makeSummary({ feature: 'Report what each seat spent', costBreakdown }),
+      summary: makeSummary({ feature: 'Report what each seat spent', costBreakdown, tokenUsage }),
     }),
     execution: { kind: 'at-rest' },
   });
@@ -2013,6 +2013,7 @@ function usageContextRoute(): RouteData {
       summary: makeSummary({
         feature: 'Review the bounded fixture branch',
         costBreakdown: USAGE_PRICED_BREAKDOWN,
+        tokenUsage: USAGE_TOKENS,
       }),
     }),
     execution: { kind: 'at-rest' },
@@ -2210,46 +2211,66 @@ function seedUsageContextCounters(): void {
 }
 
 /** Two seats that reported different amounts of what they spent: neither is filled out for it. */
-function seedUsageCounters(): void {
+const USAGE_TOKENS: TokenUsage = {
+  ...ZERO_TOKEN_USAGE,
+  plannerInput: 124_000,
+  plannerOutput: 32_000,
+  plannerCacheRead: 90_400,
+  plannerReasoning: 8_100,
+  plannerCoverage: {
+    input: 'reported',
+    output: 'reported',
+    cacheRead: 'reported',
+    cacheCreate: 'missing',
+    reasoning: 'reported',
+  },
+  implementerInput: 812_000,
+  implementerOutput: 190_500,
+  implementerCoverage: {
+    input: 'reported',
+    output: 'reported',
+    cacheRead: 'missing',
+    cacheCreate: 'missing',
+    reasoning: 'missing',
+  },
+};
+
+/** A subscription planner that reported its counts and a review tool that reported none. */
+const USAGE_UNPRICED_TOKENS: TokenUsage = {
+  ...ZERO_TOKEN_USAGE,
+  plannerInput: 6,
+  plannerOutput: 2_309,
+  plannerCacheRead: 98_070,
+  plannerCacheCreate: 31_797,
+  plannerCoverage: {
+    input: 'reported',
+    output: 'reported',
+    cacheRead: 'reported',
+    cacheCreate: 'reported',
+    reasoning: 'missing',
+  },
+  reviewerCoverage: {
+    input: 'missing',
+    output: 'missing',
+    cacheRead: 'missing',
+    cacheCreate: 'missing',
+    reasoning: 'missing',
+  },
+};
+
+const USAGE_LEGACY_TOKENS: TokenUsage = {
+  ...ZERO_TOKEN_USAGE,
+  plannerInput: 9_800,
+  plannerOutput: 1_200,
+};
+
+function seedUsageTokens(tokenUsage: TokenUsage): void {
   seedVisualConfig(USAGE_CREW);
-  addEvent({
-    type: 'cost_update',
-    ts: USAGE_TS,
-    phase: 'implementing',
-    tokenUsage: {
-      ...ZERO_TOKEN_USAGE,
-      plannerInput: 124_000,
-      plannerOutput: 32_000,
-      plannerCacheRead: 90_400,
-      plannerReasoning: 8_100,
-      plannerCoverage: {
-        input: 'reported',
-        output: 'reported',
-        cacheRead: 'reported',
-        cacheCreate: 'missing',
-        reasoning: 'reported',
-      },
-      implementerInput: 812_000,
-      implementerOutput: 190_500,
-      implementerCoverage: {
-        input: 'reported',
-        output: 'reported',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-    },
-  });
+  addEvent({ type: 'cost_update', ts: USAGE_TS, phase: 'implementing', tokenUsage });
 }
 
-function seedLegacyUsageCounters(): void {
-  seedVisualConfig(USAGE_CREW);
-  addEvent({
-    type: 'cost_update',
-    ts: USAGE_TS,
-    phase: 'implementing',
-    tokenUsage: { ...ZERO_TOKEN_USAGE, plannerInput: 9_800, plannerOutput: 1_200 },
-  });
+function seedUsageCounters(): void {
+  seedUsageTokens(USAGE_TOKENS);
 }
 
 /** One priced request, one the missing cache rate left incomplete, and two billing postures. */
@@ -2402,21 +2423,21 @@ const createUsageDetailsFixture: FixtureFactory = () =>
     overlay: 'usage-details',
     seed: seedUsageCounters,
     underlyingScreen: 'workflow',
-    workflowRoute: usageRoute(USAGE_PRICED_BREAKDOWN),
+    workflowRoute: usageRoute(USAGE_PRICED_BREAKDOWN, USAGE_TOKENS),
   });
 const createUsageDetailsUnpricedFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'usage-details',
-    seed: seedUsageCounters,
+    seed: () => seedUsageTokens(USAGE_UNPRICED_TOKENS),
     underlyingScreen: 'workflow',
-    workflowRoute: usageRoute(USAGE_UNPRICED_BREAKDOWN),
+    workflowRoute: usageRoute(USAGE_UNPRICED_BREAKDOWN, USAGE_UNPRICED_TOKENS),
   });
 const createUsageDetailsLegacyFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'usage-details',
-    seed: seedLegacyUsageCounters,
+    seed: () => seedUsageTokens(USAGE_LEGACY_TOKENS),
     underlyingScreen: 'workflow',
-    workflowRoute: usageRoute(USAGE_LEGACY_BREAKDOWN),
+    workflowRoute: usageRoute(USAGE_LEGACY_BREAKDOWN, USAGE_LEGACY_TOKENS),
   });
 
 /**
@@ -2506,7 +2527,7 @@ const createUsageDetailsApiTwinFixture: FixtureFactory = () =>
       seedVisualConfig({ ...USAGE_CREW, implementer: BUILD_API_TWIN_SEAT });
     },
     underlyingScreen: 'workflow',
-    workflowRoute: usageRoute(USAGE_API_TWIN_BREAKDOWN),
+    workflowRoute: usageRoute(USAGE_API_TWIN_BREAKDOWN, USAGE_TOKENS),
   });
 const createUsageContextFixture: FixtureFactory = () =>
   createOverlayFixture({
