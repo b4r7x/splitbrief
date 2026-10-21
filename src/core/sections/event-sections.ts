@@ -197,7 +197,15 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
     const ev = events[i];
     if (ev === undefined) continue;
     if (isTaskStartedEvent(ev)) {
-      abandonOpenTask(taskRanges, openTasks, ev.taskId, i - 1);
+      // Briefs run one at a time: a brief that starts ends every open range. Another brief's
+      // attempt keeps its rows up to its last own row, and the rows after it join the gap.
+      for (const openId of [...openTasks.keys()]) {
+        const end =
+          openId === ev.taskId
+            ? i - 1
+            : events.findLastIndex((event, idx) => idx < i && event.taskId === openId);
+        abandonOpenTask(taskRanges, openTasks, openId, end);
+      }
       const latest = taskRanges.at(-1);
       if (latest?.abandoned && latest.taskId === ev.taskId) {
         latest.abandoned = false;

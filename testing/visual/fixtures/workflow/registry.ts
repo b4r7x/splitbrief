@@ -560,6 +560,21 @@ const checkpointPredicates = [
     },
   ],
   [
+    checkpointId('rejected-rerun'),
+    (context) => {
+      const lines = workflowTranscriptText().split('\n');
+      const count = (text: string) => lines.filter((line) => line.includes(text)).length;
+      return (
+        includesTranscript()(context) &&
+        count('T901 Project') === 2 &&
+        count('T902 Register') === 2 &&
+        count('Stopped at T902') === 1 &&
+        count('Rejected') === 1 &&
+        count('Run continued') === 1
+      );
+    },
+  ],
+  [
     checkpointId('complete-after-fix-tasks'),
     (context) => {
       const [rail = ''] = context.output.split('\n');

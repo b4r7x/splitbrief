@@ -1668,6 +1668,82 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
   ],
 };
 
+/**
+ * A checkout run stopped inside the second brief, rejected in part and continued in the same
+ * window: the reject put the first brief's file back, so it runs again before the second brief.
+ */
+function rerunBuildActivity(
+  brief: (typeof FIXTURE_PLANNED_BRIEFS)[number],
+  ts: number,
+  label: string,
+): EngineEventOf<'runner_call_activity'> {
+  return {
+    type: 'runner_call_activity',
+    ts,
+    phase: 'implementing',
+    taskId: brief.id,
+    callId: `visual-rerun-${brief.id}-${ts}`,
+    role: 'implementer',
+    backendKind: 'api',
+    runnerName: FIXED_RUNNER_NAME,
+    model: FIXED_RUNNER_MODEL,
+    axes: seatAxisWords(BASE_IMPLEMENTER),
+    attempt: 1,
+    sequence: 1,
+    activityId: `visual-rerun-${brief.id}-${ts}:write`,
+    stage: 'completed',
+    kind: 'write',
+    label,
+    target: brief.index === 0 ? WORKFLOW_FIXTURE_REVIEW_FILE : WORKFLOW_FIXTURE_SECOND_FILE,
+    redacted: false,
+    rawAvailable: false,
+  };
+}
+
+const [REJECT_FIRST_BRIEF, REJECT_SECOND_BRIEF] = FIXTURE_PLANNED_BRIEFS;
+const rejectedRerunProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-rejected-rerun'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+    FIXTURE_TASKS_PLANNED,
+    orphanBriefStarted(REJECT_FIRST_BRIEF, FIXED_TS + 100),
+    fixtureBriefPassed(REJECT_FIRST_BRIEF, FIXED_TS + 110),
+    orphanBriefStarted(
+      { ...REJECT_SECOND_BRIEF, file: WORKFLOW_FIXTURE_SECOND_FILE },
+      FIXED_TS + 200,
+    ),
+    rerunBuildActivity(REJECT_SECOND_BRIEF, FIXED_TS + 210, 'editing the projection registry'),
+    {
+      type: 'turn_interrupted',
+      ts: FIXED_TS + 220,
+      phase: 'implementing',
+      source: 'user',
+      at: 'mid-step',
+      step: { kind: 'brief', taskId: REJECT_SECOND_BRIEF.id, attempt: 0 },
+    },
+    {
+      type: 'run_rejected',
+      ts: FIXED_TS + 300,
+      restored: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+      removed: [WORKFLOW_FIXTURE_SECOND_FILE],
+      conflicted: [],
+      missing: 0,
+    },
+    { type: 'workflow_resumed', ts: FIXED_TS + 400, phase: 'implementing', inProcess: true },
+    orphanBriefStarted(REJECT_FIRST_BRIEF, FIXED_TS + 500),
+    rerunBuildActivity(REJECT_FIRST_BRIEF, FIXED_TS + 510, 'writing the activity projection'),
+    fixtureBriefPassed(REJECT_FIRST_BRIEF, FIXED_TS + 520),
+    orphanBriefStarted(
+      { ...REJECT_SECOND_BRIEF, file: WORKFLOW_FIXTURE_SECOND_FILE },
+      FIXED_TS + 600,
+    ),
+    rerunBuildActivity(REJECT_SECOND_BRIEF, FIXED_TS + 610, 'editing the projection registry'),
+  ],
+};
+
 /** The fix task the review appended passed, and so did the review: every brief counted once. */
 const completeAfterFixTasksProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-complete-after-fix-tasks'),
@@ -6322,6 +6398,7 @@ const projections = [
   implementationRetryProjection,
   reviewFixProjection,
   reviewFixCyclesProjection,
+  rejectedRerunProjection,
   completeAfterFixTasksProjection,
   reviewFixNoChangeProjection,
   finalReviewProjection,

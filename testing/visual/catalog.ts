@@ -870,6 +870,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-rejected-rerun',
+      title: 'Workflow · a brief rerun after a reject in part, in the same window',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'rejected-rerun',
+        title: 'Each block painted once after the reject',
+        kind: 'implementation',
+        marker: 'Register the bounded fixture projection',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Rerun transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-complete-after-fix-tasks',
       viewports: WIDE_VIEWPORTS,
       title: 'Workflow · complete after the review appended a fix task',
