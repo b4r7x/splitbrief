@@ -243,13 +243,16 @@ export function recordedSeatIdentity(ref: SessionRef, state: WorkflowState): Sea
     plannerTool: ids.plan.tool,
     plannerModel: recordedModel(ids.plan),
     plannerKind: ids.plan.kind,
+    plannerAxes: ids.plan.axes,
     implementerTool: ids.build.tool,
     implementerModel: recordedModel(ids.build),
     implementerKind: ids.build.kind,
+    implementerAxes: ids.build.axes,
     ...(!reviewFollowsPlan && {
       reviewerTool: ids.review.tool,
       reviewerModel: recordedModel(ids.review),
       reviewerKind: ids.review.kind,
+      reviewerAxes: ids.review.axes,
     }),
   };
 }

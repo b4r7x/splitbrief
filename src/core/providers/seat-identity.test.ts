@@ -23,6 +23,22 @@ describe('runSeatIdentity', () => {
     });
   });
 
+  it('keeps the axis words each seat runs at', () => {
+    const identity = runSeatIdentity(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
+        implementer: { kind: 'api', provider: 'ollama', model: 'qwen2.5-coder:7b' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5', effort: 'low' },
+      }),
+    );
+
+    expect(identity).toMatchObject({
+      plannerAxes: ['high'],
+      implementerAxes: [],
+      reviewerAxes: ['low'],
+    });
+  });
+
   it('keeps an api provider that reuses a cli tool name on its own kind', () => {
     const identity = runSeatIdentity(
       makeConfig({
