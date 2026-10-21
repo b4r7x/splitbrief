@@ -2207,6 +2207,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-ready-override-confirm',
+      title: 'Workflow · Apply as is asks once, with a finding written on two lines',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-override-confirm',
+        title: 'Apply as is confirmation',
+        kind: 'ready',
+        marker: 'Apply with 2 open findings?',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-applied',
       title: 'Workflow · applied to the checkout',
       surface: screenSurface('workflow'),

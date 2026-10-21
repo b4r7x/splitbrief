@@ -215,6 +215,24 @@ describe('ResultMenu', () => {
     ui.unmount();
   });
 
+  it('keeps the title in view when a finding carries a line break', async () => {
+    const { ui } = renderMenu({
+      override: true,
+      findings: ['Edge case missing\nUnicode input is not covered', 'Criterion C1: fail'],
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await tick(30);
+    const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const title = rows.findIndex((row) => row.includes('Apply with 2 open findings?'));
+
+    expect(title).toBeGreaterThan(-1);
+    expect(rows[title + 1]).toContain('- Edge case missing Unicode input is not covered');
+    expect(rows[title + 2]).toContain('- Criterion C1: fail');
+    expect(rows[title + 3]).toContain('Apply as is · write the changes');
+    ui.unmount();
+  });
+
   it('asks once before applying an override, and goes back without applying', async () => {
     const { ui, onCommand } = renderMenu({ override: true, findings: ['missing null check'] });
     await flushEffects();

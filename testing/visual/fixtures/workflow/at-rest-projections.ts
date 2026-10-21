@@ -1023,6 +1023,27 @@ const READY_OVERRIDE = record({
   ledger: READY_LEDGER,
 });
 
+/** A reviewer finding keeps its title and body on two lines; the confirmation names it on one row. */
+const READY_OVERRIDE_MULTILINE = record({
+  sessionId: 'visual-ready-override-confirm',
+  status: READY_OVERRIDE.status,
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'failed',
+    acceptedAsIs: {
+      at: GENERATED_AT,
+      findings: [
+        'Edge case missing\nsrc/form.ts re-validates on every keystroke',
+        'docs/validation-errors.md names a retired code',
+      ],
+    },
+    workspace: RUN_WORKSPACE,
+  }),
+  summary: workspaceSummary('visual-ready-override-confirm'),
+  ledger: READY_LEDGER,
+});
+
 /** The transcript names each brief's action the way the saved task the closed block reads names it. */
 function savedAction(state: WorkflowState, id: string): Task['action'] {
   const task = state.tasks.find((item) => item.id === id);
@@ -2359,6 +2380,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-ready-override',
     route: { record: READY_OVERRIDE, log: READY_OVERRIDE_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-ready-override-confirm',
+    route: { record: READY_OVERRIDE_MULTILINE, log: READY_OVERRIDE_LOG },
   }),
   atRestProjection({ id: 'workflow-closed-applied', route: { record: CLOSED_APPLIED } }),
   atRestProjection({
