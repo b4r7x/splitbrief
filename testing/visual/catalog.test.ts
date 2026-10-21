@@ -493,6 +493,7 @@ describe('visual catalog', () => {
       'workflow-start-readiness-warning',
       'overlay-usage-details',
       'overlay-usage-details-legacy',
+      'overlay-usage-details-unpriced',
       'overlay-usage-context-insufficient',
       'overlay-local-connection-ollama',
       'overlay-local-connection-lmstudio',

@@ -532,15 +532,25 @@ export function formatUsageMoney(money: UsageMoney): string {
     case 'legacy':
       return money.partial ? `${formatCost(money.amount)} + unknown` : formatCost(money.amount);
     case 'estimate': {
+      if (!statesAmount(money)) return 'not estimated';
       if (money.amount !== null) return formatCost(money.amount);
-      if (money.knownSubtotal === 0) return 'not estimated';
       return `${formatCost(money.knownSubtotal)} + unknown`;
     }
   }
 }
 
+/** Whether the money states an amount; an estimate that priced no part of any request does not. */
+export function statesAmount(money: UsageMoney): boolean {
+  if (money.kind === 'not-estimated') return false;
+  if (money.kind !== 'estimate') return true;
+  return money.amount !== null || money.knownSubtotal > 0;
+}
+
+/** An unpriced snapshot keeps zero placeholders; its source word is the whole rate. */
 function rateFacts(row: UsageRateRow): string[] {
   const { rates } = row;
+  const requests = row.requests === 1 ? '1 request' : `${row.requests} requests`;
+  if (rates.source === 'unpriced') return [rates.model, RATE_SOURCE_WORDS.unpriced, requests];
   const facts = [
     rates.model,
     RATE_SOURCE_WORDS[rates.source],
@@ -551,7 +561,7 @@ function rateFacts(row: UsageRateRow): string[] {
     facts.push(`tier ${formatUsageTokens(rates.selectedThresholdTokens)}`);
   }
   facts.push(rates.rateAsOf === undefined ? 'no rate date' : `rates of ${rates.rateAsOf}`);
-  facts.push(row.requests === 1 ? '1 request' : `${row.requests} requests`);
+  facts.push(requests);
   return facts;
 }
 
@@ -689,7 +699,7 @@ export function usageDetailRows(view: UsageDetailsView): UsageDetailRow[] {
       'money:amount',
       'Amount',
       [formatUsageMoney(view.money)],
-      view.money.kind === 'not-estimated' ? 'textDim' : 'text',
+      statesAmount(view.money) ? 'text' : 'textDim',
     ),
   );
   // A run with no amount has no basis to state: `unmetered` carries its billing words instead, and
@@ -714,7 +724,10 @@ export function usageDetailRows(view: UsageDetailsView): UsageDetailRow[] {
       ),
     );
   }
-  if (view.money.kind === 'estimate' || view.money.kind === 'legacy') {
+  if (
+    (view.money.kind === 'estimate' || view.money.kind === 'legacy') &&
+    statesAmount(view.money)
+  ) {
     rows.push({
       key: 'money:note',
       kind: 'note',

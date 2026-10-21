@@ -4789,6 +4789,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Usage details',
       },
       {
+        id: 'overlay-usage-details-unpriced',
+        title: 'Overlay · usage details · subscription tools with no published rate',
+        marker: 'Usage details',
+      },
+      {
         id: 'overlay-usage-context-insufficient',
         title: 'Overlay · usage details · the context a halted review never had',
         marker: 'Usage details',

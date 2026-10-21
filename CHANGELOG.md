@@ -366,6 +366,7 @@
 - The *Apply as is* confirmation lists each open finding on one row, so a finding written on two lines no longer covers the card title. Before, its second line pushed over the title.
 - `splitbrief start` over a run that is still running tells you to stop it, then run `splitbrief continue <id>`. Before, it told you to run `splitbrief resume`, which refuses a running run.
 - In the model picker, the key line says what ⏎ does on the highlighted row: `⏎ expand` on a collapsed model row. Before, it said `⏎ confirm` while ⏎ opened the row.
+- `/usage` no longer shows `$0.00` per million tokens for a model that has no published rate, and `/usage` and `/copy cost` call an amount a catalog estimate only when an amount is shown. Before, a run on a subscription tool read as free and claimed an estimate it never made.
 
 ## [0.1.0] - 2026-08-07
 

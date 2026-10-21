@@ -107,6 +107,50 @@ describe('readCostText', () => {
 
     expect(readCostText()).toBe('$1.25 (legacy estimate; rates not recorded)');
   });
+
+  it('copies an unpriced run as not estimated, with no estimate label', () => {
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord({
+        summary: makeSummary({
+          costBreakdown: makeCostBreakdown({
+            hasUnpricedUsage: true,
+            requestEstimate: {
+              amount: null,
+              currency: 'USD',
+              basis: 'unavailable',
+              completeness: 'unavailable',
+              knownSubtotal: 0,
+              reasons: ['unpriced-model'],
+              items: [
+                {
+                  callId: 'c1',
+                  role: 'planner',
+                  usageBoundary: 'single-request',
+                  amount: null,
+                  knownSubtotal: 0,
+                  completeness: 'unavailable',
+                  reasons: ['unpriced-model'],
+                  billing: { posture: 'unknown', basis: 'unknown' },
+                  rates: {
+                    source: 'unpriced',
+                    provider: 'claude-code',
+                    model: 'haiku',
+                    inputPer1M: 0,
+                    outputPer1M: 0,
+                    capturedAt: 1_700_000_000_000,
+                  },
+                },
+              ],
+            },
+          }),
+        }),
+      }),
+      execution: { kind: 'at-rest' },
+    });
+
+    expect(readCostText()).toBe('not estimated');
+  });
 });
 
 function reviewCall(
