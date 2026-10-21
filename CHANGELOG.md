@@ -351,6 +351,7 @@
 - After a BUILD seat on a named implementer profile stops, moving the seat or trying again runs the brief on that same profile until the brief passes, also after a stop or when you open the run again. Before, the brief could move to the default profile.
 - While a halt waits on a named BUILD profile, `/crew build` changes that profile, and *Try again* runs the brief on the seat you saved. Before, the save went to the default profile.
 - When a brief does not fit the BUILD profile it was moved to, the halt names that profile, so `/crew build` changes it and *Try again* runs the brief on the new seat. Before, *Try again* raised the same halt each time.
+- A seat that goes down now moves to its declared fallback when the fallback tool is installed and can call the fallback's model, also in a headless run, a fresh clone or CI, and for a model on a provider set up only in the tool's own config. Before, the halt called the fallback not installed or not signed in until SPLITBRIEF had checked the tools once on the home screen.
 
 ## [0.1.0] - 2026-08-07
 
