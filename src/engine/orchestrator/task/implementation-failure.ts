@@ -4,7 +4,6 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import type { runImplementation } from './run-implementation.js';
-import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishError } from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
@@ -14,6 +13,7 @@ import {
   runnerDefectRow,
   runnerHaltRow,
 } from '../recovery/builders/task.js';
+import { haltAttempts } from '../recovery/builders/details.js';
 import { classifySeatFailure } from '../../runners/seat-failure.js';
 import { runnerAuthDisplayName } from '../../runners/auth-failure.js';
 import { boundedHandBack } from '../escalation/types.js';
@@ -81,8 +81,7 @@ export async function handleFailedImplementation(opts: {
       runner: wctx.config.implementer,
       classification: { class: 'account', cause: 'auth' },
       words: toolMessage,
-      attempts: state.attempt + 1,
-      maxAttempts: DEFAULT_LOCAL_RETRIES,
+      ...haltAttempts(state, task, { booked: false }),
       ...(wctx.implementerProfile !== undefined && {
         selectedImplementerProfile: wctx.implementerProfile,
       }),
@@ -127,8 +126,7 @@ export async function handleFailedImplementation(opts: {
         source: 'result-error',
       }),
       words: toolMessage,
-      attempts: state.attempt + 1,
-      maxAttempts: DEFAULT_LOCAL_RETRIES,
+      ...haltAttempts(state, task, { booked: false }),
       ...(wctx.implementerProfile !== undefined && {
         selectedImplementerProfile: wctx.implementerProfile,
       }),
@@ -173,8 +171,7 @@ export async function handleFailedImplementation(opts: {
       phase: state.phase,
       runner: wctx.config.implementer,
       toolMessage,
-      attempts: state.attempt + 1,
-      maxAttempts: DEFAULT_LOCAL_RETRIES,
+      ...haltAttempts(state, task, { booked: false }),
       ...(wctx.implementerProfile !== undefined && {
         selectedImplementerProfile: wctx.implementerProfile,
       }),

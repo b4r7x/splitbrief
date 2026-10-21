@@ -781,7 +781,11 @@ describe('handleRetryAndEscalation', () => {
   it('pre_escalation deny stops before the consult, attributing retry-exhausted to the hook', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
-    const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
+    // The first call is booked on the lineage before the ladder, as `retryAndRecord` does.
+    const state = transition(
+      { ...makeValidatingState(), tasks: [task] },
+      { type: 'COUNT_ATTEMPT', taskId: task.id },
+    );
     writeFileSync(
       join(projectDir, 'deny-escalation.mjs'),
       "console.log(JSON.stringify({ decision: 'deny', message: 'policy: escalation not allowed' }));\n",
@@ -840,6 +844,9 @@ describe('handleRetryAndEscalation', () => {
     expect(formatRecoveryHeadline(finalState.pendingRecovery!)).toBe(
       finalState.pendingRecovery?.message,
     );
+    // The first call and the local retry: the transcript read `attempt 2 of 8` for the retry.
+    expect(finalState.pendingRecovery).toMatchObject({ attempts: 2, maxAttempts: 8 });
+    expect(finalState.pendingRecovery?.details).toContain('Attempts: 2/8');
   });
 
   it('a pre_validation deny of a consult verify ends the ladder on the skipped task', async () => {

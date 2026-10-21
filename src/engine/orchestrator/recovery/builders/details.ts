@@ -1,6 +1,7 @@
 import type { ConsultSeat } from '../../../../core/schemas/consult.js';
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../../../core/crew/identity.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
+import { lineageAttemptsOf, type WorkflowState } from '../../../../core/schemas/workflow.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { scopePathPatterns } from '../../../../utils/path-patterns.js';
 import { consultSeatRunner } from '../../escalation/consult-guidance.js';
@@ -49,6 +50,20 @@ export function attemptDetails(
   }
   if (attempts !== undefined) return [`Attempts: ${attempts}`];
   return [`Max attempts: ${maxAttempts}`];
+}
+
+/**
+ * The attempt a halted call ran as on its brief's lineage, out of the lineage's allowance: the
+ * `attempt N of M` the transcript showed for that call. A call the lineage booked before the halt
+ * is already in `used`.
+ */
+export function haltAttempts(
+  state: Pick<WorkflowState, 'lineages'>,
+  task: Pick<Task, 'id' | 'parentId'>,
+  opts: { booked: boolean },
+): { attempts: number; maxAttempts: number } {
+  const { used, allowance } = lineageAttemptsOf(state, task);
+  return { attempts: opts.booked ? used : used + 1, maxAttempts: allowance };
 }
 
 /** An inherited review follows PLAN until its switch gives REVIEW a separate seat. */

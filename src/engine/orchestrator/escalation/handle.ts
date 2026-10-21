@@ -7,7 +7,6 @@ import { recordNoProgressCut, runLocalRetries } from './local-retries.js';
 import { runRetryStep, type BlockedReport } from './step.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import {
   publishConsultBoundSpent,
   publishError,
@@ -26,6 +25,7 @@ import {
   attemptBoundSpent,
   type ConsultBoundSpent,
 } from '../recovery/builders/consult.js';
+import { haltAttempts } from '../recovery/builders/details.js';
 import {
   buildRetryExhaustedRecoveryIssue,
   buildSeatDownIssue,
@@ -109,8 +109,7 @@ async function seatDownHalt(
     runner: failure.runner,
     classification,
     words: stepOutcome.lastError,
-    attempts: stepOutcome.attempts,
-    maxAttempts: DEFAULT_LOCAL_RETRIES,
+    ...haltAttempts(stepOutcome.state, task, { booked: false }),
     ...(ctx.implementerProfile !== undefined && {
       selectedImplementerProfile: ctx.implementerProfile,
     }),
@@ -166,8 +165,10 @@ async function runnerDefectHalt(
     phase: stepOutcome.state.phase,
     runner: failure.runner,
     toolMessage: stepOutcome.lastError,
-    attempts: stepOutcome.attempts,
-    maxAttempts: DEFAULT_LOCAL_RETRIES,
+    // The local ladder books a timeout before it names the second one in a row a defect.
+    ...haltAttempts(stepOutcome.state, task, {
+      booked: failure.outcome === 'runner-timeout-repeated',
+    }),
     ...(ctx.implementerProfile !== undefined && {
       selectedImplementerProfile: ctx.implementerProfile,
     }),
@@ -351,8 +352,7 @@ export async function handleRetryAndEscalation(
         phase: state.phase,
         escalationBlockedBy: reason,
         validationSummary: lastError,
-        attempts,
-        maxAttempts: DEFAULT_LOCAL_RETRIES,
+        ...haltAttempts(state, task, { booked: true }),
         allowRetryOverride: true,
         ...(ctx.implementerProfile !== undefined && {
           selectedImplementerProfile: ctx.implementerProfile,

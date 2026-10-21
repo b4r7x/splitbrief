@@ -3155,6 +3155,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-repeated-timeout',
+      title: 'Workflow · a BUILD seat that timed out twice on one brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'repeated-timeout',
+        title: 'Repeated-timeout recovery menu',
+        kind: 'question',
+        marker: 'Seat down · Google Antigravity CLI',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-resolved-retry',
       title: 'Workflow · a checkout halt resolved with Try again',
       surface: screenSurface('workflow'),
