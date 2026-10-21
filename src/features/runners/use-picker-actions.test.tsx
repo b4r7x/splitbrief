@@ -602,7 +602,10 @@ describe('usePickerActions', () => {
 
   // The save said `seat changes after this brief` while the plan was made and in the final review,
   // where no brief runs: the words now come from the one place the composer legend reads.
-  const saveBuildSeatUnderRun = async (phase: Phase): Promise<string> => {
+  const saveBuildSeatUnderRun = async (
+    phase: Phase,
+    status: 'running' | 'paused' = 'running',
+  ): Promise<string> => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
     seed(config);
     const prepared = makePreparedExecution({
@@ -616,7 +619,7 @@ describe('usePickerActions', () => {
       run: makeRunRecord({ ref: prepared.session.ref }),
       execution: { kind: 'local', prepared },
     });
-    lifecycleStore.__testReset({ phase });
+    lifecycleStore.__testReset({ phase, status });
 
     const ui = renderFeature(
       <ConfirmOnKeyProbe role="implementer" selection={realPickerOption('implementer', 'codex')} />,
@@ -664,6 +667,21 @@ describe('usePickerActions', () => {
 
     expect(await saveBuildSeatUnderRun('final-review')).toBe(
       `${CREW_SEAT_LABELS.build} seat changes after a fix brief or at the next run`,
+    );
+  });
+
+  it('says a seat saved while the run is parked after a brief lands after that brief', async () => {
+    tasksStore.__testReset({
+      tasks: [
+        { id: 'T001', title: 'first', status: 'done' },
+        { id: 'T002', title: 'second', status: 'pending' },
+      ],
+      currentTask: 1,
+      totalTasks: 2,
+    });
+
+    expect(await saveBuildSeatUnderRun('implementing', 'paused')).toBe(
+      `${CREW_SEAT_LABELS.build} seat changes after T001`,
     );
   });
 

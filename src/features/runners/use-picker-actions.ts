@@ -7,7 +7,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { selectSeatChangePoint, tasksStore } from '../../stores/workflow/tasks.js';
-import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import { takesSeatAtBoundary } from '../../stores/workflow/stop.js';
 import { usePickerProfile } from './picker-profile.js';
 import {
   formatConfigSaveSuccess,
@@ -213,16 +213,14 @@ function writeSeatAuthChannel(
 
 /**
  * A seat saved under a run this process is driving lands at the next brief boundary,
- * where the run re-prepares from the saved config. A halt's own picker swaps the seat at
- * once, so it is not announced as a boundary change.
+ * where the run re-prepares from the saved config.
  */
 function changesRunningSeat(before: Config, after: Config): boolean {
   const route = routerStore.get();
   return (
     route.screen === 'workflow' &&
     route.execution.kind === 'local' &&
-    lifecycleStore.get().status === 'running' &&
-    recoveryNoticeStore.get().issue === null &&
+    takesSeatAtBoundary() &&
     seatIdentityChanges(seatIdentitiesFromConfig(before), seatIdentitiesFromConfig(after)).length >
       0
   );

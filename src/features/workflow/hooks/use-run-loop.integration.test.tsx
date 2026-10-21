@@ -102,7 +102,7 @@ interface HarnessProps {
   captureRunner?: { current: RunnerHandle | null };
   runWorkflow?: RunWorkflowFn | undefined;
   prepareExecution?: PrepareExecutionFn | undefined;
-  continueAtRest?: ((record: RunRecord) => void) | undefined;
+  continueAtRest?: ((record: RunRecord, steer: UserMessageInput) => void) | undefined;
 }
 
 function Harness({
@@ -1421,6 +1421,7 @@ describe('useRunLoop', () => {
     });
     expect(continueAtRest).toHaveBeenCalledWith(
       expect.objectContaining({ ref: { projectDir, sessionId } }),
+      plainUserMessage(''),
     );
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
     expect(overlayStore.get().active).toBe('none');
@@ -1465,6 +1466,144 @@ describe('useRunLoop', () => {
     expect(stopStore.get()).toMatchObject({ intent: 'pause-after-brief', phase: 'parked' });
 
     inst.unmount();
+  });
+
+  describe('a seat saved while the run is parked', () => {
+    function savedRun(sessionId: string): PreparedExecution {
+      ensureSessionDir(projectDir, sessionId);
+      saveState(
+        { projectDir, sessionId },
+        { ...createInitialState('add auth'), ...RUN_CREW, phase: 'implementing' },
+      );
+      return preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    }
+
+    /**
+     * The engine pass by pass: the first parks where the test says, once the test lets the brief
+     * run; every later pass records the preparation it runs on and the words it was continued with.
+     */
+    function parkingEngine(park: (options: Parameters<RunWorkflowFn>[0]) => Promise<void>) {
+      const { promise: running, resolve: letBriefRun } = Promise.withResolvers<void>();
+      const passes: { prepared: PreparedExecution; steer: string | undefined }[] = [];
+      let continuedInPlace: boolean | undefined;
+      const engine: RunWorkflowFn = vi.fn(async (options) => {
+        passes.push({ prepared: options.prepared, steer: options.steer?.text });
+        if (passes.length === 1) {
+          await running;
+          await park(options);
+          continuedInPlace = options.signal?.aborted !== true;
+        }
+        return makeSummary();
+      });
+      return { engine, letBriefRun, passes, continuedInPlace: () => continuedInPlace };
+    }
+
+    const parkAtBoundary = async (options: Parameters<RunWorkflowFn>[0]) => {
+      requestBoundaryPause();
+      options.sinks.consumeBoundaryPause?.();
+      await options.callbacks.onContinuationNeeded?.('', 'boundary', []);
+    };
+
+    async function renderParked(
+      prepared: PreparedExecution,
+      run: ReturnType<typeof parkingEngine>,
+      requests: PrepareExecutionInput[],
+    ) {
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      // The screen's continuation of a run at rest re-enters it; here the loop's own re-entry.
+      const continueAtRest = vi.fn((_record: RunRecord, steer: UserMessageInput) => {
+        captureRunner.current?.handleResume(steer);
+      });
+      const inst = renderHarness({
+        prepared,
+        captureRunner,
+        continueAtRest,
+        runWorkflow: run.engine,
+        prepareExecution: reprepareSameSession(requests),
+      });
+      await vi.waitFor(() => {
+        expect(run.engine).toHaveBeenCalledTimes(1);
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      run.letBriefRun();
+      await vi.waitFor(() => {
+        expect(stopStore.get().phase).toBe('parked');
+      });
+      const resume = (message?: UserMessageInput) => captureRunner.current?.handleResume(message);
+      return { inst, continueAtRest, resume };
+    }
+
+    it('continues a boundary park on the seat saved while it waited, with the words typed to continue it', async () => {
+      const prepared = savedRun('2026-10-21-park-seat-saved');
+      configStore.__testReset({ projectDir, config: prepared.config });
+      const requests: PrepareExecutionInput[] = [];
+      const run = parkingEngine(parkAtBoundary);
+      const { inst, continueAtRest, resume } = await renderParked(prepared, run, requests);
+
+      configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
+      resume(plainUserMessage('carry on'));
+      await vi.waitFor(() => {
+        expect(run.passes).toHaveLength(2);
+      });
+
+      expect(run.continuedInPlace()).toBe(false);
+      expect(continueAtRest).toHaveBeenCalledTimes(1);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.effectiveConfig.implementer).toMatchObject({ tool: 'codex' });
+      expect(run.passes[1]?.prepared.config.implementer).toMatchObject({ tool: 'codex' });
+      expect(run.passes[1]?.steer).toBe('carry on');
+
+      inst.unmount();
+    });
+
+    it('continues a boundary park in place when no seat was saved while it waited', async () => {
+      const prepared = savedRun('2026-10-21-park-no-seat-saved');
+      configStore.__testReset({ projectDir, config: prepared.config });
+      const requests: PrepareExecutionInput[] = [];
+      const run = parkingEngine(parkAtBoundary);
+      const { inst, continueAtRest, resume } = await renderParked(prepared, run, requests);
+
+      configStore.__testReset({
+        projectDir,
+        config: { ...prepared.config, workflow: { ...prepared.config.workflow, approve: 'none' } },
+      });
+      resume();
+      await vi.waitFor(() => {
+        expect(settledRun()).not.toBeNull();
+      });
+
+      expect(run.continuedInPlace()).toBe(true);
+      expect(continueAtRest).not.toHaveBeenCalled();
+      expect(requests).toHaveLength(0);
+      expect(run.passes).toHaveLength(1);
+
+      inst.unmount();
+    });
+
+    it('takes a seat saved while a cut brief waits at the next brief boundary', async () => {
+      const prepared = savedRun('2026-10-21-cut-brief-seat-saved');
+      configStore.__testReset({ projectDir, config: prepared.config });
+      const requests: PrepareExecutionInput[] = [];
+      let pausedAtBoundary: boolean | undefined;
+      const run = parkingEngine(async (options) => {
+        await options.callbacks.onContinuationNeeded?.('', 'mid-step', []);
+        pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
+        if (pausedAtBoundary) await options.callbacks.onContinuationNeeded?.('', 'boundary', []);
+      });
+      const { inst, continueAtRest, resume } = await renderParked(prepared, run, requests);
+
+      configStore.__testReset({ projectDir, config: CODEX_SEAT_SAVED });
+      resume();
+      await vi.waitFor(() => {
+        expect(run.passes).toHaveLength(2);
+      });
+
+      expect(pausedAtBoundary).toBe(true);
+      expect(continueAtRest).toHaveBeenCalledTimes(1);
+      expect(run.passes[1]?.prepared.config.implementer).toMatchObject({ tool: 'codex' });
+
+      inst.unmount();
+    });
   });
 
   describe('a save that changes no seat under a running brief', () => {

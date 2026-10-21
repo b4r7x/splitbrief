@@ -1,5 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
+import { lifecycleStore } from './lifecycle.js';
+import { recoveryNoticeStore } from './recovery-notice.js';
 
 export type StopIntent = 'none' | 'stop-now' | 'pause-after-brief' | 'end-run' | 'quit';
 export type StopPhase =
@@ -55,6 +57,16 @@ function request(intent: Exclude<StopIntent, 'none'>): void {
     parked: s.parked,
     seatChange: intent === 'pause-after-brief' && s.seatChange,
   }));
+}
+
+/**
+ * Whether the run this process drives takes a seat saved now at a brief boundary: it runs, or it
+ * waits parked and goes on at the boundary when it continues. A halt's own picker moves its seat
+ * at once, so a halted run waits for no boundary.
+ */
+export function takesSeatAtBoundary(): boolean {
+  const { status } = lifecycleStore.get();
+  return (status === 'running' || status === 'paused') && recoveryNoticeStore.get().issue === null;
 }
 
 function markSeatChange(pending: boolean): void {
