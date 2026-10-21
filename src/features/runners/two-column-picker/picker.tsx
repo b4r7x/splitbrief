@@ -114,7 +114,7 @@ function getHint(input: {
   hasRefresh: boolean;
   maxVisible: number;
   width: number;
-  expandedHint?: string | undefined;
+  enterHint?: string | undefined;
 }): string {
   const { kind, nav, hasRefresh, maxVisible } = input;
   const escapeHint = ESCAPE_HINTS[nav.escape];
@@ -145,7 +145,7 @@ function getHint(input: {
   if (kind === 'expanded') {
     // The launcher is pinned above the expansion and answers for itself, so the
     // expansion's verb never speaks for it.
-    const lead = nav.isOnCustomItem ? '⏎ add custom' : (input.expandedHint ?? '⏎ choose route');
+    const lead = nav.isOnCustomItem ? '⏎ add custom' : (input.enterHint ?? '⏎ choose route');
     // An empty lead is a row with no verb of its own; it drops its slot rather
     // than opening the line with a separator that reads as a missing key.
     return fitHint(lead, true);
@@ -157,7 +157,7 @@ function getHint(input: {
   if (nav.activeColumn === 'left' && nav.isDisabled) {
     return fitHint('', false);
   }
-  return fitHint('⏎ confirm', true);
+  return fitHint(input.enterHint ?? '⏎ confirm', true);
 }
 
 /**
@@ -336,9 +336,12 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     hasRefresh: !!onRefresh,
     maxVisible,
     width: totalBoxWidth,
-    expandedHint: rightProps.expandedHint?.(
-      rightCurrent && isRealRightItem(rightCurrent) ? rightCurrent : undefined,
-    ),
+    enterHint:
+      nav.activeColumn === 'right'
+        ? rightProps.enterHint?.(
+            rightCurrent && isRealRightItem(rightCurrent) ? rightCurrent : undefined,
+          )
+        : undefined,
   });
 
   const rawPreview =

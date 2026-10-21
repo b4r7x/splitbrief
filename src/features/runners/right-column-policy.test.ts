@@ -10,7 +10,7 @@ import { mergeOptionFamilies } from './model-catalog/option-merge.js';
 import {
   confirmRow,
   cycleRightRow,
-  expandedRowHint,
+  rowEnterHint,
   isExpandableRow,
   modelRowSave,
   rightRowActivation,
@@ -229,14 +229,14 @@ describe('isExpandableRow', () => {
   });
 });
 
-describe('expandedRowHint', () => {
+describe('rowEnterHint', () => {
   const opus: ModelOption = { id: 'opus' };
 
   // A provider expansion whose routes publish no ladder holds no draft, so its byline
   // must offer the way out rather than a confirm that saves nothing new.
   it('offers collapse on an expanded provider row with nothing to draft', () => {
     expect(
-      expandedRowHint(
+      rowEnterHint(
         { kind: 'model', model: openai, provenance: 'Detected', section: '', expanded: true },
         { tool: undefined, providerAuth: undefined, catalog: undefined },
       ),
@@ -244,7 +244,7 @@ describe('expandedRowHint', () => {
   });
 
   it('names space and enter when the axis ladder can step', () => {
-    const hint = expandedRowHint(
+    const hint = rowEnterHint(
       optionAxisRow({ model: opus, axis: 'effort', value: 'high', steps: true }),
       { tool: undefined, providerAuth: undefined, catalog: undefined },
     );
@@ -253,7 +253,7 @@ describe('expandedRowHint', () => {
   });
 
   it('names only enter when the axis ladder cannot step', () => {
-    const hint = expandedRowHint(
+    const hint = rowEnterHint(
       optionAxisRow({ model: opus, axis: 'effort', value: 'high', steps: false }),
       { tool: undefined, providerAuth: undefined, catalog: undefined },
     );
@@ -264,13 +264,13 @@ describe('expandedRowHint', () => {
   it('offers browse on an action row and nothing on a route row', () => {
     const auth = { tool: undefined, providerAuth: undefined, catalog: undefined };
     expect(
-      expandedRowHint(
+      rowEnterHint(
         { kind: 'action', action: 'browse-catalog', text: 'Browse the full catalog…' },
         auth,
       ),
     ).toBe('⏎ browse');
     expect(
-      expandedRowHint(
+      rowEnterHint(
         {
           kind: 'route',
           model: openai,
@@ -609,12 +609,12 @@ describe('authentication method rows', () => {
   });
 
   it('names confirmation with nothing to cycle, and names the step when it can move', () => {
-    expect(expandedRowHint(authRow({}), unchecked)).toBe('⏎ confirm');
-    const hint = expandedRowHint(authRow({ choices: enforceable }), unchecked) ?? '';
+    expect(rowEnterHint(authRow({}), unchecked)).toBe('⏎ confirm');
+    const hint = rowEnterHint(authRow({ choices: enforceable }), unchecked) ?? '';
     expect(hint).toContain('space');
     expect(hint).toContain('⏎');
     // Stepped onto the only rung it has, the row still confirms but promises no step.
-    const settled = expandedRowHint(
+    const settled = rowEnterHint(
       authRow({ method: 'host-configured', choices: ['host-configured'] }),
       unchecked,
     );

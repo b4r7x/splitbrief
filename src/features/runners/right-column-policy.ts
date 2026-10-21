@@ -155,11 +155,12 @@ export function isExpandableRow(row: RightRow, auth: RouteAuthContext): boolean 
 }
 
 /**
- * The expanded column's Enter verb belongs to the highlighted row: space steps an
- * axis in place, and a row outside the expansion still confirms or expands there.
- * Only a provider expansion's own rows keep the column-wide `⏎ choose route`.
+ * The Enter verb belongs to the highlighted row, with or without an open expansion:
+ * a collapsed row expands, space steps an axis in place, and a row outside the
+ * expansion still confirms or expands there. Only a provider expansion's own rows
+ * keep the column-wide `⏎ choose route`.
  */
-export function expandedRowHint(
+export function rowEnterHint(
   row: RightRow | undefined,
   auth: RouteAuthContext,
 ): string | undefined {

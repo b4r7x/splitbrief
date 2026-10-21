@@ -80,8 +80,8 @@ export interface RightColumnProps<L, R> {
   onCollapse?: (() => void) | undefined;
   onCycle?: ((item: R) => CycleOutcome) | undefined;
   isExpanded?: boolean | undefined;
-  /** Replaces the expanded-column Enter verb for the highlighted row (`⏎ choose route` otherwise). */
-  expandedHint?: ((item: R | undefined) => string | undefined) | undefined;
+  /** The Enter verb of the highlighted row (`⏎ choose route` in an expansion, `⏎ confirm` otherwise). */
+  enterHint?: ((item: R | undefined) => string | undefined) | undefined;
 }
 
 export interface ColumnState<T> {

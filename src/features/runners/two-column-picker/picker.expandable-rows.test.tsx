@@ -335,6 +335,57 @@ describe('TwoColumnPicker expandable right rows', () => {
     await press('\u001B', 'esc cancel');
   });
 
+  it('names in the key line what enter does on the row under the cursor', async () => {
+    const keyLine = (frame: string | undefined) =>
+      (frame ?? '').split('\n').find((line) => line.includes('↑↓ select')) ?? '';
+    const enterHint = (row: Route | undefined) =>
+      row === undefined ? undefined : `⏎ ${row.activation}`;
+    const rightProps = (expanded: boolean, rows: Route[]) => ({
+      items: rows,
+      getKey: (m: Route) => m.id,
+      renderRow: (m: Route) => <Text>{m.displayName}</Text>,
+      activationOf: (m: Route) => m.activation,
+      isExpanded: expanded,
+      enterHint,
+    });
+    const picker = (expanded: boolean, rows: Route[], column: 'left' | 'right' = 'right') => (
+      <TwoColumnPicker<Tool, Route>
+        title="Planner"
+        initialColumn={column}
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={rightProps(expanded, rows)}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    );
+
+    const collapsed = mount(picker(false, ROWS));
+    await flushEffects();
+    expect(keyLine(collapsed.lastFrame())).toContain('⏎ expand');
+    expect(keyLine(collapsed.lastFrame())).not.toContain('⏎ confirm');
+    collapsed.stdin.write('\u001B[B');
+    await flushEffects();
+    expect(keyLine(collapsed.lastFrame())).toContain('⏎ confirm');
+    collapsed.unmount();
+
+    const expanded = mount(
+      picker(true, [{ id: 'luna', displayName: 'GPT-5.6 Luna', activation: 'collapse' }]),
+    );
+    await flushEffects();
+    expect(keyLine(expanded.lastFrame())).toContain('⏎ collapse');
+    expanded.unmount();
+
+    const onTools = mount(picker(false, ROWS, 'left'));
+    await flushEffects();
+    expect(keyLine(onTools.lastFrame())).toContain('⏎ confirm');
+    expect(keyLine(onTools.lastFrame())).not.toContain('⏎ expand');
+    onTools.unmount();
+  });
+
   it('maintains fixed slot order for hint keys across default, expanded, and terminal-pane states', async () => {
     const KEYS = ['←→', '↑↓', '⏎', 'esc'] as const;
     const [k0, k1, k2, k3] = KEYS;

@@ -32,7 +32,7 @@ import {
   activationOfRightRow,
   confirmRow as confirmRightRow,
   cycleRightRow,
-  expandedRowHint,
+  rowEnterHint,
   modelRowSave,
   rightRowMatches,
   seatEffortDraft,
@@ -436,7 +436,7 @@ export function PickerView({
         },
         onCollapse: () => pickerViewStore.collapse(),
         onCycle: cycleRightRow,
-        expandedHint: (row) => expandedRowHint(row, authContext),
+        enterHint: (row) => rowEnterHint(row, authContext),
         // The store's id survives a move to another tool, whose rows carry no
         // expansion; only the rows on screen can say whether Escape collapses.
         isExpanded: catalog.rightRows.some((row) => row.kind === 'model' && row.expanded),
