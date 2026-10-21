@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import type { ReactNode } from 'react';
 import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
@@ -31,6 +32,7 @@ import {
 } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { WorkflowScreen } from './workflow.js';
+import { CommandPaletteOverlay } from '../overlays/palette.js';
 import { useRuntimeCommands } from '../command-context.js';
 import {
   activeApply,
@@ -140,6 +142,44 @@ function builtOnOtherCrew(): Summary {
 /** The crew saved after that run built: BUILD on Sonnet. */
 function sonnetBuildConfig() {
   return makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet' } });
+}
+
+/** The Ctrl+K palette over the screen, fed by the real command registry, as the app root mounts it. */
+function WithPalette({ children }: { children: ReactNode }) {
+  const phase = lifecycleStore.use((state) => state.phase);
+  const { commands, handleRuntimeCommand } = useRuntimeCommands({ exit: () => {}, phase });
+  const active = overlayStore.use((state) => state.active);
+  return (
+    <>
+      {children}
+      {active === 'command-palette' && (
+        <CommandPaletteOverlay
+          commands={commands}
+          onRuntimeCommand={(raw) => handleRuntimeCommand(raw, 'workflow')}
+        />
+      )}
+    </>
+  );
+}
+
+/** Opens the palette, finds the command by its name and picks it, then types the argument. */
+async function pickInPalette(
+  ui: ReturnType<typeof renderFeature>,
+  name: string,
+  argument: string,
+): Promise<void> {
+  overlayStore.open('command-palette');
+  await flushEffects();
+  for (const key of name) {
+    ui.stdin.write(key);
+    await flushEffects();
+  }
+  ui.stdin.write('\r');
+  await flushEffects();
+  for (const key of argument) {
+    ui.stdin.write(key);
+    await flushEffects();
+  }
 }
 
 function navigatePreparedWorkflow(projectDir: string, feature: string): void {
@@ -997,19 +1037,21 @@ describe('WorkflowScreen showing a run at rest', () => {
     }));
 
     return renderFeature(
-      <WorkflowScreen
-        commands={[]}
-        onRuntimeCommand={onRuntimeCommand}
-        deps={{
-          runWorkflow,
-          sessionSelect: {
-            applying: () => false,
-            loadResumeState: hydrateResume,
-            prepareResume,
-            hydrateRun: async () => {},
-          },
-        }}
-      />,
+      <WithPalette>
+        <WorkflowScreen
+          commands={[]}
+          onRuntimeCommand={onRuntimeCommand}
+          deps={{
+            runWorkflow,
+            sessionSelect: {
+              applying: () => false,
+              loadResumeState: hydrateResume,
+              prepareResume,
+              hydrateRun: async () => {},
+            },
+          }}
+        />
+      </WithPalette>,
     );
   }
 
@@ -1054,6 +1096,52 @@ describe('WorkflowScreen showing a run at rest', () => {
     });
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('tab back to the actions');
+    ui.unmount();
+  });
+
+  it('hands the keys to the composer for a command picked in the palette over a halt menu', async () => {
+    const onRuntimeCommand = vi.fn();
+    const ui = renderDependencyBlockedHalt(onRuntimeCommand);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+
+    await pickInPalette(ui, 'scroll', 'top');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/scroll top');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/scroll top');
+    });
+    expect(onRuntimeCommand.mock.calls).toEqual([['/scroll top']]);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Skip task');
+    expect(frame).toContain('tab back to the actions');
+    ui.unmount();
+  });
+
+  it('takes no halt letter typed into the palette over it', async () => {
+    const ui = renderDependencyBlockedHalt();
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+
+    overlayStore.open('command-palette');
+    await flushEffects();
+    ui.stdin.write('s');
+    await flushEffects();
+    await tick(30);
+    overlayStore.close();
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).not.toContain('-> skipped');
+    expect(frame).toContain('Choose an action above…');
     ui.unmount();
   });
 
@@ -1154,6 +1242,29 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept');
     });
+    ui.unmount();
+  });
+
+  it('hands the keys to the composer for a command picked in the palette over the result menu', async () => {
+    readyRun();
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WithPalette>
+        <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />
+      </WithPalette>,
+    );
+    await flushEffects();
+
+    await pickInPalette(ui, 'scroll', 'top');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/scroll top');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/scroll top');
+    });
+    expect(onRuntimeCommand.mock.calls).toEqual([['/scroll top']]);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Show diff');
+    expect(frame).toContain('tab back to the actions');
     ui.unmount();
   });
 
@@ -2282,6 +2393,60 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
       expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
     });
     await flushEffects();
+    expect(replies).toEqual([]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
+    ui.unmount();
+  });
+
+  it('hands the keys to the composer for a command picked in the palette over the reviewer checks card', async () => {
+    const answers: unknown[] = [];
+    openChecksCard(answers);
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WithPalette>
+        <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />
+      </WithPalette>,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+
+    await pickInPalette(ui, 'scroll', 'top');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/scroll top');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/scroll top');
+    });
+    await flushEffects();
+    expect(onRuntimeCommand.mock.calls).toEqual([['/scroll top']]);
+    expect(answers).toEqual([]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
+    ui.unmount();
+  });
+
+  it('hands the keys to the composer for a command picked in the palette over the planner question', async () => {
+    const replies: unknown[] = [];
+    askPlannerQuestion(replies);
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WithPalette>
+        <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />
+      </WithPalette>,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+
+    await pickInPalette(ui, 'scroll', 'top');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/scroll top');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/scroll top');
+    });
+    await flushEffects();
+    expect(onRuntimeCommand.mock.calls).toEqual([['/scroll top']]);
     expect(replies).toEqual([]);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
     ui.unmount();

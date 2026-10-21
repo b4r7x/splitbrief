@@ -85,7 +85,7 @@ export function WorkflowFooter({
   buildBlockShown = false,
   menuFocused = false,
   onToggleMenu,
-  onTakeKeys,
+  panelHoldsKeys = false,
   keepPlaceholderWhileFocused,
   questionPanelFocused = false,
   onReturnToQuestion,
@@ -119,8 +119,8 @@ export function WorkflowFooter({
   onReturnToQuestion?: (() => void) | undefined;
   menuFocused?: boolean | undefined;
   onToggleMenu?: (() => void) | undefined;
-  /** Lets go of the panel that holds the keys, so a typed slash command goes to the composer. */
-  onTakeKeys?: (() => void) | undefined;
+  /** A panel holds the keys; a typed slash still goes to the composer as a command. */
+  panelHoldsKeys?: boolean | undefined;
   /** The placeholder names what the composer takes on either side of the menu toggle, so focus keeps it. */
   keepPlaceholderWhileFocused?: boolean | undefined;
   readClipboardImage?: typeof readSystemClipboardImage | undefined;
@@ -148,12 +148,11 @@ export function WorkflowFooter({
     taskId,
     steerableSeat,
   });
-  // A slash typed while a panel holds the keys is a command: the panel lets go and the composer takes
-  // the whole read, so a pasted `/settings` arrives in one piece.
+  // A slash typed while a panel holds the keys is a command: the composer takes the whole read, so
+  // a pasted `/settings` arrives in one piece, and the screen moves the keys to it.
   useInput((input) => {
-    if (onTakeKeys === undefined || !input.startsWith('/')) return;
+    if (!panelHoldsKeys || !input.startsWith('/')) return;
     startSlashHandoff();
-    onTakeKeys();
     composerDraftStore.requestCommand(input);
   });
   useEffect(() => {

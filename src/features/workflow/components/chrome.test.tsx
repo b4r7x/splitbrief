@@ -1,5 +1,5 @@
 import type { DraftSubmission } from '../../../core/composer/submission.js';
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { Text } from 'ink';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
@@ -24,6 +24,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WorkflowFooter, WorkflowHeader } from './chrome.js';
@@ -244,7 +245,6 @@ describe('WorkflowFooter', () => {
   });
 
   it('hands a slash typed over a panel to the composer, the whole chunk at once', async () => {
-    const onTakeKeys = vi.fn();
     const { cols, rows } = terminalSizeStore.get();
     const ui = renderFeature(
       <WorkflowFooter
@@ -254,7 +254,7 @@ describe('WorkflowFooter', () => {
         mode="normal"
         inputHint=""
         disabled
-        onTakeKeys={onTakeKeys}
+        panelHoldsKeys
       />,
       { cols, rows },
     );
@@ -262,11 +262,11 @@ describe('WorkflowFooter', () => {
 
     ui.stdin.write('x');
     await flushEffects();
-    expect(onTakeKeys).not.toHaveBeenCalled();
+    expect(composerLiveStore.get().text).toBe('');
 
     ui.stdin.write('/settings');
     await flushEffects();
-    expect(onTakeKeys).toHaveBeenCalledTimes(1);
+    expect(composerLiveStore.get().text).toBe('/settings');
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/settings');
     ui.unmount();
   });
