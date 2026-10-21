@@ -31,6 +31,11 @@ export const sessionPreparationError = {
     ),
 } as const;
 
+/** What works on a run another process still runs: stop it there, then continue it. */
+export function stillActiveFix(sessionId: string): string {
+  return `Stop it, then run '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' — or delete ${SPLITBRIEF_IDENTITY.stateDir}/active to discard it.`;
+}
+
 export const sessionError = {
   invalidData: (sessionId: string, reason: string) =>
     error('session-invalid-data', `Invalid session data: ${reason}`, { sessionId, reason }),
@@ -49,7 +54,7 @@ export const sessionError = {
   stillActive: (sessionId: string) =>
     error(
       'session-still-active',
-      `session '${sessionId}' is still active.\nStop it, then run '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' — or delete ${SPLITBRIEF_IDENTITY.stateDir}/active to discard it.`,
+      `session '${sessionId}' is still active.\n${stillActiveFix(sessionId)}`,
       { sessionId },
     ),
   invalidId: (sessionId: string) =>

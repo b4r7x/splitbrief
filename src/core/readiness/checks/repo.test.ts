@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sessionError } from '../../sessions/errors.js';
 import {
   buildRepoChecks,
   exemptLiveSessionBlocker,
@@ -126,6 +127,34 @@ describe('buildRepoChecks dirty worktree', () => {
   it('emits no dirty-worktree check on a clean worktree', () => {
     const checks = buildRepoChecks(cleanRepo);
     expect(checks.find((check) => check.id === 'repo.dirty-worktree')).toBeUndefined();
+  });
+});
+
+describe('buildRepoChecks active session', () => {
+  it('tells a live run to stop and continue, as every refusal of a live run does', () => {
+    const live = buildRepoChecks({
+      ...cleanRepo,
+      activeSession: 'session-abc',
+      activeSessionLive: true,
+    }).find((check) => check.id === 'repo.active-session-live');
+
+    expect(live?.severity).toBe('blocker');
+    expect(live?.fix).toBe(
+      "Stop it, then run 'splitbrief continue session-abc' — or delete .splitbrief/active to discard it.",
+    );
+    expect(sessionError.stillActive('session-abc').message).toContain(live?.fix);
+  });
+
+  it('keeps the stale marker as information with no fix', () => {
+    const stale = buildRepoChecks({
+      ...cleanRepo,
+      activeSession: 'session-abc',
+      activeSessionLive: false,
+    }).find((check) => check.id === 'repo.active-session-stale');
+
+    expect(stale?.severity).toBe('info');
+    expect(stale?.summary).toBe('Stale active session marker session-abc can be cleared.');
+    expect(stale?.fix).toBeUndefined();
   });
 });
 

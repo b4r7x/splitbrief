@@ -158,7 +158,7 @@ Run `npm rebuild better-sqlite3` in the SPLITBRIEF installation directory to res
 1. Read the `Next action` line. It points to `splitbrief init`, config repair, or cleaning/isolating the repo.
 2. For doctor-only missing config warnings, run `splitbrief init` or `splitbrief init --reconfigure`.
 3. For invalid config, fix `.splitbrief/config.yaml` and re-run `splitbrief doctor --json` to verify (`stateId` / `remediation` per check).
-4. For active-session blockers, run `splitbrief status`, then `splitbrief resume` or `splitbrief continue <session-id>`.
+4. For a live active session, stop the run in the window that runs it, then run `splitbrief continue <session-id>`. `splitbrief resume` refuses a run that is still running.
 
 **Prevention:** Run `splitbrief doctor` after changing runner config or before CI starts a headless run.
 
@@ -172,7 +172,7 @@ Run `npm rebuild better-sqlite3` in the SPLITBRIEF installation directory to res
 
 **Fix:**
 1. Read the command first. In `splitbrief doctor`, the seat shows the warning `PLAN runs a command you declared, with your permissions on this machine.` (or `BUILD` or `REVIEW`). The `Command:` line under it shows the command and its arguments. The check ids, such as `runners.planner.trust-boundary`, appear only in `splitbrief doctor --json`.
-2. If you want it, run SPLITBRIEF in a terminal. It shows the resolved executable path, the argv, the working directory, and the environment names the runner declares in `env` (the only variables of your shell it gets), then asks for the confirmation phrase and a reason. Confirming stores an owner-only receipt in `~/.splitbrief/trust/custom-runners.json`.
+2. If you want it, run SPLITBRIEF in a terminal. It shows the resolved executable path, the argv, the working directory, and the environment names the runner declares in `env` (the only variables of your shell it gets), then asks you to confirm: `y` on the TUI panel, or the confirmation phrase `I confirm` on the terminal. Confirming stores an owner-only receipt in `~/.splitbrief/trust/custom-runners.json`.
 3. In CI or any headless run (`--json`), pass `--allow-repo-runners`. It grants that run only and persists nothing.
 4. If the command should not run, replace the runner in `.splitbrief/config.yaml`.
 
