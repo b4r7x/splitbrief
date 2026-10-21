@@ -158,7 +158,7 @@ flowchart TD
 
 ## Recovery
 
-Replacing a BUILD worker after a usage limit updates the failing named profile, including a non-default profile. Other profiles keep their configuration; the retry uses the chosen replacement. Taking `switch-seat` on the panel does not swap the tool alone: it opens that seat's own picker on the chosen tool, so the swap carries the model and effort picked there (`configWithSwitchedSeat` spreads `model`, `effort` and `variant` into the seat's runner block), and the picker writes the choice to `.splitbrief/config.yaml` so the next run starts on it too. Cancelling the picker leaves the halt pending and changes nothing.
+Replacing a BUILD worker after a usage limit updates the failing named profile, including a non-default profile. Other profiles keep their configuration; the retry uses the chosen replacement. The brief then runs on that profile, not on the profile routing would choose, also when the run stops or is opened again before the brief passes: `state.json` keeps the brief and its profile in `retryProfile` until the brief passes or is skipped. Taking `switch-seat` on the panel does not swap the tool alone: it opens that seat's own picker on the chosen tool, so the swap carries the model and effort picked there (`configWithSwitchedSeat` spreads `model`, `effort` and `variant` into the seat's runner block), and the picker writes the choice to `.splitbrief/config.yaml` so the next run starts on it too. Cancelling the picker leaves the halt pending and changes nothing.
 
 Recovery takes over when the consult ladder is exhausted — a spent consult or attempt bound included — or when a workflow-level failure occurs that automation cannot resolve. The system lives in `src/engine/orchestrator/recovery/`.
 
@@ -264,7 +264,7 @@ An automatic switch that resolves a recovery shows two transcript blocks. The fi
 
 A switch does not write the session's `seats.json`. The next resume reconciles `seats.json` against the config before it publishes `workflow_resumed`. The engine checks each changed seat against the `seat_switched` events since the last `workflow_started` or `workflow_resumed`. If the latest switch for that seat records the current config, the engine records nothing. A config change between runs is recorded as a `seat_switched` event with the cause `crew changed`: the transcript shows one seat row, and the review packet lists it under Recovery Decisions.
 
-A seat saved in Settings or with `/crew` while the halt waits is used when the run goes on, also after you open the run again: Try again or a correction runs the halted step on it, recorded as `crew changed`. Change <SEAT> tool switches the seat to the row you take in its picker, the saved one included; Escape keeps the halt and the saved seat. A seat saved on another role stays as saved.
+A seat saved in Settings or with `/crew` while the halt waits is used when the run goes on, also after you open the run again: Try again or a correction runs the halted step on it, recorded as `crew changed`. Change <SEAT> tool switches the seat to the row you take in its picker, the saved one included; Escape keeps the halt and the saved seat. A seat saved on another role stays as saved. While the halt waits on a named BUILD profile, `/crew build` and the BUILD row in Settings open that profile's picker and save to it, also when the run is open at rest; the default profile and the other profiles keep their configuration.
 
 History replay reads the recorded `auto` field. Switch rows that still need the cause use `formatSeatSwitchCause` in `src/core/recovery/headline.ts`; folded Recovery rows use the prompted headline.
 
@@ -307,7 +307,7 @@ A halt offers only the actions of its kind (`allowedActionsForHalt`). *Needs you
 Account halts name their cause: `Balance spent on <tool>`, `Billing refused by <tool>` or `Quota spent on <tool>`.
 OpenCode and Kilo Code bill the provider that the model route names, so their halts name that provider first: `Balance spent on deepseek (OpenCode CLI)`.
 Rate limits keep `Usage limit on <tool>` and the reset clock. The panel omits the internal Worker profile row.
-The issue keeps the selected profile for retry and seat switching. Context overflow keeps its `Context limit: <n> tokens` detail.
+The issue keeps the selected profile for retry and seat switching: Try again, Continue and Change BUILD tool run the brief on that profile. When the brief does not fit that profile, the context-overflow halt names it, so `/crew build` saves a larger seat to that profile and Try again runs the brief on it. Context overflow keeps its `Context limit: <n> tokens` detail.
 
 | Reason | Halt | When | Available actions | Recommended |
 |---|---|---|---|---|

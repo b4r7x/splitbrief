@@ -161,10 +161,13 @@ export function createInitialState(feature: string, now: Date = new Date()): Wor
   };
 }
 
+/** A brief's recovery pin ends when the brief settles: until then every route of it reads the pin. */
 function setTaskStatus(state: WorkflowState, taskId: TaskId, status: TaskStatus): WorkflowState {
   return {
     ...state,
     tasks: state.tasks.map((t) => (t.id === taskId ? { ...t, status } : t)),
+    ...(state.retryProfile?.taskId === taskId &&
+      isTaskSettled(status) && { retryProfile: undefined }),
   };
 }
 
@@ -267,6 +270,19 @@ function markRecoveryApplying(
       selectedAction: action.action,
     },
   };
+}
+
+/**
+ * A recovery action that names a BUILD profile pins the brief to it until the
+ * brief settles; one that names none leaves an earlier pin in place, so a
+ * reopen that restarts the interrupted brief keeps the profile.
+ */
+function retryProfilePin(
+  action: Extract<StateAction, { type: 'RESET_TASK' | 'RESTART_ATTEMPT_ON_SEAT' }>,
+): Pick<WorkflowState, 'retryProfile'> {
+  return action.profile === undefined
+    ? {}
+    : { retryProfile: { taskId: action.taskId, profile: action.profile } };
 }
 
 export function transition(
@@ -743,6 +759,7 @@ export function transition(
         attempt: 0,
         phase: 'implementing',
         ...(state.pendingRecovery?.taskId === action.taskId ? { pendingRecovery: undefined } : {}),
+        ...retryProfilePin(action),
       };
     }
 
@@ -1062,7 +1079,12 @@ export function transition(
     case 'RESTART_ATTEMPT_ON_SEAT': {
       const idx = state.tasks.findIndex((t) => t.id === action.taskId);
       if (idx < 0) return state;
-      return { ...state, currentTaskIndex: idx, pendingRecovery: undefined };
+      return {
+        ...state,
+        currentTaskIndex: idx,
+        pendingRecovery: undefined,
+        ...retryProfilePin(action),
+      };
     }
 
     case 'RECORD_SEAT_SWITCH':

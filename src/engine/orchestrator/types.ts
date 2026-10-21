@@ -1,6 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { BriefReviewPromptKind, Phase } from '../../core/schemas/enums.js';
-import type { TaskId } from '../../core/schemas/task.js';
 import type { StepCut } from '../../core/schemas/run-step.js';
 import type { ContinuationHolder } from './continuation.js';
 import type { ProjectContext } from '../../core/state/types.js';
@@ -108,8 +107,6 @@ export interface WorkflowContext {
     | undefined;
   allowRepoRunners?: boolean | undefined;
   implementerProfile?: string | undefined;
-  retryProfileOverride?: string | undefined;
-  retryProfileOverrideTaskId?: TaskId | undefined;
   routingDecision?: RoutingDecision | undefined;
   signal?: AbortSignal | undefined;
   metadata: SpecMetadata;

@@ -15,6 +15,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { reactivateExistingSession } from '../../../src/core/sessions/active-pointer.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { switchSeatAndPrepareResume } from '../../../src/engine/orchestrator/recovery/switch-seat-resume.js';
@@ -26,6 +27,8 @@ import { configStore } from '../../../src/stores/project/config.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { pickerViewStore } from '../../../src/stores/ui/picker-view.js';
+import { routerStore } from '../../../src/stores/navigation/router.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 
 const BIG = { kind: 'cli', tool: 'claude-code', model: 'sonnet', contextLength: 200_000 } as const;
@@ -47,7 +50,7 @@ function answerSwitchSeat(): UseInputModeResult {
 }
 
 /** A run whose routed `small` BUILD profile hit a usage limit; `big` is the default profile. */
-function haltedOnSmallProfile() {
+function writeHaltedOnSmallProfile() {
   const projectDir = createTempDir('halt-picker-profile');
   dirs.push(projectDir);
   const ref = { projectDir, sessionId: 'sess-profile' };
@@ -77,6 +80,12 @@ function haltedOnSmallProfile() {
   );
   const state = loadState(ref);
   if (state === null) throw new Error('expected the halted state to persist');
+  return { ref, state };
+}
+
+function haltedOnSmallProfile() {
+  const { ref, state } = writeHaltedOnSmallProfile();
+  const projectDir = ref.projectDir;
   const sourceConfig = loadConfig(projectDir).config;
   const prepared = makePreparedExecution({
     ...ref,
@@ -167,6 +176,37 @@ describe('the halt picker of a named BUILD profile', () => {
       model: 'my-a',
       customModels: ['my-a'],
       label: 'Small',
+    });
+  });
+
+  it('saves the BUILD seat to the halted profile while the halted run is open at rest', async () => {
+    const { ref, state } = writeHaltedOnSmallProfile();
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({
+        ref,
+        hydration: { kind: 'loaded', state },
+        status: deriveRunStatus({ state, liveness: 'not-alive' }),
+      }),
+      execution: { kind: 'at-rest' },
+    });
+    overlayStore.open('implementer-picker', 'tool:claude-code');
+    pickerViewStore.open({ kind: 'custom-model' });
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="implementer" />);
+    mounted.push(ui.unmount);
+    await flushEffects();
+    ui.stdin.write('my-a');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(loadConfig(ref.projectDir).config.implementerProfiles?.profiles.small).toMatchObject({
+        tool: 'claude-code',
+        model: 'my-a',
+      });
+    });
+    expect(loadConfig(ref.projectDir).config.implementerProfiles?.profiles.big).toEqual({
+      ...BIG,
+      label: 'Big',
     });
   });
 });

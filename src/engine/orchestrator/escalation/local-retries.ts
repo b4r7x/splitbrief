@@ -212,7 +212,6 @@ export async function runLocalRetries(
       transitionType: 'VALIDATION_PASS',
       usageCategory: 'implementer',
       retryFailureFallback: 'Retry failed to produce valid code',
-      profileOverride: ctx.retryProfileOverride,
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
         steering: ctx.steering,

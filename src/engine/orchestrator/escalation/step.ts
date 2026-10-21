@@ -5,7 +5,6 @@ import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAttemptChanges } from '../task/attempt-gate.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { withPerCallAbort } from '../cancellable-call.js';
-import { createRetryRuntime, type RetryRuntime, stateForRetryProfile } from './retry-runtime.js';
 import { persistRetryApprovalEvidence, recordRetryDenial } from './retry-evidence.js';
 import { validateAndCommit } from './validate-and-commit.js';
 import { boundedHandBack, failedRetry } from './types.js';
@@ -68,15 +67,11 @@ function deviationReportOf(result: RetryInvokeResult): DeviationReport | undefin
 }
 
 export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepResult> {
-  const { ctx, attempts, profileOverride, isolationRole } = opts;
+  const { ctx, attempts, isolationRole } = opts;
   let { state, task } = opts;
   ({ task, state } = await refreshAndPersistCode(task, ctx, state, ctx.workspaceDir, 'retry'));
 
-  const retryRuntime = await createRetryRuntime(ctx, profileOverride);
   state = rebaseOnPersistedWorkflowState(ctx, state);
-  if (retryRuntime.profile !== undefined) {
-    state = stateForRetryProfile(state, retryRuntime.profile);
-  }
 
   const invocationAttempt = Math.max(state.attempt, attempts);
   if (state.attempt !== invocationAttempt) {
@@ -94,15 +89,14 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepResult
   }
   const workspace = await ctx.isolation.acquire({
     role: isolationRole ?? 'implementer',
-    config: retryRuntime.config,
+    config: ctx.config,
   });
-  const outcome = await runRetryStepAttempt({ ...opts, state, task }, retryRuntime, workspace);
+  const outcome = await runRetryStepAttempt({ ...opts, state, task }, workspace);
   return { ...outcome, attemptSnapshot: workspace.snapshot };
 }
 
 async function runRetryStepAttempt(
   opts: RetryStepOpts,
-  retryRuntime: RetryRuntime,
   workspace: AttemptWorkspace,
 ): Promise<RetryStepResult> {
   const {
@@ -122,14 +116,6 @@ async function runRetryStepAttempt(
     onValidationAfterRetryFail,
   } = opts;
   let state = initialState;
-  const retryCtx = {
-    ...ctx,
-    config: retryRuntime.config,
-    implementer: retryRuntime.implementer,
-    ...(retryRuntime.implementerProfile !== undefined && {
-      implementerProfile: retryRuntime.implementerProfile,
-    }),
-  };
   let retryResult: Awaited<ReturnType<typeof invokeRetry>>;
   try {
     retryResult = await withAttemptRestoreScope({
@@ -147,10 +133,10 @@ async function runRetryStepAttempt(
               lastError,
               attempts: state.attempt,
               projectDir: workspace.projectDir,
-              config: retryRuntime.config,
-              implementer: retryRuntime.implementer,
-              ...(retryRuntime.implementerProfile !== undefined && {
-                implementerProfile: retryRuntime.implementerProfile,
+              config: ctx.config,
+              implementer: ctx.implementer,
+              ...(ctx.implementerProfile !== undefined && {
+                implementerProfile: ctx.implementerProfile,
               }),
               signal,
               sandboxEnv: workspace.sandboxEnv,
@@ -201,7 +187,7 @@ async function runRetryStepAttempt(
       ...(retryResult.outcome !== undefined && {
         lastFailure: {
           outcome: retryResult.outcome,
-          runner: retryResult.runner ?? retryRuntime.config.implementer,
+          runner: retryResult.runner ?? ctx.config.implementer,
           ...(handBack !== undefined && { handBack }),
         },
       }),
@@ -265,7 +251,7 @@ async function runRetryStepAttempt(
   }
   const actualChangedFiles = gate.approvedFiles;
   const confirmed = await confirmAttemptDecisions({
-    wctx: retryCtx,
+    wctx: ctx,
     task,
     state,
     report: deviationReportOf(retryResult),
@@ -279,7 +265,7 @@ async function runRetryStepAttempt(
   }
   if (confirmed.kind === 'retry') return { state, task, lastError: confirmed.error, attempts };
   const commitResult = await validateAndCommit({
-    ctx: retryCtx,
+    ctx,
     task,
     state,
     method,

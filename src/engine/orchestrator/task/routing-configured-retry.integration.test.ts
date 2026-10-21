@@ -28,10 +28,8 @@ import { customRunnerAdmissionError } from '../../runners/custom-launchability.j
 import { createStagedProject } from '../approval/staged-project.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { stateForRetryProfile, createRetryRuntime } from './retry-runtime.js';
-import { configForProfile } from '../task/routing.js';
-import type { EscalationContext } from './types.js';
+import { configForProfile, createTaskImplementer } from './routing.js';
+import type { EscalationContext } from '../escalation/types.js';
 
 let dirs: string[] = [];
 
@@ -48,35 +46,12 @@ afterEach(() => {
 });
 
 function setupProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('retry-runtime-test');
+  const projectDir = createTempDir('routing-configured-retry-test');
   dirs.push(projectDir);
   createTestGitRepo(projectDir);
-  const sessionId = 'sess-retry-runtime';
+  const sessionId = 'sess-routing-configured-retry';
   ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
-}
-
-function configWithProfiles() {
-  return {
-    ...makeNoValidationConfig({
-      approval: { feedRejectionsToPlanner: true },
-      workflow: {},
-    }),
-    implementerProfiles: {
-      default: 'cheap-large',
-      profiles: {
-        'cheap-large': {
-          kind: 'api' as const,
-          provider: 'ollama',
-          service: 'ollama',
-          offering: 'local' as const,
-          apiBase: 'http://localhost:11434/v1',
-          model: 'deepseek-chat',
-          contextLength: 128_000,
-        },
-      },
-    },
-  };
 }
 
 function retryConfigWithContracts(
@@ -268,63 +243,7 @@ async function configuredRetryContext(
   };
 }
 
-describe('stateForRetryProfile', () => {
-  it('updates implementer tool and model from profile', () => {
-    const state = makeImplState([], { implementerTool: 'ollama', implementerModel: 'qwen' });
-    const profile = {
-      name: 'test',
-      config: {
-        kind: 'api' as const,
-        provider: 'custom-endpoint',
-        service: 'custom-endpoint',
-        offering: 'payg' as const,
-        apiBase: 'https://api.example.com/v1',
-        apiKey: 'key',
-        model: 'gpt-4',
-        contextLength: 8192,
-      },
-      capabilities: { writesFiles: 'direct' as const },
-      isDefault: false,
-    };
-    const result = stateForRetryProfile(state, profile);
-    expect(result.implementerTool).toBe('custom-endpoint');
-    expect(result.implementerModel).toBe('gpt-4');
-  });
-
-  it('drops implementerModel when the profile config carries no model', () => {
-    const state = makeImplState([], { implementerTool: 'ollama', implementerModel: 'qwen' });
-    const profile = {
-      name: 'test',
-      config: { kind: 'cli' as const, tool: 'opencode' as const },
-      capabilities: { writesFiles: 'direct' as const },
-      isDefault: false,
-    };
-    const result = stateForRetryProfile(state, profile);
-    expect(result.implementerTool).toBe('opencode');
-    expect('implementerModel' in result).toBe(false);
-  });
-});
-
-describe('createRetryRuntime', () => {
-  it('returns existing implementer when no override', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const config = configWithProfiles();
-    const ctx = await makeRetryCtx({ projectDir, sessionId, config });
-
-    const runtime = await createRetryRuntime(ctx, undefined);
-
-    expect(runtime.config).toBe(config);
-    expect(runtime.implementer).toBe(ctx.implementer);
-    expect(runtime.implementerProfile).toBeUndefined();
-  });
-
-  it('throws for nonexistent profile', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const ctx = await makeRetryCtx({ projectDir, sessionId, config: configWithProfiles() });
-
-    await expect(createRetryRuntime(ctx, 'nonexistent')).rejects.toThrow(/nonexistent/);
-  });
-
+describe('createTaskImplementer configured retry runner', () => {
   it.each([
     ['output', 'direct'],
     ['direct', 'output'],
@@ -373,7 +292,18 @@ describe('createRetryRuntime', () => {
         config,
         runtime: childRuntime,
       });
-      const retryRuntime = await createRetryRuntime(ctx, 'retry-profile');
+      const profile = resolveImplementerProfiles(ctx.config).profiles.find(
+        (candidate) => candidate.name === 'retry-profile',
+      );
+      if (profile === undefined) throw new Error('retry-profile is not configured');
+      const retryRuntime = {
+        config: configForProfile(ctx.config, profile),
+        implementer: await createTaskImplementer({
+          wctx: ctx,
+          profile,
+          singleImplementerMode: false,
+        }),
+      };
       const task = makeTask({ id: 'T001', suggestedFiles: [taskFile] });
 
       if (retryContract === 'direct') {

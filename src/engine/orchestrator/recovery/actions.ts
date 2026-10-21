@@ -351,6 +351,7 @@ function applyConsultGrantRecoveryAction(
     {
       type: 'RESET_TASK',
       taskId: target.id,
+      profile: issue.selectedImplementerProfile,
     },
     { expectedRevision: state.stateRevision ?? 0 },
   );
@@ -833,7 +834,11 @@ export function commitSeatSwitch(
       : transitionAndSave(
           opts,
           state,
-          { type: 'RESTART_ATTEMPT_ON_SEAT', taskId: issue.taskId },
+          {
+            type: 'RESTART_ATTEMPT_ON_SEAT',
+            taskId: issue.taskId,
+            profile: seat === 'build' ? issue.selectedImplementerProfile : undefined,
+          },
           { expectedRevision: state.stateRevision ?? 0 },
         );
   state = transitionAndSave(
@@ -1027,7 +1032,6 @@ function applyRetryCurrentTaskRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
   missingTaskMessage: string,
-  selectedImplementerProfile?: string | undefined,
 ): ApplyRecoveryActionResult {
   const target = currentRecoveryTask(opts.state, issue);
   if (!target) {
@@ -1040,8 +1044,6 @@ function applyRetryCurrentTaskRecoveryAction(
     });
   }
 
-  const effectiveProfile = selectedImplementerProfile ?? issue.selectedImplementerProfile;
-
   let state = markRecoveryApplying(opts, issue);
   state = transitionAndSave(
     opts,
@@ -1049,6 +1051,7 @@ function applyRetryCurrentTaskRecoveryAction(
     {
       type: 'RESET_TASK',
       taskId: target.id,
+      profile: issue.selectedImplementerProfile,
     },
     { expectedRevision: state.stateRevision ?? 0 },
   );
@@ -1072,7 +1075,7 @@ function applyRetryCurrentTaskRecoveryAction(
     issue,
     action: opts.action,
     outcome: 'retry-current-task',
-    implementerProfile: effectiveProfile,
+    implementerProfile: issue.selectedImplementerProfile,
   });
 
   return {
@@ -1081,7 +1084,7 @@ function applyRetryCurrentTaskRecoveryAction(
     issue,
     state,
     status: 'retry-current-task',
-    implementerProfile: effectiveProfile,
+    implementerProfile: issue.selectedImplementerProfile,
   };
 }
 

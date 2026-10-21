@@ -535,6 +535,59 @@ describe('continueCommand', () => {
     expect(headlessRuns).toHaveLength(1);
   });
 
+  it('keeps the brief on the named BUILD profile it halted on when the seat moves headlessly', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2026-10-21-switch-on-profile';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    writeConfig(
+      projectDir,
+      makeConfig({
+        implementer: { kind: 'cli', tool: 'codex' },
+        implementerProfiles: {
+          default: 'big',
+          profiles: {
+            big: { kind: 'cli', tool: 'codex' },
+            small: { kind: 'cli', tool: 'opencode' },
+          },
+        },
+      }),
+    );
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('test-feature'),
+        ...RUN_CREW,
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001' })],
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'runner-usage-limit',
+          seat: 'build',
+          selectedImplementerProfile: 'small',
+          availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
+          recommendedAction: 'switch-seat',
+          switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+        }),
+      },
+    );
+
+    await continueCommand(
+      sessionId,
+      { projectDir, json: true, action: parseContinueActionOption('switch-seat:claude-code') },
+      deps,
+    );
+
+    const pin = { taskId: 'T001', profile: 'small' };
+    expect(loadState({ projectDir, sessionId })?.retryProfile).toEqual(pin);
+    expect(headlessRuns).toHaveLength(1);
+    expect(headlessRuns[0]?.state?.retryProfile).toEqual(pin);
+    const yaml = YAML.parse(readFileSync(join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE), 'utf8'));
+    expect(yaml.implementer_profiles).toMatchObject({
+      default: 'big',
+      profiles: { big: { tool: 'codex' }, small: { tool: 'claude-code' } },
+    });
+  });
+
   it('gives an inherited final review its own reviewer block after a seat switch', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-review-limit';

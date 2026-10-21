@@ -9,7 +9,7 @@ import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import { isTaskCompleted, isTaskSettled, type TaskId } from '../../../core/schemas/task.js';
+import { isTaskCompleted, isTaskSettled } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
 import type { Reviewer } from '../../reviewers/types.js';
@@ -133,9 +133,6 @@ export type RunWorkflowOptions = {
   _implementer?: Implementer | undefined;
   /** Test-only: inject a pre-built reviewer (avoids spawning real subprocesses in tests). */
   _reviewer?: Reviewer | undefined;
-  /** One-shot implementer profile override used when recovery retries a task on a selected worker. */
-  retryProfileOverride?: string | undefined;
-  retryProfileOverrideTaskId?: TaskId | undefined;
   /** Model cache accessor for pricing/cost lookups — injected from composition layer. */
   modelCache?: ModelCacheAccessor | undefined;
   /** Implementer context length sourced from boot provider detection (not explicit config/CLI/env). Injected from composition layer. */
@@ -534,12 +531,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     validator,
     ...(opts.detectedContextLength !== undefined && {
       detectedContextLength: opts.detectedContextLength,
-    }),
-    ...(opts.retryProfileOverride !== undefined && {
-      retryProfileOverride: opts.retryProfileOverride,
-    }),
-    ...(opts.retryProfileOverrideTaskId !== undefined && {
-      retryProfileOverrideTaskId: opts.retryProfileOverrideTaskId,
     }),
     ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
     ...(opts.drainPendingAttachments !== undefined && {

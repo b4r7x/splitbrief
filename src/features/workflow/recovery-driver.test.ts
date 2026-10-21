@@ -288,7 +288,7 @@ describe('createRecoveryDriver', () => {
     expect(result.state?.closed?.as).toBe('ended');
   });
 
-  it('resumes the run on a retry and carries the selected worker as the profile override', async () => {
+  it('resumes the run on a retry with the brief pinned to the selected worker in the state', async () => {
     const { prepared, state } = setupSession();
     const { inputMode } = makeInputMode(['retry-same-worker']);
 
@@ -298,8 +298,7 @@ describe('createRecoveryDriver', () => {
     if (result.shouldRun) {
       expect(result.state.pendingRecovery).toBeUndefined();
       expect(result.state.tasks[0]?.status).toBe('pending');
-      expect(result.retryProfileOverride).toBe('local-qwen');
-      expect(result.retryProfileOverrideTaskId).toBe(taskId('T001'));
+      expect(result.state.retryProfile).toEqual({ taskId: 'T001', profile: 'local-qwen' });
     }
   });
 
@@ -374,7 +373,7 @@ describe('createRecoveryDriver', () => {
       expect(result.state.pendingRecovery).toBeDefined();
       expect(result.switchSeat?.candidate).toEqual({ tool: 'claude-code', model: 'opus' });
       expect(result.switchSeat?.policy.purpose).toBe('resume');
-      expect(result.retryProfileOverride).toBeUndefined();
+      expect(result.state.retryProfile).toBeUndefined();
     }
   });
 
@@ -701,7 +700,7 @@ describe('createRecoveryDriver', () => {
     };
     const controller = new AbortController();
     const { inputMode } = makeInputMode([]);
-    let cancelQuestion = (): void => {};
+    let cancelQuestion: (() => void) | undefined;
     const promptPendingRecovery = createRecoveryDriver({
       prepared,
       configOfRun: prepared.sourceConfig,
@@ -711,7 +710,7 @@ describe('createRecoveryDriver', () => {
           new Promise<UserMessageInput>((_resolve, reject) => {
             cancelQuestion = () => reject(WORKFLOW_USER_CANCELLED_ABORT_REASON);
           }),
-        resetMode: () => cancelQuestion(),
+        resetMode: () => cancelQuestion?.(),
       },
       abortedRef: { current: false },
       retentionNoticeHandled: { current: false },
@@ -720,7 +719,8 @@ describe('createRecoveryDriver', () => {
     });
     const pending = promptPendingRecovery({ state: halted, controller, republishPrompt: false });
     const settled = expect(pending).rejects.toBe(WORKFLOW_USER_CANCELLED_ABORT_REASON);
-    await vi.waitFor(() => expect(recoveryNoticeStore.get().at).toEqual({ kind: 'apply' }));
+    await vi.waitFor(() => expect(cancelQuestion).toBeDefined());
+    expect(recoveryNoticeStore.get().at).toEqual({ kind: 'apply' });
 
     controller.abort();
     await settled;

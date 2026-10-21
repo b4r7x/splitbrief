@@ -1204,3 +1204,59 @@ it('moves only the halted BUILD profile to the custom model typed in the halt pi
     screen.unmount();
   }
 });
+
+it('runs the brief on the halted BUILD profile when switch-seat moves it to a model as large as the default', {
+  timeout: 240_000,
+}, async () => {
+  const { target, claudeCalls } = await codexSeatFixture(false, PRIMARY_MODEL);
+  const big = {
+    kind: 'cli',
+    tool: 'claude-code',
+    model: 'opus',
+    contextLength: 1_000_000,
+  } as const;
+  const small = {
+    kind: 'cli',
+    tool: 'codex',
+    model: PRIMARY_MODEL,
+    contextLength: 200_000,
+  } as const;
+  writeConfig(target.projectDir, {
+    ...loadConfig(target.projectDir).config,
+    implementer: big,
+    implementerProfiles: { default: 'big', profiles: { big, small } },
+  });
+  const options = { timeoutMs: 90_000, reapProjectDir: target.projectDir };
+  const halted = await cli(target, ['start', 'smoke'], options);
+  expect(halted.stderr).toContain('Seat down (runner-usage-limit)');
+  const ref = {
+    projectDir: target.projectDir,
+    sessionId: readdirSync(sessionsRoot(target.projectDir))[0] ?? '',
+  };
+  expect(loadState(ref)?.pendingRecovery?.selectedImplementerProfile).toBe('small');
+
+  // Sonnet's catalogued window is 1M, as large as the default profile's.
+  const switched = await cli(
+    target,
+    ['continue', ref.sessionId, '--action', `switch-seat:claude-code:${SWITCHED_MODEL}`],
+    options,
+  );
+
+  expect(switched.exitCode, `${switched.stdout}\n${switched.stderr}`).toBe(0);
+  expect(loadState(ref)?.phase).toBe('complete');
+  const { events } = await readRunEvents(ref);
+  const starts = events.filter((event) => event.type === 'task_started');
+  expect(starts.at(-1)).toMatchObject({
+    taskId: 'T001',
+    implementerProfile: 'small',
+    tool: 'claude-code',
+    model: SWITCHED_MODEL,
+  });
+  expect(recordedCalls(claudeCalls)).toEqual([
+    { model: SWITCHED_MODEL, prompt: expect.stringContaining(GREET_FILE) },
+  ]);
+  const profiles = loadConfig(target.projectDir).config.implementerProfiles;
+  expect(profiles?.default).toBe('big');
+  expect(profiles?.profiles.big).toEqual(big);
+  expect(profiles?.profiles.small).toMatchObject({ tool: 'claude-code', model: SWITCHED_MODEL });
+});

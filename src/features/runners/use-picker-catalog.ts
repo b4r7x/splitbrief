@@ -47,6 +47,7 @@ import {
   type RightRow,
 } from './model-catalog/rows.js';
 import { inheritsPlannerSeat } from './config-transforms.js';
+import { usePickerProfile } from './picker-profile.js';
 import type { Config } from '../../core/schemas/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import type { DiscoverySourceRefresh } from '../../stores/discovery/model-cache/types.js';
@@ -192,7 +193,7 @@ export function usePickerCatalog(
   const effortDraft = pickerViewStore.use((s) => s.effortDraft);
   const authDraft = pickerViewStore.use((s) => s.authDraft);
   const browseCatalog = pickerViewStore.use((s) => s.browseCatalog);
-  const profile = pickerViewStore.use((s) => s.profile);
+  const profile = usePickerProfile();
 
   const [{ cliTools, providers, providerOutcomes, cliCatalogOutcomes, refresh }] =
     useStores(detectionStore);

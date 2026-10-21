@@ -10,6 +10,7 @@ import { makeImplementer, makeWctx } from '#testing/helpers/orchestrator-factori
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { runTaskLoop } from './loop.js';
+import { loadState } from '../../../core/state/persistence.js';
 
 let dirs: string[] = [];
 
@@ -135,10 +136,13 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
   });
 
-  it('uses a one-shot recovery profile override for the resumed task dispatch', async () => {
+  it('dispatches a brief on the profile a recovery pinned it to, once', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
-    const state = makeImplState([task]);
+    const state = {
+      ...makeImplState([task]),
+      retryProfile: { taskId: task.id, profile: 'cheap-large' },
+    };
     const config = profilesConfig({ largeWindow: 32768, smallWindow: 32768 });
     const selectedImplementer = makeImplementer({
       implement: vi.fn().mockResolvedValue({
@@ -160,8 +164,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         callbacks,
         implementer: defaultImplementer,
         createImplementer: createProfileImplementer,
-        retryProfileOverride: 'cheap-large',
-        retryProfileOverrideTaskId: task.id,
         bus,
       }),
       initialState: state,
@@ -169,6 +171,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
+    expect(loadState({ projectDir, sessionId })?.retryProfile).toBeUndefined();
     expect(defaultImplementer.implement).not.toHaveBeenCalled();
     expect(selectedImplementer.implement).toHaveBeenCalledTimes(1);
     expect(createProfileImplementer).toHaveBeenCalledWith(

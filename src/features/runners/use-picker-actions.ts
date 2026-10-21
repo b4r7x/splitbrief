@@ -8,6 +8,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { selectSeatChangePoint, tasksStore } from '../../stores/workflow/tasks.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
+import { usePickerProfile } from './picker-profile.js';
 import {
   formatConfigSaveSuccess,
   reportConfigSaveFailure,
@@ -315,7 +316,7 @@ export function usePickerActions(opts: {
   const config = configStore.useConfig();
   const view = pickerViewStore.use((s) => s.view);
   const preservedLeftIndex = pickerViewStore.use((s) => s.preservedLeftIndex);
-  const profile = pickerViewStore.use((s) => s.profile);
+  const profile = usePickerProfile();
   const saveInFlight = useRef(false);
 
   const seatSaved = (updated: Config) =>
@@ -605,7 +606,7 @@ export function useLocalConnectionActions(
 ): LocalConnectionActions {
   const seatRole: ActiveRunnerRole = seatPickerLane(role);
   const config = configStore.useConfig();
-  const profile = pickerViewStore.use((s) => s.profile);
+  const profile = usePickerProfile();
   const roleLabel = CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]];
 
   return {

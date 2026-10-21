@@ -183,6 +183,7 @@ function preparedExecution(input: {
   resumeState?: WorkflowState | undefined;
   planner?: PlannerConfig | undefined;
   implementer?: Config['implementer'] | undefined;
+  implementerProfiles?: Config['implementerProfiles'] | undefined;
   workflow?: Partial<Config['workflow']> | undefined;
 }): PreparedExecution {
   const sessionId = input.sessionId ?? 'prepared-workflow-session';
@@ -198,6 +199,9 @@ function preparedExecution(input: {
         command: 'splitbrief-non-existent-planner-x7q9',
       },
       ...(input.implementer !== undefined && { implementer: input.implementer }),
+      ...(input.implementerProfiles !== undefined && {
+        implementerProfiles: input.implementerProfiles,
+      }),
       ...(input.workflow !== undefined && { workflow: input.workflow }),
     }),
     preparationId: `workflow-hook-${sessionId}`,
@@ -2646,6 +2650,123 @@ describe('useRunLoop', () => {
           halt.inst.unmount();
         },
       );
+
+      describe('a halt on a named BUILD profile', () => {
+        const profileConfig = makeConfig({
+          planner,
+          implementer: { kind: 'cli', tool: 'codex' },
+          implementerProfiles: {
+            default: 'big',
+            profiles: {
+              big: { kind: 'cli', tool: 'codex' },
+              small: { kind: 'cli', tool: 'opencode' },
+            },
+          },
+        });
+
+        /** A run whose first pass halts Seat down on the `small` profile; its second pass records its state. */
+        function haltOnSmall(sessionId: string) {
+          const captureRunner: HarnessProps['captureRunner'] = { current: null };
+          const prepared = preparedExecution({
+            projectDir,
+            feature: 'add auth',
+            sessionId,
+            implementer: profileConfig.implementer,
+            implementerProfiles: profileConfig.implementerProfiles,
+          });
+          configStore.__testReset({ projectDir, config: profileConfig });
+          detectionStore.setDetection({
+            cliTools: [cliDetectionFor('ready', 'claude-code')],
+            providers: [],
+          });
+          let entryState: WorkflowState | undefined;
+          const run = recordedEngine({
+            1: async () => {
+              const halted = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+                ...RUN_CREW,
+                pendingRecovery: makeRecoveryIssue({
+                  reason: 'runner-usage-limit',
+                  seat: 'build',
+                  selectedImplementerProfile: 'small',
+                  availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
+                  recommendedAction: 'switch-seat',
+                  switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+                }),
+              });
+              saveState({ projectDir, sessionId }, halted);
+              return makeSummary();
+            },
+            2: async (options) => {
+              entryState = options.savedState;
+              return makeSummary();
+            },
+          });
+          const inst = renderHarnessWithPicker({
+            prepared,
+            captureRunner,
+            runWorkflow: run.engine,
+          });
+          return { captureRunner, prepared, run, inst, entryState: () => entryState };
+        }
+
+        function savedProfiles() {
+          return configStore.get().config?.implementerProfiles;
+        }
+
+        it('moves the brief to the picked tool on its own profile, also after a reopen', async () => {
+          const halt = haltOnSmall('2026-10-21-halt-on-small-switch');
+          await openHaltPicker(halt.captureRunner);
+          halt.inst.stdin.write('\r');
+          await tick(100);
+          halt.inst.stdin.write('\r');
+          await vi.waitFor(() => {
+            expect(halt.run.returned()).toBe(2);
+          });
+
+          expect(savedProfiles()).toMatchObject({
+            default: 'big',
+            profiles: { big: { tool: 'codex' }, small: { tool: 'claude-code' } },
+          });
+          const pin = { taskId: 'T001', profile: 'small' };
+          expect(halt.entryState()?.retryProfile).toEqual(pin);
+          expect(loadState(halt.prepared.session.ref)?.retryProfile).toEqual(pin);
+
+          halt.inst.unmount();
+        });
+
+        it('saves /crew build to the halted profile, and Try again runs the brief on it', async () => {
+          const halt = haltOnSmall('2026-10-21-halt-on-small-crew');
+          await vi.waitFor(() => {
+            expect(controlsStore.get().inputMode).toBe('question');
+          });
+          // `/crew build` opens the BUILD seat's picker while the halt waits.
+          overlayStore.open('implementer-picker', toolRowFocus('claude-code'));
+          await tick(100);
+          halt.inst.stdin.write('\r');
+          await tick(100);
+          halt.inst.stdin.write('\r');
+          await vi.waitFor(() => {
+            expect(overlayStore.get().active).toBe('none');
+          });
+
+          expect(savedProfiles()).toMatchObject({
+            default: 'big',
+            profiles: { big: { tool: 'codex' }, small: { tool: 'claude-code' } },
+          });
+
+          await answerRecoveryPanel(halt.captureRunner, 'retry');
+          await vi.waitFor(() => {
+            expect(halt.run.returned()).toBe(2);
+          });
+
+          expect(halt.run.entered[1]?.config.implementerProfiles?.profiles.small).toMatchObject({
+            tool: 'claude-code',
+          });
+          expect(halt.entryState()?.retryProfile).toEqual({ taskId: 'T001', profile: 'small' });
+
+          halt.inst.unmount();
+        });
+      });
     });
 
     it('requests no pause when Settings saves another key while a halt waits and a seat is on auto', async () => {

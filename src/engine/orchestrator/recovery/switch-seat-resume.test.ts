@@ -520,6 +520,31 @@ describe('switchSeatAndPrepareResume', () => {
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeDefined();
   });
 
+  it('pins the brief to the BUILD profile that failed in the state it commits', async () => {
+    const options = { selectedImplementerProfile: 'small', config: profileTableConfig() };
+    const { projectDir, sessionId, state, config } = setup('seat-swap-resume-pin', true, options);
+    const { bus } = makeBusRecorder();
+    const prepare = prepareReturning(preparedFor(config));
+
+    const result = await switchSeatAndPrepareResume({
+      projectDir,
+      sessionId,
+      state,
+      bus,
+      config,
+      candidate: { tool: 'claude-code', model: 'sonnet' },
+      policy: RESUME_POLICY,
+      signal: new AbortController().signal,
+      prepare,
+    });
+
+    expect(result.kind).toBe('switched');
+    if (result.kind !== 'switched') return;
+    const pin = { taskId: 'T001', profile: 'small' };
+    expect(result.state.retryProfile).toEqual(pin);
+    expect(loadState({ projectDir, sessionId })?.retryProfile).toEqual(pin);
+  });
+
   it('blocks — and changes neither config nor state — when the failing profile is gone', async () => {
     const { projectDir, sessionId, state, config } = setup(
       'seat-swap-resume-missing-profile',

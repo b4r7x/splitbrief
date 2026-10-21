@@ -1,5 +1,4 @@
 import { useRef, useEffect, useEffectEvent } from 'react';
-import type { TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
@@ -73,7 +72,9 @@ import { clearSessionScopedStores } from '../session-stores.js';
 import type { UseRunContinueResult } from './use-run-continue.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { CrewSeatId } from '../../../core/crew/identity.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { sameSeatIds, seatIdsOf, type CrewSeatId } from '../../../core/crew/identity.js';
+import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 export type RunWorkflowFn = typeof runWorkflow;
@@ -102,6 +103,20 @@ function swapBaseConfig(saved: Config, run: Config, seat: CrewSeatId): Config {
     default:
       return assertNever(seat);
   }
+}
+
+/**
+ * Whether the saved config moved the BUILD seat of the profile a recovery pinned the brief to. The
+ * crew's BUILD seat is the default profile, so a save to a named profile is not a crew seat change.
+ */
+function pinnedSeatSaved(run: Config, saved: Config, state: WorkflowState): boolean {
+  const profile = state.retryProfile?.profile;
+  if (profile === undefined) return false;
+  const before = readImplementerProfileConfig(run, profile);
+  const after = readImplementerProfileConfig(saved, profile);
+  return (
+    before !== undefined && after !== undefined && !sameSeatIds(seatIdsOf(before), seatIdsOf(after))
+  );
 }
 
 function isWorkflowAborted(controller: AbortController, ref: { current: boolean }): boolean {
@@ -300,8 +315,6 @@ export function useRunLoop({
     };
 
     try {
-      let retryProfileOverride: string | undefined;
-      let retryProfileOverrideTaskId: TaskId | undefined;
       let switchSeat: SeatSwapChoice | undefined;
       // A retired file halt is not a question any more: on this re-entry it travels into the
       // engine, which resolves it and says so in the transcript. Asked once — a halt this run
@@ -353,8 +366,6 @@ export function useRunLoop({
           }
           if (recovery.prepared !== undefined) preparedForRun = recovery.prepared;
           stateForRun = recovery.state;
-          retryProfileOverride = recovery.retryProfileOverride;
-          retryProfileOverrideTaskId = recovery.retryProfileOverrideTaskId;
           switchSeat = recovery.switchSeat;
           steerForRun =
             recovery.correctionTaken === true ? undefined : (recovery.steer ?? steerForRun);
@@ -417,10 +428,11 @@ export function useRunLoop({
         const savedConfig = configStore.get().config;
         const seatsSaved =
           savedConfig !== null &&
-          seatIdentityChanges(
+          (seatIdentityChanges(
             seatIdentitiesFromConfig(configOfRun),
             seatIdentitiesFromConfig(savedConfig),
-          ).length > 0;
+          ).length > 0 ||
+            (stateForRun !== undefined && pinnedSeatSaved(configOfRun, savedConfig, stateForRun)));
         if (
           stateForRun !== undefined &&
           (preparedForRun.purpose === 'new-workflow' || seatsSaved)
@@ -480,11 +492,7 @@ export function useRunLoop({
           selectedSkills,
           ...(steerForRun !== undefined && { steer: steerForRun }),
           ...(detectedContextLength !== undefined && { detectedContextLength }),
-          ...(retryProfileOverride !== undefined && { retryProfileOverride }),
-          ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
         });
-        retryProfileOverride = undefined;
-        retryProfileOverrideTaskId = undefined;
         steerForRun = undefined;
 
         if (abortedRef.current) return;

@@ -351,6 +351,8 @@ const WorkflowStateFields = {
   userAnswers: PlannerConversationSchema.shape.answers.optional(),
   seatWait: SeatWaitSchema.optional(),
   seatSwitches: z.array(SeatSwitchRecordSchema).optional(),
+  /** The BUILD profile a recovery action keeps the brief on until that brief settles. */
+  retryProfile: z.object({ taskId: TaskIdSchema, profile: z.string() }).optional(),
   rewindPending: z
     .object({
       target: z.enum(['spec', 'plan']),

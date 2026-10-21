@@ -7,9 +7,13 @@ import {
 } from '#testing/helpers/orchestrator-task-context.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import { transition } from '../../../core/state/machine.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import { APPLICATION_DEFAULT_CONTEXT_TOKENS } from '../../providers/runtime-context.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
 import { selectRoutingProfile } from './routing-selection.js';
 
 function cacheOnlyResolvableProfile(): ResolvedImplementerProfile {
@@ -187,17 +191,23 @@ describe('selectRoutingProfile context cache', () => {
   });
 });
 
-describe('selectRoutingProfile recovery override', () => {
-  it('uses the exact requested retry profile only for its target task', async () => {
+describe('selectRoutingProfile recovery pin', () => {
+  it('routes the pinned brief to its profile after the state is reopened, and no other brief', async () => {
     const task = makeTask({ id: 'T010' });
+    const otherTask = makeTask({ id: 'T011' });
     const profiles = detectedFallbackProfiles();
-    const state = makeImplStateWithMetadata([task]);
+    const wctx = makeTaskWorkflowContext();
+    const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
+    saveState(ref, {
+      ...makeImplStateWithMetadata([task, otherTask]),
+      retryProfile: { taskId: task.id, profile: 'standard-worker' },
+    });
+    const state = loadState(ref);
+    expect(state?.retryProfile).toEqual({ taskId: task.id, profile: 'standard-worker' });
+    if (state === null) return;
 
     const selected = await selectRoutingProfile({
-      wctx: makeTaskWorkflowContext({
-        retryProfileOverride: 'standard-worker',
-        retryProfileOverrideTaskId: task.id,
-      }),
+      wctx,
       state,
       setTrackedState: () => {},
       task,
@@ -210,13 +220,9 @@ describe('selectRoutingProfile recovery override', () => {
     expect(selected.selectedProfile).toBe(profiles[1]);
     expect(selected.routingDecision.selectedProfile).toBe('standard-worker');
 
-    const otherTask = makeTask({ id: 'T011' });
     const normal = await selectRoutingProfile({
-      wctx: makeTaskWorkflowContext({
-        retryProfileOverride: 'standard-worker',
-        retryProfileOverrideTaskId: task.id,
-      }),
-      state: makeImplStateWithMetadata([otherTask]),
+      wctx,
+      state: { ...state, currentTaskIndex: 1 },
       setTrackedState: () => {},
       task: otherTask,
       resolvedProfiles: profiles,
@@ -227,5 +233,90 @@ describe('selectRoutingProfile recovery override', () => {
     if (!normal.ok) return;
     expect(normal.selectedProfile).toBe(profiles[0]);
     expect(normal.routingDecision.selectedProfile).toBe('cheap-detected-worker');
+  });
+
+  it('keeps the pin after the brief starts, so a stop and a reopen route it to its profile again', async () => {
+    const task = makeTask({ id: 'T001' });
+    const profiles = detectedFallbackProfiles();
+    const wctx = makeTaskWorkflowContext();
+    const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
+    const pinned = {
+      ...makeImplStateWithMetadata([task]),
+      retryProfile: { taskId: task.id, profile: 'standard-worker' },
+    };
+    saveState(ref, transition(pinned, { type: 'START_TASK', taskId: taskId('T001') }));
+    const state = loadState(ref);
+    if (state === null) throw new Error('state not saved');
+
+    const selected = await selectRoutingProfile({
+      wctx,
+      state,
+      setTrackedState: () => {},
+      task,
+      resolvedProfiles: profiles,
+      getRunnerModelName,
+    });
+
+    expect(selected.ok && selected.selectedProfile.name).toBe('standard-worker');
+  });
+
+  it('names the pinned profile when it does not fit, so Try again runs the seat saved to it', async () => {
+    const task = makeTask({ id: 'T001', description: 'large routing input '.repeat(2000) });
+    const smallSeat = (contextLength: number): ResolvedImplementerProfile => ({
+      name: 'small',
+      capabilities: { writesFiles: 'extracted-code' },
+      isDefault: false,
+      config: { kind: 'agent', command: 'small-worker', model: 'small-model', contextLength },
+    });
+    const big: ResolvedImplementerProfile = {
+      name: 'big',
+      capabilities: { writesFiles: 'extracted-code' },
+      isDefault: true,
+      config: {
+        kind: 'agent',
+        command: 'big-worker',
+        model: 'big-model',
+        contextLength: 1_000_000,
+      },
+    };
+    const wctx = makeTaskWorkflowContext();
+    const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
+    saveState(ref, {
+      ...makeImplStateWithMetadata([task]),
+      retryProfile: { taskId: task.id, profile: 'small' },
+    });
+    const pinned = loadState(ref);
+    if (pinned === null) throw new Error('state not saved');
+
+    const halted = await selectRoutingProfile({
+      wctx,
+      state: pinned,
+      setTrackedState: () => {},
+      task,
+      resolvedProfiles: [big, smallSeat(1_000)],
+      getRunnerModelName,
+    });
+    expect(halted.ok).toBe(false);
+    expect(halted.state.pendingRecovery?.reason).toBe('context-overflow');
+    expect(halted.state.pendingRecovery?.selectedImplementerProfile).toBe('small');
+
+    const tried = await applyRecoveryAction({
+      ...ref,
+      state: halted.state,
+      action: 'retry-same-worker',
+      bus: wctx.bus,
+    });
+    if (!tried.ok) throw new Error('Try again was refused');
+    expect(tried.state.retryProfile).toEqual({ taskId: task.id, profile: 'small' });
+
+    const routed = await selectRoutingProfile({
+      wctx,
+      state: tried.state,
+      setTrackedState: () => {},
+      task,
+      resolvedProfiles: [big, smallSeat(1_000_000)],
+      getRunnerModelName,
+    });
+    expect(routed.ok && routed.selectedProfile.name).toBe('small');
   });
 });
