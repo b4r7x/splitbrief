@@ -886,6 +886,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-apply-rereview',
+      title: 'Workflow · the review again after Apply met checkout changes',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'apply-rereview',
+        title: 'The merged review counts the cycle Apply spent',
+        kind: 'implementation',
+        marker: 'Final review after 2 fix cycles',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Re-review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-complete-after-fix-tasks',
       viewports: WIDE_VIEWPORTS,
       title: 'Workflow · complete after the review appended a fix task',
@@ -976,7 +992,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
               ? 'Task review running after the second brief'
               : 'Task and final reviews replayed at rest',
           kind: 'implementation',
-          marker: suffix === '' ? 'Review T002' : 'Final review passed',
+          marker: suffix === '' ? 'Review T002' : 'Final review after 1 fix cycle passed',
         },
         viewports: WIDE_VIEWPORTS,
         elements: [

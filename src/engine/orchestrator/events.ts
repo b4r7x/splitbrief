@@ -1,4 +1,8 @@
-import type { ConsultRecord, WorkflowState } from '../../core/schemas/workflow.js';
+import {
+  type ConsultRecord,
+  fixCyclesOf,
+  type WorkflowState,
+} from '../../core/schemas/workflow.js';
 import type { Check, CheckResult, CheckStatus, Task, TaskId } from '../../core/schemas/task.js';
 import type {
   RecoveryAction,
@@ -135,6 +139,21 @@ export function publishReviewEvent(
     ),
 ): void {
   ctx.bus.publish({ ...event, ts: Date.now(), phase: ctx.phase });
+}
+
+/** Every spent fix cycle announces itself with the count the cap halt reads. */
+export function publishFixCycleStarted(
+  bus: EventBus,
+  state: WorkflowState,
+  taskIds: readonly TaskId[],
+): void {
+  bus.publish({
+    type: 'review_fix_started',
+    ts: Date.now(),
+    phase: state.phase,
+    cycle: fixCyclesOf(state).used,
+    taskIds: [...taskIds],
+  });
 }
 
 // Announces the current ordered task list at loop entry and after structural changes.

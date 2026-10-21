@@ -499,10 +499,12 @@ describe('workflow visual fixtures', () => {
             expect.arrayContaining([
               expect.stringContaining('✗ Review T002 failed  1 blocking · fixes T003 · 49.0s'),
               expect.stringContaining('● Review T002 passed  49.0s'),
-              expect.stringContaining('● Final review passed  1m 2s'),
+              expect.stringContaining('● Final review after 1 fix cycle passed  1m 2s'),
             ]),
           );
-          expect(lines.filter((line) => line.includes('Final review passed'))).toHaveLength(1);
+          expect(
+            lines.filter((line) => line.includes('Final review after 1 fix cycle passed')),
+          ).toHaveLength(1);
           expect(frame).not.toContain('running 0:');
         }
       } finally {
@@ -991,7 +993,11 @@ describe('workflow visual fixtures', () => {
     for (const projection of workflowFixtureProjections.values()) {
       expect(
         projection.events.filter(
-          (event) => event.type === 'planner_text' && event.phase === 'final-review',
+          (event) =>
+            event.type === 'planner_text' &&
+            event.phase === 'final-review' &&
+            // Apply announces the integration re-review in its phase (apply/run.ts).
+            !event.text.startsWith('Your checkout changed '),
         ),
         projection.scenarioId,
       ).toHaveLength(0);

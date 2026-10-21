@@ -12,6 +12,7 @@ import { isRecord } from '../../../utils/type-guards.js';
 import {
   createBusTextHandler,
   publishError,
+  publishFixCycleStarted,
   publishRecoveryResolved,
   publishWarning,
 } from '../events.js';
@@ -336,6 +337,7 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
       merged: await buildMergedEntries(changed),
     });
     setTrackedState?.(state);
+    publishFixCycleStarted(wctx.bus, state, []);
     createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
       `Your checkout changed ${countNoun(changed.length, 'file')} this run also changed (${changed.join(', ')}); the merged result goes through its checks and the review again before Apply.`,
     );

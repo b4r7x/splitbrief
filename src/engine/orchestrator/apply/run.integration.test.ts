@@ -14,7 +14,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
+import { taskId } from '../../../core/schemas/task.js';
+import { groupEventsIntoSections } from '../../../core/sections/event-sections.js';
+import type { EngineEvent } from '../../events/types.js';
+import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
@@ -993,6 +997,73 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       ]);
       expect(saved.fixCycles?.used).toBe(1);
       expect(deriveRunStatus({ state: saved, liveness: 'not-alive' }).kind).toBe('open');
+    });
+  });
+
+  // The run spent its first fix cycle on T002; the integration review spends the second, the
+  // allowance, so its failure halts on the cap after 2 fix cycles.
+  it('names the integration re-review after the fix cycle Apply spent, the count its cap halt reads', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+      const state = {
+        ...(await reviewedReadyState(run)),
+        fixCycles: { used: 1, allowance: 2, notes: [] },
+      };
+      saveState({ projectDir: run.dir, sessionId: run.sessionId }, state);
+      writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'three', 'four', 'FIVE'));
+      const { bus, events } = makeBusRecorder();
+
+      const result = await runApply({
+        wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
+        state,
+      });
+
+      expect(result.outcome).toBe('review');
+      const spent = fixCyclesOf(savedState(run)).used;
+      expect(spent).toBe(2);
+      expect(events.filter((event) => event.type === 'review_fix_started')).toMatchObject([
+        { phase: 'final-review', cycle: spent, taskIds: [] },
+      ]);
+      const final = (ts: number, verdict: 'pass' | 'fail'): EngineEvent[] => [
+        { type: 'review_started', ts, phase: 'final-review', scope: 'final', tool: 'codex' },
+        {
+          type: 'review_completed',
+          ts: ts + 1,
+          phase: 'final-review',
+          scope: 'final',
+          tool: 'codex',
+          verdict,
+          duration: 1,
+        },
+      ];
+      const transcript: EngineEvent[] = [
+        ...final(1_000, 'fail'),
+        {
+          type: 'review_fix_started',
+          ts: 1_002,
+          phase: 'implementing',
+          cycle: 1,
+          taskIds: [taskId('T002')],
+        },
+        makeTaskStart({ ts: 2_000, taskId: taskId('T002'), index: 1 }),
+        makeTaskComplete({ ts: 2_001, taskId: taskId('T002') }),
+        ...final(3_000, 'pass'),
+        ...events,
+        { type: 'workflow_resumed', ts: Date.now(), phase: 'final-review' },
+        ...final(Date.now() + 1, 'fail'),
+      ];
+      const finals = groupEventsIntoSections(transcript).flatMap((section) =>
+        section.type === 'settled-stage' &&
+        section.summary.stage === 'review' &&
+        section.summary.scope === 'final'
+          ? [section.summary]
+          : [],
+      );
+      expect(finals).toMatchObject([
+        { outcome: 'failed', fixCyclesBefore: 0, rerunsBefore: 0 },
+        { outcome: 'passed', fixCyclesBefore: 1, rerunsBefore: 0 },
+        { outcome: 'failed', fixCyclesBefore: spent, rerunsBefore: 0 },
+      ]);
     });
   });
 

@@ -575,6 +575,10 @@ const checkpointPredicates = [
     },
   ],
   [
+    checkpointId('apply-rereview'),
+    includesTranscript('Final review after 1 fix cycle passed', 'Final review after 2 fix cycles'),
+  ],
+  [
     checkpointId('complete-after-fix-tasks'),
     (context) => {
       const [rail = ''] = context.output.split('\n');
@@ -620,7 +624,7 @@ const checkpointPredicates = [
   [
     checkpointId('review-task-cadence-settled'),
     includesTranscript(
-      'Final review passed',
+      'Final review after 1 fix cycle passed',
       'Review T002 failed',
       'Blocking F1',
       'PLAN rejected 1 decision for T003',

@@ -218,7 +218,7 @@ describe('groupEventsIntoSections', () => {
     ]);
   });
 
-  it('settles task reviews between briefs and counts only final reviews', () => {
+  it('settles task reviews between briefs and counts their fix cycles before the final review', () => {
     const seat = { tool: 'codex', model: 'gpt-6.1-sol', axes: ['high'] };
     const events: EngineEvent[] = [
       makeTaskStart({ ts: 1_000 }),
@@ -360,11 +360,147 @@ describe('groupEventsIntoSections', () => {
       summary: {
         stage: 'review',
         scope: 'final',
-        fixCyclesBefore: 0,
+        fixCyclesBefore: 1,
         rerunsBefore: 0,
         outcome: 'passed',
         duration: 62_000,
       },
+    });
+  });
+
+  // A `review: task` run: two task reviews and a final review started fixes, a third task review
+  // started the fourth cycle, and the last final review halted on the cap after 4 fix cycles.
+  it('names each final review by every fix cycle the run spent before it, task reviews included', () => {
+    const fail = (scope: 'task' | 'final', ts: number, afterTaskId?: string): EngineEvent[] => {
+      const phase = scope === 'final' ? 'final-review' : 'implementing';
+      const named = { scope, ...(afterTaskId !== undefined && { afterTaskId }), tool: 'codex' };
+      return [
+        { type: 'review_started', ts, phase, ...named },
+        {
+          type: 'review_completed',
+          ts: ts + 1,
+          phase,
+          ...named,
+          verdict: 'fail',
+          findings: { blocking: 1, minor: 0 },
+          duration: 1,
+        },
+      ];
+    };
+    const fix = (ts: number, cycle: number, id: string): EngineEvent => ({
+      type: 'review_fix_started',
+      ts,
+      phase: 'implementing',
+      cycle,
+      taskIds: [taskId(id)],
+    });
+    const brief = (id: string, index: number, ts: number): EngineEvent[] => [
+      makeTaskStart({ ts, taskId: taskId(id), index }),
+      makeTaskComplete({ ts: ts + 1, taskId: taskId(id) }),
+    ];
+    const events: EngineEvent[] = [
+      ...brief('T001', 0, 1_000),
+      ...brief('T002', 1, 2_000),
+      ...fail('task', 3_000, 'T002'),
+      fix(3_002, 1, 'T003'),
+      ...brief('T003', 2, 4_000),
+      ...fail('task', 5_000, 'T003'),
+      fix(5_002, 2, 'T004'),
+      ...brief('T004', 3, 6_000),
+      ...fail('final', 7_000),
+      fix(7_002, 3, 'T005'),
+      ...brief('T005', 4, 8_000),
+      ...fail('task', 9_000, 'T005'),
+      fix(9_002, 4, 'T006'),
+      ...brief('T006', 5, 10_000),
+      ...fail('final', 11_000),
+    ];
+    const finals = groupEventsIntoSections(events).flatMap((section) =>
+      section.type === 'settled-stage' &&
+      section.summary.stage === 'review' &&
+      section.summary.scope === 'final'
+        ? [section.summary]
+        : [],
+    );
+    expect(finals).toMatchObject([
+      { outcome: 'failed', fixCyclesBefore: 2, rerunsBefore: 0, fixes: ['T005'] },
+      { outcome: 'failed', fixCyclesBefore: 4, rerunsBefore: 0, fixes: [] },
+    ]);
+  });
+
+  describe('a fix cycle that starts no fix brief', () => {
+    const at = (type: string, ts: number, fields: Record<string, unknown> = {}) => ({
+      type,
+      ts,
+      phase: 'final-review' as const,
+      ...fields,
+    });
+    const final = (ts: number, verdict: 'pass' | 'fail') => [
+      at('review_started', ts, { scope: 'final' }),
+      at('review_completed', ts + 1, { scope: 'final', verdict }),
+    ];
+    const cycle = (ts: number, n: number, taskIds: string[] = []) =>
+      at('review_fix_started', ts, { cycle: n, taskIds });
+    const resumed = (ts: number) => at('workflow_resumed', ts);
+    const finals = (events: { type: string; ts: number; phase: Phase }[]) => {
+      const sections = groupEventsIntoSections(events);
+      expect(
+        sections.flatMap((section) => section.items.map((_, i) => section.startIndex + i)),
+      ).toEqual(events.map((_, i) => i));
+      return sections.flatMap((section) =>
+        section.type === 'settled-stage' &&
+        section.summary.stage === 'review' &&
+        section.summary.scope === 'final'
+          ? [section.summary]
+          : [],
+      );
+    };
+
+    it('names each final review after the cycles before it, none a re-run', () => {
+      expect(
+        finals([
+          ...final(1_000, 'fail'),
+          cycle(1_002, 1),
+          ...final(2_000, 'fail'),
+          cycle(2_002, 2),
+          ...final(3_000, 'fail'),
+        ]),
+      ).toMatchObject([
+        { fixCyclesBefore: 0, rerunsBefore: 0 },
+        { fixCyclesBefore: 1, rerunsBefore: 0 },
+        { fixCyclesBefore: 2, rerunsBefore: 0 },
+      ]);
+    });
+
+    // Apply found the checkout changed a file the run changed: it spent a fix cycle and sent the
+    // merged result to review. A ready run continues after Apply; a halted Apply continues first.
+    const notice = (ts: number) => at('planner_text', ts, { text: 'Your checkout changed 1 file' });
+    it.each([
+      ['before the run continues', [cycle(4_000, 2), notice(4_001), resumed(4_003)]],
+      ['after the run continued', [resumed(4_000), cycle(4_002, 2), notice(4_003)]],
+    ])('counts the cycle an Apply re-review spent %s, as its cap halt does', (_, apply) => {
+      const events = [
+        ...final(1_000, 'fail'),
+        cycle(1_002, 1, ['T002']),
+        makeTaskStart({ ts: 2_000, taskId: taskId('T002'), index: 1 }),
+        makeTaskComplete({ ts: 2_001, taskId: taskId('T002') }),
+        ...final(3_000, 'pass'),
+        at('workflow_complete', 3_002, { phase: 'complete', review: 'passed' }),
+        ...apply,
+        ...final(5_000, 'fail'),
+      ];
+      expect(finals(events)).toMatchObject([
+        { outcome: 'failed', fixCyclesBefore: 0, rerunsBefore: 0 },
+        { outcome: 'passed', fixCyclesBefore: 1, rerunsBefore: 0, fixes: [] },
+        { outcome: 'failed', fixCyclesBefore: 2, rerunsBefore: 0 },
+      ]);
+      const passed = groupEventsIntoSections(events).find(
+        (section) =>
+          section.type === 'settled-stage' &&
+          section.summary.stage === 'review' &&
+          section.summary.outcome === 'passed',
+      );
+      expect(passed?.items.at(-1)).toMatchObject({ type: 'review_completed', verdict: 'pass' });
     });
   });
 

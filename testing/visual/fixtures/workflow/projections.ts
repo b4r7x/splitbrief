@@ -1669,6 +1669,53 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
 };
 
 /**
+ * The review passed after one fix cycle, Apply found the checkout changed a file the run changed
+ * and spent a second cycle on the merged result, and the run continued into that review.
+ */
+const applyRereviewProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-apply-rereview'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  config: { reviewer: CODEX_REVIEW_SEAT },
+  events: [
+    ...reviewFixCyclesProjection.events.slice(0, -2),
+    reviewCheck(FIXED_TS + 5_000, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
+    reviewCheck(FIXED_TS + 6_000, REVIEW_CHECK_TEST, { status: 'done', passed: true }),
+    finalReviewCompleted({
+      ts: FIXED_TS + 6_500,
+      duration: 1_600,
+      verdict: 'pass',
+      seat: CODEX_REVIEW_SEAT,
+    }),
+    {
+      type: 'workflow_complete',
+      ts: FIXED_TS + 6_600,
+      phase: 'complete',
+      review: 'passed',
+      completedTasks: 4,
+    },
+    {
+      type: 'review_fix_started',
+      ts: FIXED_TS + 7_000,
+      phase: 'final-review',
+      cycle: 2,
+      taskIds: [],
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 7_000,
+      phase: 'final-review',
+      text: 'Your checkout changed 1 file this run also changed (registry.ts); the merged result goes through its checks and the review again before Apply.',
+    },
+    { type: 'workflow_resumed', ts: FIXED_TS + 8_000, phase: 'final-review', inProcess: true },
+    finalReviewStarted(FIXED_TS + 8_100, CODEX_REVIEW_SEAT),
+    reviewChecksPlanned(FIXED_TS + 8_100),
+    reviewCheck(FIXED_TS + 8_200, REVIEW_CHECK_TYPECHECK, { status: 'running' }),
+  ],
+};
+
+/**
  * A checkout run stopped inside the second brief, rejected in part and continued in the same
  * window: the reject put the first brief's file back, so it runs again before the second brief.
  */
@@ -6399,6 +6446,7 @@ const projections = [
   reviewFixProjection,
   reviewFixCyclesProjection,
   rejectedRerunProjection,
+  applyRereviewProjection,
   completeAfterFixTasksProjection,
   reviewFixNoChangeProjection,
   finalReviewProjection,

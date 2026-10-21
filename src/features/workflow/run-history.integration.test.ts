@@ -602,7 +602,7 @@ describe('hydrateRun', () => {
     expect(live.lines.filter((line) => /review/i.test(line))).toEqual([
       '● Review T001 passed  49.0s',
       '✗ Review T002 failed  1 blocking · fixes T003 · 49.0s',
-      '● Final review passed  1m 2s',
+      '● Final review after 1 fix cycle passed  1m 2s',
     ]);
     resetWorkflow();
     await hydrateRun(
