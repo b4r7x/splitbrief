@@ -703,8 +703,11 @@ export function usageDetailRows(view: UsageDetailsView): UsageDetailRow[] {
     ),
   );
   // A run with no amount has no basis to state: `unmetered` carries its billing words instead, and
-  // `not-estimated` is the absence itself.
-  if (view.money.kind === 'estimate' || view.money.kind === 'legacy') {
+  // `not estimated` is the absence itself.
+  if (
+    (view.money.kind === 'estimate' || view.money.kind === 'legacy') &&
+    statesAmount(view.money)
+  ) {
     rows.push(
       entry(
         'money:basis',
