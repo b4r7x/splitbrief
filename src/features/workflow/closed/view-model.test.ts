@@ -19,6 +19,11 @@ import { bylineParts } from './byline.js';
 import { outcomeLineSpans } from './outcome.js';
 import { deriveSummaryView, type SummaryView } from './view-model.js';
 import { atRestRailStages } from '../at-rest.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { readSessionSummary } from '../../../core/sessions/run-record-io.js';
+import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 
 function ledgerTask(overrides: Partial<EvidenceTask> & Pick<EvidenceTask, 'id'>): EvidenceTask {
   return {
@@ -730,6 +735,50 @@ describe('seats', () => {
       ],
       contiguous: true,
     });
+  });
+
+  it('names every BUILD seat of a closed run read back from disk', () => {
+    const projectDir = createTempDir('closed-crew-from-disk');
+    const ref = { projectDir, sessionId: 'sess-two-build-seats' };
+    const brief = { method: 'local', implementerTokens: 10, escalationTokens: 0 } as const;
+    try {
+      finalizeRunAtRest({
+        ref,
+        state: {
+          ...createInitialState('feat'),
+          ...RUN_CREW,
+          phase: 'implementing',
+          taskBreakdowns: [
+            {
+              ...brief,
+              taskId: taskId('T001'),
+              taskTitle: 'First',
+              retryCount: 1,
+              tool: 'claude-code',
+              model: 'haiku',
+            },
+            {
+              ...brief,
+              taskId: taskId('T002'),
+              taskTitle: 'Second',
+              retryCount: 0,
+              tool: 'antigravity',
+              model: 'auto',
+            },
+          ],
+        },
+      });
+      const summary = readSessionSummary(ref);
+      if (summary === null) throw new Error('expected the finalized run to have a summary');
+
+      expect(
+        crewLine(derive(summary, { status: ENDED }), 200)
+          .map((span) => span.text)
+          .join(''),
+      ).toContain(`BUILD Haiku 5.5${arrowSep()}auto`);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
   });
 });
 
