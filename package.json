@@ -89,8 +89,8 @@
     "skills:check": "tsx scripts/sync-skills.ts --check",
     "knip": "knip",
     "release:smoke": "node scripts/pack-install-smoke.mjs",
-    "release-check": "npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:integration && npm run test:e2e && npm run check:invariants && npm run skills:check",
-    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:e2e && npm run check:invariants && npm run skills:check"
+    "release-check": "npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:integration && npm run build && npm run test:e2e && npm run check:invariants && npm run skills:check",
+    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run build && npm run test:e2e && npm run check:invariants && npm run skills:check"
   },
   "keywords": [
     "ai",

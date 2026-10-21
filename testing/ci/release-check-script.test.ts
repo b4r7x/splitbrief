@@ -13,7 +13,7 @@ const { scripts } = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'ut
 };
 
 const RELEASE_CHECK =
-  'npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:integration && npm run test:e2e && npm run check:invariants && npm run skills:check';
+  'npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:integration && npm run build && npm run test:e2e && npm run check:invariants && npm run skills:check';
 const E2E_CONFIG = 'testing/e2e/vitest.e2e.config.ts';
 const LIVE_CONFIG = 'testing/e2e/vitest.live.config.ts';
 const REAL_CLI_MARKERS = ['SPLITBRIEF_REAL_CLI', 'live-harness'];
@@ -43,6 +43,10 @@ describe('release-check and live-tier npm scripts', () => {
   it('keeps test-ci as the exhaustive form that still runs coverage', () => {
     expect(scripts['test-ci']).toContain('npm run test:coverage');
     expect(scripts['test-ci']).not.toBe(scripts['release-check']);
+  });
+
+  it.each(['release-check', 'test-ci'])('builds dist before %s runs the e2e replay', (key) => {
+    expect(scripts[key]).toContain('npm run build && npm run test:e2e');
   });
 
   it('gates every live tier behind the opt-in env switch and its own config', () => {

@@ -38,7 +38,7 @@ npm test                      # vitest run --project unit
 npm run test:integration      # git, worktree, run-loop and process tests
 npm run test:watch            # vitest watch mode
 npm run test:coverage         # tsx scripts/coverage-run.ts (vitest --coverage + run pruning)
-npm run release-check         # format:check -> typecheck -> lint -> test -> test:integration -> e2e -> invariants -> skills:check (no coverage)
+npm run release-check         # format:check -> typecheck -> lint -> test -> test:integration -> build -> e2e -> invariants -> skills:check (no coverage)
 npm run test:e2e:live         # OPT-IN, costs money: real CLI calls (needs SPLITBRIEF_REAL_CLI_E2E=1)
 npm run test:e2e:release      # OPT-IN release proof: full live matrix (needs SPLITBRIEF_RELEASE_LIVE=1; real CLI calls)
 npm run test-ci               # format -> typecheck -> lint -> test:coverage -> e2e -> invariants -> skills:check

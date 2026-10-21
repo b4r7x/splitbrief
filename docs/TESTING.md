@@ -804,7 +804,7 @@ Ask Codex to read the manifest before comparing files. The manifest distinguishe
 
 ## Manual smoke checklist
 
-`npm run test-ci` covers the vast majority of the surface. `npm run release-check` is the fast pre-PR gate — `format:check → typecheck → lint → test → test:integration → e2e replay → invariants → skills:check` — and `npm run test-ci` is the exhaustive form that additionally runs `test:coverage`, whose thresholds also run in `.github/workflows/nightly-coverage.yml` when you start it by hand (`workflow_dispatch`). A handful of flows need a real TTY, a fresh checkout, or an external process and therefore live outside the automated suite. Run the checks below after a fresh install or any change that touches the CLI entry point, the TUI mount, or hook dispatch.
+`npm run test-ci` covers the vast majority of the surface. `npm run release-check` is the fast pre-PR gate — `format:check → typecheck → lint → test → test:integration → build → e2e replay → invariants → skills:check` — and `npm run test-ci` is the exhaustive form that additionally runs `test:coverage`, whose thresholds also run in `.github/workflows/nightly-coverage.yml` when you start it by hand (`workflow_dispatch`). A handful of flows need a real TTY, a fresh checkout, or an external process and therefore live outside the automated suite. Run the checks below after a fresh install or any change that touches the CLI entry point, the TUI mount, or hook dispatch.
 
 ### Headless terminal interaction
 
