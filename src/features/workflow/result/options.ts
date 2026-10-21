@@ -2,6 +2,7 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
+import { oneLineDisplayText } from '../../../utils/display-text.js';
 import { stopMenuLayout } from '../stop/options.js';
 
 export type ResultRowId = 'apply' | 'show-diff' | 'discard' | 'confirm-apply' | 'back';
@@ -68,12 +69,13 @@ export function resultMenuRows(input: ResultMenuInput): ResultRow[] {
 }
 
 /**
- * The open findings the confirmation names, one line each. Rows the menu cannot spare are counted
- * on a last line rather than cut: the count is what the operator confirms against.
+ * The open findings the confirmation names, one row each: a finding's line breaks read as spaces,
+ * so the menu height counts its rows. Rows the menu cannot spare are counted on a last line rather
+ * than cut: the count is what the operator confirms against.
  */
 export function resultMenuFindingLines(findings: readonly string[], budget: number): string[] {
   if (budget <= 0) return [];
-  const lines = findings.map((finding) => `- ${finding}`);
+  const lines = findings.map((finding) => `- ${oneLineDisplayText(finding)}`);
   if (lines.length <= budget) return lines;
   const shown = budget - 1;
   const hidden = findings.length - shown;

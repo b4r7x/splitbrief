@@ -173,6 +173,9 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   if (projection.scenarioId === 'workflow-ready-slash-command') {
     return () => ({ ...base(), afterMount: (write) => write.press('/settings') });
   }
+  if (projection.scenarioId === 'workflow-ready-override-confirm') {
+    return () => ({ ...base(), afterMount: (write) => write.press('\r') });
+  }
   if (projection.scenarioId === 'workflow-ready-empty-diff') {
     return () => ({
       ...base(),
@@ -809,6 +812,10 @@ const checkpointPredicates = [
   [checkpointId('ready-slash-command'), includesAll('Ready to apply', '› /settings')],
   [checkpointId('ready-empty-diff'), includesAll('Ready to apply')],
   [checkpointId('ready-override'), includesAll()],
+  [
+    checkpointId('ready-override-confirm'),
+    includesAll('Apply with 2 open findings?', '- Edge case missing src/'),
+  ],
   [checkpointId('closed-applied'), includesAll()],
   [checkpointId('closed-pre-existing'), includesAll('V2 pre-existing')],
   // A finding wraps at words, so at 60x18 the earlier failed review scrolls above the viewport.

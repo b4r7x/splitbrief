@@ -13,6 +13,7 @@ import {
   RESULT_MENU_LEGEND,
   RESULT_MENU_UNFOCUSED_LEGEND,
   resultMenuFindingLines,
+  resultMenuHeight,
   resultMenuRows,
   resultMenuTitle,
   resultRowCommand,
@@ -89,7 +90,7 @@ function ResultMenuBody({
     focused ? RESULT_MENU_LEGEND : RESULT_MENU_UNFOCUSED_LEGEND,
     Math.max(1, layout.width - 4),
   );
-  const boxHeight = height ?? layout.height + (confirming ? findings.length : 0);
+  const boxHeight = height ?? resultMenuHeight(input, cols);
   // Border, title and legend take four rows; the actions keep theirs, the findings get the rest.
   const findingLines = confirming
     ? resultMenuFindingLines(findings, boxHeight - 4 - layout.bodyRows)

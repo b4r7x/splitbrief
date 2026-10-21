@@ -146,6 +146,10 @@ describe('resultMenuFindingLines', () => {
     ]);
   });
 
+  it('gives each finding one row, its line breaks read as spaces', () => {
+    expect(resultMenuFindingLines(['a\nb'], 5)).toEqual(['- a b']);
+  });
+
   it('gives no line when there is no room', () => {
     expect(resultMenuFindingLines(['missing null check'], 0)).toEqual([]);
   });

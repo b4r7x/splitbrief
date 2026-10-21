@@ -363,6 +363,7 @@
 - An earlier attempt of a brief that the run stopped or redid now shows the stop mark `×`, so only the brief the run works on shows as in progress. Before, the earlier attempt showed the same in-progress mark as the live brief.
 - The refusal for an `agent` runner from the project config now reads "an agent runner command". Before, it read "a agent runner command".
 - The panel that asks you to trust a `shell` or `agent` runner from the project config is now titled "Trust and run a configured runner:" and names the runner command. Before, it was titled "Network access:" and labelled "confirm file write".
+- The *Apply as is* confirmation lists each open finding on one row, so a finding written on two lines no longer covers the card title. Before, its second line pushed over the title.
 
 ## [0.1.0] - 2026-08-07
 
