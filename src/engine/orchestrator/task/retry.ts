@@ -7,7 +7,6 @@ import type { ConsultSeat } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import type { RetryAttemptFailure } from '../escalation/types.js';
 
-import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { retentionError } from '../isolation/retention.js';
 import { isAbortError } from '../../../utils/abort.js';
@@ -26,7 +25,11 @@ import {
   plannerCallHaltIssue,
   plannerHaltRow,
 } from '../recovery/planner-call-failure.js';
-import { consultHaltDetails, reviewSeatDetails } from '../recovery/builders/details.js';
+import {
+  consultHaltDetails,
+  haltAttempts,
+  reviewSeatDetails,
+} from '../recovery/builders/details.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
@@ -187,8 +190,7 @@ export async function handleTaskPlannerCallFailure(
       task,
       phase: recoveryBaseState.phase,
       validationSummary: diagnosis.message,
-      attempts: recoveryBaseState.attempt,
-      maxAttempts: DEFAULT_LOCAL_RETRIES,
+      ...haltAttempts(recoveryBaseState, task, { booked: true }),
       allowRetryOverride: true,
       selectedImplementerProfile: wctx.implementerProfile,
       createdAt: nowIso(),
@@ -209,16 +211,7 @@ export async function handleTaskPlannerCallFailure(
     row = plannerHaltRow(issue, diagnosis);
   }
   publishRow(row);
-  const nextState = raisePendingRecovery(
-    wctx,
-    recoveryBaseState,
-    {
-      ...issue,
-      attempts: recoveryBaseState.attempt,
-      maxAttempts: DEFAULT_LOCAL_RETRIES,
-    },
-    setTrackedState,
-  );
+  const nextState = raisePendingRecovery(wctx, recoveryBaseState, issue, setTrackedState);
   await recordFailedTask(opts, nextState, recoveryBaseState.attempt);
   return nextState;
 }
@@ -299,8 +292,7 @@ export async function retryAndRecord(
         task,
         phase: nextState.phase,
         validationSummary: result.lastError ?? initialError,
-        attempts: result.attempts,
-        maxAttempts: DEFAULT_LOCAL_RETRIES,
+        ...haltAttempts(nextState, task, { booked: true }),
         allowRetryOverride: true,
         selectedImplementerProfile: wctx.implementerProfile,
         ...(result.handBack !== undefined && { handBack: result.handBack }),

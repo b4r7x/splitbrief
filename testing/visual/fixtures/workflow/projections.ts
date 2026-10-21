@@ -27,7 +27,6 @@ import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
 import { renderCheckNotes, planRepairWarning } from '../../../../src/engine/spec/plan-checks.js';
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
-import { DEFAULT_LOCAL_RETRIES } from '../../../../src/core/pipeline-spec/retries.js';
 import { BOUNDS } from '../../../../src/core/pipeline-spec/bounds.js';
 import { buildConsultBoundRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/consult.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/checks.js';
@@ -65,6 +64,7 @@ import {
   buildSeatDownIssue,
   buildLeftIsolationRecoveryIssue,
   buildCheckoutChangedRecoveryIssue,
+  buildRepeatedTimeoutRecoveryIssue,
   buildDependencyBlockedRecoveryIssue,
   buildMissingModelRecoveryIssue,
   runnerDefectRow,
@@ -2606,7 +2606,7 @@ function usageLimitRecoveryIssue(
     task: HALTED_TASK,
     phase: 'implementing',
     attempts: 1,
-    maxAttempts: DEFAULT_LOCAL_RETRIES,
+    maxAttempts: BOUNDS.attemptsPerLineage,
     selectedImplementerProfile: 'local-fixture',
     seatSwap: {
       seat: 'build',
@@ -2695,7 +2695,7 @@ function balanceSpentRecoveryIssue(): RecoveryIssue {
     task: HALTED_TASK,
     phase: 'implementing',
     attempts: 1,
-    maxAttempts: DEFAULT_LOCAL_RETRIES,
+    maxAttempts: BOUNDS.attemptsPerLineage,
     selectedImplementerProfile: 'default',
     seatSwap: {
       seat: 'build',
@@ -2743,7 +2743,7 @@ function modelRefusalRecoveryIssue(routeAuth: ModelRefusalRouteAuth): RecoveryIs
     runner: OPENCODE_ROUTE_SEAT,
     toolMessage: NO_ROUTE_WORDS,
     attempts: 1,
-    maxAttempts: DEFAULT_LOCAL_RETRIES,
+    maxAttempts: BOUNDS.attemptsPerLineage,
     selectedImplementerProfile: 'default',
     seatSwap: {
       seat: 'build',
@@ -2875,8 +2875,8 @@ const retryExhaustedRecoveryIssue = buildRetryExhaustedRecoveryIssue({
   task: HALTED_TASK,
   phase: 'escalating',
   validationSummary: FIXTURE_TYPECHECK_ERROR,
-  attempts: 4,
-  maxAttempts: 3,
+  attempts: 5,
+  maxAttempts: BOUNDS.attemptsPerLineage,
   allowRetryOverride: true,
   selectedImplementerProfile: 'default',
   handBack:
@@ -2940,8 +2940,8 @@ const manyFilesRecoveryIssue = buildRetryExhaustedRecoveryIssue({
   task: MANY_FILES_TASK,
   phase: 'escalating',
   validationSummary: FIXTURE_TYPECHECK_ERROR,
-  attempts: 4,
-  maxAttempts: 3,
+  attempts: 5,
+  maxAttempts: BOUNDS.attemptsPerLineage,
   allowRetryOverride: true,
   selectedImplementerProfile: 'default',
   handBack:
@@ -3276,8 +3276,8 @@ const leftIsolationInPlaceRecoveryIssue = buildLeftIsolationRecoveryIssue({
   task: HALTED_TASK,
   runner: AGY_BUILD_SEAT,
   toolMessage: 'wrote outside the checkout with run_command: touch ../outside.txt',
-  attempts: 0,
-  maxAttempts: DEFAULT_LOCAL_RETRIES,
+  attempts: 1,
+  maxAttempts: BOUNDS.attemptsPerLineage,
   inPlace: { revertedDir: `.splitbrief/sessions/${VISUAL_WORKFLOW_SESSION_ID}/reverted` },
   seatSwap: {
     seat: 'build',
@@ -3314,8 +3314,8 @@ const checkoutChangedRecoveryIssue = buildCheckoutChangedRecoveryIssue({
   task: HALTED_TASK,
   runner: AGY_BUILD_SEAT,
   toolMessage: 'branch fix/implementer-never-runs-gates',
-  attempts: 0,
-  maxAttempts: DEFAULT_LOCAL_RETRIES,
+  attempts: 1,
+  maxAttempts: BOUNDS.attemptsPerLineage,
   createdAt: new Date(FIXED_TS).toISOString(),
 });
 
@@ -3336,6 +3336,27 @@ const checkoutChangedRecoveryProjection: WorkflowFixtureProjection = {
       base: { snapshotId: 'visual-base', head: null },
     },
   },
+};
+
+/** The halt the local ladder raises when agy timed out on the brief's first two attempts. */
+const repeatedTimeoutRecoveryIssue = buildRepeatedTimeoutRecoveryIssue({
+  id: 'rec_visual_repeated_timeout',
+  task: HALTED_TASK,
+  runner: AGY_BUILD_SEAT,
+  toolMessage: 'Tool implementer (antigravity) timed out after 900s',
+  attempts: 2,
+  maxAttempts: BOUNDS.attemptsPerLineage,
+  createdAt: new Date(FIXED_TS).toISOString(),
+});
+
+const repeatedTimeoutRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-repeated-timeout'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_CREW,
+  resumeState: haltedResumeState(repeatedTimeoutRecoveryIssue),
 };
 
 const retriedBriefStart: EngineEventOf<'task_started'> = {
@@ -6549,6 +6570,7 @@ const projections = [
   leftIsolationRecoveryProjection,
   leftIsolationInPlaceRecoveryProjection,
   checkoutChangedRecoveryProjection,
+  repeatedTimeoutRecoveryProjection,
   resolvedRetryRecoveryProjection,
   resolvedSkipRecoveryProjection,
   resolvedDependencySkipRecoveryProjection,

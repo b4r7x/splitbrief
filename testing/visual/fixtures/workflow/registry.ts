@@ -932,6 +932,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('left-isolation'), includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],
+  [checkpointId('repeated-timeout'), includesAll()],
   [checkpointId('at-rest-left-isolation'), includesAll()],
   [checkpointId('gates-approved'), includesAll()],
   [checkpointId('gate-stopped'), includesAll()],

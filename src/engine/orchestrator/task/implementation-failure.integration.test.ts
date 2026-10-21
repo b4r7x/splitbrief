@@ -32,6 +32,7 @@ import { createCliImplementer } from '../../implementers/cli.js';
 import { createShellImplementer } from '../../implementers/shell.js';
 import { createApiImplementer } from '../../implementers/api.js';
 import { runTaskLoop } from './loop.js';
+import { formatRecoveryPrompt } from '../../../features/workflow/recovery-prompt.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
@@ -85,9 +86,10 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
       reason: 'implementer-recipe-invalid',
       taskId: 'T001',
       attempts: 1,
+      maxAttempts: 8,
     });
-    // The halt counts the one call the tool refused.
-    expect(next.pendingRecovery?.details).toContain('Attempts: 1/1');
+    // The halt counts the one call the tool refused, on the brief's lineage.
+    expect(next.pendingRecovery?.details).toContain('Attempts: 1/8');
     expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
   });
 
@@ -308,6 +310,50 @@ describe('handleFailedImplementation — an account the provider refuses is a se
     );
     const row = events.find((e) => e.type === 'error');
     expect(row?.type === 'error' && row.message).toContain('HTTP 403 Forbidden');
+  });
+});
+
+describe('handleFailedImplementation — a seat refused on the retry counts both calls', () => {
+  it('states the retry as the second attempt on the lineage', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = implementingState([task]);
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        outcome: 'usage-limit',
+        error: OPENCODE_DEEPSEEK_BALANCE,
+      }),
+    });
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      implementer,
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        validation: { endChecks: false, testCommand: 'noop' },
+      }),
+    });
+
+    const next = await handleFailedImplementation({
+      wctx,
+      task,
+      state,
+      implState: implState({ success: false, output: '', error: 'type error in src/a.ts' }),
+      taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(implementer.retry).toHaveBeenCalledTimes(1);
+    expect(next.pendingRecovery).toMatchObject({
+      reason: 'runner-usage-limit',
+      attempts: 2,
+      maxAttempts: 8,
+    });
+    expect(next.pendingRecovery?.details).toContain('Attempts: 2/8');
   });
 });
 
@@ -546,6 +592,15 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
     return { state, events };
   }
 
+  // The transcript reads `attempt 2 of 8` above the halt; the halt states the same count.
+  function expectTwoAttempts(state: WorkflowState) {
+    expect(state.pendingRecovery).toMatchObject({ attempts: 2, maxAttempts: 8 });
+    expect(state.pendingRecovery?.details).toContain('Attempts: 2/8');
+    expect(formatRecoveryPrompt(state.pendingRecovery!)).toContain(
+      'timed out twice in a row on T001 after 2 attempts',
+    );
+  }
+
   it('halts a cli seat as runner-timeout-repeated and offers the seat switch', async () => {
     const shimDir = createTempDir('timeout-halt-shim');
     shimDirs.push(shimDir);
@@ -577,6 +632,7 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
       taskId: 'T001',
     });
     expect(state.pendingRecovery?.availableActions).toContain('switch-seat');
+    expectTwoAttempts(state);
   });
 
   it('halts a shell seat as runner-timeout-repeated', async () => {
@@ -600,6 +656,7 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
       taskId: 'T001',
     });
     expect(state.pendingRecovery?.availableActions).toContain('switch-seat');
+    expectTwoAttempts(state);
   });
 
   it('halts a shell seat cut twice for silence as runner-timeout-repeated', async () => {
@@ -624,6 +681,7 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
       taskId: 'T001',
     });
     expect(state.pendingRecovery?.availableActions).toContain('switch-seat');
+    expectTwoAttempts(state);
     expect(events.some((event) => event.type === 'no_progress_cut')).toBe(true);
   });
 
@@ -649,5 +707,6 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
       taskId: 'T001',
     });
     expect(state.pendingRecovery?.availableActions).toContain('switch-seat');
+    expectTwoAttempts(state);
   });
 });

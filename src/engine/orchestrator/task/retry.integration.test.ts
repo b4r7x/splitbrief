@@ -286,10 +286,17 @@ describe('retryAndRecord — retry budget', () => {
 
 describe('retryAndRecord — the exhaustion issue', () => {
   function stubLadder(result: RetryResult, pendingRecovery?: RecoveryIssue) {
-    vi.mocked(handleRetryAndEscalation).mockImplementationOnce(async ({ currentState }) => ({
-      state: pendingRecovery === undefined ? currentState : { ...currentState, pendingRecovery },
-      result,
-    }));
+    vi.mocked(handleRetryAndEscalation).mockImplementationOnce(async ({ task, currentState }) => {
+      // The ladder books each retry it runs on the brief's lineage.
+      let state = currentState;
+      for (let call = 0; call < result.attempts; call++) {
+        state = transition(state, { type: 'COUNT_ATTEMPT', taskId: task.id });
+      }
+      return {
+        state: pendingRecovery === undefined ? state : { ...state, pendingRecovery },
+        result,
+      };
+    });
   }
 
   async function exhaust(result: RetryResult, pendingRecovery?: RecoveryIssue) {
@@ -339,7 +346,7 @@ describe('retryAndRecord — the exhaustion issue', () => {
 
     expect(res.state.pendingRecovery?.details).toEqual([
       'Last error: E',
-      'Attempts: 4',
+      'Attempts: 5/8',
       'Implementer said: H',
     ]);
   });
@@ -555,9 +562,10 @@ describe('retryAndRecord — recovery stop points', () => {
       reason: 'planner-call-failed',
       seat: 'plan',
       taskId: 'T001',
-      attempts: 1,
       availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
     });
+    // A consult call is not an attempt on the brief, so its halt states no attempt count.
+    expect(result.state.pendingRecovery?.attempts).toBeUndefined();
     expect(loadState({ projectDir, sessionId })).toMatchObject({
       attempt: 1,
       pendingRecovery: expect.objectContaining({ reason: 'planner-call-failed', seat: 'plan' }),
@@ -619,6 +627,30 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
       taskId: task.id,
       switchSeat: { seat: 'review', candidates: [{ tool: 'claude-code' }] },
     });
+  });
+
+  it('states no attempt count when the consult before a dispatch fails on a brief with attempts', async () => {
+    const ref = setupProject();
+    await rememberDetectedTools(
+      ref.projectDir,
+      cliDetectionsFor('ready', ['codex', 'claude-code']),
+    );
+    const task = makeTask({ id: 'T002', status: 'in_progress' });
+    let state = transition(implementingState([task]), { type: 'START_TASK', taskId: task.id });
+    for (let i = 0; i < 3; i++)
+      state = transition(state, { type: 'COUNT_ATTEMPT', taskId: task.id });
+    const { bus } = makeBusRecorder();
+    const result = await handleTaskPlannerCallFailure({
+      wctx: makeWorkflowContext({ ...ref, config, bus }),
+      task,
+      state: { ...state, attempt: 0 },
+      err: new Error('socket hang up'),
+      label: 'Planner consult for T002 failed',
+      seat: 'plan',
+      setTrackedState: vi.fn(),
+    });
+    expect(result.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', seat: 'plan' });
+    expect(result.pendingRecovery?.attempts).toBeUndefined();
   });
 
   async function consultHalted(
