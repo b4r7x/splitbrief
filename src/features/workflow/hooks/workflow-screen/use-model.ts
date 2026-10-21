@@ -156,7 +156,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     inputMode,
     continuation,
     runWorkflow: deps?.runWorkflow,
-    continueAtRest: (run) => continueAtRest(plainUserMessage(''), run),
+    continueAtRest: (run, steer) => continueAtRest(steer, run),
   });
 
   const approvalPromptState = approvalPromptStore.use((s) => s);

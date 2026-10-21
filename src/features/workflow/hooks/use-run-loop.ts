@@ -7,7 +7,6 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { resetMarkdownConversationRowsCache } from '../conversation-rows/markdown-rows.js';
 import { resetConversationRowsProjectionCache } from '../conversation-rows/projection-cache.js';
 import { resetEventBlockCache } from '../conversation-rows/block-cache.js';
@@ -52,7 +51,7 @@ import { parkStoppedRun } from '../../../engine/orchestrator/state-ops.js';
 import { endRun, endRunError } from '../../../engine/orchestrator/run/close.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
-import { stopStore } from '../../../stores/workflow/stop.js';
+import { stopStore, takesSeatAtBoundary } from '../../../stores/workflow/stop.js';
 import {
   onProcessRegistryChange,
   registeredProcessCount,
@@ -135,9 +134,10 @@ interface UseRunLoopOptions {
   prepareExecution?: PrepareExecutionFn | undefined;
   /**
    * The path a bare ⏎ takes on a run at rest: re-prepare it from the saved config and re-enter it in
-   * place. A run that stopped itself at a brief boundary to pick up a changed seat continues here.
+   * place. A run that stopped itself at a brief boundary to pick up a changed seat continues here,
+   * with the words its park was continued with.
    */
-  continueAtRest?: ((record: RunRecord) => void) | undefined;
+  continueAtRest?: ((record: RunRecord, steer: UserMessageInput) => void) | undefined;
 }
 
 /**
@@ -279,10 +279,11 @@ export function useRunLoop({
 
     // A seat saved under the running brief is picked up at the next brief boundary: the run
     // stops itself there instead of parking, and continues the way a run at rest does, re-prepared
-    // from the saved config. A halt runs no brief, so a seat saved while it waits is read when the
-    // run re-enters. The saved seats are compared with the config the preparation read, not with
-    // the prepared one: preparation names the model a seat leaves to its tool. A seat saved while
-    // the preparation ran is then a change too.
+    // from the saved config. A seat saved while the run waits parked is picked up when it continues.
+    // A halt runs no brief, so a seat saved while it waits is read when the run re-enters. The saved
+    // seats are compared with the config the preparation read, not with the prepared one:
+    // preparation names the model a seat leaves to its tool. A seat saved while the preparation ran
+    // is then a change too.
     let configOfRun = prepared.sourceConfig;
     const requestSeatChanges = (): void => {
       const config = configStore.get().config;
@@ -294,23 +295,32 @@ export function useRunLoop({
       if (changed.length > 0) requestSeatChangeAtBoundary();
     };
     const offConfig = configStore.subscribe(() => {
-      if (lifecycleStore.get().status === 'running' && recoveryNoticeStore.get().issue === null)
-        requestSeatChanges();
+      if (takesSeatAtBoundary()) requestSeatChanges();
     });
     let seatChangedAtBoundary: 'continue' | 'stop' | undefined;
+    let steerAtBoundary = plainUserMessage('');
     const promptCallbacks = buildPromptCallbacks({ inputMode, abortedRef, controller });
     const callbacks: OrchestratorCallbacks = {
       ...promptCallbacks,
+      // Continuing a park settles the stop store and a waiting seat change with it, so the saved
+      // seats are compared again: a cut brief takes them at the next boundary, a boundary park now.
       onContinuationNeeded: async (partial, at, kept) => {
-        const landed = at === 'boundary' ? landBoundaryPause() : 'park';
-        if (landed !== 'park') {
-          seatChangedAtBoundary = landed;
-          controller.abort();
-          return plainUserMessage('');
+        let landed = at === 'boundary' ? landBoundaryPause() : 'park';
+        let steer = plainUserMessage('');
+        if (landed === 'park') {
+          steer =
+            (await promptCallbacks.onContinuationNeeded?.(partial, at, kept)) ??
+            plainUserMessage('');
+          if (controller.signal.aborted) return steer;
+          requestSeatChanges();
+          if (at !== 'boundary') return steer;
+          landed = landBoundaryPause();
+          if (landed === 'park') return steer;
         }
-        return (
-          (await promptCallbacks.onContinuationNeeded?.(partial, at, kept)) ?? plainUserMessage('')
-        );
+        seatChangedAtBoundary = landed;
+        steerAtBoundary = steer;
+        controller.abort();
+        return plainUserMessage('');
       },
     };
 
@@ -500,7 +510,7 @@ export function useRunLoop({
           if (stopStore.get().intent === 'end-run') await finishStoppedRun();
           else if (seatChangedAtBoundary === 'continue') {
             stopStore.reset();
-            continueAtRest?.(await settleRun(session.ref, false));
+            continueAtRest?.(await settleRun(session.ref, false), steerAtBoundary);
           } else await settleRun(session.ref, true);
           return;
         }
