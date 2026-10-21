@@ -19,20 +19,20 @@ import {
   approvalKeyColumnWidth,
   approvalOptionKeyCell,
   approvalOptionLabelText,
-  approvalSubjectText,
   approvalTitle,
+  fitConfirmPanel,
   getApprovalConfirmLabel,
   getConfirmOptionZones,
   getConfirmOptions,
   isIrreversibleActionClass,
-  promptLeadShed,
-  promptSpacersShed,
 } from '../../prompt-rows/approval.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { navigateIndex } from '../../../../utils/indexing.js';
 import { fitKeyLegend } from '../../../../core/key-legend.js';
+import { ELLIPSIS } from '../../../../utils/display-text.js';
+import { countNoun } from '../../../../utils/pluralize.js';
 
 export const PROMPT_ZONE_Z = 50;
 
@@ -72,8 +72,14 @@ export function ConfirmApprovalPrompt({
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
-  const boxRows = Math.min(promptRows, clampedBoxRows ?? promptRows);
-  const spacersShed = promptSpacersShed(promptRows, boxRows);
+  // A page that gives the panel no region gives it the terminal.
+  const boxRows = Math.min(promptRows, clampedBoxRows ?? rows);
+  const fit = fitConfirmPanel({
+    actionDescription: request.actionDescription,
+    cols,
+    promptRows,
+    boxRows,
+  });
   const irreversible = isIrreversibleActionClass(request.actionClass);
   const options = getConfirmOptions(request.actionClass);
   const keyWidth = approvalKeyColumnWidth(options);
@@ -164,10 +170,10 @@ export function ConfirmApprovalPrompt({
     const zones = getConfirmOptionZones({
       boxTop,
       cols,
-      promptRows: boxRows,
+      promptRows,
+      boxRows,
       actionClass: request.actionClass,
       actionDescription: request.actionDescription,
-      leadShed: promptLeadShed(spacersShed),
     });
     const cleanups = zones.map((zone) =>
       registerMouseZone({
@@ -183,7 +189,7 @@ export function ConfirmApprovalPrompt({
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
-  }, [isActive, confirmStep, cols, rows, boxRows, spacersShed, request]);
+  }, [isActive, confirmStep, cols, rows, promptRows, boxRows, request]);
 
   return (
     <Box
@@ -197,9 +203,12 @@ export function ConfirmApprovalPrompt({
       flexShrink={0}
     >
       <Text color={tone}>{approvalTitle(request.actionClass)}</Text>
-      {spacersShed < 1 && <Text> </Text>}
+      {fit.gaps.title && <Text> </Text>}
       <Text>{getApprovalConfirmLabel(request.actionClass)}</Text>
-      <Text bold>{approvalSubjectText(request.actionDescription, cols)}</Text>
+      <Text bold>{fit.subject.join('\n')}</Text>
+      {fit.hidden > 0 && (
+        <Text color={t.textDim}>{`${ELLIPSIS} ${countNoun(fit.hidden, 'more line')}`}</Text>
+      )}
       {/* Every gate wears the same heavy rule, so weight alone cannot tell an irreversible one apart —
           and it has to be told apart, because `y` is the primary key on one panel and a refused key on
           the other. The banded warning is the silhouette no other gate has, and it is shape, not hue, so
@@ -211,7 +220,7 @@ export function ConfirmApprovalPrompt({
           labelColor={t.error}
         />
       ) : null}
-      {spacersShed < 2 && <Text> </Text>}
+      {fit.gaps.options && <Text> </Text>}
       {confirmStep === 'choose' ? (
         <>
           {options.map((option, index) => {
@@ -229,7 +238,7 @@ export function ConfirmApprovalPrompt({
               </Text>
             );
           })}
-          <Box flexGrow={1} minHeight={spacersShed < 3 ? 1 : 0} />
+          <Box flexGrow={1} minHeight={fit.gaps.legend ? 1 : 0} />
           {nudged ? (
             <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, approvalTextWidth(cols))}</Text>
           ) : (
@@ -245,7 +254,7 @@ export function ConfirmApprovalPrompt({
             <Text color={t.text}>{glyph('liveBar')}</Text>
           </Box>
           <Text color={t.textDim}>{CONFIRM_REASON_OPTIONAL}</Text>
-          <Box flexGrow={1} minHeight={spacersShed < 3 ? 1 : 0} />
+          <Box flexGrow={1} minHeight={fit.gaps.legend ? 1 : 0} />
           <Text color={t.textDim}>{CONFIRM_REASON_HINTS}</Text>
         </>
       )}

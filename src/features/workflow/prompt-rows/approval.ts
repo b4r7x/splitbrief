@@ -263,13 +263,6 @@ export function formatApprovalActionDescription(actionDescription: string): stri
   return sanitizeTerminalDisplayText(actionDescription, { preserveLineBreaks: true });
 }
 
-export function approvalSubjectText(actionDescription: string, cols: number): string {
-  return wrapPathAwareText(
-    formatApprovalActionDescription(actionDescription),
-    approvalTextWidth(cols),
-  );
-}
-
 // The label column is set by the widest key in the set, so a row with a shorter key still aligns
 // with the rest — on a destructive gate that is `r`, one cell, because Confirm carries none.
 export function approvalKeyColumnWidth(options: ReadonlyArray<ApprovalOption>): number {
@@ -307,22 +300,52 @@ export function approvalOptionLabelText(input: {
 export const APPROVAL_OPTION_FIRST_ROW_OFFSET = 4;
 
 /** The blank rows the confirm panel paints: two above the options, one below them. */
-export const PROMPT_SPACER_ROWS = 3;
-/** Of those, the ones that sit above the options, so shedding them moves the option rows up. */
-const PROMPT_LEAD_SPACER_ROWS = 2;
+const PROMPT_SPACER_ROWS = 3;
+
+export interface ConfirmPanelFit {
+  /** The blank rows kept: under the title, above the options, above the legend. */
+  gaps: { title: boolean; options: boolean; legend: boolean };
+  subject: string[];
+  hidden: number;
+}
 
 /**
  * What a region shorter than the panel takes from it. The blank rows go first, top down: a clipped
  * panel loses its bottom border and its legend — the two things the reader cannot answer the gate
- * without. Whitespace is the only row that says nothing, so it is the only row that pays.
+ * without. Past the blanks the disclosure gives way from the bottom, a whole line at a time, because
+ * its first lines name what runs. The last kept row counts the cut rows of text, as
+ * `clipPromptBodyRows` does, and the blank above the options comes back so that count does not run
+ * into the keys.
  */
-export function promptSpacersShed(promptRows: number, boxRows: number): number {
-  return Math.min(Math.max(0, promptRows - boxRows), PROMPT_SPACER_ROWS);
-}
-
-/** How far up shedding those blanks moves the option rows. */
-export function promptLeadShed(spacersShed: number): number {
-  return Math.min(spacersShed, PROMPT_LEAD_SPACER_ROWS);
+export function fitConfirmPanel(input: {
+  actionDescription: string;
+  cols: number;
+  promptRows: number;
+  boxRows: number;
+}): ConfirmPanelFit {
+  const width = approvalTextWidth(input.cols);
+  const lines = formatApprovalActionDescription(input.actionDescription)
+    .split('\n')
+    .map((line) => wrapPathAwareText(line, width).split('\n'));
+  const shed = Math.min(Math.max(0, input.promptRows - input.boxRows), PROMPT_SPACER_ROWS);
+  const overflow = input.promptRows - input.boxRows - PROMPT_SPACER_ROWS;
+  if (overflow <= 0) {
+    const gaps = { title: shed < 1, options: shed < 2, legend: shed < 3 };
+    return { gaps, subject: lines.flat(), hidden: 0 };
+  }
+  const rows = lines.flat();
+  const room = rows.length - overflow - 2;
+  const kept: string[] = [];
+  for (const line of lines) {
+    if (kept.length > 0 && kept.length + line.length > room) break;
+    kept.push(...line);
+  }
+  while (kept.length > 1 && kept.at(-1)?.trim() === '') kept.pop();
+  return {
+    gaps: { title: false, options: true, legend: false },
+    subject: kept,
+    hidden: rows.slice(kept.length).filter((row) => row.trim() !== '').length,
+  };
 }
 
 export interface PromptOptionZone {
@@ -354,7 +377,7 @@ export function getApprovalOptionZones(input: {
   promptRows: number;
   subjectRows: number;
   options: ReadonlyArray<ApprovalOption>;
-  leadShed?: number;
+  leadShed: number;
 }): PromptOptionZone[] {
   const width = approvalTextWidth(input.cols);
   const keyWidth = approvalKeyColumnWidth(input.options);
@@ -362,7 +385,7 @@ export function getApprovalOptionZones(input: {
   const right = Math.max(1, input.cols);
   const boxBottom = input.boxTop + input.promptRows - 1;
   const zones: PromptOptionZone[] = [];
-  let offset = APPROVAL_OPTION_FIRST_ROW_OFFSET + input.subjectRows - (input.leadShed ?? 0);
+  let offset = APPROVAL_OPTION_FIRST_ROW_OFFSET + input.subjectRows - input.leadShed;
   for (const option of input.options) {
     const optionRows = approvalOptionLabelLines({ option, keyWidth, width }).length;
     const top = input.boxTop + offset;
@@ -392,21 +415,22 @@ export function getConfirmOptionZones(input: {
   boxTop: number;
   cols: number;
   promptRows: number;
+  boxRows: number;
   actionClass: ActionClass;
   actionDescription: string;
-  leadShed?: number;
 }): PromptOptionZone[] {
+  const { gaps, subject, hidden } = fitConfirmPanel(input);
   return getApprovalOptionZones({
     boxTop: input.boxTop,
     cols: input.cols,
-    promptRows: input.promptRows,
-    subjectRows: confirmSubjectRowCount({
-      actionClass: input.actionClass,
-      actionDescription: input.actionDescription,
-      cols: input.cols,
-    }),
+    promptRows: input.boxRows,
+    subjectRows:
+      confirmSubjectRowCount(input) -
+      approvalSubjectRowCount(input.actionDescription, input.cols) +
+      subject.length +
+      (hidden > 0 ? 1 : 0),
     options: getConfirmOptions(input.actionClass),
-    ...(input.leadShed === undefined ? {} : { leadShed: input.leadShed }),
+    leadShed: (gaps.title ? 0 : 1) + (gaps.options ? 0 : 1),
   });
 }
 

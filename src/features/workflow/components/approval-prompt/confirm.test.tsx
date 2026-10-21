@@ -451,3 +451,80 @@ describe('short-viewport clamp on the confirm panel', () => {
     ui.unmount();
   });
 });
+
+const TRUST_DISCLOSURE = [
+  'Executable: "/Users/someone/.local/bin/review-bot"',
+  'Arguments: "--diff" "--strict"',
+  'Contract: direct',
+  'Working directory: Project directory',
+  'Staging: None',
+  'Environment names: "REVIEW_BOT_TOKEN", "REVIEW_BOT_URL"',
+  'Environment access: Declared environment references only',
+  'Filesystem: Not an OS sandbox; the process can access files available to the current user',
+  'Network: Network access is not restricted',
+  'Result: Reviewed workspace diff; it writes directly into the project directory',
+  '',
+  'Exact confirmation stores an owner-only reusable receipt.',
+].join('\n');
+
+describe('runner trust panel', () => {
+  afterEach(() => {
+    terminalSizeStore.reset();
+  });
+
+  it.each([
+    // The cut rows hold one blank row, which the count leaves out.
+    { cols: 60, rows: 18, lastSubjectRow: /… 9 more lines/ },
+    { cols: 80, rows: 24, lastSubjectRow: /Exact confirmation stores/ },
+  ])(
+    'fits an unclamped panel in $cols x $rows and keeps the subject and the options',
+    async ({ cols, rows, lastSubjectRow }) => {
+      terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 120 });
+      const ui = renderFeature(<ApprovalPrompt />, { cols, rows });
+      const pending = openApprovalPrompt(makeConfirmRequest(TRUST_DISCLOSURE, 'runner_trust'));
+      await tick(PAST_GRACE);
+
+      const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
+      expect(lines.length).toBeLessThanOrEqual(rows);
+      // The title sits right under the top border, and the legend right above the bottom one.
+      expect(lines[1]).toContain(approvalTitle('runner_trust'));
+      const frame = lines.join('\n');
+      expect(frame).toContain('runner command from the project config');
+      expect(frame).toContain('Executable:');
+      expect(frame).toContain('Arguments: "--diff" "--strict"');
+      expect(frame).toContain('y   Confirm');
+      expect(frame).toContain('x   Deny');
+      expect(lines.at(-2)).toContain(CHOOSE_HINTS);
+      // The last subject row and the options keep a blank row between them.
+      const confirmRow = lines.findIndex((line) => line.includes('y   Confirm'));
+      expect(lines[confirmRow - 1]).toMatch(/^\|\s+\|$/);
+      expect(lines[confirmRow - 2]).toMatch(lastSubjectRow);
+
+      ui.stdin.write(ESC);
+      await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
+      ui.unmount();
+    },
+  );
+
+  it('sheds disclosure lines from the bottom once a clamped panel has no blank rows left', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const ui = render(<ApprovalPrompt clampedBoxRows={12} />);
+    const pending = openApprovalPrompt(makeConfirmRequest(TRUST_DISCLOSURE, 'runner_trust'));
+    await tick(PAST_GRACE);
+
+    const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
+    expect(lines).toHaveLength(12);
+    const frame = lines.join('\n');
+    expect(frame).toContain(approvalTitle('runner_trust'));
+    expect(frame).toContain('Executable:');
+    expect(frame).toContain('Arguments:');
+    expect(frame).not.toContain('Exact confirmation stores');
+    expect(frame).toContain('… 9 more lines');
+    expect(frame).toContain('x   Deny');
+    expect(lines.at(-2)).toContain(CHOOSE_HINTS);
+
+    ui.stdin.write(ESC);
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
+    ui.unmount();
+  });
+});

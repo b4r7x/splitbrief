@@ -8,6 +8,7 @@ import {
   CHOOSE_HINTS,
   approvalKeyColumnWidth,
   approvalTitle,
+  fitConfirmPanel,
   getApprovalConfirmLabel,
   getConfirmOptions,
   getConfirmPrimaryKey,
@@ -71,6 +72,25 @@ describe('confirm gate keys and legends', () => {
 
   it('keeps the way out on the refusal a stray y earns', () => {
     expect(CONFIRM_NUDGE).toBe('⏎ confirms this write · esc deny');
+  });
+});
+
+describe('fitConfirmPanel', () => {
+  const actionDescription = ['A: one', `B: ${'word '.repeat(30).trim()}`, 'C: three'].join('\n');
+
+  it('sheds blank rows first, top down', () => {
+    expect(fitConfirmPanel({ actionDescription, cols: 60, promptRows: 20, boxRows: 18 })).toEqual({
+      gaps: { title: false, options: false, legend: true },
+      subject: expect.arrayContaining(['A: one', 'C: three']),
+      hidden: 0,
+    });
+  });
+
+  it('then cuts whole lines from the bottom, counts them and keeps the blank above the options', () => {
+    const fit = fitConfirmPanel({ actionDescription, cols: 60, promptRows: 20, boxRows: 15 });
+    expect(fit.subject).toEqual(['A: one']);
+    expect(fit.hidden).toBe(4);
+    expect(fit.gaps).toEqual({ title: false, options: true, legend: false });
   });
 });
 
