@@ -57,7 +57,7 @@ callbacks                  — OrchestratorCallbacks (see "Events vs callbacks")
 bus                        — the EventBus
 planner, reviewer, implementer — the active runner instances (reviewer is the planner when no reviewer block is configured)
 createImplementer          — builds another implementer for a profile switch
-implementerProfile, retryProfileOverride, retryProfileOverrideTaskId, routingDecision
+implementerProfile, routingDecision
                            — the selected implementer profile and the router's decision
 steering                   — the SteeringPort for mid-call delivery
 context                    — ProjectContext (name, dir, skillsContext — the run's skills block, built once for every seat)

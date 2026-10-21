@@ -24,8 +24,6 @@ export interface PickerViewState {
   browseCatalog: boolean;
   /** Set when the picker takes a row: it saved the seat and closes. Escape and Ctrl+D never set it. */
   committed: boolean;
-  /** The BUILD profile a seat save lands on, set by the opener; undefined is the default profile. */
-  profile: string | undefined;
 }
 
 const initial: PickerViewState = {
@@ -38,7 +36,6 @@ const initial: PickerViewState = {
   draft: null,
   browseCatalog: false,
   committed: false,
-  profile: undefined,
 };
 
 const store = createStore<PickerViewState>(initial);
@@ -115,10 +112,6 @@ function setCommitted(committed: boolean) {
   store.set((s) => (s.committed === committed ? s : { ...s, committed }));
 }
 
-function setProfile(profile: string | undefined) {
-  store.set((s) => (s.profile === profile ? s : { ...s, profile }));
-}
-
 export const pickerViewStore = {
   ...storeBase(store),
   open,
@@ -131,5 +124,4 @@ export const pickerViewStore = {
   setDraft,
   setBrowseCatalog,
   setCommitted,
-  setProfile,
 };

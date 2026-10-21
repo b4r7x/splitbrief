@@ -12,7 +12,7 @@ import { buildProjectLanguageContext } from '../../spec/prompts/language-context
 import { buildContextOverflowRecoveryIssue } from '../recovery/builders/task.js';
 import {
   selectedProfileFromDecision,
-  retryProfileOverrideForTask,
+  retryProfileForTask,
   routingBlockMessage,
 } from './routing.js';
 
@@ -38,18 +38,18 @@ export async function selectRoutingProfile(opts: {
   const { projectDir } = wctx;
   let state = opts.state;
 
-  const retryProfileOverride = retryProfileOverrideForTask(wctx, task);
+  const pinnedProfile = retryProfileForTask(state, task);
   const routingProfiles =
-    retryProfileOverride === undefined
+    pinnedProfile === undefined
       ? resolvedProfiles
-      : resolvedProfiles.filter((profile) => profile.name === retryProfileOverride);
+      : resolvedProfiles.filter((profile) => profile.name === pinnedProfile);
   if (routingProfiles.length === 0) {
-    const message = `Recovery selected implementer profile "${retryProfileOverride}" is not configured.`;
+    const message = `Recovery selected implementer profile "${pinnedProfile}" is not configured.`;
     publishError({ bus: wctx.bus, phase: state.phase, message: message });
     const issue = buildContextOverflowRecoveryIssue({
       task,
       phase: state.phase,
-      selectedImplementerProfile: retryProfileOverride,
+      selectedImplementerProfile: pinnedProfile,
       routingReason: message,
       createdAt: nowIso(),
     });
@@ -84,6 +84,7 @@ export async function selectRoutingProfile(opts: {
       task,
       phase: state.phase,
       routingDecision,
+      selectedImplementerProfile: pinnedProfile,
       createdAt: nowIso(),
     });
     state = raisePendingRecovery(wctx, state, issue, setTrackedState);

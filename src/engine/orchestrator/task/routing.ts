@@ -1,4 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
@@ -57,11 +58,9 @@ export async function createTaskImplementer(opts: {
   });
 }
 
-export function retryProfileOverrideForTask(wctx: WorkflowContext, task: Task): string | undefined {
-  if (!wctx.retryProfileOverride) return undefined;
-  if (wctx.retryProfileOverrideTaskId !== undefined && wctx.retryProfileOverrideTaskId !== task.id)
-    return undefined;
-  return wctx.retryProfileOverride;
+/** The BUILD profile a recovery action pinned this brief to, read from the run state. */
+export function retryProfileForTask(state: WorkflowState, task: Task): string | undefined {
+  return state.retryProfile?.taskId === task.id ? state.retryProfile.profile : undefined;
 }
 
 export function routingBlockMessage(decision: RoutingDecision): string {

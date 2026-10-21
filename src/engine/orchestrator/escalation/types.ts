@@ -137,7 +137,6 @@ export type RetryStepOpts = {
   commitSuffix?: string | undefined;
   usageCategory: UsageCategory;
   retryFailureFallback: string;
-  profileOverride?: string | undefined;
   isolationRole?: IsolationRole | undefined;
   resultTool?: string | undefined;
   resultModel?: string | undefined;

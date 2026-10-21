@@ -10,7 +10,6 @@ import type { Config } from '../../core/schemas/config.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { StepRef } from '../../core/schemas/run-step.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
-import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 import { prepareDraftSubmission } from '../../core/composer/submission.js';
@@ -53,8 +52,6 @@ type PendingRecoveryResult =
       shouldRun: true;
       state: WorkflowState;
       prepared?: PreparedExecution | undefined;
-      retryProfileOverride?: string | undefined;
-      retryProfileOverrideTaskId?: TaskId | undefined;
       switchSeat?: SeatSwapChoice | undefined;
       /** The operator's typed correction, to seed the next call's prompt. */
       steer?: UserMessageInput | undefined;
@@ -148,7 +145,7 @@ function seatIn(
  * variant — or the configured seat it was prepared from, which may leave its model to
  * the tool. A take of the seat a save under the halt already chose is a swap, also
  * after the run is opened again. A BUILD halt names the profile that failed: the picker
- * saves to it, and the swap is read from it.
+ * reads the open halt and saves to that profile, and the swap is read from it.
  */
 async function pickSwappedSeat(
   seat: CrewSeatId,
@@ -166,7 +163,6 @@ async function pickSwappedSeat(
     );
   }
   pickerViewStore.setCommitted(false);
-  pickerViewStore.setProfile(profile);
   overlayStore.open(overlay, toolRowFocus(candidate.tool));
   if (!(await overlayClosed(overlay, signal))) return undefined;
   const after = seatIn(configStore.get().config, seat, profile);
@@ -232,6 +228,9 @@ export function createRecoveryDriver(
       };
     }
 
+    // The halt is open before any action applies: a seat picker opened for it saves to the
+    // profile it names, also when a reopened run applies its selected action at once.
+    openRecoveryNotice(issue, at);
     const bus = createRecoveryBus({ projectDir, sessionId, sink });
 
     // `revise` carries the operator's words to the planner, so the panel asks for
@@ -261,7 +260,6 @@ export function createRecoveryDriver(
         const offered = switchSeatCandidateForAnswer(answer, offer);
         if (offer === undefined || offered === undefined) {
           feedbackStore.setError('No other tool is offered for this seat.');
-          openRecoveryNotice(issue, at);
           return null;
         }
         const profile = offer.seat === 'build' ? issue.selectedImplementerProfile : undefined;
@@ -289,10 +287,7 @@ export function createRecoveryDriver(
           profile,
         );
         if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
-        if (candidate === undefined) {
-          openRecoveryNotice(issue, at);
-          return null;
-        }
+        if (candidate === undefined) return null;
         feedbackStore.reset();
         return {
           shouldRun: true,
@@ -301,7 +296,6 @@ export function createRecoveryDriver(
         };
       }
 
-      const retryProfileOverrideTaskId = issue.taskId ?? state.tasks[state.currentTaskIndex]?.id;
       const result = await applyRecoveryAction({
         projectDir,
         sessionId,
@@ -318,7 +312,6 @@ export function createRecoveryDriver(
         feedbackStore.setError(result.message);
         // The engine must stay parked on this halt. Returning shouldRun here re-enters the
         // workflow with the same pending issue before the operator can choose another action.
-        openRecoveryNotice(issue, at);
         return null;
       }
 
@@ -349,25 +342,14 @@ export function createRecoveryDriver(
         result.currentConfig === undefined
           ? {}
           : { prepared: { ...prepared, config: parsePreparedConfig(result.currentConfig) } };
-      const retryProfileOverride = result.implementerProfile ?? issue.selectedImplementerProfile;
-      if (retryProfileOverride === undefined || result.status !== 'retry-current-task') {
-        return {
-          shouldRun: true,
-          state: result.state,
-          ...updatedPreparation,
-          ...steered,
-          ...(result.status === 'continued' && result.correctionRecorded
-            ? { correctionTaken: true }
-            : {}),
-        };
-      }
       return {
         shouldRun: true,
         state: result.state,
-        retryProfileOverride,
-        ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
         ...updatedPreparation,
         ...steered,
+        ...(result.status === 'continued' && result.correctionRecorded
+          ? { correctionTaken: true }
+          : {}),
       };
     };
 
@@ -400,8 +382,6 @@ export function createRecoveryDriver(
     if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
 
     if (republishPrompt) publishRecoveryPrompted({ bus, phase: state.phase }, sessionId, issue);
-
-    openRecoveryNotice(issue, at);
 
     while (true) {
       const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));

@@ -1,4 +1,4 @@
-import type { Task, TaskId } from '../../../core/schemas/task.js';
+import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ConsultReason } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
@@ -60,8 +60,6 @@ type HandleRetryOptions = {
   currentState: WorkflowState;
   taskStartSnapshot?: ChangedFilesSnapshot;
   dependsOnFiles?: string[];
-  profileOverride?: string | undefined;
-  profileOverrideTaskId?: TaskId | undefined;
   /** How the first attempt ended, when it ended on a machine outcome. */
   initialFailure?: RetryAttemptFailure | undefined;
   /** The first attempt's blocked report, when it stopped asking for a decision. */
@@ -88,14 +86,13 @@ async function seatDownHalt(
 ): Promise<{ state: WorkflowState; result: RetryResult } | null> {
   const failure = stepOutcome.lastFailure;
   if (failure?.outcome !== 'unauthenticated' && failure?.outcome !== 'usage-limit') return null;
-  const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
   const seatSwap = await loadSeatSwapContext({
     projectDir: ctx.projectDir,
     modelCache: ctx.modelCache,
     seat: 'build',
     runner: failure.runner,
     config: ctx.config,
-    implementerProfile: failingProfile,
+    implementerProfile: ctx.implementerProfile,
   });
   const classification: SeatFailureClassification =
     failure.outcome === 'unauthenticated'
@@ -114,7 +111,9 @@ async function seatDownHalt(
     words: stepOutcome.lastError,
     attempts: stepOutcome.attempts,
     maxAttempts: DEFAULT_LOCAL_RETRIES,
-    ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
+    ...(ctx.implementerProfile !== undefined && {
+      selectedImplementerProfile: ctx.implementerProfile,
+    }),
     ...(seatSwap !== undefined && { seatSwap }),
     seatSwitches: stepOutcome.state.seatSwitches,
     createdAt: nowIso(),
@@ -153,14 +152,13 @@ async function runnerDefectHalt(
   if (failure === undefined) return null;
   const build = recoveryBuilderForRunnerOutcome(failure.outcome);
   if (build === undefined) return null;
-  const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
   const seatSwap = await loadSeatSwapContext({
     projectDir: ctx.projectDir,
     modelCache: ctx.modelCache,
     seat: 'build',
     runner: failure.runner,
     config: ctx.config,
-    implementerProfile: failingProfile,
+    implementerProfile: ctx.implementerProfile,
     refusal: stepOutcome.lastError,
   });
   const issue = build({
@@ -170,7 +168,9 @@ async function runnerDefectHalt(
     toolMessage: stepOutcome.lastError,
     attempts: stepOutcome.attempts,
     maxAttempts: DEFAULT_LOCAL_RETRIES,
-    ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
+    ...(ctx.implementerProfile !== undefined && {
+      selectedImplementerProfile: ctx.implementerProfile,
+    }),
     ...(seatSwap !== undefined && { seatSwap }),
     seatSwitches: stepOutcome.state.seatSwitches,
     ...(stepOutcome.state.workspace?.kind === 'checkout' && {
@@ -287,10 +287,6 @@ export async function handleRetryAndEscalation(
     ...wctx,
     taskStartSnapshot,
     dependsOnFiles: opts.dependsOnFiles ?? [],
-    ...(opts.profileOverride !== undefined && { retryProfileOverride: opts.profileOverride }),
-    ...(opts.profileOverrideTaskId !== undefined && {
-      retryProfileOverrideTaskId: opts.profileOverrideTaskId,
-    }),
   };
 
   let task = opts.task;
@@ -409,7 +405,6 @@ export async function handleRetryAndEscalation(
       commitSuffix: 'after consult',
       usageCategory: 'implementer',
       retryFailureFallback: 'Consult-guided retry failed to produce valid code',
-      profileOverride: ctx.retryProfileOverride,
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
         steering: ctx.steering,

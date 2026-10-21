@@ -13,6 +13,7 @@ import { formatModelName } from '../../core/model-display.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { readPickerRunner } from './model-catalog/catalog.js';
+import { readPickerProfile } from './picker-profile.js';
 import {
   isOptionFamily,
   optionAxesOf,
@@ -61,7 +62,7 @@ function configuredEffort(role: SeatPickerRole, slot: PickerSlot): string | null
   const config = configStore.get().config;
   if (config === null) return null;
   const lane = seatPickerLane(role);
-  const runner = readPickerRunner(config, lane, slot, pickerViewStore.get().profile);
+  const runner = readPickerRunner(config, lane, slot, readPickerProfile());
   return runner === undefined ? null : seatConfiguredEffort({ runner, role: lane });
 }
 

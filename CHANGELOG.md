@@ -348,6 +348,9 @@
 - A build seat that times out or is cut for silence twice in a row on one brief now stops as *Seat down*, on every seat kind, API seats included, and the halt can move the seat to another ready tool. Before, the timeouts used up the brief's retries and planner consults, and the run stopped as a failed brief.
 - After a *Seat down* halt, a tool and model you saved for the seat while the run waited are taken when you pick them in **Change BUILD tool** (or PLAN or REVIEW), also after you open the run again. Before, picking the saved row counted as no change, and the halt asked again.
 - In **Change BUILD tool** (or PLAN or REVIEW), picking a ready tool that the halt did not list now moves the seat, and the switch names the seat the halted call ran on. Before, the run said it could not switch and kept the halt.
+- After a BUILD seat on a named implementer profile stops, moving the seat or trying again runs the brief on that same profile until the brief passes, also after a stop or when you open the run again. Before, the brief could move to the default profile.
+- While a halt waits on a named BUILD profile, `/crew build` changes that profile, and *Try again* runs the brief on the seat you saved. Before, the save went to the default profile.
+- When a brief does not fit the BUILD profile it was moved to, the halt names that profile, so `/crew build` changes it and *Try again* runs the brief on the new seat. Before, *Try again* raised the same halt each time.
 
 ## [0.1.0] - 2026-08-07
 

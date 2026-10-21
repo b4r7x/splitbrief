@@ -14,15 +14,13 @@ import { SANDBOX_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createStagedProject } from '../approval/staged-project.js';
-import { createRetryRuntime } from '../escalation/retry-runtime.js';
 import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
 import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
 import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
 import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-execution.js';
 import { runTaskLoop } from '../task/loop.js';
-import { configForProfile } from '../task/routing.js';
+import { configForProfile, createTaskImplementer } from '../task/routing.js';
 import { initializeWorkflow } from './init.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
@@ -298,14 +296,18 @@ describe('configured direct stage canaries', () => {
 
           expect(init.ok).toBe(true);
           if (!init.ok) return;
-          const retryRuntime = await createRetryRuntime(
-            {
-              ...init.wctx,
-              taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
-              dependsOnFiles: [],
-            },
-            'retry-direct',
+          const profile = resolveImplementerProfiles(init.wctx.config).profiles.find(
+            (candidate) => candidate.name === 'retry-direct',
           );
+          if (profile === undefined) throw new Error('retry-direct is not configured');
+          const retryRuntime = {
+            config: configForProfile(init.wctx.config, profile),
+            implementer: await createTaskImplementer({
+              wctx: init.wctx,
+              profile,
+              singleImplementerMode: false,
+            }),
+          };
           const stage = await createStagedProject({
             projectDir: projectDir,
             config: retryRuntime.config,

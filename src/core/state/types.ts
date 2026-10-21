@@ -99,7 +99,7 @@ export type StateAction =
   | { type: 'SET_PLANNER_CONVERSATION'; conversation: PlannerConversation }
   | { type: 'CLEAR_PLANNER_CONVERSATION' }
   | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string | null }
-  | { type: 'RESET_TASK'; taskId: TaskId }
+  | { type: 'RESET_TASK'; taskId: TaskId; profile?: string | undefined }
   | { type: 'REPLACE_TASK'; taskId: TaskId; task: Task }
   | { type: 'INSERT_TASKS'; parentId: TaskId | null; afterTaskId?: TaskId; tasks: Task[] }
   | {
@@ -145,7 +145,7 @@ export type StateAction =
   | { type: 'SET_PENDING_RECOVERY'; issue: RecoveryIssue }
   | { type: 'MARK_RECOVERY_APPLYING'; action: RecoveryAction }
   | { type: 'RESOLVE_PENDING_RECOVERY' }
-  | { type: 'RESTART_ATTEMPT_ON_SEAT'; taskId: TaskId }
+  | { type: 'RESTART_ATTEMPT_ON_SEAT'; taskId: TaskId; profile?: string | undefined }
   | ({ type: 'RECORD_SEAT_SWITCH' } & Omit<SeatSwitchRecord, 'ts'>);
 
 export interface TokenBudget {

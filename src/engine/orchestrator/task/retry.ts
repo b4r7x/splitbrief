@@ -19,7 +19,6 @@ import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { recordTaskUsage } from '../tokens.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
-import { retryProfileOverrideForTask } from './routing.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import {
@@ -253,7 +252,6 @@ export async function retryAndRecord(
     }
   }
   let result: Awaited<ReturnType<typeof handleRetryAndEscalation>>['result'];
-  const retryProfileOverride = retryProfileOverrideForTask(wctx, task);
   try {
     ({ state, result } = await handleRetryAndEscalation({
       wctx,
@@ -263,8 +261,6 @@ export async function retryAndRecord(
       currentState: state,
       taskStartSnapshot,
       dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
-      profileOverride: retryProfileOverride,
-      ...(retryProfileOverride !== undefined && { profileOverrideTaskId: task.id }),
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
       ...(opts.initialBlocked !== undefined && { initialBlocked: opts.initialBlocked }),
       ...(opts.initialAnswer !== undefined && { initialAnswer: opts.initialAnswer }),
@@ -280,7 +276,6 @@ export async function retryAndRecord(
   }
   let nextState = state;
   setTrackedState(nextState);
-  const retryImplementerProfile = retryProfileOverride ?? wctx.implementerProfile;
   if (!result.completed) {
     // A pre_validation deny already skipped the task, restored its files and wrote its evidence.
     if (wctx.signal?.aborted || result.method === 'skipped') {
@@ -307,7 +302,7 @@ export async function retryAndRecord(
         attempts: result.attempts,
         maxAttempts: DEFAULT_LOCAL_RETRIES,
         allowRetryOverride: true,
-        selectedImplementerProfile: retryImplementerProfile,
+        selectedImplementerProfile: wctx.implementerProfile,
         ...(result.handBack !== undefined && { handBack: result.handBack }),
         createdAt: nowIso(),
       });
@@ -334,7 +329,7 @@ export async function retryAndRecord(
     retryCount: result.attempts,
     tool: result.tool ?? nextState.implementerTool ?? getRunnerDisplayName(wctx.config.implementer),
     ...(model !== undefined && { model }),
-    ...(retryImplementerProfile !== undefined && { implementerProfile: retryImplementerProfile }),
+    ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
     ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
   });
   const escalated = classifyTaskCompletionMethod(result.method) === 'escalated';

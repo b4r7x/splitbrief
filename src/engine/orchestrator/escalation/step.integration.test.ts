@@ -17,7 +17,7 @@ import { isolationWorktreePath, isolationWorktreeRoot, sessionDir } from '../../
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
-import type { Implementer, RetryOptions } from '../../implementers/types.js';
+import type { Implementer } from '../../implementers/types.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { createChangeDetector } from '../../change-detection.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
@@ -787,134 +787,7 @@ describe('runRetryStep', () => {
     });
   });
 
-  it('uses an overridden implementer profile for retry execution and completion metadata', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/profile.ts'] });
-    const state = makeImplState([task]);
-    const config = configWithProfiles();
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const defaultRetry = async () => {
-      throw new Error('default implementer should not handle an overridden retry');
-    };
-    let receivedRetry: RetryOptions | undefined;
-    const overrideRetry = async (opts: RetryOptions) => {
-      receivedRetry = opts;
-      return {
-        success: true,
-        output: 'fixed',
-        usage: { inputTokens: 12, outputTokens: 6 },
-      };
-    };
-    const defaultImplementer = makeImplementer({ retry: defaultRetry });
-    const overrideImplementer = makeImplementer({ retry: overrideRetry });
-    const createProfileImplementer = () => overrideImplementer;
-
-    const outcome = await runRetryStep({
-      ctx: {
-        projectDir,
-        workspaceDir: projectDir,
-        sessionId,
-        config,
-        callbacks,
-        bus,
-        planner: makePlanner(),
-        reviewer: makePlanner(),
-        context: defaultContext,
-        implementer: defaultImplementer,
-        createImplementer: createProfileImplementer,
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        taskStartSnapshot,
-        dependsOnFiles: [],
-      },
-      task,
-      state,
-      lastError: 'validation failed',
-      attempts: 1,
-      method: 'local',
-      transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
-      retryFailureFallback: 'retry failed',
-      profileOverride: 'cheap-large',
-      invokeRetry: ({
-        task: retryTask,
-        lastError,
-        attempts,
-        projectDir: retryProjectDir,
-        config: retryConfig,
-        implementer,
-      }) =>
-        implementer.retry({
-          task: retryTask,
-          projectDir: retryProjectDir,
-          config: retryConfig,
-          context: defaultContext,
-          error: lastError,
-          attempt: attempts,
-          kind: 'local',
-          onOutput: () => {},
-          phase: state.phase,
-        }),
-    });
-
-    expect(receivedRetry).toMatchObject({
-      error: 'validation failed',
-      attempt: 1,
-      kind: 'local',
-      config: { implementer: { kind: 'api', provider: 'custom-endpoint', model: 'deepseek-chat' } },
-    });
-    expect(outcome.result).toEqual({
-      completed: true,
-      method: 'local',
-      attempts: 1,
-      durationMs: expect.any(Number),
-    });
-    expect(events.find((event) => event.type === 'task_completed')).toMatchObject({
-      type: 'task_completed',
-      taskId: 'T001',
-      method: 'local',
-      implementerProfile: 'cheap-large',
-      tool: 'custom-endpoint',
-      model: 'deepseek-chat',
-    });
-    expect(loadState({ projectDir, sessionId })).toMatchObject({
-      implementerTool: 'custom-endpoint',
-      implementerModel: 'deepseek-chat',
-    });
-  });
-
-  it('propagates the profile-resolution error instead of retrying', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T002', suggestedFiles: ['src/missing.ts'] });
-    const invokeRetry = vi.fn();
-
-    await expect(
-      runRetryStep({
-        ctx: {
-          ...makeWctx({ projectDir, sessionId, config: configWithProfiles() }),
-          taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
-          dependsOnFiles: [],
-        },
-        task,
-        state: makeImplState([task]),
-        lastError: 'validation failed',
-        attempts: 1,
-        method: 'local',
-        transitionType: 'VALIDATION_PASS',
-        usageCategory: 'implementer',
-        retryFailureFallback: 'retry failed',
-        profileOverride: 'nonexistent-profile',
-        invokeRetry,
-      }),
-    ).rejects.toThrow(/nonexistent-profile/);
-    expect(invokeRetry).not.toHaveBeenCalled();
-  });
-
-  it('uses the default implementer when profileOverride is undefined', async () => {
+  it('retries on the implementer the brief was routed to', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/default.ts'] });
     const state = makeImplState([task]);
@@ -929,7 +802,7 @@ describe('runRetryStep', () => {
     });
     const defaultImplementer = makeImplementer({ retry: defaultRetry });
     const createProfileImplementer = () => {
-      throw new Error('profile implementer should not be created without an override');
+      throw new Error('a retry creates no implementer of its own');
     };
 
     const outcome = await runRetryStep({
@@ -960,7 +833,6 @@ describe('runRetryStep', () => {
       transitionType: 'VALIDATION_PASS',
       usageCategory: 'implementer',
       retryFailureFallback: 'retry failed',
-      profileOverride: undefined,
       invokeRetry: ({
         implementer,
         task: retryTask,

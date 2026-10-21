@@ -971,6 +971,41 @@ describe('transition', () => {
     expect(next.awaitingContinue).toBe(true);
   });
 
+  it('pins the brief to the profile a recovery names until the brief settles', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', status: 'in_progress' }), makeTask({ id: 'T002' })],
+      currentTaskIndex: 0,
+    };
+    const pin = { taskId: taskId('T001'), profile: 'small' };
+
+    const moved = transition(state, {
+      type: 'RESTART_ATTEMPT_ON_SEAT',
+      taskId: taskId('T001'),
+      profile: 'small',
+    });
+    expect(moved.retryProfile).toEqual(pin);
+    const reset = transition(moved, { type: 'RESET_TASK', taskId: taskId('T001') });
+    expect(reset.retryProfile).toEqual(pin);
+    expect(
+      transition(state, { type: 'RESET_TASK', taskId: taskId('T001'), profile: 'small' })
+        .retryProfile,
+    ).toEqual(pin);
+    const started = transition(reset, { type: 'START_TASK', taskId: taskId('T001') });
+    expect(started.retryProfile).toEqual(pin);
+    const passed = transition(transition(started, { type: 'TASK_SENT' }), {
+      type: 'VALIDATION_PASS',
+    });
+    expect(passed.retryProfile).toBe(undefined);
+    expect(transition(started, { type: 'SKIP_TASK', taskId: taskId('T001') }).retryProfile).toBe(
+      undefined,
+    );
+    expect(transition(started, { type: 'SKIP_TASK', taskId: taskId('T002') }).retryProfile).toEqual(
+      pin,
+    );
+  });
+
   it('RESTART_ATTEMPT_ON_SEAT leaves a task it does not know alone', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
