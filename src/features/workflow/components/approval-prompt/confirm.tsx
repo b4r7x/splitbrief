@@ -141,7 +141,7 @@ export function ConfirmApprovalPrompt({
       }
 
       const letter = input.toLowerCase();
-      if (letter === 'r') {
+      if (letter === 'r' && options.some((option) => option.key === 'r')) {
         takeRow('r');
         return;
       }

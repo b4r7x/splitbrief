@@ -99,11 +99,7 @@ function isExecutableLaunchability(
 function isConfirmed(
   response: Awaited<ReturnType<NonNullable<CustomRunnerAdmissionPolicy['onTieredApproval']>>>,
 ): boolean {
-  return (
-    response.decision === 'confirm' &&
-    response.phrase === CONFIRM_PHRASE &&
-    response.reason.trim().length > 0
-  );
+  return response.decision === 'confirm' && response.phrase === CONFIRM_PHRASE;
 }
 
 function snapshotRunner(input: unknown): ConfiguredCustomRunner | null {

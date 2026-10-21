@@ -369,6 +369,7 @@
 - `/usage` no longer shows `$0.00` per million tokens for a model that has no published rate, and `/usage` and `/copy cost` call an amount a catalog estimate only when an amount is shown. Before, a run on a subscription tool read as free and claimed an estimate it never made.
 - `/usage` no longer shows `Basis nothing recorded` under `Amount not estimated`. Before, the money section said nothing was recorded while the token counts above it showed recorded tokens.
 - The runner trust panel fits a short terminal and keeps the executable, its arguments and the choices in view; the lines that do not fit are counted. Before, the top of the panel scrolled off screen.
+- Trusting a configured runner no longer asks for a reason that was never kept. Before, the panel offered "Confirm with a reason" and the terminal asked why you trust the runner.
 
 ## [0.1.0] - 2026-08-07
 

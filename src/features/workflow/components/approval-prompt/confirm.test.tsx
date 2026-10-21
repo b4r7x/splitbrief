@@ -474,7 +474,7 @@ describe('runner trust panel', () => {
 
   it.each([
     // The cut rows hold one blank row, which the count leaves out.
-    { cols: 60, rows: 18, lastSubjectRow: /… 9 more lines/ },
+    { cols: 60, rows: 18, lastSubjectRow: /… 7 more lines/ },
     { cols: 80, rows: 24, lastSubjectRow: /Exact confirmation stores/ },
   ])(
     'fits an unclamped panel in $cols x $rows and keeps the subject and the options',
@@ -519,12 +519,30 @@ describe('runner trust panel', () => {
     expect(frame).toContain('Executable:');
     expect(frame).toContain('Arguments:');
     expect(frame).not.toContain('Exact confirmation stores');
-    expect(frame).toContain('… 9 more lines');
+    expect(frame).toContain('… 8 more lines');
     expect(frame).toContain('x   Deny');
     expect(lines.at(-2)).toContain(CHOOSE_HINTS);
 
     ui.stdin.write(ESC);
     await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
+    ui.unmount();
+  });
+
+  it('offers no reason step: no reason row, r does nothing, y confirms', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const ui = render(<ApprovalPrompt />);
+    const pending = openApprovalPrompt(makeConfirmRequest(TRUST_DISCLOSURE, 'runner_trust'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    expect(stripColor(ui.lastFrame())).not.toContain('Confirm with a reason');
+    ui.stdin.write('r');
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).not.toContain(CONFIRM_QUESTION);
+    expect(stripColor(ui.lastFrame())).toContain('y   Confirm');
+
+    ui.stdin.write('y');
+    await expect(pending).resolves.toMatchObject({ decision: 'confirm', phrase: CONFIRM_PHRASE });
     ui.unmount();
   });
 });
