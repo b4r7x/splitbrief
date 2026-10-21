@@ -289,6 +289,38 @@ describe('usage details money', () => {
     expect(facts(subscription, 'money:amount')).toEqual(['not estimated']);
     for (const text of texts(subscription)) expect(text).not.toContain('$');
   });
+
+  it('states no basis for an amount it did not estimate', () => {
+    const unpriced = {
+      tokenUsage: usage({ plannerInput: 6, plannerOutput: 2_309 }),
+      costBreakdown: breakdown({
+        requestEstimate: {
+          amount: null,
+          currency: 'USD' as const,
+          basis: 'unavailable' as const,
+          completeness: 'unavailable' as const,
+          knownSubtotal: 0,
+          reasons: ['unpriced-model' as const],
+          items: [
+            {
+              callId: 'c1',
+              role: 'planner' as const,
+              usageBoundary: 'single-request' as const,
+              amount: null,
+              knownSubtotal: 0,
+              completeness: 'unavailable' as const,
+              reasons: ['unpriced-model' as const],
+              billing: { posture: 'unknown' as const, basis: 'unknown' as const },
+            },
+          ],
+        },
+      }),
+    };
+
+    expect(facts(unpriced, 'money:amount')).toEqual(['not estimated']);
+    expect(rows(unpriced).some((row) => row.key === 'money:basis')).toBe(false);
+    expect(facts(unpriced, 'money:reasons')).toEqual(['model has no published rate']);
+  });
 });
 
 describe('usage details billing', () => {
