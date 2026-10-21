@@ -120,16 +120,18 @@ describe('readConversationScrollSnapshot', () => {
       expect(snapshot.viewportHeight).toBe(paintedHeight);
       expect(snapshot.transcriptViewportHeight).toBe(paintedHeight);
       expect(snapshot.maxOffset).toBeGreaterThan(0);
-      expect(stripAnsiStyles(bottomFrame)).toContain('Final review passed');
+      expect(stripAnsiStyles(bottomFrame)).toContain('Final review after 1 fix cycle passed');
       conversationScrollStore.scrollUp({ ...snapshot, step: snapshot.maxOffset });
       const topFrame = await ui.waitForCheckpoint({
         predicate: ({ output }) => stripAnsiStyles(output).includes('T001 Add validator module'),
       });
       expect(readConversationScrollSnapshot().scrollOffset).toBe(snapshot.maxOffset);
       expect(stripAnsiStyles(topFrame)).toContain('T001 Add validator module');
-      expect(stripAnsiStyles(topFrame)).not.toContain('Final review passed');
+      expect(stripAnsiStyles(topFrame)).not.toContain('Final review after 1 fix cycle passed');
       conversationScrollStore.scrollToBottom(snapshot.renderableCount);
-      expect(stripAnsiStyles(await ui.waitForCheckpoint())).toContain('Final review passed');
+      expect(stripAnsiStyles(await ui.waitForCheckpoint())).toContain(
+        'Final review after 1 fix cycle passed',
+      );
     } finally {
       await ui.unmount();
     }

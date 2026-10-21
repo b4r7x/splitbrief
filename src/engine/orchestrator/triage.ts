@@ -23,7 +23,7 @@ import { checkTaskIdentities } from '../spec/plan-checks.js';
 import { taskFromSpec } from '../spec/plan-tasks.js';
 import { writeTasksArtifact } from './artifact-write.js';
 import { transitionAndSave } from './state-ops.js';
-import { publishTasksPlanned } from './events.js';
+import { publishFixCycleStarted, publishTasksPlanned } from './events.js';
 import type { WorkflowContext } from './types.js';
 import {
   checkRegistry,
@@ -388,12 +388,6 @@ export function startFixCycle(args: {
   if (args.taskIds.length > 0) {
     publishTasksPlanned({ bus: wctx.bus, phase: state.phase }, state.tasks);
   }
-  wctx.bus.publish({
-    type: 'review_fix_started',
-    ts: Date.now(),
-    phase: state.phase,
-    cycle: fixCyclesOf(state).used,
-    taskIds: [...args.taskIds],
-  });
+  publishFixCycleStarted(wctx.bus, state, args.taskIds);
   return state;
 }
