@@ -9,6 +9,10 @@ import {
 } from '../../core/readiness/checks/availability.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { approvalPromptStore, openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { ApprovalPrompt } from '../workflow/components/approval-prompt.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
+import { formatCustomRunnerDisclosure } from '../../engine/runners/custom-runner-disclosure.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { StartPreparationPanel, type StartPreparationPanelProps } from './panel.js';
 
@@ -347,6 +351,44 @@ describe('StartPreparationPanel', () => {
     expect(onRetry).not.toHaveBeenCalled();
     expect(onBack).not.toHaveBeenCalled();
     expect(onOpenSettings).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('fits the runner trust panel the screens mount into a 60x18 terminal', async () => {
+    const disclosure = formatCustomRunnerDisclosure({
+      executable: '"/Users/someone/.local/bin/review-bot"',
+      argv: ['"--diff"'],
+      contract: 'direct',
+      cwd: 'Project directory',
+      stage: 'None',
+      environment: ['"REVIEW_BOT_TOKEN"'],
+      environmentAccess: 'Declared environment references only',
+      filesystem: 'Not an OS sandbox; the process can access files available to the current user',
+      network: 'Network access is not restricted',
+      result: 'Reviewed workspace diff; it writes directly into the project directory',
+    });
+    const pending = openApprovalPrompt({
+      tier: 'confirm',
+      actionClass: 'runner_trust',
+      actionDescription: `${disclosure}\n\nExact confirmation stores an owner-only reusable receipt.`,
+      phase: 'planning',
+    });
+    const ui = renderPanel(
+      { state: { kind: 'preparing' }, approvalPrompt: <ApprovalPrompt /> },
+      { cols: 60, rows: 18 },
+    );
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+
+    const lines = stripAnsiStyles(ui.lastFrame()).replace(/\n$/, '').split('\n');
+    expect(lines.length).toBeLessThanOrEqual(18);
+    const frame = lines.join('\n');
+    expect(frame).toContain('Trust and run a configured runner:');
+    expect(frame).toContain('Executable:');
+    expect(frame).toContain('Arguments: "--diff"');
+    expect(frame).toContain('Deny');
+    ui.stdin.write(ESC);
+    await pending;
+    approvalPromptStore.__testReset();
     ui.unmount();
   });
 
