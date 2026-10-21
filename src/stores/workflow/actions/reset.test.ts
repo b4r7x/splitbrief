@@ -29,8 +29,8 @@ describe('resetWorkflow', () => {
   it('closes a pending tiered approval prompt with the cancelled decision', async () => {
     const pending = openApprovalPrompt({
       tier: 'confirm',
-      actionClass: 'network',
-      actionDescription: 'push to origin',
+      actionClass: 'package_change',
+      actionDescription: 'package.json',
       phase: 'implementing',
     });
     expect(approvalPromptStore.get().status).toBe('pending');

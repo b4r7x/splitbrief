@@ -272,7 +272,7 @@ describe('ActionClassSchema', () => {
   it('accepts "validation", the class of an npm run check the approved plan confirms', () => {
     expect(ActionClassSchema.parse('validation')).toBe('validation');
   });
-  it('accepts "network", which a custom runner admission still asks about', () => {
-    expect(ActionClassSchema.parse('network')).toBe('network');
+  it('accepts "runner_trust", the class of the request to trust a configured runner', () => {
+    expect(ActionClassSchema.parse('runner_trust')).toBe('runner_trust');
   });
 });

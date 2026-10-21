@@ -362,6 +362,7 @@
 - With task reviews on, the heading of a final review counts the same fix cycles as the halt below it, also for the review Apply starts when your checkout changed a file the run also changed. Before, the heading could read "after 1 fix cycle" while the halt read "after 4 fix cycles".
 - An earlier attempt of a brief that the run stopped or redid now shows the stop mark `×`, so only the brief the run works on shows as in progress. Before, the earlier attempt showed the same in-progress mark as the live brief.
 - The refusal for an `agent` runner from the project config now reads "an agent runner command". Before, it read "a agent runner command".
+- The panel that asks you to trust a `shell` or `agent` runner from the project config is now titled "Trust and run a configured runner:" and names the runner command. Before, it was titled "Network access:" and labelled "confirm file write".
 
 ## [0.1.0] - 2026-08-07
 

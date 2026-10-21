@@ -996,8 +996,8 @@ describe('useAppKeys: ESC stop ladder', () => {
     const exit = vi.fn();
     void openApprovalPrompt({
       tier: 'confirm',
-      actionClass: 'network',
-      actionDescription: 'push to origin',
+      actionClass: 'package_change',
+      actionDescription: 'package.json',
       phase: 'implementing',
     });
     const ui = renderFeature(<Harness exit={exit} />);
@@ -1179,8 +1179,8 @@ describe('useAppKeys: keystroke binding', () => {
     const exit = vi.fn();
     void openApprovalPrompt({
       tier: 'confirm',
-      actionClass: 'network',
-      actionDescription: 'push to origin',
+      actionClass: 'package_change',
+      actionDescription: 'package.json',
       phase: 'implementing',
     });
     const ui = renderFeature(<Harness exit={exit} />);

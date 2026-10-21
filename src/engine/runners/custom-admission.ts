@@ -263,7 +263,7 @@ export async function prepareCustomRunnerAdmission(
 
     const request: TieredApprovalRequest = {
       tier: 'confirm',
-      actionClass: 'network',
+      actionClass: 'runner_trust',
       actionDescription: `${formatCustomRunnerDisclosure(disclosed.disclosure)}\n\n${RECEIPT_CONFIRMATION_NOTICE}`,
       phase: capturedOptions.phase,
       ...(capturedOptions.taskId === undefined ? {} : { taskId: capturedOptions.taskId }),

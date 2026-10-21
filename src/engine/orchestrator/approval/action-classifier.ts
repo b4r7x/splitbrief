@@ -28,7 +28,7 @@ export const DEFAULT_TIER_MAP: Record<ActionClass, ApprovalTier> = {
   validation: 'auto',
   write_out_of_scope: 'auto',
   destructive: 'confirm',
-  network: 'confirm',
+  runner_trust: 'confirm',
   package_change: 'confirm',
   sensitive_change: 'confirm',
 };

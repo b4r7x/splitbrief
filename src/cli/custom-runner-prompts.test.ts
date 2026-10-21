@@ -13,7 +13,7 @@ describe('custom runner CLI prompts', () => {
     const response = await promptCustomRunnerDisclosure({
       request: {
         tier: 'confirm',
-        actionClass: 'network',
+        actionClass: 'runner_trust',
         actionDescription: 'Canonical configured-runner disclosure',
         phase: 'planning',
       },
@@ -39,7 +39,7 @@ describe('custom runner CLI prompts', () => {
     const response = await promptCustomRunnerDisclosure({
       request: {
         tier: 'confirm',
-        actionClass: 'network',
+        actionClass: 'runner_trust',
         actionDescription: 'Canonical configured-runner disclosure',
         phase: 'planning',
       },

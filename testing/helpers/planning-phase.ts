@@ -145,9 +145,9 @@ export function seedRejectionEvidence(projectDir: string, sessionId: string): vo
   ledger = recordRejectionEvidence({
     ledger,
     tier: 'sticky',
-    actionClass: 'network',
-    actionDescription: 'fetch https://api.example.com/audit',
-    reason: 'user denied network access',
+    actionClass: 'sensitive_change',
+    actionDescription: 'write .github/workflows/audit.yml',
+    reason: 'user denied the CI change',
   });
   writeEvidenceLedger({ projectDir, sessionId }, ledger);
 }

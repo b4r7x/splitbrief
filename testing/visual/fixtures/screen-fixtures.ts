@@ -32,6 +32,8 @@ import {
   REPO_LOCAL_RUNNER_REFUSAL,
 } from '../../../src/engine/runners/prepare-execution/evaluate-candidate.js';
 import { blockedCheck } from '../../../src/engine/runners/prepare-execution/runner-candidates.js';
+import { formatCustomRunnerDisclosure } from '../../../src/engine/runners/custom-runner-disclosure.js';
+import { openApprovalPrompt } from '../../../src/stores/approval-prompt/prompt.js';
 import type { CliToolDetection, DetectedModel } from '../../../src/core/discovery/detection.js';
 import {
   nativeCliCatalogToDetectedModels,
@@ -856,6 +858,40 @@ function createHomePreparationBlockedFixture(): FixtureLifecycle {
 }
 
 /**
+ * The first start of a runner the project config declares: the check waits on the trust panel. The
+ * disclosure is the real formatter's output for a project `agent` command, so the panel
+ * shows the rows an operator really reads.
+ */
+function createHomePreparationRunnerTrustFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      submitHeldCheck('start');
+      const disclosure = formatCustomRunnerDisclosure({
+        executable: '"tools/review-bot"',
+        argv: ['"--diff"'],
+        contract: 'direct',
+        cwd: 'Project directory',
+        stage: 'None',
+        environment: ['"REVIEW_BOT_TOKEN"'],
+        environmentAccess: 'Declared environment references only',
+        filesystem: 'Not an OS sandbox; the process can access files available to the current user',
+        network: 'Network access is not restricted',
+        result: 'Reviewed workspace diff; it writes directly into the project directory',
+      });
+      void openApprovalPrompt({
+        tier: 'confirm',
+        actionClass: 'runner_trust',
+        actionDescription: `${disclosure}\n\nExact confirmation stores an owner-only reusable receipt.`,
+        phase: 'planning',
+      });
+    },
+    teardown: home.teardown,
+  };
+}
+
+/**
  * The readiness blocker that recommends the checkout. The check comes from the real
  * `buildIsolationChecks` against a throwaway workspace manifest, so the panel shows the summary
  * and the fix line an operator really reads, and the report is filed in the `repo` section with
@@ -1299,6 +1335,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-preparation-checkout-warning'), createHomePreparationCheckoutWarningFixture],
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
   [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
+  [scenarioId('home-preparation-runner-trust'), createHomePreparationRunnerTrustFixture],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
   [scenarioId('home-palette-prefill-draft'), () => createPalettePrefillFixture(false)],
   [scenarioId('home-palette-prefill-cleared'), () => createPalettePrefillFixture(true)],
