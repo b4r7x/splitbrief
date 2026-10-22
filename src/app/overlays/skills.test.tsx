@@ -187,7 +187,7 @@ describe('SkillsPicker', () => {
     await tick(20);
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('alphabeta');
+    expect(frame).toContain('alpha beta');
     expect(frame).toContain('safedesc');
     expect(frame).not.toContain('owned');
     expect(frame).not.toContain('\u001b');
