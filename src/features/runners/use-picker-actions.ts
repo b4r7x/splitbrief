@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { preparationStore } from '../../stores/navigation/preparation.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
@@ -26,7 +27,7 @@ import {
   PLANNER_INHERITANCE,
 } from '../../core/crew/identity.js';
 import { seatFallback } from '../../core/crew/fallback.js';
-import { seatChangeWords } from '../../core/crew/seats.js';
+import { seatChangeWords, type SeatChangePoint } from '../../core/crew/seats.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 
@@ -212,18 +213,25 @@ function writeSeatAuthChannel(
 }
 
 /**
- * A seat saved under a run this process is driving lands at the next brief boundary,
- * where the run re-prepares from the saved config.
+ * Where a seat saved under a run this process drives takes over: at a brief boundary, where the
+ * run re-prepares from the saved config. A start still checking its tools runs on the config it
+ * read first, so its first boundary takes the seat.
  */
-function changesRunningSeat(before: Config, after: Config): boolean {
+function runningSeatChangePoint(before: Config, after: Config): SeatChangePoint | undefined {
+  if (
+    seatIdentityChanges(seatIdentitiesFromConfig(before), seatIdentitiesFromConfig(after))
+      .length === 0
+  ) {
+    return undefined;
+  }
+  const preparation = preparationStore.get();
+  if (preparation.kind === 'checking' && preparation.origin === 'start') {
+    return { after: 'next-brief' };
+  }
   const route = routerStore.get();
-  return (
-    route.screen === 'workflow' &&
-    route.execution.kind === 'local' &&
-    takesSeatAtBoundary() &&
-    seatIdentityChanges(seatIdentitiesFromConfig(before), seatIdentitiesFromConfig(after)).length >
-      0
-  );
+  return route.screen === 'workflow' && route.execution.kind === 'local' && takesSeatAtBoundary()
+    ? selectSeatChangePoint(tasksStore.get(), lifecycleStore.get().phase)
+    : undefined;
 }
 
 /**
@@ -329,14 +337,12 @@ export function usePickerActions(opts: {
     try {
       const result = await deps.saveConfig(updated);
       if (reportConfigSaveFailure(result)) return;
+      const changePoint = runningSeatChangePoint(config, updated);
       feedbackStore.setMessage(
         [
-          changesRunningSeat(config, updated)
-            ? seatChangeWords(
-                `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat`,
-                selectSeatChangePoint(tasksStore.get(), lifecycleStore.get().phase),
-              )
-            : formatConfigSaveSuccess(subject, result),
+          changePoint === undefined
+            ? formatConfigSaveSuccess(subject, result)
+            : seatChangeWords(`${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat`, changePoint),
           ...(notice === undefined ? [] : [notice]),
         ].join(SOFT_SEP),
       );
