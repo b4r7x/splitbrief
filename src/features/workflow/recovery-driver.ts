@@ -228,9 +228,6 @@ export function createRecoveryDriver(
       };
     }
 
-    // The halt is open before any action applies: a seat picker opened for it saves to the
-    // profile it names, also when a reopened run applies its selected action at once.
-    openRecoveryNotice(issue, at);
     const bus = createRecoveryBus({ projectDir, sessionId, sink });
 
     // `revise` carries the operator's words to the planner, so the panel asks for
@@ -279,6 +276,9 @@ export function createRecoveryDriver(
         ) {
           kept.push(configured);
         }
+        // The picker reads the open halt and saves to the profile it names, also when a
+        // reopened run replays this switch at once.
+        openRecoveryNotice(issue, at);
         const candidate = await pickSwappedSeat(
           offer.seat,
           offered,
@@ -374,6 +374,10 @@ export function createRecoveryDriver(
         feedbackStore.setError(NO_CORRECTION_MESSAGE);
       }
     }
+
+    // The halt is open only while it waits on the operator: an action the entry applies at once
+    // — a reopened run's selected action, words only revise can carry — paints no halt.
+    openRecoveryNotice(issue, at);
 
     if (!retentionNoticeHandled.current) {
       await publishRetainedWorkspaceNotice({ ...ref, state, bus });

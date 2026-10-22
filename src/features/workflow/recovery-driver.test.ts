@@ -128,6 +128,16 @@ async function closeSeatPicker(
   overlayStore.close();
 }
 
+/** Records every halt the driver opens for the rest of the screen until the returned stop runs. */
+function recordNoticeOpens(): { opens: RecoveryIssue[]; stop: () => void } {
+  const opens: RecoveryIssue[] = [];
+  const stop = recoveryNoticeStore.subscribe(() => {
+    const { issue } = recoveryNoticeStore.get();
+    if (issue !== null) opens.push(issue);
+  });
+  return { opens, stop };
+}
+
 function runDriver(
   prepared: PreparedExecution,
   state: WorkflowState,
@@ -343,15 +353,56 @@ describe('createRecoveryDriver', () => {
       selectedAction: 'retry-same-worker',
     });
     const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+    const notices = recordNoticeOpens();
 
     const result = await runDriver(prepared, state, inputMode);
+    notices.stop();
 
     expect(feedbackAtPrompt).toHaveLength(0);
+    expect(notices.opens).toEqual([]);
     expect(result.shouldRun).toBe(true);
     if (result.shouldRun) {
       expect(result.state.pendingRecovery).toBeUndefined();
       expect(result.state.tasks[0]?.status).toBe('pending');
     }
+  });
+
+  it('opens the halt in the same tick the run enters it, so no frame paints the run without it', async () => {
+    const { prepared, state } = setupSession();
+    const { inputMode } = makeInputMode(['skip-current-task']);
+
+    const pending = runDriver(prepared, state, inputMode);
+    const openAtEntry = recoveryNoticeStore.get().issue;
+    await pending;
+
+    expect(openAtEntry?.reason).toBe(state.pendingRecovery?.reason);
+  });
+
+  it('holds the halt open while a reopened run replays a seat switch in the picker', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code', model: 'opus' }] },
+      status: 'applying',
+      selectedAction: 'switch-seat',
+    });
+    const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+    const pending = runDriver(prepared, state, inputMode);
+    await vi.waitFor(() => {
+      expect(overlayStore.get().active).toBe('implementer-picker');
+    });
+    expect(recoveryNoticeStore.get().issue?.reason).toBe('runner-usage-limit');
+    await closeSeatPicker(prepared, { kind: 'cli', tool: 'claude-code', model: 'opus' });
+    const result = await pending;
+
+    expect(feedbackAtPrompt).toHaveLength(0);
+    expect(result.shouldRun && result.switchSeat?.candidate).toEqual({
+      tool: 'claude-code',
+      model: 'opus',
+    });
   });
 
   it('hands a switch-seat choice back to the run and leaves the halt pending', async () => {
@@ -1119,6 +1170,7 @@ describe('createRecoveryDriver', () => {
   it('takes the words a failed review was continued with as its correction, without asking', async () => {
     const { prepared, state } = setupFailedReview();
     const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+    const notices = recordNoticeOpens();
 
     const result = await runDriver(
       prepared,
@@ -1126,8 +1178,10 @@ describe('createRecoveryDriver', () => {
       inputMode,
       plainUserMessage('log the error and rethrow'),
     );
+    notices.stop();
 
     expect(feedbackAtPrompt).toHaveLength(0);
+    expect(notices.opens).toEqual([]);
     expect(result.shouldRun).toBe(true);
     if (!result.shouldRun) return;
     expect(result.correctionTaken).toBe(true);
