@@ -1,4 +1,5 @@
 import type { TokenDelta } from '../../core/schemas/tokens.js';
+import { toProviderTokenDelta } from '../calls/usage.js';
 import { isRecord, optionalString } from '../../utils/type-guards.js';
 import type { CliProtocolEvent } from '../runners/cli-tools/contract.js';
 
@@ -39,14 +40,12 @@ function tokenDelta(raw: unknown): TokenDelta | null {
   if (inputTokens === undefined || output === undefined) return null;
   const reasoningTokens = tokenCount(raw.thinking_tokens);
   const cacheReadTokens = tokenCount(raw.cache_read_tokens);
-  const outputTokens = output - (reasoningTokens ?? 0);
-  if (outputTokens < 0) return null;
-  return {
+  return toProviderTokenDelta({
     inputTokens,
-    outputTokens,
+    outputTokens: output - (reasoningTokens ?? 0),
     ...(reasoningTokens !== undefined && { reasoningTokens }),
     ...(cacheReadTokens !== undefined && { cacheReadTokens }),
-  };
+  });
 }
 
 function parseToolStep(step: Record<string, unknown>): readonly CliProtocolEvent[] {

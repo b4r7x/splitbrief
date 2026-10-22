@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- `/usage` and `/copy` no longer call the token totals of a new run with an Antigravity, OpenCode or Kilo Code seat `legacy; coverage unknown`. Each count these tools report now reads as reported, and a count they do not send reads as not reported.
 - Cursor Agent CLI on Linux reads as signed in after `cursor-agent login`, and a token it refreshes during a run is kept in your own sign-in file.
 - After Show diff opens the patch in less or in your editor in fullscreen mode, the line that says how to return no longer stays in your shell after SPLITBRIEF exits.
 - OpenCode 2 signed in with `opencode auth login` now reads as signed in. Before, the model picker marked its `opencode/…` models `needs sign-in`, and a run on them did not start, with "OpenCode CLI is not signed in". Its models on the other providers it is signed in to now read `signed in · stored credential` instead of `available`.

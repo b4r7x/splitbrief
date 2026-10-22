@@ -558,7 +558,18 @@ describe('OpenCode JSON envelope adapter', () => {
     );
     expect(usage).toContainEqual({
       type: 'usage',
-      usage: { inputTokens: 5, outputTokens: 2, reasoningTokens: 1 },
+      usage: {
+        inputTokens: 5,
+        outputTokens: 2,
+        reasoningTokens: 1,
+        counterCoverage: {
+          input: 'reported',
+          output: 'reported',
+          cacheRead: 'missing',
+          cacheCreate: 'missing',
+          reasoning: 'reported',
+        },
+      },
       semantics: 'delta',
     });
 
@@ -675,7 +686,17 @@ describe('OpenCode JSON envelope adapter', () => {
       type: 'result',
       status: 'failed',
       text: '',
-      usage: { inputTokens: 7, outputTokens: 2 },
+      usage: {
+        inputTokens: 7,
+        outputTokens: 2,
+        counterCoverage: {
+          input: 'reported',
+          output: 'reported',
+          cacheRead: 'missing',
+          cacheCreate: 'missing',
+          reasoning: 'missing',
+        },
+      },
       nativeSessionId: 'ses-open',
       error: { code: 'opencode-error', message: 'APIError: Upstream stream ended' },
       partial: true,
@@ -729,7 +750,18 @@ describe('OpenCode JSON envelope adapter', () => {
       type: 'result',
       status: 'completed',
       text: 'final message',
-      usage: { inputTokens: 5, outputTokens: 3, reasoningTokens: 1 },
+      usage: {
+        inputTokens: 5,
+        outputTokens: 3,
+        reasoningTokens: 1,
+        counterCoverage: {
+          input: 'reported',
+          output: 'reported',
+          cacheRead: 'missing',
+          cacheCreate: 'missing',
+          reasoning: 'reported',
+        },
+      },
       nativeSessionId: 'ses-final',
       error: null,
       partial: false,
