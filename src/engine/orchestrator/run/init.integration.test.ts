@@ -1606,6 +1606,50 @@ describe('initializeWorkflow — seat record', () => {
     });
   });
 
+  it('records a seat moved on a BUILD profile other than the default as a crew change', async () => {
+    await withTempDir('splitbrief-init-seat-profile', async (projectDir) => {
+      const feature = 'resume on a moved profile';
+      const sessionId = 'session-init-seat-profile';
+      const events: EngineEvent[] = [];
+      const profiles = (small: { tool: 'antigravity' | 'claude-code'; model: string }) => ({
+        implementerProfiles: {
+          default: 'big',
+          profiles: {
+            big: { kind: 'cli' as const, tool: 'claude-code' as const, model: 'haiku' },
+            small: { kind: 'cli' as const, ...small },
+          },
+        },
+      });
+      ensureSessionDir(projectDir, sessionId);
+      writeSeatIdentities(
+        { projectDir, sessionId },
+        seatIdentitiesFromConfig(
+          makeConfig(profiles({ tool: 'antigravity', model: 'gemini-nonexistent-9' })),
+        ),
+      );
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        savedState: { ...createInitialState(feature), phase: 'implementing' },
+        eventSink: (e) => events.push(e),
+        configOverrides: profiles({ tool: 'claude-code', model: 'haiku' }),
+      });
+
+      expect(init.ok).toBe(true);
+      expect(events.filter((e) => e.type === 'seat_switched')).toEqual([
+        expect.objectContaining({
+          seat: 'build',
+          from: expect.stringContaining('Google Antigravity CLI'),
+          to: expect.stringContaining('Claude Code CLI'),
+          cause: 'crew-changed',
+          auto: false,
+        }),
+      ]);
+    });
+  });
+
   it("keeps the plan seat's session when its record left out the level its id spells", async () => {
     await withTempDir('splitbrief-init-seat-id-level', async (projectDir) => {
       const feature = 'resume on the same crew';

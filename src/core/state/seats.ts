@@ -11,7 +11,14 @@
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { Config } from '../schemas/config.js';
-import { CREW_SEAT_IDS, CREW_SEAT_LABELS, sameSeatIds, seatIdsOf } from '../crew/identity.js';
+import {
+  CREW_SEAT_IDS,
+  CREW_SEAT_LABELS,
+  formatSeatIdentity,
+  sameSeatIds,
+  seatIdsOf,
+} from '../crew/identity.js';
+import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import type { CrewSeatId, SeatIds } from '../crew/identity.js';
 import { deriveCrewSeats } from '../crew/seats.js';
 import { RUNNER_KINDS } from '../schemas/enums.js';
@@ -49,6 +56,13 @@ export const SeatIdentitiesSchema = z.object({
    * reviewer set to the planner's tool and model has the same ids. Records written before it have none.
    */
   reviewFollowsPlan: z.boolean().optional(),
+  /**
+   * The BUILD profiles other than the default, by name: a brief routed to one runs on its seat, so
+   * a move there is a move of the BUILD seat too. Absent when the config names no other profile.
+   */
+  buildProfiles: z
+    .record(z.string(), z.object({ identity: z.string(), ids: SeatIdsSchema }))
+    .optional(),
 });
 
 export type SeatIdentities = z.infer<typeof SeatIdentitiesSchema>;
@@ -63,6 +77,8 @@ export type SeatChange = Readonly<{
   after: string;
   beforeIds?: SeatIds | undefined;
   afterIds?: SeatIds | undefined;
+  /** The BUILD profile that moved, when it is not the default one. */
+  profile?: string | undefined;
 }>;
 
 /** The crew as the surfaces spell it: `displayNames` are the catalog labels the crew rows show. */
@@ -71,6 +87,9 @@ export function seatIdentitiesFromConfig(
   displayNames?: Partial<Record<CrewSeatId, string>>,
 ): SeatIdentities {
   const [plan, build, review] = deriveCrewSeats({ config, displayNames });
+  const otherProfiles = resolveImplementerProfiles(config).profiles.filter(
+    (profile) => !profile.isDefault,
+  );
   return {
     plan: plan.model,
     build: build.model,
@@ -81,6 +100,17 @@ export function seatIdentitiesFromConfig(
       review: seatIdsOf(review.runner),
     },
     reviewFollowsPlan: review.source === 'planner',
+    ...(otherProfiles.length > 0 && {
+      buildProfiles: Object.fromEntries(
+        otherProfiles.map((profile) => [
+          profile.name,
+          {
+            identity: formatSeatIdentity({ seat: profile.config }),
+            ids: seatIdsOf(profile.config),
+          },
+        ]),
+      ),
+    }),
   };
 }
 
@@ -149,6 +179,19 @@ export function seatIdentityChanges(
       ...(current.ids !== undefined && { afterIds: current.ids[seat] }),
     });
   }
+  // A profile only one side names was added or removed, which moves no brief's seat.
+  for (const [profile, before] of Object.entries(recorded.buildProfiles ?? {})) {
+    const after = current.buildProfiles?.[profile];
+    if (after === undefined || sameSeatIds(before.ids, after.ids)) continue;
+    changes.push({
+      seat: 'build',
+      before: before.identity,
+      after: after.identity,
+      beforeIds: before.ids,
+      afterIds: after.ids,
+      profile,
+    });
+  }
   return changes;
 }
 
@@ -188,6 +231,9 @@ export function reconcileSeatIdentities(
   const orderChanged = recorded !== null && recorded.switchCount !== switchCount;
   const followChanged =
     recorded !== null && recorded.reviewFollowsPlan !== current.reviewFollowsPlan;
+  const profilesChanged =
+    recorded !== null &&
+    JSON.stringify(recorded.buildProfiles) !== JSON.stringify(current.buildProfiles);
   // A record written before the ids, or their kinds, were kept gains them without a notice, so
   // the next move is named on both sides; a catalog label that changed is re-spelled the same way,
   // and so is a review seat that starts or stops following PLAN on the same tool and model.
@@ -197,7 +243,8 @@ export function reconcileSeatIdentities(
     missingIds ||
     missingKinds ||
     orderChanged ||
-    followChanged
+    followChanged ||
+    profilesChanged
   ) {
     writeSeatIdentities(ref, current);
   }

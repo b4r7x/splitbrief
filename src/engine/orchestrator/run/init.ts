@@ -281,7 +281,13 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         typeof recordedSwitch.to !== 'string' &&
         sameSeatCandidate(
           recordedSwitch.to,
-          seatCandidateOfRunner(readActiveRunner({ config, role: CREW_SEAT_ROLES[change.seat] })),
+          seatCandidateOfRunner(
+            readActiveRunner({
+              config,
+              role: CREW_SEAT_ROLES[change.seat],
+              profile: change.profile,
+            }),
+          ),
         );
       if (!recordedChange) {
         const labelled = labelSeatChange(change, modelCache);
