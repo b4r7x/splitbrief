@@ -55,6 +55,13 @@ describe('parseOpencodeLine', () => {
       reasoningTokens: 32,
       cacheReadTokens: 0,
       cacheCreateTokens: 0,
+      counterCoverage: {
+        input: 'reported',
+        output: 'reported',
+        cacheRead: 'reported',
+        cacheCreate: 'reported',
+        reasoning: 'reported',
+      },
     });
     expect(result.sessionId).toBe('ses_13f89223effeq85h7RlKmjsV3M');
   });
@@ -217,6 +224,17 @@ describe('parseOpencodeLine', () => {
         },
       ],
     });
+  });
+
+  it('skips a step_finish whose token counts are not counts, with a warning', () => {
+    const result = parseOpencodeLine(
+      JSON.stringify({
+        type: 'step_finish',
+        part: { type: 'step-finish', tokens: { input: -3, output: 10 } },
+      }),
+    );
+    expect(result.usage).toBeUndefined();
+    expect(result.warning?.[0]?.code).toBe('malformed_opencode');
   });
 
   it('ignores the legacy top-level text/usage shapes that opencode never emits', () => {

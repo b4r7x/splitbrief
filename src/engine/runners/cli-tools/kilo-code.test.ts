@@ -376,7 +376,18 @@ describe('Kilo Code planner JSON adapter', () => {
       ),
     ).toContainEqual({
       type: 'usage',
-      usage: { inputTokens: 5, outputTokens: 2, reasoningTokens: 1 },
+      usage: {
+        inputTokens: 5,
+        outputTokens: 2,
+        reasoningTokens: 1,
+        counterCoverage: {
+          input: 'reported',
+          output: 'reported',
+          cacheRead: 'missing',
+          cacheCreate: 'missing',
+          reasoning: 'reported',
+        },
+      },
       semantics: 'delta',
     });
     expect(
@@ -495,7 +506,18 @@ describe('Kilo Code terminal outcomes', () => {
       type: 'result',
       status: 'completed',
       text: 'final plan',
-      usage: { inputTokens: 5, outputTokens: 3, reasoningTokens: 1 },
+      usage: {
+        inputTokens: 5,
+        outputTokens: 3,
+        reasoningTokens: 1,
+        counterCoverage: {
+          input: 'reported',
+          output: 'reported',
+          cacheRead: 'missing',
+          cacheCreate: 'missing',
+          reasoning: 'reported',
+        },
+      },
       nativeSessionId: 'ses-final',
       error: null,
       partial: false,
@@ -536,7 +558,17 @@ describe('Kilo Code terminal outcomes', () => {
         type: 'result',
         status: 'failed',
         text: '',
-        usage: { inputTokens: 7, outputTokens: 2 },
+        usage: {
+          inputTokens: 7,
+          outputTokens: 2,
+          counterCoverage: {
+            input: 'reported',
+            output: 'reported',
+            cacheRead: 'missing',
+            cacheCreate: 'missing',
+            reasoning: 'missing',
+          },
+        },
         nativeSessionId: 'ses-kilo',
         error: { code: 'kilo-code-error', message: 'APIError: Upstream stream ended' },
         partial: true,

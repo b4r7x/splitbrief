@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { RunnerCallCounterCoverage } from '../../core/runner-call-contract.js';
+import { createInitialState } from '../../core/state/machine.js';
+import { addUsage } from '../orchestrator/tokens.js';
 import type { CliProtocolEvent } from '../runners/cli-tools/contract.js';
 import { parseAntigravityLine } from './parse-antigravity.js';
 
@@ -9,6 +12,15 @@ const FIXTURES = join(import.meta.dirname, '../../../testing/fixtures/antigravit
 type ToolUseEvent = Extract<CliProtocolEvent, { type: 'tool-use' }>;
 type UsageEvent = Extract<CliProtocolEvent, { type: 'usage' }>;
 type ResultEvent = Extract<CliProtocolEvent, { type: 'result' }>;
+
+// agy reports input, output, thinking and cache reads; it never reports cache writes.
+const AGY_COVERAGE: RunnerCallCounterCoverage = {
+  input: 'reported',
+  output: 'reported',
+  cacheRead: 'reported',
+  cacheCreate: 'missing',
+  reasoning: 'reported',
+};
 
 function fixtureEvents(name: string): readonly CliProtocolEvent[] {
   return readFileSync(join(FIXTURES, name), 'utf8')
@@ -97,13 +109,25 @@ describe('parseAntigravityLine', () => {
       {
         type: 'usage',
         semantics: 'delta',
-        usage: { inputTokens: 13888, outputTokens: 1, reasoningTokens: 84, cacheReadTokens: 0 },
+        usage: {
+          inputTokens: 13888,
+          outputTokens: 1,
+          reasoningTokens: 84,
+          cacheReadTokens: 0,
+          counterCoverage: AGY_COVERAGE,
+        },
       },
       {
         type: 'result',
         status: 'completed',
         text: 'ok\n',
-        usage: { inputTokens: 13888, outputTokens: 1, reasoningTokens: 84, cacheReadTokens: 0 },
+        usage: {
+          inputTokens: 13888,
+          outputTokens: 1,
+          reasoningTokens: 84,
+          cacheReadTokens: 0,
+          counterCoverage: AGY_COVERAGE,
+        },
         nativeSessionId: 'df8f4fa7-413a-4ccd-b70f-908f44494fa6',
         error: null,
         partial: false,
@@ -119,7 +143,13 @@ describe('parseAntigravityLine', () => {
     expect(deltas[0]).toEqual({
       type: 'usage',
       semantics: 'delta',
-      usage: { inputTokens: 14018, outputTokens: 76, reasoningTokens: 674, cacheReadTokens: 0 },
+      usage: {
+        inputTokens: 14018,
+        outputTokens: 76,
+        reasoningTokens: 674,
+        cacheReadTokens: 0,
+        counterCoverage: AGY_COVERAGE,
+      },
     });
     const summed = deltas.reduce(
       (total, event) => ({
@@ -130,13 +160,25 @@ describe('parseAntigravityLine', () => {
       }),
       { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 },
     );
-    expect(terminalOf(events)?.usage).toEqual(summed);
+    expect(terminalOf(events)?.usage).toEqual({ ...summed, counterCoverage: AGY_COVERAGE });
     expect(summed).toEqual({
       inputTokens: 59864,
       outputTokens: 272,
       reasoningTokens: 999,
       cacheReadTokens: 0,
     });
+  });
+
+  it('says which counters agy reports, so the seat total of a new run is not a legacy record', () => {
+    const events = fixtureEvents('stream-json.ndjson');
+    for (const event of usages(events)) expect(event.usage.counterCoverage).toEqual(AGY_COVERAGE);
+    expect(terminalOf(events)?.usage?.counterCoverage).toEqual(AGY_COVERAGE);
+
+    const state = usages(events).reduce(
+      (current, event) => addUsage(current, 'implementer', event.usage),
+      createInitialState('feature'),
+    );
+    expect(state.tokenUsage.implementerCoverage).toEqual(AGY_COVERAGE);
   });
 
   it('carries a json-schema call structured_output on the completed terminal', () => {
