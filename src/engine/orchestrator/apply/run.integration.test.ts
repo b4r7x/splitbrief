@@ -36,6 +36,7 @@ import { applyBackupDir, readApplyBackup, writeApplyBackup } from './backup.js';
 import * as merge from './merge.js';
 import { restoreApplyBackup } from './restore.js';
 import { runApply } from './run.js';
+import { bindApplyHandOffs } from './hand-off.js';
 import { acquireLiveness } from '../run/liveness.js';
 import { activeApply } from '../session-lifecycle/shutdown.js';
 import { readWorkspaceRecord } from '../isolation/retention.js';
@@ -1096,7 +1097,7 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
         { path: 'a.txt', checkoutHunks: expect.stringContaining('+THEIRS') },
       ]);
       expect(saved.applyIntegrated).toEqual([
-        { path: 'a.txt', checkout: `file:${sha256Hex(theirs)}:644` },
+        { path: 'a.txt', checkout: `file:${sha256Hex(theirs)}:644`, workspace: null },
       ]);
       expect(saved.pendingTriage).toEqual({
         inputs: [
@@ -1134,7 +1135,7 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       );
       expect(saved.pendingTriage).toBeUndefined();
       expect(saved.applyIntegrated).toEqual([
-        { path: 'bin.dat', checkout: `file:${sha256Hex('a\0theirs\n')}:644` },
+        { path: 'bin.dat', checkout: `file:${sha256Hex('a\0theirs\n')}:644`, workspace: null },
       ]);
       expect(saved.applyReview).toBeUndefined();
     });
@@ -1541,5 +1542,134 @@ describe('runApply after a conflict halt', { timeout: 60_000 }, () => {
       expect(read(run.dir, 'bin.dat')).toBe('a\0theirs\n');
       expect(statSync(join(run.dir, 'bin.dat')).mode & 0o777).toBe(0o755);
     });
+  });
+
+  /** The review fails, a fix brief makes `write()`, and the next review passes. */
+  async function fixBriefThenPass(run: ApplyRun, write: () => void): Promise<WorkflowState> {
+    write();
+    const fixed = transition(savedState(run), { type: 'START_FIX_CYCLE' });
+    saveState(
+      { projectDir: run.dir, sessionId: run.sessionId },
+      transition(fixed, { type: 'ALL_DONE' }),
+    );
+    return passIntegrationReview(run);
+  }
+
+  /** A fix brief resolves the conflict markers to `resolution`, and the next review judges it. */
+  async function fixMarkers(run: ApplyRun, resolution: string): Promise<void> {
+    writeFileSync(join(run.ws, 'a.txt'), resolution);
+    const fixed = transition(transition(savedState(run), { type: 'START_FIX_CYCLE' }), {
+      type: 'ALL_DONE',
+    });
+    saveState({ projectDir: run.dir, sessionId: run.sessionId }, fixed);
+    bindApplyHandOffs(
+      { projectDir: run.dir, sessionId: run.sessionId },
+      fixed,
+      await captureReviewedCandidate({
+        projectDir: run.dir,
+        sessionId: run.sessionId,
+        workspace: run.workspace,
+      }),
+    );
+  }
+
+  it("a file resolved to the checkout's version stops Apply again when a later brief writes the run's version", async () => {
+    await withApplyRun({ 'a.txt': 'base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      await haltOnAddedLogo(run);
+      writeFileSync(join(run.ws, 'logo.bin'), CHECKOUT_LOGO);
+      expect((await apply(run, await choose(run, 'retry-same-worker'))).outcome).toBe('review');
+      const passed = await fixBriefThenPass(run, () =>
+        writeFileSync(join(run.ws, 'logo.bin'), RUN_LOGO),
+      );
+
+      const result = await apply(run, passed);
+
+      expect(result.outcome).toBe('halted');
+      expect(savedState(run).pendingRecovery?.files).toEqual(['logo.bin']);
+      expect(readFileSync(join(run.dir, 'logo.bin'))).toEqual(CHECKOUT_LOGO);
+    });
+  });
+
+  it("a binary file set back to the base stops Apply again when a later brief writes the run's version", async () => {
+    await withApplyRun({ 'bin.dat': 'a\0base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'bin.dat'), 'a\0ours\n');
+      const state = await reviewedReadyState(run);
+      writeFileSync(join(run.dir, 'bin.dat'), 'a\0theirs\n');
+      expect((await apply(run, state)).outcome).toBe('halted');
+      writeFileSync(join(run.ws, 'bin.dat'), 'a\0base\n');
+      expect((await apply(run, await choose(run, 'retry-same-worker'))).outcome).toBe('review');
+      const passed = await fixBriefThenPass(run, () =>
+        writeFileSync(join(run.ws, 'bin.dat'), 'a\0ours\n'),
+      );
+
+      const result = await apply(run, passed);
+
+      expect(result.outcome).toBe('halted');
+      expect(read(run.dir, 'bin.dat')).toBe('a\0theirs\n');
+    });
+  });
+
+  it('a combined version the review passed stops Apply again when a later brief changes it', async () => {
+    await withApplyRun({ 'a.txt': 'base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      await haltOnAddedLogo(run);
+      writeFileSync(join(run.ws, 'logo.bin'), Buffer.concat([RUN_LOGO, CHECKOUT_LOGO]));
+      expect((await apply(run, await choose(run, 'retry-same-worker'))).outcome).toBe('review');
+      const passed = await fixBriefThenPass(run, () =>
+        writeFileSync(join(run.ws, 'logo.bin'), RUN_LOGO),
+      );
+
+      const result = await apply(run, passed);
+
+      expect(result.outcome).toBe('halted');
+      expect(readFileSync(join(run.dir, 'logo.bin'))).toEqual(CHECKOUT_LOGO);
+    });
+  });
+
+  it("conflict markers resolved to keep both sides go back to the review when a later brief drops the checkout's change", async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      const ours = lines('one', 'two', 'OURS', 'four', 'five');
+      writeFileSync(join(run.ws, 'a.txt'), ours);
+      const state = await reviewedReadyState(run);
+      const theirs = lines('one', 'two', 'THEIRS', 'four', 'five');
+      writeFileSync(join(run.dir, 'a.txt'), theirs);
+      expect((await apply(run, state)).outcome).toBe('review');
+      await fixMarkers(run, lines('one', 'two', 'OURS', 'THEIRS', 'four', 'five'));
+      const passed = await fixBriefThenPass(run, () => writeFileSync(join(run.ws, 'a.txt'), ours));
+
+      const result = await apply(run, passed);
+
+      expect(result.outcome).toBe('review');
+      expect(read(run.dir, 'a.txt')).toBe(theirs);
+      expect(read(run.ws, 'a.txt')).toContain('<<<<<<< ours');
+    });
+  });
+
+  it('a marker resolution Apply sent back to the review gets conflict markers again when a later brief changes it', async () => {
+    await withApplyRun(
+      { 'a.txt': FIVE, 'b.txt': lines('x', 'y', 'z') },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        const ours = lines('one', 'two', 'OURS', 'four', 'five');
+        writeFileSync(join(run.ws, 'a.txt'), ours);
+        writeFileSync(join(run.ws, 'b.txt'), lines('X', 'y', 'z'));
+        const state = await reviewedReadyState(run);
+        const theirs = lines('one', 'two', 'THEIRS', 'four', 'five');
+        writeFileSync(join(run.dir, 'a.txt'), theirs);
+        expect((await apply(run, state)).outcome).toBe('review');
+        await fixMarkers(run, lines('one', 'two', 'OURS', 'THEIRS', 'four', 'five'));
+        const resolved = await passIntegrationReview(run);
+        writeFileSync(join(run.dir, 'b.txt'), lines('x', 'y', 'Z'));
+        expect((await apply(run, resolved)).outcome).toBe('review');
+        const passed = await fixBriefThenPass(run, () =>
+          writeFileSync(join(run.ws, 'a.txt'), ours),
+        );
+
+        const result = await apply(run, passed);
+
+        expect(result.outcome).toBe('review');
+        expect(read(run.dir, 'a.txt')).toBe(theirs);
+        expect(read(run.ws, 'a.txt')).toContain('<<<<<<< ours');
+      },
+    );
   });
 });

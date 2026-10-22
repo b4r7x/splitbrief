@@ -60,7 +60,7 @@ async function canWriteWorkspaceEntry(workspaceDir: string, path: string): Promi
 
 export async function mergeApplyStates(
   states: ApplyStates,
-  integrated?: ReadonlyMap<string, string>,
+  integrated?: ReadonlyMap<string, { checkout: string; workspace: string | null }>,
 ): Promise<ApplyMerge> {
   const paths = [
     ...new Set([...states.base.keys(), ...states.ours.keys(), ...states.theirs.keys()]),
@@ -73,9 +73,14 @@ export async function mergeApplyStates(
     const theirs = states.theirs.get(path) ?? { kind: 'absent' };
     const conflict = { path, base, ours, theirs };
     // A file an earlier Apply handed to the workspace takes the workspace
-    // entry while the checkout still holds what that Apply saw; a workspace
-    // back at the base still takes the checkout's side.
-    const handedOff = integrated?.get(path) === entryKey(theirs);
+    // entry while the checkout still holds what that Apply saw and the
+    // workspace still holds the resolution the user made; a workspace back at
+    // the base still takes the checkout's side.
+    const handOff = integrated?.get(path);
+    const handedOff =
+      handOff !== undefined &&
+      handOff.checkout === entryKey(theirs) &&
+      handOff.workspace === entryKey(ours);
     if (sameSideEntry(ours, theirs)) continue;
     // A base without a mode, or without the file, cannot tell which side
     // changed a mode-only difference.

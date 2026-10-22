@@ -300,15 +300,20 @@ export const SeatSwitchRecordSchema = z.object({
 
 export type SeatSwitchRecord = z.infer<typeof SeatSwitchRecordSchema>;
 
-const ApplyIntegratedSchema = z.object({ path: z.string(), checkout: z.string() });
+const ApplyIntegratedSchema = z.object({
+  path: z.string(),
+  checkout: z.string(),
+  workspace: z.string().nullable(),
+});
 
 /**
- * A record saved before `checkout` named only the checkout file's hash, in `checkoutHash`. Without
- * the mode it matches no checkout entry, so that file merges again.
+ * A record saved before `workspace` is bound to no resolution, so it loads as nothing and that
+ * file merges again.
  */
-function foldCheckoutHash(value: unknown): unknown {
-  if (!isRecord(value) || typeof value.checkoutHash !== 'string') return value;
-  return { path: value.path, checkout: `file:${value.checkoutHash}` };
+function dropUnboundRecords(value: unknown): unknown {
+  return Array.isArray(value)
+    ? value.filter((record) => isRecord(record) && 'workspace' in record)
+    : value;
 }
 
 const WorkflowStateFields = {
@@ -434,10 +439,11 @@ const WorkflowStateFields = {
     })
     .optional(),
   /**
-   * Each conflicted file Apply handed to the workspace, with the checkout entry it saw then
-   * (`entryKey`: `absent`, `file:<sha256>:<octal mode>` or `symlink:<target>`).
+   * Each conflicted file Apply handed to the workspace, with the checkout entry it saw then and the
+   * workspace entry the user resolved it to, `null` until the resolution is taken (`entryKey`:
+   * `absent`, `file:<sha256>:<octal mode>` or `symlink:<target>`).
    */
-  applyIntegrated: z.array(z.preprocess(foldCheckoutHash, ApplyIntegratedSchema)).optional(),
+  applyIntegrated: z.preprocess(dropUnboundRecords, z.array(ApplyIntegratedSchema)).optional(),
   closed: z
     .object({
       at: z.string(),

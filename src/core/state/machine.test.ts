@@ -2036,27 +2036,59 @@ describe('the run workspace and Apply', () => {
     expect(fixed.pendingTriage).toBeUndefined();
   });
 
-  it('RECORD_APPLY_INTEGRATED appends handed-off files to the ones already recorded', () => {
+  it('RECORD_APPLY_INTEGRATED replaces the record of a path handed off again', () => {
     const first = transition(ready(), {
       type: 'RECORD_APPLY_INTEGRATED',
-      integrated: [{ path: 'a.txt', checkout: 'file:a' }],
+      integrated: [
+        { path: 'a.txt', checkout: 'file:a', workspace: 'file:ours' },
+        { path: 'b.txt', checkout: 'absent', workspace: 'file:b' },
+      ],
     });
     const next = transition(first, {
       type: 'RECORD_APPLY_INTEGRATED',
-      integrated: [{ path: 'b.txt', checkout: 'absent' }],
+      integrated: [{ path: 'a.txt', checkout: 'file:a2', workspace: null }],
     });
 
     expect(next.applyIntegrated).toEqual([
-      { path: 'a.txt', checkout: 'file:a' },
-      { path: 'b.txt', checkout: 'absent' },
+      { path: 'b.txt', checkout: 'absent', workspace: 'file:b' },
+      { path: 'a.txt', checkout: 'file:a2', workspace: null },
     ]);
   });
 
-  it('a handed-off file saved with its checkout hash reads as a file entry', () => {
-    const saved = { ...ready(), applyIntegrated: [{ path: 'a.txt', checkoutHash: 'hash-a' }] };
+  it("BIND_APPLY_INTEGRATED binds open records and ends the ones at the base or on the checkout's side", () => {
+    const recorded = transition(ready(), {
+      type: 'RECORD_APPLY_INTEGRATED',
+      integrated: [
+        { path: 'bound.txt', checkout: 'file:c', workspace: 'file:kept' },
+        { path: 'run.txt', checkout: 'file:c', workspace: null },
+        { path: 'checkout.txt', checkout: 'file:c', workspace: null },
+        { path: 'base.txt', checkout: 'file:c', workspace: null },
+      ],
+    });
+
+    const bound = transition(recorded, {
+      type: 'BIND_APPLY_INTEGRATED',
+      candidate: { 'bound.txt': 'file:later', 'run.txt': 'file:run', 'checkout.txt': 'file:c' },
+    });
+
+    expect(bound.applyIntegrated).toEqual([
+      { path: 'bound.txt', checkout: 'file:c', workspace: 'file:kept' },
+      { path: 'run.txt', checkout: 'file:c', workspace: 'file:run' },
+    ]);
+  });
+
+  it('a handed-off file saved without its workspace entry loads as no record', () => {
+    const saved = {
+      ...ready(),
+      applyIntegrated: [
+        { path: 'a.txt', checkoutHash: 'hash-a' },
+        { path: 'b.txt', checkout: 'file:b' },
+        { path: 'c.txt', checkout: 'file:c', workspace: null },
+      ],
+    };
 
     expect(WorkflowStateSchema.parse(saved).applyIntegrated).toEqual([
-      { path: 'a.txt', checkout: 'file:hash-a' },
+      { path: 'c.txt', checkout: 'file:c', workspace: null },
     ]);
   });
 

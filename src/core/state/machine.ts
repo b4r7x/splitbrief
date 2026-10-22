@@ -121,6 +121,7 @@ const phaseActions = {
     'REVIEW_DONE',
     'REVIEW_CORRECTION',
     'RECORD_APPLY_RECHECK',
+    'BIND_APPLY_INTEGRATED',
     'RECORD_REVIEW',
     'RECORD_REVIEW_CHECKS',
     'RECORD_TRIAGE',
@@ -135,6 +136,7 @@ const phaseActions = {
     'ACCEPT_AS_IS',
     'APPLY_REVIEW_START',
     'RECORD_APPLY_INTEGRATED',
+    'BIND_APPLY_INTEGRATED',
     'APPLY_START',
     'APPLY_DONE',
     'APPLY_RESTORED',
@@ -573,10 +575,29 @@ export function transition(
       };
     }
 
-    case 'RECORD_APPLY_INTEGRATED':
+    case 'RECORD_APPLY_INTEGRATED': {
+      const paths = new Set(action.integrated.map((record) => record.path));
       return {
         ...state,
-        applyIntegrated: [...(state.applyIntegrated ?? []), ...action.integrated],
+        applyIntegrated: [
+          ...(state.applyIntegrated ?? []).filter((record) => !paths.has(record.path)),
+          ...action.integrated,
+        ],
+      };
+    }
+
+    // A resolution at the run base or on the checkout's side ends its record: Apply merges that
+    // file again from then on.
+    case 'BIND_APPLY_INTEGRATED':
+      return {
+        ...state,
+        applyIntegrated: (state.applyIntegrated ?? []).flatMap((record) => {
+          if (record.workspace !== null) return [record];
+          const workspace = action.candidate[record.path];
+          return workspace === undefined || workspace === record.checkout
+            ? []
+            : [{ ...record, workspace }];
+        }),
       };
 
     case 'RECORD_APPLY_RECHECK':
