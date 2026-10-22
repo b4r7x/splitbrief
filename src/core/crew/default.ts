@@ -3,7 +3,7 @@ import { getRunnerModelName, type RunnerConfig } from '../config/accessors/runne
 import type { SavedCatalogOf } from '../discovery/catalog-read-merge.js';
 import type { CliToolDetection, ProviderDetection } from '../discovery/detection.js';
 import { routeAuthState } from '../runners/route-auth.js';
-import { takesHostModel } from '../providers/automatic-model.js';
+import { seatRouteModel } from '../providers/automatic-model.js';
 import { CLI_TOOL_IDS, cliToolSupportsRole } from '../runners/cli-tool-catalog.js';
 import type { Config } from '../schemas/config.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
@@ -58,9 +58,7 @@ export function detectedSeatReady(runner: RunnerConfig, detection: CrewDetection
             (tool.diagnostic.state === 'unauthenticated' &&
               routeAuthState({
                 tool: tool.tool,
-                model: takesHostModel(runner.model, runner.tool)
-                  ? (tool.selectedModel ?? runner.model)
-                  : runner.model,
+                model: seatRouteModel(runner.model, runner.tool, tool.selectedModel),
                 providerAuth: tool.providerAuth,
                 catalog: detection.cliCatalog?.(tool.tool),
               }).kind === 'configured')),

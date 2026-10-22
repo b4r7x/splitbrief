@@ -227,6 +227,40 @@ describe('deriveFallbackRows on a fallback tool that stores no credential', () =
     expect(rowOf(unserved, 'build').note).toBe('unauthenticated');
     expect(rowOf(unread, 'build').note).toBe('unauthenticated');
   });
+
+  it.each([undefined, 'auto'])(
+    'reads a fallback on model %s against the model the tool selects on this host',
+    (model) => {
+      const autoConfig = makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'codex',
+          model: 'gpt-5',
+          fallback: { tool: 'opencode', ...(model !== undefined && { model }) },
+        },
+      });
+      const selecting = [
+        {
+          ...cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+          selectedModel: 'ollama/llama3',
+        },
+      ];
+
+      const served = deriveFallbackRows({
+        config: autoConfig,
+        cliTools: selecting,
+        cliCatalog: listing(['ollama/llama3']),
+      });
+      const unselected = deriveFallbackRows({
+        config: autoConfig,
+        cliTools,
+        cliCatalog: listing(['ollama/llama3']),
+      });
+
+      expect(rowOf(served, 'build').note).toBeUndefined();
+      expect(rowOf(unselected, 'build').note).toBe('unauthenticated');
+    },
+  );
 });
 
 describe('seatFallback', () => {

@@ -2,6 +2,7 @@ import { readActiveRunner } from '../config/accessors/active-runner.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import type { SavedCatalog, SavedCatalogOf } from '../discovery/catalog-read-merge.js';
 import type { CliToolDetection } from '../discovery/detection.js';
+import { seatRouteModel } from '../providers/automatic-model.js';
 import { isCliToolId } from '../runners/cli-tool-catalog.js';
 import { ROUTE_NEEDS_SIGN_IN, routeAuthState } from '../runners/route-auth.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
@@ -62,8 +63,10 @@ export function fallbackRunner(fallback: SeatFallback): RunnerConfig | undefined
 
 /**
  * Why a halt would not take the fallback. A tool that stores no credential still calls a route its
- * model list serves, so a fallback on such a route is taken. A ready or unverified tool's route
- * that needs a sign-in is refused on every call, so the note names the route word the picker shows.
+ * model list serves, so a fallback on such a route is taken; a fallback on `auto` or with no model
+ * calls the model the tool selects on this host, the same as a seat. A ready or unverified tool's
+ * route that needs a sign-in is refused on every call, so the note names the route word the picker
+ * shows.
  */
 export function fallbackBlockedReason(
   fallback: SeatFallback,
@@ -74,7 +77,7 @@ export function fallbackBlockedReason(
   if (state === undefined || state === 'unavailable') return 'not installed';
   const route = routeAuthState({
     tool: detection?.tool,
-    model: fallback.model,
+    model: seatRouteModel(fallback.model, fallback.tool, detection?.selectedModel),
     providerAuth: detection?.providerAuth,
     catalog,
   });

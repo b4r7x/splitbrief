@@ -13,6 +13,7 @@ import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 import { classifyHaltSignature } from '../../../core/pipeline-spec/halts.js';
+import { seatRouteModel } from '../../../core/providers/automatic-model.js';
 import {
   defaultCliAuthChannel,
   PROVIDER_ORACLE_TOOL_IDS,
@@ -145,7 +146,7 @@ async function fallbackDecision(
   let catalog: SavedCatalog | undefined = savedRouteCatalog(
     remembered,
     fallback.tool,
-    fallback.model,
+    seatRouteModel(fallback.model, fallback.tool, row?.selectedModel),
   );
   const blocked = fallbackBlockedReason(fallback, row, catalog);
   const runner = fallbackRunner(fallback);
@@ -163,7 +164,7 @@ async function fallbackDecision(
     routeReadsCatalog(
       routeAuthState({
         tool: runner.tool,
-        model: runner.model,
+        model: seatRouteModel(runner.model, runner.tool, live?.selectedModel),
         providerAuth: live?.providerAuth,
         catalog,
       }),

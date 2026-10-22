@@ -4199,6 +4199,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'needs sign-in',
       },
       {
+        id: 'overlay-settings-fallback-host-model',
+        title: 'Overlay · settings · an auto fallback on the model its tool selects',
+        marker: 'OpenCode CLI · auto',
+      },
+      {
         id: 'overlay-settings-fallback-catalog',
         title: 'Overlay · settings · matching crew and fallback catalog names',
         marker: 'Fallback',

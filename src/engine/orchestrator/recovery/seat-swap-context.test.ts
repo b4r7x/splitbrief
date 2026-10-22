@@ -497,6 +497,99 @@ describe('loadSeatSwapContext', () => {
     },
   );
 
+  describe('a fallback on the model its tool selects, on a tool that stores no credential', () => {
+    const fallback = { tool: 'opencode' };
+    const runner = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex', fallback } as const;
+    const selecting = {
+      ...cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+      selectedModel: 'ollama/llama3',
+    };
+
+    async function accountHalt(projectDir: string) {
+      const config = makeConfig({ implementer: runner });
+      writeConfig(projectDir, config);
+      const context = await loadSeatSwapContext({
+        modelCache: undefined,
+        projectDir,
+        seat: 'build',
+        runner,
+        config,
+      });
+      const issue = buildSeatDownIssue({
+        seat: 'build',
+        runner,
+        phase: 'implementing',
+        classification: { class: 'account', cause: 'balance' },
+        words: 'Insufficient Balance',
+        seatSwap: context,
+        createdAt: '2026-10-22T12:00:00.000Z',
+      });
+      return { context, issue };
+    }
+
+    it('moves an account halt to it when the saved model list serves the selected model', async () => {
+      const projectDir = createTempDir('seat-swap-fallback-host-model');
+      dirs.push(projectDir);
+      mkdirSync(getSplitbriefPath(projectDir), { recursive: true });
+      await saveDetectionCache({
+        projectDir,
+        snapshot: {
+          contextKey: 'readiness-remembered',
+          fetchedAt: Date.now(),
+          validatedAt: Date.now(),
+          generation: 1,
+          requestId: 1,
+          providers: [],
+          cliTools: [cliDetectionFor('ready', 'codex'), selecting],
+          cliCatalogs: [
+            {
+              tool: 'opencode',
+              models: [{ id: 'ollama/llama3' }],
+              namesProject: true,
+              probedAt: Date.now(),
+            },
+          ],
+        },
+      });
+      live.detectAvailableCliTools.mockResolvedValue([selecting]);
+
+      const { context, issue } = await accountHalt(projectDir);
+
+      expect(context?.fallbackBlockedReason).toBeUndefined();
+      expect(issue.switchSeat?.auto?.candidate).toEqual(fallback);
+    });
+
+    it('moves an account halt to it when a live check and the fresh model list serve the selected model', async () => {
+      const projectDir = createTempDir('seat-swap-fallback-host-model-live');
+      dirs.push(projectDir);
+      live.detectAvailableCliTools.mockResolvedValue([selecting]);
+      evidence.detectRunnerEvidence.mockResolvedValue({
+        providerAuth: { kind: 'empty' },
+        catalog: { kind: 'success', value: [{ id: 'ollama/llama3' }] },
+      });
+
+      const { context, issue } = await accountHalt(projectDir);
+
+      expect(evidence.detectRunnerEvidence).toHaveBeenCalledTimes(1);
+      expect(context?.fallbackBlockedReason).toBeUndefined();
+      expect(issue.switchSeat?.auto?.candidate).toEqual(fallback);
+    });
+
+    it('names it unauthenticated when the tool selects no model', async () => {
+      const projectDir = createTempDir('seat-swap-fallback-no-host-model');
+      dirs.push(projectDir);
+      live.detectAvailableCliTools.mockResolvedValue([
+        cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+      ]);
+
+      const { context, issue } = await accountHalt(projectDir);
+
+      expect(evidence.detectRunnerEvidence).not.toHaveBeenCalled();
+      expect(context?.fallbackBlockedReason).toBe('unauthenticated');
+      expect(issue.switchSeat?.auto).toBeUndefined();
+    });
+  });
+
   it.each([
     ['moves to it', ['ollama-cloud/glm-5'], undefined],
     ['does not move to it', ['anthropic/claude-sonnet-4'], 'needs sign-in'],
