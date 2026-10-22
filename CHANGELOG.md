@@ -378,6 +378,7 @@
 - A message you send to BUILD just as a brief finishes stays queued, and the run goes on. Before, the run stopped with an internal state error.
 - A run that closes after Re-run Apply, or whose Re-run Apply stops on an error, names every BUILD seat its briefs ran on. Before, it named only the last one.
 - After Apply stops on a conflicting file, keeping the run's version in the workspace and choosing Re-run Apply now applies it; a combined version goes through the checks and the review first, then applies. When the run or your checkout changes a file you resolved, a mode change included, Apply merges that file again and stops, or sends the conflict to the review, where both sides changed the same part. Before, Re-run Apply stopped again at once on the same file unless you copied your checkout's version over it, and a file whose conflict markers were resolved could later be applied over your checkout's change without a stop.
+- `/usage` names every tool in full and keeps each rate on as few lines as fit, so Billing stays on screen at a normal terminal size. Before, a tool name longer than 12 characters was cut (`Google Anti…`), and a rate one column too wide broke into one fact per line.
 
 ## [0.1.0] - 2026-08-07
 

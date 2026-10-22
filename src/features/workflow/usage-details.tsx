@@ -12,7 +12,11 @@ import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-
 import { SOFT_SEP } from '../../core/separators.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
-import { truncateTerminalDisplayText } from '../../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  padTerminalDisplayTextEnd,
+  truncateTerminalDisplayText,
+} from '../../utils/display-text.js';
 import { wrapHard } from '../../utils/wrap.js';
 import {
   usageDetailRows,
@@ -24,7 +28,6 @@ const DENSITY: OverlayDensity = 'wide';
 // Title, the blank under it, the hint and the blank above it, plus the two rows the document keeps
 // for its scroll indicators — the border and the padding are the panel's own frame.
 const CHROME_ROWS = 6;
-const LABEL_WIDTH = 12;
 /** The two spaces every labelled column on every other surface puts after its label. */
 const LABEL_GAP = '  ';
 
@@ -34,26 +37,47 @@ function toneColor(theme: Theme, tone: UsageDetailRow['tone']): string | undefin
   return theme.textDim;
 }
 
-function wrapDetailRows(rows: readonly UsageDetailRow[], width: number): UsageDetailRow[] {
+/** Packs whole facts at `SOFT_SEP`, as many to a line as fit; it cuts only a fact wider than a line. */
+function wrapDetailRows(
+  rows: readonly UsageDetailRow[],
+  width: number,
+  labelWidth: number,
+): UsageDetailRow[] {
   return rows.flatMap((row) => {
     if (row.kind === 'spacer' || row.kind === 'header') return [row];
     const valueWidth =
-      row.kind === 'note' ? width : Math.max(1, width - LABEL_WIDTH - LABEL_GAP.length);
-    const joined = row.facts.join(SOFT_SEP);
-    const lines =
-      joined.length > valueWidth
-        ? row.facts.flatMap((fact) => wrapHard(fact, valueWidth).split('\n'))
-        : [joined];
-    return lines.map((line, index) => ({
+      row.kind === 'note' ? width : Math.max(1, width - labelWidth - LABEL_GAP.length);
+    const lines: string[] = [];
+    let line = '';
+    for (const fact of row.facts) {
+      const joined = line === '' ? fact : `${line}${SOFT_SEP}${fact}`;
+      if (getTerminalCellWidth(joined) <= valueWidth) {
+        line = joined;
+        continue;
+      }
+      for (const piece of wrapHard(fact, valueWidth).split('\n')) {
+        if (line !== '') lines.push(line);
+        line = piece;
+      }
+    }
+    return [...lines, line].map((text, index) => ({
       ...row,
       key: `${row.key}:${index}`,
       label: index === 0 ? row.label : '',
-      facts: [line],
+      facts: [text],
     }));
   });
 }
 
-function DetailRow({ row, width }: { row: UsageDetailRow; width: number }) {
+function DetailRow({
+  row,
+  width,
+  labelWidth,
+}: {
+  row: UsageDetailRow;
+  width: number;
+  labelWidth: number;
+}) {
   const t = useTheme();
   if (row.kind === 'spacer') return <Text> </Text>;
   if (row.kind === 'header') return <RuleHeader label={row.label} width={width} />;
@@ -70,7 +94,7 @@ function DetailRow({ row, width }: { row: UsageDetailRow; width: number }) {
     <Box width={width}>
       <Text wrap="truncate-end">
         <Text color={t.textDim}>
-          {`${truncateTerminalDisplayText(row.label, LABEL_WIDTH).padEnd(LABEL_WIDTH)}${LABEL_GAP}`}
+          {`${padTerminalDisplayTextEnd(truncateTerminalDisplayText(row.label, labelWidth), labelWidth)}${LABEL_GAP}`}
         </Text>
         <Text color={toneColor(t, row.tone)}>{row.facts.join(SOFT_SEP)}</Text>
       </Text>
@@ -97,15 +121,23 @@ export function UsageDetails({ view, onClose }: UsageDetailsProps) {
   });
 
   const details = usageDetailRows(view);
-  const fullWidthRows = wrapDetailRows(details, rect.innerWidth);
+  // The label column fits the widest label, up to a third of the panel; only a wider label is cut.
+  const labelWidth = Math.min(
+    Math.max(
+      0,
+      ...details.map((row) => (row.kind === 'entry' ? getTerminalCellWidth(row.label) : 0)),
+    ),
+    Math.floor(rect.innerWidth / 3),
+  );
+  const fullWidthRows = wrapDetailRows(details, rect.innerWidth, labelWidth);
   const overflows = fullWidthRows.length > capacity;
   const rowWidth = overflows ? getScrollViewportContentWidth(rect.innerWidth) : rect.innerWidth;
-  const rowModels = overflows ? wrapDetailRows(details, rowWidth) : fullWidthRows;
+  const rowModels = overflows ? wrapDetailRows(details, rowWidth, labelWidth) : fullWidthRows;
   // The panel is as tall as what it has to say, so a short record leaves no empty frame under it.
   const height = Math.min(capacity, rowModels.length);
   const documentRows: ScrollableDocumentRow[] = rowModels.map((row) => ({
     key: row.key,
-    node: <DetailRow row={row} width={rowWidth} />,
+    node: <DetailRow row={row} width={rowWidth} labelWidth={labelWidth} />,
   }));
 
   return (

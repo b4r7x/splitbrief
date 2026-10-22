@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { ZERO_TOKEN_USAGE } from '../../core/schemas/tokens.js';
@@ -127,6 +128,122 @@ describe('UsageDetails', () => {
     ui.stdin.write(ESCAPE);
     await vi.waitFor(() => expect(closed).toEqual([1]));
     ui.unmount();
+  });
+});
+
+/** One unpriced Antigravity request: the rate row reads `<model> · no published rate · 1 request`. */
+function unpricedRun(model: string): UsageDetailsView {
+  return deriveUsageDetails({
+    tokenUsage: { ...ZERO_TOKEN_USAGE, reviewerInput: 2_100 },
+    costBreakdown: {
+      actualPlannerCost: 0,
+      actualImplementerCost: 0,
+      totalActualCost: 0,
+      hasUnpricedUsage: true,
+      requestEstimate: {
+        amount: null,
+        currency: 'USD',
+        basis: 'unavailable',
+        completeness: 'unavailable',
+        knownSubtotal: 0,
+        reasons: ['unpriced-model'],
+        items: [
+          {
+            callId: 'call-review-1',
+            role: 'review',
+            usageBoundary: 'single-request',
+            amount: null,
+            knownSubtotal: 0,
+            completeness: 'unavailable',
+            reasons: ['unpriced-model'],
+            billing: { posture: 'unknown', basis: 'unknown' },
+            rates: {
+              source: 'unpriced',
+              provider: 'antigravity',
+              model,
+              inputPer1M: 0,
+              outputPer1M: 0,
+              capturedAt: 1_700_000_000_000,
+            },
+          },
+        ],
+      },
+      providerRunMetadata: {
+        'cli:antigravity': {
+          service: 'antigravity',
+          offering: 'coding-subscription',
+          normalizedEndpoint: 'cli:antigravity',
+          billing: 'unknown',
+          asOf: '',
+          billingAttribution: { posture: 'unknown', basis: 'unknown' },
+        },
+      },
+    },
+  });
+}
+
+async function renderLines(view: UsageDetailsView): Promise<string[]> {
+  const ui = renderFeature(<UsageDetails view={view} onClose={() => {}} />, {
+    cols: 120,
+    rows: 40,
+  });
+  await tick(20);
+  const lines = (ui.lastFrame() ?? '').split('\n');
+  ui.unmount();
+  return lines;
+}
+
+/** The cells a rate row's value column holds, measured on the painted Antigravity rate row. */
+async function rateValueColumn(): Promise<{ labelCol: number; valueCol: number; width: number }> {
+  const lines = await renderLines(unpricedRun('probe'));
+  const row = lines.find((line) => line.includes('antigravity ')) ?? '';
+  const labelCol = row.indexOf('antigravity');
+  const valueCol = row.indexOf('probe');
+  const { innerWidth } = overlayRect({ cols: 120, rows: 40, density: 'wide' });
+  return { labelCol, valueCol, width: innerWidth - (valueCol - labelCol) };
+}
+
+describe('UsageDetails rows', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+  });
+
+  it('names a tool with a long name in full when the panel has room for it', async () => {
+    const lines = await renderLines(unpricedRun('gemini-3-pro'));
+
+    expect(lines.join('\n')).toContain(
+      'Google Antigravity CLI  unknown · no evidence, tool default',
+    );
+    expect(lines.join('\n')).not.toContain('…');
+  });
+
+  it('packs a rate row that overruns by one column into two lines, not one per fact', async () => {
+    const { labelCol, valueCol, width } = await rateValueColumn();
+    // `<model> · no published rate · 1 request` is the model plus 32 cells: one cell too many.
+    const model = 'm'.repeat(width - 31);
+    const lines = await renderLines(unpricedRun(model));
+    const index = lines.findIndex((line) => line.includes('antigravity '));
+
+    expect(lines[index]?.slice(valueCol).trimEnd()).toMatch(
+      new RegExp(`^${model} · no published rate +│$`),
+    );
+    expect(lines[index + 1]?.slice(labelCol, valueCol).trim()).toBe('');
+    expect(lines[index + 1]?.slice(valueCol).trimEnd()).toMatch(/^1 request +│$/);
+    expect(lines[index + 2]?.slice(labelCol).trimEnd()).toMatch(/^ +│$/);
+  });
+
+  it('hard-wraps only a fact wider than the column and keeps packing after it', async () => {
+    const { valueCol, width } = await rateValueColumn();
+    const model = 'm'.repeat(width + 5);
+    const lines = await renderLines(unpricedRun(model));
+    const index = lines.findIndex((line) => line.includes('antigravity '));
+
+    expect(lines[index]?.slice(valueCol, valueCol + width)).toBe('m'.repeat(width));
+    expect(lines[index + 1]?.slice(valueCol).trimEnd()).toMatch(
+      /^m{5} · no published rate · 1 request +│$/,
+    );
   });
 });
 
