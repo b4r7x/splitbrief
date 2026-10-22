@@ -323,6 +323,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         marker: 'Trust and run a configured runner:',
       },
       elements: [{ id: 'preparation-panel', title: 'Runner trust panel' }],
+      // The question takes its own box across the page: at 42x30 the card needs more rows, at
+      // 39x40 the card's legend does not fit.
+      viewports: [
+        ...REQUIRED_VIEWPORTS,
+        viewport({ cols: 42, rows: 30 }),
+        viewport({ cols: 39, rows: 40 }),
+      ],
     }),
     defineScenario({
       id: 'home-draft-image',

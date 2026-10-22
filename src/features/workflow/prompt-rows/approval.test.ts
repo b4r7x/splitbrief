@@ -22,6 +22,7 @@ import {
   reviewDocumentOptions,
 } from './approval.js';
 import { REVIEW_DECORATION_ROWS } from '../layout/rect.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 
 describe('review gate legends', () => {
@@ -107,7 +108,7 @@ describe('fitConfirmPanel', () => {
     fitConfirmPanel({
       actionClass: 'runner_trust',
       actionDescription,
-      frame: ownConfirmFrame(60),
+      frame: ownConfirmFrame(getChromeContentWidth(60)),
       boxRows,
     });
 
@@ -198,7 +199,7 @@ describe('fitConfirmPanel', () => {
       fitConfirmPanel({
         actionClass: 'destructive',
         actionDescription: '.splitbrief/state.json',
-        frame: ownConfirmFrame(120),
+        frame: ownConfirmFrame(getChromeContentWidth(120)),
         boxRows,
       });
     expect(destructive(8)).toMatchObject({ framed: false, note: true, label: true, hidden: 0 });

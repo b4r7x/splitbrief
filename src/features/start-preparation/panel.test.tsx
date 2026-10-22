@@ -408,7 +408,7 @@ describe('StartPreparationPanel', () => {
     ),
   ];
   // A narrow card sheds legend keys and wraps its title where the wider box does not.
-  const sizes = [30, 34, 36, 37, 38, 40, 41, 42, 50, 60, 70, 80, 100, 120].flatMap((cols) =>
+  const sizes = [30, 34, 36, 37, 38, 39, 40, 41, 42, 43, 50, 60, 70, 80, 100, 120].flatMap((cols) =>
     [18, 19, 20, 21, 22, 23, 24, 30, 36, 40, 45, 50].map((rows) => ({ cols, rows })),
   );
   it.each(
@@ -419,32 +419,44 @@ describe('StartPreparationPanel', () => {
     'shows every runner trust line in the card or keeps its own box at $cols x $rows ($name)',
     async ({ disclosure, cols, rows }) => {
       const actionDescription = `${disclosure}\n\n${TRUST_RECEIPT}`;
-      const paint = async (card: boolean) => {
-        void openApprovalPrompt({
-          tier: 'confirm',
-          actionClass: 'runner_trust',
-          actionDescription,
-          phase: 'planning',
-        });
-        const ui = renderPanel(
-          {
-            state: { kind: 'preparing' },
-            approvalPrompt: (given) => <ApprovalPrompt {...(card && { card: given })} />,
-          },
-          { cols, rows },
-        );
-        await flushEffects();
-        const frame = stripAnsiStyles(ui.lastFrame()).replace(/\n$/, '');
-        ui.unmount();
-        approvalPromptStore.__testReset();
-        return frame;
-      };
-      const carded = await paint(true);
-      const ownBox = await paint(false);
+      void openApprovalPrompt({
+        tier: 'confirm',
+        actionClass: 'runner_trust',
+        actionDescription,
+        phase: 'planning',
+      });
+      const ui = renderPanel(
+        {
+          state: { kind: 'preparing' },
+          approvalPrompt: (given) => <ApprovalPrompt card={given} />,
+        },
+        { cols, rows },
+      );
+      await flushEffects();
+      const carded = stripAnsiStyles(ui.lastFrame()).replace(/\n$/, '');
+      ui.unmount();
+      approvalPromptStore.__testReset();
 
       expect(carded.split('\n').length).toBeLessThanOrEqual(rows);
       if (!carded.includes(`Tool preparation${SOFT_SEP}Needs you`)) {
-        expect(carded).toBe(ownBox);
+        // The page has no gutter, so the question's own box takes the whole width and counts its
+        // rows at the width it paints: no row it counted twice shows as a second blank row.
+        const rowsOf = carded.split('\n');
+        for (const border of rowsOf.filter((row) => /^\s*\+-+\+\s*$/.test(row))) {
+          expect(border).toBe(`+${'-'.repeat(cols - 2)}+`);
+        }
+        const inner = rowsOf.map((row) => row.replace(/^\s*[|│]|[|│]\s*$/g, '').trim());
+        const legend = inner.findIndex((row) => row.startsWith('↑↓ select'));
+        if (legend >= 2) expect(inner.slice(legend - 2, legend)).not.toEqual(['', '']);
+        // A row it counted too few wraps past the bottom and is lost with no mark: the mark's
+        // hidden rows hold every line the box drops.
+        const shown = inner.join('').replace(/\s+/g, '');
+        const missing = [TRUST_LABEL, ...disclosure.split('\n'), TRUST_RECEIPT].filter(
+          (line) => line.trim() !== '' && !shown.includes(line.replace(/\s+/g, '')),
+        );
+        const hidden = Number(carded.match(/… (\d+) more lines?/)?.[1] ?? 0);
+        expect(missing.length).toBeLessThanOrEqual(hidden);
+        expect(missing.length > 0).toBe(hidden > 0);
         return;
       }
       // The rows inside the border, rejoined without white space, because a long fact wraps onto a

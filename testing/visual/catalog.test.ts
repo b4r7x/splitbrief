@@ -42,6 +42,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-cli-stop-continued', ['120x40', '80x24', '60x18', '120x60']],
   ['workflow-resumed-kept-work', ['120x40', '80x24', '60x18', '160x45']],
   ['home-cold-detecting', ['80x40']],
+  ['home-preparation-runner-trust', ['120x40', '80x24', '60x18', '42x30', '39x40']],
   ['home-cold-crew', ['120x40', '80x24', '60x18', '200x50']],
   ['workflow-crew-wide', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-crew-kilo', ['120x40', '80x24', '60x18', '160x45']],

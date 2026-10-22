@@ -10,6 +10,7 @@ import {
 } from '../prompt-rows/approval.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
 import { overlayRect } from '../../../core/navigation/overlay-rect.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import type { TieredApprovalResponse } from '../../../core/approval/types.js';
 import type { OverlayCard } from '../../../components/overlays/overlay-panel.js';
 import { ConfirmApprovalPrompt, PROMPT_ZONE_Z } from './approval-prompt/confirm.js';
@@ -71,7 +72,8 @@ export function ApprovalPrompt({ clampedBoxRows, card, review }: ApprovalPromptP
   const frame =
     cardFrame !== undefined && confirmCardFits(state.request, cardFrame, clampedBoxRows ?? rows)
       ? cardFrame
-      : ownConfirmFrame(cols);
+      : // Only a page gives a card, and a page has no gutter, so its box paints across the terminal.
+        ownConfirmFrame(card === undefined ? getChromeContentWidth(cols) : cols);
 
   return (
     <ConfirmApprovalPrompt
