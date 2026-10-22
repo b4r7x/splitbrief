@@ -1,7 +1,7 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import type { ReactNode } from 'react';
 import { useInput } from 'ink';
-import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
+import { OverlayPanel, type OverlayCard } from '../../components/overlays/overlay-panel.js';
 import { RuleHeader } from '../../components/rule-header.js';
 import {
   ScrollableDocument,
@@ -10,7 +10,11 @@ import {
 import { getScrollViewportContentWidth } from '../../components/scrollbar.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
-import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
+import {
+  OVERLAY_FRAME_ROWS,
+  overlayRect,
+  type OverlayDensity,
+} from '../../core/navigation/overlay-rect.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -22,10 +26,11 @@ import {
 } from '../../utils/display-text.js';
 import type { StartPreparationState } from './use-start-preparation.js';
 
-const DENSITY: OverlayDensity = 'compact';
+const DENSITY: OverlayDensity = 'roomy';
 // Title, the blank under it, the hint and the blank above it — the border and the padding are the
 // panel's own frame.
 const CHROME_ROWS = 4;
+const QUESTION_TITLE = `Tool preparation${SOFT_SEP}Needs you`;
 const INDENT = '  ';
 /** `blocker`, the longest severity word a problem carries, so the detail IDs line up. */
 const SEVERITY_WIDTH = 7;
@@ -37,7 +42,12 @@ export type StartPreparationPanelProps = Readonly<{
   onRetry: () => void;
   onBack: () => void;
   onOpenSettings: () => void;
-  approvalPrompt?: ReactNode | undefined;
+  /**
+   * A question to answer before the tools are ready. It paints this card itself, with the title and
+   * density given, so it can budget the card's rows; a terminal too short for every line of the
+   * question in the card, or too narrow for every key of its legend, gets its own box instead.
+   */
+  approvalPrompt?: ((card: OverlayCard) => ReactNode) | undefined;
 }>;
 
 type LineTone = 'cause' | 'text' | 'dim';
@@ -280,9 +290,8 @@ export function StartPreparationPanel({
   const t = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
-  const hasApprovalPrompt = approvalPrompt !== undefined && approvalPrompt !== null;
   const actionable = state.kind === 'blocked' || state.kind === 'failed';
-  const isActive = actionable && !hasOverlay && !hasApprovalPrompt;
+  const isActive = actionable && !hasOverlay && approvalPrompt === undefined;
 
   useInput(
     (input, key) => {
@@ -299,13 +308,16 @@ export function StartPreparationPanel({
     { isActive },
   );
 
-  if (hasApprovalPrompt) return approvalPrompt;
+  if (approvalPrompt !== undefined) {
+    return approvalPrompt({ title: QUESTION_TITLE, density: DENSITY });
+  }
   // A routine check takes no page anywhere: every screen keeps its own chrome and states the
   // check on the fixed status row beside its composer. This panel is for what needs answering.
   if (state.kind === 'idle' || state.kind === 'preparing') return null;
 
   const rect = overlayRect({ cols, rows, density: DENSITY });
-  const capacity = Math.max(1, overlayInnerRowCapacity({ rows, outerChromeRows: CHROME_ROWS }));
+  // The card is the page while it shows, not an overlay above one, so it keeps no gutter rows.
+  const capacity = Math.max(1, rows - OVERLAY_FRAME_ROWS - CHROME_ROWS);
   const model = panelModel(state);
   // Measured at the full width first: the scrollbar's column is paid for only once the copy is
   // known not to fit, and taking it back would re-wrap every line under the cause.

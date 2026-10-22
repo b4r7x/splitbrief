@@ -20,11 +20,19 @@ export function overlayInnerRowCapacity(input: { rows: number; outerChromeRows: 
   );
 }
 
+/** The card a page asks a body to paint itself in, so the body can budget the card's rows. */
+export interface OverlayCard {
+  title: string;
+  density: OverlayDensity;
+}
+
 interface OverlayPanelProps {
   title?: string | undefined;
   hint?: string | undefined;
   /** `tight` buys back the blank row under the title for panels that budget their own body rows. */
   titleSpacing?: 'gap' | 'tight' | undefined;
+  /** `0` buys back the blank rows inside the border, for a body that budgets its own rows. */
+  paddingY?: 0 | 1 | undefined;
   density: OverlayDensity;
   children: ReactNode;
 }
@@ -33,6 +41,7 @@ export function OverlayPanel({
   title,
   hint,
   titleSpacing = 'gap',
+  paddingY = 1,
   density,
   children,
 }: OverlayPanelProps) {
@@ -64,7 +73,7 @@ export function OverlayPanel({
         borderStyle={borderStyleFor('round')}
         borderColor={t.border}
         paddingX={2}
-        paddingY={1}
+        paddingY={paddingY}
       >
         {titleNode}
         {children}

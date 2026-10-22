@@ -8,10 +8,13 @@ import {
   CHOOSE_HINTS,
   approvalKeyColumnWidth,
   approvalTitle,
+  confirmPanelMinRows,
   fitConfirmPanel,
   getApprovalConfirmLabel,
   getConfirmOptions,
   getApprovalPromptRows,
+  getConfirmPanelRows,
+  ownConfirmFrame,
   getConfirmPrimaryKey,
   getReviewDocumentPromptRows,
   reviewArtifactForPhase,
@@ -19,6 +22,7 @@ import {
   reviewDocumentOptions,
 } from './approval.js';
 import { REVIEW_DECORATION_ROWS } from '../layout/rect.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 
 describe('review gate legends', () => {
   it('keeps the document legend to the keys its option rows do not spell out', () => {
@@ -100,7 +104,12 @@ describe('fitConfirmPanel', () => {
   } as const;
   const fullRows = getApprovalPromptRows({ status: 'pending', request, resolve: () => {} }, 60);
   const fitIn = (boxRows: number) =>
-    fitConfirmPanel({ actionClass: 'runner_trust', actionDescription, cols: 60, boxRows });
+    fitConfirmPanel({
+      actionClass: 'runner_trust',
+      actionDescription,
+      frame: ownConfirmFrame(60),
+      boxRows,
+    });
 
   it('sheds blank rows first, keeping the one above the options longest', () => {
     expect(fitIn(fullRows - 1)).toMatchObject({
@@ -133,12 +142,63 @@ describe('fitConfirmPanel', () => {
     });
   });
 
+  it('in a card gives back its padding, then its title gap, before the panel blank rows', () => {
+    const frame = {
+      width: 30,
+      kind: 'card',
+      card: { title: `Tool preparation${SOFT_SEP}Needs you`, density: 'roomy' },
+    } as const;
+    const cardRows = getConfirmPanelRows(request, frame);
+    const fitCard = (boxRows: number) =>
+      fitConfirmPanel({ actionClass: 'runner_trust', actionDescription, frame, boxRows });
+    expect(fitCard(cardRows)).toMatchObject({
+      framed: false,
+      card: { padding: true, titleGap: true },
+      gaps: { title: true, options: true, legend: true },
+      hidden: 0,
+    });
+    expect(fitCard(cardRows).subject.every((line) => line.length <= 30)).toBe(true);
+    expect(fitCard(cardRows - 1)).toMatchObject({
+      card: { padding: false, titleGap: true },
+      gaps: { title: true, options: true, legend: true },
+      hidden: 0,
+    });
+    expect(fitCard(cardRows - 3)).toMatchObject({
+      card: { padding: false, titleGap: false },
+      gaps: { title: true, options: true, legend: true },
+      hidden: 0,
+    });
+    expect(fitCard(cardRows - 6)).toMatchObject({
+      card: { padding: false, titleGap: false },
+      gaps: { title: false, options: false, legend: false },
+      label: true,
+      hidden: 0,
+    });
+    // The card keeps its border and title row, so the panel's own box takes the rest.
+    expect(fitCard(cardRows - 6).bodyRows).toBe(cardRows - 6 - 3);
+  });
+
+  it('counts every row of a card title that wraps', () => {
+    const card = (title: string) =>
+      ({ width: 30, kind: 'card', card: { title, density: 'roomy' } }) as const;
+    const short = card('Needs you');
+    const wrapping = card(`Tool preparation${SOFT_SEP}Needs you${SOFT_SEP}runner trust`);
+    expect(confirmPanelMinRows(request, wrapping)).toBe(confirmPanelMinRows(request, short) + 1);
+    expect(getConfirmPanelRows(request, wrapping)).toBe(getConfirmPanelRows(request, short) + 1);
+    const boxRows = confirmPanelMinRows(request, wrapping);
+    // The border and both title rows stay the card's; the panel takes the rest.
+    expect(
+      fitConfirmPanel({ actionClass: 'runner_trust', actionDescription, frame: wrapping, boxRows })
+        .bodyRows,
+    ).toBe(boxRows - 4);
+  });
+
   it('drops the irreversible note, then the label, and keeps the file over both', () => {
     const destructive = (boxRows: number) =>
       fitConfirmPanel({
         actionClass: 'destructive',
         actionDescription: '.splitbrief/state.json',
-        cols: 120,
+        frame: ownConfirmFrame(120),
         boxRows,
       });
     expect(destructive(8)).toMatchObject({ framed: false, note: true, label: true, hidden: 0 });

@@ -51,6 +51,7 @@ import { getLogo } from '../../features/home/logo.js';
 import { formatNeedsSignInSaveFeedback } from '../../features/runners/picker-format.js';
 import { formatConfigSaveSuccess } from '../../stores/project/save-feedback.js';
 import { SOFT_SEP } from '../../core/separators.js';
+import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { HomeScreen, type HomeScreenDeps } from './home.js';
 
 const prepareExecutionMock = vi.fn<(input: PrepareExecutionInput) => Promise<PreparationOutcome>>();
@@ -1219,6 +1220,47 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
+  it('asks the runner trust question in the centred tool preparation card', async () => {
+    forceUnicodeGlyphs();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    prepareExecutionMock.mockImplementation(async (input) => {
+      const onTieredApproval = input.policy.onTieredApproval;
+      if (!onTieredApproval) throw new Error('Expected the interactive approval callback.');
+      await onTieredApproval({
+        tier: 'confirm',
+        actionClass: 'runner_trust',
+        actionDescription: `Filesystem: ${'Not an OS sandbox; the process can access files available to the current user. '.repeat(2).trim()}`,
+        phase: 'planning',
+      });
+      return pending.promise;
+    });
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('custom tool approval');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Deny'), SESSION_FILTER_WAIT_MS);
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const card = overlayRect({ cols: 120, rows: 40, density: 'roomy' });
+    const top = lines.find((line) => line.includes('╭')) ?? '';
+    expect(getTerminalCellWidth(top.trim())).toBe(card.width);
+    expect(lines.join('\n')).not.toContain('┏');
+    expect(lines.find((line) => line.includes('Tool preparation'))?.trim()).toMatch(
+      new RegExp(`^│ {2}Tool preparation${SOFT_SEP}Needs you +│$`),
+    );
+    // The disclosure wraps to the card, so no line of it runs past the card's text column.
+    for (const line of lines.filter((row) => row.includes('│'))) {
+      expect(getTerminalCellWidth(line.trim())).toBe(card.width);
+    }
+    closeApprovalPrompt();
+    pending.resolve({ kind: 'aborted' });
+    await flushEffects();
+    ui.unmount();
+  });
+
   describe('a click on the runner trust panel', () => {
     async function openTrustPanel() {
       terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
@@ -1251,6 +1293,9 @@ describe('HomeScreen', () => {
       await flushEffects();
       const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
       const rowOf = (text: string) => lines.findIndex((line) => line.includes(text)) + 1;
+      // The panel is a centred card, so a click lands on the column its option keys paint at.
+      const column =
+        (lines.find((line) => line.includes('x   Deny')) ?? '').indexOf('x   Deny') + 1;
       let settled: TieredApprovalResponse | undefined;
       void answer.promise.then((response) => {
         settled = response;
@@ -1258,7 +1303,9 @@ describe('HomeScreen', () => {
       return {
         settled: () => settled,
         rowOf,
-        click: (row: number) => mouse.emit(pointerEvent('press', 10, row)),
+        /** The painted text between the card's borders on a 1-based row. */
+        textOf: (row: number) => (lines[row - 1] ?? '').replace(/^\s*│|│\s*$/g, '').trim(),
+        click: (row: number) => mouse.emit(pointerEvent('press', column, row)),
         close: () => {
           disposeMouse();
           ui.unmount();
@@ -1276,10 +1323,14 @@ describe('HomeScreen', () => {
       panel.close();
     });
 
-    it('on the blank row or the legend does nothing', async () => {
+    it.each([
+      ['the blank row above the legend', -1, /^$/],
+      ['the legend', 0, /^↑↓ select/],
+    ])('on %s does nothing', async (_name, offset, painted) => {
       const panel = await openTrustPanel();
-      panel.click(panel.rowOf('x   Deny') + 1);
-      panel.click(panel.rowOf('↑↓ select'));
+      const row = panel.rowOf('↑↓ select') + offset;
+      expect(panel.textOf(row)).toMatch(painted);
+      panel.click(row);
       await tick(20);
       expect(panel.settled()).toBeUndefined();
       panel.click(panel.rowOf('x   Deny'));

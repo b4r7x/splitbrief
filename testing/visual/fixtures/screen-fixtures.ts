@@ -858,34 +858,39 @@ function createHomePreparationBlockedFixture(): FixtureLifecycle {
 }
 
 /**
- * The first start of a runner the project config declares: the check waits on the trust panel. The
- * disclosure is the real formatter's output for a project `agent` command, so the panel
- * shows the rows an operator really reads.
+ * The trust panel a runner the project config declares opens on its first start. The disclosure is
+ * the real formatter's output for a project `agent` command, so the panel shows the rows an
+ * operator really reads.
  */
+function openRunnerTrustPrompt(): void {
+  const disclosure = formatCustomRunnerDisclosure({
+    executable: '"tools/review-bot"',
+    argv: ['"--diff"'],
+    contract: 'direct',
+    cwd: 'Project directory',
+    stage: 'None',
+    environment: ['"REVIEW_BOT_TOKEN"'],
+    environmentAccess: 'Declared environment references only',
+    filesystem: 'Not an OS sandbox; the process can access files available to the current user',
+    network: 'Network access is not restricted',
+    result: 'Reviewed workspace diff; it writes directly into the project directory',
+  });
+  void openApprovalPrompt({
+    tier: 'confirm',
+    actionClass: 'runner_trust',
+    actionDescription: `${disclosure}\n\nExact confirmation stores an owner-only reusable receipt.`,
+    phase: 'planning',
+  });
+}
+
+/** The first start of a runner the project config declares: the check waits on the trust panel. */
 function createHomePreparationRunnerTrustFixture(): FixtureLifecycle {
   const home = createHomeFixture();
   return {
     setup: async (context) => {
       await home.setup(context);
       submitHeldCheck('start');
-      const disclosure = formatCustomRunnerDisclosure({
-        executable: '"tools/review-bot"',
-        argv: ['"--diff"'],
-        contract: 'direct',
-        cwd: 'Project directory',
-        stage: 'None',
-        environment: ['"REVIEW_BOT_TOKEN"'],
-        environmentAccess: 'Declared environment references only',
-        filesystem: 'Not an OS sandbox; the process can access files available to the current user',
-        network: 'Network access is not restricted',
-        result: 'Reviewed workspace diff; it writes directly into the project directory',
-      });
-      void openApprovalPrompt({
-        tier: 'confirm',
-        actionClass: 'runner_trust',
-        actionDescription: `${disclosure}\n\nExact confirmation stores an owner-only reusable receipt.`,
-        phase: 'planning',
-      });
+      openRunnerTrustPrompt();
     },
     teardown: home.teardown,
   };
@@ -952,6 +957,18 @@ function createWorkflowContinuingFixture(): FixtureLifecycle {
       composerDraftStore.request('and keep the parser out of the brief header');
     },
     teardown: workflow.teardown,
+  };
+}
+
+/** Continuing a run whose declared runner was never trusted: the check waits on the trust panel. */
+function createWorkflowContinueRunnerTrustFixture(): FixtureLifecycle {
+  const continuing = createWorkflowContinuingFixture();
+  return {
+    setup: async (context) => {
+      await continuing.setup(context);
+      openRunnerTrustPrompt();
+    },
+    teardown: continuing.teardown,
   };
 }
 
@@ -1370,6 +1387,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('workflow-continue-repo-runner-blocked'),
     createWorkflowContinueRepoRunnerBlockedFixture,
   ],
+  [scenarioId('workflow-continue-runner-trust'), createWorkflowContinueRunnerTrustFixture],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('workflow-removed-command'), createRemovedCommandFixture],
   [scenarioId('setup-initial'), () => createSetupFixture()],

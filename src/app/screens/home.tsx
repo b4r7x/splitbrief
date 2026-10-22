@@ -349,7 +349,7 @@ export function HomeScreen({
           onRetry={() => observePreparationCleanup(startPreparation.retry())}
           onBack={() => startPreparation.cancel(closeApprovalPrompt)}
           onOpenSettings={() => overlayStore.open('settings')}
-          approvalPrompt={approvalPending ? <ApprovalPrompt /> : undefined}
+          approvalPrompt={approvalPending ? (card) => <ApprovalPrompt card={card} /> : undefined}
         />
       )}
       {/* The panel covers the screen rather than replacing it, so what is typed here outlives a
