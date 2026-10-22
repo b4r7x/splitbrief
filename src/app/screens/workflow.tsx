@@ -173,6 +173,11 @@ export function WorkflowScreen({
       projectDir,
       supportsImages: plannerSupportsImages(config, modelCacheStore.getDetection().providers),
     });
+    if (!submission.ok && submission.reason === 'command') {
+      questionPromptStore.setFocus('answer', '');
+      model.handleRuntimeCommand(text.trim());
+      return;
+    }
     if (!submission.ok) {
       feedbackStore.setError(formatSubmissionFailure(submission));
       return;
