@@ -386,6 +386,7 @@
 - Home now follows the runs that another terminal or a headless run starts, ends or makes ready to apply, and updates their rows while it shows. Before, it kept the rows it read when it opened.
 - The question to trust a runner from the project config now opens in the same centred Tool preparation card as the other preparation steps, and its text wraps to the card. Before, it filled the whole terminal width in a different box with no title.
 - In a narrow or short terminal, where the question to trust a runner keeps its own box, the box no longer shows two blank rows above its keys.
+- Each notice about the config file, such as a retired key or a file other users can write, now shows once when you start a run with a feature, resume it or continue it. Before, it showed twice.
 
 ## [0.1.0] - 2026-08-07
 

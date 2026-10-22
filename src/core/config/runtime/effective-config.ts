@@ -40,8 +40,20 @@ export function formatEffectiveConfigWarnings(
   return dedupeConfigWarnings(warnings.map(formatEffectiveConfigWarning));
 }
 
-export function emitEffectiveConfigWarnings(warnings: readonly EffectiveConfigWarning[]): void {
-  for (const message of formatEffectiveConfigWarnings(warnings)) warnStderr(`⚠ ${message}`);
+// A command resolves its config more than once (the screen's store, the run, a recovery action),
+// so each notice about a project's config is told once a process.
+const toldNotices = new Set<string>();
+
+export function emitEffectiveConfigWarnings(
+  projectDir: string,
+  warnings: readonly EffectiveConfigWarning[],
+): void {
+  for (const message of formatEffectiveConfigWarnings(warnings)) {
+    const notice = `${projectDir}\0${message}`;
+    if (toldNotices.has(notice)) continue;
+    toldNotices.add(notice);
+    warnStderr(`⚠ ${message}`);
+  }
 }
 
 export function resolveEffectiveConfig(opts: {

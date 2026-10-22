@@ -15,6 +15,6 @@ export function resolveRunConfig(args: { projectDir: string; opts: WorkflowOpts 
     overrides,
     loaderDiagnostics,
   });
-  emitEffectiveConfigWarnings(warnings);
+  emitEffectiveConfigWarnings(args.projectDir, warnings);
   return config;
 }

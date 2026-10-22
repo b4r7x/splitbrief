@@ -147,7 +147,7 @@ describe('emitEffectiveConfigWarnings', () => {
   });
 
   it('writes each effective-config warning to stderr so the detached server log surfaces it', () => {
-    emitEffectiveConfigWarnings([
+    emitEffectiveConfigWarnings('/work/each', [
       {
         source: 'loader',
         diagnostic: { kind: 'config-file-permissions', path: '/tmp/.splitbrief/config.yaml' },
@@ -167,7 +167,7 @@ describe('emitEffectiveConfigWarnings', () => {
     } satisfies ConfigLoaderDiagnostic;
     const message = formatConfigLoaderDiagnostic(diagnostic);
 
-    emitEffectiveConfigWarnings([
+    emitEffectiveConfigWarnings('/work/matching', [
       { source: 'loader', diagnostic },
       { source: 'validation', message },
     ]);
@@ -175,8 +175,21 @@ describe('emitEffectiveConfigWarnings', () => {
     expect(stderrChunks.filter((chunk) => chunk.includes(message))).toHaveLength(1);
   });
 
+  it("tells a project's notice once a process and another project's notice again", () => {
+    const warnings = [{ source: 'validation', message: 'workflow.mode was retired.' }] as const;
+
+    emitEffectiveConfigWarnings('/work/one', warnings);
+    emitEffectiveConfigWarnings('/work/one', warnings);
+    emitEffectiveConfigWarnings('/work/two', warnings);
+
+    expect(stderrChunks.filter((chunk) => chunk.includes('workflow.mode was retired.'))).toEqual([
+      '⚠ workflow.mode was retired.\n',
+      '⚠ workflow.mode was retired.\n',
+    ]);
+  });
+
   it('writes nothing when there are no warnings', () => {
-    emitEffectiveConfigWarnings([]);
+    emitEffectiveConfigWarnings('/work/none', []);
 
     expect(stderrChunks.join('')).toBe('');
   });
