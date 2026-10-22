@@ -15,6 +15,15 @@ const store = createStore<SessionsState>(initial);
 
 function load(projectDir: string) {
   const sessions = listSessions(projectDir);
+  const current = store.get();
+  // A listing returns the same row for a run that did not change, so an unchanged list paints nothing.
+  if (
+    current.projectDir === projectDir &&
+    current.sessions.length === sessions.length &&
+    sessions.every((row, index) => row === current.sessions[index])
+  ) {
+    return;
+  }
   store.set({ sessions, totalCount: sessions.length, projectDir });
 }
 

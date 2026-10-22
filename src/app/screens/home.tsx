@@ -14,6 +14,7 @@ import { resolveImplementerProfiles } from '../../core/config/accessors/implemen
 import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
+import { LOCKFILE_PING_INTERVAL_MS } from '../../engine/orchestrator/run/heartbeat.js';
 import { Composer } from '../../components/composer/composer.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';
 import { ScreenShell } from '../../components/screen-shell.js';
@@ -272,9 +273,11 @@ export function HomeScreen({
   const { frame: refreshFrame } = useSpinnerFrame(hintNotice);
   const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
 
-  // Another process can end or finish a run, so home reads the list again whenever it shows.
+  // Another process can start, end or finish a run, so home reads the list again while it shows.
   useEffect(() => {
     sessionsStore.refresh();
+    const timer = setInterval(sessionsStore.refresh, LOCKFILE_PING_INTERVAL_MS);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {

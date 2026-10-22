@@ -383,6 +383,7 @@
 - A `shell` or `agent` runner that prints a tool's usage limit or sign-in refusal as the last line of its stdout and exits with an error now halts with Seat down on every seat, names the reset time and offers a seat switch. Before, the build retried and spent planner consults, and planning or review stopped as a failed call, such as "Planning failed: sh exited with code 1".
 - A seat fallback on the automatic model now takes over when its tool, such as OpenCode or Kilo Code, stores no credential but calls a provider set up in its own config, the same way that tool works as a seat. Before, Settings marked the fallback unauthenticated and a seat-down halt did not move to it, in the TUI and in headless runs.
 - When a check fails again with a different failure, the planner still reads what the earlier attempt failed on: the exit code and the error line of the script, without the lines that npm, pnpm, yarn or bun print around it, also in a chained, nested, filtered, recursive or workspace run. When a reviewer check failure cannot be verified at the run base, its reason now quotes an output of one line. Before, the planner got an empty reason for the earlier attempt, and the run base reason said only `without diagnostics`.
+- Home now follows the runs that another terminal or a headless run starts, ends or makes ready to apply, and updates their rows while it shows. Before, it kept the rows it read when it opened.
 
 ## [0.1.0] - 2026-08-07
 
