@@ -9,8 +9,13 @@ import {
 } from '../../runners/errors.js';
 import type { ImplementerOptions } from '../types.js';
 import { processError } from '../../../lib/process/errors.js';
-import { classifySeatFailure } from '../../runners/seat-failure.js';
+import {
+  classifySeatFailure,
+  type SeatFailureClassification,
+  type SeatFailureSource,
+} from '../../runners/seat-failure.js';
 import { isRecord } from '../../../utils/type-guards.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 
 export const ABORTED_OUTCOME_TEXT = 'Aborted';
 
@@ -202,4 +207,43 @@ export function typedRunnerCallErrorCode(err: unknown): string | null {
 export function runnerOwnWords(err: unknown): string | null {
   const detail = errorData(err)?.detail;
   return typedRunnerCallErrorMessage(err) ?? (typeof detail === 'string' ? detail : null);
+}
+
+/** A thrown runner error as the seat classifier reads it, with the words a halt quotes. */
+export type ThrownSeatFailure = Readonly<{
+  words: string;
+  classification: SeatFailureClassification;
+  source: Extract<SeatFailureSource, 'thrown' | 'stdout-tail'>;
+}>;
+
+export function isSeatDown(classification: SeatFailureClassification): boolean {
+  return classification.class === 'account' || classification.class === 'rate-limited';
+}
+
+/**
+ * The one reading of a thrown runner error: the runner's own words, else the
+ * error's message, with the HTTP status an API error carries. A `shell` or
+ * `agent` seat that exits non-zero keeps its stdout out of the message, so when
+ * those words name neither an account refusal nor a limit, the last line it
+ * printed is matched against the halt phrases; when it names one, that line is
+ * the words the halt quotes and reads its reset from. Only that exit is read so:
+ * the output a timeout or a cut call keeps is the model's own text.
+ */
+export function thrownSeatFailure(err: unknown): ThrownSeatFailure {
+  const data = errorData(err);
+  const status = data?.status ?? data?.statusCode;
+  const words = runnerOwnWords(err) ?? toErrorMessage(err);
+  const classification = classifySeatFailure({
+    message: words,
+    ...(typeof status === 'number' && { status }),
+    source: 'thrown',
+  });
+  if (isSeatDown(classification) || !processError.isExitCode(err)) {
+    return { words, classification, source: 'thrown' };
+  }
+  const lastLine = errorOutput(err).trimEnd().split('\n').at(-1)?.trim() ?? '';
+  const tail = classifySeatFailure({ message: lastLine, source: 'stdout-tail' });
+  return isSeatDown(tail)
+    ? { words: lastLine, classification: tail, source: 'stdout-tail' }
+    : { words, classification, source: 'thrown' };
 }

@@ -89,14 +89,26 @@ function writeExecutable(path: string, lines: readonly string[]): void {
   chmodSync(path, 0o755);
 }
 
-/** The failing seat: an `agent` command that writes a partial file, prints the limit line, and exits. */
-function writeAgentShim(dir: string): void {
+/** The failing seat: its runner kind and the lines it prints on each stream before it exits 1. */
+type FailingSeat = Readonly<{
+  kind: 'agent' | 'shell';
+  stdout: readonly string[];
+  stderr: readonly string[];
+}>;
+
+const BALANCE_SEAT: FailingSeat = { kind: 'agent', stdout: [], stderr: [BALANCE_LINE] };
+
+/** The failing seat's command: it writes a partial file, prints its lines, and exits. */
+function writeSeatShim(dir: string, seat: FailingSeat): void {
+  const print = (line: string, redirect: string) =>
+    `printf '%s\\n' ${JSON.stringify(line)}${redirect}`;
   writeExecutable(join(dir, AGENT_COMMAND), [
     '#!/bin/bash',
     'cat >/dev/null 2>/dev/null || true',
     'mkdir -p src',
     `printf '%s\\n' '${PARTIAL}' > src/seat.ts`,
-    `printf '%s\\n' '${BALANCE_LINE}' >&2`,
+    ...seat.stdout.map((line) => print(line, '')),
+    ...seat.stderr.map((line) => print(line, ' >&2')),
     'exit 1',
   ]);
 }
@@ -176,6 +188,7 @@ async function runToFirstSeatDown(
   opencode: 'success' | 'fail',
   detection: 'remembered' | 'none' = 'remembered',
   route: 'gateway' | 'project-provider' = 'gateway',
+  seat: FailingSeat = BALANCE_SEAT,
 ): Promise<SeatDownRun> {
   const projectDir = createTempDir(`seat-down-switch-${opencode}`);
   dirs.push(projectDir);
@@ -187,7 +200,7 @@ async function runToFirstSeatDown(
 
   const shimDir = createTempDir(`seat-down-shim-${opencode}`);
   dirs.push(shimDir);
-  writeAgentShim(shimDir);
+  writeSeatShim(shimDir, seat);
   if (opencode === 'success') {
     writeOpencodeSuccessShim(shimDir, route === 'gateway' ? AUTH_LISTING : '[]');
   } else writeOpencodeFailureShim(shimDir);
@@ -195,7 +208,7 @@ async function runToFirstSeatDown(
 
   const config = makeConfig({
     implementer: {
-      kind: 'agent',
+      kind: seat.kind,
       command: AGENT_COMMAND,
       model: 'agent-model',
       contextLength: 4096,
@@ -422,5 +435,53 @@ describe('a spent implementer switches to its declared fallback', { timeout: 90_
     expect(second.pendingRecovery?.switchSeat?.candidates).toEqual([{ tool: 'claude-code' }]);
     expect(second.pendingRecovery?.switchSeat?.auto).toBeUndefined();
     expect(second.seatSwitches).toHaveLength(1);
+  });
+});
+
+const LIMIT_LINE = "Error: You've hit your usage limit. Your limit resets at 3pm.";
+
+describe('a seat that prints its halt only on stdout', { timeout: 90_000 }, () => {
+  it.each(['agent', 'shell'] as const)(
+    'the %s seat halts on its limit with the reset and switches to its fallback',
+    async (kind) => {
+      const run = await runToFirstSeatDown('success', 'remembered', 'gateway', {
+        kind,
+        stdout: [LIMIT_LINE],
+        stderr: [],
+      });
+
+      const recovery = run.halted.pendingRecovery;
+      expect(recovery?.reason).toBe('runner-usage-limit');
+      expect(recovery?.attempts).toBe(1);
+      expect(recovery?.details).toContain(`${kind} reported: ${LIMIT_LINE}`);
+      const resetAt = new Date(recovery?.resetAt ?? Number.NaN);
+      expect([resetAt.getHours(), resetAt.getMinutes()]).toEqual([15, 0]);
+      expect(recovery?.switchSeat?.auto?.candidate).toEqual({
+        tool: 'opencode',
+        model: FALLBACK_MODEL,
+      });
+    },
+  );
+
+  it('halts on a sign-in refusal as signed out', async () => {
+    const run = await runToFirstSeatDown('success', 'remembered', 'gateway', {
+      kind: 'agent',
+      stdout: ['Invalid API key · Please run /login'],
+      stderr: [],
+    });
+
+    expect(run.halted.pendingRecovery?.reason).toBe('runner-unauthenticated');
+    expect(run.halted.pendingRecovery?.attempts).toBe(1);
+  });
+
+  it('reads the stdout limit past unrelated stderr noise', async () => {
+    const run = await runToFirstSeatDown('success', 'remembered', 'gateway', {
+      kind: 'agent',
+      stdout: [LIMIT_LINE],
+      stderr: ['warning: deprecated flag'],
+    });
+
+    expect(run.halted.pendingRecovery?.reason).toBe('runner-usage-limit');
+    expect(run.halted.pendingRecovery?.details).toContain(`agent reported: ${LIMIT_LINE}`);
   });
 });

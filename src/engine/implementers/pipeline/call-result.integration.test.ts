@@ -346,6 +346,39 @@ describe('runnerCallOutcome — usage-limit classification', () => {
     }
   });
 
+  it.each([
+    [
+      'a usage limit',
+      'The middleware now answers 429 too many requests when the usage limit is spent.',
+    ],
+    ['a sign-in refusal', 'Requests without a token now get 401 Unauthorized.'],
+  ])('keeps a timeout whose model last named %s', async (_, line) => {
+    const invoke = vi.fn().mockRejectedValue(
+      processError.timeout({
+        command: 'claude-code',
+        timeoutMs: 600_000,
+        output: `Added the guard.\n${line}`,
+      }),
+    );
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, backendKind: 'cli', invoke }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      outcome: 'timeout',
+      error: 'claude-code timed out after 600s',
+    });
+  });
+
   it('classifies a thrown provider 403 as unauthenticated and keeps the raw detail', async () => {
     const { streamError } = await import('../../streaming/stream-errors.js');
     const invoke = vi

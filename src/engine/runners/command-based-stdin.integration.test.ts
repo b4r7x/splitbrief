@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { toErrorMessage } from '../../utils/format-errors.js';
-import { runnerOwnWords } from '../implementers/pipeline/call-result.js';
+import { thrownSeatFailure } from '../implementers/pipeline/call-result.js';
 import { invokeCommandBasedRunner } from './command-based.js';
-import { classifySeatFailure } from './seat-failure.js';
 
 // Far past the pipe buffer, so a child that never reads stdin breaks the pipe under the prompt.
 const LARGE_PROMPT = 'x'.repeat(256 * 1024);
@@ -26,11 +24,9 @@ describe('invokeCommandBasedRunner — a child that stops before it reads its pr
       'echo "Error: You have hit your usage limit. Your limit resets at 3pm." >&2; exit 1',
     );
 
-    const words = runnerOwnWords(err) ?? toErrorMessage(err);
+    const { words, classification } = thrownSeatFailure(err);
     expect(words).toContain('You have hit your usage limit. Your limit resets at 3pm.');
-    expect(classifySeatFailure({ message: words, source: 'thrown' })).toMatchObject({
-      class: 'rate-limited',
-    });
+    expect(classification).toMatchObject({ class: 'rate-limited' });
   });
 
   it('fails on its exit code with its output when it printed only to stdout', async () => {

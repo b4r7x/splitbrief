@@ -2,11 +2,11 @@ import type { DeepReadonly, RunnerConfig } from '../../../core/config/accessors/
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import {
   runnerOwnWords,
+  thrownSeatFailure,
   typedRunnerCallErrorCode,
   typedRunnerCallErrorMessage,
 } from '../../implementers/pipeline/call-result.js';
 import { runnerAuthDisplayName, runnerLoginInstruction } from '../../runners/auth-failure.js';
-import { classifySeatFailure } from '../../runners/seat-failure.js';
 import type { SeatFailureClassification } from '../../runners/seat-failure.js';
 import { usageLimitAdvice } from '../../runners/usage-limit.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
@@ -14,7 +14,6 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
-import { isRecord } from '../../../utils/type-guards.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { inputTooLargeFigures } from '../../runners/input-limit.js';
 import { inputTooLargeSentence } from './builders/review-input.js';
@@ -83,12 +82,14 @@ export function diagnosePlannerCallFailure(
       : `${input.label}: ${sanitizeTerminalDiagnosticText(typed)}`;
   // An API error's own message is a rewritten hint with advice of its own, so a
   // halt that gives its advice starts from the provider's words under the hint.
-  const words = runnerOwnWords(err);
+  // A halt line a seat printed last on its stdout is its own words too.
+  const thrown = thrownSeatFailure(err);
+  const words = thrown.source === 'stdout-tail' ? thrown.words : runnerOwnWords(err);
   const advised =
     words === null ? message : `${input.label}: ${sanitizeTerminalDiagnosticText(words)}`;
   const tool = runnerAuthDisplayName(runner);
   const details = typed === null ? [] : [toolReported(tool, typed)];
-  const said = typed ?? words ?? message;
+  const said = words ?? message;
   // A model the tool refused is the tool's own verdict on the seat's model: no
   // reading of the words turns it into a quota or a sign-in, and the halt asks
   // the route's credential listing which of the two it is.
@@ -120,16 +121,8 @@ export function diagnosePlannerCallFailure(
   }
   // The one classifier reads the tool's own words. A limit outranks the auth
   // check: its message must never earn login advice, because logging in does
-  // not restore quota. API planners throw their provider errors, so the status
-  // is read from the typed data.
-  const data = isRecord(err) && isRecord(err.data) ? err.data : undefined;
-  const rawStatus = data?.status ?? data?.statusCode;
-  const status = typeof rawStatus === 'number' ? rawStatus : undefined;
-  const classification = classifySeatFailure({
-    message: words ?? typed ?? message,
-    ...(status !== undefined && { status }),
-    source: 'thrown',
-  });
+  // not restore quota.
+  const { classification } = thrown;
   if (
     classification.class === 'rate-limited' ||
     (classification.class === 'account' && classification.cause !== 'auth')

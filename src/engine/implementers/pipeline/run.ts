@@ -46,18 +46,17 @@ import {
   createImplementerCallContext,
   defaultShouldThrow,
   errorOutput,
+  isSeatDown,
   runnerCallFailureMessage,
   runnerCallOutcome,
-  runnerOwnWords,
+  thrownSeatFailure,
   typedRunnerCallErrorMessage,
 } from './call-result.js';
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
-import { classifySeatFailure } from '../../runners/seat-failure.js';
 import { runnerAuthDisplayName } from '../../runners/auth-failure.js';
 import { extractLastJsonObject } from '../../runners/typed-output.js';
 import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { isRecord } from '../../../utils/type-guards.js';
 import { processError } from '../../../lib/process/errors.js';
 import { isApiDeadlineError } from '../../providers/api-deadlines.js';
 import {
@@ -634,16 +633,8 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       // failed call result, so the one classifier reads them here too. The raw
       // provider detail is kept over the rewritten hint: the recovery needs
       // the reset time the provider's own words carry.
-      const data = isRecord(err) && isRecord(err.data) ? err.data : undefined;
-      const rawStatus = data?.status ?? data?.statusCode;
-      const status = typeof rawStatus === 'number' ? rawStatus : undefined;
-      const words = runnerOwnWords(err) ?? toErrorMessage(err);
-      const classification = classifySeatFailure({
-        message: words,
-        ...(status !== undefined && { status }),
-        source: 'thrown',
-      });
-      if (classification.class === 'account' || classification.class === 'rate-limited') {
+      const { words, classification } = thrownSeatFailure(err);
+      if (isSeatDown(classification)) {
         const authFailure = classification.class === 'account' && classification.cause === 'auth';
         failTask(opts, words);
         return {
