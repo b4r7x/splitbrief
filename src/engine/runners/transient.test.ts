@@ -61,7 +61,7 @@ describe('isTransientSeatFailure', () => {
     ).toBe(false);
     expect(
       isTransientSeatFailure({
-        message: 'The planner seat answer did not match its contract after 2 attempt(s).',
+        message: 'The planner seat answer did not match its contract after 2 attempts.',
       }),
     ).toBe(false);
     expect(isTransientSeatFailure({ message: 'Implementer wrote nothing for task T001' })).toBe(

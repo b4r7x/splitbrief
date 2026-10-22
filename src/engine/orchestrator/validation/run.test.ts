@@ -169,7 +169,7 @@ describe('formatChangedFiles', () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ category: 'validation', taskId: mkTask('src/app.ts').id });
-    expect(rows[0]?.message).toContain('src/app.ts');
+    expect(rows[0]?.message).toMatch(/^Formatted 1 file with .*: src\/app\.ts$/);
     expect(rows[0]?.message).not.toContain('src/clean.ts');
   });
 

@@ -15,6 +15,7 @@ import {
 } from '../../../core/gitignore-bookkeeping.js';
 import { resolveConfinedIsolationWorktreePath, resolveConfinedWorktreePath } from './path.js';
 import { findLiveWorktreeSession } from './worktree-status.js';
+import { countNoun } from '../../../utils/pluralize.js';
 
 export type WorktreeWarningPublisher = (message: string) => void;
 
@@ -143,7 +144,7 @@ export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void>
   }
   if (uncommittedPaths.length > 0 && !suppressUncommittedWarning) {
     publishWorktreeWarning(
-      `Warning: forcing removal of worktree "${label}" with ${uncommittedPaths.length} uncommitted file(s).`,
+      `Warning: forcing removal of worktree "${label}" with ${countNoun(uncommittedPaths.length, 'uncommitted file')}.`,
       warningPublisher,
     );
   }

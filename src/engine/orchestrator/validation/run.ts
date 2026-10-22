@@ -27,6 +27,7 @@ import type {
   Validator,
   ValidatorDeps,
 } from './types.js';
+import { countNoun } from '../../../utils/pluralize.js';
 
 function resolveValidationTimeout(config: Config): number {
   return config.validation.timeoutMs ?? STAGE_TIMEOUT_MS;
@@ -121,7 +122,7 @@ async function formatFiles(opts: {
   const rewritten = files.filter((file) => before.get(file) !== after.get(file));
   if (rewritten.length === 0) return undefined;
   return {
-    message: `Formatted ${rewritten.length} file(s) with ${command}: ${rewritten.join(', ')}`,
+    message: `Formatted ${countNoun(rewritten.length, 'file')} with ${command}: ${rewritten.join(', ')}`,
     safety: { category: 'validation', code: 'validation_formatted' },
   };
 }

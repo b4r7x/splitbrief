@@ -9,6 +9,7 @@ import {
   isValidSessionId,
 } from '../../core/paths.js';
 import { cliError } from '../errors.js';
+import { countNoun, pluralize } from '../../utils/pluralize.js';
 
 export type AliasedSession = {
   alias: number;
@@ -105,7 +106,7 @@ export async function resolveNumericAlias(input: string, projectDir: string): Pr
 
   if (!match) {
     throw cliError(
-      `session alias ${num} is out of range; there are ${sessions.length} session(s). Open \`/sessions\` in the TUI to browse runs, or run \`splitbrief status\` for the active run.`,
+      `session alias ${num} is out of range; there ${pluralize(sessions.length, 'is', 'are')} ${countNoun(sessions.length, 'session')}. Open \`/sessions\` in the TUI to browse runs, or run \`splitbrief status\` for the active run.`,
       1,
     );
   }

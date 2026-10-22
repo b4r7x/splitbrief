@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- Messages that count things now say `1 attempt`, `2 files` or `there is 1 session` instead of `attempt(s)` or `file(s)`.
 - `/usage` and `/copy` no longer call the token totals of a new run with an Antigravity, OpenCode or Kilo Code seat `legacy; coverage unknown`. Each count these tools report now reads as reported, and a count they do not send reads as not reported.
 - Cursor Agent CLI on Linux reads as signed in after `cursor-agent login`, and a token it refreshes during a run is kept in your own sign-in file.
 - After Show diff opens the patch in less or in your editor in fullscreen mode, the line that says how to return no longer stays in your shell after SPLITBRIEF exits.

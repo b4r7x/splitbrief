@@ -11,6 +11,7 @@ import {
 } from '../../../core/paths.js';
 import { uniqueInOrder } from '../../../utils/collections.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
+import { countNoun } from '../../../utils/pluralize.js';
 
 export type AnalyzeBriefDriftInput = {
   tasks: Task[];
@@ -124,7 +125,7 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     findings.push({
       severity: 'error',
       code: 'orphan_diff',
-      message: `Diff contains ${runProducedFiles.length} file(s) but every task is failed or skipped.`,
+      message: `Diff contains ${countNoun(runProducedFiles.length, 'file')} but every task is failed or skipped.`,
     });
   }
 

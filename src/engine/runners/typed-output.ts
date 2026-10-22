@@ -14,6 +14,7 @@ import type { RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from '../planners/require-completed-call.js';
 import { inputTooLargeRefusal } from './input-limit.js';
 import { isStrictJsonSchema } from './strict-json-schema.js';
+import { countNoun } from '../../utils/pluralize.js';
 
 export type TypedSchemaInput = Readonly<{
   json: Readonly<Record<string, unknown>>;
@@ -85,7 +86,7 @@ export const typedOutputError = {
   seatProtocol: (data: SeatProtocolErrorData): SeatProtocolError =>
     error(
       'seat-protocol-error',
-      `The ${data.seat} seat answer did not match its contract after ${data.attempts} attempt(s).`,
+      `The ${data.seat} seat answer did not match its contract after ${countNoun(data.attempts, 'attempt')}.`,
       data,
     ),
 } as const;

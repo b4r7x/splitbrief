@@ -12,6 +12,7 @@ import {
   type RequestTypedResult,
   type SeatProtocolError,
   type TypedSeatCall,
+  typedOutputError,
 } from './typed-output.js';
 
 const probeSchema = z.object({ answer: z.string(), count: z.number() });
@@ -72,6 +73,22 @@ function expectError(result: RequestTypedResult<Probe>): SeatProtocolError {
   if (!('error' in result)) throw new Error('Expected a seat protocol error');
   return result.error;
 }
+
+describe('typedOutputError.seatProtocol', () => {
+  it.each([
+    [1, 'The implementer seat answer did not match its contract after 1 attempt.'],
+    [2, 'The implementer seat answer did not match its contract after 2 attempts.'],
+  ] as const)('counts %i attempt in words', (attempts, message) => {
+    const err = typedOutputError.seatProtocol({
+      seat: 'implementer',
+      attempts,
+      transport: 'native',
+      errors: '',
+      answerPreview: '',
+    });
+    expect(err.message).toBe(message);
+  });
+});
 
 describe('extractLastJsonObject', () => {
   it('reads a bare object', () => {
