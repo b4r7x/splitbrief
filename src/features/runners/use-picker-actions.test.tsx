@@ -19,6 +19,11 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import {
+  CHECKING_TOOLS_STAGE,
+  preparationStore,
+  type PreparationOrigin,
+} from '../../stores/navigation/preparation.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
@@ -442,10 +447,12 @@ describe('usePickerActions', () => {
     pickerViewStore.reset();
     routerStore.reset();
     lifecycleStore.__testReset();
+    preparationStore.reset();
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    preparationStore.reset();
     rmSync(projectDir, { recursive: true, force: true });
   });
 
@@ -682,6 +689,51 @@ describe('usePickerActions', () => {
 
     expect(await saveBuildSeatUnderRun('implementing', 'paused')).toBe(
       `${CREW_SEAT_LABELS.build} seat changes after T001`,
+    );
+  });
+
+  // A start checks its tools on home and runs on the config it read before the check ended, so a
+  // seat saved during the check takes over at the first boundary, the way a running run's does.
+  // A continue admits a seat saved during its check when it enters, so its save is a plain save.
+  const saveBuildSeatWhilePreparing = async (origin: PreparationOrigin): Promise<string> => {
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
+    routerStore.init({ screen: 'home' });
+    preparationStore.submit({
+      origin,
+      stage: CHECKING_TOOLS_STAGE,
+      prepare: () => new Promise(() => {}),
+      onPrepared: () => {},
+    });
+
+    const ui = renderFeature(
+      <ConfirmOnKeyProbe role="implementer" selection={realPickerOption('implementer', 'codex')} />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).not.toBeNull();
+    });
+    expect(configStore.get().config?.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
+    ui.unmount();
+    return feedbackStore.get().message ?? '';
+  };
+
+  it('says a seat saved while a start checks its tools lands after the next brief', async () => {
+    tasksStore.__testReset({
+      tasks: [{ id: 'T001', title: 'an earlier run', status: 'done' }],
+      currentTask: 1,
+      totalTasks: 1,
+    });
+
+    expect(await saveBuildSeatWhilePreparing('start')).toBe(
+      `${CREW_SEAT_LABELS.build} seat changes after the next brief`,
+    );
+  });
+
+  it('says a seat saved while a continue checks its tools is saved', async () => {
+    expect(await saveBuildSeatWhilePreparing('continue')).toMatch(
+      new RegExp(`^Saved ${CREW_SEAT_LABELS.build} · `),
     );
   });
 
