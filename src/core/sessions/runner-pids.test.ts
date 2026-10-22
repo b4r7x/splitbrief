@@ -106,8 +106,8 @@ describe('runner pid ledger', () => {
         { pid: 222, startTimeMs: 2000 },
       ]);
       const warnings = stderr.mock.calls.flat().join('');
-      expect(warnings).toContain('failed to parse runner pid entry');
-      expect(warnings).toContain('invalid runner pid entry');
+      const skipped = `Warning: skipped a line of .splitbrief/sessions/${ref.sessionId}/runner-pids.jsonl that is not valid: `;
+      expect(warnings.split(skipped)).toHaveLength(3);
     } finally {
       stderr.mockRestore();
     }

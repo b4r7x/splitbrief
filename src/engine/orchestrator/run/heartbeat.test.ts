@@ -114,7 +114,7 @@ describe('startHeartbeat', () => {
     expect(control.failedWrites).toBe(FAILING_TICKS + 1);
     expect(rejections).toEqual([]);
     const warnings = stderrSpy.mock.calls.filter((call) =>
-      String(call[0]).includes('heartbeat write failed'),
+      String(call[0]).includes('Could not update lockfile.json of this run'),
     );
     expect(warnings.length).toBe(1);
   });

@@ -20,7 +20,11 @@ import type {
   RunnerGateExpectation,
   RunnerSlot,
 } from './prepared-execution.js';
-import { runnerRoleForSlot, type RunnerConfig } from '../../core/config/accessors/runner-config.js';
+import {
+  getRunnerCatalogDisplayName,
+  runnerRoleForSlot,
+  type RunnerConfig,
+} from '../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 
 export type RunnerFactoryAuthority = Readonly<{
@@ -241,15 +245,14 @@ export function warnDroppedRunnerFields(
   }>,
 ): void {
   const { runner, seat } = input;
+  const tool = getRunnerCatalogDisplayName(runner);
   if (runner.effort && input.supportsEffort === false) {
-    warnStderr(`${seat}-effort: dropped (${runner.kind} backend has no reasoning control)`);
+    warnStderr(`The ${seat} effort setting is not used: ${tool} has no effort channel`);
   }
   if (runner.variant !== undefined && !deliversVariant(runner)) {
-    warnStderr(`${seat}-variant: dropped (${runner.kind} backend has no named effort preset)`);
+    warnStderr(`The ${seat} variant setting is not used: ${tool} has no variant channel`);
   }
   if (runner.temperature !== undefined && runner.kind !== 'api') {
-    warnStderr(
-      `${seat}-temperature: dropped (${runner.kind} backend does not accept sampling temperature)`,
-    );
+    warnStderr(`The ${seat} temperature setting is not used: ${tool} takes no temperature`);
   }
 }

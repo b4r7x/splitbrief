@@ -1,10 +1,11 @@
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { sessionDir } from '../../../core/paths.js';
+import { LOCKFILE, sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { warnError } from '../../../lib/warn.js';
 import { error } from '../../../utils/error.js';
 import { startHeartbeat } from './heartbeat.js';
+import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
 import {
   checkSessionLiveness,
   markExited,
@@ -51,13 +52,17 @@ export async function acquireLiveness(opts: LivenessOpts): Promise<() => Promise
 
 async function lockLiveness(opts: LivenessOpts): Promise<() => Promise<void>> {
   const dir = sessionDir(opts.projectDir, opts.sessionId);
+  const lockfile = sessionRelativePath(opts.sessionId, LOCKFILE);
   ensureSessionDir(opts.projectDir, opts.sessionId);
   let status: SessionLivenessStatus;
   try {
     status = checkSessionLiveness(dir);
   } catch (err) {
     if (opts.signal?.aborted) return async () => {};
-    warnError('Failed to inspect session liveness lockfile', err);
+    warnError(
+      `Could not read ${lockfile}, so another SPLITBRIEF process can open this run at the same time`,
+      err,
+    );
     return async () => {};
   }
   if (status.alive) {
@@ -79,12 +84,15 @@ async function lockLiveness(opts: LivenessOpts): Promise<() => Promise<void>> {
       try {
         await markExited(dir, 0);
       } catch (err) {
-        warnError('Failed to mark session exited', err);
+        warnError(`Could not mark the run as ended in ${lockfile}`, err);
       }
     };
   } catch (err) {
     if (opts.signal?.aborted) return async () => {};
-    warnError('Failed to acquire session liveness lockfile', err);
+    warnError(
+      `Could not write ${lockfile}, so another SPLITBRIEF process can open this run at the same time`,
+      err,
+    );
     return async () => {};
   }
 }

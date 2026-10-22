@@ -6,6 +6,8 @@ import {
   upsertEvidenceTask,
 } from '../../../core/evidence/ledger-state.js';
 import { mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { EVIDENCE_FILE } from '../../../core/paths.js';
+import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { warnError } from '../../../lib/warn.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -57,7 +59,10 @@ export async function recordCheckRuns(input: RecordCheckRunsInput): Promise<void
       );
     }
   } catch (err) {
-    warnError('failed to compute the check-run candidate id', err);
+    warnError(
+      'Could not identify the current change, so the reviewer does not see the renders of these checks',
+      err,
+    );
   }
 
   try {
@@ -81,6 +86,9 @@ export async function recordCheckRuns(input: RecordCheckRunsInput): Promise<void
       },
     );
   } catch (err) {
-    warnError('failed to persist check runs', err);
+    warnError(
+      `Could not save the check results to ${sessionRelativePath(input.sessionId, EVIDENCE_FILE)}`,
+      err,
+    );
   }
 }

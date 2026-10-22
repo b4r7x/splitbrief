@@ -40,7 +40,7 @@ function runWithStdin(
     // write can never combine with a spurious exit-0 into a false "native" success.
     child.stdin?.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EPIPE') return;
-      warnError('clipboard: native stdin write failed', err);
+      warnError(`Could not copy the text with ${command}`, err);
       resolve(1);
     });
     child.stdin?.end(input);

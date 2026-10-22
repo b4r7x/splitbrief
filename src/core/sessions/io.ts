@@ -42,7 +42,7 @@ function readSummaryFile(filePath: string, sessionId: string): Session | null {
     }
     if (result.session.id !== sessionId) {
       warnStderr(
-        `Warning: session ${filePath} payload id '${result.session.id}' does not match directory '${sessionId}'; using directory id`,
+        `Warning: session ${filePath} names the id '${result.session.id}', not its folder '${sessionId}'; the folder name is used`,
       );
       return { ...result.session, id: sessionId };
     }

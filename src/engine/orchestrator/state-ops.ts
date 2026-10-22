@@ -15,6 +15,7 @@ import { confinedAtomicWriteFileSync, type ConfigRevision } from '../../lib/conf
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import { STATE_FILE, sessionDir } from '../../core/paths.js';
 import { assertSessionDirConfined } from '../../core/sessions/confinement.js';
+import { sessionRelativePath } from '../../core/sessions/ownership-marker.js';
 import { error, matches, type AppError } from '../../utils/error.js';
 import { warnError } from '../../lib/warn.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
@@ -635,7 +636,10 @@ export function recordLastFailure(
     const result = commitWorkflowState({ ref, expected: state, next });
     return result.kind === 'conflict' ? state : result.state;
   } catch (err) {
-    warnError('Failed to record the run failure on the workflow state', err);
+    warnError(
+      `Could not save the run failure to ${sessionRelativePath(ref.sessionId, STATE_FILE)}`,
+      err,
+    );
     return state;
   }
 }

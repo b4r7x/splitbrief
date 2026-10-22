@@ -81,7 +81,7 @@ export async function loadDiscovery(projectDir: string): Promise<void> {
       current,
     })
       .catch((err: unknown) => {
-        warnError('Could not refresh runner discovery', err);
+        warnError('Could not check your tools', err);
       })
       .then(() => {
         if (!watchCancelled) crewWatchTeardown = watchCrewForProjectListing(storeConfig);
@@ -125,7 +125,7 @@ function watchCrewForProjectListing(loadedConfig: Config): () => void {
       }).then(
         () => undefined,
         (err: unknown) => {
-          warnError('Could not refresh runner discovery', err);
+          warnError('Could not check your tools', err);
         },
       ),
     );

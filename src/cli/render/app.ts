@@ -228,7 +228,10 @@ export async function renderApp(
   // skip the mid-task rollback. Await cleanup before exiting so the TUI discards a partially
   // applied task exactly like the headless host does.
   const reportTerminationCleanupFailure = (error: unknown) =>
-    warnError('TUI cleanup failed during termination', error);
+    warnError(
+      'Could not stop every tool process while SPLITBRIEF stopped, so one may keep running',
+      error,
+    );
   const onTerminationSignal = createTerminationHandler({
     cleanup,
     reportCleanupFailure: reportTerminationCleanupFailure,
@@ -249,7 +252,7 @@ export async function renderApp(
     process.stderr.write(`SPLITBRIEF crashed: ${toErrorMessage(reason)}\n`);
   };
   const reportCrashCleanupFailure = (error: unknown) =>
-    warnError('TUI cleanup failed during crash handling', error);
+    warnError('Could not stop every tool process after the crash, so one may keep running', error);
   const onCrash = createCrashHandler({
     cleanup,
     report: reportCrash,

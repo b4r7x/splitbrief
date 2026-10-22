@@ -581,7 +581,10 @@ export async function runFinalReviewPhase(opts: {
         deserializeChangedFilesBaseline(baseline),
       );
     } catch (err) {
-      warnError('failed to compute the review candidate id', err);
+      warnError(
+        'Could not identify the current change, so the reviewer does not see its renders',
+        err,
+      );
     }
     // The renders the checks log recorded: the seat takes up to four images per
     // check when its tool declares a channel, else it gets a manifest and the

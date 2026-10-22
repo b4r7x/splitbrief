@@ -2,6 +2,7 @@ import { existsSync, lstatSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path';
 import { assertWritablePathConfined } from '../../lib/path-confinement.js';
 import { warnError } from '../../lib/warn.js';
+import { projectRelativePathLabel } from '../../utils/path-links.js';
 import {
   isValidSessionId,
   READINESS_FILE,
@@ -32,17 +33,16 @@ export interface OrphanPruneResult {
   removed: string[];
 }
 
-function listSessionIds(projectDir: string): string[] {
+export function listSessionIds(projectDir: string): string[] {
   const root = sessionsRoot(projectDir);
   if (!existsSync(root)) return [];
-  try {
-    return readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && isValidSessionId(entry.name))
-      .map((entry) => entry.name);
-  } catch (err) {
-    warnError('orphan sessions: cannot list sessions', err);
-    return [];
-  }
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && isValidSessionId(entry.name))
+    .map((entry) => entry.name);
+}
+
+export function sessionsRootLabel(projectDir: string): string {
+  return projectRelativePathLabel({ path: sessionsRoot(projectDir), rootDir: projectDir });
 }
 
 function activeSessionId(projectDir: string): string | null {
@@ -108,24 +108,18 @@ export function discardOrphanSessionDirectory(ref: SessionRef): boolean {
   }
 }
 
-export function listOrphanSessionIds(input: OrphanScanInput): string[] {
-  const nowMs = input.nowMs ?? Date.now();
-  const orphans: string[] = [];
-  for (const sessionId of listSessionIds(input.projectDir)) {
-    try {
-      if (isCollectableOrphan({ projectDir: input.projectDir, sessionId }, nowMs)) {
-        orphans.push(sessionId);
-      }
-    } catch (err) {
-      warnError(`orphan sessions: skipping session ${sessionId}`, err);
-    }
-  }
-  return orphans;
-}
-
 export function pruneOrphanSessions(input: OrphanScanInput): OrphanPruneResult {
   const nowMs = input.nowMs ?? Date.now();
-  const sessionIds = listSessionIds(input.projectDir);
+  let sessionIds: string[];
+  try {
+    sessionIds = listSessionIds(input.projectDir);
+  } catch (err) {
+    warnError(
+      `Could not list ${sessionsRootLabel(input.projectDir)}, so unused run folders stay in it`,
+      err,
+    );
+    return { scanned: 0, removed: [] };
+  }
   const removed: string[] = [];
   for (const sessionId of sessionIds) {
     try {
@@ -134,7 +128,10 @@ export function pruneOrphanSessions(input: OrphanScanInput): OrphanPruneResult {
         removed.push(sessionId);
       }
     } catch (err) {
-      warnError(`orphan sessions: skipping session ${sessionId}`, err);
+      warnError(
+        `Kept ${sessionRelativePath(sessionId)}: could not check or remove it as an unused run folder`,
+        err,
+      );
     }
   }
   return { scanned: sessionIds.length, removed };

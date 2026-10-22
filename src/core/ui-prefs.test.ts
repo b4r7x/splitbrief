@@ -49,6 +49,24 @@ describe('ui-prefs', () => {
     }
   });
 
+  it('names the file and the default layout when ui-prefs.json is malformed', () => {
+    const splitbriefDir = join(testDir, SPLITBRIEF_DIR);
+    mkdirSync(splitbriefDir, { recursive: true });
+    writeFileSync(join(splitbriefDir, 'ui-prefs.json'), '{ not valid json');
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    try {
+      readUiPrefs(testDir);
+      const output = warn.mock.calls.map(([chunk]) => String(chunk)).join('');
+      expect(output).toContain(
+        'Could not read .splitbrief/ui-prefs.json, so the default layout is used: ',
+      );
+      expect(output).not.toContain('ui-prefs:');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('does not throw and warns when the state dir is unwritable', () => {
     const splitbriefDir = join(testDir, SPLITBRIEF_DIR);
     mkdirSync(splitbriefDir, { recursive: true });
@@ -57,7 +75,9 @@ describe('ui-prefs', () => {
     const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     try {
       writeUiPrefs(testDir, { sidebarVisible: false });
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('ui-prefs: failed to save'));
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Could not save .splitbrief/ui-prefs.json'),
+      );
     } finally {
       warn.mockRestore();
     }

@@ -55,7 +55,7 @@ import {
   rebaseOnPersistedWorkflowState,
   recordLastFailure,
 } from '../state-ops.js';
-import { sessionDir } from '../../../core/paths.js';
+import { SANDBOX_DIR, sessionDir } from '../../../core/paths.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
 import { createSteeringPort } from '../../calls/steering.js';
 import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
@@ -193,11 +193,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   };
 
   await reapOrphanRunners(projectDir);
-  try {
-    pruneOrphanSessions({ projectDir });
-  } catch (err) {
-    warnError('orphan sessions: cannot prune session directories', err);
-  }
+  pruneOrphanSessions({ projectDir });
 
   const releaseLiveness = await acquireLiveness({
     projectDir,
@@ -375,7 +371,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
               // A failure raised before the run has a bus has no event to carry
               // it; without this the run returns an empty summary and says
               // nothing about why.
-              warnError('workflow initialization', err);
+              warnError('Could not start the run', err);
             }
             if (trackedState) trackedState = recordFailure(trackedState, message);
           }
@@ -451,12 +447,12 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     // A host credential bridged into the project sandbox must not outlive the
     // run that admitted it; the next run re-bridges whatever it needs.
     await clearBridgedCliState(projectDir).catch((err: unknown) => {
-      warnError('sandbox bridged state cleanup', err);
+      warnError(`Could not remove the tool sign-in copies from ${SANDBOX_DIR}`, err);
     });
     // A dispose failure (e.g. git refuses to remove the worktree) is reported,
     // never allowed to escape runWorkflow.
     await isolation.dispose().catch((err: unknown) => {
-      warnError('run isolation disposal', err);
+      warnError('Could not remove the run workspace', err);
     });
     // Disposal settles the last attempt revert, so this is the checkout as the run left it.
     const restingBus = wctx?.bus ?? workflowBus;

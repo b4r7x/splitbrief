@@ -15,7 +15,7 @@ export async function withSchemaFile<R>(
     return await fn(path);
   } finally {
     await rm(dir, { recursive: true, force: true }).catch((err: unknown) =>
-      warnError('Failed to remove schema file', err),
+      warnError(`Could not remove the temporary folder ${dir}`, err),
     );
   }
 }

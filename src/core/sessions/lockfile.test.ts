@@ -108,7 +108,9 @@ describe('updateHeartbeat', () => {
     control.perturbReads = false;
 
     const warnings = stderrSpy.mock.calls.filter((call) =>
-      String(call[0]).includes('heartbeat write failed'),
+      String(call[0]).includes(
+        `Could not update .splitbrief/sessions/${sessionIdFor(testDir)}/lockfile.json`,
+      ),
     );
     stderrSpy.mockRestore();
     expect(warnings.length).toBe(1);

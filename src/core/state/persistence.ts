@@ -5,7 +5,7 @@ import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../schemas/workflow
 import type { SessionRef } from '../types/session-ref.js';
 import { LEGACY_STATE_VERSION, legacyWorkflowStateSchema } from './migration/legacy-state.js';
 import { mapV3StateToV4 } from './migration/map-v3.js';
-import { SPLITBRIEF_DIR, SESSIONS_DIR, STATE_FILE, sessionDir } from '../paths.js';
+import { STATE_FILE, sessionDir } from '../paths.js';
 import {
   cacheRevision,
   cacheStateSnapshot,
@@ -23,6 +23,7 @@ import { confinedAtomicWriteFileSync } from '../../lib/confined-fs-atomic.js';
 import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 import { warnStderr } from '../../lib/warn.js';
 import { assertSessionDirConfined } from '../sessions/confinement.js';
+import { sessionRelativePath } from '../sessions/ownership-marker.js';
 
 export function saveState(ref: SessionRef, state: WorkflowState): void {
   assertSessionDirConfined(ref.projectDir, ref.sessionId);
@@ -43,7 +44,7 @@ export function saveState(ref: SessionRef, state: WorkflowState): void {
         ? (current.revision ?? null)
         : null;
 
-  confinedEnsureDir(ref.projectDir, join(SPLITBRIEF_DIR, SESSIONS_DIR, ref.sessionId));
+  confinedEnsureDir(ref.projectDir, sessionRelativePath(ref.sessionId));
   const filePath = statePath(ref);
   const write = confinedAtomicWriteFileSync(filePath, serializedState(parsed.data), {
     expectedRevision,
@@ -61,16 +62,14 @@ export function loadState(ref: SessionRef): WorkflowState | null {
   const dir = sessionDir(ref.projectDir, ref.sessionId);
   const filePath = join(dir, STATE_FILE);
   if (!existsSync(filePath)) return null;
+  const relativePath = sessionRelativePath(ref.sessionId, STATE_FILE);
   try {
     rejectSymlinkTarget(filePath);
   } catch {
-    warnStderr('Warning: refusing to read state through symlink, ignoring');
+    warnStderr(`Warning: skipped ${relativePath}: it is a symbolic link`);
     return null;
   }
-  assertExistingPathConfined(
-    `${SPLITBRIEF_DIR}/${SESSIONS_DIR}/${ref.sessionId}/${STATE_FILE}`,
-    ref.projectDir,
-  );
+  assertExistingPathConfined(relativePath, ref.projectDir);
   const cacheKey = statePath(ref);
   let stat: ReturnType<typeof statSync>;
   let raw: unknown;
@@ -80,23 +79,23 @@ export function loadState(ref: SessionRef): WorkflowState | null {
     if (cached !== null) return cached;
     raw = JSON.parse(readFileSync(filePath, 'utf-8'));
   } catch {
-    warnStderr('Warning: corrupt state file, ignoring');
+    warnStderr(`Warning: skipped ${relativePath}: it could not be read`);
     return null;
   }
   const record = narrowRecord(raw);
   if (!record) {
-    warnStderr('Warning: state file is not an object, ignoring');
+    warnStderr(`Warning: skipped ${relativePath}: it is not a JSON object`);
     return null;
   }
   if (record.stateVersion === LEGACY_STATE_VERSION) {
     const classification = classifyStateVersion(raw);
     if (classification.kind !== 'v3') {
-      warnStderr('Warning: state file failed schema validation, ignoring');
+      warnStderr(`Warning: skipped ${relativePath}: its content is not valid`);
       return null;
     }
     const state = mapV3StateToV4({ ref, state: classification.state, stateRevision: 1 });
     if (state === null) {
-      warnStderr('Warning: state file failed schema validation, ignoring');
+      warnStderr(`Warning: skipped ${relativePath}: its content is not valid`);
       return null;
     }
     cacheStateSnapshot(cacheKey, stat.mtimeMs, stat.size, state);
@@ -104,13 +103,13 @@ export function loadState(ref: SessionRef): WorkflowState | null {
   }
   if (record.stateVersion !== WORKFLOW_STATE_VERSION) {
     warnStderr(
-      `Warning: state file version ${String(record.stateVersion)} is incompatible with version ${WORKFLOW_STATE_VERSION}, ignoring`,
+      `Warning: skipped ${relativePath}: state version ${String(record.stateVersion)} is incompatible with version ${WORKFLOW_STATE_VERSION}`,
     );
     return null;
   }
   const result = WorkflowStateSchema.safeParse(raw);
   if (!result.success) {
-    warnStderr('Warning: state file failed schema validation, ignoring');
+    warnStderr(`Warning: skipped ${relativePath}: its content is not valid`);
     return null;
   }
   const state = result.data;

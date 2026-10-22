@@ -1,6 +1,7 @@
 import { existsSync, globSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
 
 // Text a user may never read: admissions of untested work, internal process, and the
 // ids and paths of how SPLITBRIEF is built. Each pattern is narrow enough that product
@@ -94,10 +95,64 @@ export function findUserFacingTextViolations(root: string = process.cwd()): stri
   );
 }
 
+// A warning shows on the feedback line and on stderr, so its label is user-facing text too: the
+// argument that holds it, by the function that shows it.
+const WARNING_LABEL_ARGUMENT: Readonly<Record<string, number>> = {
+  warnError: 0,
+  warnStderr: 0,
+  readValidatedJson: 3,
+};
+
+const WARNING_LABEL_MARKERS: readonly Readonly<{ label: string; pattern: RegExp }>[] = [
+  { label: 'module tag', pattern: /^[a-z][\w -]*: / },
+  { label: 'camelCase name', pattern: /\b[a-z]+[A-Z]\w*/ },
+  { label: 'call form', pattern: /\w\(/ },
+];
+
+// The words of a label as written: each interpolated value reads as `x`, so a tag built from a
+// value (`${seat}-effort: `) still reads as a tag.
+function labelText(node: ts.Expression): string | null {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  if (ts.isTemplateExpression(node)) {
+    return node.head.text + node.templateSpans.map((span) => `x${span.literal.text}`).join('');
+  }
+  return null;
+}
+
+export function findWarningLabelViolations(root: string = process.cwd()): string[] {
+  const files = globSync('src/**/*.{ts,tsx}', { cwd: root, exclude: ['**/*.test.{ts,tsx}'] });
+  return files.sort().flatMap((file) => {
+    const source = ts.createSourceFile(file, readFileSync(join(root, file), 'utf8'), {
+      languageVersion: ts.ScriptTarget.Latest,
+    });
+    const violations: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+        const index = WARNING_LABEL_ARGUMENT[node.expression.text];
+        const argument = index === undefined ? undefined : node.arguments[index];
+        const text = argument === undefined ? null : labelText(argument);
+        if (text !== null) {
+          const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+          for (const { label } of WARNING_LABEL_MARKERS.filter(({ pattern }) =>
+            pattern.test(text),
+          )) {
+            violations.push(`${file}:${line}: warning label ${label}: ${text}`);
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    return violations;
+  });
+}
+
 function isMainModule(): boolean {
   return process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 }
 
 if (isMainModule()) {
-  for (const violation of findUserFacingTextViolations()) console.log(violation);
+  for (const violation of [...findUserFacingTextViolations(), ...findWarningLabelViolations()]) {
+    console.log(violation);
+  }
 }

@@ -140,7 +140,7 @@ export async function fetchModelList<T>(options: {
     });
     onError?.(diagnostic);
     if (!isEndpointUnreachable(err)) {
-      warnError('fetchModelList', diagnostic);
+      warnError('Could not read the model list from the provider', diagnostic);
     }
     return [];
   }

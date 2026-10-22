@@ -83,7 +83,11 @@ describe('loadHistoryFromDisk', () => {
     try {
       const { loadHistoryFromDisk } = await loadModules();
       expect(loadHistoryFromDisk()).toEqual([]);
-      expect(stderr).toHaveBeenCalledWith(expect.stringContaining('input-history: failed to load'));
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Could not read ~/.splitbrief/history, so earlier prompts are not available: ',
+        ),
+      );
     } finally {
       stderr.mockRestore();
     }
@@ -372,7 +376,9 @@ describe('installHistoryPersistence', () => {
       const { loadHistoryFromDisk } = await loadModules();
       expect(loadHistoryFromDisk()).toEqual([]);
       expect(stderr).toHaveBeenCalledWith(
-        expect.stringContaining('input-history: ignored a malformed history file'),
+        expect.stringContaining(
+          'Could not read ~/.splitbrief/history, so earlier prompts are not available: ',
+        ),
       );
       expect(readFileSync(historyFile, 'utf-8')).toBe(content);
       expect(existsSync(join(tmpHome, 'pwned'))).toBe(false);
