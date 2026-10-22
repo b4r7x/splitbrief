@@ -2,8 +2,7 @@ import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
-import { runnerOwnWords } from '../../implementers/pipeline/call-result.js';
+import { thrownSeatFailure } from '../../implementers/pipeline/call-result.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
 import { classifySeatFailure } from '../../runners/seat-failure.js';
 import {
@@ -81,7 +80,7 @@ export function seatResetWaitDeadline(
 
 /** The runner's own words out of a thrown call error, for the classifier. */
 export function seatFailureFromError(err: unknown): SeatFailure {
-  return { message: runnerOwnWords(err) ?? toErrorMessage(err) };
+  return { message: thrownSeatFailure(err).words };
 }
 
 /**

@@ -285,6 +285,8 @@ planner:
 
 Arbitrary `stdin → stdout` command. SPLITBRIEF writes the prompt to stdin and parses what comes out of stdout, using `outputFormat` to pick a parser. No shell or network sandbox is applied; the command runs as a normal child process under the current user.
 
+When the command exits non-zero, SPLITBRIEF reads its stderr and the last line it printed on stdout for a tool's usage limit or sign-in refusal. A wrapper that prints that line last therefore halts as *Seat down*, with the reset the line names. The same applies to `kind: agent`.
+
 **A `shell` or `agent` command is not trusted because it is in the config.** `.splitbrief/config.yaml` travels with `git clone`, so the command a project declares is the repository author's proposal until you accept it on *this machine*. See [Runner command trust](#runner-command-trust).
 
 | Field | Type | Required | Description |
