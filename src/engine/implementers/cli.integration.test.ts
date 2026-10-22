@@ -1460,8 +1460,7 @@ describe('createCliImplementer (timeout surfacing)', () => {
     });
 
     expect(result).toMatchObject({ success: false, outcome: 'timeout' });
-    expect(result.error).toMatch(/timed out after/);
-    expect(result.error).not.toMatch(/operation was aborted/i);
+    expect(result.error).toBe('OpenCode CLI timed out after 0s');
   });
 });
 

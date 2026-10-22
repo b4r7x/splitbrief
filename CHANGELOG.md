@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- A seat that runs past its timeout now halts with the tool's name and the timeout in seconds, instead of "The operation was aborted due to timeout" or words the tool never printed.
 - The line that `resume` and `continue` print before the run screen opens no longer shows an internal phase name.
 - The warning before Apply on a run accepted as is no longer breaks a finding written on two lines across two rows.
 - When a final review failed more than once, the closed run listed the failed reviews with the same name. Each one now says how many fix cycles came before it, as in the transcript.

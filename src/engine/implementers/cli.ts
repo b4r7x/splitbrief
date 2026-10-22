@@ -115,7 +115,7 @@ export function createCliImplementer(
     descriptor.compatibility.installUrl,
   );
   const deadlineMs = config.timeout;
-  const runnerLabel = `Tool implementer (${toolName})`;
+  const runnerLabel = descriptor.displayName;
 
   return createImplementerBase({
     extractsCode: false,

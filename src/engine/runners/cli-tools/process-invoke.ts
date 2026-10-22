@@ -29,7 +29,7 @@ import {
   spawnPipeError,
 } from '../../../lib/process/spawn/lifecycle.js';
 import { createLineBuffer, type LineBufferOverflow } from '../../../lib/process/line-buffer.js';
-import { isENOENT, processError } from '../../../lib/process/errors.js';
+import { isENOENT, processError, timedOutMessage } from '../../../lib/process/errors.js';
 import { assertNever, isRecord } from '../../../utils/type-guards.js';
 import { error, matches } from '../../../utils/error.js';
 import { isCredentialEnvironmentName } from '../../../utils/redact.js';
@@ -732,7 +732,13 @@ export async function invokeProcessCli(
         status,
         error:
           status === 'timeout'
-            ? { code: 'timeout', message: 'CLI invocation timed out' }
+            ? {
+                code: 'timeout',
+                message:
+                  timeoutMs === undefined
+                    ? 'CLI invocation timed out'
+                    : timedOutMessage(adapter.descriptor.displayName, timeoutMs),
+              }
             : RUNNER_CALL_STOPPED_ERROR,
       });
     }

@@ -88,7 +88,11 @@ export function diagnosePlannerCallFailure(
   const advised =
     words === null ? message : `${input.label}: ${sanitizeTerminalDiagnosticText(words)}`;
   const tool = runnerAuthDisplayName(runner);
-  const details = typed === null ? [] : [toolReported(tool, typed)];
+  // A timeout's words are SPLITBRIEF's own deadline, already the message: nothing to quote.
+  const details =
+    typed === null || typedRunnerCallErrorCode(err) === 'timeout'
+      ? []
+      : [toolReported(tool, typed)];
   const said = words ?? message;
   // A model the tool refused is the tool's own verdict on the seat's model: no
   // reading of the words turns it into a quota or a sign-in, and the halt asks

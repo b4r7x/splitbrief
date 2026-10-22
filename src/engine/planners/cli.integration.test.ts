@@ -27,6 +27,7 @@ import { ensureSessionDir } from '../../core/paths-io.js';
 import { saveState } from '../../core/state/persistence.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { runPlanningPhase } from '../orchestrator/planning/run.js';
+import { diagnosePlannerCallFailure } from '../orchestrator/recovery/planner-call-failure.js';
 
 const invokeCliAdapterDeadlines = vi.hoisted(() => [] as Array<number | undefined>);
 
@@ -1153,6 +1154,27 @@ describe('seat deadlines', () => {
       expect(invokeCliAdapterDeadlines).toEqual([45_000, 45_000]);
     },
   );
+
+  itUnix('a planner call past its timeout halts on the tool and the deadline', async () => {
+    writeCommandShim({ dir: shimDir, command: 'opencode', lines: [], sleepSeconds: 5 });
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'opencode', timeout: 1_000 } });
+    const planner = createCliPlanner(config);
+
+    const err = await callPlanner(planner, {
+      prompt: 'plan a change',
+      projectDir,
+      callbacks: { onOutput: vi.fn() },
+    }).catch((caught: unknown) => caught);
+
+    expect(
+      diagnosePlannerCallFailure({
+        err,
+        label: 'Planning failed',
+        runner: config.planner,
+        seat: 'plan',
+      }).message,
+    ).toBe('Planning failed: OpenCode CLI timed out after 1s');
+  });
 });
 
 describe('createCliPlanner — typed calls', () => {

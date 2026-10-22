@@ -28,7 +28,6 @@ import {
   findUnexpectedPlanningMutations,
   planningMutationError,
 } from '../orchestrator/planning/mutation-guard.js';
-import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import { resolveCliExecutableAliases } from '../runners/resolve-cli-executable.js';
@@ -118,7 +117,6 @@ export function createCliPlanner(
     let unexpectedResumeSessionId: string | null = null;
     let stderrOutput = '';
 
-    const effectiveSignal = composeAbortSignal(signal, timeout);
     const onCallEvent = (event: RunnerCallEvent): void => {
       if (event.type === 'call_stderr_delta') {
         stderrOutput = `${stderrOutput}${event.text}`.slice(-8_192);
@@ -154,7 +152,7 @@ export function createCliPlanner(
         cwd: projectDir,
         images,
         timeoutMs: timeout,
-        signal: effectiveSignal,
+        signal,
       },
       prompt,
       steering: callbacks.steering,

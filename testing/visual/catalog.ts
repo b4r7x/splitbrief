@@ -3302,6 +3302,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-plan-timeout',
+      title: 'Workflow · a PLAN call past its timeout',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-plan-timeout',
+        title: 'Plan-seat timeout recovery menu',
+        kind: 'question',
+        marker: 'Change PLAN tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-repeated-timeout',
       title: 'Workflow · a BUILD seat that timed out twice on one brief',
       surface: screenSurface('workflow'),
