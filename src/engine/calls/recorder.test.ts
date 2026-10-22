@@ -629,3 +629,24 @@ describe('createRunnerCallRecorder', () => {
     expect(JSON.stringify(events)).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
 });
+
+describe('runner stderr preview', () => {
+  it('keeps the stderr chunks of a failed call apart in its warning', () => {
+    const recorder = createRunnerCallRecorder({ context, onEvent: () => {} });
+    recorder.stderr({ text: 'disk full', ts: 1 });
+    recorder.stderr({ text: 'retrying', ts: 2 });
+
+    const result = recorder.finishFailed({
+      status: 'failed',
+      error: { code: 'provider-error', message: 'exit 1' },
+      endedAt: 3,
+    });
+
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'stderr_on_failure',
+        message: expect.stringContaining('disk full retrying'),
+      }),
+    );
+  });
+});

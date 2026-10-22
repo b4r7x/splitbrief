@@ -157,6 +157,15 @@ describe('consumer payload bounds', () => {
     expect(result.redacted).toBe(true);
     expect(payload.text).toBe(`key=sk-${CALL_CONSUMER_REDACTION_MARKER}`);
   });
+
+  it('keeps line breaks and tabs of a public string, a CRLF as a plain line break', () => {
+    const result = boundConsumerPayload({
+      context: 'session-log',
+      payload: { text: 'first\tcell\r\nsecond\u001b[2m line\u001b[22m\n' },
+    });
+
+    expect(expectRecord(result.payload).text).toBe('first\tcell\nsecond line\n');
+  });
 });
 
 function expectRecord(value: PublicPayload): { [key: string]: PublicPayload } {

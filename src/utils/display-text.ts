@@ -7,8 +7,7 @@ const BEL = '\\u0007';
 const STRING_TERMINATOR = '\\u009c';
 const CSI = '\\u009b';
 const OSC = '\\u009d';
-const C0_CONTROL_RANGE = '\\u0000-\\u001f';
-const C0_CONTROL_RANGE_EXCEPT_LINE_BREAK = '\\u0000-\\u0009\\u000b-\\u001f';
+const C0_CONTROL_RANGE_EXCEPT_WHITESPACE = '\\u0000-\\u0008\\u000e-\\u001f';
 const C1_CONTROL_RANGE = '\\u007f-\\u009f';
 const EMOJI_VARIATION_SELECTOR = '\ufe0f';
 
@@ -25,11 +24,12 @@ const CSI_SEQUENCE_PATTERN = new RegExp(
   'g',
 );
 const ESCAPE_SEQUENCE_PATTERN = new RegExp(`${ESC}(?:[ -/]*[@-~]|[@-Z\\\\-_])`, 'g');
-const CONTROL_CHARACTER_PATTERN = new RegExp(`[${C0_CONTROL_RANGE}${C1_CONTROL_RANGE}]`, 'g');
-const CONTROL_CHARACTER_EXCEPT_LINE_BREAK_PATTERN = new RegExp(
-  `[${C0_CONTROL_RANGE_EXCEPT_LINE_BREAK}${C1_CONTROL_RANGE}]`,
+const CONTROL_CHARACTER_EXCEPT_WHITESPACE_PATTERN = new RegExp(
+  `[${C0_CONTROL_RANGE_EXCEPT_WHITESPACE}${C1_CONTROL_RANGE}]`,
   'g',
 );
+const WHITESPACE_CONTROL_RUN_PATTERN = /[\t\n\v\f\r]+/g;
+const WHITESPACE_CONTROL_EXCEPT_LINE_BREAK_PATTERN = /[\t\v\f]/g;
 const KEYCAP_SEQUENCE_PATTERN = /^[#*0-9]\ufe0f?\u20e3$/u;
 const DEFAULT_EMOJI_PRESENTATION_PATTERN = /\p{Emoji_Presentation}/u;
 const EMOJI_VARIATION_BASE_PATTERN = /\p{Extended_Pictographic}/u;
@@ -49,18 +49,22 @@ export interface TerminalDisplayTextOptions {
   preserveLineBreaks?: boolean | undefined;
 }
 
+/**
+ * Escape sequences and controls removed. A line break or a tab becomes a space, never nothing, so
+ * the words on each side stay apart: on one row each run of them is one space; with
+ * `preserveLineBreaks` a line break stays (`\r\n` and `\r` as `\n`) and each tab is one space.
+ */
 export function stripTerminalControls(text: string, opts: TerminalDisplayTextOptions = {}): string {
-  const controlPattern = opts.preserveLineBreaks
-    ? CONTROL_CHARACTER_EXCEPT_LINE_BREAK_PATTERN
-    : CONTROL_CHARACTER_PATTERN;
-  const normalized = opts.preserveLineBreaks ? text.replace(/\r\n?/g, '\n') : text;
-
-  return normalized
+  const stripped = text
     .replace(OSC_SEQUENCE_PATTERN, '')
     .replace(STRING_CONTROL_SEQUENCE_PATTERN, '')
     .replace(CSI_SEQUENCE_PATTERN, '')
     .replace(ESCAPE_SEQUENCE_PATTERN, '')
-    .replace(controlPattern, '');
+    .replace(CONTROL_CHARACTER_EXCEPT_WHITESPACE_PATTERN, '');
+
+  return opts.preserveLineBreaks
+    ? stripped.replace(/\r\n?/g, '\n').replace(WHITESPACE_CONTROL_EXCEPT_LINE_BREAK_PATTERN, ' ')
+    : stripped.replace(WHITESPACE_CONTROL_RUN_PATTERN, ' ');
 }
 
 export function sanitizeTerminalDisplayText(
@@ -70,14 +74,9 @@ export function sanitizeTerminalDisplayText(
   return redactSecrets(stripTerminalControls(text, opts));
 }
 
-/**
- * Text on one row: each run of line breaks and tabs is one space, so the words they separated stay
- * apart, then other controls are stripped, secrets redacted and spaces made single.
- */
+/** Text on one row: controls stripped, secrets redacted, spaces made single and trimmed. */
 export function oneLineDisplayText(text: string): string {
-  return sanitizeTerminalDisplayText(text.replace(/[\t\n\v\f\r]+/g, ' '))
-    .replace(/\s+/g, ' ')
-    .trim();
+  return sanitizeTerminalDisplayText(text).replace(/\s+/g, ' ').trim();
 }
 
 /**

@@ -356,7 +356,7 @@ describe('ListRow', () => {
 
   it('stays one line tall and strips terminal controls', () => {
     const frame = frameOf(<ListRow label={'A\x1b[31m\nB'} metadata="meta" />);
-    expect(frame).toContain('AB');
+    expect(frame).toContain('A B');
     expect(frame).toContain('meta');
     expect(frame).not.toContain('\x1b[31m');
     expect(frame.split('\n')).toHaveLength(1);

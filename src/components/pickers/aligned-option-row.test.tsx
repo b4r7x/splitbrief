@@ -32,7 +32,7 @@ describe('AlignedOptionRow', () => {
     );
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('AB');
+    expect(frame).toContain('A B');
     expect(frame).toContain('okdone');
     expect(frame).not.toContain('owned');
     expect(frame).not.toContain('\u001b');
