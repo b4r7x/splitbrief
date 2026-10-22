@@ -1001,6 +1001,34 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
+  it('keeps the check status under a warning that shows while the check runs', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    prepareExecutionMock.mockReturnValue(pending.promise);
+    detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+    const warning =
+      '⚠ workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.';
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('background preparation');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
+      SESSION_FILTER_WAIT_MS,
+    );
+    feedbackStore.setError(warning);
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame.replace(/\s+/g, ' ')).toContain(warning);
+    expect(frame.split(CHECKING_STATUS)).toHaveLength(2);
+    expect(frame).not.toContain('Checking your tools…');
+    ui.stdin.write(ESC);
+    await flushEffects();
+    ui.unmount();
+  });
+
   it('esc during preparation leaves the submitted draft in the composer input', async () => {
     const pending = Promise.withResolvers<PreparationOutcome>();
     prepareExecutionMock.mockReturnValue(pending.promise);
@@ -1829,6 +1857,88 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     expect(frame).toContain('label printer.');
     expect(frame).toContain('/crew to change');
     expect(frame).toMatch(/\d+ more/);
+    ui.unmount();
+  });
+
+  const RETIRED_MODE =
+    '⚠ workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.';
+  const STARTUP_WARNINGS: Record<number, string> = {
+    2: `2 warnings, all shown when you quit · ${RETIRED_MODE}`,
+    3: `3 warnings, all shown when you quit · ${RETIRED_MODE} · ⚠ Skipping session directory 'old runs': invalid session id`,
+    4: `3 warnings, all shown when you quit · ${RETIRED_MODE} · ${RETIRED_MODE}`,
+  };
+
+  async function renderColdCheckUnder(message: string, sessions: number) {
+    await configStore.save(makeConfig());
+    seedSessions(sessions);
+    detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+    const ui = renderHome();
+    await flushEffects();
+    feedbackStore.setError(message);
+    await flushEffects();
+    return ui;
+  }
+
+  function expectWholeFrame(frame: string, cols: number, rows: number): void {
+    const lines = frame.split('\n');
+    expect(lines).toHaveLength(rows);
+    for (const line of lines) expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(cols);
+  }
+
+  it.each([
+    [2, 0],
+    [3, 0],
+    [4, 0],
+    [2, 2],
+    [3, 2],
+    [4, 2],
+  ])(
+    'names the tool check at 80x24 under a %i-row warning with %i sessions',
+    async (feedbackRows, sessions) => {
+      terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
+      const message = STARTUP_WARNINGS[feedbackRows] ?? '';
+      const ui = await renderColdCheckUnder(message, sessions);
+
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame.replace(/\s+/g, ' ')).toContain(message);
+      expect(frame.split('Checking your tools…')).toHaveLength(2);
+      expectWholeFrame(frame, 80, 24);
+      ui.unmount();
+    },
+  );
+
+  it('names the tool check at 60x18 under a four-row save message', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    const message = [
+      formatConfigSaveSuccess('BUILD · OpenCode CLI · Claude Haiku 4.5 · via anthropic', {
+        ignoreRuleAdded: false,
+      }),
+      formatNeedsSignInSaveFeedback({ tool: 'opencode', provider: 'anthropic' }),
+    ].join(SOFT_SEP);
+    const ui = await renderColdCheckUnder(message, 3);
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame.replace(/\s+/g, ' ')).toContain(message);
+    expect(frame).toContain('Checking your tools…');
+    expect(frame).toContain('/crew to change');
+    expectWholeFrame(frame, 60, 18);
+    ui.unmount();
+  });
+
+  it('keeps the notice row in place when the warning goes', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
+    const ui = await renderColdCheckUnder(STARTUP_WARNINGS[2] ?? '', 2);
+    const noticeRow = (frame: string) =>
+      stripAnsiStyles(frame)
+        .split('\n')
+        .findIndex((line) => line.includes('Checking your tools…'));
+    const underWarning = noticeRow(ui.lastFrame() ?? '');
+
+    feedbackStore.setError(null);
+    await flushEffects();
+
+    expect(noticeRow(ui.lastFrame() ?? '')).toBe(underWarning);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Checking your tools… · drop an image');
     ui.unmount();
   });
 

@@ -98,6 +98,29 @@ describe('deriveHomeHintLines', () => {
     expect(lines.feedbackLine).toContain('…');
   });
 
+  it('keeps a notice on the row under feedback, without the drop affordance', () => {
+    expect(
+      deriveHomeHintLines({
+        active: true,
+        homeHint: HINT,
+        notice: 'Checking your tools…',
+        feedbackMessage: 'Attached: notes.md',
+        width: 80,
+        dropEnabled: true,
+      }),
+    ).toEqual({ feedbackLine: 'Attached: notes.md', homeHintLine: 'Checking your tools…' });
+    expect(
+      deriveHomeHintLines({
+        active: true,
+        homeHint: HINT,
+        notice: 'Checking your tools…',
+        feedbackMessage: null,
+        width: 80,
+        dropEnabled: true,
+      }).homeHintLine,
+    ).toBe('Checking your tools… · drop an image');
+  });
+
   // Home is 108 cells wide at 120 columns, 76 at 80 and 56 at 60.
   it.each([
     [108, 2],
