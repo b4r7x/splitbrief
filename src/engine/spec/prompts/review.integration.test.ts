@@ -355,7 +355,6 @@ describe('buildFinalReviewPrompt', () => {
         plannerTool: 'claude-code',
         implementerTool: 'ollama',
       },
-      taskBreakdowns: [],
     });
 
     expect(result.reviewStatus).toBe('written');

@@ -6,7 +6,6 @@ import {
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
@@ -58,7 +57,6 @@ export type SummaryBase = {
 
 type BuildSummaryOptions = SummaryBase & {
   state: BuildSummaryState & Pick<WorkflowState, 'phase' | 'currentTaskIndex'>;
-  taskBreakdowns?: TaskTokenUsage[];
   /**
    * The run's per-call usage records (`collectCallUsageEvidence`). A caller that
    * holds the event stream can supply them; otherwise the run's own session
@@ -122,7 +120,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     feature,
     state,
     startTime,
-    taskBreakdowns,
     plannerTool,
     plannerModel,
     plannerKind,
@@ -140,6 +137,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     pricingCache,
     callEvidence,
   } = opts;
+  const { taskBreakdowns } = state;
   const totalTasks = state.tasks.length;
   const completionCounts = countLocalAndEscalatedTasks(state, taskBreakdowns);
   const completedByLocal = completionCounts.local;

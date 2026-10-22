@@ -139,7 +139,6 @@ async function review(
       plannerTool: 'test',
       implementerTool: 'test',
     },
-    taskBreakdowns: [],
   });
 }
 
@@ -379,7 +378,6 @@ describe('final review input cap', () => {
       projectDir: ref.projectDir,
       sessionId: ref.sessionId,
       state: result.state,
-      taskBreakdowns: [],
     });
     expect(summary.review).toBeUndefined();
   });

@@ -92,9 +92,8 @@ describe('buildSummary task costs', () => {
 
     const summary = summaryOf({
       feature: 'with-costs',
-      state: makeState({ tokenUsage: usage }),
+      state: makeState({ tokenUsage: usage, taskBreakdowns: breakdowns }),
       startTime: Date.now(),
-      taskBreakdowns: breakdowns,
       plannerTool: 'claude-code',
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
@@ -128,9 +127,8 @@ describe('buildSummary task costs', () => {
 
     const summary = summaryOf({
       feature: 'local-cost',
-      state: makeState({ tokenUsage: usage }),
+      state: makeState({ tokenUsage: usage, taskBreakdowns: breakdowns }),
       startTime: Date.now(),
-      taskBreakdowns: breakdowns,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
     });
@@ -160,9 +158,8 @@ describe('buildSummary task costs', () => {
 
     const summary = summaryOf({
       feature: 'model-aware-costs',
-      state: makeState({ tokenUsage: usage }),
+      state: makeState({ tokenUsage: usage, taskBreakdowns: breakdowns }),
       startTime: Date.now(),
-      taskBreakdowns: breakdowns,
       plannerTool: 'custom-planner-api',
       plannerModel: 'claude-opus-5',
       implementerTool: 'ollama',
@@ -210,9 +207,8 @@ describe('buildSummary task costs', () => {
 
     const summary = summaryOf({
       feature: 'mixed-profile-costs',
-      state: makeState({ tokenUsage: usage }),
+      state: makeState({ tokenUsage: usage, taskBreakdowns: breakdowns }),
       startTime: Date.now(),
-      taskBreakdowns: breakdowns,
       plannerTool: 'claude-code',
       implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
@@ -308,9 +304,9 @@ describe('buildSummary offering presentation', () => {
             plannerCacheRead: 100_000,
             reviewerCacheRead,
           }),
+          taskBreakdowns: breakdowns,
         }),
         startTime: Date.now(),
-        taskBreakdowns: breakdowns,
         plannerTool: 'custom-planner-api',
         plannerModel: 'claude-sonnet-5',
         implementerTool: 'custom-worker-api',

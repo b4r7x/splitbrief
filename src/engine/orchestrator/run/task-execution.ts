@@ -379,11 +379,7 @@ export async function runTasksAndReview(
 
   if (wctx.signal?.aborted) {
     return {
-      summary: buildSummary({
-        ...summaryBase,
-        state,
-        taskBreakdowns: taskResult.taskBreakdowns,
-      }),
+      summary: buildSummary({ ...summaryBase, state }),
       completed: false,
       state,
     };
@@ -395,11 +391,7 @@ export async function runTasksAndReview(
   const canRunFinalReview = state.phase === 'implementing' || state.phase === 'final-review';
   if (taskResult.status !== 'complete' || !canRunFinalReview) {
     return {
-      summary: buildSummary({
-        ...summaryBase,
-        state,
-        taskBreakdowns: taskResult.taskBreakdowns,
-      }),
+      summary: buildSummary({ ...summaryBase, state }),
       completed: false,
       state,
     };
@@ -412,8 +404,7 @@ export async function runTasksAndReview(
     phase: state.phase,
   });
 
-  let taskBreakdowns = taskResult.taskBreakdowns;
-  const summaryNow = () => buildSummary({ ...summaryBase, state, taskBreakdowns });
+  const summaryNow = () => buildSummary({ ...summaryBase, state });
   const captureCandidate = async (): Promise<Record<string, string> | undefined> => {
     const workspace = state.workspace;
     return workspace !== undefined &&
@@ -438,14 +429,12 @@ export async function runTasksAndReview(
   const runFixTasks = async () => {
     let rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
     state = rerun.state;
-    taskBreakdowns = rerun.taskBreakdowns;
     while (rerun.status === 'paused') {
       const parked = await parkAtBoundary({ wctx, state, setTrackedState });
       state = parked.state;
       if (!parked.continued) break;
       rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
       state = rerun.state;
-      taskBreakdowns = rerun.taskBreakdowns;
     }
     if (rerun.status === 'complete') return undefined;
     return {
@@ -505,7 +494,6 @@ export async function runTasksAndReview(
       sinks: wctx.sinks,
       ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),
       summaryBase,
-      taskBreakdowns,
       setTrackedState,
       ...(wctx.context.skillsContext !== undefined && {
         skillsContext: wctx.context.skillsContext,

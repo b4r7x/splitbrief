@@ -43,7 +43,6 @@ type RunTaskLoopOptions = {
 
 export type TaskLoopResult = {
   state: WorkflowState;
-  taskBreakdowns: TaskTokenUsage[];
   status: 'complete' | 'stopped' | 'paused';
 };
 
@@ -105,7 +104,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       message: `Recovery is still pending (reason: ${recovery.reason}, status: ${recovery.status}); no task work was started. Available actions: ${recovery.availableActions.join(', ')}.`,
       safety: { category: 'recovery', code: 'recovery_pending_unresolved' },
     });
-    return { state, taskBreakdowns, status: 'stopped' };
+    return { state, status: 'stopped' };
   }
   if (state.pendingScheduledReview !== undefined) {
     const pending = await runScheduledReview({
@@ -115,7 +114,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       callbacks: wctx.callbacks,
     });
     state = pending.state;
-    if (pending.status === 'stopped') return { state, taskBreakdowns, status: 'stopped' };
+    if (pending.status === 'stopped') return { state, status: 'stopped' };
   }
   let changedFilesBaseline: ChangedFilesBaseline =
     state.changedFilesBaseline !== undefined
@@ -136,7 +135,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   // The bound is re-read every pass: a consult that inserts subtasks grows the list the
   // loop still has to run, and their indices follow the parent the split replaced.
   for (let i = state.currentTaskIndex; i < state.tasks.length; i++) {
-    if (wctx.signal?.aborted) return { state, taskBreakdowns, status: 'stopped' };
+    if (wctx.signal?.aborted) return { state, status: 'stopped' };
     const task = state.tasks[i];
     if (!task) continue;
     // A fix cycle starts at its first appended brief; a brief that passed or was skipped is not re-run.
@@ -150,7 +149,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       taskIndex: i,
     });
     state = depGate.state;
-    if (depGate.stopped) return { state, taskBreakdowns, status: 'stopped' };
+    if (depGate.stopped) return { state, status: 'stopped' };
 
     syncBaselineIntoState();
     let refreshedTask = task;
@@ -172,7 +171,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       getRunnerModelName,
     });
     state = routing.state;
-    if (!routing.ok) return { state, taskBreakdowns, status: 'stopped' };
+    if (!routing.ok) return { state, status: 'stopped' };
     const { selectedProfile, selectedModel, routingDecision } = routing;
     const selectedTaskConfig = configForProfile(
       config,
@@ -213,7 +212,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
         }),
         setTrackedState,
       );
-      return { state, taskBreakdowns, status: 'stopped' };
+      return { state, status: 'stopped' };
     }
     const { implementerModel: _previousImplementerModel, ...stateWithoutImplementerModel } = state;
     const taskState: WorkflowState = {
@@ -270,7 +269,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
 
     if (wctx.signal?.aborted || state.currentTaskIndex <= i) {
       setCurrentTask(undefined);
-      return { state, taskBreakdowns, status: 'stopped' };
+      return { state, status: 'stopped' };
     }
 
     // The configured cadence: with workflow.review 'task' every brief that passed its
@@ -287,15 +286,15 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       state = scheduled.state;
       if (scheduled.status === 'stopped') {
         setCurrentTask(undefined);
-        return { state, taskBreakdowns, status: 'stopped' };
+        return { state, status: 'stopped' };
       }
     }
 
     if (wctx.sinks.consumeBoundaryPause?.()) {
       setCurrentTask(undefined);
-      return { state, taskBreakdowns, status: 'paused' };
+      return { state, status: 'paused' };
     }
   }
   setCurrentTask(undefined);
-  return { state, taskBreakdowns, status: 'complete' };
+  return { state, status: 'complete' };
 }

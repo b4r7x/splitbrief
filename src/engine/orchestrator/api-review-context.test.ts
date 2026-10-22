@@ -401,7 +401,6 @@ async function review(opts: {
       plannerTool: 'ollama',
       implementerTool: 'ollama',
     },
-    taskBreakdowns: [],
     ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
   });
 }

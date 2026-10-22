@@ -21,6 +21,7 @@ export type BuildSummaryState = Pick<
   | 'implementerModel'
   | 'reviewerTool'
   | 'reviewerModel'
+  | 'taskBreakdowns'
 >;
 
 export function countLocalAndEscalatedTasks(

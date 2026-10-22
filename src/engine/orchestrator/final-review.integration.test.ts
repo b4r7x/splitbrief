@@ -50,7 +50,6 @@ import { finalReviewError, runFinalReviewPhase } from './final-review.js';
 import { createContinuationHolder } from './continuation.js';
 import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../core/evidence/ledger-state.js';
@@ -205,7 +204,6 @@ describe('runFinalReviewPhase continuation', () => {
         steer: plainUserMessage('ignore the formatting nits'),
       }),
       summaryBase: { ...SUMMARY_BASE, projectDir, sessionId },
-      taskBreakdowns: [],
     });
 
     expect(prompts).toHaveLength(1);
@@ -242,7 +240,6 @@ describe('runFinalReviewPhase continuation', () => {
       metadata: TEST_METADATA,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       summaryBase: { ...SUMMARY_BASE, projectDir, sessionId },
-      taskBreakdowns: [],
     });
 
     expect(prompts[0]).toContain('Greet people by name.');
@@ -302,7 +299,6 @@ describe('runFinalReviewPhase', () => {
         tracked = state;
       },
       summaryBase: { ...SUMMARY_BASE, projectDir, sessionId },
-      taskBreakdowns: [],
     });
 
     expect(phaseAtReview).toBe('final-review');
@@ -340,7 +336,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [] satisfies TaskTokenUsage[],
     });
 
     expect(result.reviewStatus).toBe('written');
@@ -422,7 +417,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(result.reviewStatus).toBe('written');
@@ -468,7 +462,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(prompts).toHaveLength(2);
@@ -521,7 +514,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
       reviewChecks: true,
     });
 
@@ -557,7 +549,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
       reviewChecks: false,
     });
 
@@ -610,7 +601,6 @@ describe('runFinalReviewPhase', () => {
         reviewer,
         metadata: TEST_METADATA,
         summaryBase: SUMMARY_BASE,
-        taskBreakdowns: [],
         reviewChecks: false,
       });
       return { result, prompts: prompts.join('\n') };
@@ -643,7 +633,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(prompts).toHaveLength(2);
@@ -752,7 +741,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const record = readReviewRecord(projectDir, sessionId);
@@ -797,7 +785,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const record = readReviewRecord(projectDir, sessionId);
@@ -857,7 +844,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const record = readReviewRecord(projectDir, sessionId);
@@ -924,7 +910,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
       reviewChecks: false,
     });
 
@@ -983,7 +968,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     // The coverage rule sends that finding back once; it never verifies.
@@ -1050,7 +1034,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(result.reviewStatus).toBe('written');
@@ -1115,7 +1098,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(result.reviewStatus).toBe('written');
@@ -1155,7 +1137,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(prompts).toHaveLength(0);
@@ -1207,7 +1188,6 @@ describe('runFinalReviewPhase', () => {
         reviewer,
         metadata: TEST_METADATA,
         summaryBase: SUMMARY_BASE,
-        taskBreakdowns: [],
       });
 
       expect(prompts).toHaveLength(1);
@@ -1237,7 +1217,6 @@ describe('runFinalReviewPhase', () => {
         reviewer,
         metadata: TEST_METADATA,
         summaryBase: SUMMARY_BASE,
-        taskBreakdowns: [],
       });
 
       expect(prompts).toHaveLength(1);
@@ -1386,7 +1365,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const prompt = prompts[0] ?? '';
@@ -1435,7 +1413,6 @@ describe('runFinalReviewPhase', () => {
       metadata: TEST_METADATA,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(state.tokenUsage.reviewerInput).toBe(200);
@@ -1481,7 +1458,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(prompts[0]).toContain(
@@ -1511,7 +1487,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(prompts[1]).toContain('State fallback marker: rotate audit log checksum.');
@@ -1549,7 +1524,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const errorEvent = events.find((e) => e.type === 'error');
@@ -1600,7 +1574,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(typedCall).toHaveBeenCalledTimes(1);
@@ -1644,7 +1617,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const failure = events.find((event) => event.type === 'error');
@@ -1676,7 +1648,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const reviews = events.filter(
@@ -1729,7 +1700,6 @@ describe('runFinalReviewPhase', () => {
       metadata: TEST_METADATA,
       signal: controller.signal,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(result.reviewStatus).toBe('failed');
@@ -1764,7 +1734,6 @@ describe('runFinalReviewPhase', () => {
       state,
       reviewer,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(result.state.tasks).toEqual([]);
@@ -1797,7 +1766,6 @@ describe('runFinalReviewPhase', () => {
       state: allTasksDoneState(tasks, runStartHead),
       reviewer,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const drift = JSON.parse(
@@ -1833,7 +1801,6 @@ describe('runFinalReviewPhase', () => {
       state: allTasksDoneState([task], runStartHead),
       reviewer,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const message = 'Task T001 reached done but src/a.ts, src/b.ts were not changed.';
@@ -1871,7 +1838,6 @@ describe('runFinalReviewPhase', () => {
       state,
       reviewer,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const errorEvent = events.find((event) => event.type === 'error');
@@ -1934,7 +1900,6 @@ describe('runFinalReviewPhase', () => {
       state,
       reviewer,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const drift = JSON.parse(
@@ -1973,7 +1938,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(prompts[0]).toContain(marker);
@@ -2016,7 +1980,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(prompts[0]).toContain(committedMarker);
@@ -2084,7 +2047,6 @@ describe('runFinalReviewPhase', () => {
       state,
       reviewer,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(prompts[0]).toContain(postRunMarker);
@@ -2130,7 +2092,6 @@ describe('runFinalReviewPhase', () => {
       },
       reviewer,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     expect(prompts[0]).toContain(marker);
@@ -2170,7 +2131,6 @@ describe('runFinalReviewPhase', () => {
       state: allTasksDoneState([task], runStartHead),
       reviewer,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const promptDiff = prompts[0]
@@ -2200,7 +2160,6 @@ describe('review record', () => {
       },
       reviewer,
       summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
     });
 
     const record = readReviewRecord(projectDir, sessionId);

@@ -106,7 +106,6 @@ async function review(
       plannerTool: 'test',
       implementerTool: 'test',
     },
-    taskBreakdowns: [],
   });
 }
 

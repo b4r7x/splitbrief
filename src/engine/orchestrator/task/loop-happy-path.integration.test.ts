@@ -140,7 +140,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(result.taskBreakdowns.map((b) => b.taskId)).toEqual(['T001', 'T002']);
+    expect(result.state.taskBreakdowns?.map((b) => b.taskId)).toEqual(['T001', 'T002']);
     const persisted = loadState({ projectDir, sessionId });
     expect(persisted?.taskBreakdowns?.map((b) => b.taskId)).toEqual(['T001', 'T002']);
 
@@ -160,7 +160,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(reentry.taskBreakdowns.map((b) => b.taskId)).toEqual(['T001', 'T002']);
+    expect(reentry.state.taskBreakdowns?.map((b) => b.taskId)).toEqual(['T001', 'T002']);
   });
 
   it('dispatches each task as a separate implementer call without prior task continuation text', async () => {

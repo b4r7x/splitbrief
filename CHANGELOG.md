@@ -376,6 +376,7 @@
 - A mouse click on the trust and confirm panels answers on the row it hits: Confirm confirms, Deny denies, and a blank row, the title or the key line does nothing. In a short terminal the panels give up blank rows and details before the title and the choices, name the file or the runner's executable while a row is free for it, and count the details they cannot show. Before, on the panels before a run a click on Confirm or Deny did nothing and a click below them could trust the runner, and over a run in a short terminal a choice could drop out of view and a click could answer for the row next to it.
 - A seat you save while a run waits paused is now used when you continue the run in the same window: after a pause between briefs the next brief runs on the new seat, and the save notice says where the seat changes. Before, the next brief ran on the seat you had replaced.
 - A message you send to BUILD just as a brief finishes stays queued, and the run goes on. Before, the run stopped with an internal state error.
+- A run that closes after Re-run Apply, or whose Re-run Apply stops on an error, names every BUILD seat its briefs ran on. Before, it named only the last one.
 
 ## [0.1.0] - 2026-08-07
 
