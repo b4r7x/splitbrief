@@ -57,6 +57,6 @@ describe.each([
         reason: 'unreadable',
         path: '\u001b]0;pwned\u0007\u001b[31mnotes.md\u001b[0m\n',
       }),
-    ).toBe(`${prefix}cannot read the file. Check its permissions. File: notes.md.`);
+    ).toBe(`${prefix}cannot read the file. Check its permissions. File: notes.md .`);
   });
 });

@@ -452,8 +452,8 @@ export function parseCopilotHelpConfigCatalog(stdout: string): NativeCliModelCat
 
 // `agy models` prints `<id>\t<display name>` per model, one row per effort
 // variant (`gemini-3.8-flash-high`), and sends its progress line to stderr. The
-// tab is the only separator and `stripTerminalControls` deletes it, so a row is
-// split before it is cleaned; a line without a tab carries no model.
+// tab is the only separator and `stripTerminalControls` turns it into a space, so
+// a row is split before it is cleaned; a line without a tab carries no model.
 export function parseAntigravityModelCatalog(stdout: string): NativeCliModelCatalog | null {
   const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
   for (const line of stdout.split('\n')) {

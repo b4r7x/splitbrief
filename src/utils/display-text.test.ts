@@ -50,7 +50,29 @@ describe('stripTerminalControls', () => {
   it('removes ESC, BEL, OSC, CSI, and C0/C1 controls from display text', () => {
     const text = 'a\u001b[31mb\u001b[0mc\u0007d\u001b]0;owned\u0007e\u009b2Kf\u009dtitle\u009cg\nh';
 
-    expect(stripTerminalControls(text)).toBe('abcdefgh');
+    expect(stripTerminalControls(text)).toBe('abcdefg h');
+  });
+
+  it('turns each run of line breaks and tabs into one space on one row', () => {
+    expect(stripTerminalControls('a\nb')).toBe('a b');
+    expect(stripTerminalControls('a\r\nb')).toBe('a b');
+    expect(stripTerminalControls('a\n\n\tb')).toBe('a b');
+    expect(stripTerminalControls('a\n\u0000\nb')).toBe('a b');
+  });
+
+  it('keeps line breaks and turns each tab into a space in the line-break mode', () => {
+    expect(stripTerminalControls('a\r\nb\n\tc\rd', { preserveLineBreaks: true })).toBe(
+      'a\nb\n c\nd',
+    );
+    expect(stripTerminalControls('\t\tx\u000by\u000cz', { preserveLineBreaks: true })).toBe(
+      '  x y z',
+    );
+  });
+
+  it('strips an escape sequence whole, with no extra space for a line break inside it', () => {
+    expect(stripTerminalControls('a\u001b]0;ti\ntle\u0007b')).toBe('ab');
+    expect(stripTerminalControls('a\n\u001b]8;;x\ny\u0007\nb')).toBe('a b');
+    expect(stripTerminalControls('a\u001b[31m\nb\u001b[0m')).toBe('a b');
   });
 });
 
@@ -87,6 +109,22 @@ describe('sanitizeTerminalDiagnosticText', () => {
     );
 
     expect(result).toBe('a ***REDACTED*** xx…');
+  });
+
+  it('shows a line break as one space, so the words on each side stay apart', () => {
+    expect(sanitizeTerminalDiagnosticText('a\nb')).toBe('a b');
+    expect(sanitizeTerminalDiagnosticText('a\r\nb')).toBe('a b');
+    expect(sanitizeTerminalDiagnosticText('a\n\n\tb')).toBe('a b');
+    expect(sanitizeTerminalDiagnosticText('a\r\nb\tc', { preserveLineBreaks: true })).toBe(
+      'a\nb c',
+    );
+  });
+
+  it('bounds the result and redacts a token next to a line break', () => {
+    expect(sanitizeTerminalDiagnosticText('alpha\nbeta\ngamma', { maxChars: 8 })).toBe('alpha b…');
+    expect(
+      sanitizeTerminalDiagnosticText('TOKEN=abcdefghijklmnopqrstuvwxyz1234567890abcdef\nnext'),
+    ).toBe('TOKEN=***REDACTED*** next');
   });
 
   it('uses the default terminal diagnostic bound', () => {
@@ -137,12 +175,25 @@ describe('getTerminalCellWidth', () => {
   it.each([
     ['unit separator', '\u001f'],
     ['delete', '\u007f'],
-    ['tab', '\u0009'],
-    ['line feed', '\n'],
     ['C1 control', '\u0085'],
   ])('still strips %s rather than measuring it as printable', (_, control) => {
     expect(getTerminalCellWidth(control)).toBe(0);
     expect(getTerminalCellWidth(`ab${control}cd`)).toBe(4);
+  });
+
+  it.each([
+    ['tab', '\t'],
+    ['line feed', '\n'],
+    ['run of line breaks', '\r\n\n'],
+  ])('measures a %s as the one space it shows as', (_, control) => {
+    expect(getTerminalCellWidth(control)).toBe(1);
+    expect(getTerminalCellWidth(`ab${control}cd`)).toBe(5);
+  });
+
+  it('truncates and pads text with a line break by the space it shows as', () => {
+    expect(truncateTerminalDisplayText('alpha\nbeta', 8)).toBe('alpha b…');
+    expect(truncateTerminalDisplayText('alpha\nbeta', 10)).toBe('alpha beta');
+    expect(padTerminalDisplayTextEnd('a\tb', 5)).toBe('a b  ');
   });
 
   it('measures an empty string as zero cells', () => {

@@ -239,7 +239,7 @@ function sanitizeString(value: string, state: PayloadTransformState): string {
 
 function stripPublicStringControls(value: string): string {
   return value
-    .split('\n')
+    .split(/\r?\n/)
     .map((line) =>
       line
         .split('\t')

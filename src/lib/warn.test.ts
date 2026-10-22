@@ -69,3 +69,21 @@ describe('warn diagnostics ownership', () => {
     expect(stderr).toEqual(['to stderr\n']);
   });
 });
+
+describe('a line break in a warning', () => {
+  it('shows as one space on the stderr line, not as nothing', () => {
+    const stderr = captureStderr();
+    let parseError: unknown;
+    try {
+      JSON.parse('{"visible": tru\n');
+    } catch (err) {
+      parseError = err;
+    }
+
+    warnError('could not read the saved layout', parseError);
+
+    expect(stderr).toEqual([
+      `could not read the saved layout: Unexpected token ' ', "{"visible": tru " is not valid JSON\n`,
+    ]);
+  });
+});
