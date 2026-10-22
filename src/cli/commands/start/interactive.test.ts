@@ -8,7 +8,6 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { writeConfigMarker, prepareExecutionMock } from '#testing/helpers/start-command.js';
 import { saveDetectionCache } from '../../../engine/detection/cache.js';
-import * as capabilitiesModule from '../../../engine/providers/capabilities.js';
 import * as initStoresModule from '../../bootstrap/init.js';
 import * as setupModule from '../../setup.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
@@ -46,6 +45,10 @@ beforeEach(() => {
   resetAllStores();
   preparationStore.reset();
   process.stdin.isTTY = true;
+  // Store discovery probes every tool on PATH; a unit test never starts the tester's real tools.
+  vi.spyOn(initStoresModule, 'initStoresForTuiMount').mockResolvedValue({
+    awaitDiscovery: Promise.resolve(),
+  });
 });
 
 afterEach(() => {
@@ -81,9 +84,7 @@ describe('runInteractiveStart', () => {
     const setupSpy = vi
       .spyOn(setupModule, 'setupWorkflow')
       .mockImplementation(() => setupGate.promise);
-    const initSpy = vi
-      .spyOn(initStoresModule, 'initStoresForTuiMount')
-      .mockResolvedValue({ awaitDiscovery: Promise.resolve() });
+    const initSpy = vi.mocked(initStoresModule.initStoresForTuiMount);
     vi.spyOn(readinessModule, 'assertNoLiveSessionForCli').mockImplementation(() => {});
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
@@ -123,9 +124,6 @@ describe('runInteractiveStart', () => {
       useMouse: false,
       useHover: false,
     });
-    vi.spyOn(initStoresModule, 'initStoresForTuiMount').mockResolvedValue({
-      awaitDiscovery: Promise.resolve(),
-    });
     vi.spyOn(readinessModule, 'assertNoLiveSessionForCli').mockImplementation(() => {});
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
@@ -136,9 +134,8 @@ describe('runInteractiveStart', () => {
 
   it('mounts Ink before store discovery finishes (T-037)', async () => {
     const discoveryGate = Promise.withResolvers<void>();
-    vi.spyOn(capabilitiesModule, 'detectCapabilities').mockImplementation(async () => {
-      await discoveryGate.promise;
-      return { contextLength: 32_768, origin: 'fallback' as const };
+    vi.spyOn(initStoresModule, 'initStoresForTuiMount').mockResolvedValue({
+      awaitDiscovery: discoveryGate.promise,
     });
     vi.spyOn(setupModule, 'setupWorkflow').mockResolvedValue({
       projectDir: tmp,
@@ -267,9 +264,6 @@ async function heldCliLaunch() {
     useFullscreen: false,
     useMouse: false,
     useHover: false,
-  });
-  vi.spyOn(initStoresModule, 'initStoresForTuiMount').mockResolvedValue({
-    awaitDiscovery: Promise.resolve(),
   });
   vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   vi.spyOn(console, 'log').mockImplementation(() => {});
