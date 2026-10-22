@@ -20,6 +20,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import type { Summary } from '../../core/schemas/summary.js';
+import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import {
@@ -2236,7 +2237,16 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     });
   }
 
-  function askPlannerQuestion(replies: unknown[]): void {
+  function askPlannerQuestion(
+    replies: unknown[],
+    question: ClarificationQuestion = {
+      id: 'scope',
+      type: 'choice',
+      text: 'Which module should change?',
+      options: ['src/auth.ts', 'src/session.ts'],
+      default: 'src/auth.ts',
+    },
+  ): void {
     navigatePreparedWorkflow(projectDir, 'panel slash');
     runWorkflow.mockImplementation(async (opts) => {
       publishEvent(opts, {
@@ -2249,15 +2259,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
         .onPlannerReply?.({
           call: 'research',
           text: '',
-          questions: [
-            {
-              id: 'scope',
-              type: 'choice',
-              text: 'Which module should change?',
-              options: ['src/auth.ts', 'src/session.ts'],
-              default: 'src/auth.ts',
-            },
-          ],
+          questions: [question],
           answers: [],
           answered: false,
         })
@@ -2395,6 +2397,41 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     await flushEffects();
     expect(replies).toEqual([]);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
+    ui.unmount();
+  });
+
+  it('runs a slash command typed into the answer field of a free-text question without answering it', async () => {
+    const replies: unknown[] = [];
+    askPlannerQuestion(replies, {
+      id: 'name',
+      type: 'input',
+      text: 'What should the flag be called?',
+    });
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+
+    for (const key of '/usage') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('› /usage');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/usage');
+    });
+    await flushEffects();
+    expect(onRuntimeCommand.mock.calls).toEqual([['/usage']]);
+    expect(replies).toEqual([]);
+    expect(feedbackStore.get().isError).toBe(false);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Question 1 of 1');
+    expect(frame).not.toContain('› /usage');
     ui.unmount();
   });
 
