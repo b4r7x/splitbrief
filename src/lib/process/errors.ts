@@ -41,14 +41,16 @@ export interface ExitCodeErrorOptions {
   truncated?: boolean | undefined;
 }
 
-export type ProcessOutputCapture = { text: string; complete: boolean };
+export type ProcessOutputCapture = { stdout: string; stderr: string; complete: boolean };
 
-/** The joined output and stderr of a red process; a stream its spawner cut makes it incomplete. */
+/** The output and stderr of a red process; a stream its spawner cut makes it incomplete. */
 export function processOutputCapture(data: ProcessOutputErrorData): ProcessOutputCapture {
-  return {
-    text: [data.output, data.stderr].filter((part) => part.trim().length > 0).join('\n'),
-    complete: data.truncated !== true,
-  };
+  return { stdout: data.output, stderr: data.stderr, complete: data.truncated !== true };
+}
+
+/** A capture as one text: its stdout, then its stderr. */
+export function captureText(capture: ProcessOutputCapture): string {
+  return [capture.stdout, capture.stderr].filter((part) => part.trim().length > 0).join('\n');
 }
 
 export type ProcessTerminationTarget = 'process' | 'process-group';

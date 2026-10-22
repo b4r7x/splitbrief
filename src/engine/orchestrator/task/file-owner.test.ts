@@ -6,7 +6,7 @@ const WORKSPACE = '/ws';
 
 function filesOf(output: string): string[] {
   const failure = failureKeys(
-    { capture: { text: output, complete: true }, exitCode: 1 },
+    { capture: { stdout: output, stderr: '', complete: true }, exitCode: 1 },
     WORKSPACE,
   );
   return failingFilesFromKeys(failure.keys, WORKSPACE);

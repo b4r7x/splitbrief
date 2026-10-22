@@ -5,32 +5,16 @@ import { lineageAttemptsOf, type WorkflowState } from '../../../../core/schemas/
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { scopePathPatterns } from '../../../../utils/path-patterns.js';
 import { consultSeatRunner } from '../../escalation/consult-guidance.js';
+import { withoutRunBanners } from '../../validation/extract-failure-keys.js';
 import { summarizeText } from './issue.js';
-
-/** `> <package>@<version> <script>`: npm and pnpm print it, then `> <command>`, above a script's output. */
-const RUN_BANNER = /^> (?:@[^\s/]+\/)?[^\s@/]+@\S+ \S/;
-
-/** npm and pnpm print a banner pair above a script's real output; it is not the error. */
-function stripBannerLines(input: string): string {
-  const lines = input.split('\n');
-  const kept: string[] = [];
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index] ?? '';
-    if (RUN_BANNER.test(line)) {
-      if ((lines[index + 1] ?? '').startsWith('> ')) index++;
-      continue;
-    }
-    if (line.trim().length > 0) kept.push(line);
-  }
-  return kept.length > 0 ? kept.join('\n') : input;
-}
 
 export function summarizeValidation(opts: { validationSummary?: string | undefined }): {
   detail: string;
   summary: string;
 } {
   if (opts.validationSummary !== undefined && opts.validationSummary.trim().length > 0) {
-    const summary = summarizeText(stripBannerLines(opts.validationSummary));
+    const kept = withoutRunBanners(opts.validationSummary);
+    const summary = summarizeText(kept.length > 0 ? kept.join('\n') : opts.validationSummary);
     return { detail: `Validation: ${summary}`, summary };
   }
 

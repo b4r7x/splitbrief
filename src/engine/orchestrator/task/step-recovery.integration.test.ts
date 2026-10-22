@@ -464,7 +464,7 @@ describe('runSingleTask — the retry-exhausted halt keeps the check output', ()
 
     expect(result.pendingRecovery?.reason).toBe('retry-exhausted');
     expect(result.pendingRecovery?.details[0]).toBe(
-      'Last error: check K1 did not pass (fail): test failed',
+      'Last error: check K1 did not pass (fail): exited with code 2: test failed Output tail: test failed',
     );
   });
 });

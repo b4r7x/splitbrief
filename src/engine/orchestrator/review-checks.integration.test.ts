@@ -850,7 +850,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         `failed and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${red.reason}); the reviewer decides.`,
       );
       expect(sectionOf(outcome)).toContain(
-        `- V1 \`${red.command}\`: failed, not verified at the run base (${red.reason}); the reviewer decides\ncheck V1 did not pass (fail): ${red.red}`,
+        `- V1 \`${red.command}\`: failed, not verified at the run base (${red.reason}); the reviewer decides\ncheck V1 did not pass (fail): ${red.reason.slice('both runs '.length)}\nOutput tail:\n${red.red}`,
       );
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
       expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();

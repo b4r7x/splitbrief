@@ -1,4 +1,5 @@
 import {
+  captureText,
   isENOENT,
   processError,
   processOutputCapture,
@@ -68,14 +69,15 @@ export async function runValidationStep(opts: {
       label: 'test validation',
       signal,
     });
-    const green = [stdout, stderr].filter((part) => part.trim().length > 0).join('\n');
+    const capture = {
+      stdout,
+      stderr,
+      complete: stdoutMetadata?.truncated !== true && stderrMetadata?.truncated !== true,
+    };
     return {
       passed: true,
-      output: sanitizeTestOutput(green),
-      capture: {
-        text: green,
-        complete: stdoutMetadata?.truncated !== true && stderrMetadata?.truncated !== true,
-      },
+      output: sanitizeTestOutput(captureText(capture)),
+      capture,
       command,
       exitCode: 0,
     };
@@ -85,7 +87,7 @@ export async function runValidationStep(opts: {
       return {
         passed: false,
         output: '',
-        capture: { text: '', complete: true },
+        capture: { stdout: '', stderr: '', complete: true },
         command,
         notRunnable,
       };
@@ -96,15 +98,15 @@ export async function runValidationStep(opts: {
         timedOut: true,
         error: boundedOutputTail(err.message),
         output: '',
-        capture: { text: err.message, complete: true },
+        capture: { stdout: '', stderr: '', complete: true },
         command,
       };
     }
     if (processError.isExitCode(err)) {
-      const { output, stderr } = err.data;
+      const { output } = err.data;
       const stdout = String(output ?? '');
       const capture = processOutputCapture(err.data);
-      const failingTests = parseFailingTests(relativeToDir(capture.text, cwd));
+      const failingTests = parseFailingTests(relativeToDir(captureText(capture), cwd));
       const detail =
         failingTests.length > 0
           ? failingTests
@@ -113,10 +115,7 @@ export async function runValidationStep(opts: {
                   `FAIL  ${failingTestLabel(test)}${test.message === '' ? '' : `\n${test.message}`}`,
               )
               .join('\n\n')
-          : truncateByTailLines(
-              [stdout, stderr].filter((part) => part.trim().length > 0).join('\n'),
-              MAX_TEST_TAIL_LINES,
-            ).trim();
+          : truncateByTailLines(captureText(capture), MAX_TEST_TAIL_LINES).trim();
       return {
         passed: false,
         output: sanitizeTestOutput(stdout),

@@ -16,6 +16,7 @@ import type {
   WorkflowState,
 } from '../../../core/schemas/workflow.js';
 import {
+  captureText,
   processError,
   processOutputCapture,
   type ProcessOutputCapture,
@@ -168,7 +169,11 @@ async function runTestCheck(
     };
   }
   // A test that ran shows in the visible counts; a cut-off output cannot show that none ran.
-  if (result.passed && planned.countsCargoTests && countCargoTests(result.capture.text) === 0) {
+  if (
+    result.passed &&
+    planned.countsCargoTests &&
+    countCargoTests(captureText(result.capture)) === 0
+  ) {
     return {
       checkId: check.id,
       status: 'not-runnable',
@@ -232,11 +237,10 @@ async function runCommandCheck(
       label: `check ${check.id}`,
       signal: opts.signal,
     });
-    const output = [stdout, stderr].filter((part) => part.trim().length > 0).join('\n');
     return {
       checkId: check.id,
       status: 'pass',
-      output: boundedOutputTail(output),
+      output: boundedOutputTail(captureText({ stdout, stderr, complete: true })),
       command: check.value,
       exitCode: 0,
     };
@@ -256,7 +260,7 @@ async function runCommandCheck(
       return {
         checkId: check.id,
         status: 'fail',
-        output: boundedOutputTail(capture.text),
+        output: boundedOutputTail(captureText(capture)),
         failure: failureKeys({ capture, exitCode: err.data.code ?? undefined }, opts.projectDir),
         command: check.value,
         ...(err.data.code !== null && { exitCode: err.data.code }),
@@ -268,7 +272,7 @@ async function runCommandCheck(
         status: 'fail',
         output: boundedOutputTail(err.message),
         failure: failureKeys(
-          { capture: { text: err.message, complete: true }, timedOut: true },
+          { capture: { stdout: '', stderr: '', complete: true }, timedOut: true },
           opts.projectDir,
         ),
         command: check.value,
@@ -320,10 +324,7 @@ async function runRenderCheck(
       signal: opts.signal,
     });
     exitCode = 0;
-    capture = {
-      text: [stdout, stderr].filter((part) => part.trim().length > 0).join('\n'),
-      complete: true,
-    };
+    capture = { stdout, stderr, complete: true };
   } catch (err: unknown) {
     const notRunnable = notRunnableReason(err, cmd);
     if (notRunnable !== undefined) {
@@ -344,7 +345,7 @@ async function runRenderCheck(
         status: 'fail',
         output: boundedOutputTail(err.message),
         failure: failureKeys(
-          { capture: { text: err.message, complete: true }, timedOut: true },
+          { capture: { stdout: '', stderr: '', complete: true }, timedOut: true },
           opts.projectDir,
         ),
         command,
@@ -380,7 +381,7 @@ async function runRenderCheck(
           status: 'fail' as const,
           failure: failureKeys({ capture, exitCode }, opts.projectDir),
         }),
-    output: boundedOutputTail(capture.text),
+    output: boundedOutputTail(captureText(capture)),
     command,
     exitCode,
     artifacts,

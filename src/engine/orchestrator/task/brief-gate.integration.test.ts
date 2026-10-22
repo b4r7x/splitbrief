@@ -260,7 +260,10 @@ describe('brief gate', () => {
     expect(result.acceptance.accepted).toBe(green && !queued);
     expect(result.correction).toBe(green && queued);
     if (green) expect(result.error).toBe(queued ? CORRECTION_AFTER_CHECKS : '');
-    else expect(result.error).toMatch(/^check K1 did not pass \(fail\): broken/);
+    else
+      expect(result.error).toMatch(
+        /^check K1 did not pass \(fail\): exited with code 1 without diagnostics\nOutput tail:\nbroken/,
+      );
     expect(result.diagnosis).toBe(green ? '' : 'check K1 failed');
     expect(result.state.tasks[0]?.checkResults).toEqual([
       { id: 'K1', status: green ? 'pass' : 'fail' },
@@ -519,7 +522,9 @@ describe('brief gate', () => {
     });
     expect(runCommand).toHaveBeenCalledTimes(1);
     expect(result.acceptance.accepted).toBe(false);
-    expect(result.error).toMatch(/^check K1 did not pass \(fail\): broken/);
+    expect(result.error).toMatch(
+      /^check K1 did not pass \(fail\): exited with code 1 without diagnostics\nOutput tail:\nbroken/,
+    );
     expect(result.diagnosis).toBe('check K1 failed');
   });
 
