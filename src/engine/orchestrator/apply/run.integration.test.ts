@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -115,6 +116,19 @@ async function passIntegrationReview(run: ApplyRun): Promise<WorkflowState> {
   });
   saveState({ projectDir: run.dir, sessionId: run.sessionId }, state);
   return state;
+}
+
+async function choose(run: ApplyRun, action: 'retry-same-worker' | 'restore-backup') {
+  const { bus } = makeBusRecorder();
+  const chosen = await applyRecoveryAction({
+    projectDir: run.dir,
+    sessionId: run.sessionId,
+    state: savedState(run),
+    action,
+    bus,
+  });
+  if (!chosen.ok) throw new Error(chosen.message);
+  return chosen.state;
 }
 
 beforeEach(async () => {
@@ -635,18 +649,6 @@ describe('runApply', { timeout: 60_000 }, () => {
           .mocked(entry.writeConfinedEntryOrLink)
           .mockImplementation(actualEntry.writeConfinedEntryOrLink);
     };
-    const choose = async (run: ApplyRun, action: 'retry-same-worker' | 'restore-backup') => {
-      const { bus } = makeBusRecorder();
-      const chosen = await applyRecoveryAction({
-        projectDir: run.dir,
-        sessionId: run.sessionId,
-        state: savedState(run),
-        action,
-        bus,
-      });
-      if (!chosen.ok) throw new Error(chosen.message);
-      return chosen.state;
-    };
 
     it('partial apply: failure after the first file, restart, restore brings exact bytes back, a later user edit is a reported conflict', async () => {
       await withApplyRun(
@@ -1093,7 +1095,9 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       expect(saved.applyReview?.merged).toEqual([
         { path: 'a.txt', checkoutHunks: expect.stringContaining('+THEIRS') },
       ]);
-      expect(saved.applyIntegrated).toEqual([{ path: 'a.txt', checkoutHash: sha256Hex(theirs) }]);
+      expect(saved.applyIntegrated).toEqual([
+        { path: 'a.txt', checkout: `file:${sha256Hex(theirs)}:644` },
+      ]);
       expect(saved.pendingTriage).toEqual({
         inputs: [
           {
@@ -1129,7 +1133,9 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
         'bin.dat · both sides changed a binary file',
       );
       expect(saved.pendingTriage).toBeUndefined();
-      expect(saved.applyIntegrated).toBeUndefined();
+      expect(saved.applyIntegrated).toEqual([
+        { path: 'bin.dat', checkout: `file:${sha256Hex('a\0theirs\n')}:644` },
+      ]);
       expect(saved.applyReview).toBeUndefined();
     });
   });
@@ -1339,6 +1345,201 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
 
       expect(result.outcome).toBe('applied');
       expect(JSON.stringify(events)).not.toContain('Run accepted as is');
+    });
+  });
+});
+
+describe('runApply after a conflict halt', { timeout: 60_000 }, () => {
+  const RUN_LOGO = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]);
+  const CHECKOUT_LOGO = Buffer.from([0x00, 0x01, 0x02, 0x03, 0xfe, 0xff]);
+
+  /** The run adds `logo.bin`, the checkout adds its own, and the first Apply halts on it. */
+  async function haltOnAddedLogo(run: ApplyRun): Promise<void> {
+    writeFileSync(join(run.ws, 'logo.bin'), RUN_LOGO);
+    const state = await reviewedReadyState(run);
+    writeFileSync(join(run.dir, 'logo.bin'), CHECKOUT_LOGO);
+    expect((await apply(run, state)).outcome).toBe('halted');
+    expect(savedState(run).pendingRecovery?.details).toContain(
+      'logo.bin · added on both sides with different content',
+    );
+  }
+
+  it("Re-run Apply lands the run's version kept for a file added on both sides", async () => {
+    await withApplyRun({ 'a.txt': 'base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      await haltOnAddedLogo(run);
+
+      const result = await apply(run, await choose(run, 'retry-same-worker'));
+
+      expect(result.outcome).toBe('applied');
+      expect(readFileSync(join(run.dir, 'logo.bin'))).toEqual(RUN_LOGO);
+      const backupId = savedState(run).applied?.backupId ?? '';
+      expect((await readApplyBackup(run.dir, run.sessionId, backupId)).replaced).toContainEqual(
+        expect.objectContaining({ path: 'logo.bin', sha256: sha256Hex(CHECKOUT_LOGO) }),
+      );
+    });
+  });
+
+  it("Re-run Apply lands the run's version kept for a binary file both sides changed", async () => {
+    await withApplyRun({ 'bin.dat': 'a\0base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'bin.dat'), 'a\0ours\n');
+      const state = await reviewedReadyState(run);
+      writeFileSync(join(run.dir, 'bin.dat'), 'a\0theirs\n');
+      expect((await apply(run, state)).outcome).toBe('halted');
+
+      const result = await apply(run, await choose(run, 'retry-same-worker'));
+
+      expect(result.outcome).toBe('applied');
+      expect(read(run.dir, 'bin.dat')).toBe('a\0ours\n');
+    });
+  });
+
+  it("Re-run Apply lands the run's side kept for a file deleted on one side and changed on the other", async () => {
+    await withApplyRun(
+      { 'gone.txt': 'base gone\n', 'kept.txt': 'base kept\n' },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        unlinkSync(join(run.ws, 'gone.txt'));
+        writeFileSync(join(run.ws, 'kept.txt'), 'ours kept\n');
+        const state = await reviewedReadyState(run);
+        writeFileSync(join(run.dir, 'gone.txt'), 'theirs gone\n');
+        unlinkSync(join(run.dir, 'kept.txt'));
+        expect((await apply(run, state)).outcome).toBe('halted');
+        expect(savedState(run).pendingRecovery?.files).toEqual(['gone.txt', 'kept.txt']);
+
+        const result = await apply(run, await choose(run, 'retry-same-worker'));
+
+        expect(result.outcome).toBe('applied');
+        expect(existsSync(join(run.dir, 'gone.txt'))).toBe(false);
+        expect(read(run.dir, 'kept.txt')).toBe('ours kept\n');
+      },
+    );
+  });
+
+  it('a combined version written in the workspace goes back to the review, then applies', async () => {
+    await withApplyRun({ 'a.txt': 'base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      await haltOnAddedLogo(run);
+      const combined = Buffer.concat([RUN_LOGO, CHECKOUT_LOGO]);
+      writeFileSync(join(run.ws, 'logo.bin'), combined);
+
+      const result = await apply(run, await choose(run, 'retry-same-worker'));
+
+      expect(result.outcome).toBe('review');
+      expect(savedState(run).applyReview?.merged.map((entry) => entry.path)).toEqual(['logo.bin']);
+      expect(readFileSync(join(run.dir, 'logo.bin'))).toEqual(CHECKOUT_LOGO);
+      expect((await apply(run, await passIntegrationReview(run))).outcome).toBe('applied');
+      expect(readFileSync(join(run.dir, 'logo.bin'))).toEqual(combined);
+    });
+  });
+
+  it('a checkout file changed after the halt is still a conflict', async () => {
+    await withApplyRun({ 'a.txt': 'base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      await haltOnAddedLogo(run);
+      const later = Buffer.from([0x00, 0x09, 0x09]);
+      writeFileSync(join(run.dir, 'logo.bin'), later);
+
+      const result = await apply(run, await choose(run, 'retry-same-worker'));
+
+      expect(result.outcome).toBe('halted');
+      expect(savedState(run).pendingRecovery?.files).toEqual(['logo.bin']);
+      expect(readFileSync(join(run.dir, 'logo.bin'))).toEqual(later);
+      expect(readFileSync(join(run.ws, 'logo.bin'))).toEqual(RUN_LOGO);
+    });
+  });
+
+  it("a text file kept beside a binary file resolved to the checkout's version gets no conflict markers", async () => {
+    await withApplyRun(
+      { 'a.txt': FIVE, 'bin.dat': 'a\0base\n' },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        const ours = lines('one', 'two', 'OURS', 'four', 'five');
+        writeFileSync(join(run.ws, 'a.txt'), ours);
+        writeFileSync(join(run.ws, 'bin.dat'), 'a\0ours\n');
+        const state = await reviewedReadyState(run);
+        writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'THEIRS', 'four', 'five'));
+        writeFileSync(join(run.dir, 'bin.dat'), 'a\0theirs\n');
+        expect((await apply(run, state)).outcome).toBe('halted');
+        expect(savedState(run).pendingRecovery?.files).toEqual(['a.txt', 'bin.dat']);
+        writeFileSync(join(run.ws, 'bin.dat'), 'a\0theirs\n');
+
+        const result = await apply(run, await choose(run, 'retry-same-worker'));
+
+        expect(result.outcome).toBe('review');
+        expect(read(run.ws, 'a.txt')).toBe(ours);
+        const saved = savedState(run);
+        expect(saved.pendingTriage).toBeUndefined();
+        expect(saved.applyReview?.merged.map((entry) => entry.path)).toEqual(['bin.dat']);
+        expect((await apply(run, await passIntegrationReview(run))).outcome).toBe('applied');
+        expect(read(run.dir, 'a.txt')).toBe(ours);
+        expect(read(run.dir, 'bin.dat')).toBe('a\0theirs\n');
+      },
+    );
+  });
+
+  it("deleting the run's added file in the workspace keeps the checkout's file", async () => {
+    await withApplyRun({ 'a.txt': 'base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      await haltOnAddedLogo(run);
+      unlinkSync(join(run.ws, 'logo.bin'));
+
+      expect((await apply(run, await choose(run, 'retry-same-worker'))).outcome).toBe('review');
+      expect((await apply(run, await passIntegrationReview(run))).outcome).toBe('applied');
+      expect(readFileSync(join(run.dir, 'logo.bin'))).toEqual(CHECKOUT_LOGO);
+    });
+  });
+
+  it("a binary file reverted to the base in the workspace keeps the checkout's version", async () => {
+    await withApplyRun({ 'bin.dat': 'a\0base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'bin.dat'), 'a\0ours\n');
+      const state = await reviewedReadyState(run);
+      writeFileSync(join(run.dir, 'bin.dat'), 'a\0theirs\n');
+      expect((await apply(run, state)).outcome).toBe('halted');
+      writeFileSync(join(run.ws, 'bin.dat'), 'a\0base\n');
+
+      expect((await apply(run, await choose(run, 'retry-same-worker'))).outcome).toBe('review');
+      expect((await apply(run, await passIntegrationReview(run))).outcome).toBe('applied');
+      expect(read(run.dir, 'bin.dat')).toBe('a\0theirs\n');
+    });
+  });
+
+  it("conflict markers resolved back to the base keep the checkout's change", async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), lines('one', 'two', 'OURS', 'four', 'five'));
+      const state = await reviewedReadyState(run);
+      const theirs = lines('one', 'two', 'THEIRS', 'four', 'five');
+      writeFileSync(join(run.dir, 'a.txt'), theirs);
+      expect((await apply(run, state)).outcome).toBe('review');
+      writeFileSync(join(run.ws, 'a.txt'), FIVE);
+      const fixed = transition(savedState(run), { type: 'START_FIX_CYCLE' });
+      const finished = transition(transition(fixed, { type: 'ALL_DONE' }), {
+        type: 'REVIEW_DONE',
+        reviewStatus: 'passed',
+        candidate: await captureReviewedCandidate({
+          projectDir: run.dir,
+          sessionId: run.sessionId,
+          workspace: run.workspace,
+        }),
+      });
+      saveState({ projectDir: run.dir, sessionId: run.sessionId }, finished);
+
+      const result = await apply(run, finished);
+
+      expect(result.outcome).toBe('applied');
+      expect(read(run.dir, 'a.txt')).toBe(theirs);
+    });
+  });
+
+  it('a checkout file whose mode changed after the halt is still a conflict', async () => {
+    await withApplyRun({ 'bin.dat': 'a\0base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'bin.dat'), 'a\0ours\n');
+      const state = await reviewedReadyState(run);
+      writeFileSync(join(run.dir, 'bin.dat'), 'a\0theirs\n');
+      expect((await apply(run, state)).outcome).toBe('halted');
+      chmodSync(join(run.dir, 'bin.dat'), 0o755);
+
+      const result = await apply(run, await choose(run, 'retry-same-worker'));
+
+      expect(result.outcome).toBe('halted');
+      expect(read(run.dir, 'bin.dat')).toBe('a\0theirs\n');
+      expect(statSync(join(run.dir, 'bin.dat')).mode & 0o777).toBe(0o755);
     });
   });
 });

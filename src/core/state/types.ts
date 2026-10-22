@@ -65,9 +65,9 @@ export type StateAction =
   | {
       type: 'APPLY_REVIEW_START';
       merged: { path: string; checkoutHunks: string }[];
-      integrated?: NonNullable<WorkflowState['applyIntegrated']>;
       triage?: TriageInput[];
     }
+  | { type: 'RECORD_APPLY_INTEGRATED'; integrated: NonNullable<WorkflowState['applyIntegrated']> }
   | { type: 'RECORD_APPLY_RECHECK'; failures: string[] }
   | { type: 'APPLY_START'; backupId: string }
   | { type: 'APPLY_DONE'; files: string[] }

@@ -4,6 +4,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';
 import { awaitsApply, isAnsweredApplyRecovery } from '../../../core/sessions/run-status.js';
+import { transition } from '../../../core/state/machine.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import { error, matches } from '../../../utils/error.js';
 import { countNoun } from '../../../utils/pluralize.js';
@@ -32,6 +33,7 @@ import { reconcileApplyBackup, restoreApplyBackup } from './restore.js';
 import {
   candidateOf,
   captureApplyStates,
+  entryKey,
   readBaseBytes,
   readSideEntry,
   sameSideEntry,
@@ -51,6 +53,17 @@ type TextMarkerConflict = ApplyConflict & {
   ours: Extract<SideEntry, { kind: 'file' }>;
   theirs: Extract<SideEntry, { kind: 'file' }>;
 };
+
+/** The conflicted files Apply hands to the workspace, with the checkout entry it saw for each. */
+function handOff(state: WorkflowState, conflicts: readonly ApplyConflict[]): WorkflowState {
+  return transition(state, {
+    type: 'RECORD_APPLY_INTEGRATED',
+    integrated: conflicts.map((conflict) => ({
+      path: conflict.path,
+      checkout: entryKey(conflict.theirs),
+    })),
+  });
+}
 
 function raiseApplyHalt(
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>,
@@ -209,7 +222,7 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
   const integratedMap =
     state.applyIntegrated === undefined
       ? undefined
-      : new Map(state.applyIntegrated.map((entry) => [entry.path, entry.checkoutHash]));
+      : new Map(state.applyIntegrated.map((entry) => [entry.path, entry.checkout]));
   let merged: ApplyMerge;
   try {
     merged = await mergeApplyStates(states, integratedMap);
@@ -278,7 +291,6 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
         conflict.theirs.kind === 'file',
     );
     if (textConflicts.length === merged.conflicts.length) {
-      const integrated: { path: string; checkoutHash: string }[] = [];
       const triage: TriageInput[] = [];
       for (const [index, conflict] of textConflicts.entries()) {
         await writeConfinedEntry(workspace.path, conflict.path, {
@@ -287,7 +299,6 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
           sha256: sha256Hex(conflict.markers),
           mode: conflict.ours.mode,
         });
-        integrated.push({ path: conflict.path, checkoutHash: conflict.theirs.sha256 });
         triage.push({
           id: `A${index + 1}`,
           kind: 'defect',
@@ -296,10 +307,9 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
           file: conflict.path,
         });
       }
-      state = transitionAndSave(wctx, state, {
+      state = transitionAndSave(wctx, handOff(state, textConflicts), {
         type: 'APPLY_REVIEW_START',
         merged: await buildMergedEntries(textConflicts.map((conflict) => conflict.path)),
-        integrated,
         triage,
       });
       setTrackedState?.(state);
@@ -308,6 +318,11 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
       );
       return { outcome: 'review', state };
     }
+    // The run's own entry of an unsupported file cannot land, so the halt hands off the rest.
+    state = handOff(
+      state,
+      merged.conflicts.filter((conflict) => conflict.kind !== 'unsupported-entry'),
+    );
     return halt(
       buildApplyConflictRecoveryIssue({
         conflicts: merged.conflicts,

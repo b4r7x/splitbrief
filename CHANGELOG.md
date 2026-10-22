@@ -377,6 +377,7 @@
 - A seat you save while a run waits paused is now used when you continue the run in the same window: after a pause between briefs the next brief runs on the new seat, and the save notice says where the seat changes. Before, the next brief ran on the seat you had replaced.
 - A message you send to BUILD just as a brief finishes stays queued, and the run goes on. Before, the run stopped with an internal state error.
 - A run that closes after Re-run Apply, or whose Re-run Apply stops on an error, names every BUILD seat its briefs ran on. Before, it named only the last one.
+- After Apply stops on a conflicting file, keeping the run's version in the workspace and choosing Re-run Apply now applies it, and a file your checkout changed after the stop, a mode change included, still stops Apply. Before, Re-run Apply stopped again at once on the same file unless you copied your checkout's version over it.
 
 ## [0.1.0] - 2026-08-07
 

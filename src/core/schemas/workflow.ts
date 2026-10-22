@@ -300,6 +300,17 @@ export const SeatSwitchRecordSchema = z.object({
 
 export type SeatSwitchRecord = z.infer<typeof SeatSwitchRecordSchema>;
 
+const ApplyIntegratedSchema = z.object({ path: z.string(), checkout: z.string() });
+
+/**
+ * A record saved before `checkout` named only the checkout file's hash, in `checkoutHash`. Without
+ * the mode it matches no checkout entry, so that file merges again.
+ */
+function foldCheckoutHash(value: unknown): unknown {
+  if (!isRecord(value) || typeof value.checkoutHash !== 'string') return value;
+  return { path: value.path, checkout: `file:${value.checkoutHash}` };
+}
+
 const WorkflowStateFields = {
   stateVersion: z.literal(WORKFLOW_STATE_VERSION),
   stateRevision: nonnegativeInteger,
@@ -422,8 +433,11 @@ const WorkflowStateFields = {
       failures: z.array(z.string()),
     })
     .optional(),
-  /** The checkout hash Apply recorded for each text conflict whose markers it wrote into the workspace. */
-  applyIntegrated: z.array(z.object({ path: z.string(), checkoutHash: z.string() })).optional(),
+  /**
+   * Each conflicted file Apply handed to the workspace, with the checkout entry it saw then
+   * (`entryKey`: `absent`, `file:<sha256>:<octal mode>` or `symlink:<target>`).
+   */
+  applyIntegrated: z.array(z.preprocess(foldCheckoutHash, ApplyIntegratedSchema)).optional(),
   closed: z
     .object({
       at: z.string(),

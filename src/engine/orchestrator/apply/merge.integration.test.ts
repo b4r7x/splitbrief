@@ -68,7 +68,7 @@ describe('git-merge-three-states', { timeout: 60_000 }, () => {
     });
   });
 
-  it('promotes a recorded integrated path without merging while the checkout hash holds', async () => {
+  it('promotes a recorded integrated path without merging while the checkout entry holds', async () => {
     await withRun({ 'a.txt': FIVE }, async (run) => {
       const theirs = lines('one', 'two', 'THEIRS', 'four', 'five');
       const resolved = lines('one', 'two', 'RESOLVED', 'four', 'five');
@@ -80,7 +80,10 @@ describe('git-merge-three-states', { timeout: 60_000 }, () => {
         workspace: run.workspace,
       });
 
-      const result = await mergeApplyStates(states, new Map([['a.txt', sha256Hex(theirs)]]));
+      const result = await mergeApplyStates(
+        states,
+        new Map([['a.txt', `file:${sha256Hex(theirs)}:644`]]),
+      );
 
       expect(result.conflicts).toEqual([]);
       expect(result.promote).toEqual(['a.txt']);
@@ -89,7 +92,7 @@ describe('git-merge-three-states', { timeout: 60_000 }, () => {
     });
   });
 
-  it('merges an integrated path normally once the checkout hash changed', async () => {
+  it('merges an integrated path normally once the checkout entry changed', async () => {
     await withRun({ 'a.txt': FIVE }, async (run) => {
       const ours = lines('one', 'two', 'RESOLVED', 'four', 'five');
       writeFileSync(join(run.ws, 'a.txt'), ours);
@@ -102,7 +105,9 @@ describe('git-merge-three-states', { timeout: 60_000 }, () => {
 
       const result = await mergeApplyStates(
         states,
-        new Map([['a.txt', sha256Hex(lines('one', 'two', 'RECORDED', 'four', 'five'))]]),
+        new Map([
+          ['a.txt', `file:${sha256Hex(lines('one', 'two', 'RECORDED', 'four', 'five'))}:644`],
+        ]),
       );
 
       expect(result.promote).toEqual([]);

@@ -134,6 +134,7 @@ const phaseActions = {
     'QUEUE_TRIAGE',
     'ACCEPT_AS_IS',
     'APPLY_REVIEW_START',
+    'RECORD_APPLY_INTEGRATED',
     'APPLY_START',
     'APPLY_DONE',
     'APPLY_RESTORED',
@@ -566,14 +567,17 @@ export function transition(
         completedAt: undefined,
         acceptedAsIs: undefined,
         applyReview: { merged: action.merged, failures: [] },
-        ...(action.integrated !== undefined && {
-          applyIntegrated: [...(state.applyIntegrated ?? []), ...action.integrated],
-        }),
         ...(action.triage !== undefined
           ? { pendingTriage: { inputs: action.triage } }
           : { fixCycles: { ...fixCycles, used: fixCycles.used + 1 } }),
       };
     }
+
+    case 'RECORD_APPLY_INTEGRATED':
+      return {
+        ...state,
+        applyIntegrated: [...(state.applyIntegrated ?? []), ...action.integrated],
+      };
 
     case 'RECORD_APPLY_RECHECK':
       if (state.applyReview === undefined) {
