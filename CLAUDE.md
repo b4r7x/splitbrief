@@ -10,15 +10,6 @@ The one exception is the orchestrating session, at an agreed checkpoint: after t
 
 **Enforcement (best-effort):** `.claude/hooks/block-git-commits.sh` is a `PreToolUse` hook that blocks `git add` / `git stage` / `git commit` (including `git -c …`, `git -C …`, and simple quoted/backslashed variants) with exit code 2. It is a guardrail, not a sandbox — sufficiently obfuscated invocations may still slip past, so the never-commit rule above is what binds you, not the hook. A `BLOCKED:` message in stderr means the guardrail fired — stop and report to the user.
 
-## Stack
-
-- **Runtime:** Node.js 22 or 24, TypeScript 6.x, ESM only (`.js` extension in imports)
-- **Runner:** `tsx` (dev) / `tsc` → `dist/` (build)
-- **TUI:** Ink 6.x (React 19) + `fullscreen-ink`
-- **Testing:** Vitest 4.x, colocated (`foo.test.ts` next to `foo.ts`)
-- **Lint/format:** Biome 2.x
-- **Validation:** Zod 4.x. **Config:** `yaml`. **Git:** `simple-git`. **CLI:** `commander`
-
 ## Commands
 
 ```bash
