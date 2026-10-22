@@ -1275,6 +1275,14 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       warning:
         'Run accepted as is with 1 open finding: Is the cap right? Your note: Why review this? No review checked them;',
     },
+    {
+      acceptedAsIs: {
+        findings: ['Edge case missing\nUnicode input is not covered'],
+        note: 'Checked\nby hand',
+      },
+      warning:
+        'Run accepted as is with 1 open finding: Edge case missing Unicode input is not covered. Your note: Checked by hand. No review checked them;',
+    },
   ])(
     'the override warning counts findings only and shows the note once: $warning',
     async ({ acceptedAsIs, warning }) => {

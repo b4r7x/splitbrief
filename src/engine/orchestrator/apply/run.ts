@@ -7,6 +7,7 @@ import { awaitsApply, isAnsweredApplyRecovery } from '../../../core/sessions/run
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import { error, matches } from '../../../utils/error.js';
 import { countNoun } from '../../../utils/pluralize.js';
+import { oneLineDisplayText } from '../../../utils/display-text.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import {
@@ -349,7 +350,11 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
     return { outcome: 'review', state };
   }
   if (state.acceptedAsIs !== undefined && input.overrideConfirmed !== true && !retrying) {
-    const { findings, note } = state.acceptedAsIs;
+    const findings = state.acceptedAsIs.findings.map(oneLineDisplayText);
+    const note =
+      state.acceptedAsIs.note === undefined
+        ? undefined
+        : oneLineDisplayText(state.acceptedAsIs.note);
     const clause = (text: string): string => text.replace(/\.$/, '');
     const sentence = (text: string): string => (/[.!?]$/.test(text) ? text : `${text}.`);
     publishWarning({
