@@ -147,6 +147,7 @@ const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
     title: 'Home · first tool check running',
     viewports: HOME_COLD_DETECTING_VIEWPORTS,
   },
+  { id: 'home-cold-failed', title: 'Home · first tool check failed' },
   {
     id: 'home-cold-crew',
     title: 'Home · first discovery with a wide crew',

@@ -213,6 +213,54 @@ function seededViewport() {
 // The temp project every suite in this file works in; `renderHome` seeds the session store from it.
 let projectDir = '';
 
+// A first tool check that settled without a result: it failed, or it could not run.
+function settleColdDiscovery(readiness: 'failed' | 'not-run'): void {
+  const request = detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+  expect(
+    detectionStore.publish({
+      request,
+      result: {
+        providers: [],
+        cliTools: [],
+        catalog: null,
+        cliModels: [],
+        generation: 1,
+        outcomes: {
+          readiness:
+            readiness === 'failed'
+              ? {
+                  kind: 'failed',
+                  source: 'readiness',
+                  contextKey: DISCOVERY_CONTEXTS.readiness,
+                  generation: 1,
+                  requestId: 1,
+                  checkedAt: 100,
+                  error: { kind: 'timeout', message: 'Discovery request timed out.' },
+                }
+              : {
+                  kind: 'not-run',
+                  source: 'readiness',
+                  contextKey: DISCOVERY_CONTEXTS.readiness,
+                  reason: 'offline',
+                },
+          modelsDev: {
+            kind: 'not-run',
+            source: 'models-dev',
+            contextKey: DISCOVERY_CONTEXTS.modelsDev,
+            reason: 'offline',
+          },
+          cliModels: {
+            kind: 'not-run',
+            source: 'cli-models',
+            contextKey: DISCOVERY_CONTEXTS.cliModels,
+            reason: 'offline',
+          },
+        },
+      },
+    }),
+  ).toBe(true);
+}
+
 // Boot loads the session list before the screen mounts; the screen never reads
 // the directory itself, so a test seeds the store the same way.
 function renderHome(deps: HomeScreenDeps = HOME_DEPS) {
@@ -501,51 +549,59 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('shows an actionable failure line when cold discovery fails', async () => {
+  it.each([
+    ['failed', 'Tool check failed'],
+    ['not-run', 'Tools not checked'],
+  ] as const)('shows an actionable card when cold discovery settles %s', async (outcome, title) => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
-    const request = detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
-    expect(
-      detectionStore.publish({
-        request,
-        result: {
-          providers: [],
-          cliTools: [],
-          catalog: null,
-          cliModels: [],
-          generation: 1,
-          outcomes: {
-            readiness: {
-              kind: 'failed',
-              source: 'readiness',
-              contextKey: DISCOVERY_CONTEXTS.readiness,
-              generation: 1,
-              requestId: 1,
-              checkedAt: 100,
-              error: { kind: 'timeout', message: 'Discovery request timed out.' },
-            },
-            modelsDev: {
-              kind: 'not-run',
-              source: 'models-dev',
-              contextKey: DISCOVERY_CONTEXTS.modelsDev,
-              reason: 'offline',
-            },
-            cliModels: {
-              kind: 'not-run',
-              source: 'cli-models',
-              contextKey: DISCOVERY_CONTEXTS.cliModels,
-              reason: 'offline',
-            },
-          },
-        },
-      }),
-    ).toBe(true);
+    settleColdDiscovery(outcome);
 
     const ui = renderHome();
     await flushEffects();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Tool check failed');
+    expect(frame).toContain(title);
     expect(frame).toContain('Open /settings to retry.');
     expect(frame).not.toContain('Checking your tools…');
+    expect(frame).not.toContain('detecting tools…');
+    ui.unmount();
+  });
+
+  it.each([
+    ['failed', 'Tool check failed', 'error'],
+    ['not-run', 'Tools not checked', 'warning'],
+  ] as const)(
+    'says a %s cold check on the hint row when its card does not fit',
+    async (outcome, title, tone) => {
+      const originalColorLevel = chalk.level;
+      chalk.level = 3;
+      terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
+      settleColdDiscovery(outcome);
+
+      const ui = renderHome();
+      try {
+        await flushEffects();
+        const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+        const notice = `${title} · open /settings to retry`;
+        expect(frame).not.toContain('Open /settings to retry.');
+        expect(frame.split(notice)).toHaveLength(2);
+        expect(frame).not.toContain('detecting tools…');
+        expect(ui.lastFrame()).toContain(paint(defaultTheme[tone], notice));
+      } finally {
+        ui.unmount();
+        chalk.level = originalColorLevel;
+      }
+    },
+  );
+
+  it('offers no image drop on the row of a failed cold check', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 18, isSmall: false });
+    settleColdDiscovery('failed');
+
+    const ui = renderHome();
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Tool check failed · open /settings to retry');
+    expect(frame).not.toContain('drop an image');
     ui.unmount();
   });
 

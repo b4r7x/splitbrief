@@ -7,6 +7,7 @@ import { ReferenceCompletionMenu } from './completion/reference/menu.js';
 import { useCommandCompletion } from './completion/command/hook.js';
 import { useReferenceCompletion } from './completion/reference/hook.js';
 import type { Theme } from '../../core/theme/palette.js';
+import { colorForTone } from '../../core/theme/tone-color.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
@@ -122,6 +123,11 @@ export interface ComposerBoxHints {
   keys: string;
 }
 
+export interface HomeNotice {
+  text: string;
+  tone: 'textDim' | 'warning' | 'error';
+}
+
 interface ComposerProps {
   onSubmit?: ((submission: Extract<DraftSubmission, { ok: true }>) => void) | undefined;
   onSendNow?: ((submission: Extract<DraftSubmission, { ok: true }>) => boolean) | undefined;
@@ -143,7 +149,7 @@ interface ComposerProps {
   /** What the screen is waiting on. It takes the reserved row for as long as it lasts. */
   homeStatus?: string | undefined;
   /** A notice that keeps the reserved row under feedback, where the hint gives it up. */
-  homeNotice?: string | undefined;
+  homeNotice?: HomeNotice | undefined;
   boxHints?: ComposerBoxHints | undefined;
   onEmptySubmit?: (() => void) | undefined;
   onTab?: (() => void) | undefined;
@@ -617,15 +623,21 @@ function ComposerInput({
   const stopping = stopStore.use((state) => state.intent !== 'none');
   const reserveHomeHint = currentScreen === 'home';
   // A check the screen is waiting on owns the row while it runs, under feedback too. An
-  // affordance never rides a status, so the drop invitation stands down until the row is a hint
-  // again.
+  // affordance never rides a status or a warning, so the drop invitation stands down until the row
+  // is a hint or a plain notice again.
+  const noticeTone = homeStatus === undefined ? (homeNotice?.tone ?? 'textDim') : 'textDim';
   const { feedbackLine, homeHintLine } = deriveHomeHintLines({
     active: reserveHomeHint && !showCommandSuggestions && !showReferenceSuggestions,
     homeHint,
-    notice: homeStatus ?? homeNotice,
+    notice: homeStatus ?? homeNotice?.text,
     feedbackMessage,
     width: width ?? cols,
-    dropEnabled: homeStatus === undefined && !disabled && supportsImages && commandsOnly !== true,
+    dropEnabled:
+      homeStatus === undefined &&
+      noticeTone === 'textDim' &&
+      !disabled &&
+      supportsImages &&
+      commandsOnly !== true,
   });
   const feedbackRows = feedbackLine?.split('\n') ?? [];
   const hintRows = Math.max(1, feedbackRows.length + (homeHintLine === null ? 0 : 1));
@@ -662,7 +674,7 @@ function ComposerInput({
             </Text>
           ))}
           {homeHintLine !== null ? (
-            <Text color={theme.textDim} wrap="truncate-end">
+            <Text color={colorForTone(noticeTone, theme)} wrap="truncate-end">
               {homeHintLine}
             </Text>
           ) : (
