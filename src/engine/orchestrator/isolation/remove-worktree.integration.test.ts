@@ -233,7 +233,7 @@ describe('removeWorktree', () => {
 
     expect(stderrSpy.mock.calls).toHaveLength(0);
     expect(warningPublisher).toHaveBeenCalledOnce();
-    expect(String(warningPublisher.mock.calls[0]?.[0])).toContain('1 uncommitted file(s)');
+    expect(String(warningPublisher.mock.calls[0]?.[0])).toContain('with 1 uncommitted file.');
     expect(existsSync(wtPath)).toBe(false);
 
     stderrSpy.mockRestore();
@@ -256,7 +256,7 @@ describe('removeWorktree', () => {
 
     const stderrCalls = stderrSpy.mock.calls.map((c) => String(c[0]));
     expect(stderrCalls.some((msg) => msg.includes(`live session ${sessionId}`))).toBe(true);
-    expect(stderrCalls.some((msg) => msg.includes('2 uncommitted file(s)'))).toBe(true);
+    expect(stderrCalls.some((msg) => msg.includes('with 2 uncommitted files.'))).toBe(true);
     expect(existsSync(wtPath)).toBe(false);
 
     stderrSpy.mockRestore();

@@ -427,7 +427,9 @@ describe('analyzeBriefDrift', () => {
       changedFiles: ['src/c.ts'],
       preRunChangedFiles: [],
     });
-    expect(report.findings.some((f) => f.code === 'orphan_diff')).toBe(true);
+    expect(report.findings.find((f) => f.code === 'orphan_diff')?.message).toBe(
+      'Diff contains 1 file but every task is failed or skipped.',
+    );
     expect(report.passed).toBe(false);
   });
 });

@@ -181,7 +181,9 @@ describe('resolveNumericAlias', () => {
 
     makeSessionWithLockfile(projectDir, 'only-session', 1000);
 
-    await expect(resolveNumericAlias('5', projectDir)).rejects.toThrow(/out of range/);
+    await expect(resolveNumericAlias('5', projectDir)).rejects.toThrow(
+      'out of range; there is 1 session. Open',
+    );
   });
 
   it('throws for alias 0', async () => {
