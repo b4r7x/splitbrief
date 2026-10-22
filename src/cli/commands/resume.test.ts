@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { resumeCommand, type ResumeDeps } from './resume.js';
+import { Command } from 'commander';
+import { registerResumeCommand, resumeCommand, type ResumeDeps } from './resume.js';
 import { resumeSavedSession } from './continue/resume.js';
 import { writeActive } from '../../core/sessions/active-pointer.js';
 import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
@@ -11,6 +12,12 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { parsePreparedConfig } from '../../engine/runners/prepared-execution.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { writeConfig } from '../../core/config/load/io.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
+import { installDiagnosticSink, warnStderr } from '../../lib/warn.js';
+import type { ResumeTailDeps } from './continue/resume.js';
 
 let tmp: string;
 
@@ -215,5 +222,139 @@ describe('resume command', () => {
     });
 
     expect(gatePath).toBe('/usr/local/bin/claude');
+  });
+});
+
+describe('resume diagnostics before the screen mounts', () => {
+  const sessionId = '2026-04-18-boot-warning';
+  let stderrSpy: MockInstance<typeof process.stderr.write>;
+
+  // A resume without --json or --plain mounts the TUI, which needs a terminal.
+  beforeEach(() => {
+    process.stdin.isTTY = true;
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+    delete (process.stdin as { isTTY?: boolean }).isTTY;
+    if (tmp) cleanupTempDir(tmp);
+    tmp = '';
+  });
+
+  function onStderr(text: string): number {
+    return stderrSpy.mock.calls.filter(([chunk]) => String(chunk).includes(text)).length;
+  }
+
+  /** Resumes the active session on the screen; the screen collects what it is shown. */
+  async function resumeOnScreen(
+    initStores: ResumeTailDeps['initStores'],
+    held: string,
+  ): Promise<string[]> {
+    const shown: string[] = [];
+    const tail: ResumeTailDeps = {
+      prepareExecution: async (input) => {
+        if (!('existingSession' in input)) throw new Error('expected resume preparation');
+        return {
+          kind: 'prepared',
+          execution: makePreparedExecution({
+            projectDir: tmp,
+            sessionId,
+            feature: input.feature,
+            config: input.effectiveConfig,
+            resumeState: input.resumeState,
+          }),
+        };
+      },
+      initStores,
+      renderApp: async () => {
+        const release = installDiagnosticSink((message) => shown.push(message));
+        try {
+          expect(onStderr(held)).toBe(0);
+        } finally {
+          release();
+        }
+      },
+      runHeadless: async () => {},
+      setupWorkflow: async () => ({
+        projectDir: tmp,
+        useFullscreen: true,
+        useMouse: false,
+        useHover: false,
+      }),
+    };
+    await resumeFromCli(['--project', tmp], {
+      checkSessionLiveness,
+      resumeSavedSession: (args) => resumeSavedSession({ ...args, deps: tail }),
+    });
+    return shown;
+  }
+
+  async function resumeFromCli(args: string[], deps: ResumeDeps): Promise<void> {
+    const program = new Command();
+    program.exitOverride();
+    registerResumeCommand(program, deps);
+    await program.parseAsync(['resume', ...args], { from: 'user' });
+  }
+
+  function makeSession(): void {
+    tmp = createTempDir('resume-boot-warning');
+    writeState(makeSessionDir(tmp, sessionId), 'boot warning', { phase: 'planning' });
+    writeActive({ projectDir: tmp, sessionId });
+  }
+
+  it('shows a warning raised while it starts on the screen once the screen mounts', async () => {
+    makeSession();
+    writeConfig(tmp, makeConfig());
+    const warning = 'Could not read .splitbrief/ui-prefs.json, so the default layout is used';
+
+    const shown = await resumeOnScreen(async () => warnStderr(warning), warning);
+
+    expect(shown).toEqual([warning]);
+    expect(onStderr(warning)).toBe(1);
+  });
+
+  it('shows a notice its own config raises on the screen once the screen mounts', async () => {
+    makeSession();
+    writeFileSync(
+      join(tmp, SPLITBRIEF_DIR, CONFIG_FILE),
+      [
+        'version: 3',
+        'planner:',
+        '  kind: cli',
+        '  tool: claude-code',
+        'implementer:',
+        '  kind: api',
+        '  provider: ollama',
+        '  api_base: http://localhost:11434/v1',
+        '  model: qwen2.5-coder:7b',
+        'workflow:',
+        '  mode: instant',
+      ].join('\n'),
+    );
+    const notice = '⚠ workflow.mode was retired and is ignored';
+
+    const shown = await resumeOnScreen(async () => {}, notice);
+
+    expect(shown).toEqual([expect.stringContaining(notice)]);
+    expect(onStderr(notice)).toBe(1);
+  });
+
+  it('writes a warning as it comes when the resume has no screen', async () => {
+    makeSession();
+    writeConfig(tmp, makeConfig());
+    const warning = 'Could not read .splitbrief/ui-prefs.json, so the default layout is used';
+    let writtenAtOnce = 0;
+
+    await resumeFromCli(['--json', '--project', tmp], {
+      checkSessionLiveness,
+      resumeSavedSession: async () => {
+        warnStderr(warning);
+        writtenAtOnce = onStderr(warning);
+      },
+    });
+
+    expect(writtenAtOnce).toBe(1);
+    expect(onStderr(warning)).toBe(1);
   });
 });

@@ -13,7 +13,7 @@ import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
 import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
 import { cliError } from './errors.js';
 import { toErrorMessage } from '../utils/format-errors.js';
-import { stripTerminalControls } from '../utils/display-text.js';
+import { warnStderr } from '../lib/warn.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 
 function resolveProjectDir(dir?: string): string {
@@ -41,8 +41,8 @@ export async function canonicalizeProjectDir(opts: {
   if (toplevel === canonical) return toplevel;
 
   if (opts.project !== undefined) {
-    console.error(
-      `Warning: --project ${stripTerminalControls(resolved)} is inside git repository ${stripTerminalControls(toplevel)}; using repository root.`,
+    warnStderr(
+      `Warning: --project ${resolved} is inside git repository ${toplevel}; using repository root.`,
     );
   }
   return toplevel;

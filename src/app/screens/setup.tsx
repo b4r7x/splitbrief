@@ -228,6 +228,12 @@ function DiscoveryPanel({ state, noConfig, onBack, onRetry, onOpenSettings }: Di
   const t = useTheme();
   const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
   const { frame } = useSpinnerFrame(noConfig && state === 'initializing');
+  const feedback = feedbackStore.use((snapshot) => snapshot);
+  const { cols, rows } = terminalSizeStore.use((size) => size);
+  const { innerWidth } = overlayRect({ cols, rows, density: 'compact' });
+  const notice = layoutFeedbackNotice(feedback, innerWidth);
+  const feedbackNotice =
+    notice === null ? undefined : <FeedbackNotice notice={notice} width={innerWidth} />;
 
   useInput(
     (input, key) => {
@@ -249,11 +255,14 @@ function DiscoveryPanel({ state, noConfig, onBack, onRetry, onOpenSettings }: Di
     return (
       <OverlayPanel title={BOOT_MANIFEST_TITLE} density="compact" hint="esc quit">
         {noConfig ? (
-          <Text color={t.textDim}>
-            <Text color={t.accent}>{frame}</Text> Choose your crew after the tool check.
-          </Text>
+          <>
+            <Text color={t.textDim}>
+              <Text color={t.accent}>{frame}</Text> Choose your crew after the tool check.
+            </Text>
+            {feedbackNotice}
+          </>
         ) : (
-          <BootManifest />
+          <BootManifest footer={feedbackNotice} />
         )}
       </OverlayPanel>
     );
@@ -269,6 +278,7 @@ function DiscoveryPanel({ state, noConfig, onBack, onRetry, onOpenSettings }: Di
       <Box marginTop={1}>
         <Text color={t.textDim}>Retry the check or review runner settings.</Text>
       </Box>
+      {feedbackNotice}
     </OverlayPanel>
   );
 }

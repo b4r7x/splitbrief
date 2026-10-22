@@ -1,5 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -31,6 +39,11 @@ import * as entry from '../../../engine/orchestrator/approval/file-snapshots/ent
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { readyToApplyMessage } from '../../sessions/resolve.js';
 import { readLockfile } from '../../../core/sessions/lockfile.js';
+import { installDiagnosticSink } from '../../../lib/warn.js';
+import { Command } from 'commander';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { setupWorkflow } from '../../setup.js';
+import { registerContinueCommand } from './register.js';
 
 vi.mock('../../../engine/orchestrator/approval/file-snapshots/entry.js', async (importOriginal) => {
   const actual =
@@ -197,6 +210,29 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
     prepareExecution: prepareResume,
     ...overrides,
   };
+}
+
+const RETIRED_NOTICE = '⚠ workflow.mode was retired and is ignored';
+
+/** A stopped run whose config still carries the retired `workflow.mode` key. */
+function sessionWithRetiredKey(sessionId: string): string {
+  const projectDir = makeTmpProject();
+  const sessDir = makeSessionDir(projectDir, sessionId);
+  writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+  writeState(sessDir, 'implementing');
+  writeConfig(projectDir, makeConfig());
+  const configFile = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
+  const yaml = YAML.parse(readFileSync(configFile, 'utf8'));
+  writeFileSync(configFile, YAML.stringify({ ...yaml, workflow: { mode: 'instant' } }));
+  return projectDir;
+}
+
+/** Continues from the command line, as `splitbrief continue <id> --project <dir>` does. */
+async function continueFromCli(args: string[], continueDeps: ContinueDeps): Promise<void> {
+  const program = new Command();
+  program.exitOverride();
+  registerContinueCommand(program, continueDeps);
+  await program.parseAsync(['continue', ...args], { from: 'user' });
 }
 
 describe('continueCommand', () => {
@@ -926,6 +962,109 @@ describe('continueCommand', () => {
 
     expect(renderRuns).toHaveLength(1);
     expect([...skillsStore.get().selected].sort()).toEqual(['react', 'typescript']);
+  });
+
+  describe('diagnostics before the screen mounts', () => {
+    let stderrSpy: MockInstance<typeof process.stderr.write>;
+
+    beforeEach(() => {
+      stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    });
+
+    afterEach(() => {
+      stderrSpy.mockRestore();
+    });
+
+    function onStderr(text: string): number {
+      return stderrSpy.mock.calls.filter(([chunk]) => String(chunk).includes(text)).length;
+    }
+
+    it('shows a notice its own config raises on the screen once the screen mounts', async () => {
+      const projectDir = sessionWithRetiredKey('2025-04-01-config-notice');
+      const shown: string[] = [];
+
+      await continueFromCli(
+        ['2025-04-01-config-notice', '--project', projectDir],
+        createDeps({
+          renderApp: async () => {
+            const release = installDiagnosticSink((message) => shown.push(message));
+            try {
+              expect(onStderr(RETIRED_NOTICE)).toBe(0);
+            } finally {
+              release();
+            }
+          },
+        }),
+      );
+
+      expect(shown).toEqual([expect.stringContaining(RETIRED_NOTICE)]);
+      expect(onStderr(RETIRED_NOTICE)).toBe(1);
+    });
+
+    it('writes a notice its own config raises once when the continue fails before the screen mounts', async () => {
+      const projectDir = sessionWithRetiredKey('2025-04-01-config-notice-refused');
+
+      await expect(
+        continueFromCli(
+          ['2025-04-01-config-notice-refused', '--project', projectDir],
+          createDeps({
+            prepareExecution: async () => {
+              throw new Error('refused');
+            },
+          }),
+        ),
+      ).rejects.toThrow('refused');
+
+      expect(onStderr(RETIRED_NOTICE)).toBe(1);
+    });
+
+    it('writes a notice its own config raises as it comes when the continue has no screen', async () => {
+      const projectDir = sessionWithRetiredKey('2025-04-01-config-notice-headless');
+      let writtenAtOnce = 0;
+
+      await continueFromCli(
+        ['2025-04-01-config-notice-headless', '--json', '--project', projectDir],
+        createDeps({
+          runHeadless: async () => {
+            writtenAtOnce = onStderr(RETIRED_NOTICE);
+          },
+        }),
+      );
+
+      expect(writtenAtOnce).toBe(1);
+      expect(onStderr(RETIRED_NOTICE)).toBe(1);
+    });
+
+    it('shows a --project warning for a folder inside the repository once, on the screen', async () => {
+      const projectDir = realpathSync(makeTmpProject());
+      createTestGitRepo(projectDir);
+      const subdir = join(projectDir, 'pkg');
+      mkdirSync(subdir);
+      const sessDir = makeSessionDir(projectDir, '2025-04-01-project-subdir');
+      writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-project-subdir' });
+      writeState(sessDir, 'implementing');
+      writeConfig(projectDir, makeConfig());
+      const warning = `Warning: --project ${subdir} is inside git repository ${projectDir}; using repository root.`;
+      const shown: string[] = [];
+
+      await continueFromCli(
+        ['2025-04-01-project-subdir', '--project', subdir],
+        createDeps({
+          setupWorkflow,
+          renderApp: async () => {
+            const release = installDiagnosticSink((message) => shown.push(message));
+            try {
+              expect(onStderr(warning)).toBe(0);
+            } finally {
+              release();
+            }
+          },
+        }),
+      );
+
+      expect(shown).toEqual([warning]);
+      expect(onStderr(warning)).toBe(1);
+    });
   });
 
   it('strips terminal control bytes from the pre-TUI resume status line', async () => {

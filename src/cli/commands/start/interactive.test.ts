@@ -28,7 +28,10 @@ import type {
   TieredApprovalResponse,
 } from '../../../core/approval/types.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { installDiagnosticSink, warnStderr } from '../../../lib/warn.js';
+import { Command } from 'commander';
 import { runInteractiveStart } from './interactive.js';
+import { registerStartCommand } from './register.js';
 import * as readinessModule from './readiness.js';
 import type { InteractiveDispatchArgs, StartDeps } from './types.js';
 
@@ -254,6 +257,115 @@ describe('runInteractiveStart', () => {
     expect(answered).toEqual({ decision: 'deny', reason: 'not now' });
   });
 });
+
+describe('splitbrief start diagnostics before the screen mounts', () => {
+  it('shows a warning raised while it starts on the screen once the screen mounts', async () => {
+    vi.spyOn(setupModule, 'setupWorkflow').mockImplementation(async () => {
+      warnStderr('Skipping session directory');
+      return { projectDir: tmp, useFullscreen: true, useMouse: false, useHover: false };
+    });
+    vi.spyOn(readinessModule, 'assertNoLiveSessionForCli').mockImplementation(() => {});
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const shown: string[] = [];
+    const renderApp: StartDeps['renderApp'] = async () => {
+      const release = installDiagnosticSink((message) => shown.push(message));
+      try {
+        expect(stderrSpy).not.toHaveBeenCalled();
+      } finally {
+        release();
+      }
+    };
+
+    await startFromCli({ ...makeDispatch().deps, renderApp });
+
+    expect(shown).toEqual(['Skipping session directory']);
+    expect(stderrSpy.mock.calls).toEqual([['Skipping session directory\n']]);
+  });
+
+  it('keeps a warning raised while it starts on the terminal after a feature start leaves the screen', async () => {
+    vi.spyOn(setupModule, 'setupWorkflow').mockImplementation(async () => {
+      warnStderr('Skipping session directory');
+      return { projectDir: tmp, useFullscreen: true, useMouse: false, useHover: false };
+    });
+    const writes: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const shown: string[] = [];
+    // The screen releases its sink once the terminal is restored, as renderApp does on every exit.
+    const renderApp: StartDeps['renderApp'] = async (_app, options) => {
+      const release = installDiagnosticSink((message) => shown.push(message));
+      await new Promise<void>((resolve) => {
+        options.unmountSignal?.addEventListener('abort', () => resolve(), { once: true });
+      });
+      writes.push('[restored]');
+      release();
+    };
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await expect(
+      startFromCli(
+        {
+          ...makeDispatch().deps,
+          renderApp,
+          prepareExecution: async () => ({ kind: 'blocked', report: blockedReport(tmp) }),
+        },
+        ['ship it'],
+      ),
+    ).rejects.toThrow(/Run readiness blocked/u);
+
+    expect(shown).toEqual(['Skipping session directory']);
+    expect(writes.slice(0, 2)).toEqual(['[restored]', 'Skipping session directory\n']);
+  });
+
+  it('writes a warning raised while it starts to the terminal when it ends before the screen mounts', async () => {
+    vi.spyOn(setupModule, 'setupWorkflow').mockImplementation(async () => {
+      warnStderr('Skipping session directory');
+      return { projectDir: tmp, useFullscreen: true, useMouse: false, useHover: false };
+    });
+    vi.spyOn(readinessModule, 'assertNoLiveSessionForCli').mockImplementation(() => {
+      throw new Error('a run is live');
+    });
+    const writes: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    });
+
+    await expect(startFromCli(makeDispatch().deps)).rejects.toThrow('a run is live');
+
+    expect(writes).toEqual(['Skipping session directory\n']);
+  });
+
+  it('writes a warning as it comes when the start has no screen', async () => {
+    const writes: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    let writtenAtOnce: string[] = [];
+    vi.spyOn(setupModule, 'setupWorkflow').mockImplementation(async () => {
+      warnStderr('Skipping session directory');
+      writtenAtOnce = [...writes];
+      throw new Error('stop here');
+    });
+
+    await expect(startFromCli(makeDispatch().deps, ['ship it', '--json'])).rejects.toThrow(
+      'stop here',
+    );
+
+    expect(writtenAtOnce).toEqual(['Skipping session directory\n']);
+  });
+});
+
+/** Starts from the command line, as `splitbrief start [feature] --project <dir>` does. */
+async function startFromCli(deps: StartDeps, args: string[] = []): Promise<void> {
+  const program = new Command();
+  program.exitOverride();
+  registerStartCommand(program, deps);
+  await program.parseAsync(['start', ...args, '--project', tmp], { from: 'user' });
+}
 
 const SESSION_ID = 'sess-launch';
 

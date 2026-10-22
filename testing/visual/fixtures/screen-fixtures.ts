@@ -427,6 +427,7 @@ export function createSetupFixture(
     | 'signed-out'
     | 'config-only'
     | 'detecting'
+    | 'saved-detecting'
     | 'cached-refresh'
     | 'cached-failure'
     | 'api-override'
@@ -445,6 +446,7 @@ export function createSetupFixture(
       if (state !== 'unavailable' && state !== 'signed-out' && state !== 'config-only') {
         configStore.load(VISUAL_FIXTURE_PROJECT_DIR);
       }
+      if (state === 'saved-detecting') seedVisualConfig();
       if (state === 'config-only') {
         seedVisualConfig({
           implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/glm-5.3' },
@@ -522,7 +524,7 @@ export function createSetupFixture(
             },
           });
         }
-      } else if (state === 'detecting')
+      } else if (state === 'detecting' || state === 'saved-detecting')
         detectionStore.beginRefresh({ contexts: VISUAL_DETECTION_CONTEXTS });
       // A new machine: three tools installed but not signed in, one ready.
       else if (state === 'signed-out')
@@ -1136,6 +1138,20 @@ const SAVE_SIGN_IN_MESSAGE = [
   formatNeedsSignInSaveFeedback({ tool: 'opencode', provider: 'anthropic' }),
 ].join(SOFT_SEP);
 
+// The line the screen shows for two retired config keys raised before it opened.
+const STARTUP_WARNINGS_MESSAGE =
+  '2 warnings, all shown when you quit · ⚠ workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.';
+
+function withStartupWarnings(fixture: FixtureLifecycle): FixtureLifecycle {
+  return {
+    ...fixture,
+    setup: async (context) => {
+      await fixture.setup(context);
+      feedbackStore.setError(STARTUP_WARNINGS_MESSAGE);
+    },
+  };
+}
+
 function setSaveSignInMessage(): void {
   feedbackStore.setMessage(SAVE_SIGN_IN_MESSAGE);
 }
@@ -1150,6 +1166,7 @@ export const homeFixtureFeedback: ReadonlyMap<string, string> = new Map([
   ['home-attachment-not-text', attachmentFailureMessage('not-text')],
   ['home-save-sign-in', SAVE_SIGN_IN_MESSAGE],
   ['home-save-long-draft', SAVE_SIGN_IN_MESSAGE],
+  ['home-startup-warnings', STARTUP_WARNINGS_MESSAGE],
 ]);
 
 function createSaveSignInFixture(): FixtureLifecycle {
@@ -1380,6 +1397,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-attachment-not-text'), () => createOutsideAttachmentFailureFixture('not-text')],
   [scenarioId('home-save-sign-in'), createSaveSignInFixture],
+  [scenarioId('home-startup-warnings'), () => withStartupWarnings(createHomeFixture())],
   [scenarioId('home-save-long-draft'), createSaveLongDraftFixture],
   [scenarioId('home-no-config-long-draft'), createNoConfigLongDraftFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
@@ -1404,6 +1422,14 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => createSetupFixture('persisted-api-override'),
   ],
   [scenarioId('setup-no-config-detecting'), () => createSetupFixture('detecting')],
+  [
+    scenarioId('setup-detecting-startup-warnings'),
+    () => withStartupWarnings(createSetupFixture('detecting')),
+  ],
+  [
+    scenarioId('setup-saved-detecting-startup-warnings'),
+    () => withStartupWarnings(createSetupFixture('saved-detecting')),
+  ],
   [scenarioId('setup-no-config-cached-refresh'), () => createSetupFixture('cached-refresh')],
   [scenarioId('setup-no-config-cached-failure'), () => createSetupFixture('cached-failure')],
 ]);

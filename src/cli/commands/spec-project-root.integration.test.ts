@@ -14,7 +14,7 @@ import { registerSpecCommand } from './spec.js';
 let tmp: string;
 let subdir: string;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
-let errorSpy: ReturnType<typeof vi.spyOn>;
+let stderrSpy: ReturnType<typeof vi.spyOn>;
 let restoreShim: (() => void) | undefined;
 let shimDir: string;
 
@@ -45,7 +45,7 @@ beforeEach(() => {
   subdir = join(tmp, 'packages', 'api');
   mkdirSync(subdir, { recursive: true });
   consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-  errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 });
 
 afterEach(() => {
@@ -55,7 +55,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   if (tmp) cleanupTempDir(tmp);
   consoleSpy.mockRestore();
-  errorSpy.mockRestore();
+  stderrSpy.mockRestore();
 });
 
 function runSpec(args: string[]): Promise<unknown> {
@@ -82,7 +82,7 @@ describe('spec command project root', () => {
   it('tells the user the project was relocated to the repository root', async () => {
     await runSpec(['--project', subdir, 'add a helper']);
 
-    const warnings = errorSpy.mock.calls.map((call: unknown[]) => String(call[0]));
+    const warnings = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0]));
     expect(warnings.some((line: string) => line.includes('using repository root'))).toBe(true);
   });
 });

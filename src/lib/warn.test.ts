@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { installDiagnosticSink, warnError, warnStderr } from './warn.js';
+import { installDiagnosticSink, warnError, warnStderr, withHeldDiagnostics } from './warn.js';
 
 const HOSTILE = 'AUDIT_SYNTHETIC_DIAGNOSTIC \x1b[2Jcleared\x1b]0;title\x07';
 const SANITIZED = 'AUDIT_SYNTHETIC_DIAGNOSTIC cleared';
@@ -67,6 +67,62 @@ describe('warn diagnostics ownership', () => {
     expect(inner).toEqual(['to inner', 'to late']);
     expect(outer).toEqual(['to outer']);
     expect(stderr).toEqual(['to stderr\n']);
+  });
+
+  it('hands the diagnostics raised before a sink to the sink once it is installed', async () => {
+    const stderr = captureStderr();
+    const received: [string, string][] = [];
+
+    await withHeldDiagnostics(async () => {
+      warnStderr(HOSTILE);
+      warnStderr('only for the log', 'log-only');
+      warnError('second', new Error('boom'));
+      expect(stderr).toEqual([]);
+
+      const releaseSink = installDiagnosticSink((message, presentation) =>
+        received.push([message, presentation]),
+      );
+      warnStderr('after mount');
+      expect(stderr).toEqual([]);
+      releaseSink();
+      releaseSink();
+    });
+
+    expect(received).toEqual([
+      ['only for the log', 'log-only'],
+      [`2 warnings, all shown when you quit · ${SANITIZED}`, 'feedback'],
+      ['after mount', 'feedback'],
+    ]);
+    // The screen showed them for a moment; the restored terminal keeps them, once, in order.
+    expect(stderr).toEqual([`${SANITIZED}\n`, 'only for the log\n', 'second: boom\n']);
+  });
+
+  it('hands a single held warning to the sink as it is', async () => {
+    captureStderr();
+    const received: string[] = [];
+
+    await withHeldDiagnostics(async () => {
+      warnStderr('only one');
+      const releaseSink = installDiagnosticSink((message) => received.push(message));
+      releaseSink();
+    });
+
+    expect(received).toEqual(['only one']);
+  });
+
+  it('writes the held diagnostics to stderr when the run fails before a sink is installed', async () => {
+    const stderr = captureStderr();
+
+    await expect(
+      withHeldDiagnostics(async () => {
+        warnStderr(HOSTILE);
+        warnStderr('only for the log', 'log-only');
+        throw new Error('refused');
+      }),
+    ).rejects.toThrow('refused');
+    warnStderr('after release');
+
+    expect(stderr).toEqual([`${SANITIZED}\n`, 'only for the log\n', 'after release\n']);
   });
 });
 

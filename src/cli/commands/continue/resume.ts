@@ -129,7 +129,7 @@ export async function resumeSavedSession(args: {
   console.log(
     `Resuming: ${oneLineDisplayText(state.feature)} (phase: ${state.phase}, task ${position}/${state.tasks.length})`,
   );
-  const renderOptions = await deps.setupWorkflow(opts);
+  const renderOptions = await deps.setupWorkflow({ ...opts, project: projectDir });
   await deps.initStores(projectDir, opts);
   const resumeSkillIds = selectedSkills?.map((skill) => skill.id) ?? state.selectedSkills;
   if (resumeSkillIds && resumeSkillIds.length > 0) {

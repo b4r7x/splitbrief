@@ -14,6 +14,7 @@ import { runHeadlessStart } from './streaming.js';
 import { runInteractiveStart } from './interactive.js';
 import type { StartDeps } from './types.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import { withHeldDiagnostics } from '../../../lib/warn.js';
 
 export const defaultStartDeps: StartDeps = {
   runHeadless,
@@ -29,55 +30,61 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       .description('Full workflow: the planner plans and reviews, the implementer executes'),
   ).action(async (feature: string | undefined, files: string[], opts: WorkflowOpts) => {
     const headlessMode = opts.json === true ? 'json' : opts.plain === true ? 'plain' : undefined;
-    if (!feature && files.length > 0) {
-      throw cliError(
-        'Cannot start: the feature description is empty. Put the feature description first: splitbrief start "<feature>" @<file>',
-        2,
-      );
-    }
-    if (headlessMode !== undefined && !feature) {
-      throw cliError(`--${headlessMode} requires a feature argument`);
-    }
-    if (feature?.startsWith('@') && feature.length > 1) {
-      throw cliError(
-        `Cannot start: @${stripTerminalControls(feature.slice(1))} is a file reference, not a feature description. Put the feature description first: splitbrief start "<feature>" @<file>`,
-        2,
-      );
-    }
+    // The screen shows what an interactive start raises from its first step.
+    const start = () => startCommand({ feature, files, opts, headlessMode, deps });
+    await (headlessMode === undefined ? withHeldDiagnostics(start) : start());
+  });
+}
 
-    const projectDir = await canonicalizeProjectDir(opts);
+async function startCommand({
+  feature,
+  files,
+  opts,
+  headlessMode,
+  deps,
+}: {
+  feature: string | undefined;
+  files: string[];
+  opts: WorkflowOpts;
+  headlessMode: 'json' | 'plain' | undefined;
+  deps: StartDeps;
+}): Promise<void> {
+  if (!feature && files.length > 0) {
+    throw cliError(
+      'Cannot start: the feature description is empty. Put the feature description first: splitbrief start "<feature>" @<file>',
+      2,
+    );
+  }
+  if (headlessMode !== undefined && !feature) {
+    throw cliError(`--${headlessMode} requires a feature argument`);
+  }
+  if (feature?.startsWith('@') && feature.length > 1) {
+    throw cliError(
+      `Cannot start: @${stripTerminalControls(feature.slice(1))} is a file reference, not a feature description. Put the feature description first: splitbrief start "<feature>" @<file>`,
+      2,
+    );
+  }
 
-    let enrichedFeature = feature;
-    let plannerContext: string | undefined;
-    let attachedInputs: AttachedInput[] | undefined;
-    if (feature && files.length > 0) {
-      const parsed = parseAtFiles(feature, files, projectDir);
-      if (parsed.errors.length > 0) {
-        throw cliError(formatAtFileRefusal(parsed.errors), 2);
-      }
-      enrichedFeature = parsed.feature;
-      if (parsed.textContext) plannerContext = parsed.textContext;
-      if (parsed.attachedInputs.length > 0) attachedInputs = parsed.attachedInputs;
-      for (const att of parsed.attachments) {
-        attachmentsStore.add(att);
-      }
+  const projectDir = await canonicalizeProjectDir(opts);
+
+  let enrichedFeature = feature;
+  let plannerContext: string | undefined;
+  let attachedInputs: AttachedInput[] | undefined;
+  if (feature && files.length > 0) {
+    const parsed = parseAtFiles(feature, files, projectDir);
+    if (parsed.errors.length > 0) {
+      throw cliError(formatAtFileRefusal(parsed.errors), 2);
     }
-
-    if (headlessMode !== undefined && feature) {
-      await runHeadlessStart({
-        deps,
-        projectDir,
-        feature,
-        enrichedFeature,
-        plannerContext,
-        ...(attachedInputs !== undefined && { attachedInputs }),
-        opts,
-        mode: headlessMode,
-      });
-      return;
+    enrichedFeature = parsed.feature;
+    if (parsed.textContext) plannerContext = parsed.textContext;
+    if (parsed.attachedInputs.length > 0) attachedInputs = parsed.attachedInputs;
+    for (const att of parsed.attachments) {
+      attachmentsStore.add(att);
     }
+  }
 
-    await runInteractiveStart({
+  if (headlessMode !== undefined && feature) {
+    await runHeadlessStart({
       deps,
       projectDir,
       feature,
@@ -85,6 +92,18 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       plannerContext,
       ...(attachedInputs !== undefined && { attachedInputs }),
       opts,
+      mode: headlessMode,
     });
+    return;
+  }
+
+  await runInteractiveStart({
+    deps,
+    projectDir,
+    feature,
+    enrichedFeature,
+    plannerContext,
+    ...(attachedInputs !== undefined && { attachedInputs }),
+    opts,
   });
 }

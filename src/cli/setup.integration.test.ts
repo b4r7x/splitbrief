@@ -225,7 +225,7 @@ describe('canonicalizeProjectDir', () => {
     createTestGitRepo(real);
     const link = join(dirname(real), `${tmp.split('/').pop()}-link`);
     symlinkSync(real, link, 'dir');
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     try {
       // The symlink resolves to the repo root, so this is an exact-root
@@ -233,9 +233,9 @@ describe('canonicalizeProjectDir', () => {
       const result = await canonicalizeProjectDir({ project: link });
 
       expect(result).toBe(real);
-      expect(errorSpy).not.toHaveBeenCalled();
+      expect(stderrSpy).not.toHaveBeenCalled();
     } finally {
-      errorSpy.mockRestore();
+      stderrSpy.mockRestore();
       cleanupTempDir(link);
     }
   });
@@ -245,15 +245,15 @@ describe('canonicalizeProjectDir', () => {
     createTestGitRepo(real);
     const subdir = join(real, 'pkg');
     mkdirSync(subdir, { recursive: true });
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     try {
       const result = await canonicalizeProjectDir({ project: subdir });
 
       expect(result).toBe(real);
-      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(stderrSpy).toHaveBeenCalledTimes(1);
     } finally {
-      errorSpy.mockRestore();
+      stderrSpy.mockRestore();
     }
   });
 
@@ -262,7 +262,7 @@ describe('canonicalizeProjectDir', () => {
     createTestGitRepo(real);
     const subdir = join(real, 'packages', 'web');
     mkdirSync(subdir, { recursive: true });
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const previousCwd = process.cwd();
 
     try {
@@ -274,10 +274,10 @@ describe('canonicalizeProjectDir', () => {
       // mistake worth a warning — the commands simply have to agree on
       // which directory the project is.
       expect(result).toBe(real);
-      expect(errorSpy).not.toHaveBeenCalled();
+      expect(stderrSpy).not.toHaveBeenCalled();
     } finally {
       process.chdir(previousCwd);
-      errorSpy.mockRestore();
+      stderrSpy.mockRestore();
     }
   });
 });

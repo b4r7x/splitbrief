@@ -729,6 +729,53 @@ describe('SetupScreen', () => {
     });
   });
 
+  it('shows a warning raised while the tools are checked on the tool check panel', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 30 });
+    feedbackStore.setError('2 warnings, all shown when you quit · ⚠ workflow.mode was retired.');
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+    await flushEffects();
+
+    const cold = ui.lastFrame() ?? '';
+    expect(cold).toContain('Checking your tools…');
+    expect(cold).toContain('2 warnings, all shown when you quit · ⚠ workflow.mode was retired.');
+
+    failedDiscovery(beginDiscovery(), 1);
+    await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Tool check failed'));
+    expect(ui.lastFrame() ?? '').toContain('2 warnings, all shown when you quit');
+    ui.unmount();
+  });
+
+  it.each([
+    { cols: 60, rows: 18 },
+    { cols: 39, rows: 18 },
+  ])('keeps the tool check of a saved crew whole at $cols x $rows with a warning', async (size) => {
+    terminalSizeStore.__testReset(size);
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig(),
+      revision: {
+        rawSha256: 'saved-config',
+        fileIdentity: { dev: 0n, ino: 0n, size: 0n, mtimeNs: 0n },
+      },
+    });
+    feedbackStore.setError('2 warnings, all shown when you quit · ⚠ workflow.mode was retired.');
+    const ui = renderFeature(
+      <SetupScreen prepare={async (input) => preparedOutcome(input)} />,
+      size,
+    );
+    await flushEffects();
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    expect(lines.length).toBeLessThanOrEqual(size.rows);
+    expect(lines.join('\n')).toContain('PLAN');
+    expect(lines.join('\n')).toContain('2 warnings');
+    expect(lines.join('\n')).toContain('esc quit');
+    const framed = lines.filter((line) => line.trim() !== '');
+    expect(framed[0]).toMatch(/^\s*\+-+\+\s*$/);
+    expect(framed.at(-1)).toMatch(/^\s*\+-+\+\s*$/);
+    ui.unmount();
+  });
+
   it('shows generic cold initialization and reaches the crew surface once discovery is actionable', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30 });
     const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
