@@ -9,10 +9,12 @@ import { wrapHard } from '../../../utils/wrap.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { REVIEW_DECORATION_ROWS } from '../layout/rect.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { OVERLAY_FRAME_ROWS } from '../../../core/navigation/overlay-rect.js';
 import type { OverlayCard } from '../../../components/overlays/overlay-panel.js';
 import {
   MIN_TEXT_WIDTH,
+  approvalBoxTextWidth,
   approvalTextWidth,
   pathAwareRows,
   wrapPathAwareText,
@@ -356,8 +358,12 @@ export type ConfirmFrame =
   | Readonly<{ width: number; kind: 'box' }>
   | Readonly<{ width: number; kind: 'card'; card: OverlayCard }>;
 
-export function ownConfirmFrame(cols: number): ConfirmFrame {
-  return { width: approvalTextWidth(cols), kind: 'box' };
+/**
+ * The panel's own box, painted across `paintWidth`: the chrome content width on the run screen,
+ * the terminal width on a page.
+ */
+export function ownConfirmFrame(paintWidth: number): ConfirmFrame {
+  return { width: approvalBoxTextWidth(paintWidth), kind: 'box' };
 }
 
 /** The blank rows an overlay card keeps: its padding rows and the row under its title. */
@@ -546,5 +552,5 @@ export function getConfirmPanelRows(request: TieredApprovalRequest, frame: Confi
 
 export function getApprovalPromptRows(state: ApprovalPromptState, cols: number): number {
   if (state.status !== 'pending') return 0;
-  return getConfirmPanelRows(state.request, ownConfirmFrame(cols));
+  return getConfirmPanelRows(state.request, ownConfirmFrame(getChromeContentWidth(cols)));
 }

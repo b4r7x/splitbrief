@@ -20,8 +20,13 @@ export function pathAwareRows(text: string, width: number): number {
 
 export const APPROVAL_HORIZONTAL_CHROME = 4;
 
+/** The text budget of a panel that paints its own border and padding across `paintWidth`. */
+export function approvalBoxTextWidth(paintWidth: number): number {
+  return Math.max(MIN_TEXT_WIDTH, paintWidth - APPROVAL_HORIZONTAL_CHROME);
+}
+
 // The panel renders inside the gutter, so its text budget is the chrome content width minus the
 // panel's own border and padding — never the raw terminal width.
 export function approvalTextWidth(cols: number): number {
-  return Math.max(MIN_TEXT_WIDTH, getChromeContentWidth(cols) - APPROVAL_HORIZONTAL_CHROME);
+  return approvalBoxTextWidth(getChromeContentWidth(cols));
 }
