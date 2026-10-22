@@ -9,6 +9,7 @@ import {
   type SpawnIdleOptions,
   type SpawnPipeFatalSignal,
   spawnPipe,
+  spawnPipeError,
 } from './lifecycle.js';
 
 type LineStreamCallback<T> =
@@ -65,6 +66,18 @@ export async function spawnWithStdin(opts: {
     },
   );
 
+  const exitFailure = (code: number | null): Error => {
+    if (code === 127) return processError.notFound(opts.command, opts.notFoundMessage);
+    const stderrText = stderrOutput.snapshot().text;
+    return processError.exitCode({
+      command: opts.command,
+      code,
+      stderr: stderrText,
+      output: rawText.snapshot().text,
+      detail: stderrText.trim() ? undefined : opts.errorDetail?.(),
+    });
+  };
+
   return spawnPipe({
     command: opts.command,
     args: [...opts.args],
@@ -92,23 +105,9 @@ export async function spawnWithStdin(opts: {
     onClose: (code) => {
       const flushResult = stdoutBuf.flush();
       if (isFatalSignal(flushResult)) throw flushResult;
+      if (code !== 0) throw exitFailure(code);
       const textSnapshot = rawText.snapshot();
       const stderrSnapshot = stderrOutput.snapshot();
-
-      if (code === 127) {
-        throw processError.notFound(opts.command, opts.notFoundMessage);
-      }
-
-      if (code !== 0) {
-        throw processError.exitCode({
-          command: opts.command,
-          code,
-          stderr: stderrSnapshot.text,
-          output: textSnapshot.text,
-          detail: stderrSnapshot.text.trim() ? undefined : opts.errorDetail?.(),
-        });
-      }
-
       return {
         text: textSnapshot.text,
         stderrOutput: stderrSnapshot.text,
@@ -117,5 +116,18 @@ export async function spawnWithStdin(opts: {
         stderrMetadata: stderrSnapshot,
       };
     },
+  }).catch((err: unknown) => {
+    // A child that stops on its own error (a usage limit, a dead login) before
+    // it reads the whole prompt breaks the pipe under it: its words, not the
+    // pipe, are the diagnosis.
+    if (
+      spawnPipeError.isStdinIncomplete(err) &&
+      err.data !== undefined &&
+      err.data.code !== 0 &&
+      (stderrOutput.snapshot().text.trim() || rawText.snapshot().text.trim())
+    ) {
+      throw exitFailure(err.data.code);
+    }
+    throw err;
   });
 }
