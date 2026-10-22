@@ -1274,7 +1274,16 @@ const CLOSED_FIX_CYCLE: RunRecord = {
         ],
         at: GENERATED_AT,
       },
-      { scope: 'final', cycle: 1, outcome: 'pass', blocking: [], at: GENERATED_AT },
+      {
+        scope: 'final',
+        cycle: 1,
+        outcome: 'fail',
+        blocking: [
+          { id: 'F1', text: 'The signup route returns 500 when the email field is missing.' },
+        ],
+        at: GENERATED_AT,
+      },
+      { scope: 'final', cycle: 2, outcome: 'pass', blocking: [], at: GENERATED_AT },
     ],
   },
 };

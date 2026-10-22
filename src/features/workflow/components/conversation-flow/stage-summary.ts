@@ -9,6 +9,7 @@ import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { formatStageLabel } from '../../../../core/phase-display.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import { oneLineDisplayText } from '../../../../utils/display-text.js';
+import { finalReviewAnchor } from '../../../../core/recovery/headline.js';
 
 export function stageSummaryRow(summary: StageSummary): {
   state: Extract<TaskSummaryState, { kind: 'stage' }>;
@@ -116,12 +117,4 @@ export function stageHeadingParts(
         : finalReviewAnchor(stage.fixCyclesBefore, stage.rerunsBefore);
   if (anchor !== undefined) parts.push({ text: ` ${anchor}`, tone: 'textDim' });
   return parts;
-}
-
-function finalReviewAnchor(fixCycles: number, reruns: number): string | undefined {
-  const parts = [
-    ...(fixCycles > 0 ? [`after ${countNoun(fixCycles, 'fix cycle')}`] : []),
-    ...(reruns > 0 ? [reruns === 1 ? 're-run' : `re-run ${reruns}`] : []),
-  ];
-  return parts.length === 0 ? undefined : parts.join(', ');
 }
