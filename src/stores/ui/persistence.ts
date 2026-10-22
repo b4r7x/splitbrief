@@ -20,8 +20,11 @@ const HistoryEnvelopeSchema = z.object({
   entries: z.array(DraftDocumentSchema),
 });
 
+const HISTORY_FILE = join(SPLITBRIEF_DIR, 'history');
+const HISTORY_NOT_READ = `Could not read ~/${HISTORY_FILE}, so earlier prompts are not available`;
+
 function historyFile(): string {
-  return join(homedir(), SPLITBRIEF_DIR, 'history');
+  return join(homedir(), HISTORY_FILE);
 }
 
 function redactDocument(document: DraftDocument): DraftDocument {
@@ -53,12 +56,12 @@ function parseHistory(content: string): DraftDocument[] {
   try {
     json = JSON.parse(content);
   } catch (err) {
-    warnError('input-history: ignored a malformed history file', err);
+    warnError(HISTORY_NOT_READ, err);
     return [];
   }
   const envelope = HistoryEnvelopeSchema.safeParse(json);
   if (!envelope.success) {
-    warnError('input-history: ignored a malformed history file', envelope.error);
+    warnError(HISTORY_NOT_READ, envelope.error);
     return [];
   }
   return envelope.data.entries;
@@ -69,7 +72,7 @@ export function loadHistoryFromDisk(): DraftDocument[] {
     return normalizeInputHistoryEntries(parseHistory(readFileSync(historyFile(), 'utf-8')));
   } catch (err) {
     if (isENOENT(err)) return [];
-    warnError('input-history: failed to load', err);
+    warnError(HISTORY_NOT_READ, err);
     return [];
   }
 }
@@ -90,7 +93,10 @@ export function installHistoryPersistence(): () => void {
     try {
       saveHistoryToDisk(entries);
     } catch (err) {
-      warnError('input-history: failed to save', err);
+      warnError(
+        `Could not save ~/${HISTORY_FILE}, so recent prompts are not kept for the next start`,
+        err,
+      );
     }
   };
 

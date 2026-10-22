@@ -389,6 +389,37 @@ describe('renderApp completion', () => {
       }
     },
   );
+  // Cleanup restores the terminal whatever fails; only a tool process it cannot stop reaches the report.
+  it.each([
+    ['a termination signal', 'Could not stop every tool process while SPLITBRIEF stopped'],
+    ['a crash', 'Could not stop every tool process after the crash'],
+  ] as const)('says a tool process may keep running after %s', async (stop, words) => {
+    const inkExit = Promise.withResolvers<void>();
+    vi.mocked(render).mockReturnValueOnce(inkInstance(() => inkExit.promise));
+    lifecycle.killAllProcesses.mockRejectedValueOnce(new Error('the process group is still live'));
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = vi.fn();
+    const known = new Set(process.listeners('uncaughtException'));
+    const rendering = renderApp(createElement(Fragment), { fullscreen: false }, { exit });
+    try {
+      if (stop === 'a crash') {
+        const crash = process
+          .listeners('uncaughtException')
+          .find((listener) => !known.has(listener));
+        crash?.(new Error('boom'), 'uncaughtException');
+      } else {
+        process.emit('SIGTERM', 'SIGTERM');
+      }
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledOnce());
+      expect(stderr.mock.calls.map(([chunk]) => String(chunk))).toContain(
+        `${words}, so one may keep running: the process group is still live\n`,
+      );
+    } finally {
+      inkExit.resolve();
+      await expect(rendering).rejects.toThrow('the process group is still live');
+      stderr.mockRestore();
+    }
+  });
   it.each([true, false])(
     'leaves the keyboard mode off when it crashes while an editor holds the terminal, fullscreen=%s',
     async (fullscreen) => {

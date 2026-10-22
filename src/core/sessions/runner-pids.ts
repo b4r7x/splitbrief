@@ -6,8 +6,9 @@ import { isENOENT } from '../../lib/process/errors.js';
 import { warnStderr } from '../../lib/warn.js';
 import { sessionDir } from '../paths.js';
 import type { SessionRef } from '../types/session-ref.js';
+import { sessionRelativePath } from './ownership-marker.js';
 
-const RUNNER_PIDS_FILE = 'runner-pids.jsonl';
+export const RUNNER_PIDS_FILE = 'runner-pids.jsonl';
 
 const RunnerPidEntrySchema = z.object({
   pid: z.number().int().positive(),
@@ -22,10 +23,11 @@ function runnerPidsPath(ref: SessionRef): string {
 
 export function readRunnerPids(ref: SessionRef): RunnerPidEntry[] {
   const filePath = runnerPidsPath(ref);
+  const label = sessionRelativePath(ref.sessionId, RUNNER_PIDS_FILE);
   try {
     rejectSymlinkTarget(filePath);
   } catch {
-    warnStderr(`Warning: refusing to read runner pid ledger through symlink ${filePath}`);
+    warnStderr(`Warning: skipped ${label}: it is a symbolic link`);
     return [];
   }
 
@@ -45,10 +47,12 @@ export function readRunnerPids(ref: SessionRef): RunnerPidEntry[] {
       if (result.success) {
         entries.push(result.data);
       } else {
-        warnStderr(`Warning: invalid runner pid entry in ${filePath}: ${result.error.message}`);
+        warnStderr(
+          `Warning: skipped a line of ${label} that is not valid: ${result.error.message}`,
+        );
       }
     } catch (err) {
-      warnStderr(`Warning: failed to parse runner pid entry in ${filePath}: ${String(err)}`);
+      warnStderr(`Warning: skipped a line of ${label} that is not valid: ${String(err)}`);
     }
   }
   return entries;

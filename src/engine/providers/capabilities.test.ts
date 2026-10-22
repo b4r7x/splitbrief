@@ -178,7 +178,9 @@ describe('detectCapabilities', () => {
         await detectCapabilities(ollamaConfig());
 
         expect(stderr).toHaveBeenCalledWith(
-          expect.stringContaining('detectContextLength(ollama): malformed provider response'),
+          expect.stringContaining(
+            'Could not read the context length of qwen:7b from Ollama: malformed provider response',
+          ),
         );
       } finally {
         stderr.mockRestore();

@@ -1,7 +1,9 @@
-import { existsSync, readdirSync } from 'node:fs';
-import { isValidSessionId, sessionDir, sessionsRoot } from '../../../core/paths.js';
+import { sessionDir } from '../../../core/paths.js';
 import { checkSessionLockStatus } from '../../../core/sessions/lockfile-status.js';
+import { listSessionIds, sessionsRootLabel } from '../../../core/sessions/orphans.js';
+import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
 import {
+  RUNNER_PIDS_FILE,
   readRunnerPids,
   releaseRunnerPids,
   type RunnerPidEntry,
@@ -74,16 +76,28 @@ async function reapSessionOrphans(
   deps: OrphanReaperDeps,
 ): Promise<void> {
   const ref = { projectDir, sessionId };
+  let pids: RunnerPidEntry[];
   try {
-    const pids = readRunnerPids(ref);
+    pids = readRunnerPids(ref);
     if (pids.length === 0) return;
 
     if (!sessionOwnerGone(sessionDir(projectDir, sessionId), sessionId)) return;
 
     await Promise.all(pids.map((entry) => reapOrphanPid(entry, deps)));
+  } catch (err) {
+    warnError(
+      `Could not check ${sessionRelativePath(sessionId)} for tool processes its stopped run left, so they may keep running`,
+      err,
+    );
+    return;
+  }
+  try {
     releaseRunnerPids(ref, pids);
   } catch (err) {
-    warnError(`orphan reaper: skipping session ${sessionId}`, err);
+    warnError(
+      `Checked the tool processes the stopped run in ${sessionRelativePath(sessionId)} left, but could not update ${sessionRelativePath(sessionId, RUNNER_PIDS_FILE)}, so the next start checks them again`,
+      err,
+    );
   }
 }
 
@@ -91,18 +105,15 @@ export async function reapOrphanRunners(
   projectDir: string,
   deps: OrphanReaperDeps = defaultDeps,
 ): Promise<void> {
-  const root = sessionsRoot(projectDir);
-  if (!existsSync(root)) return;
-
   let sessionIds: string[];
   try {
-    sessionIds = readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && isValidSessionId(entry.name))
-      .map((entry) => entry.name);
+    sessionIds = listSessionIds(projectDir);
   } catch (err) {
-    warnError('orphan reaper: cannot list sessions', err);
+    warnError(
+      `Could not list ${sessionsRootLabel(projectDir)}, so tool processes that stopped runs left may keep running`,
+      err,
+    );
     return;
   }
-
   await Promise.all(sessionIds.map((sessionId) => reapSessionOrphans(projectDir, sessionId, deps)));
 }

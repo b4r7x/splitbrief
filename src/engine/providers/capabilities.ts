@@ -59,7 +59,10 @@ export async function detectCapabilities(config: Config): Promise<DetectedCapabi
         const ctx = await provider.detectContextLength(config.implementer.model);
         if (ctx) return { contextLength: ctx, origin: 'detected' };
       } catch (error) {
-        warnError(`detectCapabilities(${provider.name})`, error);
+        warnError(
+          `Could not read the context length of ${config.implementer.model} from ${provider.name}`,
+          error,
+        );
       }
     }
   }

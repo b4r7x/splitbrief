@@ -364,7 +364,9 @@ function buildCache(snapshot: DetectionCacheSnapshot): DetectionCache | null {
   // Field paths only: a rejected value is often the credential-shaped material
   // the schema refused, so it must not travel into a diagnostic line.
   const fields = result.error.issues.map((issue) => issue.path.join('.')).join(', ');
-  warnError(`detection cache: snapshot not remembered, rejected fields: ${fields}`);
+  warnError(
+    `Could not save the tool check to ${CACHE_RELATIVE_PATH}, so the next start shows an older tool check, or none, until it checks your tools again. Fields not valid: ${fields}`,
+  );
   return null;
 }
 

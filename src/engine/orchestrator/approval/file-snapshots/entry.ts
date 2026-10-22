@@ -351,7 +351,7 @@ async function writeConfinedFileEntry(
     // The target is already committed after link/rename. A failed cleanup must
     // not misreport that successful write as an unapplied file.
     await rm(temporary, { force: true }).catch((err) =>
-      warnError(`Could not remove promotion temporary file ${temporary}`, err),
+      warnError(`Could not remove the temporary file ${relative(projectDir, temporary)}`, err),
     );
   }
 }

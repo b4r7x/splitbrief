@@ -63,7 +63,7 @@ export function writeTerminalSequence(sequence: string): boolean {
   try {
     process.stdout.write(sequence, (err?: Error | null) => {
       if (!err || isBrokenOutputError(err)) return;
-      warnError('writeTerminalSequence: stdout write failed', err);
+      warnError('Could not write to the terminal', err);
     });
     return true;
   } catch (err) {

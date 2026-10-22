@@ -131,7 +131,7 @@ export async function withRunBaseTree<T>(
     try {
       await removeRunBaseTree(dir);
     } catch (cleanupError) {
-      warnError(`Could not remove run base tree ${dir} after its callback failed`, cleanupError);
+      warnError(`Could not remove run base tree ${dir} after the base re-run failed`, cleanupError);
     }
     throw err;
   }

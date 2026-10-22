@@ -124,7 +124,7 @@ async function readSkill({
 }): Promise<SkillMeta | null> {
   const raw = await readSkillFile(ctx, path);
   if (raw === null) {
-    if (ctx.projectDir !== undefined) warnError(`Failed to read confined skill ${path}`);
+    if (ctx.projectDir !== undefined) warnError(`Failed to read skill ${path}`);
     return null;
   }
   const fm = parseFrontmatter(raw)?.fields;
@@ -269,7 +269,7 @@ export type SkillContent = { content: string; omitted: string[]; unread: SkillMe
 async function readSkillText(skill: SkillMeta, path: string): Promise<string | null> {
   if (skill.projectDir !== undefined) {
     const confined = readProjectFileConfined(skill.projectDir, relative(skill.projectDir, path));
-    if (confined === null) warnError(`Failed to read confined skill ${path}`);
+    if (confined === null) warnError(`Failed to read skill ${path}`);
     return confined;
   }
   try {

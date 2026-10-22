@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { sessionDir, LOCKFILE } from '../../../core/paths.js';
+import { sessionDir, sessionsRoot, LOCKFILE } from '../../../core/paths.js';
 import {
   currentProcessStartTimeMs,
   readProcessStartTimeMs,
@@ -248,6 +248,7 @@ describe('reapOrphanRunners', () => {
     vi.useFakeTimers();
     tmp = createTempDir('orphan-reaper-test');
     const calls = installKillSpy(new Set([50031]));
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     // runner-pids.jsonl as a directory makes readRunnerPids throw (EISDIR).
     writeLockfile(tmp, 'broken-session', { pid: 40031, startTimeMs: 1000 });
@@ -263,6 +264,56 @@ describe('reapOrphanRunners', () => {
 
     expect(calls).toContainEqual({ pid: -50031, signal: 'SIGTERM' });
     expect(readRunnerPids({ projectDir: tmp, sessionId: 'dead-session' })).toEqual([]);
+    expect(stderr.mock.calls.map(([chunk]) => String(chunk))).toContainEqual(
+      expect.stringContaining(
+        'Could not check .splitbrief/sessions/broken-session for tool processes its stopped run left, so they may keep running: ',
+      ),
+    );
+  });
+
+  it('says the next start checks the stopped processes again when it cannot update the pid ledger', async () => {
+    vi.useFakeTimers();
+    tmp = createTempDir('orphan-reaper-test');
+    const calls = installKillSpy(new Set([50041]));
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    writeLockfile(tmp, 'dead-session', { pid: 40041, startTimeMs: 1000 });
+    recordRunnerPid({ projectDir: tmp, sessionId: 'dead-session' }, 50041, 111_000);
+    mockedStartTimes.set(50041, 111_000);
+    const dir = sessionDir(tmp, 'dead-session');
+    chmodSync(dir, 0o500);
+    try {
+      const reaping = reapOrphanRunners(tmp, reaperDeps());
+      await vi.advanceTimersByTimeAsync(2000);
+      await reaping;
+    } finally {
+      chmodSync(dir, 0o700);
+    }
+
+    expect(calls).toContainEqual({ pid: -50041, signal: 'SIGTERM' });
+    expect(stderr.mock.calls.map(([chunk]) => String(chunk))).toEqual([
+      expect.stringContaining(
+        'Checked the tool processes the stopped run in .splitbrief/sessions/dead-session left, but could not update .splitbrief/sessions/dead-session/runner-pids.jsonl, so the next start checks them again: ',
+      ),
+    ]);
+  });
+
+  it('says the leftover tool processes may keep running when it cannot list the runs', async () => {
+    tmp = createTempDir('orphan-reaper-test');
+    const root = sessionsRoot(tmp);
+    mkdirSync(root, { recursive: true });
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    chmodSync(root, 0o000);
+    try {
+      await reapOrphanRunners(tmp, reaperDeps());
+    } finally {
+      chmodSync(root, 0o700);
+    }
+
+    expect(stderr.mock.calls.map(([chunk]) => String(chunk))).toEqual([
+      expect.stringContaining(
+        'Could not list .splitbrief/sessions, so tool processes that stopped runs left may keep running: ',
+      ),
+    ]);
   });
 
   it('a live pid whose start time cannot be read is never signalled', async () => {

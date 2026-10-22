@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -27,7 +28,6 @@ import { activeFile, READINESS_FILE, sessionDir, sessionsRoot } from '../paths.j
 import { writeActive } from './active-pointer.js';
 import {
   discardOrphanSessionDirectory,
-  listOrphanSessionIds,
   ORPHAN_SESSION_GRACE_MS,
   pruneOrphanSessions,
 } from './orphans.js';
@@ -78,41 +78,6 @@ function writeV1ActiveReceipt(project: string, sessionId: string): void {
     { mode: 0o600 },
   );
 }
-
-describe('listOrphanSessionIds', () => {
-  it('lists readiness-only and empty directories older than the grace period', () => {
-    const project = projectDir();
-    oldReadinessOnly(project, '2026-08-03-list-old-readiness');
-    const empty = sessionDirectory(project, '2026-08-03-list-old-empty');
-    age(empty, NOW_MS - ORPHAN_SESSION_GRACE_MS - 120_000);
-
-    const orphans = listOrphanSessionIds({ projectDir: project, nowMs: NOW_MS }).sort();
-
-    expect(orphans).toEqual(['2026-08-03-list-old-empty', '2026-08-03-list-old-readiness']);
-  });
-
-  it('excludes young, active, foreign-content and invalid-id directories', () => {
-    const project = projectDir();
-    const young = sessionDirectory(project, '2026-08-03-list-young');
-    writeFile(young, READINESS_FILE);
-    age(young, NOW_MS - 60_000);
-    oldReadinessOnly(project, '2026-08-03-list-active');
-    writeActive({ projectDir: project, sessionId: '2026-08-03-list-active' });
-    const foreign = sessionDirectory(project, '2026-08-03-list-foreign');
-    writeFile(foreign, READINESS_FILE);
-    writeFile(foreign, 'state.json');
-    age(foreign, NOW_MS - ORPHAN_SESSION_GRACE_MS - 60_000);
-    mkdirSync(
-      join(
-        sessionsRoot(project),
-        '.2026-08-03-list-claim.directory.11111111-1111-4111-8111-111111111111.claim',
-      ),
-      { recursive: true },
-    );
-
-    expect(listOrphanSessionIds({ projectDir: project, nowMs: NOW_MS })).toEqual([]);
-  });
-});
 
 describe('pruneOrphanSessions', () => {
   it('removes readiness-only and empty directories older than the grace period', () => {
@@ -189,6 +154,29 @@ describe('pruneOrphanSessions', () => {
     expect(existsSync(readinessAndSwap)).toBe(true);
   });
 
+  it('says the unused run folders stay when it cannot list the runs', () => {
+    const project = projectDir();
+    const root = sessionsRoot(project);
+    mkdirSync(root, { recursive: true });
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    chmodSync(root, 0o000);
+    let result: ReturnType<typeof pruneOrphanSessions>;
+    try {
+      result = pruneOrphanSessions({ projectDir: project, nowMs: NOW_MS });
+    } finally {
+      chmodSync(root, 0o700);
+    }
+    const written = stderr.mock.calls.map(([chunk]) => String(chunk));
+    stderr.mockRestore();
+
+    expect(result).toEqual({ scanned: 0, removed: [] });
+    expect(written).toEqual([
+      expect.stringContaining(
+        'Could not list .splitbrief/sessions, so unused run folders stay in it: ',
+      ),
+    ]);
+  });
+
   it('ignores quarantine claim directories', () => {
     const project = projectDir();
     const claim = join(
@@ -212,6 +200,7 @@ describe('pruneOrphanSessions', () => {
     if (realIdentity === undefined)
       throw new Error('directoryIdentity mock lost its implementation');
 
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       identityMock.mockImplementation((ref, relativeDirectory, expected) => {
         if (ref.sessionId === '2026-08-03-prune-blocked') {
@@ -226,8 +215,14 @@ describe('pruneOrphanSessions', () => {
       expect(result.removed).toEqual(['2026-08-03-prune-clean']);
       expect(existsSync(blocked)).toBe(true);
       expect(existsSync(clean)).toBe(false);
+      expect(stderr.mock.calls.map(([chunk]) => String(chunk))).toEqual([
+        expect.stringContaining(
+          'Kept .splitbrief/sessions/2026-08-03-prune-blocked: could not check or remove it as an unused run folder: ',
+        ),
+      ]);
     } finally {
       identityMock.mockImplementation(realIdentity);
+      stderr.mockRestore();
     }
   });
 });

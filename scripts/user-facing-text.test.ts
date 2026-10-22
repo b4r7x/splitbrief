@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { findUserFacingTextViolations, userFacingFiles } from './user-facing-text.js';
+import {
+  findUserFacingTextViolations,
+  findWarningLabelViolations,
+  userFacingFiles,
+} from './user-facing-text.js';
 
 describe('user-facing text', () => {
   let root: string;
@@ -156,5 +160,48 @@ describe('user-facing text', () => {
     write('website/index.html', '<p>The owner decides.</p>');
 
     expect(findUserFacingTextViolations(root)).toEqual(['website/index.html:1: the owner']);
+  });
+
+  it('rejects a warning label with a module tag, a camelCase name or a call form', () => {
+    write(
+      'src/core/prefs.ts',
+      [
+        "warnError('ui-prefs: failed to read', err);",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture source must carry a literal template
+        'warnStderr(`${seat}-effort: dropped`);',
+        "warnError('writeTerminalSequence: stdout write failed', err);",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture source must carry a literal template
+        'warnError(`detectContextLength(${name})`, err);',
+        "readValidatedJson(path, parse, fallback, 'prefs: failed to read');",
+      ].join('\n'),
+    );
+    write('src/core/prefs.test.ts', "warnError('ui-prefs: failed to read', err);");
+
+    expect(findWarningLabelViolations(root)).toEqual([
+      'src/core/prefs.ts:1: warning label module tag: ui-prefs: failed to read',
+      'src/core/prefs.ts:2: warning label module tag: x-effort: dropped',
+      'src/core/prefs.ts:3: warning label module tag: writeTerminalSequence: stdout write failed',
+      'src/core/prefs.ts:3: warning label camelCase name: writeTerminalSequence: stdout write failed',
+      'src/core/prefs.ts:4: warning label camelCase name: detectContextLength(x)',
+      'src/core/prefs.ts:4: warning label call form: detectContextLength(x)',
+      'src/core/prefs.ts:5: warning label module tag: prefs: failed to read',
+    ]);
+  });
+
+  it('passes a warning label in product words', () => {
+    write(
+      'src/core/prefs.ts',
+      [
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture source must carry a literal template
+        'warnError(`Could not read ${path}, so the default layout is used`, err);',
+        "warnStderr('Warning: skipped .splitbrief/ui-prefs.json: it is not valid');",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the fixture source must carry a literal template
+        'warnStderr(`⚠ ${message}`);',
+        'warnStderr(message);',
+        "readValidatedJson(path, parse, fallback, 'Could not read .splitbrief/ui-prefs.json');",
+      ].join('\n'),
+    );
+
+    expect(findWarningLabelViolations(root)).toEqual([]);
   });
 });

@@ -212,7 +212,7 @@ describe('loadState', () => {
     ],
     ['tasks not an array', () => ({ ...createInitialState('invalid-tasks'), tasks: 'not-array' })],
     ['unknown phase', () => ({ ...createInitialState('broken'), phase: 'not-a-real-phase' })],
-  ])('returns null and warns that schema validation failed for %s', (_name, build) => {
+  ])('returns null and warns that the state file content is not valid for %s', (_name, build) => {
     const dir = makeTmp();
     const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
@@ -222,7 +222,10 @@ describe('loadState', () => {
     try {
       expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
       const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
-      expect(output).toContain('failed schema validation');
+      expect(output).toContain(
+        `Warning: skipped .splitbrief/sessions/${SESSION_ID}/state.json: its content is not valid`,
+      );
+      expect(output).not.toContain('schema');
       expect(output).not.toContain('is incompatible');
     } finally {
       stderrSpy.mockRestore();

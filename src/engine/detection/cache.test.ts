@@ -114,7 +114,9 @@ describe('detection cache', () => {
       stderr.mockRestore();
     }
 
-    expect(written).toContain('detection cache: snapshot not remembered');
+    expect(written).toContain(
+      'Could not save the tool check to .splitbrief/detection-cache.json, so the next start shows an older tool check, or none, until it checks your tools again.',
+    );
     expect(written).toContain('contextKey');
     expect(written).not.toContain('not-a-persistable-key');
     await expect(

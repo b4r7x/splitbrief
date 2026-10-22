@@ -26,7 +26,7 @@ export function createLaneChannel(): LaneChannel {
     try {
       listener(lane);
     } catch (err) {
-      warnError('Detection lane listener failed', err);
+      warnError('Could not show a tool check result', err);
     }
   };
   return {

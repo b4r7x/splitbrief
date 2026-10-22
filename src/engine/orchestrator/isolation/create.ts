@@ -399,7 +399,7 @@ export function createRunIsolation(opts: {
       .then(() => revertAttempt(dir, snapshot, files))
       .catch((err) => {
         cleanupFailure ??= attemptCleanupError.failed(dir, err);
-        warnError(`Isolation cleanup failed for session ${sessionId} at ${dir}`, err);
+        warnError(`Could not undo the attempt's changes in ${dir}`, err);
       });
   }
 

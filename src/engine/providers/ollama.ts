@@ -137,7 +137,7 @@ async function observeLoadedOllamaModels(
     throwIfAborted(input.signal);
     if (!isEndpointUnreachable(error)) {
       warnError(
-        'observeLoadedModels(ollama)',
+        'Could not read the loaded models from Ollama',
         sanitizeProviderDiagnostic(error, { credentialValues: [input.apiKey] }),
       );
     }
@@ -221,7 +221,7 @@ async function detectContextLengthFromShow(
   } catch (error) {
     if (isEndpointUnreachable(error)) return null;
     warnError(
-      'detectContextLength(ollama)',
+      `Could not read the context length of ${input.model} from Ollama`,
       sanitizeProviderDiagnostic(error, { credentialValues: [input.apiKey] }),
     );
     return null;

@@ -370,7 +370,7 @@ describe('createPlanner', () => {
     await createPlanner(config);
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('planner-effort');
+    expect(written).toContain('The planner effort setting');
   });
 
   it('writes a variant warning to stderr when the backend has no named effort preset', async () => {
@@ -385,7 +385,7 @@ describe('createPlanner', () => {
     await createPlanner(config);
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('planner-variant');
+    expect(written).toContain('The planner variant setting');
   });
 
   it('keeps the variant when the planner backend takes it as a named effort preset', async () => {
@@ -395,7 +395,7 @@ describe('createPlanner', () => {
     await createPlanner(config);
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).not.toContain('planner-variant');
+    expect(written).not.toContain('The planner variant setting');
   });
 
   it('does not warn about variant when no variant is configured', async () => {
@@ -405,7 +405,7 @@ describe('createPlanner', () => {
     await createPlanner(config);
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).not.toContain('planner-variant');
+    expect(written).not.toContain('The planner variant setting');
   });
 
   it('writes a temperature warning to stderr when the backend cannot deliver it', async () => {
@@ -420,7 +420,7 @@ describe('createPlanner', () => {
     await createPlanner(config);
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('planner-temperature');
+    expect(written).toContain('The planner temperature setting');
   });
 
   it('does not warn about temperature for the api planner kind', async () => {
@@ -438,7 +438,7 @@ describe('createPlanner', () => {
     await createPlanner(config);
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).not.toContain('planner-temperature');
+    expect(written).not.toContain('The planner temperature setting');
   });
 
   describe('claude-code idle wiring', () => {
@@ -597,7 +597,7 @@ describe('createImplementer', () => {
     await createImplementer(config);
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('implementer-variant');
+    expect(written).toContain('The implementer variant setting');
   });
 
   it('keeps the variant when the implementer backend takes it as a named effort preset', async () => {
@@ -607,7 +607,7 @@ describe('createImplementer', () => {
     await createImplementer(config);
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).not.toContain('implementer-variant');
+    expect(written).not.toContain('The implementer variant setting');
   });
 
   it('writes a temperature warning to stderr when the backend cannot deliver it', async () => {
@@ -623,7 +623,7 @@ describe('createImplementer', () => {
     await createImplementer(config);
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('implementer-temperature');
+    expect(written).toContain('The implementer temperature setting');
   });
 
   it('does not warn about temperature for the api implementer kind', async () => {
@@ -641,7 +641,7 @@ describe('createImplementer', () => {
     await createImplementer(config);
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).not.toContain('implementer-temperature');
+    expect(written).not.toContain('The implementer temperature setting');
   });
 });
 
@@ -985,7 +985,7 @@ describe('createReviewer', () => {
     await createPreparedReviewer(config, reviewerAuthority(config));
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('reviewer-variant');
+    expect(written).toContain('The reviewer variant setting');
   });
 
   it('keeps the variant when the reviewer backend takes it as a named effort preset', async () => {
@@ -995,7 +995,7 @@ describe('createReviewer', () => {
     await createPreparedReviewer(config, reviewerAuthority(config));
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).not.toContain('reviewer-variant');
+    expect(written).not.toContain('The reviewer variant setting');
   });
 });
 

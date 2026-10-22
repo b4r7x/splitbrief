@@ -1612,7 +1612,9 @@ describe('runWorkflow — smoke', () => {
       });
 
       expect(
-        stderrWrite.mock.calls.some(([chunk]) => String(chunk).includes('run isolation disposal')),
+        stderrWrite.mock.calls.some(([chunk]) =>
+          String(chunk).includes('Could not remove the run workspace'),
+        ),
       ).toBe(true);
     } finally {
       createSpy.mockRestore();

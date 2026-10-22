@@ -99,7 +99,10 @@ function startParentWatchdog(): ChildProcess {
   watchdog.on('disconnect', forget);
   watchdog.on('error', (err) => {
     forget();
-    warnError('process watchdog: tool processes may outlive SPLITBRIEF', err);
+    warnError(
+      'Could not start the helper that stops tool processes if SPLITBRIEF exits early, so they may keep running',
+      err,
+    );
   });
   watchdog.unref();
   watchdog.channel?.unref();
@@ -148,7 +151,7 @@ function releaseRegistration(entry: RegisteredProcess): void {
   try {
     entry.ledger.release(entry.pid);
   } catch (err) {
-    warnError('process ledger: failed to release runner pid', err);
+    warnError('Could not remove an ended tool process from the record of tool processes', err);
   }
 }
 
@@ -159,7 +162,7 @@ function monitorGroupRelease(entry: RegisteredProcess): void {
     try {
       if (!groupExists(pid)) releaseRegistration(entry);
     } catch (err) {
-      warnError('process ledger: failed to check runner process group', err);
+      warnError('Could not check whether a tool process ended', err);
     }
   }, REAP_POLL_MS);
   entry.releaseMonitor.unref?.();
@@ -187,7 +190,10 @@ export function registerProcess(
     try {
       ledger.record(entry.pid, readProcessStartTimeMs(entry.pid));
     } catch (err) {
-      warnError('process ledger: failed to record runner pid', err);
+      warnError(
+        'Could not add a started tool process to the record of tool processes, so a later run cannot stop it if SPLITBRIEF exits early',
+        err,
+      );
     }
   }
 }
@@ -205,7 +211,7 @@ export function unregisterProcess(proc: ChildProcess): void {
       return;
     }
   } catch (err) {
-    warnError('process ledger: failed to check runner process group', err);
+    warnError('Could not check whether a tool process ended', err);
   }
   monitorGroupRelease(entry);
 }
@@ -341,7 +347,7 @@ export function killProcess(proc: ChildProcess, options?: { group?: boolean }): 
     try {
       if (registeredTargetIsAbsent(entry)) releaseRegistration(entry);
     } catch (err) {
-      warnError('process ledger: failed to check registered process absence', err);
+      warnError('Could not check whether a tool process ended', err);
     }
   });
   processTerminations.set(proc, termination);

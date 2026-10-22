@@ -1262,7 +1262,9 @@ describe('createDetectionService', () => {
       await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8'),
     );
     expect(cache.cliTools).toHaveLength(1);
-    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('Detection lane listener failed'));
+    expect(stderr).toHaveBeenCalledWith(
+      expect.stringContaining('Could not show a tool check result'),
+    );
     stderr.mockRestore();
   });
 

@@ -1,8 +1,11 @@
 import { readFile, stat } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { writeSecureFileAsync } from '../../lib/fs.js';
 import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { error } from '../../utils/error.js';
 import { warnError } from '../../lib/warn.js';
+import { LOCKFILE } from '../paths.js';
+import { sessionRelativePath } from './ownership-marker.js';
 import {
   checkSessionLockStatus,
   parseSessionLockfileData,
@@ -116,7 +119,10 @@ export async function updateHeartbeat(sessionDir: string): Promise<void> {
   } catch (err) {
     if (!heartbeatFailureWarned) {
       heartbeatFailureWarned = true;
-      warnError('heartbeat write failed; liveness pings paused', err);
+      warnError(
+        `Could not update ${sessionRelativePath(basename(sessionDir), LOCKFILE)}, so other SPLITBRIEF processes may treat the run as stopped`,
+        err,
+      );
     }
   }
 }

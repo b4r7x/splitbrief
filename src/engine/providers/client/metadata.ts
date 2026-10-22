@@ -225,7 +225,7 @@ export function createMetadataProvider<TRaw extends { id: string }>(
       } catch (error) {
         if (!isEndpointUnreachable(error)) {
           warnError(
-            `detectContextLength(${opts.name})`,
+            `Could not read the context length of ${model} from ${opts.name}`,
             sanitizeProviderDiagnostic(error, {
               credentialValues: authentication === 'none' ? undefined : [resolveCredential()],
             }),
