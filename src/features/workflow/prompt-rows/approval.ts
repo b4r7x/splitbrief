@@ -3,11 +3,14 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import type { ActionClass, Phase } from '../../../core/schemas/enums.js';
 import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
+import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import { PLAN_JSON_FILE } from '../../../core/paths.js';
 import { wrapHard } from '../../../utils/wrap.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { REVIEW_DECORATION_ROWS } from '../layout/rect.js';
+import { OVERLAY_FRAME_ROWS } from '../../../core/navigation/overlay-rect.js';
+import type { OverlayCard } from '../../../components/overlays/overlay-panel.js';
 import {
   MIN_TEXT_WIDTH,
   approvalTextWidth,
@@ -17,6 +20,10 @@ import {
 } from './measure.js';
 
 const BORDER_ROWS = 2;
+/** The blank rows inside an overlay card's border, above its title and under its body. */
+const CARD_PADDING_ROWS = OVERLAY_FRAME_ROWS - BORDER_ROWS;
+/** The panel's blank rows: under the title, above the options and above the legend. */
+const PANEL_GAP_ROWS = 3;
 
 // The title states the operation the run is asking for, in the words the reader would use to
 // describe it. The subject line under it carries the path or command the sentence points at, so
@@ -60,6 +67,8 @@ export const IRREVERSIBLE_NOTE = 'this cannot be undone';
 // The refusal replaces the legend rather than adding a row, so it has to carry the way out with
 // it: the moment a user mis-keys on the most dangerous panel is not the moment to hide `esc`.
 export const CONFIRM_NUDGE = `⏎ confirms this write${SOFT_SEP}${formatKeyHints([DENY_HINT])}`;
+/** The legends of the choose step: too narrow a row sheds their trailing keys. */
+const CHOOSE_LEGENDS = [CHOOSE_HINTS, CONFIRM_NUDGE];
 
 // The engine rejects a confirm response with an empty reason, so a keyed confirm still
 // carries one — worded so the evidence trail cannot be mistaken for a stated reason.
@@ -315,13 +324,11 @@ interface ConfirmPanelRows {
   core: number;
 }
 
-function confirmPanelRows(actionClass: ActionClass, cols: number): ConfirmPanelRows {
-  const width = approvalTextWidth(cols);
+function confirmPanelRows(actionClass: ActionClass, width: number): ConfirmPanelRows {
   const options = getConfirmOptions(actionClass);
   const optionRows = approvalOptionRows(options, width);
   const chooseLegend = Math.max(
-    wrappedRows(fitKeyLegend(CHOOSE_HINTS, width), width),
-    wrappedRows(fitKeyLegend(CONFIRM_NUDGE, width), width),
+    ...CHOOSE_LEGENDS.map((legend) => wrappedRows(fitKeyLegend(legend, width), width)),
   );
   const chooseAnswer = optionRows.reduce((rows, optionRow) => rows + optionRow, 0);
   const reason = options.some((option) => option.key === 'r');
@@ -340,8 +347,44 @@ function confirmPanelRows(actionClass: ActionClass, cols: number): ConfirmPanelR
   };
 }
 
+/**
+ * Where the confirm panel paints. On the workflow screen it draws its own heavy box inside the
+ * gutter (`box`). On a page it is the body of a titled overlay card (`card`), whose blank rows are
+ * the panel's to give back. `width` is the width every line of text wraps to.
+ */
+export type ConfirmFrame =
+  | Readonly<{ width: number; kind: 'box' }>
+  | Readonly<{ width: number; kind: 'card'; card: OverlayCard }>;
+
+export function ownConfirmFrame(cols: number): ConfirmFrame {
+  return { width: approvalTextWidth(cols), kind: 'box' };
+}
+
+/** The blank rows an overlay card keeps: its padding rows and the row under its title. */
+export interface CardSpacing {
+  padding: boolean;
+  titleGap: boolean;
+}
+
+const NO_CARD_SPACING: CardSpacing = { padding: false, titleGap: false };
+const FULL_CARD_SPACING: CardSpacing = { padding: true, titleGap: true };
+
+/** The rows an overlay card keeps around its body: its border, its title and the blank rows kept. */
+function cardRows(frame: ConfirmFrame, spacing: CardSpacing): number {
+  if (frame.kind === 'box') return 0;
+  return (
+    BORDER_ROWS +
+    wrappedRows(frame.card.title, frame.width) +
+    (spacing.padding ? CARD_PADDING_ROWS : 0) +
+    (spacing.titleGap ? 1 : 0)
+  );
+}
+
 export interface ConfirmPanelFit {
   framed: boolean;
+  card: CardSpacing;
+  /** The rows the panel's own box takes: the region less the card's rows around it. */
+  bodyRows: number;
   title: boolean;
   /** The blank rows kept: under the title, above the options, above the legend. */
   gaps: { title: boolean; options: boolean; legend: boolean };
@@ -358,10 +401,12 @@ export interface ConfirmPanelFit {
 
 /**
  * What a region of `boxRows` keeps of the panel. The option rows are the answer and the title is
- * what the answer decides, so they stay longest. A framed panel gives way first by its blank rows:
- * the one under the title, then the one above the legend, then the one above the options, so the
- * facts run into the keys last. A framed panel with no spare row has no blank row. A region too
- * short for the framed panel without its blank rows drops the border and is filled in this order:
+ * what the answer decides, so they stay longest. A card gives way first by its own blank rows: its
+ * padding rows, then the row under its title; it keeps its border and title. Then the panel gives
+ * way by its blank rows: the one under the title, then the one above the legend, then the one above
+ * the options, so the facts run into the keys last. A framed panel with no spare row has no blank
+ * row. A region too short for the framed panel without its blank rows drops the border and is
+ * filled in this order:
  * the option rows, the title, the legend, the disclosure, the label, the irreversible note, the
  * blank row above the options, the blank row above the legend. The label restates the title, so
  * it gives way before any disclosure line. The disclosure gives way from the bottom, a whole line
@@ -376,22 +421,30 @@ export interface ConfirmPanelFit {
 export function fitConfirmPanel(input: {
   actionClass: ActionClass;
   actionDescription: string;
-  cols: number;
+  frame: ConfirmFrame;
   boxRows: number;
 }): ConfirmPanelFit {
-  const width = approvalTextWidth(input.cols);
-  const rows = confirmPanelRows(input.actionClass, input.cols);
+  const { frame } = input;
+  const rows = confirmPanelRows(input.actionClass, frame.width);
   const lines = formatApprovalActionDescription(input.actionDescription)
     .split('\n')
-    .map((line) => wrapPathAwareText(line, width).split('\n'));
+    .map((line) => wrapPathAwareText(line, frame.width).split('\n'));
   const subjectRows = lines.flat();
-  const factRows = rows.label + subjectRows.length;
-  const spare = input.boxRows - BORDER_ROWS - rows.title - rows.note - rows.core - factRows;
+  const minRows = confirmPanelMinRows(input, frame);
+  const spare = input.boxRows - minRows;
   if (spare >= 0) {
+    const card = {
+      titleGap: frame.kind === 'card' && spare >= 4,
+      padding: frame.kind === 'card' && spare >= 4 + CARD_PADDING_ROWS,
+    };
     return {
-      framed: true,
+      framed: frame.kind === 'box',
+      card,
+      // The body holds its own blank rows only. A row the card's padding cannot take as a pair stays
+      // outside the card, where the panel centres it like any odd row.
+      bodyRows: minRows - cardRows(frame, NO_CARD_SPACING) + Math.min(spare, PANEL_GAP_ROWS),
       title: true,
-      gaps: { title: spare >= 3, options: spare >= 1, legend: spare >= 2 },
+      gaps: { title: spare >= PANEL_GAP_ROWS, options: spare >= 1, legend: spare >= 2 },
       label: true,
       subject: subjectRows,
       hidden: 0,
@@ -402,8 +455,9 @@ export function fitConfirmPanel(input: {
     };
   }
   const optionRows = rows.options.reduce((total, optionRow) => total + optionRow, 0);
+  const bodyRows = input.boxRows - cardRows(frame, NO_CARD_SPACING);
   // The reason step replaces the option rows, so a taller one keeps its rows too.
-  let room = input.boxRows - (rows.answer - optionRows);
+  let room = bodyRows - (rows.answer - optionRows);
   let options = 0;
   for (const optionRow of rows.options) {
     if (optionRow > room) break;
@@ -434,6 +488,8 @@ export function fitConfirmPanel(input: {
   if (note) room -= rows.note;
   return {
     framed: false,
+    card: NO_CARD_SPACING,
+    bodyRows,
     title,
     gaps: { title: false, options: room >= 1, legend: room >= 2 },
     label,
@@ -446,26 +502,49 @@ export function fitConfirmPanel(input: {
   };
 }
 
-export function approvalSubjectRowCount(actionDescription: string, cols: number): number {
-  return pathAwareRows(formatApprovalActionDescription(actionDescription), approvalTextWidth(cols));
+/** The fewest rows that keep every line of the panel in view: no blank row, no count. */
+export function confirmPanelMinRows(
+  request: Pick<TieredApprovalRequest, 'actionClass' | 'actionDescription'>,
+  frame: ConfirmFrame,
+): number {
+  const rows = confirmPanelRows(request.actionClass, frame.width);
+  return (
+    (frame.kind === 'box' ? BORDER_ROWS : cardRows(frame, NO_CARD_SPACING)) +
+    rows.title +
+    rows.label +
+    pathAwareRows(formatApprovalActionDescription(request.actionDescription), frame.width) +
+    rows.note +
+    rows.core
+  );
 }
 
-function getConfirmRows(actionClass: ActionClass, actionDescription: string, cols: number): number {
-  const rows = confirmPanelRows(actionClass, cols);
+/**
+ * Whether a card can take the question in a region of `regionRows`: every line of it in view and
+ * every key of its legends whole. The card is narrower than the panel's own box, so a legend sheds
+ * a key in the card that the box still shows.
+ */
+export function confirmCardFits(
+  request: Pick<TieredApprovalRequest, 'actionClass' | 'actionDescription'>,
+  frame: Extract<ConfirmFrame, { kind: 'card' }>,
+  regionRows: number,
+): boolean {
   return (
-    BORDER_ROWS +
-    rows.title +
-    1 +
-    rows.label +
-    approvalSubjectRowCount(actionDescription, cols) +
-    rows.note +
-    1 +
-    rows.core +
-    1
+    CHOOSE_LEGENDS.every((legend) => fitKeyLegend(legend, frame.width) === legend) &&
+    confirmPanelMinRows(request, frame) <= regionRows
+  );
+}
+
+/** The rows the whole panel takes, every blank row and disclosure line in view. */
+export function getConfirmPanelRows(request: TieredApprovalRequest, frame: ConfirmFrame): number {
+  return (
+    confirmPanelMinRows(request, frame) +
+    PANEL_GAP_ROWS +
+    cardRows(frame, FULL_CARD_SPACING) -
+    cardRows(frame, NO_CARD_SPACING)
   );
 }
 
 export function getApprovalPromptRows(state: ApprovalPromptState, cols: number): number {
   if (state.status !== 'pending') return 0;
-  return getConfirmRows(state.request.actionClass, state.request.actionDescription, cols);
+  return getConfirmPanelRows(state.request, ownConfirmFrame(cols));
 }

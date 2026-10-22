@@ -3463,6 +3463,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
     }),
     defineScenario({
+      id: 'workflow-continue-runner-trust',
+      title: 'Workflow · a continue waiting on the runner trust panel',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review',
+        title: 'Runner trust panel',
+        kind: 'review',
+        marker: 'Trust and run a configured runner:',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Runner trust panel' }],
+    }),
+    defineScenario({
       id: 'workflow-command-argument',
       title: 'Workflow · command argument completion',
       surface: screenSurface('workflow'),

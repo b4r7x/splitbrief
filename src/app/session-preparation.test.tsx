@@ -25,6 +25,7 @@ import {
 import { routerStore } from '../stores/navigation/router.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../lib/terminal/typeahead-grace.js';
+import { SOFT_SEP } from '../core/separators.js';
 import { SessionPreparation } from './session-preparation.js';
 
 const ESC = '\u001b';
@@ -193,7 +194,7 @@ describe('SessionPreparation', () => {
     closeApprovalPrompt();
     await selection;
     expect(approvalSettled).toBe(true);
-    expect(ui.lastFrame() ?? '').toContain('Tool preparation');
+    expect(ui.lastFrame() ?? '').toContain(`Tool preparation${SOFT_SEP}Blocked`);
     ui.unmount();
   });
 

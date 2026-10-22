@@ -11,9 +11,12 @@ import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { approvalPromptStore, openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { ApprovalPrompt } from '../workflow/components/approval-prompt.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { formatCustomRunnerDisclosure } from '../../engine/runners/custom-runner-disclosure.js';
+import { escapeTrustLiteral } from '../../core/trust/literal.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { SOFT_SEP } from '../../core/separators.js';
+import { overlayRect } from '../../core/navigation/overlay-rect.js';
+import { confirmPanelMinRows } from '../workflow/prompt-rows/approval.js';
 import { StartPreparationPanel, type StartPreparationPanelProps } from './panel.js';
 
 const ESC = '\x1b';
@@ -67,6 +70,22 @@ const TRUST_BOUNDARY: ReadinessCheck = {
     'SPLITBRIEF approval gates review the plan and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
   ],
 };
+
+/** The disclosure the visual fixture shows: the real formatter's output for a project command. */
+const TRUST_DISCLOSURE = formatCustomRunnerDisclosure({
+  executable: '"tools/review-bot"',
+  argv: ['"--diff"'],
+  contract: 'direct',
+  cwd: 'Project directory',
+  stage: 'None',
+  environment: ['"REVIEW_BOT_TOKEN"'],
+  environmentAccess: 'Declared environment references only',
+  filesystem: 'Not an OS sandbox; the process can access files available to the current user',
+  network: 'Network access is not restricted',
+  result: 'Reviewed workspace diff; it writes directly into the project directory',
+});
+const TRUST_LABEL = 'runner command from the project config';
+const TRUST_RECEIPT = 'Exact confirmation stores an owner-only reusable receipt.';
 
 function renderPanel(
   props: Partial<StartPreparationPanelProps> & Pick<StartPreparationPanelProps, 'state'>,
@@ -175,8 +194,10 @@ describe('StartPreparationPanel', () => {
     expect(offline).toContain('http://localhost:11434.');
     expect(offline).toContain('Run `ollama serve`');
 
-    expect(unauthorized).toContain('Planner Ollama · Qwen3 Coder 30B rejected the configured');
-    expect(unauthorized).toContain('credential at http://localhost:11434.');
+    expect(unauthorized).toContain(
+      'Planner Ollama · Qwen3 Coder 30B rejected the configured credential at',
+    );
+    expect(unauthorized).toContain('http://localhost:11434.');
     expect(unauthorized).toContain('Check the credential for ollama');
     expect(unauthorized).not.toContain('Run `ollama serve`');
 
@@ -296,6 +317,27 @@ describe('StartPreparationPanel', () => {
     ui.unmount();
   });
 
+  it('gives a blocked card that does not fit every row of the terminal, with no gutter rows', async () => {
+    const readiness = report([
+      availability({ state: 'unavailable', diagnostic: 'connection refused' }),
+      TRUST_BOUNDARY,
+      ...Array.from({ length: 8 }, (_, index) => check(`repo.check-${index}`, 'warning')),
+    ]);
+    const ui = renderPanel(
+      { state: { kind: 'blocked', report: readiness } },
+      { cols: 80, rows: 24 },
+    );
+
+    await flushEffects();
+    const lines = stripAnsiStyles(ui.lastFrame()).replace(/\n$/, '').split('\n');
+    expect(lines.find((row) => row.includes('r retry'))).toContain('scroll');
+    // The card is the page while it shows, so its border sits on the first and the last row.
+    expect(lines).toHaveLength(24);
+    expect(lines[0]?.trim()).toMatch(/^\+-+\+$/);
+    expect(lines[23]?.trim()).toMatch(/^\+-+\+$/);
+    ui.unmount();
+  });
+
   it('sanitizes diagnostic and failure text before rendering it', async () => {
     const esc = '\u001b';
     const bel = '\u0007';
@@ -354,59 +396,195 @@ describe('StartPreparationPanel', () => {
     ui.unmount();
   });
 
-  it('fits the runner trust panel the screens mount into a 60x18 terminal', async () => {
-    const disclosure = formatCustomRunnerDisclosure({
-      executable: '"/Users/someone/.local/bin/review-bot"',
-      argv: ['"--diff"'],
-      contract: 'direct',
-      cwd: 'Project directory',
-      stage: 'None',
-      environment: ['"REVIEW_BOT_TOKEN"'],
-      environmentAccess: 'Declared environment references only',
-      filesystem: 'Not an OS sandbox; the process can access files available to the current user',
-      network: 'Network access is not restricted',
-      result: 'Reviewed workspace diff; it writes directly into the project directory',
-    });
-    const pending = openApprovalPrompt({
-      tier: 'confirm',
-      actionClass: 'runner_trust',
-      actionDescription: `${disclosure}\n\nExact confirmation stores an owner-only reusable receipt.`,
-      phase: 'planning',
-    });
-    const ui = renderPanel(
-      { state: { kind: 'preparing' }, approvalPrompt: <ApprovalPrompt /> },
-      { cols: 60, rows: 18 },
-    );
-    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+  // Before the card, the question painted in its own box; the card must never cut a line that box
+  // keeps. A real disclosure names the executable by its absolute path.
+  const disclosures = [
+    { name: 'a relative path', disclosure: TRUST_DISCLOSURE },
+    ...['/Users/someone/work/app/tools/review-bot', '/Users/someone/.local/bin/review-bot'].map(
+      (path) => ({
+        name: path,
+        disclosure: TRUST_DISCLOSURE.replace('"tools/review-bot"', escapeTrustLiteral(path)),
+      }),
+    ),
+  ];
+  // A narrow card sheds legend keys and wraps its title where the wider box does not.
+  const sizes = [30, 34, 36, 37, 38, 40, 41, 42, 50, 60, 70, 80, 100, 120].flatMap((cols) =>
+    [18, 19, 20, 21, 22, 23, 24, 30, 36, 40, 45, 50].map((rows) => ({ cols, rows })),
+  );
+  it.each(
+    disclosures.flatMap(({ name, disclosure }) =>
+      sizes.map((size) => ({ name, disclosure, ...size })),
+    ),
+  )(
+    'shows every runner trust line in the card or keeps its own box at $cols x $rows ($name)',
+    async ({ disclosure, cols, rows }) => {
+      const actionDescription = `${disclosure}\n\n${TRUST_RECEIPT}`;
+      const paint = async (card: boolean) => {
+        void openApprovalPrompt({
+          tier: 'confirm',
+          actionClass: 'runner_trust',
+          actionDescription,
+          phase: 'planning',
+        });
+        const ui = renderPanel(
+          {
+            state: { kind: 'preparing' },
+            approvalPrompt: (given) => <ApprovalPrompt {...(card && { card: given })} />,
+          },
+          { cols, rows },
+        );
+        await flushEffects();
+        const frame = stripAnsiStyles(ui.lastFrame()).replace(/\n$/, '');
+        ui.unmount();
+        approvalPromptStore.__testReset();
+        return frame;
+      };
+      const carded = await paint(true);
+      const ownBox = await paint(false);
 
-    const lines = stripAnsiStyles(ui.lastFrame()).replace(/\n$/, '').split('\n');
-    expect(lines.length).toBeLessThanOrEqual(18);
-    const frame = lines.join('\n');
-    expect(frame).toContain('Trust and run a configured runner:');
-    expect(frame).toContain('Executable:');
-    expect(frame).toContain('Arguments: "--diff"');
-    expect(frame).toContain('Deny');
-    ui.stdin.write(ESC);
-    await pending;
-    approvalPromptStore.__testReset();
-    ui.unmount();
+      expect(carded.split('\n').length).toBeLessThanOrEqual(rows);
+      if (!carded.includes(`Tool preparation${SOFT_SEP}Needs you`)) {
+        expect(carded).toBe(ownBox);
+        return;
+      }
+      // The rows inside the border, rejoined without white space, because a long fact wraps onto a
+      // second row, a path after its separator.
+      const text = carded
+        .split('\n')
+        .map((row) => row.replace(/^\s*[|│]|[|│]\s*$/g, ''))
+        .join('')
+        .replace(/\s+/g, '');
+      for (const line of [
+        'Trust and run a configured runner:',
+        TRUST_LABEL,
+        ...disclosure.split('\n'),
+        TRUST_RECEIPT,
+        'Confirm',
+        'Deny',
+        'esc deny',
+      ]) {
+        expect(text).toContain(line.replace(/\s+/g, ''));
+      }
+      expect(carded.split('\n').filter((row) => /^\s*\+-+\+\s*$/.test(row))).toHaveLength(2);
+    },
+  );
+
+  it.each([{ cols: 120 }, { cols: 80 }, { cols: 42 }])(
+    'opens the runner trust question in the card from the first row that keeps all of it, at $cols columns',
+    async ({ cols }) => {
+      const request = {
+        actionClass: 'runner_trust',
+        actionDescription: `${TRUST_DISCLOSURE}\n\n${TRUST_RECEIPT}`,
+      } as const;
+      const card = { title: `Tool preparation${SOFT_SEP}Needs you`, density: 'roomy' } as const;
+      const minRows = confirmPanelMinRows(request, {
+        width: overlayRect({ cols, rows: 40, density: card.density }).innerWidth,
+        kind: 'card',
+        card,
+      });
+      for (const [rows, carded] of [
+        [minRows, true],
+        [minRows - 1, false],
+      ] as const) {
+        void openApprovalPrompt({ tier: 'confirm', phase: 'planning', ...request });
+        const ui = renderPanel(
+          {
+            state: { kind: 'preparing' },
+            approvalPrompt: (given) => <ApprovalPrompt card={given} />,
+          },
+          { cols, rows },
+        );
+        await flushEffects();
+        expect(stripAnsiStyles(ui.lastFrame()).includes(card.title)).toBe(carded);
+        ui.unmount();
+        approvalPromptStore.__testReset();
+      }
+    },
+  );
+
+  it.each([{ cols: 120 }, { cols: 80 }])(
+    'keeps one blank row above the runner trust legend at every height the card adds, at $cols columns',
+    async ({ cols }) => {
+      const request = {
+        actionClass: 'runner_trust',
+        actionDescription: `${TRUST_DISCLOSURE}\n\n${TRUST_RECEIPT}`,
+      } as const;
+      const card = { title: `Tool preparation${SOFT_SEP}Needs you`, density: 'roomy' } as const;
+      const minRows = confirmPanelMinRows(request, {
+        width: overlayRect({ cols, rows: 40, density: card.density }).innerWidth,
+        kind: 'card',
+        card,
+      });
+      for (let rows = minRows + 2; rows <= minRows + 7; rows += 1) {
+        void openApprovalPrompt({ tier: 'confirm', phase: 'planning', ...request });
+        const ui = renderPanel(
+          {
+            state: { kind: 'preparing' },
+            approvalPrompt: (given) => <ApprovalPrompt card={given} />,
+          },
+          { cols, rows },
+        );
+        await flushEffects();
+        const inner = stripAnsiStyles(ui.lastFrame())
+          .split('\n')
+          .map((row) => row.replace(/^\s*[|│]|[|│]\s*$/g, '').trim());
+        const legend = inner.findIndex((row) => row.includes('esc deny'));
+        expect({ rows, above: inner.slice(legend - 2, legend) }).toEqual({
+          rows,
+          above: [expect.stringContaining('Deny'), ''],
+        });
+        ui.unmount();
+        approvalPromptStore.__testReset();
+      }
+    },
+  );
+
+  it.each([
+    { cols: 120, rows: 40 },
+    { cols: 80, rows: 24 },
+  ])('opens the runner trust question in the card at $cols x $rows', async ({ cols, rows }) => {
+    for (const { disclosure } of disclosures) {
+      void openApprovalPrompt({
+        tier: 'confirm',
+        actionClass: 'runner_trust',
+        actionDescription: `${disclosure}\n\n${TRUST_RECEIPT}`,
+        phase: 'planning',
+      });
+      const ui = renderPanel(
+        {
+          state: { kind: 'preparing' },
+          approvalPrompt: (card) => <ApprovalPrompt card={card} />,
+        },
+        { cols, rows },
+      );
+      await flushEffects();
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(`Tool preparation${SOFT_SEP}Needs you`);
+      ui.unmount();
+      approvalPromptStore.__testReset();
+    }
   });
 
-  it('renders the caller-supplied tiered approval surface instead of generic actions', async () => {
+  it('paints the caller-supplied tiered approval into the card instead of generic actions', async () => {
     const onRetry = vi.fn();
     const onBack = vi.fn();
     const onOpenSettings = vi.fn();
+    const approvalPrompt = vi.fn(() => <Text>Tiered approval</Text>);
     const ui = renderPanel({
       state: { kind: 'preparing' },
       onRetry,
       onBack,
       onOpenSettings,
-      approvalPrompt: <Text>Tiered approval</Text>,
+      approvalPrompt,
     });
 
     await flushEffects();
+    // The question paints the card, so it can give back the card's blank rows on a short terminal.
+    expect(approvalPrompt).toHaveBeenLastCalledWith({
+      title: `Tool preparation${SOFT_SEP}Needs you`,
+      density: 'roomy',
+    });
     expect(ui.lastFrame()).toContain('Tiered approval');
-    expect(ui.lastFrame()).not.toContain('Tool preparation');
+    expect(ui.lastFrame()).not.toContain('r retry');
 
     ui.stdin.write('r');
     await flushEffects();

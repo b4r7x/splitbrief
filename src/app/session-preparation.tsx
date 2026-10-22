@@ -56,7 +56,7 @@ export function SessionPreparation() {
         cancelSessionPreparation();
       }}
       onOpenSettings={() => overlayStore.open('settings')}
-      approvalPrompt={approvalPending ? <ApprovalPrompt /> : undefined}
+      approvalPrompt={approvalPending ? (card) => <ApprovalPrompt card={card} /> : undefined}
     />
   );
 }

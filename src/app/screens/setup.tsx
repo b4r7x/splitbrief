@@ -666,7 +666,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
         onRetry={() => observePreparationCleanup(preparation.retry())}
         onBack={cancelPreparation}
         onOpenSettings={() => overlayStore.open('settings')}
-        approvalPrompt={approvalPending ? <ApprovalPrompt /> : undefined}
+        approvalPrompt={approvalPending ? (card) => <ApprovalPrompt card={card} /> : undefined}
       />
     );
   }

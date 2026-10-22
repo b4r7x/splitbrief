@@ -2,6 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { useRef, useState } from 'react';
 import { Box, useInput } from 'ink';
 import { RuleHeader } from '../../../../components/rule-header.js';
+import { OverlayPanel } from '../../../../components/overlays/overlay-panel.js';
 import { borderStyleFor, glyph } from '../../../../lib/glyphs.js';
 import { listRowLead } from '../../../../components/list-row.js';
 import { RowZone } from '../../../../components/pickers/row-zone.js';
@@ -24,10 +25,10 @@ import {
   getApprovalConfirmLabel,
   getConfirmOptions,
   isIrreversibleActionClass,
+  type ConfirmFrame,
 } from '../../prompt-rows/approval.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
-import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { navigateIndex } from '../../../../utils/indexing.js';
 import { fitKeyLegend } from '../../../../core/key-legend.js';
 import { ELLIPSIS } from '../../../../utils/display-text.js';
@@ -48,6 +49,7 @@ function deny(): void {
 
 interface ConfirmApprovalPromptProps {
   request: TieredApprovalRequest;
+  frame: ConfirmFrame;
   promptRows: number;
   clampedBoxRows?: number | undefined;
   isActive: boolean;
@@ -56,6 +58,7 @@ interface ConfirmApprovalPromptProps {
 
 export function ConfirmApprovalPrompt({
   request,
+  frame,
   promptRows,
   clampedBoxRows,
   isActive,
@@ -69,14 +72,13 @@ export function ConfirmApprovalPrompt({
   const confirmStepRef = useRef<ConfirmStep>('choose');
   const selectedIndexRef = useRef(0);
   const t = useTheme();
-  const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
   // A page that gives the panel no region gives it the terminal.
   const boxRows = Math.min(promptRows, clampedBoxRows ?? rows);
   const fit = fitConfirmPanel({
     actionClass: request.actionClass,
     actionDescription: request.actionDescription,
-    cols,
+    frame,
     boxRows,
   });
   const irreversible = isIrreversibleActionClass(request.actionClass);
@@ -164,15 +166,16 @@ export function ConfirmApprovalPrompt({
     { isActive },
   );
 
-  return (
+  const body = (
     <Box
       flexDirection="column"
       {...(fit.framed && {
         borderStyle: borderStyleFor('bold'),
         borderColor: irreversible ? t.error : t.border,
       })}
-      paddingX={fit.framed ? 1 : 2}
-      height={boxRows}
+      // A card pads the panel itself.
+      paddingX={fit.framed ? 1 : frame.kind === 'box' ? 2 : 0}
+      height={fit.bodyRows}
       width="100%"
       overflow="hidden"
       flexShrink={0}
@@ -199,11 +202,7 @@ export function ConfirmApprovalPrompt({
           the other. The banded warning is the silhouette no other gate has, and it is shape, not hue, so
           it survives a terminal with the colour stripped out. */}
       {irreversible && fit.note ? (
-        <RuleHeader
-          label={IRREVERSIBLE_NOTE}
-          width={approvalTextWidth(cols)}
-          labelColor={t.error}
-        />
+        <RuleHeader label={IRREVERSIBLE_NOTE} width={frame.width} labelColor={t.error} />
       ) : null}
       {fit.gaps.options && <Text> </Text>}
       {confirmStep === 'choose' ? (
@@ -219,7 +218,7 @@ export function ConfirmApprovalPrompt({
                   <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
                   {'   '}
                   <Text color={active ? t.accent : t.text}>
-                    {approvalOptionLabelText({ option, keyWidth, width: approvalTextWidth(cols) })}
+                    {approvalOptionLabelText({ option, keyWidth, width: frame.width })}
                   </Text>
                 </Text>
               );
@@ -240,9 +239,9 @@ export function ConfirmApprovalPrompt({
           <Box flexGrow={1} minHeight={fit.gaps.legend ? 1 : 0} />
           {fit.legend &&
             (nudged ? (
-              <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, approvalTextWidth(cols))}</Text>
+              <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, frame.width)}</Text>
             ) : (
-              <Text color={t.textDim}>{fitKeyLegend(CHOOSE_HINTS, approvalTextWidth(cols))}</Text>
+              <Text color={t.textDim}>{fitKeyLegend(CHOOSE_HINTS, frame.width)}</Text>
             ))}
         </>
       ) : (
@@ -259,5 +258,17 @@ export function ConfirmApprovalPrompt({
         </>
       )}
     </Box>
+  );
+  return frame.kind === 'box' ? (
+    body
+  ) : (
+    <OverlayPanel
+      title={frame.card.title}
+      density={frame.card.density}
+      paddingY={fit.card.padding ? 1 : 0}
+      titleSpacing={fit.card.titleGap ? 'gap' : 'tight'}
+    >
+      {body}
+    </OverlayPanel>
   );
 }

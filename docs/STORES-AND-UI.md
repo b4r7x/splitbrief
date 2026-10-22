@@ -310,11 +310,11 @@ The first-run setup screen (`src/app/screens/setup.tsx`) composes the same featu
 
 | density | share | min | max | who |
 |---|---|---|---|---|
-| `compact` | 0.60 | 56 | 72 | start preparation, the picker's "initializing tools" panel |
-| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, skills, sessions, the picker's sub-steps |
+| `compact` | 0.60 | 56 | 72 | the picker's "initializing tools" panel |
+| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, skills, sessions, the picker's sub-steps, the start preparation card |
 | `wide` | 0.90 | 76 | 140 | the seat picker, setup, the home body and composer (capped locally at 108) |
 
-`width = min(cols - 4, max(min, floor(cols * share)), max)`; the frame costs 6 columns and 4 rows, and `overlayGutterRows` gives back one row of vertical air per 6 rows above the 18-row floor, capped at 2 (the first at 24 rows, the second at 30). Every panel passes a `density` to `OverlayPanel`; `maxWidth` no longer exists, so nothing renders byte-identical at 80 and 120 columns.
+`width = min(cols - 4, max(min, floor(cols * share)), max)`; the frame costs 6 columns and 4 rows, and `overlayGutterRows` gives back one row of vertical air per 6 rows above the 18-row floor, capped at 2 (the first at 24 rows, the second at 30). The start preparation card takes no gutter rows: it is the page while it shows, and the runner trust question needs every row of an 80x24 terminal. When the trust question is short of rows, its card gives back its padding rows, then its title gap, then the panel's blank rows (`fitConfirmPanel`, `src/features/workflow/prompt-rows/approval.ts`). A terminal too short for every line of the question in the card, or too narrow for every key of its legend, shows the question in its own box, as the workflow screen does (`ApprovalPrompt`, `confirmCardFits`). Every panel passes a `density` to `OverlayPanel`; `maxWidth` no longer exists, so nothing renders byte-identical at 80 and 120 columns.
 
 The workflow screen takes no density, live or at rest: its rail, dividers, transcript (the closed run's ledger included) and composer all span `getChromeContentWidth(cols)`, and nothing on it is centred.
 
