@@ -114,7 +114,9 @@ describe('startHeartbeat', () => {
     expect(control.failedWrites).toBe(FAILING_TICKS + 1);
     expect(rejections).toEqual([]);
     const warnings = stderrSpy.mock.calls.filter((call) =>
-      String(call[0]).includes('Could not update lockfile.json of this run'),
+      String(call[0]).includes(
+        '/lockfile.json, so other SPLITBRIEF processes may treat the run as stopped',
+      ),
     );
     expect(warnings.length).toBe(1);
   });
