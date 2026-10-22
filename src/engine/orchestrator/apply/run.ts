@@ -4,7 +4,6 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';
 import { awaitsApply, isAnsweredApplyRecovery } from '../../../core/sessions/run-status.js';
-import { transition } from '../../../core/state/machine.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import { error, matches } from '../../../utils/error.js';
 import { countNoun } from '../../../utils/pluralize.js';
@@ -28,12 +27,12 @@ import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
 import { writeConfinedEntry } from '../approval/file-snapshots/entry.js';
 import { applyBackupDir, readApplyBackup, removeApplyWriteTemporaries } from './backup.js';
+import { bindApplyHandOffs, handOff } from './hand-off.js';
 import { type ApplyConflict, type ApplyMerge, mergeApplyStates } from './merge.js';
 import { reconcileApplyBackup, restoreApplyBackup } from './restore.js';
 import {
   candidateOf,
   captureApplyStates,
-  entryKey,
   readBaseBytes,
   readSideEntry,
   sameSideEntry,
@@ -53,17 +52,6 @@ type TextMarkerConflict = ApplyConflict & {
   ours: Extract<SideEntry, { kind: 'file' }>;
   theirs: Extract<SideEntry, { kind: 'file' }>;
 };
-
-/** The conflicted files Apply hands to the workspace, with the checkout entry it saw for each. */
-function handOff(state: WorkflowState, conflicts: readonly ApplyConflict[]): WorkflowState {
-  return transition(state, {
-    type: 'RECORD_APPLY_INTEGRATED',
-    integrated: conflicts.map((conflict) => ({
-      path: conflict.path,
-      checkout: entryKey(conflict.theirs),
-    })),
-  });
-}
 
 function raiseApplyHalt(
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>,
@@ -219,10 +207,12 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
     sessionId: wctx.sessionId,
     workspace,
   });
+  state = bindApplyHandOffs(wctx, state, candidateOf(states));
+  setTrackedState?.(state);
   const integratedMap =
     state.applyIntegrated === undefined
       ? undefined
-      : new Map(state.applyIntegrated.map((entry) => [entry.path, entry.checkout]));
+      : new Map(state.applyIntegrated.map((record) => [record.path, record]));
   let merged: ApplyMerge;
   try {
     merged = await mergeApplyStates(states, integratedMap);

@@ -210,7 +210,6 @@ export function sameAsBase(side: SideEntry, base: BaseEntry): boolean {
 /**
  * The run diff of a captured workspace: every path the workspace changed from
  * the run base, a mode-only change included, keyed to its entry fingerprint.
- * The key leaves a file's mode out.
  */
 export function candidateOf(states: ApplyStates): Record<string, string> {
   const candidate: Record<string, string> = {};

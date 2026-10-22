@@ -82,7 +82,15 @@ describe('git-merge-three-states', { timeout: 60_000 }, () => {
 
       const result = await mergeApplyStates(
         states,
-        new Map([['a.txt', `file:${sha256Hex(theirs)}:644`]]),
+        new Map([
+          [
+            'a.txt',
+            {
+              checkout: `file:${sha256Hex(theirs)}:644`,
+              workspace: `file:${sha256Hex(resolved)}:644`,
+            },
+          ],
+        ]),
       );
 
       expect(result.conflicts).toEqual([]);
@@ -106,7 +114,13 @@ describe('git-merge-three-states', { timeout: 60_000 }, () => {
       const result = await mergeApplyStates(
         states,
         new Map([
-          ['a.txt', `file:${sha256Hex(lines('one', 'two', 'RECORDED', 'four', 'five'))}:644`],
+          [
+            'a.txt',
+            {
+              checkout: `file:${sha256Hex(lines('one', 'two', 'RECORDED', 'four', 'five'))}:644`,
+              workspace: `file:${sha256Hex(ours)}:644`,
+            },
+          ],
         ]),
       );
 

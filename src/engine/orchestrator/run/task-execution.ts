@@ -30,6 +30,7 @@ import {
 import type { UnrunnableCheck } from '../recovery/builders/checks.js';
 import { recordCheckRuns } from '../evidence/record-checks.js';
 import { captureReviewedCandidate } from '../apply/states.js';
+import { bindApplyHandOffs } from '../apply/hand-off.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -466,6 +467,10 @@ export async function runTasksAndReview(
       ? { state, failures: [], notRun: [], inputs: [], unrunnable: [] }
       : await recheckMergedCandidate({ wctx, state, setTrackedState });
     state = recheck.state;
+    if (candidate !== undefined) {
+      state = bindApplyHandOffs(ref, state, candidate);
+      setTrackedState(state);
+    }
     if (recheck.unrunnable.length > 0) {
       state = haltRequiredChecksUnrunnable({
         wctx,

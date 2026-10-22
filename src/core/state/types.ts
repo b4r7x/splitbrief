@@ -68,6 +68,7 @@ export type StateAction =
       triage?: TriageInput[];
     }
   | { type: 'RECORD_APPLY_INTEGRATED'; integrated: NonNullable<WorkflowState['applyIntegrated']> }
+  | { type: 'BIND_APPLY_INTEGRATED'; candidate: Record<string, string> }
   | { type: 'RECORD_APPLY_RECHECK'; failures: string[] }
   | { type: 'APPLY_START'; backupId: string }
   | { type: 'APPLY_DONE'; files: string[] }

@@ -1724,6 +1724,63 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     }
   });
 
+  it('a file Apply handed over with conflict markers binds to the resolution the next review judges', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    const checkout = `file:${'c'.repeat(64)}:644`;
+    const { reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: {
+        ...integrationReviewState(tasks, head, 0),
+        applyIntegrated: [{ path: 'src/alpha.ts', checkout, workspace: null }],
+        pendingTriage: {
+          inputs: [
+            {
+              id: 'A1',
+              kind: 'defect',
+              source: 'apply',
+              text: 'Apply merge conflict in src/alpha.ts: resolve the conflict markers',
+              file: 'src/alpha.ts',
+            },
+          ],
+        },
+      },
+      review: (prompt) => passingReviewVerdict(prompt),
+      triage: () => ({
+        fixTasks: [
+          {
+            ...makeTaskSpec({
+              id: 'T002',
+              suggestedFiles: ['src/alpha.ts'],
+              criteria: [],
+              checks: [],
+            }),
+            findingIds: ['A1'],
+          },
+        ],
+        rejected: [],
+        verify: [],
+        ask: null,
+      }),
+      onComplete: vi.fn(),
+    });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(reviewPrompts).toHaveLength(2);
+      expect(result.state.reviewStatus).toBe('passed');
+      const resolved = result.state.reviewedCandidate?.['src/alpha.ts'];
+      expect(resolved).toBeDefined();
+      expect(result.state.applyIntegrated).toEqual([
+        { path: 'src/alpha.ts', checkout, workspace: resolved },
+      ]);
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
   it('a changed candidate hands fresh Apply failures to the reviewer', async () => {
     const { projectDir, sessionId, head } = setupProject();
     writeFileSync(
