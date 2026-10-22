@@ -6,7 +6,7 @@ import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
-import { initStores, teardownStores } from './init.js';
+import { initStores, initStoresForTuiMount, teardownStores } from './init.js';
 import { awaitBackgroundDiscovery } from './discovery.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
@@ -681,6 +681,30 @@ describe('initStores', () => {
     await initStores(dir);
 
     expect(controlsStore.get().sidebarVisible).toBe(false);
+  }, 30_000);
+});
+
+describe('initStoresForTuiMount', () => {
+  it('returns while provider discovery still runs, so the TUI mounts first (T-037)', async () => {
+    const dir = makeProjectDir();
+    writeConfigYaml(dir, toYaml(createDefaultConfig()));
+    const capabilities = Promise.withResolvers<Awaited<ReturnType<typeof detectCapabilities>>>();
+    const detect = vi
+      .spyOn(capabilitiesModule, 'detectCapabilities')
+      .mockReturnValue(capabilities.promise);
+    let discovered = false;
+
+    const { awaitDiscovery } = await initStoresForTuiMount(dir);
+    const settled = awaitDiscovery.then(() => {
+      discovered = true;
+    });
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(detect).toHaveBeenCalledOnce();
+    expect(discovered).toBe(false);
+    capabilities.resolve({ contextLength: 32_768, origin: 'fallback' });
+    await settled;
+    expect(discovered).toBe(true);
   }, 30_000);
 });
 
