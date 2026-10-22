@@ -220,12 +220,6 @@ describe('buildSummary', () => {
     const state = makeState({
       tasks: [makeTask({ id: 'T001', status: 'done' })],
       tokenUsage: makeUsage({ implementerInput: 100, implementerOutput: 50 }),
-    });
-
-    const summary = buildSummary({
-      feature: 'intermediate',
-      state,
-      startTime: Date.now(),
       taskBreakdowns: [
         {
           taskId: taskId('T001'),
@@ -236,6 +230,12 @@ describe('buildSummary', () => {
           retryCount: 1,
         },
       ],
+    });
+
+    const summary = buildSummary({
+      feature: 'intermediate',
+      state,
+      startTime: Date.now(),
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
     });
@@ -287,7 +287,7 @@ describe('buildSummary', () => {
     expect(summary.tokenUsage).toEqual(usage);
   });
 
-  it('taskBreakdowns passed through to summary', () => {
+  it("the state's task breakdowns pass through to summary", () => {
     const breakdowns = [
       {
         taskId: taskId('T001'),
@@ -301,9 +301,8 @@ describe('buildSummary', () => {
 
     const summary = buildSummary({
       feature: 'with-breakdowns',
-      state: makeState(),
+      state: makeState({ taskBreakdowns: breakdowns }),
       startTime: Date.now(),
-      taskBreakdowns: breakdowns,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
     });
@@ -374,9 +373,11 @@ describe('buildSummary taskBreakdown', () => {
   it('preserves task breakdown prose', () => {
     const summary = buildSummary({
       feature: 'kept',
-      state: makeState({ tasks: [makeTask({ id: 'T001', status: 'done' })] }),
+      state: makeState({
+        tasks: [makeTask({ id: 'T001', status: 'done' })],
+        taskBreakdowns: breakdownWithProse(),
+      }),
       startTime: Date.now(),
-      taskBreakdowns: breakdownWithProse(),
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
     });

@@ -340,7 +340,7 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
         taskId: 'T001',
         implementerProfile: selected.profile,
       });
-      expect(result.taskBreakdowns).toEqual([
+      expect(result.state.taskBreakdowns).toEqual([
         expect.objectContaining({
           taskId: 'T001',
           implementerProfile: selected.profile,

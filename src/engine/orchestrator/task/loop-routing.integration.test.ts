@@ -126,7 +126,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       tool: 'ollama',
       model: 'qwen-large',
     });
-    expect(result.taskBreakdowns[0]).toMatchObject({
+    expect(result.state.taskBreakdowns?.[0]).toMatchObject({
       taskId: 'T001',
       implementerProfile: 'cheap-large',
       tool: 'ollama',

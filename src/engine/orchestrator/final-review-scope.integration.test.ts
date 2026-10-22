@@ -142,7 +142,6 @@ async function review(p: Awaited<ReturnType<typeof project>>, api = false, tasks
       plannerTool: 'test',
       implementerTool: 'test',
     },
-    taskBreakdowns: [],
   });
   expect(result.verdict?.outcome.kind).toBe('fail');
   expect(prompts).toHaveLength(1);

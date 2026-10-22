@@ -80,7 +80,7 @@ vi.mock('./task/loop.js', async (importOriginal) => {
     ...actual,
     runTaskLoop: async (opts: Parameters<typeof actual.runTaskLoop>[0]) => {
       taskLoop.calls += 1;
-      return { state: opts.initialState, taskBreakdowns: [], status: 'complete' as const };
+      return { state: opts.initialState, status: 'complete' as const };
     },
   };
 });

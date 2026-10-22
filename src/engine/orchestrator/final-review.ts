@@ -3,7 +3,6 @@ import type { WorkflowState, ReviewRecord } from '../../core/schemas/workflow.js
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { ContinuationHolder } from './continuation.js';
 import type { EventBus } from '../events/types.js';
-import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
@@ -310,7 +309,6 @@ export async function runFinalReviewPhase(opts: {
   sinks?: WorkflowSinks | undefined;
   continuation?: ContinuationHolder | undefined;
   summaryBase?: SummaryBase | undefined;
-  taskBreakdowns?: TaskTokenUsage[] | undefined;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
   skillsContext?: string | undefined;
   /** The integration re-check section when an Apply merge changed the reviewed candidate. */
@@ -340,7 +338,6 @@ export async function runFinalReviewPhase(opts: {
     reviewer,
     metadata,
     summaryBase,
-    taskBreakdowns,
   } = opts;
 
   state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, { keepUnsaved: true });
@@ -1060,7 +1057,7 @@ export async function runFinalReviewPhase(opts: {
 
   // The packet is the final review's artifact; a task-cadence review writes only
   // review.json and review.md.
-  if (opts.scope !== 'task' && summaryBase !== undefined && taskBreakdowns !== undefined) {
+  if (opts.scope !== 'task' && summaryBase !== undefined) {
     try {
       await writeReviewPacket({
         projectDir,
@@ -1071,7 +1068,6 @@ export async function runFinalReviewPhase(opts: {
           projectDir,
           sessionId,
           state,
-          taskBreakdowns,
         }),
         state,
         finalReviewStatus: writeStatus,

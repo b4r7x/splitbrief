@@ -147,8 +147,10 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
 
     expect(implementer.implement).not.toHaveBeenCalled();
-    expect(result.taskBreakdowns).toContainEqual(preResumeRow);
-    expect(result.taskBreakdowns.filter((row) => row.taskId === taskId('T001'))).toHaveLength(1);
+    expect(result.state.taskBreakdowns).toContainEqual(preResumeRow);
+    expect(
+      (result.state.taskBreakdowns ?? []).filter((row) => row.taskId === taskId('T001')),
+    ).toHaveLength(1);
   });
 
   it('blocks before implementer dispatch when every profile overflows the task prompt', async () => {

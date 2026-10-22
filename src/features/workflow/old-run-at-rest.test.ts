@@ -86,7 +86,6 @@ describe('a run the old step chain made', () => {
       state: makeImplState([makeTask({ id: 'T001', status: 'done' })]),
       projectDir,
       sessionId: SESSION_ID,
-      taskBreakdowns: [],
     });
 
     expect(summary.review).toEqual({
