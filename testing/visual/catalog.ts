@@ -390,6 +390,19 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         elements: [{ id: 'composer', title: 'Draft and attachment feedback' }],
       }),
     ),
+    // Warnings raised before the screen opened: the count leads, then the first of them.
+    defineScenario({
+      id: 'home-startup-warnings',
+      title: 'Home · warnings raised while it opened',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Warning count above the composer',
+        kind: 'ready',
+        marker: '2 warnings, all shown when you quit',
+      },
+      elements: [{ id: 'composer', title: 'Warning count and feature composer' }],
+    }),
     // A save message longer than one row wraps whole above the composer, sign-in command included.
     defineScenario({
       id: 'home-save-sign-in',
@@ -3919,6 +3932,30 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Setup header' },
         { id: 'setup-panel', title: 'Setup panel' },
       ],
+    }),
+    defineScenario({
+      id: 'setup-detecting-startup-warnings',
+      title: 'Setup · warnings raised while the tools are checked',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Warning count on the tool check',
+        kind: 'ready',
+        marker: '2 warnings, all shown when you quit',
+      },
+      elements: [{ id: 'setup-panel', title: 'Setup panel' }],
+    }),
+    defineScenario({
+      id: 'setup-saved-detecting-startup-warnings',
+      title: 'Setup · warnings raised while a saved crew is checked',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Warning count in place of the tool check note',
+        kind: 'ready',
+        marker: '2 warnings, all shown when you quit',
+      },
+      elements: [{ id: 'setup-panel', title: 'Setup panel' }],
     }),
     defineScenario({
       id: 'setup-no-config-cached-refresh',

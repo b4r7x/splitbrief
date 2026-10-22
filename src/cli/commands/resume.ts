@@ -9,6 +9,7 @@ import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
 import { sessionDir } from '../../core/paths.js';
 import { emitRecoveryAndFailIfPending, recordWriterFor } from '../headless.js';
 import { resumeSavedSession } from './continue/resume.js';
+import { withHeldDiagnostics } from '../../lib/warn.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export interface ResumeDeps {
@@ -78,11 +79,16 @@ export async function resumeCommand(
   await deps.resumeSavedSession({ projectDir, sessionId, state: hydrated.state, opts });
 }
 
-export function registerResumeCommand(program: Command): void {
+export function registerResumeCommand(
+  program: Command,
+  deps: ResumeDeps = defaultResumeDeps,
+): void {
   addWorkflowOptions(program.command('resume').description('Resume the most recent run')).action(
     async (opts: WorkflowOpts) => {
-      const projectDir = await canonicalizeProjectDir(opts);
-      await resumeCommand({ ...opts, projectDir });
+      // The screen shows what an interactive resume raises from its first step.
+      const resume = async () =>
+        resumeCommand({ ...opts, projectDir: await canonicalizeProjectDir(opts) }, deps);
+      await (opts.json === true || opts.plain === true ? resume() : withHeldDiagnostics(resume));
     },
   );
 }

@@ -20,7 +20,10 @@ import type { InteractiveDispatchArgs } from './types.js';
 export async function runInteractiveStart(args: InteractiveDispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, attachedInputs, opts } = args;
   assertInteractiveTty('use --json or --plain');
-  const { useFullscreen, useMouse, useHover, needsSetup } = await setupWorkflow(opts);
+  const { useFullscreen, useMouse, useHover, needsSetup } = await setupWorkflow({
+    ...opts,
+    project: projectDir,
+  });
   const { awaitDiscovery } = await initStoresForTuiMount(projectDir, opts);
 
   const unmountInk = new AbortController();

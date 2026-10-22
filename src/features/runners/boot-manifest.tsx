@@ -1,5 +1,6 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { Box } from 'ink';
+import type { ReactNode } from 'react';
 import { glyph } from '../../lib/glyphs.js';
 import { FIRST_RUN_NOTE } from '../../core/discovery/copy.js';
 import {
@@ -73,9 +74,10 @@ function LaneMark({
 /**
  * First-run loading manifest: the configured crew with live per-seat marks and
  * the discovery lanes ticking in as they land. Sources stay unnamed — the
- * reader cares that the freshest results arrive, not where they come from.
+ * reader cares that the freshest results arrive, not where they come from. A footer (a feedback
+ * notice) takes the note's place, so a one-row notice adds no row to the manifest.
  */
-export function BootManifest() {
+export function BootManifest({ footer }: { footer?: ReactNode }) {
   const t = useTheme();
   const config = configStore.useConfig();
   const displayNames = useCrewDisplayNames(config);
@@ -146,9 +148,11 @@ export function BootManifest() {
           </Box>
         ))}
       </Box>
-      <Box marginTop={1}>
-        <Text color={t.textDim}>{FIRST_RUN_NOTE}</Text>
-      </Box>
+      {footer ?? (
+        <Box marginTop={1}>
+          <Text color={t.textDim}>{FIRST_RUN_NOTE}</Text>
+        </Box>
+      )}
     </Box>
   );
 }

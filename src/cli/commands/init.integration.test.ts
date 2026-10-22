@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -7,8 +7,10 @@ import {
   installCompatibleCliShim,
 } from '#testing/helpers/compatible-cli-shim.js';
 import { createTempDir, cleanupTempDir, withTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import { configPath } from '../../core/config/load/document.js';
 import { loadConfig } from '../../core/config/load/io.js';
+import { installDiagnosticSink } from '../../lib/warn.js';
 import { registerInitCommand } from './init.js';
 
 afterEach(() => {
@@ -102,6 +104,92 @@ describe('init --yes detected crew', () => {
       );
       expect(readFileSync(configPath(projectDir), 'utf8')).toBe(existing);
       expect(notice).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('init --yes diagnostics', () => {
+  it('writes a --project warning for a folder inside the repository as it comes', async () => {
+    await withTempDir('init-yes-project-subdir', async (dir) => {
+      const projectDir = realpathSync(dir);
+      createTestGitRepo(projectDir);
+      const subdir = join(projectDir, 'pkg');
+      mkdirSync(subdir);
+      const shimDir = createTempDir('init-yes-subdir-shim');
+      const restore = activateCompatibleCliShim(
+        installCompatibleCliShim({ directory: shimDir, tool: 'codex', authChannel: 'session' }),
+      );
+      vi.stubEnv('PATH', `${shimDir}:/usr/bin:/bin`);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new Error('Offline fixture');
+        }),
+      );
+      const output: string[] = [];
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+        output.push(String(chunk));
+        return true;
+      });
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.spyOn(console, 'log').mockImplementation((line: string) => {
+        output.push(line);
+      });
+      try {
+        await init(subdir);
+      } finally {
+        restore();
+        cleanupTempDir(shimDir);
+      }
+
+      expect(output[0]).toBe(
+        `Warning: --project ${subdir} is inside git repository ${projectDir}; using repository root.\n`,
+      );
+      expect(output.at(-1)).toBe(
+        'Run `splitbrief doctor` to check readiness before your first run.',
+      );
+    });
+  });
+});
+
+describe('init on the setup screen', () => {
+  it('shows a --project warning for a folder inside the repository once, on the screen', async () => {
+    await withTempDir('init-project-subdir', async (dir) => {
+      const projectDir = realpathSync(dir);
+      createTestGitRepo(projectDir);
+      const subdir = join(projectDir, 'pkg');
+      mkdirSync(subdir);
+      const wasTty = process.stdin.isTTY;
+      process.stdin.isTTY = true;
+      const writes: string[] = [];
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+        writes.push(String(chunk));
+        return true;
+      });
+      const shown: string[] = [];
+      const warning = `Warning: --project ${subdir} is inside git repository ${projectDir}; using repository root.`;
+      const program = new Command();
+      program.exitOverride();
+      registerInitCommand(program, {
+        initStores: async () => {},
+        renderApp: async () => {
+          const release = installDiagnosticSink((message) => shown.push(message));
+          try {
+            expect(writes).toEqual([]);
+          } finally {
+            release();
+          }
+        },
+      });
+
+      try {
+        await program.parseAsync(['init', '--project', subdir], { from: 'user' });
+      } finally {
+        process.stdin.isTTY = wasTty;
+      }
+
+      expect(shown).toEqual([warning]);
+      expect(writes).toEqual([`${warning}\n`]);
     });
   });
 });

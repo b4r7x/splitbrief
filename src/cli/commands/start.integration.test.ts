@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
-import { realpathSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -10,6 +11,7 @@ import type { StartDeps } from './start/types.js';
 import { initStores } from '../bootstrap/init.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { installDiagnosticSink } from '../../lib/warn.js';
 import {
   prepareExecutionMock,
   setupRunnerTrustIsolation,
@@ -53,6 +55,37 @@ afterEach(() => {
 describe('start command — shorthand invocation', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('shows a --project warning for a folder inside the repository once, on the screen', async () => {
+    writeConfigMarker(tmp);
+    const subdir = join(tmp, 'pkg');
+    mkdirSync(subdir);
+    const writes: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const shown: string[] = [];
+    const warning = `Warning: --project ${subdir} is inside git repository ${tmp}; using repository root.`;
+
+    const program = new Command();
+    program.exitOverride();
+    registerStartCommand(program, {
+      ...fakeDeps,
+      renderApp: async () => {
+        const release = installDiagnosticSink((message) => shown.push(message));
+        try {
+          expect(writes).toEqual([]);
+        } finally {
+          release();
+        }
+      },
+    });
+    await program.parseAsync(['node', 'splitbrief', '--project', subdir]);
+
+    expect(shown).toEqual([warning]);
+    expect(writes).toEqual([`${warning}\n`]);
   });
 
   it('direct interactive start uses the shared preparation policy', async () => {
