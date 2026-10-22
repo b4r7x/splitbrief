@@ -30,6 +30,18 @@ export function takesHostModel(model: string | undefined, tool: string): boolean
 }
 
 /**
+ * The model a CLI seat's route is read on: the model its tool selects on this host for a seat that
+ * takes it, else the seat's own model. With no selection read, the seat's own word stays.
+ */
+export function seatRouteModel(
+  model: string | undefined,
+  tool: string,
+  selectedModel: string | undefined,
+): string | undefined {
+  return takesHostModel(model, tool) ? (selectedModel ?? model) : model;
+}
+
+/**
  * CLI automatic selection is structural, not catalog-driven: it resolves to no
  * model at all so the adapter omits `--model` and the tool uses whatever its own
  * configuration says, unless preparation resolved the tool's own selection into

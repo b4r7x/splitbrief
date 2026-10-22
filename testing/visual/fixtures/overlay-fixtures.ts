@@ -1008,6 +1008,31 @@ const createSettingsFallbackNeedsSignInFixture: FixtureFactory = () =>
     },
     focus: 'fallback:build',
   });
+// OpenCode stores no credential and selects an Ollama Cloud model its own config sets up: the
+// BUILD fallback on `auto` calls that model, so its row carries no note.
+const createSettingsFallbackHostModelFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: () => {
+      seedConfig({ implementer: { ...BUILD_CODEX_SEAT, fallback: { tool: 'opencode' } } })();
+      publishVisualDiscovery({
+        cliTools: [
+          cliDetectionFor('ready', 'codex'),
+          {
+            ...cliDetectionFor('unauthenticated', 'opencode', { providerAuth: { kind: 'empty' } }),
+            selectedModel: OPENCODE_CONFIG_ROUTE,
+          },
+        ],
+        cliModels: [
+          catalogAttempt({
+            tool: 'opencode',
+            outcome: { kind: 'success', value: opencodeConfigOnlyModels() },
+          }),
+        ],
+      });
+    },
+    focus: 'fallback:build',
+  });
 const createSettingsFallbackFilteredFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:fallback' });
 const createSettingsInheritedEffortFixture: FixtureFactory = () =>
@@ -2569,6 +2594,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-fallback-catalog'), createSettingsFallbackCatalogFixture],
   [scenarioId('overlay-settings-fallback-set'), createSettingsFallbackSetFixture],
   [scenarioId('overlay-settings-fallback-needs-sign-in'), createSettingsFallbackNeedsSignInFixture],
+  [scenarioId('overlay-settings-fallback-host-model'), createSettingsFallbackHostModelFixture],
   [scenarioId('overlay-settings-fallback-filtered'), createSettingsFallbackFilteredFixture],
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
   [scenarioId('overlay-settings-crew-kilo-copilot'), createSettingsCrewKiloCopilotFixture],
