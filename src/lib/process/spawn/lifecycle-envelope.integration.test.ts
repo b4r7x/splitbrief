@@ -1,6 +1,5 @@
 import type { SpawnStdinWriter } from './lifecycle.js';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
-import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -26,16 +25,34 @@ function processIsAbsent(pid: number): boolean {
 
 const silent = 'setInterval(()=>{},1000)';
 
+const dirs: string[] = [];
+function markerDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'splitbrief-lifecycle-'));
+  dirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+// The child closes its stdin before it writes the marker, and nothing else
+// holds that read end: once the marker exists, the parent's first stdin write
+// breaks the pipe. A zombie state is no such proof, since Linux shows the main
+// thread as a zombie while the other threads still hold the descriptors.
+function closeStdinThenMark(marker: string): string {
+  return `require('node:fs').closeSync(0);require('node:fs').writeFileSync(${JSON.stringify(marker)},'')`;
+}
+
 // Holds this event loop, and with it the parent's first stdin write, until the
-// child is a zombie: proof that it quit before it could read anything.
-function blockUntilExited(pid: number): void {
+// marker exists.
+function blockUntilMarked(marker: string): void {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    const stat = execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' });
-    if (stat.trim().startsWith('Z')) return;
+    if (existsSync(marker)) return;
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
   }
-  throw new Error(`child ${pid} did not exit`);
+  throw new Error(`marker ${marker} was not written`);
 }
 
 function pipe(opts: {
@@ -81,16 +98,8 @@ const outputBudgetSignal: SpawnPipeFatalSignal = {
 };
 
 describe('spawnPipe lifecycle termination', () => {
-  const dirs: string[] = [];
-  function markerDir(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'splitbrief-lifecycle-'));
-    dirs.push(dir);
-    return dir;
-  }
-
   afterEach(async () => {
     await killAllProcesses();
-    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
   itUnix('resolves a successful child and leaves no process behind', async () => {
@@ -421,16 +430,17 @@ describe('spawnPipe stdin failure', () => {
   });
 
   itUnix.each([0, 7])(
-    'preserves exit code %i when the child exits before the first optional stdin write',
+    'preserves exit code %i when the child closes its stdin before the first optional write',
     async (code) => {
       let pid = 0;
+      const marker = join(markerDir(), 'stdin-closed');
       const pending = pipe({
-        script: `process.exit(${code})`,
+        script: `${closeStdinThenMark(marker)};process.exit(${code})`,
         stdin: 'payload',
         stdinOptional: true,
         onSpawned: (spawnedPid) => {
           pid = spawnedPid;
-          blockUntilExited(spawnedPid);
+          blockUntilMarked(marker);
         },
       });
 
@@ -439,25 +449,29 @@ describe('spawnPipe stdin failure', () => {
     },
   );
 
-  itUnix('delivers the stderr of a child that exits before the first stdin write', async () => {
-    let pid = 0;
-    let stderr = '';
-    const pending = pipe({
-      script: writeLimitAndExit,
-      stdin: 'prompt',
-      onStderr: (chunk) => {
-        stderr += chunk;
-      },
-      onSpawned: (spawnedPid) => {
-        pid = spawnedPid;
-        blockUntilExited(spawnedPid);
-      },
-    });
+  itUnix(
+    'delivers the stderr of a child that closes its stdin before the first write',
+    async () => {
+      let pid = 0;
+      let stderr = '';
+      const marker = join(markerDir(), 'stdin-closed');
+      const pending = pipe({
+        script: `${closeStdinThenMark(marker)};${writeLimitAndExit}`,
+        stdin: 'prompt',
+        onStderr: (chunk) => {
+          stderr += chunk;
+        },
+        onSpawned: (spawnedPid) => {
+          pid = spawnedPid;
+          blockUntilMarked(marker);
+        },
+      });
 
-    await expect(pending).rejects.toSatisfy(spawnPipeError.isStdinIncomplete);
-    expect(stderr).toContain(limitLine);
-    expect(processIsAbsent(pid)).toBe(true);
-  });
+      await expect(pending).rejects.toSatisfy(spawnPipeError.isStdinIncomplete);
+      expect(stderr).toContain(limitLine);
+      expect(processIsAbsent(pid)).toBe(true);
+    },
+  );
 
   itUnix('kills a child that stays alive after it closes its stdin', async () => {
     let pid = 0;
@@ -484,19 +498,21 @@ describe('spawnPipe stdin failure', () => {
     async () => {
       let stderr = '';
       let drainStartedAt = 0;
+      const marker = join(markerDir(), 'stdin-closed');
       const pending = pipe({
         script: [
           "const {spawn}=require('node:child_process')",
           "const holder=spawn(process.execPath,['-e','setTimeout(()=>{},10000)'],{detached:true,stdio:['ignore','ignore','inherit']})",
           "require('node:fs').writeSync(2,'holder:'+holder.pid+'\\n')",
+          closeStdinThenMark(marker),
           writeLimitAndExit,
         ].join(';'),
         stdin: 'prompt',
         onStderr: (chunk) => {
           stderr += chunk;
         },
-        onSpawned: (spawnedPid) => {
-          blockUntilExited(spawnedPid);
+        onSpawned: () => {
+          blockUntilMarked(marker);
           drainStartedAt = performance.now();
         },
       });
