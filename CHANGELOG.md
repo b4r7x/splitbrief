@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- The line that `resume` and `continue` print before the run screen opens no longer shows an internal phase name.
 - The warning before Apply on a run accepted as is no longer breaks a finding written on two lines across two rows.
 - When a final review failed more than once, the closed run listed the failed reviews with the same name. Each one now says how many fix cycles came before it, as in the transcript.
 - A slash command typed into the answer field of a free-text planner question now runs. It no longer shows "A slash command is not a message", and the question stays open.

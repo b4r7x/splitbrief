@@ -1089,7 +1089,7 @@ describe('continueCommand', () => {
     expect(resumeLine).not.toContain('pwned');
   });
 
-  it('keeps the words of a task written on two lines apart on the resume status line', async () => {
+  it('keeps the words of a task written on two lines apart on the resume status line, with no phase id', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-two-lines');
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-two-lines' });
@@ -1104,8 +1104,8 @@ describe('continueCommand', () => {
       logSpy.mockRestore();
     }
 
-    expect(logged.find((line) => line.includes('Resuming:'))).toContain(
-      'Resuming: Add fixtures, as one task (phase:',
+    expect(logged.find((line) => line.includes('Resuming:'))).toBe(
+      'Resuming: Add fixtures, as one task (task 1/1)',
     );
   });
 

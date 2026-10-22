@@ -127,7 +127,7 @@ export async function resumeSavedSession(args: {
   // The cursor points one past the last brief once every brief has settled.
   const position = Math.min(state.currentTaskIndex + 1, state.tasks.length);
   console.log(
-    `Resuming: ${oneLineDisplayText(state.feature)} (phase: ${state.phase}, task ${position}/${state.tasks.length})`,
+    `Resuming: ${oneLineDisplayText(state.feature)} (task ${position}/${state.tasks.length})`,
   );
   const renderOptions = await deps.setupWorkflow({ ...opts, project: projectDir });
   await deps.initStores(projectDir, opts);
