@@ -125,7 +125,17 @@ interface ScreenScenarioInput {
 }
 
 const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
-  { id: 'home-empty', title: 'Home · empty project' },
+  // The compact wordmark is 37 cells wide: at 41 columns the body holds it, at 40 the logo gives
+  // way instead of wrapping.
+  {
+    id: 'home-empty',
+    title: 'Home · empty project',
+    viewports: [
+      ...REQUIRED_VIEWPORTS,
+      viewport({ cols: 41, rows: 18 }),
+      viewport({ cols: 40, rows: 18 }),
+    ],
+  },
   { id: 'home-no-config', title: 'Home · no config' },
   { id: 'home-opencode-routes', title: 'Home · same model on different OpenCode routes' },
   { id: 'home-kilo-routes', title: 'Home · same model on different Kilo Code routes' },

@@ -1,7 +1,7 @@
 import { overlayWidth } from '../../core/navigation/overlay-rect.js';
 import { wrapHard } from '../../utils/wrap.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
-import { getLogoTier, getLogoHeight, type LogoTier } from './logo.js';
+import { getLogoTier, getLogoHeight, getLogoWidth, type LogoTier } from './logo.js';
 
 interface HomeLayoutInput {
   cols: number;
@@ -112,7 +112,8 @@ function shownSessionRows(limit: SessionLimit, sessionCount: number): number {
 
 // The crew block outranks the logo, and so do the first session row and its count row: the logo
 // gives way when keeping it would cut the crew block, or would leave the list fewer rows than it
-// shows over a resting dock, down to a row and its count.
+// shows over a resting dock, down to a row and its count. A wordmark wider than the body would
+// wrap, so it gives way too.
 export function getHomeLayout({
   cols,
   rows,
@@ -145,6 +146,7 @@ export function getHomeLayout({
     dockRows: RESTING_DOCK_ROWS,
   });
   const showLogo =
+    getLogoWidth(logoTier) <= width &&
     withLogo.crewFits &&
     shownSessionRows(withLogo, sessionCount) >=
       Math.min(shownSessionRows(resting, sessionCount), 2);

@@ -34,3 +34,11 @@ export function getLogoTier(rows: number, cols: number): LogoTier {
 export function getLogoHeight(tier: LogoTier): number {
   return getLogo(tier).split('\n').length;
 }
+
+export function getLogoWidth(tier: LogoTier): number {
+  return Math.max(
+    ...getLogo(tier)
+      .split('\n')
+      .map((line) => line.length),
+  );
+}
