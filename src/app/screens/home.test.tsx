@@ -20,6 +20,7 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { saveSummary } from '../../core/sessions/io.js';
+import { LOCKFILE_PING_INTERVAL_MS } from '../../engine/orchestrator/run/heartbeat.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { prepareNewSession } from '../../core/sessions/prepare.js';
 import { saveState } from '../../core/state/persistence.js';
@@ -737,6 +738,42 @@ describe('HomeScreen', () => {
     expect(frame).toContain(HOME_HINT);
     expect(frame).toContain('›');
     ui.unmount();
+  });
+
+  it('reads the run list again while it shows, and stops once it is gone', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+      const first = { projectDir, sessionId: 'first-run' };
+      saveSummary(first, makeSession({ id: 'first-run', feature: 'first feature' }));
+      const refresh = vi.spyOn(sessionsStore, 'refresh');
+      const ui = renderHome();
+      await flushEffects();
+      expect(lineContaining(ui.lastFrame() ?? '', 'first feature')).toContain('stopped');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('second feature');
+
+      // Another terminal finishes the first run and starts a second one while home shows.
+      saveSummary(
+        first,
+        makeSession({ id: 'first-run', feature: 'first feature', status: 'complete' }),
+      );
+      saveSummary(
+        { projectDir, sessionId: 'second-run' },
+        makeSession({ id: 'second-run', feature: 'second feature', startedAt: 1_700_000_100 }),
+      );
+      vi.advanceTimersByTime(LOCKFILE_PING_INTERVAL_MS);
+      await flushEffects();
+      const frame = ui.lastFrame() ?? '';
+      expect(stripAnsiStyles(frame)).toContain('second feature');
+      expect(lineContaining(frame, 'first feature')).toContain('complete');
+
+      ui.unmount();
+      refresh.mockClear();
+      vi.advanceTimersByTime(LOCKFILE_PING_INTERVAL_MS * 3);
+      expect(refresh).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders logo and recent sessions within the terminal budget', async () => {

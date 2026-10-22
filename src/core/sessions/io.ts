@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Phase } from '../schemas/enums.js';
 import type { Session } from '../schemas/session.js';
@@ -9,7 +9,14 @@ import { parsePersistedSession } from './summary-parser.js';
 import { loadRunRecord, type RunRecordDeps } from './run-record.js';
 import { defaultRunRecordDeps } from './run-record-io.js';
 import type { RunStatus } from './run-status.js';
-import { sessionDir, sessionsRoot, isValidSessionId, SUMMARY_FILE } from '../paths.js';
+import {
+  sessionDir,
+  sessionsRoot,
+  isValidSessionId,
+  LOCKFILE,
+  STATE_FILE,
+  SUMMARY_FILE,
+} from '../paths.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { sessionError } from './errors.js';
@@ -109,7 +116,9 @@ const LISTING_DEPS: RunRecordDeps = {
   readCheckpoint: () => null,
 };
 
-function sessionRow(ref: SessionRef): Session | null {
+type ListedRow = Readonly<{ row: Session | null; running: boolean }>;
+
+function sessionRow(ref: SessionRef): ListedRow {
   const persisted = readSummaryFile(
     join(sessionDir(ref.projectDir, ref.sessionId), SUMMARY_FILE),
     ref.sessionId,
@@ -118,9 +127,9 @@ function sessionRow(ref: SessionRef): Session | null {
   const state = record.hydration.kind === 'loaded' ? record.hydration.state : null;
   // Without a readable state there is nothing to derive from: the summary the run
   // wrote when it ended is the whole record.
-  if (state === null) return persisted;
+  if (state === null) return { row: persisted, running: false };
 
-  return rowFor(
+  const row = rowFor(
     {
       id: ref.sessionId,
       feature: persisted?.feature ?? record.feature,
@@ -132,29 +141,63 @@ function sessionRow(ref: SessionRef): Session | null {
     record.status,
     persisted?.summary ?? record.summary,
   );
+  return { row, running: record.status.kind === 'running' };
 }
 
-function isValidSessionDirectory(sessionId: string): boolean {
-  if (!isValidSessionId(sessionId)) {
-    warnError(`Skipping session directory '${sessionId}'`, sessionError.invalidId(sessionId));
-    return false;
-  }
-  return true;
+/** The files a row is read from; a write replaces a file, so its inode changes with it. */
+function rowSignature(directory: string): string {
+  return [STATE_FILE, SUMMARY_FILE, LOCKFILE]
+    .map((file) => {
+      const stat = statSync(join(directory, file), { throwIfNoEntry: false });
+      return stat === undefined ? '-' : `${stat.ino}:${stat.mtimeMs}:${stat.size}`;
+    })
+    .join('|');
 }
+
+type CachedRow = ListedRow & Readonly<{ signature: string }>;
+
+type Listing = Readonly<{ rows: ReadonlyMap<string, CachedRow>; skipped: ReadonlySet<string> }>;
+
+/**
+ * The last listing per sessions folder. Home lists the runs every few seconds, and a large state
+ * file costs a parse, so a row is read again only when one of its files changed. A running row is
+ * always read again: an owner killed without its exit handler changes no file. A folder with an
+ * invalid name warns once, when a listing first skips it.
+ */
+const listingCache = new Map<string, Listing>();
 
 export function listSessions(projectDir: string): Session[] {
   const root = sessionsRoot(projectDir);
-  if (!existsSync(root)) return [];
+  if (!existsSync(root)) {
+    listingCache.delete(root);
+    return [];
+  }
 
   const entries = readdirSync(root, { withFileTypes: true });
+  const previous = listingCache.get(root);
+  const rows = new Map<string, CachedRow>();
+  const skipped = new Set<string>();
   const sessions: Session[] = [];
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    if (!isValidSessionDirectory(entry.name)) continue;
-    const session = sessionRow({ projectDir, sessionId: entry.name });
-    if (session) sessions.push(session);
+    if (!isValidSessionId(entry.name)) {
+      if (!previous?.skipped.has(entry.name)) {
+        warnError(`Skipping session directory '${entry.name}'`, sessionError.invalidId(entry.name));
+      }
+      skipped.add(entry.name);
+      continue;
+    }
+    const signature = rowSignature(join(root, entry.name));
+    const cached = previous?.rows.get(entry.name);
+    const listed =
+      cached !== undefined && cached.signature === signature && !cached.running
+        ? cached
+        : { ...sessionRow({ projectDir, sessionId: entry.name }), signature };
+    rows.set(entry.name, listed);
+    if (listed.row) sessions.push(listed.row);
   }
+  listingCache.set(root, { rows, skipped });
 
   return sessions.sort((a, b) => b.startedAt - a.startedAt);
 }

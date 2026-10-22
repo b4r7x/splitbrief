@@ -112,7 +112,7 @@ On `turn_interrupted` or `workflow_cancelled`, the operations reducer clears eve
 - **configStore** -- loaded `Config` object, project directory, CLI overrides, disk persistence.
 - **skillsStore** -- available and selected skills, which every seat of the next run or continue carries; opening a run selects the skills it saved.
 - **detectionStore** -- detected tool availability (git, npm, language runtimes).
-- **sessionsStore** -- past session metadata.
+- **sessionsStore** -- past session metadata. Home calls `refresh()` when it mounts and every `LOCKFILE_PING_INTERVAL_MS` (2 seconds) while it stays mounted, so a run another process starts, ends or makes ready to apply updates its row. `listSessions` (`src/core/sessions/io.ts`) reads a row again only when its state, summary or lock file changed, and a running row on every listing, because an owner killed without its exit handler changes no file. An unchanged listing returns the same rows, and `refresh()` then sets nothing. A folder in the sessions folder whose name is not a session id warns once, on the first listing that skips it, and again only after it was gone for a listing.
 
 ### Discovery -- `src/stores/discovery/`
 

@@ -1,8 +1,18 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, statSync, existsSync } from 'node:fs';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import {
+  mkdirSync,
+  writeFileSync,
+  statSync,
+  existsSync,
+  rmSync,
+  renameSync,
+  readFileSync,
+  utimesSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { listSessions, saveSummary, readSession } from './io.js';
-import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR, LOCKFILE, sessionDir } from '../paths.js';
+import { HEARTBEAT_STALENESS_MS } from './lockfile-status.js';
 import { saveState } from '../state/persistence.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -10,11 +20,14 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { taskId } from '../schemas/task.js';
+import { installDiagnosticSink } from '../../lib/warn.js';
 
 let tmp: string;
 
 afterEach(() => {
+  vi.useRealTimers();
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -74,6 +87,48 @@ describe('listSessions', () => {
 
     const sessions = listSessions(tmp);
     expect(sessions.map((s) => s.id)).toEqual(['2024-01-02-good']);
+  });
+
+  it('warns once about a folder with an invalid name, and again when it comes back', () => {
+    tmp = createTempDir('sessions-io-test');
+    const diagnostics: string[] = [];
+    const release = installDiagnosticSink((message) => {
+      diagnostics.push(message);
+    });
+    try {
+      mkdirSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, 'old runs'), { recursive: true });
+      listSessions(tmp);
+      listSessions(tmp);
+      expect(diagnostics).toEqual(["Skipping session directory 'old runs': invalid session id"]);
+
+      rmSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, 'old runs'), { recursive: true });
+      listSessions(tmp);
+      mkdirSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, 'old runs'));
+      listSessions(tmp);
+      expect(diagnostics).toHaveLength(2);
+    } finally {
+      release();
+    }
+  });
+
+  it('warns again about a folder with an invalid name once the sessions folder was made again', () => {
+    tmp = createTempDir('sessions-io-test');
+    const diagnostics: string[] = [];
+    const release = installDiagnosticSink((message) => {
+      diagnostics.push(message);
+    });
+    try {
+      const root = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR);
+      mkdirSync(join(root, 'old runs'), { recursive: true });
+      listSessions(tmp);
+      rmSync(root, { recursive: true });
+      listSessions(tmp);
+      mkdirSync(join(root, 'old runs'), { recursive: true });
+      listSessions(tmp);
+      expect(diagnostics).toHaveLength(2);
+    } finally {
+      release();
+    }
   });
 
   it('sorts sessions by startedAt descending', () => {
@@ -415,5 +470,114 @@ describe('rows derived from state.json', () => {
     );
 
     expect(listSessions(tmp)[0]).toMatchObject({ status: 'open', feature: 'legacy feature' });
+  });
+});
+
+describe('a listing read again', () => {
+  it('returns the same row for a run whose files did not change', () => {
+    tmp = createTempDir('sessions-io-test');
+    saveState(
+      { projectDir: tmp, sessionId: '2024-01-01-still' },
+      makeImplState([makeTask()], { feature: 'still' }),
+    );
+
+    const [first] = listSessions(tmp);
+    const [second] = listSessions(tmp);
+    expect(first).toMatchObject({ feature: 'still' });
+    expect(second).toBe(first);
+  });
+
+  it('reads a row again once its state file changes, at the same size', () => {
+    tmp = createTempDir('sessions-io-test');
+    const ref = { projectDir: tmp, sessionId: '2024-01-01-moved' };
+    const file = join(sessionDir(tmp, ref.sessionId), 'state.json');
+    saveState(ref, makeImplState([makeTask()], { feature: 'before' }));
+    expect(listSessions(tmp)[0]).toMatchObject({ feature: 'before' });
+    const size = statSync(file).size;
+
+    saveState(ref, makeImplState([makeTask()], { feature: 'latest' }));
+    expect(statSync(file).size).toBe(size);
+    expect(listSessions(tmp)[0]).toMatchObject({ feature: 'latest' });
+  });
+
+  it('reads a row again once its summary file changes', () => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = '2024-01-01-summary';
+    saveSummary(
+      { projectDir: tmp, sessionId: sessionId },
+      makeSession({ id: sessionId, feature: 'before' }),
+    );
+    expect(listSessions(tmp)[0]).toMatchObject({ feature: 'before' });
+
+    saveSummary(
+      { projectDir: tmp, sessionId: sessionId },
+      makeSession({ id: sessionId, feature: 'after the change' }),
+    );
+    expect(listSessions(tmp)[0]).toMatchObject({ feature: 'after the change' });
+  });
+
+  it('reads a row again once another process replaces its summary in the same second', () => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = '2024-01-01-second';
+    const file = join(sessionDir(tmp, sessionId), 'summary.json');
+    const second = 1_700_000_000;
+    saveSummary({ projectDir: tmp, sessionId }, makeSession({ id: sessionId, feature: 'before' }));
+    utimesSync(file, second, second);
+    expect(listSessions(tmp)[0]).toMatchObject({ feature: 'before' });
+    const before = statSync(file);
+
+    writeFileSync(`${file}.tmp`, readFileSync(file, 'utf8').replace('"before"', '"latest"'));
+    renameSync(`${file}.tmp`, file);
+    utimesSync(file, second, second);
+    const after = statSync(file);
+    expect([after.mtimeMs, after.size]).toEqual([before.mtimeMs, before.size]);
+    expect(after.ino).not.toBe(before.ino);
+    expect(listSessions(tmp)[0]).toMatchObject({ feature: 'latest' });
+  });
+
+  it('reads a row again once another process takes the run', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    tmp = createTempDir('sessions-io-test');
+    const ref = { projectDir: tmp, sessionId: '2024-01-01-taken' };
+    saveState(ref, makeImplState([makeTask()], { feature: 'taken' }));
+    expect(listSessions(tmp)[0]).toMatchObject({ status: 'open', stop: 'stopped' });
+
+    writeFileSync(
+      join(sessionDir(tmp, ref.sessionId), LOCKFILE),
+      JSON.stringify(makeSessionLockfile(ref.sessionId)),
+    );
+    expect(listSessions(tmp)[0]).not.toHaveProperty('stop');
+  });
+
+  it('reads a running row again, so an owner that died without a word reads as stopped', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    tmp = createTempDir('sessions-io-test');
+    const ref = { projectDir: tmp, sessionId: '2024-01-01-owner' };
+    saveState(ref, makeImplState([makeTask()], { feature: 'owner' }));
+    writeFileSync(
+      join(sessionDir(tmp, ref.sessionId), LOCKFILE),
+      JSON.stringify(makeSessionLockfile(ref.sessionId)),
+    );
+    expect(listSessions(tmp)[0]).toMatchObject({ status: 'open' });
+    expect(listSessions(tmp)[0]).not.toHaveProperty('stop');
+
+    vi.setSystemTime(Date.now() + HEARTBEAT_STALENESS_MS + 1);
+    expect(listSessions(tmp)[0]).toMatchObject({ status: 'open', stop: 'stopped' });
+  });
+
+  it('drops a removed session from the next listing', () => {
+    tmp = createTempDir('sessions-io-test');
+    saveSummary(
+      { projectDir: tmp, sessionId: '2024-01-01-kept' },
+      makeSession({ id: '2024-01-01-kept', feature: 'kept' }),
+    );
+    saveSummary(
+      { projectDir: tmp, sessionId: '2024-01-01-gone' },
+      makeSession({ id: '2024-01-01-gone', feature: 'gone' }),
+    );
+    expect(listSessions(tmp)).toHaveLength(2);
+
+    rmSync(sessionDir(tmp, '2024-01-01-gone'), { recursive: true });
+    expect(listSessions(tmp).map((row) => row.feature)).toEqual(['kept']);
   });
 });
