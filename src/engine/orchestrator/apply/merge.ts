@@ -12,6 +12,7 @@ import {
 import {
   type ApplyStates,
   type BaseEntry,
+  entryKey,
   readApplyEntry,
   readBaseBytes,
   readSideEntry,
@@ -71,18 +72,15 @@ export async function mergeApplyStates(
     const ours = states.ours.get(path) ?? { kind: 'absent' };
     const theirs = states.theirs.get(path) ?? { kind: 'absent' };
     const conflict = { path, base, ours, theirs };
-    if (
-      integrated !== undefined &&
-      theirs.kind === 'file' &&
-      integrated.get(path) === theirs.sha256
-    ) {
-      result.promote.push(path);
-      continue;
-    }
+    // A file an earlier Apply handed to the workspace takes the workspace
+    // entry while the checkout still holds what that Apply saw; a workspace
+    // back at the base still takes the checkout's side.
+    const handedOff = integrated?.get(path) === entryKey(theirs);
     if (sameSideEntry(ours, theirs)) continue;
     // A base without a mode, or without the file, cannot tell which side
     // changed a mode-only difference.
     if (
+      !handedOff &&
       (base.kind === 'absent' || (base.kind === 'file' && base.mode === undefined)) &&
       ours.kind === 'file' &&
       theirs.kind === 'file' &&
@@ -106,7 +104,7 @@ export async function mergeApplyStates(
       }
       continue;
     }
-    if (sameAsBase(theirs, base)) {
+    if (handedOff || sameAsBase(theirs, base)) {
       // Apply writes a symlink only when it stays inside the project, in the
       // workspace and through the links of the checkout it lands in.
       const leaves =

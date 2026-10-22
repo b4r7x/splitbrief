@@ -174,7 +174,7 @@ export function sameSideEntry(left: SideEntry, right: SideEntry): boolean {
   }
 }
 
-/** The stable fingerprint of one side of the run: absent, a file's hash, or a symlink's target. */
+/** The stable fingerprint of one side of the run: absent, a file's hash and mode, or a symlink's target. */
 export function entryKey(entry: SideEntry): string {
   switch (entry.kind) {
     case 'absent':
@@ -182,7 +182,7 @@ export function entryKey(entry: SideEntry): string {
     case 'symlink':
       return `symlink:${entry.target}`;
     case 'file':
-      return `file:${entry.sha256}`;
+      return `file:${entry.sha256}:${entry.mode.toString(8)}`;
   }
 }
 

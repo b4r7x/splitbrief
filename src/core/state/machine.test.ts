@@ -2011,7 +2011,6 @@ describe('the run workspace and Apply', () => {
 
   it('APPLY_REVIEW_START with a triage queues the inputs and leaves the fix cycle to START_FIX_CYCLE', () => {
     const merged = [{ path: 'a.txt', checkoutHunks: 'checkout diff' }];
-    const integrated = [{ path: 'a.txt', checkoutHash: 'hash-a' }];
     const triage = [
       {
         id: 'A1',
@@ -2023,12 +2022,11 @@ describe('the run workspace and Apply', () => {
     ];
     const state = transition(
       { ...ready(), reviewFixes: { cycle: 1, findings: {} } },
-      { type: 'APPLY_REVIEW_START', merged, integrated, triage },
+      { type: 'APPLY_REVIEW_START', merged, triage },
     );
 
     expect(state.phase).toBe('final-review');
     expect(state.applyReview).toEqual({ merged, failures: [] });
-    expect(state.applyIntegrated).toEqual(integrated);
     expect(state.pendingTriage).toEqual({ inputs: triage });
     expect(fixCyclesOf(state).used).toBe(1);
     expect(WorkflowStateSchema.parse(state).pendingTriage?.inputs).toEqual(triage);
@@ -2038,24 +2036,27 @@ describe('the run workspace and Apply', () => {
     expect(fixed.pendingTriage).toBeUndefined();
   });
 
-  it('APPLY_REVIEW_START appends integrated paths to the ones already recorded', () => {
+  it('RECORD_APPLY_INTEGRATED appends handed-off files to the ones already recorded', () => {
     const first = transition(ready(), {
-      type: 'APPLY_REVIEW_START',
-      merged: [],
-      integrated: [{ path: 'a.txt', checkoutHash: 'a' }],
+      type: 'RECORD_APPLY_INTEGRATED',
+      integrated: [{ path: 'a.txt', checkout: 'file:a' }],
     });
-    const next = transition(
-      { ...first, phase: 'complete' as const, reviewStatus: 'passed' as const },
-      {
-        type: 'APPLY_REVIEW_START',
-        merged: [],
-        integrated: [{ path: 'b.txt', checkoutHash: 'b' }],
-      },
-    );
+    const next = transition(first, {
+      type: 'RECORD_APPLY_INTEGRATED',
+      integrated: [{ path: 'b.txt', checkout: 'absent' }],
+    });
 
     expect(next.applyIntegrated).toEqual([
-      { path: 'a.txt', checkoutHash: 'a' },
-      { path: 'b.txt', checkoutHash: 'b' },
+      { path: 'a.txt', checkout: 'file:a' },
+      { path: 'b.txt', checkout: 'absent' },
+    ]);
+  });
+
+  it('a handed-off file saved with its checkout hash reads as a file entry', () => {
+    const saved = { ...ready(), applyIntegrated: [{ path: 'a.txt', checkoutHash: 'hash-a' }] };
+
+    expect(WorkflowStateSchema.parse(saved).applyIntegrated).toEqual([
+      { path: 'a.txt', checkout: 'file:hash-a' },
     ]);
   });
 
