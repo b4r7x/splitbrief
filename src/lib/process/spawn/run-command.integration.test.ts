@@ -225,7 +225,8 @@ describe('runCommand', () => {
     expect(processError.isExitCode(err)).toBe(true);
     if (!processError.isExitCode(err)) return;
     expect(processOutputCapture(err.data)).toEqual({
-      text: `${'x'.repeat(4100)}\n${diagnostic}`,
+      stdout: `${'x'.repeat(4100)}\n${diagnostic}`,
+      stderr: '',
       complete: true,
     });
   });

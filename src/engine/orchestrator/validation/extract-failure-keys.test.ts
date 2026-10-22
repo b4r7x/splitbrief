@@ -20,7 +20,13 @@ describe('extractFailureKeys', () => {
   it('keys a vitest failure by its test name and drops its stack frame', () => {
     expect(
       failureKeys(
-        { capture: { text: ' FAIL  src/x.test.ts > x\n   ❯ src/x.ts:12:5', complete: true } },
+        {
+          capture: {
+            stdout: ' FAIL  src/x.test.ts > x\n   ❯ src/x.ts:12:5',
+            stderr: '',
+            complete: true,
+          },
+        },
         '/repo',
       ).keys,
     ).toEqual(['src/x.test.ts::x']);
@@ -38,9 +44,9 @@ describe('extractFailureKeys', () => {
         `   Duration  ${duration}`,
       ].join('\n');
     for (const text of [tail('02:34:50', '6.93s'), tail('02:41:07', '7.11s')]) {
-      expect(failureKeys({ capture: { text, complete: true } }, '/repo').keys).toEqual([
-        'src/legacy.test.ts::legacy > still red',
-      ]);
+      expect(
+        failureKeys({ capture: { stdout: text, stderr: '', complete: true } }, '/repo').keys,
+      ).toEqual(['src/legacy.test.ts::legacy > still red']);
     }
   });
 
@@ -94,9 +100,9 @@ describe('extractFailureKeys', () => {
       'tests/test_late.py::test_late FAILED [100%]',
       'FAILED tests/test_late.py::test_late - assert 1 == 2',
     ].join('\n');
-    expect(failureKeys({ capture: { text: output, complete: true } }, '/repo').keys).toEqual([
-      'tests/test_late.py::test_late',
-    ]);
+    expect(
+      failureKeys({ capture: { stdout: output, stderr: '', complete: true } }, '/repo').keys,
+    ).toEqual(['tests/test_late.py::test_late']);
   });
 
   it.each([
@@ -166,7 +172,10 @@ describe('failureKeys', () => {
       "src/a.ts(1,1): error TS2322: Type 'string' is not assignable to type 'number'.";
     const output = `${diagnostic}\n FAIL  src/b.test.ts > fails\n ❯ src/b.test.ts:4:2`;
     expect(
-      failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, '/repo'),
+      failureKeys(
+        { capture: { stdout: output, stderr: '', complete: true }, exitCode: 1 },
+        '/repo',
+      ),
     ).toEqual({
       keys: ['src/b.test.ts::fails', diagnostic],
     });
@@ -180,14 +189,15 @@ describe('failureKeys', () => {
       ' ❯ src/b.test.ts:4:2',
     ].join('\n');
     expect(
-      failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, '/repo').messages,
+      failureKeys({ capture: { stdout: output, stderr: '', complete: true }, exitCode: 1 }, '/repo')
+        .messages,
     ).toEqual(new Map([['src/a.test.ts::adds', 'AssertionError: expected 1 to be 2']]));
   });
 
   it('keeps a Go test message even when it is also a diagnostic key', () => {
     const output = '--- FAIL: TestX (0.00s)\n    x_test.go:12: got 1, want 2';
     const failure = failureKeys(
-      { capture: { text: output, complete: true }, exitCode: 1 },
+      { capture: { stdout: output, stderr: '', complete: true }, exitCode: 1 },
       '/repo',
     );
     expect(failure.keys).toEqual(['TestX', 'x_test.go:12: got 1, want 2']);
@@ -204,14 +214,19 @@ describe('failureKeys', () => {
       'C:\\repo\\tests\\test_a.py:7: in test_fails',
       diagnostic,
     ].join('\n');
-    expect(failureKeys({ capture: { text: output, complete: true } }, '/repo')).toEqual({
+    expect(
+      failureKeys({ capture: { stdout: output, stderr: '', complete: true } }, '/repo'),
+    ).toEqual({
       keys: [diagnostic],
     });
   });
 
   it('returns one placeholder when the process capture is incomplete', () => {
     expect(
-      failureKeys({ capture: { text: 'src/a.ts(1,1): error TS2322', complete: false } }, '/repo'),
+      failureKeys(
+        { capture: { stdout: 'src/a.ts(1,1): error TS2322', stderr: '', complete: false } },
+        '/repo',
+      ),
     ).toEqual({
       keys: ['output over the capture limit'],
       placeholder: 'output over the capture limit',
@@ -221,7 +236,10 @@ describe('failureKeys', () => {
   it('keys an output that lists only whole paths by those paths', () => {
     expect(
       failureKeys(
-        { capture: { text: 'src/a.ts\n./src/b.ts\nsrc/a.ts', complete: true }, exitCode: 1 },
+        {
+          capture: { stdout: 'src/a.ts\n./src/b.ts\nsrc/a.ts', stderr: '', complete: true },
+          exitCode: 1,
+        },
         '/repo',
       ),
     ).toEqual({ keys: ['src/a.ts', 'src/b.ts'] });
@@ -232,7 +250,8 @@ describe('failureKeys', () => {
       failureKeys(
         {
           capture: {
-            text: [
+            stderr: '',
+            stdout: [
               'TAP version 13',
               '# node:internal/modules/cjs/loader:1386',
               "# Error: Cannot find module '/repo/src'",
@@ -268,7 +287,11 @@ describe('failureKeys', () => {
     expect(
       failureKeys(
         {
-          capture: { text: 'src/a.ts\nsrc/b.ts\nfatal: runner crashed', complete: true },
+          capture: {
+            stdout: 'src/a.ts\nsrc/b.ts\nfatal: runner crashed',
+            stderr: '',
+            complete: true,
+          },
           exitCode: 1,
         },
         '/repo',
@@ -313,7 +336,10 @@ describe('failureKeys', () => {
     ].join('\n');
     const key = 'test/legacy.test.mjs::truncateText keeps short text unchanged';
     expect(
-      failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, '/repo'),
+      failureKeys(
+        { capture: { stdout: output, stderr: '', complete: true }, exitCode: 1 },
+        '/repo',
+      ),
     ).toEqual({
       keys: [key],
       messages: new Map([[key, 'Expected values to be strictly equal:']]),
@@ -337,7 +363,8 @@ describe('failureKeys', () => {
       diagnostic,
     ].join('\n');
     expect(
-      failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, '/repo').keys,
+      failureKeys({ capture: { stdout: output, stderr: '', complete: true }, exitCode: 1 }, '/repo')
+        .keys,
     ).toEqual(['test/a.test.mjs::adds', diagnostic]);
   });
 
@@ -378,7 +405,10 @@ describe('failureKeys', () => {
       '1..2',
     ].join('\n');
     expect(
-      failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, '/repo'),
+      failureKeys(
+        { capture: { stdout: output, stderr: '', complete: true }, exitCode: 1 },
+        '/repo',
+      ),
     ).toEqual({
       keys: ['test/i.test.mjs', 'test/legacy.test.mjs::legacy red'],
       messages: new Map([
@@ -405,7 +435,8 @@ describe('failureKeys', () => {
         '1..1',
       ].join('\n');
       expect(
-        failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, dir).keys,
+        failureKeys({ capture: { stdout: output, stderr: '', complete: true }, exitCode: 1 }, dir)
+          .keys,
       ).toEqual(['test/a.test.mjs::adds']);
     } finally {
       cleanupTempDir(root);

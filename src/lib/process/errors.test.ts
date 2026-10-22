@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS } from '../../utils/display-text.js';
-import { isENOENT, processError, processOutputCapture, spawnError } from './errors.js';
+import { captureText, isENOENT, processError, processOutputCapture, spawnError } from './errors.js';
 
 const JWT_FIXTURE =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
@@ -117,7 +117,8 @@ describe('processError.exitCode', () => {
       stderr: 'stderr',
     });
     expect(processOutputCapture(err.data)).toEqual({
-      text: `${'x'.repeat(4100)}\nsrc/a.ts(3,3): error TS2322: mismatch\nstderr`,
+      stdout: `${'x'.repeat(4100)}\nsrc/a.ts(3,3): error TS2322: mismatch`,
+      stderr: 'stderr',
       complete: true,
     });
   });
@@ -133,9 +134,10 @@ describe('processError.exitCode', () => {
     expect(processOutputCapture(err.data).complete).toBe(false);
   });
 
-  it('joins short display streams when another spawner provides no capture', () => {
-    const err = processError.exitCode({ command: 'tsc', code: 1, output: 'out', stderr: 'err' });
-    expect(processOutputCapture(err.data)).toEqual({ text: 'out\nerr', complete: true });
+  it('reads a capture as its stdout, then its stderr, without an empty stream', () => {
+    expect(captureText({ stdout: 'out\n', stderr: 'err', complete: true })).toBe('out\n\nerr');
+    expect(captureText({ stdout: '\n', stderr: 'err', complete: true })).toBe('err');
+    expect(captureText({ stdout: 'out', stderr: '', complete: true })).toBe('out');
   });
 
   it.each([

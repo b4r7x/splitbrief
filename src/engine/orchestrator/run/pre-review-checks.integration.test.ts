@@ -448,7 +448,7 @@ describe('pre-review checks', () => {
           status: 'fail',
           output,
           failure: failureKeys(
-            { capture: { text: output, complete: true }, exitCode: 1 },
+            { capture: { stdout: output, stderr: '', complete: true }, exitCode: 1 },
             projectDir,
           ),
           command: 'cargo test',

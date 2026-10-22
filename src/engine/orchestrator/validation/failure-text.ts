@@ -64,14 +64,10 @@ export function checkFailureText(
   const scoped = options.file != null;
   const head = `check ${run.checkId} did not pass (${run.status})`;
   const output = boundedOutputTail(run.output);
-  if (run.status !== 'fail' || run.failure.placeholder !== undefined) {
-    const detail =
-      run.status === 'fail' &&
-      run.failure.placeholder !== undefined &&
-      (scoped || output.trim() === '')
-        ? clip(run.failure.placeholder)
-        : output;
-    return `${head}: ${detail}`;
+  if (run.status !== 'fail') return `${head}: ${output}`;
+  if (run.failure.placeholder !== undefined) {
+    const line = `${head}: ${clip(run.failure.placeholder)}`;
+    return scoped || output.trim() === '' ? line : [line, 'Output tail:', output].join('\n');
   }
   const keys = failureKeysForFile({ failure: run.failure, file: options.file });
   const messages = new Map(
