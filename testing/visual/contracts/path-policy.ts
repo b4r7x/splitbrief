@@ -24,7 +24,8 @@ const POSIX_PATH_PATTERN = new RegExp(
   String.raw`${PATH_BOUNDARY}(\/(?!\/)[^\s'\x22\x60\u2500-\u257f]+)`,
   'gu',
 );
-const SLASH_COMMAND_PATTERN = /^\/[a-z][a-z0-9-]*[!),.:;?\]}]*$/u;
+// A command a narrow hint cuts short ends in an ellipsis.
+const SLASH_COMMAND_PATTERN = /^\/[a-z][a-z0-9-]*[!),.:;?\]}…]*$/u;
 const TRAILING_PROSE_PUNCTUATION_PATTERN = /[!),.:;?\]}]+$/u;
 // These exact synthetic fixture paths identify no operator machine; other host paths remain forbidden.
 const FIXTURE_HOST_PATHS = new Set([

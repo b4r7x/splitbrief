@@ -391,6 +391,7 @@
 - Warnings raised while `start`, `resume`, `continue` or `init` opens the full-screen interface now show on the screen once it opens, led by their count when there are several, and stay on the terminal after you quit. Before, they printed behind the screen and showed only after you quit. The warning that `--project` names a folder inside a repository now shows once instead of twice.
 - Home keeps showing that your tools are being checked while a long warning or save message shows above the input, and a feature waiting on its tool check keeps its status there too.
 - After SPLITBRIEF is stopped by a signal or crashes, the terminal keeps your earlier output and the crash report, and your shell's keys work normally again. An editor opened from the interface also gets normal keys when SPLITBRIEF runs inline.
+- Home hides the logo in a terminal too narrow for it, instead of breaking each logo line in two and pushing the crew lines off the screen.
 
 ## [0.1.0] - 2026-08-07
 

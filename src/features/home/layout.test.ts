@@ -46,6 +46,11 @@ describe('getHomeLayout', () => {
     expect(layout.logoTier).toBe('compact');
   });
 
+  it('hides the logo when its wordmark is wider than the body', () => {
+    expect(getHomeLayout({ cols: 41, rows: 18, ...AT_REST }).showLogo).toBe(true);
+    expect(getHomeLayout({ cols: 40, rows: 18, ...AT_REST }).showLogo).toBe(false);
+  });
+
   it('budgets two body gap rows at narrow and wide layouts', () => {
     const narrow = getHomeLayout({ cols: 80, rows: 18, ...AT_REST });
     const wide = getHomeLayout({ cols: 120, rows: 18, ...AT_REST });

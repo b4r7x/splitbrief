@@ -261,6 +261,7 @@ describe('visual contract boundaries', () => {
     expect(containsHostPath('~/private.txt')).toBe(true);
     for (const terminalUi of [
       '/help · /settings · /skills · ctrl+k commands',
+      '/help · /crew · /settings · /skills…',
       "/ _` | | '_ \\| __| | | |/ __| '_ \\",
       '\\__,_|_| .__/ \\__|\\__, |\\___|_| |_|',
     ]) {

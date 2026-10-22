@@ -131,7 +131,7 @@ function resolveHomeHeader(context: LocatorContext): CellRect {
     x: Math.floor((cols - layout.width) / 2),
     y: 0,
     width: layout.width,
-    height: getLogoHeight(layout.logoTier) + 1 + homeConfigBlockRows(rows),
+    height: (layout.showLogo ? getLogoHeight(layout.logoTier) + 1 : 0) + homeConfigBlockRows(rows),
   });
 }
 
