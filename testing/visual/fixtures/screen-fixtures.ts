@@ -207,6 +207,7 @@ interface HomeFixtureOptions {
   readonly config?: VisualConfigOverrides;
   readonly cold?: boolean;
   readonly detecting?: boolean;
+  readonly checkFailed?: boolean;
   readonly noConfig?: boolean;
 }
 
@@ -225,6 +226,7 @@ export function createHomeFixture(options: HomeFixtureOptions = {}): FixtureLife
       if (options.detecting === true) {
         detectionStore.beginRefresh({ contexts: VISUAL_DETECTION_CONTEXTS });
       }
+      if (options.checkFailed === true) publishFailedColdCheck();
       routerStore.init({ screen: 'home' });
     },
     teardown: teardownVisualFixture,
@@ -306,8 +308,46 @@ function publishFreshDiscovery(): void {
   });
 }
 
+// A first tool check that failed: it detected nothing, so it has no tools to merge.
+function publishFailedColdCheck(): void {
+  const request = detectionStore.beginRefresh({ contexts: VISUAL_DETECTION_CONTEXTS });
+  detectionStore.publish({
+    request,
+    result: {
+      providers: [],
+      cliTools: [],
+      catalog: null,
+      cliModels: [],
+      generation: 1,
+      outcomes: {
+        readiness: {
+          kind: 'failed',
+          source: 'readiness',
+          contextKey: VISUAL_DETECTION_CONTEXTS.readiness,
+          generation: 1,
+          requestId: request.id,
+          checkedAt: VISUAL_PUBLISHED_AT,
+          error: { kind: 'timeout', message: 'Discovery request timed out.' },
+        },
+        modelsDev: {
+          kind: 'not-run',
+          source: 'models-dev',
+          contextKey: VISUAL_DETECTION_CONTEXTS.modelsDev,
+          reason: 'offline',
+        },
+        cliModels: {
+          kind: 'not-run',
+          source: 'cli-models',
+          contextKey: VISUAL_DETECTION_CONTEXTS.cliModels,
+          reason: 'offline',
+        },
+      },
+    },
+  });
+}
+
 /**
- * The one discovery publisher every visual fixture uses. Tools already detected
+ * The one publisher of detected tools every visual fixture uses. Tools already detected
  * survive unless the caller restates them, so a scenario names only the tool it
  * is about. A `pending` models.dev lane is left unsettled on purpose — that is
  * the fetching notice the cold picker frame shows.
@@ -1360,6 +1400,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-cold'), () => createHomeFixture({ cold: true })],
   [scenarioId('home-cold-detecting'), () => createHomeFixture({ cold: true, detecting: true })],
+  [scenarioId('home-cold-failed'), () => createHomeFixture({ cold: true, checkFailed: true })],
   [
     scenarioId('home-cold-crew'),
     () => createHomeFixture({ cold: true, detecting: true, config: VISUAL_WIDE_CREW }),

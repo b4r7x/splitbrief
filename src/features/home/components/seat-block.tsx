@@ -18,6 +18,7 @@ import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { homeConfigBlockRows } from '../layout.js';
+import { deriveHomeToolCheck } from '../tool-check.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 
 const CREW_HINT = '/crew to change';
@@ -63,6 +64,12 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
   // Dim until the first discovery result ever lands: the seats are what the
   // config says, not yet what the machine confirmed.
   const coldDiscovery = detectionStore.use((s) => s.refresh.readiness.fetchedAt === null);
+  // A first check that settled without a result says so above the composer; this line stops
+  // saying it is still detecting.
+  const settledCold = detectionStore.use((s) => {
+    const toolCheck = deriveHomeToolCheck(s.refresh);
+    return toolCheck === 'failed' || toolCheck === 'not-run';
+  });
   const displayNames = useCrewDisplayNames(config);
 
   const seats = deriveCrewSeats({ config, displayNames });
@@ -74,7 +81,10 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
   // skills count, then the detection notice, until the line fits.
   const optional = shedToFit({
     lead: [],
-    optional: [selectedSkillsText(skills), ...(coldDiscovery ? [DETECTING_TOOLS_STATUS] : [])],
+    optional: [
+      selectedSkillsText(skills),
+      ...(coldDiscovery && !settledCold ? [DETECTING_TOOLS_STATUS] : []),
+    ],
     tail: [CREW_HINT],
     width: textWidth,
   });

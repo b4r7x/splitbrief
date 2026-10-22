@@ -392,6 +392,7 @@
 - Home keeps showing that your tools are being checked while a long warning or save message shows above the input, and a feature waiting on its tool check keeps its status there too.
 - After SPLITBRIEF is stopped by a signal or crashes, the terminal keeps your earlier output and the crash report, and your shell's keys work normally again. An editor opened from the interface also gets normal keys when SPLITBRIEF runs inline.
 - Home hides the logo in a terminal too narrow for it, instead of breaking each logo line in two and pushing the crew lines off the screen.
+- When the first tool check fails or cannot run and its card does not fit on home, the line above the input says so and how to retry, and the crew line stops saying it is still detecting tools.
 
 ## [0.1.0] - 2026-08-07
 

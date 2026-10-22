@@ -19,7 +19,11 @@ import type { Config } from '../../core/schemas/config.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import { cliSignInStep } from '../../core/schemas/readiness.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
-import { BOOT_MANIFEST_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
+import {
+  BOOT_MANIFEST_TITLE,
+  REFRESHING_TOOLS_TITLE,
+  TOOL_CHECK_FAILED_TITLE,
+} from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import {
@@ -270,7 +274,7 @@ function DiscoveryPanel({ state, noConfig, onBack, onRetry, onOpenSettings }: Di
 
   return (
     <OverlayPanel
-      title="Tool check failed"
+      title={TOOL_CHECK_FAILED_TITLE}
       density="compact"
       hint={`r retry${SOFT_SEP}esc quit${SOFT_SEP}s settings`}
     >

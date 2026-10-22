@@ -6,6 +6,8 @@ import {
   BOOT_MANIFEST_TITLE,
   FIRST_RUN_NOTE,
   REFRESHING_TOOLS_TITLE,
+  TOOL_CHECK_FAILED_TITLE,
+  TOOLS_NOT_CHECKED_TITLE,
 } from '../../core/discovery/copy.js';
 import { formatCollapsedSeatSpans, seatLineText } from '../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
@@ -15,7 +17,7 @@ import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-r
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { LOCKFILE_PING_INTERVAL_MS } from '../../engine/orchestrator/run/heartbeat.js';
-import { Composer } from '../../components/composer/composer.js';
+import { Composer, type HomeNotice } from '../../components/composer/composer.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -45,6 +47,7 @@ import { borderStyleFor } from '../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
 import { getHomeLayout, NO_CONFIG_NOTICE } from '../../features/home/layout.js';
 import { getLogo } from '../../features/home/logo.js';
+import { deriveHomeToolCheck } from '../../features/home/tool-check.js';
 import { RECENT_SESSIONS_HINT } from '../../features/home/components/recent-sessions-list.js';
 import { useRecentSessionsFocus } from '../../features/home/use-recent-sessions-focus.js';
 import {
@@ -99,21 +102,15 @@ function DiscoveryPanel({ width }: { width: number }) {
   const theme = useTheme();
   const config = configStore.useConfig();
   const displayNames = useCrewDisplayNames(config);
-  const refresh = detectionStore.use((s) => s.refresh);
-  const cold = refresh.readiness.fetchedAt === null;
-  const refreshing =
-    refresh.readiness.refreshing || refresh.modelsDev.refreshing || refresh.cliModels.refreshing;
-  const { frame } = useSpinnerFrame(cold && refreshing);
+  const toolCheck = detectionStore.use((s) => deriveHomeToolCheck(s.refresh));
+  const { frame } = useSpinnerFrame(toolCheck === 'cold');
 
-  if (!cold) return null;
+  if (toolCheck === null || toolCheck === 'warm') return null;
 
   // A settled cold check without a result: failed outright, or not-run
   // (offline/cancelled). Both need an actionable box, never a frozen spinner.
-  const stalled =
-    !refreshing &&
-    (refresh.readiness.outcome === 'failed' || refresh.readiness.outcome === 'not-run');
-  if (!refreshing && !stalled) return null;
-  const failedOutcome = refresh.readiness.outcome === 'failed';
+  const stalled = toolCheck !== 'cold';
+  const failedOutcome = toolCheck === 'failed';
   const seatInput = {
     planner: config.planner,
     build: resolveImplementerProfiles(config).defaultProfile.config,
@@ -142,7 +139,7 @@ function DiscoveryPanel({ width }: { width: number }) {
       {stalled ? (
         <Fragment>
           <Text color={failedOutcome ? theme.error : theme.warning} bold>
-            {failedOutcome ? 'Tool check failed' : 'Tools not checked'}
+            {failedOutcome ? TOOL_CHECK_FAILED_TITLE : TOOLS_NOT_CHECKED_TITLE}
           </Text>
           <Text color={theme.textDim}>Open /settings to retry.</Text>
         </Fragment>
@@ -191,11 +188,7 @@ export function HomeScreen({
   const selectionError = sessionSelectStore.use((s) => s.error);
   const noConfig = configStore.use((state) => state.revision === null);
   const approvalPending = approvalPromptStore.use((state) => state.status === 'pending');
-  const discoveryNotice = detectionStore.use((s) => {
-    const r = s.refresh;
-    if (!(r.readiness.refreshing || r.modelsDev.refreshing || r.cliModels.refreshing)) return null;
-    return r.readiness.fetchedAt === null ? 'cold' : 'warm';
-  });
+  const toolCheck = detectionStore.use((s) => deriveHomeToolCheck(s.refresh));
   const startPreparation = useStartPreparation<Extract<DraftSubmission, { ok: true }>>({
     prepare: async (submission, signal) => {
       const current = configStore.get();
@@ -268,9 +261,10 @@ export function HomeScreen({
   const discoveryPanelFits =
     rows >= DISCOVERY_PANEL_MIN_ROWS &&
     layout.sessionCapacity - renderedSessionRows >= DISCOVERY_PANEL_SLACK_ROWS;
-  const hintNotice =
-    discoveryNotice === 'warm' || (discoveryNotice === 'cold' && !discoveryPanelFits);
-  const { frame: refreshFrame } = useSpinnerFrame(hintNotice);
+  const hintNotice = toolCheck === 'warm' || (toolCheck !== null && !discoveryPanelFits);
+  const { frame: refreshFrame } = useSpinnerFrame(
+    hintNotice && (toolCheck === 'cold' || toolCheck === 'warm'),
+  );
   const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
 
   // Another process can start, end or finish a run, so home reads the list again while it shows.
@@ -320,7 +314,7 @@ export function HomeScreen({
   );
 
   let homeHint: string | undefined;
-  let homeNotice: string | undefined;
+  let homeNotice: HomeNotice | undefined;
   if (!interactionBlocked) {
     homeHint = DEFAULT_HOME_HINT;
     if (canFocus) homeHint = HOME_HINT;
@@ -328,9 +322,22 @@ export function HomeScreen({
     // The notice borrows the reserved hint line instead of adding a row; under feedback it keeps
     // that line and the feedback stacks above it.
     else if (hintNotice) {
-      homeNotice = `${refreshFrame} ${
-        discoveryNotice === 'cold' ? BOOT_MANIFEST_TITLE : REFRESHING_TOOLS_TITLE
-      }`;
+      if (toolCheck === 'failed') {
+        homeNotice = {
+          text: `${TOOL_CHECK_FAILED_TITLE}${SOFT_SEP}open /settings to retry`,
+          tone: 'error',
+        };
+      } else if (toolCheck === 'not-run') {
+        homeNotice = {
+          text: `${TOOLS_NOT_CHECKED_TITLE}${SOFT_SEP}open /settings to retry`,
+          tone: 'warning',
+        };
+      } else {
+        homeNotice = {
+          text: `${refreshFrame} ${toolCheck === 'cold' ? BOOT_MANIFEST_TITLE : REFRESHING_TOOLS_TITLE}`,
+          tone: 'textDim',
+        };
+      }
     }
   }
 
