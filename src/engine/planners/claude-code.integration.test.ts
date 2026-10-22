@@ -13,6 +13,7 @@ import type { RunnerCallEvent } from '../calls/types.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { sandboxRoot } from '../runners/sandbox-state-paths.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
+import { diagnosePlannerCallFailure } from '../orchestrator/recovery/planner-call-failure.js';
 
 let shimDir: string;
 let projectDir: string;
@@ -478,6 +479,31 @@ Create the Claude retry file.
       status: 'delivered',
       usage: null,
     });
+  });
+
+  it('halts a call past its timeout on the tool and the deadline', async () => {
+    writeCommandShim({ dir: shimDir, command: 'claude', lines: [], sleepSeconds: 5 });
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+    const planner = await createTrustedClaudeCodePlanner({
+      authChannel: undefined,
+      timeout: 1_000,
+    });
+
+    const err = await callPlanner(planner, {
+      prompt: 'plan a change',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    }).catch((caught: unknown) => caught);
+
+    const diagnosis = diagnosePlannerCallFailure({
+      err,
+      label: 'Planning failed',
+      runner: { kind: 'cli', tool: 'claude-code' },
+      seat: 'plan',
+    });
+    expect(diagnosis.message).toBe('Planning failed: Claude Code CLI timed out after 1s');
+    // The deadline is SPLITBRIEF's own words: the halt quotes nothing as the tool's.
+    expect(diagnosis.details).toEqual([]);
   });
 
   it('threads a configured idleWarnMs override into the spawn', async () => {

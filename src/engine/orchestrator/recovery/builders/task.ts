@@ -812,7 +812,7 @@ export function buildRepeatedTimeoutRecoveryIssue(
     affectedTaskIds: [opts.task.id],
     message: `${displayName} timed out twice in a row on ${opts.task.id}`,
     details: [
-      toolReported(displayName, opts.toolMessage),
+      opts.toolMessage,
       'The run stopped instead of escalating a brief the implementer cannot finish in time.',
       ...attemptDetails(opts.attempts, opts.maxAttempts),
     ],

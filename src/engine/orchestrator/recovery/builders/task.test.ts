@@ -1301,6 +1301,8 @@ describe('buildRepeatedTimeoutRecoveryIssue', () => {
 
     expect(issue.reason).toBe('runner-timeout-repeated');
     expect(issue.message).toContain('timed out twice in a row on T024');
+    expect(issue.details).toContain('implementer timed out');
+    expect(issue.details.join('\n')).not.toContain('reported:');
     expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(issue);

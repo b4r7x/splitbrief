@@ -67,6 +67,10 @@ export type PlatformLimitationErrorOptions =
       signal: NodeJS.Signals | null;
     };
 
+export function timedOutMessage(subject: string, timeoutMs: number): string {
+  return `${subject} timed out after ${Math.round(timeoutMs / 1000)}s`;
+}
+
 export const processError = {
   notFound: (command: string, message?: string) => {
     const safeCommand = sanitizeTerminalDiagnosticText(command);
@@ -83,9 +87,7 @@ export const processError = {
   timeout: (opts: TimeoutErrorOptions) => {
     const command = sanitizeTerminalDiagnosticText(opts.command);
     const label = opts.label === undefined ? undefined : sanitizeTerminalDiagnosticText(opts.label);
-    const subject = label ?? command;
-    const seconds = Math.round(opts.timeoutMs / 1000);
-    return error('command-timeout', `${subject} timed out after ${seconds}s`, {
+    return error('command-timeout', timedOutMessage(label ?? command, opts.timeoutMs), {
       command,
       label,
       timeoutMs: opts.timeoutMs,

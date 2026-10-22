@@ -75,6 +75,7 @@ import {
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
 import { runnerAuthDisplayName } from '../../../../src/engine/runners/auth-failure.js';
+import { timedOutMessage } from '../../../../src/lib/process/errors.js';
 import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure.js';
 import {
   consultHaltDetails,
@@ -3492,7 +3493,7 @@ const repeatedTimeoutRecoveryIssue = buildRepeatedTimeoutRecoveryIssue({
   id: 'rec_visual_repeated_timeout',
   task: HALTED_TASK,
   runner: AGY_BUILD_SEAT,
-  toolMessage: 'Tool implementer (antigravity) timed out after 900s',
+  toolMessage: timedOutMessage(runnerAuthDisplayName(AGY_BUILD_SEAT), 900_000),
   attempts: 2,
   maxAttempts: BOUNDS.attemptsPerLineage,
   createdAt: new Date(FIXED_TS).toISOString(),
@@ -3931,6 +3932,46 @@ const planSeatRecoveryProjection: WorkflowFixtureProjection = {
       startedAt: RESUMED_RUN_STARTED_AT,
       phase: 'planning',
       pendingRecovery: planSeatRecoveryIssue(),
+    });
+  },
+};
+
+/** The plan seat's call ran past the seat's `timeout`: the halt names the tool and the deadline. */
+function planTimeoutRecoveryIssue(): RecoveryIssue {
+  const planner = visualConfig().planner;
+  const words = timedOutMessage(runnerAuthDisplayName(planner), 4_000);
+  return buildPlannerCallFailedRecoveryIssue({
+    id: 'rec_visual_plan_timeout',
+    diagnosis: diagnosePlannerCallFailure({
+      seat: 'plan',
+      err: error('runner-call-failed', `Claude runner call timeout: ${words}`, {
+        status: 'timeout',
+        error: { code: 'timeout', message: words },
+      }),
+      label: 'Planning failed',
+      runner: planner,
+    }),
+    phase: 'planning',
+    runner: planner,
+    seatSwap: plannerSeatSwap('plan', 'claude-code', ['claude-code', 'codex', 'opencode']),
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const planTimeoutRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-plan-timeout'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    return haltErrorEvents(planTimeoutRecoveryIssue());
+  },
+  get resumeState() {
+    return makeWorkflowState({
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'planning',
+      pendingRecovery: planTimeoutRecoveryIssue(),
     });
   },
 };
@@ -6731,6 +6772,7 @@ const projections = [
   implementationAfterRetryProjection,
   apiContextRecoveryProjection,
   planSeatRecoveryProjection,
+  planTimeoutRecoveryProjection,
   planChecksRecoveryProjection,
   planQuestionsRecoveryProjection,
   planSeatSwappedProjection,
@@ -6842,6 +6884,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
   const halts = [
     usageLimitRecoveryIssue(),
     planSeatRecoveryIssue(),
+    planTimeoutRecoveryIssue(),
     reviewSeatRecoveryIssue(),
     consultSeatRecoveryIssue(),
     planSwappedRecoveryIssue(),

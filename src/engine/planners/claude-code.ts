@@ -16,7 +16,6 @@ import {
   isSessionExpiredError,
   sessionResumeMismatchError,
 } from '../session-expiry.js';
-import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
 import type { TypedSchemaInput } from '../runners/typed-output.js';
@@ -89,6 +88,7 @@ export function createClaudeCodePlanner(opts: {
       configuredArgs: args,
       ...(skillRoots !== undefined && { skillRoots }),
       ...(input.signal !== undefined && { signal: input.signal }),
+      ...(timeout !== undefined && { timeoutMs: timeout }),
       ...(idleWarnMs !== undefined && { idleWarnMs }),
       ...(idleKillMs !== undefined && { idleKillMs }),
     };
@@ -107,7 +107,6 @@ export function createClaudeCodePlanner(opts: {
     schema?: TypedSchemaInput | undefined,
   ) {
     const resumeId = session.getResumeId() ?? undefined;
-    const effectiveSignal = composeAbortSignal(signal, timeout);
     let resumeConfirmed = false;
     let mismatchedId: string | undefined;
     const callbackBuffer =
@@ -145,7 +144,7 @@ export function createClaudeCodePlanner(opts: {
           },
         },
         callContext,
-        ...claudeRunnerPrep({ env, signal: effectiveSignal }),
+        ...claudeRunnerPrep({ env, signal }),
         ...(images && images.length > 0 ? { images } : {}),
         ...(schema !== undefined && { schema: { json: schema.json } }),
       });
@@ -187,7 +186,6 @@ export function createClaudeCodePlanner(opts: {
     },
 
     async invokeOneShot({ prompt, projectDir, callbacks, callContext, signal, images, schema }) {
-      const effectiveSignal = composeAbortSignal(signal, timeout);
       const env = await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner');
       return invokeClaudePlanner({
         prompt,
@@ -195,7 +193,7 @@ export function createClaudeCodePlanner(opts: {
         sessionId: null,
         callbacks,
         callContext,
-        ...claudeRunnerPrep({ env, signal: effectiveSignal }),
+        ...claudeRunnerPrep({ env, signal }),
         ...(images !== undefined && images.length > 0 ? { images } : {}),
         ...(schema !== undefined && { schema: { json: schema.json } }),
       });
@@ -208,7 +206,6 @@ export function createClaudeCodePlanner(opts: {
     async injectUserTurn(injection): Promise<PlannerUserTurnResult> {
       const sessionId = session.getResumeId();
       if (!sessionId) return { status: 'not-delivered', reason: 'not-ready' };
-      const effectiveSignal = composeAbortSignal(injection.signal, timeout);
       const callbackBuffer = createRunnerAttemptCallbackBuffer({
         onOutput: () => {},
         onCallEvent: injection.callbacks?.onCallEvent,
@@ -236,7 +233,7 @@ export function createClaudeCodePlanner(opts: {
             },
           },
           callContext: injection.callContext ?? createPlannerCallContext(identityConfig, 'planner'),
-          ...claudeRunnerPrep({ env, signal: effectiveSignal }),
+          ...claudeRunnerPrep({ env, signal: injection.signal }),
         });
         const returnedSessionId = mismatchedId ?? result.nativeSessionId ?? sessionId;
         if (returnedSessionId !== null && returnedSessionId !== sessionId) {

@@ -43,6 +43,7 @@ export async function invokeClaudePlanner(opts: {
   skillRoots?: readonly string[] | undefined;
   images?: readonly Attachment[] | undefined;
   signal?: AbortSignal | undefined;
+  timeoutMs?: number | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
   schema?: CliSchemaInput | undefined;
@@ -90,6 +91,7 @@ export async function invokeClaudePlanner(opts: {
       environment: toCliEnvironment(opts.env),
       cwd: opts.projectDir,
       images: opts.images,
+      timeoutMs: opts.timeoutMs,
       signal: opts.signal,
     },
     prompt: opts.prompt,
