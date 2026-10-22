@@ -130,7 +130,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         ...(initialInvocation === undefined && { overrides: workflowOptsToCLIOverrides(opts) }),
         loaderDiagnostics: loaded.loaderDiagnostics,
       });
-      emitEffectiveConfigWarnings(warnings);
+      emitEffectiveConfigWarnings(projectDir, warnings);
       await loadRememberedCatalog(projectDir);
 
       const interaction = process.stdin.isTTY ? 'interactive' : 'headless';

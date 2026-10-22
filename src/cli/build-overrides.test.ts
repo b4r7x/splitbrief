@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../core/paths.js';
+import { configStore } from '../stores/project/config.js';
 import { resolveRunConfig } from './build-overrides.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -45,6 +46,7 @@ describe('resolveRunConfig', () => {
   });
 
   afterEach(() => {
+    configStore.__testReset();
     cleanupTempDir(tempDir);
     vi.restoreAllMocks();
   });
@@ -64,6 +66,18 @@ describe('resolveRunConfig', () => {
     writeMinimalV3Config(tempDir, ['workflow:', '  mode: instant']);
     const stderrChunks = captureStderr();
 
+    resolveRunConfig({ projectDir: tempDir, opts: {} });
+
+    expect(
+      stderrChunks.filter((chunk) => chunk.includes('workflow.mode was retired')),
+    ).toHaveLength(1);
+  });
+
+  it('tells the retired workflow.mode notice once when the screen already loaded the config', () => {
+    writeMinimalV3Config(tempDir, ['workflow:', '  mode: instant']);
+    const stderrChunks = captureStderr();
+
+    configStore.load(tempDir);
     resolveRunConfig({ projectDir: tempDir, opts: {} });
 
     expect(

@@ -69,7 +69,7 @@ function loadedState(projectDir: string, overrides: CLIOverrides): ConfigState {
     overrides,
     loaderDiagnostics,
   });
-  emitEffectiveConfigWarnings(warnings);
+  emitEffectiveConfigWarnings(projectDir, warnings);
   return {
     config,
     diskConfig: cloneConfig(

@@ -164,7 +164,7 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
         ...(initialInvocation === undefined && { overrides: seatOverrides(opts.reviewer) }),
         loaderDiagnostics: loaded.loaderDiagnostics,
       });
-      emitEffectiveConfigWarnings(warnings);
+      emitEffectiveConfigWarnings(projectDir, warnings);
 
       const stamp = reviewStamp(new Date());
       const interaction = process.stdin.isTTY ? 'interactive' : 'headless';
