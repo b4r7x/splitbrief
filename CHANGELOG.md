@@ -394,6 +394,7 @@
 - Home hides the logo in a terminal too narrow for it, instead of breaking each logo line in two and pushing the crew lines off the screen.
 - When the first tool check fails or cannot run and its card does not fit on home, the line above the input says so and how to retry, and the crew line stops saying it is still detecting tools.
 - Warnings now say in plain words what went wrong and name the file involved. They also say what SPLITBRIEF does next.
+- When you continue a run that stopped while your recovery choice was applied, the screen no longer shows the build as failed for a moment.
 
 ## [0.1.0] - 2026-08-07
 
