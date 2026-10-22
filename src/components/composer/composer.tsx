@@ -142,6 +142,8 @@ interface ComposerProps {
   homeHint?: string | undefined;
   /** What the screen is waiting on. It takes the reserved row for as long as it lasts. */
   homeStatus?: string | undefined;
+  /** A notice that keeps the reserved row under feedback, where the hint gives it up. */
+  homeNotice?: string | undefined;
   boxHints?: ComposerBoxHints | undefined;
   onEmptySubmit?: (() => void) | undefined;
   onTab?: (() => void) | undefined;
@@ -193,6 +195,7 @@ function ComposerInput({
   promptGlyph,
   homeHint,
   homeStatus,
+  homeNotice,
   boxHints,
   onEmptySubmit,
   onTab,
@@ -613,16 +616,19 @@ function ComposerInput({
   const parked = stopStore.use((state) => state.phase === 'parked');
   const stopping = stopStore.use((state) => state.intent !== 'none');
   const reserveHomeHint = currentScreen === 'home';
-  // A check the screen is waiting on owns the row while it runs. An affordance never rides a
-  // status, so the drop invitation stands down until the row is a hint again.
+  // A check the screen is waiting on owns the row while it runs, under feedback too. An
+  // affordance never rides a status, so the drop invitation stands down until the row is a hint
+  // again.
   const { feedbackLine, homeHintLine } = deriveHomeHintLines({
     active: reserveHomeHint && !showCommandSuggestions && !showReferenceSuggestions,
-    homeHint: homeStatus ?? homeHint,
+    homeHint,
+    notice: homeStatus ?? homeNotice,
     feedbackMessage,
     width: width ?? cols,
     dropEnabled: homeStatus === undefined && !disabled && supportsImages && commandsOnly !== true,
   });
-  const hintRows = feedbackLine?.split('\n').length ?? 1;
+  const feedbackRows = feedbackLine?.split('\n') ?? [];
+  const hintRows = Math.max(1, feedbackRows.length + (homeHintLine === null ? 0 : 1));
   // Home plans its body around this height, so it counts the home row and its message rows.
   const dockRows = (reserveHomeHint ? hintRows : 0) + visibleRows + 2;
 
@@ -646,22 +652,21 @@ function ComposerInput({
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
       {reserveHomeHint && (
         <Box flexDirection="column" alignItems="center" height={hintRows}>
-          {feedbackLine !== null ? (
-            feedbackLine.split('\n').map((row, index) => (
-              <Text
-                key={`${index}:${row}`}
-                color={feedbackIsError ? theme.error : theme.textDim}
-                wrap="truncate-end"
-              >
-                {row}
-              </Text>
-            ))
-          ) : homeHintLine !== null ? (
+          {feedbackRows.map((row, index) => (
+            <Text
+              key={`${index}:${row}`}
+              color={feedbackIsError ? theme.error : theme.textDim}
+              wrap="truncate-end"
+            >
+              {row}
+            </Text>
+          ))}
+          {homeHintLine !== null ? (
             <Text color={theme.textDim} wrap="truncate-end">
               {homeHintLine}
             </Text>
           ) : (
-            <Text> </Text>
+            feedbackLine === null && <Text> </Text>
           )}
         </Box>
       )}

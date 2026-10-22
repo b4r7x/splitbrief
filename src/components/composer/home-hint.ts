@@ -63,20 +63,22 @@ export interface HomeHintLines {
   homeHintLine: string | null;
 }
 
-// Feedback takes the home row when there is any, otherwise the hint does. Feedback wraps at
-// word boundaries onto up to FEEDBACK_MAX_ROWS rows, so a long save message keeps its sign-in
-// command; the hint is one row. A focused chat input paints no placeholder (segments.ts), so the
-// drop affordance rides the hint line — the one home row that renders while the box is live
-// enough to take a drop. It is the optional half of that line: it goes whole, or not at all,
-// never clipped.
+// Feedback takes the home row from the hint when there is any. A notice keeps the row: the
+// feedback stacks above it, so the notice row stays put while feedback comes and goes. Feedback
+// wraps at word boundaries onto up to FEEDBACK_MAX_ROWS rows, so a long save message keeps its
+// sign-in command; the hint is one row. A focused chat input paints no placeholder (segments.ts),
+// so the drop affordance rides the hint line — the one home row that renders while the box is
+// live enough to take a drop. It is the optional half of that line: it goes whole, or not at all,
+// never clipped, and never under feedback.
 export function deriveHomeHintLines(opts: {
   active: boolean;
   homeHint: string | undefined;
+  notice?: string | undefined;
   feedbackMessage: string | null;
   width: number;
   dropEnabled: boolean;
 }): HomeHintLines {
-  const { active, homeHint, feedbackMessage, dropEnabled } = opts;
+  const { active, homeHint, notice, feedbackMessage, dropEnabled } = opts;
   const width = Math.max(1, opts.width);
   if (!active || homeHint === undefined) return { feedbackLine: null, homeHintLine: null };
 
@@ -86,13 +88,14 @@ export function deriveHomeHintLines(opts: {
         structureKnownFeedbackMessage(sanitizeTerminalDisplayText(feedbackMessage)),
         { width, maxRows: FEEDBACK_MAX_ROWS },
       ),
-      homeHintLine: null,
+      homeHintLine: notice ?? null,
     };
   }
 
-  const dropFits = getTerminalCellWidth(`${homeHint}${DROP_AFFORDANCE}`) <= width;
+  const line = notice ?? homeHint;
+  const dropFits = getTerminalCellWidth(`${line}${DROP_AFFORDANCE}`) <= width;
   return {
     feedbackLine: null,
-    homeHintLine: `${homeHint}${dropEnabled && dropFits ? DROP_AFFORDANCE : ''}`,
+    homeHintLine: `${line}${dropEnabled && dropFits ? DROP_AFFORDANCE : ''}`,
   };
 }

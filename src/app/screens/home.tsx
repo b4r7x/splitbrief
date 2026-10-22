@@ -320,17 +320,18 @@ export function HomeScreen({
   );
 
   let homeHint: string | undefined;
+  let homeNotice: string | undefined;
   if (!interactionBlocked) {
     homeHint = DEFAULT_HOME_HINT;
     if (canFocus) homeHint = HOME_HINT;
-    // The notice borrows the reserved hint line instead of adding a row, so it
-    // never moves the layout.
-    if (hintNotice) {
-      homeHint = `${refreshFrame} ${
+    if (sessionsActive) homeHint = RECENT_SESSIONS_HINT;
+    // The notice borrows the reserved hint line instead of adding a row; under feedback it keeps
+    // that line and the feedback stacks above it.
+    else if (hintNotice) {
+      homeNotice = `${refreshFrame} ${
         discoveryNotice === 'cold' ? BOOT_MANIFEST_TITLE : REFRESHING_TOOLS_TITLE
       }`;
     }
-    if (sessionsActive) homeHint = RECENT_SESSIONS_HINT;
   }
 
   // The check the user is waiting on borrows the same reserved row, so the status appears and goes
@@ -421,6 +422,7 @@ export function HomeScreen({
                 keepPlaceholderWhileFocused
                 homeHint={homeHint}
                 homeStatus={preparationStatus}
+                homeNotice={homeNotice}
                 readClipboardImage={readClipboardImage}
                 listProjectFiles={listProjectFiles}
               />

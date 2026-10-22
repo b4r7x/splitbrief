@@ -403,6 +403,32 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [{ id: 'composer', title: 'Warning count and feature composer' }],
     }),
+    // The same warnings while the first tool check runs: the check keeps a sign on screen.
+    defineScenario({
+      id: 'home-cold-detecting-startup-warnings',
+      title: 'Home · warnings raised while the tools are checked',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Warning count and the tool check above the composer',
+        kind: 'ready',
+        marker: '2 warnings, all shown when you quit',
+      },
+      elements: [{ id: 'header', title: 'Home header' }],
+    }),
+    // The same warnings while a submitted feature waits on its tool check: the status stays.
+    defineScenario({
+      id: 'home-preparing-startup-warnings',
+      title: 'Home · warnings raised while a feature waits on its tool check',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Warning count and the check status above the composer',
+        kind: 'ready',
+        marker: 'Checking tools',
+      },
+      elements: [{ id: 'header', title: 'Home header' }],
+    }),
     // A save message longer than one row wraps whole above the composer, sign-in command included.
     defineScenario({
       id: 'home-save-sign-in',

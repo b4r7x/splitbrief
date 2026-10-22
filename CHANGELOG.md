@@ -389,6 +389,7 @@
 - Each notice about the config file, such as a retired key or a file other users can write, now shows once when you start a run with a feature, resume it or continue it. Before, it showed twice.
 - A warning or error that contains a line break or a tab now shows a space there. Before, the words on each side ran together, and a secret on the line after a break showed in clear.
 - Warnings raised while `start`, `resume`, `continue` or `init` opens the full-screen interface now show on the screen once it opens, led by their count when there are several, and stay on the terminal after you quit. Before, they printed behind the screen and showed only after you quit. The warning that `--project` names a folder inside a repository now shows once instead of twice.
+- Home keeps showing that your tools are being checked while a long warning or save message shows above the input, and a feature waiting on its tool check keeps its status there too.
 
 ## [0.1.0] - 2026-08-07
 

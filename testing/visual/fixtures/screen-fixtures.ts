@@ -1398,6 +1398,14 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-attachment-not-text'), () => createOutsideAttachmentFailureFixture('not-text')],
   [scenarioId('home-save-sign-in'), createSaveSignInFixture],
   [scenarioId('home-startup-warnings'), () => withStartupWarnings(createHomeFixture())],
+  [
+    scenarioId('home-cold-detecting-startup-warnings'),
+    () => withStartupWarnings(createHomeFixture({ cold: true, detecting: true })),
+  ],
+  [
+    scenarioId('home-preparing-startup-warnings'),
+    () => withStartupWarnings(createHomePreparingFixture()),
+  ],
   [scenarioId('home-save-long-draft'), createSaveLongDraftFixture],
   [scenarioId('home-no-config-long-draft'), createNoConfigLongDraftFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
