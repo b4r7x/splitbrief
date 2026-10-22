@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
-import { error, matches } from '../../../utils/error.js';
+import { error, matches, type AppError } from '../../../utils/error.js';
 import { createBoundedOutput, type BoundedOutputMetadata } from '../bounded-output.js';
 import { spawnError, processError } from '../errors.js';
 import {
@@ -32,17 +32,25 @@ export interface SpawnPipeFatalOutcome extends SpawnPipeFatalSignal {
 
 type SpawnPipeCallbackResult = SpawnPipeFatalSignal | undefined;
 
+/** How a child that broke its prompt closed; absent when it did not close within the grace. */
+export type SpawnPipeExit = Readonly<{ code: number | null }>;
+
+const isStdinIncompleteKind = matches('process-stdin-incomplete');
+
 export const spawnPipeError = {
-  stdinIncomplete: (cause?: unknown) =>
+  stdinIncomplete: (cause?: unknown, exit?: SpawnPipeExit) =>
     error(
       'process-stdin-incomplete',
       'Process stdin closed before all input was delivered',
-      undefined,
+      exit,
       cause,
     ),
   stdinClosed: () => error('process-stdin-closed', 'Process stdin is closed'),
   isStdinClosed: matches('process-stdin-closed'),
-  isStdinIncomplete: matches('process-stdin-incomplete'),
+  isStdinIncomplete: (
+    err: unknown,
+  ): err is AppError<'process-stdin-incomplete', SpawnPipeExit | undefined> =>
+    isStdinIncompleteKind(err),
 } as const;
 
 export interface SpawnIdleOptions {
@@ -169,6 +177,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     let proc: ChildProcess;
     let phase: 'active' | 'draining' | 'terminating' | 'settled' = 'active';
     const closed = Promise.withResolvers<void>();
+    let exit: SpawnPipeExit | undefined;
     let stdinWriteComplete = opts.stdin === undefined;
     let stdinEndComplete = false;
     let removeAbortListener: (() => void) | undefined;
@@ -214,7 +223,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       reason:
         | { kind: 'fatal'; signal: SpawnPipeFatalSignal }
         | { kind: 'error'; error: unknown }
-        | { kind: 'stdin-incomplete'; error: unknown },
+        | { kind: 'stdin-incomplete'; cause?: unknown },
     ) => {
       if (phase !== 'active') return;
       cleanup();
@@ -241,7 +250,11 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
         .then(
           () =>
             settleTermination(
-              reason.kind === 'fatal' ? fatalOutcome(reason.signal) : reason.error,
+              reason.kind === 'fatal'
+                ? fatalOutcome(reason.signal)
+                : reason.kind === 'stdin-incomplete'
+                  ? spawnPipeError.stdinIncomplete(reason.cause, exit)
+                  : reason.error,
               true,
             ),
           (err) => settleTermination(err, false),
@@ -387,6 +400,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     });
 
     proc.on('close', (code, signal) => {
+      exit = { code };
       closed.resolve();
       clearIdleTimers();
       if (phase !== 'active') {
@@ -398,7 +412,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
         !opts.stdinOptional &&
         (!stdinWriteComplete || (opts.onStdinReady === undefined && !stdinEndComplete))
       ) {
-        terminate({ kind: 'stdin-incomplete', error: spawnPipeError.stdinIncomplete() });
+        terminate({ kind: 'stdin-incomplete' });
         return;
       }
       unregisterProcess(proc);
@@ -423,7 +437,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       terminate(
         opts.stdin === undefined
           ? { kind: 'error', error: err }
-          : { kind: 'stdin-incomplete', error: spawnPipeError.stdinIncomplete(err) },
+          : { kind: 'stdin-incomplete', cause: err },
       );
     });
 
@@ -490,7 +504,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     stdin.write(opts.stdin, (err) => {
       if (err) {
         if (opts.stdinOptional && isStdinReaderGone(err)) return;
-        terminate({ kind: 'stdin-incomplete', error: spawnPipeError.stdinIncomplete(err) });
+        terminate({ kind: 'stdin-incomplete', cause: err });
         return;
       }
       stdinWriteComplete = true;
