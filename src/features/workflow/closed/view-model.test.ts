@@ -1150,6 +1150,32 @@ describe('review', () => {
     ]);
   });
 
+  it('names each earlier failed final review by the fix cycles before it, as the transcript does', () => {
+    const failed = (cycle: number, at: string) => ({
+      scope: 'final' as const,
+      cycle,
+      outcome: 'fail' as const,
+      blocking: [{ id: 'F1', text: 'Edge case missing' }],
+      at,
+    });
+    const view = derive(readySummary(), {
+      ledger: {
+        ...makeLedger([]),
+        reviews: [
+          failed(0, '2026-09-14T00:00:00.000Z'),
+          failed(1, '2026-09-14T00:01:00.000Z'),
+          failed(1, '2026-09-14T00:02:00.000Z'),
+          failed(2, '2026-09-14T00:03:00.000Z'),
+        ],
+      },
+    });
+    expect(view.failedReviews.map((review) => review.label)).toEqual([
+      'Final review',
+      'Final review after 1 fix cycle',
+      'Final review after 1 fix cycle, re-run',
+    ]);
+  });
+
   it('is not run when the record carries no review at all', () => {
     expect(derive(makeSummary()).review).toEqual({ kind: 'not-run' });
   });

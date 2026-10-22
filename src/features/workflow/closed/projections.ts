@@ -1,11 +1,15 @@
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
-import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
+import type {
+  EvidenceLedger,
+  EvidenceReview,
+  EvidenceTask,
+} from '../../../core/schemas/evidence.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
 import { namedFailures } from '../../../core/review/base-split.js';
-import { reviewName } from '../../../core/recovery/headline.js';
+import { finalReviewAnchor, reviewName } from '../../../core/recovery/headline.js';
 import type {
   BriefRow,
   BriefRowState,
@@ -435,20 +439,33 @@ export function reviewView(
 
 /**
  * The reviews the ledger recorded as failed, except the last final review: that one is the review
- * of record, which the Review row already states.
+ * of record, which the Review row already states. A final review is named as the transcript names
+ * it, by the fix cycles before it and a re-run within one cycle.
  */
 export function failedReviewViews(ledger: EvidenceLedger | null): FailedReviewView[] {
   const reviews = ledger?.reviews ?? [];
   const earlier = reviews.at(-1)?.scope === 'final' ? reviews.slice(0, -1) : reviews;
-  return earlier
-    .filter((review) => review.outcome === 'fail')
-    .map((review) => ({
-      label: reviewName(review),
-      blocking: review.blocking.map((entry) => ({
-        id: oneLineDisplayText(entry.id),
-        text: oneLineDisplayText(entry.text),
-      })),
-    }));
+  const label = (review: EvidenceReview, index: number): string => {
+    if (review.scope !== 'final') return reviewName(review);
+    const reruns = reviews
+      .slice(0, index)
+      .filter((before) => before.scope === 'final' && before.cycle === review.cycle).length;
+    const anchor = finalReviewAnchor(review.cycle, reruns);
+    return anchor === undefined ? reviewName(review) : `${reviewName(review)} ${anchor}`;
+  };
+  return earlier.flatMap((review, index) =>
+    review.outcome === 'fail'
+      ? [
+          {
+            label: label(review, index),
+            blocking: review.blocking.map((entry) => ({
+              id: oneLineDisplayText(entry.id),
+              text: oneLineDisplayText(entry.text),
+            })),
+          },
+        ]
+      : [],
+  );
 }
 
 export function scopeView(summary: Summary): ScopeView {

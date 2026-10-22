@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- When a final review failed more than once, the closed run listed the failed reviews with the same name. Each one now says how many fix cycles came before it, as in the transcript.
 - A slash command typed into the answer field of a free-text planner question now runs. It no longer shows "A slash command is not a message", and the question stays open.
 - A seat you change for a BUILD profile other than the default, then use, is now recorded as a seat change in the transcript and the review packet.
 - A seat you save while a new run checks its tools now says `seat changes after the next brief`, which is when the run takes it. Before, home said the seat was saved and showed it in the crew, while the first brief still ran on the old seat.

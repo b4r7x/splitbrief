@@ -35,6 +35,15 @@ export function reviewName(
   return review.afterTaskId === undefined ? 'Task review' : `Review ${review.afterTaskId}`;
 }
 
+/** What tells final reviews apart: the fix cycles before one, and a re-run within one cycle. */
+export function finalReviewAnchor(fixCycles: number, reruns: number): string | undefined {
+  const parts = [
+    ...(fixCycles > 0 ? [`after ${countNoun(fixCycles, 'fix cycle')}`] : []),
+    ...(reruns > 0 ? [reruns === 1 ? 're-run' : `re-run ${reruns}`] : []),
+  ];
+  return parts.length === 0 ? undefined : parts.join(', ');
+}
+
 /** A review that judged its scope and found blockers, in the one wording every surface shares. */
 export function reviewFailedCause(review: string, blocking: number): string {
   return `${review} failed with ${countNoun(blocking, 'blocking finding')}`;

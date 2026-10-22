@@ -822,8 +822,9 @@ const checkpointPredicates = [
   [
     checkpointId('closed-fix-cycle'),
     (context) =>
-      includesAll('Final review', '2 blocking', 'email field is missing.')(context) &&
-      (context.viewport.cols < 80 || includesAll('Review T002 failed · 1 blocking')(context)),
+      includesAll('Final review after 1 fix cycle', 'email field is missing.')(context) &&
+      (context.viewport.cols < 80 ||
+        includesAll('Review T002 failed · 1 blocking', '2 blocking')(context)),
   ],
   [checkpointId('closed-undone'), includesAll('Apply undone')],
   [checkpointId('closed-undo-conflicts'), includesAll('1 conflict kept')],
@@ -960,6 +961,7 @@ const checkpointPredicates = [
   [checkpointId('left-isolation'), includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],
   [checkpointId('repeated-timeout'), includesAll()],
+  [checkpointId('recovery-plan-timeout'), includesAll('timed out')],
   [checkpointId('at-rest-left-isolation'), includesAll()],
   [checkpointId('gates-approved'), includesAll()],
   [checkpointId('gate-stopped'), includesAll()],
