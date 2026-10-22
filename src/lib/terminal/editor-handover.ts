@@ -1,10 +1,4 @@
-import {
-  kittyPushSequence,
-  setTerminalInputModes,
-  terminalSequences,
-  writeTerminalSequence,
-} from './control.js';
-import { detectKittyKeyboardFlags, resolveKittyFlagBits } from './kitty-keyboard.js';
+import { setTerminalInputModes, terminalSequences, writeTerminalSequence } from './control.js';
 
 type HandoverSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP' | 'SIGTSTP' | 'SIGCONT';
 
@@ -24,6 +18,8 @@ export interface TerminalHandoverConfig {
   sourceStdin: TerminalHandoverStdin;
   beforeSuspend?: (() => void) | undefined;
   beforeResume?: (() => void) | undefined;
+  /** The keyboard-mode push Ink wrote, while that mode is on. The editor gets the terminal without it. */
+  keyboardPush?: (() => string | undefined) | undefined;
 }
 
 interface SignalSnapshot {
@@ -119,10 +115,9 @@ export function suspendTerminalForEditor(config?: TerminalHandoverConfig): void 
       const paste = handover.paste ?? handover.mouse;
       if (handover.mouse || paste)
         setTerminalInputModes('disable', { mouse: handover.mouse, paste });
-      if (handover.fullscreen) {
+      if (handover.keyboardPush?.() !== undefined)
         writeTerminalSequence(terminalSequences.popKittyKeyboard);
-        writeTerminalSequence(terminalSequences.exitAltBuffer);
-      }
+      if (handover.fullscreen) writeTerminalSequence(terminalSequences.exitAltBuffer);
     }
     // Ink hides the hardware cursor once at mount and never re-asserts it, so the handover
     // owns visibility in both directions: the editor (or shell) gets a cursor even in
@@ -150,11 +145,8 @@ export function resumeTerminalAfterEditor(config?: TerminalHandoverConfig): void
     // clean exit, SIGINT death, spawn failure — the TUI takes the screen back cursor-hidden.
     writeTerminalSequence(terminalSequences.hideCursor);
     if (handover) {
-      if (handover.fullscreen) {
-        writeTerminalSequence(
-          kittyPushSequence(resolveKittyFlagBits(detectKittyKeyboardFlags().flags)),
-        );
-      }
+      const keyboardPush = handover.keyboardPush?.();
+      if (keyboardPush !== undefined) writeTerminalSequence(keyboardPush);
       process.stdout.emit('resize');
       const paste = handover.paste ?? handover.mouse;
       if (handover.mouse || paste)

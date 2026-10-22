@@ -197,8 +197,14 @@ export async function renderApp(
     }
   });
 
+  // Every frame Ink writes goes through this stream. Ink unmounts on process exit and paints
+  // a final frame, which after a signal or a crash would land on the restored main screen
+  // (a frame as tall as the terminal clears it and the scrollback), so the restore closes it
+  // first; only the keyboard-mode pop of that unmount still reaches the terminal.
+  const editorOutput = createEditorOutput(process.stdout);
   const cleanupTerminal = () => {
     try {
+      editorOutput.close();
       setActiveTerminalHandover(undefined);
       setActiveFilteredStdin(undefined);
       disableFilteredStdin();
@@ -292,7 +298,6 @@ export async function renderApp(
   // cost is a whole-frame rewrite per repaint, which Ink brackets in DEC 2026 synchronized
   // output on a TTY outside CI (ink/build/write-synchronized.js) and leaves unbracketed on a
   // pipe. Under CI there is no cost at all: Ink drops every non-static redraw (ink.js:262).
-  const editorOutput = createEditorOutput(process.stdout);
   const renderFallback = (input: FilteredStdin) => {
     setActiveTerminalHandover({
       fullscreen: false,
@@ -300,6 +305,7 @@ export async function renderApp(
       sourceStdin: process.stdin,
       beforeSuspend: editorOutput.suspend,
       beforeResume: editorOutput.resume,
+      keyboardPush: editorOutput.keyboardPush,
     });
     const instance = render(appElement, {
       exitOnCtrlC: false,
@@ -346,6 +352,7 @@ export async function renderApp(
               editorOutput.resume();
               selection?.resume();
             },
+            keyboardPush: editorOutput.keyboardPush,
           },
           setHandover: setActiveTerminalHandover,
         });
