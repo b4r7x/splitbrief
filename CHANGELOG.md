@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- A seat you change for a BUILD profile other than the default, then use, is now recorded as a seat change in the transcript and the review packet.
 - A seat you save while a new run checks its tools now says `seat changes after the next brief`, which is when the run takes it. Before, home said the seat was saved and showed it in the crew, while the first brief still ran on the old seat.
 - Messages that count things now say `1 attempt`, `2 files` or `there is 1 session` instead of `attempt(s)` or `file(s)`.
 - `/usage` and `/copy` no longer call the token totals of a new run with an Antigravity, OpenCode or Kilo Code seat `legacy; coverage unknown`. Each count these tools report now reads as reported, and a count they do not send reads as not reported.

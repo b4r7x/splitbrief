@@ -133,6 +133,37 @@ describe('reconcileSeatIdentities', () => {
     expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(current));
   });
 
+  // A brief can route to a BUILD profile other than the default; a seat saved for that profile
+  // runs that brief, so the record names it as a move the same way it names the default's.
+  const profiles = (small: { tool: 'antigravity' | 'claude-code'; model: string }) =>
+    makeConfig({
+      implementerProfiles: {
+        default: 'big',
+        profiles: {
+          big: { kind: 'cli', tool: 'claude-code', model: 'haiku' },
+          small: { kind: 'cli', ...small },
+        },
+      },
+    });
+
+  it('reports a seat moved on a BUILD profile other than the default', () => {
+    const ref = session('seats-reconcile-profile');
+    recordSeatIdentities(ref, profiles({ tool: 'antigravity', model: 'gemini-nonexistent-9' }));
+    const current = profiles({ tool: 'claude-code', model: 'haiku' });
+
+    const changes = reconcileSeatIdentities(ref, current);
+
+    expect(changes).toEqual([
+      expect.objectContaining({
+        seat: 'build',
+        profile: 'small',
+        beforeIds: expect.objectContaining({ tool: 'antigravity', model: 'gemini-nonexistent-9' }),
+        afterIds: expect.objectContaining({ tool: 'claude-code', model: 'haiku' }),
+      }),
+    ]);
+    expect(reconcileSeatIdentities(ref, current)).toEqual([]);
+  });
+
   it('leaves the record alone when the crew did not move', () => {
     const ref = session('seats-reconcile-same');
     const config = makeConfig();
