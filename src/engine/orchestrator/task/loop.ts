@@ -3,7 +3,11 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import { runSingleTask } from './step.js';
-import { commitWorkflowState, raisePendingRecovery } from '../state-ops.js';
+import {
+  commitWorkflowState,
+  raisePendingRecovery,
+  rebaseOnPersistedWorkflowState,
+} from '../state-ops.js';
 import { refreshAndPersistCode } from './refresh-code.js';
 import {
   getRunnerDisplayName,
@@ -59,12 +63,15 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     return state;
   }
 
-  function commitTrackedState(next: WorkflowState): WorkflowState {
-    const committed = commitWorkflowState({
-      ref: { projectDir, sessionId },
-      expected: next,
-      next,
-    });
+  // The loop holds its state across awaits; a head saved meanwhile (a queued message) wins
+  // and the loop's own fields go on top of it.
+  function commitTrackedState(
+    current: WorkflowState,
+    apply: (head: WorkflowState) => WorkflowState,
+  ): WorkflowState {
+    const ref = { projectDir, sessionId };
+    const head = rebaseOnPersistedWorkflowState(ref, current, { keepUnsaved: true });
+    const committed = commitWorkflowState({ ref, expected: head, next: apply(head) });
     if (committed.kind === 'conflict') {
       throw error(
         'state-persistence-conflict',
@@ -83,8 +90,9 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   }
 
   function persistTaskBreakdowns(): void {
-    state = { ...state, taskBreakdowns: [...taskBreakdowns] };
-    commitTrackedState(syncBaselineIntoState());
+    commitTrackedState(state, (head) =>
+      syncBaselineIntoState({ ...head, taskBreakdowns: [...taskBreakdowns] }),
+    );
   }
 
   const resolvedProfiles = resolveImplementerProfiles(config);
@@ -236,7 +244,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
         // On disk, not only tracked: a crash or a park between here and the brief's end
         // reads this snapshot back, and a rebase from the persisted head would lose it.
         changedFilesBaseline = withActiveTaskSnapshot(changedFilesBaseline, taskStartSnapshot);
-        return commitTrackedState(syncBaselineIntoState(snapshotState));
+        return commitTrackedState(snapshotState, syncBaselineIntoState);
       },
       onTaskAcceptedFiles: (files) => {
         for (const file of files) taskAcceptedFiles.add(file);
