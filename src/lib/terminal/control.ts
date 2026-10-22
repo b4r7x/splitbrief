@@ -18,10 +18,6 @@ export const terminalSequences = {
   eraseDown: '\u001b[J',
 } as const;
 
-export function kittyPushSequence(bitmask: number): string {
-  return `\u001b[>${bitmask}u`;
-}
-
 export function cursorUpSequence(rows: number): string {
   return `\u001b[${rows}A`;
 }

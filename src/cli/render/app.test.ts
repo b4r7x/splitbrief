@@ -5,6 +5,11 @@ import { withFullScreen } from 'fullscreen-ink';
 import { render } from 'ink';
 import { terminalBackgroundStore } from '../../stores/ui/terminal-background.js';
 import { processError } from '../../lib/process/errors.js';
+import { terminalSequences } from '../../lib/terminal/control.js';
+import {
+  resumeTerminalAfterEditor,
+  suspendTerminalForEditor,
+} from '../../lib/terminal/editor-handover.js';
 import { createCrashHandler, createTerminationHandler } from './process-lifecycle.js';
 import { createCrashListener, createTerminationSignalListener, renderApp } from './app.js';
 
@@ -321,6 +326,118 @@ describe('renderApp completion', () => {
     await rendering;
     expect(exit).toHaveBeenCalledExactlyOnceWith(143);
   });
+
+  // Ink unmounts on process exit and paints a final frame; a frame as tall as the terminal
+  // is written as a clear of the screen and the scrollback.
+  it.each([
+    ['a termination signal', true],
+    ['a termination signal', false],
+    ['a crash', true],
+    ['a crash', false],
+  ] as const)(
+    'paints nothing after the terminal is restored on %s, fullscreen=%s',
+    async (stop, fullscreen) => {
+      const inkExit = Promise.withResolvers<void>();
+      let inkStdout: NodeJS.WriteStream | undefined;
+      vi.mocked(render).mockImplementationOnce((_node, options) => {
+        if (options !== undefined && 'stdout' in options) inkStdout = options.stdout;
+        return inkInstance(() => inkExit.promise);
+      });
+      vi.mocked(withFullScreen).mockImplementationOnce((_node, options) => {
+        if (options !== undefined && 'stdout' in options) inkStdout = options.stdout;
+        return {
+          start: async () => {},
+          waitUntilExit: () => inkExit.promise,
+          instance: inkInstance(() => inkExit.promise),
+        };
+      });
+      const writes: string[] = [];
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        if (chunk === terminalSequences.exitAltBuffer) inkStdout?.write('frame during restore');
+        return true;
+      });
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const exit = vi.fn(() => {
+        inkStdout?.write('final frame');
+        inkStdout?.write(terminalSequences.popKittyKeyboard);
+      });
+      const known = new Set(process.listeners('uncaughtException'));
+      const rendering = renderApp(createElement(Fragment), { fullscreen }, { exit });
+      try {
+        await vi.waitFor(() => expect(inkStdout).toBeDefined());
+        inkStdout?.write('live frame');
+        if (stop === 'a crash') {
+          const crash = process
+            .listeners('uncaughtException')
+            .find((listener) => !known.has(listener));
+          crash?.(new Error('boom'), 'uncaughtException');
+        } else {
+          process.emit('SIGTERM', 'SIGTERM');
+        }
+        await vi.waitFor(() => expect(exit).toHaveBeenCalledOnce());
+        expect(writes).toContain('live frame');
+        expect(writes).not.toContain('frame during restore');
+        expect(writes).not.toContain('final frame');
+        expect(writes.at(-1)).toBe(terminalSequences.popKittyKeyboard);
+        if (fullscreen) expect(writes).toContain(terminalSequences.exitAltBuffer);
+      } finally {
+        inkExit.resolve();
+        await rendering;
+        stdout.mockRestore();
+        stderr.mockRestore();
+      }
+    },
+  );
+  it.each([true, false])(
+    'leaves the keyboard mode off when it crashes while an editor holds the terminal, fullscreen=%s',
+    async (fullscreen) => {
+      const inkExit = Promise.withResolvers<void>();
+      let inkStdout: NodeJS.WriteStream | undefined;
+      vi.mocked(render).mockImplementationOnce((_node, options) => {
+        if (options !== undefined && 'stdout' in options) inkStdout = options.stdout;
+        return inkInstance(() => inkExit.promise);
+      });
+      vi.mocked(withFullScreen).mockImplementationOnce((_node, options) => {
+        if (options !== undefined && 'stdout' in options) inkStdout = options.stdout;
+        return {
+          start: async () => {},
+          waitUntilExit: () => inkExit.promise,
+          instance: inkInstance(() => inkExit.promise),
+        };
+      });
+      const writes: string[] = [];
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const exit = vi.fn(() => {
+        inkStdout?.write(terminalSequences.popKittyKeyboard);
+      });
+      const known = new Set(process.listeners('uncaughtException'));
+      const rendering = renderApp(createElement(Fragment), { fullscreen }, { exit });
+      try {
+        await vi.waitFor(() => expect(inkStdout).toBeDefined());
+        inkStdout?.write('\u001b[>1u');
+        suspendTerminalForEditor();
+        const crash = process
+          .listeners('uncaughtException')
+          .find((listener) => !known.has(listener));
+        crash?.(new Error('boom'), 'uncaughtException');
+        await vi.waitFor(() => expect(exit).toHaveBeenCalledOnce());
+        expect(writes.filter((chunk) => chunk === terminalSequences.popKittyKeyboard)).toHaveLength(
+          1,
+        );
+      } finally {
+        resumeTerminalAfterEditor();
+        inkExit.resolve();
+        await rendering;
+        stdout.mockRestore();
+        stderr.mockRestore();
+      }
+    },
+  );
 });
 
 describe('app process listeners', () => {

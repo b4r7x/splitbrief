@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { detectKittyKeyboardFlags, resolveKittyFlagBits } from './kitty-keyboard.js';
+import { detectKittyKeyboardFlags } from './kitty-keyboard.js';
 
 describe('detectKittyKeyboardFlags', () => {
   let savedTerm: string | undefined;
@@ -59,11 +59,5 @@ describe('detectKittyKeyboardFlags', () => {
     delete process.env['TERM_PROGRAM'];
 
     expect(detectKittyKeyboardFlags().mode).toBe('auto');
-  });
-});
-
-describe('resolveKittyFlagBits', () => {
-  it('maps disambiguateEscapeCodes to bit 1', () => {
-    expect(resolveKittyFlagBits(['disambiguateEscapeCodes'])).toBe(1);
   });
 });

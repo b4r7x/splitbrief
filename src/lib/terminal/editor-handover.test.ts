@@ -68,6 +68,8 @@ afterEach(() => {
   setActiveTerminalHandover(undefined);
 });
 
+const INK_KEYBOARD_PUSH = '\u001b[>1u';
+
 describe('terminal handover for $EDITOR', () => {
   it.each([true, false])(
     'requests a TUI redraw after the fullscreen=%s editor returns',
@@ -91,7 +93,12 @@ describe('terminal handover for $EDITOR', () => {
 
   it('brackets the editor with disable-then-restore sequences in fullscreen mouse mode', () => {
     const { stdin, calls } = makeFakeStdin();
-    const config: TerminalHandoverConfig = { fullscreen: true, mouse: true, sourceStdin: stdin };
+    const config: TerminalHandoverConfig = {
+      fullscreen: true,
+      mouse: true,
+      sourceStdin: stdin,
+      keyboardPush: () => INK_KEYBOARD_PUSH,
+    };
     setActiveTerminalHandover(config);
     const written = captureStdout();
 
@@ -111,6 +118,7 @@ describe('terminal handover for $EDITOR', () => {
     );
 
     expect(resumeWrites).toContain(terminalSequences.enterAltBuffer);
+    expect(resumeWrites).toContain(INK_KEYBOARD_PUSH);
     expect(resumeWrites).toContain(terminalSequences.enableButtonEventMouse);
     expect(resumeWrites).not.toContain(terminalSequences.showCursor);
     expect(resumeWrites.indexOf(terminalSequences.hideCursor)).toBeGreaterThan(
@@ -120,9 +128,14 @@ describe('terminal handover for $EDITOR', () => {
     expect(calls).toEqual(['pause', 'resume']);
   });
 
-  it('re-hides the hardware cursor on resume for a non-fullscreen handover', () => {
+  it('hands the keyboard mode over and re-hides the hardware cursor for a non-fullscreen handover', () => {
     const { stdin } = makeFakeStdin();
-    const config: TerminalHandoverConfig = { fullscreen: false, mouse: false, sourceStdin: stdin };
+    const config: TerminalHandoverConfig = {
+      fullscreen: false,
+      mouse: false,
+      sourceStdin: stdin,
+      keyboardPush: () => INK_KEYBOARD_PUSH,
+    };
     const written = captureStdout();
 
     suspendTerminalForEditor(config);
@@ -131,6 +144,8 @@ describe('terminal handover for $EDITOR', () => {
 
     expect(written.slice(0, afterSuspend)).toContain(terminalSequences.showCursor);
     expect(written.slice(afterSuspend)).toContain(terminalSequences.hideCursor);
+    expect(written.slice(0, afterSuspend)).toContain(terminalSequences.popKittyKeyboard);
+    expect(written.slice(afterSuspend)).toContain(INK_KEYBOARD_PUSH);
     expect(written).not.toContain(terminalSequences.enterAltBuffer);
     expect(written).not.toContain(terminalSequences.exitAltBuffer);
   });
@@ -260,6 +275,23 @@ describe('terminal handover for $EDITOR', () => {
       if (suspended) resumeTerminalAfterEditor(config);
       for (const { signal, listener } of testHandlers) process.off(signal, listener);
     }
+  });
+
+  it('leaves the keyboard mode alone when Ink did not turn it on', () => {
+    const { stdin } = makeFakeStdin();
+    const config: TerminalHandoverConfig = {
+      fullscreen: true,
+      mouse: false,
+      sourceStdin: stdin,
+      keyboardPush: () => undefined,
+    };
+    const written = captureStdout();
+
+    suspendTerminalForEditor(config);
+    resumeTerminalAfterEditor(config);
+
+    expect(written).not.toContain(terminalSequences.popKittyKeyboard);
+    expect(written.some((sequence) => sequence.startsWith('\u001b[>'))).toBe(false);
   });
 
   it('skips alt-buffer and mouse sequences when no handover is active but still pauses stdin', () => {
