@@ -36,8 +36,8 @@ describe('planner question batch', () => {
     store.setQuestions(questions);
     expect(store.get().drafts[0]?.selected).toBe(0);
     expect(store.answer(plainUserMessage('Builder'))).toBeUndefined();
-    expect(store.get().focus).toBe('answer');
-    expect(store.get().drafts[1]?.text).toBe('src/');
+    expect(store.get().focus).toBe('menu');
+    expect(store.get().drafts[1]?.text).toBe('');
     expect(store.answer(plainUserMessage('   '))).toBeUndefined();
     expect(store.get().index).toBe(1);
     store.setFocus('menu', 'src/auth.ts');
@@ -107,12 +107,28 @@ describe('planner question batch', () => {
     expect(store.answer(plainUserMessage('late answer'))).toBeUndefined();
   });
 
-  it('falls back to text for empty options and ignores unavailable defaults', () => {
-    store.setQuestions([
+  it('offers the default of a question with no options as its one option, with an empty field', () => {
+    for (const question of [
       { id: 'empty', type: 'choice', text: 'Pick', options: [], default: 'Suggested' },
-    ]);
-    expect(store.get().focus).toBe('answer');
-    expect(store.get().drafts[0]?.text).toBe('Suggested');
+      { id: 'free', type: 'input', text: 'Pick', default: 'Suggested' },
+    ] satisfies ClarificationQuestion[]) {
+      store.setQuestions([question]);
+      expect(questionOptions(question)).toEqual(['Suggested']);
+      expect(store.get().focus).toBe('menu');
+      expect(store.get().drafts[0]).toEqual({ text: '', selected: 0 });
+    }
+  });
+
+  it('opens the field for a question with neither options nor a default, and ignores unavailable defaults', () => {
+    for (const question of [
+      { id: 'free', type: 'input', text: 'Pick' },
+      { id: 'blank', type: 'input', text: 'Pick', default: ' ' },
+    ] satisfies ClarificationQuestion[]) {
+      store.setQuestions([question]);
+      expect(questionOptions(question)).toEqual([]);
+      expect(store.get().focus).toBe('answer');
+      expect(store.get().drafts[0]).toEqual({ text: '', selected: 0 });
+    }
     store.setQuestions([
       { id: 'empty', type: 'choice', text: 'Pick', options: ['A', 'B'], default: 'Missing' },
     ]);
@@ -184,4 +200,28 @@ it('keeps per-answer bodies and metadata in an exact one-shot batch', () => {
   store.clearHint();
   expect(store.takeAnswerBatch()).toEqual(expected);
   expect(store.takeAnswerBatch()).toBeUndefined();
+});
+
+it('keeps the round Esc closed until the reply settles it or another round opens', () => {
+  const round: ClarificationQuestion[] = [
+    { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+    { id: 'files', type: 'input', text: 'Which files?' },
+  ];
+  store.setHint('Type your answer…');
+  store.setQuestions(round);
+  expect(store.get().unanswered).toEqual([]);
+  store.answer(plainUserMessage('Planner'));
+  store.close();
+  expect(store.get()).toMatchObject({ questions: [], unanswered: round, answers: [] });
+  expect(store.get().hint).toBe('Type your answer…');
+
+  store.setQuestions([{ id: 'ready', type: 'confirm', text: 'Proceed?' }]);
+  expect(store.get().unanswered).toEqual([]);
+  store.close();
+  store.clearHint();
+  expect(store.get().unanswered).toEqual([]);
+  store.setQuestions(round);
+  store.close();
+  store.setHint('Reply to the planner…');
+  expect(store.get().unanswered).toEqual([]);
 });

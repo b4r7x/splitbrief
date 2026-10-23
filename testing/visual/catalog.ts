@@ -1767,6 +1767,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-question-default',
+      title: 'Workflow · a free-text question with its default',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'question-default',
+        title: 'The default row and the row that opens an empty answer',
+        kind: 'question',
+        marker: 'Question 1 of 1',
+      },
+      elements: [
+        { id: 'question-panel', title: 'Question panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-question-input',
       title: 'Workflow · answer inside the question',
       surface: screenSurface('workflow'),
@@ -1829,6 +1845,53 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Answered questions transcript' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-question-replied',
+      title: 'Workflow · a round answered in the composer after Esc',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'question-replied',
+        title: 'The round and the reply in one answered block',
+        kind: 'question',
+        marker: 'Answered · 2 questions',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Answered round with the reply' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-question-unanswered',
+      title: 'Workflow · a planner round left open with Esc',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'question-unanswered',
+        title: 'The open round above the composer that takes the reply',
+        kind: 'question',
+        marker: 'Unanswered · 2 questions',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Unanswered round' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-reviewer-question-unanswered',
+      title: 'Workflow · a reviewer question left open with Esc',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'reviewer-question-unanswered',
+        title: 'The reviewer question above the composer that takes the reply',
+        kind: 'question',
+        marker: 'Unanswered · 1 question',
+      },
+      elements: [
+        { id: 'transcript', title: 'Unanswered reviewer question' },
+        { id: 'composer', title: 'Reply to the reviewer' },
       ],
     }),
     defineScenario({
@@ -2117,6 +2180,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-question',
+      title: 'Workflow · a run parked at a question round',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-question',
+        title: 'Run waiting at its questions',
+        kind: 'question',
+        marker: 'Unanswered · 2 questions',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript and open round' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

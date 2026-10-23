@@ -3,6 +3,7 @@ import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/
 import { taskId } from '../../../../core/schemas/task.js';
 import { arrowSep } from '../../../../core/separators.js';
 import type { DriftFinding } from '../../../../core/schemas/drift.js';
+import type { ClarificationQuestion } from '../../../../core/schemas/question.js';
 import { parseEngineEvent } from '../../../../engine/events/schema.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../../stores/workflow/streaming-output.js';
@@ -1535,6 +1536,158 @@ describe('event row dispatch', () => {
     expect(text).not.toContain(']52');
     expect(text).not.toContain('[2J');
     expect(text).toContain('beforeafter');
+  });
+
+  describe('a reply that answers a question round in words', () => {
+    const round = [
+      {
+        id: 'module',
+        type: 'choice' as const,
+        text: 'Which module should change?',
+        options: ['src/auth.ts', 'src/session.ts'],
+      },
+      { id: 'api', type: 'confirm' as const, text: 'Keep the public API?' },
+      { id: 'files', type: 'input' as const, text: 'Which files?' },
+    ];
+    const lines = (event: EngineEvent, width: number) =>
+      eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width, viewportRows: 40, streaming },
+      });
+    const reply = (text: string, questions: readonly ClarificationQuestion[]) =>
+      ({
+        type: 'user_message',
+        ts: 0,
+        phase: 'planning',
+        text,
+        questions: [...questions],
+      }) satisfies EngineEvent;
+
+    it.each([
+      [1, ['· Which module should change?']],
+      [2, ['· Which module should change?', '· Keep the public API?']],
+      [3, ['· Which module should change?', '· Keep the public API?', '· Which files?']],
+    ])(
+      'lists the %i questions of the round, then the reply once under all of them',
+      (size, asked) => {
+        for (const width of [120, 80, 60]) {
+          const rows = lines(
+            reply('Change src/session.ts and keep it.', round.slice(0, size)),
+            width,
+          );
+
+          expect(rows.map(rowText)).toEqual([
+            `Answered · ${size === 1 ? '1 question' : `${size} questions`}`,
+            ...asked,
+            'You → Change src/session.ts and keep it.',
+          ]);
+          expect(rows.filter((row) => row.kind === 'prompt')).toHaveLength(1);
+        }
+      },
+    );
+
+    it('keeps every line of a reply that spans lines under the questions', () => {
+      const rows = lines(reply('Change src/session.ts.\nKeep it.', round.slice(0, 2)), 80);
+
+      expect(rows.map(rowText)).toEqual([
+        'Answered · 2 questions',
+        '· Which module should change?',
+        '· Keep the public API?',
+        'You → Change src/session.ts.',
+        'Keep it.',
+      ]);
+    });
+
+    it('wraps a long reply on the content column without a lone last word', () => {
+      const text =
+        'Change src/session.ts, keep the public API exactly as it is today, and leave the auth flow alone.';
+      const rows = lines(reply(text, round.slice(0, 2)), 60).map(rowText);
+
+      expect(rows.slice(0, 3)).toEqual([
+        'Answered · 2 questions',
+        '· Which module should change?',
+        '· Keep the public API?',
+      ]);
+      const answer = rows.slice(3);
+      expect(answer[0]?.startsWith('You → Change')).toBe(true);
+      expect(answer.length).toBeGreaterThan(1);
+      expect(answer.slice(1).every((line) => line !== '' && !line.startsWith(' '))).toBe(true);
+      expect(answer.at(-1)).toContain(' ');
+      expect(answer.join(' ').replaceAll(/\s+/g, ' ')).toBe(`You → ${text}`);
+    });
+
+    it('hangs a long question under its text, two cells in', () => {
+      const long = {
+        id: 'scope',
+        type: 'input' as const,
+        text: 'Which modules and which of their callers should the refactor of the session cover?',
+      };
+      const rows = lines(reply('Only src/session.ts.', [long]), 60).map(rowText);
+
+      const question = rows.slice(1, -1);
+      expect(rows[0]).toBe('Answered · 1 question');
+      expect(question.length).toBeGreaterThan(1);
+      expect(question[0]?.startsWith('· Which modules')).toBe(true);
+      expect(question.slice(1).every((line) => /^ {2}\S/.test(line))).toBe(true);
+      expect(question.join(' ').replace(/^· /, '').replaceAll(/\s+/g, ' ')).toBe(long.text);
+      expect(rows.at(-1)).toBe('You → Only src/session.ts.');
+    });
+
+    it('names the attached files after the answered round', () => {
+      const rows = lines(
+        {
+          ...reply('Read @/Users/me/notes/brief.md', round.slice(0, 2)),
+          attachedInputs: [{ path: '/Users/me/notes/brief.md', kind: 'text' }],
+        },
+        80,
+      ).map((row) => rowText(row).trim());
+
+      expect(rows).toEqual([
+        'Answered · 2 questions',
+        '· Which module should change?',
+        '· Keep the public API?',
+        'You → Read @/Users/me/notes/brief.md',
+        'Attached files · 1',
+        'text · /Users/me/notes/brief.md',
+      ]);
+    });
+
+    it.each([
+      [
+        'a panel answer',
+        [
+          { question: 'Which module should change?', answer: 'src/auth.ts' },
+          { question: 'Keep the public API?', answer: 'Yes' },
+        ],
+      ],
+      ['an empty ⏎ that takes the default', [{ question: 'Keep the public API?', answer: 'Yes' }]],
+      [
+        'a typed reply to a review or consult question',
+        [{ question: 'Which store?', answer: 'redis' }],
+      ],
+    ])('keeps the numbered pairs for %s', (_answer, qa) => {
+      const rows = lines(
+        { type: 'user_message', ts: 0, phase: 'planning', text: 'answers', qa },
+        80,
+      ).map(rowText);
+
+      expect(rows).toEqual([
+        `Answered · ${qa.length === 1 ? '1 question' : `${qa.length} questions`}`,
+        ...qa.flatMap((pair, index) => [`${index + 1}. ${pair.question}`, `You → ${pair.answer}`]),
+      ]);
+    });
+
+    it('shows a reply with no round as the plain reply it always was', () => {
+      const rows = lines(
+        { type: 'user_message', ts: 0, phase: 'planning', text: 'Keep the public API.' },
+        80,
+      );
+
+      expect(rows.map(rowText).join('\n')).toContain('Keep the public API.');
+      expect(rows.map(rowText).join('\n')).not.toContain('Answered ·');
+    });
   });
 
   describe('the attached files of a request', () => {

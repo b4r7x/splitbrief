@@ -938,6 +938,8 @@ A diagnostic key includes its path, position and message. Match exact keys first
 **Clarifications / queue / messages (8):**
 `clarifications_collected` and `clarification_answered` (replay only: no producer now), `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`, `steerable_call`
 
+`user_message` carries `qa` when the question panel answered a round, and the round's `questions` when the user answered it in words: a composer reply after `esc`, a reply from the instruction composer, or a typed correction at rest. `recordAnswers` (`src/engine/orchestrator/planning/session.ts`) sets `questions`; the transcript shows one `Answered · <n> questions` block with one `· <question>` line per question and `You → <reply>` once under all of them (`repliedQuestionsRowBlock`); `qa` keeps the numbered pairs (`answeredQuestionsRowBlock`). A log without the field replays the reply as a plain user row.
+
 `message_queued` and `queue_drained` carry optional `seat` and `taskId` fields. `seat` is a `CrewSeatId`: `plan`, `build`, or `review`. BUILD events name the running brief with `taskId`. `commitQueueMessagesDrained` and `drainQueue` include these fields when callers supply them. `drainQueueForReview` publishes `queue_drained` with seat `review` when it drains messages.
 
 `message_queued` also carries optional `steerable: boolean`. The queue sets it to `true` when it captures a matching steerable call. The transcript uses this saved value for delivery timing.

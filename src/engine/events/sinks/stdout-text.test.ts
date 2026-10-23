@@ -45,6 +45,20 @@ describe('createStdoutTextSink', () => {
     expect(lines[0]?.startsWith('attached files: /tmp/a')).toBe(true);
   });
 
+  it('prints nothing more for a reply that answers a question round in words', () => {
+    expect(
+      collect([
+        {
+          type: 'user_message',
+          ts,
+          phase: 'planning',
+          text: 'Keep it.',
+          questions: [{ id: 'q1', type: 'confirm', text: 'Keep the public API?' }],
+        },
+      ]),
+    ).toEqual(['phase: planning']);
+  });
+
   it('prints the attached files of a request on one line', () => {
     const request: EngineEventOf<'user_message'> = {
       type: 'user_message',

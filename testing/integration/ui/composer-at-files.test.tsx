@@ -185,7 +185,12 @@ describe('composer @ files', () => {
       { timeout: 5000 },
     );
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-    ui.stdin.write(` @${path}`);
+    // The second row under the default opens an empty field for an answer of one's own.
+    ui.stdin.write('\u001b[B');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    ui.stdin.write(`Please use @${path}`);
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => expect(reviewStore.get().source).not.toBeNull(), { timeout: 5000 });

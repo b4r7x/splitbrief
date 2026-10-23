@@ -1,4 +1,5 @@
 import type { Phase } from '../../core/schemas/enums.js';
+import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import {
   applyStopRailStages,
   getRailStages,
@@ -39,6 +40,17 @@ export function recordPhase(record: RunRecord): Phase {
   if (summary.stoppedAt !== undefined || summary.totalTasks > 0) return 'implementing';
   if (summary.reviewPacket !== undefined) return 'final-review';
   return 'planning';
+}
+
+/** The questions of the round an open run waits at; a run that waits on nothing else has none. */
+export function openRoundQuestions(record: RunRecord): readonly ClarificationQuestion[] {
+  const { status, hydration } = record;
+  const waitsAtQuestion =
+    status.kind === 'open' &&
+    status.stop.kind === 'waiting-for-you' &&
+    status.stop.on.kind === 'question';
+  if (!waitsAtQuestion || hydration.kind !== 'loaded') return [];
+  return hydration.state.pendingPlannerConversation?.questions ?? [];
 }
 
 /**

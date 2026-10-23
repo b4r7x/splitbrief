@@ -259,6 +259,52 @@ describe('buildPromptCallbacks onPlannerReply', () => {
     );
   });
 
+  it('opens a free-text question with a default on its rows with an empty field, live or asked again on a continued run', async () => {
+    let settle: (message: UserMessageInput) => void = () => {};
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode(''),
+      setQuestionMode: () =>
+        new Promise<UserMessageInput>((resolve) => {
+          settle = resolve;
+        }),
+    });
+    const pending = callbacks.onPlannerReply?.({
+      ...reply,
+      call: 'plan',
+      questions: [{ id: 'case', type: 'input', text: 'Which words?', default: 'a, an' }],
+    });
+    expect(questionPromptStore.get().focus).toBe('menu');
+    expect(questionPromptStore.get().drafts).toEqual([{ text: '', selected: 0 }]);
+    settle(plainUserMessage(''));
+    await pending;
+  });
+
+  it('hands the composer reply on as the answer once Esc closed a question asked again on a continued run', async () => {
+    let settle: (message: UserMessageInput) => void = () => {};
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode(''),
+      setQuestionMode: () =>
+        new Promise<UserMessageInput>((resolve) => {
+          settle = resolve;
+        }),
+    });
+    const pending = callbacks.onPlannerReply?.({
+      ...reply,
+      call: 'plan',
+      questions: [
+        { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+        { id: 'case', type: 'input', text: 'Which words?', default: 'a, an' },
+      ],
+    });
+    questionPromptStore.answer(plainUserMessage('Planner'));
+    questionPromptStore.close();
+    expect(questionPromptStore.get().questions).toEqual([]);
+    settle(plainUserMessage('Use the planner seat and no small words'));
+    await expect(pending).resolves.toEqual(
+      plainUserMessage('Use the planner seat and no small words'),
+    );
+  });
+
   it('returns no reply when the workflow is already unwinding', async () => {
     const controller = new AbortController();
     controller.abort();

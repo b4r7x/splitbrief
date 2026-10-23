@@ -37,7 +37,7 @@ import {
   wrappedTextBlock,
 } from '../row-block-compose.js';
 import { artifactWrittenRowBlock } from './artifact-card.js';
-import { answeredQuestionsRowBlock } from './answered-questions.js';
+import { answeredQuestionsRowBlock, repliedQuestionsRowBlock } from './answered-questions.js';
 import { attachedInputsRowBlock } from './attached-inputs.js';
 import {
   taskStartedMetadata,
@@ -460,7 +460,14 @@ export function eventRowBlock(options: {
       const body =
         event.qa !== undefined && event.qa.length > 0
           ? answeredQuestionsRowBlock({ keyPrefix, qa: event.qa, width: ctx.width })
-          : promptTextBlock({ keyPrefix, text: event.text, width: ctx.width });
+          : event.questions !== undefined
+            ? repliedQuestionsRowBlock({
+                keyPrefix,
+                questions: event.questions,
+                reply: event.text,
+                width: ctx.width,
+              })
+            : promptTextBlock({ keyPrefix, text: event.text, width: ctx.width });
       if (event.attachedInputs === undefined || event.attachedInputs.length === 0) return body;
       return compositeBlock(keyPrefix, [
         body,

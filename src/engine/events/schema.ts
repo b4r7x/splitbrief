@@ -16,7 +16,10 @@ import { AttachedInputSchema } from '../../core/schemas/attachment.js';
 import { DriftFindingsSchema } from '../../core/schemas/drift.js';
 import { ReviewFindingCountsSchema } from '../../core/schemas/review.js';
 import { CheckResultSchema, TaskIdSchema } from '../../core/schemas/task.js';
-import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
+import {
+  AnsweredQuestionSchema,
+  ClarificationQuestionSchema,
+} from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
 import { ConsultRecordSchema, SeatSwitchCauseSchema } from '../../core/schemas/workflow.js';
 import {
@@ -809,6 +812,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('user_message').extend({
     text: z.string(),
     qa: z.array(AnsweredQuestionSchema).optional(),
+    questions: z.array(ClarificationQuestionSchema).min(1).optional(),
     attachedInputs: z.array(AttachedInputSchema).optional(),
   }),
   phaseEvent('planner_attachments_dropped').extend({

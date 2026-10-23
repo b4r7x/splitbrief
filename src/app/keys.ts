@@ -9,8 +9,10 @@ import { recoveryNoticeStore } from '../stores/workflow/recovery-notice.js';
 import { approvalPromptStore } from '../stores/approval-prompt/prompt.js';
 import { completionStore } from '../stores/ui/completion.js';
 import { reviewKeysStore } from '../stores/ui/review-keys.js';
+import { questionPromptStore } from '../stores/question-prompt/prompt.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin/active.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../lib/terminal/typeahead-grace.js';
 import {
   scheduleEscapeAction,
   cancelEscapeAction,
@@ -85,8 +87,9 @@ function applyAction(action: AppKeyAction, exit: () => void, deps: AppKeyDeps) {
   }
 }
 
-// A run that can still be stopped answers esc with the sheet. A question prompt, a review gate and
-// a validation stage are all part of that run, so none of them takes the press for itself. A paused
+// A run that can still be stopped answers esc with the sheet. A review gate and a validation stage
+// are part of that run, so neither takes the press for itself; an open planner question panel takes
+// the first press to close itself, as a plan card comment does (`useAppKeys`). A paused
 // run with no park of its own was continued and is re-entering the engine, as its byline says. A
 // halt panel is part of the run too, also after a failed final review or an Apply halt, when every
 // phase has completed.
@@ -296,15 +299,24 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
       // A pasted blob can carry a raw `\x1b`; ignore it while a bracketed paste is in flight.
       if (getActiveFilteredStdin()?.isPasteActive()) return;
       const press = escapePress(input);
-      if (reviewCommenting) {
-        // Two presses inside the debounce read as the slow pair: the cancel, then the ladder's step.
+      // A plan card comment cancels and an open planner question panel closes on the first esc. An
+      // esc typed ahead of a panel that just opened is not aimed at it: the panel stays.
+      const prompt = questionPromptStore.get();
+      const first = reviewCommenting
+        ? cancelReviewComment
+        : (prompt.questions?.length ?? 0) > 0 &&
+            Date.now() - prompt.openedAt >= PROMPT_TYPEAHEAD_GRACE_MS
+          ? questionPromptStore.close
+          : undefined;
+      if (first !== undefined) {
+        // Two presses inside the debounce read as the slow pair: the first step, then the ladder's.
         runDeferredEscape(
           input,
           () => {
-            cancelReviewComment();
+            first();
             press?.deferred();
           },
-          cancelReviewComment,
+          first,
         );
         return;
       }

@@ -17,7 +17,10 @@ import {
   openReviewChecksPrompt,
 } from '../../../../src/stores/review-checks-prompt/prompt.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';
-import { questionPromptStore } from '../../../../src/stores/question-prompt/prompt.js';
+import {
+  questionOptions,
+  questionPromptStore,
+} from '../../../../src/stores/question-prompt/prompt.js';
 import { controlsStore } from '../../../../src/stores/ui/controls.js';
 import { addEvent } from '../../../../src/stores/workflow/actions/event.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
@@ -293,6 +296,18 @@ export function createWorkflowFixtureFactory(
         questionPromptStore.answer(plainUserMessage(longAnswer));
         questionPromptStore.previous();
       },
+    }),
+    ...(projection.questionPreview === 'write' && {
+      afterMount: () => {
+        const question = projection.question?.questions?.[0];
+        if (question === undefined) throw new Error('Question write fixture requires a question');
+        questionPromptStore.select(questionOptions(question).length);
+        questionPromptStore.setFocus('answer', projection.question?.answer);
+      },
+    }),
+    // Esc on the open panel: the round stays in the transcript and the composer takes the reply.
+    ...(projection.questionPreview === 'closed' && {
+      afterMount: () => questionPromptStore.close(),
     }),
   });
 }

@@ -96,6 +96,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-plan-card-shared-command', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-activity', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-question', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-question-default', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-question-input', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-question-overflow', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-stop-menu-ended-rewound-gate', ['120x40', '80x24', '60x18', '60x40']],

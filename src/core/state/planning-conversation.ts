@@ -1,6 +1,13 @@
 import type { ClarificationQuestion } from '../schemas/question.js';
 import type { PlannerConversation, WorkflowState } from '../schemas/workflow.js';
 
+/** One question on one line with what it offers: `<text> (a / b)`, `<text> (yes / no)`. */
+export function questionLine(question: ClarificationQuestion): string {
+  if (question.type === 'choice') return `${question.text} (${question.options.join(' / ')})`;
+  if (question.type === 'confirm') return `${question.text} (yes / no)`;
+  return question.text;
+}
+
 export function questionsText(questions: readonly ClarificationQuestion[]): string {
   return questions
     .map((question, index) => {

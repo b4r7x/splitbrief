@@ -8,6 +8,7 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { taskId } from '../../core/schemas/task.js';
 import { saveState } from '../../core/state/persistence.js';
+import { questionsText } from '../../core/state/planning-conversation.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
 import { reportDraftNotSaved } from '../../stores/ui/session-drafts.js';
@@ -35,6 +36,7 @@ import {
 } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { WorkflowScreen } from './workflow.js';
+import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import { CommandPaletteOverlay } from '../overlays/palette.js';
 import { useRuntimeCommands } from '../command-context.js';
 import {
@@ -837,6 +839,153 @@ describe('WorkflowScreen showing a run at rest', () => {
     expect(frame).toContain('.splitbrief/sessions/at-rest-session/draft.json');
     expect(frame.indexOf('signup form posts')).toBeLessThan(frame.indexOf('Warning'));
     expect(frame).toContain('esc or quit again leaves without it');
+    ui.unmount();
+  });
+
+  it('shows an older run whose log has no closed round as it always did', async () => {
+    openRun();
+    loadEvents([
+      {
+        type: 'planner_text',
+        ts: FIXED_TS,
+        phase: 'planning',
+        role: 'planner',
+        content: 'plain',
+        text: 'Questions before the plan · round 1 of 2',
+      },
+      { type: 'user_message', ts: FIXED_TS, phase: 'planning', text: 'Keep the public API.' },
+    ]);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Questions before the plan · round 1 of 2');
+    expect(frame).toContain('Keep the public API.');
+    expect(frame).not.toContain('Answered ·');
+    expect(frame).not.toContain('Unanswered ·');
+    ui.unmount();
+  });
+
+  it.each([
+    ['an open run at rest', () => openRun()],
+    ['a closed run', () => closedRun('ended')],
+  ])('shows a round answered in words as one answered block on %s', async (_run, open) => {
+    open();
+    loadEvents([
+      {
+        type: 'user_message',
+        ts: FIXED_TS,
+        phase: 'planning',
+        text: 'Change src/session.ts and keep the public API.',
+        questions: [
+          {
+            id: 'module',
+            type: 'choice',
+            text: 'Which module should change?',
+            options: ['src/auth.ts', 'src/session.ts'],
+            default: 'src/auth.ts',
+          },
+          { id: 'api', type: 'confirm', text: 'Keep the public API?', default: true },
+        ],
+      },
+    ]);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Answered · 2 questions');
+    expect(frame).toContain('· Which module should change?');
+    expect(frame).toContain('· Keep the public API?');
+    expect(frame).not.toContain('1. Which module should change?');
+    expect(frame).not.toContain('(src/auth.ts / src/session.ts)');
+    expect(frame).toContain('You → Change src/session.ts and keep the public API.');
+    expect(frame.indexOf('· Keep the public API?')).toBeLessThan(
+      frame.indexOf('You → Change src/session.ts and keep the public API.'),
+    );
+    expect(frame.split('Change src/session.ts and keep the public API.')).toHaveLength(2);
+    expect(frame).not.toContain('Unanswered ·');
+    expect(frame).not.toContain('Declined');
+    ui.unmount();
+  });
+
+  it('shows the round an open run stopped at, and only the panel once it continues', async () => {
+    const questions: ClarificationQuestion[] = [
+      {
+        id: 'module',
+        type: 'choice',
+        text: 'Which module should change?',
+        options: ['src/auth.ts', 'src/session.ts'],
+        default: 'src/auth.ts',
+      },
+      { id: 'api', type: 'confirm', text: 'Keep the public API?', default: true },
+    ];
+    const state = makeWorkflowState({
+      phase: 'planning',
+      pendingPlannerConversation: {
+        call: 'plan',
+        text: questionsText(questions),
+        questions,
+        answers: [],
+        answered: false,
+      },
+    });
+    const record = openRun({
+      status: {
+        kind: 'open',
+        stop: { kind: 'waiting-for-you', on: { kind: 'question' } },
+        resumeAt: { kind: 'planner', call: 'plan' },
+      },
+      hydration: { kind: 'loaded', state },
+    });
+    saveState(record.ref, state);
+    const prepareResume = vi.fn(async () => ({
+      kind: 'prepared' as const,
+      execution: preparedExecution(projectDir, 'continued run'),
+    }));
+    runWorkflow.mockImplementation(async (opts) => {
+      void opts.callbacks.onPlannerReply?.({
+        call: 'plan',
+        text: questionsText(questions),
+        questions,
+        answers: [],
+        answered: false,
+      });
+      return pendingWorkflow();
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen
+        commands={[]}
+        onRuntimeCommand={vi.fn()}
+        deps={{
+          runWorkflow,
+          sessionSelect: {
+            applying: () => false,
+            loadResumeState: () => ({ kind: 'loaded', state }),
+            prepareResume,
+            hydrateRun: async () => {},
+          },
+        }}
+      />,
+    );
+    await flushEffects();
+    const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame()).toContain('Unanswered · 2 questions');
+    expect(frame()).toContain('· Which module should change? (src/auth.ts / src/session.ts)');
+    expect(frame()).toContain('· Keep the public API? (yes / no)');
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => expect(frame()).toContain('Question 1 of 2'));
+    expect(frame()).not.toContain('Unanswered ·');
+    expect(frame().match(/Which module should change\?/g)).toHaveLength(1);
+
+    questionPromptStore.close();
+    await vi.waitFor(() => expect(frame()).toContain('Unanswered · 2 questions'));
+    expect(frame()).not.toContain('Declined');
+    expect(frame().match(/Unanswered ·/g)).toHaveLength(1);
+    expect(frame().match(/Which module should change\?/g)).toHaveLength(1);
     ui.unmount();
   });
 
@@ -2276,13 +2425,15 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
 
   function askPlannerQuestion(
     replies: unknown[],
-    question: ClarificationQuestion = {
-      id: 'scope',
-      type: 'choice',
-      text: 'Which module should change?',
-      options: ['src/auth.ts', 'src/session.ts'],
-      default: 'src/auth.ts',
-    },
+    questions: readonly ClarificationQuestion[] = [
+      {
+        id: 'scope',
+        type: 'choice',
+        text: 'Which module should change?',
+        options: ['src/auth.ts', 'src/session.ts'],
+        default: 'src/auth.ts',
+      },
+    ],
   ): void {
     navigatePreparedWorkflow(projectDir, 'panel slash');
     runWorkflow.mockImplementation(async (opts) => {
@@ -2296,7 +2447,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
         .onPlannerReply?.({
           call: 'research',
           text: '',
-          questions: [question],
+          questions: [...questions],
           answers: [],
           answered: false,
         })
@@ -2439,11 +2590,9 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
 
   it('runs a slash command typed into the answer field of a free-text question without answering it', async () => {
     const replies: unknown[] = [];
-    askPlannerQuestion(replies, {
-      id: 'name',
-      type: 'input',
-      text: 'What should the flag be called?',
-    });
+    askPlannerQuestion(replies, [
+      { id: 'name', type: 'input', text: 'What should the flag be called?' },
+    ]);
     const onRuntimeCommand = vi.fn();
     const ui = renderFeature(
       <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
@@ -2470,6 +2619,266 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     expect(frame).toContain('Question 1 of 1');
     expect(frame).not.toContain('› /usage');
     ui.unmount();
+  });
+
+  describe('a free-text question with a default', () => {
+    const named: ClarificationQuestion = {
+      id: 'case',
+      type: 'input',
+      text: 'Which small words stay lower case?',
+      default: 'a, an, and, or, nor',
+    };
+
+    async function openQuestion(questions: readonly ClarificationQuestion[] = [named]): Promise<{
+      ui: ReturnType<typeof renderFeature>;
+      replies: unknown[];
+      onRuntimeCommand: ReturnType<typeof vi.fn>;
+    }> {
+      const replies: unknown[] = [];
+      askPlannerQuestion(replies, questions);
+      const onRuntimeCommand = vi.fn();
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
+      );
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+          `Question 1 of ${questions.length}`,
+        );
+      });
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      return { ui, replies, onRuntimeCommand };
+    }
+
+    async function press(
+      ui: ReturnType<typeof renderFeature>,
+      keys: string | readonly string[],
+    ): Promise<void> {
+      for (const key of keys) {
+        ui.stdin.write(key);
+        await flushEffects();
+      }
+    }
+
+    const down = '\u001b[B';
+    const frameOf = (ui: ReturnType<typeof renderFeature>) => stripAnsiStyles(ui.lastFrame() ?? '');
+
+    it('offers the default as the first row and an empty answer of your own as the second', async () => {
+      const { ui, replies } = await openQuestion();
+      const frame = frameOf(ui);
+      expect(frame).toContain(`${listRowLead('active')}a, an, and, or, nor default`);
+      expect(frame).toContain('Write your own answer…');
+      expect(frame).not.toContain('› a, an');
+      expect(questionPromptStore.get().focus).toBe('menu');
+
+      ui.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(replies).toHaveLength(1);
+      });
+      expect(replies[0]).toMatchObject({
+        qa: [{ question: named.text, answer: 'a, an, and, or, nor' }],
+      });
+      ui.unmount();
+    });
+
+    it('opens an empty field from the second row and takes the typed text as the answer', async () => {
+      const { ui, replies } = await openQuestion();
+      await press(ui, [down, '\r']);
+      expect(questionPromptStore.get().focus).toBe('answer');
+      expect(questionPromptStore.get().drafts[0]?.text).toBe('');
+
+      await press(ui, 'the, of');
+      expect(frameOf(ui)).toContain('› the, of');
+      ui.stdin.write('\r');
+      await vi.waitFor(() => {
+        expect(replies).toHaveLength(1);
+      });
+      expect(replies[0]).toMatchObject({ qa: [{ question: named.text, answer: 'the, of' }] });
+      ui.unmount();
+    });
+
+    it('returns from the empty field to the rows with tab', async () => {
+      const { ui, replies } = await openQuestion();
+      await press(ui, [down, '\r']);
+      expect(questionPromptStore.get().focus).toBe('answer');
+      await press(ui, '\t');
+      expect(questionPromptStore.get().focus).toBe('menu');
+      await press(ui, ['\u001b[A', '\r']);
+      await vi.waitFor(() => {
+        expect(replies).toHaveLength(1);
+      });
+      expect(replies[0]).toMatchObject({
+        qa: [{ question: named.text, answer: 'a, an, and, or, nor' }],
+      });
+      ui.unmount();
+    });
+
+    it.each([['/usage'], ['/crew plan'], ['/stop']])(
+      'runs %s typed in the empty field without answering, and leaves the default row',
+      async (command) => {
+        const { ui, replies, onRuntimeCommand } = await openQuestion();
+        await press(ui, [down, '\r']);
+        await press(ui, command);
+        ui.stdin.write('\r');
+        await vi.waitFor(() => {
+          expect(onRuntimeCommand).toHaveBeenCalledWith(command);
+        });
+        await flushEffects();
+        expect(onRuntimeCommand.mock.calls).toEqual([[command]]);
+        expect(replies).toEqual([]);
+        const frame = frameOf(ui);
+        expect(frame).toContain('Question 1 of 1');
+        expect(frame).toContain('a, an, and, or, nor default');
+        expect(frame).not.toContain(`nor${command}`);
+        ui.unmount();
+      },
+    );
+
+    it.each([['/usage'], ['/crew plan'], ['/stop']])(
+      'runs %s typed over the rows without answering',
+      async (command) => {
+        const { ui, replies, onRuntimeCommand } = await openQuestion();
+        await press(ui, command);
+        ui.stdin.write('\r');
+        await vi.waitFor(() => {
+          expect(onRuntimeCommand).toHaveBeenCalledWith(command);
+        });
+        await flushEffects();
+        expect(replies).toEqual([]);
+        expect(frameOf(ui)).toContain('a, an, and, or, nor default');
+        ui.unmount();
+      },
+    );
+
+    it('shows the default of the question on screen, not of the first one, at question 2 of 3', async () => {
+      const { ui } = await openQuestion([
+        { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+        { id: 'files', type: 'input', text: 'Which files?', default: 'src/' },
+        named,
+      ]);
+      await press(ui, '\r');
+      await vi.waitFor(() => {
+        expect(frameOf(ui)).toContain('Question 2 of 3');
+      });
+      const frame = frameOf(ui);
+      expect(frame).toContain(`${listRowLead('active')}src/ default`);
+      expect(frame).toContain('Write your own answer…');
+      expect(frame).toContain('Previous question');
+      expect(frame).not.toContain('› src/');
+      ui.unmount();
+    });
+
+    it('takes every default of a mixed round on ⏎ alone', async () => {
+      const { ui, replies } = await openQuestion([
+        named,
+        {
+          id: 'seat',
+          type: 'choice',
+          text: 'Which seat?',
+          options: ['Planner', 'Builder'],
+          default: 'Builder',
+        },
+        { id: 'ready', type: 'confirm', text: 'Proceed?', default: false },
+      ]);
+      await press(ui, '\r\r\r');
+      await vi.waitFor(() => {
+        expect(replies).toHaveLength(1);
+      });
+      expect(replies[0]).toMatchObject({
+        qa: [
+          { question: named.text, answer: 'a, an, and, or, nor' },
+          { question: 'Which seat?', answer: 'Builder' },
+          { question: 'Proceed?', answer: 'No' },
+        ],
+      });
+      ui.unmount();
+    });
+  });
+
+  describe('↑ from the write field of a planner question', () => {
+    const up = '\u001b[A';
+    const down = '\u001b[B';
+    const kinds: Array<[string, ClarificationQuestion, number]> = [
+      [
+        'choice',
+        {
+          id: 'scope',
+          type: 'choice',
+          text: 'Which module should change?',
+          options: ['src/auth.ts', 'src/session.ts'],
+        },
+        2,
+      ],
+      ['confirm', { id: 'ready', type: 'confirm', text: 'Proceed?', default: true }, 2],
+      [
+        'free-text with a default',
+        { id: 'files', type: 'input', text: 'Which files?', default: 'src/' },
+        1,
+      ],
+    ];
+
+    async function openField(question: ClarificationQuestion, writeRow: number) {
+      const replies: unknown[] = [];
+      askPlannerQuestion(replies, [question]);
+      const ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      );
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Question 1 of 1');
+      });
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      const press = async (keys: string | readonly string[]) => {
+        for (const key of keys) {
+          ui.stdin.write(key);
+          await flushEffects();
+        }
+      };
+      await press([...Array.from({ length: writeRow }, () => down), '\r']);
+      expect(questionPromptStore.get().focus).toBe('answer');
+      return { ui, replies, press, frame: () => stripAnsiStyles(ui.lastFrame() ?? '') };
+    }
+
+    it.each(kinds)(
+      'moves back to the rows of a %s question on line 1 and keeps the typed text',
+      async (_kind, question, writeRow) => {
+        const { ui, replies, press, frame } = await openField(question, writeRow);
+        await press('my own words');
+        await press([up]);
+        expect(questionPromptStore.get().focus).toBe('menu');
+        expect(questionPromptStore.get().drafts[0]?.selected).toBe(writeRow);
+        expect(frame()).toContain(`${listRowLead('active')}Write your own answer…`);
+        await press('\r');
+        expect(questionPromptStore.get().focus).toBe('answer');
+        expect(frame()).toContain('› my own words');
+        expect(replies).toEqual([]);
+        ui.unmount();
+      },
+    );
+
+    it.each(kinds)(
+      'moves the cursor up on line 2 of a %s answer and the rows on line 1',
+      async (_kind, question, writeRow) => {
+        const { ui, press } = await openField(question, writeRow);
+        await press(['first line', SHIFT_ENTER, 'second line']);
+        await press([up]);
+        expect(questionPromptStore.get().focus).toBe('answer');
+        expect(questionPromptStore.get().drafts[0]?.text).toBe('first line\nsecond line');
+        await press([up]);
+        expect(questionPromptStore.get().focus).toBe('menu');
+        expect(questionPromptStore.get().drafts[0]?.text).toBe('first line\nsecond line');
+        ui.unmount();
+      },
+    );
+
+    it.each(kinds)(
+      'moves back to the rows of a %s question from an empty field',
+      async (_kind, question, writeRow) => {
+        const { ui, press } = await openField(question, writeRow);
+        await press([up]);
+        expect(questionPromptStore.get().focus).toBe('menu');
+        expect(questionPromptStore.get().drafts[0]?.selected).toBe(writeRow);
+        ui.unmount();
+      },
+    );
   });
 
   it('hands the keys to the composer for a command picked in the palette over the reviewer checks card', async () => {
