@@ -70,6 +70,7 @@ function applyStop(stop: FixtureStopState): void {
 // Stamping on every run start is what survives that replay.
 const CONSULT_BOUND_NOTE = 'run the formatter first';
 const PLAN_CARD_COMMENT_DRAFT = 'Split the CLI change into a separate task.';
+const TYPED_WORDS = 'keep the old lockfile';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
@@ -207,6 +208,37 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       };
     };
   }
+  // The words go through the screen's own composer and ⏎, so the refusal on screen is the real one.
+  if (atRest !== undefined && projection.scenarioId === 'workflow-at-rest-typed-words') {
+    return () => {
+      const lifecycle = base();
+      const { record } = atRest;
+      if (record.hydration.kind !== 'loaded') throw new Error('typed-words needs a state');
+      const saved = {
+        ...record.hydration.state,
+        stateVersion: WORKFLOW_STATE_VERSION,
+        stateRevision: 0,
+        startedAt: new Date(VISUAL_FIXTURE_EPOCH).toISOString(),
+      };
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          saveState(record.ref, saved);
+        },
+        afterMount: async (write) => {
+          const fixedNow = Date.now;
+          Date.now = () => fixedNow() + PROMPT_TYPEAHEAD_GRACE_MS;
+          try {
+            await write.press(TYPED_WORDS);
+            await write.press('\r');
+          } finally {
+            Date.now = fixedNow;
+          }
+        },
+      };
+    };
+  }
   if (atRest !== undefined && projection.scenarioId === 'workflow-at-rest-closed-elsewhere') {
     return () => {
       const lifecycle = base();
@@ -299,6 +331,22 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       ...base(),
       afterMount: async (write) => {
         await write.press('\u0001');
+      },
+    });
+  }
+  if (projection.scenarioId === 'workflow-recovery-apply-conflict-sentence') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        const fixedNow = Date.now;
+        Date.now = () => fixedNow() + PROMPT_TYPEAHEAD_GRACE_MS;
+        try {
+          await write.press('\t');
+          await write.press(TYPED_WORDS);
+          await write.press('\r');
+        } finally {
+          Date.now = fixedNow;
+        }
       },
     });
   }
@@ -745,9 +793,17 @@ const checkpointPredicates = [
   [checkpointId('at-rest-halted'), includesAll()],
   [checkpointId('at-rest-halted-chosen'), includesAll('⏎ to try again')],
   [
+    checkpointId('at-rest-typed-words'),
+    includesAll('Cannot send words with Restore backup. Clear them.', TYPED_WORDS),
+  ],
+  [
     checkpointId('at-rest-apply-conflict'),
     (context) =>
       includesAll('Apply found 2 conflicting files')(context) && excludesAll('the review')(context),
+  ],
+  [
+    checkpointId('recovery-apply-conflict-sentence'),
+    includesAll('This halt takes no typed correction', TYPED_WORDS),
   ],
   [
     checkpointId('recovery-apply-conflict'),
@@ -778,6 +834,7 @@ const checkpointPredicates = [
   [checkpointId('at-rest-failed-unsaved'), includesAll('Stopped by an error')],
   [checkpointId('at-rest-plan-unsaved'), includesAll('Stopped by an error', 'plan.json')],
   [checkpointId('at-rest-crashed-review'), includesAll('interrupted', 'Stopped at the review')],
+  [checkpointId('at-rest-crashed-apply'), includesAll('/ for a command…')],
   [
     checkpointId('at-rest-crashed-review-check'),
     (context) =>

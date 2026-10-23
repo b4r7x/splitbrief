@@ -17,6 +17,7 @@ import { PromptBody } from './components/prompt-body.js';
 import { countPromptBodyRows, promptBodyRows } from './prompt-body-rows.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import {
+  correctionActionFor,
   formatActionRow,
   formatMiddotList,
   formatRecoveryPrompt,
@@ -1005,4 +1006,29 @@ describe('recovery prompt', () => {
       expect(recoveryComposerHint(issue, menuFocused)).toBe(hint);
     },
   );
+
+  it.each(['apply-partial', 'apply-conflict'] as const)(
+    'invites no correction on an %s halt: Apply reads no typed words',
+    (reason) => {
+      const issue: RecoveryIssue = {
+        ...baseIssue,
+        reason,
+        phase: 'complete',
+        taskId: undefined,
+        availableActions:
+          reason === 'apply-partial'
+            ? ['retry-same-worker', 'restore-backup']
+            : ['retry-same-worker', 'end-run'],
+        recommendedAction: 'retry-same-worker',
+      };
+
+      expect(correctionActionFor(issue)).toBeUndefined();
+      expect(recoveryComposerHint(issue, false)).toBe('Tab to choose an action…');
+      expect(recoveryComposerHint(issue, true)).toBe('Choose an action above…');
+    },
+  );
+
+  it('keeps Try again as the correction of a brief halt', () => {
+    expect(correctionActionFor(baseIssue)).toBe('retry-same-worker');
+  });
 });

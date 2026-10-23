@@ -55,7 +55,7 @@ import {
   resumeParkedRun,
 } from '../handlers.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
-import { useInputMode } from './use-input-mode.js';
+import { plainAnswer, useInputMode } from './use-input-mode.js';
 import { useRunContinue } from './use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from './use-run-loop.js';
 
@@ -495,7 +495,7 @@ describe('run-loop stop completion', () => {
 
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', parked: null });
     expect(resumeParkedRun(plainUserMessage('src/core'))).toBe(false);
-    inputMode?.resolve(plainUserMessage('src/core'));
+    inputMode?.resolve(plainAnswer('src/core'));
     await vi.waitFor(() => expect(answers).toEqual([plainUserMessage('src/core')]));
     expect(requestStopNow()).toBe(true);
     await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'), { timeout: 3000 });

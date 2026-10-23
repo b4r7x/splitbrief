@@ -2179,6 +2179,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-typed-words',
+      title: 'Workflow · words typed for a chosen Apply action, at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-typed-words',
+        title: 'Restore backup refuses the typed words',
+        kind: 'failure',
+        marker: 'Cannot send words',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-closed-elsewhere',
       title: 'Workflow · a paused run that another process ended',
       surface: screenSurface('workflow'),
@@ -2252,6 +2268,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'The cut REVIEW call reads as interrupted',
         kind: 'ready',
         marker: 'interrupted',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-crashed-apply',
+      title: 'Workflow · a run whose process went away during Apply',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-crashed-apply',
+        title: 'The run takes no typed words before Apply',
+        kind: 'ready',
+        marker: '/ for a command',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3432,6 +3464,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Apply-conflict recovery menu',
         kind: 'question',
         marker: 'Files docs/readme.md',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-apply-conflict-sentence',
+      title: 'Workflow · a sentence typed as the answer to an Apply halt',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-apply-conflict-sentence',
+        title: 'The refusal, with the sentence back in the composer',
+        kind: 'failure',
+        marker: 'This halt takes no typed correction',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

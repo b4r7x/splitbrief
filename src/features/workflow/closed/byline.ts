@@ -133,6 +133,7 @@ function bylineFor(view: SummaryView): Byline {
  */
 export const AT_REST_PLACEHOLDER = {
   open: 'Type a correction…',
+  noWords: '/ for a command…',
   inputRequired: 'Type your answer…',
   closed: `/ for a command${SOFT_SEP}⏎ for home…`,
   applying: `/ for a command${SOFT_SEP}⏎ for home when Apply finishes…`,

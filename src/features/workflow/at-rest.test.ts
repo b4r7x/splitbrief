@@ -420,6 +420,58 @@ describe('atRestComposer', () => {
     },
   );
 
+  // ⏎ continues the run; typed words would be refused, so the placeholder does not invite them.
+  it.each([
+    [
+      'a pending halt in Apply',
+      makeRecoveryIssue({
+        reason: 'apply-partial',
+        taskId: undefined,
+        availableActions: ['retry-same-worker', 'restore-backup'],
+      }),
+    ],
+    [
+      'a chosen Accept as is',
+      makeRecoveryIssue({
+        reason: 'review-failed',
+        taskId: undefined,
+        availableActions: ['revise', 'accept-as-is', 'end-run'],
+        status: 'applying',
+        selectedAction: 'accept-as-is',
+      }),
+    ],
+  ])('invites no correction on %s', (_, issue) => {
+    const composer = atRestComposer(
+      recordAt({
+        status: openWith({ kind: 'waiting-for-you', on: { kind: 'halt', issue } }),
+        phase: 'complete',
+      }),
+    );
+    expect(composer).toEqual({
+      continuable: true,
+      commandsOnly: false,
+      placeholder: '/ for a command…',
+    });
+  });
+
+  it('invites no correction on a stop at Apply with no halt', () => {
+    const composer = atRestComposer(
+      recordAt({
+        status: {
+          kind: 'open',
+          stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+          resumeAt: { kind: 'apply' },
+        },
+        phase: 'complete',
+      }),
+    );
+    expect(composer).toEqual({
+      continuable: true,
+      commandsOnly: false,
+      placeholder: '/ for a command…',
+    });
+  });
+
   it('takes commands only from a closed run', () => {
     const composer = atRestComposer(recordAt({ status: { kind: 'closed', as: 'complete' } }));
     expect(composer.continuable).toBe(false);

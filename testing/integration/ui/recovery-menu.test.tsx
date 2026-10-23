@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -22,6 +24,7 @@ import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { readSession } from '../../../src/core/sessions/io.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { requestEndRun } from '../../../src/features/workflow/handlers.js';
+import { buildApplyPartialRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/apply.js';
 
 let projectDir = '';
 let ui: ReturnType<typeof renderFeature> | undefined;
@@ -270,4 +273,131 @@ describe('recovery menu and composer keyboard ownership', () => {
       ).toEqual([['review-failed', 'revise']]);
     },
   );
+});
+
+describe('a sentence on the panel of an Apply halt', () => {
+  async function openApplyPartialHalt(sessionId: string) {
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, ref.sessionId);
+    saveState(
+      ref,
+      makeWorkflowState({
+        ...RUN_CREW,
+        phase: 'complete',
+        reviewStatus: 'passed',
+        workspace: {
+          kind: 'worktree',
+          path: `${projectDir}/wt`,
+          base: { snapshotId: 'base', head: null },
+        },
+        pendingRecovery: buildApplyPartialRecoveryIssue({
+          backupId: 'backup-1',
+          backupDir: '.splitbrief/apply-backups/backup-1',
+          createdAt: '2026-10-23T00:00:00.000Z',
+          written: ['src/a.ts'],
+          files: ['src/a.ts', 'src/b.ts'],
+          failedFile: 'src/b.ts',
+          cause: 'EACCES: permission denied',
+        }),
+      }),
+    );
+    const saved = loadState(ref);
+    if (saved === null) throw new Error('Missing fixture state');
+    const config = makeConfig();
+    const prepared = prepareWorkflowExecution({
+      ...ref,
+      config,
+      feature: saved.feature,
+      resumeState: saved,
+    });
+    configStore.__testReset({ config, projectDir });
+    terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord({ ref, feature: saved.feature }),
+      execution: { kind: 'local', prepared },
+    });
+    const runWorkflow = vi.fn(() => new Promise<Summary>(() => {}));
+    ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={() => {}} deps={{ runWorkflow }} />,
+    );
+    const screen = ui;
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('Restore backup');
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('Choose an action above');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+    return { ref, screen, runWorkflow };
+  }
+
+  it('refuses the sentence and puts it back in the composer', async () => {
+    const { ref, screen, runWorkflow } = await openApplyPartialHalt('apply-partial-sentence');
+
+    screen.stdin.write('\t');
+    await flushEffects();
+    screen.stdin.write('mind the lockfile');
+    await flushEffects();
+    screen.stdin.write('\r');
+
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('This halt takes no typed correction'),
+    );
+    await vi.waitFor(() => expect(composerLiveStore.get().text).toBe('mind the lockfile'));
+    expect(stripAnsiStyles(screen.lastFrame())).toContain('mind the lockfile');
+    expect(runWorkflow).not.toHaveBeenCalled();
+    expect(loadState(ref)?.pendingRecovery?.status).toBe('awaiting-user');
+  });
+
+  it('refuses a sentence with an image and puts the image back in the composer', async () => {
+    writeFileSync(
+      join(projectDir, 'shot.png'),
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+    );
+    const { ref, screen, runWorkflow } = await openApplyPartialHalt('apply-partial-image');
+
+    screen.stdin.write('\t');
+    await flushEffects();
+    screen.stdin.write('see @shot.png please');
+    await flushEffects();
+    screen.stdin.write('\r');
+
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('This halt takes no typed correction'),
+    );
+    await vi.waitFor(() =>
+      expect(composerLiveStore.get().document.parts).toMatchObject([
+        { kind: 'text', text: 'see ' },
+        { kind: 'image', attachment: { path: expect.stringMatching(/shot\.png$/) } },
+        { kind: 'text', text: ' please' },
+      ]),
+    );
+    const texts = composerLiveStore
+      .get()
+      .document.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : []));
+    expect(texts.some((text) => text.includes('[image:'))).toBe(false);
+    expect(texts.some((text) => text.includes('Images referenced above'))).toBe(false);
+    expect(runWorkflow).not.toHaveBeenCalled();
+    expect(loadState(ref)?.pendingRecovery?.status).toBe('awaiting-user');
+  });
+
+  it('runs Restore backup from u typed in the composer', async () => {
+    const { ref, screen, runWorkflow } = await openApplyPartialHalt('apply-partial-key');
+
+    screen.stdin.write('\t');
+    await flushEffects();
+    screen.stdin.write('u');
+    await flushEffects();
+    screen.stdin.write('\r');
+
+    await vi.waitFor(() => expect(runWorkflow).toHaveBeenCalledOnce());
+    expect(stripAnsiStyles(screen.lastFrame())).not.toContain('Cannot send');
+    expect(loadState(ref)?.pendingRecovery).toMatchObject({
+      status: 'applying',
+      selectedAction: 'restore-backup',
+    });
+  });
 });

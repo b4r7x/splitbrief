@@ -27,7 +27,11 @@ import {
   recoveryNoticeStore,
   type RecoveryNoticeState,
 } from '../../stores/workflow/recovery-notice.js';
-import type { UseInputModeResult } from './hooks/use-input-mode.js';
+import {
+  plainAnswer,
+  type QuestionAnswer,
+  type UseInputModeResult,
+} from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
@@ -109,9 +113,9 @@ function makeInputMode(answers: string[]): {
     hint: '',
     questionEpoch: 0,
     setReviewMode: async (): Promise<ApprovalReviewResult> => ({ approved: false }),
-    setQuestionMode: async (): Promise<UserMessageInput> => {
+    setQuestionMode: async (): Promise<QuestionAnswer> => {
       feedbackAtPrompt.push({ ...feedbackStore.get() });
-      return plainUserMessage(queue.shift() ?? '');
+      return plainAnswer(queue.shift() ?? '');
     },
     resolve: () => {},
     resetMode: () => {},
@@ -222,7 +226,7 @@ describe('createRecoveryDriver', () => {
       inputMode: {
         ...inputMode,
         setQuestionMode: () =>
-          new Promise<UserMessageInput>((_resolve, reject) => {
+          new Promise<QuestionAnswer>((_resolve, reject) => {
             cancelQuestion = () => reject(WORKFLOW_USER_CANCELLED_ABORT_REASON);
           }),
         resetMode: () => cancelQuestion(),
@@ -909,7 +913,7 @@ describe('createRecoveryDriver', () => {
       inputMode: {
         ...inputMode,
         setQuestionMode: () =>
-          new Promise<UserMessageInput>((_resolve, reject) => {
+          new Promise<QuestionAnswer>((_resolve, reject) => {
             cancelQuestion = () => reject(WORKFLOW_USER_CANCELLED_ABORT_REASON);
           }),
         resetMode: () => cancelQuestion?.(),
@@ -1210,6 +1214,182 @@ describe('createRecoveryDriver', () => {
     expect(composerDraftStore.get().request).toBeNull();
   });
 
+  it('leaves the composer draft alone when Skip task is chosen beside it', async () => {
+    const { prepared, state } = setupSession();
+    composerLiveStore.setDraft(createDraftDocument('the prop is optional'));
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['s']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(1);
+    expect(result.shouldRun && result.state.tasks[0]?.status).toBe('skipped');
+    expect(composerDraftStore.get().request).toBeNull();
+  });
+
+  describe('words beside the menu for an action that reads none', () => {
+    /** Answers each panel question in turn; the composer is emptied before the answer `clearAt`. */
+    function answersClearingAt(
+      answers: string[],
+      clearAt: number,
+    ): ReturnType<typeof makeInputMode> {
+      const made = makeInputMode([]);
+      const queue = [...answers];
+      let asked = 0;
+      made.inputMode.setQuestionMode = async () => {
+        made.feedbackAtPrompt.push({ ...feedbackStore.get() });
+        asked += 1;
+        if (asked === clearAt) composerLiveStore.setDraft(createDraftDocument(''));
+        return plainAnswer(queue.shift() ?? '');
+      };
+      return made;
+    }
+
+    const APPLY_PARTIAL: Partial<RecoveryIssue> = {
+      reason: 'apply-partial',
+      phase: 'complete',
+      taskId: undefined,
+      affectedTaskIds: [],
+      availableActions: ['retry-same-worker', 'restore-backup'],
+      recommendedAction: 'retry-same-worker',
+      facts: { backupId: 'backup-1', written: 1, total: 2 },
+    };
+
+    it.each([
+      ['r', 'retry-same-worker', 'Re-run Apply'],
+      ['u', 'restore-backup', 'Restore backup'],
+    ] as const)(
+      'refuses %s on an apply-partial halt, keeps the words, and takes it once they are cleared',
+      async (key, action, label) => {
+        const { prepared, state } = setupSession(APPLY_PARTIAL);
+        composerLiveStore.setDraft(createDraftDocument('mind the lockfile'));
+        const { inputMode, feedbackAtPrompt } = answersClearingAt([key, key], 2);
+
+        const result = await runDriver(prepared, state, inputMode);
+
+        expect(feedbackAtPrompt[1]).toEqual({
+          message: `Cannot send words with ${label}. Clear them.`,
+          isError: true,
+        });
+        expect(composerDraftStore.get().request).toBeNull();
+        if (!result.shouldRun) throw new Error('expected the Apply action to run');
+        expect(result.state.pendingRecovery).toMatchObject({
+          status: 'applying',
+          selectedAction: action,
+        });
+        expect(result.steer).toBeUndefined();
+        expect(result.state.messageQueue).toEqual([]);
+      },
+    );
+
+    it('refuses Re-run Apply on an apply-conflict halt while the composer holds words', async () => {
+      const { prepared, state } = setupSession({
+        reason: 'apply-conflict',
+        phase: 'complete',
+        taskId: undefined,
+        affectedTaskIds: [],
+        availableActions: ['retry-same-worker', 'end-run'],
+        recommendedAction: 'retry-same-worker',
+      });
+      composerLiveStore.setDraft(createDraftDocument('keep my version of a.ts'));
+      const { inputMode, feedbackAtPrompt } = answersClearingAt(['r', 'r'], 2);
+
+      const result = await runDriver(prepared, state, inputMode);
+
+      expect(feedbackAtPrompt[1]).toEqual({
+        message: 'Cannot send words with Re-run Apply. Clear them.',
+        isError: true,
+      });
+      if (!result.shouldRun) throw new Error('expected Re-run Apply to run');
+      expect(result.state.messageQueue).toEqual([]);
+      expect(result.correctionTaken).toBeUndefined();
+      expect(result.steer).toBeUndefined();
+    });
+
+    it('refuses Accept as is on a failed review while the composer holds words', async () => {
+      const { prepared, state } = setupFailedReview();
+      const halted: WorkflowState = {
+        ...state,
+        pendingRecovery: buildReviewFailedRecoveryIssue({
+          blocking: 1,
+          phase: 'complete',
+          acceptAsIs: true,
+          createdAt: '2026-09-24T00:00:00.000Z',
+        }),
+      };
+      saveState(prepared.session.ref, halted);
+      composerLiveStore.setDraft(createDraftDocument('the finding is a false alarm'));
+      const { inputMode, feedbackAtPrompt } = answersClearingAt(['k', 'a'], 3);
+
+      const result = await runDriver(prepared, halted, inputMode);
+
+      expect(feedbackAtPrompt[1]).toEqual({
+        message: 'Cannot send words with Accept as is. Clear them.',
+        isError: true,
+      });
+      expect(result.state?.acceptedAsIs).toBeUndefined();
+      expect(composerDraftStore.get().request).toBeNull();
+    });
+
+    it('refuses a sentence typed as the answer on an apply-partial halt and puts it back', async () => {
+      const { prepared, state } = setupSession(APPLY_PARTIAL);
+      const { inputMode, feedbackAtPrompt } = makeInputMode(['mind the lockfile', 'u']);
+
+      const result = await runDriver(prepared, state, inputMode);
+
+      expect(feedbackAtPrompt[1]).toEqual({
+        message: 'This halt takes no typed correction. Choose an action.',
+        isError: true,
+      });
+      if (!result.shouldRun) throw new Error('expected Restore backup to run');
+      expect(result.state.pendingRecovery?.selectedAction).toBe('restore-backup');
+      expect(result.steer).toBeUndefined();
+      expect(composerDraftStore.get().request).toMatchObject({
+        kind: 'prepend',
+        value: 'mind the lockfile',
+        document: createDraftDocument('mind the lockfile'),
+      });
+    });
+  });
+
+  it.each([
+    ['checkout', 'closes the run'],
+    ['worktree', 'leaves it ready to apply'],
+  ] as const)(
+    'takes Accept as is an older build left chosen, with nothing typed, in %s mode: it %s',
+    async (mode, _outcome) => {
+      const { prepared, state } = setupFailedReview();
+      const projectDir = prepared.session.ref.projectDir;
+      const halted: WorkflowState = {
+        ...state,
+        workspace: {
+          kind: mode,
+          path: mode === 'checkout' ? projectDir : join(projectDir, 'wt'),
+          base: { snapshotId: 'base', head: null },
+        },
+        pendingRecovery: {
+          ...buildReviewFailedRecoveryIssue({
+            blocking: 1,
+            phase: 'complete',
+            acceptAsIs: true,
+            createdAt: '2026-09-24T00:00:00.000Z',
+          }),
+          status: 'applying',
+          selectedAction: 'accept-as-is',
+        },
+      };
+      saveState(prepared.session.ref, halted);
+      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+      const result = await runDriver(prepared, halted, inputMode);
+
+      expect(feedbackAtPrompt).toHaveLength(0);
+      expect(result.state?.acceptedAsIs).toBeDefined();
+      expect(result.state?.pendingRecovery).toBeUndefined();
+      expect(result.shouldRun).toBe(mode === 'worktree');
+      if (mode === 'checkout') expect(feedbackStore.get().message).toContain('Run closed');
+    },
+  );
+
   it('carries no steer when the retry keyword itself is typed', async () => {
     const { prepared, state } = setupSession();
     const { inputMode } = makeInputMode(['retry']);
@@ -1232,11 +1412,48 @@ describe('createRecoveryDriver', () => {
 
     expect(feedbackAtPrompt).toHaveLength(2);
     expect(feedbackAtPrompt[1]).toEqual({
-      message: 'This halt takes no typed correction. Choose one of its actions.',
+      message: 'This halt takes no typed correction. Choose an action.',
       isError: true,
     });
     expect(result.shouldRun).toBe(false);
     expect(result.state?.closed?.as).toBe('ended');
+  });
+
+  it('keeps words typed at reopen for the step Skip task runs next, with no refusal', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'dependency-blocked',
+      availableActions: ['skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
+    });
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['s']);
+
+    const result = await runDriver(
+      prepared,
+      state,
+      inputMode,
+      plainUserMessage('mind the lockfile'),
+    );
+
+    expect(feedbackAtPrompt).toEqual([{ message: null, isError: false }]);
+    if (!result.shouldRun) throw new Error('expected the skip to run');
+    expect(result.state.tasks[0]?.status).toBe('skipped');
+    expect(result.steer).toBeUndefined();
+    expect(result.correctionTaken).toBeUndefined();
+  });
+
+  it('says a halt End run alone answers takes no typed correction at reopen', async () => {
+    const { prepared, state } = setupSession({
+      availableActions: ['end-run'],
+      recommendedAction: 'end-run',
+    });
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['end']);
+
+    await runDriver(prepared, state, inputMode, plainUserMessage('mind the lockfile'));
+
+    expect(feedbackAtPrompt[0]).toEqual({
+      message: 'This halt takes no typed correction. Choose an action.',
+      isError: true,
+    });
   });
 
   it('turns a sentence at a planner halt into the revise note, not a steer', async () => {
@@ -1501,7 +1718,10 @@ describe('prepared recovery corrections', () => {
       const { inputMode } = makeInputMode([]);
       const result = await runDriver(prepared, state, {
         ...inputMode,
-        setQuestionMode: async () => original,
+        setQuestionMode: async () => ({
+          message: original,
+          document: createDraftDocument(original.displayText),
+        }),
       });
       if (!result.shouldRun) throw new Error('expected recovery');
       if (action === 'retry') expect(result.steer).toBe(original);

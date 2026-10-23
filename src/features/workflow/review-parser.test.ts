@@ -17,7 +17,7 @@ import { tasksStore } from '../../stores/workflow/tasks.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
-import type { UseInputModeResult } from './hooks/use-input-mode.js';
+import { plainAnswer, type UseInputModeResult } from './hooks/use-input-mode.js';
 import { clearAllHandlers, setQueueHandler } from './handlers.js';
 import {
   createReviewInputHandler,
@@ -38,7 +38,7 @@ function makeInputMode(mode: UseInputModeResult['mode'] = 'review'): UseInputMod
     hint: '',
     questionEpoch: 0,
     setReviewMode: vi.fn(async () => ({ approved: false as const })),
-    setQuestionMode: vi.fn(async () => plainUserMessage('')),
+    setQuestionMode: vi.fn(async () => plainAnswer('')),
     resolve: vi.fn(),
     resetMode: vi.fn(),
   };
@@ -246,6 +246,7 @@ describe('review input ownership', () => {
     feedbackStore.reset();
     reviewStore.reset();
     lifecycleStore.reset();
+    composerLiveStore.reset();
   });
 
   it('does not parse composer text as a review shortcut', async () => {
@@ -259,10 +260,12 @@ describe('review input ownership', () => {
 
   it('passes question/editor-owned text through without shortcut parsing', async () => {
     const inputMode = makeInputMode('question');
+    const document = createDraftDocument('q');
+    composerLiveStore.setDraft(document);
 
     await createReviewInputHandler(inputMode).handleInput(plainUserMessage('q'));
 
-    expect(inputMode.resolve).toHaveBeenCalledWith(plainUserMessage('q'));
+    expect(inputMode.resolve).toHaveBeenCalledWith({ message: plainUserMessage('q'), document });
   });
 
   it('uses the same typed refusal path for the review end-run key', async () => {
@@ -311,6 +314,7 @@ describe('review input effects', () => {
     feedbackStore.reset();
     reviewStore.reset();
     lifecycleStore.reset();
+    composerLiveStore.reset();
     vi.unstubAllEnvs();
     rmSync(tempDir, { recursive: true, force: true });
   });
@@ -409,12 +413,17 @@ describe('review input effects', () => {
   it('answers a question through the same resolve with the effects supplied', async () => {
     const inputMode = makeInputMode('question');
     const effects = makeEffects();
+    const document = createDraftDocument('use the other adapter');
+    composerLiveStore.setDraft(document);
 
     await createReviewInputHandler(inputMode, effects).handleInput(
       plainUserMessage('use the other adapter'),
     );
 
-    expect(inputMode.resolve).toHaveBeenCalledWith(plainUserMessage('use the other adapter'));
+    expect(inputMode.resolve).toHaveBeenCalledWith({
+      message: plainUserMessage('use the other adapter'),
+      document,
+    });
     expect(effects.enqueue).not.toHaveBeenCalled();
   });
 

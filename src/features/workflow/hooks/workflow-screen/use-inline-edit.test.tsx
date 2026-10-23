@@ -1,4 +1,3 @@
-import { plainUserMessage } from '../../../../core/types/user-input.js';
 import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, type RenderFeatureResult } from '#testing/helpers/ink.js';
@@ -6,7 +5,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { externalEditRequestStore } from '../../../../stores/ui/external-edit-request.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import type { ReviewInputEffects } from '../../review-parser.js';
-import type { UseInputModeResult } from '../use-input-mode.js';
+import { plainAnswer, type UseInputModeResult } from '../use-input-mode.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
 
 const REVIEW_FILE = '/tmp/use-inline-edit-tasks.md';
@@ -17,7 +16,7 @@ const inputMode: UseInputModeResult = {
   hint: '',
   questionEpoch: 0,
   setReviewMode: async () => ({ approved: false }),
-  setQuestionMode: async () => plainUserMessage(''),
+  setQuestionMode: async () => plainAnswer(''),
   resolve: vi.fn(),
   resetMode: () => {},
 };

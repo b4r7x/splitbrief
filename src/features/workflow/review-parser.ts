@@ -367,7 +367,7 @@ export function createReviewInputHandler(
       // Contract: must call markInterruptResumed() before resolve() — a resolve
       // reaching a still-'interrupted' loop is treated as superseded and re-asked.
       if (lifecycleStore.get().status === 'interrupted') markInterruptResumed();
-      inputMode.resolve(message);
+      inputMode.resolve({ message, document: composerLiveStore.get().document });
     }
   };
 

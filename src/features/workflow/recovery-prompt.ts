@@ -28,6 +28,7 @@ import {
   recoveryActionParts,
   type RecoveryActionChoiceContext,
 } from '../../core/recovery/action-label.js';
+import { leavesWordsUnread } from '../../core/recovery/typed-words.js';
 import { formatTruncatedList } from '../../core/formatting.js';
 import { elidePathMiddle, getTerminalCellWidth } from '../../utils/display-text.js';
 import {
@@ -136,7 +137,8 @@ export function getRecoveryPromptActions(issue: RecoveryIssue): RecoveryAction[]
 
 /**
  * The action typed words take on this halt: a retry carries them as the steer, and a halt that
- * offers no retry sends them with its revise. A halt that offers neither takes no words.
+ * offers no retry sends them with its revise. A halt that offers neither takes no words, and so
+ * does an Apply halt: Re-run Apply reads none.
  */
 export function correctionActionFor(issue: RecoveryIssue): RecoveryAction | undefined {
   const offered: readonly RecoveryAction[] = [
@@ -145,7 +147,9 @@ export function correctionActionFor(issue: RecoveryIssue): RecoveryAction | unde
     // A spent bound continues by a grant, and the grant records the note and steers the replay.
     ...(BOUND_REASONS.has(issue.reason) ? (['continue'] as const) : []),
   ];
-  return offered.find((action) => issue.availableActions.includes(action));
+  return offered.find(
+    (action) => issue.availableActions.includes(action) && !leavesWordsUnread(issue.reason, action),
+  );
 }
 
 /** The composer placeholder on an open halt names what the focused side takes. */

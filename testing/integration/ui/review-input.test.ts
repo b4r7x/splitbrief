@@ -696,6 +696,8 @@ const waiting = setInterval(() => {
 describe('createReviewInputHandler – question mode', () => {
   it('question submission clears the interrupted state before resolving', async () => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'interrupted' });
+    const document = createDraftDocument('steer toward smaller diffs');
+    composerLiveStore.setDraft(document);
     const resolved: Array<{ value: unknown; status: string }> = [];
     const { handleInput } = createReviewInputHandler(
       makeInputMode('question', (value) => {
@@ -706,7 +708,10 @@ describe('createReviewInputHandler – question mode', () => {
     await handleInput(plainUserMessage('steer toward smaller diffs'));
 
     expect(resolved).toEqual([
-      { value: plainUserMessage('steer toward smaller diffs'), status: 'running' },
+      {
+        value: { message: plainUserMessage('steer toward smaller diffs'), document },
+        status: 'running',
+      },
     ]);
   });
 });
