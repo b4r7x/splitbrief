@@ -1780,7 +1780,10 @@ describe('runWorkflow — smoke', () => {
           sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
           _planner: secondPlanner,
         }),
-      ).rejects.toMatchObject({ kind: 'workflow-session-already-live' });
+      ).rejects.toMatchObject({
+        kind: 'workflow-session-already-live',
+        message: `session '${sessionId}' is already running (pid ${process.pid}) — stop it before resuming, or run 'splitbrief continue ${sessionId}' once it stops.`,
+      });
       expect(secondPlanner.isAvailable).not.toHaveBeenCalled();
       expect(secondPlanner.typedCall).not.toHaveBeenCalled();
     } finally {

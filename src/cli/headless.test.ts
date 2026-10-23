@@ -36,7 +36,7 @@ describe('failIfSessionFailed', () => {
     expect(stderr.mock.calls).toEqual([]);
     expect(writeRecord).toHaveBeenCalledWith({
       type: 'error',
-      message: 'Session s-1 ended with status failed.',
+      message: 'Session s-1 failed.',
     });
   });
 

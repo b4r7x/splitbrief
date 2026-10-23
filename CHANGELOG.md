@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- When SPLITBRIEF cannot release a run's lock, the notice says so instead of saying the run ended, and a long notice cut to one row keeps the file name of the path it names. With --json, the error record of a failed run reads "Session <id> failed.", and a run that stops short of completion reads "did not complete" with the status word that Sessions shows, such as stopped or waiting for you, instead of "ended with status".
 - When SPLITBRIEF cannot save to a run's folder (the folder is read-only or the disk is full) and the run fails, the run now shows as failed with the cause until you quit SPLITBRIEF, and `--plain` and `--json` print the cause and end with a failed status instead of a raw file error. A save that fails while the plan, build or review seat works now reads as a save failure, not as that seat failing, and does not use a build attempt. A file error names the file SPLITBRIEF meant to write, such as `Cargo.lock`, and a full disk reads `no space left on device`. After a restart, the run shows as stopped at its last saved step.
 - A run reopened after SPLITBRIEF stopped while it applied the recovery action you chose now names that action under the composer (for example `⏎ to try again`) instead of asking you to decide. A correction you type there goes to the step that the action runs next; Accept as is, Re-run Apply and Restore backup do not use it.
 - After you pause before the final review and continue, the final review no longer reads "stopped" while it runs.

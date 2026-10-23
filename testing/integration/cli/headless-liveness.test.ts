@@ -12,11 +12,23 @@ import { createInitialState } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { sessionDir } from '../../../src/core/paths.js';
-import { readLockfile, checkSessionLiveness } from '../../../src/core/sessions/lockfile.js';
+import {
+  readLockfile,
+  checkSessionLiveness,
+  markExited,
+} from '../../../src/core/sessions/lockfile.js';
 import type { LockfileData } from '../../../src/core/sessions/lockfile.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
 import { runHeadless } from '../../../src/cli/headless.js';
+import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readSession } from '../../../src/core/sessions/io.js';
+import { sessionStatusWord } from '../../../src/core/sessions/display.js';
+
+vi.mock('../../../src/core/sessions/lockfile.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/core/sessions/lockfile.js')>();
+  return { ...actual, markExited: vi.fn(actual.markExited) };
+});
 
 let stderrSpy: ReturnType<typeof vi.spyOn>;
 let dirs: string[] = [];
@@ -115,4 +127,64 @@ describe('runHeadless — liveness record (F-261)', () => {
     const lock = readLockfile(dir);
     expect(lock?.exitedAt).toBeDefined();
   }, 30_000);
+
+  it.each([
+    [
+      'comes to Apply',
+      { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } },
+      'resolved',
+      'ready to apply',
+    ],
+    ['halts', { success: false, output: '', error: 'build broke' }, 'rejected', 'waiting for you'],
+  ])(
+    'names the run lock once, whole, on stderr when a run that %s cannot release it',
+    async (_outcome, result, settled, status) => {
+      const { projectDir, sessionId } = setupLivenessProject();
+      vi.mocked(markExited).mockRejectedValueOnce(
+        Object.assign(new Error("EACCES: permission denied, open '/x/lockfile.json'"), {
+          code: 'EACCES',
+        }),
+      );
+      const implementer = makeImplementer({
+        implement: vi.fn().mockResolvedValue(result),
+        retry: vi.fn().mockResolvedValue(result),
+      });
+      const resumeState = persistReadyExecutionState(
+        { projectDir, sessionId },
+        {
+          ...createInitialState('liveness feature'),
+          phase: 'implementing',
+          tasks: [makeTaskForFile('T001', 'src/one.ts')],
+          plannerTool: 'claude-code',
+          implementerTool: 'ollama',
+        },
+      );
+
+      const outcome = await runHeadless({
+        prepared: preparedHeadlessExecution({
+          projectDir,
+          sessionId,
+          feature: 'liveness feature',
+          resumeState,
+        }),
+        _planner: planner,
+        _implementer: implementer,
+      }).then(
+        () => 'resolved',
+        () => 'rejected',
+      );
+
+      expect(outcome).toBe(settled);
+      const session = readSession({ projectDir, sessionId });
+      expect(session === null ? null : sessionStatusWord(session)).toBe(status);
+      expect(readRunRecord({ projectDir, sessionId }).status.kind).toBe('running');
+      const lines = stderrSpy.mock.calls
+        .map(([chunk]: [unknown]) => String(chunk))
+        .filter((line: string) => line.includes('lockfile.json'));
+      expect(lines).toEqual([
+        `Could not release the run lock: permission denied · .splitbrief/sessions/${sessionId}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds\n`,
+      ]);
+    },
+    30_000,
+  );
 });

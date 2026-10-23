@@ -1,4 +1,10 @@
-import { ELLIPSIS, graphemes } from '../../utils/display-text.js';
+import { SOFT_SEP } from '../../core/separators.js';
+import {
+  ELLIPSIS,
+  elidePathMiddle,
+  getTerminalCellWidth,
+  graphemes,
+} from '../../utils/display-text.js';
 import { widestPathAwareUnit, wrapPathAware } from '../../utils/wrap.js';
 
 export interface FeedbackMessageParts {
@@ -60,6 +66,50 @@ function truncateToBox(text: string, box: FeedbackBox): string {
   return longestFittingHead(text, (head) => `${head}${ELLIPSIS}`, box);
 }
 
+// A part with `/` and no space is a path. Each path, left to right, takes the most room the text
+// before it leaves (less one cell for the end cut when text follows it), shortened from the middle
+// so its file name stays. A path whose `…/<name>` does not fit there ends the message on the whole
+// parts before it and ` …`, or stays whole for the end cut when they do not fit; a path that opens
+// the message keeps what fits of its name. A message cut after a shortened path ends on its last
+// whole part and ` …`, or on the path when ` …` does not fit.
+function shortenPaths(text: string, box: FeedbackBox): string {
+  const parts = text.split(SOFT_SEP);
+  let shortened = -1;
+  for (const [index, path] of parts.entries()) {
+    if (!path.includes('/') || /\s/u.test(path)) continue;
+    const before = parts
+      .slice(0, index)
+      .map((part) => `${part}${SOFT_SEP}`)
+      .join('');
+    const after = index < parts.length - 1 ? ELLIPSIS : '';
+    let low = 0;
+    let high = getTerminalCellWidth(path);
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (fitsBox(`${before}${elidePathMiddle(path, mid)}${after}`, box)) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+    const name = `${ELLIPSIS}/${path.slice(path.lastIndexOf('/') + 1)}`;
+    if (low >= getTerminalCellWidth(name) || (index === 0 && low > 0)) {
+      parts[index] = elidePathMiddle(path, low);
+      if (parts[index] !== path) shortened = index;
+    } else if (index > 0) {
+      const head = `${parts.slice(0, index).join(SOFT_SEP)} ${ELLIPSIS}`;
+      if (fitsBox(head, box)) return head;
+    }
+  }
+  const joined = parts.join(SOFT_SEP);
+  if (shortened < 0 || fitsBox(joined, box)) return joined;
+  for (let kept = parts.length - 1; kept > shortened; kept--) {
+    const head = `${parts.slice(0, kept).join(SOFT_SEP)} ${ELLIPSIS}`;
+    if (fitsBox(head, box)) return head;
+  }
+  return parts.slice(0, shortened + 1).join(SOFT_SEP);
+}
+
 export function matchKnownFeedbackMessage(
   message: string,
   prefix: string,
@@ -75,7 +125,7 @@ export function matchKnownFeedbackMessage(
 
 function fitText(message: FeedbackMessageInput, text: string, box: FeedbackBox): string {
   if (fitsBox(text, box)) return text;
-  if (typeof message === 'string') return truncateToBox(message, box);
+  if (typeof message === 'string') return truncateToBox(shortenPaths(message, box), box);
 
   const emptyTitle = `${message.prefix}${message.suffix}`;
   if (!fitsBox(emptyTitle, box)) return truncateToBox(text, box);

@@ -363,6 +363,35 @@ describe('the stop byline through the footer', () => {
     expect(line.endsWith('… 0:42')).toBe(true);
   });
 
+  const STATE_FAILURE =
+    'Could not save the run state: permission denied · .splitbrief/sessions/2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-/state.json';
+
+  it.each([
+    [
+      120,
+      'Stop failed · Could not save the run state: permission denied · .splitbrief/…/state.json',
+    ],
+    [80, 'Stop failed · Could not save the run state: permission denied · …/state.json'],
+    [60, `${`Stop failed · ${STATE_FAILURE}`.slice(0, 55)}…`],
+  ])('keeps the file name of a failed stop at %i columns', (cols, line) => {
+    const stopped = stopByline({
+      ...running,
+      phase: 'failed',
+      error: STATE_FAILURE,
+    });
+    if (stopped === null) throw new Error('expected a stop byline');
+    const byline = buildInputFooterByline({
+      cols,
+      lead: [{ text: `${glyph('statusPending')} `, tone: stopped.tone }, ...stopped.parts],
+      leadClock: stopped.clock,
+      hintText: stopped.hint,
+      queuedText: null,
+    });
+
+    expect(fullByline(byline)).toBe(`${glyph('statusPending')} ${line}`);
+    expect(byline[0]).toEqual({ text: `${glyph('statusPending')} `, tone: stopped.tone });
+  });
+
   it('says the session is being saved on the way out', () => {
     expect(stopLine({ ...running, intent: 'quit' })).toContain(
       'Quitting · Stopping processes and saving session',

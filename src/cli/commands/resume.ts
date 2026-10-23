@@ -36,7 +36,7 @@ export async function resumeCommand(
   const status = deps.checkSessionLiveness(sessionDir(projectDir, sessionId));
   if (status.alive) {
     throw cliError(
-      `session '${sessionId}' is running — stop it before resuming, or use \`splitbrief continue\` once it has ended.`,
+      `session '${sessionId}' is running — stop it before resuming, or use \`splitbrief continue\` once it stops.`,
       1,
     );
   }

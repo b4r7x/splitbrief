@@ -2,6 +2,7 @@ import { Box } from 'ink';
 import { ThemeText as Text, useTheme } from './theme.js';
 import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
 import { wrapPathAware } from '../utils/wrap.js';
+import { fitFeedbackMessage } from './composer/feedback-fit.js';
 
 export interface FeedbackNoticeLayout {
   readonly text: string;
@@ -20,7 +21,9 @@ export function layoutFeedbackNotice(
 ): FeedbackNoticeLayout | null {
   if (feedback.message === null) return null;
   const clean = sanitizeTerminalDisplayText(feedback.message);
-  if (feedback.isError) return { text: clean, isError: true, rows: 2 };
+  if (feedback.isError) {
+    return { text: fitFeedbackMessage(clean, { width, maxRows: 1 }), isError: true, rows: 2 };
+  }
   const text = wrapPathAware(clean, width);
   return { text, isError: false, rows: 1 + text.split('\n').length };
 }

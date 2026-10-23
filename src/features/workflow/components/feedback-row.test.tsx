@@ -14,6 +14,7 @@ import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { formatCopyResult } from '../../../core/runtime/commands/types.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { clearAllHandlers, requestSeatChangeAtBoundary } from '../handlers.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
 
 describe('FeedbackRow', () => {
@@ -278,5 +279,32 @@ describe('FeedbackRow', () => {
     expect(frame.trim()).toBe(`${KEY_LEGEND_LEADING}Seat changes after T001 · ${RUNNING_LEGEND}`);
     expect(frame).not.toContain('Pause requested');
     ui.unmount();
+  });
+
+  const RUN_LOCK_RELEASE = `Could not release the run lock: permission denied · .splitbrief/sessions/2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds`;
+
+  function renderRunLockRelease(cols: number): string {
+    terminalSizeStore.__testReset({ cols, rows: 24, isSmall: false });
+    feedbackStore.setError(RUN_LOCK_RELEASE);
+
+    const ui = renderFeature(<FeedbackRow />, { cols: getChromeContentWidth(cols), rows: 24 });
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    ui.unmount();
+    return frame;
+  }
+
+  it.each([
+    [120, 'denied · .splitbrief/…/lockfile.json …'],
+    [80, 'denied · …/lockfile.json …'],
+  ])('keeps the file name of a long run lock path on one row at %i columns', (cols, tail) => {
+    expect(renderRunLockRelease(cols)).toBe(
+      `${' '.repeat(MARK_SLOT_CELLS)}Could not release the run lock: permission ${tail}`,
+    );
+  });
+
+  it('drops the path at 60 columns when its file name cannot follow the cause', () => {
+    expect(renderRunLockRelease(60)).toBe(
+      `${' '.repeat(MARK_SLOT_CELLS)}Could not release the run lock: permission denied …`,
+    );
   });
 });
