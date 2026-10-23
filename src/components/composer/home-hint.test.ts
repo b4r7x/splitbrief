@@ -149,6 +149,24 @@ describe('deriveHomeHintLines', () => {
     expect(shown.some((row) => row.includes('run opencode auth login anthropic'))).toBe(true);
   });
 
+  it('ends a home feedback on the file name it shortened, not on a stub of the next part', () => {
+    const { feedbackLine } = deriveHomeHintLines({
+      active: true,
+      homeHint: HINT,
+      feedbackMessage:
+        'Could not release the run lock: permission denied · .splitbrief/sessions/2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds',
+      width: 24,
+      dropEnabled: true,
+    });
+
+    expect(feedbackLine?.split('\n')).toEqual([
+      'Could not release',
+      'the run lock:',
+      'permission denied ·',
+      '…/lockfile.json …',
+    ]);
+  });
+
   it('keeps a short message on one row', () => {
     expect(
       deriveHomeHintLines({

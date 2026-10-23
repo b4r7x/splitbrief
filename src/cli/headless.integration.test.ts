@@ -725,9 +725,7 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
       exitCode: 1,
       message: 'Workflow failed \u2014 see the error output above.',
     });
-    expect(records()).toEqual([
-      { type: 'error', message: `Session ${sessionId} ended with status failed.` },
-    ]);
+    expect(records()).toEqual([{ type: 'error', message: `Session ${sessionId} failed.` }]);
   });
 
   it.each([
@@ -753,32 +751,37 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
     },
   );
 
-  it('a stopped run with no recorded failure does not report a failure', async () => {
-    const { projectDir, sessionId } = seedFinishedSession('stopped', { phase: 'implementing' });
-    saveSummary(
-      { projectDir, sessionId },
-      {
-        id: sessionId,
-        feature: 'finish me',
-        startedAt: Date.now(),
-        completedAt: null,
-        stateVersion: 4,
-        status: 'open',
-        stop: 'stopped',
-        summary: null,
-      },
-    );
+  const STOPPED_EARLY = 'Workflow did not complete \u2014 the run stopped early.';
 
-    const error = await runAndCatch(projectDir, sessionId);
+  it.each([
+    ['stopped', { status: 'open', stop: 'stopped' }, 'stopped', STOPPED_EARLY],
+    ['waiting', { status: 'open', stop: 'waiting-for-you' }, 'waiting for you', STOPPED_EARLY],
+    ['ended', { status: 'ended' }, 'ended', 'Workflow was cancelled.'],
+  ] as const)(
+    'a %s run with no recorded failure names its status in the words the session list uses',
+    async (name, row, word, message) => {
+      const { projectDir, sessionId } = seedFinishedSession(name, { phase: 'implementing' });
+      saveSummary(
+        { projectDir, sessionId },
+        {
+          id: sessionId,
+          feature: 'finish me',
+          startedAt: Date.now(),
+          completedAt: null,
+          stateVersion: 4,
+          ...row,
+          summary: null,
+        },
+      );
 
-    expect(error).toMatchObject({
-      exitCode: 1,
-      message: 'Workflow did not complete \u2014 the run stopped early.',
-    });
-    expect(records()).toEqual([
-      { type: 'error', message: `Session ${sessionId} ended with status open.` },
-    ]);
-  });
+      const error = await runAndCatch(projectDir, sessionId);
+
+      expect(error).toMatchObject({ exitCode: 1, message });
+      expect(records()).toEqual([
+        { type: 'error', message: `Session ${sessionId} did not complete (status: ${word}).` },
+      ]);
+    },
+  );
 });
 
 describe('runHeadless — a failure in a session folder that takes no new file', () => {
@@ -945,7 +948,7 @@ describe('runHeadless — a failure in a session folder that takes no new file',
       });
       expect(records.at(-1)).toEqual({
         type: 'error',
-        message: `Session ${run.sessionId} ended with status failed.`,
+        message: `Session ${run.sessionId} failed.`,
       });
       expect(`${run.stderr}${run.stdout}`).not.toMatch(/EACCES|\.tmp\./);
     },

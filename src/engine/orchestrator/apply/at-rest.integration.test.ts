@@ -11,10 +11,15 @@ import * as stagedProject from '../approval/staged-project.js';
 import { activeApply, awaitActiveWorkflowShutdown } from '../session-lifecycle/shutdown.js';
 import { runApplyAtRest } from './at-rest.js';
 import * as backup from './backup.js';
+import * as lockfile from '../../../core/sessions/lockfile.js';
 
 vi.mock('../approval/staged-project.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../approval/staged-project.js')>();
   return { ...actual, promoteStagedChanges: vi.fn(actual.promoteStagedChanges) };
+});
+vi.mock('../../../core/sessions/lockfile.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../core/sessions/lockfile.js')>();
+  return { ...actual, markExited: vi.fn(actual.markExited) };
 });
 vi.mock('./backup.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./backup.js')>();
@@ -57,12 +62,16 @@ const actualStaged = await vi.importActual<typeof import('../approval/staged-pro
   '../approval/staged-project.js',
 );
 const actualBackup = await vi.importActual<typeof import('./backup.js')>('./backup.js');
+const actualLockfile = await vi.importActual<typeof import('../../../core/sessions/lockfile.js')>(
+  '../../../core/sessions/lockfile.js',
+);
 
 beforeEach(() => {
   vi.mocked(stagedProject.promoteStagedChanges)
     .mockReset()
     .mockImplementation(actualStaged.promoteStagedChanges);
   vi.mocked(backup.writeApplyBackup).mockReset().mockImplementation(actualBackup.writeApplyBackup);
+  vi.mocked(lockfile.markExited).mockReset().mockImplementation(actualLockfile.markExited);
 });
 
 describe('runApplyAtRest', { timeout: 60_000 }, () => {
@@ -95,7 +104,10 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
         const shutdown = awaitActiveWorkflowShutdown().then(() => {
           shutDown = true;
         });
-        await expect(start()).rejects.toMatchObject({ kind: 'workflow-session-already-live' });
+        await expect(start()).rejects.toMatchObject({
+          kind: 'workflow-session-already-live',
+          message: `session '${SESSION_ID}' is already running (pid ${process.pid}) — stop it before resuming, or run 'splitbrief continue ${SESSION_ID}' once it stops.`,
+        });
         await new Promise((resolve) => setTimeout(resolve, 50));
         expect(shutDown).toBe(false);
         expect(activeApply()).toBeDefined();
@@ -131,6 +143,40 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
         expect(record.summary).toMatchObject({
           activeTime: 210_000,
           phaseTimings: { planning: 60_000, implementing: 120_000, review: 30_000 },
+        });
+      },
+    );
+  });
+
+  it('names the run lock once when the closed run cannot release it', async () => {
+    await withApplyRun(
+      { 'a.txt': 'one\n' },
+      { sessionId: SESSION_ID, strategy: 'staged-copy' },
+      async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), 'two\n');
+        vi.mocked(lockfile.markExited).mockRejectedValueOnce(
+          Object.assign(new Error("EACCES: permission denied, open '/x/lockfile.json'"), {
+            code: 'EACCES',
+          }),
+        );
+        const writes: string[] = [];
+        const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+          writes.push(String(chunk));
+          return true;
+        });
+
+        try {
+          expect((await applyAtRest(run)()).outcome).toBe('applied');
+        } finally {
+          stderr.mockRestore();
+        }
+
+        expect(writes).toEqual([
+          `Could not release the run lock: permission denied · .splitbrief/sessions/${SESSION_ID}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds\n`,
+        ]);
+        expect(readRunRecord({ projectDir: run.dir, sessionId: run.sessionId }).status).toEqual({
+          kind: 'closed',
+          as: 'applied',
         });
       },
     );

@@ -99,6 +99,7 @@ import {
   teardownVisualFixture,
   LONG_SESSION_ID,
   retainUnremovableDraft,
+  RUN_LOCK_NOT_RELEASED,
   UNSAVED_DRAFT_ERROR,
   visualConfig,
   VISUAL_FIXTURE_PROJECT_DIR,
@@ -1147,6 +1148,12 @@ const createSettingsSavedFixture: FixtureFactory = () => ({
     feedbackStore.setMessage(
       formatConfigSaveSuccess('End-of-run checks · off', { ignoreRuleAdded: false }),
     );
+  },
+});
+const createSettingsErrorPathFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({ overlay: 'settings' }),
+  afterMount: () => {
+    feedbackStore.setError(RUN_LOCK_NOT_RELEASED);
   },
 });
 // The picker closed on a saved route that needs a sign-in: Settings carries the save message and
@@ -2700,6 +2707,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-end-checks'), createSettingsEndChecksFixture],
   [scenarioId('overlay-settings-end-checks-off'), createSettingsEndChecksOffFixture],
   [scenarioId('overlay-settings-saved'), createSettingsSavedFixture],
+  [scenarioId('overlay-settings-error-path'), createSettingsErrorPathFixture],
   [scenarioId('overlay-settings-saved-route-sign-in'), createSettingsSavedRouteSignInFixture],
   [
     scenarioId('overlay-settings-seat-saved-final-review'),
@@ -2888,6 +2896,10 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [
     scenarioId('workflow-quit-hint'),
     () => createParkedFeedbackFixture(() => feedbackStore.setMessage('Press ctrl+c again to quit')),
+  ],
+  [
+    scenarioId('workflow-run-lock-not-released'),
+    () => createParkedFeedbackFixture(() => feedbackStore.setError(RUN_LOCK_NOT_RELEASED)),
   ],
   [
     scenarioId('workflow-draft-not-saved'),

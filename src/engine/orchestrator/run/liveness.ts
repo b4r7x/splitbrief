@@ -19,7 +19,7 @@ const workflowLivenessError = {
   sessionAlreadyLive: (sessionId: string, pid: number) =>
     error(
       'workflow-session-already-live',
-      `session '${sessionId}' is already running (pid ${pid}) — stop it before resuming, or run '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' once it has ended.`,
+      `session '${sessionId}' is already running (pid ${pid}) — stop it before resuming, or run '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' once it stops.`,
       { sessionId, pid },
     ),
 };
@@ -85,7 +85,9 @@ async function lockLiveness(opts: LivenessOpts): Promise<() => Promise<void>> {
       try {
         await markExited(dir, 0);
       } catch (err) {
-        warnStderr(sessionFileFailure('Could not mark the run as ended', lockfile, err));
+        warnStderr(
+          `${sessionFileFailure('Could not release the run lock', lockfile, err)}${SOFT_SEP}other SPLITBRIEF processes can see the run as running for a few more seconds`,
+        );
       }
     };
   } catch (err) {

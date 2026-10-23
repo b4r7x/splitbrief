@@ -22,8 +22,8 @@ import {
 } from '../../../src/stores/ui/session-drafts.js';
 import { writeSessionDraft } from '../../../src/core/sessions/draft.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';
-import { sessionDir } from '../../../src/core/paths.js';
-import { sessionError } from '../../../src/core/sessions/errors.js';
+import { LOCKFILE, sessionDir } from '../../../src/core/paths.js';
+import { sessionError, sessionFileFailure } from '../../../src/core/sessions/errors.js';
 import { sessionRelativePath } from '../../../src/core/sessions/ownership-marker.js';
 import { formatAttachmentFailure } from '../../../src/core/attachments/failure.js';
 import { SOFT_SEP } from '../../../src/core/separators.js';
@@ -1232,6 +1232,15 @@ export const UNSAVED_DRAFT_ERROR = sessionError.draftNotSaved(
   sessionRelativePath(LONG_SESSION_ID, 'draft.json'),
   Object.assign(new Error("EACCES: permission denied, open '/x/draft.json'"), { code: 'EACCES' }),
 );
+
+// The line a run that cannot release its lock leaves on the feedback row.
+export const RUN_LOCK_NOT_RELEASED = `${sessionFileFailure(
+  'Could not release the run lock',
+  sessionRelativePath(LONG_SESSION_ID, LOCKFILE),
+  Object.assign(new Error("EACCES: permission denied, open '/x/lockfile.json'"), {
+    code: 'EACCES',
+  }),
+)}${SOFT_SEP}other SPLITBRIEF processes can see the run as running for a few more seconds`;
 
 // The line a leave names for an emptied draft whose old file stays.
 const DRAFT_NOT_REMOVED_MESSAGE = sessionError.draftNotRemoved(

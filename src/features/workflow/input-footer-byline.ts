@@ -8,6 +8,7 @@ import {
 import { getChromeContentWidth } from './layout/chrome-rows.js';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
 import { separatedSpans } from './conversation-rows/row-format/text.js';
+import { fitFeedbackMessage } from '../../components/composer/feedback-fit.js';
 
 // The rail's fraction counts briefs that passed their checks, never the index of the one running:
 // a run on its last brief must not read as finished.
@@ -75,7 +76,10 @@ export function buildInputFooterByline(
   }
 
   if (!matched) {
-    leadOut = truncateTerminalDisplayText(lead, Math.max(1, width - bylineCells(clockTail)));
+    leadOut = fitFeedbackMessage(lead, {
+      width: Math.max(1, width - bylineCells(clockTail)),
+      maxRows: 1,
+    });
     line = `${leadOut}${clockTail}`;
   }
 

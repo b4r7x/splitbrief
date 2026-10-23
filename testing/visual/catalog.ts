@@ -2043,6 +2043,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [{ id: 'composer', title: 'Workflow composer' }],
     }),
     defineScenario({
+      id: 'workflow-run-lock-not-released',
+      title: 'Workflow · a stop that cannot release the run lock',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'run-lock-not-released',
+        title: 'Run lock not released',
+        kind: 'ready',
+        marker: 'Could not release the run lock',
+      },
+      elements: [{ id: 'composer', title: 'Workflow composer' }],
+    }),
+    defineScenario({
       id: 'workflow-draft-not-saved',
       title: 'Workflow · leaving with a draft that cannot be saved',
       surface: screenSurface('workflow'),
@@ -4614,6 +4626,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-settings-saved',
         title: 'Overlay · settings · a toggle saved',
         marker: 'Saved End-of-run checks',
+      },
+      {
+        id: 'overlay-settings-error-path',
+        title: 'Overlay · settings · an error that names a long path',
+        marker: 'Could not release the run lock',
       },
       {
         id: 'overlay-settings-saved-route-sign-in',

@@ -1,9 +1,11 @@
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createElement, Fragment } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureSessionDir } from '../../core/paths-io.js';
+import { sessionDir } from '../../core/paths.js';
+import { acquireLiveness } from '../../engine/orchestrator/run/liveness.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { withShutdownHandlers } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { configureLogger, resetLoggerForTests } from '../../lib/logger.js';
@@ -311,6 +313,32 @@ describe('renderApp diagnostics ownership', () => {
     const line =
       'Saved the run state, but could not confirm it on disk · .splitbrief/sessions/sess-quit/state.json\n';
     expect(terminalWrites.filter((write) => write.includes('state'))).toEqual([line]);
+    const restoredAt = terminalWrites.indexOf(terminalSequences.exitAltBuffer);
+    expect(restoredAt).toBeGreaterThanOrEqual(0);
+    expect(terminalWrites.indexOf(line)).toBeGreaterThan(restoredAt);
+  });
+
+  it('writes the run lock a quit could not release to stderr once, whole, after the terminal is restored', async () => {
+    const sessionId = '2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-';
+    let release: () => Promise<void> = async () => {};
+    ink.script.fullscreen = {
+      start: async () => {},
+      waitUntilExit: async () => {
+        release = await acquireLiveness({ projectDir, sessionId, feature: 'quit with a run' });
+      },
+    };
+
+    await renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() });
+    const dir = sessionDir(projectDir, sessionId);
+    chmodSync(dir, 0o555);
+    try {
+      await release();
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+
+    const line = `Could not release the run lock: permission denied · .splitbrief/sessions/${sessionId}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds\n`;
+    expect(terminalWrites.filter((write) => write.includes('run lock'))).toEqual([line]);
     const restoredAt = terminalWrites.indexOf(terminalSequences.exitAltBuffer);
     expect(restoredAt).toBeGreaterThanOrEqual(0);
     expect(terminalWrites.indexOf(line)).toBeGreaterThan(restoredAt);

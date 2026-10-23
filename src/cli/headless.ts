@@ -10,6 +10,7 @@ import type { Config } from '../core/schemas/config.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import { recoveryFactString } from '../core/schemas/recovery/facts.js';
 import { readSession } from '../core/sessions/io.js';
+import { sessionStatusWord } from '../core/sessions/display.js';
 import { questionLine } from '../core/state/planning-conversation.js';
 import { runWorkflow } from '../engine/orchestrator/run/workflow.js';
 import { applyOfferedSeatSwap } from '../engine/orchestrator/run/seat-swap.js';
@@ -203,7 +204,7 @@ export function failIfSessionFailed(
   if (status.kind !== 'open' || status.stop.on.kind !== 'failed') return;
   writeRecord({
     type: 'error',
-    message: `Session ${sessionId} ended with status failed.`,
+    message: `Session ${sessionId} failed.`,
   });
   if (cause !== undefined) process.stderr.write(`${cause}\n`);
   throw cliError('Workflow failed — see the error output above.', 1);
@@ -223,7 +224,7 @@ function failIfSessionInterrupted(
   if (session === null || session.status === 'complete') return;
   writeRecord({
     type: 'error',
-    message: `Session ${sessionId} ended with status ${session.status}.`,
+    message: `Session ${sessionId} did not complete (status: ${sessionStatusWord(session)}).`,
   });
   throw cliError(
     session.status === 'ended'

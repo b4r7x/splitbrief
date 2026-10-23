@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { elidePathMiddle, getTerminalCellWidth } from '../../utils/display-text.js';
 import { wrapHard } from '../../utils/wrap.js';
 import { fitFeedbackMessage } from './feedback-fit.js';
 
@@ -228,7 +228,7 @@ describe('fitFeedbackMessage', () => {
       const fitted = fitFeedbackMessage(message, { width, maxRows: 4 });
 
       expect(fitted.split('\n').filter((row) => row.startsWith('·'))).toEqual([]);
-      if (!fitted.endsWith('…')) expect(fitted.replace(/\s/g, '')).toBe(message.replace(/\s/g, ''));
+      if (!fitted.includes('…')) expect(fitted.replace(/\s/g, '')).toBe(message.replace(/\s/g, ''));
     }
   });
 
@@ -246,6 +246,100 @@ describe('fitFeedbackMessage', () => {
     expect(rows[0]).toBe('one two three four');
     expect(rows[1]?.endsWith('…')).toBe(true);
     for (const row of rows) expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(20);
+  });
+
+  describe('a message that names a path', () => {
+    const SESSION = '2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-';
+    const LOCK = `.splitbrief/sessions/${SESSION}/lockfile.json`;
+    const STATE = `.splitbrief/sessions/${SESSION}/state.json`;
+    const RELEASE = `Could not release the run lock: permission denied · ${LOCK} · other SPLITBRIEF processes can see the run as running for a few more seconds`;
+
+    it.each([
+      [116, 'Could not release the run lock: permission denied · .splitbrief/…/lockfile.json …'],
+      [76, 'Could not release the run lock: permission denied · …/lockfile.json …'],
+      [68, 'Could not release the run lock: permission denied · …/lockfile.json'],
+    ])('keeps the file name on one row of %i cells and drops the parts after it', (width, row) => {
+      const fitted = fitFeedbackMessage(RELEASE, { width, maxRows: 1 });
+
+      expect(fitted).toBe(row);
+      expect(getTerminalCellWidth(fitted)).toBeLessThanOrEqual(width);
+    });
+
+    it('cuts the end as before when the whole path fits', () => {
+      expect(fitFeedbackMessage(RELEASE, { width: 151, maxRows: 1 })).toBe(
+        `${RELEASE.slice(0, 150)}…`,
+      );
+    });
+
+    it('keeps each whole part that fits after a shortened path', () => {
+      const message = RELEASE.replace(`${LOCK} · `, `${LOCK} · retry · `);
+
+      expect(fitFeedbackMessage(message, { width: 116, maxRows: 1 })).toBe(
+        'Could not release the run lock: permission denied · .splitbrief/…/lockfile.json · retry …',
+      );
+    });
+
+    it('drops a path whose file name cannot follow the cause', () => {
+      expect(fitFeedbackMessage(RELEASE, { width: 56, maxRows: 1 })).toBe(
+        'Could not release the run lock: permission denied …',
+      );
+    });
+
+    it('cuts the end as before when not even the cause and the ellipsis fit', () => {
+      expect(fitFeedbackMessage(RELEASE, { width: 50, maxRows: 1 })).toBe(
+        `${RELEASE.slice(0, 49)}…`,
+      );
+    });
+
+    it('shortens a path at the end of the message and cuts nothing else', () => {
+      const message = `Could not save the run state: permission denied · ${STATE}`;
+
+      expect(fitFeedbackMessage(message, { width: 76, maxRows: 1 })).toBe(
+        'Could not save the run state: permission denied · .splitbrief/…/state.json',
+      );
+    });
+
+    it('shortens each of two paths, left to right, in the room the text before it leaves', () => {
+      const message = `Could not copy · ${STATE} · .splitbrief/sessions/${SESSION}/run.patch`;
+
+      expect(fitFeedbackMessage(message, { width: 80, maxRows: 1 })).toBe(
+        'Could not copy · .splitbrief/…/state.json · .splitbrief/…/run.patch',
+      );
+    });
+
+    it('does not take a part with a space for a path', () => {
+      const message = `Could not read: permission denied · /Users/me/My Projects/app/${STATE}`;
+
+      expect(fitFeedbackMessage(message, { width: 60, maxRows: 1 })).toBe(
+        `${message.slice(0, 59)}…`,
+      );
+    });
+
+    it('counts wide characters in cells when it gives the path its room', () => {
+      const message = `无法保存运行状态: permission denied · ${STATE}`;
+
+      expect(fitFeedbackMessage(message, { width: 61, maxRows: 1 })).toBe(
+        '无法保存运行状态: permission denied · …/state.json',
+      );
+    });
+
+    it('cuts the file name in its middle when not even the name fits', () => {
+      const fitted = fitFeedbackMessage(LOCK, { width: 10, maxRows: 1 });
+
+      expect(fitted).toBe(elidePathMiddle(LOCK, 10));
+      expect(fitted).toContain('…');
+      expect(getTerminalCellWidth(fitted)).toBeLessThanOrEqual(10);
+    });
+
+    it('keeps the file name on a home feedback of four rows at a narrow width', () => {
+      for (const width of [44, 52, 64]) {
+        const rows = fitFeedbackMessage(RELEASE, { width, maxRows: 4 }).split('\n');
+
+        expect(rows.length).toBeLessThanOrEqual(4);
+        expect(rows.some((row) => row.includes('lockfile.json'))).toBe(true);
+        for (const row of rows) expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(width);
+      }
+    });
   });
 
   it('shrinks a known message title only when the whole message passes its rows', () => {

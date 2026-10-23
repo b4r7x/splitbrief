@@ -12,6 +12,7 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { fitKeyLegend, KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
+import { fitFeedbackMessage } from '../../../components/composer/feedback-fit.js';
 import { hintStateSeverity } from '../input-hints.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 
@@ -80,7 +81,8 @@ export function FeedbackRow({
   );
   // A sheet under the row names its own keys, so above it the row carries a message or nothing.
   if (!owned || isError || copyReceipt || messageWord === 'Press ctrl+c again to quit') {
-    if (messageWord !== '') word = messageWord;
+    if (messageWord !== '')
+      word = fitFeedbackMessage(messageWord, { width: cols - MARK_SLOT_CELLS, maxRows: 1 });
     else if (!panelBelow) {
       if (stopHint !== '') {
         word = stopHint;
