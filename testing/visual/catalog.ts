@@ -4333,6 +4333,17 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · command palette session row of a task written on several lines',
         marker: 'Add generated JSON',
       },
+      {
+        id: 'overlay-command-palette-typed-name',
+        title: 'Overlay · command palette with a command name typed after /copy was used',
+        marker: 'Browse past sessions',
+      },
+      {
+        id: 'overlay-command-palette-typed-skill',
+        title:
+          'Overlay · command palette with a skill name typed after a session of that word was opened',
+        marker: 'Skill · verify',
+      },
     ],
   }),
   skills: overlayGroup({

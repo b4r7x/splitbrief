@@ -11,6 +11,7 @@ import type {
 } from '../../../src/engine/providers/types.js';
 import type { SeatPickerRole } from '../../../src/core/runners/seat-roles.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
+import { commandPaletteMruStore } from '../../../src/stores/ui/command-palette-mru.js';
 import type {
   CliProviderAuth,
   CliProviderAuthUnreadableReason,
@@ -930,6 +931,44 @@ const createPaletteSessionTaskFixture: FixtureFactory = () => ({
     },
   }),
   afterMount: (write) => write('fixtures'),
+});
+const createPaletteTypedNameFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'command-palette',
+    underlyingScreen: 'workflow',
+    seed: () => {
+      seedSkills();
+      commandPaletteMruStore.record('command:/copy');
+    },
+  }),
+  afterMount: (write) => write('sessions'),
+});
+const createPaletteTypedSkillFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'command-palette',
+    underlyingScreen: 'workflow',
+    seed: () => {
+      skillsStore.setAvailable([
+        {
+          id: 'verify',
+          name: 'verify',
+          description: 'Check a change against its plan',
+          path: 'fixtures/skills/verify/SKILL.md',
+          scope: 'global',
+        },
+      ]);
+      const session = makeSession({
+        id: 'visual-session-verify',
+        feature: 'verify the login flow',
+        startedAt: VISUAL_FIXTURE_EPOCH - 60_000,
+        status: 'open',
+        stop: 'stopped',
+      });
+      sessionsStore.__testReset({ sessions: [session], totalCount: 1 });
+      commandPaletteMruStore.record('session:visual-session-verify');
+    },
+  }),
+  afterMount: (write) => write('verify'),
 });
 const createSkillsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'skills', seed: seedSkills });
@@ -2631,6 +2670,8 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-help'), createHelpFixture],
   [scenarioId('overlay-command-palette'), createPaletteFixture],
   [scenarioId('overlay-command-palette-session-task'), createPaletteSessionTaskFixture],
+  [scenarioId('overlay-command-palette-typed-name'), createPaletteTypedNameFixture],
+  [scenarioId('overlay-command-palette-typed-skill'), createPaletteTypedSkillFixture],
   [scenarioId('overlay-skills'), createSkillsEmptyFixture],
   [scenarioId('overlay-skills-list'), createSkillsFixture],
   [scenarioId('overlay-settings'), createSettingsFixture],

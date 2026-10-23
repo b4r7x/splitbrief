@@ -487,7 +487,7 @@ Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 ### Command palette overlay (Ctrl+K)
 
-**What it does.** Fuzzy search across slash commands, live tasks, recent sessions, and user-defined custom actions. Recently used items rank higher within each query (in-memory MRU).
+**What it does.** Fuzzy search across slash commands, skills, live tasks, recent sessions, and user-defined custom actions. A row whose name you type in full comes first, and a command of that name comes before a skill, task, session or custom action of the same name. Then come the rows whose name starts with what you typed, then the other matches. A skill row is ranked on the skill's name, without the `Skill ·` word. Inside each of these groups, recently used items rank higher (in-memory MRU).
 
 **How to use.** `Ctrl+K` opens it from any screen. Arrow keys + Enter to select; Esc to dismiss.
 
