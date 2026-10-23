@@ -1211,7 +1211,7 @@ describe('runWorkflow — smoke', () => {
         expect(readRunRecord(ref).status.kind).toBe('ready-to-apply');
       });
 
-      describe('a continue in this process restores the files the failed attempt wrote', () => {
+      describe('the files a failed attempt wrote are back at their task-start bytes when the brief runs again', () => {
         const committed = {
           'src/hello.ts': 'hello start\n',
           'docs/notes.md': 'notes start\n',
