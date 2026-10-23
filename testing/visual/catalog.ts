@@ -414,6 +414,19 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [{ id: 'composer', title: 'Warning count and feature composer' }],
     }),
+    // One warning raised before the screen opened shows as is: a config file its group or other users can change.
+    defineScenario({
+      id: 'home-startup-permission-warning',
+      title: 'Home · config file its group or other users can change',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Permission warning above the composer',
+        kind: 'ready',
+        marker: "The file's group or other users",
+      },
+      elements: [{ id: 'composer', title: 'Permission warning and feature composer' }],
+    }),
     // The same warnings while the first tool check runs: the check keeps a sign on screen.
     defineScenario({
       id: 'home-cold-detecting-startup-warnings',

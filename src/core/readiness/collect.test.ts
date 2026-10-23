@@ -717,7 +717,9 @@ describe('collectReadiness config loader warnings', () => {
     );
 
     expect(configWarnings).toHaveLength(1);
-    expect(configWarnings[0]?.summary).toContain('overly permissive');
+    expect(configWarnings[0]?.summary).toBe(
+      "The file's group or other users can change .splitbrief/config.yaml. SPLITBRIEF still uses it; run chmod 600 on the file to fix this.",
+    );
   });
 
   it('names each retired workflow key once, the load-mapped approve level included', async () => {

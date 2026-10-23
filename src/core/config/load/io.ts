@@ -41,12 +41,12 @@ export interface LoadConfigResult {
 
 /** What the load found in the file itself: the file's permissions, and a retired value it holds. */
 export type ConfigLoaderDiagnostic =
-  | { kind: 'config-file-permissions'; path: string }
+  | { kind: 'config-file-permissions' }
   | { kind: 'retired-value'; notice: string };
 
 export function formatConfigLoaderDiagnostic(diagnostic: ConfigLoaderDiagnostic): string {
   if (diagnostic.kind === 'retired-value') return diagnostic.notice;
-  return `Config file ${diagnostic.path} has overly permissive permissions. Consider running: chmod 600 ${diagnostic.path}`;
+  return `The file's group or other users can change ${CONFIG_RELATIVE_PATH}. SPLITBRIEF still uses it; run chmod 600 on the file to fix this.`;
 }
 
 export function dedupeConfigWarnings(warnings: readonly string[]): string[] {
@@ -92,7 +92,7 @@ function parseLoadedConfig(
   const filePath = configPath(projectDir);
   const loaderDiagnostics: ConfigLoaderDiagnostic[] = [];
   if (process.platform !== 'win32' && !checkConfigPermissions(filePath)) {
-    loaderDiagnostics.push({ kind: 'config-file-permissions', path: filePath });
+    loaderDiagnostics.push({ kind: 'config-file-permissions' });
   }
 
   let parsed: unknown;

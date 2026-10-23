@@ -58,7 +58,7 @@ describe('resolveRunConfig', () => {
 
     resolveRunConfig({ projectDir: tempDir, opts: {} });
 
-    const permissionWarnings = stderrChunks.filter((chunk) => chunk.includes('overly permissive'));
+    const permissionWarnings = stderrChunks.filter((chunk) => chunk.includes('chmod 600'));
     expect(permissionWarnings).toHaveLength(1);
   });
 

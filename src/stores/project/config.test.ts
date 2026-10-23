@@ -206,7 +206,7 @@ describe('configStore.load', () => {
 
     configStore.load(tmpDir);
 
-    const permissionWarnings = stderrChunks.filter((chunk) => chunk.includes('overly permissive'));
+    const permissionWarnings = stderrChunks.filter((chunk) => chunk.includes('chmod 600'));
     expect(permissionWarnings).toHaveLength(1);
     vi.restoreAllMocks();
   });

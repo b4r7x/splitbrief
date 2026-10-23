@@ -42,8 +42,6 @@ describe('resolveEffectiveConfig', () => {
         model: 'custom-model',
       },
     });
-    const permissionPath = '/tmp/project/.splitbrief/config.yaml';
-
     const { config, warnings } = resolveEffectiveConfig({
       base,
       overrides: {
@@ -53,14 +51,14 @@ describe('resolveEffectiveConfig', () => {
           apiBase: 'http://localhost:11434/v1',
         },
       },
-      loaderDiagnostics: [{ kind: 'config-file-permissions', path: permissionPath }],
+      loaderDiagnostics: [{ kind: 'config-file-permissions' }],
     });
 
     expect(config.implementer).toMatchObject({ kind: 'api', provider: 'ollama' });
     expect(warnings).toContainEqual(
       expect.objectContaining({
         source: 'loader',
-        diagnostic: { kind: 'config-file-permissions', path: permissionPath },
+        diagnostic: { kind: 'config-file-permissions' },
       }),
     );
     expect(
@@ -116,10 +114,7 @@ describe('resolveEffectiveConfig', () => {
   });
 
   it('deduplicates colliding messages only when formatting for output', () => {
-    const diagnostic = {
-      kind: 'config-file-permissions',
-      path: '/tmp/.splitbrief/config.yaml',
-    } satisfies ConfigLoaderDiagnostic;
+    const diagnostic = { kind: 'config-file-permissions' } satisfies ConfigLoaderDiagnostic;
     const message = formatConfigLoaderDiagnostic(diagnostic);
 
     expect(
@@ -150,21 +145,20 @@ describe('emitEffectiveConfigWarnings', () => {
     emitEffectiveConfigWarnings('/work/each', [
       {
         source: 'loader',
-        diagnostic: { kind: 'config-file-permissions', path: '/tmp/.splitbrief/config.yaml' },
+        diagnostic: { kind: 'config-file-permissions' },
       },
       { source: 'validation', message: 'budget override exceeds the configured ceiling.' },
     ]);
 
     const written = stderrChunks.join('');
-    expect(written).toContain('⚠ Config file /tmp/.splitbrief/config.yaml has overly permissive');
+    expect(written).toContain(
+      "⚠ The file's group or other users can change .splitbrief/config.yaml.",
+    );
     expect(written).toContain('⚠ budget override exceeds the configured ceiling.');
   });
 
   it('prints matching loader and validation warnings once', () => {
-    const diagnostic = {
-      kind: 'config-file-permissions',
-      path: '/tmp/.splitbrief/config.yaml',
-    } satisfies ConfigLoaderDiagnostic;
+    const diagnostic = { kind: 'config-file-permissions' } satisfies ConfigLoaderDiagnostic;
     const message = formatConfigLoaderDiagnostic(diagnostic);
 
     emitEffectiveConfigWarnings('/work/matching', [

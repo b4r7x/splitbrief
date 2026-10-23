@@ -11,17 +11,14 @@ describe('buildConfigChecks', () => {
       warnings: [
         {
           source: 'loader',
-          diagnostic: {
-            kind: 'config-file-permissions',
-            path: '/tmp/.splitbrief/config.yaml',
-          },
+          diagnostic: { kind: 'config-file-permissions' },
         },
         { source: 'validation', message: 'planner.model: unknown model' },
       ],
     });
 
     const permissions = checks.find(
-      (check) => check.id === 'config.warning' && check.summary.includes('permissive'),
+      (check) => check.id === 'config.warning' && check.summary.includes('chmod 600'),
     );
     const validation = checks.find(
       (check) => check.id === 'config.warning' && check.summary.includes('unknown model'),
@@ -56,10 +53,7 @@ describe('buildConfigChecks', () => {
   });
 
   it('does not offer a config rewrite for a validation warning that repeats a loader message', () => {
-    const diagnostic = {
-      kind: 'config-file-permissions',
-      path: '/tmp/.splitbrief/config.yaml',
-    } satisfies ConfigLoaderDiagnostic;
+    const diagnostic = { kind: 'config-file-permissions' } satisfies ConfigLoaderDiagnostic;
     const message = formatConfigLoaderDiagnostic(diagnostic);
 
     const checks = buildConfigChecks({
