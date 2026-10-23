@@ -6,6 +6,7 @@ import { lineageIdOf } from '../../core/state/task-insert.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { loadState } from '../../core/state/persistence.js';
+import { LEGACY_STATE_VERSION } from '../../core/state/migration/legacy-state.js';
 import { revisionFromBytes, serializedState } from '../../core/state/state-file.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../../core/schemas/workflow.js';
@@ -19,6 +20,7 @@ import { sessionRelativePath } from '../../core/sessions/ownership-marker.js';
 import { sessionFileFailure } from '../../core/sessions/errors.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { error, matches, type AppError } from '../../utils/error.js';
+import { narrowRecord } from '../../utils/type-guards.js';
 import { warnError } from '../../lib/warn.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { resumeStep } from '../../core/sessions/run-status.js';
@@ -165,7 +167,8 @@ function readStateHead(ref: SessionRef): StateHead | null {
   const path = workflowStatePath(ref);
   if (!existsSync(path)) return null;
 
-  if (loadState(ref) === null) {
+  const loaded = loadState(ref);
+  if (loaded === null) {
     throw stateOpsError.notRead(ref.sessionId, 'it could not be read, or its content is not valid');
   }
 
@@ -188,12 +191,15 @@ function readStateHead(ref: SessionRef): StateHead | null {
   } catch (cause) {
     throw stateOpsError.invalidHead('Workflow state is not valid JSON.', cause);
   }
+  const revision = revisionFromBytes(bytes, stat);
+  // A v3 file reads as the v4 state `loadState` maps it to; its first write saves it as v4.
+  if (narrowRecord(raw)?.stateVersion === LEGACY_STATE_VERSION) {
+    return { state: loaded, revision, digest: revision.rawSha256 };
+  }
   const parsed = WorkflowStateSchema.safeParse(raw);
   if (!parsed.success) {
     throw stateOpsError.invalidHead('Workflow state failed schema validation.');
   }
-
-  const revision = revisionFromBytes(bytes, stat);
   return { state: parsed.data, revision, digest: revision.rawSha256 };
 }
 

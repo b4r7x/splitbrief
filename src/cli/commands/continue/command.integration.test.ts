@@ -782,6 +782,33 @@ describe('continueCommand', () => {
     expect(renderRuns).toHaveLength(0);
   });
 
+  it('ends a run saved as v3 and saves the close as v4', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-end-v3-run';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    reactivateExistingSession({ projectDir, sessionId });
+    writeState(sessDir, 'reviewing-briefs', RUN_CREW);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      await continueCommand(
+        sessionId,
+        { projectDir, plain: true, action: parseContinueActionOption('end-run') },
+        deps,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(JSON.parse(readFileSync(join(sessDir, 'state.json'), 'utf8'))).toMatchObject({
+      stateVersion: 4,
+      closed: { as: 'ended' },
+    });
+    expect(readSession({ projectDir, sessionId })?.status).toBe('ended');
+    expect(headlessRuns).toHaveLength(0);
+  });
+
   it('refuses End run on an already closed run', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-end-closed-run';

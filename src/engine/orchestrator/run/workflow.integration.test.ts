@@ -699,6 +699,31 @@ describe('runWorkflow — smoke', () => {
       expect(`${run.errors.join('\n')}${run.stderr}`).not.toMatch(/durability|persist/);
     });
 
+    it.each([
+      ['it cannot confirm', 'unconfirmed', unconfirmed],
+      [
+        'that fails before anything reaches the disk',
+        'eio',
+        (sessionId: string) =>
+          `Could not save the run state: i/o error · .splitbrief/sessions/${sessionId}/state.json`,
+      ],
+    ] as const)('the first write over a state saved as v3, %s', async (_label, fails, line) => {
+      const projectDir = setupProject();
+      const sessionId = `legacy-first-write-${fails}`;
+      ensureSessionDir(projectDir, sessionId);
+      writeRawState({ projectDir, sessionId }, legacyWorkflowState('state write'));
+      const run = await runWithStateWrite(sessionId, { from: 'writeStateFile', fails }, 'start', {
+        projectDir,
+        purpose: 'resume',
+      });
+
+      expect(`${run.errors.join('\n')}\n${run.stderr}`).toContain(line(sessionId));
+      expect(`${run.errors.join('\n')}${run.stderr}`).not.toMatch(/schema|durability|persist/);
+      // The run stays open at the step it saved, with the line as why it stopped.
+      expect(run.state?.lastFailure?.message).toBe(line(sessionId));
+      expect(run.status?.kind).toBe('open');
+    });
+
     it('a write that fails before anything reaches the disk', async () => {
       const sessionId = 'not-saved-phase-sid';
       const message = `Could not save the run state: i/o error · .splitbrief/sessions/${sessionId}/state.json`;
@@ -1180,31 +1205,93 @@ describe('runWorkflow — smoke', () => {
     }
   });
 
-  it('leaves an unmigrated legacy state untouched and keeps provider work out of the path', async () => {
+  it.each([
+    ['with the state the TUI and the CLI load', true],
+    ['with the state it reads from disk', false],
+  ])(
+    'continues a run saved as v3 as one planning session and saves it as v4, %s',
+    async (_label, passLoaded) => {
+      const projectDir = setupProject();
+      const sessionId = 'legacy-state-sid';
+      const ref = { projectDir, sessionId };
+      ensureSessionDir(projectDir, sessionId);
+      writeRawState(ref, legacyWorkflowState('legacy state'));
+      const controller = new AbortController();
+      const typed = scriptedTypedCall([makePlanProposal()]);
+      const events: EngineEvent[] = [];
+      const stderr: string[] = [];
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        stderr.push(String(chunk));
+        return true;
+      });
+      try {
+        await runWorkflow({
+          ...ref,
+          feature: 'legacy state',
+          purpose: 'resume',
+          ...(passLoaded ? { savedState: loadState(ref) ?? undefined } : {}),
+          steer: plainUserMessage('PELICAN-42 keep the old name'),
+          config: makeConfig({
+            codebase: { enabled: false, tokenBudget: 4000 },
+            workflow: { approve: 'plan', isolation: 'none' },
+            validation: { endChecks: false, testCommand: 'noop' },
+          }),
+          callbacks: makeCallbacks({
+            onApprovalNeeded: async () => {
+              controller.abort();
+              return { approved: false };
+            },
+          }).callbacks,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          signal: controller.signal,
+          _planner: makePlanner({ typedCall: typed.typedCall }),
+          _eventSink: (event) => events.push(event),
+        });
+      } finally {
+        vi.restoreAllMocks();
+      }
+
+      expect(stderr.join('')).toBe('');
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(typed.prompts[0]).toContain('PELICAN-42');
+      const saved = JSON.parse(readFileSync(stateFile(ref), 'utf8'));
+      expect(saved).toMatchObject({ stateVersion: 4, phase: 'reviewing-plan' });
+    },
+  );
+
+  it('reads a v3 state it cannot map as not readable and leaves its bytes alone', async () => {
     const projectDir = setupProject();
-    const sessionId = 'legacy-state-sid';
+    const sessionId = 'invalid-legacy-sid';
     const ref = { projectDir, sessionId };
     ensureSessionDir(projectDir, sessionId);
-    writeRawState(ref, legacyWorkflowState('legacy state'));
+    writeRawState(ref, { ...legacyWorkflowState('invalid legacy'), tasks: 'not a list' });
     const before = readFileSync(stateFile(ref));
-
     const planner = makePlanner({ isAvailable: vi.fn() });
-    const summary = await runWorkflow({
-      feature: 'legacy state',
-      projectDir,
-      config: unavailablePlannerConfig(),
-      callbacks: makeCallbacks().callbacks,
-      sessionId,
-      purpose: 'resume',
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      _planner: planner,
+    const stderr: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderr.push(String(chunk));
+      return true;
     });
+    try {
+      await runWorkflow({
+        feature: 'invalid legacy',
+        projectDir,
+        config: unavailablePlannerConfig(),
+        callbacks: makeCallbacks().callbacks,
+        sessionId,
+        purpose: 'resume',
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        _planner: planner,
+      });
+    } finally {
+      vi.restoreAllMocks();
+    }
 
-    expect(summary.totalTasks).toBe(0);
+    expect(stderr.join('')).toContain(
+      `Could not read the run state: it could not be read, or its content is not valid · .splitbrief/sessions/${sessionId}/state.json`,
+    );
     expect(readFileSync(stateFile(ref))).toEqual(before);
-    expect(planner.isAvailable).not.toHaveBeenCalled();
     expect(planner.typedCall).not.toHaveBeenCalled();
-    expect(planner.review).not.toHaveBeenCalled();
   });
 
   it('rejects a future state without rewriting bytes or invoking the planner', async () => {

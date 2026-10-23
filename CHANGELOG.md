@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- An open run saved by an older version now continues and ends normally instead of failing with a schema error.
 - `splitbrief doctor` no longer says a tool is signed in when the model a seat uses has no credential in that tool; the tool row says it is installed, trusted and compatible, and the seat row names the missing credential.
 - The command palette now lists the command or skill whose name you type first, ahead of the ones you used recently.
 - Home, Settings and the seat picker now show a hand edit of `.splitbrief/config.yaml`; an edit that does not load is named once, and SPLITBRIEF keeps the config it loaded before.
