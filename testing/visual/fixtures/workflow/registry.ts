@@ -778,6 +778,12 @@ const checkpointPredicates = [
   [checkpointId('at-rest-failed-unsaved'), includesAll('Stopped by an error')],
   [checkpointId('at-rest-plan-unsaved'), includesAll('Stopped by an error', 'plan.json')],
   [checkpointId('at-rest-crashed-review'), includesAll('interrupted', 'Stopped at the review')],
+  [
+    checkpointId('at-rest-crashed-review-check'),
+    (context) =>
+      includesAll('Final review stopped', 'Stopped at the review')(context) &&
+      excludesAll('· running')(context),
+  ],
   [checkpointId('retained-workspace'), includesAll('Workspace kept')],
   [
     checkpointId('cli-stop-continued'),

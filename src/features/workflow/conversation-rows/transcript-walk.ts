@@ -3,6 +3,7 @@ import {
   type ReviewStage,
   type Section,
 } from '../../../core/sections/event-sections.js';
+import { isProcessWentAwayMark } from '../../../core/event-phase.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { WORKSPACE_KEPT_CODE } from '../../../core/sessions/workspace-notice.js';
@@ -273,8 +274,9 @@ export function* walkTranscript(
 
 /**
  * The `working on <file>…` rows whose attempt has ended. The row says a BUILD call is running; once
- * the attempt is done, failed, reset, cut by a stop, or closed by a call error — the interruption a
- * process that went away leaves — the rows after it say what happened, and the row goes.
+ * the attempt is done, failed, reset, cut by a stop, closed by a call error — the interruption a
+ * process that went away leaves — or left by a process that went away after its call, the rows
+ * after it say what happened, and the row goes.
  */
 function endedImplementerAttempts(sections: readonly Section<EngineEvent>[]): Set<EngineEvent> {
   const ended = new Set<EngineEvent>();
@@ -302,6 +304,9 @@ function endedImplementerAttempts(sections: readonly Section<EngineEvent>[]): Se
         case 'workflow_cancelled':
         case 'workflow_resumed':
           end(undefined);
+          break;
+        case 'replay_complete':
+          if (isProcessWentAwayMark(event)) end(undefined);
           break;
         case 'runner_call_activity':
           if (event.role === 'implementer' && isCallError(event)) end(event.taskId);

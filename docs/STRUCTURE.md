@@ -240,6 +240,7 @@ These are runtime commands, not a slash-only subsystem: the same registry backs 
 src/core/sessions/
 ├── io.ts              # read/write session state + log files
 ├── active-pointer.ts  # active-session pointer (readActive, writeActive, clearActive)
+├── at-rest-end.ts     # endBeforeAtRest — where an End taken at rest ends a running stretch
 ├── liveness.ts        # inspectSessionLiveness / isSessionLive
 ├── lockfile.ts        # per-session lockfile (pid + heartbeat) and lockfile-status.ts
 ├── session-id.ts      # session id minting

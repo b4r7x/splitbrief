@@ -76,7 +76,11 @@ export function stageSummaryRow(summary: StageSummary): {
         kind: 'stage',
         headingParts,
         outcome: summary.outcome,
-        detail: [duration],
+        // A review stopped before anything after its start reported a time has no clock to show.
+        detail:
+          summary.outcome === 'stopped' && formatDuration(summary.duration) === formatDuration(0)
+            ? []
+            : [duration],
       },
     };
   }

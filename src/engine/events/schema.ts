@@ -855,10 +855,12 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     totalEvents: z.number(),
     diagnostics: replayDiagnosticsSchema.optional(),
   }),
+  /** `processWentAway`: the reopened run's process went away mid-step, so nothing it ran then finished. */
   phaseEvent('replay_complete').extend({
     totalEvents: z.number(),
     durationMs: z.number(),
     diagnostics: replayDiagnosticsSchema.optional(),
+    processWentAway: z.literal(true).optional(),
   }),
 ]);
 

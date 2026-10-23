@@ -1,6 +1,7 @@
 import { phaseStage } from '../../../core/rail-stages.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { SessionLogEventEntrySchema } from '../../../core/schemas/session-log.js';
+import { endBeforeAtRest } from '../../../core/sessions/at-rest-end.js';
 import { readSessionLogValuesSync } from '../../../core/sessions/log-reader.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -92,12 +93,7 @@ function runStretches(marks: readonly RunMark[]): RunStretch[] | null {
           (open) =>
             began === undefined
               ? mark.ts
-              : marks
-                  .slice(open.from, index)
-                  .reduce(
-                    (latest, m) => (m.ts < began ? Math.max(latest, m.ts) : latest),
-                    open.start,
-                  ),
+              : endBeforeAtRest(marks.slice(open.from, index), began, open.start),
           index,
         );
         return;

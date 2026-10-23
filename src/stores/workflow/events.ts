@@ -5,6 +5,7 @@ import {
   sanitizeTerminalDisplayText,
 } from '../../utils/display-text.js';
 import { suiteCommandKey } from './operations/state.js';
+import { isProcessWentAwayMark } from '../../core/event-phase.js';
 
 export interface EventsState {
   events: EngineEvent[];
@@ -36,6 +37,12 @@ const COMMAND_BOUNDARIES: ReadonlySet<EngineEvent['type']> = new Set([
   'workflow_cancelled',
   'workflow_resumed',
 ]);
+
+// A stop, an end, a continue, or the reopen of a run whose process went away: a command still
+// running then never finishes.
+function endsRunningCommands(event: EngineEvent): boolean {
+  return COMMAND_BOUNDARIES.has(event.type) || isProcessWentAwayMark(event);
+}
 
 export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | null {
   switch (event.type) {
@@ -163,7 +170,7 @@ function updateRunningCommandIndex(
 
 export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEvent[] {
   if (repeatsCallError(events, event)) return events;
-  if (COMMAND_BOUNDARIES.has(event.type)) {
+  if (endsRunningCommands(event)) {
     events = events.slice();
     settleStoppedCommands(events);
   }
@@ -205,7 +212,7 @@ export function mergeEventLog(events: EngineEvent[]): EngineEvent[] {
   for (const event of events) {
     const projected = projectEventForTuiEventLog(event);
     if (projected === null) continue;
-    if (COMMAND_BOUNDARIES.has(projected.type)) {
+    if (endsRunningCommands(projected)) {
       settleStoppedCommands(log, runningCommands);
     }
     const commandIndex = commandReplacementIndex(log, projected, runningCommands);
