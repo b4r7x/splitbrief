@@ -20,10 +20,12 @@ export interface PaletteCommandItem {
 }
 
 /** A discovered skill, ranked beside the command rows: `⏎` attaches or detaches it. */
-export type PaletteSkillItem = Omit<PaletteCommandItem, 'shortcut'> & { id: string };
+export type PaletteSkillItem = Omit<PaletteCommandItem, 'shortcut'> & { id: string; name: string };
 
 interface PaletteCandidateBase {
   id: string;
+  /** What a typed query ranks the row on: its label without a kind word such as `Skill · `. */
+  name: string;
   label: string;
   description: string;
   hint: string | null;
@@ -57,6 +59,8 @@ export type PaletteInputs = {
 
 type RankedPaletteResult = {
   result: PaletteResult;
+  /** 0 when the typed text is a command's name, 1 another row's name, 2 a start of the name, else 3. */
+  nameTier: number;
   candidateOrder: number;
 };
 
@@ -66,6 +70,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
   for (const item of inputs.commandItems) {
     candidates.push({
       id: 'command:' + item.label,
+      name: item.label,
       label: item.label,
       description: item.description,
       hint: item.hint,
@@ -79,6 +84,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
   for (const item of inputs.skillItems) {
     candidates.push({
       id: 'skill:' + item.id,
+      name: item.name,
       label: item.label,
       description: item.description,
       hint: item.hint,
@@ -92,6 +98,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
   for (const item of inputs.taskItems) {
     candidates.push({
       id: 'task:' + item.id,
+      name: item.title,
       label: item.title,
       description: 'task ' + item.id,
       hint: null,
@@ -105,6 +112,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
   for (const item of inputs.sessionItems) {
     candidates.push({
       id: 'session:' + item.id,
+      name: item.feature,
       label: item.feature,
       description: item.status,
       hint: null,
@@ -118,6 +126,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
   for (const item of inputs.customItems) {
     candidates.push({
       id: 'custom:' + item.id,
+      name: item.label,
       label: item.label,
       description: item.description,
       hint: null,
@@ -160,7 +169,23 @@ function compareByCategory(a: RankedPaletteResult, b: RankedPaletteResult): numb
   return categoryCompare !== 0 ? categoryCompare : a.candidateOrder - b.candidateOrder;
 }
 
+function typedName(text: string): string {
+  return text.toLowerCase().replace(/^\//, '');
+}
+
+// `typed` holds the whole query and each of its terms, so `crew review` still names `/crew`.
+function nameTier(candidate: PaletteCandidate, typed: readonly string[]): number {
+  const name = typedName(candidate.name);
+  let tier = 3;
+  for (const text of typed) {
+    if (text === name) return candidate.source === 'command' ? 0 : 1;
+    if (text !== '' && name.startsWith(text)) tier = 2;
+  }
+  return tier;
+}
+
 function compareByScore(a: RankedPaletteResult, b: RankedPaletteResult): number {
+  if (a.nameTier !== b.nameTier) return a.nameTier - b.nameTier;
   const mru = compareByMru(a, b);
   if (mru !== null) return mru;
 
@@ -184,6 +209,7 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
     return sortPaletteResults(
       candidates.map((candidate, candidateOrder) => ({
         result: { ...candidate, score: 0, mruRank: getMruRank(inputs.mruIds, candidate.id) },
+        nameTier: 3,
         candidateOrder,
       })),
       compareByCategory,
@@ -191,6 +217,8 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
   }
 
   const scored: RankedPaletteResult[] = [];
+  const termList = terms.split(/\s+/);
+  const typed = [termList.join(' '), ...termList].map(typedName);
 
   for (const [candidateOrder, candidate] of candidates.entries()) {
     // The grammar is part of the target even though it is a cell of its own: typing `review`
@@ -206,6 +234,7 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
         score: match.score,
         mruRank: getMruRank(inputs.mruIds, candidate.id),
       },
+      nameTier: nameTier(candidate, typed),
       candidateOrder,
     });
   }

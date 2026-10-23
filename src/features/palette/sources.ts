@@ -132,6 +132,7 @@ export function buildCommandItems({
 function buildSkillItems(skills: SkillMeta[], selected: ReadonlySet<string>): PaletteSkillItem[] {
   return skills.map((skill) => ({
     id: skill.id,
+    name: skill.name,
     label: `Skill · ${skill.name}`,
     description: skill.description,
     hint: selected.has(skill.id) ? 'attached' : null,

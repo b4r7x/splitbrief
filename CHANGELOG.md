@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- The command palette now lists the command or skill whose name you type first, ahead of the ones you used recently.
 - Home, Settings and the seat picker now show a hand edit of `.splitbrief/config.yaml`; an edit that does not load is named once, and SPLITBRIEF keeps the config it loaded before.
 - When SPLITBRIEF cannot save or confirm the run state, the run log or the run evidence, it now names the file and the cause (for example no space left on the disk) instead of an unclear message, and a run whose state save is not confirmed reads failed with that cause instead of stopped.
 - Leaving a run with an empty composer no longer stops you when its old saved draft cannot be removed; SPLITBRIEF names the file once and says the text comes back after a restart.

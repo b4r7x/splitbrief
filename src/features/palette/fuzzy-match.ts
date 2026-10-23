@@ -13,7 +13,7 @@ export function fuzzyMatch(query: string, target: string): FuzzyMatchResult | nu
   const top = results[0];
   if (top === undefined || top.score <= 0) return null;
   return {
-    score: Math.min(1, top.score / 100),
+    score: top.score,
     positions: [...top.positions].sort((a, b) => a - b),
   };
 }

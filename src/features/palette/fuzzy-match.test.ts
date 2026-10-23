@@ -25,11 +25,14 @@ describe('fuzzyMatch', () => {
     expect(result?.positions.length).toBeGreaterThan(0);
   });
 
-  it('score is clamped to [0, 1]', () => {
-    const result = fuzzyMatch('rv', 'revise-spec');
-    expect(result).not.toBeNull();
-    expect(result?.score).toBeGreaterThanOrEqual(0);
-    expect(result?.score).toBeLessThanOrEqual(1);
+  it('scores a whole word above letters scattered through a long text', () => {
+    const word = fuzzyMatch('sessions', '/sessions Browse past sessions command');
+    const scattered = fuzzyMatch(
+      'sessions',
+      '/copy Copy to clipboard: message | brief | path | command | cost [message|brief|path|command|cost] command',
+    );
+    expect(scattered).not.toBeNull();
+    expect(word?.score).toBeGreaterThan(scattered?.score ?? Number.POSITIVE_INFINITY);
   });
 
   it('case-insensitive matching', () => {
