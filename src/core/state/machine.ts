@@ -704,7 +704,8 @@ export function transition(
       };
       const first = state.tasks.findIndex((task) => reopened.includes(task.id));
       const firstId = reopened[0];
-      // The run moves back before the step it stopped or halted on, so a halt there is over.
+      // The run moves back before the step it stopped or halted on, so a halt there is over, and the
+      // next review judges a rebuilt candidate.
       if (firstId !== undefined && first < state.currentTaskIndex) {
         return {
           ...reopenedState,
@@ -712,6 +713,8 @@ export function transition(
           currentTaskIndex: first,
           attempt: 0,
           pendingRecovery: undefined,
+          pendingTriage: undefined,
+          pendingScheduledReview: undefined,
           interruptedStep: {
             step: { kind: 'brief', taskId: firstId, attempt: 0 },
             source: step?.source ?? 'user',
