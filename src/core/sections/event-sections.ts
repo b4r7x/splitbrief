@@ -516,6 +516,30 @@ function settledStageSummary<TEvent extends SectionableEvent>(
     }
     if (isReviewFixStartedEvent(event)) fixes = event.taskIds;
   }
+  // A stop before the review started parked the run before it; a review call that starts after the
+  // stop is the cut call continued in place.
+  const startIndex = items.findLastIndex(isReviewStartedEvent);
+  const stopIndex = items.findLastIndex(
+    (event, index) =>
+      index > startIndex &&
+      (event.type === 'turn_interrupted' ||
+        event.type === 'workflow_cancelled' ||
+        (event.type === 'runner_call_activity' &&
+          'kind' in event &&
+          event.kind === 'error' &&
+          'role' in event &&
+          event.role === 'review' &&
+          'stage' in event &&
+          event.stage === 'aborted')),
+  );
+  const stopped =
+    stopIndex >= 0 &&
+    !items
+      .slice(stopIndex + 1)
+      .some(
+        (event) =>
+          event.type === 'runner_call_started' && 'role' in event && event.role === 'review',
+      );
   const outcome = completed
     ? completed.verdict === 'pass'
       ? 'passed'
@@ -525,19 +549,7 @@ function settledStageSummary<TEvent extends SectionableEvent>(
           ? 'failed'
           : completed.verdict
     : reviewStarted
-      ? resumed ||
-        items.some(
-          (event) =>
-            event.type === 'turn_interrupted' ||
-            event.type === 'workflow_cancelled' ||
-            (event.type === 'runner_call_activity' &&
-              'kind' in event &&
-              event.kind === 'error' &&
-              'role' in event &&
-              event.role === 'review' &&
-              'stage' in event &&
-              event.stage === 'aborted'),
-        )
+      ? resumed || stopped
         ? 'stopped'
         : null
       : (verdict ?? (fixes.length > 0 ? 'failed' : resumed ? 'stopped' : null));

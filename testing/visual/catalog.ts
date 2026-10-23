@@ -1197,6 +1197,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-after-pause',
+      title: 'Workflow · final review running after a pause before it',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-after-pause',
+        title: 'Final review running after the run continued',
+        kind: 'implementation',
+        marker: 'choosing checks',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-verdict-only',
       title: 'Workflow · reviewer answers after a question',
       surface: screenSurface('workflow'),
