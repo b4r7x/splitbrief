@@ -401,6 +401,8 @@ describe('e2e: a BUILD route with no credential', { timeout: 240_000 }, () => {
     expect(out).not.toContain('BUILD is ready to start.');
     expect(out.split(ROUTE_WARNING)).toHaveLength(2);
     expect(out.split(`Fix: ${SIGN_IN_FIX}`)).toHaveLength(2);
+    expect(out).toContain('ok       OpenCode CLI is installed, trusted and compatible.');
+    expect(out).not.toContain('OpenCode CLI is installed, trusted, compatible, and signed in.');
 
     const json = await cli(target, ['doctor'], { timeoutMs: 60_000, json: true });
     const record = JSON.parse(json.stdout.trim()) as {

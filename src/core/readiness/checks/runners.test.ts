@@ -325,6 +325,96 @@ describe('buildRunnerChecks availability guidance', () => {
     });
   });
 
+  describe('the tool row of a tool whose seat route has no credential', () => {
+    const DEEPSEEK = { provider: 'DeepSeek', source: 'stored' } as const;
+    // A gateway model of each tool, which needs the tool's own sign-in; DeepSeek does not serve it.
+    const routes = [
+      {
+        tool: 'opencode',
+        name: 'OpenCode CLI',
+        model: 'opencode/big-pickle',
+        provider: 'opencode',
+      },
+      { tool: 'kilo-code', name: 'Kilo Code CLI', model: 'kilo/openrouter/free', provider: 'kilo' },
+    ] as const;
+    const seats = [
+      { word: 'PLAN', key: 'planner' },
+      { word: 'BUILD', key: 'implementer' },
+      { word: 'REVIEW', key: 'reviewer' },
+    ] as const;
+    const signedIn = (tool: (typeof routes)[number]['tool']) =>
+      cliReadiness({
+        tool,
+        authChannel: 'provider-dependent',
+        auth: 'authenticated',
+        providerAuth: { kind: 'read', facts: [DEEPSEEK] },
+      });
+    const checksFor = (route: (typeof routes)[number], config: ReturnType<typeof makeConfig>) =>
+      buildRunnerChecks({
+        config,
+        cliReadiness: [cliReadiness(), signedIn(route.tool)],
+        cliCatalogs: [{ tool: route.tool, models: [{ id: route.model }, { id: 'ollama/llama3' }] }],
+      });
+    const summaryOf = (checks: ReturnType<typeof buildRunnerChecks>, id: string) =>
+      checks.find((check) => check.id === id)?.summary;
+
+    for (const route of routes) {
+      it.each(seats)(
+        `leaves the credential of $word on ${route.tool} to its route row`,
+        ({ word, key }) => {
+          const checks = checksFor(
+            route,
+            makeConfig({
+              planner: { kind: 'cli', tool: 'claude-code' },
+              [key]: { kind: 'cli', tool: route.tool, model: route.model },
+            }),
+          );
+          expect(summaryOf(checks, `runners.cli.${route.tool}.readiness`)).toBe(
+            `${route.name} is installed, trusted and compatible.`,
+          );
+          expect(checks.find((check) => check.id.startsWith('runners.route.'))?.summary).toBe(
+            `${word}: ${route.name} has no credential for ${route.provider}.`,
+          );
+        },
+      );
+
+      it.each(seats)(
+        `keeps signed in for ${route.tool} when only the fallback of $word routes to it with no credential`,
+        ({ key }) => {
+          const seat = { kind: 'cli', tool: 'claude-code' } as const;
+          const checks = checksFor(
+            route,
+            makeConfig({
+              planner: seat,
+              implementer: { kind: 'cli', tool: route.tool, model: 'ollama/llama3' },
+              reviewer: seat,
+              [key]: {
+                ...(key === 'implementer'
+                  ? { kind: 'cli', tool: route.tool, model: 'ollama/llama3' }
+                  : seat),
+                fallback: { tool: route.tool, model: route.model },
+              },
+            }),
+          );
+          expect(checks.find((check) => check.id.startsWith('runners.route.'))).toBeUndefined();
+          expect(summaryOf(checks, `runners.cli.${route.tool}.readiness`)).toBe(
+            `${route.name} is installed, trusted, compatible, and signed in.`,
+          );
+        },
+      );
+    }
+
+    it('keeps signed in for a tool with no route check', () => {
+      const checks = buildRunnerChecks({
+        config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+        cliReadiness: [cliReadiness()],
+      });
+      expect(summaryOf(checks, 'runners.cli.claude-code.readiness')).toBe(
+        'Claude Code CLI is installed, trusted, compatible, and signed in.',
+      );
+    });
+  });
+
   it('warns without claiming readiness when selected CLI authentication is unknown', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
