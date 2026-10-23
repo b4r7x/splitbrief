@@ -298,7 +298,7 @@ describe('e2e: a refused plan check', () => {
         : [],
     );
     expect(warnings).toEqual([
-      `The test checks do not take ${command} from the planner (it ${reason}) and use config, the manifest or the stack default.`,
+      `The test checks do not take ${command} from the plan: it ${reason}. They use config, the manifest or the stack default.`,
     ]);
     expect(calls.map((call) => call.kind)).toEqual(['plan', 'task-review', 'final-review']);
     expect(state.tasks[0]?.checkResults).toEqual([

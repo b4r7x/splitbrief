@@ -531,7 +531,7 @@ export function sanitizeDiscoveredValidation(
       sanitized.testPattern = discovered.testPattern;
     } else {
       refuse(
-        `The test checks do not take the file pattern ${discovered.testPattern} from the planner (${testPatternRefusal(discovered.testPattern)}) and use config or the stack's test file patterns.`,
+        `The test checks do not take the file pattern ${discovered.testPattern} from the plan: ${testPatternRefusal(discovered.testPattern)}. They use config or the stack's test file patterns.`,
       );
     }
   }
@@ -552,7 +552,7 @@ export function sanitizeDiscoveredValidation(
       formatValidationCommand(resolved.cmd, resolved.args) !== value
     ) {
       refuse(
-        `The test checks do not take ${value} from the planner (it ${refusal}) and use config, the manifest or the stack default.`,
+        `The test checks do not take ${value} from the plan: it ${refusal}. They use config, the manifest or the stack default.`,
       );
     }
   }
