@@ -114,6 +114,8 @@ type ApplyInput = {
  * last writes.
  */
 export function runApply(input: ApplyInput): Promise<ApplyResult> {
+  const asking = askOverrideConfirmation(input);
+  if (asking !== undefined) return Promise.resolve(asking);
   const applying = applyRun(input);
   void trackActiveApply(
     applying.then(
@@ -122,6 +124,35 @@ export function runApply(input: ApplyInput): Promise<ApplyResult> {
     ),
   );
   return applying;
+}
+
+/**
+ * A run accepted as is asks for its one confirmation before Apply reads or writes the checkout,
+ * so the ask never shows as an Apply in progress. A conflict or a changed checkout is then found
+ * after the confirmation. A halted, retried or cut Apply goes on to its own path.
+ */
+function askOverrideConfirmation(input: ApplyInput): ApplyResult | undefined {
+  const { wctx, state } = input;
+  const accepted = state.acceptedAsIs;
+  if (
+    accepted === undefined ||
+    input.overrideConfirmed === true ||
+    state.pendingRecovery !== undefined ||
+    state.applying !== undefined
+  ) {
+    return undefined;
+  }
+  const findings = accepted.findings.map(oneLineDisplayText);
+  const note = accepted.note === undefined ? undefined : oneLineDisplayText(accepted.note);
+  const clause = (text: string): string => text.replace(/\.$/, '');
+  const sentence = (text: string): string => (/[.!?]$/.test(text) ? text : `${text}.`);
+  publishWarning({
+    bus: wctx.bus,
+    phase: state.phase,
+    message: `Run accepted as is with ${countNoun(findings.length, 'open finding')}: ${sentence(findings.map(clause).join('; '))}${note === undefined ? '' : ` Your note: ${sentence(note)}`} No review checked them; Apply needs one confirmation (/run accept confirm).`,
+    safety: { category: 'recovery', code: 'apply_override_unconfirmed' },
+  });
+  return { outcome: 'needs-confirmation', state };
 }
 
 async function applyRun(input: ApplyInput): Promise<ApplyResult> {
@@ -348,22 +379,6 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
       `Your checkout changed ${countNoun(changed.length, 'file')} this run also changed (${changed.join(', ')}); the merged result goes through its checks and the review again before Apply.`,
     );
     return { outcome: 'review', state };
-  }
-  if (state.acceptedAsIs !== undefined && input.overrideConfirmed !== true && !retrying) {
-    const findings = state.acceptedAsIs.findings.map(oneLineDisplayText);
-    const note =
-      state.acceptedAsIs.note === undefined
-        ? undefined
-        : oneLineDisplayText(state.acceptedAsIs.note);
-    const clause = (text: string): string => text.replace(/\.$/, '');
-    const sentence = (text: string): string => (/[.!?]$/.test(text) ? text : `${text}.`);
-    publishWarning({
-      bus: wctx.bus,
-      phase: state.phase,
-      message: `Run accepted as is with ${countNoun(findings.length, 'open finding')}: ${sentence(findings.map(clause).join('; '))}${note === undefined ? '' : ` Your note: ${sentence(note)}`} No review checked them; Apply needs one confirmation (/run accept confirm).`,
-      safety: { category: 'recovery', code: 'apply_override_unconfirmed' },
-    });
-    return { outcome: 'needs-confirmation', state };
   }
   const result = await writeApply({
     scope: wctx,

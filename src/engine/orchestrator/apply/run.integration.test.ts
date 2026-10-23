@@ -1236,7 +1236,9 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
         override: true,
       });
 
-      const asked = await runApply({ wctx: { ...ref, bus }, state: accepted.state });
+      const asking = runApply({ wctx: { ...ref, bus }, state: accepted.state });
+      expect(activeApply()).toBeUndefined();
+      const asked = await asking;
 
       expect(asked.outcome).toBe('needs-confirmation');
       expect(read(run.dir, 'a.txt')).toBe(FIVE);
