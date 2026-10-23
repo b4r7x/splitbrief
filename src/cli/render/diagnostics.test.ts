@@ -239,4 +239,24 @@ describe('renderApp diagnostics ownership', () => {
     expect(rawDiagnosticWrites()).toHaveLength(1);
     expect(debugLog()).toContain(`${DIAGNOSTIC}: recoverable`);
   });
+  it('writes an at-exit note to stderr only after the terminal is restored, never to the feedback line', async () => {
+    let writesWhileMounted: string[] = [];
+    ink.script.fullscreen = {
+      start: async () => {},
+      waitUntilExit: async () => {
+        warnStderr(DIAGNOSTIC, 'at-exit');
+        feedbackDuringMount.push(feedbackStore.get().message);
+        writesWhileMounted = rawDiagnosticWrites();
+      },
+    };
+
+    await renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() });
+
+    expect(writesWhileMounted).toEqual([]);
+    expect(feedbackDuringMount).toEqual([null]);
+    const restoredAt = terminalWrites.indexOf(terminalSequences.exitAltBuffer);
+    expect(terminalWrites.indexOf(`${DIAGNOSTIC}\n`)).toBeGreaterThan(restoredAt);
+    expect(restoredAt).toBeGreaterThanOrEqual(0);
+    expect(rawDiagnosticWrites()).toHaveLength(1);
+  });
 });

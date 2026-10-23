@@ -42,16 +42,26 @@ export function readSessionDraft(ref: SessionRef): DraftDocument | null {
   });
 }
 
-/** A cleared draft leaves no file, so emptying the composer never needs a writable session. */
+/**
+ * A cleared draft leaves no file. An old file that cannot be removed throws its own error, so a
+ * caller never holds an empty composer for it.
+ */
 export function writeSessionDraft(ref: SessionRef, document: DraftDocument): void {
+  const relativePath = sessionRelativePath(ref.sessionId, DRAFT_FILE);
+  let path: string;
   try {
-    const path = draftPath(ref);
+    path = draftPath(ref);
     if (draftLength(document) > 0) {
       confinedWriteFile(ref.projectDir, path, JSON.stringify(DraftDocumentSchema.parse(document)));
-    } else if (confinedExists(ref.projectDir, path)) {
-      confinedUnlinkSync(ref.projectDir, path);
+      return;
     }
+    if (!confinedExists(ref.projectDir, path)) return;
   } catch (error) {
-    throw sessionError.draftNotSaved(sessionRelativePath(ref.sessionId, DRAFT_FILE), error);
+    throw sessionError.draftNotSaved(relativePath, error);
+  }
+  try {
+    confinedUnlinkSync(ref.projectDir, path);
+  } catch (error) {
+    throw sessionError.draftNotRemoved(relativePath, error);
   }
 }

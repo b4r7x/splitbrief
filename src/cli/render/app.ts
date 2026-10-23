@@ -186,7 +186,7 @@ export async function renderApp(
   const releaseDiagnosticSink = installDiagnosticSink((message, presentation) => {
     diagnosticLog.warn(message);
     if (presentation === 'log-only') return;
-    if (tearingDown) {
+    if (tearingDown || presentation === 'at-exit') {
       deferredDiagnostics.push(message);
       return;
     }

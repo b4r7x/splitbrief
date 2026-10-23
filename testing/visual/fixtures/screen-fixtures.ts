@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import type { RouteData } from '../../../src/stores/navigation/router.js';
@@ -12,7 +12,16 @@ import { detectionStore } from '../../../src/stores/project/detection.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
-import { reportDraftNotSaved } from '../../../src/stores/ui/session-drafts.js';
+import {
+  __testDiscardPending,
+  flushSessionDrafts,
+  nameDraftsNotRemoved,
+  reportDraftNotSaved,
+  saveSessionDraft,
+} from '../../../src/stores/ui/session-drafts.js';
+import { writeSessionDraft } from '../../../src/core/sessions/draft.js';
+import { createDraftDocument } from '../../../src/core/composer/document.js';
+import { sessionDir } from '../../../src/core/paths.js';
 import { sessionError } from '../../../src/core/sessions/errors.js';
 import { sessionRelativePath } from '../../../src/core/sessions/ownership-marker.js';
 import { formatAttachmentFailure } from '../../../src/core/attachments/failure.js';
@@ -1216,10 +1225,52 @@ function withStartupWarnings(
 }
 
 /** A session id of the length most real ones have, so the file names a path that has to wrap. */
+export const LONG_SESSION_ID = '2026-10-22-add-a-greeting-helper-to-the-cli-entry-point-docs';
+
 export const UNSAVED_DRAFT_ERROR = sessionError.draftNotSaved(
-  sessionRelativePath('2026-10-22-add-a-greeting-helper-to-the-cli-entry-point-docs', 'draft.json'),
+  sessionRelativePath(LONG_SESSION_ID, 'draft.json'),
   Object.assign(new Error("EACCES: permission denied, open '/x/draft.json'"), { code: 'EACCES' }),
 );
+
+// The line a leave names for an emptied draft whose old file stays.
+const DRAFT_NOT_REMOVED_MESSAGE = sessionError.draftNotRemoved(
+  sessionRelativePath(LONG_SESSION_ID, 'draft.json'),
+  Object.assign(new Error("EACCES: permission denied, unlink '/x/draft.json'"), { code: 'EACCES' }),
+).message;
+
+/**
+ * Empties a run's draft over an old `draft.json` its session folder no longer lets SPLITBRIEF
+ * remove, through the real flush; the caller names it on its screen. Returns the undo.
+ */
+export function retainUnremovableDraft(): () => void {
+  const ref = { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: LONG_SESSION_ID };
+  writeSessionDraft(ref, createDraftDocument('the old draft'));
+  const dir = sessionDir(ref.projectDir, ref.sessionId);
+  chmodSync(dir, 0o555);
+  saveSessionDraft(ref, createDraftDocument(''));
+  flushSessionDrafts();
+  return () => {
+    chmodSync(dir, 0o755);
+    __testDiscardPending();
+  };
+}
+
+function createDraftNotRemovedFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  let restore: (() => void) | undefined;
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      restore = retainUnremovableDraft();
+      nameDraftsNotRemoved('screen');
+    },
+    teardown: () => {
+      restore?.();
+      restore = undefined;
+      return home.teardown();
+    },
+  };
+}
 
 // The line home shows for the first quit that a draft left on a run could not be saved for.
 const DRAFT_NOT_SAVED_MESSAGE = `${UNSAVED_DRAFT_ERROR.message}${SOFT_SEP}quit again leaves without it`;
@@ -1252,6 +1303,7 @@ export const homeFixtureFeedback: ReadonlyMap<string, string> = new Map([
   ['home-startup-warnings', STARTUP_WARNINGS_MESSAGE],
   ['home-startup-permission-warning', STARTUP_PERMISSION_WARNING_MESSAGE],
   ['home-draft-not-saved', DRAFT_NOT_SAVED_MESSAGE],
+  ['home-draft-not-removed', DRAFT_NOT_REMOVED_MESSAGE],
 ]);
 
 function createSaveSignInFixture(): FixtureLifecycle {
@@ -1497,6 +1549,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => withStartupWarnings(createHomePreparingFixture()),
   ],
   [scenarioId('home-draft-not-saved'), createDraftNotSavedFixture],
+  [scenarioId('home-draft-not-removed'), createDraftNotRemovedFixture],
   [scenarioId('home-save-long-draft'), createSaveLongDraftFixture],
   [scenarioId('home-no-config-long-draft'), createNoConfigLongDraftFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],

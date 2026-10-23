@@ -483,6 +483,20 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [{ id: 'composer', title: 'Draft refusal and feature composer' }],
     }),
+    // A leave with an empty composer over an old draft file the session folder keeps: it lands
+    // home, and home names the file, the cause and when the text comes back.
+    defineScenario({
+      id: 'home-draft-not-removed',
+      title: 'Home · an emptied draft whose old file stays',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Cause, file and restart note above the composer',
+        kind: 'ready',
+        marker: 'open that run',
+      },
+      elements: [{ id: 'composer', title: 'Draft note and feature composer' }],
+    }),
     // The same message over a long draft: the logo and the session rows give way, the crew block
     // and the more row stay.
     defineScenario({
@@ -1920,6 +1934,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Quit confirmation',
         kind: 'ready',
         marker: 'Press ctrl+c again to quit',
+      },
+      elements: [{ id: 'composer', title: 'Workflow composer' }],
+    }),
+    defineScenario({
+      id: 'workflow-draft-not-removed',
+      title: 'Workflow · an emptied draft whose old file stays',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'draft-not-removed',
+        title: 'Draft note at the transcript tail',
+        kind: 'ready',
+        marker: 'Could not remove the old draft',
       },
       elements: [{ id: 'composer', title: 'Workflow composer' }],
     }),

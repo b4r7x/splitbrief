@@ -68,6 +68,7 @@ import {
   saveHomeDraft,
   saveSessionDraft,
   flushSessionDrafts,
+  nameDraftsNotRemoved,
   reportDraftNotSaved,
 } from '../../stores/ui/session-drafts.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -265,6 +266,7 @@ function ComposerInput({
       } catch (error) {
         reportDraftNotSaved(error, false);
       }
+      nameDraftsNotRemoved('screen');
     },
     [sessionRef?.projectDir, sessionRef?.sessionId],
   );

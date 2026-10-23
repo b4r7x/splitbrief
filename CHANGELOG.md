@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- Leaving a run with an empty composer no longer stops you when its old saved draft cannot be removed; SPLITBRIEF names the file once and says the text comes back after a restart.
 - When SPLITBRIEF cannot save the message you were typing, the first Esc or quit now names the file and the reason and stays, and the second leaves without it; an empty composer never holds you.
 - The messages about a test command or test file pattern not taken from the plan read as plain sentences, without nested parentheses.
 - The Claude rate limit warning reads 5-hour or 7-day, not five_hour or seven_day.

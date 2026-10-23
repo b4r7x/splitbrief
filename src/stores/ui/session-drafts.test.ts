@@ -4,14 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { sessionDir } from '../../core/paths.js';
-import { readSessionDraft } from '../../core/sessions/draft.js';
+import { readSessionDraft, writeSessionDraft } from '../../core/sessions/draft.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { routerStore } from '../navigation/router.js';
 import { feedbackStore } from './feedback.js';
 import {
   draftRefusalStore,
+  __testDiscardPending,
   flushSessionDrafts,
   loadSessionDraft,
+  nameDraftsNotRemoved,
   reportDraftNotSaved,
   saveSessionDraft,
 } from './session-drafts.js';
@@ -145,5 +147,129 @@ describe('pending session drafts', () => {
       routerStore.reset();
       feedbackStore.reset();
     }
+  });
+});
+
+describe('an emptied draft whose old file cannot be removed', () => {
+  let projectDir: string;
+  let dir: string;
+  const ref = () => ({ projectDir, sessionId: 'one' });
+  const NOTE =
+    'Could not remove the old draft: permission denied · .splitbrief/sessions/one/draft.json · its text comes back when you restart SPLITBRIEF and open that run';
+
+  beforeEach(() => {
+    projectDir = createTempDir('session-draft-unremovable-');
+    dir = sessionDir(projectDir, 'one');
+    writeSessionDraft(ref(), createDraftDocument('my unsent draft'));
+    chmodSync(dir, 0o555);
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: ref() }),
+      execution: { kind: 'at-rest' },
+    });
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    chmodSync(dir, 0o755);
+    __testDiscardPending();
+    vi.useRealTimers();
+    routerStore.reset();
+    feedbackStore.reset();
+    cleanupTempDir(projectDir);
+  });
+
+  it('does not throw, holds nothing, and opens the run empty again in this process', () => {
+    saveSessionDraft(ref(), createDraftDocument(''));
+
+    expect(() => flushSessionDrafts()).not.toThrow();
+    expect(draftRefusalStore.get()).toBeNull();
+    expect(readSessionDraft(ref())).toEqual(createDraftDocument('my unsent draft'));
+    expect(loadSessionDraft(ref())).toEqual(createDraftDocument(''));
+  });
+
+  it('says nothing on the typing save', () => {
+    saveSessionDraft(ref(), createDraftDocument(''));
+    vi.advanceTimersByTime(300);
+
+    expect(draftRefusalStore.get()).toBeNull();
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('brings the old text back in a new process', () => {
+    saveSessionDraft(ref(), createDraftDocument(''));
+    flushSessionDrafts();
+    __testDiscardPending();
+
+    expect(loadSessionDraft(ref())).toEqual(createDraftDocument('my unsent draft'));
+  });
+
+  it('names the file once, on home feedback, however often it is left', () => {
+    saveSessionDraft(ref(), createDraftDocument(''));
+    flushSessionDrafts();
+    routerStore.navigate({ to: 'home' });
+    nameDraftsNotRemoved('screen');
+    expect(feedbackStore.get()).toEqual({ message: NOTE, isError: true });
+
+    feedbackStore.reset();
+    saveSessionDraft(ref(), createDraftDocument(''));
+    flushSessionDrafts();
+    nameDraftsNotRemoved('screen');
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('names the file at the transcript tail when the leave lands on another run', () => {
+    saveSessionDraft(ref(), createDraftDocument(''));
+    flushSessionDrafts();
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord({ ref: { projectDir, sessionId: 'two' } }),
+      execution: { kind: 'at-rest' },
+    });
+    nameDraftsNotRemoved('screen');
+
+    expect(draftRefusalStore.get()?.message).toBe(NOTE);
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('keeps throwing the save failure of another session in the same flush', () => {
+    const blocked = { projectDir, sessionId: 'two' };
+    const blockedDir = sessionDir(projectDir, 'two');
+    mkdirSync(blockedDir, { recursive: true });
+    chmodSync(blockedDir, 0o555);
+    try {
+      saveSessionDraft(ref(), createDraftDocument(''));
+      saveSessionDraft(blocked, createDraftDocument('real unsent words'));
+
+      expect(() => flushSessionDrafts()).toThrow(
+        'Draft not saved: permission denied · .splitbrief/sessions/two/draft.json',
+      );
+      expect(loadSessionDraft(blocked)).toEqual(createDraftDocument('real unsent words'));
+      expect(loadSessionDraft(ref())).toEqual(createDraftDocument(''));
+    } finally {
+      chmodSync(blockedDir, 0o755);
+    }
+  });
+
+  it('holds again for real text typed over the old file', () => {
+    saveSessionDraft(ref(), createDraftDocument(''));
+    flushSessionDrafts();
+    saveSessionDraft(ref(), createDraftDocument('typed again'));
+
+    expect(() => flushSessionDrafts()).toThrow(
+      'Draft not saved: permission denied · .splitbrief/sessions/one/draft.json',
+    );
+  });
+
+  it('removes the file and reads it again once the folder is writable', () => {
+    saveSessionDraft(ref(), createDraftDocument(''));
+    flushSessionDrafts();
+    chmodSync(dir, 0o755);
+    saveSessionDraft(ref(), createDraftDocument('saved now'));
+    flushSessionDrafts();
+
+    expect(loadSessionDraft(ref())).toEqual(createDraftDocument('saved now'));
+    saveSessionDraft(ref(), createDraftDocument(''));
+    flushSessionDrafts();
+    expect(existsSync(join(dir, 'draft.json'))).toBe(false);
   });
 });
