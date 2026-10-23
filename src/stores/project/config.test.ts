@@ -11,9 +11,23 @@ import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../core/paths.js';
 import { loadConfig } from '../../core/config/load/io.js';
 import { readConfigDocument } from '../../core/config/load/document.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
+import { configError } from '../../core/config/errors.js';
 import type { Config } from '../../core/schemas/config.js';
 import { editsForSave } from './config-persistence.js';
 import { narrowRecord } from '../../utils/type-guards.js';
+
+// A load that throws an error no document on disk produces, such as one with a nested intro line.
+const loadFailure = vi.hoisted(() => ({ error: undefined as unknown }));
+vi.mock('../../core/config/load/io.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../core/config/load/io.js')>();
+  return {
+    ...actual,
+    loadConfig: (...args: Parameters<typeof actual.loadConfig>) => {
+      if (loadFailure.error !== undefined) throw loadFailure.error;
+      return actual.loadConfig(...args);
+    },
+  };
+});
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -756,5 +770,67 @@ implementer:
     expect(implementer.tool).toBe('codex');
     expect(implementer.provider).toBeUndefined();
     expect(implementer.api_base).toBeUndefined();
+  });
+});
+
+describe('configStore.reloadShownConfig', () => {
+  const KEEPS = 'SPLITBRIEF keeps the config it loaded before · ';
+
+  beforeEach(() => {
+    tmpDir = createTempDir('config-reload-test');
+    configStore.reset();
+    feedbackStore.reset();
+    writeConfigYaml();
+    configStore.load(tmpDir);
+  });
+
+  afterEach(() => {
+    loadFailure.error = undefined;
+    cleanupTempDir(tmpDir);
+    configStore.reset();
+    feedbackStore.reset();
+  });
+
+  function reloadAfterEdit(failure?: unknown): string | null {
+    writeConfigYaml({ sessions: { scope: 'global' } });
+    loadFailure.error = failure;
+    configStore.reloadShownConfig();
+    return feedbackStore.get().message;
+  }
+
+  it('names the file and each field of a hand edit that does not load', () => {
+    writeConfigYaml({ workflow: { bogus: 1 } });
+    configStore.reloadShownConfig();
+    expect(feedbackStore.get().message).toBe(
+      `${KEEPS}Configuration errors in .splitbrief/config.yaml: workflow.bogus: Unknown config key — remove it or use the current spelling from docs/CONFIGURATION.md.`,
+    );
+  });
+
+  it('keeps a one-line error whole', () => {
+    writeConfigYaml({ version: 2 });
+    configStore.reloadShownConfig();
+    expect(feedbackStore.get().message).toBe(
+      `${KEEPS}Unsupported config version: 2. Supported: 3. Run \`splitbrief init --reconfigure\` to write a current config.`,
+    );
+  });
+
+  it('drops a later line that only introduces more lines, as the save line does', () => {
+    expect(
+      reloadAfterEdit(
+        configError.validationFailed(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE), [
+          'Configuration errors in .splitbrief/config.yaml:',
+          '  planner: No runner kind matches; each kind needs:',
+          '  planner.tool: Required',
+          '  planner.command: Required',
+        ]),
+      ),
+    ).toBe(
+      `${KEEPS}Configuration errors in .splitbrief/config.yaml: planner.tool: Required; planner.command: Required`,
+    );
+  });
+
+  it('names a thrown value that is not an Error on one line', () => {
+    expect(reloadAfterEdit('disk gone\n  twice')).toBe(`${KEEPS}disk gone; twice`);
+    expect(loadedConfig().sessions?.scope).toBe('project');
   });
 });

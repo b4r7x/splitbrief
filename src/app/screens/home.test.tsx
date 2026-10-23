@@ -855,6 +855,95 @@ describe('HomeScreen', () => {
     }
   });
 
+  describe('a hand edit of config.yaml while home shows', () => {
+    const crewOn = (model: string) => ({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'claude-opus-4-1' },
+      implementer: { kind: 'cli', tool: 'claude-code', model },
+    });
+
+    async function homeAfterTicks(edit: () => void, ticks = 1) {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      writeConfigYaml(projectDir, crewOn('claude-sonnet-4-5'));
+      configStore.load(projectDir);
+      const ui = renderHome();
+      await flushEffects();
+      const before = stripAnsiStyles(ui.lastFrame() ?? '');
+      edit();
+      for (let i = 0; i < ticks; i += 1) {
+        vi.advanceTimersByTime(LOCKFILE_PING_INTERVAL_MS);
+        await flushEffects();
+      }
+      return { ui, before, current: () => stripAnsiStyles(ui.lastFrame() ?? '') };
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it.each([
+      ['wide', 120, 40, 'BUILD     '],
+      ['collapsed', 60, 18, 'BUILD'],
+    ])(
+      'shows a new BUILD model on the %s crew line within one refresh tick',
+      async (_c, cols, rows, anchor) => {
+        terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 120 });
+        const { ui, before, current } = await homeAfterTicks(() =>
+          writeConfigYaml(projectDir, crewOn('claude-haiku-4-5')),
+        );
+        expect(lineContaining(before, anchor)).toContain('Sonnet 4.5');
+        expect(lineContaining(current(), anchor)).toContain('Haiku 4.5');
+        expect(current()).not.toContain('Sonnet 4.5');
+        ui.unmount();
+      },
+    );
+
+    it('leaves the store alone while the file stays as it was', async () => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+      const changes = vi.fn();
+      const { ui } = await homeAfterTicks(() => {
+        configStore.subscribe(changes);
+      }, 3);
+      expect(changes).not.toHaveBeenCalled();
+      ui.unmount();
+    });
+
+    it('names an edit that does not load once, keeps the crew, keeps reading, and stays usable', async () => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+      const setError = vi.spyOn(feedbackStore, 'setError');
+      const { ui, current } = await homeAfterTicks(
+        () => writeConfigYaml(projectDir, { ...crewOn('claude-haiku-4-5'), version: 2 }),
+        3,
+      );
+      const named = setError.mock.calls.filter(([message]) =>
+        String(message).includes('Unsupported config version: 2'),
+      );
+      expect(named).toHaveLength(1);
+      expect(String(named[0]?.[0])).toContain('SPLITBRIEF keeps the config it loaded before');
+      expect(current()).toContain('Unsupported config version: 2');
+      expect(lineContaining(current(), 'BUILD     ')).toContain('Sonnet 4.5');
+
+      ui.stdin.write('still typing');
+      await flushEffects();
+      expect(current()).toContain('still typing');
+
+      writeConfigYaml(projectDir, crewOn('claude-haiku-4-5'));
+      vi.advanceTimersByTime(LOCKFILE_PING_INTERVAL_MS);
+      await flushEffects();
+      expect(lineContaining(current(), 'BUILD     ')).toContain('Haiku 4.5');
+      ui.unmount();
+    });
+
+    it('shows the no-config state once the file is deleted', async () => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+      const { ui, before, current } = await homeAfterTicks(() =>
+        unlinkSync(join(projectDir, '.splitbrief', 'config.yaml')),
+      );
+      expect(before).not.toContain('No config.');
+      expect(current()).toContain('No config. Setup saves .splitbrief/config.yaml.');
+      ui.unmount();
+    });
+  });
+
   it('renders logo and recent sessions within the terminal budget', async () => {
     const terminalRows = 30;
     terminalSizeStore.__testReset({ cols: 120, rows: terminalRows, isSmall: false });

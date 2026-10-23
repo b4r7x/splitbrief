@@ -60,6 +60,7 @@ export function ToolModelPicker({
   const coldDiscovery = catalog.discovery.cold && catalog.discovery.refreshing;
   const item = catalog.currentItem;
 
+  useEffect(() => configStore.reloadShownConfig(), []);
   useEffect(() => () => pickerViewStore.reset(), []);
 
   useInput(

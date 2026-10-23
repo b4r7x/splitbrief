@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -751,5 +752,63 @@ describe('SettingsOverlay', () => {
     expect(tightHeader).toBeGreaterThan(-1);
     expect(tightLines[tightHeader - 1]).toContain('REVIEW');
     tight.unmount();
+  });
+
+  describe('a hand edit of config.yaml made before Settings opens', () => {
+    const build = (extra: Record<string, unknown> = {}) => ({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'claude-opus-4-1' },
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-5', ...extra },
+    });
+
+    async function openAfter(edit: () => void, focus?: string) {
+      writeConfigYaml(projectDir, build());
+      configStore.load(projectDir);
+      edit();
+      overlayStore.open('settings', focus);
+      const ui = renderAt(120, 40);
+      await flushEffects();
+      return { ui, lines: frameLines(ui) };
+    }
+
+    it('shows a new BUILD model on the Crew row', async () => {
+      const { ui, lines } = await openAfter(() =>
+        writeConfigYaml(projectDir, build({ model: 'claude-haiku-4-5' })),
+      );
+      expect(lineWith(seatRowLines(lines), 'BUILD')).toContain('Haiku 4.5');
+      ui.unmount();
+    });
+
+    it('shows a fallback-only edit on the Fallback row', async () => {
+      detectionStore.setDetection({ providers: [], cliTools: [cliDetectionFor('ready', 'codex')] });
+      const { ui } = await openAfter(
+        () =>
+          writeConfigYaml(
+            projectDir,
+            build({ fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'high' } }),
+          ),
+        'fallback:build',
+      );
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Codex CLI · GPT-5 Codex · high');
+      ui.unmount();
+    });
+
+    it('shows a context-length-only edit on the Prompt budget row', async () => {
+      const { ui, lines } = await openAfter(
+        () => writeConfigYaml(projectDir, build({ context_length: 64000 })),
+        'implementer.contextLength',
+      );
+      expect(lineWith(lines, 'Prompt budget')).toMatch(/64[,.\s]?000/);
+      ui.unmount();
+    });
+
+    it('names an edit that does not load and keeps the crew it loaded', async () => {
+      const { ui, lines } = await openAfter(() =>
+        writeConfigYaml(projectDir, { ...build(), version: 2 }),
+      );
+      expect(feedbackStore.get().message).toContain('Unsupported config version: 2');
+      expect(feedbackStore.get().message).toContain('SPLITBRIEF keeps the config it loaded before');
+      expect(lineWith(seatRowLines(lines), 'BUILD')).toContain('Sonnet 4.5');
+      ui.unmount();
+    });
   });
 });

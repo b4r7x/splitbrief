@@ -19,6 +19,10 @@ import {
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { configError } from '../../core/config/errors.js';
+import { SOFT_SEP } from '../../core/separators.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
+import { feedbackStore } from '../ui/feedback.js';
+import { configErrorLines } from './save-feedback.js';
 import { selectInitialCrew } from '../../core/crew/default.js';
 import { type SeatIds, sameSeatIds, seatIdsOf } from '../../core/crew/identity.js';
 import {
@@ -37,6 +41,8 @@ interface ConfigState {
   overrides: CLIOverrides;
   detectedContextLength: number | undefined;
   discovery: Discovery | undefined;
+  /** The line that named a hand edit that did not load; a load clears it. */
+  refusedEdit: string | undefined;
 }
 
 /** The context length boot discovery found, and the implementer it measured; an env value has none. */
@@ -51,6 +57,7 @@ const initial: ConfigState = {
   overrides: {},
   detectedContextLength: undefined,
   discovery: undefined,
+  refusedEdit: undefined,
 };
 
 const store = createStore<ConfigState>(initial);
@@ -96,6 +103,7 @@ function loadedState(
     overrides: cloneValue(overrides),
     detectedContextLength: undefined,
     discovery,
+    refusedEdit: undefined,
   });
 }
 
@@ -148,6 +156,26 @@ function reloadIfChanged(): void {
   if (!projectDir) throw configError.loadNotCalled('reload');
   if (configRevisionsMatch(revision, readConfigDocument(projectDir).revision)) return;
   store.set(loadedState(projectDir, overrides, discovery));
+}
+
+/**
+ * The reload of a surface that shows the config: home on its refresh tick, Settings and the seat
+ * picker when they open. An edit that does not load is named once, what SPLITBRIEF keeps first, so
+ * a cut line loses the end of the reason; the store keeps the config it loaded before.
+ */
+function reloadShownConfig(): void {
+  try {
+    reloadIfChanged();
+  } catch (err) {
+    const { intro, issues } = configErrorLines(err instanceof Error ? err.message : String(err));
+    const reason = [intro, issues.join('; ')].filter((part) => part !== '').join(' ');
+    const message = toErrorMessage(
+      `SPLITBRIEF keeps the config it loaded before${SOFT_SEP}${reason}`,
+    );
+    if (store.get().refusedEdit === message) return;
+    store.set((state) => ({ ...state, refusedEdit: message }));
+    feedbackStore.setError(message);
+  }
 }
 
 function refreshFromExecution(projectDir: string, config: Config): void {
@@ -301,6 +329,7 @@ export const configStore = {
   ...storeBase(store),
   load,
   reloadIfChanged,
+  reloadShownConfig,
   refreshFromExecution,
   save,
   useConfig,

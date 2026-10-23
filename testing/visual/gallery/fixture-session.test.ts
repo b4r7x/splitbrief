@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -380,6 +380,8 @@ describe('a previewed App spends fixture effects and no production one', () => {
 
   it('refreshes, checks and saves a local connection without a process or a write', async () => {
     const preview = await open('overlay-picker-local-server');
+    const configFile = join(FIXTURE_SESSION_ROOT, '.splitbrief', 'config.yaml');
+    const seeded = readFileSync(configFile, 'utf8');
 
     await press(preview.ui, CTRL_R);
     expect(feedbackStore.get().message).toBe(PREVIEW_UNAVAILABLE);
@@ -399,9 +401,11 @@ describe('a previewed App spends fixture effects and no production one', () => {
         model: 'gemma3:27b',
       }),
     );
-    // The seat moved in memory only: nothing was written to the fixture project, let alone to
-    // the real one the host was pointed at.
-    expect(readdirSync(FIXTURE_SESSION_ROOT)).toEqual([]);
+    // The seat moved in memory only: the fixture project holds the config its seed wrote, and
+    // nothing reached the real project the host was pointed at.
+    expect(readdirSync(FIXTURE_SESSION_ROOT)).toEqual(['.splitbrief']);
+    expect(readdirSync(join(FIXTURE_SESSION_ROOT, '.splitbrief'))).toEqual(['config.yaml']);
+    expect(readFileSync(configFile, 'utf8')).toBe(seeded);
     expectEveryPathInFixtureRoot();
 
     await preview.close();
