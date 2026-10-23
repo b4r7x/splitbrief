@@ -623,7 +623,7 @@ describe('rate_limit_event frames', () => {
       {
         code: 'claude_rate_limit',
         severity: 'warning',
-        message: `seven_day rate limit approaching (resets ${resetLabel})`,
+        message: `7-day rate limit approaching (resets ${resetLabel})`,
       },
     ]);
   });
@@ -639,10 +639,18 @@ describe('rate_limit_event frames', () => {
       {
         code: 'claude_rate_limit',
         severity: 'error',
-        message: `five_hour rate limit reached (resets ${resetLabel})`,
+        message: `5-hour rate limit reached (resets ${resetLabel})`,
       },
     ]);
     expect(parsed.warning?.[0]?.message.length).toBeLessThanOrEqual(200);
+  });
+
+  it('names a limit window it does not know as a plain rate limit', () => {
+    const parsed = parseStreamLine(
+      rateFrame({ status: 'allowed_warning', rateLimitType: 'new_window', resetsAt }),
+    );
+
+    expect(parsed.warning?.[0]?.message).toBe(`rate limit approaching (resets ${resetLabel})`);
   });
 
   it.each([
