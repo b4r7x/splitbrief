@@ -40,7 +40,8 @@ import { bindApplyHandOffs } from './hand-off.js';
 import { acquireLiveness } from '../run/liveness.js';
 import { activeApply } from '../session-lifecycle/shutdown.js';
 import { readWorkspaceRecord } from '../isolation/retention.js';
-import { captureReviewedCandidate } from './states.js';
+import { captureReviewedCandidate, readApplyEntry } from './states.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 
 vi.mock('../approval/staged-project.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../approval/staged-project.js')>();
@@ -53,6 +54,24 @@ vi.mock('../approval/file-snapshots/entry.js', async (importOriginal) => {
 vi.mock('./backup.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./backup.js')>();
   return { ...actual, writeApplyBackup: vi.fn(actual.writeApplyBackup) };
+});
+// A temporary file the disk refuses to open, the way a full disk refuses one: the error names it.
+const refusedOpen = vi.hoisted(() => ({ pattern: undefined as RegExp | undefined }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  const open: typeof actual.open = (path, ...rest) => {
+    if (refusedOpen.pattern?.test(String(path))) {
+      return Promise.reject(
+        Object.assign(new Error(`ENOSPC: no space left on device, open '${String(path)}'`), {
+          code: 'ENOSPC',
+          syscall: 'open',
+          path: String(path),
+        }),
+      );
+    }
+    return actual.open(path, ...rest);
+  };
+  return { ...actual, open, default: { ...actual, open } };
 });
 vi.mock('./merge.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./merge.js')>();
@@ -149,6 +168,7 @@ beforeEach(async () => {
   vi.mocked(merge.mergeApplyStates).mockReset().mockImplementation(actualMerge.mergeApplyStates);
   const actualBackup = await vi.importActual<typeof import('./backup.js')>('./backup.js');
   vi.mocked(backup.writeApplyBackup).mockReset().mockImplementation(actualBackup.writeApplyBackup);
+  refusedOpen.pattern = undefined;
 });
 
 describe('runApply', { timeout: 60_000 }, () => {
@@ -406,6 +426,85 @@ describe('runApply', { timeout: 60_000 }, () => {
         );
       },
     );
+  });
+
+  it.each(['Cargo.lock', 'yarn.lock', 'flake.lock'])(
+    'a %s the checkout folder refuses names that file in the halt',
+    async (name) => {
+      await withApplyRun({ [`pkg/${name}`]: 'base\n' }, { sessionId: SESSION_ID }, async (run) => {
+        writeFileSync(join(run.ws, 'pkg', name), 'ours\n');
+        const folder = join(run.dir, 'pkg');
+        chmodSync(folder, 0o555);
+        try {
+          expect((await apply(run)).outcome).toBe('halted');
+        } finally {
+          chmodSync(folder, 0o755);
+        }
+
+        const detail = savedState(run).pendingRecovery?.details.find((line) =>
+          line.includes(' failed: '),
+        );
+        expect(detail).toMatch(new RegExp(`failed: permission denied · \\S*/pkg/${name}$`));
+      });
+    },
+  );
+
+  describe('a backup write the disk refuses names the backup file, never its temporary copy', () => {
+    const backupOf = async (run: ApplyRun) => {
+      const checkout = await readApplyEntry(run.dir, 'a.txt');
+      if (checkout === null) throw new Error('a.txt is missing');
+      return writeApplyBackup({
+        projectDir: run.dir,
+        sessionId: run.sessionId,
+        backupId: 'backup-1',
+        workspaceDir: run.ws,
+        files: ['a.txt'],
+        theirs: new Map([['a.txt', checkout]]),
+      });
+    };
+    const blobOf = (run: ApplyRun) =>
+      join(applyBackupDir(run.dir, run.sessionId, 'backup-1'), 'blobs', sha256Hex('base a\n'));
+
+    it('a blobs folder that takes no new file', async () => {
+      await withApplyRun({ 'a.txt': 'base a\n' }, { sessionId: SESSION_ID }, async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+        const blobs = join(applyBackupDir(run.dir, run.sessionId, 'backup-1'), 'blobs');
+        mkdirSync(blobs, { recursive: true });
+        chmodSync(blobs, 0o555);
+        let thrown: unknown;
+        try {
+          await backupOf(run).catch((err: unknown) => {
+            thrown = err;
+          });
+        } finally {
+          chmodSync(blobs, 0o755);
+        }
+
+        expect(thrown).toMatchObject({ code: 'EACCES', path: blobOf(run) });
+        expect(toErrorMessage(thrown)).not.toMatch(/\.blob\.|\.tmp/);
+      });
+    });
+
+    it.each([
+      ['blob', /\.blob\.[0-9a-f]{16}\.tmp$/],
+      ['manifest', /\.manifest\.[0-9a-f]{16}\.tmp$/],
+    ] as const)('a full disk on the %s', async (kind, pattern) => {
+      await withApplyRun({ 'a.txt': 'base a\n' }, { sessionId: SESSION_ID }, async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+        refusedOpen.pattern = pattern;
+        const thrown = await backupOf(run).then(
+          () => undefined,
+          (err: unknown) => err,
+        );
+        const target =
+          kind === 'blob'
+            ? blobOf(run)
+            : join(applyBackupDir(run.dir, run.sessionId, 'backup-1'), 'manifest.json');
+
+        expect(thrown).toMatchObject({ code: 'ENOSPC', path: target });
+        expect(toErrorMessage(thrown)).not.toMatch(/\.(blob|manifest)\.|\.tmp/);
+      });
+    });
   });
 
   it('a pending recovery stops Apply before it reads or writes anything', async () => {

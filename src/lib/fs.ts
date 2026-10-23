@@ -18,6 +18,7 @@ import { readdir, readFile, lstat, writeFile, rename, rm } from 'node:fs/promise
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { error, matches } from '../utils/error.js';
 import { assertWritablePathConfined } from './path-confinement.js';
+import { isNodeError } from './process/errors.js';
 import { warnError } from './warn.js';
 
 export function readJsonSafe(path: string): unknown | null {
@@ -78,6 +79,15 @@ export function ensureSecureDir(dir: string): void {
   mkdirSync(dir, { recursive: true, mode: SECURE_DIR_MODE });
 }
 
+/**
+ * A write through a temporary or lock sibling fails for the file it meant: the error names that
+ * file, so no reader has to guess it from the sibling's name.
+ */
+export function nameWriteTarget(err: unknown, target: string): unknown {
+  if (isNodeError(err)) Object.assign(err, { path: target, dest: undefined });
+  return err;
+}
+
 export function writeSecureFile(filePath: string, content: string): void {
   ensureSecureDir(dirname(filePath));
   rejectSymlinkTarget(filePath);
@@ -91,7 +101,7 @@ export function writeSecureFile(filePath: string, content: string): void {
     renameSync(tmpPath, filePath);
   } catch (err) {
     rmSync(tmpPath, { force: true });
-    throw err;
+    throw nameWriteTarget(err, filePath);
   }
 }
 
@@ -107,7 +117,7 @@ async function atomicSecureWriteAsync(filePath: string, content: string): Promis
     await rename(tmpPath, filePath);
   } catch (err) {
     await rm(tmpPath, { force: true });
-    throw err;
+    throw nameWriteTarget(err, filePath);
   }
 }
 

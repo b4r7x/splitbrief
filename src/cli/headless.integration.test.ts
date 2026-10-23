@@ -34,7 +34,13 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  passingReviewVerdict,
+  planFromTasks,
+  typedCallAnswering,
+  typedCallFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 import { readWorkspaceRecord } from '../engine/orchestrator/isolation/retention.js';
 import { createRunIsolation } from '../engine/orchestrator/isolation/create.js';
 import { createSnapshot } from '../engine/snapshots/create.js';
@@ -775,6 +781,178 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
   });
 });
 
+describe('runHeadless — a failure in a session folder that takes no new file', () => {
+  let stdoutChunks: string[];
+  let stderrChunks: string[];
+
+  beforeEach(() => {
+    stdoutChunks = [];
+    stderrChunks = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    });
+  });
+
+  afterEach(async () => {
+    await settleTrackedWorkflows();
+    vi.restoreAllMocks();
+    for (const d of dirs) cleanupTempDir(d);
+    dirs = [];
+  });
+
+  type Origin = 'brief' | 'planning' | 'halt' | 'final review';
+
+  // Each origin takes the folder's write access away at its own moment, so the
+  // failure it ends on is the state write that comes next.
+  function seatsFor(origin: Origin, readOnly: () => void) {
+    const plan = () => planFromTasks([makeTask({ id: 'T001' })]);
+    if (origin === 'planning')
+      return {
+        _planner: makePlanner({
+          typedCall: typedCallAnswering(() => {
+            readOnly();
+            return plan();
+          }),
+        }),
+      };
+    if (origin === 'halt')
+      return {
+        _planner: makePlanner({
+          typedCall: typedCallAnswering(() => {
+            readOnly();
+            throw new Error('planner down');
+          }),
+        }),
+      };
+    if (origin === 'final review')
+      return {
+        _planner: makePlanner({
+          typedCall: typedCallPlanAndReview(plan, (prompt) => {
+            readOnly();
+            return passingReviewVerdict(prompt);
+          }),
+        }),
+      };
+    return {
+      _implementer: makeImplementer({
+        implement: vi.fn().mockImplementation(async () => {
+          readOnly();
+          return { success: true, output: '', usage: null };
+        }),
+      }),
+    };
+  }
+
+  async function runReadOnly(name: string, plain: boolean, origin: Origin) {
+    const projectDir = createHeadlessGitProject(name);
+    dirs.push(projectDir);
+    writeHeadlessConfigYaml(projectDir, [
+      'version: 3',
+      'planner:',
+      '  kind: cli',
+      '  tool: claude-code',
+      'implementer:',
+      '  kind: api',
+      '  provider: ollama',
+      '  service: ollama',
+      '  offering: local',
+      '  api_base: http://localhost:11434/v1',
+      '  model: qwen2.5-coder:7b',
+      '  context_length: 32768',
+      'validation:',
+      '  end_checks: false',
+      '  test_command: "noop"',
+      'workflow:',
+      '  approve: none',
+    ]);
+    const sessionId = `sess-${name}`;
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+    const dir = sessionDir(projectDir, sessionId);
+    const error = await runHeadless({
+      prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'read only' }),
+      plain,
+      _planner: makePlanner({ typedCall: typedCallFromTasks([makeTask({ id: 'T001' })]) }),
+      _implementer: makeImplementer(),
+      ...seatsFor(origin, () => chmodSync(dir, 0o555)),
+    })
+      .then(
+        () => {
+          throw new Error('runHeadless unexpectedly resolved');
+        },
+        (err: { exitCode?: number; message?: string }) => err,
+      )
+      .finally(() => chmodSync(dir, 0o755));
+    const stateCause = `Could not save the run state: permission denied · .splitbrief/sessions/${sessionId}/state.json`;
+    // The planning origin fails first on plan.json, the run file the plan goes to.
+    const cause =
+      origin === 'planning'
+        ? `Could not save a run file: permission denied · .splitbrief/sessions/${sessionId}/plan.json`
+        : stateCause;
+    return {
+      error,
+      sessionId,
+      cause,
+      stateCause,
+      stderr: stderrChunks.join(''),
+      stdout: stdoutChunks.join(''),
+    };
+  }
+
+  const origins: readonly Origin[] = ['brief', 'planning', 'halt', 'final review'];
+
+  it.each(origins)(
+    '--plain prints the cause and exits as failed: %s',
+    async (origin) => {
+      const run = await runReadOnly(`read-only-plain-${origin.replace(' ', '-')}`, true, origin);
+
+      expect(run.error).toMatchObject({
+        exitCode: 1,
+        message: 'Workflow failed \u2014 see the error output above.',
+      });
+      expect(run.stderr.split('\n')).toContain(run.cause);
+      expect(run.stderr).toContain(`Could not record why the run failed: ${run.stateCause}`);
+      expect(run.stderr).toContain(
+        `Could not save the run summary: permission denied · .splitbrief/sessions/${run.sessionId}/summary.json`,
+      );
+      expect(`${run.stderr}${run.stdout}`).not.toMatch(/EACCES|\.tmp\./);
+    },
+    30_000,
+  );
+
+  it.each(origins)(
+    '--json records the failed status after the cause: %s',
+    async (origin) => {
+      const run = await runReadOnly(`read-only-json-${origin.replace(' ', '-')}`, false, origin);
+      const records = run.stdout
+        .trim()
+        .split('\n')
+        .filter((line) => line.trim().startsWith('{'))
+        .map((line) => HeadlessJsonRecordSchema.parse(JSON.parse(line)));
+
+      expect(run.error).toMatchObject({
+        exitCode: 1,
+        message: 'Workflow failed \u2014 see the error output above.',
+      });
+      expect(records).toContainEqual({
+        type: 'event',
+        data: expect.objectContaining({ type: 'error', message: run.cause }),
+      });
+      expect(records.at(-1)).toEqual({
+        type: 'error',
+        message: `Session ${run.sessionId} ended with status failed.`,
+      });
+      expect(`${run.stderr}${run.stdout}`).not.toMatch(/EACCES|\.tmp\./);
+    },
+    30_000,
+  );
+});
+
 describe('runHeadless — the seat-down policy and the record', () => {
   let stdoutChunks: string[];
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
@@ -876,7 +1054,7 @@ describe('runHeadless — the seat-down policy and the record', () => {
             message:
               record === 'malformed'
                 ? 'The stopped workspace could not be verified. Its files were left in place; automatic continuation is blocked.'
-                : expect.stringContaining('EACCES'),
+                : `permission denied · ${path}`,
           }),
         }),
       );

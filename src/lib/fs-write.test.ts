@@ -154,6 +154,19 @@ describe('writeSecureFile', () => {
     const stray = readdirSync(dir).filter((f) => f.includes('.tmp.'));
     expect(stray).toEqual([]);
   });
+
+  it('names the file it meant, not its temporary copy, when the folder refuses the write', () => {
+    const dir = makeTmp();
+    const target = join(dir, 'Cargo.lock');
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => writeSecureFile(target, 'payload')).toThrow(
+        expect.objectContaining({ code: 'EACCES', path: target }),
+      );
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+  });
 });
 
 describe('writeSecureFileAsync', () => {
@@ -212,6 +225,20 @@ describe('writeSecureFileAsync', () => {
     await expect(writeSecureFileAsync(target, 'payload')).rejects.toThrow();
     const stray = readdirSync(dir).filter((f) => f.includes('.tmp.'));
     expect(stray).toEqual([]);
+  });
+
+  it('names the file it meant, not its temporary copy, when the folder refuses the write', async () => {
+    const dir = makeTmp();
+    const target = join(dir, 'Cargo.lock');
+    chmodSync(dir, 0o555);
+    try {
+      await expect(writeSecureFileAsync(target, 'payload')).rejects.toMatchObject({
+        code: 'EACCES',
+        path: target,
+      });
+    } finally {
+      chmodSync(dir, 0o755);
+    }
   });
 });
 

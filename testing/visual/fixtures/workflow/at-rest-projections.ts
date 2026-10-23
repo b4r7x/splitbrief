@@ -2289,6 +2289,77 @@ const CRASHED_BUILD = record({
   }),
 });
 
+const UNSAVED_FAILURE_MESSAGE =
+  'Could not save the run state: permission denied · .splitbrief/sessions/visual-at-rest-failed-unsaved/state.json';
+
+const FAILED_UNSAVED_LOG: readonly EngineEvent[] = [
+  ...CRASHED_BUILD_LOG,
+  {
+    type: 'error',
+    ts: CRASH_TS + 74_000,
+    phase: 'implementing',
+    message: UNSAVED_FAILURE_MESSAGE,
+  },
+];
+
+const FAILED_UNSAVED = record({
+  sessionId: 'visual-at-rest-failed-unsaved',
+  status: {
+    kind: 'open',
+    stop: { kind: 'stopped', on: { kind: 'failed', message: UNSAVED_FAILURE_MESSAGE } },
+    resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 },
+  },
+  state: savedState({
+    phase: 'implementing',
+    currentTaskIndex: 1,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'in_progress' },
+    ],
+    lastFailure: {
+      step: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 },
+      message: UNSAVED_FAILURE_MESSAGE,
+      at: new Date(CRASH_TS + 74_000).toISOString(),
+    },
+  }),
+});
+
+const PLAN_UNSAVED_MESSAGE =
+  'Could not save a run file: permission denied · .splitbrief/sessions/visual-at-rest-plan-unsaved/plan.json';
+
+const PLAN_UNSAVED_LOG: readonly EngineEvent[] = [
+  { type: 'workflow_started', ts: CRASH_TS, phase: 'planning', feature: AT_REST_FIXTURE_FEATURE },
+  { type: 'user_message', ts: CRASH_TS + 10, phase: 'planning', text: AT_REST_FIXTURE_FEATURE },
+  {
+    type: 'planner_text',
+    ts: CRASH_TS + 20_000,
+    phase: 'planning',
+    role: 'planner',
+    content: 'markdown',
+    text: 'Validate the input before the form sends it.',
+  },
+  { type: 'error', ts: CRASH_TS + 21_000, phase: 'planning', message: PLAN_UNSAVED_MESSAGE },
+];
+
+/** The planner answered, but the session folder took no plan.json: a save failure, not the planner's. */
+const PLAN_UNSAVED = record({
+  sessionId: 'visual-at-rest-plan-unsaved',
+  status: {
+    kind: 'open',
+    stop: { kind: 'stopped', on: { kind: 'failed', message: PLAN_UNSAVED_MESSAGE } },
+    resumeAt: { kind: 'planner', call: 'plan' },
+  },
+  state: savedState({
+    phase: 'planning',
+    briefs: [],
+    lastFailure: {
+      step: { kind: 'planner', call: 'plan' },
+      message: PLAN_UNSAVED_MESSAGE,
+      at: new Date(CRASH_TS + 21_000).toISOString(),
+    },
+  }),
+});
+
 const CRASHED_REVIEW_LOG: readonly EngineEvent[] = [
   {
     type: 'workflow_started',
@@ -2410,6 +2481,14 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     }),
     sidebarVisible: true,
   },
+  atRestProjection({
+    id: 'workflow-at-rest-failed-unsaved',
+    route: { record: FAILED_UNSAVED, log: FAILED_UNSAVED_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-plan-unsaved',
+    route: { record: PLAN_UNSAVED, log: PLAN_UNSAVED_LOG },
+  }),
   atRestProjection({
     id: 'workflow-at-rest-crashed-review',
     route: { record: CRASHED_REVIEW, log: CRASHED_REVIEW_LOG },

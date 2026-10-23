@@ -14,7 +14,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, type Stats } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import { fsError } from '../../../../lib/fs.js';
+import { fsError, nameWriteTarget } from '../../../../lib/fs.js';
 import {
   assertExistingPathConfined,
   assertPathConfined,
@@ -347,6 +347,8 @@ async function writeConfinedFileEntry(
     } else {
       await rename(temporary, fullPath);
     }
+  } catch (err) {
+    throw nameWriteTarget(err, fullPath);
   } finally {
     // The target is already committed after link/rename. A failed cleanup must
     // not misreport that successful write as an unapplied file.

@@ -20,6 +20,7 @@ import {
 import { warnError, warnStderr } from '../../lib/warn.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { sessionError } from './errors.js';
+import { sessionRelativePath } from './ownership-marker.js';
 import { writeSecureFile } from '../../lib/fs.js';
 
 type SessionRowBase = Readonly<{
@@ -64,10 +65,14 @@ export function saveSummary(ref: SessionRef, session: Session): void {
   if (result.data.id !== id) {
     throw sessionError.idMismatch(id, result.data.id);
   }
-  writeSecureFile(
-    join(sessionDir(projectDir, id), SUMMARY_FILE),
-    `${JSON.stringify(session, null, 2)}\n`,
-  );
+  try {
+    writeSecureFile(
+      join(sessionDir(projectDir, id), SUMMARY_FILE),
+      `${JSON.stringify(session, null, 2)}\n`,
+    );
+  } catch (cause) {
+    throw sessionError.summaryNotSaved(sessionRelativePath(id, SUMMARY_FILE), cause);
+  }
 }
 
 export function readSession(ref: SessionRef): Session | null {

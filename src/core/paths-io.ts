@@ -21,6 +21,8 @@ import { assertPathConfined, assertModelWritablePathConfined } from '../lib/path
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { nowIso } from '../utils/format-time.js';
 import { error, matches } from '../utils/error.js';
+import { fileErrorReason } from '../utils/format-errors.js';
+import { sessionError } from './sessions/errors.js';
 
 export const pathError = {
   escapesProject: (filePath: string, cause?: unknown) =>
@@ -112,7 +114,13 @@ export function writeSpecFile(
   if (metadata && FRONTMATTER_FILES.has(filename) && !hasFileFrontmatter(content)) {
     finalContent = buildSpecFrontmatter(metadata) + content;
   }
-  confinedWriteFile(ref.projectDir, specFileRelativePath(ref.sessionId, filename), finalContent);
+  const relativePath = specFileRelativePath(ref.sessionId, filename);
+  try {
+    confinedWriteFile(ref.projectDir, relativePath, finalContent);
+  } catch (cause) {
+    if (fileErrorReason(cause) === undefined) throw cause;
+    throw sessionError.fileNotSaved(relativePath, cause);
+  }
 }
 
 function specFileRelativePath(sessionId: string, filename: string): string {

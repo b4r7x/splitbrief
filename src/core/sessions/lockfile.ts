@@ -10,6 +10,8 @@ import { LOCKFILE } from '../paths.js';
 import { sessionRelativePath } from './ownership-marker.js';
 import {
   checkSessionLockStatus,
+  forgetExitInMemory,
+  keepExitInMemory,
   parseSessionLockfileData,
   readSessionLockfileData,
   sessionLockfilePath,
@@ -35,6 +37,7 @@ export async function writeLockfile(
   sessionDir: string,
   data: Omit<LockfileData, 'version'>,
 ): Promise<void> {
+  forgetExitInMemory(sessionDir);
   const payload: LockfileData = {
     version: 1,
     ...data,
@@ -129,14 +132,19 @@ export async function updateHeartbeat(sessionDir: string): Promise<void> {
 }
 
 export async function markExited(sessionDir: string, exitCode: number): Promise<void> {
-  await updateLockfile(
-    sessionDir,
-    (data) => {
-      if (data.exitedAt === undefined) data.exitedAt = Date.now();
-      data.exitCode = exitCode;
-    },
-    true,
-  );
+  try {
+    await updateLockfile(
+      sessionDir,
+      (data) => {
+        if (data.exitedAt === undefined) data.exitedAt = Date.now();
+        data.exitCode = exitCode;
+      },
+      true,
+    );
+  } catch (err) {
+    keepExitInMemory(sessionDir);
+    throw err;
+  }
 }
 
 export function readLockfile(sessionDir: string): LockfileData | null {

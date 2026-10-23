@@ -438,7 +438,10 @@ describe('a planner that reads no files of its own', () => {
     expect(pathNotices(run.events)).toEqual([]);
     expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
     expect(run.events).toContainEqual(
-      expect.objectContaining({ type: 'error', message: expect.stringContaining('EIO') }),
+      expect.objectContaining({
+        type: 'error',
+        message: 'Planning failed: cannot stat /path-check/brief.md',
+      }),
     );
   });
 

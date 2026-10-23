@@ -476,7 +476,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
     finalState === null ? null : deriveRunStatus({ state: finalState, liveness: 'not-alive' });
   if (status?.kind === 'closed' && status.as === 'complete') return;
   failIfFinalReviewFailed(finalState, projectDir, sessionId, writeRecord);
-  failIfFinalReviewIncomplete(finalState, sessionId, writeRecord);
   failIfSessionFailed(finalState, sessionId, writeRecord, lastError);
+  failIfFinalReviewIncomplete(finalState, sessionId, writeRecord);
   failIfSessionInterrupted(projectDir, sessionId, writeRecord);
 }

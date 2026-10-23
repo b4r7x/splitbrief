@@ -8,6 +8,7 @@ import type { WorkflowContext } from '../types.js';
 import type { RetryAttemptFailure } from '../escalation/types.js';
 
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { sessionError } from '../../../core/sessions/errors.js';
 import { retentionError } from '../isolation/retention.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -149,7 +150,12 @@ export async function handleTaskPlannerCallFailure(
     },
 ): Promise<WorkflowState> {
   const { wctx, task, err, setTrackedState } = opts;
-  if (retentionError.isFailed(err) || retentionError.isUnavailable(err)) throw err;
+  if (
+    retentionError.isFailed(err) ||
+    retentionError.isUnavailable(err) ||
+    sessionError.isLocalSaveFailure(err)
+  )
+    throw err;
   if (isAbortError(err) || wctx.signal?.aborted) {
     const stoppedState = loadState(wctx) ?? opts.state;
     setTrackedState(stoppedState);

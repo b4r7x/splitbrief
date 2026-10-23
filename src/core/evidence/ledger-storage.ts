@@ -13,8 +13,7 @@ export function evidenceLedgerPath(ref: SessionRef): string {
 }
 
 function withEvidenceLedgerLock<T>(ledgerPath: string, fn: () => T): T {
-  const lockPath = lockSibling(ledgerPath);
-  return withFileLock(lockPath, () => evidenceError.lockTimeout(lockPath), fn);
+  return withFileLock(ledgerPath, () => evidenceError.lockTimeout(lockSibling(ledgerPath)), fn);
 }
 
 function writeEvidenceLedgerUnlocked(ledgerPath: string, ledger: EvidenceLedger): void {

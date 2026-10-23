@@ -18,6 +18,7 @@ import {
 import {
   writeSecureFile,
   ensureSecureDir,
+  nameWriteTarget,
   rejectSymlinkTargetAsync,
   SECURE_FILE_MODE,
 } from './fs.js';
@@ -181,6 +182,6 @@ export async function confinedReplaceFile(
     await rename(tmpPath, filePath);
   } catch (err) {
     await rm(tmpPath, { force: true });
-    throw err;
+    throw nameWriteTarget(err, filePath);
   }
 }

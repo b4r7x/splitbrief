@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ensureSplitbriefDir,
@@ -11,6 +11,7 @@ import {
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR, sessionDir } from './paths.js';
+import { sessionError } from './sessions/errors.js';
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
@@ -83,6 +84,26 @@ describe('writeSpecFile', () => {
     expect(() =>
       writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, '../outside.md', 'x'),
     ).toThrow('Invalid filename');
+  });
+
+  itUnix('names the run file a folder that takes no new file refused, never its temp copy', () => {
+    const dir = makeTmp();
+    ensureSessionDir(dir, SESSION_ID);
+    const folder = sessionDir(dir, SESSION_ID);
+    chmodSync(folder, 0o555);
+    let thrown: unknown;
+    try {
+      writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'plan.json', '{}');
+    } catch (err) {
+      thrown = err;
+    } finally {
+      chmodSync(folder, 0o755);
+    }
+
+    expect(sessionError.isLocalSaveFailure(thrown)).toBe(true);
+    expect(thrown).toMatchObject({
+      message: `Could not save a run file: permission denied · ${join(SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'plan.json')}`,
+    });
   });
 });
 

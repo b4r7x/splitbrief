@@ -20,6 +20,7 @@ import {
 import { labelError, toErrorMessage } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
+import { sessionError } from '../../../core/sessions/errors.js';
 
 export async function handlePlanningFailure(opts: {
   err: unknown;
@@ -53,6 +54,8 @@ export async function handlePlanningFailure(opts: {
     publishError({ bus: wctx.bus, phase: latest.phase, message: toErrorMessage(err) });
     return { disposition: 'terminal', state: latest, outcome: 'closed' };
   }
+
+  if (sessionError.isLocalSaveFailure(err)) throw err;
 
   // A packet the seat was never given is read off the error's own data before
   // any wording is inspected: an auth or quota heuristic run over this sentence

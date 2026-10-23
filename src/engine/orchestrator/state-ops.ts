@@ -6,6 +6,7 @@ import { lineageIdOf } from '../../core/state/task-insert.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { loadState } from '../../core/state/persistence.js';
+import { keepUnsavedFailure } from '../../core/state/resume-hydration.js';
 import { LEGACY_STATE_VERSION } from '../../core/state/migration/legacy-state.js';
 import { revisionFromBytes, serializedState } from '../../core/state/state-file.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -666,20 +667,22 @@ export function pruneResumeUserMessages(
  * Records why a run stopped, through the same CAS boundary as every other head
  * write. A conflict means a later writer already moved the head on; the failure
  * is reported through the bus either way, so the in-memory state is returned
- * rather than raising over a run that has already ended.
+ * rather than raising over a run that has already ended. A save that fails keeps
+ * the failure in this process, so the run reads failed here; the disk cannot say so.
  */
 export function recordLastFailure(
   ref: SessionRef,
   state: WorkflowState,
   failure: NonNullable<WorkflowState['lastFailure']>,
 ): WorkflowState {
+  const next = { ...state, lastFailure: failure };
   try {
-    const next = { ...state, lastFailure: failure };
     const result = commitWorkflowState({ ref, expected: state, next });
     return result.kind === 'conflict' ? state : result.state;
   } catch (err) {
     warnError('Could not record why the run failed', err);
-    return state;
+    keepUnsavedFailure(ref, state.stateRevision, failure);
+    return next;
   }
 }
 
