@@ -21,6 +21,7 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { deriveRunStatus } from '../sessions/run-status.js';
+import { reviewsAgain } from '../review/verdict.js';
 import { plainUserMessage } from '../types/user-input.js';
 
 function makeQueuedMessage(overrides: Partial<QueuedMessage> = {}): QueuedMessage {
@@ -510,6 +511,27 @@ describe('transition', () => {
         currentTaskIndex,
         attempt: 3,
         pendingRecovery: issue,
+        review: {
+          scope: 'final',
+          cycle: 0,
+          verdict: { tasks: [], criteria: [], findings: [] },
+          outcome: 'fail',
+          verification: [],
+          redInputs: [{ id: 'P1', text: 'Required check K1 did not pass' }],
+          at: '2026-10-03T10:00:00.000Z',
+        },
+        pendingTriage: {
+          inputs: [
+            {
+              id: 'P1',
+              kind: 'defect',
+              source: 'check',
+              text: 'Required check K1 did not pass',
+              file: null,
+            },
+          ],
+        },
+        pendingScheduledReview: { afterTaskId: taskId('T001') },
       };
 
       const next = transition(halted, {
@@ -519,6 +541,9 @@ describe('transition', () => {
       });
 
       expect(next.pendingRecovery).toBeUndefined();
+      expect(next.pendingTriage).toBeUndefined();
+      expect(next.pendingScheduledReview).toBeUndefined();
+      expect(reviewsAgain(next, 'final')).toBe(false);
       expect(next).toMatchObject({ phase: 'implementing', currentTaskIndex: 0, attempt: 0 });
       expect(next.interruptedStep).toMatchObject({
         step: { kind: 'brief', taskId: 'T001', attempt: 0 },

@@ -51,6 +51,7 @@ import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { transition } from '../../../core/state/machine.js';
 import { createSteeringPort } from '../../calls/steering.js';
 import type { TypedCallContext } from '../../planners/types.js';
 import { sessionDir } from '../../../core/paths.js';
@@ -1030,6 +1031,71 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       as: 'ended',
     });
     expect(existsSync(join(sessionDir(projectDir, sessionId), 'run.patch'))).toBe(false);
+  });
+
+  it('a reject that reopens a brief after a failed final review runs the plan checks again before the next verdict', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    writeFileSync(
+      join(projectDir, 'Makefile'),
+      'test:\n\t@test -f fixed.txt || (echo "not fixed" >&2; exit 1)\n',
+    );
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    const config = makeNoValidationConfig({ workflow: { isolation: 'none' } });
+    const failed = runOptions({
+      projectDir,
+      sessionId,
+      state: {
+        ...resumedReviewState(tasks, head, 2),
+        plan: {
+          summary: 'Fix the widget.',
+          decisions: [],
+          criteria: [],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'make test', required: true }],
+          validation: null,
+        },
+        workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head } },
+      },
+      review: (prompt) => passingReviewVerdict(prompt),
+      triage: () => ({
+        fixTasks: [],
+        rejected: [{ findingId: 'P1', reason: 'A test harness fault.' }],
+        verify: [],
+        ask: null,
+      }),
+      onComplete: vi.fn(),
+      config,
+    });
+    const halted = await runTasksAndReview(failed.options);
+    expect(halted.state.pendingRecovery?.reason).toBe('review-failed');
+    expect(halted.state.pendingTriage?.inputs).toContainEqual(
+      expect.objectContaining({ id: 'P1', source: 'check' }),
+    );
+
+    writeFileSync(join(projectDir, 'fixed.txt'), 'fixed\n');
+    const rejected = transition(halted.state, {
+      type: 'RECORD_REJECT',
+      removed: ['src/alpha.ts'],
+      booked: [taskId('T001')],
+    });
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: rejected,
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+      config,
+    });
+    const result = await runTasksAndReview(options);
+
+    const planCheck = events.findIndex(
+      (event) => event.type === 'full_suite' && event.moment === 'plan' && event.id === 'K1',
+    );
+    const verdict = events.findIndex(
+      (event) => event.type === 'review_step' && event.step === 'verdict',
+    );
+    expect(planCheck).toBeGreaterThanOrEqual(0);
+    expect(planCheck).toBeLessThan(verdict);
+    expect(result.state.reviewStatus).toBe('passed');
   });
 
   it('a fail with only unverified criteria halts without a triage', async () => {
