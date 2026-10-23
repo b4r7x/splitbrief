@@ -5,6 +5,7 @@ import type { RouteData } from '../../../src/stores/navigation/router.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { resolveEffectiveConfig } from '../../../src/core/config/runtime/effective-config.js';
+import { formatConfigLoaderDiagnostic } from '../../../src/core/config/load/io.js';
 import { createProductionDetectionDeps } from '../../../src/engine/detection/deps.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
@@ -1182,12 +1183,18 @@ const SAVE_SIGN_IN_MESSAGE = [
 const STARTUP_WARNINGS_MESSAGE =
   '2 warnings, all shown when you quit · ⚠ workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.';
 
-function withStartupWarnings(fixture: FixtureLifecycle): FixtureLifecycle {
+// The line the screen shows for a config file its group or other users can change, the one warning raised.
+const STARTUP_PERMISSION_WARNING_MESSAGE = `⚠ ${formatConfigLoaderDiagnostic({ kind: 'config-file-permissions' })}`;
+
+function withStartupWarnings(
+  fixture: FixtureLifecycle,
+  message: string = STARTUP_WARNINGS_MESSAGE,
+): FixtureLifecycle {
   return {
     ...fixture,
     setup: async (context) => {
       await fixture.setup(context);
-      feedbackStore.setError(STARTUP_WARNINGS_MESSAGE);
+      feedbackStore.setError(message);
     },
   };
 }
@@ -1207,6 +1214,7 @@ export const homeFixtureFeedback: ReadonlyMap<string, string> = new Map([
   ['home-save-sign-in', SAVE_SIGN_IN_MESSAGE],
   ['home-save-long-draft', SAVE_SIGN_IN_MESSAGE],
   ['home-startup-warnings', STARTUP_WARNINGS_MESSAGE],
+  ['home-startup-permission-warning', STARTUP_PERMISSION_WARNING_MESSAGE],
 ]);
 
 function createSaveSignInFixture(): FixtureLifecycle {
@@ -1439,6 +1447,10 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-attachment-not-text'), () => createOutsideAttachmentFailureFixture('not-text')],
   [scenarioId('home-save-sign-in'), createSaveSignInFixture],
   [scenarioId('home-startup-warnings'), () => withStartupWarnings(createHomeFixture())],
+  [
+    scenarioId('home-startup-permission-warning'),
+    () => withStartupWarnings(createHomeFixture(), STARTUP_PERMISSION_WARNING_MESSAGE),
+  ],
   [
     scenarioId('home-cold-detecting-startup-warnings'),
     () => withStartupWarnings(createHomeFixture({ cold: true, detecting: true })),
