@@ -98,15 +98,20 @@ function consultHaltSeat(
 
 /**
  * True when the consult replaced or split the brief: the current task is the
- * replacement's new revision or the first child of its split. The ladder hands
- * back with no recovery, and the task loop dispatches the new current task.
+ * replacement's new revision or the first child of its split, which removed the
+ * brief. The ladder hands back with no recovery, and the task loop dispatches the
+ * new current task. A split child that passed leaves its next sibling to the loop.
  */
 export function consultHandedBackToLoop(state: WorkflowState, task: Task): boolean {
   if (state.pendingRecovery !== undefined) return false;
   const current = state.tasks[state.currentTaskIndex];
   if (current === undefined || current.status !== 'pending') return false;
   if (current.id === task.id) return (current.revision ?? 1) > (task.revision ?? 1);
-  return current.parentId !== undefined && current.parentId === lineageIdOf(task);
+  return (
+    current.parentId !== undefined &&
+    current.parentId === lineageIdOf(task) &&
+    !state.tasks.some((t) => t.id === task.id)
+  );
 }
 
 type TaskFailureContext = Pick<RetryAndRecordOptions, 'wctx' | 'task' | 'initialChangedFiles'>;
