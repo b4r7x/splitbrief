@@ -6,7 +6,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { PINNED_CLAUDE_CODE_OPTIONS } from '#testing/helpers/factories/model-cache.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
-import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { createTempDir, withTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor, cliDetectionsFor } from '#testing/helpers/factories/detection.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
@@ -177,7 +177,11 @@ describe('runner picker semantics integration', () => {
     modelCacheStore.__testSetClaudeCodeModelOptions(PINNED_CLAUDE_CODE_OPTIONS);
     _resetMouseZones();
     terminalSizeStore.__testReset({ ...VIEWPORT, isSmall: false });
-    configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
+    // The picker reloads the config from disk when it opens, so the project folder must exist.
+    configStore.__testReset({
+      projectDir: createTempDir('picker-semantics'),
+      config: makeConfig(),
+    });
   });
 
   afterEach(() => {
