@@ -13,7 +13,15 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { appendEngineEvent, appendMessage, createSessionLogAppender } from './log-writer.js';
-import { SessionLogEventEntrySchema } from '../schemas/session-log.js';
+import {
+  SESSION_LOG_MAX_ENTRY_BYTES,
+  SESSION_LOG_MAX_STRING_BYTES,
+  SessionLogEventEntrySchema,
+} from '../schemas/session-log.js';
+import {
+  boundSessionLogString,
+  CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER,
+} from '../payload-bounds.js';
 import { taskId } from '../schemas/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
@@ -187,6 +195,95 @@ describe('createSessionLogAppender', () => {
       'utf-8',
     );
     expect(raw.split('\n').filter(Boolean)).toHaveLength(50);
+  });
+
+  describe('a user message', () => {
+    const limit = SESSION_LOG_MAX_STRING_BYTES;
+
+    function appendQuietly(entry: Parameters<ReturnType<typeof createSessionLogAppender>>[0]) {
+      const dir = makeTmp();
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        createSessionLogAppender({ projectDir: dir, sessionId: SESSION_ID })(entry);
+        return {
+          stderr: stderrSpy.mock.calls.map((c) => String(c[0])).join(''),
+          lines: readFileSync(
+            join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+            'utf-8',
+          )
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line)),
+        };
+      } finally {
+        stderrSpy.mockRestore();
+      }
+    }
+
+    it('is written as it is at the string limit', () => {
+      const text = 'x'.repeat(limit);
+      const run = appendQuietly({ kind: 'message', ts: '1', role: 'user', text });
+      expect(run.stderr).toBe('');
+      expect(run.lines).toEqual([{ kind: 'message', ts: '1', role: 'user', text }]);
+    });
+
+    it.each([
+      ['one byte over the string limit', limit + 1],
+      ['over the entry limit', SESSION_LOG_MAX_ENTRY_BYTES + 1],
+    ])('is written bounded with the truncation marker, without a warning, %s', (_label, bytes) => {
+      const run = appendQuietly({
+        kind: 'message',
+        ts: '1',
+        role: 'user',
+        text: 'x'.repeat(bytes),
+      });
+      expect(run.stderr).toBe('');
+      expect(run.lines).toHaveLength(1);
+      const text: string = run.lines[0]?.text;
+      expect(text.endsWith(CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER)).toBe(true);
+      expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(limit);
+    });
+
+    it('is written with each of its answers bounded', () => {
+      const answer = 'y'.repeat(SESSION_LOG_MAX_ENTRY_BYTES + 1);
+      const run = appendQuietly({
+        kind: 'message',
+        ts: '1',
+        role: 'user',
+        text: answer,
+        qa: [{ question: 'Which log?', answer }],
+      });
+      expect(run.stderr).toBe('');
+      expect(run.lines[0]?.qa[0].question).toBe('Which log?');
+      expect(run.lines[0]?.qa[0].answer.endsWith(CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER)).toBe(
+        true,
+      );
+    });
+
+    it('is written with a secret redacted, the way its event is logged', () => {
+      const text = `use sk-ant-api03-${'A'.repeat(90)} please`;
+      const run = appendQuietly({ kind: 'message', ts: '1', role: 'user', text });
+      expect(run.lines[0]?.text).toBe(boundSessionLogString(text));
+      expect(run.lines[0]?.text).not.toContain('A'.repeat(90));
+    });
+  });
+
+  it('drops an oversized entry that is not a user message, with the warning', () => {
+    const dir = makeTmp();
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      createSessionLogAppender({ projectDir: dir, sessionId: SESSION_ID })({
+        kind: 'message',
+        ts: '1',
+        role: 'assistant',
+        text: 'z'.repeat(SESSION_LOG_MAX_ENTRY_BYTES + 1),
+      });
+      expect(stderrSpy.mock.calls.map((c) => String(c[0])).join('')).toBe(
+        `Warning: failed to persist oversized log entry exceeding ${SESSION_LOG_MAX_ENTRY_BYTES} bytes\n`,
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 
   itUnix('refuses to append through a symlinked session log', () => {

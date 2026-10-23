@@ -1,5 +1,6 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { AnsweredQuestion } from '../../../core/schemas/question.js';
+import { boundSessionLogString } from '../../../core/payload-bounds.js';
 import type { SessionLogMessageEntry } from '../../../core/schemas/session-log.js';
 import type { QueuedMessage } from '../../../core/schemas/workflow.js';
 import { createSessionLogAppender } from '../../../core/sessions/log-writer.js';
@@ -32,10 +33,11 @@ export function recordUserMessage(
     }),
   };
   if (details.queuedMessage === undefined) {
+    // The log keeps the bounded display text; a resumed planner gets the whole text from here.
     recordResumeUserMessage(scope, {
       ts: entry.ts,
       phase: scope.phase,
-      displayText: message.displayText,
+      displayText: boundSessionLogString(message.displayText),
       text: message.text,
       ...(details.answerIndex !== undefined && { answerIndex: details.answerIndex }),
     });
