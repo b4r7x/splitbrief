@@ -702,7 +702,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       ]);
       expect(outcome.state.pendingTriage?.inputs[0]?.notVerified).toBeUndefined();
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
-        'failed with new failures. No task changed it.\ncheck V1 did not pass (fail):',
+        'failed with new failures.\ncheck V1 did not pass (fail):',
       );
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('timed out');
       expect(sectionOf(outcome)).toContain(
@@ -1235,7 +1235,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         expect.objectContaining({ id: 'V1.1', file: null }),
       ]);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('exited with code 1');
-      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('No task changed it.');
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain('No task changed it.');
     });
   });
 

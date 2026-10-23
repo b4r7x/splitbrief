@@ -467,6 +467,35 @@ describe('pre-review checks', () => {
     expect(inputs[0]?.text).not.toContain('Output tail:');
   });
 
+  it('names no owner for a red whole-suite command whose output names no file', () => {
+    const output = 'Error: boom';
+    const check: Check = { id: 'K1', kind: 'cmd', value: 'npm test', required: true };
+    const task = makeTask({ id: 'T001', status: 'done' });
+    const inputs = buildPreReviewInputs({
+      failed: [
+        {
+          checkId: check.id,
+          status: 'fail',
+          output,
+          failure: failureKeys(
+            { capture: { stdout: output, stderr: '', complete: true }, exitCode: 1 },
+            projectDir,
+          ),
+          command: 'npm test',
+        },
+      ],
+      registry: new Map([[check.id, check]]),
+      tasks: [task],
+      ledger: ledgerFor([task], { T001: ['clamp.js'] }),
+      workspaceDir: projectDir,
+    });
+
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]?.file).toBeNull();
+    expect(inputs[0]?.text).toMatch(/^Required check K1 did not pass/);
+    expect(inputs[0]?.text).not.toContain('No task changed it.');
+  });
+
   it('reads the files a check failure key names relative to the workspace', () => {
     expect(
       failingFilesFromKeys(
