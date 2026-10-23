@@ -13,6 +13,7 @@ import { fsError, rejectSymlinkTarget } from '../../lib/fs.js';
 import { confinedAppendFileSync, confinedEnsureDir } from '../../lib/confined-fs.js';
 import { warnStderr } from '../../lib/warn.js';
 import { nowIso } from '../../utils/format-time.js';
+import { boundSessionLogString } from '../payload-bounds.js';
 import { assertSessionDirConfined } from './confinement.js';
 import { sessionFileFailure } from './errors.js';
 
@@ -45,7 +46,11 @@ export function createSessionLogAppender(
         warnStderr('Warning: failed to persist invalid log entry');
         return;
       }
-      const line = JSON.stringify(parsed.data) + '\n';
+      const logged =
+        parsed.data.kind === 'message' && parsed.data.role === 'user'
+          ? boundUserMessage(parsed.data)
+          : parsed.data;
+      const line = JSON.stringify(logged) + '\n';
       if (Buffer.byteLength(line, 'utf8') > SESSION_LOG_MAX_ENTRY_BYTES) {
         opts.onFailure?.('oversized-entry');
         warnStderr(
@@ -63,6 +68,20 @@ export function createSessionLogAppender(
       opts.onFailure?.('write-failed');
       warnStderr(`Warning: ${sessionFileFailure('Could not save the run log', logRel, err)}`);
     }
+  };
+}
+
+/** Bounded the way the session-log sink bounds the message's event, so the two pair on replay. */
+function boundUserMessage(entry: SessionLogMessageEntry): SessionLogMessageEntry {
+  return {
+    ...entry,
+    text: boundSessionLogString(entry.text),
+    ...(entry.qa !== undefined && {
+      qa: entry.qa.map((pair) => ({
+        question: boundSessionLogString(pair.question),
+        answer: boundSessionLogString(pair.answer),
+      })),
+    }),
   };
 }
 

@@ -1,17 +1,28 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { plainUserMessage } from '../../../core/types/user-input.js';
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { buildResumeContext } from './rebuild.js';
 import { attachedMessage } from '#testing/helpers/user-message.js';
 import { createEventBus } from '../../events/bus.js';
 import { recordSteer } from '../continuation.js';
 import { transitionAndSave } from '../state-ops.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
+import { readRunEvents } from '../../events/replay.js';
+import { enqueueUserMessage } from '../queue/submit.js';
+import { recordUserMessage } from './user-message.js';
+import { readMessages } from '../../../core/sessions/log-reader.js';
+import {
+  SESSION_LOG_MAX_ENTRY_BYTES,
+  SESSION_LOG_MAX_STRING_BYTES,
+} from '../../../core/schemas/session-log.js';
+import { CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER } from '../../../core/payload-bounds.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 
 let dirs: string[] = [];
 
@@ -398,6 +409,149 @@ describe('buildResumeContext', () => {
       { role: 'user', content: '## Summary\nOld work preserved' },
       { role: 'assistant', content: 'later answer' },
       { role: 'user', content: 'later request' },
+    ]);
+  });
+});
+
+describe('a user message over the session log limit', () => {
+  const big = 'LOG-LINE 42 failed\n'.repeat(Math.ceil((SESSION_LOG_MAX_ENTRY_BYTES + 1) / 19));
+
+  function startPlanning(): SessionRef {
+    const ref = setupProject();
+    saveState(ref, { ...createInitialState('feature'), phase: 'planning' });
+    return ref;
+  }
+
+  function capture<T>(act: () => T): { value: T; stderr: string } {
+    const chunks: string[] = [];
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      chunks.push(String(chunk));
+      return true;
+    });
+    try {
+      return { value: act(), stderr: chunks.join('') };
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  async function loggedUserTexts(ref: SessionRef): Promise<string[]> {
+    const texts: string[] = [];
+    for await (const entry of readMessages(ref)) if (entry.role === 'user') texts.push(entry.text);
+    return texts;
+  }
+
+  function expectBounded(text: string | undefined): void {
+    expect(text?.endsWith(CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER)).toBe(true);
+    expect(Buffer.byteLength(text ?? '', 'utf8')).toBeLessThanOrEqual(SESSION_LOG_MAX_STRING_BYTES);
+  }
+
+  function liveBus(ref: SessionRef) {
+    const bus = createEventBus();
+    bus.subscribe(createJsonlSink(ref));
+    return bus;
+  }
+
+  it('a steer is logged bounded, reopens as one row and resumes with the whole text', async () => {
+    const ref = startPlanning();
+    const { stderr } = capture(() =>
+      recordSteer({ ...ref, bus: liveBus(ref) }, 'planning', plainUserMessage(big)),
+    );
+
+    expect(stderr).toBe('');
+    const logged = await loggedUserTexts(ref);
+    expect(logged).toHaveLength(1);
+    expectBounded(logged[0]);
+    const rows = (await readRunEvents(ref)).events.filter((event) => event.type === 'user_message');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ text: logged[0] });
+    expect((await buildResumeContext({ ref })).messages).toEqual([{ role: 'user', content: big }]);
+  });
+
+  it('a steer between the string limit and the entry limit reopens as one row', async () => {
+    const ref = startPlanning();
+    const text = 'y'.repeat(SESSION_LOG_MAX_STRING_BYTES + 1);
+    recordSteer({ ...ref, bus: liveBus(ref) }, 'planning', plainUserMessage(text));
+
+    const rows = (await readRunEvents(ref)).events.filter((event) => event.type === 'user_message');
+    expect(rows).toHaveLength(1);
+    expect((await buildResumeContext({ ref })).messages).toEqual([{ role: 'user', content: text }]);
+  });
+
+  it('a steer with a key reopens as one row, keeps no raw key in the log and resumes with the whole text', async () => {
+    const ref = startPlanning();
+    const key = `sk-ant-api03-${'A'.repeat(90)}`;
+    const text = `use ${key} please`;
+    recordSteer({ ...ref, bus: liveBus(ref) }, 'planning', plainUserMessage(text));
+
+    const rows = (await readRunEvents(ref)).events.filter((event) => event.type === 'user_message');
+    expect(rows).toHaveLength(1);
+    expect(
+      readFileSync(join(sessionDir(ref.projectDir, ref.sessionId), SESSION_LOG_FILE), 'utf8'),
+    ).not.toContain(key);
+    expect((await buildResumeContext({ ref })).messages).toEqual([{ role: 'user', content: text }]);
+  });
+
+  it('a queued message is logged bounded and resumes with the whole text once delivered', async () => {
+    const ref = startPlanning();
+    const state = loadState(ref);
+    if (state === null) throw new Error('expected the saved state');
+    const { value: queued, stderr } = capture(() =>
+      enqueueUserMessage({
+        ...ref,
+        state,
+        message: plainUserMessage(big),
+        phase: 'planning',
+        bus: liveBus(ref),
+      }),
+    );
+    const id = queued.message?.id ?? '';
+    transitionAndSave(ref, queued.state, { type: 'MARK_DELIVERED_NATIVE', id });
+
+    expect(stderr).toBe('');
+    expectBounded((await loggedUserTexts(ref))[0]);
+    expect((await buildResumeContext({ ref })).messages).toEqual([{ role: 'user', content: big }]);
+  });
+
+  it('an answer to a planner question is logged bounded and resumes with the whole answer', async () => {
+    const ref = startPlanning();
+    saveState(ref, {
+      ...createInitialState('feature'),
+      phase: 'planning',
+      userAnswers: [{ reply: 'Which log?', answer: big }],
+    });
+    const { stderr } = capture(() =>
+      recordUserMessage({ ...ref, bus: liveBus(ref), phase: 'planning' }, plainUserMessage(big), {
+        qa: [{ question: 'Which log?', answer: big }],
+        answerIndex: 0,
+      }),
+    );
+
+    expect(stderr).toBe('');
+    expectBounded((await loggedUserTexts(ref))[0]);
+    expect((await buildResumeContext({ ref })).messages).toEqual([{ role: 'user', content: big }]);
+  });
+
+  it('a message with an @file and a large typed part keeps both its display and its planner text', async () => {
+    const ref = startPlanning();
+    const attached = attachedMessage(ref.projectDir);
+    const message: UserMessageInput = {
+      ...attached,
+      displayText: `${big}${attached.displayText}`,
+      text: `${big}${attached.text}`,
+    };
+    const { stderr } = capture(() =>
+      recordSteer({ ...ref, bus: liveBus(ref) }, 'planning', message),
+    );
+
+    expect(stderr).toBe('');
+    const logged = await loggedUserTexts(ref);
+    expectBounded(logged[0]);
+    expect(logged[0]).not.toContain('PELICAN-42');
+    const rows = (await readRunEvents(ref)).events.filter((event) => event.type === 'user_message');
+    expect(rows).toHaveLength(1);
+    expect((await buildResumeContext({ ref })).messages).toEqual([
+      { role: 'user', content: message.text },
     ]);
   });
 });

@@ -163,6 +163,10 @@ export function boundConsumerPayload(opts: {
   });
 }
 
+export function boundSessionLogString(value: string): string {
+  return sanitizeString(value, createTransformState(CALL_SESSION_LOG_MAX_PUBLIC_STRING_BYTES));
+}
+
 function measurePublicPayloadBytes(payload: PublicPayload): number {
   return Buffer.byteLength(JSON.stringify(payload) ?? 'null', 'utf8');
 }

@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- A very long pasted message or start prompt is now kept in the run, shows once when you reopen the run, and a resumed run gives the planner the whole text; a message with a key in it also reopens once, with the key hidden in the run log.
 - An open run saved by an older version now continues and ends normally instead of failing with a schema error.
 - `splitbrief doctor` no longer says a tool is signed in when the model a seat uses has no credential in that tool; the tool row says it is installed, trusted and compatible, and the seat row names the missing credential.
 - The command palette now lists the command or skill whose name you type first, ahead of the ones you used recently.

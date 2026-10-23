@@ -83,6 +83,10 @@ import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { shutdownWorkflow } from '../session-lifecycle/shutdown.js';
 import { boundEngineEventForConsumer } from '../../events/bound.js';
 import { readRunEvents } from '../../events/replay.js';
+import { readMessages } from '../../../core/sessions/log-reader.js';
+import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
+import { CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER } from '../../../core/payload-bounds.js';
+import { buildResumeContext } from '../transcript/rebuild.js';
 import { makePassingPlanner } from '#testing/helpers/planning-phase.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import {
@@ -722,6 +726,59 @@ describe('runWorkflow — smoke', () => {
       // The run stays open at the step it saved, with the line as why it stopped.
       expect(run.state?.lastFailure?.message).toBe(line(sessionId));
       expect(run.status?.kind).toBe('open');
+    });
+
+    const bigPrompt = 'LOG-LINE 42 failed\n'.repeat(
+      Math.ceil((SESSION_LOG_MAX_ENTRY_BYTES + 1) / 19),
+    );
+
+    it('a start prompt over the session log limit is logged bounded and resumes whole, in --plain', async () => {
+      const sessionId = 'big-start-prompt-sid';
+      const projectDir = setupProject();
+      const run = await runWithStateWrite(sessionId, undefined, 'start', {
+        projectDir,
+        feature: bigPrompt,
+      });
+      const ref = { projectDir, sessionId };
+
+      expect(run.stderr).not.toMatch(/persist|oversized/);
+      const logged: string[] = [];
+      for await (const entry of readMessages(ref))
+        if (entry.role === 'user') logged.push(entry.text);
+      expect(logged[0]?.endsWith(CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER)).toBe(true);
+      expect(run.state?.resumeUserMessages).toEqual([
+        expect.objectContaining({ displayText: logged[0], text: bigPrompt }),
+      ]);
+      expect((await buildResumeContext({ ref })).messages[0]).toEqual({
+        role: 'user',
+        content: bigPrompt,
+      });
+    });
+
+    it.each([
+      [
+        'refused',
+        'eio',
+        (sessionId: string) =>
+          `Could not save the run state: i/o error · .splitbrief/sessions/${sessionId}/state.json`,
+      ],
+      [
+        'unconfirmed',
+        'unconfirmed',
+        (sessionId: string) =>
+          `Saved the run state, but could not confirm it on disk · .splitbrief/sessions/${sessionId}/state.json`,
+      ],
+    ] as const)('the save of the whole start prompt, %s', async (_label, fails, line) => {
+      const sessionId = `big-start-prompt-${fails}`;
+      const run = await runWithStateWrite(
+        sessionId,
+        { from: 'recordResumeUserMessage', fails },
+        'start',
+        { feature: bigPrompt },
+      );
+
+      expect(run.stderr).toBe(`Could not start the run: ${line(sessionId)}\n`);
+      expect(run.status).toMatchObject(failedWith(line(sessionId)));
     });
 
     it('a write that fails before anything reaches the disk', async () => {

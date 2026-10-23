@@ -28,7 +28,7 @@ import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { reconcileSeatIdentities, recordSeatIdentities } from '../../../core/state/seats.js';
-import { appendMessage } from '../../../core/sessions/log-writer.js';
+import { recordUserMessage } from '../transcript/user-message.js';
 import {
   ensureSessionDir,
   ensureSplitbriefDir,
@@ -57,7 +57,6 @@ import {
   publishPlannerStatus,
   publishRecoveryResolved,
   publishWorkflowConfig,
-  publishUserMessage,
   publishSeatSwitched,
   publishWarning,
   publishWarningFromError,
@@ -79,7 +78,7 @@ import {
 import { resumeStep } from '../../../core/sessions/run-status.js';
 import { sessionConversation } from '../../../core/state/planning-conversation.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import type { UserMessageInput } from '../../../core/types/user-input.js';
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { restoreInterruptedTaskFiles } from '../task/rollback.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation/run.js';
@@ -468,10 +467,10 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     setTrackedState(state);
     bus.publish({ type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
     publishPlannerStatus(bus, state, 'running');
-    appendMessage({ projectDir, sessionId }, { role: 'user', phase: state.phase, text: feature });
-    publishUserMessage({ bus: bus, phase: state.phase }, feature, {
-      attachedInputs: runtime.attachedInputs,
-    });
+    recordUserMessage(
+      { projectDir, sessionId, bus, phase: state.phase },
+      { ...plainUserMessage(feature), attachedInputs: [...(runtime.attachedInputs ?? [])] },
+    );
     for (const message of startReadinessWarnings(
       createStartReadinessRecord(prepared.report, { projectDir, sessionId }),
     )) {
