@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- A change you make to `.splitbrief/config.yaml` by hand while SPLITBRIEF is open now counts when you start, continue or retry a run, and a context length measured for one build model no longer carries over to another.
 - The warning about a config file that its group or other users can change names `.splitbrief/config.yaml` once, says SPLITBRIEF still uses it, and says how to fix it.
 - A seat that runs past its timeout now halts with the tool's name and the timeout in seconds, instead of "The operation was aborted due to timeout" or words the tool never printed.
 - The line that `resume` and `continue` print before the run screen opens no longer shows an internal phase name.

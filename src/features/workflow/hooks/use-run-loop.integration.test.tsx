@@ -340,7 +340,7 @@ beforeEach(() => {
   resetWorkflow();
   controlsStore.reset();
   feedbackStore.reset();
-  configStore.__testReset();
+  configStore.__testReset({ projectDir });
   overlayStore.reset();
   clearAllHandlers();
 });
@@ -1556,6 +1556,26 @@ describe('useRunLoop', () => {
       inst.unmount();
     });
 
+    it('continues a boundary park on the seat a hand edit of the file wrote while it waited', async () => {
+      const prepared = savedRun('2026-10-23-park-seat-hand-edit');
+      writeConfig(projectDir, prepared.config);
+      configStore.load(projectDir);
+      const requests: PrepareExecutionInput[] = [];
+      const run = parkingEngine(parkAtBoundary);
+      const { inst, continueAtRest, resume } = await renderParked(prepared, run, requests);
+
+      writeConfig(projectDir, CODEX_SEAT_SAVED);
+      resume();
+      await vi.waitFor(() => {
+        expect(run.passes).toHaveLength(2);
+      });
+
+      expect(continueAtRest).toHaveBeenCalledTimes(1);
+      expect(run.passes[1]?.prepared.config.implementer).toMatchObject({ tool: 'codex' });
+
+      inst.unmount();
+    });
+
     it('continues a boundary park in place when no seat was saved while it waited', async () => {
       const prepared = savedRun('2026-10-21-park-no-seat-saved');
       configStore.__testReset({ projectDir, config: prepared.config });
@@ -1994,7 +2014,10 @@ describe('useRunLoop', () => {
             }),
           );
           // The operator adds the render command while the halt panel is open.
-          writeConfig(projectDir, makeConfig({ validation: { render: 'true {id} {out}' } }));
+          writeConfig(projectDir, {
+            ...prepared.config,
+            validation: { ...prepared.config.validation, render: 'true {id} {out}' },
+          });
           return makeSummary();
         },
         2: async () => makeSummary(),
@@ -2383,6 +2406,45 @@ describe('useRunLoop', () => {
       ]);
       expect(run.entered[0]?.config.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
       expect(reentry.seen()).toMatchObject({ pausedAtBoundary: false, intent: 'none' });
+
+      inst.unmount();
+    });
+
+    it('runs Try again on the seat a hand edit of the file wrote while the Seat down halt waits', async () => {
+      const sessionId = '2026-10-23-halt-hand-edit';
+      ensureSessionDir(projectDir, sessionId);
+      const halted = saveSeatDownHalt(sessionId);
+      const prepared = preparedExecution({
+        projectDir,
+        feature: halted.feature,
+        sessionId,
+        resumeState: halted,
+      });
+      writeConfig(projectDir, prepared.config);
+      configStore.load(projectDir);
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const requests: PrepareExecutionInput[] = [];
+      const reentry = engineEntryAfterHalt();
+      const run = recordedEngine({ 1: reentry.engine });
+
+      const inst = renderHarness({
+        prepared,
+        captureRunner,
+        runWorkflow: run.engine,
+        prepareExecution: reprepareSameSession(requests),
+      });
+      await vi.waitFor(() => {
+        expect(controlsStore.get().inputMode).toBe('question');
+      });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      writeConfig(projectDir, CODEX_SEAT_SAVED);
+      await answerRecoveryPanel(captureRunner, 'retry');
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(1);
+      });
+
+      expect(requests[0]?.effectiveConfig.implementer).toMatchObject({ tool: 'codex' });
+      expect(run.entered[0]?.config.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
 
       inst.unmount();
     });

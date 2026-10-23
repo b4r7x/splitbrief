@@ -191,6 +191,7 @@ export function HomeScreen({
   const toolCheck = detectionStore.use((s) => deriveHomeToolCheck(s.refresh));
   const startPreparation = useStartPreparation<Extract<DraftSubmission, { ok: true }>>({
     prepare: async (submission, signal) => {
+      configStore.reloadIfChanged();
       const current = configStore.get();
       if (!current.config || !current.projectDir) {
         return { kind: 'failed', error: appPreparationError.configNotLoaded() };

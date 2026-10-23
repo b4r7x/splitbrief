@@ -1219,11 +1219,12 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
       // The picker states the conflict where the overlay cannot hide it.
       expect(frameText(ui)).toContain('Config changed on disk');
       expect(feedbackStore.get()).toMatchObject({
-        message: 'Config changed on disk. Reload before saving again.',
+        message: 'Config changed on disk. SPLITBRIEF loaded it; make your change again.',
         isError: true,
       });
     });
     expect(overlayStore.get().active).toBe('planner-picker');
+    expect(configStore.get().config?.planner).toMatchObject({ model: 'haiku' });
     // The refused save left the bytes the other writer put on disk.
     expect(readFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'utf8')).toBe(
       externalBytes,

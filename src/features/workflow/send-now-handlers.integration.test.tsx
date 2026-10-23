@@ -7,6 +7,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { configStore } from '../../stores/project/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { reactivateExistingSession } from '../../core/sessions/active-pointer.js';
@@ -51,6 +52,7 @@ beforeEach(() => {
   finish = Promise.withResolvers<void>();
   settled = Promise.withResolvers<void>();
   resetAllStores();
+  configStore.__testReset({ projectDir });
   clearAllHandlers();
 });
 

@@ -86,6 +86,7 @@ import {
   opencodeApiModels,
   opencodeConfigOnlyModels,
   publishVisualDiscovery,
+  persistVisualConfig,
   seedVisualConfig,
   seedRoutedCrew,
   setupVisualFixture,
@@ -104,6 +105,7 @@ const EMPTY_SEED: OverlaySeed = () => {};
 function overlayPrepared(): PreparedExecution {
   const config = configStore.get().config;
   if (config === null) throw new Error('Visual overlay fixture requires project config');
+  persistVisualConfig();
   return prepareWorkflowExecution({
     projectDir: VISUAL_FIXTURE_PROJECT_DIR,
     feature: 'Inspect visual fixture',

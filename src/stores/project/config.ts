@@ -1,6 +1,10 @@
 import { createStore, storeBase } from '../create-store.js';
 import { loadConfig, transactConfigDocument } from '../../core/config/load/io.js';
-import { configRevisionsMatch, configPath } from '../../core/config/load/document.js';
+import {
+  configRevisionsMatch,
+  configPath,
+  readConfigDocument,
+} from '../../core/config/load/document.js';
 import type { ConfigRevision, ExpectedConfigRevision } from '../../lib/confined-fs-atomic.js';
 import { toYaml } from '../../core/config/load/transform.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
@@ -13,8 +17,10 @@ import {
   updateDefaultImplementerConfig,
 } from '../../core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../core/schemas/config.js';
+import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { configError } from '../../core/config/errors.js';
 import { selectInitialCrew } from '../../core/crew/default.js';
+import { type SeatIds, sameSeatIds, seatIdsOf } from '../../core/crew/identity.js';
 import {
   cloneConfig,
   cloneValue,
@@ -30,7 +36,11 @@ interface ConfigState {
   projectDir: string;
   overrides: CLIOverrides;
   detectedContextLength: number | undefined;
+  discovery: Discovery | undefined;
 }
+
+/** The context length boot discovery found, and the implementer it measured; an env value has none. */
+type Discovery = Readonly<{ contextLength: number; seat: SeatIds | undefined }>;
 
 const initial: ConfigState = {
   config: null,
@@ -40,6 +50,7 @@ const initial: ConfigState = {
   projectDir: '',
   overrides: {},
   detectedContextLength: undefined,
+  discovery: undefined,
 };
 
 const store = createStore<ConfigState>(initial);
@@ -61,7 +72,11 @@ export type ConfigSaveResult =
 
 let saveQueue: Promise<void> = Promise.resolve();
 
-function loadedState(projectDir: string, overrides: CLIOverrides): ConfigState {
+function loadedState(
+  projectDir: string,
+  overrides: CLIOverrides,
+  discovery: Discovery | undefined,
+): ConfigState {
   const { config: loaded, loaderDiagnostics, rawYaml, revision } = loadConfig(projectDir);
   const base = cloneConfig(loaded);
   const { config, warnings } = resolveEffectiveConfig({
@@ -70,7 +85,7 @@ function loadedState(projectDir: string, overrides: CLIOverrides): ConfigState {
     loaderDiagnostics,
   });
   emitEffectiveConfigWarnings(projectDir, warnings);
-  return {
+  return withDiscovery({
     config,
     diskConfig: cloneConfig(
       revision === null ? selectInitialCrew({ detected: null, overrides }).persisted : loaded,
@@ -80,23 +95,73 @@ function loadedState(projectDir: string, overrides: CLIOverrides): ConfigState {
     projectDir,
     overrides: cloneValue(overrides),
     detectedContextLength: undefined,
-  };
+    discovery,
+  });
 }
 
 function load(projectDir: string, overrides: CLIOverrides = {}) {
-  store.set(loadedState(projectDir, overrides));
+  store.set(loadedState(projectDir, overrides, undefined));
+}
+
+function defaultImplementer(config: Config): ImplementerConfig {
+  return resolveImplementerProfiles(config).defaultProfile.config;
+}
+
+/** A context window belongs to the tool and the model; the effort does not change it. */
+function windowSeat(config: Config): SeatIds {
+  return { ...seatIdsOf(defaultImplementer(config)), axes: [] };
+}
+
+/**
+ * Puts the discovered context length into a state whose config was just replaced, as a restart
+ * would: an env value fits any implementer, a measured value only the implementer it measured
+ * while the file names none. On another implementer the measured value goes.
+ */
+function withDiscovery(state: ConfigState): ConfigState {
+  const { config, diskConfig, discovery } = state;
+  const cleared = { ...state, detectedContextLength: undefined };
+  if (config === null || discovery === undefined) return cleared;
+  const named = diskConfig !== null && defaultImplementer(diskConfig).contextLength !== undefined;
+  if (discovery.seat === undefined || (!named && sameSeatIds(discovery.seat, windowSeat(config)))) {
+    return {
+      ...state,
+      config: updateDefaultImplementerConfig(config, (existing) => ({
+        ...existing,
+        contextLength: discovery.contextLength,
+      })),
+      detectedContextLength: discovery.seat === undefined ? undefined : discovery.contextLength,
+    };
+  }
+  if (named || defaultImplementer(config).contextLength !== discovery.contextLength) return cleared;
+  return {
+    ...cleared,
+    config: updateDefaultImplementerConfig(
+      config,
+      ({ contextLength: _contextLength, ...existing }) => existing,
+    ),
+  };
+}
+
+/** Loads the file again when it is not the file the store read: a hand edit while SPLITBRIEF is open. */
+function reloadIfChanged(): void {
+  const { projectDir, overrides, revision, discovery } = store.get();
+  if (!projectDir) throw configError.loadNotCalled('reload');
+  if (configRevisionsMatch(revision, readConfigDocument(projectDir).revision)) return;
+  store.set(loadedState(projectDir, overrides, discovery));
 }
 
 function refreshFromExecution(projectDir: string, config: Config): void {
   const { config: diskConfig, rawYaml, revision } = loadConfig(projectDir);
-  store.set((state) => ({
-    ...state,
-    projectDir,
-    config: cloneConfig(config),
-    diskConfig: cloneConfig(diskConfig),
-    rawYaml,
-    revision,
-  }));
+  store.set((state) =>
+    withDiscovery({
+      ...state,
+      projectDir,
+      config: cloneConfig(config),
+      diskConfig: cloneConfig(diskConfig),
+      rawYaml,
+      revision,
+    }),
+  );
 }
 
 async function saveOnce(
@@ -104,7 +169,7 @@ async function saveOnce(
   expectedRevision: ExpectedConfigRevision,
   expectedProjectDir: string,
 ): Promise<ConfigSaveResult> {
-  const { config, diskConfig, projectDir, overrides, revision, rawYaml } = store.get();
+  const { config, diskConfig, projectDir, overrides, revision, rawYaml, discovery } = store.get();
   if (!projectDir) throw configError.loadNotCalled('save');
   if (!config || !diskConfig) throw configError.loadNotCalled('save');
   if (projectDir !== expectedProjectDir || !configRevisionsMatch(expectedRevision, revision)) {
@@ -122,6 +187,7 @@ async function saveOnce(
   try {
     const result = await transactConfigDocument(projectDir, revision, edits);
     if (result.kind === 'conflict') {
+      reloadIfChanged();
       return {
         kind: 'conflict',
         ok: false,
@@ -129,7 +195,7 @@ async function saveOnce(
       };
     }
     const next = {
-      ...loadedState(projectDir, revision === null ? {} : overrides),
+      ...loadedState(projectDir, revision === null ? {} : overrides, discovery),
       ...(revision === null && {
         config: cloneConfig(updated),
         overrides: cloneValue(overrides),
@@ -137,15 +203,18 @@ async function saveOnce(
     };
     if (result.kind === 'saved') {
       if (!configRevisionsMatch(result.revision, next.revision)) {
+        reloadIfChanged();
         return { kind: 'conflict', ok: false, currentRevision: next.revision };
       }
-      store.set((state) => ({
-        ...state,
-        config: cloneConfig(updated),
-        diskConfig: cloneConfig(persisted),
-        rawYaml: next.rawYaml,
-        revision: next.revision,
-      }));
+      store.set((state) =>
+        withDiscovery({
+          ...state,
+          config: cloneConfig(updated),
+          diskConfig: cloneConfig(persisted),
+          rawYaml: next.rawYaml,
+          revision: next.revision,
+        }),
+      );
       return {
         kind: 'saved',
         ok: true,
@@ -153,7 +222,7 @@ async function saveOnce(
         ignoreRuleAdded: result.ignoreRuleAdded,
       };
     }
-    store.set(next);
+    store.set(withDiscovery(next));
     return { ...result, ok: false };
   } catch (err) {
     return {
@@ -188,34 +257,23 @@ function setInitialCrew(config: Config): void {
       detected: config,
       overrides: state.overrides,
     });
-    return {
+    return withDiscovery({
       ...state,
       config: cloneConfig(effective),
       diskConfig: cloneConfig(persisted),
-      detectedContextLength: undefined,
-    };
+    });
   });
 }
 
 function setContextLength(contextLength: number, detected = false) {
-  store.set((s) => {
-    if (!s.config) return s;
-    const nextDetected = detected ? contextLength : undefined;
-    const current = resolveImplementerProfiles(s.config).defaultProfile.config.contextLength;
-    if (current === contextLength) {
-      return s.detectedContextLength === nextDetected
-        ? s
-        : { ...s, detectedContextLength: nextDetected };
-    }
-    return {
-      ...s,
-      detectedContextLength: nextDetected,
-      config: updateDefaultImplementerConfig(s.config, (existing) => ({
-        ...existing,
-        contextLength,
-      })),
-    };
-  });
+  store.set((s) =>
+    s.config === null
+      ? s
+      : withDiscovery({
+          ...s,
+          discovery: { contextLength, seat: detected ? windowSeat(s.config) : undefined },
+        }),
+  );
 }
 
 function getDetectedContextLength(): number | undefined {
@@ -242,6 +300,7 @@ function __testReset(next?: Partial<ConfigState>): void {
 export const configStore = {
   ...storeBase(store),
   load,
+  reloadIfChanged,
   refreshFromExecution,
   save,
   useConfig,

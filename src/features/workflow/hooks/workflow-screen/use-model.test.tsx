@@ -26,6 +26,7 @@ import { hydrateFromState } from '../../../../stores/workflow/actions/hydrate.js
 import { recoveryNoticeStore } from '../../../../stores/workflow/recovery-notice.js';
 import { stopStore } from '../../../../stores/workflow/stop.js';
 import { departureStore } from '../../../../stores/workflow/departure.js';
+import { configStore } from '../../../../stores/project/config.js';
 import {
   activeApply,
   trackActiveApply,
@@ -59,6 +60,7 @@ describe('useWorkflowScreen while a brief is parked', () => {
     resetAllStores();
     clearAllHandlers();
     projectDir = createTempDir('use-model-parked');
+    configStore.__testReset({ projectDir });
     routerStore.navigate({
       to: 'workflow',
       run: makeRunRecord(),
@@ -142,6 +144,7 @@ describe('useWorkflowScreen continuing a run stopped at Apply', () => {
     clearAllHandlers();
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     projectDir = createTempDir('use-model-apply-continue');
+    configStore.__testReset({ projectDir });
     const ref = { projectDir, sessionId: 'applying-interrupted' };
     const state = makeWorkflowState({
       phase: 'complete',
@@ -296,6 +299,7 @@ describe('useWorkflowScreen at rest on a run another process owns', () => {
     clearAllHandlers();
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
     projectDir = createTempDir('use-model-owner-gone');
+    configStore.__testReset({ projectDir });
     const ref = { projectDir, sessionId: 'owned-elsewhere' };
     saveState(ref, makeWorkflowState({ phase: 'implementing' }));
     await writeLockfile(sessionDir(projectDir, ref.sessionId), {
