@@ -209,7 +209,7 @@ describe('sanitizeDiscoveredValidation', () => {
     if (command.length === 0) return;
     expect(sanitize({ testCommand: command })).toBeUndefined();
     expect(warnings()).toEqual([
-      `The test checks do not take ${command} from the planner (it ${reason}) and use config, the manifest or the stack default.`,
+      `The test checks do not take ${command} from the plan: it ${reason}. They use config, the manifest or the stack default.`,
     ]);
   });
 
@@ -422,7 +422,7 @@ describe('sanitizeDiscoveredValidation', () => {
   ])('names the interpreter rule that refuses %s', (command, reason) => {
     expect(sanitize({ testCommand: command })).toBeUndefined();
     expect(warnings()).toEqual([
-      `The test checks do not take ${command} from the planner (it ${reason}) and use config, the manifest or the stack default.`,
+      `The test checks do not take ${command} from the plan: it ${reason}. They use config, the manifest or the stack default.`,
     ]);
     expect(
       checkCommandRefusal(command, {
@@ -456,7 +456,7 @@ describe('sanitizeDiscoveredValidation', () => {
     'npx TsX@ pwn',
   ])('refuses a code-running command behind %s', (command) => {
     expect(sanitize({ testCommand: command })).toBeUndefined();
-    expect(warnings()).toEqual([expect.stringContaining(`${command} from the planner`)]);
+    expect(warnings()).toEqual([expect.stringContaining(`${command} from the plan:`)]);
   });
 
   it.each([
@@ -502,7 +502,7 @@ describe('sanitizeDiscoveredValidation', () => {
       expect.objectContaining({ type: 'warning', phase: 'researching', category: 'validation' }),
     ]);
     expect(warnings()).toEqual([
-      expect.stringMatching(/^The test checks .*npm run unit from the planner.*package script/),
+      expect.stringMatching(/^The test checks .*npm run unit from the plan:.*package script/),
     ]);
     expect(warnings().join('\n')).not.toMatch(/ignored|sanitize-discovered|allowlist/);
     expect(stderr).not.toHaveBeenCalled();
@@ -570,7 +570,7 @@ describe('sanitizeDiscoveredValidation', () => {
     expect(result?.testPattern).toBeUndefined();
     expect(result?.language).toBe('typescript');
     expect(warnings()).toEqual([
-      expect.stringMatching(/^The test checks .*\.\.\/\.\.\/outside\.test\.ts from the planner/),
+      expect.stringMatching(/^The test checks .*\.\.\/\.\.\/outside\.test\.ts from the plan:/),
     ]);
   });
 
@@ -580,7 +580,7 @@ describe('sanitizeDiscoveredValidation', () => {
     expect(warnings()).toEqual(
       refused.map((pattern) =>
         expect.stringContaining(
-          `${pattern} from the planner (it contains ${pattern.includes('..') ? '".."' : 'a path separator'})`,
+          `${pattern} from the plan: it contains ${pattern.includes('..') ? '".."' : 'a path separator'}.`,
         ),
       ),
     );
@@ -589,14 +589,14 @@ describe('sanitizeDiscoveredValidation', () => {
   it('names the path separator for a pattern that has one and no ".."', () => {
     const result = sanitize({ language: 'typescript', testPattern: '**/*.test.{ts,tsx}' });
     expect(result).toEqual({ language: 'typescript' });
-    expect(warnings()).toEqual([expect.stringContaining('(it contains a path separator)')]);
+    expect(warnings()).toEqual([expect.stringContaining(': it contains a path separator.')]);
     expect(warnings().join('\n')).not.toContain('..');
     expect(warnings().join('\n')).toContain("stack's test file patterns");
   });
 
   it('names ".." for a pattern that climbs out', () => {
     sanitize({ testPattern: '..test.ts' });
-    expect(warnings()).toEqual([expect.stringContaining('(it contains "..")')]);
+    expect(warnings()).toEqual([expect.stringContaining(': it contains "..".')]);
   });
 
   it('publishes nothing when the test check resolves to the refused command', () => {
@@ -612,7 +612,7 @@ describe('sanitizeDiscoveredValidation', () => {
     const result = sanitizeResolving({ testCommand: 'npm run unit' }, { testCommand: 'npm test' });
     expect(result).toBeUndefined();
     expect(warnings()).toEqual([
-      expect.stringMatching(/^The test checks .*npm run unit from the planner.*package script/),
+      expect.stringMatching(/^The test checks .*npm run unit from the plan:.*package script/),
     ]);
   });
 
@@ -740,7 +740,7 @@ describe('sanitizeDiscoveredValidation — script runners', () => {
     for (const [cmd] of refusals) sanitize({ testCommand: cmd });
     expect(warnings()).toEqual(
       refusals.map(([cmd, reason]) =>
-        expect.stringContaining(`${cmd} from the planner (it ${reason})`),
+        expect.stringContaining(`${cmd} from the plan: it ${reason}.`),
       ),
     );
   });
@@ -911,8 +911,9 @@ describe('checkCommandRefusal', () => {
     );
     expect(sanitize({ testCommand: 'test -x src/cli.js' })).toBeUndefined();
     expect(warnings()).toEqual([
-      'The test checks do not take test -x src/cli.js from the planner (it runs a program outside the allowlist (test)) and use config, the manifest or the stack default.',
+      'The test checks do not take test -x src/cli.js from the plan: it runs a program outside the allowlist (test). They use config, the manifest or the stack default.',
     ]);
+    expect(warnings()[0]).not.toMatch(/\([^()]*\(/);
   });
 
   it('keeps the discovered-validation policy for every other command', () => {

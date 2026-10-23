@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- The messages about a test command or test file pattern not taken from the plan read as plain sentences, without nested parentheses.
 - The Claude rate limit warning reads 5-hour or 7-day, not five_hour or seven_day.
 - Apply as is no longer shows "Applying to your checkout" while it asks for its confirmation.
 - A failed whole-suite check that names no file no longer says that no task changed it.
