@@ -453,19 +453,27 @@ function parseRateLimitEvent(event: Record<string, unknown>): StreamParseResult 
   return { sessionId, isHeartbeat: true };
 }
 
+/** The limit windows Claude Code names, in plain words. */
+const RATE_LIMIT_WINDOWS: Readonly<Record<string, string>> = {
+  five_hour: '5-hour',
+  seven_day: '7-day',
+};
+
 /**
- * `seven_day rate limit approaching (resets Nov 3, 16:30)`: the limit type and its
- * reset when the frame names them, and a shorter clause when it does not.
+ * `7-day rate limit approaching (resets Nov 3, 16:30)`: the limit window and its
+ * reset when the frame names them, and a shorter clause when it does not or names
+ * a window this map does not know.
  */
 function rateLimitWarning(
   status: 'allowed_warning' | 'rejected',
   info: Record<string, unknown>,
 ): ParsedWarningInfo {
   const type = firstString(info.rateLimitType);
+  const window = type === undefined ? undefined : RATE_LIMIT_WINDOWS[type];
   const reached = status === 'rejected';
   const reset = rateLimitResetLabel(info.resetsAt);
   const state = reached ? 'reached' : 'approaching';
-  const head = type === undefined ? 'rate limit' : `${type} rate limit`;
+  const head = window === undefined ? 'rate limit' : `${window} rate limit`;
   return {
     code: 'claude_rate_limit',
     severity: reached ? 'error' : 'warning',

@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- The Claude rate limit warning reads 5-hour or 7-day, not five_hour or seven_day.
 - Apply as is no longer shows "Applying to your checkout" while it asks for its confirmation.
 - A failed whole-suite check that names no file no longer says that no task changed it.
 - With a review after each task, the next part of a split task now waits for the review of the part a consult verified.
