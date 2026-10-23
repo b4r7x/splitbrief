@@ -44,7 +44,7 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
 } from '../../../engine/runners/prepared-execution.js';
-import { useInputMode } from './use-input-mode.js';
+import { plainAnswer, useInputMode, type QuestionAnswer } from './use-input-mode.js';
 import { useRunContinue } from './use-run-continue.js';
 import { useRunLoop } from './use-run-loop.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
@@ -93,7 +93,7 @@ import type { PrepareExecutionFn, RunWorkflowFn } from './use-run-loop.js';
 interface RunnerHandle {
   handleResume: (message?: UserMessageInput) => void;
   /** Answers the question the recovery panel is asking, as the composer would. */
-  answer: (message: UserMessageInput) => void;
+  answer: (answer: QuestionAnswer) => void;
 }
 
 interface HarnessProps {
@@ -317,7 +317,7 @@ async function answerRecoveryPanel(
   await tick(60);
   const runner = captureRunner.current;
   if (!runner) throw new Error('expected captureRunner.current to be populated');
-  runner.answer(plainUserMessage(text));
+  runner.answer(plainAnswer(text));
 }
 
 function userMessageEvents() {

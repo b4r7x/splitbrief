@@ -3367,6 +3367,12 @@ const applyConflictRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
+/** The same Apply halt with a sentence typed as the answer: refused, and back in the composer. */
+const applyConflictSentenceProjection: WorkflowFixtureProjection = {
+  ...applyConflictRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-apply-conflict-sentence'),
+};
+
 const resumedApplyPartialIssue = buildApplyPartialRecoveryIssue({
   backupId: 'visual-apply',
   backupDir: '.splitbrief/apply-backups/visual-apply',
@@ -6884,6 +6890,7 @@ const projections = [
   taskReviewCapRecoveryProjection,
   checksMissingProgramRecoveryProjection,
   applyConflictRecoveryProjection,
+  applyConflictSentenceProjection,
   resumedApplyPartialRecoveryProjection,
   reviewContextRecoveryProjection,
   reviewCallFailedRecoveryProjection,

@@ -22,7 +22,10 @@ import {
 } from '../../../../src/engine/providers/cost/breakdown.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
 import { buildSeatDownIssue } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
-import { buildApplyConflictRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/apply.js';
+import {
+  buildApplyConflictRecoveryIssue,
+  buildApplyPartialRecoveryIssue,
+} from '../../../../src/engine/orchestrator/recovery/builders/apply.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../../src/engine/events/workflow-cancel.js';
 import {
   WORKSPACE_KEPT_CODE,
@@ -1256,6 +1259,72 @@ const APPLY_CONFLICT_LOG: readonly EngineEvent[] = [
     code: 'apply_conflict',
   },
 ];
+
+/** Apply stopped part way, Restore backup was chosen and saved, and the process went away first. */
+const APPLY_PARTIAL_CHOSEN = {
+  ...buildApplyPartialRecoveryIssue({
+    backupId: 'visual-apply',
+    backupDir: '.splitbrief/apply-backups/visual-apply',
+    createdAt: STARTED_AT_ISO,
+    written: [FILES.form],
+    files: [FILES.form, FILES.docs],
+    failedFile: FILES.docs,
+    cause: 'EACCES: permission denied',
+  }),
+  status: 'applying',
+  selectedAction: 'restore-backup',
+} as const;
+
+export const AT_REST_TYPED_WORDS_SESSION = 'visual-at-rest-typed-words';
+
+const AT_REST_TYPED_WORDS = record({
+  sessionId: AT_REST_TYPED_WORDS_SESSION,
+  status: {
+    kind: 'open',
+    stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: APPLY_PARTIAL_CHOSEN } },
+    resumeAt: { kind: 'apply' },
+  },
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'passed',
+    workspace: RUN_WORKSPACE,
+    pendingRecovery: APPLY_PARTIAL_CHOSEN,
+  }),
+  summary: workspaceSummary(AT_REST_TYPED_WORDS_SESSION),
+  ledger: READY_LEDGER,
+});
+
+const APPLY_PARTIAL_LOG: readonly EngineEvent[] = [
+  ...READY_LOG,
+  {
+    type: 'error',
+    ts: Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime + 30_000,
+    phase: 'complete',
+    message: APPLY_PARTIAL_CHOSEN.message,
+    category: 'recovery',
+    code: 'apply_partial',
+  },
+];
+
+/** Apply was writing to the checkout when the process went away: no halt, and Apply is next. */
+const CRASHED_APPLY = record({
+  sessionId: 'visual-at-rest-crashed-apply',
+  status: {
+    kind: 'open',
+    stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+    resumeAt: { kind: 'apply' },
+  },
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'passed',
+    workspace: RUN_WORKSPACE,
+    applying: { at: STARTED_AT_ISO, backupId: 'visual-apply' },
+  }),
+  summary: workspaceSummary('visual-at-rest-crashed-apply'),
+  ledger: READY_LEDGER,
+});
 
 const CLOSED_APPLIED = record({
   sessionId: 'visual-closed-applied',
@@ -2534,6 +2603,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-at-rest-apply-conflict',
     route: { record: AT_REST_APPLY_CONFLICT, log: APPLY_CONFLICT_LOG },
   }),
+  atRestProjection({
+    id: 'workflow-at-rest-typed-words',
+    route: { record: AT_REST_TYPED_WORDS, log: APPLY_PARTIAL_LOG },
+  }),
   {
     ...atRestProjection({
       id: 'workflow-at-rest-crashed-build',
@@ -2552,6 +2625,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-at-rest-crashed-review',
     route: { record: CRASHED_REVIEW, log: CRASHED_REVIEW_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-crashed-apply',
+    route: { record: CRASHED_APPLY, log: READY_LOG },
   }),
   atRestProjection({
     id: 'workflow-at-rest-crashed-review-check',

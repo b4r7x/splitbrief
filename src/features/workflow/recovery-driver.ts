@@ -12,6 +12,8 @@ import type { StepRef } from '../../core/schemas/run-step.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
+import { recoveryActionLabel } from '../../core/recovery/action-label.js';
+import { leavesWordsUnread } from '../../core/recovery/typed-words.js';
 import { prepareDraftSubmission } from '../../core/composer/submission.js';
 import { plannerSupportsImages } from '../../core/runners/capabilities.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -45,7 +47,7 @@ import {
   switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
 
-const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose one of its actions.';
+const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose an action.';
 
 type PendingRecoveryResult =
   | {
@@ -245,7 +247,9 @@ export function createRecoveryDriver(
       action: RecoveryAction,
     ): Promise<UserMessageInput | undefined> => {
       const question = noteQuestion(action);
-      return question === undefined ? undefined : inputMode.setQuestionMode(question);
+      return question === undefined
+        ? undefined
+        : (await inputMode.setQuestionMode(question)).message;
     };
 
     const applyAction = async (
@@ -375,12 +379,13 @@ export function createRecoveryDriver(
     }
 
     // Words typed to continue the run answer the halt when only its revise can carry them; a
-    // retry halt keeps them as the steer of whichever retry the operator picks on the panel.
+    // retry halt keeps them as the steer of whichever retry the operator picks on the panel. Only
+    // a halt End run alone answers has no step to take them.
     if (reentryCorrection !== undefined && reentryCorrection.text.trim() !== '') {
       if (correctionAction === 'revise') {
         const applied = await applyAction(correctionAction, '', reentryCorrection);
         if (applied !== null) return applied;
-      } else if (correctionAction === undefined) {
+      } else if (issue.availableActions.every((action) => action === 'end-run')) {
         feedbackStore.setError(NO_CORRECTION_MESSAGE);
       }
     }
@@ -398,7 +403,9 @@ export function createRecoveryDriver(
     if (republishPrompt) publishRecoveryPrompted({ bus, phase: state.phase }, sessionId, issue);
 
     while (true) {
-      const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(issue));
+      const { message: answer, document } = await inputMode.setQuestionMode(
+        formatRecoveryPrompt(issue),
+      );
       if (controller.signal.aborted || abortedRef.current) {
         return { shouldRun: false, state };
       }
@@ -407,6 +414,7 @@ export function createRecoveryDriver(
       if (action === null && answer.text.trim() !== '') {
         if (correctionAction === undefined) {
           feedbackStore.setError(NO_CORRECTION_MESSAGE);
+          composerDraftStore.requestPrepend(document);
           continue;
         }
         action = correctionAction;
@@ -418,6 +426,12 @@ export function createRecoveryDriver(
       }
       // Words typed beside the panel are the note of the action that takes one.
       const draft = composerLiveStore.get();
+      if (!draft.empty && leavesWordsUnread(issue.reason, action)) {
+        feedbackStore.setError(
+          `Cannot send words with ${recoveryActionLabel(action, { reason: issue.reason })}. Clear them.`,
+        );
+        continue;
+      }
       if (correction === undefined && action === correctionAction && !draft.empty) {
         const submission = prepareDraftSubmission(draft.document, {
           projectDir,

@@ -12,6 +12,7 @@ import { awaitsApply, type StopReason } from '../../core/sessions/run-status.js'
 import type { RouteData } from '../../stores/navigation/router.js';
 import type { DepartureKind } from '../../stores/workflow/departure.js';
 import { AT_REST_PLACEHOLDER } from './closed/byline.js';
+import { statusLeavesWordsUnread } from '../../core/recovery/typed-words.js';
 
 /**
  * A stop the operator can answer wears the cancel mark; a stop the run could not get past wears the
@@ -140,7 +141,8 @@ export interface AtRestComposer {
 
 /**
  * What the composer of a run at rest takes. A run that can be picked up takes a correction and a
- * bare Enter; anything else takes commands only, so Enter never promises work that cannot happen.
+ * bare Enter, or only the bare Enter at a halt or an Apply that reads no typed words; anything
+ * else takes commands only, so Enter never promises work that cannot happen.
  * Behind this window's Apply, Enter queues home, which a queued quit already overrides; `apply` is
  * absent when no Apply of this window writes the run, so Enter goes home at once.
  */
@@ -161,7 +163,9 @@ export function atRestComposer(
             ? AT_REST_PLACEHOLDER.closed
             : record.status.kind === 'open' && record.status.stop.on.kind === 'question'
               ? AT_REST_PLACEHOLDER.inputRequired
-              : AT_REST_PLACEHOLDER.open,
+              : statusLeavesWordsUnread(record.status)
+                ? AT_REST_PLACEHOLDER.noWords
+                : AT_REST_PLACEHOLDER.open,
   };
 }
 

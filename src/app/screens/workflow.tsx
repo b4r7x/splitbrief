@@ -72,6 +72,7 @@ import {
 } from '../../features/workflow/layout/chrome-rows.js';
 import { BuildProgressBlock } from '../../features/workflow/components/build-progress.js';
 import { useRailCells } from '../../features/workflow/hooks/use-rail-cells.js';
+import { plainAnswer } from '../../features/workflow/hooks/use-input-mode.js';
 import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows/workflow.js';
 import {
   reviewArtifactForPhase,
@@ -658,7 +659,7 @@ export function WorkflowScreen({
             onRecoveryFocusChange={(menuFocused) => {
               setRecoveryFocus({ key: recoveryFocusKey, menu: menuFocused });
             }}
-            onRecoveryResolve={(answer) => model.inputMode.resolve(plainUserMessage(answer))}
+            onRecoveryResolve={(answer) => model.inputMode.resolve(plainAnswer(answer))}
             questions={plannerQuestions}
             planner={
               structuredQuestion

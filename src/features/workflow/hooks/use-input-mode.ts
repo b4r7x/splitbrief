@@ -6,14 +6,27 @@ import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { markWaitEnded, markWaitStarted } from '../../../stores/workflow/actions/wait.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
+import { createDraftDocument } from '../../../core/composer/document.js';
+import type { DraftDocument } from '../../../core/schemas/draft-document.js';
+
+/** A question's answer: the message the run takes, and the draft the composer sent it from. */
+export interface QuestionAnswer {
+  message: UserMessageInput;
+  document: DraftDocument;
+}
+
+/** The answer of plain text, such as a letter picked on a menu. */
+export function plainAnswer(text: string): QuestionAnswer {
+  return { message: plainUserMessage(text), document: createDraftDocument(text) };
+}
 
 export interface UseInputModeResult {
   mode: InputMode;
   hint: string;
   questionEpoch: number;
   setReviewMode: (h: string) => Promise<ApprovalReviewResult>;
-  setQuestionMode: (h: string) => Promise<UserMessageInput>;
-  resolve: (value: ApprovalReviewResult | UserMessageInput) => void;
+  setQuestionMode: (h: string) => Promise<QuestionAnswer>;
+  resolve: (value: ApprovalReviewResult | QuestionAnswer) => void;
   resetMode: () => void;
 }
 
@@ -33,7 +46,7 @@ export function useInputMode(): UseInputModeResult {
   const modeRef = useRef(modeState.mode);
   modeRef.current = modeState.mode;
   const reviewResolverRef = useRef<((value: ApprovalReviewResult) => void) | null>(null);
-  const questionResolverRef = useRef<((value: UserMessageInput) => void) | null>(null);
+  const questionResolverRef = useRef<((value: QuestionAnswer) => void) | null>(null);
   const questionRejectorRef = useRef<((reason: unknown) => void) | null>(null);
 
   const supersedePending = (): void => {
@@ -44,7 +57,7 @@ export function useInputMode(): UseInputModeResult {
     questionRejectorRef.current = null;
     questionPromptStore.clearHint();
     reviewResolver?.({ approved: false });
-    questionResolver?.(plainUserMessage(''));
+    questionResolver?.(plainAnswer(''));
   };
 
   const setReviewMode = (h: string): Promise<ApprovalReviewResult> => {
@@ -57,7 +70,7 @@ export function useInputMode(): UseInputModeResult {
     });
   };
 
-  const setQuestionMode = (h: string): Promise<UserMessageInput> => {
+  const setQuestionMode = (h: string): Promise<QuestionAnswer> => {
     supersedePending();
     return new Promise((resolve, reject) => {
       questionResolverRef.current = resolve;
@@ -73,7 +86,7 @@ export function useInputMode(): UseInputModeResult {
     });
   };
 
-  const resolve = (value: ApprovalReviewResult | UserMessageInput): void => {
+  const resolve = (value: ApprovalReviewResult | QuestionAnswer): void => {
     const currentMode = modeRef.current;
     const answersReview = currentMode === 'review' && 'approved' in value;
     const answersQuestion = currentMode === 'question' && !('approved' in value);
@@ -115,7 +128,7 @@ export function useInputMode(): UseInputModeResult {
   useEffect(() => {
     return () => {
       reviewResolverRef.current?.({ approved: false });
-      questionResolverRef.current?.(plainUserMessage(''));
+      questionResolverRef.current?.(plainAnswer(''));
       reviewResolverRef.current = null;
       questionResolverRef.current = null;
       questionRejectorRef.current = null;

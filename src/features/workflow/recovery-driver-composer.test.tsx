@@ -10,7 +10,6 @@ import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { Composer } from '../../components/composer/composer.js';
-import { plainUserMessage } from '../../core/types/user-input.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { configStore } from '../../stores/project/config.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
@@ -19,7 +18,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../engine/events/workflow-cancel.js';
-import { useInputMode, type UseInputModeResult } from './hooks/use-input-mode.js';
+import { plainAnswer, useInputMode, type UseInputModeResult } from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
 
 function RecoveryComposerHarness({ capture }: { capture: { current: UseInputModeResult | null } }) {
@@ -34,7 +33,9 @@ function RecoveryComposerHarness({ capture }: { capture: { current: UseInputMode
       mode={inputMode.mode}
       hint={inputMode.hint}
       questionEpoch={inputMode.questionEpoch}
-      onSubmit={(submission) => inputMode.resolve(submission.message)}
+      onSubmit={(submission) =>
+        inputMode.resolve({ message: submission.message, document: submission.document })
+      }
       onRuntimeCommand={() => {}}
       listProjectFiles={async () => []}
     />
@@ -100,7 +101,7 @@ it('restores the whole refused recovery draft when the question prompt is re-arm
   composerDraftStore.requestDocument(document);
   await flushEffects();
 
-  capture.current.resolve(plainUserMessage('r'));
+  capture.current.resolve(plainAnswer('r'));
   await vi.waitFor(() => expect(capture.current?.questionEpoch).toBe(2));
   await flushEffects();
 
@@ -147,7 +148,9 @@ it('runs a slash command typed under a recovery menu and never takes one as the 
         mode={inputMode.mode}
         hint={inputMode.hint}
         questionEpoch={inputMode.questionEpoch}
-        onSubmit={(submission) => inputMode.resolve(submission.message)}
+        onSubmit={(submission) =>
+          inputMode.resolve({ message: submission.message, document: submission.document })
+        }
         onRuntimeCommand={(command) => commands.push(command)}
         listProjectFiles={async () => []}
       />
@@ -187,7 +190,7 @@ it('runs a slash command typed under a recovery menu and never takes one as the 
 
   composerDraftStore.request('/scroll top');
   await flushEffects();
-  capture.current.resolve(plainUserMessage('r'));
+  capture.current.resolve(plainAnswer('r'));
   await vi.waitFor(() => expect(capture.current?.questionEpoch).toBe(2));
   await flushEffects();
 

@@ -1,4 +1,3 @@
-import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { useEffect } from 'react';
 import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -7,7 +6,12 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
-import { useInputMode, type UseInputModeResult } from './use-input-mode.js';
+import {
+  plainAnswer,
+  useInputMode,
+  type QuestionAnswer,
+  type UseInputModeResult,
+} from './use-input-mode.js';
 
 function Harness({ capture }: { capture: { current: UseInputModeResult | null } }) {
   const inputMode = useInputMode();
@@ -59,7 +63,7 @@ describe('useInputMode', () => {
 
     const second = capture.current?.setQuestionMode('second question');
     if (!second) throw new Error('expected second question promise');
-    await expect(first).resolves.toEqual(plainUserMessage(''));
+    await expect(first).resolves.toEqual(plainAnswer(''));
     await waitForMode(capture, 'question', 'second question');
 
     expect(capture.current?.mode).toBe('question');
@@ -73,8 +77,8 @@ describe('useInputMode', () => {
     await tick();
     expect(ui.lastFrame()).toContain('60x18:question:second question:question-2');
 
-    resolveAtCompact(plainUserMessage('answer'));
-    await expect(second).resolves.toEqual(plainUserMessage('answer'));
+    resolveAtCompact(plainAnswer('answer'));
+    await expect(second).resolves.toEqual(plainAnswer('answer'));
     await waitForMode(capture, 'normal');
 
     expect(capture.current?.mode).toBe('normal');
@@ -101,8 +105,8 @@ describe('useInputMode', () => {
 
     expect(ui.lastFrame()).toContain('question:question prompt');
 
-    capture.current?.resolve(plainUserMessage('answer'));
-    await expect(question).resolves.toEqual(plainUserMessage('answer'));
+    capture.current?.resolve(plainAnswer('answer'));
+    await expect(question).resolves.toEqual(plainAnswer('answer'));
     ui.unmount();
   });
 
@@ -118,7 +122,7 @@ describe('useInputMode', () => {
 
     const review = capture.current?.setReviewMode('review prompt');
     if (!review) throw new Error('expected review promise');
-    await expect(question).resolves.toEqual(plainUserMessage(''));
+    await expect(question).resolves.toEqual(plainAnswer(''));
     await waitForMode(capture, 'review');
 
     expect(questionPromptStore.get().hint).toBeNull();
@@ -205,7 +209,7 @@ describe('useInputMode — mode transitions', () => {
     await tick();
     const inputMode = requireRef(ref);
 
-    let answer: UserMessageInput | undefined;
+    let answer: QuestionAnswer | undefined;
     const pending = inputMode.setQuestionMode('Which framework?').then((v) => {
       answer = v;
     });
@@ -215,10 +219,10 @@ describe('useInputMode — mode transitions', () => {
     expect(questionPromptStore.get().hint).toBe('Which framework?');
     expect(ui.lastFrame()).toContain('Which framework?');
 
-    requireRef(ref).resolve(plainUserMessage('react'));
+    requireRef(ref).resolve(plainAnswer('react'));
     await pending;
 
-    expect(answer).toEqual(plainUserMessage('react'));
+    expect(answer).toEqual(plainAnswer('react'));
     expect(controlsStore.get().inputMode).toBe('normal');
     expect(questionPromptStore.get().hint).toBeNull();
     ui.unmount();
@@ -248,7 +252,7 @@ describe('useInputMode — mode transitions', () => {
     await tick();
     const inputMode = requireRef(ref);
 
-    let answer: UserMessageInput | undefined;
+    let answer: QuestionAnswer | undefined;
     const pending = inputMode.setQuestionMode('Which DB?').then(
       (v) => {
         answer = v;
@@ -301,7 +305,7 @@ describe('useInputMode — mode transitions', () => {
     await tick();
     const inputMode = requireRef(ref);
 
-    let answer: UserMessageInput | undefined;
+    let answer: QuestionAnswer | undefined;
     const pending = inputMode.setQuestionMode('Which DB?').then((v) => {
       answer = v;
     });
@@ -310,7 +314,7 @@ describe('useInputMode — mode transitions', () => {
     ui.unmount();
     await pending;
 
-    expect(answer).toEqual(plainUserMessage(''));
+    expect(answer).toEqual(plainAnswer(''));
     expect(questionPromptStore.get().hint).toBeNull();
   });
 });

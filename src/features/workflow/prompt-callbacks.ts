@@ -82,7 +82,7 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
             : 'Reply to the planner…';
       const answerPromise = inputMode.setQuestionMode(hint);
       questionPromptStore.setQuestions(reply.questions);
-      const answer = await answerPromise;
+      const { message: answer } = await answerPromise;
       if (controller.signal.aborted || abortedRef.current) return undefined;
       const batch = questionPromptStore.takeAnswerBatch();
       if (answer.text.trim() === '') return answer;

@@ -37,6 +37,8 @@ import {
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { recoveryNoticeStore } from '../../../../stores/workflow/recovery-notice.js';
 import { feedbackStore } from '../../../../stores/ui/feedback.js';
+import { composerDraftStore } from '../../../../stores/ui/composer-draft.js';
+import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { stopStore } from '../../../../stores/workflow/stop.js';
 import { departureStore } from '../../../../stores/workflow/departure.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
@@ -150,6 +152,8 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     if (outcome.kind !== 'refused') return;
     if (outcome.reason === 'closed' || outcome.reason === 'ready-to-apply')
       void rereadRunAtRest(run.ref);
+    if (outcome.reason === 'takes-no-words')
+      composerDraftStore.requestPrepend(composerLiveStore.get().document);
     feedbackStore.setError(outcome.message);
   };
 

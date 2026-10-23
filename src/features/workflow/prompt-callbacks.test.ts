@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
 import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import { buildPromptCallbacks } from './prompt-callbacks.js';
-import type { UseInputModeResult } from './hooks/use-input-mode.js';
+import {
+  plainAnswer,
+  type QuestionAnswer,
+  type UseInputModeResult,
+} from './hooks/use-input-mode.js';
+import { createDraftDocument } from '../../core/composer/document.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
@@ -19,7 +24,7 @@ function makeInputMode(answers: string | string[]): UseInputModeResult {
     hint: '',
     questionEpoch: 0,
     setReviewMode: async () => ({ approved: false }),
-    setQuestionMode: async () => plainUserMessage(queue.shift() ?? ''),
+    setQuestionMode: async () => plainAnswer(queue.shift() ?? ''),
     resolve: () => {},
     resetMode: () => {},
   };
@@ -230,7 +235,7 @@ describe('buildPromptCallbacks onPlannerReply', () => {
       ...makeInputMode('the cache'),
       setQuestionMode: async (hint) => {
         hints.push(hint);
-        return plainUserMessage('the cache');
+        return plainAnswer('the cache');
       },
     });
 
@@ -246,7 +251,7 @@ describe('buildPromptCallbacks onPlannerReply', () => {
       ...makeInputMode('the cache'),
       setQuestionMode: async (hint) => {
         hints.push(hint);
-        return plainUserMessage('the cache');
+        return plainAnswer('the cache');
       },
     });
     await callbacks.onPlannerReply?.(reply);
@@ -260,11 +265,11 @@ describe('buildPromptCallbacks onPlannerReply', () => {
   });
 
   it('opens a free-text question with a default on its rows with an empty field, live or asked again on a continued run', async () => {
-    let settle: (message: UserMessageInput) => void = () => {};
+    let settle: (answer: QuestionAnswer) => void = () => {};
     const callbacks = makeCallbacksWithInputMode({
       ...makeInputMode(''),
       setQuestionMode: () =>
-        new Promise<UserMessageInput>((resolve) => {
+        new Promise<QuestionAnswer>((resolve) => {
           settle = resolve;
         }),
     });
@@ -275,16 +280,16 @@ describe('buildPromptCallbacks onPlannerReply', () => {
     });
     expect(questionPromptStore.get().focus).toBe('menu');
     expect(questionPromptStore.get().drafts).toEqual([{ text: '', selected: 0 }]);
-    settle(plainUserMessage(''));
+    settle(plainAnswer(''));
     await pending;
   });
 
   it('hands the composer reply on as the answer once Esc closed a question asked again on a continued run', async () => {
-    let settle: (message: UserMessageInput) => void = () => {};
+    let settle: (answer: QuestionAnswer) => void = () => {};
     const callbacks = makeCallbacksWithInputMode({
       ...makeInputMode(''),
       setQuestionMode: () =>
-        new Promise<UserMessageInput>((resolve) => {
+        new Promise<QuestionAnswer>((resolve) => {
           settle = resolve;
         }),
     });
@@ -299,7 +304,7 @@ describe('buildPromptCallbacks onPlannerReply', () => {
     questionPromptStore.answer(plainUserMessage('Planner'));
     questionPromptStore.close();
     expect(questionPromptStore.get().questions).toEqual([]);
-    settle(plainUserMessage('Use the planner seat and no small words'));
+    settle(plainAnswer('Use the planner seat and no small words'));
     await expect(pending).resolves.toEqual(
       plainUserMessage('Use the planner seat and no small words'),
     );
@@ -360,7 +365,10 @@ it('forwards message-valued planner replies with attached bodies and metadata', 
   };
   const callbacks = makeCallbacksWithInputMode({
     ...makeInputMode(''),
-    setQuestionMode: async () => original,
+    setQuestionMode: async () => ({
+      message: original,
+      document: createDraftDocument(original.displayText),
+    }),
   });
   await expect(
     callbacks.onPlannerReply?.({
@@ -380,7 +388,7 @@ it('consumes the completed structured batch once without flattening attachment t
     images: [],
     attachedInputs: [{ kind: 'text', path: '/outside/a.txt' }],
   };
-  const answer = Promise.withResolvers<UserMessageInput>();
+  const answer = Promise.withResolvers<QuestionAnswer>();
   const callbacks = makeCallbacksWithInputMode({
     ...makeInputMode(''),
     setQuestionMode: () => answer.promise,
@@ -395,7 +403,10 @@ it('consumes the completed structured batch once without flattening attachment t
   const batch = questionPromptStore.answer(original);
   if (batch === undefined) throw new Error('expected completed batch');
   questionPromptStore.clearHint();
-  answer.resolve(batch.message);
+  answer.resolve({
+    message: batch.message,
+    document: createDraftDocument(batch.message.displayText),
+  });
   await expect(pending).resolves.toEqual(batch);
   expect(questionPromptStore.takeAnswerBatch()).toBeUndefined();
 });

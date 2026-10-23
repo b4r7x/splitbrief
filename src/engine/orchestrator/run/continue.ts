@@ -3,6 +3,8 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import type { OwnedResumeState } from '../../../core/state/resume-hydration.js';
 import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run-status.js';
+import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
+import { statusLeavesWordsUnread } from '../../../core/recovery/typed-words.js';
 import { sanitizePasteBody } from '../../../lib/terminal/filtered-stdin/paste.js';
 
 export type ContinueRunOutcome =
@@ -12,7 +14,7 @@ export type ContinueRunOutcome =
   | { kind: 'restarted'; state: WorkflowState }
   | {
       kind: 'refused';
-      reason: 'missing' | 'invalid' | 'closed' | 'ready-to-apply';
+      reason: 'missing' | 'invalid' | 'closed' | 'ready-to-apply' | 'takes-no-words';
       message: string;
     };
 
@@ -86,6 +88,22 @@ export function continueRun(
     };
   }
 
+  // Typed words no step would read wait for a bare ⏎.
+  if (steer.text !== '' && statusLeavesWordsUnread(status)) {
+    return { kind: 'refused', reason: 'takes-no-words', message: noWordsMessage(status) };
+  }
+
   deps.restart({ state: hydrated.state, steer: steer.text === '' ? undefined : steer });
   return { kind: 'restarted', state: hydrated.state };
+}
+
+function noWordsMessage(status: RunStatus): string {
+  if (status.kind !== 'open' || status.stop.on.kind !== 'halt') {
+    return 'Cannot send words to Apply. Clear them.';
+  }
+  const issue = status.stop.on.issue;
+  const chosen = issue.status === 'applying' ? issue.selectedAction : undefined;
+  return chosen === undefined
+    ? 'Cannot send words to this halt. Clear them first.'
+    : `Cannot send words with ${recoveryActionLabel(chosen, { reason: issue.reason })}. Clear them.`;
 }
