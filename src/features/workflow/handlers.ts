@@ -2,6 +2,7 @@ import {
   discardPendingSessionDrafts,
   flushSessionDrafts,
   leaveWasRefusedHere,
+  nameDraftsNotRemoved,
   reportDraftNotSaved,
 } from '../../stores/ui/session-drafts.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
@@ -326,11 +327,14 @@ function leave(departure: Departure | null): void {
     }
     discardPendingSessionDrafts();
   }
+  // A quit names an old draft it could not remove before its screen unmounts; a home lands first.
+  if (departure?.kind === 'quit') nameDraftsNotRemoved('at-exit');
   try {
     departure?.run();
   } catch (err) {
     feedbackStore.setError(toErrorMessage(err));
   }
+  nameDraftsNotRemoved('screen');
 }
 
 function stopWaitingForStop(): void {

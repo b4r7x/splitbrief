@@ -44,7 +44,10 @@ import {
 import { deriveFallbackRows } from '../../../src/core/crew/fallback.js';
 import { deriveCrewRows } from '../../../src/core/crew/rows.js';
 import { crewActivate, fallbackActivate } from '../../../src/features/crew/rows.js';
-import { reportDraftNotSaved } from '../../../src/stores/ui/session-drafts.js';
+import {
+  nameDraftsNotRemoved,
+  reportDraftNotSaved,
+} from '../../../src/stores/ui/session-drafts.js';
 import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
@@ -92,6 +95,7 @@ import {
   seedRoutedCrew,
   setupVisualFixture,
   teardownVisualFixture,
+  retainUnremovableDraft,
   UNSAVED_DRAFT_ERROR,
   visualConfig,
   VISUAL_FIXTURE_PROJECT_DIR,
@@ -2837,6 +2841,25 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [
     scenarioId('workflow-draft-not-saved'),
     () => createParkedFeedbackFixture(() => reportDraftNotSaved(UNSAVED_DRAFT_ERROR, true)),
+  ],
+  [
+    scenarioId('workflow-draft-not-removed'),
+    () => {
+      const parked = createParkedFeedbackFixture(() => nameDraftsNotRemoved('screen'));
+      let restore: (() => void) | undefined;
+      return {
+        ...parked,
+        setup: async (context) => {
+          await parked.setup(context);
+          restore = retainUnremovableDraft();
+        },
+        teardown: () => {
+          restore?.();
+          restore = undefined;
+          return parked.teardown();
+        },
+      };
+    },
   ],
   [
     scenarioId('workflow-stop-menu-pause'),

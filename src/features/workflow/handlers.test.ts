@@ -49,6 +49,8 @@ import {
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
 import { createDraftDocument } from '../../core/composer/document.js';
+import { writeSessionDraft } from '../../core/sessions/draft.js';
+import { installDiagnosticSink } from '../../lib/warn.js';
 
 describe('createAbortHandlerScope', () => {
   afterEach(() => {
@@ -525,6 +527,81 @@ describe('departure with an unsent draft that cannot be saved', () => {
 
     requestQuit(exit);
     expect(exit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('leaving with an empty composer over an old draft that cannot be removed', () => {
+  let projectDir: string;
+  let dir: string;
+  const ref = () => ({ projectDir, sessionId: 'one' });
+  const NOTE =
+    'Could not remove the old draft: permission denied · .splitbrief/sessions/one/draft.json · its text comes back when you restart SPLITBRIEF and open that run';
+  let diagnostics: { message: string; presentation: string }[];
+  let releaseSink: () => void;
+
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    feedbackStore.reset();
+    projectDir = createTempDir('handlers-draft-unremovable-');
+    dir = sessionDir(projectDir, 'one');
+    writeSessionDraft(ref(), createDraftDocument('my unsent draft'));
+    chmodSync(dir, 0o555);
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: ref() }),
+      execution: { kind: 'at-rest' },
+    });
+    saveSessionDraft(ref(), createDraftDocument(''));
+    diagnostics = [];
+    releaseSink = installDiagnosticSink((message, presentation) =>
+      diagnostics.push({ message, presentation }),
+    );
+  });
+  afterEach(() => {
+    releaseSink();
+    chmodSync(dir, 0o755);
+    __testDiscardPending();
+    clearAllHandlers();
+    stopStore.__testReset();
+    feedbackStore.reset();
+    routerStore.reset();
+    cleanupTempDir(projectDir);
+  });
+
+  it.each([
+    [
+      'esc, Back to sessions',
+      () => {
+        requestLeaveSession();
+        return routerStore.get().screen === 'home';
+      },
+    ],
+    [
+      'ctrl+c, /quit',
+      () => {
+        const exit = vi.fn();
+        requestQuit(exit);
+        return exit.mock.calls.length === 1;
+      },
+    ],
+  ])('%s leaves on the first press', (_name, leave) => {
+    expect(leave()).toBe(true);
+    expect(draftRefusalStore.get()).toBeNull();
+    expect(feedbackStore.get().message ?? '').not.toContain('Draft not saved');
+  });
+
+  it('names the file on home after esc', () => {
+    requestLeaveSession();
+    expect(routerStore.get().screen).toBe('home');
+    expect(feedbackStore.get()).toEqual({ message: NOTE, isError: true });
+  });
+
+  it('names the file on stderr once the terminal is restored after a quit', () => {
+    const exit = vi.fn();
+    requestQuit(exit);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(diagnostics).toEqual([{ message: NOTE, presentation: 'at-exit' }]);
   });
 });
 

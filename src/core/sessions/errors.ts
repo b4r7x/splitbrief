@@ -39,6 +39,17 @@ export function stillActiveFix(sessionId: string): string {
   return `Stop it, then run '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' — or delete ${SPLITBRIEF_IDENTITY.stateDir}/active to discard it.`;
 }
 
+/**
+ * `<what>: <cause> · <project-relative file>`. Node spells a file error `EACCES: permission denied,
+ * open '<absolute path>'`: the user needs only its words, and the cause comes before the file so a
+ * cut line hides the file, not the cause.
+ */
+export function sessionFileFailure(what: string, relativePath: string, cause: unknown): string {
+  const reason =
+    (isNodeError(cause) && /^E[A-Z]+: ([^,]+)/.exec(cause.message)?.[1]) || toErrorMessage(cause);
+  return `${what}: ${reason}${SOFT_SEP}${relativePath}`;
+}
+
 export const sessionError = {
   invalidData: (sessionId: string, reason: string) =>
     error('session-invalid-data', `Invalid session data: ${reason}`, { sessionId, reason }),
@@ -62,18 +73,21 @@ export const sessionError = {
     ),
   invalidId: (sessionId: string) =>
     error('session-invalid-id', 'invalid session id', { sessionId }),
-  // Node spells a file error `EACCES: permission denied, open '<absolute path>'`: the user needs
-  // only its words and the project-relative file.
-  draftNotSaved: (relativePath: string, cause: unknown) => {
-    const reason =
-      (isNodeError(cause) && /^E[A-Z]+: ([^,]+)/.exec(cause.message)?.[1]) || toErrorMessage(cause);
-    return error(
+  draftNotSaved: (relativePath: string, cause: unknown) =>
+    error(
       'session-draft-not-saved',
-      `Draft not saved: ${reason}${SOFT_SEP}${relativePath}`,
-      { relativePath, reason },
+      sessionFileFailure('Draft not saved', relativePath, cause),
+      { relativePath },
       cause,
-    );
-  },
+    ),
+  draftNotRemoved: (relativePath: string, cause: unknown) =>
+    error(
+      'session-draft-not-removed',
+      `${sessionFileFailure('Could not remove the old draft', relativePath, cause)}${SOFT_SEP}its text comes back when you restart SPLITBRIEF and open that run`,
+      { relativePath },
+      cause,
+    ),
 
   isStillActive: matches('session-still-active'),
+  isDraftNotRemoved: matches('session-draft-not-removed'),
 } as const;

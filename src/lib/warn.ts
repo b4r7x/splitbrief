@@ -2,7 +2,9 @@ import { toErrorMessage } from '../utils/format-errors.js';
 import { sanitizeTerminalDiagnosticText } from '../utils/display-text.js';
 import { countNoun } from '../utils/pluralize.js';
 
-type DiagnosticPresentation = 'feedback' | 'log-only';
+// `at-exit` is a note for the user who quits: the TUI writes it to stderr once the terminal is
+// restored, never to the feedback line.
+type DiagnosticPresentation = 'feedback' | 'log-only' | 'at-exit';
 type DiagnosticSink = (message: string, presentation: DiagnosticPresentation) => void;
 
 type Diagnostic = Readonly<{ text: string; presentation: DiagnosticPresentation }>;

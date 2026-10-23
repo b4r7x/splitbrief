@@ -2,13 +2,16 @@ import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { readSessionDraft, writeSessionDraft } from '../../core/sessions/draft.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
+import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { handleSessionSelect } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -334,6 +337,107 @@ describe('unsent session composer draft', () => {
     } finally {
       chmodSync(dir, 0o755);
     }
+  });
+});
+
+describe('an emptied composer over an old draft that cannot be removed', () => {
+  let projectDir: string;
+  let dir: string;
+  const NOTE =
+    'Could not remove the old draft: permission denied · .splitbrief/sessions/one/draft.json · its text comes back when you restart SPLITBRIEF and open that run';
+  beforeEach(() => {
+    resetAllStores();
+    projectDir = createTempDir('session-draft-unremovable-');
+    dir = sessionDir(projectDir, 'one');
+    writeSessionDraft({ projectDir, sessionId: 'one' }, createDraftDocument('my unsent draft'));
+    chmodSync(dir, 0o555);
+  });
+  afterEach(() => {
+    chmodSync(dir, 0o755);
+    flushSessionDrafts();
+    cleanupTempDir(projectDir);
+  });
+
+  function open(sessionId: string) {
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord({ ref: { projectDir, sessionId } }),
+      execution: { kind: 'at-rest' },
+    });
+  }
+  const composer = () => (
+    <Composer
+      currentScreen="workflow"
+      mode="normal"
+      hint=""
+      commands={[]}
+      onRuntimeCommand={() => {}}
+    />
+  );
+
+  async function emptyTheComposer() {
+    open('one');
+    const ui = renderFeature(composer());
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('my unsent draft');
+    composerDraftStore.requestDocument(createDraftDocument(''));
+    await flushEffects();
+    return ui;
+  }
+
+  it('names the file on home after /home and opens the run empty again', async () => {
+    const ui = await emptyTheComposer();
+    routerStore.navigate({ to: 'home' });
+    ui.unmount();
+    await flushEffects();
+
+    expect(feedbackStore.get()).toEqual({ message: NOTE, isError: true });
+    expect(draftRefusalStore.get()).toBeNull();
+
+    open('one');
+    const reopened = renderFeature(composer());
+    await flushEffects();
+    expect(reopened.lastFrame()).not.toContain('my unsent draft');
+    reopened.unmount();
+  });
+
+  it('names the file at the transcript tail when another session is picked', async () => {
+    const ui = await emptyTheComposer();
+    await handleSessionSelect(makeSession({ id: 'two' }), projectDir, {
+      loadResumeState: loadOwnerWorkflowState,
+      prepareResume: async () => {
+        throw new Error('Resume preparation was not expected');
+      },
+      hydrateRun: async () => {},
+      applying: () => false,
+    });
+    await flushEffects();
+
+    const route = routerStore.get();
+    expect(route.screen === 'workflow' && route.run.ref.sessionId).toBe('two');
+    expect(draftRefusalStore.get()?.message).toBe(NOTE);
+    expect(feedbackStore.get().message).toBeNull();
+    ui.unmount();
+  });
+
+  it('names the file at the transcript tail when the session changes under the composer', async () => {
+    const ui = await emptyTheComposer();
+    open('two');
+    await flushEffects();
+
+    expect(draftRefusalStore.get()?.message).toBe(NOTE);
+    expect(feedbackStore.get().message).toBeNull();
+    ui.unmount();
+  });
+
+  it('names its own run when the note lands on that run again', async () => {
+    const ui = await emptyTheComposer();
+    open('one');
+    await flushEffects();
+    ui.unmount();
+    await flushEffects();
+
+    expect(draftRefusalStore.get()?.message).toBe(NOTE);
   });
 });
 
