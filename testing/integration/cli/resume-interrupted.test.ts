@@ -90,10 +90,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
     const { exitCode, stdout } = await runCommand(['resume', '--project', tmp]);
 
     expect(exitCode).toBe(0);
-    expect(stdout).toMatch(/Resuming/);
-    expect(stdout).toContain('resume me');
-    expect(stdout).toContain('implementing');
-    expect(stdout).toContain('2/2');
+    expect(stdout).toContain('Resuming: resume me (task 2/2)');
   });
 
   it('kill during validation resumes at task start', async () => {
@@ -116,8 +113,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
     // and is asserted in src/engine/orchestrator/run/init.integration.test.ts.
     expect(exitCode).toBe(0);
     expect(stderr).not.toContain('cannot be resumed');
-    expect(stdout).toMatch(/Resuming/);
-    expect(stdout).toContain('validating-task');
+    expect(stdout).toContain('Resuming: validate me (task 1/1)');
     expect(loadState({ projectDir: tmp, sessionId })?.tasks[0]?.id).toBe('T001');
   });
 
@@ -137,8 +133,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
 
     expect(exitCode).toBe(0);
     expect(stderr).not.toContain('cannot be resumed');
-    expect(stdout).toMatch(/Resuming/);
-    expect(stdout).toContain('specifying');
+    expect(stdout).toContain('Resuming: spec me');
     // An old run stopped inside the retired chain picks up at its planning session.
     const saved = loadState({ projectDir: tmp, sessionId });
     if (saved === null) throw new Error('expected the resumed state to load');
