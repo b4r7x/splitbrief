@@ -94,12 +94,15 @@ export function configuredCliReadinessChecks(
         ? routes.filter(({ auth }) => auth.kind !== 'configured').map(({ seat }) => seat)
         : seats;
     if (signInSeats.length === 0) return [configRoutedCliReadinessCheck(result), ...routeChecks];
-    return [cliToolReadinessCheck(tool, signInSeats, result), ...routeChecks];
+    return [
+      cliToolReadinessCheck(tool, signInSeats, result, routeChecks.length > 0),
+      ...routeChecks,
+    ];
   });
 }
 
 function configRoutedCliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
-  const { id, metadata } = cliReadinessCheck(result);
+  const { id, metadata } = cliReadinessCheck(result, false);
   return {
     id,
     metadata,
@@ -112,8 +115,9 @@ function cliToolReadinessCheck(
   tool: CliToolId,
   seats: readonly ConfiguredCliSeat[],
   result: CliReadinessResult,
+  routeChecked: boolean,
 ): ReadinessCheck {
-  const check = cliReadinessCheck(result);
+  const check = cliReadinessCheck(result, routeChecked);
   const cause = cliReadinessCause(result, check.diagnosticState);
   if (cause === undefined) return check;
   // Only a sign-in fact depends on the seat's authentication selection; a
@@ -193,7 +197,8 @@ function cliReadinessDiagnosticState(
   }
 }
 
-function cliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
+/** `routeChecked`: a route row of the tool names the credential, so the tool row claims no sign-in. */
+function cliReadinessCheck(result: CliReadinessResult, routeChecked: boolean): ReadinessCheck {
   const descriptor = CLI_TOOL_CATALOG[result.tool];
   const severity =
     result.status === 'ready' ? 'ok' : result.status === 'unverified' ? 'warning' : 'blocker';
@@ -201,7 +206,7 @@ function cliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
   return {
     id: result.checkId,
     severity,
-    summary: cliReadinessSummary(result, descriptor.displayName),
+    summary: cliReadinessSummary(result, descriptor.displayName, routeChecked),
     ...(result.remediation !== null && { fix: result.remediation }),
     ...(diagnosticState !== undefined && { diagnosticState }),
     ...(severity === 'blocker' && { nextAction: 'prepare-runner' as const }),
@@ -220,11 +225,17 @@ function cliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
   };
 }
 
-function cliReadinessSummary(result: CliReadinessResult, name: string): string {
+function cliReadinessSummary(
+  result: CliReadinessResult,
+  name: string,
+  routeChecked: boolean,
+): string {
   switch (result.status) {
     case 'ready':
-      return result.auth === 'not-required'
-        ? `${name} is installed, trusted, compatible, and does not require authentication.`
+      if (result.auth === 'not-required')
+        return `${name} is installed, trusted, compatible, and does not require authentication.`;
+      return routeChecked
+        ? `${name} is installed, trusted and compatible.`
         : `${name} is installed, trusted, compatible, and signed in.`;
     case 'disabled':
       return `${name} is disabled.`;
