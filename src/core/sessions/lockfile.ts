@@ -3,7 +3,9 @@ import { basename } from 'node:path';
 import { writeSecureFileAsync } from '../../lib/fs.js';
 import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { error } from '../../utils/error.js';
-import { warnError } from '../../lib/warn.js';
+import { warnStderr } from '../../lib/warn.js';
+import { SOFT_SEP } from '../separators.js';
+import { sessionFileFailure } from './errors.js';
 import { LOCKFILE } from '../paths.js';
 import { sessionRelativePath } from './ownership-marker.js';
 import {
@@ -119,9 +121,8 @@ export async function updateHeartbeat(sessionDir: string): Promise<void> {
   } catch (err) {
     if (!heartbeatFailureWarned) {
       heartbeatFailureWarned = true;
-      warnError(
-        `Could not update ${sessionRelativePath(basename(sessionDir), LOCKFILE)}, so other SPLITBRIEF processes may treat the run as stopped`,
-        err,
+      warnStderr(
+        `${sessionFileFailure('Could not update the run lock', sessionRelativePath(basename(sessionDir), LOCKFILE), err)}${SOFT_SEP}other SPLITBRIEF processes may treat the run as stopped`,
       );
     }
   }

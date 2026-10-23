@@ -1,11 +1,11 @@
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { warnError } from '../../../lib/warn.js';
+import { warnStderr } from '../../../lib/warn.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import { withSignalHandlers } from '../signals.js';
-import { commitWorkflowState, readWorkflowStateHead } from '../state-ops.js';
-import { error } from '../../../utils/error.js';
+import { commitWorkflowState, readWorkflowStateHead, stateOpsError } from '../state-ops.js';
 
 function persistTrackedState(ref: SessionRef, state: WorkflowState): void {
   const head = readWorkflowStateHead(ref);
@@ -17,17 +17,9 @@ function persistTrackedState(ref: SessionRef, state: WorkflowState): void {
     expected: head === null ? null : state,
     next: state,
   });
-  if (committed.kind === 'conflict') {
-    throw error(
-      'state-persistence-conflict',
-      'Workflow state changed before shutdown persistence committed.',
-    );
-  }
+  if (committed.kind === 'conflict') throw stateOpsError.changedOnDisk(ref.sessionId);
   if (committed.kind === 'durability-uncertain') {
-    throw error(
-      'state-persistence-durability-uncertain',
-      'Workflow state durability is uncertain during shutdown.',
-    );
+    throw stateOpsError.durabilityUncertain(ref.sessionId);
   }
 }
 
@@ -46,7 +38,9 @@ export async function shutdownWorkflow(opts: WithShutdownHandlersOpts): Promise<
     try {
       persistTrackedState({ projectDir, sessionId }, trackedState);
     } catch (err) {
-      warnError('Failed to save state during shutdown', err);
+      // The error says what happened to which file; a prefix would claim a failed save over a
+      // state that was saved.
+      warnStderr(toErrorMessage(err));
     }
   }
 }

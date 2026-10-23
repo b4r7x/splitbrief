@@ -279,7 +279,7 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
       const { run } = runWithWriteOn('task_completed', (ref) => rmSync(workflowStatePath(ref)));
 
       await expect(run).rejects.toThrow(
-        'Workflow state changed before task metadata could be persisted.',
+        'Could not save the run state: the file changed on disk before SPLITBRIEF could save it · .splitbrief/sessions/sess-queue-race/state.json',
       );
     });
   });

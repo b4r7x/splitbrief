@@ -2,7 +2,9 @@ import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { LOCKFILE, sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { warnError } from '../../../lib/warn.js';
+import { warnStderr } from '../../../lib/warn.js';
+import { sessionFileFailure } from '../../../core/sessions/errors.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { error } from '../../../utils/error.js';
 import { startHeartbeat } from './heartbeat.js';
 import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
@@ -59,9 +61,8 @@ async function lockLiveness(opts: LivenessOpts): Promise<() => Promise<void>> {
     status = checkSessionLiveness(dir);
   } catch (err) {
     if (opts.signal?.aborted) return async () => {};
-    warnError(
-      `Could not read ${lockfile}, so another SPLITBRIEF process can open this run at the same time`,
-      err,
+    warnStderr(
+      `${sessionFileFailure('Could not read the run lock', lockfile, err)}${SOFT_SEP}another SPLITBRIEF process can open this run at the same time`,
     );
     return async () => {};
   }
@@ -84,14 +85,13 @@ async function lockLiveness(opts: LivenessOpts): Promise<() => Promise<void>> {
       try {
         await markExited(dir, 0);
       } catch (err) {
-        warnError(`Could not mark the run as ended in ${lockfile}`, err);
+        warnStderr(sessionFileFailure('Could not mark the run as ended', lockfile, err));
       }
     };
   } catch (err) {
     if (opts.signal?.aborted) return async () => {};
-    warnError(
-      `Could not write ${lockfile}, so another SPLITBRIEF process can open this run at the same time`,
-      err,
+    warnStderr(
+      `${sessionFileFailure('Could not write the run lock', lockfile, err)}${SOFT_SEP}another SPLITBRIEF process can open this run at the same time`,
     );
     return async () => {};
   }

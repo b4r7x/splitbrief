@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- When SPLITBRIEF cannot save or confirm the run state, the run log or the run evidence, it now names the file and the cause (for example no space left on the disk) instead of an unclear message, and a run whose state save is not confirmed reads failed with that cause instead of stopped.
 - Leaving a run with an empty composer no longer stops you when its old saved draft cannot be removed; SPLITBRIEF names the file once and says the text comes back after a restart.
 - When SPLITBRIEF cannot save the message you were typing, the first Esc or quit now names the file and the reason and stays, and the second leaves without it; an empty composer never holds you.
 - The messages about a test command or test file pattern not taken from the plan read as plain sentences, without nested parentheses.

@@ -7,6 +7,7 @@ import {
   commitWorkflowState,
   raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
+  stateOpsError,
 } from '../state-ops.js';
 import { refreshAndPersistCode } from './refresh-code.js';
 import {
@@ -29,7 +30,6 @@ import { selectRoutingProfile } from './routing-selection.js';
 import { absorbAcceptedFiles } from './post-task.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-import { error } from '../../../utils/error.js';
 import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
 import { runScheduledReview } from '../run/review.js';
 import { recordCheckoutRunSnapshot } from '../run/snapshots.js';
@@ -71,17 +71,9 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     const ref = { projectDir, sessionId };
     const head = rebaseOnPersistedWorkflowState(ref, current, { keepUnsaved: true });
     const committed = commitWorkflowState({ ref, expected: head, next: apply(head) });
-    if (committed.kind === 'conflict') {
-      throw error(
-        'state-persistence-conflict',
-        'Workflow state changed before task metadata could be persisted.',
-      );
-    }
+    if (committed.kind === 'conflict') throw stateOpsError.changedOnDisk(sessionId);
     if (committed.kind === 'durability-uncertain') {
-      throw error(
-        'state-persistence-durability-uncertain',
-        'Workflow task metadata persistence is uncertain.',
-      );
+      throw stateOpsError.durabilityUncertain(sessionId);
     }
     state = committed.state;
     setTrackedState(state);

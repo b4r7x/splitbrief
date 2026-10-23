@@ -1,4 +1,6 @@
 import { plainUserMessage } from '../../core/types/user-input.js';
+import { chmodSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
@@ -17,7 +19,10 @@ import { enqueueUserMessage } from './queue/submit.js';
 import { dispatchNativeInjection } from './queue/native-injection.js';
 import { readQueueForPrompt, releaseQueuedMessage } from './queue/drain.js';
 import { isQueuedMessagePendingDelivery } from '../../core/queue-state.js';
+import { sessionDir } from '../../core/paths.js';
+import { resumeStep } from '../../core/sessions/run-status.js';
 import {
+  stateOpsError,
   transitionAndSave,
   parkStoppedRun,
   raisePendingRecovery,
@@ -245,6 +250,59 @@ describe('rebaseOnPersistedWorkflowState', () => {
     } finally {
       cleanupTempDir(projectDir);
     }
+  });
+});
+
+describe('a state write that fails', () => {
+  it('names state.json and the cause in plain words', () => {
+    const ref = setupProject();
+    const dir = sessionDir(ref.projectDir, ref.sessionId);
+    const saved = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
+    chmodSync(dir, 0o555);
+    try {
+      expect(() =>
+        transitionAndSave(ref, saved, {
+          type: 'INTERRUPT_STEP',
+          step: resumeStep(saved),
+          source: 'user',
+          cut: 'mid-step',
+        }),
+      ).toThrow(
+        'Could not save the run state: permission denied · .splitbrief/sessions/sess-state-ops/state.json',
+      );
+    } finally {
+      chmodSync(dir, 0o755);
+      cleanupTempDir(ref.projectDir);
+    }
+  });
+
+  it('names state.json in plain words when it cannot read it before the write', () => {
+    const ref = setupProject();
+    const saved = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
+    writeFileSync(join(sessionDir(ref.projectDir, ref.sessionId), 'state.json'), '{"tru');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(() =>
+        transitionAndSave(ref, saved, {
+          type: 'INTERRUPT_STEP',
+          step: resumeStep(saved),
+          source: 'user',
+          cut: 'mid-step',
+        }),
+      ).toThrow(
+        'Could not read the run state: it could not be read, or its content is not valid · .splitbrief/sessions/sess-state-ops/state.json',
+      );
+    } finally {
+      stderr.mockRestore();
+      cleanupTempDir(ref.projectDir);
+    }
+  });
+
+  it('says in plain words when a written state cannot be confirmed', () => {
+    const { message } = stateOpsError.durabilityUncertain('sess-state-ops');
+    expect(message).toBe(
+      'Saved the run state, but could not confirm it on disk · .splitbrief/sessions/sess-state-ops/state.json',
+    );
   });
 });
 

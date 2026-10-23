@@ -15,8 +15,7 @@ import { isAbortError } from '../../../utils/abort.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { isResumableWorkspaceStop } from '../isolation/retention.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
-import { commitWorkflowState } from '../state-ops.js';
-import { error } from '../../../utils/error.js';
+import { commitWorkflowState, stateOpsError } from '../state-ops.js';
 import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
 import { withAttemptRestoreScope } from '../task/restore-scope.js';
 
@@ -80,11 +79,10 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepResult
       expected: loadState(ctx) === null ? null : state,
       next: { ...state, attempt: invocationAttempt },
     });
-    if (saved.kind !== 'committed')
-      throw error(
-        'retry-state-persistence',
-        'Could not persist the retry attempt before execution.',
-      );
+    if (saved.kind === 'conflict') throw stateOpsError.changedOnDisk(ctx.sessionId);
+    if (saved.kind === 'durability-uncertain') {
+      throw stateOpsError.durabilityUncertain(ctx.sessionId);
+    }
     state = saved.state;
   }
   const workspace = await ctx.isolation.acquire({

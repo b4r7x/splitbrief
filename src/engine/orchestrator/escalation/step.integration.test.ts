@@ -52,6 +52,36 @@ import { transitionAndSave } from '../state-ops.js';
 import { runRetryStep } from './step.js';
 import type { RetryInvokeResult } from './types.js';
 
+// The next state.json write `runRetryStep` commits itself is renamed into place but not confirmed on
+// disk, or finds the file changed by another writer; every other write is real.
+const retryAttemptWrite = vi.hoisted(() => ({
+  fails: undefined as 'unconfirmed' | 'conflict' | undefined,
+}));
+vi.mock('../../../lib/confined-fs-atomic.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/confined-fs-atomic.js')>();
+  return {
+    ...actual,
+    confinedAtomicWriteFileSync: (
+      ...args: Parameters<typeof actual.confinedAtomicWriteFileSync>
+    ): ReturnType<typeof actual.confinedAtomicWriteFileSync> => {
+      const fails = retryAttemptWrite.fails;
+      if (
+        fails === undefined ||
+        !args[0].endsWith('/state.json') ||
+        !/at commitWorkflowState \(.*\n.*\brunRetryStep \(/.test(new Error().stack ?? '')
+      ) {
+        return actual.confinedAtomicWriteFileSync(...args);
+      }
+      retryAttemptWrite.fails = undefined;
+      if (fails === 'conflict') return { kind: 'conflict', observedRevision: null };
+      const written = actual.confinedAtomicWriteFileSync(...args);
+      return written.kind === 'written'
+        ? { kind: 'durability-uncertain', observedRevision: written.revision }
+        : written;
+    },
+  };
+});
+
 let dirs: string[] = [];
 let stateHome = '';
 const ORIGINAL_XDG_STATE_HOME = process.env.XDG_STATE_HOME;
@@ -275,6 +305,44 @@ describe('runRetryStep', () => {
     expect(retriedActions).toEqual(['create']);
     expect(loadState(ref)?.tasks[0]?.action).toBe('create');
   });
+
+  it.each([
+    ['unconfirmed', 'Saved the run state, but could not confirm it on disk'],
+    [
+      'conflict',
+      'Could not save the run state: the file changed on disk before SPLITBRIEF could save it',
+    ],
+  ] as const)(
+    'names the retry attempt it could not save (%s) in plain words, with the file',
+    async (fails, words) => {
+      const ref = setupProject();
+      const task = makeTask();
+      const state = makeImplState([task], { attempt: 1 });
+      saveState(ref, state);
+      const ctx = {
+        ...makeWctx({ ...ref, implementer: makeImplementer() }),
+        taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
+        dependsOnFiles: [],
+      };
+      retryAttemptWrite.fails = fails;
+
+      await expect(
+        runRetryStep({
+          ctx,
+          task,
+          state,
+          lastError: 'failed check',
+          attempts: 2,
+          method: 'local',
+          transitionType: 'VALIDATION_PASS',
+          usageCategory: 'implementer',
+          retryFailureFallback: 'retry failed',
+          invokeRetry: vi.fn(),
+        }),
+      ).rejects.toThrow(`${words} · .splitbrief/sessions/${ref.sessionId}/state.json`);
+      expect(retryAttemptWrite.fails).toBeUndefined();
+    },
+  );
 
   it('writes one bundle receipt for a retry before completing the task', async () => {
     const ref = setupProject();

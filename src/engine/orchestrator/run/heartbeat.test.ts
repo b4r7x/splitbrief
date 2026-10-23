@@ -114,10 +114,11 @@ describe('startHeartbeat', () => {
     expect(control.failedWrites).toBe(FAILING_TICKS + 1);
     expect(rejections).toEqual([]);
     const warnings = stderrSpy.mock.calls.filter((call) =>
-      String(call[0]).includes(
-        '/lockfile.json, so other SPLITBRIEF processes may treat the run as stopped',
-      ),
+      String(call[0]).startsWith('Could not update the run lock: no space left on device · '),
     );
     expect(warnings.length).toBe(1);
+    expect(String(warnings[0]?.[0])).toContain(
+      '/lockfile.json · other SPLITBRIEF processes may treat the run as stopped',
+    );
   });
 });

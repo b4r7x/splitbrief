@@ -146,7 +146,9 @@ describe('appendEngineEvent', () => {
         appendEngineEvent({ projectDir: dir, sessionId: SESSION_ID }, event),
       ).not.toThrow();
       const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
-      expect(output).toContain('failed to persist log entry');
+      expect(output).toBe(
+        `Warning: Could not save the run log: permission denied · .splitbrief/sessions/${SESSION_ID}/session.jsonl\n`,
+      );
     } finally {
       stderrSpy.mockRestore();
       chmodSync(sessionPath, 0o700);

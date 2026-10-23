@@ -3,6 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createElement, Fragment } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ensureSessionDir } from '../../core/paths-io.js';
+import { createInitialState } from '../../core/state/machine.js';
+import { withShutdownHandlers } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { configureLogger, resetLoggerForTests } from '../../lib/logger.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
 import { installDiagnosticSink, warnError, warnStderr } from '../../lib/warn.js';
@@ -38,6 +41,23 @@ const ink = vi.hoisted(() => {
     };
   };
   return { script, mount };
+});
+
+// A state.json write renamed into place that SPLITBRIEF could not confirm on disk.
+const stateWrite = vi.hoisted(() => ({ unconfirmed: false }));
+vi.mock('../../lib/confined-fs-atomic.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/confined-fs-atomic.js')>();
+  return {
+    ...actual,
+    confinedAtomicWriteFileSync: (
+      ...args: Parameters<typeof actual.confinedAtomicWriteFileSync>
+    ): ReturnType<typeof actual.confinedAtomicWriteFileSync> => {
+      const written = actual.confinedAtomicWriteFileSync(...args);
+      return stateWrite.unconfirmed && written.kind === 'written'
+        ? { kind: 'durability-uncertain', observedRevision: written.revision }
+        : written;
+    },
+  };
 });
 
 vi.mock('ink', async (importOriginal) => {
@@ -104,6 +124,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  stateWrite.unconfirmed = false;
   vi.restoreAllMocks();
   feedbackStore.reset();
   resetLoggerForTests();
@@ -258,5 +279,40 @@ describe('renderApp diagnostics ownership', () => {
     expect(terminalWrites.indexOf(`${DIAGNOSTIC}\n`)).toBeGreaterThan(restoredAt);
     expect(restoredAt).toBeGreaterThanOrEqual(0);
     expect(rawDiagnosticWrites()).toHaveLength(1);
+  });
+
+  it('writes an unconfirmed state save at quit to stderr once, after the terminal is restored', async () => {
+    ensureSessionDir(projectDir, 'sess-quit');
+    stateWrite.unconfirmed = true;
+    let endRun = () => {};
+    let run: Promise<unknown> = Promise.resolve();
+    ink.script.fullscreen = {
+      start: async () => {},
+      waitUntilExit: async () => {
+        run = withShutdownHandlers(
+          {
+            projectDir,
+            sessionId: 'sess-quit',
+            getTrackedState: () => createInitialState('quit with a run'),
+            getCurrentTask: () => undefined,
+          },
+          () =>
+            new Promise<void>((resolve) => {
+              endRun = resolve;
+            }),
+        );
+      },
+    };
+
+    await renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() });
+    endRun();
+    await run;
+
+    const line =
+      'Saved the run state, but could not confirm it on disk · .splitbrief/sessions/sess-quit/state.json\n';
+    expect(terminalWrites.filter((write) => write.includes('state'))).toEqual([line]);
+    const restoredAt = terminalWrites.indexOf(terminalSequences.exitAltBuffer);
+    expect(restoredAt).toBeGreaterThanOrEqual(0);
+    expect(terminalWrites.indexOf(line)).toBeGreaterThan(restoredAt);
   });
 });
