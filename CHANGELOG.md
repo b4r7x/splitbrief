@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- After you pause before the final review and continue, the final review no longer reads "stopped" while it runs.
 - A planner question without choices now shows its suggested answer as the first row and `Write your own answer…` as the second, so a slash command typed there runs instead of being glued to the suggestion. Esc closes a planner or reviewer question so you can reply in the composer, ↑ on the first line of your own answer goes back to the choices, and a reply you type shows once under all the questions of the round.
 - A very long pasted message or start prompt is now kept in the run, shows once when you reopen the run, and a resumed run gives the planner the whole text; a message with a key in it also reopens once, with the key hidden in the run log.
 - An open run saved by an older version now continues and ends normally instead of failing with a schema error.

@@ -1,10 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { groupEventsIntoSections, diffEventKey, isSettledSection } from './event-sections.js';
-import type { Section } from './event-sections.js';
+import type { Section, SectionableEvent } from './event-sections.js';
 import type { Phase } from '../schemas/enums.js';
 import type { EngineEvent } from '../../engine/events/types.js';
+import { engineEventFromLogEntry } from '../../engine/events/replay.js';
+import { SessionLogEntrySchema } from '../schemas/session-log.js';
 import { taskId } from '../schemas/task.js';
-import { makeRunnerCallCompleted } from '#testing/helpers/events/runner-call.js';
+import {
+  makeRunnerCallCompleted,
+  makeRunnerCallStarted,
+} from '#testing/helpers/events/runner-call.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { makeTaskStart, makeTaskComplete, makeTaskSkipped } from '#testing/helpers/events/task.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
@@ -1730,6 +1737,257 @@ describe('groupEventsIntoSections', () => {
       );
       expect(isSettledSection(requireSection(sections, 8, 'active-review'))).toBe(false);
     });
+  });
+
+  describe('a final review after a pause before it', () => {
+    const at = (ts: number, phase: Phase, type: string, fields: Record<string, unknown> = {}) => ({
+      type,
+      ts,
+      phase,
+      ...fields,
+    });
+    const parkedBeforeReview = (ts: number, cycle = 0) =>
+      at(ts, 'implementing', 'turn_interrupted', {
+        source: 'user',
+        at: 'boundary',
+        step: { kind: 'review', cycle },
+      });
+    const reviewStarted = (ts: number) =>
+      at(ts, 'final-review', 'review_started', { scope: 'final', tool: 'codex' });
+    const reviewCall = (ts: number, callId: string) =>
+      makeRunnerCallStarted({ ts, phase: 'final-review', role: 'review', callId });
+    const reviewerCheck = (ts: number, fields: Record<string, unknown> = {}) =>
+      at(ts, 'final-review', 'full_suite', {
+        status: 'running',
+        id: 'V1',
+        command: 'npm test',
+        moment: 'pre-review',
+        ...fields,
+      });
+    const cutReviewCall = (ts: number, callId: string) =>
+      at(ts, 'final-review', 'runner_call_activity', {
+        callId,
+        role: 'review',
+        activityId: `${callId}:terminal`,
+        stage: 'aborted',
+        kind: 'error',
+        label: 'aborted runner_interrupted',
+      });
+    const midReviewStop = (ts: number, source: 'user' | 'watchdog' = 'user') =>
+      at(ts, 'final-review', 'turn_interrupted', {
+        source,
+        at: 'mid-step',
+        step: { kind: 'review', cycle: 0 },
+      });
+    const brief = [makeTaskStart({ ts: 1_000 }), makeTaskComplete({ ts: 2_000 })];
+    const lastSection = (events: readonly SectionableEvent[]) =>
+      groupEventsIntoSections([...events]).at(-1);
+
+    const pauses = {
+      'Pause after this brief or a seat save': [
+        parkedBeforeReview(3_000),
+        at(3_100, 'implementing', 'workflow_resumed', { inProcess: true }),
+      ],
+      'a Stop at the parked prompt and a continue in a new process': [
+        parkedBeforeReview(3_000),
+        at(3_050, 'implementing', 'workflow_cancelled', { reason: 'user' }),
+        at(3_100, 'implementing', 'workflow_resumed'),
+      ],
+    };
+    const runningReviews = {
+      'a plan check runs': [reviewerCheck(4_000, { id: 'K1', moment: 'plan' })],
+      'the reviewer chooses its checks': [
+        reviewStarted(4_000),
+        at(4_001, 'final-review', 'review_step', { step: 'choosing-checks' }),
+        reviewCall(4_002, 'choose'),
+      ],
+      'a reviewer check runs': [reviewStarted(4_000), reviewerCheck(5_000)],
+      'a render runs': [reviewStarted(4_000), reviewerCheck(5_000, { scenario: 'workflow-x' })],
+      'the review halts': [
+        reviewStarted(4_000),
+        reviewCall(4_002, 'verdict'),
+        at(5_000, 'final-review', 'recovery_prompted', { reason: 'seat-down' }),
+      ],
+    };
+    const states = Object.entries(pauses).flatMap(([pause, paused]) =>
+      Object.entries(runningReviews).map(
+        ([state, review]) => [state, pause, [...brief, ...paused, ...review]] as const,
+      ),
+    );
+
+    it.each(states)('keeps the review running while %s after %s', (_state, _pause, events) => {
+      expect(lastSection(events)).toMatchObject({
+        type: 'active-review',
+        review: { stage: 'review', scope: 'final', fixCyclesBefore: 0, rerunsBefore: 0 },
+      });
+    });
+
+    it.each([
+      ['pass', 'passed'],
+      ['fail', 'failed'],
+      ['no-verdict', 'no-verdict'],
+    ] as const)('settles the review on its %s verdict after the pause', (verdict, outcome) => {
+      const events = [
+        ...brief,
+        ...pauses['Pause after this brief or a seat save'],
+        ...runningReviews['the reviewer chooses its checks'],
+        at(9_000, 'final-review', 'review_completed', {
+          scope: 'final',
+          tool: 'codex',
+          verdict,
+          duration: 5_000,
+        }),
+      ];
+      expect(lastSection(events)).toMatchObject({
+        type: 'settled-stage',
+        summary: { stage: 'review', outcome },
+      });
+    });
+
+    it.each([
+      ['the cut review call', [cutReviewCall(6_000, 'verdict')]],
+      ['a stop inside the review', [cutReviewCall(6_000, 'verdict'), midReviewStop(6_000)]],
+      [
+        'a stop that ends the run',
+        [
+          cutReviewCall(6_000, 'verdict'),
+          midReviewStop(6_000),
+          at(6_000, 'final-review', 'workflow_cancelled', { reason: 'user' }),
+        ],
+      ],
+    ])('still reads stopped after %s during the review', (_mark, stop) => {
+      const events = [
+        ...brief,
+        ...pauses['Pause after this brief or a seat save'],
+        reviewStarted(4_000),
+        reviewCall(4_002, 'verdict'),
+        ...stop,
+      ];
+      expect(lastSection(events)).toMatchObject({
+        type: 'settled-stage',
+        summary: { stage: 'review', outcome: 'stopped', duration: 2_000 },
+      });
+    });
+
+    it.each(['user', 'watchdog'] as const)(
+      'runs again once a review call the %s cut continues in place',
+      (source) => {
+        const cut = [
+          ...brief,
+          reviewStarted(4_000),
+          reviewCall(4_002, 'first'),
+          cutReviewCall(6_000, 'first'),
+          midReviewStop(6_001, source),
+        ];
+        expect(lastSection(cut)).toMatchObject({ summary: { outcome: 'stopped' } });
+        const continued = [...cut, reviewCall(8_000, 'continued')];
+        expect(lastSection(continued)).toMatchObject({ type: 'active-review' });
+        expect(
+          lastSection([
+            ...continued,
+            at(9_000, 'final-review', 'review_completed', {
+              scope: 'final',
+              tool: 'codex',
+              verdict: 'pass',
+              duration: 5_000,
+            }),
+          ]),
+        ).toMatchObject({ type: 'settled-stage', summary: { outcome: 'passed' } });
+      },
+    );
+
+    it('keeps the re-review of a fix cycle running after a pause on its last fix brief', () => {
+      const events = [
+        ...brief,
+        reviewStarted(3_000),
+        at(4_000, 'final-review', 'review_completed', {
+          scope: 'final',
+          tool: 'codex',
+          verdict: 'fail',
+          duration: 1_000,
+        }),
+        at(4_100, 'implementing', 'review_fix_started', { cycle: 1, taskIds: [taskId('T002')] }),
+        makeTaskStart({ ts: 5_000, taskId: taskId('T002') }),
+        makeTaskComplete({ ts: 6_000, taskId: taskId('T002') }),
+        parkedBeforeReview(6_100, 1),
+        at(6_200, 'implementing', 'workflow_resumed', { inProcess: true }),
+        reviewStarted(7_000),
+        reviewCall(7_002, 'verdict'),
+      ];
+      const sections = groupEventsIntoSections(events);
+      expect(sections.map((section) => section.type)).toEqual([
+        'completed-task',
+        'settled-stage',
+        'completed-task',
+        'active-review',
+      ]);
+      expect(sections[1]).toMatchObject({ summary: { outcome: 'failed' } });
+      expect(sections[3]).toMatchObject({ review: { fixCyclesBefore: 1, rerunsBefore: 0 } });
+    });
+
+    it.each([
+      [
+        'a stop inside the brief',
+        [
+          at(1_500, 'implementing', 'turn_interrupted', {
+            source: 'user',
+            at: 'mid-step',
+            step: { kind: 'brief', taskId: 'T001', attempt: 0 },
+          }),
+        ],
+      ],
+      [
+        'a halt on the brief',
+        [at(1_500, 'implementing', 'recovery_prompted', { taskId: taskId('T001') })],
+      ],
+    ])('keeps the review running after %s and a continue', (_cut, cut) => {
+      const events = [
+        makeTaskStart({ ts: 1_000 }),
+        ...cut,
+        at(1_600, 'implementing', 'workflow_resumed'),
+        makeTaskStart({ ts: 1_700 }),
+        makeTaskComplete({ ts: 2_000 }),
+        reviewStarted(4_000),
+        reviewCall(4_002, 'verdict'),
+      ];
+      const sections = groupEventsIntoSections(events);
+      expect(sections.map((section) => section.type)).toEqual(['completed-task', 'active-review']);
+      expect(sections[0]?.items).toContain(cut[0]);
+    });
+
+    // The live runs: a pause after the last brief (rU) and a seat save during it (rB2), with the
+    // events of their logs fed in one prefix at a time.
+    it.each(['review-after-pause', 'review-after-seat-save'])(
+      'keeps the %s log review running until its verdict',
+      (fixture) => {
+        const events = readFileSync(
+          join(import.meta.dirname, `../../../testing/fixtures/session-log/${fixture}.jsonl`),
+          'utf8',
+        )
+          .split('\n')
+          .filter((line) => line.trim() !== '')
+          .map((line) => SessionLogEntrySchema.parse(JSON.parse(line)))
+          .flatMap((entry) => {
+            const event = entry.kind === 'event' ? engineEventFromLogEntry(entry) : null;
+            return event === null ? [] : [event];
+          });
+        const started = events.findIndex((event) => event.type === 'review_started');
+        const verdict = events.findIndex((event) => event.type === 'review_completed');
+        expect(events.slice(0, started).some((event) => event.type === 'turn_interrupted')).toBe(
+          true,
+        );
+        for (let count = started + 1; count <= verdict; count++) {
+          expect(lastSection(events.slice(0, count))).toMatchObject({
+            type: 'active-review',
+            review: { scope: 'final' },
+          });
+        }
+        expect(lastSection(events.slice(0, verdict + 1))).toMatchObject({
+          type: 'settled-stage',
+          summary: { stage: 'review', outcome: 'passed' },
+        });
+      },
+    );
   });
 });
 

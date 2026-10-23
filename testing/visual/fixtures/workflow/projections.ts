@@ -6632,6 +6632,35 @@ const projections = [
           : [event],
       ),
   },
+  // Pause after this brief on the last brief parks the run before the review; it then continues.
+  {
+    ...finalReviewProjection,
+    scenarioId: scenarioId('workflow-review-after-pause'),
+    events: finalReviewProjection.events
+      .filter((event) => event.type !== 'review_checks')
+      .flatMap((event): EngineEvent[] =>
+        event.type === 'review_started'
+          ? [
+              {
+                type: 'turn_interrupted',
+                ts: event.ts - 20,
+                phase: 'implementing',
+                source: 'user',
+                at: 'boundary',
+                step: { kind: 'review', cycle: 0 },
+              },
+              {
+                type: 'workflow_resumed',
+                ts: event.ts - 10,
+                phase: 'implementing',
+                inProcess: true,
+              },
+              event,
+              { type: 'review_step', ts: event.ts, phase: event.phase, step: 'choosing-checks' },
+            ]
+          : [event],
+      ),
+  },
   reviewCorrectedProjection,
   reviewTaskCadenceProjection,
   reviewTaskOutOfScopeProjection,

@@ -535,6 +535,12 @@ const checkpointPredicates = [
   [checkpointId('recovery-resolved-apply-retry'), includesAll('Run continued')],
   [checkpointId('review-fix'), includesAll()],
   [checkpointId('review-choosing-checks'), includesAll()],
+  [
+    checkpointId('review-after-pause'),
+    (context) =>
+      includesTranscript('Final review')(context) &&
+      !workflowTranscriptText().includes('Final review stopped'),
+  ],
   [checkpointId('review-verdict-only'), includesAll()],
   [
     checkpointId('review-check-crash'),
