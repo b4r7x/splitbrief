@@ -1,12 +1,21 @@
 import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { confinedReadFile, confinedWriteFile } from '../../lib/confined-fs.js';
+import {
+  confinedExists,
+  confinedReadFile,
+  confinedUnlinkSync,
+  confinedWriteFile,
+} from '../../lib/confined-fs.js';
 import { sanitizePasteBody } from '../../lib/terminal/filtered-stdin/paste.js';
-import { normalizeDraftDocument } from '../composer/document.js';
+import { draftLength, normalizeDraftDocument } from '../composer/document.js';
 import { sessionDir } from '../paths.js';
 import { DraftDocumentSchema, type DraftDocument } from '../schemas/draft-document.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { assertSessionDirConfined, resolveSessionFilePath } from './confinement.js';
+import { sessionError } from './errors.js';
+import { sessionRelativePath } from './ownership-marker.js';
+
+const DRAFT_FILE = 'draft.json';
 
 function draftPath(ref: SessionRef): string {
   assertSessionDirConfined(ref.projectDir, ref.sessionId);
@@ -14,8 +23,8 @@ function draftPath(ref: SessionRef): string {
   // The confinement check resolves against the session directory, so the file must be named
   // relative to it — passing a project-relative path would double it whenever projectDir itself
   // is relative and read as an escape.
-  if (existsSync(directory)) resolveSessionFilePath('draft.json', directory);
-  return relative(ref.projectDir, join(directory, 'draft.json'));
+  if (existsSync(directory)) resolveSessionFilePath(DRAFT_FILE, directory);
+  return relative(ref.projectDir, join(directory, DRAFT_FILE));
 }
 
 export function readSessionDraft(ref: SessionRef): DraftDocument | null {
@@ -33,10 +42,16 @@ export function readSessionDraft(ref: SessionRef): DraftDocument | null {
   });
 }
 
+/** A cleared draft leaves no file, so emptying the composer never needs a writable session. */
 export function writeSessionDraft(ref: SessionRef, document: DraftDocument): void {
-  confinedWriteFile(
-    ref.projectDir,
-    draftPath(ref),
-    JSON.stringify(DraftDocumentSchema.parse(document)),
-  );
+  try {
+    const path = draftPath(ref);
+    if (draftLength(document) > 0) {
+      confinedWriteFile(ref.projectDir, path, JSON.stringify(DraftDocumentSchema.parse(document)));
+    } else if (confinedExists(ref.projectDir, path)) {
+      confinedUnlinkSync(ref.projectDir, path);
+    }
+  } catch (error) {
+    throw sessionError.draftNotSaved(sessionRelativePath(ref.sessionId, DRAFT_FILE), error);
+  }
 }

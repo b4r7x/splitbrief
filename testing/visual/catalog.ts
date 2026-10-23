@@ -469,6 +469,20 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Save message and feature composer' },
       ],
     }),
+    // A quit that a draft left on a run could not be saved for: the cause and the whole file wrap
+    // above the composer, and the line says a second quit leaves without it.
+    defineScenario({
+      id: 'home-draft-not-saved',
+      title: 'Home · quitting with a draft that cannot be saved',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Cause, file and second-quit hint above the composer',
+        kind: 'ready',
+        marker: 'quit again leaves without it',
+      },
+      elements: [{ id: 'composer', title: 'Draft refusal and feature composer' }],
+    }),
     // The same message over a long draft: the logo and the session rows give way, the crew block
     // and the more row stay.
     defineScenario({
@@ -1906,6 +1920,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Quit confirmation',
         kind: 'ready',
         marker: 'Press ctrl+c again to quit',
+      },
+      elements: [{ id: 'composer', title: 'Workflow composer' }],
+    }),
+    defineScenario({
+      id: 'workflow-draft-not-saved',
+      title: 'Workflow · leaving with a draft that cannot be saved',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'draft-not-saved',
+        title: 'Draft not saved',
+        kind: 'ready',
+        marker: 'Draft not saved',
       },
       elements: [{ id: 'composer', title: 'Workflow composer' }],
     }),

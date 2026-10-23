@@ -68,6 +68,7 @@ import {
   saveHomeDraft,
   saveSessionDraft,
   flushSessionDrafts,
+  reportDraftNotSaved,
 } from '../../stores/ui/session-drafts.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import type { listProjectFiles } from '../../lib/file-listing.js';
@@ -262,7 +263,7 @@ function ComposerInput({
       try {
         flushSessionDrafts();
       } catch (error) {
-        feedbackStore.setError(`Could not save session draft: ${toErrorMessage(error)}`);
+        reportDraftNotSaved(error, false);
       }
     },
     [sessionRef?.projectDir, sessionRef?.sessionId],

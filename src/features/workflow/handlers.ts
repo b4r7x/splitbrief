@@ -1,4 +1,9 @@
-import { flushSessionDrafts } from '../../stores/ui/session-drafts.js';
+import {
+  discardPendingSessionDrafts,
+  flushSessionDrafts,
+  leaveWasRefusedHere,
+  reportDraftNotSaved,
+} from '../../stores/ui/session-drafts.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { assertCanCloseRun, endRunAtRest } from '../../engine/orchestrator/run/close.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
@@ -306,9 +311,22 @@ function leftOrigin(origin: RouteData): boolean {
   );
 }
 
+/**
+ * A draft that cannot be saved holds the first leave and names the cause and the file. Only a leave
+ * from the screen that showed the refusal goes without it; any other screen, the same run reopened
+ * included, holds again.
+ */
 function leave(departure: Departure | null): void {
   try {
     flushSessionDrafts();
+  } catch (err) {
+    if (!leaveWasRefusedHere()) {
+      reportDraftNotSaved(err, true);
+      return;
+    }
+    discardPendingSessionDrafts();
+  }
+  try {
     departure?.run();
   } catch (err) {
     feedbackStore.setError(toErrorMessage(err));

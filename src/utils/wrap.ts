@@ -7,6 +7,22 @@ export function wrapHard(text: string, width: number): string {
 
 const PATH_SEGMENT = /[^/]*\/|[^/]+/gu;
 
+/**
+ * The widest run `wrapPathAware` keeps whole at `width`: a word that fits, else a path segment of it
+ * that fits. A box narrower than this run cuts it.
+ */
+export function widestPathAwareUnit(text: string, width: number): number {
+  const maxCells = Math.max(1, width);
+  const units = text
+    .split(/[ \n]/u)
+    .flatMap((word) =>
+      getTerminalCellWidth(word) <= maxCells
+        ? [word]
+        : Array.from(word.matchAll(PATH_SEGMENT), ([segment]) => segment),
+    );
+  return Math.max(0, ...units.map(getTerminalCellWidth).filter((cells) => cells <= maxCells));
+}
+
 export function wrapPathAware(text: string, width: number): string {
   const maxCells = Math.max(1, width);
   const lines: string[] = [];

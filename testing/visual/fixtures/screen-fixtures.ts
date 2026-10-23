@@ -12,6 +12,9 @@ import { detectionStore } from '../../../src/stores/project/detection.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
+import { reportDraftNotSaved } from '../../../src/stores/ui/session-drafts.js';
+import { sessionError } from '../../../src/core/sessions/errors.js';
+import { sessionRelativePath } from '../../../src/core/sessions/ownership-marker.js';
 import { formatAttachmentFailure } from '../../../src/core/attachments/failure.js';
 import { SOFT_SEP } from '../../../src/core/separators.js';
 import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
@@ -1212,6 +1215,26 @@ function withStartupWarnings(
   };
 }
 
+/** A session id of the length most real ones have, so the file names a path that has to wrap. */
+export const UNSAVED_DRAFT_ERROR = sessionError.draftNotSaved(
+  sessionRelativePath('2026-10-22-add-a-greeting-helper-to-the-cli-entry-point-docs', 'draft.json'),
+  Object.assign(new Error("EACCES: permission denied, open '/x/draft.json'"), { code: 'EACCES' }),
+);
+
+// The line home shows for the first quit that a draft left on a run could not be saved for.
+const DRAFT_NOT_SAVED_MESSAGE = `${UNSAVED_DRAFT_ERROR.message}${SOFT_SEP}quit again leaves without it`;
+
+function createDraftNotSavedFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      reportDraftNotSaved(UNSAVED_DRAFT_ERROR, true);
+    },
+    teardown: home.teardown,
+  };
+}
+
 function setSaveSignInMessage(): void {
   feedbackStore.setMessage(SAVE_SIGN_IN_MESSAGE);
 }
@@ -1228,6 +1251,7 @@ export const homeFixtureFeedback: ReadonlyMap<string, string> = new Map([
   ['home-save-long-draft', SAVE_SIGN_IN_MESSAGE],
   ['home-startup-warnings', STARTUP_WARNINGS_MESSAGE],
   ['home-startup-permission-warning', STARTUP_PERMISSION_WARNING_MESSAGE],
+  ['home-draft-not-saved', DRAFT_NOT_SAVED_MESSAGE],
 ]);
 
 function createSaveSignInFixture(): FixtureLifecycle {
@@ -1472,6 +1496,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('home-preparing-startup-warnings'),
     () => withStartupWarnings(createHomePreparingFixture()),
   ],
+  [scenarioId('home-draft-not-saved'), createDraftNotSavedFixture],
   [scenarioId('home-save-long-draft'), createSaveLongDraftFixture],
   [scenarioId('home-no-config-long-draft'), createNoConfigLongDraftFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],

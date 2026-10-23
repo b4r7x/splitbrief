@@ -137,6 +137,48 @@ describe('readConversationScrollSnapshot', () => {
     }
   });
 
+  it('scrolls an open run to its first rows while the draft warning sits at its tail', async () => {
+    const scenario = findVisualScenario(scenarioId('workflow-draft-not-saved'));
+    if (scenario === undefined) throw new Error('Missing draft-not-saved scenario');
+    const checkpoint = scenario.checkpoints[0];
+    if (checkpoint === undefined) throw new Error('Missing draft-not-saved checkpoint');
+    const ui = await mountGalleryScenario({
+      scenario,
+      checkpoint,
+      viewport: viewport({ cols: 80, rows: 24 }),
+    });
+    try {
+      await ui.waitForCheckpoint();
+      addEvent({
+        type: 'planner_text',
+        ts: 1_700_000_000_000,
+        phase: 'implementing',
+        text: 'A reply long enough to push the first rows of the run out of the pane.\n'
+          .repeat(8)
+          .trimEnd(),
+      });
+      const bottomFrame = stripAnsiStyles(
+        await ui.waitForCheckpoint({
+          predicate: ({ output }) => stripAnsiStyles(output).includes('lines above'),
+        }),
+      );
+      expect(bottomFrame).toContain('Pending 1');
+      expect(bottomFrame).toContain('Warning');
+      const snapshot = readConversationScrollSnapshot();
+      expect(snapshot.maxOffset).toBeGreaterThan(0);
+      conversationScrollStore.scrollUp({ ...snapshot, step: snapshot.maxOffset });
+      const topFrame = stripAnsiStyles(
+        await ui.waitForCheckpoint({
+          predicate: ({ output }) => !stripAnsiStyles(output).includes('lines above'),
+        }),
+      );
+      expect(readConversationScrollSnapshot().scrollOffset).toBe(snapshot.maxOffset);
+      expect(topFrame).toContain('Pending 1');
+    } finally {
+      await ui.unmount();
+    }
+  });
+
   it("a ready run's result menu reduces the snapshot transcript rows the same as the screen", async () => {
     const findings = ['Missing receiving test', 'Missing stock check', 'Missing error check'];
     configStore.__testReset({ config: makeConfig() });
@@ -213,6 +255,13 @@ describe('readConversationScrollSnapshot', () => {
     inputHeightStore.__testReset({ rows: 3 });
     controlsStore.setSidebar(true);
     expect(getWorkflowSidebarWidth({ cols, sidebarVisible: true })).toBe(0);
+    if (closed) {
+      routerStore.init({
+        screen: 'workflow',
+        execution: { kind: 'at-rest' },
+        run: makeRunRecord({ status: { kind: 'closed', as: 'complete' } }),
+      });
+    }
     lifecycleStore.__testReset({ phase: closed ? 'complete' : 'implementing' });
     tasksStore.__testReset({
       currentTask: 1,
@@ -299,6 +348,7 @@ describe('readConversationScrollSnapshot', () => {
       ).toBe(height - 1);
     } finally {
       ui.unmount();
+      routerStore.reset();
       await flushEffects();
     }
   });

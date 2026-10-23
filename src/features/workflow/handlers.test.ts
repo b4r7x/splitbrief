@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { plainUserMessage } from '../../core/types/user-input.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,6 +39,16 @@ import { eventsStore } from '../../stores/workflow/events.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { stopStore } from '../../stores/workflow/stop.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import {
+  __testDiscardPending,
+  draftRefusalStore,
+  loadSessionDraft,
+  saveSessionDraft,
+} from '../../stores/ui/session-drafts.js';
+import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
+import { loadEvents } from '../../stores/workflow/actions/load.js';
+import { createDraftDocument } from '../../core/composer/document.js';
 
 describe('createAbortHandlerScope', () => {
   afterEach(() => {
@@ -400,6 +410,120 @@ describe('requestQuit', () => {
     expect(exit).not.toHaveBeenCalled();
 
     stopStore.park('mid-brief', 'T002', null);
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('departure with an unsent draft that cannot be saved', () => {
+  let projectDir: string;
+  let dir: string;
+  const run = () => makeRunRecord({ ref: ref() });
+  const openRun = () =>
+    routerStore.init({ screen: 'workflow', run: run(), execution: { kind: 'at-rest' } });
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    feedbackStore.reset();
+    eventsStore.reset();
+    lifecycleStore.reset();
+    projectDir = createTempDir('handlers-draft-');
+    dir = sessionDir(projectDir, 'one');
+    mkdirSync(dir, { recursive: true });
+    chmodSync(dir, 0o555);
+    openRun();
+  });
+  afterEach(() => {
+    chmodSync(dir, 0o755);
+    __testDiscardPending();
+    clearAllHandlers();
+    stopStore.__testReset();
+    feedbackStore.reset();
+    routerStore.reset();
+    cleanupTempDir(projectDir);
+  });
+
+  const ref = () => ({ projectDir, sessionId: 'one' });
+  const CAUSE = 'Draft not saved: permission denied · .splitbrief/sessions/one/draft.json';
+  const HINT = { message: 'Draft not saved · esc or quit again leaves without it', isError: true };
+
+  it('names the cause and the file once, then leaves without it on the next quit', () => {
+    const exit = vi.fn();
+    saveSessionDraft(ref(), createDraftDocument('unsent words'));
+
+    requestQuit(exit);
+    expect(exit).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toEqual(HINT);
+    expect(draftRefusalStore.get()?.message).toBe(CAUSE);
+    expect(eventsStore.get().events).toEqual([]);
+
+    requestQuit(exit);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(loadSessionDraft(ref())).toEqual(createDraftDocument(''));
+    expect(draftRefusalStore.get()).toBeNull();
+  });
+
+  it('holds a later leave again once a save in between landed', () => {
+    const exit = vi.fn();
+    saveSessionDraft(ref(), createDraftDocument('first words'));
+    requestQuit(exit);
+    chmodSync(dir, 0o755);
+    requestQuit(exit);
+    expect(exit).toHaveBeenCalledTimes(1);
+
+    chmodSync(dir, 0o555);
+    feedbackStore.reset();
+    saveSessionDraft(ref(), createDraftDocument('second words'));
+    requestQuit(exit);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(feedbackStore.get()).toEqual(HINT);
+  });
+
+  it('leaves on the second quit after a re-read of the same run replaced its route', () => {
+    const exit = vi.fn();
+    saveSessionDraft(ref(), createDraftDocument('unsent words'));
+    requestQuit(exit);
+    routerStore.updateRun({ run: run(), execution: { kind: 'at-rest' } });
+
+    requestQuit(exit);
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds again when the same run is opened again before the next quit', () => {
+    const exit = vi.fn();
+    saveSessionDraft(ref(), createDraftDocument('unsent words'));
+    requestQuit(exit);
+    routerStore.navigate({ to: 'home' });
+    routerStore.navigate({ to: 'workflow', run: run(), execution: { kind: 'at-rest' } });
+
+    requestQuit(exit);
+    expect(exit).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toEqual(HINT);
+  });
+
+  it('keeps the cause and the file after End run when the at-rest re-read replaces the log', () => {
+    const exit = vi.fn();
+    saveSessionDraft(ref(), createDraftDocument('unsent words'));
+    markCancellationRequested();
+    requestQuit(exit);
+    loadEvents([]);
+
+    expect(exit).not.toHaveBeenCalled();
+    expect(draftRefusalStore.get()?.message).toBe(CAUSE);
+  });
+
+  it('names the cause and the file on home and says a second quit leaves without it', () => {
+    const exit = vi.fn();
+    saveSessionDraft(ref(), createDraftDocument('unsent words'));
+    routerStore.navigate({ to: 'home' });
+
+    requestQuit(exit);
+    expect(exit).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toEqual({
+      message: `${CAUSE} · quit again leaves without it`,
+      isError: true,
+    });
+
+    requestQuit(exit);
     expect(exit).toHaveBeenCalledTimes(1);
   });
 });

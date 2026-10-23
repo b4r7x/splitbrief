@@ -152,6 +152,7 @@ export const routerStore = {
   navigate,
   updateRun,
   supersede,
+  currentSelection: () => selection,
   isCurrentSelection: (generation: number) => generation === selection,
   init: (route: RouteData) => {
     supersede();

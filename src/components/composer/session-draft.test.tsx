@@ -1,3 +1,4 @@
+import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
@@ -10,7 +11,9 @@ import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
-import { flushSessionDrafts } from '../../stores/ui/session-drafts.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { draftRefusalStore, flushSessionDrafts } from '../../stores/ui/session-drafts.js';
+import { sessionDir } from '../../core/paths.js';
 import { Composer } from './composer.js';
 
 const document: DraftDocument = {
@@ -245,7 +248,7 @@ describe('unsent session composer draft', () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.objectContaining({ text: 'send this' }) }),
     );
-    expect(readSessionDraft(ref)).toEqual(createDraftDocument(''));
+    expect(readSessionDraft(ref)).toBeNull();
     ui.unmount();
   });
 
@@ -278,13 +281,13 @@ describe('unsent session composer draft', () => {
     ui.unmount();
   });
 
-  it('flushes a consumed quit command as an empty draft before its handler exits', async () => {
+  it('removes the draft of a consumed quit command before its handler exits', async () => {
     const ref = { projectDir, sessionId: 'one' };
     writeSessionDraft(ref, createDraftDocument('/quit'));
     open('one');
     const onRuntimeCommand = vi.fn(() => {
       flushSessionDrafts();
-      expect(readSessionDraft(ref)).toEqual(createDraftDocument(''));
+      expect(readSessionDraft(ref)).toBeNull();
     });
     const ui = renderFeature(
       <Composer
@@ -300,6 +303,37 @@ describe('unsent session composer draft', () => {
     await flushEffects();
     expect(onRuntimeCommand).toHaveBeenCalledWith('/quit');
     ui.unmount();
+  });
+
+  it('names the whole file of a draft it could not save when another session is picked', async () => {
+    const dir = sessionDir(projectDir, 'one');
+    mkdirSync(dir, { recursive: true });
+    chmodSync(dir, 0o555);
+    try {
+      open('one');
+      const ui = renderFeature(
+        <Composer
+          currentScreen="workflow"
+          mode="normal"
+          hint=""
+          commands={[]}
+          onRuntimeCommand={() => {}}
+        />,
+      );
+      await flushEffects();
+      ui.stdin.write('words with nowhere to go');
+      await flushEffects();
+      open('two');
+      await flushEffects();
+
+      expect(draftRefusalStore.get()?.message).toBe(
+        'Draft not saved: permission denied · .splitbrief/sessions/one/draft.json',
+      );
+      expect(feedbackStore.get()).toEqual({ message: 'Draft not saved', isError: true });
+      ui.unmount();
+    } finally {
+      chmodSync(dir, 0o755);
+    }
   });
 });
 

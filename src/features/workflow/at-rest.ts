@@ -79,6 +79,15 @@ export function routeBriefMark(route: RouteData): RailHalt | null {
     : null;
 }
 
+/** Whether the workflow screen shows a closed run at rest: its Closed block, and no queue. */
+export function routeClosedAtRest(route: RouteData): boolean {
+  return (
+    route.screen === 'workflow' &&
+    route.execution.kind === 'at-rest' &&
+    route.run.status.kind === 'closed'
+  );
+}
+
 /**
  * A run a process holds while its reviewed result still waits for the checkout: Apply is writing it.
  * The record says `running` for any process that holds the run, so the saved state tells Apply apart.
