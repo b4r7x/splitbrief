@@ -46,6 +46,35 @@ describe('reportConfigSaveFailure', () => {
     );
   });
 
+  it('keeps a one-line refusal whole', () => {
+    const failed = configError.saveFailed(
+      '/project/.splitbrief/config.yaml',
+      configError.unsupportedVersion(2),
+    );
+
+    reportConfigSaveFailure({ kind: 'failure', ok: false, error: failed });
+
+    expect(feedbackStore.get().message).toBe(
+      'Failed to save config: Unsupported config version: 2. Supported: 3. Run `splitbrief init --reconfigure` to write a current config.',
+    );
+  });
+
+  it('drops a later line that only introduces more lines', () => {
+    const refused = configError.validationFailed('/project/.splitbrief/config.yaml', [
+      'Configuration errors in .splitbrief/config.yaml:',
+      '  planner: No runner kind matches; each kind needs:',
+      '  planner.tool: Required',
+      '  planner.command: Required',
+    ]);
+    const failed = configError.saveFailed('/project/.splitbrief/config.yaml', refused);
+
+    reportConfigSaveFailure({ kind: 'failure', ok: false, error: failed });
+
+    expect(feedbackStore.get().message).toBe(
+      'Failed to save config: planner.tool: Required; planner.command: Required',
+    );
+  });
+
   it('falls back to the failure itself when it has no cause', () => {
     reportConfigSaveFailure({ kind: 'failure', ok: false, error: new Error('disk full') });
 

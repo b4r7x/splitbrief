@@ -497,6 +497,20 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [{ id: 'composer', title: 'Draft note and feature composer' }],
     }),
+    // A hand edit of config.yaml that does not load, read by home's refresh: named once, and the
+    // crew stays as it was loaded.
+    defineScenario({
+      id: 'home-config-edit-refused',
+      title: 'Home · a hand edit of the config that does not load',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Config error and kept-config note above the composer',
+        kind: 'ready',
+        marker: 'Configuration errors',
+      },
+      elements: [{ id: 'composer', title: 'Config error and feature composer' }],
+    }),
     // The same message over a long draft: the logo and the session rows give way, the crew block
     // and the more row stay.
     defineScenario({

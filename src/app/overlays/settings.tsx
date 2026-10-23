@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { Box } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
@@ -68,6 +69,8 @@ export function SettingsOverlay() {
     terminalSizeStore,
     feedbackStore,
   );
+
+  useEffect(() => configStore.reloadShownConfig(), []);
 
   const { initialKey, initialFilter } = parseSettingsFocus(focus);
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;

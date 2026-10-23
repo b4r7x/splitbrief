@@ -248,7 +248,7 @@ routerStore.navigate({ to: 'home' });
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate({ to, … })`, `init()` — with transition guards |
 | `preparationStore` | `navigation/preparation.ts` | `{ kind: 'idle' \| 'checking' \| 'blocked' \| 'failed', … }` — the readiness check before a run starts or continues | `submit()`, `cancel()`, `reset()` |
 | `sessionSelectStore` | `navigation/session-select.ts` | the session picker's selection and its error | `clearError()`, `reset()` — `handleSessionSelect()` and `continueRunInPlace()` drive it |
-| `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `refreshFromExecution()`, `save()`, `useConfig()`, `setContextLength()` |
+| `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `reloadIfChanged()`, `reloadShownConfig()` (home tick, Settings and seat picker open: an edit that does not load is named once), `refreshFromExecution()`, `save()`, `useConfig()`, `setContextLength()` |
 | `sessionsStore` | `project/sessions.ts` | `{ sessions, totalCount, projectDir }` | `load()`, `refresh()` |
 | `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `setAvailable()`, `setSelected()`, `toggleSelected()` |
 | `detectionStore` | `project/detection.ts` | a view over the model cache's `detection` slice: `{ providers, cliTools, providerOutcomes, cliCatalogOutcomes, refresh }`. It has no state of its own | `setDetection()`, `beginRefresh()`, `hydrate()`, `publishLane()`, `publish()`, `reset()` — each forwards to `modelCacheStore` |

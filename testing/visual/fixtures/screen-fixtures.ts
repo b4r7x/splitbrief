@@ -6,7 +6,8 @@ import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { resolveEffectiveConfig } from '../../../src/core/config/runtime/effective-config.js';
 import { formatConfigLoaderDiagnostic, writeConfig } from '../../../src/core/config/load/io.js';
-import { readConfigDocument } from '../../../src/core/config/load/document.js';
+import { configPath, readConfigDocument } from '../../../src/core/config/load/document.js';
+import type { CLIOverrides } from '../../../src/core/config/runtime/overrides/schema.js';
 import { createProductionDetectionDeps } from '../../../src/engine/detection/deps.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
@@ -181,20 +182,16 @@ export function opencodeConfigOnlyModels(): readonly DetectedModel[] {
   );
 }
 
+/**
+ * Home, Settings and the seat picker read the config file again when it differs from the store, and
+ * so does a running loop, so the fixture writes the file the store holds.
+ */
 export function seedVisualConfig(overrides?: VisualConfigOverrides): void {
   const config = visualConfig(overrides);
-  configStore.__testReset({
-    config,
-    diskConfig: config,
-    projectDir: VISUAL_FIXTURE_PROJECT_DIR,
-    revision: {
-      rawSha256: 'visual-config',
-      fileIdentity: { dev: 0n, ino: 0n, size: 0n, mtimeNs: 0n },
-    },
-  });
+  configStore.__testReset({ config, diskConfig: config, projectDir: VISUAL_FIXTURE_PROJECT_DIR });
+  persistVisualConfig();
 }
 
-/** A running loop re-reads the config file when it differs from the store, so a run fixture writes it. */
 export function persistVisualConfig(): void {
   const state = configStore.get();
   if (state.diskConfig === null) throw new Error('Visual run fixture requires project config');
@@ -203,6 +200,12 @@ export function persistVisualConfig(): void {
     ...state,
     revision: readConfigDocument(VISUAL_FIXTURE_PROJECT_DIR).revision,
   });
+}
+
+/** Loads the fixture project as a project with no config file. */
+function loadVisualProjectWithoutConfig(overrides?: CLIOverrides): void {
+  rmSync(configPath(VISUAL_FIXTURE_PROJECT_DIR), { force: true });
+  configStore.load(VISUAL_FIXTURE_PROJECT_DIR, overrides);
 }
 
 export function teardownVisualFixture(): void {
@@ -243,9 +246,7 @@ export function createHomeFixture(options: HomeFixtureOptions = {}): FixtureLife
     setup: (context) => {
       setupVisualFixture(context);
       if (options.config !== undefined) seedVisualConfig(options.config);
-      if (options.noConfig === true) {
-        configStore.load(VISUAL_FIXTURE_PROJECT_DIR);
-      }
+      if (options.noConfig === true) loadVisualProjectWithoutConfig();
       skillsStore.setSelected(HOME_FIXTURE_SKILLS);
       if (options.cold !== true) publishFreshDiscovery();
       if (options.detecting === true) {
@@ -510,7 +511,7 @@ export function createSetupFixture(
         createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, { '.gitignore': 'node_modules/\n' });
       }
       if (state !== 'unavailable' && state !== 'signed-out' && state !== 'config-only') {
-        configStore.load(VISUAL_FIXTURE_PROJECT_DIR);
+        loadVisualProjectWithoutConfig();
       }
       if (state === 'saved-detecting') seedVisualConfig();
       if (state === 'config-only') {
@@ -550,7 +551,7 @@ export function createSetupFixture(
             apiBase: 'http://127.0.0.1:12434/v1',
           },
         };
-        if (state === 'api-override') configStore.load(VISUAL_FIXTURE_PROJECT_DIR, overrides);
+        if (state === 'api-override') loadVisualProjectWithoutConfig(overrides);
         else {
           seedVisualConfig({ implementer: { model: 'custom-coder' } });
           const persisted = configStore.get().diskConfig;
@@ -1272,6 +1273,27 @@ function createDraftNotRemovedFixture(): FixtureLifecycle {
   };
 }
 
+// A hand edit that names a tool with a typo, read by home's refresh.
+const CONFIG_EDIT_REFUSED_MESSAGE =
+  'SPLITBRIEF keeps the config it loaded before · Configuration errors in .splitbrief/config.yaml: planner.tool: Invalid option: expected one of "claude-code"|"codex"|"opencode"|"copilot"|"kilo-code"|"cursor"|"command-code"|"antigravity"';
+
+function createConfigEditRefusedFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    ...home,
+    setup: async (context) => {
+      await home.setup(context);
+      writeFileSync(
+        configPath(VISUAL_FIXTURE_PROJECT_DIR),
+        readFileSync(configPath(VISUAL_FIXTURE_PROJECT_DIR), 'utf8').replace(
+          /tool: claude-code/g,
+          'tool: claude-cod',
+        ),
+      );
+    },
+  };
+}
+
 // The line home shows for the first quit that a draft left on a run could not be saved for.
 const DRAFT_NOT_SAVED_MESSAGE = `${UNSAVED_DRAFT_ERROR.message}${SOFT_SEP}quit again leaves without it`;
 
@@ -1304,6 +1326,7 @@ export const homeFixtureFeedback: ReadonlyMap<string, string> = new Map([
   ['home-startup-permission-warning', STARTUP_PERMISSION_WARNING_MESSAGE],
   ['home-draft-not-saved', DRAFT_NOT_SAVED_MESSAGE],
   ['home-draft-not-removed', DRAFT_NOT_REMOVED_MESSAGE],
+  ['home-config-edit-refused', CONFIG_EDIT_REFUSED_MESSAGE],
 ]);
 
 function createSaveSignInFixture(): FixtureLifecycle {
@@ -1550,6 +1573,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-draft-not-saved'), createDraftNotSavedFixture],
   [scenarioId('home-draft-not-removed'), createDraftNotRemovedFixture],
+  [scenarioId('home-config-edit-refused'), createConfigEditRefusedFixture],
   [scenarioId('home-save-long-draft'), createSaveLongDraftFixture],
   [scenarioId('home-no-config-long-draft'), createNoConfigLongDraftFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],

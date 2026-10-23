@@ -268,10 +268,15 @@ export function HomeScreen({
   );
   const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
 
-  // Another process can start, end or finish a run, so home reads the list again while it shows.
+  // Another process can start, end or finish a run, and a hand edit can change config.yaml, so
+  // home reads both again while it shows.
   useEffect(() => {
-    sessionsStore.refresh();
-    const timer = setInterval(sessionsStore.refresh, LOCKFILE_PING_INTERVAL_MS);
+    const refresh = () => {
+      sessionsStore.refresh();
+      configStore.reloadShownConfig();
+    };
+    refresh();
+    const timer = setInterval(refresh, LOCKFILE_PING_INTERVAL_MS);
     return () => clearInterval(timer);
   }, []);
 

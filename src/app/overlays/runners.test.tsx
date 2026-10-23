@@ -1368,3 +1368,38 @@ describe('ToolModelPicker leaving a hand-written shell seat', () => {
     ui.unmount();
   });
 });
+
+describe('ToolModelPicker after a hand edit of config.yaml', () => {
+  let projectDir = '';
+
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetPickerStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
+    projectDir = createTempDir('picker-hand-edit');
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+    });
+  });
+
+  afterEach(() => cleanupTempDir(projectDir));
+
+  it('checks the model the edit names when the picker opens', async () => {
+    const withPlanner = (model: string): Config => ({
+      ...createDefaultConfig(),
+      planner: { kind: 'cli', tool: 'claude-code', model },
+    });
+    writeConfig(projectDir, withPlanner('sonnet'));
+    configStore.load(projectDir);
+    writeConfig(projectDir, withPlanner('opus'));
+
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
+    await tick(20);
+
+    const checked = checkedModelLines(frameText(ui)).join('');
+    expect(checked).toContain('Opus');
+    expect(checked).not.toContain('Sonnet');
+    ui.unmount();
+  });
+});
