@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- Apply as is no longer shows "Applying to your checkout" while it asks for its confirmation.
 - A failed whole-suite check that names no file no longer says that no task changed it.
 - With a review after each task, the next part of a split task now waits for the review of the part a consult verified.
 - A run you rejected in part and continued now runs its checks again before the next review, instead of failing on a check failure you already fixed.
