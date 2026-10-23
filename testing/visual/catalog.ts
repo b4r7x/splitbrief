@@ -2338,7 +2338,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-closed-fix-cycle',
-      title: 'Workflow · closed after failed reviews and a fix cycle',
+      title: 'Workflow · closed after failed reviews and two fix cycles',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'closed-fix-cycle',
