@@ -1,3 +1,5 @@
+import { isProcessWentAwayMark } from '../event-phase.js';
+import { endBeforeAtRest } from '../sessions/at-rest-end.js';
 import { phaseStage } from '../rail-stages.js';
 import type { Phase, TaskCompletionMethod } from '../schemas/enums.js';
 import type { ReviewFindingCounts } from '../schemas/review.js';
@@ -37,6 +39,7 @@ type FullSuiteEvent = {
   passed?: boolean;
   newFailures?: number;
   notVerified?: number;
+  duration?: number;
 };
 type ChecksRunEvent = { type: 'checks_run'; results: { status: CheckStatus }[] };
 type ReviewFixStartedEvent = { type: 'review_fix_started'; cycle: number; taskIds: string[] };
@@ -55,6 +58,7 @@ type WorkflowCompleteEvent = {
   type: 'workflow_complete';
   review?: 'passed' | 'failed' | undefined;
 };
+type WorkflowCancelledEvent = { type: 'workflow_cancelled'; atRestFrom?: number | undefined };
 
 interface TaskRange<TEvent extends SectionableEvent> {
   taskId: string;
@@ -115,6 +119,12 @@ function isWorkflowCompleteEvent<TEvent extends SectionableEvent>(
   event: TEvent,
 ): event is TEvent & WorkflowCompleteEvent {
   return event.type === 'workflow_complete';
+}
+
+function isWorkflowCancelledEvent<TEvent extends SectionableEvent>(
+  event: TEvent,
+): event is TEvent & WorkflowCancelledEvent {
+  return event.type === 'workflow_cancelled';
 }
 
 function isReviewCompletedEvent<TEvent extends SectionableEvent>(
@@ -400,7 +410,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
   appendCompletedReviews(events.length);
   if (cursor < events.length) {
     const items = events.slice(cursor);
-    const summary = items.some(isReviewStartedEvent)
+    const summary = items.some(opensReview)
       ? settledStageSummary(items, countsAtCursor(items))
       : null;
     sections.push(
@@ -488,9 +498,8 @@ function settledStageSummary<TEvent extends SectionableEvent>(
     firstTs ??= event.ts;
     lastTs = event.ts;
   }
-  const startTs = stage === 'review' ? (reviewStarted?.ts ?? firstTs) : firstTs;
-  const duration = startTs === undefined || lastTs === undefined ? 0 : lastTs - startTs;
   if (stage === 'plan') {
+    const duration = firstTs === undefined || lastTs === undefined ? 0 : lastTs - firstTs;
     return { stage, feature: items.find(isWorkflowStartedEvent)?.feature ?? '', duration };
   }
 
@@ -516,22 +525,45 @@ function settledStageSummary<TEvent extends SectionableEvent>(
     }
     if (isReviewFixStartedEvent(event)) fixes = event.taskIds;
   }
-  // A stop before the review started parked the run before it; a review call that starts after the
-  // stop is the cut call continued in place.
-  const startIndex = items.findLastIndex(isReviewStartedEvent);
-  const stopIndex = items.findLastIndex(
-    (event, index) =>
-      index > startIndex &&
-      (event.type === 'turn_interrupted' ||
-        event.type === 'workflow_cancelled' ||
-        (event.type === 'runner_call_activity' &&
-          'kind' in event &&
-          event.kind === 'error' &&
-          'role' in event &&
-          event.role === 'review' &&
-          'stage' in event &&
-          event.stage === 'aborted')),
-  );
+  // A stop before the review opened — at its start, or before one at the first check it runs —
+  // parked the run before it; a review call that starts after the stop is the cut call continued
+  // in place.
+  const openIndex = reviewStarted
+    ? items.findLastIndex(isReviewStartedEvent)
+    : items.findIndex(opensReview);
+  const stopIndex =
+    openIndex < 0
+      ? -1
+      : items.findLastIndex(
+          (event, index) =>
+            index > openIndex &&
+            (event.type === 'turn_interrupted' ||
+              event.type === 'workflow_cancelled' ||
+              isProcessWentAwayMark(event) ||
+              (event.type === 'runner_call_activity' &&
+                'kind' in event &&
+                event.kind === 'error' &&
+                'role' in event &&
+                event.role === 'review' &&
+                'stage' in event &&
+                event.stage === 'aborted')),
+        );
+  // The clock runs from the start of what opened the review to its last mark. A finished check's row
+  // carries the time it ended, so it started `duration` before it. An End taken at rest ends the
+  // clock before the time the run sat at rest.
+  const opener = items[openIndex];
+  const startTs =
+    opener?.ts === undefined
+      ? firstTs
+      : isFullSuiteEvent(opener) && opener.status === 'done'
+        ? opener.ts - (opener.duration ?? 0)
+        : opener.ts;
+  const atRestFrom = items.findLast(isWorkflowCancelledEvent)?.atRestFrom;
+  const endTs =
+    atRestFrom === undefined || startTs === undefined
+      ? lastTs
+      : endBeforeAtRest(items.slice(Math.max(0, openIndex)), atRestFrom, startTs);
+  const duration = startTs === undefined || endTs === undefined ? 0 : endTs - startTs;
   const stopped =
     stopIndex >= 0 &&
     !items
@@ -552,7 +584,7 @@ function settledStageSummary<TEvent extends SectionableEvent>(
       ? resumed || stopped
         ? 'stopped'
         : null
-      : (verdict ?? (fixes.length > 0 ? 'failed' : resumed ? 'stopped' : null));
+      : (verdict ?? (fixes.length > 0 ? 'failed' : resumed || stopped ? 'stopped' : null));
   if (outcome === null) return null;
   return {
     ...reviewStage(items, counts),

@@ -100,6 +100,26 @@ describe('stageSummaryRow', () => {
     });
   });
 
+  it.each([
+    ['a known end', {}],
+    ['no known end', { endUnknown: true as const }],
+  ])('shows no clock on a stopped review that ran no measurable time, with %s', (_end, end) => {
+    expect(
+      stageSummaryRow({
+        stage: 'review',
+        scope: 'final',
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
+        outcome: 'stopped',
+        failedCommands: [],
+        failedChecks: 0,
+        fixes: [],
+        duration: 1,
+        ...end,
+      }),
+    ).toMatchObject({ state: { kind: 'stage', outcome: 'stopped', detail: [] } });
+  });
+
   it('omits the absent task anchor from a schema-valid review completion', () => {
     const event = EngineEventSchema.parse({
       type: 'review_completed',

@@ -2260,6 +2260,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-crashed-review-check',
+      title: 'Workflow · a run whose process went away during a reviewer check',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-crashed-review-check',
+        title: 'The reviewer check and the final review read as stopped',
+        kind: 'ready',
+        marker: 'Final review stopped',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-question',
       title: 'Workflow · a run parked at a question round',
       surface: screenSurface('workflow'),

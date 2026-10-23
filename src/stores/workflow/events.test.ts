@@ -701,6 +701,36 @@ describe('eventsStore — append via addEvent', () => {
       },
     );
 
+    it.each([
+      [true, 'stopped'],
+      [false, 'running'],
+    ] as const)(
+      'a replay marked by a process that went away (%s) leaves its commands %s in live and batch logs',
+      (processWentAway, status) => {
+        const fix = makeFullSuite({ id: 'V1', moment: 'brief', ts: 1_000 });
+        const check = makeFullSuite({ id: 'V2', moment: 'pre-review', ts: 2_000 });
+        const gate = makeValidate({ status: 'running', activeStage: 'test', ts: 3_000 });
+        const complete: EngineEvent = {
+          type: 'replay_complete',
+          ts: 3_000,
+          phase: 'idle',
+          totalEvents: 3,
+          durationMs: 2_000,
+          ...(processWentAway && { processWentAway }),
+        };
+        const log = [fix, check, gate, complete];
+        for (const event of log) addEvent(event);
+        const live = eventsStore.get().events;
+        expect(live).toEqual(mergeEventLog(log));
+        expect(live).toEqual([
+          { ...fix, status },
+          { ...check, status },
+          { ...gate, status },
+          complete,
+        ]);
+      },
+    );
+
     it('accepts the durable interruption after local stop intent to settle the transcript', () => {
       const fix = makeFullSuite({ id: 'V1', moment: 'brief', ts: 1_000 });
       addEvent(fix);

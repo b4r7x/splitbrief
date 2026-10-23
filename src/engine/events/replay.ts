@@ -16,7 +16,10 @@ export interface RunReplay {
   diagnostics: RunReplayDiagnostics;
 }
 
-export async function readRunEvents(ref: SessionRef): Promise<RunReplay> {
+export async function readRunEvents(
+  ref: SessionRef,
+  opts: { processWentAway?: boolean } = {},
+): Promise<RunReplay> {
   const { entries, diagnostics: read } = await readSessionLogWithDiagnostics(ref);
 
   const replayed: EngineEvent[] = [];
@@ -100,6 +103,7 @@ export async function readRunEvents(ref: SessionRef): Promise<RunReplay> {
     totalEvents: replayed.length,
     durationMs: replayedSpanMs,
     diagnostics,
+    ...(opts.processWentAway === true && { processWentAway: true }),
   };
 
   return {

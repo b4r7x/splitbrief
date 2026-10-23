@@ -4,7 +4,7 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { groupEventsIntoSections } from '../../core/sections/event-sections.js';
 import { ConversationRowView } from './components/conversation-flow/row-view.js';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { arrowSep } from '../../core/separators.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -16,10 +16,18 @@ import {
   makeRunnerCallStarted,
   makeRunnerCallCompleted,
 } from '#testing/helpers/events/runner-call.js';
-import { makeReviewFixInsertedEvents, makeTaskStart } from '#testing/helpers/events/task.js';
+import {
+  makeReviewFixInsertedEvents,
+  makeTaskStart,
+  makeValidate,
+} from '#testing/helpers/events/task.js';
 import { taskId } from '../../core/schemas/task.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { RunRecord } from '../../core/sessions/run-record.js';
+import type { StoppedOn } from '../../core/sessions/run-status.js';
+import { readRunEvents } from '../../engine/events/replay.js';
+import { interruptedCallEvents } from '../../engine/calls/interrupted.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import { createEventBus } from '../../engine/events/bus.js';
 import { toEngineEventEntry } from '../../core/sessions/log-writer.js';
@@ -943,4 +951,519 @@ describe('readRunHistory', () => {
     expect(tokensStore.get().tokenUsage?.plannerInput).toBe(400);
     expect(lifecycleStore.get().status).toBe('paused');
   });
+});
+
+describe('hydrateRun of a run whose process went away during a step', () => {
+  // The live run rU: one brief, a pause after it, then the final review with its plan checks, the
+  // check choice, two reviewer checks and the verdict.
+  const LOG = readFileSync(
+    join(import.meta.dirname, '../../../testing/fixtures/session-log/review-after-pause.jsonl'),
+    'utf8',
+  )
+    .split('\n')
+    .filter((line) => line.trim() !== '');
+  const NO_PAUSE = LOG.filter(
+    (line) => !/"type":"(?:turn_interrupted|workflow_resumed)"/u.test(line),
+  );
+  const through = (marker: string) => (lines: readonly string[]) =>
+    lines.slice(0, lines.findIndex((line) => line.includes(marker)) + 1);
+  const tsAfter = (lines: readonly string[]) =>
+    Date.parse((JSON.parse(lines.at(-1) ?? '{}') as { ts: string }).ts) + 1_000;
+  const logLine = (event: EngineEvent) => JSON.stringify(toEngineEventEntry(event));
+  const withLine =
+    (cut: (lines: readonly string[]) => string[], event: (ts: number) => EngineEvent) =>
+    (lines: readonly string[]) => {
+      const head = cut(lines);
+      return [...head, logLine(event(tsAfter(head)))];
+    };
+  const reviewerCheck = (ts: number, fields: Partial<EngineEventOf<'full_suite'>>) =>
+    ({
+      type: 'full_suite',
+      ts,
+      phase: 'final-review',
+      status: 'running',
+      id: 'V1',
+      command: 'node --test tests/even.test.js',
+      moment: 'pre-review',
+      ...fields,
+    }) satisfies EngineEventOf<'full_suite'>;
+  const T001 = taskId('T001');
+
+  const review = { kind: 'review', cycle: 0 } as const;
+  const brief = { kind: 'brief', taskId: T001, attempt: 0 } as const;
+  const stoppedAt = (resumeAt: typeof review | typeof brief, on: StoppedOn) =>
+    ({ kind: 'open', stop: { kind: 'stopped', on }, resumeAt }) as const;
+
+  async function reopen(lines: readonly string[], status: RunRecord['status']): Promise<void> {
+    const dir = sessionDir(projectDir, SESSION_ID);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, SESSION_LOG_FILE), `${lines.join('\n')}\n`);
+    await hydrateRun(makeRunRecord({ ref: { projectDir, sessionId: SESSION_ID }, status }));
+  }
+
+  function transcript(): string[] {
+    const { rows } = buildConversationRows({
+      sections: groupEventsIntoSections([...eventsStore.get().events]),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 120,
+      viewportHeight: 200,
+      streaming: { taskId: null, lines: [], active: false },
+    });
+    const ui = renderFeature(
+      createElement(
+        Fragment,
+        null,
+        ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+      ),
+      { cols: 120, rows: 200 },
+    );
+    const lines = stripAnsiStyles(ui.lastFrame())
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+    ui.unmount();
+    return lines;
+  }
+
+  // The review's own section: the replay marker, a resume or the run's completion may follow it.
+  const reviewSection = (events = eventsStore.get().events) =>
+    groupEventsIntoSections([...events]).findLast(
+      (section) =>
+        section.type === 'active-review' ||
+        (section.type === 'settled-stage' && section.summary.stage === 'review'),
+    );
+  const commandRows = (text: readonly string[], label: string) =>
+    text.filter((line) => line.includes(label));
+
+  // Each crash point, the check row it leaves, and the heading every read of it shows: a stop at the
+  // last mark, `at least` only when the process cut a call, and no clock when nothing reported a time
+  // after the review opened.
+  const reviewCrashes = [
+    [
+      'a plan check runs',
+      through('"status":"running","id":"K1"'),
+      'Plan check K1',
+      '× Final review stopped',
+    ],
+    [
+      'the review started, no call yet',
+      through('"type":"all_tasks_done"'),
+      null,
+      '× Final review stopped',
+    ],
+    [
+      'the reviewer chooses its checks',
+      through('"type":"runner_call_started","phase":"final-review"'),
+      null,
+      '× Final review stopped  at least 0.2s',
+    ],
+    [
+      'the checks are planned and none started, or the Run all / Skip all card is open',
+      through('"type":"review_checks"'),
+      null,
+      '× Final review stopped  22.6s',
+    ],
+    [
+      'a reviewer check runs',
+      through('"status":"running","id":"V1"'),
+      'Reviewer check V1',
+      '× Final review stopped  22.6s',
+    ],
+    [
+      'a render runs',
+      withLine(through('"type":"review_checks"'), (ts) =>
+        reviewerCheck(ts, { scenario: 'workflow-x' }),
+      ),
+      'Render workflow-x',
+      '× Final review stopped  23.6s',
+    ],
+    [
+      'a base re-run runs',
+      withLine(through('"status":"done","id":"V2"'), (ts) =>
+        reviewerCheck(ts, { id: 'V2', command: 'npm test', moment: 'base' }),
+      ),
+      'Base re-run V2',
+      '× Final review stopped  24.4s',
+    ],
+    [
+      'the verdict call has not started after the drift report',
+      through('"type":"drift_report"'),
+      null,
+      '× Final review stopped  23.5s',
+    ],
+    [
+      'the verdict call runs',
+      through('"callId":"review-6786'),
+      null,
+      '× Final review stopped  at least 23.6s',
+    ],
+  ] as const;
+  const pauses = [
+    ['a pause before the review', LOG],
+    ['no pause', NO_PAUSE],
+  ] as const;
+  const reviewStates = reviewCrashes.flatMap(([state, cut, row, heading]) =>
+    pauses.map(([pause, log]) => [state, pause, cut(log), row, heading] as const),
+  );
+  const HOUR = 3_600_000;
+  const stoppedHeading = (text: readonly string[]) =>
+    text.find((line) => line.startsWith('× Final review'));
+
+  it.each(reviewStates)(
+    'reads the review stopped at rest when the process went away while %s after %s',
+    async (_state, _pause, lines, row, heading) => {
+      await reopen(lines, stoppedAt(review, { kind: 'interrupted' }));
+      const text = transcript();
+      expect(text.filter((line) => line.endsWith('running'))).toEqual([]);
+      if (row !== null) {
+        expect(commandRows(text, row)).toHaveLength(1);
+        expect(commandRows(text, row)[0]).toMatch(/· stopped$/u);
+      }
+      expect(reviewSection()).toMatchObject({
+        type: 'settled-stage',
+        summary: { stage: 'review', outcome: 'stopped' },
+      });
+      expect(stoppedHeading(text)).toBe(heading);
+    },
+  );
+
+  it.each(reviewStates)(
+    'keeps one stopped row and the stop mark once a run that went away while %s after %s continues',
+    async (_state, _pause, lines, row, heading) => {
+      await reopen(lines, stoppedAt(review, { kind: 'interrupted' }));
+      // The resume records the calls the process left open, then its own boundary.
+      const { events } = await readRunEvents({ projectDir, sessionId: SESSION_ID });
+      const cut = interruptedCallEvents(events, projectDir);
+      const resumed: EngineEvent = {
+        type: 'workflow_resumed',
+        ts: tsAfter(lines) + 60_000,
+        phase: 'final-review',
+      };
+      for (const event of [...cut, resumed]) addEvent(event);
+      const inPlace = transcript();
+      if (row !== null) {
+        expect(commandRows(inPlace, row)).toHaveLength(1);
+        expect(commandRows(inPlace, row)[0]).toMatch(/· stopped$/u);
+      }
+      const sections = groupEventsIntoSections([...eventsStore.get().events]);
+      expect(sections.at(-2)).toMatchObject({
+        type: 'settled-stage',
+        summary: { stage: 'review', outcome: 'stopped' },
+      });
+      expect(sections.at(-1)?.items).toEqual([resumed]);
+      expect(inPlace.at(-1)).toBe('Run continued');
+      expect(stoppedHeading(inPlace)).toBe(heading);
+      expect(
+        eventsStore
+          .get()
+          .events.filter(
+            (event) => event.type === 'runner_call_activity' && event.kind === 'error',
+          ),
+      ).toHaveLength(cut.length > 0 ? 1 : 0);
+
+      // The same run read again from its log while the continued process runs it.
+      await reopen([...lines, ...[...cut, resumed].map(logLine)], { kind: 'running' });
+      const reread = transcript();
+      if (row !== null) expect(commandRows(reread, row)).toEqual(commandRows(inPlace, row));
+      expect(reviewSection()).toMatchObject({
+        type: 'settled-stage',
+        summary: { stage: 'review', outcome: 'stopped' },
+      });
+      expect(stoppedHeading(reread)).toBe(heading);
+
+      // The continued review passes and the run completes: the stopped review keeps its heading.
+      const passed: EngineEvent[] = [
+        {
+          type: 'review_started',
+          ts: resumed.ts + 1_000,
+          phase: 'final-review',
+          scope: 'final',
+          tool: 'codex',
+        },
+        {
+          type: 'review_completed',
+          ts: resumed.ts + 2_000,
+          phase: 'final-review',
+          scope: 'final',
+          tool: 'codex',
+          verdict: 'pass',
+          duration: 1_000,
+        },
+        { type: 'workflow_complete', ts: resumed.ts + 3_000, phase: 'complete', review: 'passed' },
+      ];
+      await reopen([...lines, ...[...cut, resumed, ...passed].map(logLine)], {
+        kind: 'closed',
+        as: 'complete',
+      });
+      expect(stoppedHeading(transcript())).toBe(heading);
+    },
+  );
+
+  it.each(reviewStates)(
+    'keeps the stop mark after End run at rest on a run that went away while %s after %s',
+    async (_state, _pause, lines, row, heading) => {
+      await reopen(lines, stoppedAt(review, { kind: 'interrupted' }));
+      const { events } = await readRunEvents({ projectDir, sessionId: SESSION_ID });
+      // An End taken at rest an hour later.
+      const cancelled: EngineEvent = {
+        type: 'workflow_cancelled',
+        ts: tsAfter(lines) + HOUR,
+        phase: 'final-review',
+        reason: 'user_cancelled',
+        atRestFrom: tsAfter(lines) + HOUR,
+      };
+      const ended = [...interruptedCallEvents(events, projectDir), cancelled];
+      await reopen([...lines, ...ended.map(logLine)], { kind: 'closed', as: 'ended' });
+      const text = transcript();
+      expect(text.filter((line) => line.endsWith('running'))).toEqual([]);
+      if (row !== null) {
+        expect(commandRows(text, row)).toHaveLength(1);
+        expect(commandRows(text, row)[0]).toMatch(/· stopped$/u);
+      }
+      expect(reviewSection()).toMatchObject({
+        type: 'settled-stage',
+        summary: { stage: 'review', outcome: 'stopped' },
+      });
+      expect(stoppedHeading(text)).toBe(heading);
+    },
+  );
+
+  it.each(pauses)(
+    'reads a Stop and an End run during a plan check as stopped after %s',
+    async (_pause, log) => {
+      const head = through('"status":"running","id":"K1"')(log);
+      const stop: EngineEvent = {
+        type: 'turn_interrupted',
+        ts: tsAfter(head),
+        phase: 'final-review',
+        source: 'user',
+        at: 'mid-step',
+        step: review,
+      };
+      await reopen([...head, logLine(stop)], stoppedAt(review, { kind: 'paused', at: 'mid-step' }));
+      const atRest = transcript();
+      expect(commandRows(atRest, 'Plan check K1')[0]).toMatch(/· stopped$/u);
+      expect(reviewSection()).toMatchObject({
+        type: 'settled-stage',
+        summary: { stage: 'review', outcome: 'stopped' },
+      });
+      expect(stoppedHeading(atRest)).toBe('× Final review stopped  1.0s');
+      const cancelled: EngineEvent = {
+        type: 'workflow_cancelled',
+        ts: tsAfter(head) + 1_000,
+        phase: 'final-review',
+        reason: 'user_cancelled',
+      };
+      await reopen([...head, logLine(stop), logLine(cancelled)], { kind: 'closed', as: 'ended' });
+      expect(reviewSection()).toMatchObject({
+        type: 'settled-stage',
+        summary: { stage: 'review', outcome: 'stopped' },
+      });
+      const endedAtRest: EngineEvent = {
+        type: 'workflow_cancelled',
+        ts: tsAfter(head) + HOUR,
+        phase: 'final-review',
+        reason: 'user_cancelled',
+        atRestFrom: tsAfter(head) + HOUR,
+      };
+      await reopen([...head, logLine(stop), logLine(endedAtRest)], { kind: 'closed', as: 'ended' });
+      expect(stoppedHeading(transcript())).toBe('× Final review stopped  1.0s');
+    },
+  );
+
+  // A log line moved later by `ms`, with its data fields replaced.
+  const later = (line: string, ms: number, data: Record<string, unknown> = {}) => {
+    const entry = JSON.parse(line) as { ts: string; data?: Record<string, unknown> };
+    return JSON.stringify({
+      ...entry,
+      ts: new Date(Date.parse(entry.ts) + ms).toISOString(),
+      data: { ...entry.data, ...data },
+    });
+  };
+  const userStop = (ts: number): EngineEvent => ({
+    type: 'turn_interrupted',
+    ts,
+    phase: 'final-review',
+    source: 'user',
+    at: 'mid-step',
+    step: review,
+  });
+
+  it.each([
+    ['a Stop', '× Final review stopped  1.0s'],
+    ['a process that went away', '× Final review stopped'],
+  ])(
+    'starts the review clock at its first plan check after a pause a day long, then %s in it',
+    async (stop, heading) => {
+      const resumeAt = LOG.findIndex((line) => line.includes('"type":"workflow_resumed"'));
+      const head = through('"status":"running","id":"K1"')(LOG).map((line, index) =>
+        index < resumeAt ? line : later(line, 24 * HOUR),
+      );
+      if (stop === 'a Stop') {
+        await reopen(
+          [...head, logLine(userStop(tsAfter(head)))],
+          stoppedAt(review, { kind: 'paused', at: 'mid-step' }),
+        );
+      } else {
+        await reopen(head, stoppedAt(review, { kind: 'interrupted' }));
+      }
+      expect(stoppedHeading(transcript())).toBe(heading);
+    },
+  );
+
+  it.each(
+    pauses.flatMap(([pause, log]) =>
+      [
+        ['a Stop', '× Final review stopped  3m 4s'],
+        ['a process that went away', '× Final review stopped  3m 0s'],
+      ].map(([stop, heading]) => [stop, pause, log, heading] as const),
+    ),
+  )(
+    'counts the run time of a finished plan check when %s ends the next one after %s',
+    async (stop, _pause, log, heading) => {
+      // K1 ran three minutes, then K2 started.
+      const head = through('"status":"running","id":"K2"')(log).map((line) =>
+        line.includes('"status":"done","id":"K1"')
+          ? later(line, 180_000, { duration: 180_000 })
+          : line.includes('"status":"running","id":"K2"')
+            ? later(line, 180_000)
+            : line,
+      );
+      if (stop === 'a Stop') {
+        await reopen(
+          [...head, logLine(userStop(tsAfter(head) + 3_000))],
+          stoppedAt(review, { kind: 'paused', at: 'mid-step' }),
+        );
+      } else {
+        await reopen(head, stoppedAt(review, { kind: 'interrupted' }));
+      }
+      expect(stoppedHeading(transcript())).toBe(heading);
+    },
+  );
+
+  it.each(
+    pauses.flatMap(([pause, log]) =>
+      [false, true].map((completed) => [pause, completed, log] as const),
+    ),
+  )(
+    'reads a Stop with its known clock after a crash before the review and a continue in place, after %s (review_completed: %s)',
+    async (_pause, completed, log) => {
+      // The process went away after the last brief, before the review saved its phase.
+      const crashAt = log.findIndex((line) => line.includes('pre-final-review'));
+      const head = log.slice(0, crashAt);
+      await reopen(head, stoppedAt(review, { kind: 'interrupted' }));
+      const shift = tsAfter(head) + 60_000 - Date.parse(JSON.parse(log[crashAt] ?? '{}').ts);
+      const rest = through('"status":"running","id":"V1"')(log)
+        .slice(crashAt)
+        .map((line) => later(line, shift));
+      const otherDir = sessionDir(projectDir, 'continued');
+      mkdirSync(otherDir, { recursive: true });
+      writeFileSync(join(otherDir, SESSION_LOG_FILE), `${rest.join('\n')}\n`);
+      const { events } = await readRunEvents({ projectDir, sessionId: 'continued' });
+      const continued = events.slice(0, -1);
+      const reviewStart = continued.find((event) => event.type === 'review_started')?.ts ?? 0;
+      const stopTs = tsAfter(rest) + 3_000;
+      const live: EngineEvent[] = [
+        { type: 'workflow_resumed', ts: tsAfter(head) + 59_000, phase: 'implementing' },
+        ...continued,
+        ...(completed
+          ? [
+              {
+                type: 'review_completed',
+                ts: stopTs,
+                phase: 'final-review',
+                scope: 'final',
+                tool: 'codex',
+                verdict: 'stopped',
+                duration: stopTs - reviewStart,
+              } satisfies EngineEventOf<'review_completed'>,
+            ]
+          : []),
+        userStop(stopTs),
+      ];
+      for (const event of live) addEvent(event);
+      expect(stoppedHeading(transcript())).toBe('× Final review stopped  26.6s');
+
+      await reopen(
+        [...head, ...live.map(logLine)],
+        stoppedAt(review, { kind: 'paused', at: 'mid-step' }),
+      );
+      expect(stoppedHeading(transcript())).toBe('× Final review stopped  26.6s');
+    },
+  );
+
+  it('leaves the plan check running while the process that runs it is alive', async () => {
+    await reopen(through('"status":"running","id":"K1"')(LOG), { kind: 'running' });
+    expect(commandRows(transcript(), 'Plan check K1')[0]).toMatch(/· running$/u);
+    expect(reviewSection()).toMatchObject({ type: 'active-review' });
+  });
+
+  it.each([
+    ['closed', { kind: 'closed', as: 'complete' }],
+    ['ready to apply', { kind: 'ready-to-apply', override: false }],
+  ] as const)('reads a %s run as it passed', async (_kind, status) => {
+    await reopen(LOG, status);
+    expect(reviewSection()).toMatchObject({
+      type: 'settled-stage',
+      summary: { stage: 'review', outcome: 'passed' },
+    });
+    expect(transcript().filter((line) => /stopped|running/u.test(line))).toEqual([]);
+  });
+
+  const briefCrashes = [
+    [
+      'a fix check runs',
+      withLine(through('"type":"consult_answered"'), (ts) => ({
+        type: 'full_suite',
+        ts,
+        phase: 'validating-task',
+        taskId: T001,
+        status: 'running',
+        id: 'V1',
+        command: 'npm test',
+        moment: 'brief',
+      })),
+      'Fix check V1',
+    ],
+    [
+      "the brief's own check runs",
+      withLine(through('"type":"consult_answered"'), (ts) =>
+        makeValidate({
+          ts,
+          phase: 'validating-task',
+          taskId: T001,
+          status: 'running',
+          passed: false,
+          stages: { typecheck: true, lint: true, test: false },
+          commands: { test: 'npm test' },
+          activeStage: 'test',
+        }),
+      ),
+      'Validate',
+    ],
+    [
+      'the BUILD call finished before the brief was done',
+      through('"kind":"message","role":"assistant"'),
+      null,
+    ],
+  ] as const;
+
+  it.each(briefCrashes)(
+    'reads the brief stopped at rest when the process went away while %s',
+    async (_state, cut, row) => {
+      await reopen(cut(NO_PAUSE), stoppedAt(brief, { kind: 'interrupted' }));
+      const text = transcript();
+      expect(
+        text.filter((line) => line.endsWith('running') || line.includes('working on')),
+      ).toEqual([]);
+      if (row !== null) expect(commandRows(text, row)).toHaveLength(1);
+      expect(
+        eventsStore
+          .get()
+          .events.filter((event) => event.type === 'full_suite' || event.type === 'validate')
+          .map((event) => 'status' in event && event.status),
+      ).not.toContain('running');
+    },
+  );
 });

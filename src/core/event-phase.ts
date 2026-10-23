@@ -15,3 +15,10 @@ const infrastructurePhaseEventTypes = new Set<string>(INFRASTRUCTURE_PHASE_EVENT
 export function isInfrastructurePhaseEvent(event: EventTypeCarrier): boolean {
   return infrastructurePhaseEventTypes.has(event.type);
 }
+
+/** The replay end of a reopened run whose process went away mid-step: what it ran then never finished. */
+export function isProcessWentAwayMark(event: EventTypeCarrier): boolean {
+  return (
+    event.type === 'replay_complete' && 'processWentAway' in event && event.processWentAway === true
+  );
+}

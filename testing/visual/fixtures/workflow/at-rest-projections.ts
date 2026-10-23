@@ -2431,6 +2431,66 @@ const CRASHED_REVIEW = record({
   }),
 });
 
+/** The same crash, after the reviewer chose its checks and while its first check ran. */
+const CRASHED_REVIEW_CHECK_LOG: readonly EngineEvent[] = [
+  ...CRASHED_REVIEW_LOG,
+  {
+    type: 'runner_call_completed',
+    ts: CRASH_TS + 112_000,
+    phase: 'final-review',
+    ...CRASH_REVIEW_CALL,
+    attempt: 1,
+    sequence: 3,
+    durationMs: 9_900,
+    startedAt: CRASH_TS + 102_100,
+    endedAt: CRASH_TS + 112_000,
+    status: 'completed',
+    error: null,
+    partial: false,
+    usage: null,
+    nativeSessionId: null,
+  },
+  {
+    type: 'review_checks',
+    ts: CRASH_TS + 112_100,
+    phase: 'final-review',
+    scope: 'final',
+    status: 'planned',
+    commands: [
+      { id: 'V1', command: 'npm test', reason: 'The tests cover the validator the change adds.' },
+      { id: 'V2', command: 'npm run typecheck', reason: 'The form wiring changes its props.' },
+    ],
+    declined: [],
+    reason: null,
+  },
+  {
+    type: 'full_suite',
+    ts: CRASH_TS + 112_200,
+    phase: 'final-review',
+    status: 'running',
+    id: 'V1',
+    command: 'npm test',
+    moment: 'pre-review',
+  },
+];
+
+const CRASHED_REVIEW_CHECK = record({
+  sessionId: 'visual-at-rest-crashed-review-check',
+  status: {
+    kind: 'open',
+    stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+    resumeAt: { kind: 'review', cycle: 0 },
+  },
+  state: savedState({
+    phase: 'final-review',
+    currentTaskIndex: 2,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'done' },
+    ],
+  }),
+});
+
 export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   {
     ...reviewTaskCadenceProjection,
@@ -2492,6 +2552,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-at-rest-crashed-review',
     route: { record: CRASHED_REVIEW, log: CRASHED_REVIEW_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-crashed-review-check',
+    route: { record: CRASHED_REVIEW_CHECK, log: CRASHED_REVIEW_CHECK_LOG },
   }),
   atRestProjection({
     id: 'workflow-at-rest-left-isolation',

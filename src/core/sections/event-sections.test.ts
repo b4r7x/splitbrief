@@ -1536,7 +1536,7 @@ describe('groupEventsIntoSections', () => {
         failedCommands: ['npm run typecheck', 'npm test'],
         failedChecks: 0,
         fixes: ['T005'],
-        duration: 15_000,
+        duration: 16_000,
       });
     });
 
@@ -1561,7 +1561,7 @@ describe('groupEventsIntoSections', () => {
         failedCommands: [],
         failedChecks: 0,
         fixes: [],
-        duration: 1_000,
+        duration: 2_000,
       });
     });
 
@@ -1601,7 +1601,7 @@ describe('groupEventsIntoSections', () => {
         failedCommands: ['npm test'],
         failedChecks: 3,
         fixes: ['T003', 'T004'],
-        duration: 5_000,
+        duration: 6_000,
       });
     });
 
@@ -1820,6 +1820,106 @@ describe('groupEventsIntoSections', () => {
         type: 'active-review',
         review: { stage: 'review', scope: 'final', fixCyclesBefore: 0, rerunsBefore: 0 },
       });
+    });
+
+    // A reopen marks its replay's end when the run's process went away mid-step.
+    const processWentAway = (ts: number) =>
+      at(ts, 'idle', 'replay_complete', { totalEvents: 0, durationMs: 0, processWentAway: true });
+    const stops = {
+      'a Stop': [midReviewStop(9_000)],
+      'an End run': [
+        midReviewStop(9_000),
+        at(9_000, 'final-review', 'workflow_cancelled', { reason: 'user_cancelled' }),
+      ],
+      'a process that went away': [processWentAway(9_000)],
+    };
+    const runningBeforeAHalt = Object.entries(runningReviews).filter(
+      ([state]) => state !== 'the review halts',
+    );
+    const stoppedStates = Object.entries({ ...pauses, 'no pause': [] }).flatMap(([pause, paused]) =>
+      runningBeforeAHalt.flatMap(([state, review]) =>
+        Object.entries(stops).map(
+          ([stop, ended]) =>
+            [state, stop, pause, [...brief, ...paused, ...review, ...ended]] as const,
+        ),
+      ),
+    );
+
+    it.each(stoppedStates)(
+      'reads the review stopped when %s and %s ends it after %s',
+      (_state, _stop, _pause, events) => {
+        expect(lastSection(events)).toMatchObject({
+          type: 'settled-stage',
+          summary: { stage: 'review', scope: 'final', outcome: 'stopped' },
+        });
+      },
+    );
+
+    it.each(runningBeforeAHalt)(
+      'ends the review at its last mark when the process went away while %s',
+      (_state, review) => {
+        const wentAway = lastSection([...brief, ...review, processWentAway(9_000)]);
+        expect(wentAway).toMatchObject({ summary: { outcome: 'stopped', duration: 5_000 } });
+        expect(wentAway).not.toHaveProperty('summary.endUnknown');
+      },
+    );
+
+    it('starts the clock where the first plan check started once it finished', () => {
+      const events = [
+        ...brief,
+        ...pauses['Pause after this brief or a seat save'],
+        reviewerCheck(184_000, {
+          id: 'K1',
+          moment: 'plan',
+          status: 'done',
+          passed: true,
+          duration: 180_000,
+        }),
+        reviewerCheck(184_100, { id: 'K2', moment: 'plan' }),
+        midReviewStop(188_100),
+      ];
+      expect(lastSection(events)).toMatchObject({
+        summary: { outcome: 'stopped', duration: 184_100 },
+      });
+    });
+
+    it.each([
+      [
+        'a stop in a reviewer check',
+        [reviewStarted(4_000), reviewerCheck(5_000), midReviewStop(6_000)],
+        2_000,
+      ],
+      [
+        'a process that went away in a plan check',
+        [reviewerCheck(4_000, { id: 'K1', moment: 'plan' }), processWentAway(5_000)],
+        1_000,
+      ],
+    ])('counts no time at rest when End run at rest follows %s', (_state, review, duration) => {
+      const endedAtRest = at(3_606_000, 'final-review', 'workflow_cancelled', {
+        reason: 'user_cancelled',
+        atRestFrom: 3_606_000,
+      });
+      expect(lastSection([...brief, ...review, endedAtRest])).toMatchObject({
+        summary: { outcome: 'stopped', duration },
+      });
+    });
+
+    it('keeps the review running after a replay whose process did not go away', () => {
+      const events = [
+        ...brief,
+        ...runningReviews['a plan check runs'],
+        at(9_000, 'idle', 'replay_complete', { totalEvents: 0, durationMs: 0 }),
+      ];
+      expect(lastSection(events)).toMatchObject({ type: 'active-review' });
+    });
+
+    it('reads no review when a stop comes in the review phase before the review opened', () => {
+      const sections = groupEventsIntoSections([
+        ...brief,
+        midReviewStop(3_000),
+        makeTaskStart({ ts: 4_000, taskId: taskId('T002') }),
+      ]);
+      expect(sections.some((section) => section.type === 'settled-stage')).toBe(false);
     });
 
     it.each([
