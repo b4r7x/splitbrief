@@ -383,7 +383,7 @@ The selected candidate travels back to the run loop as `switchSeat`. Before the 
 
 The recovery state tracks the issue lifecycle:
 1. `SET_PENDING_RECOVERY` — Issue attached to state, status `awaiting-user`.
-2. `MARK_RECOVERY_APPLYING` — User picked an action, status `applying`.
+2. `MARK_RECOVERY_APPLYING` — User picked an action, status `applying`. `revise`, **fix again with a note**, `accept-as-is`, `continue` on a spent budget and `retry-same-worker` on a seat or a brief save this step, the typed note and step 3 in one write. A stop then leaves the whole answer saved or none of it, and the note is never applied twice. Re-run Apply and Restore backup keep status `applying` while Apply runs.
 3. `RESOLVE_PENDING_RECOVERY` — Action applied, issue cleared from state.
 4. `CLOSE_RUN` — User chose **End run**: the close is recorded on the state and the pending issue is cleared with it.
 
