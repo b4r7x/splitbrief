@@ -743,6 +743,7 @@ const checkpointPredicates = [
   [checkpointId('at-rest-paused'), includesAll()],
   [checkpointId('at-rest-queued'), includesAll('Stopped at T003', '1 queued')],
   [checkpointId('at-rest-halted'), includesAll()],
+  [checkpointId('at-rest-halted-chosen'), includesAll('⏎ to try again')],
   [
     checkpointId('at-rest-apply-conflict'),
     (context) =>

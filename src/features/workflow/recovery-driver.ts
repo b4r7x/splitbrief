@@ -232,18 +232,20 @@ export function createRecoveryDriver(
 
     // `revise` carries the operator's words to the planner, so the panel asks for
     // them before it applies: an empty answer resolves the halt with no note.
+    const noteQuestion = (action: RecoveryAction): string | undefined => {
+      if (action === 'accept-as-is' && issue.reason === 'review-input-too-large') {
+        return 'Why skip the review? (enter records none)';
+      }
+      if (action !== 'revise') return undefined;
+      return issue.reason === 'review-failed'
+        ? "What should the fix change? (enter sends the review's findings alone)"
+        : 'What should the planner change? (enter sends no note)';
+    };
     const promptRecoveryComment = async (
       action: RecoveryAction,
     ): Promise<UserMessageInput | undefined> => {
-      if (action === 'accept-as-is' && issue.reason === 'review-input-too-large') {
-        return inputMode.setQuestionMode('Why skip the review? (enter records none)');
-      }
-      if (action !== 'revise') return undefined;
-      return inputMode.setQuestionMode(
-        issue.reason === 'review-failed'
-          ? "What should the fix change? (enter sends the review's findings alone)"
-          : 'What should the planner change? (enter sends no note)',
-      );
+      const question = noteQuestion(action);
+      return question === undefined ? undefined : inputMode.setQuestionMode(question);
     };
 
     const applyAction = async (
@@ -353,10 +355,19 @@ export function createRecoveryDriver(
       };
     };
 
+    const correctionAction = correctionActionFor(issue);
     if (issue.status === 'applying') {
       const selected = issue.selectedAction;
       if (selected !== undefined) {
-        const applied = await applyAction(selected);
+        // A replay asks nothing: the words typed to continue are the note of an action that takes
+        // one, as the panel would take them, and steer the step it runs.
+        const takesNote = selected === correctionAction || noteQuestion(selected) !== undefined;
+        const applied = await applyAction(
+          selected,
+          '',
+          takesNote ? reentryCorrection : undefined,
+          reentryCorrection,
+        );
         if (applied !== null) return applied;
       } else {
         feedbackStore.setError('Recovery is applying but no action is selected.');
@@ -365,7 +376,6 @@ export function createRecoveryDriver(
 
     // Words typed to continue the run answer the halt when only its revise can carry them; a
     // retry halt keeps them as the steer of whichever retry the operator picks on the panel.
-    const correctionAction = correctionActionFor(issue);
     if (reentryCorrection !== undefined && reentryCorrection.text.trim() !== '') {
       if (correctionAction === 'revise') {
         const applied = await applyAction(correctionAction, '', reentryCorrection);

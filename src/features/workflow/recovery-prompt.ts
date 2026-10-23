@@ -239,17 +239,26 @@ export function recoveryMenuLabel(action: RecoveryAction, issue: RecoveryIssue):
     .join('');
 }
 
-export function recoveryMenuParts(
-  action: RecoveryAction,
-  issue: RecoveryIssue,
-): ConversationRowSegment[] {
-  const label = recoveryActionParts(action, {
+function recoveryMenuContext(issue: RecoveryIssue): RecoveryActionChoiceContext {
+  return {
     reason: issue.reason,
     switchSeat: issue.switchSeat,
     seat: issue.seat,
     resetAt: issue.resetAt,
     haltedTool: recoveryFactString(issue.facts, 'tool'),
-  }).map(
+  };
+}
+
+/** The words of an action's menu row without its consequence, as a byline names the choice. */
+export function recoveryMenuActionLabel(action: RecoveryAction, issue: RecoveryIssue): string {
+  return recoveryActionLabel(action, recoveryMenuContext(issue));
+}
+
+export function recoveryMenuParts(
+  action: RecoveryAction,
+  issue: RecoveryIssue,
+): ConversationRowSegment[] {
+  const label = recoveryActionParts(action, recoveryMenuContext(issue)).map(
     (part): ConversationRowSegment => ({
       text: part.text,
       tone: part.seat === undefined ? 'text' : CREW_SEAT_ROLES[part.seat],

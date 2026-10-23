@@ -2134,6 +2134,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-halted-chosen',
+      title: 'Workflow · a halted run killed after its action was chosen',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-halted-chosen',
+        title: 'Halted run at rest with its action chosen',
+        kind: 'ready',
+        marker: '⏎ to try again',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-apply-conflict',
       title: 'Workflow · a run whose Apply halted on conflicts, at rest',
       surface: screenSurface('workflow'),

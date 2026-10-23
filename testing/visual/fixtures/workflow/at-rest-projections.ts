@@ -684,6 +684,21 @@ const SEAT_FALLBACK = {
   variant: 'max',
 } as const;
 
+const SEAT_DOWN_HALT = buildSeatDownIssue({
+  id: 'visual-halt',
+  seat: 'build',
+  runner: { ...visualConfig().implementer, fallback: SEAT_FALLBACK },
+  classification: { class: 'account', cause: 'quota' },
+  words: 'usage limit reached',
+  task: makeTask({
+    id: BRIEFS.wire.id,
+    title: BRIEFS.wire.title,
+    suggestedFiles: [BRIEFS.wire.file],
+  }),
+  phase: 'implementing',
+  createdAt: STARTED_AT_ISO,
+});
+
 const AT_REST_HALTED = record({
   sessionId: 'visual-at-rest-halted',
   status: {
@@ -692,20 +707,32 @@ const AT_REST_HALTED = record({
       kind: 'waiting-for-you',
       on: {
         kind: 'halt',
-        issue: buildSeatDownIssue({
-          id: 'visual-halt',
-          seat: 'build',
-          runner: { ...visualConfig().implementer, fallback: SEAT_FALLBACK },
-          classification: { class: 'account', cause: 'quota' },
-          words: 'usage limit reached',
-          task: makeTask({
-            id: BRIEFS.wire.id,
-            title: BRIEFS.wire.title,
-            suggestedFiles: [BRIEFS.wire.file],
-          }),
-          phase: 'implementing',
-          createdAt: STARTED_AT_ISO,
-        }),
+        issue: SEAT_DOWN_HALT,
+      },
+    },
+    resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 2 },
+  },
+  state: savedState({
+    phase: 'implementing',
+    currentTaskIndex: 1,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'in_progress' },
+      { id: BRIEFS.routeTests.id, status: 'pending' },
+    ],
+  }),
+});
+
+/** The same halt with Try again chosen and saved, and the process killed before it ran. */
+const AT_REST_HALTED_CHOSEN = record({
+  sessionId: 'visual-at-rest-halted-chosen',
+  status: {
+    kind: 'open',
+    stop: {
+      kind: 'waiting-for-you',
+      on: {
+        kind: 'halt',
+        issue: { ...SEAT_DOWN_HALT, status: 'applying', selectedAction: 'retry-same-worker' },
       },
     },
     resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 2 },
@@ -2368,6 +2395,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   }),
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
+  atRestProjection({
+    id: 'workflow-at-rest-halted-chosen',
+    route: { record: AT_REST_HALTED_CHOSEN },
+  }),
   atRestProjection({
     id: 'workflow-at-rest-apply-conflict',
     route: { record: AT_REST_APPLY_CONFLICT, log: APPLY_CONFLICT_LOG },
