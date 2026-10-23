@@ -1,8 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync, type BigIntStats } from 'node:fs';
 import { join } from 'node:path';
 import type { MachineAction } from '../../core/state/types.js';
-import { briefCorrections, transition } from '../../core/state/machine.js';
-import { lineageIdOf } from '../../core/state/task-insert.js';
+import { briefCorrections, lineageKeyFor, transition } from '../../core/state/machine.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { loadState } from '../../core/state/persistence.js';
@@ -130,8 +129,13 @@ type MutationInput = Readonly<{
   options: StateMutationOptions | undefined;
   rederivable: boolean;
   mergeQueue: boolean;
+  /** A rederivable write retries a conflict only while the latest head passes this. */
+  retryWhile?: ((head: WorkflowState) => boolean) | undefined;
   derive: (state: WorkflowState) => WorkflowState;
 }>;
+
+/** One change in a list save: a machine action, or a derive over the state the earlier steps made. */
+export type StateStep = MachineAction | ((state: WorkflowState) => WorkflowState);
 
 export function workflowStatePath(ref: SessionRef): string {
   assertSessionDirConfined(ref.projectDir, ref.sessionId);
@@ -468,7 +472,7 @@ function mutateState(input: MutationInput): WorkflowState {
     const conflict = expectedConflicts(identity, head);
     if (conflict) {
       const data = conflictData(input.operation, identity, head, retries, retryCount);
-      if (retries < retryCount) {
+      if (retries < retryCount && retriesOn(input, head)) {
         retries += 1;
         expected = observedRevision(head);
         continue;
@@ -518,13 +522,27 @@ function mutateState(input: MutationInput): WorkflowState {
 
     const latest = readStateHead(input.ref);
     const data = conflictData(input.operation, identity, latest, retries, retryCount);
-    if (retries < retryCount) {
+    if (retries < retryCount && retriesOn(input, latest)) {
       retries += 1;
       expected = observedRevision(latest);
       continue;
     }
     throw retries > 0 ? stateOpsError.conflictExhausted(data) : stateOpsError.conflict(data);
   }
+}
+
+function retriesOn(input: MutationInput, head: StateHead | null): boolean {
+  return input.retryWhile === undefined || (head !== null && input.retryWhile(head.state));
+}
+
+function applyTransition(base: WorkflowState, action: MachineAction): WorkflowState {
+  if (
+    action.type === 'ENQUEUE_USER_MSG' &&
+    base.messageQueue.some((message) => message.id === action.message.id)
+  ) {
+    return base;
+  }
+  return transition(base, action);
 }
 
 export function transitionAndSave(
@@ -541,15 +559,36 @@ export function transitionAndSave(
     options,
     rederivable: isQueueMutation,
     mergeQueue: isQueueMutation,
-    derive: (base) => {
-      if (
-        action.type === 'ENQUEUE_USER_MSG' &&
-        base.messageQueue.some((message) => message.id === action.message.id)
-      ) {
-        return base;
-      }
-      return transition(base, action);
-    },
+    derive: (base) => applyTransition(base, action),
+  });
+}
+
+/**
+ * Saves every step in one write over the persisted head, so a stop leaves all of them or none.
+ * A conflict fails the save, unless `retryWhile` names the head it may derive the steps again on.
+ */
+export function transitionsAndSave(
+  ref: SessionRef,
+  state: WorkflowState,
+  steps: readonly StateStep[],
+  options: StateMutationOptions & { retryWhile?: (head: WorkflowState) => boolean },
+): WorkflowState {
+  const { retryWhile, ...mutation } = options;
+  return mutateState({
+    ref,
+    state,
+    operation: steps.some((step) => typeof step !== 'function' && queueAction(step))
+      ? 'queue'
+      : 'transition',
+    options: mutation,
+    rederivable: retryWhile !== undefined,
+    mergeQueue: false,
+    retryWhile,
+    derive: (base) =>
+      steps.reduce(
+        (next, step) => (typeof step === 'function' ? step(next) : applyTransition(next, step)),
+        base,
+      ),
   });
 }
 
@@ -561,9 +600,7 @@ export function recordBriefCorrection(
   images: readonly Attachment[] = [],
 ): WorkflowState {
   const current = rebaseOnPersistedWorkflowState(ref, state);
-  const task = current.tasks.find((task) => task.id === taskId);
-  const key = task === undefined ? taskId : lineageIdOf(task);
-  const priorImages = current.lineages?.[key]?.correctionImages ?? [];
+  const priorImages = current.lineages?.[lineageKeyFor(current, taskId)]?.correctionImages ?? [];
   if (
     briefCorrections(current, taskId).includes(text) &&
     images.every((image) => priorImages.some((prior) => prior.id === image.id))
@@ -576,30 +613,40 @@ export function recordBriefCorrection(
     options: undefined,
     rederivable: false,
     mergeQueue: false,
-    derive: (base) => {
-      const corrected = briefCorrections(base, taskId).includes(text)
-        ? base
-        : transition(base, { type: 'RECORD_CORRECTION', taskId, text });
-      if (images.length === 0) return corrected;
-      return {
-        ...corrected,
-        lineages: Object.fromEntries(
-          Object.entries(corrected.lineages ?? {}).map(([id, lineage]) => [
-            id,
-            id === key
-              ? {
-                  ...lineage,
-                  correctionImages: imagesFromMessages([
-                    { images: lineage.correctionImages ?? [] },
-                    { images },
-                  ]),
-                }
-              : lineage,
-          ]),
-        ),
-      };
-    },
+    derive: briefCorrectionStep(taskId, text, images),
   });
+}
+
+/** Records a correction and its images on the brief's lineage once; the retried brief reads them. */
+export function briefCorrectionStep(
+  taskId: TaskId,
+  text: string,
+  images: readonly Attachment[],
+): (state: WorkflowState) => WorkflowState {
+  return (base) => {
+    const corrected = briefCorrections(base, taskId).includes(text)
+      ? base
+      : transition(base, { type: 'RECORD_CORRECTION', taskId, text });
+    if (images.length === 0) return corrected;
+    const key = lineageKeyFor(base, taskId);
+    return {
+      ...corrected,
+      lineages: Object.fromEntries(
+        Object.entries(corrected.lineages ?? {}).map(([id, lineage]) => [
+          id,
+          id === key
+            ? {
+                ...lineage,
+                correctionImages: imagesFromMessages([
+                  { images: lineage.correctionImages ?? [] },
+                  { images },
+                ]),
+              }
+            : lineage,
+        ]),
+      ),
+    };
+  };
 }
 
 export function recordResumeUserMessage(

@@ -35,7 +35,14 @@ import {
   publishSeatSwitched,
   publishWarning,
 } from '../events.js';
-import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
+import {
+  briefCorrectionStep,
+  rebaseOnPersistedWorkflowState,
+  transitionAndSave,
+  transitionsAndSave,
+  type StateStep,
+} from '../state-ops.js';
+import { formatMessageInput } from '../queue/prompt.js';
 import { endRun } from '../run/close.js';
 import { haltCutApply } from '../apply/run.js';
 import { recordUserMessage } from '../transcript/user-message.js';
@@ -271,24 +278,14 @@ function applyConsultGrantRecoveryAction(
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
   if (issue.reason === 'planner-calls-spent' && issue.taskId === undefined) {
-    let state = markRecoveryApplying(opts, issue);
-    state = transitionAndSave(
-      opts,
-      state,
+    const state = saveRecoveryAnswer(opts, issue, [
       {
         type: 'GRANT_ALLOWANCE',
         target: 'planner',
         taskId: null,
         note: opts.comment?.displayText.trim() || 'continued',
       },
-      { expectedRevision: state.stateRevision ?? 0 },
-    );
-    state = transitionAndSave(
-      opts,
-      state,
-      { type: 'RESOLVE_PENDING_RECOVERY' },
-      { expectedRevision: state.stateRevision ?? 0 },
-    );
+    ]);
     publishRecoveryResolved({
       bus: opts.bus,
       phase: state.phase,
@@ -317,23 +314,7 @@ function applyConsultGrantRecoveryAction(
     });
   }
 
-  let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(
-    opts,
-    state,
-    {
-      type: 'GRANT_ALLOWANCE',
-      target: issue.reason === 'planner-calls-spent' ? 'planner' : 'lineage',
-      taskId,
-      note: opts.comment?.displayText.trim() || 'continued',
-      ...(typeof issue.facts?.failingOutput === 'string' && {
-        failingOutput: issue.facts.failingOutput,
-      }),
-    },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
-
-  const target = currentRecoveryTask(state, issue);
+  const target = currentRecoveryTask(opts.state, issue);
   if (!target) {
     return blockRecoveryAction({
       ...opts,
@@ -345,30 +326,29 @@ function applyConsultGrantRecoveryAction(
     });
   }
 
-  state = transitionAndSave(
-    opts,
-    state,
+  const state = saveRecoveryAnswer(opts, issue, [
+    {
+      type: 'GRANT_ALLOWANCE',
+      target: issue.reason === 'planner-calls-spent' ? 'planner' : 'lineage',
+      taskId,
+      note: opts.comment?.displayText.trim() || 'continued',
+      ...(typeof issue.facts?.failingOutput === 'string' && {
+        failingOutput: issue.facts.failingOutput,
+      }),
+    },
     {
       type: 'RESET_TASK',
       taskId: target.id,
       profile: issue.selectedImplementerProfile,
     },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
+    ...briefWords(target.id, opts.comment),
+  ]);
   opts.bus.publish({
     type: 'task_reset',
     ts: Date.now(),
     phase: state.phase,
     taskId: target.id,
   });
-  state = transitionAndSave(
-    opts,
-    state,
-    {
-      type: 'RESOLVE_PENDING_RECOVERY',
-    },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
   publishRecoveryResolved({
     bus: opts.bus,
     phase: state.phase,
@@ -390,7 +370,7 @@ function applyReviseRecoveryAction(
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
   if (issue.reason === 'review-failed') return applyReviewCorrectionAction(opts, issue);
-  let state = markRecoveryApplying(opts, issue);
+  let state: WorkflowState;
   let correctionRecorded = false;
   const comment = opts.comment;
   if (comment !== undefined && comment.text.trim() !== '') {
@@ -403,24 +383,12 @@ function applyReviseRecoveryAction(
       nativeDeliveryState: 'pending',
       origin: 'user-input',
     };
-    state = transitionAndSave(
-      opts,
-      state,
-      {
-        type: 'ENQUEUE_USER_MSG',
-        message: queuedMessage,
-      },
-      { expectedRevision: state.stateRevision ?? 0 },
-    );
+    state = saveRecoveryAnswer(opts, issue, [{ type: 'ENQUEUE_USER_MSG', message: queuedMessage }]);
     recordUserMessage({ ...opts, phase: issue.phase }, comment, { queuedMessage });
     correctionRecorded = true;
+  } else {
+    state = saveRecoveryAnswer(opts, issue, []);
   }
-  state = transitionAndSave(
-    opts,
-    state,
-    { type: 'RESOLVE_PENDING_RECOVERY' },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
   publishRecoveryResolved({
     bus: opts.bus,
     phase: state.phase,
@@ -465,40 +433,20 @@ function applyAcceptAsIsRecoveryAction(
           { projectDir: opts.projectDir, sessionId: opts.sessionId },
           opts.state,
         );
-  let state = markRecoveryApplying(opts, issue);
   // A scheduled task review is skipped on its own: the run stays implementing,
   // the note is recorded and the pending marker clears so the next brief starts.
   // The final review has no such marker and its accept-as-is closes the run.
   const scheduledTaskReview =
     issue.reason === 'review-input-too-large' && opts.state.phase === 'implementing';
-  if (issue.reason === 'review-input-too-large' && !scheduledTaskReview) {
-    state = transitionAndSave(
-      opts,
-      state,
-      { type: 'REVIEW_DONE', reviewStatus: 'failed' },
-      { expectedRevision: state.stateRevision ?? 0 },
-    );
-  }
-  if (scheduledTaskReview) {
-    state = transitionAndSave(
-      opts,
-      state,
-      { type: 'CLEAR_SCHEDULED_REVIEW' },
-      { expectedRevision: state.stateRevision ?? 0 },
-    );
-  }
-  state = transitionAndSave(
-    opts,
-    state,
+  const reviewSteps: StateStep[] = scheduledTaskReview
+    ? [{ type: 'CLEAR_SCHEDULED_REVIEW' }]
+    : issue.reason === 'review-input-too-large'
+      ? [{ type: 'REVIEW_DONE', reviewStatus: 'failed' }]
+      : [];
+  const state = saveRecoveryAnswer(opts, issue, [
+    ...reviewSteps,
     { type: 'ACCEPT_AS_IS', findings, ...(note !== '' && { note }) },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
-  state = transitionAndSave(
-    opts,
-    state,
-    { type: 'RESOLVE_PENDING_RECOVERY' },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
+  ]);
   publishRecoveryResolved({
     bus: opts.bus,
     phase: state.phase,
@@ -529,25 +477,13 @@ function applyReviewCorrectionAction(
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
   const comment = opts.comment;
   const correction = comment?.text ?? '';
-  let state = markRecoveryApplying(opts, issue);
+  let state = saveRecoveryAnswer(opts, issue, [{ type: 'REVIEW_CORRECTION', text: correction }]);
   let correctionRecorded = false;
   if (comment !== undefined && correction.trim() !== '') {
-    recordUserMessage({ ...ref, bus: opts.bus, phase: state.phase }, comment);
+    recordUserMessage({ ...ref, bus: opts.bus, phase: opts.state.phase }, comment);
     correctionRecorded = true;
     state = rebaseOnPersistedWorkflowState(ref, state);
   }
-  state = transitionAndSave(
-    opts,
-    state,
-    { type: 'REVIEW_CORRECTION', text: correction },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
-  state = transitionAndSave(
-    opts,
-    state,
-    { type: 'RESOLVE_PENDING_RECOVERY' },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
   publishRecoveryResolved({
     bus: opts.bus,
     phase: state.phase,
@@ -951,31 +887,29 @@ function resolveSeatIssueWithoutTask(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
-  let state = markRecoveryApplying(opts, issue);
+  let state: WorkflowState;
   let correctionRecorded = false;
   if (opts.comment !== undefined && opts.comment.text.trim() !== '') {
     const queuedMessage: QueuedMessage = {
       id: randomUUID(),
       ...opts.comment,
       queuedAt: nowIso(),
-      phase: state.phase,
+      phase: opts.state.phase,
       deliveredViaNative: false,
       nativeDeliveryState: 'pending',
       origin: 'user-input',
     };
-    state = transitionAndSave(opts, state, {
-      type: 'ENQUEUE_USER_MSG',
-      message: queuedMessage,
-    });
-    recordUserMessage({ ...opts, phase: state.phase }, opts.comment, { queuedMessage });
+    state = saveRecoveryAnswer(
+      opts,
+      issue,
+      [{ type: 'ENQUEUE_USER_MSG', message: queuedMessage }],
+      'while-open',
+    );
+    recordUserMessage({ ...opts, phase: opts.state.phase }, opts.comment, { queuedMessage });
     correctionRecorded = true;
+  } else {
+    state = saveRecoveryAnswer(opts, issue, [], 'while-open');
   }
-  state = transitionAndSave(
-    opts,
-    state,
-    { type: 'RESOLVE_PENDING_RECOVERY' },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
   publishRecoveryResolved({
     bus: opts.bus,
     phase: state.phase,
@@ -1044,31 +978,20 @@ function applyRetryCurrentTaskRecoveryAction(
     });
   }
 
-  let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(
-    opts,
-    state,
+  const state = saveRecoveryAnswer(opts, issue, [
     {
       type: 'RESET_TASK',
       taskId: target.id,
       profile: issue.selectedImplementerProfile,
     },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
+    ...briefWords(target.id, opts.comment),
+  ]);
   opts.bus.publish({
     type: 'task_reset',
     ts: Date.now(),
     phase: state.phase,
     taskId: target.id,
   });
-  state = transitionAndSave(
-    opts,
-    state,
-    {
-      type: 'RESOLVE_PENDING_RECOVERY',
-    },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
   publishRecoveryResolved({
     bus: opts.bus,
     phase: state.phase,
@@ -1132,6 +1055,48 @@ function markRecoveryApplying(
     },
     { expectedRevision: opts.state.stateRevision ?? 0 },
   );
+}
+
+/**
+ * Saves the chosen action, its note and the resolved halt in one write, so a stop leaves all of
+ * them or none. A conflict fails the save; `while-open` derives it again on a head that still has
+ * this halt open.
+ */
+function saveRecoveryAnswer(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+  steps: readonly StateStep[],
+  retry?: 'while-open',
+): WorkflowState {
+  publishRecoveryActionSelected({
+    bus: opts.bus,
+    phase: opts.state.phase,
+    issue,
+    action: opts.action,
+  });
+  return transitionsAndSave(
+    opts,
+    opts.state,
+    [
+      { type: 'MARK_RECOVERY_APPLYING', action: opts.action },
+      ...steps,
+      { type: 'RESOLVE_PENDING_RECOVERY' },
+    ],
+    {
+      expectedRevision: opts.state.stateRevision ?? 0,
+      ...(retry === 'while-open' && {
+        conflictRetries: 1,
+        retryWhile: (head: WorkflowState) => head.pendingRecovery?.id === issue.id,
+      }),
+    },
+  );
+}
+
+/** The words typed for a retried brief, kept as its correction in the form the brief's seed takes. */
+function briefWords(taskId: Task['id'], comment: UserMessageInput | undefined): StateStep[] {
+  if (comment === undefined) return [];
+  const text = formatMessageInput(comment);
+  return text.trim() === '' ? [] : [briefCorrectionStep(taskId, text, comment.images)];
 }
 
 function blockRecoveryAction(

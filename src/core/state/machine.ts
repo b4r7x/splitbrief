@@ -187,7 +187,7 @@ const EMPTY_LINEAGE: LineageRecord = {
   notes: [],
 };
 
-function lineageKeyFor(state: WorkflowState, taskId: TaskId): TaskId {
+export function lineageKeyFor(state: WorkflowState, taskId: TaskId): TaskId {
   const task = state.tasks.find((t) => t.id === taskId);
   return task === undefined ? taskId : lineageIdOf(task);
 }
