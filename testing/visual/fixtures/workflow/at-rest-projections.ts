@@ -1,4 +1,5 @@
 import type { Phase } from '../../../../src/core/schemas/enums.js';
+import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../src/core/schemas/evidence.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { RunStatus } from '../../../../src/core/sessions/run-status.js';
@@ -774,6 +775,57 @@ const AT_REST_WAITING_GATE = record({
   },
   state: savedState({ phase: 'reviewing-spec', briefs: [] }),
 });
+
+const AT_REST_QUESTIONS: readonly ClarificationQuestion[] = [
+  {
+    id: 'module',
+    type: 'choice',
+    text: 'Which module should change?',
+    options: ['src/auth.ts', 'src/session.ts'],
+    default: 'src/auth.ts',
+  },
+  { id: 'api', type: 'confirm', text: 'Keep the public API?', default: true },
+];
+
+/** A run that stopped while the planner waited for the answers to its first round. */
+const AT_REST_QUESTION = record({
+  sessionId: 'visual-at-rest-question',
+  status: {
+    kind: 'open',
+    stop: { kind: 'waiting-for-you', on: { kind: 'question' } },
+    resumeAt: { kind: 'planner', call: 'plan' },
+  },
+  state: savedState({
+    phase: 'planning',
+    briefs: [],
+    pendingPlannerConversation: {
+      call: 'plan',
+      text: '',
+      questions: [...AT_REST_QUESTIONS],
+      answers: [],
+      answered: false,
+    },
+  }),
+});
+
+const QUESTION_TS = VISUAL_FIXTURE_EPOCH - 60_000;
+const AT_REST_QUESTION_LOG: readonly EngineEvent[] = [
+  {
+    type: 'workflow_started',
+    ts: QUESTION_TS,
+    phase: 'planning',
+    feature: AT_REST_FIXTURE_FEATURE,
+  },
+  { type: 'user_message', ts: QUESTION_TS + 10, phase: 'planning', text: AT_REST_FIXTURE_FEATURE },
+  {
+    type: 'planner_text',
+    ts: QUESTION_TS + 100,
+    phase: 'planning',
+    role: 'planner',
+    content: 'plain',
+    text: 'Questions before the plan · round 1 of 2',
+  },
+];
 
 /**
  * A quick run saved while it still researched: the rail folds the phase into Plan, and the paused
@@ -2334,6 +2386,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-at-rest-left-isolation',
     route: { record: AT_REST_LEFT_ISOLATION, log: LEFT_ISOLATION_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-question',
+    route: { record: AT_REST_QUESTION, log: AT_REST_QUESTION_LOG },
   }),
   atRestProjection({
     id: 'workflow-at-rest-waiting-gate',

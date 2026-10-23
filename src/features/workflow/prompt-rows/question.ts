@@ -20,7 +20,7 @@ export interface QuestionRow {
 export function questionMenu(question: ClarificationQuestion, index: number): readonly string[] {
   return [
     ...questionOptions(question),
-    ...(questionOptions(question).length > 0 ? ['Write an answer…'] : []),
+    ...(questionOptions(question).length > 0 ? ['Write your own answer…'] : []),
     ...(index > 0 ? ['Previous question'] : []),
   ];
 }

@@ -1,5 +1,5 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -34,6 +34,7 @@ import { resumeContinuation } from '../run/init.js';
 import { measureApiBudget } from '../../providers/api-budget.js';
 import { runPlanningPhase } from './run.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
+import { readRunEvents } from '../../events/replay.js';
 import {
   attachedMessage,
   expectCompactMessage,
@@ -1403,5 +1404,190 @@ describe('the plan card', () => {
 
     expect(asked).toEqual(['write package.json']);
     expect(gated.allow).toBe(false);
+  });
+});
+
+describe('a question round the user answers in their own words', () => {
+  const roundQuestions = (round: number) => [
+    {
+      id: `q${round}a`,
+      type: 'input',
+      text: `Round ${round}: which module?`,
+      default: 'src/a.ts',
+    },
+    {
+      id: `q${round}b`,
+      type: 'choice',
+      text: `Round ${round}: which style?`,
+      options: ['terse', 'verbose'],
+      default: 'terse',
+    },
+  ];
+  const answered = (round: number, text: string) => ({
+    type: 'user_message',
+    phase: 'planning',
+    text,
+    questions: roundQuestions(round),
+  });
+  const userMessages = (events: readonly { type: string }[]) =>
+    events.filter((event) => event.type === 'user_message');
+
+  it('carries the round on the reply, live and in the session log, and writes no other event for it', async () => {
+    const run = await plan({
+      script: [questions(1), makePlanProposal()],
+      callbacks: {
+        onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('use-jwt-for-auth')),
+      },
+    });
+
+    expect(userMessages(run.events)).toEqual([
+      expect.objectContaining(answered(1, 'use-jwt-for-auth')),
+    ]);
+    const replayed = (await readRunEvents(run)).events;
+    expect(userMessages(replayed)).toEqual([
+      expect.objectContaining(answered(1, 'use-jwt-for-auth')),
+    ]);
+    expect([...run.events, ...replayed].map((event) => event.type)).not.toContain(
+      'questions_declined',
+    );
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  it('carries each round on its own reply, round 2 included', async () => {
+    const run = await plan({
+      script: [questions(1), questions(2), makePlanProposal()],
+      callbacks: {
+        onPlannerReply: vi
+          .fn()
+          .mockResolvedValueOnce(plainUserMessage('first reply'))
+          .mockResolvedValueOnce(plainUserMessage('second reply')),
+      },
+    });
+
+    expect(userMessages(run.events)).toEqual([
+      expect.objectContaining(answered(1, 'first reply')),
+      expect.objectContaining(answered(2, 'second reply')),
+    ]);
+  });
+
+  it('carries no round on an answer from the question panel or an empty ⏎', async () => {
+    const panel = await plan({
+      script: [questions(1), makePlanProposal()],
+      callbacks: {
+        onPlannerReply: vi.fn().mockResolvedValue({
+          message: plainUserMessage('1. Round 1: which module?\nsrc/b.ts'),
+          qa: [{ question: 'Round 1: which module?', answer: 'src/b.ts' }],
+        }),
+      },
+    });
+    const defaults = await plan({
+      script: [questions(1), makePlanProposal()],
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')) },
+    });
+
+    for (const run of [panel, defaults]) {
+      const [reply, ...rest] = userMessages(run.events);
+      expect(rest).toEqual([]);
+      expect(reply).toEqual(expect.objectContaining({ qa: expect.any(Array) }));
+      expect(reply).not.toHaveProperty('questions');
+    }
+  });
+
+  it('carries the round once when a run that stopped at it continues and takes a typed reply', async () => {
+    const first = await plan({ script: [questions(1)] });
+    expect(first.result).toMatchObject({ disposition: 'terminal', outcome: 'input-required' });
+    expect(userMessages(first.events)).toEqual([]);
+    const saved = loadState(first);
+    if (saved === null) throw new Error('state not saved');
+
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe(createJsonlSink(first));
+    const typed = scriptedTypedCall([makePlanProposal()]);
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir: first.projectDir,
+        sessionId: first.sessionId,
+        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        callbacks: makeCallbacks({
+          onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('use src/b.ts')),
+        }).callbacks,
+        bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner: makePlanner({ typedCall: typed.typedCall }),
+      state: saved,
+      feature: 'greet people',
+    });
+
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(userMessages(events)).toEqual([expect.objectContaining(answered(1, 'use src/b.ts'))]);
+    const replayed = (await readRunEvents(first)).events;
+    expect(userMessages(replayed)).toEqual([expect.objectContaining(answered(1, 'use src/b.ts'))]);
+  });
+
+  it('carries the round when a typed correction answers it on a run continued at rest', async () => {
+    const first = await plan({ script: [questions(1)] });
+    const saved = loadState(first);
+    if (saved === null) throw new Error('state not saved');
+    const holder = await resumeContinuation({
+      ref: first,
+      state: saved,
+      steer: plainUserMessage('STEER-ANSWER use src/b.ts'),
+    });
+    const onPlannerReply = vi.fn();
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe(createJsonlSink(first));
+    const typed = scriptedTypedCall([makePlanProposal()]);
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir: first.projectDir,
+        sessionId: first.sessionId,
+        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        callbacks: makeCallbacks({ onPlannerReply }).callbacks,
+        bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        continuation: holder,
+      },
+      planner: makePlanner({ typedCall: typed.typedCall }),
+      state: saved,
+      feature: 'greet people',
+    });
+
+    expect(onPlannerReply).not.toHaveBeenCalled();
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(userMessages(events)).toEqual([
+      expect.objectContaining(answered(1, 'STEER-ANSWER use src/b.ts')),
+    ]);
+  });
+
+  it('still shows the round live and goes on when the session log cannot take it', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      let logFile = '';
+      const run = await plan({
+        script: [questions(1), makePlanProposal()],
+        setup: (projectDir) => {
+          logFile = join(sessionDir(projectDir, 'sess-planning'), SESSION_LOG_FILE);
+        },
+        callbacks: {
+          onPlannerReply: vi.fn().mockImplementation(async () => {
+            chmodSync(logFile, 0o444);
+            return plainUserMessage('use-jwt-for-auth');
+          }),
+        },
+      });
+
+      expect(run.result.disposition).toBe('ready-for-tasks');
+      expect(userMessages(run.events)).toEqual([
+        expect.objectContaining(answered(1, 'use-jwt-for-auth')),
+      ]);
+      expect(readFileSync(logFile, 'utf8')).not.toContain('use-jwt-for-auth');
+      expect(stderr.mock.calls.map(([text]) => String(text)).join('')).toContain(SESSION_LOG_FILE);
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { boundHeadlessJsonRecord } from './public-json.js';
+import type { EngineEventOf } from './types.js';
 
 describe('boundHeadlessJsonRecord', () => {
   it('redacts secrets before writing public records', () => {
@@ -21,6 +22,21 @@ describe('boundHeadlessJsonRecord', () => {
         phase: 'planning',
         message: 'token sk-***REDACTED***',
       },
+    });
+  });
+
+  it('carries the round a reply in words answers on its user_message event', () => {
+    const reply: EngineEventOf<'user_message'> = {
+      type: 'user_message',
+      ts: 1,
+      phase: 'planning',
+      text: 'Keep it.',
+      questions: [{ id: 'q1', type: 'confirm', text: 'Keep the public API?' }],
+    };
+
+    expect(boundHeadlessJsonRecord({ type: 'event', data: reply })).toEqual({
+      type: 'event',
+      data: reply,
     });
   });
 

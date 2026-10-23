@@ -663,6 +663,39 @@ describe('readRunEvents', () => {
     expect(diagnostics.skipped).toBe(1);
   });
 
+  it('keeps the round a reply in words answers on its user_message', async () => {
+    const reply = sampleFor('user_message', {
+      phase: 'planning',
+      text: 'Keep it.',
+      questions: [{ id: 'q1', type: 'confirm', text: 'Keep the public API?' }],
+    });
+    writeLog(ref(), [reply]);
+
+    const { events, diagnostics } = await readRunEvents(ref());
+
+    expect(events.filter((event) => event.type === 'user_message')).toEqual([reply]);
+    expect(diagnostics).toEqual({ total: 1, skipped: 0, unknownTypes: [] });
+  });
+
+  it('skips the separate round line an earlier build wrote and keeps its reply', async () => {
+    const append = createSessionLogAppender(ref());
+    append(
+      toEngineEventEntry({
+        type: 'questions_declined',
+        ts: TS,
+        phase: 'planning',
+        questions: [{ id: 'q1', type: 'confirm', text: 'Keep the public API?' }],
+      }),
+    );
+    const reply = sampleFor('user_message', { phase: 'planning', text: 'Keep it.' });
+    append(toEngineEventEntry(reply));
+
+    const { events, diagnostics } = await readRunEvents(ref());
+
+    expect(events.slice(1, -1)).toEqual([reply]);
+    expect(diagnostics).toEqual({ total: 2, skipped: 1, unknownTypes: ['questions_declined'] });
+  });
+
   it('skips retired variants, malformed data and unreadable lines, and counts each', async () => {
     const dir = sessionDir(projectDir, sessionId);
     mkdirSync(dir, { recursive: true });

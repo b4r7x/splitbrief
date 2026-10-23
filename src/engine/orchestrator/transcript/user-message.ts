@@ -1,5 +1,5 @@
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { AnsweredQuestion } from '../../../core/schemas/question.js';
+import type { AnsweredQuestion, ClarificationQuestion } from '../../../core/schemas/question.js';
 import { boundSessionLogString } from '../../../core/payload-bounds.js';
 import type { SessionLogMessageEntry } from '../../../core/schemas/session-log.js';
 import type { QueuedMessage } from '../../../core/schemas/workflow.js';
@@ -16,6 +16,8 @@ export function recordUserMessage(
   message: UserMessageInput,
   details: {
     qa?: AnsweredQuestion[];
+    /** The round a reply in the user's own words answers. */
+    questions?: readonly ClarificationQuestion[];
     queuedMessage?: Pick<QueuedMessage, 'id' | 'queuedAt'>;
     answerIndex?: number;
   } = {},
@@ -46,5 +48,6 @@ export function recordUserMessage(
   publishUserMessage(scope, message.displayText, {
     attachedInputs: message.attachedInputs,
     ...(details.qa !== undefined && { qa: details.qa }),
+    ...(details.questions !== undefined && { questions: details.questions }),
   });
 }

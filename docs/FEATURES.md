@@ -243,7 +243,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 **What it does.** Every run plans in one session. The planner answers with one typed plan (`PlanAnswerSchema`, `src/core/schemas/plan.ts`) through the seat's native JSON-schema flag or a JSON fallback. Before the plan it may ask up to three questions per round, for at most two rounds; each question carries a default. SPLITBRIEF then checks the plan, and a plan that fails goes back to the planner once. There are no workflow modes, no mode advisor, and no spec, research or clarify steps.
 
-**How to use.** `splitbrief start "<feature>"`, or `splitbrief spec "<feature>"` for the plan alone. Questions open in the bordered question panel: the default choice comes first, and `⏎` through the panel takes the defaults. Headless runs stop on a question with an `input_required` record; `splitbrief spec` without a terminal takes every default.
+**How to use.** `splitbrief start "<feature>"`, or `splitbrief spec "<feature>"` for the plan alone. Questions open in the bordered question panel: the default choice comes first, and `⏎` through the panel takes the defaults. `↑` on the first line of `Write your own answer…` goes back to the choices and keeps your text. `esc` closes the panel; type your reply in the composer and the planner reads it as the answer to the round. While you type, the transcript lists the round as `Unanswered · <n> questions`, one line per question with its options. When you send the reply, the transcript shows `Answered · <n> questions` with one `· <question>` line per question and `You → <reply>` once under them, and the run's history keeps it. The next `esc` opens the stop menu. A run at rest that waits at a question lists the round as `Unanswered · <n> questions` too. Headless runs stop on a question with an `input_required` record; `splitbrief spec` without a terminal takes every default.
 
 **Artifacts.** The session writes to `.splitbrief/sessions/<id>/`:
 
@@ -322,7 +322,7 @@ The second row appears only while a brief is running, and reads `Keep running` o
 
 **How to use.**
 
-- `esc` — open the menu, including with a draft. `esc esc` stops resumably; another Esc returns home after cleanup and saving. Once parked, one Esc returns home.
+- `esc` — open the menu, including with a draft. `esc esc` stops resumably; another Esc returns home after cleanup and saving. Once parked, one Esc returns home. On an open planner question, the first `esc` closes the question panel and the next one opens the menu; an `esc` pressed as the panel opens opens the menu and leaves the panel open.
 - While this window's Apply writes to your checkout, `esc` opens no menu: it waits for Apply, then returns home ([While Apply writes](./APPROVAL-AND-RECOVERY.md#while-apply-writes)).
 - `ctrl+c` — stop active work; another press quits after cleanup and saving. At rest/home, press twice within two seconds to quit.
 - `ctrl+q` or `/quit` — stop safely, save the session, then exit.

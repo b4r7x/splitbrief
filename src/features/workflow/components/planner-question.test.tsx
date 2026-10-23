@@ -6,7 +6,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { configStore } from '../../../stores/project/config.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
-import type { PlannerReplyAnswer } from '../../../core/schemas/question.js';
+import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { afterAll, afterEach, expect, it, vi } from 'vitest';
@@ -285,7 +285,7 @@ it('teaches select, next and write while the menu owns the keyboard', async () =
   const ui = renderQuestion();
   await flushEffects();
 
-  expect(legendOf(ui.lastFrame() ?? '')).toBe('↑↓ select · ⏎ next · tab write');
+  expect(legendOf(ui.lastFrame() ?? '')).toBe('↑↓ select · ⏎ next · esc type a reply · tab write');
 
   store.answer(plainUserMessage('Planner'));
   await flushEffects();
@@ -301,7 +301,7 @@ it('teaches the composer-only writing keys when the first question has no option
   const ui = renderQuestion();
   await flushEffects();
 
-  expect(legendOf(ui.lastFrame() ?? '')).toBe('⏎ next · ↓/tab instruction');
+  expect(legendOf(ui.lastFrame() ?? '')).toBe('⏎ next · esc type a reply · ↓/tab instruction');
   ui.unmount();
 });
 
@@ -314,9 +314,53 @@ it('splits the writing keys between the instruction and the options once choices
   const ui = renderQuestion();
   await flushEffects();
 
-  expect(legendOf(ui.lastFrame() ?? '')).toBe('⏎ next · ↓ instruction · tab options');
+  expect(legendOf(ui.lastFrame() ?? '')).toBe(
+    '⏎ next · ↑/tab options · esc type a reply · ↓ instruction',
+  );
   ui.unmount();
 });
+
+it.each<[string, ClarificationQuestion]>([
+  ['choice', { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] }],
+  ['confirm', { id: 'ready', type: 'confirm', text: 'Proceed?', default: true }],
+  [
+    'free-text with a default',
+    { id: 'files', type: 'input', text: 'Which files?', default: 'src/' },
+  ],
+])(
+  'teaches the same keys on the rows and in the field of a %s question',
+  async (_kind, question) => {
+    store.setQuestions([question]);
+    const ui = renderQuestion();
+    await flushEffects();
+    expect(legendOf(ui.lastFrame() ?? '')).toBe(
+      '↑↓ select · ⏎ send answers · esc type a reply · tab write',
+    );
+
+    store.setFocus('answer');
+    await flushEffects();
+    expect(legendOf(ui.lastFrame() ?? '')).toBe(
+      '⏎ send answers · ↑/tab options · esc type a reply · ↓ instruction',
+    );
+    ui.unmount();
+  },
+);
+
+it.each([120, 80, 60])(
+  'names tab and esc on the paused panel in the words of the rows, %i columns wide',
+  async (width) => {
+    store.setQuestions([
+      { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+    ]);
+    store.setFocus('composer');
+    const ui = renderQuestion(width);
+    await flushEffects();
+    expect(legendOf(ui.lastFrame() ?? '')).toBe(
+      'Questions paused · tab to return · esc type a reply',
+    );
+    ui.unmount();
+  },
+);
 
 it('paints the navigation rows dim until they are highlighted', async () => {
   store.setQuestions([
@@ -330,7 +374,7 @@ it('paints the navigation rows dim until they are highlighted', async () => {
   const frame = ui.lastFrame() ?? '';
 
   expect(colorOf(frame, 'Previous question')).toBeDefined();
-  expect(colorOf(frame, 'Previous question')).toBe(colorOf(frame, 'Write an answer…'));
+  expect(colorOf(frame, 'Previous question')).toBe(colorOf(frame, 'Write your own answer…'));
   expect(colorOf(frame, 'Previous question')).not.toBe(colorOf(frame, 'Large'));
   ui.unmount();
 });

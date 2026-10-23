@@ -10,6 +10,7 @@ import type { Config } from '../core/schemas/config.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import { recoveryFactString } from '../core/schemas/recovery/facts.js';
 import { readSession } from '../core/sessions/io.js';
+import { questionLine } from '../core/state/planning-conversation.js';
 import { runWorkflow } from '../engine/orchestrator/run/workflow.js';
 import { applyOfferedSeatSwap } from '../engine/orchestrator/run/seat-swap.js';
 import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
@@ -84,17 +85,7 @@ export function emitRecoveryAndFailIfPending({
     state?.pendingRecovery === undefined
   ) {
     const resumeCommand = continueRunCommand(sessionId);
-    const message =
-      conversation.text.trim() ||
-      conversation.questions
-        .map((question) =>
-          question.type === 'choice'
-            ? `${question.text} (${question.options.join(' / ')})`
-            : question.type === 'confirm'
-              ? `${question.text} (yes / no)`
-              : question.text,
-        )
-        .join('\n');
+    const message = conversation.text.trim() || conversation.questions.map(questionLine).join('\n');
     writeRecord(
       {
         type: 'input_required',

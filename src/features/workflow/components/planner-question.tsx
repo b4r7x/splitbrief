@@ -100,9 +100,15 @@ export function PlannerQuestion({
   const finalQuestion = state.index === (state.questions?.length ?? 0) - 1;
   const next = finalQuestion ? 'send answers' : 'next';
   const composerOnly = !(choices.length > 0 || state.index > 0);
+  const reply = { key: 'esc', verb: 'type a reply' };
   const legend = focused
     ? fitKeyLegend(
-        formatKeyHints([SELECT_HINT, { key: '⏎', verb: next }, { key: 'tab', verb: 'write' }]),
+        formatKeyHints([
+          SELECT_HINT,
+          { key: '⏎', verb: next },
+          reply,
+          { key: 'tab', verb: 'write' },
+        ]),
         innerWidth,
       )
     : writing
@@ -110,15 +116,12 @@ export function PlannerQuestion({
           formatKeyHints([
             { key: '⏎', verb: next },
             ...(composerOnly
-              ? [{ key: '↓/tab', verb: 'instruction' }]
-              : [
-                  { key: '↓', verb: 'instruction' },
-                  { key: 'tab', verb: 'options' },
-                ]),
+              ? [reply, { key: '↓/tab', verb: 'instruction' }]
+              : [{ key: '↑/tab', verb: 'options' }, reply, { key: '↓', verb: 'instruction' }]),
           ]),
           innerWidth,
         )
-      : 'Questions paused · tab to return';
+      : 'Questions paused · tab to return · esc type a reply';
   return (
     <Box
       width={width}

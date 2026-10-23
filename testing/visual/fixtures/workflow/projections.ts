@@ -236,7 +236,7 @@ export interface WorkflowFixtureProjection {
   readonly inputMode: 'normal' | 'review' | 'question';
   readonly sidebarVisible: boolean;
   readonly question?: FixtureQuestion;
-  readonly questionPreview?: 'overflow-back';
+  readonly questionPreview?: 'overflow-back' | 'write' | 'closed';
   readonly approval?: FixtureApproval;
   /** The reviewer checks card, open on the commands the reviewer chose. */
   readonly reviewChecksPrompt?: ReviewChecksApprovalRequest;
@@ -2389,9 +2389,27 @@ const questionOverflowProjection: WorkflowFixtureProjection = {
   questionPreview: 'overflow-back',
 };
 
+const questionDefaultProjection: WorkflowFixtureProjection = {
+  ...questionProjection,
+  scenarioId: scenarioId('workflow-question-default'),
+  question: {
+    prompt: 'Type your answer…',
+    answer: '',
+    questions: [
+      {
+        id: 'case',
+        type: 'input',
+        text: 'Which small words stay lower case?',
+        default: 'a, an, and, or, nor',
+      },
+    ],
+  },
+};
+
 const questionInputProjection: WorkflowFixtureProjection = {
   ...questionProjection,
   scenarioId: scenarioId('workflow-question-input'),
+  questionPreview: 'write',
   question: {
     prompt: 'Type your answer…',
     answer: 'Review the current diff',
@@ -2468,6 +2486,74 @@ const answeredQuestionsProjection: WorkflowFixtureProjection = {
       ],
     },
   ],
+};
+
+const repliedQuestionsProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-question-replied'),
+  feature: 'Refactor the session module',
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    {
+      type: 'workflow_started',
+      ts: FIXED_TS,
+      phase: 'planning',
+      feature: 'Refactor the session module',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 100,
+      phase: 'planning',
+      role: 'planner',
+      content: 'plain',
+      text: 'Questions before the plan · round 1 of 2',
+    },
+    {
+      type: 'user_message',
+      ts: FIXED_TS + 300,
+      phase: 'planning',
+      text: 'Change src/session.ts and keep the public API.',
+      questions: [
+        {
+          id: 'module',
+          type: 'choice',
+          text: 'Which module should change?',
+          options: ['src/auth.ts', 'src/session.ts'],
+          default: 'src/auth.ts',
+        },
+        { id: 'api', type: 'confirm', text: 'Keep the public API?', default: true },
+      ],
+    },
+    {
+      type: 'planner_status',
+      ts: FIXED_TS + 400,
+      phase: 'planning',
+      status: 'running',
+      tool: 'claude-code',
+      model: BASE_PLANNER.model,
+      call: 'plan',
+    },
+  ],
+};
+
+const unansweredQuestionsProjection: WorkflowFixtureProjection = {
+  ...questionProjection,
+  scenarioId: scenarioId('workflow-question-unanswered'),
+  questionPreview: 'closed',
+  question: {
+    prompt: 'Type your answer…',
+    answer: '',
+    questions: [
+      {
+        id: 'module',
+        type: 'choice',
+        text: 'Which module should change?',
+        options: ['src/auth.ts', 'src/session.ts'],
+        default: 'src/auth.ts',
+      },
+      { id: 'api', type: 'confirm', text: 'Keep the public API?', default: true },
+    ],
+  },
 };
 
 const consultQuestionProjection: WorkflowFixtureProjection = {
@@ -6685,9 +6771,12 @@ const projections = [
   tasksCardProjection,
   questionProjection,
   questionOverflowProjection,
+  questionDefaultProjection,
   questionInputProjection,
   plannerReplyProjection,
   answeredQuestionsProjection,
+  repliedQuestionsProjection,
+  unansweredQuestionsProjection,
   consultQuestionProjection,
   decisionQuestionProjection,
   decisionGuidanceProjection,
@@ -6700,6 +6789,17 @@ const projections = [
       prompt: 'Which cache key must the repair preserve?',
       answer: '',
       questions: [],
+    },
+  },
+  {
+    ...buildReviewConsultProjection,
+    scenarioId: scenarioId('workflow-reviewer-question-unanswered'),
+    inputMode: 'question',
+    questionPreview: 'closed',
+    question: {
+      seat: 'review',
+      prompt: 'Which cache key must the repair preserve?',
+      answer: '',
     },
   },
   {
@@ -6858,7 +6958,8 @@ export function getWorkflowFixturePromptRows(
   return getWorkflowPromptRows({
     approvalState,
     questionHint,
-    questions: projection.question?.questions,
+    // Esc closed the panel: the round has left the prompt for the transcript.
+    questions: projection.questionPreview === 'closed' ? [] : projection.question?.questions,
     // The chrome facts ask whether a panel is open, not how tall it is at one height, so the plan
     // card is measured unshed.
     review: {

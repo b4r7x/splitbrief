@@ -14,7 +14,7 @@ import type {
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import type { ConsultReason, ConsultSeat } from '../../core/schemas/consult.js';
-import type { AnsweredQuestion } from '../../core/schemas/question.js';
+import type { AnsweredQuestion, ClarificationQuestion } from '../../core/schemas/question.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
@@ -538,16 +538,18 @@ export function publishUserMessage(
   text: string,
   options: {
     qa?: AnsweredQuestion[];
+    questions?: readonly ClarificationQuestion[];
     attachedInputs?: readonly AttachedInput[] | undefined;
   } = {},
 ): void {
-  const { qa, attachedInputs } = options;
+  const { qa, questions, attachedInputs } = options;
   ctx.bus.publish({
     type: 'user_message',
     ts: Date.now(),
     phase: ctx.phase,
     text,
     ...(qa !== undefined && qa.length > 0 ? { qa } : {}),
+    ...(questions !== undefined ? { questions: [...questions] } : {}),
     ...(attachedInputs !== undefined && attachedInputs.length > 0
       ? { attachedInputs: [...attachedInputs] }
       : {}),

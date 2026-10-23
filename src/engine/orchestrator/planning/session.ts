@@ -538,6 +538,7 @@ function recordAnswers(
     ...(asked !== undefined && {
       answerIndex: (next.userAnswers?.length ?? 0) + asked.answers.length,
     }),
+    ...(asked !== undefined && reply.qa.length === 0 && { questions: asked.questions }),
   });
   return rebaseOnPersistedWorkflowState(ref, next);
 }

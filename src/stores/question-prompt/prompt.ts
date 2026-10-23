@@ -22,17 +22,21 @@ export interface QuestionPromptState {
   focus: 'menu' | 'answer' | 'composer';
   openedAt: number;
   complete: boolean;
+  /** The round Esc closed, kept on screen until the reply answers it or another prompt opens. */
+  unanswered: readonly ClarificationQuestion[];
 }
 
+/** A question with no options of its own offers its default as the one option, like a choice. */
 export function questionOptions(question: ClarificationQuestion): readonly string[] {
-  const options =
+  const value =
+    typeof question.default === 'boolean' ? (question.default ? 'Yes' : 'No') : question.default;
+  const listed =
     question.type === 'confirm'
       ? ['Yes', 'No']
       : question.type === 'choice'
         ? question.options
         : [];
-  const value =
-    typeof question.default === 'boolean' ? (question.default ? 'Yes' : 'No') : question.default;
+  const options = listed.length === 0 && value?.trim() ? [value] : listed;
   const preferred = value === undefined ? -1 : options.indexOf(value);
   return preferred > 0
     ? [
@@ -43,16 +47,6 @@ export function questionOptions(question: ClarificationQuestion): readonly strin
     : options;
 }
 
-function initialDraft(question: ClarificationQuestion): QuestionAnswerDraft {
-  const options = questionOptions(question);
-  const value =
-    typeof question.default === 'boolean' ? (question.default ? 'Yes' : 'No') : question.default;
-  return {
-    text: options.length === 0 ? (value ?? '') : '',
-    selected: 0,
-  };
-}
-
 const initial: QuestionPromptState = {
   hint: null,
   index: 0,
@@ -61,6 +55,7 @@ const initial: QuestionPromptState = {
   focus: 'composer',
   openedAt: 0,
   complete: false,
+  unanswered: [],
 };
 const store = createStore<QuestionPromptState>(initial);
 
@@ -79,9 +74,20 @@ function setQuestions(questions: readonly ClarificationQuestion[]): void {
     ...initial,
     hint: state.hint,
     questions,
-    drafts: questions.map(initialDraft),
+    drafts: questions.map(() => ({ text: '', selected: 0 })),
     openedAt: Date.now(),
     focus: questions[0] && questionOptions(questions[0]).length > 0 ? 'menu' : 'answer',
+  }));
+}
+
+/** Esc closes the panel: the round waits for a composer reply, as an ordinary planner reply does. */
+function close(): void {
+  answeredBatch = undefined;
+  store.set((state) => ({
+    ...initial,
+    hint: state.hint,
+    questions: [],
+    unanswered: state.questions ?? [],
   }));
 }
 
@@ -170,6 +176,7 @@ export const questionPromptStore = {
   ...storeBase(store),
   setHint,
   setQuestions,
+  close,
   select,
   setFocus,
   previous,

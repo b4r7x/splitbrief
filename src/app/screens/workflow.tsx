@@ -40,6 +40,8 @@ import {
 import { closedTranscriptBlock } from '../../features/workflow/closed/block.js';
 import { calloutRowsBlock } from '../../features/workflow/conversation-rows/callout-block.js';
 import { sectionSpacerBlock } from '../../features/workflow/conversation-rows/build.js';
+import { openRoundQuestions } from '../../features/workflow/at-rest.js';
+import { unansweredQuestionsRowBlock } from '../../features/workflow/conversation-rows/event-rows/answered-questions.js';
 import { recordedCrewHeader } from '../../features/workflow/closed/header.js';
 import {
   applyByline,
@@ -380,8 +382,21 @@ export function WorkflowScreen({
           width: contentWidth,
           severity: 'warning',
         });
+  // A round Esc closed stays on screen until the reply answers it; an open run at rest shows the
+  // round it waits at. Neither repeats a question the panel is showing.
+  const roundBlock = unansweredQuestionsRowBlock({
+    keyPrefix: 'open-round',
+    questions:
+      questionState.unanswered.length > 0
+        ? questionState.unanswered
+        : model.atRestRecord !== undefined && !model.closed
+          ? openRoundQuestions(model.atRestRecord)
+          : [],
+    width: contentWidth,
+  });
   const transcriptTail = [
     ...(closedBlock === null ? [] : [closedBlock]),
+    ...(roundBlock === null ? [] : [sectionSpacerBlock(roundBlock.key), roundBlock]),
     ...(draftBlock === null ? [] : [sectionSpacerBlock(draftBlock.key), draftBlock]),
   ];
 
