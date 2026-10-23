@@ -12,6 +12,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { configStore } from '../../../stores/project/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir } from '../../../core/paths.js';
@@ -169,6 +170,7 @@ describe('run-loop stop completion', () => {
     projectDir = createTempDir('run-loop-stop-');
     execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
     resetAllStores();
+    configStore.__testReset({ projectDir });
     clearAllHandlers();
   });
 

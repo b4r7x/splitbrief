@@ -85,7 +85,7 @@ describe('useRunLoop abort race', () => {
     resetWorkflow();
     controlsStore.reset();
     feedbackStore.reset();
-    configStore.__testReset();
+    configStore.__testReset({ projectDir });
     clearAllHandlers();
   });
 

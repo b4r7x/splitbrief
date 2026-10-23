@@ -49,7 +49,9 @@ export function reportConfigSaveFailure(
       feedbackStore.setError(redact(`Config save could not be confirmed: ${result.warning}`));
       return true;
     case 'conflict':
-      feedbackStore.setError('Config changed on disk. Reload before saving again.');
+      feedbackStore.setError(
+        'Config changed on disk. SPLITBRIEF loaded it; make your change again.',
+      );
       return true;
     default:
       return assertNever(result);

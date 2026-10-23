@@ -37,6 +37,7 @@ export async function prepareSessionResume(
   }>,
   signal: AbortSignal,
 ): Promise<PreparationOutcome> {
+  configStore.reloadIfChanged();
   const config = configStore.get().config;
   if (config === null) {
     return { kind: 'failed', error: appPreparationError.configNotLoaded() };

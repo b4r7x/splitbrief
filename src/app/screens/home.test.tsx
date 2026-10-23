@@ -18,6 +18,7 @@ import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { saveSummary } from '../../core/sessions/io.js';
 import { LOCKFILE_PING_INTERVAL_MS } from '../../engine/orchestrator/run/heartbeat.js';
@@ -407,6 +408,27 @@ describe('HomeScreen', () => {
     const input = prepareExecutionMock.mock.calls[0]?.[0];
     expect(input).toHaveProperty('plannerContext', undefined);
     expect(input).not.toHaveProperty('attachedInputs');
+    ui.unmount();
+  });
+
+  it('starts on the config a hand edit saved while home was open', async () => {
+    const crew = { planner: { kind: 'cli', tool: 'claude-code' } };
+    writeConfigYaml(projectDir, crew);
+    configStore.load(projectDir);
+    writeConfigYaml(projectDir, { ...crew, workflow: { compaction_format: 'structured' } });
+    prepareExecutionMock.mockResolvedValue({ kind: 'aborted' });
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('plain feature');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
+      SESSION_FILTER_WAIT_MS,
+    );
+    expect(prepareExecutionMock.mock.calls[0]?.[0].effectiveConfig?.workflow.compactionFormat).toBe(
+      'structured',
+    );
     ui.unmount();
   });
 

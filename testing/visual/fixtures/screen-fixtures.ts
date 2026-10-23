@@ -5,7 +5,8 @@ import type { RouteData } from '../../../src/stores/navigation/router.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { resolveEffectiveConfig } from '../../../src/core/config/runtime/effective-config.js';
-import { formatConfigLoaderDiagnostic } from '../../../src/core/config/load/io.js';
+import { formatConfigLoaderDiagnostic, writeConfig } from '../../../src/core/config/load/io.js';
+import { readConfigDocument } from '../../../src/core/config/load/document.js';
 import { createProductionDetectionDeps } from '../../../src/engine/detection/deps.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
@@ -181,6 +182,17 @@ export function seedVisualConfig(overrides?: VisualConfigOverrides): void {
   });
 }
 
+/** A running loop re-reads the config file when it differs from the store, so a run fixture writes it. */
+export function persistVisualConfig(): void {
+  const state = configStore.get();
+  if (state.diskConfig === null) throw new Error('Visual run fixture requires project config');
+  writeConfig(VISUAL_FIXTURE_PROJECT_DIR, state.diskConfig);
+  configStore.__testReset({
+    ...state,
+    revision: readConfigDocument(VISUAL_FIXTURE_PROJECT_DIR).revision,
+  });
+}
+
 export function teardownVisualFixture(): void {
   resetVisualFixtureStores();
   removeFixtureProject();
@@ -281,6 +293,7 @@ export function createWorkflowBaseFixture(
     const config = configStore.get().config;
     if (config === null) throw new Error('Visual workflow fixture requires project config');
     const sessionId = VISUAL_WORKFLOW_SESSION_ID;
+    persistVisualConfig();
     if (resumeState !== undefined) {
       saveState({ projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId }, resumeState);
     }

@@ -280,7 +280,8 @@ export function useRunLoop({
     // A seat saved under the running brief is picked up at the next brief boundary: the run
     // stops itself there instead of parking, and continues the way a run at rest does, re-prepared
     // from the saved config. A seat saved while the run waits parked is picked up when it continues.
-    // A halt runs no brief, so a seat saved while it waits is read when the run re-enters. The saved
+    // A halt runs no brief, so a seat saved while it waits is read when the run re-enters. Both
+    // read a hand edit of the file first, so a seat written there counts as saved. The saved
     // seats are compared with the config the preparation read, not with the prepared one:
     // preparation names the model a seat leaves to its tool. A seat saved while the preparation ran
     // is then a change too.
@@ -312,6 +313,7 @@ export function useRunLoop({
             (await promptCallbacks.onContinuationNeeded?.(partial, at, kept)) ??
             plainUserMessage('');
           if (controller.signal.aborted) return steer;
+          configStore.reloadIfChanged();
           requestSeatChanges();
           if (at !== 'boundary') return steer;
           landed = landBoundaryPause();
@@ -382,6 +384,7 @@ export function useRunLoop({
         }
 
         staleHalt = false;
+        configStore.reloadIfChanged();
 
         // A taken seat swap resolves the halt onto the new tool and prepares this session on it.
         // That is this re-entry's preparation: the seat that halted is not admitted again, so a
