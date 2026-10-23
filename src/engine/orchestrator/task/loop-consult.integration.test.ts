@@ -581,4 +581,91 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       }),
     );
   });
+
+  it('reviews a split child that a consult verified before its sibling starts', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const check = { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true } as const;
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'], criteria: ['C1'], checks: [check] }),
+    ];
+    let green = false;
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+      if (green) return { stdout: '', stderr: '', code: 0 };
+      throw processError.exitCode({ command: 'tsc', code: 2, stderr: 'not finished', output: '' });
+    });
+    const write = async (opts: ImplementerOptions) => {
+      mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+      writeFileSync(join(opts.projectDir, opts.task.suggestedFiles[0]), `${opts.task.id}\n`);
+      return { success: true, output: 'wrote the brief file' };
+    };
+    let consults = 0;
+    const planner = makePlanner({
+      typedCall: consultCallAnswering(() => {
+        consults += 1;
+        if (consults === 1) {
+          return {
+            answer: {
+              diagnosis: 'T001 carries two jobs.',
+              action: 'split-task',
+              tasks: [
+                makeTaskSpec({
+                  id: 'T100',
+                  criteria: ['C1'],
+                  checks: [check],
+                  suggestedFiles: ['src/b.ts'],
+                }),
+                makeTaskSpec({
+                  id: 'T101',
+                  criteria: ['C1'],
+                  checks: [],
+                  suggestedFiles: ['src/c.ts'],
+                  dependsOn: ['T100'],
+                }),
+              ],
+            },
+          };
+        }
+        green = true;
+        return {
+          answer: {
+            diagnosis: 'The check was flaky.',
+            action: 'verify',
+            checkIds: ['K1'],
+            reason: 'Run the check again.',
+          },
+        };
+      }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const wctx = await openRunWorkspace(
+      makeWctx({
+        projectDir,
+        sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        config: makeNoValidationConfig({ workflow: { review: 'task' } }),
+        planner,
+        implementer: makeImplementer({ implement: vi.fn(write), retry: vi.fn(write) }),
+        bus,
+      }),
+    );
+
+    const result = await runTaskLoop({
+      wctx,
+      initialState: makeImplState(tasks),
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('complete');
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'consult_answered', taskId: 'T002', action: 'verify' }),
+    );
+    const at = (match: (event: (typeof events)[number]) => boolean) => events.findIndex(match);
+    const childDone = at((e) => e.type === 'task_completed' && e.taskId === 'T002');
+    const review = at((e) => e.type === 'review_started');
+    const siblingStart = at((e) => e.type === 'task_started' && e.taskId === 'T003');
+    expect(childDone).toBeGreaterThanOrEqual(0);
+    expect(review).toBeGreaterThan(childDone);
+    expect(review).toBeLessThan(siblingStart);
+  });
 });
