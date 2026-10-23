@@ -17,7 +17,7 @@ import {
 } from '../recovery/builders/checks.js';
 import type { EventBus } from '../../events/types.js';
 import type { WorkflowContext } from '../types.js';
-import { failingFilesFromKeys, lastTaskChangingFile } from '../task/file-owner.js';
+import { failingFilesFromKeys, fileOwnerSentence } from '../task/file-owner.js';
 import {
   checkRegistry,
   planApprovesNpmScripts,
@@ -72,8 +72,7 @@ export function buildPreReviewInputs(input: {
           ? [normalizeProjectRelativePath(check.value)]
           : [null];
     for (const file of files) {
-      const owner =
-        file === null ? undefined : lastTaskChangingFile(input.ledger, input.tasks, file);
+      const owner = fileOwnerSentence(input.ledger, input.tasks, file);
       const failureKeys = failureKeysForFile({
         failure: run.status === 'fail' ? run.failure : null,
         file,
@@ -83,9 +82,7 @@ export function buildPreReviewInputs(input: {
         kind: 'defect',
         source: 'check',
         file,
-        text: `${
-          owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`
-        }\nRequired ${checkFailureText(run, { file })}`,
+        text: `${owner === undefined ? '' : `${owner}\n`}Required ${checkFailureText(run, { file })}`,
         checkIds: [run.checkId],
         ...(run.command !== undefined && { command: run.command }),
         output: run.output,

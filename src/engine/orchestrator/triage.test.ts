@@ -646,7 +646,7 @@ describe('review fix work', () => {
         kind: 'defect' as const,
         source: 'check' as const,
         file: null,
-        text: 'No task changed it.\nRequired check K1 did not pass (fail): broken',
+        text: 'Required check K1 did not pass (fail): broken',
         checkIds: ['K1'],
         output: 'broken',
       },

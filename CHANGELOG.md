@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- A failed whole-suite check that names no file no longer says that no task changed it.
 - With a review after each task, the next part of a split task now waits for the review of the part a consult verified.
 - A run you rejected in part and continued now runs its checks again before the next review, instead of failing on a check failure you already fixed.
 - A change you make to `.splitbrief/config.yaml` by hand while SPLITBRIEF is open now counts when you start, continue or retry a run, and a context length measured for one build model no longer carries over to another.

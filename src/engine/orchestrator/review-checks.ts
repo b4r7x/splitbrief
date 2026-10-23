@@ -35,7 +35,7 @@ import { runReviewerCall } from './review-call.js';
 import { reviewOperatorInstructions, reviewPlanData } from './review-plan.js';
 import { plannerFeature } from './run/planner-callbacks-context.js';
 import { transitionAndSave } from './state-ops.js';
-import { failingFilesFromKeys, lastTaskChangingFile } from './task/file-owner.js';
+import { failingFilesFromKeys, fileOwnerSentence } from './task/file-owner.js';
 import type { FailureKeys } from './validation/extract-failure-keys.js';
 import { checkFailureText, failureKeysForFile, newFailureKeys } from './validation/failure-text.js';
 import {
@@ -620,7 +620,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     stoppedBy = chosen.id;
     const named = failingFilesFromKeys(fresh, opts.workspaceDir);
     for (const file of named.length > 0 ? named : [null]) {
-      const owner = file === null ? undefined : lastTaskChangingFile(ledger, state.tasks, file);
+      const owner = fileOwnerSentence(ledger, state.tasks, file);
       const failureKeys = failureKeysForFile({ failure: { ...run.failure, keys: fresh }, file });
       inputs.push({
         id: `${chosen.id}.${inputs.length + 1}`,
@@ -633,7 +633,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
             : run.base === undefined
               ? `and SPLITBRIEF could not verify its run base re-run (${notVerified}); the reviewer decides.`
               : `and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${notVerified}); the reviewer decides.`
-        } ${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}\n${checkFailureText(run, { file })}`,
+        }${owner === undefined ? '' : ` ${owner}`}\n${checkFailureText(run, { file })}`,
         checkIds: [chosen.id],
         command: chosen.command,
         output: run.output,

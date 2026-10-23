@@ -35,7 +35,7 @@ import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
-import { failingFilesFromKeys, lastTaskChangingFile } from '../task/file-owner.js';
+import { failingFilesFromKeys, fileOwnerSentence } from '../task/file-owner.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
 import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
@@ -178,7 +178,7 @@ async function recheckMergedCandidate(
     run: CheckRunResult,
   ): void => {
     for (const file of files) {
-      const owner = file === null ? undefined : lastTaskChangingFile(ledger, state.tasks, file);
+      const owner = fileOwnerSentence(ledger, state.tasks, file);
       const failureKeys = failureKeysForFile({
         failure: run.status === 'fail' ? run.failure : null,
         file,
@@ -188,7 +188,7 @@ async function recheckMergedCandidate(
         kind: 'defect',
         source: 'check',
         file,
-        text: `${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}\n${ownerLabel} ${checkFailureText(run, { file })}`,
+        text: `${owner === undefined ? '' : `${owner}\n`}${ownerLabel} ${checkFailureText(run, { file })}`,
         checkIds: [run.checkId],
         ...(run.command !== undefined && { command: run.command }),
         output: run.output,

@@ -31,7 +31,7 @@ export function failingFilesFromKeys(keys: readonly string[], workspaceDir: stri
  * task first. Ownership comes from the evidence ledger's recorded changed files,
  * never from the brief's declared targets.
  */
-export function lastTaskChangingFile(
+function lastTaskChangingFile(
   ledger: EvidenceLedger | null,
   tasks: readonly Task[],
   file: string,
@@ -50,4 +50,18 @@ export function lastTaskChangingFile(
     }
   }
   return undefined;
+}
+
+/**
+ * The sentence that says which task last changed a failing file. A failure that names no file
+ * says nothing about who changed it.
+ */
+export function fileOwnerSentence(
+  ledger: EvidenceLedger | null,
+  tasks: readonly Task[],
+  file: string | null,
+): string | undefined {
+  if (file === null) return undefined;
+  const owner = lastTaskChangingFile(ledger, tasks, file);
+  return owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`;
 }
