@@ -421,7 +421,7 @@ describe('useRunLoop', () => {
       expect(errorMessages()).toEqual([
         record === 'malformed'
           ? 'The stopped workspace could not be verified. Its files were left in place; automatic continuation is blocked.'
-          : expect.stringContaining('EACCES'),
+          : `permission denied · ${path}`,
       ]);
       expect(
         eventsStore

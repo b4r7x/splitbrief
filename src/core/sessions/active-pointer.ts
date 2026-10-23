@@ -18,8 +18,13 @@ import { basename, dirname, join } from 'node:path';
 import { activeFile, validateSessionId, SPLITBRIEF_DIR } from '../paths.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { error } from '../../utils/error.js';
-import { SECURE_FILE_MODE, ensureSecureDir, rejectSymlinkTarget } from '../../lib/fs.js';
-import { lockSibling, withFileLock } from '../../lib/file-lock.js';
+import {
+  SECURE_FILE_MODE,
+  ensureSecureDir,
+  nameWriteTarget,
+  rejectSymlinkTarget,
+} from '../../lib/fs.js';
+import { withFileLock } from '../../lib/file-lock.js';
 import {
   assertExistingPathConfined,
   assertWritablePathConfined,
@@ -177,7 +182,7 @@ function removeFileBestEffort(filePath: string): void {
 
 export function withSessionMutationLock<T>(projectDir: string, mutate: () => T): T {
   return withFileLock(
-    lockSibling(activeFile(projectDir)),
+    activeFile(projectDir),
     () => activeMutationError.timeout(projectDir),
     mutate,
   );
@@ -256,7 +261,7 @@ function writeActiveBytesLocked(
     removeFileBestEffort(claim);
   } catch (cause) {
     rmSync(temporary, { force: true });
-    throw cause;
+    throw nameWriteTarget(cause, target);
   }
 }
 

@@ -74,6 +74,20 @@ function revisionFor(path: string): ConfigRevision {
   };
 }
 
+// A folder that takes no new file refuses the lock and the temporary copy of the write.
+function readOnlyTarget(): { dir: string; path: string; revision: ConfigRevision } {
+  const file = makeFile();
+  chmodSync(file.dir, 0o555);
+  return file;
+}
+
+const refusedOpen = (path: string) =>
+  Object.assign(new Error(`EACCES: permission denied, open '${path}'`), {
+    code: 'EACCES',
+    syscall: 'open',
+    path,
+  });
+
 function temporaryFiles(dir: string): string[] {
   return readdirSync(dir).filter((entry) => entry.includes('.tmp.'));
 }
@@ -478,6 +492,32 @@ function exitedProcessPid(): number {
 }
 
 describe('confinedAtomicWriteFile', () => {
+  itUnix('names the file it meant, not its lock, when the folder takes no new file', async () => {
+    const { dir, path, revision } = readOnlyTarget();
+    try {
+      await expect(
+        confinedAtomicWriteFile(path, Buffer.from('refused'), {
+          expectedRevision: revision,
+          mode: 0o600,
+        }),
+      ).rejects.toMatchObject({ code: 'EACCES', path });
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+  });
+
+  it('names the file it meant, not its temporary copy, when the copy is refused', async () => {
+    const { path, revision } = makeFile();
+    await expect(
+      confinedAtomicWriteFileForTest(
+        path,
+        Buffer.from('refused'),
+        { expectedRevision: revision, mode: 0o600 },
+        { open: async (temporary) => Promise.reject(refusedOpen(temporary)) },
+      ),
+    ).rejects.toMatchObject({ code: 'EACCES', path });
+  });
+
   itUnix('reclaims a lock only after proving its owner process is dead', async () => {
     const { path, revision } = makeFile();
     writeFileSync(
@@ -980,6 +1020,36 @@ describe('confinedAtomicWriteFile', () => {
 });
 
 describe('confinedAtomicWriteFileSync', () => {
+  itUnix('names the file it meant, not its lock, when the folder takes no new file', () => {
+    const { dir, path, revision } = readOnlyTarget();
+    try {
+      expect(() =>
+        confinedAtomicWriteFileSync(path, Buffer.from('refused'), {
+          expectedRevision: revision,
+          mode: 0o600,
+        }),
+      ).toThrow(expect.objectContaining({ code: 'EACCES', path }));
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+  });
+
+  it('names the file it meant, not its temporary copy, when the copy is refused', () => {
+    const { path, revision } = makeFile();
+    expect(() =>
+      confinedAtomicWriteFileSyncForTest(
+        path,
+        Buffer.from('refused'),
+        { expectedRevision: revision, mode: 0o600 },
+        {
+          open: (temporary) => {
+            throw refusedOpen(temporary);
+          },
+        },
+      ),
+    ).toThrow(expect.objectContaining({ code: 'EACCES', path }));
+  });
+
   itUnix('reclaims a lock only after proving its owner process is dead', () => {
     const { path, revision } = makeFile();
     writeFileSync(

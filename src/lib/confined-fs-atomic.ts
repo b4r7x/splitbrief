@@ -17,7 +17,7 @@ import {
 import { createHash, randomBytes } from 'node:crypto';
 import { link, lstat, open, realpath, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { fsError, SECURE_FILE_MODE } from './fs.js';
+import { fsError, nameWriteTarget, SECURE_FILE_MODE } from './fs.js';
 import { isENOENT, isNodeError } from './process/errors.js';
 import { readProcessStartTimeMs } from './process/start-time.js';
 
@@ -1180,7 +1180,9 @@ export async function confinedAtomicWriteFile(
     bytes,
     options,
     atomicWriteOperations(undefined),
-  );
+  ).catch((err: unknown) => {
+    throw nameWriteTarget(err, path);
+  });
 }
 
 export async function confinedAtomicWriteFileForTest(
@@ -1194,7 +1196,9 @@ export async function confinedAtomicWriteFileForTest(
     bytes,
     options,
     atomicWriteOperations(operations),
-  );
+  ).catch((err: unknown) => {
+    throw nameWriteTarget(err, path);
+  });
 }
 
 function atomicDirectoryIdentitySync(directory: string): AtomicDirectoryIdentity {
@@ -1498,12 +1502,16 @@ export function confinedAtomicWriteFileSync(
   bytes: Uint8Array,
   options: ConfinedAtomicWriteOptions,
 ): ConfinedAtomicWriteResult {
-  return confinedAtomicWriteFileSyncWithOperations(
-    path,
-    bytes,
-    options,
-    atomicWriteSyncOperations(undefined),
-  );
+  try {
+    return confinedAtomicWriteFileSyncWithOperations(
+      path,
+      bytes,
+      options,
+      atomicWriteSyncOperations(undefined),
+    );
+  } catch (err) {
+    throw nameWriteTarget(err, path);
+  }
 }
 
 export function confinedAtomicWriteFileSyncForTest(
@@ -1512,10 +1520,14 @@ export function confinedAtomicWriteFileSyncForTest(
   options: ConfinedAtomicWriteOptions,
   operations: ConfinedAtomicWriteSyncTestOperations,
 ): ConfinedAtomicWriteResult {
-  return confinedAtomicWriteFileSyncWithOperations(
-    path,
-    bytes,
-    options,
-    atomicWriteSyncOperations(operations),
-  );
+  try {
+    return confinedAtomicWriteFileSyncWithOperations(
+      path,
+      bytes,
+      options,
+      atomicWriteSyncOperations(operations),
+    );
+  } catch (err) {
+    throw nameWriteTarget(err, path);
+  }
 }

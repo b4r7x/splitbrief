@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- When SPLITBRIEF cannot save to a run's folder (the folder is read-only or the disk is full) and the run fails, the run now shows as failed with the cause until you quit SPLITBRIEF, and `--plain` and `--json` print the cause and end with a failed status instead of a raw file error. A save that fails while the plan, build or review seat works now reads as a save failure, not as that seat failing, and does not use a build attempt. A file error names the file SPLITBRIEF meant to write, such as `Cargo.lock`, and a full disk reads `no space left on device`. After a restart, the run shows as stopped at its last saved step.
 - A run reopened after SPLITBRIEF stopped while it applied the recovery action you chose now names that action under the composer (for example `⏎ to try again`) instead of asking you to decide. A correction you type there goes to the step that the action runs next; Accept as is, Re-run Apply and Restore backup do not use it.
 - After you pause before the final review and continue, the final review no longer reads "stopped" while it runs.
 - A planner question without choices now shows its suggested answer as the first row and `Write your own answer…` as the second, so a slash command typed there runs instead of being glued to the suggestion. Esc closes a planner or reviewer question so you can reply in the composer, ↑ on the first line of your own answer goes back to the choices, and a reply you type shows once under all the questions of the round.

@@ -1,8 +1,8 @@
 import { afterEach, describe, it, expect } from 'vitest';
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { confinedReadFile, confinedReadFileAsync } from './confined-fs.js';
+import { confinedReadFile, confinedReadFileAsync, confinedReplaceFile } from './confined-fs.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const tmpDirs: string[] = [];
@@ -102,5 +102,22 @@ describe('confinedReadFileAsync', () => {
     await expect(confinedReadFileAsync(root, 'linked.md')).rejects.toMatchObject({
       kind: 'path-symlink-read',
     });
+  });
+});
+
+describe('confinedReplaceFile', () => {
+  it('names the file it meant, not its temporary copy, when the folder refuses the write', async () => {
+    const root = createTempDir('confined-replace-refused');
+    tmpDirs.push(root);
+    mkdirSync(join(root, 'pkg'));
+    writeFileSync(join(root, 'pkg', 'yarn.lock'), 'base');
+    chmodSync(join(root, 'pkg'), 0o555);
+    try {
+      await expect(confinedReplaceFile(root, 'pkg/yarn.lock', 'ours', 0o644)).rejects.toMatchObject(
+        { code: 'EACCES', path: join(root, 'pkg', 'yarn.lock') },
+      );
+    } finally {
+      chmodSync(join(root, 'pkg'), 0o755);
+    }
   });
 });

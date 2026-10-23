@@ -13,7 +13,7 @@ import {
   assertWritablePathConfined,
 } from '../../lib/path-confinement.js';
 import { writeSecureFile } from '../../lib/fs.js';
-import { lockSibling, withFileLock } from '../../lib/file-lock.js';
+import { withFileLock } from '../../lib/file-lock.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { error } from '../../utils/error.js';
@@ -82,7 +82,7 @@ export function appendReviewChanges(ref: SessionRef, changes: ReviewChange[]): v
   assertWritablePathConfined(relative(ref.projectDir, path), ref.projectDir);
   assertSessionConfinement(path, dirname(path));
   withFileLock(
-    lockSibling(path),
+    path,
     () => error('review-changes-lock', 'Review changes are locked.'),
     () => {
       const previous = readReviewChanges(ref);

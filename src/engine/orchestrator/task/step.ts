@@ -5,6 +5,7 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
+import { sessionError } from '../../../core/sessions/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { publishError, publishTaskValidating, publishWarning } from '../events.js';
 import { error } from '../../../utils/error.js';
@@ -342,7 +343,12 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       ...(retryError !== undefined && { retryError }),
     });
   } catch (err) {
-    if (retentionError.isFailed(err) || retentionError.isUnavailable(err)) throw err;
+    if (
+      retentionError.isFailed(err) ||
+      retentionError.isUnavailable(err) ||
+      sessionError.isLocalSaveFailure(err)
+    )
+      throw err;
     state = rebaseOnPersistedWorkflowState(wctx, state);
     setTrackedState(state);
     if (isAbortError(err) || wctx.signal?.aborted) return state;

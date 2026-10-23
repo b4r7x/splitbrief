@@ -678,6 +678,8 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
     expect(lstatSync(join(second.worktreePath, 'node_modules')).isSymbolicLink()).toBe(true);
     expect(warnings.join('\n')).toContain('Could not link node_modules');
     expect(warnings.join('\n')).toContain(first.worktreePath);
-    expect(warnings.join('\n')).toContain('EEXIST');
+    expect(warnings.join('\n')).toContain(
+      `file already exists · ${join(first.worktreePath, 'node_modules')}`,
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { IGNORE_RULE_ADDED } from '../../core/config/load/document.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { fileErrorReason, toErrorMessage } from '../../utils/format-errors.js';
 import { feedbackStore } from '../ui/feedback.js';
 import type { ConfigSaveResult } from './config.js';
 
@@ -21,10 +22,12 @@ export function configErrorLines(message: string): { intro: string; issues: stri
 
 /**
  * Why a save failed, on one line. The failure itself says only where the save went; its cause says
- * why, which for a refused document is each field and the rule it broke.
+ * why, which for a refused document is each field and the rule it broke, and for a refused write
+ * its words and the file.
  */
 function saveFailureReason(error: Error): string {
   const source = error.cause instanceof Error ? error.cause : error;
+  if (fileErrorReason(source) !== undefined) return toErrorMessage(source);
   const { issues } = configErrorLines(source.message);
   return issues.length === 0 ? source.message : issues.join('; ');
 }

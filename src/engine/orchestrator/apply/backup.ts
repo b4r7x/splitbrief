@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { sessionDir } from '../../../core/paths.js';
 import { pathExists } from '../../../core/sessions/ownership-marker.js';
-import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../../lib/fs.js';
+import { nameWriteTarget, SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../../lib/fs.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';
@@ -220,9 +220,12 @@ export async function writeApplyBackup(input: {
       await readBackupBlob(projectDir, sessionId, backupId, sha256);
       continue;
     }
+    const blob = join(blobsDir, sha256);
     const temporary = join(blobsDir, `.blob.${randomBytes(8).toString('hex')}.tmp`);
-    await writeSyncedFile(temporary, bytes);
-    await rename(temporary, join(blobsDir, sha256));
+    await writeSyncedFile(temporary, bytes).catch((err: unknown) => {
+      throw nameWriteTarget(err, blob);
+    });
+    await rename(temporary, blob);
   }
   await syncDirectory(blobsDir);
   const candidateDir = join(dir, 'candidate');
@@ -239,7 +242,9 @@ export async function writeApplyBackup(input: {
   }
   await syncDirectory(candidateDir);
   const temporary = join(dir, `.manifest.${randomBytes(8).toString('hex')}.tmp`);
-  await writeSyncedFile(temporary, `${JSON.stringify(backup, null, 2)}\n`);
+  await writeSyncedFile(temporary, `${JSON.stringify(backup, null, 2)}\n`).catch((err: unknown) => {
+    throw nameWriteTarget(err, manifestPath);
+  });
   await rename(temporary, manifestPath);
   await syncDirectory(dir);
   await syncDirectory(dirname(dir));

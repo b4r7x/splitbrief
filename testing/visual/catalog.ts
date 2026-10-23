@@ -2200,6 +2200,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-failed-unsaved',
+      title: 'Workflow · a failed run whose session folder took no new file',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-failed-unsaved',
+        title: 'The run reads failed with the save cause',
+        kind: 'ready',
+        marker: 'Stopped by an error',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-plan-unsaved',
+      title: 'Workflow · a plan the session folder could not save',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-plan-unsaved',
+        title: 'The run reads failed with the plan.json save cause',
+        kind: 'ready',
+        marker: 'Stopped by an error',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-crashed-review',
       title: 'Workflow · a run whose process went away during the final review',
       surface: screenSurface('workflow'),

@@ -464,7 +464,7 @@ describe('collectReadiness git posture', () => {
     const repo = report.sections.find((section) => section.id === 'repo');
     const failure = repo?.checks.find((check) => check.id === 'isolation.check-failed');
     expect(failure).toMatchObject({ severity: 'warning' });
-    expect(failure?.details?.join('\n')).toContain('EISDIR');
+    expect(failure?.details?.join('\n')).toContain('illegal operation on a directory');
   });
 
   it('warns when the repository is on a detached HEAD', async () => {

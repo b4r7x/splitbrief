@@ -1,5 +1,4 @@
-import { isNodeError } from '../../lib/process/errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { fileErrorReason, fileFailure, toErrorMessage } from '../../utils/format-errors.js';
 import { error, matches, type AppError } from '../../utils/error.js';
 import { SPLITBRIEF_IDENTITY } from '../identity.js';
 import { SOFT_SEP } from '../separators.js';
@@ -39,16 +38,20 @@ export function stillActiveFix(sessionId: string): string {
   return `Stop it, then run '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' — or delete ${SPLITBRIEF_IDENTITY.stateDir}/active to discard it.`;
 }
 
-/**
- * `<what>: <cause> · <project-relative file>`. Node spells a file error `EACCES: permission denied,
- * open '<absolute path>'`: the user needs only its words, and the cause comes before the file so a
- * cut line hides the file, not the cause.
- */
+/** `<what>: <cause> · <project-relative file>`. */
 export function sessionFileFailure(what: string, relativePath: string, cause: unknown): string {
-  const reason =
-    (isNodeError(cause) && /^E[A-Z]+: ([^,]+)/.exec(cause.message)?.[1]) || toErrorMessage(cause);
-  return `${what}: ${reason}${SOFT_SEP}${relativePath}`;
+  return `${what}: ${fileFailure(fileErrorReason(cause) ?? toErrorMessage(cause), relativePath)}`;
 }
+
+// A run file, or the run state `state-ops.ts` saves, that did not reach the disk or was not confirmed there.
+const localSaveFailures = [
+  matches('session-file-not-saved'),
+  matches('state-not-saved'),
+  matches('state-durability-uncertain'),
+  matches('state-changed-on-disk'),
+  matches('state-conflict'),
+  matches('state-conflict-exhausted'),
+];
 
 export const sessionError = {
   invalidData: (sessionId: string, reason: string) =>
@@ -80,6 +83,20 @@ export const sessionError = {
       { relativePath },
       cause,
     ),
+  summaryNotSaved: (relativePath: string, cause: unknown) =>
+    error(
+      'session-summary-not-saved',
+      sessionFileFailure('Could not save the run summary', relativePath, cause),
+      { relativePath },
+      cause,
+    ),
+  fileNotSaved: (relativePath: string, cause: unknown) =>
+    error(
+      'session-file-not-saved',
+      sessionFileFailure('Could not save a run file', relativePath, cause),
+      { relativePath },
+      cause,
+    ),
   draftNotRemoved: (relativePath: string, cause: unknown) =>
     error(
       'session-draft-not-removed',
@@ -89,5 +106,8 @@ export const sessionError = {
     ),
 
   isStillActive: matches('session-still-active'),
+  isSummaryNotSaved: matches('session-summary-not-saved'),
+  /** A save SPLITBRIEF could not make in the run's folder is never a seat failing: the run fails with it. */
+  isLocalSaveFailure: (err: unknown): boolean => localSaveFailures.some((isKind) => isKind(err)),
   isDraftNotRemoved: matches('session-draft-not-removed'),
 } as const;

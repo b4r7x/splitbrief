@@ -50,6 +50,20 @@ export interface SessionLockStatusOptions extends SessionLockfileOptions {
   nowMs?: number | undefined;
 }
 
+/**
+ * Runs this process let go of when their lock could not take the exit: the lock still names this
+ * process as alive, so this process reads it as exited. Another process reads the heartbeat.
+ */
+const exitedInMemory = new Set<string>();
+
+export function keepExitInMemory(sessionDir: string): void {
+  exitedInMemory.add(resolve(sessionDir));
+}
+
+export function forgetExitInMemory(sessionDir: string): void {
+  exitedInMemory.delete(resolve(sessionDir));
+}
+
 export function sessionLockfilePath(sessionDir: string): string {
   const p = resolve(sessionDir, LOCKFILE);
   assertSessionConfinement(p, sessionDir);
@@ -133,7 +147,11 @@ export function checkSessionLockStatus(options: SessionLockStatusOptions): Sessi
   if (read.kind !== 'valid') return read;
 
   const { data } = read;
-  if (data.exitedAt !== undefined) return { kind: 'exited', data };
+  if (
+    data.exitedAt !== undefined ||
+    (data.pid === process.pid && exitedInMemory.has(resolve(options.sessionDir)))
+  )
+    return { kind: 'exited', data };
   if (!processMatchesLockfile(data)) return { kind: 'dead', data, processAlive: false };
 
   const nowMs = options.nowMs ?? Date.now();

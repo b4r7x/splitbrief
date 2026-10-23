@@ -7,6 +7,7 @@ import {
   mkdirSync,
   readFileSync,
   rmSync,
+  unlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -29,11 +30,13 @@ import {
 } from '#testing/helpers/user-message.js';
 import { PlanSchema } from '../../../core/schemas/plan.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { formatTasks } from '../../spec/formatter.js';
+import { parsePlanJson } from '../../../core/sessions/plan-file.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { WorkflowStateSchema, type WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { RunnerCallContext } from '../../../engine/calls/types.js';
 import type { PlannerOutputCallbacks } from '../../../engine/planners/types.js';
@@ -47,7 +50,10 @@ import {
   SESSION_LOG_FILE,
   SPLITBRIEF_DIR,
   SESSIONS_DIR,
+  PLAN_FILE,
+  PLAN_JSON_FILE,
   STATE_FILE,
+  TASKS_FILE,
   sessionDir,
   sessionsRoot,
 } from '../../../core/paths.js';
@@ -55,7 +61,10 @@ import { ORPHAN_SESSION_GRACE_MS } from '../../../core/sessions/orphans.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { readSession, saveSummary } from '../../../core/sessions/io.js';
+import { listSessions, readSession, saveSummary } from '../../../core/sessions/io.js';
+import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { loadOwnerWorkflowState } from '../../../core/state/resume-hydration.js';
+import { forgetCachedState, statePath } from '../../../core/state/state-file.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import {
   reactivateExistingSession,
@@ -107,14 +116,42 @@ import {
 // A state.json write SPLITBRIEF renamed into place but could not confirm on disk (a failing disk,
 // EIO on a network mount): every write once `unconfirmed` is set, or only the `next` write made
 // from the named function, which `eio` fails before anything is written and `conflict` finds
-// changed by another writer; `thenEvery` makes every later write unconfirmed too. Every other
-// write is real.
+// changed by another writer (`conflict-twice`: that write and its retry); `thenEvery` makes every
+// later write unconfirmed too, or, after `enospc`, fails every later write on a full disk. Every
+// other write is real.
 const stateWrite = vi.hoisted(() => ({
   unconfirmed: false,
+  full: false,
   next: undefined as
-    | { from: string; fails: 'unconfirmed' | 'eio' | 'conflict'; thenEvery?: true }
+    | {
+        from: string;
+        fails: 'unconfirmed' | 'eio' | 'enospc' | 'conflict' | 'conflict-twice';
+        thenEvery?: true;
+      }
     | undefined,
 }));
+// The run file whose write is refused, the way a folder that takes no new file refuses its
+// temporary copy; the writer names the file it meant.
+const secureWrite = vi.hoisted(() => ({ refuses: undefined as string | undefined }));
+vi.mock('../../../lib/fs.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/fs.js')>();
+  const { basename, dirname, join } = await import('node:path');
+  return {
+    ...actual,
+    writeSecureFile: (filePath: string, content: string): void => {
+      if (basename(filePath) !== secureWrite.refuses) {
+        actual.writeSecureFile(filePath, content);
+        return;
+      }
+      const temp = join(dirname(filePath), `.${basename(filePath)}.tmp.0123456789abcdef`);
+      throw Object.assign(new Error(`EACCES: permission denied, open '${temp}'`), {
+        code: 'EACCES',
+        syscall: 'open',
+        path: filePath,
+      });
+    },
+  };
+});
 vi.mock('../../../lib/confined-fs-atomic.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../lib/confined-fs-atomic.js')>();
   return {
@@ -123,17 +160,26 @@ vi.mock('../../../lib/confined-fs-atomic.js', async (importOriginal) => {
       ...args: Parameters<typeof actual.confinedAtomicWriteFileSync>
     ): ReturnType<typeof actual.confinedAtomicWriteFileSync> => {
       const next = stateWrite.next;
+      const enospc = () =>
+        Object.assign(new Error(`ENOSPC: no space left on device, open '${args[0]}'`), {
+          code: 'ENOSPC',
+        });
+      if (stateWrite.full && args[0].endsWith('/state.json')) throw enospc();
       if (
         next !== undefined &&
         args[0].endsWith('/state.json') &&
         new Error().stack?.includes(` ${next.from} (`)
       ) {
-        stateWrite.next = undefined;
-        if (next.thenEvery) stateWrite.unconfirmed = true;
+        stateWrite.next =
+          next.fails === 'conflict-twice' ? { ...next, fails: 'conflict' } : undefined;
+        if (next.thenEvery) stateWrite[next.fails === 'enospc' ? 'full' : 'unconfirmed'] = true;
+        if (next.fails === 'enospc') throw enospc();
         if (next.fails === 'eio') {
           throw Object.assign(new Error(`EIO: i/o error, open '${args[0]}'`), { code: 'EIO' });
         }
-        if (next.fails === 'conflict') return { kind: 'conflict', observedRevision: null };
+        if (next.fails === 'conflict' || next.fails === 'conflict-twice') {
+          return { kind: 'conflict', observedRevision: null };
+        }
         const written = actual.confinedAtomicWriteFileSync(...args);
         if (written.kind === 'written') {
           return { kind: 'durability-uncertain', observedRevision: written.revision };
@@ -636,6 +682,7 @@ describe('runWorkflow — smoke', () => {
       } finally {
         stateWrite.next = undefined;
         stateWrite.unconfirmed = false;
+        stateWrite.full = false;
         vi.restoreAllMocks();
       }
       const state = loadState({ projectDir, sessionId });
@@ -847,7 +894,7 @@ describe('runWorkflow — smoke', () => {
       ['it cannot confirm', 'unconfirmed', unconfirmed],
       ['another writer changed', 'conflict', changedOnDisk],
     ] as const)(
-      'the files a first attempt wrote, when %s the save, run the brief again',
+      'the files a first attempt wrote, when %s the save, fail the run with that cause',
       async (_, fails, line) => {
         const sessionId = `restore-scope-${fails}-sid`;
         const run = await runWithStateWrite(
@@ -856,8 +903,8 @@ describe('runWorkflow — smoke', () => {
           'task_started',
         );
 
-        expect(run.errors).toEqual([`Implementation failed: ${line(sessionId)}`]);
-        expect(run.state?.phase).toBe('complete');
+        expect(run.errors).toEqual([line(sessionId)]);
+        expect(run.status).toMatchObject(failedWith(line(sessionId)));
       },
     );
 
@@ -865,7 +912,7 @@ describe('runWorkflow — smoke', () => {
       ['it cannot confirm', 'unconfirmed', unconfirmed],
       ['another writer changed', 'conflict', changedOnDisk],
     ] as const)(
-      'the files a retry wrote, when %s the save, halt the brief',
+      'the files a retry wrote, when %s the save, fail the run with that cause',
       async (_, fails, line) => {
         const sessionId = `retry-scope-${fails}-sid`;
         const run = await runWithStateWrite(
@@ -879,11 +926,9 @@ describe('runWorkflow — smoke', () => {
           },
         );
 
-        expect(run.errors).toEqual([
-          'Implementation failed: boom',
-          `Retrying T001 failed: ${line(sessionId)}`,
-        ]);
-        expect(run.state?.pendingRecovery?.details?.join('\n')).not.toMatch(/persist/);
+        expect(run.errors).toEqual(['Implementation failed: boom', line(sessionId)]);
+        expect(run.state?.pendingRecovery).toBeUndefined();
+        expect(run.status).toMatchObject(failedWith(line(sessionId)));
       },
     );
 
@@ -911,6 +956,433 @@ describe('runWorkflow — smoke', () => {
       ]);
     });
 
+    describe('a failure in a session folder that takes no new file reads failed in this process', () => {
+      const notSaved = (sessionId: string, reason = 'permission denied') =>
+        `Could not save the run state: ${reason} · .splitbrief/sessions/${sessionId}/state.json`;
+
+      async function runInReadOnlyFolder(
+        sessionId: string,
+        lockDown: 'brief' | 'planning',
+        options: Partial<WorkflowTestOptions> = {},
+      ) {
+        const projectDir = setupProject();
+        const dir = sessionDir(projectDir, sessionId);
+        const readOnly = () => chmodSync(dir, 0o555);
+        const run = await runWithStateWrite(sessionId, undefined, 'start', {
+          projectDir,
+          ...(lockDown === 'planning' && {
+            _planner: makePlanner({
+              typedCall: typedCallAnswering(() => {
+                readOnly();
+                return planFromTasks([makeTask({ id: 'T001' })]);
+              }),
+            }),
+          }),
+          ...(lockDown === 'brief' && {
+            _implementer: makeImplementer({
+              implement: vi.fn().mockImplementation(async () => {
+                readOnly();
+                return { success: true, output: '', usage: null };
+              }),
+            }),
+          }),
+          ...options,
+        });
+        const ref = { projectDir, sessionId };
+        return {
+          ...run,
+          ref,
+          dir,
+          record: readRunRecord(ref).status,
+          row: listSessions(projectDir).find((session) => session.id === sessionId),
+        };
+      }
+
+      it.each([
+        ['a brief', 'brief'],
+        ['planning', 'planning'],
+      ] as const)('a state write that fails during %s', async (_label, lockDown) => {
+        const sessionId = `read-only-${lockDown}-sid`;
+        const run = await runInReadOnlyFolder(sessionId, lockDown);
+        // Planning fails first on plan.json, the run file the plan goes to.
+        const cause =
+          lockDown === 'planning'
+            ? `Could not save a run file: permission denied · .splitbrief/sessions/${sessionId}/plan.json`
+            : notSaved(sessionId);
+        try {
+          // The run ends with the cause, not a raw error about a file it could not create.
+          expect(run.thrown).toBeUndefined();
+          expect(run.errors.at(-1)).toBe(cause);
+          expect(run.plainCause).toBe(cause);
+          // The live record and the listing read it the way a saved failure reads.
+          expect(run.record).toMatchObject(failedWith(cause));
+          expect(run.row).toMatchObject({ status: 'open', stop: 'stopped' });
+          // Reopened in this process, after the lock went stale, it still reads failed.
+          vi.useFakeTimers({ now: Date.now() + 60_000, toFake: ['Date'] });
+          expect(readRunRecord(run.ref).status).toMatchObject(failedWith(cause));
+          vi.useRealTimers();
+          // The stderr line says the failure did not reach the disk.
+          expect(run.stderr).toContain(
+            `Could not record why the run failed: ${notSaved(sessionId)}`,
+          );
+          // A new process reads only the disk (`run.status`): the run stopped where it was.
+          expect(run.status).toMatchObject({
+            kind: 'open',
+            stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+          });
+        } finally {
+          vi.useRealTimers();
+          chmodSync(run.dir, 0o755);
+        }
+      });
+
+      const plannerDown = makePlanner({
+        typedCall: typedCallAnswering(() => {
+          throw new Error('planner down');
+        }),
+      });
+
+      it.each([
+        ['a halt', 'raisePendingRecovery', 'start', { _planner: plannerDown }],
+        ['a brief', 'transitionAndSave', 'task_started', {}],
+      ] as const)(
+        '%s whose state write fails on a full disk',
+        async (_label, from, armOn, seats) => {
+          const sessionId = `full-disk-${from}-sid`;
+          const projectDir = setupProject();
+          const run = await runWithStateWrite(
+            sessionId,
+            { from, fails: 'enospc', thenEvery: true },
+            armOn,
+            { projectDir, ...seats },
+          );
+          const ref = { projectDir, sessionId };
+          const line = notSaved(sessionId, 'no space left on device');
+
+          expect(run.thrown).toBeUndefined();
+          expect(run.errors.at(-1)).toBe(line);
+          expect(readRunRecord(ref).status).toMatchObject(failedWith(line));
+          expect(run.status).toMatchObject({
+            kind: 'open',
+            stop: { kind: 'stopped' },
+          });
+        },
+      );
+
+      it('a continue once the folder takes files again reads what it saves', async () => {
+        const sessionId = 'read-only-continued-sid';
+        const run = await runInReadOnlyFolder(sessionId, 'brief');
+        chmodSync(run.dir, 0o755);
+        const kept = loadOwnerWorkflowState(run.ref);
+        const savedState = kept.kind === 'loaded' ? kept.state : undefined;
+        expect(savedState?.lastFailure?.message).toBe(notSaved(sessionId));
+
+        const again = await runWithStateWrite(sessionId, undefined, 'start', {
+          projectDir: run.ref.projectDir,
+          savedState,
+          purpose: 'resume',
+        });
+
+        expect(again.thrown).toBeUndefined();
+        expect(again.state?.lastFailure).toBeUndefined();
+        expect(readRunRecord(run.ref).status.kind).toBe('ready-to-apply');
+        const reread = loadOwnerWorkflowState(run.ref);
+        expect(reread.kind === 'loaded' && reread.state.lastFailure).toBeUndefined();
+      });
+
+      it('a failure a continue saves reads its own cause, not the one this process kept', async () => {
+        const sessionId = 'read-only-failed-again-sid';
+        const run = await runInReadOnlyFolder(sessionId, 'brief');
+        chmodSync(run.dir, 0o755);
+        const kept = loadOwnerWorkflowState(run.ref);
+        const savedState = kept.kind === 'loaded' ? kept.state : undefined;
+
+        const again = await runWithStateWrite(
+          sessionId,
+          { from: 'transitionAndSave', fails: 'eio' },
+          'task_started',
+          { projectDir: run.ref.projectDir, savedState, purpose: 'resume' },
+        );
+
+        const cause = notSaved(sessionId, 'i/o error');
+        expect(again.errors.at(-1)).toBe(cause);
+        expect(again.state?.lastFailure?.message).toBe(cause);
+        expect(readRunRecord(run.ref).status).toMatchObject(failedWith(cause));
+      });
+
+      it('a continue after planning failed on a save plans again and builds once', async () => {
+        const sessionId = 'read-only-planning-continued-sid';
+        const projectDir = setupProject();
+        const dir = sessionDir(projectDir, sessionId);
+        let plans = 0;
+        const planner = makePlanner({
+          typedCall: typedCallAnswering(() => {
+            plans += 1;
+            if (plans === 1) chmodSync(dir, 0o555);
+            return planFromTasks([makeTask({ id: 'T001' })]);
+          }),
+        });
+        const implement = vi.fn().mockResolvedValue({ success: true, output: '', usage: null });
+        const options = {
+          projectDir,
+          _planner: planner,
+          _implementer: makeImplementer({ implement }),
+        };
+        await runWithStateWrite(sessionId, undefined, 'start', options).finally(() =>
+          chmodSync(dir, 0o755),
+        );
+        const ref = { projectDir, sessionId };
+        const kept = loadOwnerWorkflowState(ref);
+        const savedState = kept.kind === 'loaded' ? kept.state : undefined;
+        expect(savedState?.lastFailure?.message).toBe(
+          `Could not save a run file: permission denied · .splitbrief/sessions/${sessionId}/plan.json`,
+        );
+        expect(implement).not.toHaveBeenCalled();
+
+        const again = await runWithStateWrite(sessionId, undefined, 'start', {
+          ...options,
+          savedState,
+          purpose: 'resume',
+        });
+
+        expect(again.thrown).toBeUndefined();
+        // No plan reached the disk, so the planner plans again.
+        expect(plans).toBe(2);
+        const planFile = parsePlanJson(readFileSync(join(dir, PLAN_JSON_FILE), 'utf8'));
+        if (!('plan' in planFile)) throw new Error(planFile.errors.join('; '));
+        const { plan } = planFile;
+        expect(plan.tasks.map((task) => task.id)).toEqual(['T001']);
+        expect(again.state?.tasks.map((task) => task.id)).toEqual(['T001']);
+        expect(readFileSync(join(dir, TASKS_FILE), 'utf8')).toContain(
+          formatTasks(again.state?.tasks ?? []),
+        );
+        expect(readFileSync(join(dir, PLAN_FILE), 'utf8')).toContain(plan.tasks[0]?.title);
+        expect(again.state?.lastFailure).toBeUndefined();
+        const reread = loadOwnerWorkflowState(ref);
+        expect(reread.kind === 'loaded' && reread.state.lastFailure).toBeUndefined();
+        expect(readRunRecord(ref).status.kind).toBe('ready-to-apply');
+        expect(implement).toHaveBeenCalledTimes(1);
+      });
+
+      it('a continue after the final review failed on a save reviews again, with no brief rerun', async () => {
+        const sessionId = 'read-only-review-continued-sid';
+        const projectDir = setupProject();
+        const dir = sessionDir(projectDir, sessionId);
+        let reviews = 0;
+        const planner = makePlanner({
+          typedCall: typedCallPlanAndReview(
+            () => planFromTasks([makeTask({ id: 'T001' })]),
+            (prompt) => {
+              reviews += 1;
+              if (reviews === 1) chmodSync(dir, 0o555);
+              return passingReviewVerdict(prompt);
+            },
+          ),
+        });
+        const implement = vi.fn().mockResolvedValue({ success: true, output: '', usage: null });
+        const options = {
+          projectDir,
+          _planner: planner,
+          _implementer: makeImplementer({ implement }),
+        };
+        const failed = await runWithStateWrite(sessionId, undefined, 'start', options).finally(() =>
+          chmodSync(dir, 0o755),
+        );
+        expect(failed.errors.at(-1)).toMatch(
+          /^Could not save (a run file|the run state): permission denied · /,
+        );
+        expect(implement).toHaveBeenCalledTimes(1);
+        const ref = { projectDir, sessionId };
+        const kept = loadOwnerWorkflowState(ref);
+
+        const again = await runWithStateWrite(sessionId, undefined, 'start', {
+          ...options,
+          savedState: kept.kind === 'loaded' ? kept.state : undefined,
+          purpose: 'resume',
+        });
+
+        expect(again.thrown).toBeUndefined();
+        // The built brief stands: no restore and no second implementer call.
+        expect(implement).toHaveBeenCalledTimes(1);
+        expect(reviews).toBe(2);
+        const reread = loadOwnerWorkflowState(ref);
+        expect(reread.kind === 'loaded' && reread.state.lastFailure).toBeUndefined();
+        expect(again.state?.pendingRecovery).toBeUndefined();
+        expect(readRunRecord(ref).status.kind).toBe('ready-to-apply');
+      });
+
+      describe('a continue in this process restores the files the failed attempt wrote', () => {
+        const committed = {
+          'src/hello.ts': 'hello start\n',
+          'docs/notes.md': 'notes start\n',
+          'docs/old.md': 'old start\n',
+          'dirty.txt': 'dirty committed\n',
+          '.gitignore': 'build/\n',
+        };
+        const watched = [
+          'src/hello.ts',
+          'docs/notes.md',
+          'docs/old.md',
+          'docs/new.md',
+          'dirty.txt',
+        ];
+        const contents = (dir: string) =>
+          Object.fromEntries(
+            watched.map((file) => [
+              file,
+              existsSync(join(dir, file)) ? readFileSync(join(dir, file), 'utf8') : null,
+            ]),
+          );
+
+        it.each([
+          ['worktree', 'a folder that takes no new file', 'read-only', 'this'],
+          ['checkout', 'a folder that takes no new file', 'read-only', 'this'],
+          ['checkout', 'a folder that takes no new file', 'read-only', 'a new'],
+          ['worktree', 'a one-off i/o error', 'eio', 'this'],
+          ['worktree', 'a one-off full disk', 'enospc', 'this'],
+          ['checkout', 'another writer', 'conflict', 'this'],
+          ['worktree', 'a save it cannot confirm', 'unconfirmed', 'this'],
+        ] as const)(
+          '%s, after %s, continued in %s process',
+          async (isolation, _label, fails, continuedIn) => {
+            const projectDir = createTempDir('run-workflow-test');
+            dirs.push(projectDir);
+            createTestGitRepo(projectDir, committed);
+            // A file the user changed before the run is theirs: a restore returns it to their bytes.
+            writeFileSync(join(projectDir, 'dirty.txt'), 'dirty by the user\n');
+            const sessionId = `restore-kept-${isolation}-${fails}-${continuedIn.replace(' ', '-')}-sid`;
+            const ref = { projectDir, sessionId };
+            const config = makeConfig({
+              validation: { endChecks: false, testCommand: 'noop' },
+              workflow: {
+                approve: 'none',
+                isolation: isolation === 'checkout' ? 'none' : 'worktree',
+              },
+            });
+            let taskStart: Record<string, string | null> = {};
+            let workspace = '';
+            const first = vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
+              workspace = opts.projectDir;
+              taskStart = contents(workspace);
+              writeFileSync(join(workspace, 'src/hello.ts'), 'hello by the call\n');
+              writeFileSync(join(workspace, 'docs/notes.md'), 'notes by the call\n');
+              unlinkSync(join(workspace, 'docs/old.md'));
+              writeFileSync(join(workspace, 'docs/new.md'), 'new by the call\n');
+              writeFileSync(join(workspace, 'dirty.txt'), 'dirty by the call\n');
+              mkdirSync(join(workspace, 'build'), { recursive: true });
+              writeFileSync(join(workspace, 'build/out.log'), 'ignored by the call\n');
+              if (fails === 'read-only') chmodSync(sessionDir(projectDir, sessionId), 0o555);
+              return { success: true, output: '', usage: null };
+            });
+            const failed = await runWithStateWrite(
+              sessionId,
+              fails === 'read-only' ? undefined : { from: 'recordWrites', fails },
+              fails === 'read-only' ? 'start' : 'task_started',
+              { projectDir, config, _implementer: makeImplementer({ implement: first }) },
+            ).finally(() => chmodSync(sessionDir(projectDir, sessionId), 0o755));
+            expect(failed.status).toMatchObject({ kind: 'open', stop: { kind: 'stopped' } });
+            expect(taskStart['dirty.txt']).toBe('dirty by the user\n');
+
+            // The failed save left the undeclared writes off the disk.
+            const onDisk = WorkflowStateSchema.parse(
+              JSON.parse(readFileSync(join(sessionDir(projectDir, sessionId), STATE_FILE), 'utf8')),
+            ).changedFilesBaseline?.activeTaskSnapshot?.restoreFiles;
+            if (fails === 'unconfirmed') expect(onDisk).toContain('docs/notes.md');
+            else expect(onDisk ?? []).not.toContain('docs/notes.md');
+            // A new process holds nothing of this one in memory.
+            if (continuedIn === 'a new') forgetCachedState(statePath(ref));
+
+            let beforeSecondCall: Record<string, string | null> = {};
+            let ignoredBeforeSecondCall: string | null = null;
+            const second = vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
+              beforeSecondCall = contents(opts.projectDir);
+              const ignored = join(opts.projectDir, 'build/out.log');
+              ignoredBeforeSecondCall = existsSync(ignored) ? readFileSync(ignored, 'utf8') : null;
+              return { success: true, output: '', usage: null };
+            });
+            const kept = loadOwnerWorkflowState(ref);
+            const again = await runWithStateWrite(sessionId, undefined, 'start', {
+              projectDir,
+              config,
+              savedState: kept.kind === 'loaded' ? kept.state : undefined,
+              purpose: 'resume',
+              _implementer: makeImplementer({ implement: second }),
+            });
+
+            expect(again.thrown).toBeUndefined();
+            expect(second).toHaveBeenCalledTimes(1);
+            // A new process restores from the disk only: the declared file goes back, the
+            // undeclared writes of the failed save stay as the call left them.
+            expect(beforeSecondCall).toEqual(
+              continuedIn === 'this'
+                ? taskStart
+                : {
+                    ...taskStart,
+                    'docs/notes.md': 'notes by the call\n',
+                    'docs/old.md': null,
+                    'docs/new.md': 'new by the call\n',
+                    'dirty.txt': 'dirty by the call\n',
+                  },
+            );
+            // A file ignored at the start is not the call's write: no restore deletes it.
+            expect(ignoredBeforeSecondCall).toBe('ignored by the call\n');
+          },
+        );
+      });
+
+      // Only that one write is refused; every state write still lands.
+      it.each([
+        ['the plan', 'plan.json', {}],
+        [
+          'the final review',
+          'review.json',
+          {
+            _planner: makePlanner({
+              typedCall: typedCallPlanAndReview(
+                () => planFromTasks([makeTask({ id: 'T001' })]),
+                passingReviewVerdict,
+              ),
+            }),
+          },
+        ],
+      ] as const)(
+        '%s a run file it cannot save fails the run with that cause, not as a seat that failed',
+        async (_label, file, seats) => {
+          const sessionId = `unsaved-${file.replace('.', '-')}-sid`;
+          const projectDir = setupProject();
+          secureWrite.refuses = file;
+          const run = await runWithStateWrite(sessionId, undefined, 'start', {
+            projectDir,
+            ...seats,
+          }).finally(() => {
+            secureWrite.refuses = undefined;
+          });
+          const cause = `Could not save a run file: permission denied · .splitbrief/sessions/${sessionId}/${file}`;
+
+          expect(run.thrown).toBeUndefined();
+          expect(run.errors).toEqual([cause]);
+          expect(run.state?.pendingRecovery).toBeUndefined();
+          expect(readRunRecord({ projectDir, sessionId }).status).toMatchObject(failedWith(cause));
+        },
+      );
+
+      it('a state file the reopen cannot read reads failed with the read cause', async () => {
+        const sessionId = 'read-only-unreadable-sid';
+        const run = await runInReadOnlyFolder(sessionId, 'brief');
+        const statePath = join(run.dir, STATE_FILE);
+        chmodSync(statePath, 0o000);
+        try {
+          expect(readRunRecord(run.ref).status).toMatchObject({
+            kind: 'open',
+            stop: { kind: 'stopped', on: { kind: 'failed' } },
+          });
+        } finally {
+          chmodSync(statePath, 0o600);
+          chmodSync(run.dir, 0o755);
+        }
+      });
+    });
+
     it('the files an attempt wrote on a disk that confirms no write from then on', async () => {
       const sessionId = 'restore-scope-every-sid';
       const run = await runWithStateWrite(
@@ -919,11 +1391,66 @@ describe('runWorkflow — smoke', () => {
         'task_started',
       );
 
-      expect(run.errors[0]).toBe(`Implementation failed: ${unconfirmed(sessionId)}`);
-      expect(run.plainCause).toBe(run.errors.at(-1));
-      expect(run.status).toMatchObject(failedWith(run.errors.at(-1) ?? ''));
+      expect(run.errors).toEqual([unconfirmed(sessionId)]);
+      expect(run.plainCause).toBe(unconfirmed(sessionId));
+      expect(run.status).toMatchObject(failedWith(unconfirmed(sessionId)));
       expect(`${run.errors.join('\n')}${run.stderr}`).not.toMatch(/durability|persist/);
     });
+
+    const notSavedEio = (sessionId: string) =>
+      `Could not save the run state: i/o error · .splitbrief/sessions/${sessionId}/state.json`;
+    const reviewing = {
+      _planner: makePlanner({
+        typedCall: typedCallPlanAndReview(
+          () => planFromTasks([makeTask({ id: 'T001' })]),
+          passingReviewVerdict,
+        ),
+      }),
+    };
+
+    const kept = () => 'Workflow state kept changing while this mutation was being retried.';
+    const changedBefore = () => 'Workflow state changed before this mutation committed.';
+    const planUsage = {
+      _planner: makePlanner({
+        typedCall: typedCallFromTasks([makeTask({ id: 'T001' })], {
+          inputTokens: 50,
+          outputTokens: 25,
+        }),
+      }),
+    };
+
+    it.each([
+      ['planning', 'transitionAndSave', 'eio', 'planner_status', {}, notSavedEio],
+      ['planning', 'transitionAndSave', 'unconfirmed', 'planner_status', {}, unconfirmed],
+      ['the final review', 'transitionAndSave', 'eio', 'drift_report', reviewing, notSavedEio],
+      [
+        'the final review',
+        'transitionAndSave',
+        'unconfirmed',
+        'drift_report',
+        reviewing,
+        unconfirmed,
+      ],
+      ['a brief', 'recordWrites', 'eio', 'task_started', {}, notSavedEio],
+      ['planning', 'addUsageAndSave', 'conflict-twice', 'planner_status', planUsage, kept],
+      ['planning', 'transitionAndSave', 'conflict', 'planner_status', {}, changedBefore],
+    ] as const)(
+      'a state write that fails during %s (%s, %s) fails the run with its cause, not as the seat failing',
+      async (label, from, fails, armOn, seats, line) => {
+        const sessionId = `seat-save-${label.replaceAll(' ', '-')}-${fails}-sid`;
+        const implement = vi.fn().mockResolvedValue({ success: true, output: '', usage: null });
+        const run = await runWithStateWrite(sessionId, { from, fails }, armOn, {
+          _implementer: makeImplementer({ implement }),
+          ...seats,
+        });
+
+        expect(run.errors).toEqual([line(sessionId)]);
+        expect(run.plainCause).toBe(line(sessionId));
+        expect(run.state?.pendingRecovery).toBeUndefined();
+        expect(run.status).toMatchObject(failedWith(line(sessionId)));
+        if (label === 'a brief') expect(implement).toHaveBeenCalledTimes(1);
+      },
+    );
   });
 
   it('records the planning failure as the stop reason of an open run', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -26,7 +26,7 @@ const {
   confinedReadLockfile,
   checkSessionLiveness,
 } = await import('./lockfile.js');
-const { HEARTBEAT_STALENESS_MS } = await import('./lockfile-status.js');
+const { HEARTBEAT_STALENESS_MS, checkSessionLockStatus } = await import('./lockfile-status.js');
 
 let testDir: string;
 
@@ -141,6 +141,55 @@ describe('updateHeartbeat', () => {
 });
 
 describe('markExited', () => {
+  it('a run this process let go of reads exited here when its folder takes no new file, until it takes the lock again', async () => {
+    const hold = () =>
+      writeLockfile(testDir, {
+        pid: process.pid,
+        startTimeMs: Date.now(),
+        lastAliveMs: Date.now(),
+        sessionId: sessionIdFor(testDir),
+        feature: 'test feature',
+      });
+    await hold();
+    chmodSync(testDir, 0o555);
+    try {
+      await expect(markExited(testDir, 0)).rejects.toThrow(/permission denied/);
+      expect(readLockfile(testDir)?.exitedAt).toBeUndefined();
+      expect(checkSessionLiveness(testDir).alive).toBe(false);
+    } finally {
+      chmodSync(testDir, 0o755);
+    }
+
+    await hold();
+    expect(checkSessionLiveness(testDir).alive).toBe(true);
+  });
+
+  it('a lock another process writes after this process let go of the run does not read exited here', async () => {
+    await writeLockfile(testDir, {
+      pid: process.pid,
+      startTimeMs: Date.now(),
+      lastAliveMs: Date.now(),
+      sessionId: sessionIdFor(testDir),
+      feature: 'test feature',
+    });
+    chmodSync(testDir, 0o555);
+    try {
+      await expect(markExited(testDir, 0)).rejects.toThrow(/permission denied/);
+    } finally {
+      chmodSync(testDir, 0o755);
+    }
+
+    writeRawLockfile({
+      version: 1,
+      pid: process.ppid,
+      startTimeMs: Date.now(),
+      lastAliveMs: Date.now(),
+      sessionId: sessionIdFor(testDir),
+      feature: 'test feature',
+    });
+    expect(checkSessionLockStatus({ sessionDir: testDir }).kind).not.toBe('exited');
+  });
+
   it('adds exitedAt and exitCode', async () => {
     await writeLockfile(testDir, {
       pid: 1234,

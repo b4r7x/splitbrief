@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
-import { ensureSecureDir } from './fs.js';
+import { ensureSecureDir, nameWriteTarget } from './fs.js';
 import { canSignalProcess } from './process/liveness.js';
 
 const LOCK_SUFFIX = '.lock';
@@ -99,7 +99,9 @@ export function lockSibling(filePath: string): string {
   return `${filePath}${LOCK_SUFFIX}`;
 }
 
-export function withFileLock<T>(lockPath: string, onTimeout: () => Error, fn: () => T): T {
+/** Runs `fn` while holding the lock sibling of `filePath`. */
+export function withFileLock<T>(filePath: string, onTimeout: () => Error, fn: () => T): T {
+  const lockPath = lockSibling(filePath);
   ensureSecureDir(dirname(lockPath));
   for (let attempt = 0; attempt < LOCK_MAX_ATTEMPTS; attempt++) {
     let fd: number;
@@ -107,7 +109,7 @@ export function withFileLock<T>(lockPath: string, onTimeout: () => Error, fn: ()
       fd = openSync(lockPath, 'wx');
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined;
-      if (code !== 'EEXIST') throw err;
+      if (code !== 'EEXIST') throw nameWriteTarget(err, filePath);
       if (reclaimStaleLock(lockPath)) continue;
       sleepSync(LOCK_SLEEP_MS);
       continue;

@@ -1,9 +1,36 @@
+import type { WorkflowState } from '../schemas/workflow.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { loadState } from './persistence.js';
-import { classifyStateVersion, readRawState } from './state-file.js';
+import { classifyStateVersion, readRawState, statePath } from './state-file.js';
 import type { ResumeLoadResult } from './types.js';
 
 export type OwnedResumeState = ResumeLoadResult;
+
+type UnsavedFailure = Readonly<{
+  stateRevision: number | undefined;
+  failure: NonNullable<WorkflowState['lastFailure']>;
+}>;
+
+/**
+ * Why a run failed, when this process could not save it, kept against the saved state it failed
+ * on. The run reads failed in this process until a later save lands; another process reads only
+ * the disk, where the run stopped at its last saved step.
+ */
+const unsavedFailures = new Map<string, UnsavedFailure>();
+
+export function keepUnsavedFailure(
+  ref: SessionRef,
+  stateRevision: number | undefined,
+  failure: NonNullable<WorkflowState['lastFailure']>,
+): void {
+  unsavedFailures.set(statePath(ref), { stateRevision, failure });
+}
+
+function withUnsavedFailure(ref: SessionRef, state: WorkflowState): WorkflowState {
+  const kept = unsavedFailures.get(statePath(ref));
+  if (kept === undefined || kept.stateRevision !== state.stateRevision) return state;
+  return { ...state, lastFailure: kept.failure };
+}
 
 /**
  * `loadState` collapses every unreadable file into null. This re-reads the raw
@@ -12,7 +39,7 @@ export type OwnedResumeState = ResumeLoadResult;
  */
 export function loadOwnerWorkflowState(ref: SessionRef): OwnedResumeState {
   const state = loadState(ref);
-  if (state !== null) return { kind: 'loaded', state };
+  if (state !== null) return { kind: 'loaded', state: withUnsavedFailure(ref, state) };
 
   const raw = readRawState(ref);
   if (raw.kind === 'missing') return { kind: 'missing' };

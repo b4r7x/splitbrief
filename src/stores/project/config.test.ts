@@ -1,10 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { chmodSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  realpathSync,
+} from 'node:fs';
 import { writeConfigYaml as persistConfigYaml } from '#testing/helpers/config-io.js';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { configStore } from './config.js';
 import { feedbackStore } from '../ui/feedback.js';
+import { reportConfigSaveFailure } from './save-feedback.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { expectApi, expectCli } from '#testing/helpers/config-narrowing.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../core/paths.js';
@@ -379,6 +387,27 @@ describe('configStore.save', () => {
     expect(result.kind).toBe('failure');
     if (result.kind === 'failure') expect(result.error).toBeInstanceOf(Error);
   });
+
+  itUnix(
+    'names config.yaml, not its lock, when the .splitbrief folder takes no new file',
+    async () => {
+      writeConfigYaml();
+      configStore.load(tmpDir);
+      const folder = join(tmpDir, SPLITBRIEF_DIR);
+      chmodSync(folder, 0o555);
+      try {
+        reportConfigSaveFailure(
+          await configStore.save({ ...loadedConfig(), escalation: { enabled: true } }),
+        );
+      } finally {
+        chmodSync(folder, 0o755);
+      }
+
+      expect(feedbackStore.get().message).toBe(
+        `Failed to save config: permission denied · ${join(realpathSync(tmpDir), SPLITBRIEF_DIR, CONFIG_FILE)}`,
+      );
+    },
+  );
 
   it('save does not re-apply CLI overrides', async () => {
     writeConfigYaml();

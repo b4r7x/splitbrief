@@ -775,6 +775,8 @@ const checkpointPredicates = [
     },
   ],
   [checkpointId('at-rest-crashed-build'), includesAll('interrupted', 'Stopped at T002')],
+  [checkpointId('at-rest-failed-unsaved'), includesAll('Stopped by an error')],
+  [checkpointId('at-rest-plan-unsaved'), includesAll('Stopped by an error', 'plan.json')],
   [checkpointId('at-rest-crashed-review'), includesAll('interrupted', 'Stopped at the review')],
   [checkpointId('retained-workspace'), includesAll('Workspace kept')],
   [

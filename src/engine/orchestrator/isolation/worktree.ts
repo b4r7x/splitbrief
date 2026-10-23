@@ -43,8 +43,7 @@ const isolationError = {
 } as const;
 
 function withExcludeFileLock<T>(file: string, fn: () => T): T {
-  const lockPath = lockSibling(file);
-  return withFileLock(lockPath, () => isolationError.excludeLockTimeout(lockPath), fn);
+  return withFileLock(file, () => isolationError.excludeLockTimeout(lockSibling(file)), fn);
 }
 
 // The owning project is recorded beside the session id because sessions are

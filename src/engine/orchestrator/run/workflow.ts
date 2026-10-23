@@ -20,7 +20,8 @@ import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { error } from '../../../utils/error.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { warnError } from '../../../lib/warn.js';
+import { warnError, warnStderr } from '../../../lib/warn.js';
+import { sessionError } from '../../../core/sessions/errors.js';
 
 import {
   WORKFLOW_CANCEL_REASON_USER,
@@ -408,12 +409,10 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     if (cancelled && signalCancellationReason === undefined) {
       publishWorkflowCancellation(WORKFLOW_CANCEL_REASON_USER);
     }
-    if (!result) {
-      if (cancelled) {
-        const summary = buildSummary({
-          ...summaryBase,
-          state: trackedState ?? createInitialState(feature),
-        });
+    // The run's outcome is its state: a summary the session folder cannot take is said, and the
+    // run still returns what it did.
+    const saveRunSummary = (summary: Summary): void => {
+      try {
         saveFinalSession({
           projectDir,
           sessionId,
@@ -423,19 +422,23 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           summary,
           state: trackedState,
         });
+      } catch (err) {
+        if (!sessionError.isSummaryNotSaved(err)) throw err;
+        warnStderr(toErrorMessage(err));
+      }
+    };
+    if (!result) {
+      if (cancelled) {
+        const summary = buildSummary({
+          ...summaryBase,
+          state: trackedState ?? createInitialState(feature),
+        });
+        saveRunSummary(summary);
         return summary;
       }
       throw error('workflow-no-summary', 'Unreachable: workflow did not produce a summary');
     }
-    saveFinalSession({
-      projectDir,
-      sessionId,
-      active: session.active,
-      feature,
-      startTime,
-      summary: result,
-      state: trackedState,
-    });
+    saveRunSummary(result);
     return result;
   } finally {
     stopFollowingState?.();

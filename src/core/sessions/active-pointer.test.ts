@@ -67,6 +67,30 @@ describe('writeActive / readActive round-trip', () => {
     );
   });
 
+  it('names the active file, not its temporary copy, when the write of that copy fails', () => {
+    const dir = makeTmp();
+    mkdirSync(join(dir, '.splitbrief'), { recursive: true });
+    writeActive({ projectDir: dir, sessionId: '2026-04-14-existing' });
+
+    expect(() =>
+      writeActive(
+        { projectDir: dir, sessionId: '2026-04-14-replacement' },
+        {
+          _beforeMutation: (boundary) => {
+            if (boundary !== 'write-permissions') return;
+            throw Object.assign(new Error('ENOSPC: no space left on device, write'), {
+              code: 'ENOSPC',
+              syscall: 'write',
+            });
+          },
+        },
+      ),
+    ).toThrowError(
+      expect.objectContaining({ code: 'ENOSPC', path: join(dir, '.splitbrief', 'active') }),
+    );
+    expect(readActive(dir)).toBe('2026-04-14-existing');
+  });
+
   it('does not overwrite a different active record introduced before commit', () => {
     const dir = makeTmp();
     mkdirSync(join(dir, '.splitbrief'), { recursive: true });

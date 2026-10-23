@@ -132,6 +132,7 @@ import { runBaseOf } from './isolation/base-tree.js';
 import type { SteeringPort } from '../calls/steering.js';
 import { settleMidCallDeliveries } from './queue/mid-call.js';
 import { plannerFeature } from './run/planner-callbacks-context.js';
+import { sessionError } from '../../core/sessions/errors.js';
 
 /** The code a failed review carries when the failure names none of its own. */
 export const REVIEW_UNAVAILABLE = 'review-unavailable';
@@ -968,6 +969,7 @@ export async function runFinalReviewPhase(opts: {
     writeSpecFile({ projectDir, sessionId }, REVIEW_FILE, reviewText, metadata);
   } catch (err) {
     if (opts.signal?.aborted || isAbortError(err)) return interrupted();
+    if (sessionError.isLocalSaveFailure(err)) throw err;
     const seat = resolveReviewerRunner(config);
     const failed = `${reviewName(reviewEvent)} failed`;
     const label =
