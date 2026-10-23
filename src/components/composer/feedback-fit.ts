@@ -1,5 +1,5 @@
 import { ELLIPSIS, graphemes } from '../../utils/display-text.js';
-import { wrapHard } from '../../utils/wrap.js';
+import { widestPathAwareUnit, wrapPathAware } from '../../utils/wrap.js';
 
 export interface FeedbackMessageParts {
   prefix: string;
@@ -14,9 +14,20 @@ interface FeedbackBox {
   maxRows: number;
 }
 
+// A separator stays on the row of the text before it: the space in front of it never breaks.
+const GLUED_SEPARATOR = '\u00a0·';
+
+function glueSeparators(text: string): string {
+  return text.replaceAll(' ·', GLUED_SEPARATOR);
+}
+
+function wrapFeedback(text: string, width: number): string {
+  return wrapPathAware(glueSeparators(text), width).replaceAll(GLUED_SEPARATOR, ' ·');
+}
+
 function fitsBox(text: string, box: FeedbackBox): boolean {
   if (box.maxWidth <= 0) return text.length === 0;
-  return wrapHard(text, box.maxWidth).split('\n').length <= box.maxRows;
+  return wrapFeedback(text, box.maxWidth).split('\n').length <= box.maxRows;
 }
 
 /**
@@ -82,7 +93,8 @@ function fitText(message: FeedbackMessageInput, text: string, box: FeedbackBox):
 /**
  * The message laid out in a box of `width` cells by `maxRows` rows: it wraps at word boundaries,
  * one row per line, and only a message that passes the last row is cut, with an ellipsis. A wrapped
- * message takes the narrowest width that keeps its row count, so its rows come out even.
+ * message takes the narrowest width that keeps its row count, so its rows come out even, and never
+ * cuts a word to get there.
  */
 export function fitFeedbackMessage(
   message: FeedbackMessageInput,
@@ -94,10 +106,10 @@ export function fitFeedbackMessage(
 
   const max = Math.max(0, Math.floor(width));
   const fitted = fitText(message, text, { maxWidth: max, maxRows });
-  const rowCount = wrapHard(fitted, max).split('\n').length;
+  const rowCount = wrapFeedback(fitted, max).split('\n').length;
   if (rowCount === 1) return fitted;
 
-  let low = 1;
+  let low = widestPathAwareUnit(glueSeparators(fitted), max);
   let high = max;
   while (low < high) {
     const mid = Math.floor((low + high) / 2);
@@ -107,7 +119,7 @@ export function fitFeedbackMessage(
       low = mid + 1;
     }
   }
-  return wrapHard(fitted, low)
+  return wrapFeedback(fitted, low)
     .split('\n')
     .map((row) => row.trim())
     .join('\n');

@@ -9,6 +9,8 @@ import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js'
 import { taskId } from '../../core/schemas/task.js';
 import { saveState } from '../../core/state/persistence.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
+import { loadEvents } from '../../stores/workflow/actions/load.js';
+import { reportDraftNotSaved } from '../../stores/ui/session-drafts.js';
 import { departureStore } from '../../stores/workflow/departure.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
@@ -800,6 +802,41 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('signup form posts');
     expect(runWorkflow).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('keeps a draft that could not be saved at the tail of the transcript through a re-read', async () => {
+    openRun();
+    addEvent({
+      type: 'planner_text',
+      ts: FIXED_TS,
+      phase: 'implementing',
+      text: 'The signup form posts straight to the route handler.',
+    });
+    reportDraftNotSaved(
+      new Error(
+        'Draft not saved: permission denied · .splitbrief/sessions/at-rest-session/draft.json',
+      ),
+      true,
+    );
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    loadEvents([
+      {
+        type: 'planner_text',
+        ts: FIXED_TS,
+        phase: 'implementing',
+        text: 'The signup form posts straight to the route handler.',
+      },
+    ]);
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Warning');
+    expect(frame).toContain('.splitbrief/sessions/at-rest-session/draft.json');
+    expect(frame.indexOf('signup form posts')).toBeLessThan(frame.indexOf('Warning'));
+    expect(frame).toContain('esc or quit again leaves without it');
     ui.unmount();
   });
 

@@ -36,6 +36,7 @@ import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../conversation-rows/viewport.js';
 import { queuedBriefs } from '../conversation-rows/queued-briefs.js';
 import { resultMenuStore } from '../../../stores/workflow/result-menu.js';
+import { routeClosedAtRest } from '../at-rest.js';
 
 export interface ConversationScrollSnapshot {
   conversationWidth: number;
@@ -174,7 +175,7 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
     tasks: tasksStore.get(),
     phase: lifecycleStore.get().phase,
     sidebarShowsTasks,
-    closed: transcriptTailStore.get().rowCount > 0,
+    closed: routeClosedAtRest(routerStore.get()),
   });
   const viewportSplit = splitConversationViewport({
     viewportHeight: contentRect.height,

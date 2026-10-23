@@ -41,7 +41,7 @@ describe('session drafts', () => {
     expect(readSessionDraft({ projectDir, sessionId: 'two' })).toBeNull();
     expect(statSync(join(sessionDir(projectDir, 'one'), 'draft.json')).mode & 0o777).toBe(0o600);
     writeSessionDraft(ref, { version: 1, parts: [] });
-    expect(readSessionDraft(ref)?.parts).toEqual([]);
+    expect(readSessionDraft(ref)).toBeNull();
   });
 
   it('rejects a session symlink pointing at another session in the same project', () => {

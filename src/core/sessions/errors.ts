@@ -1,5 +1,8 @@
+import { isNodeError } from '../../lib/process/errors.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { error, matches, type AppError } from '../../utils/error.js';
 import { SPLITBRIEF_IDENTITY } from '../identity.js';
+import { SOFT_SEP } from '../separators.js';
 import type { SessionRef } from '../types/session-ref.js';
 
 export type SessionPreparationOperation =
@@ -59,6 +62,18 @@ export const sessionError = {
     ),
   invalidId: (sessionId: string) =>
     error('session-invalid-id', 'invalid session id', { sessionId }),
+  // Node spells a file error `EACCES: permission denied, open '<absolute path>'`: the user needs
+  // only its words and the project-relative file.
+  draftNotSaved: (relativePath: string, cause: unknown) => {
+    const reason =
+      (isNodeError(cause) && /^E[A-Z]+: ([^,]+)/.exec(cause.message)?.[1]) || toErrorMessage(cause);
+    return error(
+      'session-draft-not-saved',
+      `Draft not saved: ${reason}${SOFT_SEP}${relativePath}`,
+      { relativePath, reason },
+      cause,
+    );
+  },
 
   isStillActive: matches('session-still-active'),
 } as const;

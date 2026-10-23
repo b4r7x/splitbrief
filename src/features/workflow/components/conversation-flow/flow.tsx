@@ -27,7 +27,7 @@ import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';
 import { ConversationTranscriptRows } from './conversation-hover-rows.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
-import { routeBriefMark } from '../../at-rest.js';
+import { routeBriefMark, routeClosedAtRest } from '../../at-rest.js';
 
 interface ConversationFlowProps {
   height: number;
@@ -92,6 +92,7 @@ export function ConversationFlow({
   });
   const isRunning = display.animate;
   const restMark = routerStore.use(routeBriefMark);
+  const closedAtRest = routerStore.use(routeClosedAtRest);
   const sections = useSections();
   const viewportHeight = Math.max(0, height);
   const cols = conversationWidth;
@@ -104,7 +105,7 @@ export function ConversationFlow({
     tasks,
     phase: lifecycle.phase,
     sidebarShowsTasks,
-    closed: tail !== undefined && tail.length > 0,
+    closed: closedAtRest,
   });
   const viewportSplit = splitConversationViewport({
     viewportHeight,

@@ -15,6 +15,7 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { activeApply } from '../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { changedFileCount } from '../closed/projections.js';
 import { stopKeptFiles } from './copy.js';
+import { routeClosedAtRest } from '../at-rest.js';
 
 export type StopRowId =
   | 'stop-now'
@@ -169,7 +170,7 @@ export function readStopMenuRows(): StopRow[] {
       },
     ];
   if (stop.phase === 'parked' || stop.phase === 'ended' || atRest) {
-    const closed = stop.phase === 'ended' || (atRest && route.run.status.kind === 'closed');
+    const closed = stop.phase === 'ended' || routeClosedAtRest(route);
     // A ready run cannot be continued: Apply and Discard live in its result menu, and End run
     // discards it the same way.
     const ready = atRest && route.run.status.kind === 'ready-to-apply';

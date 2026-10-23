@@ -44,6 +44,7 @@ import {
 import { deriveFallbackRows } from '../../../src/core/crew/fallback.js';
 import { deriveCrewRows } from '../../../src/core/crew/rows.js';
 import { crewActivate, fallbackActivate } from '../../../src/features/crew/rows.js';
+import { reportDraftNotSaved } from '../../../src/stores/ui/session-drafts.js';
 import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
@@ -91,6 +92,7 @@ import {
   seedRoutedCrew,
   setupVisualFixture,
   teardownVisualFixture,
+  UNSAVED_DRAFT_ERROR,
   visualConfig,
   VISUAL_FIXTURE_PROJECT_DIR,
   VISUAL_PUBLISHED_AT,
@@ -1900,6 +1902,47 @@ function seedStopSheet(): void {
   });
 }
 
+/** A parked run with one feedback line armed after it settles, where nothing clears it. */
+function createParkedFeedbackFixture(feedback: () => void): FixtureLifecycle {
+  const base = createOverlayFixture({
+    overlay: 'none',
+    underlyingScreen: 'workflow',
+    seed: () => {
+      seedStopSheet();
+      stopStore.request('stop-now');
+      stopStore.park('mid-brief', 'T002', null);
+      markWorkflowPaused();
+    },
+  });
+  // The app's mount effects and the workflow's store reset both clear a feedback line seeded
+  // before mount, and the keys effect that clears it runs in the same commit as the reset —
+  // so the line is armed one macrotask after the run settles into its parked state,
+  // past every mount effect, where nothing clears it until teardown.
+  let disarm: (() => void) | undefined;
+  return {
+    ...base,
+    setup: async (context) => {
+      await base.setup(context);
+      let armed = false;
+      const stop = stopStore.subscribe(() => {
+        if (armed || stopStore.get().phase !== 'parked') return;
+        armed = true;
+        stop();
+        setImmediate(feedback);
+      });
+      disarm = () => {
+        armed = true;
+        stop();
+      };
+    },
+    teardown: () => {
+      disarm?.();
+      disarm = undefined;
+      return base.teardown();
+    },
+  };
+}
+
 const createStopSheetFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'stop-sheet',
@@ -2789,45 +2832,11 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   ],
   [
     scenarioId('workflow-quit-hint'),
-    () => {
-      const base = createOverlayFixture({
-        overlay: 'none',
-        underlyingScreen: 'workflow',
-        seed: () => {
-          seedStopSheet();
-          stopStore.request('stop-now');
-          stopStore.park('mid-brief', 'T002', null);
-          markWorkflowPaused();
-        },
-      });
-      // The app's mount effects and the workflow's store reset both clear a quit hint seeded
-      // before mount, and the keys effect that clears it runs in the same commit as the reset —
-      // so the confirmation is armed one macrotask after the run settles into its parked state,
-      // past every mount effect, where nothing clears it until teardown.
-      let disarm: (() => void) | undefined;
-      return {
-        ...base,
-        setup: async (context) => {
-          await base.setup(context);
-          let armed = false;
-          const stop = stopStore.subscribe(() => {
-            if (armed || stopStore.get().phase !== 'parked') return;
-            armed = true;
-            stop();
-            setImmediate(() => feedbackStore.setMessage('Press ctrl+c again to quit'));
-          });
-          disarm = () => {
-            armed = true;
-            stop();
-          };
-        },
-        teardown: () => {
-          disarm?.();
-          disarm = undefined;
-          return base.teardown();
-        },
-      };
-    },
+    () => createParkedFeedbackFixture(() => feedbackStore.setMessage('Press ctrl+c again to quit')),
+  ],
+  [
+    scenarioId('workflow-draft-not-saved'),
+    () => createParkedFeedbackFixture(() => reportDraftNotSaved(UNSAVED_DRAFT_ERROR, true)),
   ],
   [
     scenarioId('workflow-stop-menu-pause'),

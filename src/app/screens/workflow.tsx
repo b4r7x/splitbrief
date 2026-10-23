@@ -38,6 +38,8 @@ import {
   type WorkflowScreenDeps,
 } from '../../features/workflow/hooks/workflow-screen/use-model.js';
 import { closedTranscriptBlock } from '../../features/workflow/closed/block.js';
+import { calloutRowsBlock } from '../../features/workflow/conversation-rows/callout-block.js';
+import { sectionSpacerBlock } from '../../features/workflow/conversation-rows/build.js';
 import { recordedCrewHeader } from '../../features/workflow/closed/header.js';
 import {
   applyByline,
@@ -95,6 +97,7 @@ import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { formatSubmissionFailure } from '../../components/composer/home-hint.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { draftRefusalStore } from '../../stores/ui/session-drafts.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
@@ -355,17 +358,32 @@ export function WorkflowScreen({
     model.crewRecord === undefined
       ? null
       : recordedCrewHeader({ record: model.crewRecord, railCells, cols });
-  const transcriptTail =
+  const closedBlock =
     model.closed && model.atRestRecord !== undefined
-      ? [
-          closedTranscriptBlock({
-            view: model.closedView,
-            width: contentWidth,
-            theme,
-            crewNamed: crewChrome?.crewNamed ?? false,
-          }),
-        ]
-      : undefined;
+      ? closedTranscriptBlock({
+          view: model.closedView,
+          width: contentWidth,
+          theme,
+          crewNamed: crewChrome?.crewNamed ?? false,
+        })
+      : null;
+  // A draft that could not be saved is named below the run's own events, so a re-read of the run's
+  // history, which replaces those events, never erases the cause and the file.
+  const draftRefusal = draftRefusalStore.use((refusal) => refusal?.message ?? null);
+  const draftBlock =
+    draftRefusal === null
+      ? null
+      : calloutRowsBlock({
+          keyPrefix: 'draft-not-saved',
+          label: 'Warning',
+          value: draftRefusal,
+          width: contentWidth,
+          severity: 'warning',
+        });
+  const transcriptTail = [
+    ...(closedBlock === null ? [] : [closedBlock]),
+    ...(draftBlock === null ? [] : [sectionSpacerBlock(draftBlock.key), draftBlock]),
+  ];
 
   // The at-rest and Apply bylines carry no pip, so they open on the text column and their budget is
   // what is left of the chrome row past the mark slot.
@@ -588,7 +606,7 @@ export function WorkflowScreen({
         contentWidth={contentWidth}
         onScrollAbove={setScrollAboveLabel}
         onScrollBelow={setScrollBelowLabel}
-        {...(transcriptTail !== undefined && { transcriptTail })}
+        {...(transcriptTail.length > 0 && { transcriptTail })}
         {...(crewChrome !== null && { recordedCrew: crewChrome.seats })}
       />
       <Box

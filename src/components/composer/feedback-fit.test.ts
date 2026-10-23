@@ -174,7 +174,7 @@ describe('fitFeedbackMessage', () => {
     const tabbed = `tab\there ${'x'.repeat(30)}`;
     const colored = `a\u001b[31mred\u001b[0m ${'x'.repeat(30)}`;
 
-    expect(fitFeedbackMessage(tabbed, { width: 12, maxRows: 1 })).toBe('tab\ther…');
+    expect(fitFeedbackMessage(tabbed, { width: 12, maxRows: 1 })).toBe('tab\there xx…');
     expect(fitFeedbackMessage(colored, { width: 12, maxRows: 1 })).toBe(
       'a\u001b[31mred\u001b[0m xxxxxx…',
     );
@@ -193,6 +193,43 @@ describe('fitFeedbackMessage', () => {
       'four five six',
       'seven eight nine',
     ]);
+  });
+
+  it('never evens the rows out by cutting a word that fits one row whole', () => {
+    const path = '.splitbrief/sessions/2026-10-22-add-a-greeting-helper/draft.json';
+    const rows = fitFeedbackMessage(`Draft not saved: permission denied · ${path} · quit again`, {
+      width: 80,
+      maxRows: 4,
+    }).split('\n');
+
+    expect(rows.some((row) => row.includes(path))).toBe(true);
+  });
+
+  it.each([
+    '2026-10-22-add-a-greeting-helper-to-the-cli-entry-point-docs',
+    '2026-10-22-make-the-closed-transcript-block-say-the-run-outcome',
+  ])('keeps the session id %s whole on one row of 4 at any home width', (id) => {
+    const message = `Draft not saved: permission denied · .splitbrief/sessions/${id}/draft.json · quit again leaves without it`;
+    for (let width = 64; width <= 78; width++) {
+      const rows = fitFeedbackMessage(message, { width, maxRows: 4 }).split('\n');
+
+      expect(rows.length).toBeLessThanOrEqual(4);
+      expect(rows.some((row) => row.includes(id))).toBe(true);
+      expect(rows.at(-1)?.endsWith('quit again leaves without it')).toBe(true);
+      for (const row of rows) expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(width);
+    }
+  });
+
+  it.each([
+    'Draft not saved: permission denied · .splitbrief/sessions/2026-10-22-add-a-greeting-helper-to-the-cli-entry-point-docs/draft.json · quit again leaves without it',
+    'Saved BUILD · OpenCode CLI · Claude Haiku 4.5 · via anthropic to .splitbrief/config.yaml · OpenCode CLI has no credential for anthropic — run opencode auth login anthropic before start',
+  ])('keeps each separator on the row of the text before it: %s', (message) => {
+    for (let width = 40; width <= 114; width++) {
+      const fitted = fitFeedbackMessage(message, { width, maxRows: 4 });
+
+      expect(fitted.split('\n').filter((row) => row.startsWith('·'))).toEqual([]);
+      if (!fitted.endsWith('…')) expect(fitted.replace(/\s/g, '')).toBe(message.replace(/\s/g, ''));
+    }
   });
 
   it('keeps a message that fits one row on one row', () => {

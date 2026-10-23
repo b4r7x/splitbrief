@@ -42,7 +42,12 @@ import { departureStore } from '../../../../stores/workflow/departure.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
 import { useStores } from '../../../../stores/use-stores.js';
-import { applyComposer, atRestComposer, atRestRailStages } from '../../at-rest.js';
+import {
+  applyComposer,
+  atRestComposer,
+  atRestRailStages,
+  routeClosedAtRest,
+} from '../../at-rest.js';
 import { deriveSummaryView } from '../../closed/view-model.js';
 import { hydrateResume } from '../../resume-hydration.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
@@ -183,7 +188,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
         : null;
   const closedView =
     atRestRecord === undefined ? null : deriveSummaryView({ record: atRestRecord });
-  const closed = atRestRecord !== undefined && atRestRecord.status.kind === 'closed';
+  const closed = routeClosedAtRest(route);
   // A run continued into Apply keeps the rail it rested with until the engine re-enters it or a
   // halt opens; the live rail cannot tell a run about to resume into Apply from a finished one.
   const railRecord =

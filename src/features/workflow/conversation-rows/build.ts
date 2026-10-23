@@ -38,6 +38,19 @@ const MIN_ROW_WIDTH = 1;
 // one-row rhythm. renderableUnits stays 0 so the spacer never registers as a scrolled-past event.
 const SECTION_SPACER_ROWS = 1;
 
+/** The blank row that goes before the block keyed `key` when it follows another section. */
+export function sectionSpacerBlock(key: string): ConversationRowBlock {
+  return {
+    key: `spacer-${key}`,
+    rowCount: SECTION_SPACER_ROWS,
+    renderableUnits: 0,
+    createRows: (windowStart, windowEnd) =>
+      Array.from({ length: Math.max(0, windowEnd - windowStart) }, (_, offset) =>
+        blankRow(`spacer-${key}-${windowStart + offset}`),
+      ),
+  };
+}
+
 export function buildConversationRowsProjection(
   inputs: ConversationRowInputs,
 ): ConversationRowsProjection {
@@ -79,15 +92,7 @@ function buildConversationRowsProjectionWithContext(
   ): void => {
     if (block.rowCount === 0) return;
     if (hasRenderableBlock && (sectionBoundary || !joinsCheckList(lastAppendedType, eventType))) {
-      blocks.push({
-        key: `spacer-${block.key}`,
-        rowCount: SECTION_SPACER_ROWS,
-        renderableUnits: 0,
-        createRows: (windowStart, windowEnd) =>
-          Array.from({ length: Math.max(0, windowEnd - windowStart) }, (_, offset) =>
-            blankRow(`spacer-${block.key}-${windowStart + offset}`),
-          ),
-      });
+      blocks.push(sectionSpacerBlock(block.key));
     }
     blocks.push(block);
     hasRenderableBlock = true;
