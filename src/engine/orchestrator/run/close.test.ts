@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
+import { makeLegacyV3State, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -14,6 +14,7 @@ import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { sessionDir } from '../../../core/paths.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
 import { writeRunPatch } from '../apply/patch.js';
 import { recordLocalTaskEvidence, recordSkippedTaskEvidence } from '../evidence/task.js';
 import { removeRunWorkspace } from '../isolation/remove-worktree.js';
@@ -189,6 +190,29 @@ describe('endRunAtRest', () => {
     expect(atRestFrom).toBeLessThanOrEqual(cancels[0]?.ts ?? 0);
     expect(readSession(ref)?.status).toBe('ended');
     expect(readActive(projectDir)).toBeNull();
+  });
+
+  it('ends a run saved as v3 and saves the close as v4', async () => {
+    projectDir = createTempDir('end-run-v3-');
+    const ref = { projectDir, sessionId: 'v3-run' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    reactivateExistingSession(ref);
+    const file = join(sessionDir(projectDir, ref.sessionId), 'state.json');
+    writeFileSync(file, JSON.stringify({ ...makeLegacyV3State('End a v3 run'), ...RUN_CREW }));
+    const loaded = loadState(ref);
+    if (loaded === null) throw new Error('the v3 state did not load');
+    // A v3 run has no workspace, so it is never ready to apply: End run ends it.
+    expect(loaded.workspace).toBeUndefined();
+    const { bus } = makeBusRecorder();
+
+    const closure = await endRunAtRest({ ...ref, bus }, loaded);
+
+    expect(closure.closedNow).toBe(true);
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({
+      stateVersion: 4,
+      closed: { as: 'ended' },
+    });
+    expect(readSession(ref)?.status).toBe('ended');
   });
 
   it('discards a ready run and publishes no cancellation, because nothing was running', async () => {

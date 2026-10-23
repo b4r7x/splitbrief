@@ -29,9 +29,6 @@ describe('resume migration boundary', () => {
 
     expect(() => assertResumableState(state, 'session-1')).not.toThrow();
     expect(() => assertResumableState({ ...state, phase: 'idle' }, 'session-1')).not.toThrow();
-    expect(() => assertResumableState({ ...state, stateVersion: 3 }, 'session-1')).toThrow(
-      /not current v4 and cannot be resumed/,
-    );
     expect(() =>
       assertResumableState({ ...state, phase: 'complete', reviewStatus: 'passed' }, 'session-1'),
     ).toThrow(/Run session-1 is closed \(complete\); nothing to resume\./);
@@ -99,32 +96,5 @@ describe('resume migration boundary', () => {
     expect(prepareExecution.mock.calls[0]?.[0]).toMatchObject({
       resumeState: { external: { recovery } },
     });
-  });
-
-  it('rejects an unmigrated v3 state before loading config or calling a provider', async () => {
-    const prepareExecution = vi.fn();
-
-    await expect(
-      resumeSavedSession({
-        projectDir: '/tmp/resume-migration-boundary',
-        sessionId: 'session-1',
-        state: { ...resumableState(), stateVersion: 3 },
-        opts: {},
-        deps: {
-          prepareExecution,
-          initStores: async () => {},
-          renderApp: async () => {},
-          runHeadless: async () => {},
-          setupWorkflow: async () => ({
-            projectDir: '/tmp/resume-migration-boundary',
-            useFullscreen: false,
-            useMouse: false,
-            useHover: false,
-          }),
-        },
-      }),
-    ).rejects.toThrow(/not current v4 and cannot be resumed/);
-
-    expect(prepareExecution).not.toHaveBeenCalled();
   });
 });

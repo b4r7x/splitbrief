@@ -7,6 +7,8 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir } from '../../../core/paths.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import { loadState } from '../../../core/state/persistence.js';
+import { makeLegacyV3State } from '#testing/helpers/factories/workflow-state.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { registerProcess } from '../../../lib/process/registry.js';
 import { awaitActiveWorkflowShutdown, shutdownWorkflow, withShutdownHandlers } from './shutdown.js';
@@ -194,6 +196,59 @@ describe('shutdownWorkflow — a state write that does not go as planned', () =>
     expect(lines).toEqual([
       `Could not save the run state: the file changed on disk before SPLITBRIEF could save it · ${STATE_FILE_PATH}\n`,
     ]);
+  });
+
+  describe('over a state saved as v3', () => {
+    function writeV3State(projectDir: string, sessionId: string): Buffer {
+      const file = join(sessionDir(projectDir, sessionId), 'state.json');
+      writeFileSync(file, JSON.stringify(makeLegacyV3State('feat')));
+      return readFileSync(file);
+    }
+
+    it('saves the run it loaded as v4', async () => {
+      const { projectDir, sessionId } = setupGitProject();
+      writeV3State(projectDir, sessionId);
+      const loaded = loadState({ projectDir, sessionId }) ?? undefined;
+
+      expect(await stderrOfShutdown(projectDir, loaded)).toEqual([]);
+      const saved = JSON.parse(
+        readFileSync(join(sessionDir(projectDir, sessionId), 'state.json'), 'utf-8'),
+      );
+      expect(saved).toMatchObject({ stateVersion: 4, stateRevision: 2, phase: 'reviewing-briefs' });
+    });
+
+    it('says in one plain line that it saved the state but could not confirm it', async () => {
+      const { projectDir, sessionId } = setupGitProject();
+      writeV3State(projectDir, sessionId);
+      stateWrite.result = 'unconfirmed';
+
+      const lines = await stderrOfShutdown(
+        projectDir,
+        loadState({ projectDir, sessionId }) ?? undefined,
+      );
+
+      expect(lines).toEqual([
+        `Saved the run state, but could not confirm it on disk · ${STATE_FILE_PATH}\n`,
+      ]);
+    });
+
+    it('names the cause and the file once and keeps the v3 bytes when it cannot write', async () => {
+      const { projectDir, sessionId } = setupGitProject();
+      const before = writeV3State(projectDir, sessionId);
+      const loaded = loadState({ projectDir, sessionId }) ?? undefined;
+      const dir = sessionDir(projectDir, sessionId);
+      chmodSync(dir, 0o555);
+      try {
+        const lines = await stderrOfShutdown(projectDir, loaded);
+
+        expect(lines).toEqual([
+          `Could not save the run state: permission denied · ${STATE_FILE_PATH}\n`,
+        ]);
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+      expect(readFileSync(join(dir, 'state.json'))).toEqual(before);
+    });
   });
 
   it('prints nothing with no tracked state or with a saved state that moved on', async () => {

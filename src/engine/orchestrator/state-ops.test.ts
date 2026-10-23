@@ -1,5 +1,5 @@
 import { plainUserMessage } from '../../core/types/user-input.js';
-import { chmodSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
@@ -14,6 +14,9 @@ import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeLegacyV3State } from '#testing/helpers/factories/workflow-state.js';
+import { createHash } from 'node:crypto';
+import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import { clearPendingQueue } from './queue/clear.js';
 import { enqueueUserMessage } from './queue/submit.js';
 import { dispatchNativeInjection } from './queue/native-injection.js';
@@ -29,6 +32,7 @@ import {
   rebaseOnPersistedWorkflowState,
   addUsageAndSave,
   recordResumeUserMessage,
+  readWorkflowStateHead,
 } from './state-ops.js';
 
 function setupProject(): { projectDir: string; sessionId: string } {
@@ -441,6 +445,52 @@ describe('queue callers after a persisted clear', () => {
       }
     },
   );
+});
+
+describe('a state saved as v3', () => {
+  function setupV3(): { ref: { projectDir: string; sessionId: string }; file: string } {
+    const ref = setupProject();
+    const file = join(sessionDir(ref.projectDir, ref.sessionId), 'state.json');
+    writeFileSync(file, JSON.stringify(makeLegacyV3State('v3 run')));
+    return { ref, file };
+  }
+
+  it('reads as the v4 state it loads as, with the revision of its own bytes', () => {
+    const { ref, file } = setupV3();
+    try {
+      const head = readWorkflowStateHead(ref);
+
+      expect(head?.state).toEqual(loadState(ref));
+      expect(head?.state.stateVersion).toBe(4);
+      expect(head?.digest).toBe(createHash('sha256').update(readFileSync(file)).digest('hex'));
+      // An open run, never ready to apply: a v3 run has no workspace.
+      const state = head?.state ?? createInitialState('none');
+      expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('open');
+    } finally {
+      cleanupTempDir(ref.projectDir);
+    }
+  });
+
+  it('hands a correction it queued to the next prompt', () => {
+    const ref = setupProject();
+    const file = join(sessionDir(ref.projectDir, ref.sessionId), 'state.json');
+    writeFileSync(
+      file,
+      JSON.stringify({ ...makeLegacyV3State('v3 run'), messageQueue: [makeQueuedMessage()] }),
+    );
+    try {
+      const loaded = loadState(ref);
+      if (loaded === null) throw new Error('the v3 state did not load');
+
+      const read = readQueueForPrompt({ ...ref, state: loaded });
+
+      expect(read.messages.map((message) => message.text)).toEqual([
+        'queued while planner was running',
+      ]);
+    } finally {
+      cleanupTempDir(ref.projectDir);
+    }
+  });
 });
 
 describe('raisePendingRecovery', () => {
