@@ -49,6 +49,18 @@ const CONSULT_BOUND: Partial<RecoveryIssue> = {
   recommendedAction: 'continue',
 };
 
+/** A REVIEW call that never landed: the halt names no brief, so Try again re-issues the step. */
+const SEAT_LEVEL_RETRY: Partial<RecoveryIssue> = {
+  reason: 'planner-call-failed',
+  taskId: undefined,
+  phase: 'final-review',
+  seat: 'review',
+  availableActions: ['retry-same-worker', 'end-run'],
+  recommendedAction: 'retry-same-worker',
+  status: 'applying',
+  selectedAction: 'retry-same-worker',
+};
+
 afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
@@ -365,6 +377,145 @@ describe('createRecoveryDriver', () => {
       expect(result.state.pendingRecovery).toBeUndefined();
       expect(result.state.tasks[0]?.status).toBe('pending');
     }
+  });
+
+  // A replay asks nothing, so the words typed at rest carry what the panel would take from them.
+  describe('words typed at rest before a replayed action', () => {
+    const words = plainUserMessage('split the first brief');
+
+    it('steers a replayed Try again with them, as Try again on the panel does', async () => {
+      const { prepared, state } = setupSession({
+        status: 'applying',
+        selectedAction: 'retry-same-worker',
+      });
+      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+      const result = await runDriver(prepared, state, inputMode, words);
+
+      expect(feedbackAtPrompt).toHaveLength(0);
+      if (!result.shouldRun) throw new Error('expected the retry to run');
+      expect(result.steer).toEqual(words);
+      expect(result.correctionTaken).toBeUndefined();
+    });
+
+    it('sends them as the note of a replayed revise', async () => {
+      const { prepared, state } = setupSession({
+        reason: 'plan-checks-failed',
+        taskId: undefined,
+        phase: 'planning',
+        availableActions: ['revise', 'end-run'],
+        recommendedAction: 'revise',
+        status: 'applying',
+        selectedAction: 'revise',
+      });
+      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+      const result = await runDriver(prepared, state, inputMode, words);
+
+      expect(feedbackAtPrompt).toHaveLength(0);
+      if (!result.shouldRun) throw new Error('expected the revise to run');
+      expect(result.state.messageQueue.map((message) => message.text)).toEqual([words.text]);
+      expect(result.correctionTaken).toBe(true);
+    });
+
+    it('records them as the note of a replayed review skip', async () => {
+      const { prepared, state } = setupSession({
+        reason: 'review-input-too-large',
+        taskId: undefined,
+        seat: 'review',
+        availableActions: ['accept-as-is', 'end-run'],
+        recommendedAction: 'end-run',
+        status: 'applying',
+        selectedAction: 'accept-as-is',
+      });
+      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+      const result = await runDriver(prepared, state, inputMode, words);
+
+      expect(feedbackAtPrompt).toHaveLength(0);
+      expect(result.state?.acceptedAsIs?.note).toBe(words.text);
+    });
+
+    it('records them as the note of a replayed Continue on a spent bound', async () => {
+      const { prepared, state } = setupSession({
+        ...CONSULT_BOUND,
+        status: 'applying',
+        selectedAction: 'continue',
+      });
+      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+      const result = await runDriver(prepared, state, inputMode, words);
+
+      expect(feedbackAtPrompt).toHaveLength(0);
+      if (!result.shouldRun) throw new Error('expected the grant to run');
+      expect(JSON.stringify(result.state.lineages)).toContain(words.text);
+    });
+
+    it('keeps them for the panel when the replayed action is refused', async () => {
+      // A brief that failed its attempts cannot be continued safely, so the replay is refused.
+      const { prepared, state } = setupSession({
+        availableActions: ['continue', 'retry-same-worker', 'skip-current-task', 'end-run'],
+        status: 'applying',
+        selectedAction: 'continue',
+      });
+      const { inputMode, feedbackAtPrompt } = makeInputMode(['r']);
+
+      const result = await runDriver(prepared, state, inputMode, words);
+
+      expect(feedbackAtPrompt).toHaveLength(1);
+      expect(feedbackAtPrompt[0]?.isError).toBe(true);
+      if (!result.shouldRun) throw new Error('expected the retry to run');
+      expect(result.state.messageQueue).toEqual([]);
+      expect(result.steer).toEqual(words);
+    });
+
+    it('replays a seat-level Try again with them queued as its note', async () => {
+      const { prepared, state } = setupSession(SEAT_LEVEL_RETRY);
+      const halted: WorkflowState = { ...state, phase: 'final-review', tasks: [] };
+      saveState(prepared.session.ref, halted);
+      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+      const result = await runDriver(prepared, halted, inputMode, words);
+
+      expect(feedbackAtPrompt).toHaveLength(0);
+      if (!result.shouldRun) throw new Error('expected the retry to run');
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(result.state.messageQueue.map((message) => message.text)).toEqual([words.text]);
+      expect(result.correctionTaken).toBe(true);
+    });
+
+    it('replays a seat-level Try again with nothing typed', async () => {
+      const { prepared, state } = setupSession(SEAT_LEVEL_RETRY);
+      const halted: WorkflowState = { ...state, phase: 'final-review', tasks: [] };
+      saveState(prepared.session.ref, halted);
+      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+      const result = await runDriver(prepared, halted, inputMode);
+
+      expect(feedbackAtPrompt).toHaveLength(0);
+      if (!result.shouldRun) throw new Error('expected the retry to run');
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(result.state.messageQueue).toEqual([]);
+      expect(result.steer).toBeUndefined();
+      expect(result.correctionTaken).toBeUndefined();
+    });
+
+    it('replays an action that takes no note without queuing the words or claiming them', async () => {
+      const { prepared, state } = setupSession({
+        status: 'applying',
+        selectedAction: 'skip-current-task',
+      });
+      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+      const result = await runDriver(prepared, state, inputMode, words);
+
+      expect(feedbackAtPrompt).toHaveLength(0);
+      if (!result.shouldRun) throw new Error('expected the skip to run');
+      expect(result.state.tasks[0]?.status).toBe('skipped');
+      expect(result.state.messageQueue).toEqual([]);
+      expect(result.steer).toBeUndefined();
+      expect(result.correctionTaken).toBeUndefined();
+    });
   });
 
   it('opens the halt in the same tick the run enters it, so no frame paints the run without it', async () => {

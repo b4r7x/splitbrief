@@ -3,7 +3,8 @@ import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { RunStatus, StopReason } from '../../../core/sessions/run-status.js';
 import type { SummaryView } from './view-model.js';
 import { haltOf, recoveryHaltLabel } from '../../../core/recovery/halt.js';
-import { recoveryHeadlineParts } from '../recovery-prompt.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import { recoveryHeadlineParts, recoveryMenuActionLabel } from '../recovery-prompt.js';
 import { formatResetAt } from '../../../core/recovery/reset-clock.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -255,7 +256,7 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
           { text: SOFT_SEP, tone: 'textDim' },
           ...recoveryHeadlineParts(stop.on.issue),
         ],
-        action: '⏎ to decide',
+        action: haltAction(stop.on.issue),
       };
     case 'failed':
       return {
@@ -279,6 +280,15 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
         action: '⏎ to continue',
       };
   }
+}
+
+/**
+ * A halt whose action was chosen and saved before the process died replays that action on ⏎
+ * (`createRecoveryDriver`), so the byline names it instead of offering a choice.
+ */
+function haltAction(issue: RecoveryIssue): string {
+  if (issue.status !== 'applying' || issue.selectedAction === undefined) return '⏎ to decide';
+  return `⏎ to ${lowercaseLead(recoveryMenuActionLabel(issue.selectedAction, issue))}`;
 }
 
 function attentionByline(view: SummaryView): string {

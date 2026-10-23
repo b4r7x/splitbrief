@@ -634,7 +634,7 @@ The byline under the menu reads `Ready to apply · pick Apply, Show diff or Disc
 - `Stopped at T003 · type a correction or ⏎ to continue` (stopped by you)
 - `Waiting at the plan · ⏎ to reopen it` (an older run waiting at its spec or briefs gate reads `Waiting at the plan · ⏎ to continue`: it continues as one planning session)
 - `Waiting for your answer · type a reply or ⏎ to continue`
-- `Seat down · Usage limit on ollama · ⏎ to decide` (a *Needs you* halt reads `Needs you · <cause> · ⏎ to decide`)
+- `Seat down · Usage limit on ollama · ⏎ to decide` (a *Needs you* halt reads `Needs you · <cause> · ⏎ to decide`). When you chose an action on the halt and SPLITBRIEF stopped before it ran, the byline names that action, for example `Seat down · Usage limit on ollama · ⏎ to try again`: ⏎ runs it without asking again. A correction you type goes to the step the action runs next. Accept as is, Re-run Apply and Restore backup run no such step, so they do not use it.
 - `Stopped by an error · Planning failed. · ⏎ to retry the step`
 - `Stopped at T003 · ⏎ to continue` (the process went away)
 

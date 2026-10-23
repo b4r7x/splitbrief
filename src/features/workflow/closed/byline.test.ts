@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { WIDE, endedInBuild, makeView } from '#testing/helpers/factories/summary-view.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { RECOVERY_ACTIONS, type RecoveryAction } from '../../../core/schemas/enums.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { bylineParts, legendText, openRunBylineParts } from './byline.js';
 import { stopPoint } from '../stop/copy.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
@@ -502,6 +504,102 @@ describe('openRunByline', () => {
     expect(openRunByline({ continuable: true, status, width: 30 })).toBe(
       'Type a correction or ⏎ to con…',
     );
+  });
+});
+
+// A run killed after a recovery action was chosen and before it replayed: ⏎ replays that action.
+describe('openRunByline on a halt whose action was chosen', () => {
+  function haltByline(issue: RecoveryIssue): string {
+    return openRunByline({
+      continuable: true,
+      width: WIDE,
+      status: {
+        kind: 'open',
+        stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
+        resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 1 },
+      },
+    });
+  }
+
+  const SEAT_DOWN = {
+    reason: 'runner-unauthenticated',
+    phase: 'implementing',
+    seat: 'build',
+    facts: { tool: 'codex' },
+    message: 'Signed out',
+  } as const;
+
+  it.each([
+    ['Needs you', 'retry-same-worker', 'try again', {}],
+    ['Needs you', 'skip-current-task', 'skip task', {}],
+    ['Needs you', 'end-run', 'end run', {}],
+    ['Needs you', 'continue', 'continue', {}],
+    ['Needs you', 'revise', 'fix again', { reason: 'review-failed' }],
+    ['Needs you', 'accept-as-is', 'accept as is', { reason: 'review-failed' }],
+    ['Needs you', 'accept-as-is', 'skip review with a note', { reason: 'review-input-too-large' }],
+    ['Needs you', 'revise', 'send a correction', { reason: 'plan-checks-failed' }],
+    ['Needs you', 'retry-same-worker', 're-run Apply', { reason: 'apply-partial' }],
+    ['Needs you', 'restore-backup', 'restore backup', { reason: 'apply-partial' }],
+    ['Seat down', 'retry-same-worker', 'try again', SEAT_DOWN],
+    ['Seat down', 'switch-seat', 'change BUILD tool', SEAT_DOWN],
+    ['Seat down', 'retry-later', 'retry later', SEAT_DOWN],
+    ['Seat down', 'end-run', 'end run', SEAT_DOWN],
+  ] satisfies [string, RecoveryAction, string, Partial<RecoveryIssue>][])(
+    '%s halt, chosen %s: ⏎ to %s',
+    (halt, selectedAction, label, overrides) => {
+      const byline = haltByline(
+        makeRecoveryIssue({ ...overrides, status: 'applying', selectedAction }),
+      );
+      expect(byline.startsWith(`${halt} · `)).toBe(true);
+      expect(byline.endsWith(` · ⏎ to ${label}`)).toBe(true);
+    },
+  );
+
+  it('names a seat-level Try again as its menu row does', () => {
+    const issue = makeRecoveryIssue({
+      reason: 'planner-call-failed',
+      taskId: undefined,
+      phase: 'final-review',
+      seat: 'review',
+      availableActions: ['retry-same-worker', 'end-run'],
+      status: 'applying',
+      selectedAction: 'retry-same-worker',
+    });
+    expect(haltByline(issue)).toBe('Seat down · Reviewer call failed · ⏎ to try again');
+  });
+
+  it('names a label for every action, so no chosen action reads as a bare "⏎ to"', () => {
+    for (const selectedAction of RECOVERY_ACTIONS) {
+      const byline = haltByline(makeRecoveryIssue({ status: 'applying', selectedAction }));
+      expect(byline).toMatch(/ · ⏎ to [a-z]\S*( \S+)*$/);
+      expect(byline.endsWith('⏎ to decide')).toBe(false);
+    }
+  });
+
+  it('asks the user to decide while no action is chosen', () => {
+    expect(haltByline(makeRecoveryIssue())).toBe('Needs you · T001 failed · ⏎ to decide');
+    expect(haltByline(makeRecoveryIssue({ status: 'applying' }))).toBe(
+      'Needs you · T001 failed · ⏎ to decide',
+    );
+    expect(
+      haltByline(
+        makeRecoveryIssue({ status: 'awaiting-user', selectedAction: 'skip-current-task' }),
+      ),
+    ).toBe('Needs you · T001 failed · ⏎ to decide');
+  });
+
+  it('keeps the chosen action when a narrow line sheds the cause', () => {
+    const issue = makeRecoveryIssue({ status: 'applying', selectedAction: 'retry-same-worker' });
+    const parts = openRunBylineParts({
+      continuable: true,
+      width: 30,
+      status: {
+        kind: 'open',
+        stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
+        resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 1 },
+      },
+    });
+    expect(joinedByline(parts)).toBe('Needs you · ⏎ to try again');
   });
 });
 
