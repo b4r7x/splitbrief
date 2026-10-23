@@ -16,6 +16,8 @@ import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import { STATE_FILE, sessionDir } from '../../core/paths.js';
 import { assertSessionDirConfined } from '../../core/sessions/confinement.js';
 import { sessionRelativePath } from '../../core/sessions/ownership-marker.js';
+import { sessionFileFailure } from '../../core/sessions/errors.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { error, matches, type AppError } from '../../utils/error.js';
 import { warnError } from '../../lib/warn.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
@@ -68,12 +70,41 @@ export const stateOpsError = {
   invalidHead: (message: string, cause?: unknown) =>
     error('state-head-invalid', message, undefined, cause),
   isInvalidHead: matches('state-head-invalid'),
-  durabilityUncertain: (cause?: unknown) =>
+  notSaved: (sessionId: string, cause: unknown) =>
     error(
-      'state-durability-uncertain',
-      'Workflow state replacement completed without a durable revision proof.',
+      'state-not-saved',
+      sessionFileFailure(
+        'Could not save the run state',
+        sessionRelativePath(sessionId, STATE_FILE),
+        cause,
+      ),
       undefined,
       cause,
+    ),
+  durabilityUncertain: (sessionId: string) =>
+    error(
+      'state-durability-uncertain',
+      `Saved the run state, but could not confirm it on disk${SOFT_SEP}${sessionRelativePath(sessionId, STATE_FILE)}`,
+    ),
+  notRead: (sessionId: string, cause: unknown) =>
+    error(
+      'state-head-invalid',
+      sessionFileFailure(
+        'Could not read the run state',
+        sessionRelativePath(sessionId, STATE_FILE),
+        cause,
+      ),
+      undefined,
+      cause,
+    ),
+  changedOnDisk: (sessionId: string) =>
+    error(
+      'state-changed-on-disk',
+      sessionFileFailure(
+        'Could not save the run state',
+        sessionRelativePath(sessionId, STATE_FILE),
+        'the file changed on disk before SPLITBRIEF could save it',
+      ),
     ),
 } as const;
 
@@ -135,7 +166,7 @@ function readStateHead(ref: SessionRef): StateHead | null {
   if (!existsSync(path)) return null;
 
   if (loadState(ref) === null) {
-    throw stateOpsError.invalidHead('Workflow state is unavailable or failed validation.');
+    throw stateOpsError.notRead(ref.sessionId, 'it could not be read, or its content is not valid');
   }
 
   let bytes: Buffer;
@@ -148,7 +179,7 @@ function readStateHead(ref: SessionRef): StateHead | null {
     }
     stat = candidate;
   } catch (cause) {
-    throw stateOpsError.invalidHead('Workflow state could not be read safely.', cause);
+    throw stateOpsError.notRead(ref.sessionId, cause);
   }
 
   let raw: unknown;
@@ -328,27 +359,36 @@ function preparedState(base: WorkflowState, next: WorkflowState): WorkflowState 
   };
 }
 
+/** The one write of `state.json`: a write that throws names the file and the cause. */
+function writeStateFile(
+  ref: SessionRef,
+  state: WorkflowState,
+  expectedRevision: ConfigRevision | null,
+): { path: string; result: ReturnType<typeof confinedAtomicWriteFileSync> } {
+  try {
+    const path = workflowStatePath(ref);
+    const result = confinedAtomicWriteFileSync(path, serializedState(state), {
+      expectedRevision,
+      mode: SECURE_FILE_MODE,
+    });
+    return { path, result };
+  } catch (cause) {
+    throw stateOpsError.notSaved(ref.sessionId, cause);
+  }
+}
+
 function commitState(
   ref: SessionRef,
   head: StateHead | null,
   state: WorkflowState,
 ): 'written' | 'conflict' {
-  let path: string;
-  let result: ReturnType<typeof confinedAtomicWriteFileSync>;
-  try {
-    path = workflowStatePath(ref);
-    result = confinedAtomicWriteFileSync(path, serializedState(state), {
-      expectedRevision: head?.revision ?? null,
-      mode: SECURE_FILE_MODE,
-    });
-  } catch (cause) {
-    throw stateOpsError.durabilityUncertain(cause);
-  }
+  const { path, result } = writeStateFile(ref, state, head?.revision ?? null);
   if (result.kind === 'conflict') return 'conflict';
-  if (result.kind === 'durability-uncertain') {
-    throw stateOpsError.durabilityUncertain();
-  }
+  // An unconfirmed write is in place on disk, so the run follows it and can record its failure.
   committedStateFollowers.get(path)?.(state);
+  if (result.kind === 'durability-uncertain') {
+    throw stateOpsError.durabilityUncertain(ref.sessionId);
+  }
   return 'written';
 }
 
@@ -398,16 +438,12 @@ export function commitWorkflowState(input: WorkflowStateCommitInput): WorkflowSt
           stateVersion: WORKFLOW_STATE_VERSION,
           stateRevision: workflowStateRevision(input.expected) + 1,
         });
-  const path = workflowStatePath(input.ref);
-  const result = confinedAtomicWriteFileSync(path, serializedState(nextState), {
-    expectedRevision: current?.revision ?? null,
-    mode: SECURE_FILE_MODE,
-  });
+  const { path, result } = writeStateFile(input.ref, nextState, current?.revision ?? null);
   if (result.kind === 'conflict') return result;
+  committedStateFollowers.get(path)?.(nextState);
   if (result.kind === 'durability-uncertain') {
     return { kind: 'durability-uncertain', state: nextState, revision: result.observedRevision };
   }
-  committedStateFollowers.get(path)?.(nextState);
   return { kind: 'committed', state: nextState, revision: result.revision };
 }
 
@@ -636,10 +672,7 @@ export function recordLastFailure(
     const result = commitWorkflowState({ ref, expected: state, next });
     return result.kind === 'conflict' ? state : result.state;
   } catch (err) {
-    warnError(
-      `Could not save the run failure to ${sessionRelativePath(ref.sessionId, STATE_FILE)}`,
-      err,
-    );
+    warnError('Could not record why the run failed', err);
     return state;
   }
 }

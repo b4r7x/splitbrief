@@ -17,7 +17,7 @@ import {
   apiContextRecoveryFacts,
   readApiContextDiagnostic,
 } from '../../providers/api-context-diagnostic.js';
-import { labelError } from '../../../utils/format-errors.js';
+import { labelError, toErrorMessage } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 
@@ -45,6 +45,13 @@ export async function handlePlanningFailure(opts: {
       state: ending ? latest : await parkStoppedRun({ ...ref, bus: wctx.bus }, latest),
       outcome: ending ? 'cancelled' : 'interrupted',
     };
+  }
+
+  // End run on the plan card closed the run before its save failed to confirm: a closed run
+  // takes no halt, so the failure is only reported.
+  if (latest.closed !== undefined) {
+    publishError({ bus: wctx.bus, phase: latest.phase, message: toErrorMessage(err) });
+    return { disposition: 'terminal', state: latest, outcome: 'closed' };
   }
 
   // A packet the seat was never given is read off the error's own data before

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -11,9 +11,30 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { registerProcess } from '../../../lib/process/registry.js';
 import { awaitActiveWorkflowShutdown, shutdownWorkflow, withShutdownHandlers } from './shutdown.js';
 
+// What the state file write reports back: the real result, a rename it could not confirm on disk,
+// or a second writer that changed the file first.
+const stateWrite = vi.hoisted(() => ({ result: 'real' as 'real' | 'unconfirmed' | 'conflict' }));
+vi.mock('../../../lib/confined-fs-atomic.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/confined-fs-atomic.js')>();
+  return {
+    ...actual,
+    confinedAtomicWriteFileSync: (
+      ...args: Parameters<typeof actual.confinedAtomicWriteFileSync>
+    ): ReturnType<typeof actual.confinedAtomicWriteFileSync> => {
+      if (stateWrite.result === 'conflict') return { kind: 'conflict', observedRevision: null };
+      const written = actual.confinedAtomicWriteFileSync(...args);
+      return stateWrite.result === 'unconfirmed' && written.kind === 'written'
+        ? { kind: 'durability-uncertain', observedRevision: written.revision }
+        : written;
+    },
+  };
+});
+
 let dirs: string[] = [];
 
 afterEach(() => {
+  stateWrite.result = 'real';
+  vi.restoreAllMocks();
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
@@ -113,6 +134,80 @@ describe('shutdownWorkflow', () => {
 
     expect(existsSync(statePath)).toBe(true);
     expect(existsSync(filePath)).toBe(true);
+  });
+});
+
+describe('shutdownWorkflow — a state write that does not go as planned', () => {
+  const STATE_FILE_PATH = '.splitbrief/sessions/sess-final/state.json';
+
+  async function stderrOfShutdown(
+    projectDir: string,
+    trackedState: WorkflowState | undefined,
+  ): Promise<string[]> {
+    const lines: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    await shutdownWorkflow({
+      projectDir,
+      sessionId: 'sess-final',
+      getTrackedState: () => trackedState,
+      getCurrentTask: () => undefined,
+    });
+    vi.restoreAllMocks();
+    return lines;
+  }
+
+  it('says in one plain line that it saved the state but could not confirm it', async () => {
+    const { projectDir } = setupGitProject();
+    stateWrite.result = 'unconfirmed';
+
+    const lines = await stderrOfShutdown(projectDir, createInitialState('feat'));
+
+    expect(lines).toEqual([
+      `Saved the run state, but could not confirm it on disk · ${STATE_FILE_PATH}\n`,
+    ]);
+  });
+
+  it('names the cause and the file once when it cannot write the state', async () => {
+    const { projectDir, sessionId } = setupGitProject();
+    const dir = sessionDir(projectDir, sessionId);
+    chmodSync(dir, 0o555);
+    try {
+      const lines = await stderrOfShutdown(projectDir, createInitialState('feat'));
+
+      expect(lines).toEqual([
+        `Could not save the run state: permission denied · ${STATE_FILE_PATH}\n`,
+      ]);
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+  });
+
+  it('says in plain words when the state changed on disk before it could save it', async () => {
+    const { projectDir } = setupGitProject();
+    stateWrite.result = 'conflict';
+
+    const lines = await stderrOfShutdown(projectDir, createInitialState('feat'));
+
+    expect(lines).toEqual([
+      `Could not save the run state: the file changed on disk before SPLITBRIEF could save it · ${STATE_FILE_PATH}\n`,
+    ]);
+  });
+
+  it('prints nothing with no tracked state or with a saved state that moved on', async () => {
+    const { projectDir, sessionId } = setupGitProject();
+    stateWrite.result = 'unconfirmed';
+    expect(await stderrOfShutdown(projectDir, undefined)).toEqual([]);
+
+    writeFileSync(
+      join(sessionDir(projectDir, sessionId), 'state.json'),
+      JSON.stringify({ ...createInitialState('feat'), stateRevision: 5 }),
+    );
+    expect(
+      await stderrOfShutdown(projectDir, { ...createInitialState('feat'), stateRevision: 2 }),
+    ).toEqual([]);
   });
 });
 

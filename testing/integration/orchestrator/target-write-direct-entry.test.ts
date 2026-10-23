@@ -82,7 +82,9 @@ describe('isolated implementation entry', () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'warning',
-        message: expect.stringContaining('failed to persist bundle application evidence'),
+        message: expect.stringMatching(
+          /^Could not save the run evidence: .+ · \.splitbrief\/sessions\/[^/]+\/evidence\.json$/,
+        ),
       }),
     );
     expect(recordedTargetOutput(ref, task).files).toEqual([

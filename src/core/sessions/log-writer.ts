@@ -12,9 +12,9 @@ import { SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_LOG_FILE } from '../paths.js';
 import { fsError, rejectSymlinkTarget } from '../../lib/fs.js';
 import { confinedAppendFileSync, confinedEnsureDir } from '../../lib/confined-fs.js';
 import { warnStderr } from '../../lib/warn.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
 import { nowIso } from '../../utils/format-time.js';
 import { assertSessionDirConfined } from './confinement.js';
+import { sessionFileFailure } from './errors.js';
 
 export type SessionLogAppender = (entry: SessionLogMessageEntry | SessionLogEventEntry) => void;
 
@@ -61,7 +61,7 @@ export function createSessionLogAppender(
         throw err;
       }
       opts.onFailure?.('write-failed');
-      warnStderr(`Warning: failed to persist log entry: ${toErrorMessage(err)}`);
+      warnStderr(`Warning: ${sessionFileFailure('Could not save the run log', logRel, err)}`);
     }
   };
 }

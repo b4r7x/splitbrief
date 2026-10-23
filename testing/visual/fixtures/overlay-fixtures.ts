@@ -48,6 +48,7 @@ import {
   nameDraftsNotRemoved,
   reportDraftNotSaved,
 } from '../../../src/stores/ui/session-drafts.js';
+import { stateOpsError } from '../../../src/engine/orchestrator/state-ops.js';
 import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
@@ -95,6 +96,7 @@ import {
   seedRoutedCrew,
   setupVisualFixture,
   teardownVisualFixture,
+  LONG_SESSION_ID,
   retainUnremovableDraft,
   UNSAVED_DRAFT_ERROR,
   visualConfig,
@@ -2830,7 +2832,15 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
         seed: () => {
           seedStopSheet();
           stopStore.request('stop-now');
-          stopStore.fail('Could not save session: disk full');
+          // The run loop names the failure in the transcript, whole, and on the byline.
+          const message = stateOpsError.notSaved(
+            LONG_SESSION_ID,
+            Object.assign(new Error("ENOSPC: no space left on device, write '/x/state.json'"), {
+              code: 'ENOSPC',
+            }),
+          ).message;
+          addEvent({ type: 'error', ts: STOP_SHEET_TS + 6_000, phase: 'implementing', message });
+          stopStore.fail(message);
         },
       }),
   ],

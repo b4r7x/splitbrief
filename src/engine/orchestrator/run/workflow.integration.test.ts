@@ -56,6 +56,7 @@ import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readSession, saveSummary } from '../../../core/sessions/io.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import {
   reactivateExistingSession,
   readActive,
@@ -75,9 +76,12 @@ import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tra
 import type { RunWorkflowOptions } from './init.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { error } from '../../../utils/error.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-execution.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+import { shutdownWorkflow } from '../session-lifecycle/shutdown.js';
+import { boundEngineEventForConsumer } from '../../events/bound.js';
 import { readRunEvents } from '../../events/replay.js';
 import { makePassingPlanner } from '#testing/helpers/planning-phase.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
@@ -95,6 +99,50 @@ import {
   typedCallAnswering,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
+
+// A state.json write SPLITBRIEF renamed into place but could not confirm on disk (a failing disk,
+// EIO on a network mount): every write once `unconfirmed` is set, or only the `next` write made
+// from the named function, which `eio` fails before anything is written and `conflict` finds
+// changed by another writer; `thenEvery` makes every later write unconfirmed too. Every other
+// write is real.
+const stateWrite = vi.hoisted(() => ({
+  unconfirmed: false,
+  next: undefined as
+    | { from: string; fails: 'unconfirmed' | 'eio' | 'conflict'; thenEvery?: true }
+    | undefined,
+}));
+vi.mock('../../../lib/confined-fs-atomic.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/confined-fs-atomic.js')>();
+  return {
+    ...actual,
+    confinedAtomicWriteFileSync: (
+      ...args: Parameters<typeof actual.confinedAtomicWriteFileSync>
+    ): ReturnType<typeof actual.confinedAtomicWriteFileSync> => {
+      const next = stateWrite.next;
+      if (
+        next !== undefined &&
+        args[0].endsWith('/state.json') &&
+        new Error().stack?.includes(` ${next.from} (`)
+      ) {
+        stateWrite.next = undefined;
+        if (next.thenEvery) stateWrite.unconfirmed = true;
+        if (next.fails === 'eio') {
+          throw Object.assign(new Error(`EIO: i/o error, open '${args[0]}'`), { code: 'EIO' });
+        }
+        if (next.fails === 'conflict') return { kind: 'conflict', observedRevision: null };
+        const written = actual.confinedAtomicWriteFileSync(...args);
+        if (written.kind === 'written') {
+          return { kind: 'durability-uncertain', observedRevision: written.revision };
+        }
+        return written;
+      }
+      const written = actual.confinedAtomicWriteFileSync(...args);
+      return stateWrite.unconfirmed && args[0].endsWith('/state.json') && written.kind === 'written'
+        ? { kind: 'durability-uncertain', observedRevision: written.revision }
+        : written;
+    },
+  };
+});
 
 let dirs: string[] = [];
 
@@ -468,6 +516,333 @@ describe('runWorkflow — smoke', () => {
     expect(pendingBoundaryInterrupt).toBe(false);
     expect(summary.totalTasks).toBe(1);
   }, 20_000);
+
+  it('names a task state write it cannot confirm in plain words, once per failed step', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'unconfirmed-sid';
+    const message = `Saved the run state, but could not confirm it on disk · .splitbrief/sessions/${sessionId}/state.json`;
+    const events: EngineEvent[] = [];
+    let plainCause: string | undefined;
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdout.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderr.push(String(chunk));
+      return true;
+    });
+    try {
+      await runWorkflow({
+        feature: 'unconfirmed state',
+        projectDir,
+        config: makeConfig({
+          validation: { endChecks: false, testCommand: 'noop' },
+          workflow: { approve: 'none' },
+        }),
+        callbacks: makeCallbacks().callbacks,
+        sessionId,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        headless: true,
+        plain: true,
+        // What `--plain` prints as the cause of the failed run, read as `runHeadless` reads it.
+        tuiSink: (event) => {
+          const bounded = boundEngineEventForConsumer(event, 'stdout-text');
+          if (bounded.type === 'error') plainCause = bounded.message;
+        },
+        _eventSink: (event) => {
+          events.push(event);
+          // The next state write is the task-start snapshot of the task loop.
+          if (event.type === 'task_started') stateWrite.unconfirmed = true;
+        },
+        _planner: makePlanner({ typedCall: typedCallFromTasks([makeTask({ id: 'T001' })]) }),
+        _implementer: makeImplementer(),
+      });
+      // A quit after the failure writes the state once more, and it is not confirmed again.
+      await shutdownWorkflow({
+        projectDir,
+        sessionId,
+        getTrackedState: () => loadState({ projectDir, sessionId }) ?? undefined,
+        getCurrentTask: () => undefined,
+      });
+    } finally {
+      stateWrite.unconfirmed = false;
+      vi.restoreAllMocks();
+    }
+
+    expect(events.flatMap((event) => (event.type === 'error' ? [event.message] : []))).toEqual([
+      message,
+    ]);
+    expect(plainCause).toBe(message);
+    expect(loadState({ projectDir, sessionId })?.lastFailure?.message).toBe(message);
+    expect(stderr).toEqual([`${message}\n`]);
+    expect([...stdout, ...stderr].join('')).not.toMatch(
+      /durability|persist|Failed to save|Could not record/,
+    );
+  });
+
+  describe('records a state write it cannot save or confirm as why the run failed', () => {
+    const unconfirmed = (sessionId: string) =>
+      `Saved the run state, but could not confirm it on disk · .splitbrief/sessions/${sessionId}/state.json`;
+
+    async function runWithStateWrite(
+      sessionId: string,
+      next: typeof stateWrite.next,
+      armOn: EngineEvent['type'] | 'start',
+      options: Partial<WorkflowTestOptions> = {},
+    ) {
+      const projectDir = options.projectDir ?? setupProject();
+      const events: EngineEvent[] = [];
+      let plainCause: string | undefined;
+      const stderr: string[] = [];
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        stderr.push(String(chunk));
+        return true;
+      });
+      if (armOn === 'start') stateWrite.next = next;
+      let thrown: string | undefined;
+      try {
+        await runWorkflow({
+          feature: 'state write',
+          projectDir,
+          config: makeConfig({
+            validation: { endChecks: false, testCommand: 'noop' },
+            workflow: { approve: 'none' },
+          }),
+          callbacks: makeCallbacks().callbacks,
+          sessionId,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          headless: true,
+          plain: true,
+          tuiSink: (event) => {
+            const bounded = boundEngineEventForConsumer(event, 'stdout-text');
+            if (bounded.type === 'error') plainCause = bounded.message;
+          },
+          _eventSink: (event) => {
+            events.push(event);
+            if (event.type === armOn) stateWrite.next = next;
+          },
+          _planner: makePlanner({ typedCall: typedCallFromTasks([makeTask({ id: 'T001' })]) }),
+          _implementer: makeImplementer(),
+          ...options,
+        }).catch((err: unknown) => {
+          thrown = toErrorMessage(err);
+        });
+      } finally {
+        stateWrite.next = undefined;
+        stateWrite.unconfirmed = false;
+        vi.restoreAllMocks();
+      }
+      const state = loadState({ projectDir, sessionId });
+      return {
+        errors: events.flatMap((event) => (event.type === 'error' ? [event.message] : [])),
+        plainCause,
+        stderr: stderr.join(''),
+        thrown,
+        state,
+        status: state === null ? undefined : deriveRunStatus({ state, liveness: 'not-alive' }),
+      };
+    }
+
+    const failedWith = (message: string) => ({
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'failed', message } },
+    });
+
+    it('a phase write of a brief it cannot confirm', async () => {
+      const sessionId = 'unconfirmed-phase-sid';
+      const run = await runWithStateWrite(
+        sessionId,
+        { from: 'transitionAndSave', fails: 'unconfirmed' },
+        'task_started',
+      );
+
+      expect(run.errors).toEqual([unconfirmed(sessionId)]);
+      expect(run.plainCause).toBe(unconfirmed(sessionId));
+      expect(run.status).toMatchObject(failedWith(unconfirmed(sessionId)));
+    });
+
+    it('the first write of the run it cannot confirm', async () => {
+      const sessionId = 'unconfirmed-start-sid';
+      const run = await runWithStateWrite(
+        sessionId,
+        { from: 'initializeWorkflow', fails: 'unconfirmed' },
+        'start',
+      );
+
+      expect(run.stderr).toBe(`Could not start the run: ${unconfirmed(sessionId)}\n`);
+      expect(run.status).toMatchObject(failedWith(unconfirmed(sessionId)));
+    });
+
+    it('the approval level a resume saves, when it cannot confirm it', async () => {
+      const projectDir = setupProject();
+      const sessionId = 'unconfirmed-resume-sid';
+      ensureSessionDir(projectDir, sessionId);
+      const savedState = persistReadyExecutionState(
+        { projectDir, sessionId },
+        makeImplStateWithMetadata([makeTask({ id: 'T001' })], {
+          changedFilesBaseline: serializeChangedFilesBaseline(
+            await captureChangedFilesBaseline(projectDir),
+          ),
+        }),
+      );
+      const run = await runWithStateWrite(
+        sessionId,
+        { from: 'initializeWorkflow', fails: 'unconfirmed' },
+        'start',
+        { projectDir, savedState, feature: savedState.feature },
+      );
+
+      expect(run.state?.approve).toBe('none');
+      expect(run.status).toMatchObject(failedWith(unconfirmed(sessionId)));
+      expect(`${run.errors.join('\n')}${run.stderr}`).not.toMatch(/durability|persist/);
+    });
+
+    it('a write that fails before anything reaches the disk', async () => {
+      const sessionId = 'not-saved-phase-sid';
+      const message = `Could not save the run state: i/o error · .splitbrief/sessions/${sessionId}/state.json`;
+      const run = await runWithStateWrite(
+        sessionId,
+        { from: 'transitionAndSave', fails: 'eio' },
+        'task_started',
+      );
+
+      expect(run.errors).toEqual([message]);
+      expect(run.plainCause).toBe(message);
+      expect(run.status).toMatchObject(failedWith(message));
+    });
+
+    it('End run on the plan card, when it cannot confirm the close', async () => {
+      const sessionId = 'unconfirmed-close-sid';
+      const run = await runWithStateWrite(
+        sessionId,
+        { from: 'closeRunIfOpen', fails: 'unconfirmed' },
+        'start',
+        {
+          config: makeConfig({
+            validation: { endChecks: false, testCommand: 'noop' },
+            workflow: { approve: 'plan' },
+          }),
+          callbacks: makeCallbacks({
+            onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false, action: 'end-run' }),
+          }).callbacks,
+        },
+      );
+
+      expect(run.errors).toEqual([unconfirmed(sessionId)]);
+      expect(run.status).toEqual({ kind: 'closed', as: 'ended' });
+    });
+
+    it('End run during a brief, when it cannot confirm the close', async () => {
+      const sessionId = 'unconfirmed-end-sid';
+      const controller = new AbortController();
+      const run = await runWithStateWrite(
+        sessionId,
+        { from: 'closeRunIfOpen', fails: 'unconfirmed' },
+        'start',
+        {
+          signal: controller.signal,
+          _implementer: makeImplementer({
+            implement: vi.fn().mockImplementation(async () => {
+              controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+              return { success: false, output: '', usage: null };
+            }),
+          }),
+        },
+      );
+
+      // The stop sheet shows the line and offers Retry stop, as for any stop that failed to save.
+      expect(run.thrown).toBe(unconfirmed(sessionId));
+      expect(run.errors).toEqual([]);
+      expect(run.status).toEqual({ kind: 'closed', as: 'ended' });
+    });
+
+    const changedOnDisk = (sessionId: string) =>
+      `Could not save the run state: the file changed on disk before SPLITBRIEF could save it · .splitbrief/sessions/${sessionId}/state.json`;
+
+    it.each([
+      ['it cannot confirm', 'unconfirmed', unconfirmed],
+      ['another writer changed', 'conflict', changedOnDisk],
+    ] as const)(
+      'the files a first attempt wrote, when %s the save, run the brief again',
+      async (_, fails, line) => {
+        const sessionId = `restore-scope-${fails}-sid`;
+        const run = await runWithStateWrite(
+          sessionId,
+          { from: 'recordWrites', fails },
+          'task_started',
+        );
+
+        expect(run.errors).toEqual([`Implementation failed: ${line(sessionId)}`]);
+        expect(run.state?.phase).toBe('complete');
+      },
+    );
+
+    it.each([
+      ['it cannot confirm', 'unconfirmed', unconfirmed],
+      ['another writer changed', 'conflict', changedOnDisk],
+    ] as const)(
+      'the files a retry wrote, when %s the save, halt the brief',
+      async (_, fails, line) => {
+        const sessionId = `retry-scope-${fails}-sid`;
+        const run = await runWithStateWrite(
+          sessionId,
+          { from: 'runRetryStepAttempt', fails },
+          'task_started',
+          {
+            _implementer: makeImplementer({
+              implement: vi.fn().mockRejectedValueOnce(new Error('boom')),
+            }),
+          },
+        );
+
+        expect(run.errors).toEqual([
+          'Implementation failed: boom',
+          `Retrying T001 failed: ${line(sessionId)}`,
+        ]);
+        expect(run.state?.pendingRecovery?.details?.join('\n')).not.toMatch(/persist/);
+      },
+    );
+
+    it('a state file the disk no longer lets it read', async () => {
+      const projectDir = setupProject();
+      const sessionId = 'unreadable-state-sid';
+      const statePath = join(sessionDir(projectDir, sessionId), STATE_FILE);
+      const run = await runWithStateWrite(
+        sessionId,
+        { from: 'neverCalled', fails: 'eio' },
+        'start',
+        {
+          projectDir,
+          _implementer: makeImplementer({
+            implement: vi.fn().mockImplementation(async () => {
+              chmodSync(statePath, 0o000);
+              return { success: true, output: '', usage: null };
+            }),
+          }),
+        },
+      ).finally(() => chmodSync(statePath, 0o600));
+
+      expect(run.errors).toEqual([
+        `Could not read the run state: permission denied · .splitbrief/sessions/${sessionId}/state.json`,
+      ]);
+    });
+
+    it('the files an attempt wrote on a disk that confirms no write from then on', async () => {
+      const sessionId = 'restore-scope-every-sid';
+      const run = await runWithStateWrite(
+        sessionId,
+        { from: 'recordWrites', fails: 'unconfirmed', thenEvery: true },
+        'task_started',
+      );
+
+      expect(run.errors[0]).toBe(`Implementation failed: ${unconfirmed(sessionId)}`);
+      expect(run.plainCause).toBe(run.errors.at(-1));
+      expect(run.status).toMatchObject(failedWith(run.errors.at(-1) ?? ''));
+      expect(`${run.errors.join('\n')}${run.stderr}`).not.toMatch(/durability|persist/);
+    });
+  });
 
   it('records the planning failure as the stop reason of an open run', async () => {
     const projectDir = setupProject();

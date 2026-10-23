@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { isTaskSettled, type Task, type TaskId } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
-import { publishError, publishWarningFromError } from '../events.js';
+import { publishError, publishWarning } from '../events.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { createRecoveryIssue } from '../recovery/builders/issue.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -25,12 +25,31 @@ import type { GateDecision } from '../approval/types.js';
 import type { EvidenceLedger, EvidenceReview } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
-import { revertedDir, sessionDir } from '../../../core/paths.js';
+import { EVIDENCE_FILE, revertedDir, sessionDir } from '../../../core/paths.js';
+import { sessionFileFailure } from '../../../core/sessions/errors.js';
+import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
 import { checkSessionLockStatus } from '../../../core/sessions/lockfile-status.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { briefInFlight } from '../../../core/state/selectors.js';
 import { changedSinceAtRest } from '../../snapshots/run/rest-changes.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
+
+/** A lost evidence write warns in plain words and never fails the step that made it. */
+function warnEvidenceNotSaved(
+  wctx: Pick<WorkflowContext, 'sessionId' | 'bus'>,
+  phase: WorkflowState['phase'],
+  err: unknown,
+): void {
+  publishWarning({
+    bus: wctx.bus,
+    phase,
+    message: sessionFileFailure(
+      'Could not save the run evidence',
+      sessionRelativePath(wctx.sessionId, EVIDENCE_FILE),
+      err,
+    ),
+  });
+}
 
 export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState }): EvidenceLedger {
   const { ref, state } = opts;
@@ -89,11 +108,7 @@ export async function persistTaskEvidence(opts: {
       });
     });
   } catch (err) {
-    publishWarningFromError(
-      { bus: wctx.bus, phase: state.phase },
-      'failed to persist evidence ledger',
-      err,
-    );
+    warnEvidenceNotSaved(wctx, state.phase, err);
   }
 }
 
@@ -126,11 +141,7 @@ export async function persistSkippedBriefFiles(opts: {
       }),
     );
   } catch (err) {
-    publishWarningFromError(
-      { bus: wctx.bus, phase: state.phase },
-      'failed to persist evidence ledger',
-      err,
-    );
+    warnEvidenceNotSaved(wctx, state.phase, err);
   }
 }
 
@@ -226,11 +237,7 @@ export function persistApiApplyEvidence(opts: {
       }),
     );
   } catch (err) {
-    publishWarningFromError(
-      { bus: wctx.bus, phase: state.phase },
-      'failed to persist bundle application evidence',
-      err,
-    );
+    warnEvidenceNotSaved(wctx, state.phase, err);
   }
 }
 
@@ -320,11 +327,7 @@ export function persistReviewEvidence(opts: {
       return { ...ledger, reviews: [...(ledger.reviews ?? []), review], generatedAt: nowIso() };
     });
   } catch (err) {
-    publishWarningFromError(
-      { bus: wctx.bus, phase: state.phase },
-      'failed to persist review evidence',
-      err,
-    );
+    warnEvidenceNotSaved(wctx, state.phase, err);
   }
 }
 
@@ -353,10 +356,6 @@ export function persistApprovalEvidence(opts: {
       return ledger;
     });
   } catch (err) {
-    publishWarningFromError(
-      { bus: wctx.bus, phase: state.phase },
-      'failed to persist approval evidence',
-      err,
-    );
+    warnEvidenceNotSaved(wctx, state.phase, err);
   }
 }

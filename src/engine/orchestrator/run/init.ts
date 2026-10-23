@@ -247,7 +247,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
           retryLimit: 0,
         });
       }
-      if (pinned.kind === 'durability-uncertain') throw stateOpsError.durabilityUncertain();
+      if (pinned.kind === 'durability-uncertain')
+        throw stateOpsError.durabilityUncertain(sessionId);
       savedState = pinned.state;
     }
     setTrackedState(savedState);

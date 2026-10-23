@@ -1,6 +1,6 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, rmdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -667,6 +667,37 @@ describe('run-loop stop completion', () => {
     await expectParked(prepared);
     expect(engine).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ['Esc, Ctrl+C or /stop', requestStopNow],
+    ['End run', requestEndRun],
+  ] as const)(
+    'names state.json and the cause when %s cannot save the run state, and again on Retry stop',
+    async (_stop, request) => {
+      const prepared = prepare();
+      const engine = waitingEngine(awaitAbort);
+      mount(prepared, engine);
+      await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(1));
+      const dir = sessionDir(projectDir, prepared.session.ref.sessionId);
+      const line =
+        'Could not save the run state: permission denied · .splitbrief/sessions/stop-session/state.json';
+      chmodSync(dir, 0o555);
+      try {
+        request();
+        await vi.waitFor(() => expect(stopStore.get().phase).toBe('failed'));
+        expect(stopStore.get().error).toBe(line);
+        await vi.waitFor(() =>
+          expect(mounted?.lastFrame()?.replace(/\s+/g, ' ')).toContain(`Stop failed · ${line}`),
+        );
+
+        expect(requestStopNow()).toBe(true);
+        await vi.waitFor(() => expect(stopStore.get().phase).toBe('failed'));
+        expect(stopStore.get().error).toBe(line);
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+    },
+  );
 
   it.each([
     ['Stop now', requestStopNow],

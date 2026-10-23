@@ -149,7 +149,8 @@ export async function closeRunIfOpen(
       }
       return { state: result.state, closedNow: true };
     }
-    if (result.kind === 'durability-uncertain') throw stateOpsError.durabilityUncertain();
+    if (result.kind === 'durability-uncertain')
+      throw stateOpsError.durabilityUncertain(scope.sessionId);
     if (attempt === MAX_STATE_CONFLICT_RETRIES) {
       throw stateOpsError.conflictExhausted({
         operation: 'transition',

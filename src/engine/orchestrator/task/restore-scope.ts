@@ -46,8 +46,10 @@ export async function withAttemptRestoreScope<T>(opts: {
           },
         },
       });
-      if (saved.kind !== 'committed')
-        throw stateOpsError.invalidHead('Could not persist task restore scope.');
+      if (saved.kind === 'conflict') throw stateOpsError.changedOnDisk(ref.sessionId);
+      if (saved.kind === 'durability-uncertain') {
+        throw stateOpsError.durabilityUncertain(ref.sessionId);
+      }
     }
   };
   try {
