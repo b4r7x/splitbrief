@@ -210,6 +210,13 @@ describe("isolation boundary around a tool's own state", () => {
 describe("isolation boundary around the run's attached skills", () => {
   // A skill under another tool's home: codex's own state is `~/.codex`, so `~/.claude` is closed.
   // The home lives outside the temp directories, which the boundary leaves open to every tool.
+  // The excerpt cuts the raw tool input at a fixed width, so it depends on the checkout path
+  // length; these cases read the breach without it.
+  function headOf(boundary: IsolationBoundary, name: string, input: Record<string, unknown>) {
+    const breach = findIsolationBreach(boundary, { name, input });
+    return breach === null ? null : formatIsolationBreach({ ...breach, excerpt: '' });
+  }
+
   async function withAttachedSkill(
     run: (input: {
       home: string;
@@ -250,7 +257,7 @@ describe("isolation boundary around the run's attached skills", () => {
   it('reads what an attached skill lists, and still halts a write there', async () => {
     await withAttachedSkill(({ home, skill, boundaryFor }) => {
       const reference = join(skill, 'references', 'api.md');
-      expect(breachOf(boundaryFor(), 'view_file', { AbsolutePath: reference })).toBe(
+      expect(headOf(boundaryFor(), 'view_file', { AbsolutePath: reference })).toBe(
         'read ~/.claude/skills/auth/references/api.md (outside the workspace) with view_file',
       );
 
@@ -259,11 +266,11 @@ describe("isolation boundary around the run's attached skills", () => {
       expect(
         breachOf(boundary, 'list_dir', { DirectoryPath: join(skill, 'references') }),
       ).toBeNull();
-      expect(breachOf(boundary, 'write_to_file', { TargetFile: reference })).toBe(
+      expect(headOf(boundary, 'write_to_file', { TargetFile: reference })).toBe(
         'wrote to ~/.claude/skills/auth/references/api.md (outside the workspace) with write_to_file',
       );
       expect(
-        breachOf(boundary, 'view_file', {
+        headOf(boundary, 'view_file', {
           AbsolutePath: join(home, '.claude', 'skills', 'other', 'SKILL.md'),
         }),
       ).toBe('read ~/.claude/skills/other/SKILL.md (outside the workspace) with view_file');
@@ -279,10 +286,10 @@ describe("isolation boundary around the run's attached skills", () => {
       const boundary = boundaryFor([skill]);
 
       expect(breachOf(boundary, 'view_file', { AbsolutePath: join(skill, 'SKILL.md') })).toBeNull();
-      expect(breachOf(boundary, 'write_to_file', { TargetFile: join(skill, 'SKILL.md') })).toMatch(
+      expect(headOf(boundary, 'write_to_file', { TargetFile: join(skill, 'SKILL.md') })).toMatch(
         /^wrote to \S+\/checkout\/\.splitbrief\/skills\/ignored\/SKILL\.md \(your checkout\) with write_to_file$/,
       );
-      expect(breachOf(boundary, 'view_file', { AbsolutePath: join(checkout, 'app.ts') })).toMatch(
+      expect(headOf(boundary, 'view_file', { AbsolutePath: join(checkout, 'app.ts') })).toMatch(
         /^read \S+\/checkout\/app\.ts \(your checkout\) with view_file$/,
       );
     });
