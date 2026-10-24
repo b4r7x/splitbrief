@@ -137,7 +137,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
     expect(stdout).toContain('phase: planning');
     expect(stdout).toContain('task T001: done');
     expect(stdout).toContain(
-      'plan check T001-K1: not run (no test command for an unrecognised stack)',
+      'plan check T001-K1: not run (no test command for an unrecognised stack; set validation.test_command)',
     );
 
     const lines = stdout.trimEnd().split('\n').filter(Boolean);

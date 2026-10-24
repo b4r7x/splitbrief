@@ -356,7 +356,7 @@ describe('runChecks', () => {
     expect(results[0]?.exitCode).toBe(1);
   });
 
-  it('marks a test check with no affected test file as not runnable', async () => {
+  it('fails a test check whose test file the workspace does not hold', async () => {
     const task = taskWith([
       { id: 'K1', kind: 'test', value: 'src/missing.test.ts', required: true },
     ]);
@@ -364,7 +364,15 @@ describe('runChecks', () => {
     const results = await runChecks(['K1'], options({ task, runCommand: runner }));
 
     expect(results).toEqual([
-      { checkId: 'K1', status: 'not-runnable', output: 'no affected test file found' },
+      {
+        checkId: 'K1',
+        status: 'fail',
+        output: 'the workspace has no test file for src/missing.test.ts',
+        failure: {
+          keys: ['no test file'],
+          placeholder: 'the workspace has no test file for src/missing.test.ts',
+        },
+      },
     ]);
     expect(runner.calls).toHaveLength(0);
   });
@@ -525,7 +533,7 @@ describe('runChecks', () => {
     },
   );
 
-  it('refuses a cmd check the policy rejects and never runs it', async () => {
+  it('refuses a cmd check the policy rejects, fails one on an undefined script, and runs neither', async () => {
     const task = taskWith([
       { id: 'K1', kind: 'cmd', value: 'node scripts/deploy.ts', required: true },
       { id: 'K2', kind: 'cmd', value: 'npm run deploy', required: true },
@@ -533,7 +541,7 @@ describe('runChecks', () => {
     const runner = makeCommandRunner();
     const results = await runChecks(['K1', 'K2'], options({ task, runCommand: runner }));
 
-    expect(results.map((result) => result.status)).toEqual(['refused', 'refused']);
+    expect(results.map((result) => result.status)).toEqual(['refused', 'fail']);
     expect(results[1]?.output).toBe(
       'runs the npm script deploy, which package.json does not define',
     );
@@ -591,16 +599,17 @@ describe('runChecks', () => {
     ]);
   });
 
-  it('refuses an npm run check whose script package.json does not define', async () => {
+  it('fails an npm run check whose script package.json does not define, so a fix can add it', async () => {
     const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'npm run deploy', required: true }]);
     const results = await runChecks(['K1'], options({ task, runCommand: makeCommandRunner() }));
+    const missing = 'runs the npm script deploy, which package.json does not define';
 
     expect(results).toEqual([
       {
         checkId: 'K1',
-        status: 'refused',
-        output: 'runs the npm script deploy, which package.json does not define',
-        command: 'npm run deploy',
+        status: 'fail',
+        output: missing,
+        failure: { keys: ['no npm script'], placeholder: missing },
       },
     ]);
   });

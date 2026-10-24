@@ -15,6 +15,9 @@ const MAX_VALIDATION_COMMAND_CHARS = 240;
 
 type TestTarget = { run: true; targets: string[] } | { run: false; skipReason: string };
 
+/** Why a `test` check skips when the workspace holds no test file it names. */
+export const NO_TEST_FILE_FOUND = 'no affected test file found';
+
 /**
  * The test files a planner `test` check runs. A command the stack can narrow takes the files it
  * affects; any other command, a chained package test script too, runs as written.
@@ -47,7 +50,7 @@ export function resolveTestTarget(opts: {
       if (!targets.includes(target)) targets.push(target);
     }
   }
-  if (targets.length === 0) return { run: false, skipReason: 'no affected test file found' };
+  if (targets.length === 0) return { run: false, skipReason: NO_TEST_FILE_FOUND };
   return { run: true, targets };
 }
 

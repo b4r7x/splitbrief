@@ -317,8 +317,28 @@ describe('checkPlan', () => {
       refusedK10,
       refusedK8,
     ]);
-    // An approved plan may name a script that package.json does not define yet: a task can add it.
-    expect(checkPlan(plan, projectDir, fits, undefined, true)).toEqual([refusedK10, refusedK8]);
+    // An approved plan names a script package.json defines, or one a task of the plan adds.
+    expect(checkPlan(plan, projectDir, fits, undefined, true)).toEqual([
+      {
+        code: 'refused-check-command',
+        message:
+          "Check K9 is refused: `npm run lint` runs an npm script, but package.json was not found. Name a script that package.json defines, or list package.json in the task's files and add the script there.",
+      },
+      refusedK10,
+      refusedK8,
+    ]);
+    const addsScript = {
+      ...plan,
+      tasks: plan.tasks.map((task) => ({
+        ...task,
+        suggestedFiles: [...task.suggestedFiles, 'package.json'],
+        protectedOperations: [{ path: 'package.json', operation: 'write' as const }],
+      })),
+    };
+    expect(checkPlan(addsScript, projectDir, fits, undefined, true)).toEqual([
+      refusedK10,
+      refusedK8,
+    ]);
   });
 
   it('admits a file mode and a symbolic link check, and names the file tests for any other test', () => {
@@ -384,11 +404,13 @@ describe('checkPlan', () => {
 });
 
 describe('refusedCheckErrors', () => {
+  const approved = { npmScriptsApproved: true, projectDir, writtenFiles: [] };
+
   it('refuses a test check that holds a command', () => {
     expect(
       refusedCheckErrors(
         [{ id: 'K5', kind: 'test', value: 'node --test tests/truncate.test.js' }],
-        true,
+        { npmScriptsApproved: true, projectDir, writtenFiles: [] },
       ),
     ).toEqual([
       {
@@ -397,6 +419,45 @@ describe('refusedCheckErrors', () => {
           'Check K5 is refused: a `test` check names one test file, and `node --test tests/truncate.test.js` is not one file. Make it a `cmd` check that runs this command, or set its value to the test file.',
       },
     ]);
+  });
+
+  it.each([
+    'npm run build -w packages/a',
+    'npm run build --workspace=a',
+    'npm run build --prefix packages/a',
+    'npm run -w a build',
+  ])('takes %j, whose option names another package.json', (value) => {
+    expect(refusedCheckErrors([{ id: 'K6', kind: 'cmd', value }], approved)).toEqual([]);
+  });
+
+  it('judges the script of npm run when an option follows --', () => {
+    expect(
+      refusedCheckErrors([{ id: 'K6', kind: 'cmd', value: 'npm run lint -- --fix' }], approved),
+    ).toEqual([
+      {
+        code: 'refused-check-command',
+        message:
+          "Check K6 is refused: `npm run lint -- --fix` runs an npm script, but package.json was not found. Name a script that package.json defines, or list package.json in the task's files and add the script there.",
+      },
+    ]);
+  });
+
+  it.each(['workflow-x,', 'Workflow X', 'workflow x'])(
+    'refuses a render check whose value %j is not a scenario id',
+    (value) => {
+      expect(refusedCheckErrors([{ id: 'FC4', kind: 'render', value }], approved)).toEqual([
+        {
+          code: 'refused-check-command',
+          message: `Check FC4 is refused: a \`render\` check names one scenario id of lowercase letters, digits and hyphens, and \`${value}\` is not one.`,
+        },
+      ]);
+    },
+  );
+
+  it('takes a render check that names a scenario id', () => {
+    expect(
+      refusedCheckErrors([{ id: 'FC4', kind: 'render', value: 'workflow-x' }], approved),
+    ).toEqual([]);
   });
 });
 

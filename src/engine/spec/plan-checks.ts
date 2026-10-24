@@ -10,7 +10,11 @@ import { matches } from '../../utils/error.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { countNoun, pluralize } from '../../utils/pluralize.js';
 import { protectedWriteClass } from '../orchestrator/approval/action-classifier.js';
-import { commandTextRefusal } from '../orchestrator/planning/sanitize-discovered-validation.js';
+import {
+  commandTextRefusal,
+  missingNpmScript,
+  readPackageScripts,
+} from '../orchestrator/planning/sanitize-discovered-validation.js';
 
 export type PlanCheckCode =
   | 'empty-plan'
@@ -173,18 +177,13 @@ export function checkTaskIdentities(
   return errors;
 }
 
-/**
- * The ids of every `render` check the plan carries, run-level then task-level in plan order, or
- * none when the run sets `validation.render`.
- */
+/** The ids of every `render` check in `checks`, in order, or none when the run sets `validation.render`. */
 function unconfiguredRenderCheckIds(
-  plan: PlanProposal,
+  checks: readonly Pick<TaskSpec['checks'][number], 'id' | 'kind'>[],
   renderCommand: string | undefined,
 ): string[] {
   if (renderCommand !== undefined) return [];
-  return [...plan.checks, ...plan.tasks.flatMap((task) => task.checks)]
-    .filter((check) => check.kind === 'render')
-    .map((check) => check.id);
+  return checks.filter((check) => check.kind === 'render').map((check) => check.id);
 }
 
 /** "Render checks A, B need validation.render, which is not set", in the number the ids have. */
@@ -194,12 +193,27 @@ function renderChecksNeedCommand(ids: readonly string[]): string {
 
 /** The plan card's note for every render check without a command; none when the command is set. */
 export function renderCheckNotes(plan: PlanProposal, renderCommand: string | undefined): string[] {
-  const ids = unconfiguredRenderCheckIds(plan, renderCommand);
+  const ids = unconfiguredRenderCheckIds(
+    [...plan.checks, ...plan.tasks.flatMap((task) => task.checks)],
+    renderCommand,
+  );
   return ids.length === 0
     ? []
     : [
         `${renderChecksNeedCommand(ids)}. Add it to .splitbrief/config.yaml, or request changes to drop ${pluralize(ids.length, 'it', 'them')}; without it the run halts before its review.`,
       ];
+}
+
+/**
+ * The render checks of the tasks a review or a consult writes, refused while the run sets no
+ * `validation.render`: no user is asked about them, so they go back to the seat that wrote them.
+ */
+export function unconfiguredRenderCheckErrors(
+  checks: readonly Pick<TaskSpec['checks'][number], 'id' | 'kind'>[],
+  renderCommand: string | undefined,
+): string[] {
+  const ids = unconfiguredRenderCheckIds(checks, renderCommand);
+  return ids.length === 0 ? [] : [`${renderChecksNeedCommand(ids)}; use a check of another kind.`];
 }
 
 /**
@@ -210,16 +224,22 @@ export function blocksPlan(error: PlanCheckError): boolean {
   return error.code !== 'render-check-unconfigured';
 }
 
+/** The shape of a render check's value: one gallery scenario id. */
+export const RENDER_ID_PATTERN = /^[a-z0-9-]+$/;
+
 /**
- * The `cmd` and `test` checks the plan command policy refuses from their text alone: a plan's
- * checks, the checks of the fix tasks a review writes, and the checks of a consult's rewrite or
- * split, so a refused command, or a `test` check that holds more than one path, never becomes a
- * required check.
+ * The checks refused before they run: a plan's checks, the checks of the fix tasks a review writes,
+ * and the checks of a consult's rewrite or split. A refused command, an npm script that
+ * package.json lacks while no task writes package.json, a `test` check that holds more than one
+ * path, or a `render` check that names no scenario id never becomes a required check.
  */
 export function refusedCheckErrors(
   checks: readonly Pick<TaskSpec['checks'][number], 'id' | 'kind' | 'value'>[],
-  npmScriptsApproved: boolean,
+  policy: { npmScriptsApproved: boolean; projectDir: string; writtenFiles: readonly string[] },
 ): PlanCheckError[] {
+  const packageScripts = policy.writtenFiles.includes('package.json')
+    ? null
+    : readPackageScripts(policy.projectDir);
   return checks.flatMap((check): PlanCheckError[] => {
     if (check.kind === 'test') {
       return parseShellCommand(check.value).length === 1
@@ -231,14 +251,35 @@ export function refusedCheckErrors(
             },
           ];
     }
-    if (check.kind !== 'cmd') return [];
-    const refusal = commandTextRefusal(check.value, npmScriptsApproved);
-    return refusal === null
+    if (check.kind === 'render') {
+      return RENDER_ID_PATTERN.test(check.value)
+        ? []
+        : [
+            {
+              code: 'refused-check-command',
+              message: `Check ${check.id} is refused: a \`render\` check names one scenario id of lowercase letters, digits and hyphens, and \`${check.value}\` is not one.`,
+            },
+          ];
+    }
+    const refusal = commandTextRefusal(check.value, policy.npmScriptsApproved);
+    if (refusal !== null) {
+      return [
+        {
+          code: 'refused-check-command',
+          message: `Check ${check.id} is refused: \`${check.value}\` ${refusal}. Change it to a command that plan checks allow, or to a check of kind \`test\` that names a test file.`,
+        },
+      ];
+    }
+    const missing =
+      packageScripts === null
+        ? null
+        : missingNpmScript(check.value, policy.npmScriptsApproved, packageScripts);
+    return missing === null
       ? []
       : [
           {
             code: 'refused-check-command',
-            message: `Check ${check.id} is refused: \`${check.value}\` ${refusal}. Change it to a command that plan checks allow, or to a check of kind \`test\` that names a test file.`,
+            message: `Check ${check.id} is refused: \`${check.value}\` ${missing}. Name a script that package.json defines, or list package.json in the task's files and add the script there.`,
           },
         ];
   });
@@ -273,7 +314,13 @@ export function checkPlan(
   }
   for (const id of duplicates(plan.criteria.map((criterion) => criterion.id)))
     fail('duplicate-criterion-id', `Criterion id ${id} is used twice.`);
-  errors.push(...refusedCheckErrors(checks, npmScriptsApproved));
+  errors.push(
+    ...refusedCheckErrors(checks, {
+      npmScriptsApproved,
+      projectDir,
+      writtenFiles: plan.tasks.flatMap((task) => task.suggestedFiles),
+    }),
+  );
 
   for (const criterion of plan.criteria) {
     if (criterion.checkIds.length === 0) {
@@ -360,7 +407,7 @@ export function checkPlan(
     }
   }
 
-  const renderCheckIds = unconfiguredRenderCheckIds(plan, renderCommand);
+  const renderCheckIds = unconfiguredRenderCheckIds(checks, renderCommand);
   if (renderCheckIds.length > 0) {
     fail(
       'render-check-unconfigured',

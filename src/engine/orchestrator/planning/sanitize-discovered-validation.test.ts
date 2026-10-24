@@ -2,14 +2,27 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/validation-fixtures.js';
 import {
-  checkCommandRefusal,
+  commandTextRefusal,
+  missingNpmScript,
   sanitizeDiscoveredValidation,
   unsafeCommandReason,
 } from './sanitize-discovered-validation.js';
+import type { PackageScriptsReadinessInput } from '../../../core/readiness/checks/validation.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 
 const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+/** The plan command policy as a plan check meets it: its text, then the npm script it runs. */
+function checkCommandRefusal(
+  command: string,
+  opts: { npmScriptsApproved: boolean; packageScripts: PackageScriptsReadinessInput },
+): string | null {
+  return (
+    commandTextRefusal(command, opts.npmScriptsApproved) ??
+    missingNpmScript(command, opts.npmScriptsApproved, opts.packageScripts)
+  );
+}
 let recorder = makeBusRecorder();
 
 beforeEach(() => {
@@ -766,7 +779,7 @@ describe('sanitizeDiscoveredValidation — script runners', () => {
   });
 });
 
-describe('checkCommandRefusal', () => {
+describe('commandTextRefusal and missingNpmScript', () => {
   const packageScripts = {
     packageJsonExists: true,
     scripts: { lint: 'biome check', test: 'vitest run', typecheck: 'tsc --noEmit' },

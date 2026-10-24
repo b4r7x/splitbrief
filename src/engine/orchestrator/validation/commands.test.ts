@@ -185,7 +185,7 @@ describe('planTestCheck', () => {
   it('skips with its reason on an unrecognised stack', () => {
     expect(plan('src/app.ts', makeConfig({ testCommand: undefined }))).toEqual({
       kind: 'skip',
-      reason: 'no test command for an unrecognised stack',
+      reason: 'no test command for an unrecognised stack; set validation.test_command',
     });
   });
 

@@ -1473,6 +1473,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-plan-check-no-test-file',
+      title: 'Workflow · a plan check that failed because its test file is missing',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-check-no-test-file',
+        title: 'A failed plan check row with its reason and no empty command slot',
+        kind: 'implementation',
+        marker: 'Plan check K4',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-completed-orphan-rows',
       title: 'Workflow · completed briefs retain run-level and boundary rows',
       surface: screenSurface('workflow'),
@@ -3544,6 +3560,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Required-checks recovery menu that says to install the program',
         kind: 'question',
         marker: 'Install what is missing',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-checks-unrunnable',
+      title: 'Workflow · a required check that cannot run because a setting is missing',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-checks-unrunnable',
+        title: 'Required-checks recovery menu that says to fix the named cause',
+        kind: 'question',
+        marker: 'Fix the cause below',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

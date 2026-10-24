@@ -63,7 +63,8 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
       event.passed === true ? (event.scenario === undefined ? 'passed' : 'rendered') : 'failed';
     const duration =
       event.duration === undefined ? '' : `${SOFT_SEP}${formatDuration(event.duration)}`;
-    const command = event.scenario === undefined ? ` (${event.command})` : '';
+    const command =
+      event.scenario !== undefined ? '' : event.command === '' ? detail : ` (${event.command})`;
     return `${label}: ${verdict}${duration}${command}`;
   }
   const label =

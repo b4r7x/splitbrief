@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import type { ReviewAnswer } from '../../../src/core/schemas/review.js';
+import type { Check } from '../../../src/core/schemas/task.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -56,6 +57,7 @@ const finding: ReviewAnswer['findings'][number] = {
   checkIds: null,
 };
 const refusedCheck = `Check T002-K1 is refused: a \`test\` check names one test file, and \`${TEST_COMMAND}\` is not one file.`;
+const NEW_TEST_FILE = 'src/loud.test.mjs';
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -73,10 +75,10 @@ function git(cwd: string, args: readonly string[]): void {
 }
 
 /**
- * The final review fails until the fix task T002 exists. Its first fix task names the test command
- * as a `test` check value; the repair names the test file.
+ * The final review fails until the fix task T002 exists. Its first fix task carries `refused` as
+ * its check; the repair names the test file.
  */
-function plannerScript(callsPath: string): string {
+function plannerScript(callsPath: string, refused: Check = fix.checks[0] as Check): string {
   const passing = passingVerdict({ kind: 'final', taskIds: [], criterionIds: [] });
   return `import { appendFileSync } from 'node:fs';
 const chunks = [];
@@ -103,7 +105,7 @@ if (prompt.includes('# Choose the checks for this review')) {
     answer.findings = [${JSON.stringify(finding)}];
     answer.fixTasks = [{
       ...fix,
-      checks: [{ ...fix.checks[0], value: repair ? ${JSON.stringify(TEST_FILE)} : fix.checks[0].value }],
+      checks: [repair ? { ...fix.checks[0], value: ${JSON.stringify(TEST_FILE)} } : ${JSON.stringify(refused)}],
       findingIds: ['F1'],
     }];
   }
@@ -128,6 +130,10 @@ function implementerScript(): string {
     [fix.title]: {
       'src/alpha.mjs': "export const alpha = 'alpha';\nexport const loud = 'ALPHA';\n",
     },
+    'Write the loud test': {
+      [NEW_TEST_FILE]:
+        "import { strict as assert } from 'node:assert';\nimport { loud } from './alpha.mjs';\nassert.equal(loud, 'ALPHA');\n",
+    },
   };
   return `import { mkdirSync, writeFileSync } from 'node:fs';
 const chunks = [];
@@ -142,65 +148,179 @@ console.log('Implemented ' + title);
 `;
 }
 
+/**
+ * The final review fails until T003 exists. Its first fix task T002 lists the new test file
+ * `NEW_TEST_FILE` and checks it, but the builder never writes it; the review that reads the red
+ * check asks T003 to write it.
+ */
+function missingTestPlannerScript(callsPath: string): string {
+  const passing = passingVerdict({ kind: 'final', taskIds: [], criterionIds: [] });
+  const fixT002 = {
+    ...fix,
+    suggestedFiles: ['src/alpha.mjs', NEW_TEST_FILE],
+    checks: [{ id: 'T002-K1', kind: 'test', value: NEW_TEST_FILE, required: true }],
+    findingIds: ['F1'],
+  };
+  const fixT003 = makeTaskSpec({
+    id: 'T003',
+    title: 'Write the loud test',
+    intent: 'Test that loud is ALPHA.',
+    criteria: ['C1'],
+    suggestedFiles: [NEW_TEST_FILE],
+    checks: [{ id: 'T003-K1', kind: 'test', value: NEW_TEST_FILE, required: true }],
+  });
+  return `import { appendFileSync } from 'node:fs';
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+const prompt = Buffer.concat(chunks).toString('utf8');
+let kind;
+let answer;
+if (prompt.includes('# Choose the checks for this review')) {
+  kind = 'review-checks';
+  answer = null;
+} else if (prompt.includes('# Final Implementation Review')) {
+  kind = 'final-review';
+  const ids = (label) => prompt.match(new RegExp('^' + label + ' (.+)$', 'm'))[1].split(',').map((id) => id.trim());
+  const taskIds = ids('Task ids:');
+  const fails = !taskIds.includes('T002');
+  answer = {
+    ...${JSON.stringify(passing)},
+    tasks: taskIds.map((id) => ({ id, plan: fails ? 'partial' : 'met', note: '' })),
+    criteria: ids('Criterion ids:').map((id) => ({ id, status: fails ? 'fail' : 'pass', evidence: '' })),
+  };
+  if (fails) {
+    answer.findings = [${JSON.stringify(finding)}];
+    answer.fixTasks = [${JSON.stringify(fixT002)}];
+  } else if (!taskIds.includes('T003')) {
+    kind = 'final-review-red-check';
+    answer.fixTasks = [{ ...${JSON.stringify(fixT003)}, findingIds: ['P1'] }];
+  }
+} else if (prompt.includes('# Plan the change')) {
+  kind = 'plan';
+  answer = ${JSON.stringify({ result: plan })};
+} else {
+  throw new Error('Unexpected prompt: ' + prompt);
+}
+appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ kind, prompt }) + '\\n');
+process.stdout.write(JSON.stringify(answer));
+`;
+}
+
+async function startRun(planner: (callsPath: string) => string) {
+  fixture = createStopContinueFixture(() => '', { isolation: 'none' });
+  const target = fixture;
+  restorePath = activateSafeCliShimPath(target.tmpDir);
+  writeFileSync(
+    join(target.projectDir, 'package.json'),
+    `${JSON.stringify({ name: 'alpha', private: true, scripts: { test: 'node --test' } })}\n`,
+  );
+  git(target.projectDir, ['add', 'package.json']);
+  git(target.projectDir, ['commit', '--quiet', '-m', 'add the project test script']);
+  const callsPath = join(target.tmpDir, 'calls.jsonl');
+  const plannerPath = join(target.tmpDir, 'planner.mjs');
+  const implementerPath = join(target.tmpDir, 'implementer.mjs');
+  const offlinePath = join(target.tmpDir, 'offline.mjs');
+  writeFileSync(
+    offlinePath,
+    "globalThis.fetch = async () => { throw new Error('E2E network disabled'); };\n",
+  );
+  vi.stubEnv('NODE_OPTIONS', `--import=${offlinePath}`);
+  writeFileSync(plannerPath, planner(callsPath));
+  writeFileSync(implementerPath, implementerScript());
+  const config = loadConfig(target.projectDir).config;
+  if (config.planner.kind !== 'shell' || config.implementer.kind !== 'agent') {
+    throw new Error('Expected local shell and agent fixture runners');
+  }
+  writeConfig(target.projectDir, {
+    ...config,
+    planner: { ...config.planner, args: [plannerPath] },
+    implementer: { ...config.implementer, args: [implementerPath] },
+    workflow: { ...config.workflow, approve: 'none' },
+    validation: { ...config.validation, testCommand: undefined, endChecks: false },
+  });
+
+  const run = await cli(target, ['start', 'smoke'], { timeoutMs: 180_000 });
+  const output = `${run.stdout}\n${run.stderr}`;
+  const sessions = readdirSync(sessionsRoot(target.projectDir));
+  expect(sessions, output).toHaveLength(1);
+  const sessionId = sessions[0];
+  if (sessionId === undefined) throw new Error('Missing session');
+  const calls: Array<{ kind: string; prompt: string }> = readFileSync(callsPath, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  const replay = await readRunEvents({ projectDir: target.projectDir, sessionId });
+  expect(replay.diagnostics.skipped).toBe(0);
+  const unrunnable = replay.events.filter(
+    (event) => event.type === 'recovery_prompted' && event.reason === 'required-checks-unrunnable',
+  );
+  return { run, output, calls, state: readState(target, sessionId), unrunnable };
+}
+
 describe('e2e: a review fix task with a test check', { timeout: 300_000 }, () => {
   it('sends a test check that holds a command back to the reviewer, and runs the repaired check', async () => {
-    fixture = createStopContinueFixture(() => '', { isolation: 'none' });
-    const target = fixture;
-    restorePath = activateSafeCliShimPath(target.tmpDir);
-    writeFileSync(
-      join(target.projectDir, 'package.json'),
-      `${JSON.stringify({ name: 'alpha', private: true, scripts: { test: 'node --test' } })}\n`,
-    );
-    git(target.projectDir, ['add', 'package.json']);
-    git(target.projectDir, ['commit', '--quiet', '-m', 'add the project test script']);
-    const callsPath = join(target.tmpDir, 'calls.jsonl');
-    const plannerPath = join(target.tmpDir, 'planner.mjs');
-    const implementerPath = join(target.tmpDir, 'implementer.mjs');
-    const offlinePath = join(target.tmpDir, 'offline.mjs');
-    writeFileSync(
-      offlinePath,
-      "globalThis.fetch = async () => { throw new Error('E2E network disabled'); };\n",
-    );
-    vi.stubEnv('NODE_OPTIONS', `--import=${offlinePath}`);
-    writeFileSync(plannerPath, plannerScript(callsPath));
-    writeFileSync(implementerPath, implementerScript());
-    const config = loadConfig(target.projectDir).config;
-    if (config.planner.kind !== 'shell' || config.implementer.kind !== 'agent') {
-      throw new Error('Expected local shell and agent fixture runners');
-    }
-    writeConfig(target.projectDir, {
-      ...config,
-      planner: { ...config.planner, args: [plannerPath] },
-      implementer: { ...config.implementer, args: [implementerPath] },
-      workflow: { ...config.workflow, approve: 'none' },
-      validation: { ...config.validation, testCommand: undefined, endChecks: false },
-    });
-
-    const run = await cli(target, ['start', 'smoke'], { timeoutMs: 180_000 });
-    const sessions = readdirSync(sessionsRoot(target.projectDir));
-    expect(sessions).toHaveLength(1);
-    const sessionId = sessions[0];
-    if (sessionId === undefined) throw new Error('Missing session');
-    const calls: Array<{ kind: string; prompt: string }> = readFileSync(callsPath, 'utf8')
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line));
+    const { run, output, calls, state, unrunnable } = await startRun(plannerScript);
     const repair = calls.find((call) => call.kind === 'final-review-repair');
-    expect(repair?.prompt, `${run.stdout}\n${run.stderr}`).toContain(refusedCheck);
-
-    const state = readState(target, sessionId);
+    expect(repair?.prompt, output).toContain(refusedCheck);
     expect(state.tasks.find((task) => task.id === 'T002')?.checks).toMatchObject([
       { id: 'T002-K1', kind: 'test', value: TEST_FILE },
     ]);
-    const replay = await readRunEvents({ projectDir: target.projectDir, sessionId });
-    expect(replay.diagnostics.skipped).toBe(0);
-    expect(
-      replay.events.filter(
-        (event) =>
-          event.type === 'recovery_prompted' && event.reason === 'required-checks-unrunnable',
-      ),
-    ).toEqual([]);
+    expect(unrunnable).toEqual([]);
     expect(state.phase).toBe('complete');
-    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+    expect(run.exitCode, output).toBe(0);
+  });
+
+  it.each([
+    {
+      name: 'a test path with a typo',
+      check: { id: 'T002-K1', kind: 'test', value: 'src/alpha.tset.mjs', required: true },
+      refusal:
+        'Check T002-K1 is refused: a `test` check names one test file, and `src/alpha.tset.mjs` is no test file in the workspace, and no task lists it.',
+    },
+    {
+      name: 'a test path with a trailing comma',
+      check: { id: 'T002-K1', kind: 'test', value: `${TEST_FILE},`, required: true },
+      refusal: `Check T002-K1 is refused: a \`test\` check names one test file, and \`${TEST_FILE},\` is no test file in the workspace, and no task lists it.`,
+    },
+    {
+      name: 'a render id with a stray comma',
+      check: { id: 'T002-K1', kind: 'render', value: 'workflow-x,', required: true },
+      refusal:
+        'Check T002-K1 is refused: a `render` check names one scenario id of lowercase letters, digits and hyphens, and `workflow-x,` is not one.',
+    },
+  ] satisfies Array<{ name: string; check: Check; refusal: string }>)(
+    'sends $name back to the reviewer, and runs the repaired check',
+    async ({ check, refusal }) => {
+      const { run, output, calls, state, unrunnable } = await startRun((callsPath) =>
+        plannerScript(callsPath, check),
+      );
+      const repair = calls.find((call) => call.kind === 'final-review-repair');
+      expect(repair?.prompt, output).toContain(refusal);
+      expect(state.tasks.find((task) => task.id === 'T002')?.checks).toMatchObject([
+        { id: 'T002-K1', kind: 'test', value: TEST_FILE },
+      ]);
+      expect(unrunnable).toEqual([]);
+      expect(state.phase).toBe('complete');
+      expect(run.exitCode, output).toBe(0);
+    },
+  );
+
+  it('fails the check on a new test file the builder did not write, and the next fix task writes it', async () => {
+    const { run, output, calls, state, unrunnable } = await startRun(missingTestPlannerScript);
+    expect(unrunnable, output).toEqual([]);
+    expect(output).toMatch(
+      /plan check T002-K1: failed · \S+ \(the workspace has no test file for src\/loud\.test\.mjs\)/,
+    );
+    const red = calls.find((call) => call.kind === 'final-review-red-check');
+    expect(red?.prompt, output).toContain(
+      `Required check T002-K1 did not pass (fail): the workspace has no test file for ${NEW_TEST_FILE}`,
+    );
+    expect(state.tasks.map((task) => [task.id, task.status])).toEqual([
+      ['T001', 'done'],
+      ['T002', 'done'],
+      ['T003', 'done'],
+    ]);
+    expect(state.phase, output).toBe('complete');
+    expect(run.exitCode, output).toBe(0);
   });
 });

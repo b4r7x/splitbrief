@@ -194,6 +194,7 @@ export function fullSuiteSegments(
     ...(split === null || split.why === null
       ? []
       : [{ text: split.why, tone: 'textDim' as const }]),
+    ...(event.passed === false && event.command === '' ? detail : []),
   ]);
 }
 

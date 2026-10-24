@@ -165,14 +165,17 @@ export async function runPreReviewChecks(
     publishReviewCheck(notices, { ...identity, status: 'running' });
     const run = await prepared.run();
     runs.push(run);
+    // A red that ran no command, such as a missing test file or npm script, names why on its row.
+    const unranRed = run.status === 'fail' && run.command === undefined;
     publishReviewCheck(notices, {
       ...identity,
-      command: run.command ?? prepared.command,
+      command: unranRed ? '' : (run.command ?? prepared.command),
       ...(run.status === 'pass' || run.status === 'fail'
         ? {
             status: 'done',
             passed: run.status === 'pass',
             duration: Date.now() - startedAt,
+            ...(unranRed && { detail: run.output }),
           }
         : unranCheckRow(run)),
     });
