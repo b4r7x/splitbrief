@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- Checks, hooks, renders and the editor now run with your own NODE_ENV, or none if you set none, instead of production. A check that installs packages or runs React tests no longer fails in every review while it passes in your shell.
 - After a failed review, a check that names a missing or mistyped test file, an npm script that package.json does not define, a Rust file with no test, or a render with a bad name or no render command no longer stops the run with only "Run the checks again" and End run. The reviewer corrects the check, or the check fails and the builder fixes it.
 - A test that fails only because of the length of the run's folder path no longer reads as a new failure in the final review, so it no longer blocks the review or removes Accept as is.
 - Antigravity as the planner or reviewer no longer stops at Plan when the model runs a read-only shell command. Antigravity 1.3.2 or newer is now required.

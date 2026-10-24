@@ -66,6 +66,24 @@ const CHILD_CONTROL_ENV_KEYS = new Set([
   'DYLD_LIBRARY_PATH',
 ]);
 
+let userNodeEnv: { value: string | undefined } | undefined;
+
+/**
+ * Runs this process with `NODE_ENV=production`, so React and Ink load their production
+ * build, and keeps the value the user started it with for the children it starts.
+ */
+export function runAsProduction(): void {
+  userNodeEnv = { value: process.env['NODE_ENV'] };
+  process.env['NODE_ENV'] = 'production';
+}
+
+/** `env` with the `NODE_ENV` the user started SPLITBRIEF with in place of its own: their value, or none. */
+export function withUserNodeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (userNodeEnv === undefined || env['NODE_ENV'] !== 'production') return env;
+  const { NODE_ENV: _own, ...rest } = env;
+  return userNodeEnv.value === undefined ? rest : { ...rest, NODE_ENV: userNodeEnv.value };
+}
+
 /**
  * The environment of every command SPLITBRIEF runs itself: plan and reviewer checks,
  * base re-runs, fix checks, renders, the formatter and the `--version` probe. These
