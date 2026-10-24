@@ -109,8 +109,8 @@ Timeouts:
 <!-- generated: recipe:antigravity -->
 - implementer: `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --add-dir $D --output-format stream-json --model $M > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - implementer (no model): `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --add-dir $D --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'agy -p "$(cat $P)" --mode plan --add-dir $D --output-format stream-json --model $M > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'agy -p "$(cat $P)" --mode plan --add-dir $D --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'agy -p "$(cat $P)" --mode plan --sandbox --dangerously-skip-permissions --add-dir $D --output-format stream-json --model $M > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'agy -p "$(cat $P)" --mode plan --sandbox --dangerously-skip-permissions --add-dir $D --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - terminal record: the last `{"event":"result",…}` line: `result.status` `SUCCESS` = success, with `result.response` as the final text; any other status = failure; exit 0 without it = failure `ended without a terminal result`.
 

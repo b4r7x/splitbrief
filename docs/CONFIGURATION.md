@@ -232,7 +232,7 @@ planner:
   variant: high
 ```
 
-**When to use:** you already pay for a Claude Code / Codex / OpenCode license and want SPLITBRIEF to drive it as a planner without separate API billing. Copilot, Cursor, Command Code and Antigravity plan with their own read-only plan recipes like every other CLI planner.
+**When to use:** you already pay for a Claude Code / Codex / OpenCode license and want SPLITBRIEF to drive it as a planner without separate API billing. Copilot, Cursor, Command Code and Antigravity plan with their own plan recipes like every other CLI planner. The Antigravity planner and reviewer run agy's shell in its terminal sandbox, which blocks shell writes; agy's file tools need no prompt, and SPLITBRIEF fails the call when such a seat changes a file that git sees in the project.
 
 ### `kind: api`
 
