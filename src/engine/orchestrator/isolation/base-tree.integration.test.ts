@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -93,9 +94,10 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
         const first = git(run.dir, 'rev-parse HEAD~1').trim();
 
         let tree = '';
-        const legacy = await withRunBaseTree(baseOf(run), async ({ dir, incomplete }) => {
+        const legacy = await withRunBaseTree(baseOf(run), run.ws, async ({ dir, incomplete }) => {
           tree = dir;
           expect(incomplete).toBeUndefined();
+          expect(realpathSync(dir)).toHaveLength(realpathSync(run.ws).length);
           expect(inside(run.dir, dir)).toBe(false);
           expect(inside(run.ws, dir)).toBe(false);
           expect(readFileSync(join(dir, 'src/legacy.test.ts'), 'utf-8')).toBe(
@@ -142,7 +144,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
           },
         },
         async (run) => {
-          const completed = await withRunBaseTree(baseOf(run), async ({ dir }) => ({
+          const completed = await withRunBaseTree(baseOf(run), run.ws, async ({ dir }) => ({
             head: git(join(dir, 'vendor'), 'rev-parse HEAD').trim(),
             lib: readFileSync(join(dir, 'vendor/lib.txt'), 'utf-8'),
           }));
@@ -189,7 +191,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
         async (run) => {
           Object.assign(process.env, environment);
           rmSync(marker, { force: true });
-          await withRunBaseTree(baseOf(run), async () => undefined);
+          await withRunBaseTree(baseOf(run), run.ws, async () => undefined);
           const lines = readFileSync(marker, 'utf-8').trim().split('\n');
           expect(lines.length).toBeGreaterThan(0);
           for (const line of lines) expect(line).toBe('1 1');
@@ -209,7 +211,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
       const worktrees = git(run.dir, 'worktree list --porcelain');
       let tree = '';
       await expect(
-        withRunBaseTree(baseOf(run), async ({ dir }) => {
+        withRunBaseTree(baseOf(run), run.ws, async ({ dir }) => {
           tree = dir;
           throw new Error('stage crashed');
         }),
@@ -227,7 +229,11 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
       mkdirSync(runBaseTreesRoot(), { recursive: true });
       const before = readdirSync(runBaseTreesRoot());
       const use = vi.fn();
-      const failed = await withRunBaseTree({ ...baseOf(run), head: 'f'.repeat(40) }, use).then(
+      const failed = await withRunBaseTree(
+        { ...baseOf(run), head: 'f'.repeat(40) },
+        run.ws,
+        use,
+      ).then(
         () => undefined,
         (err: unknown) => err,
       );
@@ -265,7 +271,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
       mkdirSync(unowned);
       const launches = recordGitLaunches();
       try {
-        await withRunBaseTree(baseOf(run), async () => undefined);
+        await withRunBaseTree(baseOf(run), run.ws, async () => undefined);
 
         expect(existsSync(stale)).toBe(false);
         expect(registered(stale)).toBe(false);
@@ -304,7 +310,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
           const olderRegistration = join(owner.dir, '.git/worktrees', basename(older));
           expect(existsSync(registration)).toBe(true);
           try {
-            await withRunBaseTree(baseOf(run), async () => undefined);
+            await withRunBaseTree(baseOf(run), run.ws, async () => undefined);
             expect(existsSync(stale)).toBe(false);
             expect(existsSync(registration)).toBe(false);
             expect(existsSync(copy)).toBe(false);
@@ -330,8 +336,10 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
       const restore = installDiagnosticSink((message) => warnings.push(message));
       try {
         for (let attempt = 0; attempt < 2; attempt++) {
-          const completed = await withRunBaseTree({ ...baseOf(run), head: null }, async ({ dir }) =>
-            readFileSync(join(dir, 'src/legacy.ts'), 'utf8'),
+          const completed = await withRunBaseTree(
+            { ...baseOf(run), head: null },
+            run.ws,
+            async ({ dir }) => readFileSync(join(dir, 'src/legacy.ts'), 'utf8'),
           );
           expect(completed).toEqual({ result: FILES['src/legacy.ts'], cleanupError: undefined });
         }
@@ -366,7 +374,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
         expect(existsSync(gitdir)).toBe(false);
         const worktrees = git(run.dir, 'worktree list --porcelain');
         try {
-          const completed = await withRunBaseTree(baseOf(run), async ({ dir }) => {
+          const completed = await withRunBaseTree(baseOf(run), run.ws, async ({ dir }) => {
             expect(existsSync(stale)).toBe(false);
             expect(git(dir, 'rev-parse HEAD').trim()).toBe(run.workspace.base.head);
             return readFileSync(join(dir, 'src/legacy.ts'), 'utf8');
@@ -391,6 +399,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
         const use = vi.fn();
         const failed = await withRunBaseTree(
           { ...baseOf(run), snapshotId: 'missing-snapshot' },
+          run.ws,
           use,
         ).catch((err: unknown) => err);
         expect(runBaseTreeError.isPreparationFailed(failed)).toBe(true);
@@ -415,6 +424,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
       try {
         const failed = await withRunBaseTree(
           { ...baseOf(run), head: 'f'.repeat(40) },
+          run.ws,
           vi.fn(),
         ).catch((err: unknown) => err);
         expect(runBaseTreeError.isPreparationFailed(failed)).toBe(true);
@@ -439,7 +449,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
         const callbackError = new Error('callback failed');
         let tree = '';
         try {
-          const completed = await withRunBaseTree(baseOf(run), async ({ dir }) => {
+          const completed = await withRunBaseTree(baseOf(run), run.ws, async ({ dir }) => {
             tree = dir;
             git(run.dir, `worktree lock ${JSON.stringify(dir)}`);
             if (outcome === 'throw') throw callbackError;
@@ -467,18 +477,58 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
     },
   );
 
+  it('matches the workspace path length as a check reads it when the state folder links to a shorter one', async () => {
+    await withApplyRun(
+      FILES,
+      { sessionId: 'sess-base-tree-linked-state', strategy: 'staged-copy' },
+      async (run) => {
+        const links = createTempDir('base-tree-links');
+        mkdirSync(join(links, 's'));
+        const state = join(links, `state-${'x'.repeat(40)}`);
+        symlinkSync(join(links, 's'), state, 'dir');
+        vi.stubEnv('XDG_STATE_HOME', state);
+        try {
+          const seen = await withRunBaseTree(baseOf(run), run.ws, async ({ dir }) =>
+            realpathSync(dir),
+          );
+          expect(seen.result.startsWith(join(realpathSync(links), 's'))).toBe(true);
+          expect(seen.result).toHaveLength(realpathSync(run.ws).length);
+        } finally {
+          vi.unstubAllEnvs();
+          cleanupTempDir(links);
+        }
+      },
+    );
+  });
+
+  it('names a base tree no shorter than its owner and random part, and no longer than 255 bytes', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-base-tree-name-bounds' }, async (run) => {
+      const nameFor = async (workspaceDir: string) =>
+        (await withRunBaseTree(baseOf(run), workspaceDir, async ({ dir }) => basename(dir))).result;
+
+      expect(await nameFor('/')).toMatch(new RegExp(`^base-${process.pid}-[A-Za-z0-9]{6}$`));
+      const deep = join(run.dir, 'w'.repeat(200), 'w'.repeat(200));
+      mkdirSync(deep, { recursive: true });
+      const longest = await nameFor(deep);
+      expect(longest).toMatch(new RegExp(`^base-${process.pid}-_+[A-Za-z0-9]{6}$`));
+      expect(Buffer.byteLength(longest)).toBe(255);
+    });
+  });
+
   it('names the base a staged-copy run started from, and why its copy is incomplete', async () => {
     await withApplyRun(
       FILES,
       { sessionId: 'sess-base-tree-staged', strategy: 'staged-copy' },
       async (run) => {
         writeFileSync(join(run.ws, 'src/legacy.ts'), 'export const legacy = 9;\n');
-        const seen = await withRunBaseTree(baseOf(run), async ({ dir, incomplete }) => ({
+        const seen = await withRunBaseTree(baseOf(run), run.ws, async ({ dir, incomplete }) => ({
+          length: realpathSync(dir).length,
           legacy: readFileSync(join(dir, 'src/legacy.ts'), 'utf-8'),
           git: existsSync(join(dir, '.git')),
           incomplete,
         }));
         expect(seen.result).toEqual({
+          length: realpathSync(run.ws).length,
           legacy: FILES['src/legacy.ts'],
           git: false,
           incomplete:
