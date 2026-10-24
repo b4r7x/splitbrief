@@ -49,13 +49,13 @@ type CommandAnswer = 'pass' | { red: string; stderr?: string } | { throws: unkno
 
 /**
  * Runs the reviewer checks on a real run workspace and run base. `answer` decides each command by
- * its text and where it runs: the run workspace or the run base.
+ * its text and where it runs: the run workspace or the run base, and the folder it runs in.
  */
 async function reviewChecks(
   run: ApplyRun,
   opts: {
     plan: ReviewChecksPlan | ((prompt: string, call: number) => ReviewChecksPlan) | null;
-    answer?: (command: string, at: 'workspace' | 'base') => CommandAnswer;
+    answer?: (command: string, at: 'workspace' | 'base', cwd: string) => CommandAnswer;
     config?: Config;
     tasks?: Task[];
     state?: Partial<WorkflowState>;
@@ -81,9 +81,10 @@ async function reviewChecks(
   const commands: Array<{ command: string; at: 'workspace' | 'base' }> = [];
   vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args, options) => {
     const command = [cmd, ...args].join(' ');
-    const at = options?.cwd === run.ws ? 'workspace' : 'base';
+    const cwd = options?.cwd ?? '';
+    const at = cwd === run.ws ? 'workspace' : 'base';
     commands.push({ command, at });
-    const answer = opts.answer?.(command, at) ?? 'pass';
+    const answer = opts.answer?.(command, at, cwd) ?? 'pass';
     if (answer === 'pass') return { stdout: 'ok', stderr: '', code: 0 };
     if ('throws' in answer) throw answer.throws;
     throw processError.exitCode({
@@ -610,6 +611,28 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         `failed, 0 new failure(s); 1 pre-existing (also red at the run base)\ncheck V1 did not pass (fail): 1 failure\nPre-existing failures (also red at the run base):\n- ${OLD_RED}\nOutput tail:`,
       );
     });
+  });
+
+  it('marks a red that depends on the length of the folder path pre-existing at the run base', async () => {
+    await withApplyRun(
+      FILES,
+      { sessionId: 'sess-checks-path-length-red-in-a-long-run-workspace' },
+      async (run) => {
+        const { outcome, events } = await reviewChecks(run, {
+          plan: plan([['V1', 'npm test']]),
+          answer: (_command, _at, cwd) => (cwd.length >= run.ws.length ? { red: OLD_RED } : 'pass'),
+        });
+
+        expect(
+          rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+        ).toMatchObject({ passed: false, newFailures: 0, preExisting: 1 });
+        expect(outcome).toMatchObject({
+          kind: 'ran',
+          preExistingChecks: [{ id: 'V1', command: 'npm test', keys: [OLD_RED] }],
+        });
+        expect(outcome.state.pendingTriage).toBeUndefined();
+      },
+    );
   });
 
   // Q2 review B3: the base row read `fails at the run base too` whether the run stopped or went on.

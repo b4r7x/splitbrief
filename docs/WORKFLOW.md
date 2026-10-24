@@ -681,7 +681,11 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
          Each refused command is a named row. A red reviewer check re-runs at
          the run base with the same text, in a detached Git worktree at the
          base commit with the base snapshot on top (withRunBaseTree); failures
-         red there too are pre-existing. With no base commit the copy has no
+         red there too are pre-existing. With links resolved, the base tree
+         path has as many characters as the run workspace path. A run
+         workspace path shorter than the shortest base tree path, such as the
+         checkout in workflow.isolation: none, gives the base no padding.
+         With no base commit the copy has no
          Git history, file modes or symlinks: a red there is "not verified at
          the run base". Any base-tree preparation failure, including
          listing stale trees, snapshot reconciliation or dependency linking, gives

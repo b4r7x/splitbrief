@@ -187,15 +187,19 @@ async function preExistingKeys(input: {
   let atBase: { run: CheckRunResult; incomplete: string | undefined } | undefined;
   let treeError: string | undefined;
   try {
-    const completed = await withRunBaseTree(input.base, async ({ dir, incomplete }) => {
-      const [run] = await runChecks([input.id], {
-        ...input.checkOptions,
-        projectDir: dir,
-        base: undefined,
-        checkoutDir: undefined,
-      });
-      return run === undefined ? undefined : { run, incomplete };
-    });
+    const completed = await withRunBaseTree(
+      input.base,
+      input.checkOptions.projectDir,
+      async ({ dir, incomplete }) => {
+        const [run] = await runChecks([input.id], {
+          ...input.checkOptions,
+          projectDir: dir,
+          base: undefined,
+          checkoutDir: undefined,
+        });
+        return run === undefined ? undefined : { run, incomplete };
+      },
+    );
     atBase = completed.result;
     treeError = completed.cleanupError;
   } catch (err) {
