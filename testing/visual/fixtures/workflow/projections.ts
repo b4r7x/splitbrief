@@ -30,7 +30,10 @@ import { renderCheckNotes, planRepairWarning } from '../../../../src/engine/spec
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
 import { BOUNDS } from '../../../../src/core/pipeline-spec/bounds.js';
 import { buildConsultBoundRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/consult.js';
-import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/checks.js';
+import {
+  buildRequiredChecksUnrunnableRecoveryIssue,
+  type UnrunnableCheck,
+} from '../../../../src/engine/orchestrator/recovery/builders/checks.js';
 import {
   buildApplyConflictRecoveryIssue,
   buildApplyPartialRecoveryIssue,
@@ -103,7 +106,7 @@ import type { Config } from '../../../../src/core/schemas/config.js';
 import { error } from '../../../../src/utils/error.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
 import {
-  checkCommandRefusal,
+  commandTextRefusal,
   sanitizeDiscoveredValidation,
 } from '../../../../src/engine/orchestrator/planning/sanitize-discovered-validation.js';
 import {
@@ -1000,9 +1003,9 @@ const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// An approved plan names `npm run lint`, but package.json defines no lint script. The plan command
-// policy refuses the check, so the brief's checks show it as a refused row with the rule it broke,
-// and the brief completes on the check that ran.
+// A plan names `npm run lint`, and the run no longer approves the plan, so the plan command policy
+// refuses the check: the brief's checks show it as a refused row with the rule it broke, and the
+// brief completes on the check that ran.
 const planCheckRefusedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-plan-check-refused'),
   feature: WORKFLOW_FEATURE,
@@ -1021,11 +1024,7 @@ const planCheckRefusedProjection: WorkflowFixtureProjection = {
       id: 'K2',
       command: 'npm run lint',
       status: 'refused',
-      detail:
-        checkCommandRefusal('npm run lint', {
-          npmScriptsApproved: true,
-          packageScripts: { packageJsonExists: true, scripts: { test: 'node --test' } },
-        }) ?? '',
+      detail: commandTextRefusal('npm run lint', false) ?? '',
     },
     {
       type: 'checks_run',
@@ -1041,7 +1040,7 @@ const planCheckRefusedProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// The plan's test check found no affected test file, so it did not run and has no command to name.
+// The plan's test check resolved no test command, so it did not run and has no command to name.
 const planCheckNotRunProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-plan-check-not-run'),
   feature: WORKFLOW_FEATURE,
@@ -1060,7 +1059,7 @@ const planCheckNotRunProjection: WorkflowFixtureProjection = {
       id: 'K4',
       command: '',
       status: 'not-run',
-      detail: 'no affected test file found',
+      detail: 'no test command for an unrecognised stack; set validation.test_command',
     },
     {
       type: 'checks_run',
@@ -1074,6 +1073,38 @@ const planCheckNotRunProjection: WorkflowFixtureProjection = {
     },
     ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_completed'),
   ],
+};
+
+// The plan's test check names a test file the workspace does not hold, so it failed without a command.
+const planCheckNoTestFileProjection: WorkflowFixtureProjection = {
+  ...planCheckNotRunProjection,
+  scenarioId: scenarioId('workflow-plan-check-no-test-file'),
+  events: planCheckNotRunProjection.events.map((event): EngineEvent => {
+    if (event.type === 'full_suite') {
+      return {
+        type: 'full_suite',
+        ts: event.ts,
+        phase: event.phase,
+        moment: 'plan',
+        id: 'K4',
+        command: '',
+        status: 'done',
+        passed: false,
+        duration: 0,
+        detail: 'the workspace has no test file for src/loud.test.mjs',
+      };
+    }
+    if (event.type === 'checks_run') {
+      return {
+        ...event,
+        results: [
+          { id: 'K1', status: 'pass' },
+          { id: 'K4', status: 'fail' },
+        ],
+      };
+    }
+    return event;
+  }),
 };
 
 /** What production code publishes on a bus of its own, stamped in order from `ts`. */
@@ -3294,11 +3325,8 @@ const taskReviewCapRecoveryProjection: WorkflowFixtureProjection = {
   ),
 };
 
-/** The final review's required check runs a test script that calls a program not installed. */
-const checksMissingProgramRecoveryProjection: WorkflowFixtureProjection = {
-  ...reviewFailedRecoveryProjection,
-  scenarioId: scenarioId('workflow-recovery-checks-missing-program'),
-  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+function finalReviewHaltState(checks: readonly UnrunnableCheck[]): WorkflowState {
+  return makeImplState([{ ...HALTED_TASK, status: 'done' }], {
     feature: WORKFLOW_FEATURE,
     startedAt: RESUMED_RUN_STARTED_AT,
     phase: 'final-review',
@@ -3308,12 +3336,28 @@ const checksMissingProgramRecoveryProjection: WorkflowFixtureProjection = {
       base: { snapshotId: 'visual-base', head: null },
     },
     pendingRecovery: buildRequiredChecksUnrunnableRecoveryIssue({
-      id: 'rec_visual_checks_missing_program',
+      id: 'rec_visual_checks_unrunnable',
       phase: 'final-review',
-      checks: [{ checkId: 'K1', output: 'sh: mocha: command not found', missingProgram: true }],
+      checks,
       createdAt: new Date(FIXED_TS).toISOString(),
     }),
-  }),
+  });
+}
+
+/** The final review's required check runs a test script that calls a program not installed. */
+const checksMissingProgramRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-checks-missing-program'),
+  resumeState: finalReviewHaltState([
+    { checkId: 'K1', output: 'sh: mocha: command not found', missingProgram: true },
+  ]),
+};
+
+/** The final review's required render check cannot run because no render command is set. */
+const checksUnrunnableRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-checks-unrunnable'),
+  resumeState: finalReviewHaltState([{ checkId: 'K2', output: 'validation.render is not set' }]),
 };
 
 const applyConflictIssue = buildApplyConflictRecoveryIssue({
@@ -6864,6 +6908,8 @@ const projections = [
         : event,
     ),
   },
+  planCheckNoTestFileProjection,
+
   completedOrphanRowsProjection,
   usageLimitRecoveryProjection,
   noFallbackRecoveryProjection,
@@ -6889,6 +6935,7 @@ const projections = [
   reviewUnverifiedRecoveryProjection,
   taskReviewCapRecoveryProjection,
   checksMissingProgramRecoveryProjection,
+  checksUnrunnableRecoveryProjection,
   applyConflictRecoveryProjection,
   applyConflictSentenceProjection,
   resumedApplyPartialRecoveryProjection,

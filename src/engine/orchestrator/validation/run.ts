@@ -1,4 +1,7 @@
+import { posix } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
+import type { TaskSpec } from '../../../core/schemas/plan.js';
+import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import {
   readManifestCommands,
@@ -20,7 +23,7 @@ import type { EventBus } from '../../events/types.js';
 import { publishWarning } from '../events.js';
 import { sanitizeDiscoveredValidation } from '../planning/sanitize-discovered-validation.js';
 import { fingerprintFiles } from '../changed-files-baseline.js';
-import { formatValidationCommand, resolveTestTarget } from './commands.js';
+import { formatValidationCommand, NO_TEST_FILE_FOUND, resolveTestTarget } from './commands.js';
 import type {
   FormatChangedFilesOptions,
   ValidationCommandRunner,
@@ -33,7 +36,7 @@ function resolveValidationTimeout(config: Config): number {
   return config.validation.timeoutMs ?? STAGE_TIMEOUT_MS;
 }
 
-type StageContext = {
+export type StageContext = {
   projectDir: string;
   config: Config;
   manifest: ManifestCommands;
@@ -131,7 +134,10 @@ async function formatFiles(opts: {
 export function planTestCheck(file: string, ctx: StageContext): TestCheckPlan {
   const resolved = resolveTestCommand(ctx);
   if (resolved === null)
-    return { kind: 'skip', reason: 'no test command for an unrecognised stack' };
+    return {
+      kind: 'skip',
+      reason: 'no test command for an unrecognised stack; set validation.test_command',
+    };
   const target = resolveTestTarget({
     resolved,
     files: [file],
@@ -151,6 +157,36 @@ export function planTestCheck(file: string, ctx: StageContext): TestCheckPlan {
     command: formatValidationCommand(resolved.cmd, args),
     countsCargoTests: narrowing.kind === 'cargo-target' && target.targets.length > 0,
   };
+}
+
+/**
+ * The `test` checks of reviewer- or consult-written tasks that name no test file in the workspace,
+ * resolved the way the run resolves them. A file that a task of `tasks` or `otherFiles` lists is
+ * one the run writes, so its check stands. A value of more than one path is `refusedCheckErrors`'
+ * to refuse.
+ */
+export function unresolvedTestCheckErrors(
+  tasks: readonly Pick<TaskSpec, 'suggestedFiles' | 'checks'>[],
+  ctx: StageContext,
+  otherFiles: readonly string[],
+): string[] {
+  const written = new Set([...otherFiles, ...tasks.flatMap((task) => task.suggestedFiles)]);
+  return tasks.flatMap((task) =>
+    task.checks
+      .filter((check) => {
+        if (check.kind !== 'test' || parseShellCommand(check.value).length !== 1) return false;
+        const planned = planTestCheck(check.value, ctx);
+        return (
+          planned.kind === 'skip' &&
+          planned.reason === NO_TEST_FILE_FOUND &&
+          !written.has(posix.normalize(normalizeProjectRelativePath(check.value)))
+        );
+      })
+      .map(
+        (check) =>
+          `Check ${check.id} is refused: a \`test\` check names one test file, and \`${check.value}\` is no test file in the workspace, and no task lists it. Set its value to an existing test file, or list the new test file in a task's files.`,
+      ),
+  );
 }
 
 export function createValidator(deps: ValidatorDeps = {}): Validator {

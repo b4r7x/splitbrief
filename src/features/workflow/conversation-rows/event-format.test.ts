@@ -405,6 +405,22 @@ describe('fullSuiteRow for a reviewer check', () => {
     ).toBe('Plan check K4 · not\u00a0run · no affected test file found');
   });
 
+  it('names why a plan check that ran no command failed', () => {
+    expect(
+      fullSuiteRow(
+        reviewCheck({
+          id: 'K4',
+          moment: 'plan',
+          command: '',
+          status: 'done',
+          passed: false,
+          duration: 0,
+          detail: 'the workspace has no test file for src/a.test.ts',
+        }),
+      ),
+    ).toBe('Plan check K4 · failed · 0.0s · the workspace has no test file for src/a.test.ts');
+  });
+
   it.each(['pre-review', 'base', 'brief'] as const)(
     'keeps not run whole at 60 columns for a %s check',
     (moment) => {

@@ -739,7 +739,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: A plan check is `refused`
 
-**Likely cause:** The plan command policy refused the planner's command when the check ran. The row names the rule, for example `Plan check K2 · npm run lint · refused · runs the npm script lint, which package.json does not define`. A package script (`npm run <script>`) runs only under an approved plan and only when `package.json` defines the script. `checkPlan` already sends a plan back to the planner when the command text breaks the policy, so a refusal during Build is usually a script that `package.json` does not define.
+**Likely cause:** The plan command policy refused the planner's command when the check ran. The row names the rule, for example `Plan check K2 · npm run lint · refused · runs a package script or binary (npm run)`. A package script (`npm run <script>`) runs only under an approved plan. `checkPlan` already sends a plan back to the planner when a check breaks the policy, so a refusal during Build usually means that `workflow.approve` changed after planning. A check whose script `package.json` does not define is not refused: it fails, and the reviewer can answer it with a fix task.
 
 A refused check did not run. SPLITBRIEF records it as refused, not as failed, and the reviewer sees it as refused. An optional refused check does not stop the run. A required refused check halts the run before the review with `Required checks cannot run: <id>`.
 
@@ -813,7 +813,7 @@ To measure the project before a run, run its own commands directly. `doctor` run
 
 ---
 
-### Symptom: a planner `test` check is `not-runnable` with `no test command for an unrecognised stack`
+### Symptom: a planner `test` check is `not-runnable` with `no test command for an unrecognised stack; set validation.test_command`
 
 **Likely cause:** The check could not resolve a test command. That happens when the project carries none of the five stack markers (`Cargo.toml`, `go.mod`, `pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`, `tsconfig.json` or a `typescript` dependency, `package.json`), and there is no `validation.test_command`, no `package.json` `test` script / `Makefile` or `justfile` `test` target, and nothing the planner discovered. SPLITBRIEF deliberately does not guess `npm test` at that point — a fabricated check that passes is worse than a stated absence. A required `test` check in this state halts the run with `required-checks-unrunnable`. The reviewer checks do not resolve through the stack: the reviewer still chooses them from the project itself, and the reviewer command policy runs any installed program of any language.
 

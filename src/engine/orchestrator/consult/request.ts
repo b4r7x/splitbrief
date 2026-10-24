@@ -23,7 +23,7 @@ import type { Planner } from '../../planners/types.js';
 import type { Reviewer } from '../../reviewers/types.js';
 import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
 import { orderChangedFiles } from '../../change-detection.js';
-import { refusedCheckErrors } from '../../spec/plan-checks.js';
+import { refusedCheckErrors, unconfiguredRenderCheckErrors } from '../../spec/plan-checks.js';
 import { buildConsultPrompt, type ConsultPromptInput } from '../../spec/prompts/consult.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { readChangeEntry } from '../approval/file-snapshots/entry.js';
@@ -36,6 +36,11 @@ import { runReviewerCall } from '../review-call.js';
 import { runSeatCall, seatFailureFromError } from '../escalation/seat-wait.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { planApprovesNpmScripts } from '../validation/run-checks.js';
+import {
+  buildStageContext,
+  type StageContext,
+  unresolvedTestCheckErrors,
+} from '../validation/run.js';
 
 export type ConsultContext = Readonly<{
   projectDir: string;
@@ -120,14 +125,22 @@ function reasonContract(task: Task, reason: ConsultReason, answered: boolean) {
 
 /**
  * The answer contract of one consult. A rewrite or a split never brings in a `cmd` check that the
- * plan command policy refuses, or a `test` check whose value is not one test file: the answer
- * fails the schema and the seat gets its one repair.
+ * plan command policy refuses or whose npm script no one adds, a `render` check that names no
+ * scenario id or that the run cannot render, or a `test` check whose value is not one test file in
+ * the workspace or in the files of the answer or of a pending task: the answer fails the schema and the
+ * seat gets its one repair.
  */
 function answerContract(
   task: Task,
   reason: ConsultReason,
   answered: boolean,
-  npmScriptsApproved: boolean,
+  checks: {
+    npmScriptsApproved: boolean;
+    projectDir: string;
+    renderCommand: string | undefined;
+    testChecks: StageContext;
+    pendingFiles: readonly string[];
+  },
 ) {
   const contract = reasonContract(task, reason, answered);
   return {
@@ -139,11 +152,17 @@ function answerContract(
           : value.answer.action === 'split-task'
             ? value.answer.tasks
             : [];
-      for (const error of refusedCheckErrors(
-        specs.flatMap((spec) => spec.checks),
-        npmScriptsApproved,
-      )) {
-        ctx.addIssue({ code: 'custom', message: error.message });
+      const specChecks = specs.flatMap((spec) => spec.checks);
+      for (const message of [
+        ...refusedCheckErrors(specChecks, {
+          npmScriptsApproved: checks.npmScriptsApproved,
+          projectDir: checks.projectDir,
+          writtenFiles: [...checks.pendingFiles, ...specs.flatMap((spec) => spec.suggestedFiles)],
+        }).map((error) => error.message),
+        ...unconfiguredRenderCheckErrors(specChecks, checks.renderCommand),
+        ...unresolvedTestCheckErrors(specs, checks.testChecks, checks.pendingFiles),
+      ]) {
+        ctx.addIssue({ code: 'custom', message });
       }
     }),
   };
@@ -282,12 +301,20 @@ export async function requestConsult(
   const seat = consultSeat(input.task, input.reason);
   const diff = await taskDiff(ctx.workspaceDir, ctx.state, input.task, ref);
   const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir, seat);
-  const contract = answerContract(
-    input.task,
-    input.reason,
-    input.answered === true,
-    planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),
-  );
+  const contract = answerContract(input.task, input.reason, input.answered === true, {
+    npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),
+    projectDir: ctx.workspaceDir,
+    renderCommand: ctx.config.validation.render,
+    testChecks: buildStageContext({
+      projectDir: ctx.workspaceDir,
+      config: ctx.config,
+      discoveredValidation: ctx.state.discoveredValidation,
+      notices: { bus: ctx.bus, phase: ctx.state.phase },
+    }),
+    pendingFiles: ctx.state.tasks
+      .filter((task) => task.status === 'pending' && task.id !== input.task.id)
+      .flatMap((task) => task.suggestedFiles),
+  });
   const onCallEvent = (event: RunnerCallEvent): void =>
     publishRunnerCallEvent(
       { bus: ctx.bus, phase: state.phase, rootDir: ctx.projectDir, taskId: input.task.id },

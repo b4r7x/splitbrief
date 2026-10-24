@@ -716,6 +716,7 @@ const checkpointPredicates = [
   [checkpointId('plan-check-refused'), includesAll('Plan check K2', 'refused')],
   [checkpointId('plan-check-not-run'), includesAll('Plan check K4 · not')],
   [checkpointId('plan-check-missing-program'), includesAll('Plan check K4 · npm test', 'mocha')],
+  [checkpointId('plan-check-no-test-file'), includesAll('Plan check K4 · failed', 'loud.test.mjs')],
   [
     checkpointId('completed-orphan-rows'),
     includesTranscript(
@@ -1043,6 +1044,10 @@ const checkpointPredicates = [
   [
     checkpointId('recovery-checks-missing-program'),
     includesAll('mocha: command not found', 'Run the checks again'),
+  ],
+  [
+    checkpointId('recovery-checks-unrunnable'),
+    includesAll('validation.render is not set', 'Run the checks again'),
   ],
   [checkpointId('left-isolation'), includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],

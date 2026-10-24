@@ -95,12 +95,13 @@ describe('a Rust test check', () => {
     'test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s',
   ].join('\n');
 
-  it('is not runnable when its cargo selection ran no test', async () => {
+  it('fails when its cargo selection ran no test', async () => {
     expect(await run(NONE_RAN)).toMatchObject([
       {
         checkId: 'K1',
-        status: 'not-runnable',
+        status: 'fail',
         output: 'the command ran no test',
+        failure: { keys: ['no test ran'], placeholder: 'the command ran no test' },
         command: 'cargo test -- parser::',
       },
     ]);
@@ -111,12 +112,14 @@ describe('a Rust test check', () => {
     expect(await run(ran)).toMatchObject([{ checkId: 'K1', status: 'pass' }]);
   });
 
-  it('is not runnable when the output that shows no test ran was cut off', async () => {
+  it('fails when the output that shows no test ran was cut off', async () => {
+    const cutOff = 'the test output was cut off before it showed a test that ran';
     expect(await run(NONE_RAN, { truncated: true })).toMatchObject([
       {
         checkId: 'K1',
-        status: 'not-runnable',
-        output: 'the test output was cut off before it showed a test that ran',
+        status: 'fail',
+        output: cutOff,
+        failure: { keys: ['no test ran'], placeholder: cutOff },
       },
     ]);
   });
