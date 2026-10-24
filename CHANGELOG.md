@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- Antigravity as the planner or reviewer no longer stops at Plan when the model runs a read-only shell command. Antigravity 1.3.2 or newer is now required.
 - Words typed with Accept as is, Re-run Apply or Restore backup are no longer lost when you continue a stopped run, and neither are words typed to a run that stopped during Apply. SPLITBRIEF says it cannot send them, keeps them in the composer and runs nothing. Clear them and press ⏎ to go on. A sentence typed as the answer to a halt that takes none comes back into the composer with its images. A halt in Apply no longer invites a typed correction.
 - If SPLITBRIEF stops while it applies your answer to a run that stopped for you, your note is no longer applied twice. A note saved with that answer is no longer lost.
 - When SPLITBRIEF cannot release a run's lock, the notice says so instead of saying the run ended, and a long notice cut to one row keeps the file name of the path it names. With --json, the error record of a failed run reads "Session <id> failed.", and a run that stops short of completion reads "did not complete" with the status word that Sessions shows, such as stopped or waiting for you, instead of "ended with status".

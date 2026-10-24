@@ -6,6 +6,7 @@ import {
   ANTIGRAVITY_CLI_ADMISSION_VERDICT,
   CLI_TOOL_CATALOG,
 } from '../../../core/runners/cli-tool-catalog.js';
+import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
 import { CLI_PROJECT_DIR_SENTINEL, CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import type { CliSchemaInput } from './contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
@@ -17,10 +18,10 @@ import {
 } from './antigravity.js';
 
 const PROMPT = CLI_PROMPT_SENTINEL;
-// Re-pinned 2026-09-23: both raw contracts gained `--add-dir <PROJECT_DIR>`, so the raw
-// conformance run gives agy the same workspace the adapter does.
+// Re-pinned 2026-10-24: the planner contract gained `--sandbox --dangerously-skip-permissions`,
+// so a read-only shell command runs without a prompt.
 const ANTIGRAVITY_PLANNER_CONTRACT_SHA256 =
-  '9329aebd77efbe4ad1707c53f7abbcf27f852530f5b730d04b1d1be5c4503adb';
+  '8979b3cdc345e2b16541b84da8d7b35077fb96dac9a2fce5d8be00bdac3b3be9';
 const ANTIGRAVITY_IMPLEMENTER_CONTRACT_SHA256 =
   '84bb7b53c1ee6c4eede2fa5b339ee634ecad3d47175f1c2f5fc88a7838440d46';
 const STREAM_JSON_FIXTURE = join(
@@ -80,8 +81,18 @@ describe('Antigravity role adapters', () => {
     expect(CLI_TOOL_CATALOG.antigravity.effortChannel).toBe('model-id');
     expect(antigravityPlannerAdapter.supportsEffort).toBe(false);
     expect(CLI_TOOL_CATALOG.antigravity.compatibility.versionScheme).toBe('semver');
-    expect(CLI_TOOL_CATALOG.antigravity.compatibility.testedVersion).toBe('1.2.9');
-    expect(CLI_TOOL_CATALOG.antigravity.compatibility.evidence.asOf).toBe('2026-09-23');
+    expect(CLI_TOOL_CATALOG.antigravity.compatibility.testedVersion).toBe('1.4.7');
+    expect(CLI_TOOL_CATALOG.antigravity.compatibility.evidence.asOf).toBe('2026-10-24');
+  });
+
+  it('admits agy from 1.3.2, where the skip-permissions flag no longer approves a plan-mode plan', () => {
+    const { minimumAdmittedVersion } = CLI_TOOL_CATALOG.antigravity.compatibility;
+    expect(classifyCliAdmittedVersion({ installedVersion: '1.3.1', minimumAdmittedVersion })).toBe(
+      'incompatible',
+    );
+    expect(classifyCliAdmittedVersion({ installedVersion: '1.3.2', minimumAdmittedVersion })).toBe(
+      'compatible',
+    );
   });
 
   it('probes the version with --version, the flag that prints the bare semver', () => {
@@ -89,12 +100,14 @@ describe('Antigravity role adapters', () => {
     expect(antigravityImplementerAdapter.probe?.version.command).toEqual(['agy', '--version']);
   });
 
-  it('builds the planner argv with the read-only plan mode', () => {
+  it("runs the planner in plan mode inside agy's terminal sandbox, so read-only commands need no prompt", () => {
     expect(plannerArgs({ model: 'gemini-3.8-flash-low' })).toEqual([
       '-p',
       PROMPT,
       '--mode',
       'plan',
+      '--sandbox',
+      '--dangerously-skip-permissions',
       '--add-dir',
       '/project',
       '--output-format',
@@ -133,6 +146,8 @@ describe('Antigravity role adapters', () => {
       PROMPT,
       '--mode',
       'plan',
+      '--sandbox',
+      '--dangerously-skip-permissions',
       '--add-dir',
       '/project',
       '--output-format',
@@ -145,6 +160,8 @@ describe('Antigravity role adapters', () => {
       PROMPT,
       '--mode',
       'plan',
+      '--sandbox',
+      '--dangerously-skip-permissions',
       '--add-dir',
       '/project',
       '--output-format',
@@ -303,6 +320,7 @@ describe('Antigravity role adapters', () => {
   it.each([
     ['--mode', 'plan'],
     ['--dangerously-skip-permissions'],
+    ['--sandbox'],
     ['--output-format', 'text'],
     ['--print-timeout', '1m'],
     ['--model', 'other'],

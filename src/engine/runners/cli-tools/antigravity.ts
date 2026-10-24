@@ -20,10 +20,20 @@ const ANTIGRAVITY_PROMPT_TRANSPORT = Object.freeze({
 } as const);
 const ANTIGRAVITY_VERSION_ARGS = Object.freeze(['--version'] as const);
 const ANTIGRAVITY_OUTPUT_ARGS = Object.freeze(['--output-format', 'stream-json'] as const);
+// Headless agy ends the turn at the first permission it cannot prompt for, so the planner skips
+// the prompts. `--sandbox` blocks shell writes; the file tools are not fenced, and the planning
+// mutation guard reports a write inside the project.
+const ANTIGRAVITY_PLANNER_ARGS = Object.freeze([
+  '--mode',
+  'plan',
+  '--sandbox',
+  '--dangerously-skip-permissions',
+] as const);
 
 const ANTIGRAVITY_PROTECTED_FLAGS = new Set([
   '-p',
   '--dangerously-skip-permissions',
+  '--sandbox',
   '--add-dir',
   '--output-format',
   '--print-timeout',
@@ -65,8 +75,7 @@ function plannerBaseArgs(input: AntigravityPlannerBuildInput): string[] {
   return [
     '-p',
     input.prompt,
-    '--mode',
-    'plan',
+    ...ANTIGRAVITY_PLANNER_ARGS,
     '--add-dir',
     input.projectDir,
     ...ANTIGRAVITY_OUTPUT_ARGS,
@@ -194,7 +203,7 @@ function rawContract(role: 'planner' | 'implementer'): RawAntigravityCliContract
     rawInvocation: [
       '-p',
       CLI_PROMPT_SENTINEL,
-      ...(role === 'planner' ? ['--mode', 'plan'] : ['--dangerously-skip-permissions']),
+      ...(role === 'planner' ? ANTIGRAVITY_PLANNER_ARGS : ['--dangerously-skip-permissions']),
       '--add-dir',
       CLI_PROJECT_DIR_SENTINEL,
       ...ANTIGRAVITY_OUTPUT_ARGS,

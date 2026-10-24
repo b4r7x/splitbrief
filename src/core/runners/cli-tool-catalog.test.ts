@@ -138,7 +138,7 @@ describe('CLI tool catalog', () => {
       'kilo-code': '0.1.0',
       cursor: '2026.08.25-3e8eec8',
       'command-code': '1.39.2',
-      antigravity: '1.2.2',
+      antigravity: '1.3.2',
     });
   });
 

@@ -21,7 +21,7 @@ const MODEL_IDS = MODEL_ROWS.map((row) => row.slice(0, row.indexOf('\t')));
 type AgyCall = Readonly<{ args: string; home: string; user: string }>;
 
 /**
- * Stands in for `agy` 1.2.2. `models` answers from the recorded capture when
+ * Stands in for `agy` 1.4.7. `models` answers from the recorded capture when
  * signed in and fails like a signed-out account otherwise; every call records
  * its argv and the `HOME`/`USER` it was staged with.
  */
@@ -39,7 +39,7 @@ function writeAgyShim(dir: string, signedIn: boolean): string {
       '#!/bin/sh',
       `printf '%s|%s|%s\\n' "$*" "$HOME" "\${USER:-}" >> ${JSON.stringify(log)}`,
       'if [ "$1" = "--version" ]; then',
-      "  printf '%s\\n' '1.2.2'",
+      "  printf '%s\\n' '1.4.7'",
       '  exit 0',
       'fi',
       'if [ "$1" = "models" ]; then',

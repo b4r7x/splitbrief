@@ -678,10 +678,12 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://antigravity.google/docs/cli',
-      testedVersion: '1.2.9',
-      minimumAdmittedVersion: '1.2.2',
+      testedVersion: '1.4.7',
+      // Before 1.3.2, `--dangerously-skip-permissions` also approved a plan-mode plan, and the
+      // planner seat passes that flag.
+      minimumAdmittedVersion: '1.3.2',
       versionScheme: 'semver',
-      asOf: '2026-09-23',
+      asOf: '2026-10-24',
     }),
     authDiscoveryMode: 'status-unverified',
     modelDiscoveryMode: 'native-cli',
