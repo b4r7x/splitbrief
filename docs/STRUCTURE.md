@@ -20,7 +20,7 @@ This is **feature-based organization, bulletproof-react-inspired**, adapted for 
 ```
 src/
 ├── cli.ts                                   # binary entry (commander)
-├── node-env.ts                              # first import of cli.ts: NODE_ENV=production so React ships its production build
+├── node-env.ts                              # first import of cli.ts: NODE_ENV=production so React ships its production build; children get the user's NODE_ENV
 ├── app/                                     # app shell + FLAT pages (composition layer)
 │   ├── root.tsx                             # composition root; mounts <AppProvider><Router/>
 │   ├── router.tsx                           # renderScreen + renderOverlay switches → <Layout>
