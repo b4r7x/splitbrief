@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- Text you send no longer comes back as a draft when SPLITBRIEF stops right after you send it.
 - An isolation halt names the file once.
 - A file error names the file from the project root, also from a subfolder, with --project and in a run workspace, and an unreadable kept workspace record says what failed.
 - The plan editor title names the file from the project root and shortens a long path in the middle.

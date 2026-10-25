@@ -247,9 +247,60 @@ describe('unsent session composer draft', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await flushEffects();
-    flushSessionDrafts();
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.objectContaining({ text: 'send this' }) }),
+    );
+    expect(readSessionDraft(ref)).toBeNull();
+    ui.unmount();
+  });
+
+  it('clears a submitted planner answer on disk so it does not replay on reopen', async () => {
+    const ref = { projectDir, sessionId: 'one' };
+    writeSessionDraft(ref, createDraftDocument('planner answer'));
+    open('one');
+    const onSubmit = vi.fn();
+    const ui = renderFeature(
+      <Composer
+        currentScreen="workflow"
+        mode="question"
+        questionEpoch={1}
+        hint="Type your answer…"
+        commands={[]}
+        onSubmit={onSubmit}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.objectContaining({ text: 'planner answer' }) }),
+    );
+    expect(readSessionDraft(ref)).toBeNull();
+    ui.unmount();
+  });
+
+  it('clears a submitted recovery note on disk so it does not replay on reopen', async () => {
+    const ref = { projectDir, sessionId: 'one' };
+    writeSessionDraft(ref, createDraftDocument('recovery note'));
+    open('one');
+    const onSubmit = vi.fn();
+    const ui = renderFeature(
+      <Composer
+        currentScreen="workflow"
+        mode="question"
+        questionEpoch={1}
+        hint="What should the fix change? (enter sends the review's findings alone)"
+        commands={[]}
+        onSubmit={onSubmit}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.objectContaining({ text: 'recovery note' }) }),
     );
     expect(readSessionDraft(ref)).toBeNull();
     ui.unmount();

@@ -66,13 +66,28 @@ describe('pending session drafts', () => {
     const ref = { projectDir, sessionId: 'one' };
     const draftFile = join(sessionDir(projectDir, 'one'), 'draft.json');
     saveSessionDraft(ref, createDraftDocument(''));
-    flushSessionDrafts();
     expect(existsSync(draftFile)).toBe(false);
     saveSessionDraft(ref, createDraftDocument('typed'));
-    flushSessionDrafts();
-    saveSessionDraft(ref, createDraftDocument(''));
-    flushSessionDrafts();
     expect(existsSync(draftFile)).toBe(false);
+    expect(readSessionDraft(ref)).toBeNull();
+    flushSessionDrafts();
+    expect(existsSync(draftFile)).toBe(true);
+    saveSessionDraft(ref, createDraftDocument(''));
+    expect(existsSync(draftFile)).toBe(false);
+    expect(readSessionDraft(ref)).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('removes the file without advancing the timers when saving an empty document after a non-empty one', () => {
+    const ref = { projectDir, sessionId: 'one' };
+    const draftFile = join(sessionDir(projectDir, 'one'), 'draft.json');
+    saveSessionDraft(ref, createDraftDocument('typed'));
+    expect(readSessionDraft(ref)).toBeNull();
+    flushSessionDrafts();
+    expect(existsSync(draftFile)).toBe(true);
+    saveSessionDraft(ref, createDraftDocument(''));
+    expect(existsSync(draftFile)).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('names the draft file and the cause in plain words when the draft cannot be saved', () => {
