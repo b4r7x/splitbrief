@@ -316,7 +316,7 @@ function tokenOf(line: string): string | undefined {
 export function extractFailureKeys(rawOutput: string): { keys: string[]; diagnostics: boolean } {
   const lines = readNodeTap(rawOutput)
     .rest.split('\n')
-    .map((line) => line.trim())
+    .map((line) => line.trim().replace(/\s*━+$/, ''))
     .filter((line) => line.length > 0);
   const tokens: string[] = [];
   for (const line of lines) {

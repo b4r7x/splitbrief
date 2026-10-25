@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- A Biome check's failure keys no longer end in a long rule of heavy dashes, and the same output gives the same keys when it is checked again.
 - A shell tool call with no command no longer adds a `Run command` row beside the real row of the same call, or counts in the header.
 - Build rows from a pause or a continued run before the final review now stand in their own block above the Final review heading.
 - A fix task no longer retries until it gives up on failures that belong to other fix tasks. It passes once its own failures are gone. A failure that two fix tasks share waits for the last of them and reads `1 left to T025`, also when one task answers a plan check and the other a reviewer check of the same command. The retry text tells the implementer not to fix the other failures.
