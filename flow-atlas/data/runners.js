@@ -408,7 +408,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
         { if: 'tool nie jest w PLANNER_CLI_TOOL_IDS', then: 'throw runner-missing-tool-config', next: '' },
       ],
       default: 'runnerGateFor wybiera gate; dla cli zwraca trustedCli {tool, executable, installedVersion}.',
-      notes: 'Ta sama lista stems działa w invokeProcessCli jako adapter.validateArgs (argument-conflict) na końcówce argv skonfigurowanej przez użytkownika (src/engine/runners/cli-tools/validate-args.ts:44). Implementer nie ma tego preflightu w fabryce; dostaje go przy spawn.',
+      notes: 'Ta sama lista stems działa w invokeProcessCli jako adapter.validateArgs (argument-conflict) na końcówce argv skonfigurowanej przez użytkownika (src/engine/runners/cli-tools/validate-args.ts:42). Implementer nie ma tego preflightu w fabryce; dostaje go przy spawn.',
     },
     {
       id: 'RN_PLANNER_KIND',
@@ -905,7 +905,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
         { if: 'class rate-limited', then: 'reason runner-usage-limit, cause rate-limit, resetAt; akcja retry-later', next: '' },
         { if: 'seatSwap.fallback dostępny i configRevision znany i brak wcześniejszego auto switch tego seatu w seatSwitches i (account lub reset > 10 min)', then: 'switch-seat z auto → automatyczne przełączenie (recovery)', next: '' },
         { if: 'BUILD: outcome unauthenticated / usage-limit na pierwszej próbie', then: 'implementation-failure.ts:67 / :108 buduje ten halt bez retry i bez konsultu; krok INTERRUPT_STEP source seat', next: '' },
-        { if: 'BUILD: po drabinie retry', then: 'escalation/handle.ts:87 seatDownHalt z tą samą klasyfikacją', next: '' },
+        { if: 'BUILD: po drabinie retry', then: 'escalation/handle.ts:82 seatDownHalt z tą samą klasyfikacją', next: '' },
       ],
       default: 'haltOf(reason) → seat-down (core/recovery/halt.ts:80). Dalszy przebieg: recovery.',
       notes: 'Opis wyjścia: SeatFailureClassification = {class: authoritative} | {class: account, cause: balance|billing|quota|auth} | {class: rate-limited, resetAt: Date} | {class: transient} | {class: other} (seat-failure.ts:15). Dla narzędzi provider-dependent holder brzmi deepseek (OpenCode CLI) (auth-failure.ts:52).',
