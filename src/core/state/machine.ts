@@ -1028,7 +1028,7 @@ export function transition(
       };
 
     case 'SET_SEAT_WAIT':
-      return { ...state, seatWait: { seat: action.seat, resetAt: action.resetAt } };
+      return { ...state, seatWait: action.wait };
 
     case 'CLEAR_SEAT_WAIT':
       return { ...state, seatWait: undefined };

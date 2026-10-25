@@ -1631,12 +1631,14 @@ describe('consult and split state operations', () => {
   it('SET_SEAT_WAIT parks the seat and CLEAR_SEAT_WAIT releases it', () => {
     const state = implementationState([makeTask({ id: 'T002' })]);
 
-    const waiting = transition(state, {
-      type: 'SET_SEAT_WAIT',
+    const wait = {
       seat: 'plan',
       resetAt: '2026-05-01T10:00:00.000Z',
-    });
-    expect(waiting.seatWait).toEqual({ seat: 'plan', resetAt: '2026-05-01T10:00:00.000Z' });
+      tool: 'codex',
+      kind: 'cli',
+    } as const;
+    const waiting = transition(state, { type: 'SET_SEAT_WAIT', wait });
+    expect(waiting.seatWait).toEqual(wait);
 
     expect(transition(waiting, { type: 'CLEAR_SEAT_WAIT' }).seatWait).toBeUndefined();
   });

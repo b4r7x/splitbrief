@@ -16,6 +16,9 @@ import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { writeSeatIdentities } from '../../../core/state/seats.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import type { CrewSeatId, SeatIds } from '../../../core/crew/identity.js';
 import { applyRecoveryAction, commitSeatSwitch, planSwitchSeatRecoveryAction } from './actions.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
 import { buildConsultBoundRecoveryIssue } from './builders/consult.js';
@@ -921,6 +924,141 @@ describe('applyRecoveryAction: retry-later', () => {
     expect(result).toMatchObject({ ok: false, code: 'action-not-available' });
     expect(result.state.pendingRecovery).toEqual(issue);
     expect(result.state.seatWait).toBeUndefined();
+  });
+
+  describe('the wait names the runner the halted call ran on', () => {
+    type RecordedIds = SeatIds & Readonly<{ axes: readonly string[] }>;
+    const CLAUDE_IDS: RecordedIds = {
+      tool: 'claude-code',
+      model: 'claude-3-5-sonnet',
+      axes: [],
+      kind: 'cli',
+    };
+    const CODEX_IDS: RecordedIds = { tool: 'codex', model: 'gpt-5-codex', axes: [], kind: 'cli' };
+    const OLLAMA_IDS: RecordedIds = { tool: 'ollama', model: 'llama3', axes: [], kind: 'api' };
+    const SHELL_IDS: RecordedIds = { tool: 'shell', axes: [], kind: 'shell' };
+    const AGENT_IDS: RecordedIds = { tool: 'agent', axes: [], kind: 'agent' };
+    // The run started on Claude Code for every seat; its state keeps that start.
+    const STARTED = {
+      plannerTool: 'claude-code',
+      plannerKind: 'cli',
+      implementerTool: 'claude-code',
+      implementerKind: 'cli',
+    } as const;
+
+    function writeRecord(
+      ref: { projectDir: string; sessionId: string },
+      ids: Partial<Record<CrewSeatId, RecordedIds>>,
+      buildProfiles?: Record<string, RecordedIds>,
+    ): void {
+      writeSeatIdentities(ref, {
+        plan: 'p',
+        build: 'b',
+        review: 'r',
+        ids: { plan: CLAUDE_IDS, build: CLAUDE_IDS, review: CLAUDE_IDS, ...ids },
+        reviewFollowsPlan: false,
+        ...(buildProfiles !== undefined && {
+          buildProfiles: Object.fromEntries(
+            Object.entries(buildProfiles).map(([name, profileIds]) => [
+              name,
+              { identity: name, ids: profileIds },
+            ]),
+          ),
+        }),
+      });
+    }
+
+    async function retryLater(
+      name: string,
+      issue: RecoveryIssue,
+      record: ((ref: { projectDir: string; sessionId: string }) => void) | null,
+      started: Partial<WorkflowState> = STARTED,
+    ): Promise<WorkflowState | null> {
+      const ref = setupSession(name);
+      const base = makeImplState([makeTask({ id: 'T001' })], started);
+      saveState(ref, { ...base, pendingRecovery: issue });
+      record?.(ref);
+      const result = await applyRecoveryAction({
+        ...ref,
+        state: { ...base, pendingRecovery: issue },
+        action: 'retry-later',
+        bus: makeBusRecorder().bus,
+      });
+      expect(result.ok).toBe(true);
+      return loadState(ref);
+    }
+
+    function waitWord(state: WorkflowState | null): string | undefined {
+      if (state === null) return undefined;
+      const status = deriveRunStatus({ state, liveness: 'not-alive' });
+      return status.kind === 'open' &&
+        status.stop.kind === 'stopped' &&
+        status.stop.on.kind === 'seat-wait'
+        ? status.stop.on.tool
+        : undefined;
+    }
+
+    function halt(seat: CrewSeatId, extra: Partial<RecoveryIssue> = {}): RecoveryIssue {
+      return makeRecoveryIssue({
+        reason: 'runner-usage-limit',
+        phase: seat === 'plan' ? 'planning' : seat === 'build' ? 'implementing' : 'final-review',
+        seat,
+        resetAt: '2026-05-01T10:00:00.000Z',
+        availableActions: ['retry-later', 'end-run'],
+        recommendedAction: 'retry-later',
+        ...extra,
+      });
+    }
+
+    it.each([
+      { seat: 'plan', ids: CODEX_IDS, word: 'OpenAI Codex CLI' },
+      { seat: 'plan', ids: OLLAMA_IDS, word: 'Ollama' },
+      { seat: 'build', ids: SHELL_IDS, word: 'Custom Shell' },
+      { seat: 'build', ids: AGENT_IDS, word: 'Agent' },
+      { seat: 'review', ids: CODEX_IDS, word: 'OpenAI Codex CLI' },
+      { seat: 'review', ids: OLLAMA_IDS, word: 'Ollama' },
+    ] as const)('a $seat seat the latest pass put on $ids.tool', async ({ seat, ids, word }) => {
+      const state = await retryLater(`retry-later-${seat}-${ids.tool}`, halt(seat), (ref) =>
+        writeRecord(ref, { [seat]: ids }),
+      );
+      expect(state?.seatWait).toMatchObject({ seat, tool: ids.tool, kind: ids.kind });
+      expect(waitWord(state)).toBe(word);
+    });
+
+    it('a seat moved by Seat down names the tool the halted call ran on', async () => {
+      const issue = halt('build', {
+        switchSeat: {
+          seat: 'build',
+          from: { tool: 'codex', model: 'gpt-5-codex' },
+          candidates: [{ tool: 'claude-code', model: 'claude-3-5-sonnet' }],
+        },
+      });
+      const state = await retryLater('retry-later-switched', issue, (ref) => writeRecord(ref, {}));
+      expect(state?.seatWait).toMatchObject({ seat: 'build', tool: 'codex' });
+      expect(waitWord(state)).toBe('OpenAI Codex CLI');
+    });
+
+    it('a brief routed to a named profile names that profile tool', async () => {
+      const issue = halt('build', { selectedImplementerProfile: 'large' });
+      const state = await retryLater('retry-later-profile', issue, (ref) =>
+        writeRecord(ref, {}, { large: OLLAMA_IDS }),
+      );
+      expect(state?.seatWait).toMatchObject({ seat: 'build', tool: 'ollama', kind: 'api' });
+      expect(waitWord(state)).toBe('Ollama');
+    });
+
+    it('a run with no seat record names the tool it started on by its catalog name', async () => {
+      const state = await retryLater('retry-later-no-record', halt('build'), null, {
+        implementerTool: 'codex',
+        implementerKind: 'cli',
+      });
+      expect(waitWord(state)).toBe('OpenAI Codex CLI');
+    });
+
+    it('a run with no seat record and no start tool names the seat', async () => {
+      const state = await retryLater('retry-later-no-tool', halt('build'), null, {});
+      expect(waitWord(state)).toBe('BUILD');
+    });
   });
 
   it('honours a seat wait beyond the rate-limit bound when the run resumes', async () => {

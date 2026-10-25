@@ -274,10 +274,14 @@ export const PendingTriageSchema = z.object({
   reviewAfterTaskId: TaskIdSchema.optional(),
 });
 
+/** A seat waits for a reset; the runner the halted call ran on, by id, unless an older state kept none. */
 export const SeatWaitSchema = z.object({
   seat: z.enum(CREW_SEAT_IDS),
   resetAt: z.string(),
+  tool: z.string().optional(),
+  kind: RunnerKindSchema.optional(),
 });
+export type SeatWait = z.infer<typeof SeatWaitSchema>;
 
 /** A seat moved for a recovery reason, or because the crew changed while the run was stopped. */
 export const SeatSwitchCauseSchema = RecoveryReasonSchema.or(z.literal('crew-changed'));
