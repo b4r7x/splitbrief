@@ -303,9 +303,9 @@ describe('FeedbackRow', () => {
     );
   });
 
-  it('drops the path at 60 columns when its file name cannot follow the cause', () => {
+  it('keeps the file name at 60 columns by shortening the cause', () => {
     expect(renderRunLockRelease(60)).toBe(
-      `${' '.repeat(MARK_SLOT_CELLS)}Could not release the run lock: permission denied …`,
+      `${' '.repeat(MARK_SLOT_CELLS)}Could not … lock: permission denied · …/lockfile.json …`,
     );
   });
 

@@ -2086,7 +2086,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'run-lock-not-released',
         title: 'Run lock not released',
         kind: 'ready',
-        marker: 'Could not release the run lock',
+        marker: 'lockfile.json',
       },
       elements: [{ id: 'composer', title: 'Workflow composer' }],
     }),
@@ -4746,7 +4746,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-settings-error-path',
         title: 'Overlay · settings · an error that names a long path',
-        marker: 'Could not release the run lock',
+        marker: 'lockfile.json',
       },
       {
         id: 'overlay-settings-saved-route-sign-in',
