@@ -571,7 +571,8 @@ function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
     issue.reason === 'review-input-too-large' ||
     issue.reason === 'required-checks-unrunnable' ||
     issue.reason === 'plan-questions-exhausted' ||
-    issue.reason === 'plan-checks-failed'
+    issue.reason === 'plan-checks-failed' ||
+    issue.reason === 'runner-timeout-repeated'
   ) {
     return recoveryHeadlineParts(issue);
   }
