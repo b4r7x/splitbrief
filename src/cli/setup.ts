@@ -11,6 +11,7 @@ import { checkCrewAvailability, selectDetectedDefaultCrew } from '../engine/dete
 import { readConfiguredCliRoutes } from './commands/start/readiness.js';
 import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
 import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
+import { removeClosedRunWorkspaces } from '../engine/orchestrator/run/close.js';
 import { cliError } from './errors.js';
 import { setProjectRoot, toErrorMessage } from '../utils/format-errors.js';
 import { warnStderr } from '../lib/warn.js';
@@ -156,6 +157,7 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
 
   await assertGitRepo(projectDir);
   await reapOrphanRunners(projectDir);
+  await removeClosedRunWorkspaces(projectDir);
 
   const isInteractive = isInteractiveTty();
   const useFullscreen = opts.fullscreen !== false && isInteractive;
