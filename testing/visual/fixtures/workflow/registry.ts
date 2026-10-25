@@ -753,6 +753,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('plan-card-render-note'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
+  [checkpointId('plan-card-session-path'), planCardReady],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
   [checkpointId('tasks-card'), includesAll('T001', 'T004', 'T006', 'T007')],
   // The subsections the spec card does not nest, and the briefs after T001's unclosed sample.

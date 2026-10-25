@@ -112,6 +112,7 @@ import {
 import {
   BASE_IMPLEMENTER,
   BASE_PLANNER,
+  LONG_SESSION_ID,
   VISUAL_FIXTURE_PROJECT_DIR,
   visualConfig,
   VISUAL_WORKFLOW_SESSION_ID,
@@ -2300,6 +2301,19 @@ const planCardSharedCommandProjection: WorkflowFixtureProjection = {
         validation: SHARED_COMMAND_PLAN.validation,
       },
     ).map((confirmation) => confirmation.actionDescription),
+  },
+};
+
+// The plan card as a run opens it: plan.md in the run's own session folder, under a session id
+// long enough that the frame title has to shorten the path.
+const planCardSessionPathProjection: WorkflowFixtureProjection = {
+  ...planCardProjection,
+  scenarioId: scenarioId('workflow-plan-card-session-path'),
+  review: {
+    filePath: `.splitbrief/sessions/${LONG_SESSION_ID}/plan.md`,
+    source: formatPlanMarkdown(PLAN_CARD_PLAN, []),
+    planJson: `${JSON.stringify(PLAN_CARD_PLAN, null, 2)}\n`,
+    confirms: planCardProjection.review?.confirms ?? [],
   },
 };
 
@@ -6846,6 +6860,7 @@ const projections = [
   },
   planCardRenderNoteProjection,
   planCardSharedCommandProjection,
+  planCardSessionPathProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },
   tasksCardProjection,
   questionProjection,
