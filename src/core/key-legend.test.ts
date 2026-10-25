@@ -18,6 +18,10 @@ describe('fitKeyLegend', () => {
     expect(fitKeyLegend(legend, 40)).not.toContain('…');
   });
 
+  it('measures terminal cells, not string length', () => {
+    expect(fitKeyLegend('界界 · ab', 8)).toBe('界界');
+  });
+
   it('shows nothing rather than a fragment when not even one token fits', () => {
     expect(fitKeyLegend('y approve · c comment', 4)).toBe('');
   });

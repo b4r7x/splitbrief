@@ -6,10 +6,11 @@ import {
   truncateTerminalDisplayTextStart,
 } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { fitKeyLegend } from '../../../core/key-legend.js';
 
 const LABEL_VALUE_SEPARATOR = '  ';
 
-export type ActivityDisplayValueFit = 'end' | 'middle' | 'start';
+export type ActivityDisplayValueFit = 'end' | 'middle' | 'start' | 'segments';
 
 export interface CompactActivityDisplayLineInput {
   label: string;
@@ -67,6 +68,10 @@ function fitActivityValue(
       return truncateTerminalDisplayTextMiddleAtWords(value, maxCells);
     case 'start':
       return truncateTerminalDisplayTextStart(value, maxCells);
+    case 'segments': {
+      const fitted = fitKeyLegend(value, maxCells);
+      return fitted === '' ? truncateTerminalDisplayTextMiddleAtWords(value, maxCells) : fitted;
+    }
     default:
       return assertNever(valueFit);
   }

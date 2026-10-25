@@ -155,6 +155,7 @@ export function recordCliProtocolEvent(
           ...(event.severity !== undefined && { severity: event.severity }),
           ...(event.originalModel !== undefined && { originalModel: event.originalModel }),
           ...(event.fallbackModel !== undefined && { fallbackModel: event.fallbackModel }),
+          ...(event.usage !== undefined && { usage: event.usage }),
         },
       });
       return;

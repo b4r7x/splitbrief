@@ -31,6 +31,7 @@ import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { RejectRunSnapshotResult } from '../../core/runtime/commands/types.js';
 import { runRejectFacts } from '../../core/runtime/commands/messages.js';
+import { admitUsageLimitWarning } from './usage-limit-gate.js';
 
 type BusContext = {
   bus: EventBus;
@@ -59,6 +60,7 @@ export function publishRunnerCallEvent(
   ctx: BusContext & { rootDir: string; taskId?: TaskId | undefined },
   event: RunnerCallEvent,
 ): void {
+  if (!admitUsageLimitWarning(ctx.bus, event)) return;
   const projected = projectRunnerCallEvents(event, {
     phase: ctx.phase,
     rootDir: ctx.rootDir,

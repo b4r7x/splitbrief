@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { projectRunnerCallActivity } from '../../../engine/calls/activity.js';
+import { normalizeRunnerCallWarning } from '../../../engine/calls/warnings.js';
 import { runnerActivityLedgerItem } from './runner-activity-display.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  truncateTerminalDisplayTextMiddleAtWords,
+} from '../../../utils/display-text.js';
 import { rowLeadingCells } from '../conversation-rows/row-markers.js';
 import { getWorkflowContentWidth } from '../layout/rect.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from './activity-label-display.js';
@@ -145,5 +149,66 @@ describe('fitCompactActivityDisplayLine', () => {
 
     expect(line.text).toContain('…');
     expect(getTerminalCellWidth(`> ${line.text}`)).toBeLessThanOrEqual(rowCells);
+  });
+});
+
+describe('a WARN row', () => {
+  const usage = "You've used 75% of your Claude Code weekly limit · resets Jul 16, 18:00";
+  const prefixCells = rowLeadingCells('activity-child');
+
+  function renderWarning(message: string, cols: number) {
+    const activity = projectRunnerCallActivity(
+      {
+        ts: 1,
+        callId: 'warn-fit',
+        role: 'planner',
+        backendKind: 'cli',
+        runnerName: 'claude-code',
+        model: 'opus',
+        attempt: 0,
+        type: 'call_warning',
+        warning: normalizeRunnerCallWarning({ code: 'claude_rate_limit', message }),
+      },
+      1,
+      '/project',
+    );
+    if (activity === null) throw new Error('expected activity');
+    const item = runnerActivityLedgerItem(activity);
+    if (item === null) throw new Error('expected a ledger item');
+    const label = displayActivityLabel(item.label).padEnd(ACTIVITY_LABEL_PAD);
+    const rowCells = getWorkflowContentWidth({ cols, sidebarVisible: false });
+    const line = fitCompactActivityDisplayLine({
+      label,
+      value: item.value,
+      valueFit: item.fitMode,
+      rowCells,
+      prefixCells,
+    });
+    const valueCells = rowCells - prefixCells - getTerminalCellWidth(`${label}  `);
+    return { line, rowCells, valueCells };
+  }
+
+  it.each([
+    [60, "You've used 75% of your Claude Code weekly limit"],
+    [80, "You've used 75% of your Claude Code weekly limit"],
+    [120, usage],
+  ])('drops whole trailing segments at %i columns', (cols, expected) => {
+    const { line, rowCells } = renderWarning(usage, cols);
+
+    expect(line.value).toBe(expected);
+    expect(prefixCells + getTerminalCellWidth(line.text)).toBeLessThanOrEqual(rowCells);
+  });
+
+  it('cuts the middle when the first segment alone does not fit', () => {
+    const { line, valueCells } = renderWarning(usage, 50);
+
+    expect(line.value).toBe(truncateTerminalDisplayTextMiddleAtWords(usage, valueCells));
+  });
+
+  it('cuts the middle when the text has no segments', () => {
+    const message = "You've used 75% of your Claude Code weekly limit, it resets Thursday";
+    const { line, valueCells } = renderWarning(message, 60);
+
+    expect(line.value).toBe(truncateTerminalDisplayTextMiddleAtWords(message, valueCells));
   });
 });

@@ -57,6 +57,7 @@ import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-ro
 import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
 import { formatRecoveryPrompt } from '../../../../src/features/workflow/recovery-prompt.js';
 import { projectRunnerCallEvents } from '../../../../src/engine/calls/event-projection.js';
+import { formatUsageLimitWarning } from '../../../../src/core/recovery/usage-limit-step.js';
 import { createRunnerCallRecorder } from '../../../../src/engine/calls/recorder.js';
 import { createImplementerCallContext } from '../../../../src/engine/implementers/pipeline/call-result.js';
 import type { RunnerCallEvent } from '../../../../src/engine/calls/types.js';
@@ -320,6 +321,7 @@ const WORKFLOW_RECOVERY_HINT_SEAT_ID = scenarioId('workflow-recovery-hint-seat')
 const WORKFLOW_PLAN_ACTIVITY_ID = scenarioId('workflow-plan-activity');
 const WORKFLOW_PLANNING_CLAUDE_FRAMES_ID = scenarioId('workflow-planning-claude-frames');
 const WORKFLOW_PLANNER_SESSION_EXPIRED_ID = scenarioId('workflow-planner-session-expired');
+const WORKFLOW_PLAN_USAGE_LIMIT_ID = scenarioId('workflow-plan-usage-limit');
 
 const idleProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IDLE_ID,
@@ -5702,6 +5704,80 @@ const plannerSessionExpiredProjection: WorkflowFixtureProjection = {
   },
 };
 
+const PLAN_USAGE_LIMIT_RESET_AT = FIXED_TS + 3 * 86_400_000;
+
+const WORKFLOW_PLAN_USAGE_LIMIT_TEXT = formatUsageLimitWarning({
+  step: 75,
+  tool: 'Claude Code',
+  window: 'seven_day',
+  resetsAt: PLAN_USAGE_LIMIT_RESET_AT,
+});
+
+const PLAN_USAGE_LIMIT_CALL: readonly RunnerCallEvent[] = [
+  {
+    type: 'call_warning',
+    ts: FIXED_TS + 100,
+    callId: 'visual-claude-usage-call',
+    role: 'planner',
+    backendKind: 'cli',
+    runnerName: 'claude',
+    model: CLAUDE_PLAN_SEAT.model,
+    axes: seatAxisWords(CLAUDE_PLAN_SEAT),
+    warning: {
+      code: 'claude_rate_limit',
+      severity: 'warning',
+      source: 'provider',
+      surface: 'activity',
+      fingerprint: 'rw:visual-claude-usage-seven-day',
+      message: WORKFLOW_PLAN_USAGE_LIMIT_TEXT,
+      usage: { window: 'seven_day', step: 75, resetsAt: PLAN_USAGE_LIMIT_RESET_AT },
+    },
+  },
+  {
+    type: 'call_tool_use_done',
+    ts: FIXED_TS + 101,
+    callId: 'visual-claude-usage-call',
+    role: 'planner',
+    backendKind: 'cli',
+    runnerName: 'claude',
+    model: CLAUDE_PLAN_SEAT.model,
+    axes: seatAxisWords(CLAUDE_PLAN_SEAT),
+    channel: 'tool',
+    toolUse: {
+      id: 'visual-claude-usage-read',
+      name: 'Read',
+      input: { file_path: 'CLAUDE.md' },
+    },
+  },
+];
+
+/** A Claude Code planning call whose seven-day window passes 75 percent: one warning, then the call reads on. */
+const planUsageLimitProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_PLAN_USAGE_LIMIT_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { planner: CLAUDE_PLAN_SEAT },
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+    {
+      type: 'planner_status',
+      ts: FIXED_TS + 50,
+      phase: 'planning',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'opus',
+      call: 'plan',
+    },
+    ...PLAN_USAGE_LIMIT_CALL.flatMap((event, index) =>
+      projectRunnerCallEvents(
+        { ...event, ts: FIXED_TS + 100 + index },
+        { rootDir: VISUAL_FIXTURE_PROJECT_DIR, phase: 'planning', sequence: index },
+      ),
+    ),
+  ],
+};
+
 // A CLI seat gone quiet mid-brief. OpenCode reports a tool only once the tool lands, so the idle
 // watchdog warns at its default and the call runs on. The build block's freshness line is the one
 // place that silence is counted; beside it the byline says only that the seat is still working.
@@ -7096,6 +7172,7 @@ const projections = [
   reviewBaseRejectedProjection,
   reviewRedGateProjection,
   plannerSessionExpiredProjection,
+  planUsageLimitProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =

@@ -159,17 +159,31 @@ const RATE_LIMIT_RESETS_AT = 1_794_000_000;
 
 function rateLimitFrame(opts: {
   status: 'allowed' | 'allowed_warning' | 'rejected';
-  rateLimitType: string;
+  rateLimitType?: string | undefined;
   overageStatus?: string | undefined;
+  utilization?: number | undefined;
+  resetsAt?: number | undefined;
 }): string {
+  const windowKey =
+    opts.rateLimitType === 'five_hour' || opts.rateLimitType === 'seven_day'
+      ? opts.rateLimitType
+      : 'seven_day';
+  const utilization = opts.utilization ?? (opts.status === 'allowed' ? 0.56 : 0.8);
+  const resetsAt = opts.resetsAt ?? RATE_LIMIT_RESETS_AT;
   return JSON.stringify({
     type: 'rate_limit_event',
     session_id: SESSION_ID,
     rate_limit_info: {
       status: opts.status,
-      rateLimitType: opts.rateLimitType,
-      resetsAt: RATE_LIMIT_RESETS_AT,
+      rateLimitType: opts.rateLimitType ?? windowKey,
+      resetsAt,
       ...(opts.overageStatus !== undefined && { overageStatus: opts.overageStatus }),
+      unifiedWindows: {
+        [windowKey]: {
+          utilization,
+          resetsAt,
+        },
+      },
     },
   });
 }
@@ -641,12 +655,12 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
     expect(terminalRows(events)).toHaveLength(1);
   });
 
-  itUnix('carries the rate-limit status severity through to the activity', async () => {
+  itUnix('carries the stepped rate-limit warning through to the activity', async () => {
     const { result, events } = await run({
       script: EMIT_ALL,
       lines: [
-        rateLimitFrame({ status: 'allowed_warning', rateLimitType: 'seven_day' }),
-        rateLimitFrame({ status: 'rejected', rateLimitType: 'five_hour' }),
+        rateLimitFrame({ status: 'allowed_warning', rateLimitType: 'seven_day', utilization: 0.8 }),
+        rateLimitFrame({ status: 'rejected', rateLimitType: 'five_hour', utilization: 0.75 }),
         JSON.stringify({ type: 'result', session_id: SESSION_ID, result: 'ok' }),
       ],
     });
@@ -657,32 +671,54 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
       expect.objectContaining({
         code: 'claude_rate_limit',
         severity: 'warning',
-        message: expect.stringContaining('rate limit approaching'),
+        message: expect.stringContaining('80% of your Claude Code weekly limit'),
       }),
     );
     expect(warnings).toContainEqual(
       expect.objectContaining({
         code: 'claude_rate_limit',
-        severity: 'error',
-        message: expect.stringContaining('rate limit reached'),
+        severity: 'warning',
+        message: expect.stringContaining('75% of your Claude Code 5-hour limit'),
       }),
     );
     expect(activity).toContainEqual(
       expect.objectContaining({
         kind: 'warning',
         label: 'warning',
-        diagnosticPartial: expect.stringContaining('approaching'),
+        diagnosticPartial: expect.stringContaining('80% of your Claude Code weekly limit'),
       }),
     );
     expect(activity).toContainEqual(
       expect.objectContaining({
-        kind: 'error',
-        label: 'error',
-        diagnosticPartial: expect.stringContaining('reached'),
+        kind: 'warning',
+        label: 'warning',
+        diagnosticPartial: expect.stringContaining('75% of your Claude Code 5-hour limit'),
       }),
     );
     expect(result).toMatchObject({ status: 'completed' });
     expect(terminalRows(events)).toHaveLength(1);
+  });
+
+  itUnix('passes the usage field of a stepped rate-limit warning to its call warning', async () => {
+    const { events } = await run({
+      script: EMIT_ALL,
+      lines: [
+        rateLimitFrame({
+          status: 'allowed_warning',
+          rateLimitType: 'seven_day',
+          utilization: 0.75,
+        }),
+        JSON.stringify({ type: 'result', session_id: SESSION_ID, result: 'ok' }),
+      ],
+    });
+
+    expect(warningRows(events)).toContainEqual(
+      expect.objectContaining({
+        code: 'claude_rate_limit',
+        usage: expect.objectContaining({ window: 'seven_day', step: 75 }),
+        message: expect.stringContaining('75% of your Claude Code weekly limit'),
+      }),
+    );
   });
 
   itUnix('carries refusal and error-notification severity with an ordinary warning', async () => {

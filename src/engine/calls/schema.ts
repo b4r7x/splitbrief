@@ -22,6 +22,7 @@ import {
 import { InvocationIdentitySchema } from '../../core/schemas/invocation-identity.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
 import { UsageBoundarySchema } from '../../core/schemas/usage-evidence.js';
+import { USAGE_LIMIT_WINDOWS } from '../../core/recovery/usage-limit-step.js';
 
 export const UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH = 4096;
 export const RUNNER_CALL_MESSAGE_MAX_LENGTH = 8192;
@@ -99,6 +100,12 @@ export const RunnerCallErrorSchema = z.strictObject({
   providerType: boundedName.optional(),
 });
 
+export const RunnerCallWarningUsageSchema = z.strictObject({
+  window: z.enum(USAGE_LIMIT_WINDOWS),
+  step: z.number().int(),
+  resetsAt: nonnegativeInteger.optional(),
+});
+
 export const RunnerCallWarningSchema = z
   .strictObject({
     code: boundedName,
@@ -115,6 +122,7 @@ export const RunnerCallWarningSchema = z
     /** Raw model ids a fallback or refusal warning names; display layers resolve them. */
     originalModel: boundedName.optional(),
     fallbackModel: boundedName.optional(),
+    usage: RunnerCallWarningUsageSchema.optional(),
   })
   .transform((warning) => ({
     ...warning,

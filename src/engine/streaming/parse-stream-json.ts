@@ -9,7 +9,11 @@ import type {
 } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { accumulateTokenUsage, BackendTokenUsageSchema, toTokenDelta } from '../calls/usage.js';
-import { formatStoredReset } from '../../core/recovery/reset-clock.js';
+import {
+  formatUsageLimitWarning,
+  usageLimitStep,
+  USAGE_LIMIT_WINDOWS,
+} from '../../core/recovery/usage-limit-step.js';
 import { formatDuration } from '../../utils/format-time.js';
 import { isRecord, optionalString } from '../../utils/type-guards.js';
 import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
@@ -437,55 +441,52 @@ function parseSystemProgress(event: Record<string, unknown>): StreamParseResult 
   return null;
 }
 
-/**
- * A top-level `rate_limit_event`. `allowed` is the steady state, and `overageStatus` can stay
- * `rejected` while `status` is `allowed`; only an approaching or rejected limit is news.
- * Unknown and missing statuses stay telemetry, so the parser never invents a limit.
- */
 function parseRateLimitEvent(event: Record<string, unknown>): StreamParseResult | null {
   if (firstString(event.type) !== 'rate_limit_event') return null;
   const sessionId = firstString(event.session_id);
   const info = isRecord(event.rate_limit_info) ? event.rate_limit_info : null;
-  const status = info === null ? undefined : firstString(info.status);
-  if (info !== null && (status === 'allowed_warning' || status === 'rejected')) {
-    return { sessionId, warning: [rateLimitWarning(status, info)] };
+  const unified = info !== null && isRecord(info.unifiedWindows) ? info.unifiedWindows : null;
+  const warnings: ParsedWarningInfo[] = [];
+
+  if (unified !== null) {
+    for (const window of USAGE_LIMIT_WINDOWS) {
+      const windowData = isRecord(unified[window]) ? unified[window] : null;
+      if (windowData === null) continue;
+      const utilization = windowData.utilization;
+      if (typeof utilization !== 'number' || !Number.isFinite(utilization)) continue;
+      const percent = Math.floor(utilization * 100);
+      const step = usageLimitStep(percent);
+      if (step === null) continue;
+
+      const resetsAtSeconds = windowData.resetsAt;
+      const resetsAt =
+        typeof resetsAtSeconds === 'number' && Number.isFinite(resetsAtSeconds)
+          ? resetsAtSeconds * 1000
+          : undefined;
+
+      warnings.push({
+        code: 'claude_rate_limit',
+        severity: 'warning',
+        message: formatUsageLimitWarning({
+          step,
+          tool: 'Claude Code',
+          window,
+          resetsAt,
+        }),
+        usage: {
+          window,
+          step,
+          ...(resetsAt !== undefined && { resetsAt }),
+        },
+      });
+    }
   }
-  return { sessionId, isHeartbeat: true };
-}
 
-/** The limit windows Claude Code names, in plain words. */
-const RATE_LIMIT_WINDOWS: Readonly<Record<string, string>> = {
-  five_hour: '5-hour',
-  seven_day: '7-day',
-};
-
-/**
- * `7-day rate limit approaching (resets Nov 3, 16:30)`: the limit window and its
- * reset when the frame names them, and a shorter clause when it does not or names
- * a window this map does not know.
- */
-function rateLimitWarning(
-  status: 'allowed_warning' | 'rejected',
-  info: Record<string, unknown>,
-): ParsedWarningInfo {
-  const type = firstString(info.rateLimitType);
-  const window = type === undefined ? undefined : RATE_LIMIT_WINDOWS[type];
-  const reached = status === 'rejected';
-  const reset = rateLimitResetLabel(info.resetsAt);
-  const state = reached ? 'reached' : 'approaching';
-  const head = window === undefined ? 'rate limit' : `${window} rate limit`;
   return {
-    code: 'claude_rate_limit',
-    severity: reached ? 'error' : 'warning',
-    message: reset === undefined ? `${head} ${state}` : `${head} ${state} (resets ${reset})`,
+    sessionId,
+    isHeartbeat: true,
+    ...(warnings.length > 0 && { warning: warnings }),
   };
-}
-
-/** `resetsAt` is epoch seconds; a value the runtime cannot read drops the reset clause. */
-function rateLimitResetLabel(value: unknown): string | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  const resetsAt = new Date(value * 1000);
-  return Number.isNaN(resetsAt.getTime()) ? undefined : formatStoredReset(resetsAt.getTime());
 }
 
 export function parseStreamLine(line: string): StreamParseResult {

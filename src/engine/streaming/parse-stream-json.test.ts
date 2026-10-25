@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatStoredReset } from '../../core/recovery/reset-clock.js';
+import { formatUsageLimitWarning } from '../../core/recovery/usage-limit-step.js';
 import { createStreamParser, parseStreamLine } from './parse-stream-json.js';
 
 function jsonLine(value: unknown): string {
@@ -591,7 +591,6 @@ describe('parseStreamLine', () => {
 // is `allowed` and must not escalate the frame on its own.
 describe('rate_limit_event frames', () => {
   const resetsAt = 1_794_000_000;
-  const resetLabel = formatStoredReset(resetsAt * 1000);
   const rateFrame = (rateLimitInfo: unknown): string =>
     jsonLine({
       type: 'rate_limit_event',
@@ -612,45 +611,84 @@ describe('rate_limit_event frames', () => {
     });
   });
 
-  it('warns when the status approaches a limit, without inventing a result', () => {
+  it('warns when a window crosses a usage step, without inventing a result', () => {
     const parsed = parseStreamLine(
-      rateFrame({ status: 'allowed_warning', rateLimitType: 'seven_day', resetsAt }),
+      rateFrame({
+        status: 'allowed_warning',
+        unifiedWindows: {
+          seven_day: { utilization: 0.8, resetsAt },
+        },
+      }),
     );
 
     expect(parsed.sessionId).toBe('sess-rate');
+    expect(parsed.isHeartbeat).toBe(true);
     expectNoTerminalResult(parsed);
     expect(parsed.warning).toEqual([
       {
         code: 'claude_rate_limit',
         severity: 'warning',
-        message: `7-day rate limit approaching (resets ${resetLabel})`,
+        message: formatUsageLimitWarning({
+          step: 80,
+          tool: 'Claude Code',
+          window: 'seven_day',
+          resetsAt: resetsAt * 1000,
+        }),
+        usage: {
+          window: 'seven_day',
+          step: 80,
+          resetsAt: resetsAt * 1000,
+        },
       },
     ]);
   });
 
-  it('signals error severity when the status rejects the turn', () => {
+  it('warns with severity warning when the frame crosses a step, whatever its status', () => {
     const parsed = parseStreamLine(
-      rateFrame({ status: 'rejected', rateLimitType: 'five_hour', resetsAt }),
+      rateFrame({
+        status: 'rejected',
+        unifiedWindows: {
+          five_hour: { utilization: 0.75, resetsAt },
+        },
+      }),
     );
 
     expect(parsed.sessionId).toBe('sess-rate');
+    expect(parsed.isHeartbeat).toBe(true);
     expectNoTerminalResult(parsed);
     expect(parsed.warning).toEqual([
       {
         code: 'claude_rate_limit',
-        severity: 'error',
-        message: `5-hour rate limit reached (resets ${resetLabel})`,
+        severity: 'warning',
+        message: formatUsageLimitWarning({
+          step: 75,
+          tool: 'Claude Code',
+          window: 'five_hour',
+          resetsAt: resetsAt * 1000,
+        }),
+        usage: {
+          window: 'five_hour',
+          step: 75,
+          resetsAt: resetsAt * 1000,
+        },
       },
     ]);
     expect(parsed.warning?.[0]?.message.length).toBeLessThanOrEqual(200);
   });
 
-  it('names a limit window it does not know as a plain rate limit', () => {
+  it('ignores windows not known in unifiedWindows', () => {
     const parsed = parseStreamLine(
-      rateFrame({ status: 'allowed_warning', rateLimitType: 'new_window', resetsAt }),
+      rateFrame({
+        status: 'allowed_warning',
+        unifiedWindows: {
+          new_window: { utilization: 0.8, resetsAt },
+        },
+      }),
     );
 
-    expect(parsed.warning?.[0]?.message).toBe(`rate limit approaching (resets ${resetLabel})`);
+    expect(parsed.sessionId).toBe('sess-rate');
+    expect(parsed.isHeartbeat).toBe(true);
+    expect(parsed.warning).toBeUndefined();
   });
 
   it.each([
@@ -661,6 +699,7 @@ describe('rate_limit_event frames', () => {
     const parsed = parseStreamLine(rateFrame(rateLimitInfo));
 
     expect(parsed.sessionId).toBe('sess-rate');
+    expect(parsed.isHeartbeat).toBe(true);
     expect(parsed.warning).toBeUndefined();
     expectNoTerminalResult(parsed);
   });

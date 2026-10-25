@@ -281,6 +281,7 @@ function protocolEvents(parsed: StreamParseResult, line: string): readonly CliPr
       ...(warning.severity !== undefined && { severity: warning.severity }),
       ...(warning.originalModel !== undefined && { originalModel: warning.originalModel }),
       ...(warning.fallbackModel !== undefined && { fallbackModel: warning.fallbackModel }),
+      ...(warning.usage !== undefined && { usage: warning.usage }),
     });
   }
   if (parsed.isHeartbeat) events.push({ type: 'heartbeat' });

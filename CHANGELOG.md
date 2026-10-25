@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- The Claude Code usage warning now shows at 70, 75, 80, 85, 90 and 95 percent of the 5-hour and weekly limits, names the percent and the reset time, and shows each step once per run, also after you continue it.
 - The seat picker now expands the offered model at its offered variant and effort, so two Enter presses save what was offered.
 - A Biome check's failure keys no longer end in a long rule of heavy dashes, and the same output gives the same keys when it is checked again.
 - A shell tool call with no command no longer adds a `Run command` row beside the real row of the same call, or counts in the header.
@@ -139,7 +140,6 @@
 - Leaving a run with an empty composer no longer stops you when its old saved draft cannot be removed; SPLITBRIEF names the file once and says the text comes back after a restart.
 - When SPLITBRIEF cannot save the message you were typing, the first Esc or quit now names the file and the reason and stays, and the second leaves without it; an empty composer never holds you.
 - The messages about a test command or test file pattern not taken from the plan read as plain sentences, without nested parentheses.
-- The Claude rate limit warning reads 5-hour or 7-day, not five_hour or seven_day.
 - Apply as is no longer shows "Applying to your checkout" while it asks for its confirmation.
 - A failed whole-suite check that names no file no longer says that no task changed it.
 - With a review after each task, the next part of a split task now waits for the review of the part a consult verified.

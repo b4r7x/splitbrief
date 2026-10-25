@@ -40,6 +40,7 @@ function parsedLineToProtocolEvents(parsed: ParsedLine): readonly CliProtocolEve
       ...(warning.severity !== undefined && { severity: warning.severity }),
       ...(warning.originalModel !== undefined && { originalModel: warning.originalModel }),
       ...(warning.fallbackModel !== undefined && { fallbackModel: warning.fallbackModel }),
+      ...(warning.usage !== undefined && { usage: warning.usage }),
     });
   }
   if (parsed.isHeartbeat) events.push({ type: 'heartbeat' });
