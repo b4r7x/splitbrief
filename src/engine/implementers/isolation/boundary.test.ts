@@ -210,13 +210,6 @@ describe("isolation boundary around a tool's own state", () => {
 describe("isolation boundary around the run's attached skills", () => {
   // A skill under another tool's home: codex's own state is `~/.codex`, so `~/.claude` is closed.
   // The home lives outside the temp directories, which the boundary leaves open to every tool.
-  // The excerpt cuts the raw tool input at a fixed width, so it depends on the checkout path
-  // length; these cases read the breach without it.
-  function headOf(boundary: IsolationBoundary, name: string, input: Record<string, unknown>) {
-    const breach = findIsolationBreach(boundary, { name, input });
-    return breach === null ? null : formatIsolationBreach({ ...breach, excerpt: '' });
-  }
-
   async function withAttachedSkill(
     run: (input: {
       home: string;
@@ -257,7 +250,7 @@ describe("isolation boundary around the run's attached skills", () => {
   it('reads what an attached skill lists, and still halts a write there', async () => {
     await withAttachedSkill(({ home, skill, boundaryFor }) => {
       const reference = join(skill, 'references', 'api.md');
-      expect(headOf(boundaryFor(), 'view_file', { AbsolutePath: reference })).toBe(
+      expect(breachOf(boundaryFor(), 'view_file', { AbsolutePath: reference })).toBe(
         'read ~/.claude/skills/auth/references/api.md (outside the workspace) with view_file',
       );
 
@@ -266,11 +259,11 @@ describe("isolation boundary around the run's attached skills", () => {
       expect(
         breachOf(boundary, 'list_dir', { DirectoryPath: join(skill, 'references') }),
       ).toBeNull();
-      expect(headOf(boundary, 'write_to_file', { TargetFile: reference })).toBe(
+      expect(breachOf(boundary, 'write_to_file', { TargetFile: reference })).toBe(
         'wrote to ~/.claude/skills/auth/references/api.md (outside the workspace) with write_to_file',
       );
       expect(
-        headOf(boundary, 'view_file', {
+        breachOf(boundary, 'view_file', {
           AbsolutePath: join(home, '.claude', 'skills', 'other', 'SKILL.md'),
         }),
       ).toBe('read ~/.claude/skills/other/SKILL.md (outside the workspace) with view_file');
@@ -286,10 +279,10 @@ describe("isolation boundary around the run's attached skills", () => {
       const boundary = boundaryFor([skill]);
 
       expect(breachOf(boundary, 'view_file', { AbsolutePath: join(skill, 'SKILL.md') })).toBeNull();
-      expect(headOf(boundary, 'write_to_file', { TargetFile: join(skill, 'SKILL.md') })).toMatch(
+      expect(breachOf(boundary, 'write_to_file', { TargetFile: join(skill, 'SKILL.md') })).toMatch(
         /^wrote to \S+\/checkout\/\.splitbrief\/skills\/ignored\/SKILL\.md \(your checkout\) with write_to_file$/,
       );
-      expect(headOf(boundary, 'view_file', { AbsolutePath: join(checkout, 'app.ts') })).toMatch(
+      expect(breachOf(boundary, 'view_file', { AbsolutePath: join(checkout, 'app.ts') })).toMatch(
         /^read \S+\/checkout\/app\.ts \(your checkout\) with view_file$/,
       );
     });
@@ -691,6 +684,104 @@ describe('the warning a read outside the workspace raises', () => {
     });
     expect(breachOf(inHome, 'read', { filePath: '/Users/alice/.ssh/config' })).toBe(
       'read ~/.ssh/config (outside the workspace) with read',
+    );
+  });
+});
+
+describe('isolation breach excerpts and path lengths', () => {
+  const boundary = createIsolationBoundary({
+    isolationDir: '/Users/alice/.local/state/splitbrief/trees/5b1e0c7d2a94/run-7',
+    checkoutDir: '/Users/alice/Projects/splitbrief',
+    env: { HOME: '/Users/alice', PATH: ENV_PATH },
+    tool: 'antigravity',
+  });
+
+  const WRITE_TOOLS = [
+    'write',
+    'edit',
+    'create',
+    'replace',
+    'delete',
+    'remove',
+    'move',
+    'rename',
+    'mkdir',
+    'patch',
+    'file_change',
+    'insert',
+    'sed_file',
+  ] as const;
+
+  it('shows no excerpt for a write tool with a path under 200 characters', () => {
+    const breach = findIsolationBreach(boundary, {
+      name: 'write_to_file',
+      input: { TargetFile: '/Users/alice/outside/file.ts' },
+    });
+    expect(breach).not.toBeNull();
+    expect(breach?.excerpt).toBe('');
+    expect(formatIsolationBreach(breach!)).toBe(
+      'wrote to ~/outside/file.ts (outside the workspace) with write_to_file',
+    );
+  });
+
+  it('names the file once for a path over 200 characters with no excerpt and no second cut copy', () => {
+    const segment = 'a'.repeat(220);
+    const longPath = `/Users/alice/outside/${segment}.ts`;
+    const breach = findIsolationBreach(boundary, {
+      name: 'write_to_file',
+      input: { TargetFile: longPath },
+    });
+    expect(breach).not.toBeNull();
+    expect(breach?.excerpt).toBe('');
+    const formatted = formatIsolationBreach(breach!);
+    expect(formatted).toBe(
+      `wrote to ~/outside/${segment}.ts (outside the workspace) with write_to_file`,
+    );
+    expect(formatted).not.toContain('…');
+    expect(formatted.indexOf(segment)).toBe(formatted.lastIndexOf(segment));
+  });
+
+  it('keeps and cuts a shell command excerpt at 200 characters with ellipsis for Bash and run_command', () => {
+    const segment = 'b'.repeat(210);
+    const target = `/Users/alice/outside/${segment}.ts`;
+
+    const bashBreach = findIsolationBreach(boundary, {
+      name: 'Bash',
+      input: { command: `echo hello > ${target}` },
+    });
+    expect(bashBreach).not.toBeNull();
+    const expectedBashExcerpt = `echo hello > ~/outside/${segment}.ts`.slice(0, 199) + '…';
+    expect(bashBreach?.excerpt).toBe(expectedBashExcerpt);
+    expect(bashBreach?.excerpt.length).toBe(200);
+    expect(bashBreach?.excerpt.endsWith('…')).toBe(true);
+    expect(formatIsolationBreach(bashBreach!)).toBe(
+      `wrote to ~/outside/${segment}.ts (outside the workspace) with Bash: ${expectedBashExcerpt}`,
+    );
+
+    const runBreach = findIsolationBreach(boundary, {
+      name: 'run_command',
+      input: { CommandLine: `touch ${target}` },
+    });
+    expect(runBreach).not.toBeNull();
+    const expectedRunExcerpt = `touch ~/outside/${segment}.ts`.slice(0, 199) + '…';
+    expect(runBreach?.excerpt).toBe(expectedRunExcerpt);
+    expect(runBreach?.excerpt.length).toBe(200);
+    expect(runBreach?.excerpt.endsWith('…')).toBe(true);
+    expect(formatIsolationBreach(runBreach!)).toBe(
+      `wrote to ~/outside/${segment}.ts (outside the workspace) with run_command: ${expectedRunExcerpt}`,
+    );
+  });
+
+  it.each(WRITE_TOOLS)('gives no excerpt for write tool %s when it reports only a path', (tool) => {
+    const breach = findIsolationBreach(boundary, {
+      name: tool,
+      input: { path: '/Users/alice/outside/target.ts' },
+    });
+    expect(breach).not.toBeNull();
+    expect(breach?.access).toBe('write');
+    expect(breach?.excerpt).toBe('');
+    expect(formatIsolationBreach(breach!)).toBe(
+      `wrote to ~/outside/target.ts (outside the workspace) with ${tool}`,
     );
   });
 });
