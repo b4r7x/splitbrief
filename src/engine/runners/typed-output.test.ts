@@ -12,6 +12,7 @@ import {
   type RequestTypedResult,
   type SeatProtocolError,
   type TypedSeatCall,
+  seatProtocolHeadline,
   typedOutputError,
 } from './typed-output.js';
 
@@ -74,19 +75,37 @@ function expectError(result: RequestTypedResult<Probe>): SeatProtocolError {
   return result.error;
 }
 
-describe('typedOutputError.seatProtocol', () => {
+describe('seatProtocolHeadline', () => {
   it.each([
     [1, 'The implementer seat answer did not match its contract after 1 attempt.'],
     [2, 'The implementer seat answer did not match its contract after 2 attempts.'],
-  ] as const)('counts %i attempt in words', (attempts, message) => {
+  ] as const)('counts %i attempt in words', (attempts, headline) => {
+    expect(seatProtocolHeadline({ seat: 'implementer', attempts })).toBe(headline);
+  });
+});
+
+describe('typedOutputError.seatProtocol', () => {
+  it.each([
+    [
+      1,
+      ['answer: Required'],
+      'The implementer seat answer did not match its contract after 1 attempt. answer: Required.',
+    ],
+    [
+      2,
+      ['answer: Required', 'count: Expected number, received string'],
+      'The implementer seat answer did not match its contract after 2 attempts. answer: Required. count: Expected number, received string.',
+    ],
+  ] as const)('counts %i attempt in words', (attempts, errors, message) => {
     const err = typedOutputError.seatProtocol({
       seat: 'implementer',
       attempts,
       transport: 'native',
-      errors: '',
+      errors,
       answerPreview: '',
     });
     expect(err.message).toBe(message);
+    expect(err.data.errors).toEqual(errors);
   });
 });
 
@@ -517,7 +536,9 @@ describe('requestTyped', () => {
 
     const failure = expectError(await requestTyped(options({ call })));
 
-    expect(failure.data.errors).toContain('Ambiguous answer');
+    expect(failure.data.errors).toContain(
+      'Ambiguous answer: several JSON objects end the reply; send exactly one.',
+    );
   });
 
   it('tells the repair that the answer was truncated', async () => {

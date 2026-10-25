@@ -822,6 +822,20 @@ describe('the planning session on the live path', () => {
 
     expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
     expect(run.result.state.pendingRecovery?.reason).toBe('seat-protocol-error');
+    expect(run.result.state.pendingRecovery?.message).toBe(
+      'The planner seat answer did not match its contract after 2 attempts.',
+    );
+    expect(run.result.state.pendingRecovery?.details).toEqual([
+      'No JSON object found in the answer.',
+    ]);
+    expect(run.events.filter((event) => event.type === 'error')).toEqual([
+      expect.objectContaining({
+        type: 'error',
+        phase: 'planning',
+        message:
+          'The planner seat answer did not match its contract after 2 attempts. No JSON object found in the answer.',
+      }),
+    ]);
   });
 
   it('records the plan validation block as the discovered validation', async () => {
@@ -1136,6 +1150,20 @@ describe('the plan card', () => {
       callbacks: { onApprovalNeeded: reviseOnce() },
     });
     expect(first.result.state.pendingRecovery?.reason).toBe('seat-protocol-error');
+    expect(first.result.state.pendingRecovery?.message).toBe(
+      'The planner seat answer did not match its contract after 2 attempts.',
+    );
+    expect(first.result.state.pendingRecovery?.details).toEqual([
+      'No JSON object found in the answer.',
+    ]);
+    expect(first.events.filter((event) => event.type === 'error')).toEqual([
+      expect.objectContaining({
+        type: 'error',
+        phase: 'planning',
+        message:
+          'The planner seat answer did not match its contract after 2 attempts. No JSON object found in the answer.',
+      }),
+    ]);
 
     const next = await continuePlanning(first, [
       makePlanProposal({ summary: 'Greet people in Polish' }),

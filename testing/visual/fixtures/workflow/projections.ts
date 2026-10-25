@@ -3,6 +3,9 @@ import { reviewResumeProjection, reviewCheckCrashProjection } from './review-res
 import {
   buildPromptTooLargeProjection,
   buildPromptTooLargeRecoveryIssue,
+  reviewContractErrorMessage,
+  reviewContractProjection,
+  reviewContractRecoveryIssue,
   reviewPromptTooLargeProjection,
   reviewPromptTooLargeRecoveryIssue,
 } from './halt-text-projections.js';
@@ -6960,6 +6963,7 @@ const projections = [
   applyConflictRecoveryProjection,
   applyConflictSentenceProjection,
   resumedApplyPartialRecoveryProjection,
+  reviewContractProjection,
   reviewPromptTooLargeProjection,
   buildPromptTooLargeProjection,
   reviewContextRecoveryProjection,
@@ -7098,6 +7102,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     modelRefusalRecoveryIssue(ROUTE_SIGNED_OUT_AUTH),
     modelRefusalRecoveryIssue(MODEL_NOT_LISTED_AUTH),
     modelRefusalRecoveryIssue(MODEL_REFUSED_AUTH),
+    reviewContractRecoveryIssue,
     reviewPromptTooLargeRecoveryIssue,
     buildPromptTooLargeRecoveryIssue,
   ];
@@ -7113,6 +7118,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       runnerAuthDisplayName(OPENCODE_ROUTE_SEAT),
       NO_ROUTE_WORDS,
     ),
+    reviewContractErrorMessage,
   ];
   const oversized = projectionStrings(projection).find(
     // The answered card's flat text joins its bounded qa pairs; it is not independent content.

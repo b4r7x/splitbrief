@@ -35,7 +35,7 @@ export type PromptBodyLine =
       mark?: string;
     }
   | { kind: 'headline'; row: Extract<PromptRow, { kind: 'headline' }>; mark?: string }
-  | { kind: 'facts-line'; text: string }
+  | { kind: 'facts-line'; text: string; continuation?: boolean }
   | { kind: 'facts-grid-pair'; left: string; right: string }
   | { kind: 'action'; key: string; keyWidth: number; text: string; recommended: boolean }
   | { kind: 'note'; text: string };
@@ -142,7 +142,11 @@ function wrappedFactLines(item: string, width: number): PromptBodyLine[] {
   return wrapHard(item, Math.max(1, width - FACT_INDENT.length))
     .split('\n')
     .map((line, index) => (index === 0 ? line : line.trimStart()))
-    .map((line) => ({ kind: 'facts-line', text: `${FACT_INDENT}${line}` }));
+    .map((line, index) => ({
+      kind: 'facts-line',
+      text: `${FACT_INDENT}${line}`,
+      ...(index > 0 ? { continuation: true } : {}),
+    }));
 }
 
 function factRows(row: Extract<PromptRow, { kind: 'facts' }>, width: number): PromptBodyLine[] {
@@ -260,12 +264,26 @@ export function clipPromptBodyRows(
   const room = available - gap.length;
   if (facts.length <= room) return [...head, ...facts, ...gap, ...tail];
   const kept = facts.slice(0, Math.max(0, room - 1));
+  const initialKeptLength = kept.length;
+  const isContinuation = (row: PromptBodyLine | undefined): boolean =>
+    row?.kind === 'facts-line' && row.continuation === true;
+  if (isContinuation(facts[kept.length])) {
+    while (kept.length > 0 && isContinuation(kept[kept.length - 1])) {
+      kept.pop();
+    }
+    if (kept.length > 0) {
+      kept.pop();
+    }
+  }
+  const freed = initialKeptLength - kept.length;
   const mark = `${ELLIPSIS} ${countNoun(facts.length - kept.length, 'more line')}`;
   if (room > 0) {
+    const padding = Array.from({ length: freed }, () => BLANK_ROW);
     return [
       ...head,
       ...kept,
       { kind: 'facts-line', text: `${FACT_INDENT}${mark}` },
+      ...padding,
       ...gap,
       ...tail,
     ];

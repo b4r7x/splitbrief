@@ -28,7 +28,7 @@ const error = typedOutputError.seatProtocol({
   seat: 'reviewer',
   attempts: 2,
   transport: 'native',
-  errors: '✖ Invalid input',
+  errors: ['answer: Required'],
   answerPreview: '{}',
 });
 
@@ -48,8 +48,29 @@ describe('buildSeatProtocolErrorRecoveryIssue', () => {
 
     expect(issue.reason).toBe('seat-protocol-error');
     expect(issue.seat).toBe('review');
-    expect(issue.message).toBe(error.message);
-    expect(issue.details).toEqual(['✖ Invalid input']);
+    expect(issue.message).toBe(
+      'The reviewer seat answer did not match its contract after 2 attempts.',
+    );
+    expect(issue.details).toEqual(['answer: Required']);
+  });
+
+  it('asserts the headline message and one detail per error for several errors', () => {
+    const multiError = typedOutputError.seatProtocol({
+      seat: 'reviewer',
+      attempts: 2,
+      transport: 'native',
+      errors: ['answer: Required', 'count: Expected number, received string'],
+      answerPreview: '{}',
+    });
+    const issue = buildSeatProtocolErrorRecoveryIssue({
+      ...input,
+      error: multiError,
+    });
+
+    expect(issue.message).toBe(
+      'The reviewer seat answer did not match its contract after 2 attempts.',
+    );
+    expect(issue.details).toEqual(['answer: Required', 'count: Expected number, received string']);
   });
 
   it('records the transport and the attempt count as facts', () => {

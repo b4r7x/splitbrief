@@ -73,7 +73,7 @@ describe('promptBodyRows', () => {
       },
       { kind: 'blank' },
       { kind: 'facts-line', text: '  abcdefghijklmnopqr' },
-      { kind: 'facts-line', text: '  ' },
+      { kind: 'facts-line', text: '  ', continuation: true },
     ]);
     expect(rows.slice(1)).toEqual(
       promptBodyRows(promptRowsToString(trailingControlSummary), 20).slice(1),
@@ -168,7 +168,7 @@ describe('promptBodyRows', () => {
         ? [
             { kind: 'facts-line', text: '  Files …/example.ts' },
             { kind: 'facts-line', text: '  Last check npm ' },
-            { kind: 'facts-line', text: '  test' },
+            { kind: 'facts-line', text: '  test', continuation: true },
           ]
         : [
             { kind: 'facts-line', text: '  Files src/example.ts' },
@@ -420,6 +420,94 @@ describe('promptBodyRows', () => {
       expect.objectContaining({ kind: 'action', key: 'r' }),
       expect.objectContaining({ kind: 'action', key: 'a' }),
     ]);
+  });
+
+  it('shows the headline, then the mark, and no partial fact at a height that would split the first fact', () => {
+    const prompt = [
+      'recovery needed · halt',
+      '',
+      `first fact ${LONG_TOKEN}`,
+      `second fact ${LONG_TOKEN}`,
+      '',
+      '[r]  retry same worker',
+      '[a]  abort',
+    ].join('\n');
+    const rows = promptBodyRows(prompt, BODY_WIDTH);
+    const clipped = clipPromptBodyRows(rows, 6);
+
+    expect(clipped).toHaveLength(6);
+    expect(clipped).toEqual([
+      expect.objectContaining({ kind: 'headline' }),
+      { kind: 'facts-line', text: '  … 4 more lines' },
+      { kind: 'blank' },
+      { kind: 'blank' },
+      expect.objectContaining({ kind: 'action', key: 'r' }),
+      expect.objectContaining({ kind: 'action', key: 'a' }),
+    ]);
+    const summaryRows = clipped
+      .slice(
+        0,
+        clipped.findIndex((row) => row.kind === 'action'),
+      )
+      .filter((row) => row.kind !== 'blank');
+    expect(summaryRows.at(-1)).toEqual({ kind: 'facts-line', text: '  … 4 more lines' });
+
+    const rendered = renderedPromptBodyRows(prompt, 6);
+    expect(rendered.some((row) => row.includes('… 4 more lines'))).toBe(true);
+    expect(rendered.some((row) => row.includes('first fact'))).toBe(false);
+  });
+
+  it('puts the mark right under the last kept fact when the cut splits a later fact', () => {
+    const prompt = ['halt', '', 'a short fact', `second fact ${LONG_TOKEN}`, 'third fact'].join(
+      '\n',
+    );
+    const clipped = clipPromptBodyRows(promptBodyRows(prompt, BODY_WIDTH), 4);
+
+    expect(clipped).toHaveLength(4);
+    expect(clipped.map((row) => row.kind)).toEqual([
+      'headline',
+      'facts-line',
+      'facts-line',
+      'blank',
+    ]);
+    expect(clipped[1]).toEqual({ kind: 'facts-line', text: '  a short fact' });
+    expect(clipped[2]).toEqual(
+      expect.objectContaining({ text: expect.stringMatching(/^ {2}… \d+ more lines$/) }),
+    );
+  });
+
+  it('shows the first fact whole and then the mark at a height that fits it whole', () => {
+    const prompt = [
+      'recovery needed · halt',
+      '',
+      `first fact ${LONG_TOKEN}`,
+      `second fact ${LONG_TOKEN}`,
+      '',
+      '[r]  retry same worker',
+      '[a]  abort',
+    ].join('\n');
+    const rows = promptBodyRows(prompt, BODY_WIDTH);
+    const facts = rows.filter(
+      (row): row is Extract<PromptBodyLine, { kind: 'facts-line' }> => row.kind === 'facts-line',
+    );
+    const clipped = clipPromptBodyRows(rows, 7);
+
+    expect(clipped).toHaveLength(7);
+    expect(clipped).toEqual([
+      expect.objectContaining({ kind: 'headline' }),
+      facts[0],
+      facts[1],
+      { kind: 'facts-line', text: '  … 2 more lines' },
+      { kind: 'blank' },
+      expect.objectContaining({ kind: 'action', key: 'r' }),
+      expect.objectContaining({ kind: 'action', key: 'a' }),
+    ]);
+    const summaryRows = clipped.slice(0, clipped.findIndex((row) => row.kind === 'action') - 1);
+    expect(summaryRows.at(-1)).toEqual({ kind: 'facts-line', text: '  … 2 more lines' });
+
+    const rendered = renderedPromptBodyRows(prompt, 7);
+    expect(rendered.some((row) => row.includes('… 2 more lines'))).toBe(true);
+    expect(rendered.some((row) => row.includes('first fact'))).toBe(true);
   });
 
   it('marks the bottom rows a summary with no action rows loses, and keeps its headline', () => {

@@ -835,6 +835,10 @@ const checkpointPredicates = [
       excludesAll('Try again', 'argv', 'Context overflow')(context),
   ],
   [
+    checkpointId('recovery-review-contract'),
+    includesAll('Seat down · The reviewer seat', 'Try again'),
+  ],
+  [
     checkpointId('recovery-review-prompt-too-large'),
     (context) =>
       includesAll('Seat down · Final review failed', 'Change REVIEW tool')(context) &&

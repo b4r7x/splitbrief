@@ -230,7 +230,7 @@ describe('runPlanSession', () => {
       seat: 'planner',
       attempts: 2,
       transport: 'native',
-      errors: 'result: Invalid input',
+      errors: ['result: Invalid input'],
       answerPreview: '{}',
     });
     const { ask } = scripted([{ error, usage: null }]);

@@ -2,7 +2,7 @@ import { PICKER_ROLE_SEAT_IDS } from '../../../../core/runners/seat-roles.js';
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../../core/schemas/task.js';
-import type { SeatProtocolError } from '../../../runners/typed-output.js';
+import { seatProtocolHeadline, type SeatProtocolError } from '../../../runners/typed-output.js';
 import type { RecoveryBuilderBase } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
 import { chooseRecommended, haltActions } from './actions.js';
@@ -40,8 +40,8 @@ export function buildSeatProtocolErrorRecoveryIssue(
     task: opts.task,
     files: opts.task === undefined ? [] : taskFiles(opts.task),
     affectedTaskIds: opts.task === undefined ? [] : [opts.task.id],
-    message: opts.error.message,
-    details: [opts.error.data.errors],
+    message: seatProtocolHeadline(opts.error.data),
+    details: [...opts.error.data.errors],
     ...(offer !== undefined && { switchSeat: offer }),
     facts: compactFacts({
       transport: opts.error.data.transport,

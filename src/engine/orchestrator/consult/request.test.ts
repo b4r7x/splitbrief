@@ -840,7 +840,9 @@ describe('requestConsult', () => {
       if (!('error' in result)) throw new Error('expected a seat-protocol error');
       expect(result.error.kind).toBe('seat-protocol-error');
       expect(result.error.message).toContain('after 2 attempts.');
-      expect(result.error.data.errors).toContain('a rewrite-task must keep the task id T003');
+      expect(result.error.data.errors).toEqual([
+        'answer.task.id: a rewrite-task must keep the task id T003; the answer changes it to T009',
+      ]);
       expect(planner.prompts).toHaveLength(2);
     },
   );

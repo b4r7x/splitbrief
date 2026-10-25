@@ -2,6 +2,8 @@ import type { EngineEvent, EventBus } from '../../../../src/engine/events/types.
 import { VISUAL_FIXTURE_EPOCH as epoch } from '../common.js';
 import { scenarioId } from '../../contracts/identifiers.js';
 import type { WorkflowFixtureProjection } from './projections.js';
+import { typedOutputError } from '../../../../src/engine/runners/typed-output.js';
+import { buildSeatProtocolErrorRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/seat-protocol.js';
 import { buildPlannerCallFailedRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/planner.js';
 import { diagnosePlannerCallFailure } from '../../../../src/engine/orchestrator/recovery/planner-call-failure.js';
 import { reviewSeatDetails } from '../../../../src/engine/orchestrator/recovery/builders/details.js';
@@ -12,9 +14,13 @@ import {
   runnerDefectRow,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
-import { publishError } from '../../../../src/engine/orchestrator/events.js';
+import {
+  publishError,
+  publishRecoveryPrompted,
+} from '../../../../src/engine/orchestrator/events.js';
 import { makeImplState } from '../../../helpers/factories/workflow-state.js';
 import { makeTask } from '../../../helpers/factories/task.js';
+import { VISUAL_WORKFLOW_SESSION_ID } from '../screen-fixtures.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
 
 function publishedEvents(ts: number, publish: (bus: EventBus) => void): EngineEvent[] {
@@ -24,6 +30,52 @@ function publishedEvents(ts: number, publish: (bus: EventBus) => void): EngineEv
   publish(bus);
   return events.map((event, index) => ({ ...event, ts: ts + index }));
 }
+
+const contractError = typedOutputError.seatProtocol({
+  seat: 'reviewer',
+  attempts: 2,
+  transport: 'native',
+  errors: [
+    'result.checks.0.value: The check command contains a shell operator. Choose a single command.',
+    'result.verdict: Required',
+  ],
+  answerPreview: '',
+});
+
+export const reviewContractRecoveryIssue: RecoveryIssue = buildSeatProtocolErrorRecoveryIssue({
+  id: 'rec_visual_review_contract',
+  error: contractError,
+  phase: 'final-review',
+  createdAt: new Date(epoch).toISOString(),
+});
+
+export const reviewContractErrorMessage: string = contractError.message;
+
+export const reviewContractProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-review-contract'),
+  feature: 'Add a multiply function',
+  inputMode: 'question',
+  sidebarVisible: false,
+  config: { planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet' } },
+  get events(): EngineEvent[] {
+    return publishedEvents(epoch + 1_000, (bus) => {
+      publishError({ bus, phase: 'final-review', message: reviewContractErrorMessage });
+      publishRecoveryPrompted(
+        { bus, phase: 'final-review' },
+        VISUAL_WORKFLOW_SESSION_ID,
+        reviewContractRecoveryIssue,
+      );
+    });
+  },
+  get resumeState() {
+    return makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+      feature: 'Add a multiply function',
+      startedAt: new Date(epoch).toISOString(),
+      phase: 'final-review',
+      pendingRecovery: reviewContractRecoveryIssue,
+    });
+  },
+};
 
 const argvOverflow = argvPromptTooLarge(186_486, 120_000);
 const argvOverflowError = error('runner-call-failed', 'Planner review call failed', {

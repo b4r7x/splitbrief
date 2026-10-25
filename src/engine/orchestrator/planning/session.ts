@@ -73,6 +73,7 @@ import { withContinuationLoop } from '../continuation.js';
 import { persistApprovalEvidence } from '../evidence/persistence.js';
 import {
   createBusTextHandler,
+  publishError,
   publishPlannerStatus,
   publishTasksPlanned,
   publishRunnerCallEvent,
@@ -81,8 +82,7 @@ import {
 } from '../events.js';
 import { askPlannerSession } from '../planner-session.js';
 import { buildPlanSessionHaltRecoveryIssue } from '../recovery/builders/planner.js';
-import { buildSeatProtocolErrorRecoveryIssue } from '../recovery/builders/seat-protocol.js';
-import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
+import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 import { closeRunIfOpen } from '../run/close.js';
 import {
   addUsageAndSave,
@@ -583,21 +583,15 @@ async function settle(
         }),
       );
     default: {
-      const seatSwap = await loadSeatSwapContext({
+      publishError({ bus, phase: state.phase, message: outcome.error.message });
+      const issue = await seatProtocolHaltIssue({
         projectDir,
-        modelCache: wctx.modelCache,
-        seat: 'plan',
-        runner: config.planner,
         config,
+        modelCache: wctx.modelCache,
+        error: outcome.error,
+        phase: state.phase,
       });
-      return halt(
-        buildSeatProtocolErrorRecoveryIssue({
-          error: outcome.error,
-          phase: state.phase,
-          ...(seatSwap !== undefined && { seatSwap }),
-          createdAt: nowIso(),
-        }),
-      );
+      return halt(issue);
     }
   }
 }
