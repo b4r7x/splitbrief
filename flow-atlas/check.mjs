@@ -11,7 +11,8 @@ import vm from 'node:vm';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js';
 const FAQ_FILE = 'faq.js';
-const EXPECTED = ['journey', 'startup', 'runners', 'planning', 'build', 'review', 'recovery', 'lifecycle', 'ui', 'subsystems', 'structure'];
+const EXPECTED = ['journey', 'startup', 'runners', 'planning', 'build', 'review', 'recovery', 'lifecycle', 'ui', 'subsystems', 'structure', 'configuration'];
+const REFACTOR_PREFIX = 'refactor-';
 const ARRAY_FIELDS = ['entry', 'links', 'diagrams', 'decisions', 'config', 'states', 'scenarios', 'files', 'gotchas', 'glossary', 'tree'];
 const DECISION_ID = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
 const DECISION_TOKEN = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g;
@@ -52,7 +53,7 @@ function loadAreas() {
     err('data', 'katalog danych nie istnieje: ' + opts.data);
     return areas;
   }
-  const files = fs.readdirSync(opts.data).filter((f) => f.endsWith('.js') && f !== FAQ_FILE).sort();
+  const files = fs.readdirSync(opts.data).filter((f) => f.endsWith('.js') && f !== FAQ_FILE && !f.startsWith(REFACTOR_PREFIX)).sort();
   for (const id of EXPECTED) {
     if (!files.includes(id + '.js')) warn(id, 'brak pliku data/' + id + '.js (strona pokaże „brak danych”)');
   }
@@ -331,6 +332,56 @@ function loadFaq() {
   return sandbox.window.ATLAS_FAQ;
 }
 
+function loadRefactor() {
+  if (!fs.existsSync(opts.data)) return [];
+  const parts = [];
+  for (const f of fs.readdirSync(opts.data).filter((x) => x.startsWith(REFACTOR_PREFIX) && x.endsWith('.js')).sort()) {
+    const file = path.join(opts.data, f);
+    const sandbox = { window: {}, console: { log() {}, warn() {}, error() {} } };
+    vm.createContext(sandbox);
+    try {
+      new vm.Script(fs.readFileSync(file, 'utf8'), { filename: file }).runInContext(sandbox, { timeout: 2000 });
+    } catch (e) {
+      err(f, 'plik nie wykonuje się: ' + (e && e.message));
+      continue;
+    }
+    const list = sandbox.window.ATLAS_REFACTOR;
+    if (!Array.isArray(list) || !list.length) {
+      err(f, 'plik powinien dodać wpis do window.ATLAS_REFACTOR');
+      continue;
+    }
+    if (sandbox.window.ATLAS !== undefined) err(f, 'plik propozycji nie może dodawać obszarów do window.ATLAS');
+    for (const p of list) parts.push({ file: f, p });
+  }
+  return parts;
+}
+
+function checkRefactor(parts, html) {
+  const ids = new Set();
+  for (const { file, p } of parts) {
+    if (!isStr(p.part)) err(file, 'brak pola part');
+    if (!Array.isArray(p.proposals)) {
+      err(file, 'brak tablicy proposals');
+      continue;
+    }
+    p.proposals.forEach((x, i) => {
+      const c = file + ' proposals[' + i + ']' + (x && x.id ? ' ' + x.id : '');
+      if (!x || !isStr(x.id)) return err(c, 'brak id');
+      if (ids.has(x.id)) err(c, 'id powtarza się');
+      ids.add(x.id);
+      for (const k of ['kind', 'title', 'why']) if (!isStr(x[k])) err(c, 'brak pola ' + k);
+      for (const b of Array.isArray(x.before) ? x.before : []) {
+        if (b && isStr(b.path) && !fs.existsSync(path.join(opts.repo, b.path))) err(c, 'before: ścieżka nie istnieje: ' + b.path);
+      }
+      for (const r of Array.isArray(x.references) ? x.references : []) {
+        const m = /^([^\s:]+\.[\w]+)(?::(\d+))?/.exec(String(r));
+        if (m && !fs.existsSync(path.join(opts.repo, m[1]))) warn(c, 'references: plik nie istnieje: ' + m[1]);
+      }
+    });
+    if (!html.includes('data/' + file)) err(file, 'index.html nie ładuje tego pliku');
+  }
+}
+
 function sentenceCount(text) {
   return String(text).replace(/\s+/g, ' ').trim().split(/(?<=[.!?”])\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ`„0-9])/).filter(Boolean).length;
 }
@@ -478,6 +529,8 @@ function print(title, list) {
 
 const areas = loadAreas();
 const faq = loadFaq();
+const refactor = loadRefactor();
+checkRefactor(refactor, fs.readFileSync(path.join(HERE, 'index.html'), 'utf8'));
 checkSchema(areas);
 checkRefs(areas);
 checkLinks(areas);
@@ -492,6 +545,7 @@ console.log('  dane:   ' + opts.data);
 console.log('  repo:   ' + opts.repo);
 console.log('  obszary: ' + areas.length + '/' + EXPECTED.length + ' (' + areas.map((a) => a.id).join(', ') + ')');
 console.log('  pytania FAQ: ' + (faq ? faq.length : 0));
+console.log('  propozycje struktury: ' + refactor.reduce((n, x) => n + (Array.isArray(x.p.proposals) ? x.p.proposals.length : 0), 0) + ' w ' + refactor.length + ' częściach');
 console.log('  diagramy: ' + count('diagrams') + ', decyzje: ' + count('decisions') + ', scenariusze: ' + count('scenarios') + ', klucze: ' + count('config'));
 if (renderInfo) console.log('  render Mermaid: ' + (renderInfo.total ? renderInfo.rendered + '/' + renderInfo.total + ' OK' : 'pominięty'));
 else console.log('  render Mermaid: pominięty (--no-render)');

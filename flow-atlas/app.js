@@ -12,7 +12,8 @@
     ['lifecycle', 'Cykl życia runu'],
     ['ui', 'Interfejs TUI'],
     ['subsystems', 'Podsystemy'],
-    ['structure', 'Struktura kodu']
+    ['structure', 'Struktura kodu'],
+    ['configuration', 'Konfiguracja: pełna lista']
   ];
   var DECISION_RE = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g;
   var NODE_ID_RE = /^(?:flowchart|state)-(.+)-\d+$/;
@@ -24,6 +25,7 @@
     ['config', 'Konfiguracja'],
     ['scenarios', 'Scenariusze'],
     ['structure', 'Struktura'],
+    ['refactor', 'Propozycje struktury'],
     ['glossary', 'Słownik']
   ];
 
@@ -41,12 +43,15 @@
     sources: new WeakMap(),
     panzoom: new WeakMap(),
     mapNodes: new Map(),
+    refactor: [],
     faq: [],
     faqById: new Map()
   };
 
   var MIN_FIT = 0.6;
   var FAQ_PAGE = { id: 'faq', title: 'Pytania (FAQ)', order: -1 };
+  var REFACTOR_PAGE = { id: 'refactor', title: 'Propozycje struktury', order: 99 };
+  var RF_KINDS = [['split', 'podział pliku'], ['folderize', 'prefiks → folder'], ['extract-shared', 'wspólny moduł'], ['move', 'przeniesienie'], ['merge', 'scalenie'], ['rename', 'zmiana nazwy'], ['delete-dead', 'martwy kod']];
   var TOP_FAQ = ['limit', 'fallback', 'needs-you-vs-seat-down', 'crash', 'apply-fails', 'ready-vs-closed'];
   var FAQ_TAGS = [
     ['limity', 'Limity'],
@@ -202,6 +207,7 @@
       });
     });
     loadFaq();
+    loadRefactor();
     buildIndex();
   }
 
@@ -211,6 +217,17 @@
       var item = { id: str(f.id), q: str(f.q), a: str(f.a), refs: arr(f.refs).map(str).filter(Boolean), tags: arr(f.tags).map(str).filter(Boolean) };
       S.faq.push(item);
       S.faqById.set(item.id, item);
+    });
+  }
+
+  function loadRefactor() {
+    arr(window.ATLAS_REFACTOR).forEach(function (r) {
+      if (!r || typeof r !== 'object') return;
+      S.refactor.push({
+        part: str(r.part), title: str(r.title) || str(r.part), summary: str(r.summary), stats: r.stats || {},
+        proposals: arr(r.proposals).filter(function (x) { return x && x.id; }),
+        keep: arr(r.keep).filter(Boolean), conventions: arr(r.conventions).map(str).filter(Boolean)
+      });
     });
   }
 
@@ -310,6 +327,12 @@
   }
 
   function buildIndex() {
+    S.refactor.forEach(function (r) {
+      r.proposals.forEach(function (x) {
+        var paths = arr(x.before).concat(arr(x.after)).map(function (f) { return str(f && f.path); });
+        addIndex('propozycja', REFACTOR_PAGE, str(x.id) + ' — ' + str(x.title), [str(x.why)].concat(paths, arr(x.moves).map(str)), '#view/refactor/rf-' + str(x.id));
+      });
+    });
     S.faq.forEach(function (f) {
       addIndex('pytanie', FAQ_PAGE, f.q, [f.a, f.tags.join(' ')], faqHref(f.id));
     });
@@ -475,7 +498,7 @@
 
   function renderSidebar() {
     var t = totals();
-    var viewCounts = { map: '', faq: S.faq.length, decisions: t.dec, config: t.cfg, scenarios: t.sc, structure: t.tree, glossary: t.gl };
+    var viewCounts = { map: '', refactor: S.refactor.reduce(function (n, r) { return n + r.proposals.length; }, 0), faq: S.faq.length, decisions: t.dec, config: t.cfg, scenarios: t.sc, structure: t.tree, glossary: t.gl };
     document.getElementById('nav-views').innerHTML = VIEWS.map(function (v) {
       return '<a class="nav-item" data-key="view:' + v[0] + '" href="#view/' + v[0] + '"><span>' + v[1] + '</span>' +
         (viewCounts[v[0]] !== '' ? '<span class="nav-count">' + viewCounts[v[0]] + '</span>' : '') + '</a>';
@@ -575,6 +598,7 @@
     else if (parts[1] === 'scenarios') html = scenariosView();
     else if (parts[1] === 'glossary') html = glossaryView();
     else if (parts[1] === 'structure') html = structureView();
+    else if (parts[1] === 'refactor') html = refactorView();
     else html = mapView();
     main.innerHTML = html;
     var title = parts[0] === 'area' ? S.areaById.get(parts[1]).title : VIEWS.filter(function (v) { return v[0] === parts[1]; })[0][1];
@@ -1185,6 +1209,77 @@
     if (a.diagrams.length) {
       html += '<h2 class="section-title">Diagramy</h2>' + a.diagrams.map(function (g) { return diagramCard(g); }).join('');
     }
+    return html;
+  }
+
+  function rfKind(k) {
+    var x = RF_KINDS.filter(function (p) { return p[0] === k; })[0];
+    return x ? x[1] : k;
+  }
+
+  function rfFiles(list) {
+    list = arr(list);
+    if (!list.length) return '<p class="muted">—</p>';
+    return '<ul class="rf-files">' + list.map(function (f) {
+      return '<li>' + chip(str(f && f.path)) + (f && f.lines != null ? ' <span class="rf-lines">' + esc(f.lines) + ' l.</span>' : '') + (f && f.note ? ' <span class="muted">' + inline(f.note) + '</span>' : '') + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  function rfSum(list) {
+    return arr(list).reduce(function (n, f) { return n + (Number(f && f.lines) || 0); }, 0);
+  }
+
+  function rfProposal(x, part) {
+    var before = arr(x.before), after = arr(x.after);
+    var maxAfter = after.reduce(function (m, f) { return Math.max(m, Number(f && f.lines) || 0); }, 0);
+    var tags = [str(x.kind), 'p' + str(x.priority), part].join(' ');
+    var text = fold([x.id, x.title, x.why, x.kind, x.tests, x.risks].map(str).concat(before.concat(after).map(function (f) { return str(f && f.path); }), arr(x.moves).map(str)).join(' '));
+    var head = '<span class="badge">' + esc(x.id) + '</span><span class="rf-title">' + inline(str(x.title)) + '</span>' +
+      '<span class="rf-meta"><span class="pill pill-tiny rf-kind-' + esc(x.kind) + '">' + esc(rfKind(str(x.kind))) + '</span>' +
+      '<span class="pill pill-tiny rf-prio-' + esc(x.priority) + '" title="priorytet">P' + esc(x.priority) + '</span>' +
+      '<span class="pill pill-tiny" title="nakład pracy">' + esc(x.effort) + '</span>' +
+      '<span class="pill pill-tiny rf-risk-' + esc(x.risk) + '" title="ryzyko">ryzyko: ' + esc(x.risk) + '</span>' +
+      (before.length ? '<span class="rf-delta" title="linie przed → największy plik po">' + rfSum(before) + ' l. → maks. ' + maxAfter + ' l.</span>' : '') + '</span>';
+    var body = '<div class="rf-body">' +
+      '<p>' + inline(str(x.why)) + '</p>' +
+      '<div class="rf-cols"><div><h4>Teraz</h4>' + rfFiles(before) + '</div><div><h4>Po zmianie</h4>' + rfFiles(after) + '</div></div>' +
+      (arr(x.moves).length ? '<h4>Co gdzie idzie</h4><ul class="rf-moves">' + arr(x.moves).map(function (m) { return '<li>' + inline(str(m)) + '</li>'; }).join('') + '</ul>' : '') +
+      (x.tests ? '<h4>Testy</h4><p>' + inline(str(x.tests)) + '</p>' : '') +
+      '<div class="meta-row"><span class="meta-label">Importery</span><span class="meta-val">' + esc(x.importers != null ? x.importers : '—') + '</span></div>' +
+      (arr(x.references).length ? '<div class="meta-row"><span class="meta-label">Do zmiany też</span><span class="meta-val">' + arr(x.references).map(function (r) { return refs(str(r)); }).join(' ') + '</span></div>' : '') +
+      (arr(x.steps).length ? '<h4>Kroki</h4><ol class="rf-steps">' + arr(x.steps).map(function (st) { return '<li>' + inline(str(st).replace(/^\d+\.\s*/, '')) + '</li>'; }).join('') + '</ol>' : '') +
+      (x.risks ? '<div class="rf-risks"><strong>Ryzyko:</strong> ' + inline(str(x.risks)) + '</div>' : '') +
+      '</div>';
+    return '<details class="card rf-item filter-item" id="a-rf-' + esc(x.id) + '" data-area="' + esc(tags) + '" data-text="' + esc(text) + '"><summary class="rf-head">' + head + '</summary>' + body + '</details>';
+  }
+
+  function refactorView() {
+    var html = pageHead('Przekrój', 'Propozycje struktury', 'Pliki do podziału, prefiksy do zamiany na foldery i kod do wyniesienia do wspólnego modułu. Każda propozycja podaje stan przed i po, co gdzie idzie, testy, importerów, miejsca do aktualizacji i kroki.');
+    if (!S.refactor.length) return html + '<div class="empty"><strong>brak danych</strong><p>Propozycje pochodzą z plików <code>flow-atlas/data/refactor-*.js</code> (<code>window.ATLAS_REFACTOR</code>).</p></div>';
+    var all = [];
+    S.refactor.forEach(function (r) { r.proposals.forEach(function (x) { all.push(x); }); });
+    var sumStat = function (k) { return S.refactor.reduce(function (n, r) { return n + (Number(r.stats[k]) || 0); }, 0); };
+    html += '<p class="section-sub">' + all.length + ' propozycji w ' + S.refactor.length + ' częściach · plików produkcyjnych: ' + sumStat('files') + ' · linii: ' + sumStat('prodLines') +
+      ' · ponad 300 linii: ' + sumStat('over300') + ' · ponad 500 linii: ' + sumStat('over500') + ' · grup z prefiksem: ' + sumStat('prefixGroups') + ' · duplikatów: ' + sumStat('duplicates') + '</p>';
+    var kinds = RF_KINDS.filter(function (k) { return all.some(function (x) { return x.kind === k[0]; }); });
+    html += filterBar('f-rf', 'Filtruj: ścieżka, funkcja, słowo…', '<button type="button" class="btn" data-rf="open">rozwiń wszystko</button><button type="button" class="btn" data-rf="close">zwiń wszystko</button>');
+    html += '<div class="tag-filter" role="group" aria-label="Rodzaj"><button type="button" class="chip-tag" data-tag="" aria-pressed="true">wszystkie</button>' +
+      '<button type="button" class="chip-tag" data-tag="p1" aria-pressed="false">najpierw (P1)</button>' +
+      kinds.map(function (k) { return '<button type="button" class="chip-tag" data-tag="' + esc(k[0]) + '" aria-pressed="false">' + esc(k[1]) + '</button>'; }).join('') +
+      S.refactor.map(function (r) { return '<button type="button" class="chip-tag" data-tag="' + esc(r.part) + '" aria-pressed="false">' + esc(r.title) + '</button>'; }).join('') + '</div>';
+    S.refactor.forEach(function (r) {
+      var props = r.proposals.slice().sort(function (a, b) { return (a.priority || 9) - (b.priority || 9) || str(a.id).localeCompare(str(b.id)); });
+      var st = r.stats;
+      html += '<section class="rf-part filter-group" id="a-rfp-' + esc(r.part) + '"><h2 class="section-title">' + esc(r.title) + ' <span class="muted">' + props.length + '</span></h2>' +
+        '<p class="section-sub">plików: ' + esc(st.files) + ' · linii: ' + esc(st.prodLines) + ' · >300: ' + esc(st.over300) + ' · >500: ' + esc(st.over500) + ' · grupy z prefiksem: ' + esc(st.prefixGroups) + ' · duplikaty: ' + esc(st.duplicates) + '</p>' +
+        (r.summary ? '<div class="prose rf-summary">' + block(r.summary) + '</div>' : '') +
+        props.map(function (x) { return rfProposal(x, r.part); }).join('') +
+        (r.keep.length ? '<details class="card rf-keep filter-item" data-area="' + esc(r.part) + '" data-text="' + esc(fold(r.keep.map(function (k) { return str(k.path) + ' ' + str(k.reason); }).join(' '))) + '"><summary><strong>Zostają duże, bo są spójne</strong> <span class="muted">' + r.keep.length + '</span></summary>' +
+          table(['Plik', 'Linie', 'Dlaczego zostaje'], r.keep.map(function (k) { return { cells: [chip(str(k.path)), esc(k.lines), inline(str(k.reason))] }; })) + '</details>' : '') +
+        (r.conventions.length ? '<details class="card rf-conv filter-item" data-area="' + esc(r.part) + '" data-text="' + esc(fold(r.conventions.join(' '))) + '"><summary><strong>Konwencje i duplikaty z innymi częściami</strong> <span class="muted">' + r.conventions.length + '</span></summary><ul>' +
+          r.conventions.map(function (c) { return '<li>' + refs(c) + '</li>'; }).join('') + '</ul></details>' : '') +
+        '</section>';
+    });
     return html;
   }
 
@@ -1882,6 +1977,12 @@
       if (fq) {
         var openAll = fq.getAttribute('data-faq') === 'open';
         document.querySelectorAll('.faq-item:not([hidden])').forEach(function (d) { d.open = openAll; });
+        return;
+      }
+      var rf = t.closest('[data-rf]');
+      if (rf) {
+        var openRf = rf.getAttribute('data-rf') === 'open';
+        document.querySelectorAll('.rf-item:not([hidden])').forEach(function (d) { d.open = openRf; });
         return;
       }
       var tb = t.closest('[data-tree="open"], [data-tree="close"]');
