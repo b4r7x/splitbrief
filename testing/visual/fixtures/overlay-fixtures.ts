@@ -1792,6 +1792,19 @@ const createSeatSwapPickerFixture: FixtureFactory = () =>
     seed: seedOpencodeReady,
     focus: OPENCODE_FOCUS,
   });
+// The halt offered a variant of an option family at an effort: the drafted variant is not the
+// family row's own id, so the row opens collapsed and ⏎ expands it at the drafted variant and effort.
+const createSeatSwapPickerExpandedFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'implementer-picker',
+    seed: () => {
+      seedOpencodeReady();
+      pickerViewStore.expand('openai/gpt-6-astra-fast', 'openai/gpt-6-astra-fast', 'high');
+    },
+    focus: OPENCODE_FOCUS,
+  }),
+  afterMount: (write) => write.press('\r'),
+});
 const createPickerBrowseEscapeFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'implementer-picker',
@@ -2858,6 +2871,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-implementer-picker-claude'), createImplementerPickerClaudeFixture],
   [scenarioId('overlay-implementer-picker-api-twin'), createImplementerPickerApiTwinFixture],
   [scenarioId('overlay-picker-seat-swap'), createSeatSwapPickerFixture],
+  [scenarioId('overlay-picker-seat-swap-expanded'), createSeatSwapPickerExpandedFixture],
   [scenarioId('overlay-picker-browse-escape'), createPickerBrowseEscapeFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],

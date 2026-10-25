@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- The seat picker now expands the offered model at its offered variant and effort, so two Enter presses save what was offered.
 - A Biome check's failure keys no longer end in a long rule of heavy dashes, and the same output gives the same keys when it is checked again.
 - A shell tool call with no command no longer adds a `Run command` row beside the real row of the same call, or counts in the header.
 - Build rows from a pause or a continued run before the final review now stand in their own block above the Final review heading.

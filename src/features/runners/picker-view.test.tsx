@@ -963,6 +963,7 @@ describe('PickerView variant axis', () => {
           modelCounts: { ...zeroCounts, confirmed: 1 },
           browseCatalog: false,
           effortDraft: null,
+          currentModel: 'openai/gpt-5.6',
         })}
         actions={input.actions}
       />,

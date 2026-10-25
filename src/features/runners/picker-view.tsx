@@ -25,17 +25,17 @@ import { sortPickerOptions, type PickerOption } from './model-catalog/options.js
 import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
 import { formatModelName } from '../../core/model-display.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
-import { isOptionFamily, optionDraftOf, routeDraftOf } from './model-catalog/option-axis.js';
+import { routeDraftOf } from './model-catalog/option-axis.js';
 import { AUTH_METHOD_WORDS, rightRowKey, sectionOf, type RightRow } from './model-catalog/rows.js';
 import type { RouteAuthState } from '../../core/runners/route-auth.js';
 import {
   activationOfRightRow,
   confirmRow as confirmRightRow,
   cycleRightRow,
+  expansionDraft,
   rowEnterHint,
   modelRowSave,
   rightRowMatches,
-  seatEffortDraft,
   type RouteAuthContext,
 } from './right-column-policy.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
@@ -425,14 +425,13 @@ export function PickerView({
         activationOf: (row) => activationOfRightRow(row, authContext),
         onExpand: (row) => {
           if (row.kind !== 'model') return;
-          const draft = isOptionFamily(row.model)
-            ? optionDraftOf(row.model, catalog.currentModel ?? catalog.persistedModel)
-            : undefined;
-          pickerViewStore.expand(
-            row.model.id,
-            draft,
-            seatEffortDraft(row.model, draft, role, slot),
-          );
+          const draft = expansionDraft(row.model, {
+            ...pickerViewStore.get(),
+            currentModel: catalog.currentModel,
+            role,
+            slot,
+          });
+          pickerViewStore.expand(row.model.id, draft.optionDraftId, draft.effortDraft);
         },
         onCollapse: () => pickerViewStore.collapse(),
         onCycle: cycleRightRow,

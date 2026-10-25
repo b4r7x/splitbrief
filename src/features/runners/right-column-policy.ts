@@ -12,7 +12,7 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { formatModelName } from '../../core/model-display.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { PickerOption } from './model-catalog/options.js';
-import { readPickerRunner } from './model-catalog/catalog.js';
+import { modelRowMatchesId, readPickerRunner } from './model-catalog/catalog.js';
 import { readPickerProfile } from './picker-profile.js';
 import {
   isOptionFamily,
@@ -66,17 +66,50 @@ function configuredEffort(role: SeatPickerRole, slot: PickerSlot): string | null
   return runner === undefined ? null : seatConfiguredEffort({ runner, role: lane });
 }
 
-/** The seat's own preset opens the ladder, but only where that ladder spells it. */
-export function seatEffortDraft(
+interface ExpansionDraftInput {
+  readonly expandedModelId?: string | null | undefined;
+  readonly optionDraftId?: string | null | undefined;
+  readonly effortDraft?: string | null | undefined;
+  readonly currentModel?: string | undefined;
+  readonly role: SeatPickerRole;
+  readonly slot: PickerSlot;
+}
+
+export function expansionDraft(
   model: ModelOption,
-  optionDraftId: string | undefined,
-  role: SeatPickerRole,
-  slot: PickerSlot,
-): string | null {
-  const configured = configuredEffort(role, slot);
-  if (configured === null) return null;
+  input: ExpansionDraftInput,
+): { optionDraftId: string | undefined; effortDraft: string | null } {
+  const isDrafted =
+    (input.optionDraftId != null &&
+      input.optionDraftId !== '' &&
+      modelRowMatchesId(model, input.optionDraftId)) ||
+    (input.expandedModelId != null &&
+      input.expandedModelId !== '' &&
+      modelRowMatchesId(model, input.expandedModelId));
+  const isSeat =
+    input.currentModel !== undefined &&
+    input.currentModel !== '' &&
+    modelRowMatchesId(model, input.currentModel);
+
+  const draftedOption =
+    input.optionDraftId != null && modelRowMatchesId(model, input.optionDraftId)
+      ? input.optionDraftId
+      : input.expandedModelId;
+  const optionTarget = isDrafted ? draftedOption : isSeat ? input.currentModel : undefined;
+  const optionDraftId = isOptionFamily(model) ? optionDraftOf(model, optionTarget) : undefined;
+
   const choices = effortLadderFor(model, optionDraftOf(model, optionDraftId));
-  return choices.includes(configured) ? configured : null;
+  if (isDrafted && input.effortDraft != null && choices.includes(input.effortDraft)) {
+    return { optionDraftId, effortDraft: input.effortDraft };
+  }
+  if (isSeat) {
+    const configured = configuredEffort(input.role, input.slot);
+    return {
+      optionDraftId,
+      effortDraft: configured !== null && choices.includes(configured) ? configured : null,
+    };
+  }
+  return { optionDraftId, effortDraft: null };
 }
 
 export function rightRowActivation(

@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { cliTool, makeActions } from '#testing/helpers/runner-picker.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
-import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import type { ModelOption, ModelVariant } from './model-catalog/recency.js';
 import type { AuthMethodChoice, RightRow } from './model-catalog/rows.js';
@@ -15,7 +13,6 @@ import {
   modelRowSave,
   rightRowActivation,
   rightRowMatches,
-  seatEffortDraft,
   type RouteAuthContext,
 } from './right-column-policy.js';
 
@@ -392,93 +389,6 @@ describe('confirmRow', () => {
 
     expect(saved).toEqual(['openai/gpt-5.6']);
     expect(modelRowSave(row, auth, null).fullId).toBe('openai/gpt-5.6');
-  });
-});
-
-describe('seatEffortDraft', () => {
-  const opus: ModelOption = { id: 'opus', effortChoices: ['low', 'high'] };
-
-  it('opens the fallback slot on its own level rather than the seat level', () => {
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({
-        planner: {
-          kind: 'cli',
-          tool: 'claude-code',
-          model: 'opus',
-          effort: 'max',
-          fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'low' },
-        },
-      }),
-    });
-
-    expect(seatEffortDraft(opus, undefined, 'planner', 'fallback')).toBe('low');
-  });
-  const routed: ModelOption = {
-    id: 'openai/gpt-5.6',
-    variants: [
-      {
-        fullId: 'openai/gpt-5.6',
-        providerPrefix: 'openai',
-        tag: 'openai',
-        variantChoices: ['high', 'max'],
-      },
-    ],
-  };
-
-  it('opens the ladder on the level an effort-flag seat already runs', () => {
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
-      }),
-    });
-
-    expect(seatEffortDraft(opus, undefined, 'planner', 'seat')).toBe('high');
-  });
-
-  it('opens the ladder on the preset a variant-channel seat already runs', () => {
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({
-        planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6', variant: 'high' },
-      }),
-    });
-
-    expect(seatEffortDraft(opus, undefined, 'planner', 'seat')).toBe('high');
-  });
-
-  it('opens the ladder on a variant that the route ladder spells', () => {
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({
-        planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6', variant: 'max' },
-      }),
-    });
-
-    expect(seatEffortDraft(routed, undefined, 'planner', 'seat')).toBe('max');
-  });
-
-  it('seeds null when the route ladder does not spell the persisted variant', () => {
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({
-        planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6', variant: 'minimal' },
-      }),
-    });
-
-    expect(seatEffortDraft(routed, undefined, 'planner', 'seat')).toBe(null);
-  });
-
-  it('seeds null when the seat channel is none', () => {
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({
-        planner: { kind: 'shell', command: 'old-command' },
-      }),
-    });
-
-    expect(seatEffortDraft(opus, undefined, 'planner', 'seat')).toBe(null);
   });
 });
 

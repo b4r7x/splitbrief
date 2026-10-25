@@ -5171,6 +5171,12 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · implementer picker · the tool a quota halt offered',
         marker: PICKER_TITLE_MARKER,
       },
+      // The open row keeps the drafted variant and effort.
+      {
+        id: 'overlay-picker-seat-swap-expanded',
+        title: 'Overlay · implementer picker · the offered tool with its model row open',
+        marker: PICKER_TITLE_MARKER,
+      },
     ],
   }),
   'reviewer-picker': overlayGroup({
