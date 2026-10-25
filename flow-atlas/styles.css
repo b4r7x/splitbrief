@@ -727,3 +727,5 @@ tr.flash td, li.flash { animation: flash-bg 1.8s ease-out; }
 .rf-item, .rf-keep, .rf-conv { display: block; padding: 12px 16px; margin-top: 10px; }
 .rf-keep > summary, .rf-conv > summary { cursor: pointer; }
 .rf-summary { margin-bottom: 4px; }
+.rf-overlap { color: var(--accent-text); border-color: var(--accent); }
+.rf-overlap-note { padding: 8px 10px; border-radius: 8px; background: var(--accent-soft); border: 1px solid var(--accent); }

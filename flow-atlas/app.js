@@ -44,6 +44,7 @@
     panzoom: new WeakMap(),
     mapNodes: new Map(),
     refactor: [],
+    rfByPath: new Map(),
     faq: [],
     faqById: new Map()
   };
@@ -227,6 +228,17 @@
         part: str(r.part), title: str(r.title) || str(r.part), summary: str(r.summary), stats: r.stats || {},
         proposals: arr(r.proposals).filter(function (x) { return x && x.id; }),
         keep: arr(r.keep).filter(Boolean), conventions: arr(r.conventions).map(str).filter(Boolean)
+      });
+    });
+    S.refactor.forEach(function (r) {
+      r.proposals.forEach(function (x) {
+        arr(x.before).forEach(function (b) {
+          var k = str(b && b.path);
+          if (!k) return;
+          if (!S.rfByPath.has(k)) S.rfByPath.set(k, []);
+          var list = S.rfByPath.get(k);
+          if (list.indexOf(str(x.id)) < 0) list.push(str(x.id));
+        });
       });
     });
   }
@@ -1229,8 +1241,19 @@
     return arr(list).reduce(function (n, f) { return n + (Number(f && f.lines) || 0); }, 0);
   }
 
+  function rfOverlaps(x) {
+    var out = [];
+    arr(x.before).forEach(function (b) {
+      (S.rfByPath.get(str(b && b.path)) || []).forEach(function (id) {
+        if (id !== str(x.id) && out.indexOf(id) < 0) out.push(id);
+      });
+    });
+    return out;
+  }
+
   function rfProposal(x, part) {
     var before = arr(x.before), after = arr(x.after);
+    var overlaps = rfOverlaps(x);
     var maxAfter = after.reduce(function (m, f) { return Math.max(m, Number(f && f.lines) || 0); }, 0);
     var tags = [str(x.kind), 'p' + str(x.priority), part].join(' ');
     var text = fold([x.id, x.title, x.why, x.kind, x.tests, x.risks].map(str).concat(before.concat(after).map(function (f) { return str(f && f.path); }), arr(x.moves).map(str)).join(' '));
@@ -1239,12 +1262,14 @@
       '<span class="pill pill-tiny rf-prio-' + esc(x.priority) + '" title="priorytet">P' + esc(x.priority) + '</span>' +
       '<span class="pill pill-tiny" title="nakład pracy">' + esc(x.effort) + '</span>' +
       '<span class="pill pill-tiny rf-risk-' + esc(x.risk) + '" title="ryzyko">ryzyko: ' + esc(x.risk) + '</span>' +
+      (overlaps.length ? '<span class="pill pill-tiny rf-overlap" title="Inna propozycja zmienia ten sam plik">wspólny plik: ' + overlaps.length + '</span>' : '') +
       (before.length ? '<span class="rf-delta" title="linie przed → największy plik po">' + rfSum(before) + ' l. → maks. ' + maxAfter + ' l.</span>' : '') + '</span>';
     var body = '<div class="rf-body">' +
       '<p>' + inline(str(x.why)) + '</p>' +
       '<div class="rf-cols"><div><h4>Teraz</h4>' + rfFiles(before) + '</div><div><h4>Po zmianie</h4>' + rfFiles(after) + '</div></div>' +
       (arr(x.moves).length ? '<h4>Co gdzie idzie</h4><ul class="rf-moves">' + arr(x.moves).map(function (m) { return '<li>' + inline(str(m)) + '</li>'; }).join('') + '</ul>' : '') +
       (x.tests ? '<h4>Testy</h4><p>' + inline(str(x.tests)) + '</p>' : '') +
+      (overlaps.length ? '<div class="rf-overlap-note"><strong>Ten sam plik zmienia też:</strong> ' + overlaps.map(function (id) { return '<a class="badge badge-link" href="#view/refactor/rf-' + esc(id) + '">' + esc(id) + '</a>'; }).join(' ') + ' <span class="muted">— zrób je razem albo ustal kolejność.</span></div>' : '') +
       '<div class="meta-row"><span class="meta-label">Importery</span><span class="meta-val">' + esc(x.importers != null ? x.importers : '—') + '</span></div>' +
       (arr(x.references).length ? '<div class="meta-row"><span class="meta-label">Do zmiany też</span><span class="meta-val">' + arr(x.references).map(function (r) { return refs(str(r)); }).join(' ') + '</span></div>' : '') +
       (arr(x.steps).length ? '<h4>Kroki</h4><ol class="rf-steps">' + arr(x.steps).map(function (st) { return '<li>' + inline(str(st).replace(/^\d+\.\s*/, '')) + '</li>'; }).join('') + '</ol>' : '') +
@@ -1261,6 +1286,9 @@
     var sumStat = function (k) { return S.refactor.reduce(function (n, r) { return n + (Number(r.stats[k]) || 0); }, 0); };
     html += '<p class="section-sub">' + all.length + ' propozycji w ' + S.refactor.length + ' częściach · plików produkcyjnych: ' + sumStat('files') + ' · linii: ' + sumStat('prodLines') +
       ' · ponad 300 linii: ' + sumStat('over300') + ' · ponad 500 linii: ' + sumStat('over500') + ' · grup z prefiksem: ' + sumStat('prefixGroups') + ' · duplikatów: ' + sumStat('duplicates') + '</p>';
+    var shared = 0;
+    S.rfByPath.forEach(function (ids) { if (ids.length > 1) shared++; });
+    if (shared) html += '<p class="section-sub">' + shared + ' plików pojawia się w więcej niż jednej propozycji. Takie karty mają znacznik „wspólny plik” i linki do pozostałych propozycji.</p>';
     var kinds = RF_KINDS.filter(function (k) { return all.some(function (x) { return x.kind === k[0]; }); });
     html += filterBar('f-rf', 'Filtruj: ścieżka, funkcja, słowo…', '<button type="button" class="btn" data-rf="open">rozwiń wszystko</button><button type="button" class="btn" data-rf="close">zwiń wszystko</button>');
     html += '<div class="tag-filter" role="group" aria-label="Rodzaj"><button type="button" class="chip-tag" data-tag="" aria-pressed="true">wszystkie</button>' +
