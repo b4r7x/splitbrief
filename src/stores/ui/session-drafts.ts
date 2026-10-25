@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { createDraftDocument } from '../../core/composer/document.js';
+import { createDraftDocument, draftLength } from '../../core/composer/document.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { readSessionDraft, writeSessionDraft } from '../../core/sessions/draft.js';
 import { sessionError } from '../../core/sessions/errors.js';
@@ -125,6 +125,15 @@ export function leaveWasRefusedHere(): boolean {
 export function saveSessionDraft(ref: SessionRef, document: DraftDocument): void {
   pending.set(key(ref), { ref, document });
   if (timer !== null) clearTimeout(timer);
+  timer = null;
+  if (draftLength(document) === 0) {
+    try {
+      flushSessionDrafts();
+    } catch (error) {
+      reportDraftNotSaved(error, false);
+    }
+    return;
+  }
   timer = setTimeout(() => {
     try {
       flushSessionDrafts();
