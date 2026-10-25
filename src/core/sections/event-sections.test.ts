@@ -2019,10 +2019,11 @@ describe('groupEventsIntoSections', () => {
         'completed-task',
         'settled-stage',
         'completed-task',
+        'events',
         'active-review',
       ]);
       expect(sections[1]).toMatchObject({ summary: { outcome: 'failed' } });
-      expect(sections[3]).toMatchObject({ review: { fixCyclesBefore: 1, rerunsBefore: 0 } });
+      expect(sections[4]).toMatchObject({ review: { fixCyclesBefore: 1, rerunsBefore: 0 } });
     });
 
     it.each([

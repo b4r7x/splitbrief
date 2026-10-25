@@ -1204,7 +1204,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-after-pause',
         title: 'Final review running after the run continued',
         kind: 'implementation',
-        marker: 'choosing checks',
+        marker: 'Final review',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

@@ -279,6 +279,31 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
     return { fixCyclesBefore, rerunsBefore };
   }
 
+  function pushLeadingBuildEvents(endIndex = events.length): void {
+    const opener = events.findIndex(
+      (event, index) => index >= cursor && index < endIndex && opensReview(event),
+    );
+    const openerPhase = events[opener]?.phase;
+    if (opener < 0 || openerPhase === undefined || phaseStage(openerPhase) !== 'review') return;
+    let split = cursor;
+    while (split < endIndex) {
+      const event = events[split];
+      if (
+        event === undefined ||
+        event.phase === undefined ||
+        phaseStage(event.phase) !== 'build' ||
+        opensReview(event)
+      ) {
+        break;
+      }
+      split++;
+    }
+    if (split > cursor) {
+      sections.push({ type: 'events', items: events.slice(cursor, split), startIndex: cursor });
+      cursor = split;
+    }
+  }
+
   function appendCompletedReviews(endIndex: number): void {
     let reviewStarted = false;
     for (let index = cursor; index < endIndex; index++) {
@@ -288,6 +313,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
         event.type === 'workflow_resumed' &&
         (reviewStarted || (event.phase !== undefined && phaseStage(event.phase) === 'review'))
       ) {
+        pushLeadingBuildEvents(index);
         const items = events.slice(cursor, index);
         const summary = items.some(opensReview)
           ? settledStageSummary(items, countsAtCursor(items), true)
@@ -321,6 +347,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
           break;
         if (following?.type === 'review_fix_started') reviewEnd = next;
       }
+      pushLeadingBuildEvents(reviewEnd + 1);
       const items = events.slice(cursor, reviewEnd + 1);
       const summary = settledStageSummary(items, countsAtCursor(items));
       if (summary?.stage !== 'review') continue;
@@ -409,6 +436,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
 
   appendCompletedReviews(events.length);
   if (cursor < events.length) {
+    pushLeadingBuildEvents();
     const items = events.slice(cursor);
     const summary = items.some(opensReview)
       ? settledStageSummary(items, countsAtCursor(items))

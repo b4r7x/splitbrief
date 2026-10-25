@@ -602,9 +602,18 @@ const checkpointPredicates = [
   [checkpointId('review-choosing-checks'), includesAll()],
   [
     checkpointId('review-after-pause'),
-    (context) =>
-      includesTranscript('Final review')(context) &&
-      !workflowTranscriptText().includes('Final review stopped'),
+    (context) => {
+      const text = workflowTranscriptText();
+      const continued = text.indexOf('Run continued');
+      const finalReview = text.indexOf('Final review');
+      return (
+        includesTranscript('Final review')(context) &&
+        !text.includes('Final review stopped') &&
+        continued !== -1 &&
+        finalReview !== -1 &&
+        continued < finalReview
+      );
+    },
   ],
   [checkpointId('review-verdict-only'), includesAll()],
   [
