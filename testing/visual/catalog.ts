@@ -2081,6 +2081,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-run-lock-not-released',
       title: 'Workflow · a stop that cannot release the run lock',
       surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 140, rows: 40 })],
       checkpoint: {
         id: 'run-lock-not-released',
         title: 'Run lock not released',

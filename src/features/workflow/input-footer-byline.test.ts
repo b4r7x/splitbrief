@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
 import { glyph } from '../../lib/glyphs.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
 import { buildInputFooterByline, stageFractionText } from './input-footer-byline.js';
 import { stopByline } from './stop/copy.js';
@@ -53,7 +53,7 @@ describe('buildInputFooterByline', () => {
   const stageLead = `${marker} build 3/7`;
   const stageParts = [{ text: stageLead, tone: 'textDim' }] as const;
 
-  it('fits a waiting state, a seat word and a partial separator without merging tones', () => {
+  it('fits a waiting state, a seat word and ends on a whole word, not on the separator, without merging tones', () => {
     const parts = [
       { text: 'Waiting for your answer', tone: 'warning' },
       { text: ' · ', tone: 'textDim' },
@@ -69,7 +69,7 @@ describe('buildInputFooterByline', () => {
       }),
     ).toEqual([
       { text: 'Waiting for your answer', tone: 'warning' },
-      { text: ' ·…', tone: 'textDim' },
+      { text: ' …', tone: 'textDim' },
     ]);
   });
 
@@ -417,9 +417,34 @@ it('keeps the fitted lead and dim clock apart without changing the string projec
 });
 
 it('preserves fitting when a stop clock already belongs to the lead string', () => {
-  const lead = '○ Stopping the run · Finishing cleanup and saving · 2:51:54';
-  for (const cols of [40, 60, 80, 120]) {
-    const expected = truncateTerminalDisplayText(lead, getChromeContentWidth(cols));
+  const cases: Array<{
+    cols: number;
+    expected: string;
+    lastSegment: ConversationRowSegment;
+  }> = [
+    {
+      cols: 40,
+      expected: '○ Stopping the run · Finishing …',
+      lastSegment: { text: 'Finishing …', tone: 'textDim' },
+    },
+    {
+      cols: 60,
+      expected: '○ Stopping the run · Finishing cleanup and saving …',
+      lastSegment: { text: ' …', tone: 'textDim' },
+    },
+    {
+      cols: 80,
+      expected: '○ Stopping the run · Finishing cleanup and saving · 2:51:54',
+      lastSegment: { text: '2:51:54', tone: 'textDim' },
+    },
+    {
+      cols: 120,
+      expected: '○ Stopping the run · Finishing cleanup and saving · 2:51:54',
+      lastSegment: { text: '2:51:54', tone: 'textDim' },
+    },
+  ];
+
+  for (const { cols, expected, lastSegment } of cases) {
     const structured = buildInputFooterByline({
       cols,
       lead: [
@@ -433,8 +458,6 @@ it('preserves fitting when a stop clock already belongs to the lead string', () 
       queuedText: null,
     });
     expect(fullByline(structured)).toBe(expected);
-    if (cols === 60) expect(structured.at(-1)).toEqual({ text: '2:51:…', tone: 'textDim' });
-    else if (cols > 60) expect(structured.at(-1)).toEqual({ text: '2:51:54', tone: 'textDim' });
-    else expect(structured.at(-1)?.tone).toBe('textDim');
+    expect(structured.at(-1)).toEqual(lastSegment);
   }
 });

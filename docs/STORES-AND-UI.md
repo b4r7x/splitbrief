@@ -254,7 +254,7 @@ provider.
 
 The workflow's fixed rows are owned by `ScreenShell`: one header row, one header divider, the
 scrollable body, one footer divider, one feedback row, the variable-height composer, and one input
-footer/byline row. `layout/chrome-rows.ts` is the shared row contract used by viewport and pointer
+footer/byline row. A notice that does not fit ends on a whole word. `layout/chrome-rows.ts` is the shared row contract used by viewport and pointer
 geometry; scroll banners ride the dividers and never consume body rows. The composer is outside the
 body rectangle and is always terminal-originated: `x = 0`, `width = cols`. Recovery status,
 help text, prompt text, sidebar visibility, and review content width may change the composer height
