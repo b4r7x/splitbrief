@@ -1747,6 +1747,25 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    // plan.md in a run's session folder: the frame title names it project-relative and shortens
+    // the middle of the path, never its base name.
+    defineScenario({
+      id: 'workflow-plan-card-session-path',
+      title: 'Workflow · plan card naming plan.md in a long session folder',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-card-session-path',
+        title: 'Plan card with a session plan path',
+        kind: 'review',
+        marker: 'Approve plan and start the build',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
     // Seven briefs as `formatTasks` persists them, two with headers past twelve lines: the card
     // lists every one of them.
     defineScenario({

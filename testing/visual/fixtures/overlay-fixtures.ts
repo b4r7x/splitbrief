@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { type OverlayType, seatAxisFocus } from '../../../src/core/navigation/types.js';
 import {
   API_PROVIDER_CATALOG,
@@ -397,7 +397,13 @@ function seedLongTaskSession(): Session {
 function seedEditor(plan = makePlanProposal({ summary: 'Add greeting helper' })): void {
   const ownerToken = reviewStore.setReviewFile('fixtures/visual-session/plan.md', 8);
   editorStore.openRaw({
-    filePath: 'fixtures/visual-session/plan.json',
+    filePath: resolve(
+      VISUAL_FIXTURE_PROJECT_DIR,
+      '.splitbrief',
+      'sessions',
+      LONG_SESSION_ID,
+      'plan.json',
+    ),
     ownerToken,
     value: `${JSON.stringify(plan, null, 2)}\n`,
     layout: { columns: 72, rows: 19 },
