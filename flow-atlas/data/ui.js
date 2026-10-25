@@ -22,6 +22,8 @@ window.ATLAS.push({
 
 **23 komendy runtime** w pięciu kategoriach (navigate, crew, workflow, view, io). Dispatch: dokładna nazwa → usunięta nazwa dostaje wskazówkę → zły ekran → \`guard\` (powód blokuje komendę i ukrywa jej wiersz w palecie i pomocy) → handler.
 
+**Nagłówek i sidebar nazywają seat, na którym praca naprawdę biegnie** (od 016daca): wywołanie, które trwa, trasa briefu BUILD albo seat przebiegu z \`workflow_config\`, do punktu zmiany seat-u. Halt, stop kończący run i run w spoczynku pokazują seat zapisany. Zegar resetu limitu stoi tylko obok seat-u, który trafił na limit, i tylko gdy ten seat nadal pokazuje narzędzie i model wywołania (dc91b4f).
+
 **Fallback seat-a wybierasz tylko w jednym miejscu:** Settings › Fallback → ⏎ → \`ToolModelPicker\` w slocie \`fallback\`. Ten sam komponent obsługuje trzy role (planner, implementer, reviewer) i dwa sloty (seat, fallback).`,
   entry: [
     'src/app/root.tsx:60',
@@ -257,6 +259,37 @@ window.ATLAS.push({
   FAN --> VIEW["transkrypt, sidebar, pasek etapów, byline, blok postępu"]
   CB["callbacki silnika (promise)"] --> PROMPTS["approvalPromptStore, questionPromptStore, reviewChecksPromptStore, useInputMode, stopStore.park"]
   PROMPTS --> VIEW`
+    },
+    {
+      id: 'ui-running-seats',
+      title: 'Który seat nazywa nagłówek i sidebar',
+      caption: 'Najpierw wybór seat-u (praca czy zapis), potem krótka forma w linii nagłówka, na końcu zegar resetu. Ta sama tożsamość trafia do nagłówka i do sidebara.',
+      mermaid: `flowchart TD
+  H["nagłówek i sidebar: seat PLAN, BUILD, REVIEW"] --> UI_RUNNING_SEATS{"Praca biegnie na innym seacie niż zapisany?"}
+  UI_RUNNING_SEATS -->|"tak: trwające wywołanie, trasa briefu BUILD albo seat przebiegu"| RUN["tożsamość seat-u pracy"]
+  UI_RUNNING_SEATS -->|"nie, halt, stop kończący run, run at rest"| SAVED["seat z configu"]
+  RUN --> UI_SHORT_SEAT{"Linia nagłówka: model seat-u jest auto?"}
+  SAVED --> UI_SHORT_SEAT
+  UI_SHORT_SEAT -->|"tak"| TOOL["słowo narzędzia, np. Claude Code CLI"]
+  UI_SHORT_SEAT -->|"nie"| MODEL["nazwa modelu bez marki i osi"]
+  TOOL --> UI_RESET_CLOCK{"Otwarty halt z resetem na tym seacie i seat pokazuje narzędzie i model wywołania?"}
+  MODEL --> UI_RESET_CLOCK
+  UI_RESET_CLOCK -->|"tak"| CLK["zegar resetu obok seat-u, np. BUILD Codex 15:27"]
+  UI_RESET_CLOCK -->|"nie: zapisany inny seat albo halt na innym profilu BUILD"| NOCLK["zegar tylko w tytule haltu"]`
+    },
+    {
+      id: 'ui-notice-fit',
+      title: 'Linia feedbacku: jak skraca się za długi komunikat',
+      caption: 'Komunikat, który nie mieści się w polu, traci najpierw środek ścieżek, potem środek przyczyny przed nazwą pliku, a na końcu kończy się na całym słowie i znaku ….',
+      mermaid: `flowchart TD
+  N["komunikat na linii feedbacku"] --> UI_NOTICE_FIT{"Mieści się w polu?"}
+  UI_NOTICE_FIT -->|"tak"| WHOLE["cały tekst"]
+  UI_NOTICE_FIT -->|"nie, część ze ścieżką"| PATH["ścieżka skrócona w środku, nazwa pliku zostaje"]
+  PATH -->|"…/nazwa nie mieści się za pełną przyczyną"| CAUSE["przyczyna skrócona w środku na granicy słów, zostaje sama nazwa pliku"]
+  UI_NOTICE_FIT -->|"nie, bez ścieżki"| WORD["koniec na ostatnim całym słowie, które się mieści, i znak …"]
+  CAUSE --> OUT["wynik"]
+  PATH --> OUT
+  WORD --> OUT`
     }
   ],
   decisions: [
@@ -476,7 +509,7 @@ window.ATLAS.push({
       inputs: ['reviewKeysStore.commenting', 'questionPromptStore.questions', 'openedAt + 150 ms (PROMPT_TYPEAHEAD_GRACE_MS)'],
       branches: [
         { if: 'trwa komentarz na plan card', then: 'czyści szkic i `endComment()`; klawisze wracają do wierszy karty' },
-        { if: 'otwarty panel pytań, minęło 150 ms', then: '`questionPromptStore.close()`: runda czeka na odpowiedź z composera, pytania zostają jako blok w transkrypcie' },
+        { if: 'otwarty panel pytań, minęło 150 ms', then: '`questionPromptStore.close()`: runda czeka na odpowiedź z composera, pytania zostają jako blok w transkrypcie; od 1e9969c legenda nad composerem pokazuje klawisze runu (`esc stop options · ctrl+c stop now · ctrl+k commands · /help`), bo pusta lista pytań nie trzyma już legendy (feedback-row.tsx:58)' },
         { if: 'esc wpisany przed upływem 150 ms', then: 'panel zostaje (esc nie był do niego)' },
         { if: 'nic z tego', then: 'drabina', next: 'UI_ESC_LADDER' }
       ],
@@ -615,7 +648,7 @@ window.ATLAS.push({
         { if: 'zapis nie udał się, drugie wyjście z tego samego ekranu', then: 'szkic porzucony, wyjście' }
       ],
       default: 'Wyjście.',
-      notes: 'Pusty szkic nie tworzy pliku. Zapis szkicu idzie z opóźnieniem 300 ms (session-drafts.ts:125).'
+      notes: 'Pusty szkic nie tworzy pliku. Niepusty szkic zapisuje się z opóźnieniem 300 ms (session-drafts.ts:137); pusty (np. tuż po wysłaniu tekstu) od 2fef31b zapisuje się od razu (session-drafts.ts:129), więc stop zaraz po wysłaniu nie przywraca wysłanego tekstu jako szkicu.'
     },
     {
       id: 'UI_STOP_NOW',
@@ -693,7 +726,7 @@ window.ATLAS.push({
         { if: '`End run (close this run)`', then: '`action: end-run`' }
       ],
       default: 'Wiersz nie ma liter: litera to tekst w composerze.',
-      notes: 'Wiersze: src/features/workflow/prompt-rows/approval.ts. `ctrl+e` też otwiera edytor. Editor `ctrl+o` przechodzi do zewnętrznego edytora (VISUAL / EDITOR). Semantyka planu → zobacz planning.'
+      notes: 'Wiersze: src/features/workflow/prompt-rows/approval.ts. `ctrl+e` też otwiera edytor. Editor `ctrl+o` przechodzi do zewnętrznego edytora (VISUAL / EDITOR). Tytuł edytora nazywa plan.json ścieżką od korzenia projektu i skraca długą ścieżkę w środku (ff47a03, frame-panel.tsx:52). Semantyka planu → zobacz planning.'
     },
     {
       id: 'UI_PLAN_CARD_TEXT',
@@ -721,13 +754,15 @@ window.ATLAS.push({
       inputs: ['reply.questions', 'reply.seat', 'tekst odpowiedzi', 'paczka odpowiedzi'],
       branches: [
         { if: 'są pytania strukturalne', then: 'panel QuestionPrompt: ↑↓ wybór opcji, ⏎ odpowiada i przechodzi do następnego, Tab pisze własną odpowiedź; po ostatnim pytaniu wraca paczka Q/A' },
+        { if: 'pisanie własnej odpowiedzi', then: 'panel pokazuje pytanie od pierwszej linii (offset 0, e708c43), pgup / pgdn przewijają resztę; ↑ w pierwszej linii pola wraca do opcji i zachowuje tekst' },
+        { if: 'pytanie bez opcji (pytanie final review albo konsultacji bez domyślnej)', then: '↑ zostaje w polu odpowiedzi (composerOnly, 4af8f21); ↓ z pola dalej idzie do composera' },
         { if: 'brak pytań', then: 'composer z podpowiedzią `Reply to the planner…` (albo `Reply to the reviewer…`)' },
         { if: 'pusty ⏎ bez pytań strukturalnych', then: 'pusta odpowiedź = planner bierze domyślne' },
         { if: 'tekst w composerze, gdy panel pytań ma fokus composera', then: '`New instruction — replaces these questions…`: tekst zastępuje rundę' },
         { if: 'esc', then: 'panel zamyka się; runda czeka na odpowiedź z composera', next: 'UI_ESC_FIRST' }
       ],
       default: 'Odpowiedź tekstowa.',
-      notes: 'Pytanie bez opcji pokazuje swoją wartość domyślną jako jedyną opcję (questionOptions, src/stores/question-prompt/prompt.ts:30). Komenda wpisana w panelu idzie do dispatchera, nie jest odpowiedzią.'
+      notes: 'Pytanie bez opcji pokazuje swoją wartość domyślną jako jedyną opcję (questionOptions, src/stores/question-prompt/prompt.ts:30); dopiero pytanie bez opcji i bez domyślnej jest tylko polem (src/features/workflow/components/planner-question.tsx:104). Komenda wpisana w panelu idzie do dispatchera, nie jest odpowiedzią.'
     },
     {
       id: 'UI_CONFIRM_KEYS',
@@ -784,6 +819,7 @@ window.ATLAS.push({
         { if: 'litera akcji: r retry, u restore, w switch-seat, l retry later, v revise, k accept as is, c continue, s skip, a end run', then: 'wybór tej akcji (litera spoza oferty nic nie robi)' },
         { if: '↑↓ i ⏎', then: 'wybór zaznaczonego wiersza' },
         { if: 'Tab', then: 'klawisze do composera; ⏎ z tekstem = akcja korekty (np. revise) z tym tekstem' },
+        { if: 'menu ma fokus: legenda', then: 'halt z korektą: `tab type a correction`; halt bez korekty, a composer trzyma tekst: `tab edit the words` (18325e1, recovery-menu.tsx:172); halt bez korekty i pusty composer: bez Tab' },
         { if: 'akcja `switch-seat`', then: 'picker seat-a otwarty na oferowanym narzędziu', next: 'UI_SWITCH_SEAT' },
         { if: 'tekst przy akcji, która słów nie czyta', then: '`Cannot send words with <akcja>. Clear them.`' },
         { if: 'esc', then: 'stop-sheet z `Stop now` i `End run`' }
@@ -801,7 +837,8 @@ window.ATLAS.push({
         { if: 'picker zamknięty bez wyboru (esc)', then: 'anulowane: menu recovery pyta znowu' },
         { if: 'wybrany ten sam seat (tool, model, effort, variant) co przy haltcie', then: 'anulowane' },
         { if: 'inny seat zapisany', then: '`switchSeat` wraca do pętli runu, run re-preparuje się na nowym seat-cie' },
-        { if: 'brak oferty', then: '`No other tool is offered for this seat.`' }
+        { if: 'brak oferty', then: '`No other tool is offered for this seat.`' },
+        { if: '⏎ na oferowanym wierszu modelu', then: 'od f3a4390 wiersz rozwija się na oferowanym wariancie i effort (expansionDraft, src/features/runners/right-column-policy.ts:78); drugi ⏎ zapisuje dokładnie ofertę haltu' }
       ],
       default: '—'
     },
@@ -947,7 +984,7 @@ window.ATLAS.push({
         { if: 'question', then: '`Waiting for your answer · type a reply or ⏎ to continue`' },
         { if: 'halt', then: '`Needs you` / `Seat down · <headline> · ⏎ to decide` (albo zapisana akcja)' },
         { if: 'failed', then: '`Stopped by an error · <message> · ⏎ to retry the step`' },
-        { if: 'seat-wait', then: '`Waiting for <tool> · <czas resetu>` albo `⏎ to continue`' }
+        { if: 'seat-wait', then: '`Waiting for <tool> · <czas resetu>` albo `⏎ to continue`; od 890d992 <tool> to pełna nazwa z katalogu narzędzia, na którym biegło wywołanie (np. `OpenAI Codex CLI`), nie id seat-u ze startu runu' }
       ],
       default: '`Stopped at ... · ⏎ to continue`',
       notes: 'Zamknięty run: `bylineParts` – np. `Ended · Bring the changes back with git apply on the Patch file`, `Undo the Apply with /run reject confirm`. Ready: `Ready to apply · pick Apply, Show diff or Discard`. Inny proces: `Running in another process`.'
@@ -1064,7 +1101,66 @@ window.ATLAS.push({
         { if: 'halt albo brak runu', then: 'zwykły komunikat zapisu; halt czyta seat przy wznowieniu' }
       ],
       default: 'Zwykły zapis.',
-      notes: 'Pętla runu słucha configStore (use-run-loop.ts:298) – ręczna edycja pliku też się liczy.'
+      notes: 'Pętla runu słucha configStore (use-run-loop.ts:283) – ręczna edycja pliku też się liczy. Config następnego wejścia liczy jedna funkcja `nextEntryConfig` (src/features/workflow/entry-config.ts:27, od 42fb57f), którą czyta też Retry at w recovery-driver. Do punktu zmiany nagłówek i sidebar nazywają seat, na którym praca biegnie (UI_RUNNING_SEATS).'
+    },
+    {
+      id: 'UI_RUNNING_SEATS',
+      title: 'Seat pracy w nagłówku i sidebarze',
+      question: 'Czy seat w chrome to seat zapisany, czy ten, na którym biegnie praca?',
+      where: 'src/features/workflow/display/running-seats.ts:92',
+      inputs: ['operationsStore.active (trwające wywołanie)', 'running brief i jego route', 'tokensStore.passSeats (workflow_config)', 'lifecycle.status', 'otwarty halt', 'stop zaparkowany w wywołaniu (parksCutCall)', 'config'],
+      branches: [
+        { if: 'trwa wywołanie (nie status fallback)', then: 'seat tego wywołania dla jego seat-u (seatForRunningCall), także gdy run nie jest live' },
+        { if: 'run nie jest live (nie running ani interrupted, bez parku w wywołaniu) albo czeka halt', then: 'seat zapisany w configu' },
+        { if: 'BUILD i brief in_progress ma route', then: 'seat trasy briefu' },
+        { if: 'inaczej', then: 'seat przebiegu z passSeats; rekord bez słów osi (stary log, hydracja) daje seat zapisany', next: 'SS_PASS_SEATS' },
+        { if: 'wybrany seat to ta sama tożsamość co zapisany', then: 'brak nadpisania: chrome czyta config' }
+      ],
+      default: 'Seat zapisany.',
+      notes: 'Hook: useRunningSeats (src/features/workflow/hooks/use-running-seats.ts:12), czytany przez header.tsx:90 i sidebar.tsx:297. Zapisany REVIEW bez własnego bloku idzie za pokazanym PLAN, więc dalej czyta się `= PLAN`. Seat shell lub agent czyta się słowem rodzaju (`Custom Shell · <model>`, `Agent · <model>`) na każdej powierzchni, nie komendą. Zamknięty run (recordedCrew) czyta załogę z rekordu runu.'
+    },
+    {
+      id: 'UI_SHORT_SEAT',
+      title: 'Krótka forma seat-u w linii nagłówka',
+      question: 'Jak nazwać seat w zwiniętej linii nagłówka i w crew zamkniętego runu?',
+      where: 'src/core/crew/identity.ts:280',
+      inputs: ['seat (RunnerConfig albo SeatIds)', 'displayName modelu', 'kind'],
+      branches: [
+        { if: 'model brak albo auto', then: 'słowo narzędzia z długiej formy (od dee6b6c), np. `Claude Code CLI`, nie `auto`' },
+        { if: 'model ma nazwę', then: 'nazwa modelu bez marki i osi; trasa providera zachowuje providera po spacji' },
+        { if: 'crew zamkniętego runu: seat przeniesiony na stałe', then: 'kawałki z łamaniem po strzałce (seatIdentityPieces, src/features/workflow/closed/copy.ts:305); dwa seaty o tej samej krótkiej formie na dwóch narzędziach dostają słowo narzędzia, chyba że krótka forma już nim jest' }
+      ],
+      default: 'Nazwa modelu.',
+      notes: 'Forma zwinięta nie niesie osi; gdy linia się nie mieści, seat traci całą tożsamość (`REVIEW …`), a nie pół nazwy modelu.'
+    },
+    {
+      id: 'UI_RESET_CLOCK',
+      title: 'Zegar resetu limitu obok seat-u',
+      question: 'Czy pokazać zegar resetu obok seat-u w nagłówku?',
+      where: 'src/features/workflow/components/header.tsx:57',
+      inputs: ['recoveryNoticeStore.seat, ranOn, resetAt', 'seat pokazany w nagłówku (running albo zapisany)'],
+      branches: [
+        { if: 'brak haltu, brak seat-u haltu, brak ranOn albo brak resetu', then: 'bez zegara' },
+        { if: 'seat w nagłówku to inne narzędzie lub model niż ranOn (zapisano inny seat, albo halt dotyczy nazwanego profilu BUILD, a nagłówek pokazuje domyślny)', then: 'bez zegara; zegar zostaje w tytule haltu' },
+        { if: 'seat w nagłówku to narzędzie i model wywołania', then: 'zegar `formatResetNote` obok seat-u (np. `15:27`, inny dzień `Aug 8, 15:27`)' }
+      ],
+      default: 'Bez zegara.',
+      notes: 'ranOn liczy haltedSeatIds (src/core/state/seats.ts:260): `switchSeat.from` haltu, inaczej seat przebiegu z seats.json, dla BUILD na nazwanym profilu seat tego profilu (dc91b4f). Wcześniej zegar stał przy seacie haltu zawsze.'
+    },
+    {
+      id: 'UI_NOTICE_FIT',
+      title: 'Skracanie komunikatu na linii feedbacku',
+      question: 'Jak skrócić komunikat, który nie mieści się w polu feedbacku?',
+      where: 'src/components/composer/feedback-fit.ts:63',
+      inputs: ['tekst komunikatu (części rozdzielone ` · `)', 'szerokość i liczba wierszy pola'],
+      branches: [
+        { if: 'mieści się', then: 'bez zmian' },
+        { if: 'część bez spacji z `/` (ścieżka)', then: 'ścieżka skrócona w środku, nazwa pliku zostaje (shortenPaths, :87)' },
+        { if: '`…/<nazwa>` nie mieści się za pełną przyczyną', then: 'od 4f1cbb2 przyczyna przed ścieżką skraca się w środku na granicy słów, a ścieżka zostaje samą nazwą pliku' },
+        { if: 'dalej za długo albo brak ścieżki', then: 'od bc631e8 koniec na ostatnim całym słowie (nie na `·`) i ` …`; dopiero gdy żadne słowo się nie mieści, cięcie po grafemach' }
+      ],
+      default: 'Tekst w całości.',
+      notes: 'Od e473b3d błędy plików nazywają plik od korzenia projektu (`EACCES … · .splitbrief/sessions/<id>/draft.json`), a plik w workspace runu od korzenia workspace (errorFile, src/utils/format-errors.ts:38).'
     },
     {
       id: 'UI_EVENT_DROP',
@@ -1263,7 +1359,16 @@ window.ATLAS.push({
     { path: 'src/core/crew/fallback.ts', role: 'deriveFallbackRows i notatki' },
     { path: 'src/features/runners/use-picker-actions.ts', role: 'zapis seat / fallback, punkt zmiany seat-a' },
     { path: 'src/app/overlays/runners.tsx', role: 'ToolModelPicker: 3 role × 2 sloty' },
-    { path: 'src/features/palette/sources.ts', role: 'źródła palety i ukrywanie przez guard' }
+    { path: 'src/features/palette/sources.ts', role: 'źródła palety i ukrywanie przez guard' },
+    { path: 'src/features/workflow/display/running-seats.ts', role: 'deriveRunningSeats: seat pracy zamiast zapisanego' },
+    { path: 'src/features/workflow/hooks/use-running-seats.ts', role: 'useRunningSeats dla nagłówka i sidebara' },
+    { path: 'src/features/workflow/entry-config.ts', role: 'nextEntryConfig: config następnego wejścia runu (pętla i Retry at)' },
+    { path: 'src/features/workflow/components/header.tsx', role: 'linia seatów nagłówka, zegar resetu obok seat-u haltu' },
+    { path: 'src/features/workflow/components/sidebar.tsx', role: 'wiersze załogi: seat pracy, zapis, recorded crew z łamaniem po strzałce' },
+    { path: 'src/features/workflow/components/planner-question.tsx', role: 'QuestionPrompt: opcje, własna odpowiedź, ↑ w polu, przewijanie' },
+    { path: 'src/features/workflow/components/recovery-menu.tsx', role: 'menu recovery: litery, legenda tab type a correction / edit the words' },
+    { path: 'src/components/composer/feedback-fit.ts', role: 'skracanie komunikatu feedbacku: ścieżka, przyczyna, całe słowo' },
+    { path: 'src/features/workflow/components/frame-panel.tsx', role: 'ramka edytora: tytuł ścieżką od korzenia projektu' }
   ],
   gotchas: [
     '`/home` bez Apply nawiguje od razu, bez drabiny stopu (src/app/command-context.ts:363). Na pracującym runie ekran workflow się odmontowuje, a sprzątanie efektu robi `controller.abort()` (src/features/workflow/hooks/use-run-loop.ts:567). To ten sam abort co Stop now, ale bez czekania na park i bez `settleRun` na ekranie. Esc i `/quit` czekają na stop; `/home` nie.',
@@ -1279,6 +1384,16 @@ window.ATLAS.push({
     'switch-seat z menu recovery nie ma własnej listy narzędzi: otwiera ten sam picker seat-a na oferowanym narzędziu. Esc w pickerze albo wybór tego samego seat-a = anulowanie, menu pyta znowu.',
     'Stop, który się nie udał, sam otwiera stop-sheet z jednym wierszem `Retry stop` (use-run-loop.ts:569). Stop zakończony parkiem też sam otwiera sheet z Resume / End run / Back to sessions (use-run-loop.ts:661).',
     'Litery nie wybierają akcji w menu wyniku, w stop-sheet ani w karcie checks. W menu recovery i w karcie potwierdzenia litery działają.',
-    'Ekran at rest sam czyta rekord ponownie, gdy inny proces zmieni state.json, lock, session.jsonl albo summary (watchFile co 100 ms), więc run zamknięty w innym oknie zmienia się na ekranie bez akcji.'
+    'Ekran at rest sam czyta rekord ponownie, gdy inny proces zmieni state.json, lock, session.jsonl albo summary (watchFile co 100 ms), więc run zamknięty w innym oknie zmienia się na ekranie bez akcji.',
+    'Zmiana na main (2026-10): nagłówek i sidebar nazywają seat, na którym biegnie wywołanie albo przebieg, nie zapisany seat, aż do punktu zmiany seat-u (016daca); seat shell / agent czyta się `Custom Shell` / `Agent`.',
+    'Zmiana na main (2026-10): zegar resetu limitu stoi obok seat-u tylko wtedy, gdy ten seat nadal pokazuje narzędzie i model, które trafiły na limit; po zapisaniu innego seat-u albo przy haltcie nazwanego profilu BUILD zegar zostaje w tytule haltu (dc91b4f).',
+    'Zmiana na main (2026-10): krótka forma seat-u z modelem auto pokazuje nazwę narzędzia zamiast `auto` w nagłówku, sidebarze i crew zamkniętego runu (dee6b6c).',
+    'Zmiana na main (2026-10): switch-seat — dwa ⏎ w pickerze zapisują model, wariant i effort, które zaproponował halt (f3a4390).',
+    'Zmiana na main (2026-10): panel pytań — pytanie zostaje widoczne od pierwszej linii, gdy piszesz własną odpowiedź na niskim terminalu (e708c43); po esc legenda pokazuje klawisze runu (1e9969c); pytanie bez opcji trzyma ↑ w polu odpowiedzi (4af8f21).',
+    'Zmiana na main (2026-10): menu recovery na haltcie bez korekty pokazuje `tab edit the words`, gdy composer trzyma tekst (18325e1); wiersz `Fix again` nazywa notatkę raz (bab3404), a tytuł Seat down po powtórzonym timeoucie liczy próby raz (aad79db).',
+    'Zmiana na main (2026-10): wiersze build po ostatnim briefie (pauza, kontynuacja) stoją nad nagłówkiem `Final review` we własnym bloku, nie pod nim (b467b40, pushLeadingBuildEvents w src/core/sections/event-sections.ts:282).',
+    'Zmiana na main (2026-10): za długi komunikat zachowuje nazwę pliku i kończy się na całym słowie (4f1cbb2, bc631e8); błędy plików i tytuł edytora nazywają plik od korzenia projektu (e473b3d, ff47a03).',
+    'Zmiana na main (2026-10): stop zaraz po wysłaniu tekstu nie przywraca go jako szkicu, bo pusty szkic zapisuje się od razu (2fef31b).',
+    'Zmiana na main (2026-10): wywołanie shell bez komendy nie dodaje już drugiego wiersza `Run command` ani nie liczy się w nagłówku (7c58ae0); ostrzeżenie WARN w aktywności traci całe końcowe segmenty zamiast środka tekstu (a9f2ab9).'
   ]
 });

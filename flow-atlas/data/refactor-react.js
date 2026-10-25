@@ -628,6 +628,7 @@ window.ATLAS_REFACTOR.push({
     { path: 'src/app/router.tsx', lines: 157, reason: 'Dwa switche renderScreen i renderOverlay — sama kompozycja, bez logiki.' }
   ],
   conventions: [
+    'Zmiana na main (2026-10): sidebar.tsx ma 436 linii (useRunningSeats i packPieces z 016daca, dee6b6c), frame-panel.tsx czyta configStore dla ścieżki od korzenia projektu (ff47a03), picker-view.tsx oddał szkic rozwinięcia do right-column-policy.ts expansionDraft (f3a4390). Żaden komponent nie przekroczył 250 linii po raz pierwszy.',
     'Reguły komponentów React dla tego repo (rekomendacja):',
     'Strona (src/app/screens|overlays/x.tsx) to tylko wywołania hooków i JSX regionów: bez inline function X() komponentów, bez .get() w renderze, cel do 150 linii. Logika idzie do features/x/hooks/, czysta derywacja do features/x/*.ts, regiony do features/x/components/.',
     'Rozmiar: funkcja komponentu do około 120 linii, plik .tsx do około 250 linii; jeden eksportowany komponent na plik plus prywatne prezentacyjne pomocniki do około 40 linii każdy.',

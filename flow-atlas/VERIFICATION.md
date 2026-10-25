@@ -1,5 +1,49 @@
 # Flow Atlas — weryfikacja sceptyka
 
+## Stan po synchronizacji z main (2026-10)
+
+Data: 2026-10-25. Gałąź `claude/flow-atlas-main-sync` po scaleniu 35 commitów `f728869..origin/main` (od e014c5e do 42fb57f). Każdy wiersz poniżej sprawdzono ponownie w obecnym drzewie: kod i docs czytane teraz, nie w atlasie. Stany: **nadal aktualne** (kod i docs mówią to samo co przed synchronizacją), **naprawione w <sha>** (commit usunął defekt albo rozjazd), **zmienione** (zachowanie lub dowód się przesunął, werdykt w nowej formie).
+
+Wynik: żaden z 19 wpisów części A nie został naprawiony przez main. Wszystkie cztery potwierdzone defekty PRODUCT (#1, #2, #3, #5) są nadal aktualne. Zmieniły się tylko numery linii; dwa wpisy (#7, #11) mają dopisek o nowym zachowaniu wokół `seatWait`.
+
+### Część A po synchronizacji
+
+| # | Werdykt przed | Stan po main | Dowód w obecnym drzewie (plik:linia) |
+|---|---|---|---|
+| 1 | CONF · PRODUCT 1 | **nadal aktualne** | `ensureHooksTrusted` wołane tylko z `src/cli/bootstrap/init.ts:22` i `src/cli/commands/spec.ts:123`. Headless resume wraca przed `initStores`: `src/cli/commands/continue/resume.ts:114-124` (headless) wobec `:131` (`deps.initStores`). `src/cli/commands/start/streaming.ts:21` woła tylko `setupWorkflow`. Hook `pre_planning` dalej anuluje planowanie: `src/engine/orchestrator/planning/session.ts:318-319`. `docs/CLI-REFERENCE.md:136,193` i `docs/HOOKS-CONFIG.md:265` bez zmian. |
+| 2 | CONF · PRODUCT 2 | **nadal aktualne** | `src/components/composer/composer.tsx:79` (`COMMANDS_ONLY_NOTICE`), `src/features/workflow/at-rest.ts:156` (`commandsOnly: !continuable`), `src/app/screens/workflow.tsx:541` (pusty ⏎ = fokus menu wyniku). |
+| 3 | CONF · PRODUCT 2 | **nadal aktualne** | `task_completed` bez pola `file`: `src/engine/events/schema.ts:526-535`; `post_task` na `task_completed`: `src/engine/hooks/sink.ts:107-108`; docs `docs/HOOKS-CONFIG.md:16,34,62` bez zmian. |
+| 4 | PART | **nadal aktualne** | `src/engine/hooks/` bez zmian w main; `src/engine/orchestrator/task/pre-task.ts:70` (`pre_task blocked: …`) i `:72` (`skipBrief`). |
+| 5 | CONF · PRODUCT 2 | **nadal aktualne** | `src/engine/hooks/run-pre.ts:40` wkłada stderr do `warnings`, żaden wywołujący ich nie publikuje; `docs/HOOKS-CONFIG.md:190` bez zmian. |
+| 6 | PART (nie defekt) | **nadal aktualne** | `src/app/command-context.ts:363-364` (`navigateHome`); sprzątanie efektu `src/features/workflow/hooks/use-run-loop.ts:567-574` (`controller.abort()`), powrót bez `settleRun` `:531`; `src/app/screens/home.tsx:279` (ping listy). |
+| 7 | CONF | **nadal aktualne** (z dopiskiem) | `runSeatCall` `src/engine/orchestrator/escalation/seat-wait.ts:199`, wołany tylko z `consult/request.ts:367`, `task/run-implementation.ts:286`, `escalation/make-implementer-retry-invoker.ts:125`. Planowanie `planning/session.ts:513,765` i werdykt `final-review.ts:986` dalej bez retry i czekania. Docs przesunęły się do `docs/WORKFLOW.md:534` i dalej podają regułę ogólnie. Nowe w main (890d992, 42fb57f): czekanie zapisuje narzędzie i trzymany seat, a kontynuacja na innym narzędziu porzuca czekanie (`resumeSeatWait`, `seat-wait.ts:165`, warunek `moved` `:179`). |
+| 8 | CONF | **nadal aktualne** | `src/engine/orchestrator/run/task-execution.ts:523` → `haltVerdictlessReview` `src/engine/orchestrator/run/review.ts:149`; `docs/HOW-IT-WORKS.md:269` bez zmian. |
+| 9 | CONF | **nadal aktualne** | `src/engine/orchestrator/escalation/local-retries.ts:241-245` (`COUNT_ATTEMPT`) przed `:247` (`isAbortedOutcome`); `docs/APPROVAL-AND-RECOVERY.md:81` bez zmian. |
+| 10 | CONF | **nadal aktualne** | `src/engine/spec/prompt-formatter.ts:96` (`### Plan context (read-only)`); `docs/PLANNERS-AND-IMPLEMENTERS.md:227` („no access to the plan”). |
+| 11 | CONF | **nadal aktualne** (z dopiskiem) | `src/core/sessions/run-status.ts:24` (`seat-wait` w `StoppedOn`), `:222-230`; `docs/WORKFLOW.md:274` dalej wymienia tylko paused / failed / interrupted. Od 890d992 pole `tool` to nazwa z katalogu narzędzia, na którym biegło wywołanie (`seatWaitToolWord`, `run-status.ts:159`). |
+| 12 | CONF | **nadal aktualne** | `verifyReviewClaims` `src/engine/orchestrator/final-review.ts:247`, `verifyClaimChecks` `src/engine/orchestrator/triage.ts:200`, `checkVerificationStatus` `triage.ts:42`; render w `src/engine/orchestrator/validation/run-checks.ts:425-426`, `runRenderCheck` daje `pass` przy exit 0 (`:399`); wymuszone unverified tylko bez obrazu (`final-review.ts:890-905`). `docs/WORKFLOW.md:115` bez zmian. |
+| 13 | CONF | **nadal aktualne** | `src/engine/orchestrator/run/review.ts:85` (`redPending`), `:115` (`acceptAsIs: !scheduled && !redPending`); `docs/APPROVAL-AND-RECOVERY.md:398` bez zmian. |
+| 14 | CONF | **nadal aktualne** | `docs/LAYERS.md:16` bez zmian; importy wartości z engine: `components/composer/composer.tsx:38`, `components/composer/completion/command/hook.ts:25`, `components/composer/home-hint.ts:7`, `hooks/use-crew-display-names.ts:3`, `features/editor/plan-save.ts:2`, `features/palette/sources.ts:19`, `features/start-preparation/use-start-preparation.ts:7`. |
+| 15 | CONF | **nadal aktualne** | `updateTokens` `src/stores/workflow/tokens.ts:134`, `assertNever` `:353`; `docs/EXTENDING.md:38-47` dalej nie wymienia `tokens.ts`. Main dołożył do tego switcha `passSeats` z `workflow_config` (`tokens.ts:136`). |
+| 16 | CONF | **nadal aktualne** | `src/engine/orchestrator/planning/session.ts:656` (`resolveApproveLevel(...) === 'plan'`), `isApprovedNpmRun` `src/engine/orchestrator/planning/sanitize-discovered-validation.ts:445`, `commandTextRefusal` `:453-475`, `packageScriptRefusal` `:255-275`, `NPM_SCRIPT_SUBCOMMANDS` `:89`. |
+| 17 | CONF | **nadal aktualne** | `src/engine/orchestrator/task/brief-gate.ts:57` (`?? 'end'`) i `:58-70` (checki planu tylko przy `cadence === 'task'`); `task/step.ts:530` i `escalation/validate-and-commit.ts:32` dalej bez `checkIds`. 0b28a3f zmienił tylko ocenę fix-checku w tej bramce. |
+| 18 | CONF | **nadal aktualne** | `autoSwitchIntent` `src/engine/orchestrator/recovery/builders/task.ts:310-329` (filtr `record.auto` `:317`, `switchable` `:321-324`); host `src/features/workflow/hooks/use-run-loop.ts:380`, `src/cli/headless.ts:383`; klasyfikacja `src/engine/runners/seat-failure.ts:130-150`. |
+| 19 | CONF | **nadal aktualne** | `src/core/sessions/lockfile-status.ts:10` (8000 ms), `:157-158` (`stale`); `src/core/sessions/liveness.ts:116` (`takeoverMayBeAttempted: false`); `src/core/sessions/active-pointer.ts:368` (`stillActive`). |
+
+### Część B po synchronizacji
+
+- Karty z próbki w moich plikach (`startup`, `ui`, `subsystems`, `structure`, 24 karty): pliki, na które wskazują, nie zmieniły się w main (diff `f728869..HEAD` pusty dla wszystkich 21 plików i katalogów źródłowych; `docs/STRUCTURE.md` zmienił tylko linię 23, opis node-env.ts). Wynik: **nadal aktualne**, 24/24 OK.
+- `recovery RC_TRANSIENT` (poprawka z tej weryfikacji): **zmienione** w f307dcb. Reguła 429 dalej stoi (`src/engine/runners/seat-failure.ts:130-150`, transient `:162-164`), ale stderr nie jest już źródłem „tail”: fraza konta na stderr klasyfikuje się jako `account` (Seat down), a tylko ostatnia linia stdout czyta same frazy haltu (`isTailSource`, `seat-failure.ts:94`). Kartę prowadzi plik `recovery.js` (inny właściciel).
+- Diagram `sr-layers`: liczby plików policzone na nowo — features 209, engine 489, core 279, krawędź `src/cli.ts + node-env.ts → lib` ma 2 importy (c947aa6).
+
+### Nowe rozjazdy docs kontra kod po main
+
+Nie znaleziono nowego rozjazdu w obszarach UI, startu, konfiguracji, podsystemów i struktury: docs zmienione w tych commitach (`docs/STORES-AND-UI.md`, `docs/FEATURES.md`, `docs/CLI-REFERENCE.md`, `docs/PLANNERS-AND-IMPLEMENTERS.md:681`, `docs/LAYERS.md:31,36`, `docs/BOOTSTRAP.md`, `docs/CONFIGURATION.md`) opisują to, co robi kod.
+
+---
+
+## Weryfikacja przed synchronizacją (f728869)
+
 Data: 2026-10-25. Rola: niezależny sceptyk (CLAUDE.md „Reporting findings”). Każdy werdykt opiera się na kodzie przeczytanym teraz w drzewie roboczym, nie na plikach atlasu ani na docs. Plik `runners.js` pominięty (w trakcie pisania).
 
 Skróty: CONF = potwierdzone, REF = obalone, PART = częściowo. Kind: PRODUCT / TEST / ENV; klasa 1 blokuje pracę lub daje zły wynik, 2 mylący tekst, 3 kosmetyka.

@@ -18,7 +18,7 @@ window.ATLAS.push({
 
 **Evidence ledger** (\`evidence.json\`) zbiera dowody: wynik każdego briefu, każdy przebieg checku, zgody i odmowy, każde review, status finalnego review. Obok powstaje \`review-changes.json\` (bajty przed/po dla każdego briefu). Każdy zapis jest pod blokadą pliku; błąd zapisu daje ostrzeżenie, nigdy halt.
 
-Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego seatu), **logger** (\`.splitbrief/logs/debug.log\`, domyślnie wyłączony w buildzie), **wygaśnięcie sesji** planera (jedno ponowienie na świeżej sesji), **wykrywanie zmian** (implementer, który nic nie zapisał, przegrywa próbę), **załączniki @plik**, **budowa Summary** (tokeny i koszt), **pricing** (CLI nigdy nie ma ceny; API przez models.dev lub tabelę wbudowaną), **gitignore bookkeeping** i **scalanie katalogów modeli**.`,
+Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego seatu), **logger** (\`.splitbrief/logs/debug.log\`, domyślnie wyłączony w buildzie), **wygaśnięcie sesji** planera (jedno ponowienie na świeżej sesji), **wykrywanie zmian** (implementer, który nic nie zapisał, przegrywa próbę), **załączniki @plik**, **budowa Summary** (tokeny i koszt), **pricing** (CLI nigdy nie ma ceny; API przez models.dev lub tabelę wbudowaną), **gitignore bookkeeping**, **scalanie katalogów modeli**, **ostrzeżenia o zużyciu limitu Claude Code** (progi 70–95 % okien 5-hour i weekly, każdy raz na run) i **seaty przebiegu** z \`workflow_config\` (nagłówek, sidebar i /usage czytają seat, na którym przebieg naprawdę biegnie).`,
   entry: [
     'src/engine/orchestrator/run/init-sinks.ts:27',
     'src/cli/hook-trust-prompt.ts:40',
@@ -300,6 +300,33 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
   SS_SKILLS_BUDGET -->|"nie"| NAMED["Nazwany ścieżką, warning skills_truncated"]
   INL --> BLOCK["Active Project Skills w promptach seatów"]
   NAMED --> BLOCK`
+    },
+    {
+      id: 'ss-usage-warnings',
+      title: 'Ostrzeżenia o zużyciu limitu Claude Code: raz na próg w runie',
+      caption: 'Parser stream-json zamienia ramkę rate_limit_event na ostrzeżenie tylko między 70 a 99 % okna. Bramka na EventBus przepuszcza każdy próg okna raz; przy kontynuacji runu progi już pokazane są czytane z session.jsonl.',
+      mermaid: `flowchart TD
+  F["Claude Code: ramka rate_limit_event"] --> SS_USAGE_LIMIT_STEP{"Okno five_hour lub seven_day ma utilization od 70 do 99 %?"}
+  SS_USAGE_LIMIT_STEP -->|"nie: brak unifiedWindows, mniej niż 70 %, 100 % i więcej"| HB["tylko heartbeat wywołania"]
+  SS_USAGE_LIMIT_STEP -->|"tak"| W["call_warning claude_rate_limit<br/>usage: window, step, resetsAt"]
+  W --> SS_USAGE_LIMIT_GATE{"Ten próg (kod, okno, reset) albo wyższy był już pokazany na tym busie?"}
+  SS_USAGE_LIMIT_GATE -->|"tak"| DROP["pominięte: nie ma wiersza ani linii w session.jsonl"]
+  SS_USAGE_LIMIT_GATE -->|"nie"| PUB["runner_call_warning na EventBus<br/>WARN w aktywności, wiersz transkryptu"]
+  R["kontynuacja runu: initializeWorkflow"] --> SEED["seedUsageLimitSteps: najwyższy próg z session.jsonl"]
+  SEED --> SS_USAGE_LIMIT_GATE`
+    },
+    {
+      id: 'ss-pass-seats',
+      title: 'workflow_config: seaty przebiegu dla nagłówka, sidebara i /usage',
+      caption: 'Każde wejście runu publikuje seaty, na których przebieg naprawdę biegnie. TUI trzyma je w tokensStore.passSeats. Seat bez słów osi (stary log albo stan z dysku) nie zastępuje seatu zapisanego w configu.',
+      mermaid: `flowchart LR
+  INIT["initializeWorkflow: każde wejście runu"] --> PUBC["publishWorkflowConfig: tool, model, kind, axes każdego seatu, skille"]
+  PUBC --> RED["updateTokens: passSeats"]
+  RED --> SS_PASS_SEATS{"Rekord seatu ma słowa osi?"}
+  SS_PASS_SEATS -->|"tak"| RUN["deriveRunningSeats: seat przebiegu, gdy różni się od zapisanego"]
+  SS_PASS_SEATS -->|"nie: starszy log albo hydracja ze state.json"| SAVED["nagłówek i sidebar: seat zapisany w configu"]
+  RUN --> CHROME["nagłówek i sidebar do punktu zmiany seatu"]
+  RED --> USAGE["/usage: wycena seatów z passSeats"]`
     }
   ],
   decisions: [
@@ -1183,6 +1210,48 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
       default: 'Komunikat `Added .splitbrief/ to .gitignore`.'
     },
     {
+      id: 'SS_USAGE_LIMIT_STEP',
+      title: 'Próg ostrzeżenia o limicie Claude Code',
+      question: 'Czy ramka rate_limit_event daje ostrzeżenie i z jakim progiem?',
+      where: 'src/engine/streaming/parse-stream-json.ts:444',
+      inputs: ['rate_limit_info.unifiedWindows.five_hour / seven_day', 'utilization (0–1)', 'resetsAt (sekundy epoki)'],
+      branches: [
+        { if: 'brak unifiedWindows albo okna, albo utilization nie jest liczbą', then: 'tylko heartbeat' },
+        { if: 'procent (floor z utilization × 100) poniżej 70 albo od 100', then: 'brak ostrzeżenia dla tego okna (usageLimitStep zwraca null, src/core/recovery/usage-limit-step.ts:10)' },
+        { if: 'procent od 70 do 99', then: 'ostrzeżenie `claude_rate_limit`, severity warning, krok = najwyższy z 70, 75, 80, 85, 90, 95 nie większy od procentu; tekst `You\'ve used 80% of your Claude Code 5-hour limit · resets 15:27` (bez części resets, gdy ramka nie ma resetsAt)', next: 'SS_USAGE_LIMIT_GATE' }
+      ],
+      default: 'Ramka zawsze liczy się też jako heartbeat.',
+      notes: 'Zmiana na main a9f2ab9: wcześniej ostrzeżenie dawał status `allowed_warning` (warning) i `rejected` (error), tekstem `7-day rate limit approaching (resets …)`. Teraz status nie ma znaczenia, a 100 % nie daje ostrzeżenia — wyczerpany limit kończy wywołanie i trafia do recovery.'
+    },
+    {
+      id: 'SS_USAGE_LIMIT_GATE',
+      title: 'Bramka ostrzeżeń limitu: raz na próg',
+      question: 'Czy ostrzeżenie o progu limitu trafia na EventBus?',
+      where: 'src/engine/orchestrator/usage-limit-gate.ts:19',
+      inputs: ['RunnerCallEvent call_warning z polem usage', 'mapa pokazanych progów per EventBus (klucz: kod, okno, resetsAt)'],
+      branches: [
+        { if: 'event to nie call_warning albo ostrzeżenie bez usage', then: 'przepuszczone bez zmian' },
+        { if: 'ten klucz ma już ten sam albo wyższy próg', then: 'odrzucone: publishRunnerCallEvent wraca bez publikacji (src/engine/orchestrator/events.ts:64)' },
+        { if: 'próg wyższy albo nowy klucz (np. nowy reset okna)', then: 'zapis progu, publikacja `runner_call_warning`' }
+      ],
+      default: 'Przepuszczone.',
+      notes: 'Przy kontynuacji runu `seedUsageLimitSteps` (usage-limit-gate.ts:37) czyta wszystkie `runner_call_warning` z session.jsonl i zapisuje najwyższe progi (wywołanie: src/engine/orchestrator/run/init.ts:258), więc próg pokazany przed stopem nie wraca. Mapa leży w WeakMap po busie, nie w state.json.'
+    },
+    {
+      id: 'SS_PASS_SEATS',
+      title: 'Seaty przebiegu z workflow_config',
+      question: 'Czy TUI może pokazać seat, na którym przebieg naprawdę biegnie?',
+      where: 'src/stores/workflow/tokens.ts:136',
+      inputs: ['workflow_config: <seat>Tool, <seat>Model, <seat>Kind, <seat>Axes', 'hydracja ze state.json'],
+      branches: [
+        { if: 'workflow_config z kind i osiami (run od 016daca)', then: 'passSeats ma pełne seaty; deriveRunningSeats może je pokazać zamiast zapisanych', next: 'UI_RUNNING_SEATS' },
+        { if: 'starszy log bez osi albo stan odtworzony ze state.json (hydrate.ts passSeats)', then: 'passSeatRecord zwraca null; chrome pokazuje seat zapisany' },
+        { if: 'brak reviewerTool w evencie', then: 'REVIEW bierze seat PLAN przebiegu' }
+      ],
+      default: 'Brak passSeats: seaty z configu.',
+      notes: 'Od 016daca `workflow_config` wychodzi przy każdym wejściu runu (initializeWorkflow, src/engine/orchestrator/run/init.ts:502), nie raz przy starcie. passSeats zastąpiło pricingContext także w wycenie /usage (src/features/workflow/spend-text.ts:44).'
+    },
+    {
       id: 'SS_CATALOG_MERGE',
       title: 'Scalanie listy modeli narzędzia CLI',
       question: 'Które modele zostają po nowym odczycie katalogu?',
@@ -1362,7 +1431,11 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
     { path: 'src/engine/providers/pricing-resolver.ts', role: 'stawki: models.dev, tabela wbudowana, bez ceny' },
     { path: 'src/engine/providers/models-dev-cache.ts', role: 'cache katalogu models.dev (TTL 1 h)' },
     { path: 'src/core/gitignore-bookkeeping.ts', role: 'czy .gitignore zmienił tylko SPLITBRIEF' },
-    { path: 'src/core/logger.ts', role: 'włączenie debug.log' }
+    { path: 'src/core/logger.ts', role: 'włączenie debug.log' },
+    { path: 'src/core/recovery/usage-limit-step.ts', role: 'progi 70–95 %, okna five_hour / seven_day, tekst ostrzeżenia limitu' },
+    { path: 'src/engine/orchestrator/usage-limit-gate.ts', role: 'admitUsageLimitWarning i seedUsageLimitSteps: każdy próg raz na run' },
+    { path: 'src/engine/streaming/parse-stream-json.ts', role: 'parseRateLimitEvent: ramka rate_limit_event → heartbeat i ostrzeżenia progów' },
+    { path: 'src/stores/workflow/tokens.ts', role: 'updateTokens: passSeats z workflow_config (drugi wyczerpujący switch po EngineEvent)' }
   ],
   gotchas: [
     'Dokumentacja (docs/HOOKS-CONFIG.md, quick start) pokazuje `post_task` z `${event.file}`, ale zdarzenie `task_completed` nie ma pola `file` (src/engine/events/schema.ts:526). Placeholder daje pusty string. Kod wygrywa.',
@@ -1381,6 +1454,11 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
     'Repo-map przy uszkodzonym SQLite sama kasuje bazę i otwiera nową (src/engine/codebase/cache.ts:134); docs/REPOMAP.md tego nie opisuje.',
     'Dopasowanie basename w repo-mapie bierze pierwszy plik o tej nazwie (src/engine/codebase/extract-mentioned-filenames.ts:21); przy wielu `index.ts` personalizacja może trafić w zły plik.',
     'Seat CLI nigdy nie ma ceny w Summary (`unpriced-cli`), nawet gdy model ma stawkę w models.dev; kwoty liczą się tylko dla seatów `api`.',
-    'docs/ARCHITECTURE.md mówi, że JSONL sink pisze przez `appendEngineEvent`; kod używa createSessionLogAppender + toEngineEventEntry (src/engine/events/sinks/jsonl.ts:39).'
+    'docs/ARCHITECTURE.md mówi, że JSONL sink pisze przez `appendEngineEvent`; kod używa createSessionLogAppender + toEngineEventEntry (src/engine/events/sinks/jsonl.ts:39).',
+    'Ostrzeżenie limitu odrzucone przez bramkę nie trafia nigdzie: ani do transkryptu, ani do session.jsonl, ani do hooków. Bramka siedzi w publishRunnerCallEvent, przed EventBus.',
+    'Zmiana na main (2026-10): ostrzeżenia `claude_rate_limit` biorą się z progów utilization 70–95 % (a9f2ab9), nie ze statusu `allowed_warning` / `rejected`; ramka z 100 % albo ze statusem rejected nie daje już ostrzeżenia, a każdy próg okna i resetu pokazuje się raz na run, także po kontynuacji.',
+    'Zmiana na main (2026-10): `workflow_config` wychodzi przy każdym wejściu runu i niesie `plannerKind/Axes`, `implementerKind/Axes`, `reviewerKind/Axes` (016daca); store tokens trzyma je jako `passSeats` zamiast `pricingContext`.',
+    'Zmiana na main (2026-10): zdarzenie `full_suite` (done) fix-checku ma pola `deferred` i `deferredTo` (błędy zostawione innemu niedokończonemu fix-taskowi tego cyklu), a pole `proven` zniknęło ze schematu; starsze logi z `proven` są ignorowane (0b28a3f, src/engine/events/schema.ts).',
+    'Zmiana na main (2026-10): `runner_call_warning.warning` ma opcjonalne pole `usage` { window, step, resetsAt } (a9f2ab9, src/engine/calls/schema.ts:103); stan `seatWait` ma `tool`, `kind`, `holds` (890d992, 42fb57f), ale zdarzenie `seat_wait_started` się nie zmieniło.'
   ]
 });

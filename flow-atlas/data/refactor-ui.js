@@ -762,6 +762,7 @@ window.ATLAS_REFACTOR.push({
     { path: 'src/hooks/use-filterable-list.ts', lines: 398, reason: 'Poniżej 500: reducer (reduceKey, reduceListAction) i hook. Reducer można wydzielić do testów bez Ink, ale to nie jest pilne.' }
   ],
   conventions: [
+    'Zmiana na main (2026-10): doszły display/running-seats.ts (154), hooks/use-running-seats.ts (33) i entry-config.ts (40); pinnedSeatSaved przeszedł z use-run-loop.ts do entry-config.ts (42fb57f), więc RF_UI_16 bierze entry-config.ts do run-loop/seat-config.ts. Liczby w RF_UI_03, 04, 05, 07, 14, 22, 24 odświeżone.',
     'Prefiks do folderu: gdy 2 lub więcej plików w jednym folderze ma wspólny prefiks domeny, utwórz folder o nazwie prefiksu i usuń prefiks z nazw (recovery-prompt.ts → recovery/prompt-text.ts, usage-details.tsx → usage/details.tsx). Wyjątek: prefiks use- dla hooków zostaje (use-run-loop.ts, use-run-continue.ts).',
     'Sufiks też jest prefiksem: siedem plików *-block.ts w conversation-rows idzie do blocks/ bez sufiksu (callout-block.ts → blocks/callout.ts).',
     'Plik x.ts obok folderu x/ wchodzi do folderu: markdown-rows.ts → markdown-rows/build.ts, event-format.ts → event-rows/format.ts, components/approval-prompt.tsx → components/approval-prompt/prompt.tsx, prompt-body-rows.ts → prompt-rows/body.ts.',
