@@ -69,7 +69,7 @@ window.ATLAS_REFACTOR.push({
         'ownedProbeCommand (registry.ts:348) + immutableProbeCommand (catalog-probe.ts:170) → probe/safety.ts jako ownedProbeCommand'
       ],
       tests: 'catalog-probe.test.ts, catalog-probe-failure.integration.test.ts, readiness-probe.integration.test.ts, registry.test.ts zostają. Nowy probe/safety.test.ts testuje listę zakazów i porównanie argv bez spawnu procesu; dziś to wymaga sondy.',
-      importers: 6,
+      importers: 3,
       references: [ 'docs/SUBSYSTEMS.md:89' ],
       steps: [
         '1. Utwórz runners/cli-tools/probe/safety.ts z pięcioma eksportami.',
@@ -232,7 +232,7 @@ window.ATLAS_REFACTOR.push({
       effort: 'M',
       risk: 'low',
       title: 'Pliki file-bundle → implementers/file-bundle/ + jeden strażnik przepisania pliku',
-      why: 'Cztery pliki jednego kontraktu leżą płasko z różnym szykiem nazw: file-bundle.ts, parse-file-bundle.ts, apply-file-bundle.ts, bundle-baseline.ts. Strażnik przepisania jest skopiowany: MIN_GUARDED_BASELINE_LINES = 5, MAX_WHOLE_FILE_SHRINK = 0.5, countNonEmptyLines i warunek had < MIN || kept >= had * MAX (pipeline/extracted-code.ts:11-26, apply-file-bundle.ts:11-55). byPath jest trzy razy (bundle-baseline.ts:35, parse-file-bundle.ts:43, apply-file-bundle.ts:30), message(err) dwa razy (bundle-baseline.ts:48, apply-file-bundle.ts:37). implementers/apply.ts (applyCode, hasApplicablePatch) importuje tylko pipeline/extracted-code.ts.',
+      why: 'Cztery pliki jednego kontraktu leżą płasko z różnym szykiem nazw: file-bundle.ts, parse-file-bundle.ts, apply-file-bundle.ts, bundle-baseline.ts. Strażnik przepisania jest skopiowany: MIN_GUARDED_BASELINE_LINES = 5, MAX_WHOLE_FILE_SHRINK = 0.5, countNonEmptyLines i warunek had < MIN || kept >= had * MAX (pipeline/extracted-code.ts:11-26, apply-file-bundle.ts:11-55). byPath jest trzy razy (bundle-baseline.ts:35, parse-file-bundle.ts:43, apply-file-bundle.ts:32), message(err) dwa razy (bundle-baseline.ts:48, apply-file-bundle.ts:37). implementers/apply.ts (applyCode, hasApplicablePatch) importuje tylko pipeline/extracted-code.ts.',
       before: [
         { path: 'src/engine/implementers/file-bundle.ts', lines: 130, note: 'FileBundleSchema, BuildOutputContract, selectBuildOutputContract, BundleBaseline' },
         { path: 'src/engine/implementers/parse-file-bundle.ts', lines: 212, note: 'parseFileBundle, unsafePathReason' },
@@ -327,7 +327,7 @@ window.ATLAS_REFACTOR.push({
       effort: 'S',
       risk: 'low',
       title: 'Drobne duplikaty w engine: typ walidacji argumentów, kanał tekstu wyniku, firstString, komunikat braku CLI',
-      why: 'Cztery małe kopie z domem w tej części. (a) Typ CliArgumentValidation jest zdefiniowany trzy razy: cli-tools/validate-args.ts:4 (eksport), cli-tools/candidate-contract.ts:94, cli-tools/process-invoke.ts:888. (b) Predykat kanału, który daje tekst wyniku (assistant | result | stdout), jest trzy razy: calls/collector.ts:519, streaming/parsed-line-recorder.ts:197, runners/invoke-cli-adapter.ts:211. (c) firstString jest identyczna w streaming/parse-jsonl.ts:59 i streaming/parse-stream-json.ts:216. (d) cliNotFoundMessage jest w planners/cli.ts:40 (… not found. See <url>) i implementers/cli.ts:36 (… not found. Install it from <url>) z różnym tekstem dla tego samego stanu.',
+      why: 'Cztery małe kopie z domem w tej części. (a) Typ CliArgumentValidation jest zdefiniowany trzy razy: cli-tools/validate-args.ts:4 (eksport), cli-tools/candidate-contract.ts:94, cli-tools/process-invoke.ts:888. (b) Predykat kanału, który daje tekst wyniku (assistant | result | stdout), jest trzy razy: calls/collector.ts:519, streaming/parsed-line-recorder.ts:197, runners/invoke-cli-adapter.ts:208 (contributesToStreamedText). (c) firstString jest identyczna w streaming/parse-jsonl.ts:59 i streaming/parse-stream-json.ts:216. (d) cliNotFoundMessage jest w planners/cli.ts:40 (… not found. See <url>) i implementers/cli.ts:36 (… not found. Install it from <url>) z różnym tekstem dla tego samego stanu.',
       before: [
         { path: 'src/engine/runners/cli-tools/validate-args.ts', lines: 196, note: 'CliArgumentValidation' },
         { path: 'src/engine/calls/types.ts', lines: 27, note: '' }
@@ -341,12 +341,12 @@ window.ATLAS_REFACTOR.push({
       moves: [
         'CliArgumentValidation w candidate-contract.ts:94 i process-invoke.ts:888 → import z validate-args.ts',
         'normalizeCliArgumentValidation, formatArgumentConflicts (process-invoke.ts:892-918) → validate-args.ts',
-        'contributesToResultText (collector.ts:519) + contributesToRunnerResult (parsed-line-recorder.ts:197) + predykat w invoke-cli-adapter.ts:211 → calls/result-text.ts',
+        'contributesToResultText (collector.ts:519) + contributesToRunnerResult (parsed-line-recorder.ts:197) + contributesToStreamedText (invoke-cli-adapter.ts:208) → calls/result-text.ts',
         'firstString ×2 → streaming/parse/fields.ts',
         'cliNotFoundMessage ×2 → cli-tools/contract.ts (jeden tekst; właściciel wybiera brzmienie)'
       ],
       tests: 'validate-args testowany dziś przez adaptery; nowy validate-args.test.ts dla normalizacji i redakcji konfliktów (dziś to prywatne funkcje process-invoke, testowane tylko przez spawn).',
-      importers: 14,
+      importers: 9,
       references: [],
       steps: [ '1. Przenieś typ i dwie funkcje do validate-args.ts.', '2. Utwórz calls/result-text.ts i przepnij trzy pliki.', '3. Utwórz plik firstString i przepnij dwa parsery.', '4. Przenieś cliNotFoundMessage. npm run typecheck && npm run lint.' ],
       risks: 'Punkt (d) zmienia tekst widoczny dla użytkownika w jednej z dwóch ścieżek — to decyzja właściciela (reguła User-facing text). Reszta bez zmiany zachowania.'
@@ -434,9 +434,9 @@ window.ATLAS_REFACTOR.push({
       ],
       moves: [ 'registry.ts 52-183 → probe/version.ts', 'registry.ts 184-340 → probe/auth.ts', 'registry.ts 341-418 → probe/declared.ts', 'registry.ts 419-535 → probe/catalog.ts', 'cli-probe-evidence.ts → probe/evidence.ts; cli-probe-process.ts → probe/process.ts; readiness-probe.ts → probe/readiness.ts; provider-oracle.ts → probe/provider-oracle.ts', 'providers/cli-model-catalog.ts → probe/native-catalog.ts' ],
       tests: 'registry.test.ts zostaje dla rejestru; przypadki wersji i auth → probe/version.test.ts i probe/auth.test.ts (dziś są testowane tylko przez cały rejestr). readiness-probe*.integration.test.ts → probe/readiness*.integration.test.ts, provider-oracle.test.ts → probe/, cli-model-catalog.test.ts → probe/native-catalog.test.ts.',
-      importers: 38,
+      importers: 29,
       references: [ 'scripts/invariants/gates.ts:228 (bramka 29 importuje registry.ts — ścieżka bez zmian)', 'docs/SUBSYSTEMS.md:89', 'docs/EXTENDING.md:259', 'docs/ARCHITECTURE.md:659', 'src/features/runners/picker-view.tsx (import provider-oracle)', 'testing/helpers/factories/cursor-models.ts, testing/visual/fixtures/overlay-fixtures.ts, testing/visual/fixtures/screen-fixtures.ts (import cli-model-catalog)' ],
-      steps: [ '1. Po RF_ENG_02 (probe/safety.ts już jest).', '2. Wytnij cztery bloki z registry.ts do probe/*.', '3. git mv pięciu plików sond i cli-model-catalog.ts razem z testami.', '4. Zmień importy (18 dla registry — bez zmiany ścieżki; 20 dla sond i katalogu).', '5. npm run typecheck && npm run lint && npm run check:invariants && npm run skills:check (skill-blocks.ts importuje registry.ts).' ],
+      steps: [ '1. Po RF_ENG_02 (probe/safety.ts już jest).', '2. Wytnij cztery bloki z registry.ts do probe/*.', '3. git mv pięciu plików sond i cli-model-catalog.ts razem z testami.', '4. Zmień importy: 29 plików importuje registry.ts, sondy albo cli-model-catalog.ts (11 prod); importerzy samego registry.ts zostają bez zmian.', '5. npm run typecheck && npm run lint && npm run check:invariants && npm run skills:check (skill-blocks.ts importuje registry.ts).' ],
       risks: 'Niskie. Ścieżka registry.ts zostaje, więc bramka 29 i scripts/skill-blocks.ts:37 bez zmian. Importer w src/features/runners/picker-view.tsx to inna część (zmiana jednej linii). cli-model-catalog to CLI, nie dostawca API, więc przenosiny poprawiają miejsce, nie warstwę.'
     },
     {
@@ -563,7 +563,7 @@ window.ATLAS_REFACTOR.push({
       tests: 'breakdown.test.ts zostaje; przypadki metadanych → run-metadata.test.ts.',
       importers: 7,
       references: [ 'docs/EXTENDING.md:110', 'docs/TESTING.md:478' ],
-      steps: [ '1. Wytnij dwa bloki.', '2. Zmień import resolveProviderRunMetadata u wołających (grep).', '3. npm run typecheck && npm run lint.' ],
+      steps: [ '1. Wytnij dwa bloki.', '2. Zmień import resolveProviderRunMetadata i describeOfferingBillingPresentation w: providers/client/metadata.test.ts, cost/breakdown.test.ts, testing/visual/fixtures/workflow/at-rest-projections.ts.', '3. npm run typecheck && npm run lint.' ],
       risks: 'Niskie.'
     },
     {
@@ -598,7 +598,7 @@ window.ATLAS_REFACTOR.push({
       tests: 'Przenoszą się: configured-custom.test.ts, consent-preflight.test.ts, custom-admission.test.ts, custom-admission-disclosure.test.ts, custom-runner-disclosure.test.ts, custom-runner-runtime.integration.test.ts, custom-trust.test.ts, redaction.test.ts. custom-launchability.ts nie ma własnego testu (testowany przez custom-admission.test.ts).',
       importers: 42,
       references: [ 'docs/ARCHITECTURE.md:669 (drzewo runners/)' ],
-      steps: [ '1. git mv ośmiu plików i ośmiu testów.', '2. Zmień 42 importery (15 prod, w tym src/cli/commands/doctor.ts i core? — sprawdź kierunek: core nie importuje engine).', '3. npm run typecheck && npm run lint && npm run check:invariants.' ],
+      steps: [ '1. git mv ośmiu plików i ośmiu testów.', '2. Zmień 42 importery. Prod (15): src/cli/commands/doctor.ts, review.ts, spec.ts, implementers/command-invoke.ts, planners/command-invoke.ts, orchestrator/run/init.ts, runners/command-based.ts, factory.ts, factory-gates.ts, prepared-execution.ts, prepare-execution/{abort-guard,evaluate-candidate,prepare-execution,types}.ts, streaming/spawn-collect.ts. Poza src: testing/helpers/{configured-custom-implementer,custom-command-based,planner-command-invoke,runner-trust}.ts, testing/visual/fixtures/screen-fixtures.ts.', '3. npm run typecheck && npm run lint && npm run check:invariants.' ],
       risks: 'Niskie, ale szeroki zasięg (42 pliki, 5 spoza src). Bez zmiany zachowania; łapie to typecheck.'
     },
     {
@@ -699,10 +699,10 @@ window.ATLAS_REFACTOR.push({
         { path: 'src/engine/runners/cli-tools/claude-code/reply-parser.ts', lines: 114, note: 'dawny claude-reply-parser.ts' }
       ],
       moves: [ '87-209 → args.ts', '210-314 + claudeProtocolEvents (556) → protocol.ts', '315-424 → steering.ts', '425-491 → adapter.ts', '493-555 → conformance.ts', 'claude-reply-parser.ts → claude-code/reply-parser.ts' ],
-      tests: 'claude-code.test.ts (1000+ linii) dzieli się na args.test.ts, protocol.test.ts, conformance.test.ts. usage-limit.test.ts i invocation-identity-routing.test.ts zmieniają import.',
+      tests: 'claude-code.test.ts (1000+ linii) dzieli się na args.test.ts, protocol.test.ts, conformance.test.ts. Import zmieniają: usage-limit.test.ts, typed-output-replay.test.ts, typed-output-seat-kinds.integration.test.ts, invoke-cli-adapter.test.ts, contract.test.ts, output-format.test.ts, process-invoke.integration.test.ts, testing/integration/ui/thinking-freshness.test.ts, testing/visual/fixtures/workflow/projections.ts.',
       importers: 13,
       references: [ 'docs/PLANNERS-AND-IMPLEMENTERS.md:450', 'docs/PLANNERS-AND-IMPLEMENTERS.md:515', 'docs/PLANNERS-AND-IMPLEMENTERS.md:685', 'docs/TROUBLESHOOTING.md:638', 'skills/splitbrief/references/tool-recipes.md:5', 'skills/splitbrief-run/references/tool-recipes.md:5', 'skills/splitbrief-review/references/tool-recipes.md:5' ],
-      steps: [ '1. Utwórz folder i wytnij części.', '2. registry.ts importuje claude-code/adapter.ts; existing-contract.test.ts importuje claude-code/conformance.ts.', '3. Skille: tekst src/engine/runners/cli-tools/*.ts → src/engine/runners/cli-tools/** (skills:sync, potem skills:check).', '4. npm run typecheck && npm run lint && npm run skills:check.' ],
+      steps: [ '1. Utwórz folder i wytnij części.', '2. registry.ts, planners/claude-invoke.ts i runners/claude/args.ts importują claude-code/adapter.ts; existing-contract.test.ts importuje claude-code/conformance.ts.', '3. Skille: tekst src/engine/runners/cli-tools/*.ts → src/engine/runners/cli-tools/** (skills:sync, potem skills:check).', '4. npm run typecheck && npm run lint && npm run skills:check.' ],
       risks: 'Niskie. scripts/cli-conformance.ts production --module ładuje moduł z CLI_CONFORMANCE_CANDIDATES — kandydat niesie obiekt adaptera, więc osobny conformance.ts działa. Łapie to existing-contract.test.ts.'
     },
     {
@@ -786,20 +786,20 @@ window.ATLAS_REFACTOR.push({
       priority: 2,
       effort: 'M',
       risk: 'low',
-      title: 'Podzielić detection/cache.ts (523) na schemat, kodek i magazyn',
+      title: 'Podzielić detection/cache.ts (523) na folder detection/cache/ (schemat, kodek, magazyn)',
       why: 'Plik łączy schemat Zod cache detekcji (36-190), czyste przekształcenia snapshot ↔ rekord (244-397: restoreCliTool, cachedModels, cachedProvider, cachedCliCatalog, cachedCliTool, buildCache, snapshotFromCache) i I/O pliku (218, 398-523). Kodek jest czysty, ale testy (cache.test.ts i 17 innych) przechodzą przez dysk.',
       before: [ { path: 'src/engine/detection/cache.ts', lines: 523, note: '' } ],
       after: [
-        { path: 'src/engine/detection/cache.ts', lines: 150, note: 'I/O: cachePath, readCacheRaw, readCache, load*, saveDetectionCache, invalidateCache' },
-        { path: 'src/engine/detection/cache-schema.ts', lines: 160, note: 'hasSensitiveCacheValue, hasPrivateContextIdentifier, schematy, DetectionCache' },
-        { path: 'src/engine/detection/cache-codec.ts', lines: 160, note: 'restoreCliTool, cachedModels, cachedProvider, cachedCliCatalog, cachedCliTool, buildCache, snapshotFromCache' }
+        { path: 'src/engine/detection/cache/store.ts', lines: 150, note: 'I/O: cachePath, readCacheRaw, readCache, load*, saveDetectionCache, invalidateCache' },
+        { path: 'src/engine/detection/cache/schema.ts', lines: 160, note: 'hasSensitiveCacheValue, hasPrivateContextIdentifier, schematy, DetectionCache' },
+        { path: 'src/engine/detection/cache/codec.ts', lines: 160, note: 'restoreCliTool, cachedModels, cachedProvider, cachedCliCatalog, cachedCliTool, buildCache, snapshotFromCache' }
       ],
-      moves: [ '36-190 → cache-schema.ts', '244-397 → cache-codec.ts' ],
-      tests: 'cache.test.ts zostaje dla I/O; nowy cache-codec.test.ts (snapshot → rekord → snapshot bez dysku).',
+      moves: [ '36-190 → cache/schema.ts', '244-397 → cache/codec.ts', 'reszta cache.ts → cache/store.ts' ],
+      tests: 'cache.test.ts → cache/store.test.ts dla I/O; nowy cache/codec.test.ts (snapshot → rekord → snapshot bez dysku).',
       importers: 26,
       references: [ 'docs/SUBSYSTEMS.md:69' ],
-      steps: [ '1. Wytnij dwa pliki; entry cache.ts zostaje.', '2. npm run typecheck && npm run lint.' ],
-      risks: 'Niskie; ścieżka entry bez zmian. Alternatywa bez prefiksu: folder detection/cache/ — ale wtedy 26 importerów zmienia ścieżkę; wybór właściciela.'
+      steps: [ '1. Utwórz detection/cache/ i wytnij trzy pliki.', '2. Zmień 26 importerów (8 prod) na cache/store.js.', '3. npm run typecheck && npm run lint.' ],
+      risks: 'Niskie; 26 importerów zmienia ścieżkę (18 to testy). Pliki cache-schema.ts i cache-codec.ts obok cache.ts byłyby nową grupą prefiksu, dlatego folder.'
     },
     {
       id: 'RF_ENG_29',
@@ -875,9 +875,9 @@ window.ATLAS_REFACTOR.push({
       ],
       moves: [ 'plan-checks.ts → plan/checks.ts', 'plan-markdown.ts → plan/markdown.ts', 'plan-tasks.ts → plan/tasks.ts', 'prompt-formatter.ts → prompts/task.ts', 'prompts/tasks.ts → wchłonięty przez prompts/plan-session.ts' ],
       tests: 'plan-checks.test.ts, plan-markdown.test.ts, plan-tasks.test.ts → spec/plan/; prompt-formatter.test.ts → prompts/task.test.ts.',
-      importers: 37,
+      importers: 35,
       references: [ 'CLAUDE.md:188', 'CONTRIBUTING.md:133', 'docs/LAYERS.md:167', 'docs/ARCHITECTURE.md:451', 'docs/ARCHITECTURE.md:695', 'docs/ARCHITECTURE.md:696', 'docs/ARCHITECTURE.md:699', 'docs/ARCHITECTURE.md:866', 'docs/ARCHITECTURE.md:867', 'docs/FEATURES.md:261', 'docs/HOW-IT-WORKS.md:142', 'docs/PLANNERS-AND-IMPLEMENTERS.md:163', 'docs/PLANNERS-AND-IMPLEMENTERS.md:326', 'docs/TASK-CONTRACT.md:65', 'docs/TASK-CONTRACT.md:69', 'docs/TASK-CONTRACT.md:130', 'docs/TROUBLESHOOTING.md:1006', 'docs/WORKFLOW.md:330', 'docs/WORKFLOW.md:331', 'scripts/skill-blocks.ts:40 (import prompt-formatter)' ],
-      steps: [ '1. git mv plików i testów.', '2. Zmień importy (20 dla plan-*, 17 dla prompt-formatter; w tym orchestrator/planning i scripts/skill-blocks.ts).', '3. Popraw 20 miejsc w docs i CLAUDE.md:188. npm run typecheck && npm run lint && npm run skills:check.' ],
+      steps: [ '1. git mv plików i testów.', '2. Zmień importy w 35 plikach (19 prod; w tym orchestrator/planning i scripts/skill-blocks.ts).', '3. Popraw 20 miejsc w docs i CLAUDE.md:188. npm run typecheck && npm run lint && npm run skills:check.' ],
       risks: 'Niskie w kodzie, ale dużo odwołań w dokumentacji (CLAUDE.md:188 nazywa src/engine/spec/plan-checks.ts w opisie sesji planowania). Część importerów jest w orchestrator/ (inna część).'
     },
     {
@@ -951,7 +951,7 @@ window.ATLAS_REFACTOR.push({
         { path: 'src/engine/runners/cli-tools/opencode/steering.ts', lines: 299, note: '' }
       ],
       moves: [ 'opencode.ts → opencode/adapter.ts', 'opencode-steering.ts → opencode/steering.ts' ],
-      tests: 'opencode.test.ts → opencode/adapter.test.ts; testy steering → opencode/steering.test.ts.',
+      tests: 'opencode.test.ts → opencode/adapter.test.ts; opencode-steering.test.ts → opencode/steering.test.ts.',
       importers: 11,
       references: [ 'docs/PLANNERS-AND-IMPLEMENTERS.md:451' ],
       steps: [ '1. git mv dwóch plików i testów.', '2. Zmień 11 importerów (registry.ts i testy). npm run typecheck && npm run lint.' ],
