@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- When another process changes a run's state while SPLITBRIEF saves it, the message now says so and names the run's state file.
 - At a halt that takes no typed correction, such as a halt in Apply, the panel's key line now shows `tab edit the words` while the composer holds words, so you can reach them and clear them.
 - The Fix again action now reads `Fix again · grants one more fix cycle`, and its key line reads `⏎ Fix again with the typed correction`, so the note is no longer named twice.
 - A seat answer that fails its contract with several errors now lists every error in the transcript, and the halt panel and --plain show one error per line instead of a line cut in the middle of a word.

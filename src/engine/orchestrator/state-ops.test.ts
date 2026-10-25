@@ -27,6 +27,7 @@ import { resumeStep } from '../../core/sessions/run-status.js';
 import {
   stateOpsError,
   transitionAndSave,
+  transitionsAndSave,
   parkStoppedRun,
   raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
@@ -307,6 +308,56 @@ describe('a state write that fails', () => {
     expect(message).toBe(
       'Saved the run state, but could not confirm it on disk · .splitbrief/sessions/sess-state-ops/state.json',
     );
+  });
+
+  it('says in plain words when another write lands before a change is saved', () => {
+    const ref = setupProject();
+    try {
+      const initial = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
+      transitionAndSave(ref, initial, { type: 'ENQUEUE_USER_MSG', message: makeQueuedMessage() });
+      expect(() =>
+        transitionsAndSave(ref, initial, [(state) => state], {
+          expectedRevision: initial.stateRevision ?? 0,
+        }),
+      ).toThrow(
+        'Another process changed the run state, so this change was not saved · .splitbrief/sessions/sess-state-ops/state.json',
+      );
+    } finally {
+      cleanupTempDir(ref.projectDir);
+    }
+  });
+
+  it('says in plain words when state conflicts exhaust retries', () => {
+    const ref = setupProject();
+    try {
+      const initial = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
+      let counter = 0;
+      let caught: unknown;
+      try {
+        transitionsAndSave(
+          ref,
+          initial,
+          [
+            (state) => {
+              counter += 1;
+              saveState(ref, { ...state, feature: `external-${counter}` });
+              return state;
+            },
+          ],
+          { retryWhile: () => true },
+        );
+      } catch (error) {
+        caught = error;
+      }
+      expect(counter).toBe(2);
+      expect(caught).toMatchObject({
+        kind: 'state-conflict-exhausted',
+        message:
+          'Another process kept changing the run state, so this change was not saved · .splitbrief/sessions/sess-state-ops/state.json',
+      });
+    } finally {
+      cleanupTempDir(ref.projectDir);
+    }
   });
 });
 

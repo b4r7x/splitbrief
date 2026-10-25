@@ -194,7 +194,7 @@ export async function closeRunIfOpen(
     if (result.kind === 'durability-uncertain')
       throw stateOpsError.durabilityUncertain(scope.sessionId);
     if (attempt === MAX_STATE_CONFLICT_RETRIES) {
-      throw stateOpsError.conflictExhausted({
+      throw stateOpsError.conflictExhausted(scope.sessionId, {
         operation: 'transition',
         expectedRevision: latest.stateRevision ?? 0,
         observedRevision: readWorkflowStateHead(scope)?.state.stateRevision ?? null,
