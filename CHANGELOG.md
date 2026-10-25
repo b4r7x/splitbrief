@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- After you close a question with Esc, and while the planner or the reviewer waits for your reply, the key legend above the composer is no longer blank: it names the keys the run answers to.
 - On a question with no choices, ↑ in the answer field no longer moves you to the instruction box below it.
 - The Seat down title for two timeouts in a row on one brief no longer counts the attempts a second time.
 - Checks, hooks, renders and the editor now run with your own NODE_ENV, or none if you set none, instead of production. A check that installs packages or runs React tests no longer fails in every review while it passes in your shell.
