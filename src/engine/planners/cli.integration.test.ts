@@ -9,6 +9,10 @@ import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { prependPath, trustedShimGate, writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import {
+  CURSOR_MODEL_REFUSAL_FORMS,
+  writeCursorRefusalShim,
+} from '#testing/helpers/cursor-refusal.js';
 import { processError } from '../../lib/process/errors.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
@@ -1390,3 +1394,54 @@ itUnix.each(['planner', 'reviewer'] as const)(
     expect(port.current()).toBeNull();
   },
 );
+
+describe('createCliPlanner — a Cursor seat that refuses the account', () => {
+  const cursorPlanner = {
+    kind: 'cli',
+    tool: 'cursor',
+    model: 'claude-haiku-5-5-thinking-high',
+  } as const;
+
+  const calls = {
+    'the planning call': (planner: ReturnType<typeof createCliPlanner>) =>
+      callPlanner(planner, {
+        prompt: 'plan a change',
+        projectDir,
+        callbacks: { onOutput: vi.fn() },
+      }),
+    'the review verdict call': (planner: ReturnType<typeof createCliPlanner>) =>
+      planner.review('review the change', projectDir, { onOutput: vi.fn() }),
+    'a typed consult call': (planner: ReturnType<typeof createCliPlanner>) =>
+      requestTyped({
+        prompt: 'consult',
+        schema: z.object({ answer: z.string() }),
+        jsonSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+        schemaName: 'consult',
+        call: planner.typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'planner' }),
+      }),
+  } as const;
+
+  const rows = Object.keys(calls).flatMap((call) =>
+    (['plan', 'review'] as const).map((seat) => [call as keyof typeof calls, seat] as const),
+  );
+
+  itUnix.each(rows)(
+    '%s halts the %s seat as Seat down in the whole refusal',
+    async (call, seat) => {
+      writeCursorRefusalShim(shimDir, { stderr: CURSOR_MODEL_REFUSAL_FORMS[1][1] });
+      const config = makeConfig({ planner: cursorPlanner });
+
+      const err = await calls[call](createCliPlanner(config)).catch((caught: unknown) => caught);
+      const diagnosis = diagnosePlannerCallFailure({
+        err,
+        label: 'Planning failed',
+        runner: config.planner,
+        seat,
+      });
+
+      expect(diagnosis.failure).toBe('usage-limit');
+      expect(diagnosis.seatDown?.classification).toEqual({ class: 'account', cause: 'balance' });
+      expect(diagnosis.words).toContain('Buy credits or switch to a Grok model to continue.');
+    },
+  );
+});

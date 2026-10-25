@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { classifyHaltSignature } from '../../core/pipeline-spec/halts.js';
 import { runnerCallOutcome } from '../implementers/pipeline/call-result.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import {
+  CURSOR_MODEL_REFUSAL,
+  CURSOR_MODEL_REFUSAL_FORMS,
+} from '#testing/helpers/cursor-refusal.js';
 import { opencodePlannerAdapter, opencodeProtocolEvents } from './cli-tools/opencode.js';
 import { classifySeatFailure, type SeatFailureInput } from './seat-failure.js';
 
@@ -134,8 +138,14 @@ const ENVELOPES: readonly Row[] = [
   {
     name: 'antigravity quota on stderr',
     provenance: 'captured',
-    input: { message: ANTIGRAVITY_QUOTA, source: 'stderr-tail' },
+    input: { message: ANTIGRAVITY_QUOTA, source: 'stderr' },
     expected: 'rate-limited',
+  },
+  {
+    name: 'cursor model refusal on stderr',
+    provenance: 'captured',
+    input: { message: CURSOR_MODEL_REFUSAL, source: 'stderr' },
+    expected: 'account:balance',
   },
   {
     name: 'command-code weekly limit',
@@ -264,15 +274,16 @@ describe('classifySeatFailure precedence', () => {
   });
 });
 
-describe('classifySeatFailure tail sources', () => {
+describe('classifySeatFailure on the stdout tail', () => {
   it.each([
     ['payment required', 'other'],
     ['insufficient balance', 'other'],
     ['update your billing address', 'other'],
+    [CURSOR_MODEL_REFUSAL, 'other'],
     ['rate limit exceeded', 'account:quota'],
     ['Not logged in', 'account:auth'],
-  ])('reads %j on stderr as %s', (message, expected) => {
-    expect(label(classifySeatFailure({ message, source: 'stderr-tail' }))).toBe(expected);
+  ])('reads %j as %s', (message, expected) => {
+    expect(label(classifySeatFailure({ message, source: 'stdout-tail' }))).toBe(expected);
   });
 
   it('still waits out a tail limit that names a reset', () => {
@@ -280,11 +291,33 @@ describe('classifySeatFailure tail sources', () => {
       label(
         classifySeatFailure({
           message: 'usage limit reached · resets in 2h6m30s',
-          source: 'stderr-tail',
+          source: 'stdout-tail',
         }),
       ),
     ).toBe('rate-limited');
   });
+});
+
+describe('classifySeatFailure on the stderr of a failed call', () => {
+  it.each([
+    ['payment required', 'account:billing'],
+    ['insufficient balance', 'account:balance'],
+    ['Error: Out of credits', 'account:balance'],
+    ['billing_hard_limit_reached', 'account:billing'],
+    ['rate limit exceeded', 'account:quota'],
+    ['Not logged in', 'account:auth'],
+    ['update your billing address', 'other'],
+    ['POST /v1/messages 429', 'other'],
+  ])('reads %j as %s', (message, expected) => {
+    expect(label(classifySeatFailure({ message, source: 'stderr' }))).toBe(expected);
+  });
+
+  it.each(CURSOR_MODEL_REFUSAL_FORMS)(
+    "reads Cursor's model refusal in the %s form as a spent balance",
+    (_form, message) => {
+      expect(label(classifySeatFailure({ message, source: 'stderr' }))).toBe('account:balance');
+    },
+  );
 });
 
 describe('classifySeatFailure on the recorded DeepSeek balance refusal', () => {
@@ -382,8 +415,8 @@ describe('classifySeatFailure on the recorded opencode no-route refusal', () => 
     expect(label(classifySeatFailure({ message: terminal.error.message, source: 'thrown' }))).toBe(
       'other',
     );
-    expect(
-      label(classifySeatFailure({ message: terminal.error.message, source: 'stderr-tail' })),
-    ).toBe('other');
+    expect(label(classifySeatFailure({ message: terminal.error.message, source: 'stderr' }))).toBe(
+      'other',
+    );
   });
 });

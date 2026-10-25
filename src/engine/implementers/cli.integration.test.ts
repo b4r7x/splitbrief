@@ -21,6 +21,10 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import {
+  CURSOR_MODEL_REFUSAL_FORMS,
+  writeCursorRefusalShim,
+} from '#testing/helpers/cursor-refusal.js';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
@@ -1431,6 +1435,34 @@ describe('createCliImplementer (opencode arg vector)', () => {
     expect(leaderPid).toBeGreaterThan(1);
     expect(processIsAbsent(leaderPid)).toBe(true);
   });
+});
+
+describe('createCliImplementer (cursor account refusal)', () => {
+  const cursorImplementer: CliImplementerConfig = {
+    kind: 'cli',
+    tool: 'cursor',
+    model: 'claude-haiku-5-5-thinking-high',
+    contextLength: 32768,
+    temperature: 0.3,
+  };
+
+  it.each(CURSOR_MODEL_REFUSAL_FORMS)(
+    'a model refusal in the %s form on stderr with exit 1 is a usage limit in the tool words',
+    async (_form, refusal) => {
+      writeCursorRefusalShim(shimDir, { stderr: refusal });
+
+      const result = await createCliImplementer(cursorImplementer).implement({
+        task: makeTask(),
+        projectDir,
+        config: makeConfig({ implementer: cursorImplementer }),
+        context: { ...defaultContext, dir: projectDir },
+        onOutput: () => {},
+      });
+
+      expect(result).toMatchObject({ success: false, outcome: 'usage-limit' });
+      expect(result.error).toContain(refusal);
+    },
+  );
 });
 
 describe('createCliImplementer (timeout surfacing)', () => {

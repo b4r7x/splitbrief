@@ -29,6 +29,9 @@ import { applyRecoveryAction } from './recovery/actions.js';
 import { resumeSeatWait } from './escalation/seat-wait.js';
 import { haltVerdictlessReview } from './run/review.js';
 import { runFinalReviewPhase, type FinalReviewResult } from './final-review.js';
+import { createCliPlanner } from '../planners/cli.js';
+import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
+import { CURSOR_MODEL_REFUSAL, writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
 
 const CODEX_REVIEWER = makeNoValidationConfig({ reviewer: { kind: 'cli', tool: 'codex' } });
 const RESET_IN_BOUND = 'HTTP 429: rate limit reached (retry-after: 120)';
@@ -223,6 +226,59 @@ describe('a rate-limited codex reviewer', () => {
       expect(issue?.availableActions).toContain('retry-later');
       if (issue?.resetAt === undefined) throw new Error('the halt names no reset');
       expect(recoveryActionLabel('retry-later', { resetAt: issue.resetAt })).toMatch(/^Retry at /);
+    },
+  );
+});
+
+describe('a Cursor reviewer that refuses the account', () => {
+  it.each([true, false])(
+    'halts the review seat as Seat down in the whole refusal, automatic switch: %s',
+    async (auto) => {
+      const ref = project();
+      const shimDir = createTempDir('final-review-cursor-shim');
+      dirs.push(shimDir);
+      writeCursorRefusalShim(shimDir);
+      const restorePath = prependPath(shimDir);
+      try {
+        await rememberDetectedTools(
+          ref.projectDir,
+          cliDetectionsFor('ready', ['cursor', 'claude-code']),
+        );
+        const seat = {
+          kind: 'cli',
+          tool: 'cursor',
+          model: 'claude-haiku-5-5-thinking-high',
+          ...(auto && { fallback: { tool: 'claude-code', model: 'sonnet' } }),
+        } as const;
+        const config = makeNoValidationConfig({ reviewer: seat });
+        writeConfig(ref.projectDir, config);
+        const reviewer = createCliPlanner({
+          config: { ...config, planner: seat },
+          trustedCli: trustedShimGate({ dir: shimDir, tool: 'cursor' }),
+        });
+        const { bus, events } = makeBusRecorder();
+
+        const failed = await review(
+          ref,
+          doneState(makeTask({ id: 'T001' })),
+          reviewer,
+          bus,
+          config,
+        );
+        const halted = await halt(ref, failed, bus, config);
+
+        expect(halted.pendingRecovery).toMatchObject({
+          seat: 'review',
+          reason: 'runner-usage-limit',
+        });
+        expect(halted.pendingRecovery?.switchSeat?.auto !== undefined).toBe(auto);
+        expect(halted.pendingRecovery?.details.join('\n')).toContain(CURSOR_MODEL_REFUSAL);
+        const rows = events.filter((event) => event.type === 'error');
+        if (auto) expect(rows[0]?.message).toBe('Balance spent on Cursor Agent CLI');
+        else expect(rows[0]?.message).toContain('Add credit or change the REVIEW tool');
+      } finally {
+        restorePath();
+      }
     },
   );
 });

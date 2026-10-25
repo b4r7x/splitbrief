@@ -47,6 +47,7 @@ import { createSnapshot } from '../engine/snapshots/create.js';
 import { sessionDir } from '../core/paths.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
+import { writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
 
 // The two terminal guards read state and session after the run; skipping the run
 // itself is what makes them reachable without driving a whole workflow.
@@ -1517,6 +1518,105 @@ describe('runHeadless — the seat-down policy and the record', () => {
       auto: true,
       to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
     });
+  });
+
+  async function runCursorBuildSeat(
+    name: string,
+    opts: Readonly<{ fallback: boolean; plain?: boolean }>,
+  ) {
+    skipTheRun.enabled = false;
+    const projectDir = createHeadlessGitProject(name);
+    dirs.push(projectDir);
+    const shimDir = createTempDir(`${name}-shim`);
+    dirs.push(shimDir);
+    writeCursorRefusalShim(shimDir);
+    const restorePath = prependPath(shimDir);
+    const sessionId = `sess-${name}`;
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const seat = {
+      kind: 'cli',
+      tool: 'cursor',
+      model: 'claude-haiku-5-5-thinking-high',
+      contextLength: 32768,
+      ...(opts.fallback && { fallback: { tool: 'claude-code' } }),
+    } as const;
+    writeConfig(
+      projectDir,
+      makeConfig({
+        implementer: seat,
+        workflow: { isolation: 'staged-copy', approve: 'none' },
+        validation: { endChecks: false, testCommand: 'true' },
+      }),
+    );
+    const state = makeImplState([
+      makeTask({
+        id: 'T001',
+        action: 'create',
+        suggestedFiles: ['fallback.txt'],
+        scope: { inBounds: ['fallback.txt'] },
+      }),
+    ]);
+    saveState(ref, state);
+    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['cursor', 'claude-code']));
+    const cursor = createCliImplementer(seat, {
+      trustedCli: trustedShimGate({ dir: shimDir, tool: 'cursor' }),
+    });
+    const implementer = makeImplementer({
+      implement: vi.fn<Implementer['implement']>(async (input) => {
+        if (input.config.implementer.kind === 'cli' && input.config.implementer.tool === 'cursor') {
+          return cursor.implement(input);
+        }
+        writeFileSync(join(input.projectDir, 'fallback.txt'), 'fallback work\n');
+        return { success: true, output: 'done' };
+      }),
+    });
+    try {
+      return await runHeadless({
+        prepared: preparedHeadlessExecution({ ...ref, feature: state.feature, resumeState: state }),
+        ...(opts.plain === true && { plain: true }),
+        _planner: makePlanner(),
+        _implementer: implementer,
+        onSeatDown: opts.fallback ? 'switch' : 'halt',
+        _prepare: async (input) => ({
+          kind: 'prepared',
+          execution: makePreparedExecution({
+            ...ref,
+            feature: state.feature,
+            config: input.effectiveConfig,
+            resumeState: input.resumeState,
+            active: reactivateExistingSession(ref),
+          }),
+        }),
+      }).then(
+        () => ({ projectDir, error: undefined }),
+        (err: { exitCode?: number; message?: string }) => ({ projectDir, error: err }),
+      );
+    } finally {
+      restorePath();
+    }
+  }
+
+  it('moves a Cursor BUILD seat that refuses the account to its fallback on its own', async () => {
+    const { projectDir } = await runCursorBuildSeat('headless-cursor-switch', { fallback: true });
+
+    const switched = records().flatMap((record) =>
+      record.type === 'event' && record.data.type === 'seat_switched' ? [record.data] : [],
+    );
+    expect(switched).toHaveLength(1);
+    expect(switched[0]).toMatchObject({ seat: 'build', auto: true, to: { tool: 'claude-code' } });
+    expect(loadConfig(projectDir).config.implementer).toMatchObject({ tool: 'claude-code' });
+    expect(stdoutChunks.join('')).not.toContain('consult');
+  });
+
+  it('prints a Cursor BUILD refusal with no fallback as Seat down under --plain', async () => {
+    const { error } = await runCursorBuildSeat('headless-cursor-plain', {
+      fallback: false,
+      plain: true,
+    });
+
+    expect(error).toMatchObject({ exitCode: 1, message: expect.stringContaining('Seat down') });
+    expect(error?.message).toContain('Balance spent on Cursor Agent CLI');
   });
 
   it('applies the declared fallback automatically and records the switch', async () => {

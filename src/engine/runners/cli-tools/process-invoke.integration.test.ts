@@ -33,6 +33,11 @@ import type { CliExecutableIdentity } from '../../../core/discovery/detection.js
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { RUNNER_CALL_STDERR_MAX_BYTES } from '../../calls/output-limit.js';
+import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from '../../calls/schema.js';
+import {
+  CURSOR_MODEL_REFUSAL,
+  CURSOR_MODEL_REFUSAL_FORMS,
+} from '#testing/helpers/cursor-refusal.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
 import type {
   CliImplementerAdapter,
@@ -2103,6 +2108,115 @@ describe('invokeProcessCli structured-terminal halts on stderr', () => {
       });
     },
   );
+});
+
+describe('invokeProcessCli reads the stderr of a failed call as its diagnosis', () => {
+  const ACCOUNT_REFUSALS: readonly (readonly [string, string])[] = [
+    ...CURSOR_MODEL_REFUSAL_FORMS.map(([form, text]) => [`Cursor refusal, ${form}`, text] as const),
+    ['insufficient balance', 'Error: Insufficient balance'],
+    ['payment required', 'Error: Payment required'],
+    ['out of credits', 'Error: Out of credits'],
+    ['billing hard limit', 'billing_hard_limit_reached: You have reached your billing hard limit.'],
+  ];
+  const ends: readonly (readonly [string, (stderr: string) => string])[] = [
+    [
+      'exit 1 without a terminal',
+      (text) => `process.stderr.write(${JSON.stringify(`${text}\n`)});process.exit(1)`,
+    ],
+    [
+      'exit 0 without a terminal',
+      (text) => `process.stderr.write(${JSON.stringify(`${text}\n`)});process.exit(0)`,
+    ],
+    [
+      'a signal',
+      (text) =>
+        `process.stderr.write(${JSON.stringify(`${text}\n`)},()=>process.kill(process.pid,'SIGTERM'));setInterval(()=>{},1000)`,
+    ],
+  ];
+  const rows = ACCOUNT_REFUSALS.flatMap(([name, text]) =>
+    ends.map(([end, script]) => [name, end, text, script] as const),
+  );
+
+  itUnix.each(rows)(
+    'halts on %s after %s, in the whole diagnostic',
+    async (_name, _end, text, script) => {
+      const result = await run(adapter({ kind: 'stdin' }), invocation({ script: script(text) }));
+
+      expect(result).toMatchObject({
+        status: 'failed',
+        error: { code: 'usage-limit', message: text },
+      });
+      expect(runnerCallOutcome(result).state).toBe('usage-limit');
+    },
+  );
+
+  it('halts as a sign-out when stderr asks the user to sign in', async () => {
+    const text = 'Error: Your session ended. Please sign in again to continue.';
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: `process.stderr.write(${JSON.stringify(`${text}\n`)});process.exit(1)`,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'unauthenticated', message: text },
+    });
+  });
+
+  it('reads stderr when the failed terminal names no halt of its own', async () => {
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: `process.stdout.write('ERROR\\n');process.stderr.write(${JSON.stringify(`${CURSOR_MODEL_REFUSAL}\n`)});process.exit(1)`,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'usage-limit', message: CURSOR_MODEL_REFUSAL },
+    });
+  });
+
+  it.each(ACCOUNT_REFUSALS)('does not halt on %s in the last stdout line', async (_name, text) => {
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: `process.stdout.write(${JSON.stringify(`NOISE:${text.replaceAll('\n', ' ')}\n`)});process.exit(1)`,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'failed', error: { code: 'non-zero-exit' } });
+  });
+
+  it('quotes every stderr line when the refusal is not the first one', async () => {
+    const stderr = `warning: --print is deprecated\n${CURSOR_MODEL_REFUSAL_FORMS[1][1]}`;
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: `process.stderr.write(${JSON.stringify(`${stderr}\n`)});process.exit(1)`,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'usage-limit', message: stderr },
+    });
+    expect(result.error?.message).toContain('Buy credits or switch to a Grok model to continue.');
+  });
+
+  it('bounds a very long diagnostic to the recorded message limit', async () => {
+    const stderr = `${CURSOR_MODEL_REFUSAL}\n${'trace: frame\n'.repeat(2_000)}`;
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({ script: `process.stderr.write(${JSON.stringify(stderr)});process.exit(1)` }),
+    );
+
+    expect(result.error?.code).toBe('usage-limit');
+    expect(result.error?.message.length).toBeLessThanOrEqual(RUNNER_CALL_MESSAGE_MAX_LENGTH);
+    expect(result.error?.message.startsWith(CURSOR_MODEL_REFUSAL)).toBe(true);
+  });
 });
 
 describe('Claude Code process steering', () => {

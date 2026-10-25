@@ -68,6 +68,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-continuous-transcript', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-continuous-transcript-ready', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-recovery-balance-spent', ['120x40', '80x24', '60x18', '160x45', '200x50']],
+  ['workflow-recovery-cursor-refusal', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-route-signed-out', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-model-not-listed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-model-refused', ['120x40', '80x24', '60x18', '160x45']],

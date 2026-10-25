@@ -31,6 +31,10 @@ import { addUsageAndSave } from '../state-ops.js';
 import { handlePlanningFailure } from './failure.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { runPlanningSession } from './session.js';
+import { createCliPlanner } from '../../planners/cli.js';
+import { callPlanner } from '#testing/helpers/planner-call.js';
+import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
+import { CURSOR_MODEL_REFUSAL, writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
 
 let dirs: string[] = [];
 
@@ -78,6 +82,58 @@ describe('handlePlanningFailure', () => {
       expect(rows).toHaveLength(1);
       if (auto) expect(rows[0]?.message).toBe('Balance spent on deepseek (OpenCode CLI)');
       else expect(rows[0]?.message).toContain('change the PLAN tool');
+    },
+  );
+
+  it.each([true, false])(
+    'halts a Cursor PLAN seat that refuses the account as Seat down, automatic switch: %s',
+    async (auto) => {
+      const ref = setupProject();
+      const shimDir = createTempDir('planning-failure-cursor-shim');
+      dirs.push(shimDir);
+      writeCursorRefusalShim(shimDir);
+      const restorePath = prependPath(shimDir);
+      try {
+        await rememberDetectedTools(
+          ref.projectDir,
+          cliDetectionsFor('ready', ['cursor', 'claude-code']),
+        );
+        const config = makeConfig({
+          planner: {
+            kind: 'cli',
+            tool: 'cursor',
+            model: 'claude-haiku-5-5-thinking-high',
+            ...(auto && { fallback: { tool: 'claude-code', model: 'sonnet' } }),
+          },
+        });
+        writeConfig(ref.projectDir, config);
+        const planner = createCliPlanner({
+          config,
+          trustedCli: trustedShimGate({ dir: shimDir, tool: 'cursor' }),
+        });
+        const err = await callPlanner(planner, {
+          prompt: 'plan a change',
+          projectDir: ref.projectDir,
+          callbacks: { onOutput: () => {} },
+        }).catch((caught: unknown) => caught);
+        const { bus, events } = makeBusRecorder();
+
+        const result = await handlePlanningFailure({
+          ...ref,
+          state: { ...createInitialState('feature'), phase: 'planning' },
+          err,
+          wctx: makeWctx({ ...ref, bus, config }),
+        });
+
+        expect(result.state.pendingRecovery?.reason).toBe('runner-usage-limit');
+        expect(result.state.pendingRecovery?.switchSeat?.auto !== undefined).toBe(auto);
+        expect(result.state.pendingRecovery?.details.join('\n')).toContain(CURSOR_MODEL_REFUSAL);
+        const rows = events.filter((event) => event.type === 'error');
+        if (auto) expect(rows[0]?.message).toBe('Balance spent on Cursor Agent CLI');
+        else expect(rows[0]?.message).toContain('Add credit or change the PLAN tool');
+      } finally {
+        restorePath();
+      }
     },
   );
 
