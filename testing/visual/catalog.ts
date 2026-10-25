@@ -4057,6 +4057,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-plan-usage-limit',
+      title: 'Workflow · a planning call past 75 percent of its weekly usage',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-usage-limit',
+        title: 'Usage warning shown once in the planning transcript',
+        kind: 'planning',
+        marker: "You've used 75%",
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+        { id: 'activity', title: 'Plan activity block' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-silent',
       title: 'Workflow · a silent seat mid-brief, on a stream that reports tools when done',
       surface: screenSurface('workflow'),

@@ -18,6 +18,7 @@ import type {
   RunnerCallTextSemantics,
   RunnerCallUsageSemantics,
 } from '../../calls/types.js';
+import type { UsageLimitWindow } from '../../../core/recovery/usage-limit-step.js';
 
 import type { SpawnStdinWriter } from '../../../lib/process/spawn/lifecycle.js';
 import type { RunningCall } from '../../calls/steering.js';
@@ -121,6 +122,13 @@ export type CliProtocolEvent =
       fallbackModel?: string | undefined;
       status?: number | undefined;
       providerType?: string | undefined;
+      usage?:
+        | Readonly<{
+            window: UsageLimitWindow;
+            step: number;
+            resetsAt?: number | undefined;
+          }>
+        | undefined;
     }>
   /** A frame with nothing to show that still proves the tool is working. */
   | Readonly<{ type: 'heartbeat' }>

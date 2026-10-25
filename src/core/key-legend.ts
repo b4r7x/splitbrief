@@ -1,3 +1,4 @@
+import { getTerminalCellWidth } from '../utils/display-text.js';
 import { SOFT_SEP } from './separators.js';
 
 // The two-cell slot a key legend opens with: the mark, its trailing space, and nothing else, so
@@ -11,11 +12,11 @@ export const KEY_LEGEND_LEADING = '» ';
  * row drops whole trailing tokens instead, so everything left standing is a complete, live key.
  */
 export function fitKeyLegend(legend: string, width: number): string {
-  if (legend.length <= width) return legend;
+  if (getTerminalCellWidth(legend) <= width) return legend;
   let fitted = '';
   for (const token of legend.split(SOFT_SEP)) {
     const next = fitted === '' ? token : `${fitted}${SOFT_SEP}${token}`;
-    if (next.length > width) break;
+    if (getTerminalCellWidth(next) > width) break;
     fitted = next;
   }
   return fitted;

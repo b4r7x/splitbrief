@@ -16,6 +16,7 @@ import type {
   PlannerArtifactProgramId,
   PlannerArtifactSemanticId,
 } from '../../core/schemas/planner-artifact.js';
+import type { UsageLimitWindow } from '../../core/recovery/usage-limit-step.js';
 
 export interface ToolUseInfo {
   id?: string | undefined;
@@ -49,6 +50,13 @@ export interface ParsedWarningInfo {
    */
   originalModel?: string | undefined;
   fallbackModel?: string | undefined;
+  usage?:
+    | {
+        window: UsageLimitWindow;
+        step: number;
+        resetsAt?: number | undefined;
+      }
+    | undefined;
 }
 
 export type ParsedTextChannel = RunnerCallTextChannel;

@@ -380,7 +380,8 @@ function activityFitMode(
   if (label === 'READ' || label === 'EDIT' || label === 'LIST' || input.kind === 'file') {
     return isProse(value) ? 'end' : 'start';
   }
-  if (label === 'WARN' || label === 'ERR' || label === 'STOP') return 'middle';
+  if (label === 'WARN') return 'segments';
+  if (label === 'ERR' || label === 'STOP') return 'middle';
   return 'end';
 }
 

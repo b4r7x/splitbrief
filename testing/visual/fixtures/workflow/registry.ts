@@ -54,6 +54,8 @@ import {
 } from './projections.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
+const PLAN_USAGE_LIMIT_FRAGMENT = "You've used 75%";
+
 function applyStop(stop: FixtureStopState): void {
   stopStore.__testReset({
     intent: stop.intent,
@@ -1205,6 +1207,12 @@ const checkpointPredicates = [
     includesAll('Final review passed'),
   ],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
+  [
+    checkpointId('plan-usage-limit'),
+    (context) =>
+      includesTranscript()(context) &&
+      workflowTranscriptText().replace(/\s+/g, ' ').split(PLAN_USAGE_LIMIT_FRAGMENT).length === 2,
+  ],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 
 /** Predicates receive ANSI-free frame text from checkpointPredicate or waitForCheckpoint. */
