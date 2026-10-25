@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flow Atlas · SPLITBRIEF</title>
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('atlas.theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+      window.ATLAS = window.ATLAS || [];
+      window.ATLAS_LOAD_ERRORS = [];
+      window.addEventListener('error', function (e) {
+        var t = e.target;
+        if (t && t.tagName === 'SCRIPT') {
+          window.ATLAS_LOAD_ERRORS.push({ src: t.getAttribute('src') || '', kind: 'missing', message: 'nie można załadować pliku' });
+        } else if (e.filename && /\/data\/[^/]+\.js$/.test(e.filename)) {
+          window.ATLAS_LOAD_ERRORS.push({ src: 'data/' + e.filename.split('/').pop(), kind: 'error', message: String(e.message) + ' (linia ' + e.lineno + ')' });
+        }
+      }, true);
+    })();
+  </script>
+  <script src="data/journey.js"></script>
+  <script src="data/startup.js"></script>
+  <script src="data/runners.js"></script>
+  <script src="data/planning.js"></script>
+  <script src="data/build.js"></script>
+  <script src="data/review.js"></script>
+  <script src="data/recovery.js"></script>
+  <script src="data/lifecycle.js"></script>
+  <script src="data/ui.js"></script>
+  <script src="data/subsystems.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#view/map">
+        <span class="brand-mark" aria-hidden="true">◆</span>
+        <span class="brand-text"><strong>Flow Atlas</strong><small>SPLITBRIEF</small></span>
+      </a>
+      <div class="search">
+        <input id="search" type="search" placeholder="Szukaj…  ( / )" autocomplete="off" spellcheck="false" aria-label="Szukaj w atlasie">
+        <div id="search-results" class="search-results" hidden></div>
+      </div>
+      <nav class="nav-views" id="nav-views"></nav>
+      <div class="nav-label">Obszary</div>
+      <nav class="nav-areas" id="nav-areas"></nav>
+      <div class="sidebar-foot">
+        <label class="setting">
+          <span>Otwieraj pliki w</span>
+          <select id="editor-target">
+            <option value="vscode">VS Code</option>
+            <option value="cursor">Cursor</option>
+            <option value="none">brak linku</option>
+          </select>
+        </label>
+        <button class="btn btn-ghost" id="theme-toggle" type="button" title="Przełącz motyw">◐ <span id="theme-label">Motyw</span></button>
+      </div>
+    </aside>
+    <main class="main" id="main" tabindex="-1"></main>
+  </div>
+  <div class="modal" id="modal" hidden>
+    <div class="modal-bar">
+      <strong id="modal-title"></strong>
+      <span class="modal-hint">kółko: zoom · przeciągnij: przesuń · Esc: zamknij</span>
+      <span class="spacer"></span>
+      <button class="btn" type="button" data-zoom="in">+</button>
+      <button class="btn" type="button" data-zoom="out">−</button>
+      <button class="btn" type="button" data-zoom="fit">dopasuj</button>
+      <button class="btn" type="button" id="modal-close">zamknij</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
