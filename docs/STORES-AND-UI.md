@@ -411,8 +411,7 @@ interface TokensState {
   perPhase: Record<string, PhaseTokens>;
   perTask: Record<string, PerTaskTokens>;
   completedTaskCount: number;
-  pricingContext: { plannerTool: string; implementerTool: string;
-    plannerModel?: string; implementerModel?: string } | null;
+  passSeats: SeatIdentity | null; // the seats of the run pass, from `workflow_config`
 }
 
 // src/stores/workflow/review.ts

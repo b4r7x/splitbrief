@@ -48,6 +48,7 @@ import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 import { passedCountSpans, taskOutcomeCountsSpans } from '../display/build-progress.js';
+import { useRunningSeats } from '../hooks/use-running-seats.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import { wrapHard } from '../../../utils/wrap.js';
 
@@ -279,6 +280,7 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
   const t = useTheme();
   const view = tasksStore.use(selectTaskListView);
   const config = configStore.use((s) => s.config);
+  const running = useRunningSeats();
   const displayNames = useCrewDisplayNames(config);
   const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
   const tasks = view.items;
@@ -295,17 +297,22 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
   });
   const identityWidth = innerWidth - CREW_LABEL_WIDTH;
   const crewRows = (toRows: (identity: string) => string[]): SeatRows[] =>
-    seats.map((seat) => ({
-      seat,
-      rows:
-        recordedCrew !== undefined
-          ? toRows(seatIdentityWord(recordedCrew[seat.id]))
-          : seat.id === 'review' && seat.source === 'planner'
-            ? [PLANNER_INHERITANCE.mark]
-            : toRows(
-                formatSeatIdentity({ seat: seat.runner, displayName: displayNames?.[seat.id] }),
-              ),
-    }));
+    seats.map((seat) => {
+      const runningSeat = running[seat.id];
+      return {
+        seat,
+        rows:
+          recordedCrew !== undefined
+            ? toRows(seatIdentityWord(recordedCrew[seat.id]))
+            : runningSeat !== undefined
+              ? toRows(formatSeatIdentity(runningSeat))
+              : seat.id === 'review' && seat.source === 'planner'
+                ? [PLANNER_INHERITANCE.mark]
+                : toRows(
+                    formatSeatIdentity({ seat: seat.runner, displayName: displayNames?.[seat.id] }),
+                  ),
+      };
+    });
   const countFooterRows = (crew: readonly SeatRows[]): number =>
     crew.reduce((total, { rows }) => total + rows.length, outcomeRows.length);
   const wrappedSeatRows = crewRows((identity) => wrapSeatIdentity(identity, identityWidth));

@@ -94,6 +94,8 @@
 
 ### Fixed
 
+- While a seat's call runs on another seat, the header and the sidebar name the seat that runs the call, as the status line does. After you save a new seat during a run, the header and the sidebar keep naming the seat the run uses until that seat changes: through a question, the plan checks, the plan card, the running brief and its checks, a consult inside the brief, and a stop inside a call and the continue after it. A change of effort only reads the same way.
+- A custom shell or agent seat now reads `Custom Shell · <model>` or `Agent · <model>` on every surface, including the status line, the build progress block, the transcript, the recovery title and `/usage`, instead of its command on some of them.
 - The Claude Code usage warning now shows at 70, 75, 80, 85, 90 and 95 percent of the 5-hour and weekly limits, names the percent and the reset time, and shows each step once per run, also after you continue it.
 - The seat picker now expands the offered model at its offered variant and effort, so two Enter presses save what was offered.
 - A Biome check's failure keys no longer end in a long rule of heavy dashes, and the same output gives the same keys when it is checked again.

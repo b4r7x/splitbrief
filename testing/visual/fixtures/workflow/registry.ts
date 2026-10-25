@@ -62,7 +62,9 @@ function applyStop(stop: FixtureStopState): void {
     phase: stop.phase,
     seatChange: stop.seatChange ?? false,
     requestedAt: Date.now(),
-    parked: stop.parked === undefined ? null : { kept: [], ...stop.parked, resolve: null },
+    // The screen parks a stop with the engine's continuation, so the fixture gives it one.
+    parked:
+      stop.parked === undefined ? null : { kept: [], ...stop.parked, resolve: () => undefined },
   });
   if (stop.phase === 'parked') markWorkflowPaused();
 }
@@ -547,6 +549,8 @@ const checkpointPredicates = [
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
   [checkpointId('build-brief-check'), includesAll('Plan check K2', 'read after its checks')],
+  [checkpointId('build-brief-check-seat-change'), includesAll('Plan check K2')],
+  [checkpointId('implementation-shell-seat'), includesAll('Custom Shell')],
   [
     checkpointId('build-review-consult'),
     includesAll('REVIEW → T904', 'Claude Code CLI', 'answering the consult on T904'),
@@ -813,6 +817,7 @@ const checkpointPredicates = [
     checkpointId('paused-mid-brief'),
     includesAll('⏎ resume', 'Stopped at T', 'Partial changes kept'),
   ],
+  [checkpointId('paused-cut-seat'), includesAll('⏎ resume', 'Stopped at T')],
   [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
   // A run at rest carries its own name: the marker is the session the record names, which the
@@ -1145,7 +1150,12 @@ const checkpointPredicates = [
   [checkpointId('implementation-seat-change'), includesAll(WORKFLOW_FIXTURE_TEXT.implementation)],
   [
     checkpointId('final-review-seat-change'),
-    includesAll('3/3 briefs passed', 'Review · OpenAI Codex CLI'),
+    includesAll(
+      '3/3 briefs passed',
+      'Review · OpenAI Codex CLI',
+      'OpenAI Codex CLI',
+      'GPT-6-Astra',
+    ),
   ],
   [checkpointId('review-check-long-command'), includesAll('Reviewer check V2 · npx vitest')],
   [checkpointId('review-checks-approve'), includesAll('Run all', 'Skip all', 'V1')],

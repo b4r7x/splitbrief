@@ -301,6 +301,7 @@ const WORKFLOW_FINAL_REVIEW_ID = scenarioId('workflow-final-review');
 const WORKFLOW_APPROVAL_CONFIRM_ID = scenarioId('workflow-approval-confirm');
 const WORKFLOW_QUESTION_ID = scenarioId('workflow-question');
 const WORKFLOW_PAUSED_MID_BRIEF_ID = scenarioId('workflow-paused-mid-brief');
+const WORKFLOW_PAUSED_CUT_SEAT_ID = scenarioId('workflow-paused-cut-seat');
 const WORKFLOW_RESUMED_KEPT_WORK_ID = scenarioId('workflow-resumed-kept-work');
 const WORKFLOW_PAUSED_BOUNDARY_ID = scenarioId('workflow-paused-boundary');
 const WORKFLOW_STOPPING_ID = scenarioId('workflow-stopping');
@@ -351,7 +352,7 @@ const planningProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       status: 'running',
       tool: 'claude-code',
-      model: 'fixture-planner-v1',
+      model: BASE_PLANNER.model,
       call: 'plan',
     },
     {
@@ -2347,7 +2348,7 @@ const planCompiledProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       status: 'running',
       tool: 'claude-code',
-      model: 'fixture-planner-v1',
+      model: BASE_PLANNER.model,
       call: 'plan',
     },
     {
@@ -2387,7 +2388,7 @@ const questionProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       status: 'running',
       tool: 'claude-code',
-      model: 'fixture-planner-v1',
+      model: BASE_PLANNER.model,
       call: 'plan',
     },
     {
@@ -5367,6 +5368,17 @@ const pausedMidBriefProjection: WorkflowFixtureProjection = {
   },
 };
 
+/**
+ * The same stop with BUILD saved to another tool while the brief ran: the run goes on with the cut
+ * call, so the header and the sidebar name the seat the brief runs on, not the saved one.
+ */
+const pausedCutSeatProjection: WorkflowFixtureProjection = {
+  ...pausedMidBriefProjection,
+  scenarioId: WORKFLOW_PAUSED_CUT_SEAT_ID,
+  sidebarVisible: true,
+  config: { implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } },
+};
+
 const RESUMED_REPORT_TEXT = JSON.stringify({
   status: 'done',
   filesChanged: [WORKFLOW_FIXTURE_SECOND_FILE],
@@ -6063,27 +6075,97 @@ const reviewPauseRequestedProjection: WorkflowFixtureProjection = {
 // A seat saved under the run: the run goes on and the legend names the brief the seat waits for.
 const SEAT_CHANGE_STOP: FixtureStopState = { intent: 'none', phase: 'idle', seatChange: true };
 
+/** The seats the base crew's run pass started on, as the run announces them when the pass starts. */
+function baseRunPass(phase: EngineEventOf<'workflow_config'>['phase']): EngineEvent {
+  return {
+    type: 'workflow_config',
+    ts: FIXED_TS,
+    phase,
+    plannerTool: BASE_PLANNER.tool,
+    plannerModel: BASE_PLANNER.model,
+    plannerKind: BASE_PLANNER.kind,
+    plannerAxes: [],
+    implementerTool: BASE_IMPLEMENTER.provider,
+    implementerModel: BASE_IMPLEMENTER.model,
+    implementerKind: BASE_IMPLEMENTER.kind,
+    implementerAxes: [],
+  };
+}
+
+// The PLAN seat saved while the plan is made: the chrome keeps naming the seat the run pass
+// started on until the seat's change point.
 const planningSeatChangeProjection: WorkflowFixtureProjection = {
   ...planningProjection,
   scenarioId: scenarioId('workflow-planning-seat-change'),
+  sidebarVisible: true,
+  config: { planner: CLAUDE_PLAN_SEAT },
+  events: [
+    ...planningProjection.events.slice(0, 1),
+    baseRunPass('planning'),
+    ...planningProjection.events.slice(1),
+  ],
   stop: SEAT_CHANGE_STOP,
 };
 
+// The PLAN seat saved while the plan card waits: the plan is the run pass's, so the chrome keeps
+// naming the seat the pass started on until the plan is approved.
 const planCardSeatChangeProjection: WorkflowFixtureProjection = {
   ...planCardProjection,
   scenarioId: scenarioId('workflow-plan-card-seat-change'),
+  config: { planner: CLAUDE_PLAN_SEAT },
+  events: [...planCardProjection.events, baseRunPass('reviewing-plan')],
   stop: SEAT_CHANGE_STOP,
 };
 
 const implementationSeatChangeProjection: WorkflowFixtureProjection = {
   ...implementationProjection,
   scenarioId: scenarioId('workflow-implementation-seat-change'),
+  config: { implementer: CLAUDE_PLAN_SEAT },
   stop: SEAT_CHANGE_STOP,
+};
+
+const buildBriefCheckSeatChangeProjection: WorkflowFixtureProjection = {
+  ...buildBriefCheckProjection,
+  scenarioId: scenarioId('workflow-build-brief-check-seat-change'),
+  config: { implementer: CLAUDE_PLAN_SEAT },
+  stop: SEAT_CHANGE_STOP,
+};
+
+const SHELL_BUILD_SEAT = { kind: 'shell', command: './impl.sh', model: 'auto' } as const;
+
+// A custom shell BUILD seat mid-brief: every surface names it by its kind, never by its command.
+const implementationShellSeatProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-implementation-shell-seat'),
+  config: { implementer: SHELL_BUILD_SEAT },
+  events: implementationProjection.events.map((event): EngineEvent => {
+    if (event.type === 'task_started') {
+      return {
+        ...event,
+        tool: 'shell',
+        model: SHELL_BUILD_SEAT.model,
+        axes: [],
+        backendKind: 'shell',
+      };
+    }
+    if (event.type === 'runner_call_started' || event.type === 'runner_call_activity') {
+      return {
+        ...event,
+        backendKind: 'shell',
+        runnerName: SHELL_BUILD_SEAT.command,
+        model: SHELL_BUILD_SEAT.model,
+        axes: [],
+      };
+    }
+    return event;
+  }),
 };
 
 const finalReviewSeatChangeProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
   scenarioId: scenarioId('workflow-final-review-seat-change'),
+  sidebarVisible: true,
+  config: { reviewer: CLAUDE_PLAN_SEAT },
   stop: SEAT_CHANGE_STOP,
 };
 
@@ -7066,6 +7148,7 @@ const projections = [
     },
   },
   pausedMidBriefProjection,
+  pausedCutSeatProjection,
   resumedKeptWorkProjection,
   pausedBoundaryProjection,
   stoppingProjection,
@@ -7158,6 +7241,8 @@ const projections = [
   planningSeatChangeProjection,
   planCardSeatChangeProjection,
   implementationSeatChangeProjection,
+  buildBriefCheckSeatChangeProjection,
+  implementationShellSeatProjection,
   finalReviewSeatChangeProjection,
   reviewCheckLongCommandProjection,
   reviewChecksApproveProjection,

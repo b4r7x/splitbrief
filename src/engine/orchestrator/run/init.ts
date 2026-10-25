@@ -503,10 +503,16 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     {
       plannerTool: summaryBase.plannerTool,
       plannerModel: summaryBase.plannerModel,
+      plannerKind: summaryBase.plannerKind,
+      plannerAxes: summaryBase.plannerAxes,
       implementerTool: summaryBase.implementerTool,
       implementerModel: summaryBase.implementerModel,
+      implementerKind: summaryBase.implementerKind,
+      implementerAxes: summaryBase.implementerAxes,
       reviewerTool: reviewerSeat?.tool,
       reviewerModel: reviewerSeat?.model,
+      reviewerKind: reviewerSeat?.kind,
+      reviewerAxes: reviewerSeat?.axes,
       skills: skillIds,
     },
   );

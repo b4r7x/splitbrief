@@ -144,7 +144,7 @@ describe('hydrateFromState', () => {
     expect(tasksStore.get().taskMap.get('T002')?.route).toBeUndefined();
     expect(tokensStore.get().tokenUsage).toEqual(makeUsage());
     expect(tokensStore.get().completedTaskCount).toBe(2);
-    expect(tokensStore.get().pricingContext).toEqual({
+    expect(tokensStore.get().passSeats).toEqual({
       plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
@@ -244,7 +244,7 @@ describe('hydrateFromState', () => {
       messageQueue: [],
     });
 
-    expect(tokensStore.get().pricingContext).toMatchObject({
+    expect(tokensStore.get().passSeats).toMatchObject({
       reviewerTool: 'custom-endpoint',
       reviewerModel: 'custom-v4-flash',
     });
@@ -281,7 +281,7 @@ describe('hydrateFromState', () => {
       messageQueue: [],
     });
 
-    expect(tokensStore.get().pricingContext).toEqual({
+    expect(tokensStore.get().passSeats).toEqual({
       plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',

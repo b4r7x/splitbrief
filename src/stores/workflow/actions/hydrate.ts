@@ -81,13 +81,13 @@ function tasksStateFromState(
 
 function tokensStateFromState(
   state: WorkflowState,
-): Pick<TokensState, 'completedTaskCount' | 'tokenUsage' | 'pricingContext' | 'perTask'> {
+): Pick<TokensState, 'completedTaskCount' | 'tokenUsage' | 'passSeats' | 'perTask'> {
   return {
     completedTaskCount: state.tasks.filter(
       (task) => task.status !== 'pending' && task.status !== 'in_progress',
     ).length,
     tokenUsage: state.tokenUsage,
-    pricingContext: pricingContext(state),
+    passSeats: passSeats(state),
     perTask: perTaskTokens(state),
   };
 }
@@ -112,7 +112,8 @@ function perTaskTokens(state: WorkflowState): Record<string, PerTaskTokens> {
   return perTask;
 }
 
-function pricingContext(state: WorkflowState): TokensState['pricingContext'] {
+/** The saved state keeps no axis words, so the chrome does not take these seats as known. */
+function passSeats(state: WorkflowState): TokensState['passSeats'] {
   if (!state.plannerTool || !state.implementerTool) return null;
   return {
     plannerTool: state.plannerTool,

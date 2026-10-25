@@ -18,6 +18,7 @@ import type { AnsweredQuestion, ClarificationQuestion } from '../../core/schemas
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
+import type { SeatIdentity } from '../../core/providers/seat-identity.js';
 import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
 import type { ReviewChecksPlan } from '../../core/schemas/review.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
@@ -652,17 +653,10 @@ export function publishRecoveryResolved(
   });
 }
 
+/** The seats this run pass holds, complete, so the chrome names them until their change point. */
 export function publishWorkflowConfig(
   ctx: BusContext,
-  opts: {
-    plannerTool: string;
-    plannerModel?: string | undefined;
-    implementerTool: string;
-    implementerModel?: string | undefined;
-    reviewerTool?: string | undefined;
-    reviewerModel?: string | undefined;
-    skills?: string[] | undefined;
-  },
+  opts: SeatIdentity & { skills?: string[] | undefined },
 ): void {
   ctx.bus.publish({
     type: 'workflow_config',
@@ -670,10 +664,16 @@ export function publishWorkflowConfig(
     phase: ctx.phase,
     plannerTool: opts.plannerTool,
     ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
+    ...(opts.plannerKind !== undefined && { plannerKind: opts.plannerKind }),
+    ...(opts.plannerAxes !== undefined && { plannerAxes: [...opts.plannerAxes] }),
     implementerTool: opts.implementerTool,
     ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
+    ...(opts.implementerKind !== undefined && { implementerKind: opts.implementerKind }),
+    ...(opts.implementerAxes !== undefined && { implementerAxes: [...opts.implementerAxes] }),
     ...(opts.reviewerTool !== undefined && { reviewerTool: opts.reviewerTool }),
     ...(opts.reviewerModel !== undefined && { reviewerModel: opts.reviewerModel }),
+    ...(opts.reviewerKind !== undefined && { reviewerKind: opts.reviewerKind }),
+    ...(opts.reviewerAxes !== undefined && { reviewerAxes: [...opts.reviewerAxes] }),
     ...(opts.skills !== undefined && { skills: opts.skills }),
   });
 }

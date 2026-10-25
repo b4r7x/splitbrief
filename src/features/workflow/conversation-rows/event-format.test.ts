@@ -867,7 +867,7 @@ describe('formatTaskStartedParts', () => {
     for (const command of ['claude', 'opencode']) {
       expect(
         taskStartedPartTexts(taskStartedEvent({ tool: command, model: 'gpt-5', backendKind })),
-      ).toEqual(['src/validate.ts (create)', `${command} · GPT-5`]);
+      ).toEqual(['src/validate.ts (create)', `${label} · GPT-5`]);
     }
   });
 
@@ -888,7 +888,7 @@ describe('formatTaskStartedParts', () => {
       taskStartedPartTexts(
         taskStartedEvent({ tool: 'claude', model: undefined, axes: [], backendKind: 'shell' }),
       ),
-    ).toEqual(['src/validate.ts (create)', 'claude · auto']);
+    ).toEqual(['src/validate.ts (create)', 'Custom Shell · auto']);
   });
 
   it('names the build seat in the words the seat identity uses for it', () => {

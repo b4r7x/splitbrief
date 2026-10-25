@@ -230,7 +230,7 @@ describe('BuildProgressBlock', () => {
     }
   });
 
-  it('keeps a shell command named claude literal in its activity line', () => {
+  it('names a shell command named claude by the shell kind in its activity line', () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(NOW);
     addEvent(
@@ -241,7 +241,7 @@ describe('BuildProgressBlock', () => {
     const ui = renderFeature(<BuildProgressBlock cols={160} />, { cols: 160, rows: 24 });
     const frame = stripAnsiStyles(ui.lastFrame());
 
-    expect(frame).toContain('claude · auto · working · No output for 5:12');
+    expect(frame).toContain('Custom Shell · auto · working · No output for 5:12');
     expect(frame).not.toContain('Claude Code CLI');
 
     ui.unmount();
