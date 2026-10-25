@@ -270,8 +270,9 @@ export function publishReviewCheck(
     preExistingKeys?: readonly string[] | undefined;
     own?: number | undefined;
     ownLeft?: number | undefined;
+    deferred?: number | undefined;
+    deferredTo?: readonly string[] | undefined;
     others?: number | undefined;
-    proven?: boolean | undefined;
     detail?: string | undefined;
     duration?: number | undefined;
   },
@@ -297,8 +298,9 @@ export function publishReviewCheck(
       }),
     ...(opts.own !== undefined && { own: opts.own }),
     ...(opts.ownLeft !== undefined && { ownLeft: opts.ownLeft }),
+    ...(opts.deferred !== undefined && { deferred: opts.deferred }),
+    ...(opts.deferredTo !== undefined && { deferredTo: [...opts.deferredTo] }),
     ...(opts.others !== undefined && { others: opts.others }),
-    ...(opts.proven !== undefined && { proven: opts.proven }),
     ...(opts.detail !== undefined && { detail: opts.detail }),
     ...(opts.duration !== undefined && { duration: opts.duration }),
   });

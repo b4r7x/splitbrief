@@ -177,25 +177,7 @@ describe('runReviewCheck at the brief gate', () => {
       ownLeft: undefined,
       fresh: ['output over the capture limit'],
     },
-    {
-      name: 'a new stage-1 failure that skips stage 2',
-      output: 'src/first.ts(1,1): error TS2322: New failure.',
-      complete: true,
-      ownLeft: 0,
-      fresh: ['src/first.ts(1,1): error TS2322: New failure.'],
-    },
-    {
-      name: 'a passing smoke row before a new compiler failure skips the carried test',
-      output: `tests/test_smoke.py::test_ok PASSED [ 50%]\n${NEW_RED}`,
-      complete: true,
-      ownLeft: 0,
-      fresh: [NEW_RED],
-      carried: {
-        failureKeys: ['tests/test_later.py::test_fails'],
-        redKeys: ['tests/test_later.py::test_fails', 'tests/test_smoke.py::test_ok'],
-      },
-    },
-  ])('rejects $name', async ({ output, complete, ownLeft, fresh, carried }) => {
+  ])('rejects $name', async ({ output, complete, ownLeft, fresh }) => {
     await withApplyRun(FILES, { sessionId: 'sess-brief-red' }, async (run) => {
       const { bus, events } = makeBusRecorder();
       vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
@@ -210,7 +192,7 @@ describe('runReviewCheck at the brief gate', () => {
       const result = await runReviewCheck({
         check: { id: 'V1', command: 'npm test' },
         moment: 'brief',
-        carried: carried ?? { failureKeys: [NEW_RED], redKeys: [NEW_RED, OLD_RED] },
+        carried: { failureKeys: [NEW_RED], sharedWith: new Map(), exempt: false },
         checkOptions: {
           projectDir: run.ws,
           config: makeConfig(),
@@ -225,8 +207,45 @@ describe('runReviewCheck at the brief gate', () => {
       expect(rows(events).at(-1)).toMatchObject({ passed: false });
       if (ownLeft === undefined) expect(rows(events).at(-1)).not.toHaveProperty('own');
       else expect(rows(events).at(-1)).toMatchObject({ ownLeft });
-      if (ownLeft === 0) expect(rows(events).at(-1)).toMatchObject({ proven: false });
       expect(commandRunner.runCommand).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // An own failure the re-run does not show settles the check, even when the red stopped before
+  // it; the next review re-runs the whole command.
+  it.each([
+    {
+      name: 'a new stage-1 failure that skips stage 2',
+      output: 'src/first.ts(1,1): error TS2322: New failure.',
+      carried: NEW_RED,
+    },
+    {
+      name: 'a passing smoke row before a new compiler failure skips the carried test',
+      output: `tests/test_smoke.py::test_ok PASSED [ 50%]\n${NEW_RED}`,
+      carried: 'tests/test_later.py::test_fails',
+    },
+  ])('settles $name', async ({ output, carried }) => {
+    await withApplyRun(FILES, { sessionId: 'sess-brief-settle' }, async (run) => {
+      const { bus, events } = makeBusRecorder();
+      vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+        processError.exitCode({ command: 'npm test', code: 1, stderr: '', output }),
+      );
+      const result = await runReviewCheck({
+        check: { id: 'V1', command: 'npm test' },
+        moment: 'brief',
+        carried: { failureKeys: [carried], sharedWith: new Map(), exempt: false },
+        checkOptions: {
+          projectDir: run.ws,
+          config: makeConfig(),
+          bus,
+          phase: 'implementing',
+          npmScriptsApproved: false,
+          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test', required: true }],
+        },
+      });
+      expect(result.run.status).toBe('fail');
+      expect(result.fresh).toEqual([]);
+      expect(rows(events).at(-1)).toMatchObject({ passed: true, own: 1, ownLeft: 0, others: 1 });
     });
   });
 
@@ -241,7 +260,7 @@ describe('runReviewCheck at the brief gate', () => {
       const result = await runReviewCheck({
         check: { id: 'V1', command: 'npm test' },
         moment: 'brief',
-        carried: { failureKeys: [NEW_RED], redKeys: [NEW_RED, OLD_RED] },
+        carried: { failureKeys: [NEW_RED], sharedWith: new Map(), exempt: false },
         checkOptions: {
           projectDir: run.ws,
           config: makeConfig(),
@@ -256,8 +275,8 @@ describe('runReviewCheck at the brief gate', () => {
         passed: true,
         own: 1,
         ownLeft: 0,
+        deferred: 0,
         others: 0,
-        proven: true,
       });
     });
   });

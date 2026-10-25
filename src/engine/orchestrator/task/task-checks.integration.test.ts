@@ -407,7 +407,7 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
   }
 
   // Live run 2026-10-09: T013 fixed its own errors and stayed red on the errors T014-T017 own.
-  it('settles a fix check once the failures it carries are gone, when an original other failure stays red', async () => {
+  it('settles a fix check once the failures it carries are gone, while other failures stay red', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-fix-check-own-gone' }, async (run) => {
       const { result, rows, places } = await fixChecks(run, () => `${OTHER_RED}\n${OTHER_RED_2}`);
 
@@ -559,8 +559,9 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
           passed: true,
           own: 1,
           ownLeft: 0,
+          deferred: 0,
+          deferredTo: [],
           others: 1,
-          proven: true,
         },
         {
           type: 'full_suite',
@@ -573,26 +574,22 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
           passed: false,
           own: 1,
           ownLeft: 1,
+          deferred: 0,
+          deferredTo: [],
           others: 1,
-          proven: true,
         },
       ]);
     });
   });
 
-  it('does not settle a red that only shows new failures', async () => {
-    await withApplyRun(FILES, { sessionId: 'sess-fix-check-not-proven' }, async (run) => {
+  // The next review re-runs the whole command and answers the new failure.
+  it('settles a red that only shows new failures', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-new-only' }, async (run) => {
       const fresh = 'src/first.ts(1,1): error TS2322: New first-stage error.';
       const { result, rows } = await fixChecks(run, () => fresh);
-      expect(result.settled.has('V1')).toBe(false);
-      expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'V1', status: 'fail' });
-      expect(rows.at(-1)).toMatchObject({
-        passed: false,
-        own: 1,
-        ownLeft: 0,
-        others: 1,
-        proven: false,
-      });
+      expect(result.settled.has('V1')).toBe(true);
+      expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'V1', status: 'pass' });
+      expect(rows.at(-1)).toMatchObject({ passed: true, own: 1, ownLeft: 0, others: 1 });
     });
   });
 
@@ -646,8 +643,9 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
             moment: 'brief',
             own: 1,
             ownLeft: 0,
+            deferred: 0,
+            deferredTo: [],
             others: 0,
-            proven: true,
           }),
         ]);
       });

@@ -86,6 +86,11 @@ export type RunChecksOptions = {
   discoveredValidation?: DiscoveredValidation | undefined;
   signal?: AbortSignal | undefined;
   runCommand?: ValidationCommandRunner | undefined;
+  /**
+   * Per `cmd` check id, the test files it runs alone when its command is the stack's test command
+   * and the stack can select them; the next review runs the whole command.
+   */
+  testFiles?: ReadonlyMap<string, readonly string[]> | undefined;
 };
 
 export function planApprovesNpmScripts(opts: {
@@ -134,11 +139,13 @@ function validationTimeout(config: Config): number {
   return config.validation.timeoutMs ?? STAGE_TIMEOUT_MS;
 }
 
+type TestCheckPlan = ReturnType<typeof planTestCheck>;
+
 async function runTestCheck(
   check: Check,
   opts: RunChecksOptions,
   run: ValidationCommandRunner,
-  planned: ReturnType<typeof planTestCheck>,
+  planned: TestCheckPlan,
 ): Promise<CheckRunResult> {
   if (planned.kind === 'skip' && planned.reason === NO_TEST_FILE_FOUND) {
     // The stack's tests run, but the workspace lacks the test file the check names: the change is
@@ -213,6 +220,7 @@ async function runCommandCheck(
   run: ValidationCommandRunner,
   packageScripts: PackageScriptsReadinessInput,
   reviewCheck: boolean,
+  narrowed: TestCheckPlan | null,
 ): Promise<CheckRunResult> {
   // A reviewer check runs under the reviewer policy, any stack's program, and is refused for a
   // changed script; a plan check keeps the plan policy, and a plan may add a script and check it.
@@ -239,6 +247,7 @@ async function runCommandCheck(
       failure: { keys: ['no npm script'], placeholder: missing },
     };
   }
+  if (narrowed !== null) return runTestCheck(check, opts, run, narrowed);
   const [cmd, ...args] = parseShellCommand(check.value);
   if (cmd === undefined) {
     return { checkId: check.id, status: 'refused', output: 'names no program' };
@@ -417,12 +426,22 @@ export function createCheckRunner(opts: RunChecksOptions): (check: Check) => {
       return { command: '', run: () => runRenderCheck(check, opts, run) };
     }
     if (check.kind === 'cmd') {
+      const files = opts.testFiles?.get(check.id);
+      const planned = files === undefined ? null : planTestCheck(files, stageContext);
+      const narrowed =
+        planned?.kind === 'run' &&
+        planned.narrowed &&
+        parseShellCommand(check.value).join(' ') ===
+          [planned.resolved.cmd, ...planned.resolved.args].join(' ')
+          ? planned
+          : null;
       return {
-        command: check.value,
-        run: () => runCommandCheck(check, opts, run, packageScripts, reviewIds.has(check.id)),
+        command: narrowed?.command ?? check.value,
+        run: () =>
+          runCommandCheck(check, opts, run, packageScripts, reviewIds.has(check.id), narrowed),
       };
     }
-    const planned = planTestCheck(check.value, stageContext);
+    const planned = planTestCheck([check.value], stageContext);
     return {
       command: planned.kind === 'run' ? planned.command : '',
       run: () => runTestCheck(check, opts, run, planned),

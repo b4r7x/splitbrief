@@ -24,7 +24,12 @@ export const RETRY_FRAMINGS: Readonly<Record<number, string>> = {
   3: FINAL_FRAMING,
 };
 
-export function framingForAttempt(attempt: number): string {
+/** A fix brief's first retry: the error names failures that are not its job, so it fixes only its own. */
+const FIX_BRIEF_FRAMING =
+  "Your previous attempt had an error. Fix what it names as yours; failures it names as not this brief's job are left to their fix tasks or the next review:";
+
+export function framingForAttempt(attempt: number, fix: boolean): string {
+  if (attempt === 1 && fix) return FIX_BRIEF_FRAMING;
   return RETRY_FRAMINGS[attempt] ?? FINAL_FRAMING;
 }
 

@@ -26,6 +26,9 @@ Use this shape:
     <fresh brief and Plan context>
     <closing line and report contract>
 
+A fix brief's first retry asks it to fix only what the error names as its own.
+Failures the error names as not this brief's job go to their fix tasks or the next review.
+
 A failed post-consult attempt consults again while bounds permit.
 A recipe error is seat trouble. Halt with its diagnosis; do not improvise permission flags or change adapters mid-run.
 

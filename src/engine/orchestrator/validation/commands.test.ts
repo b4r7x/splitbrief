@@ -29,7 +29,7 @@ describe('planTestCheck', () => {
       discoveredValidation: discovered,
       notices: { bus: makeBusRecorder().bus, phase: 'implementing' },
     });
-    return planTestCheck(file, ctx);
+    return planTestCheck([file], ctx);
   }
 
   it('runs a config-pinned command as written, over the planner and the stack', () => {

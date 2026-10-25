@@ -1177,8 +1177,9 @@ const checkpointPredicates = [
     // The verdict wraps at narrow widths; the earlier red row scrolls out of a 60x18 transcript.
     (context) =>
       includesAll(
-        'your 2 failures gone',
-        ...(context.viewport.cols >= 120 ? ['not proven fixed'] : []),
+        '1 of your 2 failures gone',
+        'left to T905',
+        ...(context.viewport.cols >= 120 ? ['1 of your 2 failures remains'] : []),
       )({
         ...context,
         output: context.output.replace(/\s+/g, ' '),

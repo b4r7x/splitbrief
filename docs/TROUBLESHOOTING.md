@@ -794,9 +794,9 @@ The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, 
 
 A fix check runs once per brief gate. Each new BUILD attempt runs the checks again. A fix check never re-runs at the run base.
 
-It judges the failure keys its findings carry for that check id. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once.
+It judges the failure keys its findings carry for that check id. A red passes when no own failure remains. An own failure that an unfinished fix task of the same cycle also carries is left to that task. Failures the task does not own do not gate it; their fix tasks or the next review answer them. When every own failure is a test failure, it runs the stack's test runner on the own test files only. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once.
 
-Test failures match by name. Keys with no file match exactly. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration. Other failures belong to other fix tasks or the next review.
+Test failures match by name. Keys with no file match exactly. Each judged re-run gets a fix check verdict row. A settled re-run reads `your 2 failures gone · 3 others left for their fix tasks or the next review`. A shared failure reads `1 left to T025`. Plan and task checks get only a done row, with no duration.
 
 A check with no carried keys, or a re-run with no named failure, must pass. Keys come from the full process capture. An incomplete capture gives one placeholder key. The command must pass. Older saved fix tasks without own keys or original red keys must pass their commands.
 

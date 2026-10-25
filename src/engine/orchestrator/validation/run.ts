@@ -52,6 +52,8 @@ type TestCheckPlan =
       command: string;
       /** A cargo selection passes only when its output shows a test that ran. */
       countsCargoTests: boolean;
+      /** The command runs only the test files it selected, not the whole suite. */
+      narrowed: boolean;
     }
   | { kind: 'skip'; reason: string };
 
@@ -130,8 +132,8 @@ async function formatFiles(opts: {
   };
 }
 
-/** The command a planner `test` check runs on its file, narrowed when the stack can select it. */
-export function planTestCheck(file: string, ctx: StageContext): TestCheckPlan {
+/** The command that runs the tests of `files`, narrowed when the stack can select them. */
+export function planTestCheck(files: readonly string[], ctx: StageContext): TestCheckPlan {
   const resolved = resolveTestCommand(ctx);
   if (resolved === null)
     return {
@@ -140,7 +142,7 @@ export function planTestCheck(file: string, ctx: StageContext): TestCheckPlan {
     };
   const target = resolveTestTarget({
     resolved,
-    files: [file],
+    files,
     projectDir: ctx.projectDir,
     config: ctx.config,
     discovered: ctx.discovered,
@@ -156,6 +158,7 @@ export function planTestCheck(file: string, ctx: StageContext): TestCheckPlan {
     args,
     command: formatValidationCommand(resolved.cmd, args),
     countsCargoTests: narrowing.kind === 'cargo-target' && target.targets.length > 0,
+    narrowed: target.targets.length > 0,
   };
 }
 
@@ -175,7 +178,7 @@ export function unresolvedTestCheckErrors(
     task.checks
       .filter((check) => {
         if (check.kind !== 'test' || parseShellCommand(check.value).length !== 1) return false;
-        const planned = planTestCheck(check.value, ctx);
+        const planned = planTestCheck([check.value], ctx);
         return (
           planned.kind === 'skip' &&
           planned.reason === NO_TEST_FILE_FOUND &&

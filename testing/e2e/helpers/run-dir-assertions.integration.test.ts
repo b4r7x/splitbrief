@@ -199,12 +199,15 @@ describe('assertPlainStdout', () => {
     const stdout = [
       plainStdout(),
       'fix check V1: failed (npm test)',
-      'fix check V1: your 2\u00a0failures gone · 3\u00a0others left (npm test)',
-      'fix check V1: your 1\u00a0failure gone · 1\u00a0other left (npm test)',
-      'fix check V1: your 1\u00a0failure gone (npm test)',
-      'fix check V1: 1\u00a0of your 2\u00a0failures remains (npm test)',
-      'fix check V1: 2\u00a0of your 3\u00a0failures remain (npm test)',
-      'fix check V1: your 1\u00a0failure remains (npm test)',
+      'fix check V1: your\u00a02\u00a0failures\u00a0gone · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
+      'fix check V1: 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0gone · 1\u00a0left\u00a0to\u00a0T025 · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
+      'fix check V1: 1\u00a0of\u00a0your\u00a03\u00a0failures\u00a0remains · 2\u00a0left\u00a0to\u00a0T025\u00a0and\u00a01\u00a0other\u00a0fix\u00a0tasks (npm test)',
+      'fix check V1: your\u00a02\u00a0failures\u00a0left\u00a0to\u00a0T025\u00a0and\u00a0T026 (npm test)',
+      'fix check V1: no\u00a0failure\u00a0of\u00a0yours · 2\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
+      'fix check V1: your\u00a01\u00a0failure\u00a0gone (npm test)',
+      'fix check V1: 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0remains (npm test)',
+      'fix check V1: 2\u00a0of\u00a0your\u00a03\u00a0failures\u00a0remain (npm test)',
+      'fix check V1: your\u00a01\u00a0failure\u00a0remains (npm test)',
       'base re-run V1: passes',
       'base re-run V1: fails',
       'base re-run V1: 1 new, 2 pre-existing',
@@ -224,6 +227,8 @@ describe('assertPlainStdout', () => {
       'plan check K1: passed · soon (npm test)',
       'Render workflow: passed · 0.1s',
       'Render workflow: rendered · 0.1s (npm run render)',
+      'fix check V1: your 2 failures not shown · not proven fixed (npm test)',
+      'fix check V1: your\u00a02\u00a0failures\u00a0gone · 3 others left (npm test)',
     ]) {
       expect(() => assertPlainStdout(`${plainStdout()}${line}\n`)).toThrow();
     }

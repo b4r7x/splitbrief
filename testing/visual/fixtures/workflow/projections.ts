@@ -1594,8 +1594,9 @@ function reviewCheck(
         preExistingKeys?: string[];
         own?: number;
         ownLeft?: number;
+        deferred?: number;
+        deferredTo?: string[];
         others?: number;
-        proven?: boolean;
         detail?: string;
       },
   phase: 'final-review' | 'implementing' = 'final-review',
@@ -6321,6 +6322,32 @@ const reviewBaseMixedProjection: WorkflowFixtureProjection = {
 };
 
 // Q2 review B2: the fix brief runs the red V2 again under its own row and clock.
+const FIX_CHECK_SIBLING_ID = taskId('T905');
+
+/** The review behind the fix-check scenarios gives a shared failure to a second fix brief too. */
+function withFixCheckSibling(event: EngineEvent): EngineEvent {
+  if (event.type === 'review_fix_started') {
+    return { ...event, taskIds: [...event.taskIds, FIX_CHECK_SIBLING_ID] };
+  }
+  if (event.type === 'tasks_planned') {
+    return {
+      ...event,
+      total: 5,
+      tasks: [
+        ...event.tasks,
+        {
+          id: FIX_CHECK_SIBLING_ID,
+          title: 'Fix the checkout total test',
+          index: 4,
+          file: 'src/checkout/total.test.ts',
+          action: 'modify',
+        },
+      ],
+    };
+  }
+  return event.type === 'task_started' ? { ...event, total: 5 } : event;
+}
+
 const fixCheckRunningProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-fix-check-running'),
   feature: WORKFLOW_FEATURE,
@@ -6410,31 +6437,46 @@ const fixCheckStoppedContinuedProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// Live run 2026-10-09: a fix brief's check says which of the failures it carries remain; the
-// other failures of the same red command belong to other fix briefs.
+// Live run 2026-10-09: a fix brief's check says which of its own failures remain. A failure an
+// unfinished sibling fix brief also carries is left to it, and the other failures of the same red
+// command belong to other fix briefs or the next review.
+const FIX_CHECK_REMAINING = 'a.ts:1: error';
+const FIX_CHECK_SHARED = 'src/checkout/total.test.ts::returns the total';
+const FIX_CHECK_RETRY_TEXT = checkFailureText(
+  {
+    checkId: 'V2',
+    status: 'fail',
+    failure: { keys: [FIX_CHECK_REMAINING, FIX_CHECK_SHARED, 'b.ts:1', 'c.ts:1'] },
+    output: '',
+  },
+  {
+    carried: {
+      failureKeys: [FIX_CHECK_REMAINING, FIX_CHECK_SHARED],
+      sharedWith: new Map([[FIX_CHECK_SHARED, [FIX_CHECK_SIBLING_ID]]]),
+      exempt: false,
+    },
+  },
+);
 const fixCheckDoneProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-fix-check-done'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
   get events(): EngineEvent[] {
-    const testCi = { ...REVIEW_CHECK_TEST, command: 'npm run test-ci' };
-    const remaining = 'a.ts:1: error';
-    const gone = 'src/checkout/total.test.ts::returns the total';
-    const keys = [remaining, 'b.ts:1', 'c.ts:1', 'd.ts:1'];
     return [
-      ...fixCheckRunningProjection.events.slice(0, -1),
+      ...fixCheckRunningProjection.events.slice(0, -1).map(withFixCheckSibling),
       reviewCheck(
         FIXED_TS + 2_000,
-        testCi,
+        REVIEW_CHECK_TEST,
         {
           status: 'done',
           moment: 'brief',
           passed: false,
           own: 2,
           ownLeft: 1,
-          others: 3,
-          proven: true,
+          deferred: 1,
+          deferredTo: [FIX_CHECK_SIBLING_ID],
+          others: 2,
           duration: 181_000,
         },
         'implementing',
@@ -6448,42 +6490,20 @@ const fixCheckDoneProjection: WorkflowFixtureProjection = {
         taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
         attempt: 1,
         maxRetries: 1,
-        error: checkFailureText(
-          {
-            checkId: 'V2',
-            status: 'fail',
-            failure: { keys },
-            output: '',
-          },
-          { carried: { failureKeys: [remaining, gone], redKeys: [...keys, gone] } },
-        ),
+        error: FIX_CHECK_RETRY_TEXT,
       },
       reviewCheck(
         FIXED_TS + 2_200,
-        testCi,
-        {
-          status: 'done',
-          moment: 'brief',
-          passed: false,
-          own: 2,
-          ownLeft: 0,
-          others: 1,
-          proven: false,
-          duration: 180_000,
-        },
-        'implementing',
-      ),
-      reviewCheck(
-        FIXED_TS + 2_300,
-        testCi,
+        REVIEW_CHECK_TEST,
         {
           status: 'done',
           moment: 'brief',
           passed: true,
           own: 2,
           ownLeft: 0,
-          others: 3,
-          proven: true,
+          deferred: 1,
+          deferredTo: [FIX_CHECK_SIBLING_ID],
+          others: 2,
           duration: 180_000,
         },
         'implementing',
@@ -7188,7 +7208,8 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     // plan.md and plan.json, which the plan formatter and the plan schema write whole, or the
     // implementer's JSON report, which the transcript reads as one summary line, or a start
     // warning, which readiness words as its summary, its details and its fix, or a plan
-    // send-back, which lists the plan checks' own messages.
+    // send-back, which lists the plan checks' own messages, or a fix check's failure text, which
+    // lists its bounded failure keys under the verdict.
     (value) =>
       value !== planCardProjection.review?.source &&
       value !== planCardProjection.review?.planJson &&
@@ -7198,6 +7219,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       value !== planCardSharedCommandProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       value !== RESUMED_REPORT_TEXT &&
+      value !== FIX_CHECK_RETRY_TEXT &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
       !startReadinessWarningText.includes(value) &&

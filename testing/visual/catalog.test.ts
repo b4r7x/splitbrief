@@ -436,9 +436,33 @@ describe('visual catalog', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-      expect(frame).toContain('2\u00a0failures gone');
-      expect(frame).toContain('3\u00a0others left');
-      expect(frame).toContain('not\u00a0proven\u00a0fixed');
+      for (const phrase of [
+        '1 of your 2 failures remains',
+        '1 left to T905',
+        '1 of your 2 failures gone',
+        '2 others left for their fix tasks or the next review',
+      ]) {
+        expect(frame).toContain(phrase.replaceAll(' ', '\u00a0'));
+      }
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it('leaves the shared failure to a fix brief of the same review and re-runs the command of the red', async () => {
+    const scenario = findVisualScenario('workflow-fix-check-done');
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports.find((size) => size.cols === 120);
+    if (scenario === undefined || checkpoint === undefined || viewport === undefined) {
+      throw new Error('Missing fix-check scenario');
+    }
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(frame).toContain('Reviewer check V2 · npm test · failed');
+      expect(frame).toContain('fixes T904 T905');
+      expect(frame.match(/Fix check V2 · npm test · /g)).toHaveLength(2);
+      expect(frame).not.toContain('test-ci');
     } finally {
       await handle.unmount();
     }

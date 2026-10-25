@@ -285,6 +285,23 @@ describe('formatTaskPrompt', () => {
     ).not.toContain('### Current Code');
   });
 
+  it('frames a fix brief retry without sending the seat after failures that are not its job', () => {
+    const fix = makeTask({
+      fix: {
+        cycle: 1,
+        findings: [{ id: 'P1', text: 'red', acceptance: null, checkIds: ['V1'] }],
+      },
+    });
+
+    const retry = formatRetryPrompt({ task: fix, context, error: 'boom', attempt: 1 });
+    const plain = formatRetryPrompt({ task: makeTask(), context, error: 'boom', attempt: 1 });
+
+    expect(retry.split('\n')[0]).toBe(
+      "Your previous attempt had an error. Fix what it names as yours; failures it names as not this brief's job are left to their fix tasks or the next review:",
+    );
+    expect(plain.split('\n')[0]).toBe('Your previous attempt had an error. Fix it:');
+  });
+
   it('carries context files whole under a read-only heading, for a new file and a bundle', () => {
     const task = makeTask({
       action: 'create',
