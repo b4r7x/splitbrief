@@ -237,7 +237,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         next: { ...savedState, approve },
       });
       if (pinned.kind === 'conflict') {
-        throw stateOpsError.conflict({
+        throw stateOpsError.conflict(sessionId, {
           operation: 'transition',
           expectedRevision: savedState.stateRevision ?? null,
           observedRevision:

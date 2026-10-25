@@ -1408,8 +1408,10 @@ describe('runWorkflow — smoke', () => {
       }),
     };
 
-    const kept = () => 'Workflow state kept changing while this mutation was being retried.';
-    const changedBefore = () => 'Workflow state changed before this mutation committed.';
+    const kept = (sessionId: string) =>
+      `Another process kept changing the run state, so this change was not saved · .splitbrief/sessions/${sessionId}/state.json`;
+    const changedBefore = (sessionId: string) =>
+      `Another process changed the run state, so this change was not saved · .splitbrief/sessions/${sessionId}/state.json`;
     const planUsage = {
       _planner: makePlanner({
         typedCall: typedCallFromTasks([makeTask({ id: 'T001' })], {

@@ -61,12 +61,19 @@ export type StateOperationConflictError = AppError<
 >;
 
 export const stateOpsError = {
-  conflict: (data: StateOperationConflictData): StateOperationConflictError =>
-    error('state-conflict', 'Workflow state changed before this mutation committed.', data),
-  conflictExhausted: (data: StateOperationConflictData): StateOperationConflictError =>
+  conflict: (sessionId: string, data: StateOperationConflictData): StateOperationConflictError =>
+    error(
+      'state-conflict',
+      `Another process changed the run state, so this change was not saved${SOFT_SEP}${sessionRelativePath(sessionId, STATE_FILE)}`,
+      data,
+    ),
+  conflictExhausted: (
+    sessionId: string,
+    data: StateOperationConflictData,
+  ): StateOperationConflictError =>
     error(
       'state-conflict-exhausted',
-      'Workflow state kept changing while this mutation was being retried.',
+      `Another process kept changing the run state, so this change was not saved${SOFT_SEP}${sessionRelativePath(sessionId, STATE_FILE)}`,
       data,
     ),
   invalidHead: (message: string, cause?: unknown) =>
@@ -477,7 +484,9 @@ function mutateState(input: MutationInput): WorkflowState {
         expected = observedRevision(head);
         continue;
       }
-      throw retries > 0 ? stateOpsError.conflictExhausted(data) : stateOpsError.conflict(data);
+      throw retries > 0
+        ? stateOpsError.conflictExhausted(input.ref.sessionId, data)
+        : stateOpsError.conflict(input.ref.sessionId, data);
     }
 
     const base =
@@ -527,7 +536,9 @@ function mutateState(input: MutationInput): WorkflowState {
       expected = observedRevision(latest);
       continue;
     }
-    throw retries > 0 ? stateOpsError.conflictExhausted(data) : stateOpsError.conflict(data);
+    throw retries > 0
+      ? stateOpsError.conflictExhausted(input.ref.sessionId, data)
+      : stateOpsError.conflict(input.ref.sessionId, data);
   }
 }
 

@@ -1824,6 +1824,38 @@ describe('initializeWorkflow — the mode a run starts in', () => {
   });
 });
 
+describe('initializeWorkflow — a resume that saves a changed approval level', () => {
+  it('names the state file when another write lands first', async () => {
+    await withTempDir('splitbrief-init-approve-conflict', async (projectDir) => {
+      const sessionId = 'session-init-approve-conflict';
+      const started = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature: 'ship the banner',
+        configOverrides: { workflow: { approve: 'plan' } },
+      });
+      if (!started.init.ok) throw new Error('Expected run start');
+      const savedState = started.init.state;
+      saveState(
+        { projectDir, sessionId },
+        { ...savedState, stateRevision: (savedState.stateRevision ?? 0) + 1 },
+      );
+
+      await expect(
+        initializeTestWorkflow({
+          projectDir,
+          sessionId,
+          feature: 'ship the banner',
+          configOverrides: { workflow: { approve: 'none' } },
+          savedState,
+        }),
+      ).rejects.toThrow(
+        `Another process changed the run state, so this change was not saved · .splitbrief/sessions/${sessionId}/state.json`,
+      );
+    });
+  });
+});
+
 describe('initializeWorkflow — a file halt saved before the run workspace', () => {
   /** The brief is in flight with its output on record, so the halt read as standing before S7. */
   function recordBriefOutput(projectDir: string, sessionId: string, task: Task): void {
