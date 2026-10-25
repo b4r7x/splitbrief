@@ -30,6 +30,7 @@ import type { ConsultSeat } from '../../../../src/core/schemas/consult.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeRunRecord } from '../../../helpers/factories/run-record.js';
 import { makeSummary } from '../../../helpers/factories/summary.js';
+import { CURSOR_MODEL_REFUSAL } from '../../../helpers/cursor-refusal.js';
 import { SessionLogEventEntrySchema } from '../../../../src/core/schemas/session-log.js';
 import { engineEventFromLogEntry } from '../../../../src/engine/events/replay.js';
 import { makeReviewFixInsertedEvents } from '../../../helpers/events/task.js';
@@ -2989,6 +2990,56 @@ const balanceSpentRecoveryProjection: WorkflowFixtureProjection = {
   },
   get resumeState() {
     return haltedResumeState(balanceSpentRecoveryIssue());
+  },
+};
+
+const CURSOR_REFUSAL_SEAT = {
+  kind: 'cli',
+  tool: 'cursor',
+  model: 'claude-haiku-5-5-thinking-high',
+} as const;
+
+function cursorRefusalRecoveryIssue(): RecoveryIssue {
+  return buildSeatDownIssue({
+    id: 'rec_visual_cursor_refusal',
+    seat: 'build',
+    runner: CURSOR_REFUSAL_SEAT,
+    classification: { class: 'account', cause: 'balance' },
+    words: CURSOR_MODEL_REFUSAL,
+    task: HALTED_TASK,
+    phase: 'implementing',
+    attempts: 1,
+    maxAttempts: BOUNDS.attemptsPerLineage,
+    selectedImplementerProfile: 'default',
+    seatSwap: {
+      seat: 'build',
+      currentTool: 'cursor',
+      detectedTools: [{ tool: 'claude-code', ready: true }],
+    },
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const cursorRefusalRecoveryProjection: WorkflowFixtureProjection = {
+  ...usageLimitRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-cursor-refusal'),
+  config: { implementer: CURSOR_REFUSAL_SEAT },
+  get events() {
+    const issue = cursorRefusalRecoveryIssue();
+    return publishedEvents(FIXED_TS + 100, (bus) =>
+      publishError({
+        bus,
+        phase: issue.phase,
+        message: runnerHaltRow(
+          issue,
+          runnerAuthDisplayName(CURSOR_REFUSAL_SEAT),
+          CURSOR_MODEL_REFUSAL,
+        ),
+      }),
+    );
+  },
+  get resumeState() {
+    return haltedResumeState(cursorRefusalRecoveryIssue());
   },
 };
 
@@ -6632,6 +6683,7 @@ const projections = [
     }),
   },
   balanceSpentRecoveryProjection,
+  cursorRefusalRecoveryProjection,
   modelRefusalProjection('workflow-recovery-route-signed-out', ROUTE_SIGNED_OUT_AUTH),
   modelRefusalProjection('workflow-recovery-model-not-listed', MODEL_NOT_LISTED_AUTH),
   modelRefusalProjection('workflow-recovery-model-refused', MODEL_REFUSED_AUTH),
@@ -7109,6 +7161,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     reviewContractRecoveryIssue,
     reviewPromptTooLargeRecoveryIssue,
     buildPromptTooLargeRecoveryIssue,
+    cursorRefusalRecoveryIssue(),
   ];
   const engineHaltText = [
     ...halts.flatMap((issue) => [issue.message, ...issue.details]),
@@ -7123,6 +7176,11 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       NO_ROUTE_WORDS,
     ),
     reviewContractErrorMessage,
+    runnerHaltRow(
+      cursorRefusalRecoveryIssue(),
+      runnerAuthDisplayName(CURSOR_REFUSAL_SEAT),
+      CURSOR_MODEL_REFUSAL,
+    ),
   ];
   const oversized = projectionStrings(projection).find(
     // The answered card's flat text joins its bounded qa pairs; it is not independent content.

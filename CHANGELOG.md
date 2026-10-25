@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- When a tool refuses your account in its error output, for example Cursor's "is not included in your weekly usage", the seat now stops as Seat down on the first refused call on every seat, quotes the tool's whole message and moves to the fallback you declared, instead of retrying the brief and asking the planner. A planner question about a failing brief no longer offers choices that an answer cannot carry out, such as switching the tool or buying credits.
 - When another process changes a run's state while SPLITBRIEF saves it, the message now says so and names the run's state file.
 - At a halt that takes no typed correction, such as a halt in Apply, the panel's key line now shows `tab edit the words` while the composer holds words, so you can reach them and clear them.
 - The Fix again action now reads `Fix again · grants one more fix cycle`, and its key line reads `⏎ Fix again with the typed correction`, so the note is no longer named twice.

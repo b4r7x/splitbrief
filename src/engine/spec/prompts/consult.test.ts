@@ -330,6 +330,28 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain(TASK_CMD_CHECK_RULE);
   });
 
+  it.each([
+    ['plan', false],
+    ['review', false],
+    ['plan', true],
+  ] as const)(
+    'tells the %s seat (resumed=%s) that an answer only instructs the next attempt',
+    (seat, resumed) => {
+      const prompt = buildConsultPrompt(consultInput({ seat, resumed }));
+
+      expect(prompt).toContain('Offer only choices that the next attempt can carry out.');
+      if (!resumed) {
+        expect(prompt).toContain(
+          "SPLITBRIEF gives the user's answer to an `ask-user` question to the same implementer, as an instruction for its next attempt.",
+        );
+        expect(prompt).toContain(
+          "An answer cannot change a seat's tool or model, buy credits, or wait for a limit to reset.",
+        );
+        expect(prompt).toContain('the user changes a seat with `/crew`');
+      }
+    },
+  );
+
   it('lets only guidance or a rewrite answer a stale consult', () => {
     const prompt = buildConsultPrompt(consultInput({ reason: 'stale' }));
 

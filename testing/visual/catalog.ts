@@ -3028,6 +3028,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-cursor-refusal',
+      title: 'Workflow · Cursor refuses the BUILD model on the account',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'recovery',
+        title: 'Cursor account refusal recovery menu',
+        kind: 'question',
+        marker: 'Seat down · Balance spent on',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-route-signed-out',
       title: 'Workflow · a BUILD route with no credential',
       surface: screenSurface('workflow'),

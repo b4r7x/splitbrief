@@ -87,13 +87,15 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
 
 The operator rule: the Operator Instructions are the user's own decisions for this task. No action undoes one of them. A question that concerns one of them quotes it, and its default keeps it.
 
+The answer rule: SPLITBRIEF gives the user's answer to an \`ask-user\` question to the same implementer, as an instruction for its next attempt. An answer cannot change a seat's tool or model, buy credits, or wait for a limit to reset. Offer only choices that the next attempt can carry out. When the seat cannot serve the call at all, say so in \`answer.diagnosis\`: the user changes a seat with \`/crew\`.
+
 The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs \`ask-user\`. ${TASK_CMD_CHECK_RULE}`;
 
 function consultContract(seat: ConsultSeat): string {
   return `${CONSULT_ROLE[seat]} ${CONSULT_CONTRACT_BODY}`;
 }
 
-const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
+const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
 
 /** The decision-confirm contract; `guidance` is offered only after the user answered. */
 function decisionConfirmContract(answered: boolean): string {
