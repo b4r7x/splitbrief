@@ -1,9 +1,10 @@
 import { opensPlanGate } from '../pipeline-spec/steps.js';
-import type { CrewSeatId } from '../crew/identity.js';
+import { CREW_SEAT_LABELS, type CrewSeatId } from '../crew/identity.js';
+import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
 import type { Phase } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { GateName, StepCut, StepRef } from '../schemas/run-step.js';
-import { fixCyclesOf, type WorkflowState } from '../schemas/workflow.js';
+import { fixCyclesOf, type SeatWait, type WorkflowState } from '../schemas/workflow.js';
 
 /** What a run waiting for you waits on: the planner's question, a gate, or a halt. */
 export type WaitingOn =
@@ -151,10 +152,23 @@ export function isAnsweredApplyRecovery(issue: RecoveryIssue): issue is Recovery
   );
 }
 
-function seatToolWord(state: WorkflowState, seat: CrewSeatId): string {
-  if (seat === 'plan') return state.plannerTool ?? seat;
-  if (seat === 'build') return state.implementerTool ?? seat;
-  return state.reviewerTool ?? state.plannerTool ?? seat;
+/**
+ * The tool a seat wait waits on, in the catalog's words: the runner the halted call ran on, else,
+ * for a wait an older state saved without it, the seat's tool from the run's start.
+ */
+function seatWaitToolWord(state: WorkflowState, wait: SeatWait): string {
+  const started =
+    wait.seat === 'plan'
+      ? { tool: state.plannerTool, kind: state.plannerKind }
+      : wait.seat === 'build'
+        ? { tool: state.implementerTool, kind: state.implementerKind }
+        : state.reviewerTool !== undefined
+          ? { tool: state.reviewerTool, kind: state.reviewerKind }
+          : { tool: state.plannerTool, kind: state.plannerKind };
+  const ran = wait.tool !== undefined ? { tool: wait.tool, kind: wait.kind } : started;
+  return ran.tool === undefined
+    ? CREW_SEAT_LABELS[wait.seat]
+    : getRunnerIdentityDisplayName(ran.kind, ran.tool);
 }
 
 /**
@@ -211,7 +225,7 @@ export function deriveRunStatus(
     return stopped({
       kind: 'seat-wait',
       seat: state.seatWait.seat,
-      tool: seatToolWord(state, state.seatWait.seat),
+      tool: seatWaitToolWord(state, state.seatWait),
       resetAt: state.seatWait.resetAt,
     });
   }

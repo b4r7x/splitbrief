@@ -2,7 +2,7 @@ import type { Phase } from '../../../../src/core/schemas/enums.js';
 import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../src/core/schemas/evidence.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
-import type { RunStatus } from '../../../../src/core/sessions/run-status.js';
+import { deriveRunStatus, type RunStatus } from '../../../../src/core/sessions/run-status.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import { makeTask } from '../../../helpers/factories/task.js';
@@ -781,6 +781,26 @@ const AT_REST_PROMPT_TOO_LARGE = record({
     implementerTool: ARGV_IMPLEMENTER.tool,
     implementerModel: ARGV_IMPLEMENTER.model,
   }),
+});
+
+/**
+ * A brief routed to a Codex profile hit its usage limit and the run waits for the reset; the saved
+ * BUILD seat is Ollama, so the byline names the tool the wait is on, not the saved one.
+ */
+const SEAT_WAIT_STATE = savedState({
+  phase: 'implementing',
+  currentTaskIndex: 1,
+  briefs: [
+    { id: BRIEFS.validator.id, status: 'done' },
+    { id: BRIEFS.wire.id, status: 'in_progress' },
+    { id: BRIEFS.routeTests.id, status: 'pending' },
+  ],
+  seatWait: { seat: 'build', tool: 'codex', kind: 'cli', resetAt: '2026-09-14T17:00:00.000Z' },
+});
+const AT_REST_SEAT_WAIT = record({
+  sessionId: 'visual-at-rest-seat-wait',
+  status: deriveRunStatus({ state: SEAT_WAIT_STATE, liveness: 'not-alive' }),
+  state: SEAT_WAIT_STATE,
 });
 
 /** The same halt with Try again chosen and saved, and the process killed before it ran. */
@@ -2652,6 +2672,7 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   }),
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
+  atRestProjection({ id: 'workflow-at-rest-seat-wait', route: { record: AT_REST_SEAT_WAIT } }),
   atRestProjection({
     id: 'workflow-at-rest-halted-chosen',
     route: { record: AT_REST_HALTED_CHOSEN },

@@ -414,12 +414,12 @@ describe('openRunByline', () => {
           kind: 'open',
           stop: {
             kind: 'stopped',
-            on: { kind: 'seat-wait', seat: 'review', tool: 'codex', resetAt },
+            on: { kind: 'seat-wait', seat: 'review', tool: 'OpenAI Codex CLI', resetAt },
           },
           resumeAt: { kind: 'review', cycle: 0 },
         },
       }),
-    ).toBe('Waiting for codex · resets 17:00');
+    ).toBe('Waiting for OpenAI Codex CLI · resets 17:00');
   });
 
   it('names the step an interrupted run picks up at', () => {
@@ -668,9 +668,14 @@ describe('fitted byline parts', () => {
     [
       {
         kind: 'stopped',
-        on: { kind: 'seat-wait', seat: 'build', tool: 'codex', resetAt: '2026-10-10T17:00:00Z' },
+        on: {
+          kind: 'seat-wait',
+          seat: 'build',
+          tool: 'OpenAI Codex CLI',
+          resetAt: '2026-10-10T17:00:00Z',
+        },
       },
-      'Waiting for codex',
+      'Waiting for OpenAI Codex CLI',
       'warning',
     ],
   ] as const)('keeps %s structured and preserves its joined text', (stop, reason, reasonTone) => {

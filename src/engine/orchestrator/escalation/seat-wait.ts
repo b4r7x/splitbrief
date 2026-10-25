@@ -1,6 +1,10 @@
+import {
+  getRunnerDisplayName,
+  type RunnerConfig,
+} from '../../../core/config/accessors/runner-config.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { SeatWait, WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { thrownSeatFailure } from '../../implementers/pipeline/call-result.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
@@ -21,6 +25,8 @@ export type SeatCallContext = Readonly<{
   /** The state the call starts on; the wait re-reads the persisted head before it writes. */
   state: WorkflowState;
   seat: CrewSeatId;
+  /** The runner the call runs on, which a wait for its reset names. */
+  runner: RunnerConfig;
   signal?: AbortSignal | undefined;
   onStateChange?: ((state: WorkflowState) => void) | undefined;
 }>;
@@ -92,23 +98,18 @@ export async function waitForSeatReset(
   input: Readonly<{
     ref: WorkflowPersistenceContext;
     state: WorkflowState;
-    seat: CrewSeatId;
-    deadline: Date;
+    wait: SeatWait;
     signal?: AbortSignal | undefined;
   }>,
 ): Promise<WorkflowState> {
   const base = loadState(input.ref) ?? input.state;
-  let state = transitionAndSave(input.ref, base, {
-    type: 'SET_SEAT_WAIT',
-    seat: input.seat,
-    resetAt: input.deadline.toISOString(),
-  });
+  let state = transitionAndSave(input.ref, base, { type: 'SET_SEAT_WAIT', wait: input.wait });
   publishSeatWaitStarted(
     { bus: input.ref.bus, phase: state.phase },
-    input.seat,
-    input.deadline.toISOString(),
+    input.wait.seat,
+    input.wait.resetAt,
   );
-  await abortableDelay(input.deadline.getTime() - Date.now(), input.signal);
+  await abortableDelay(new Date(input.wait.resetAt).getTime() - Date.now(), input.signal);
   state = transitionAndSave(input.ref, state, { type: 'CLEAR_SEAT_WAIT' });
   return state;
 }
@@ -133,8 +134,7 @@ export async function resumeSeatWait(
   return waitForSeatReset({
     ref: input.ref,
     state: input.state,
-    seat: wait.seat,
-    deadline,
+    wait,
     ...(input.signal !== undefined && { signal: input.signal }),
   });
 }
@@ -168,8 +168,12 @@ export async function runSeatCall<T>(
   const resumed = await waitForSeatReset({
     ref: ctx.ref,
     state: ctx.state,
-    seat: ctx.seat,
-    deadline,
+    wait: {
+      seat: ctx.seat,
+      resetAt: deadline.toISOString(),
+      tool: getRunnerDisplayName(ctx.runner),
+      kind: ctx.runner.kind,
+    },
     ...(ctx.signal !== undefined && { signal: ctx.signal }),
   });
   ctx.onStateChange?.(resumed);

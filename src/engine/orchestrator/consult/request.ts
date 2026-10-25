@@ -12,6 +12,7 @@ import {
   type ResolvedConsultAnswer,
 } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
+import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
@@ -368,6 +369,7 @@ export async function requestConsult(
       ref: usageCtx,
       state,
       seat,
+      runner: seat === 'review' ? resolveReviewerRunner(ctx.config).runner : ctx.config.planner,
       ...(ctx.signal !== undefined && { signal: ctx.signal }),
       onStateChange: apply,
     },

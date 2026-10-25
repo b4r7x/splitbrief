@@ -288,6 +288,7 @@ export async function runImplementation(opts: {
                 ref: seatRef,
                 state,
                 seat: 'build',
+                runner: config.implementer,
                 signal,
                 onStateChange: (next) => {
                   state = next;

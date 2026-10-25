@@ -12,6 +12,7 @@ import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/rec
 import { sameSeatCandidate, type CrewSeatId } from '../../../core/crew/identity.js';
 import { configWithSwitchedSeat, seatCandidateOfRunner } from './switch-seat.js';
 import { readSeatOfRecord } from './seat-swap-context.js';
+import { haltedSeatIds } from '../../../core/state/seats.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
@@ -932,11 +933,20 @@ function applyRetryLaterRecoveryAction(
       message: `Recovery action "${opts.action}" needs the reset the halt names.`,
     });
   }
+  const ran = haltedSeatIds(opts, issue);
   let state = markRecoveryApplying(opts, issue);
   state = transitionAndSave(
     opts,
     state,
-    { type: 'SET_SEAT_WAIT', seat: issue.seat, resetAt: issue.resetAt },
+    {
+      type: 'SET_SEAT_WAIT',
+      wait: {
+        seat: issue.seat,
+        resetAt: issue.resetAt,
+        ...(ran !== null && { tool: ran.tool }),
+        ...(ran?.kind !== undefined && { kind: ran.kind }),
+      },
+    },
     { expectedRevision: state.stateRevision ?? 0 },
   );
   state = transitionAndSave(

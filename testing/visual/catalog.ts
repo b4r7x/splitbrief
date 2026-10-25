@@ -2215,6 +2215,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-seat-wait',
+      title: 'Workflow · a run waiting for a seat reset, at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-seat-wait',
+        title: 'Run waiting for the reset of the tool it halted on',
+        kind: 'ready',
+        marker: 'Waiting for OpenAI Codex CLI',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer and seat-wait byline' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-halted-chosen',
       title: 'Workflow · a halted run killed after its action was chosen',
       surface: screenSurface('workflow'),
