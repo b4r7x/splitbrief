@@ -157,7 +157,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
   participant RL as TUI run loop
   participant SS as switchSeatAndPrepareResume
   I-->>RS: error: You have hit your usage limit… try again at 15:27 (za 4h50)
-  RS->>RS: classify → rate-limited, reset &gt; 10 min → bez czekania
+  RS->>RS: classify → rate-limited, reset powyżej 10 min → bez czekania
   RS-->>HF: outcome usage-limit, słowa narzędzia
   HF->>SW: seat build, profil, config
   SW->>SW: config.yaml: fallback opencode · ready → na czele oferty
@@ -196,7 +196,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
     U->>RD: l
     RD->>AC: retry-later
     AC->>ST: SET_SEAT_WAIT build 15:27 · RESOLVE_PENDING_RECOVERY
-    RD->>RD: run wchodzi ponownie; init.ts resumeSeatWait śpi do 15:27 (bez limitu 10 min)
+    RD->>RD: run wchodzi ponownie, init.ts resumeSeatWait śpi do 15:27 (bez limitu 10 min)
   else użytkownik wybiera switch BUILD
     U->>RD: w
     RD->>U: otwiera picker BUILD na claude-code (model, effort do wyboru)

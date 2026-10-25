@@ -192,13 +192,13 @@ Ta strona pokazuje całość. Szczegóły każdego etapu są w obszarach, do kt�
   E->>P: odpowiedzi na tej samej sesji natywnej
   P-->>E: kind: plan
   E->>E: checkPlan + estimatePlanContextFits
-  E->>D: plan.json, plan.md, tasks.md; PLAN_COMPILED, PLAN_DONE → reviewing-plan
+  E->>D: plan.json, plan.md, tasks.md, PLAN_COMPILED, PLAN_DONE → reviewing-plan
   E-->>T: artifact_written, tasks_planned
   E->>T: await onApprovalNeeded('plan', plan.md, chronione operacje)
   T->>U: karta planu
   U->>T: Approve
   E-->>T: plan_approved
-  E->>D: BEGIN_IMPLEMENTATION → implementing; snapshot workspace-base; RECORD_WORKSPACE
+  E->>D: BEGIN_IMPLEMENTATION → implementing, snapshot workspace-base, RECORD_WORKSPACE
   loop każdy brief T001, T002, …
     E->>D: START_TASK
     E-->>T: task_started
@@ -212,11 +212,11 @@ Ta strona pokazuje całość. Szczegóły każdego etapu są w obszarach, do kt�
   E-->>T: review_started
   E->>E: runPreReviewChecks: plan i task checks
   E->>R: plan call: wybór reviewer checks V1…
-  E->>E: runReviewChecks w workspace; czerwony check powtórzony na run base
+  E->>E: runReviewChecks w workspace, czerwony check powtórzony na run base
   E-->>T: review_checks, full_suite
   E->>R: verdict call: diff, briefy, wyniki checków
   R-->>E: ReviewAnswer: pass, zero fix tasks
-  E->>D: REVIEW_DONE passed → complete; review.json, review.md
+  E->>D: REVIEW_DONE passed → complete, review.json, review.md
   E-->>T: review_completed, workflow_complete
   E->>D: summary.json, review-packet.json
   T->>U: ready-to-apply: Apply · Show diff · Discard
