@@ -3572,6 +3572,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-apply-partial-words',
+      title: 'Workflow · an Apply halt with typed words in the composer',
+      surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 30 })],
+      checkpoint: {
+        id: 'recovery-apply-partial-words',
+        title: 'Apply-partial recovery menu with typed words in the composer',
+        kind: 'question',
+        marker: 'Cannot send words with',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-review-contract',
       title: 'Workflow · a final review contract halt with two errors',
       surface: screenSurface('workflow'),

@@ -154,6 +154,7 @@ export function RecoveryMenu({
   // advertising its keys until focus comes back and says what ⏎ there does instead.
   const correctionAction = correctionActionFor(issue);
   const commandDraft = composerLiveStore.use((draft) => isCommandDraft(draft.document));
+  const composerEmpty = composerLiveStore.use((draft) => draft.empty);
   const composerLegend = commandDraft
     ? '⏎ runs the command'
     : correctionAction === undefined
@@ -164,7 +165,11 @@ export function RecoveryMenu({
       ? formatKeyHints([
           SELECT_HINT,
           { key: '⏎', verb: 'confirm' },
-          ...(correctionAction === undefined ? [] : [{ key: 'tab', verb: 'type a correction' }]),
+          ...(correctionAction !== undefined
+            ? [{ key: 'tab', verb: 'type a correction' }]
+            : composerEmpty
+              ? []
+              : [{ key: 'tab', verb: 'edit the words' }]),
         ])
       : `${composerLegend}${SOFT_SEP}tab back to the actions`,
     innerWidth,
