@@ -28,12 +28,12 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 **Acceptance criteria:**
 - No imports from `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, or `lib/`
 - No SPLITBRIEF string literals (`.splitbrief`, `claude-code`, `ollama`, `cost`, `planner`, `workflow`, etc.)
-- Pure function or small stateless module — you could publish it to npm under a different name without touching the code
+- Pure function or small stateless module — you could publish it to npm under a different name without touching the code (the format-errors path roots are the one stateful exception)
 - Reusable across unrelated projects
 
 **What lives here (`src/utils/`):**
 - `type-guards.ts` — `assertNever`, `isRecord`, `typedEntries`
-- `error.ts` / `format-errors.ts` — `error(kind, msg, …)` factory + `toErrorMessage(unknown)` → string
+- `error.ts` / `format-errors.ts` — `error(kind, msg, …)` factory + `toErrorMessage(unknown)` → string (holds module-scoped path roots set by the CLI and run isolation, the one stateful exception in `utils/`)
 - `redact.ts` — strip API keys from strings
 - `truncate.ts` — `truncateByChars`, `truncateByTailLines`
 - `format-time.ts` — `formatDuration`, `formatTime`

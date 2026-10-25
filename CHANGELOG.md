@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- A file error names the file from the project root, also from a subfolder, with --project and in a run workspace, and an unreadable kept workspace record says what failed.
 - The plan editor title names the file from the project root and shortens a long path in the middle.
 - On a short terminal, writing your own answer to a question no longer scrolls the question out of view.
 - After you close a question with Esc, and while the planner or the reviewer waits for your reply, the key legend above the composer is no longer blank: it names the keys the run answers to.

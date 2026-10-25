@@ -136,6 +136,8 @@ Run `npm rebuild better-sqlite3` in the SPLITBRIEF installation directory to res
 
 ### Symptom: `EACCES: permission denied, open '.splitbrief/...'` or config writes silently fail
 
+The error names the file from the project root, also from a subfolder or with `--project`, and names a run workspace file by its project path.
+
 **Likely cause:** The `.splitbrief/` directory was created by another user (often `root` after a `sudo` invocation), or sits on a filesystem mounted read-only. SPLITBRIEF writes session state, snapshots, and configuration there continuously.
 
 **Fix:**

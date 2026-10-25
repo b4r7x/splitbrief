@@ -12,6 +12,7 @@ import {
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { sessionFileFailure } from '../../../core/sessions/errors.js';
 import {
   WORKSPACE_KEPT_CODE,
   WORKSPACE_NOTICE_CATEGORY,
@@ -231,7 +232,10 @@ export async function publishRetainedWorkspaceNotice(
     if (record?.retained !== true || !(await retainedDirectoryMatches(record, workspace.path)))
       return false;
   } catch (err) {
-    publishError({ bus, phase: state.phase, message: toErrorMessage(err) });
+    const message = retentionError.isUnavailable(err)
+      ? toErrorMessage(err)
+      : sessionFileFailure('Could not read the kept workspace record', recordPath(input), err);
+    publishError({ bus, phase: state.phase, message });
     return false;
   }
   publishWarning({

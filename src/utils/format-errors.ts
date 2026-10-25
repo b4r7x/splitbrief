@@ -4,6 +4,21 @@ import {
 } from './display-text.js';
 import { projectRelativePathLabel } from './path-links.js';
 
+let projectRoot: string | undefined;
+const workspaceRoots: string[] = [];
+
+export function setProjectRoot(root: string): void {
+  projectRoot = root;
+}
+
+export function addWorkspaceRoot(root: string): () => void {
+  workspaceRoots.push(root);
+  return () => {
+    const index = workspaceRoots.lastIndexOf(root);
+    if (index !== -1) workspaceRoots.splice(index, 1);
+  };
+}
+
 /**
  * Node spells a file error `EACCES: permission denied, open '<absolute path>'`: the user needs
  * only its words.
@@ -13,7 +28,7 @@ export function fileErrorReason(err: unknown): string | undefined {
   return /^E[A-Z]+: ([^,]+)/.exec(err.message)?.[1];
 }
 
-/** The cause comes before the file, so a cut line hides the file, not the cause. */
+/** The cause comes first and the file follows. */
 export const fileFailure = (reason: string, file: string): string => `${reason} · ${file}`;
 
 /**
@@ -24,7 +39,23 @@ function errorFile(err: Error): string | undefined {
   const path =
     ('dest' in err && typeof err.dest === 'string' && err.dest) ||
     ('path' in err && typeof err.path === 'string' && err.path);
-  return path ? projectRelativePathLabel({ path, rootDir: process.cwd() }) : undefined;
+  if (!path) return undefined;
+
+  const candidateRoots = [...(projectRoot !== undefined ? [projectRoot] : []), ...workspaceRoots];
+
+  let winningRoot: string | undefined;
+  for (const root of candidateRoots) {
+    const labeled = projectRelativePathLabel({ path, rootDir: root });
+    if (labeled !== path) {
+      if (winningRoot === undefined || root.length > winningRoot.length) {
+        winningRoot = root;
+      }
+    }
+  }
+
+  return winningRoot !== undefined
+    ? projectRelativePathLabel({ path, rootDir: winningRoot })
+    : path;
 }
 
 /** A `write` or `fsync` error names no file: its words alone, after the caller's label. */

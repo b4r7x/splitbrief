@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmodSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -1057,7 +1057,7 @@ describe('runHeadless — the seat-down policy and the record', () => {
             message:
               record === 'malformed'
                 ? 'The stopped workspace could not be verified. Its files were left in place; automatic continuation is blocked.'
-                : `permission denied · ${path}`,
+                : `Could not read the kept workspace record: permission denied · ${relative(ref.projectDir, path)}`,
           }),
         }),
       );

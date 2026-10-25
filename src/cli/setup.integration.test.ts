@@ -14,6 +14,7 @@ import { readRunnerPids } from '../core/sessions/runner-pids.js';
 import { canSignalProcess } from '../lib/process/liveness.js';
 import { killOrphanRunner, plantOrphanRunner } from '#testing/helpers/orphan-runner.js';
 import { isCliError } from './errors.js';
+import { toErrorMessage } from '../utils/format-errors.js';
 
 let tmp: string;
 // console.log is a sanctioned global spy — see docs/TESTING.md core rules.
@@ -278,6 +279,65 @@ describe('canonicalizeProjectDir', () => {
     } finally {
       process.chdir(previousCwd);
       stderrSpy.mockRestore();
+    }
+  });
+
+  it('formats toErrorMessage project-relative with a subdirectory cwd and with --project pointing at a subdirectory', async () => {
+    const real = realpathSync(tmp);
+    createTestGitRepo(real);
+    const subdir = join(real, 'packages', 'web');
+    mkdirSync(subdir, { recursive: true });
+    const target = join(real, 'packages', 'web', 'file.ts');
+    const err = Object.assign(new Error(`EACCES: permission denied, open '${target}'`), {
+      code: 'EACCES',
+      path: target,
+    });
+    const previousCwd = process.cwd();
+
+    try {
+      process.chdir(subdir);
+      await canonicalizeProjectDir({});
+      expect(toErrorMessage(err)).toBe(`permission denied · ${join('packages', 'web', 'file.ts')}`);
+    } finally {
+      process.chdir(previousCwd);
+    }
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await canonicalizeProjectDir({ project: subdir });
+      expect(toErrorMessage(err)).toBe(`permission denied · ${join('packages', 'web', 'file.ts')}`);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('formats toErrorMessage project-relative in a folder that is not a git repository', async () => {
+    const real = realpathSync(tmp);
+    const link = join(dirname(real), `${tmp.split('/').pop()}-plain-link`);
+    symlinkSync(real, link, 'dir');
+    const target = join(real, SPLITBRIEF_DIR, CONFIG_FILE);
+    const err = Object.assign(new Error(`EACCES: permission denied, open '${target}'`), {
+      code: 'EACCES',
+      path: target,
+    });
+    const expected = `permission denied · ${join(SPLITBRIEF_DIR, CONFIG_FILE)}`;
+    const previousCwd = process.cwd();
+
+    try {
+      process.chdir(real);
+      expect(await canonicalizeProjectDir({})).toBe(real);
+      expect(toErrorMessage(err)).toBe(expected);
+      process.chdir(dirname(real));
+      expect(await canonicalizeProjectDir({ project: real.split('/').pop() })).toBe(real);
+      expect(toErrorMessage(err)).toBe(expected);
+      process.chdir(previousCwd);
+      expect(await canonicalizeProjectDir({ project: real })).toBe(real);
+      expect(toErrorMessage(err)).toBe(expected);
+      expect(await canonicalizeProjectDir({ project: link })).toBe(real);
+      expect(toErrorMessage(err)).toBe(expected);
+    } finally {
+      process.chdir(previousCwd);
+      cleanupTempDir(link);
     }
   });
 });
