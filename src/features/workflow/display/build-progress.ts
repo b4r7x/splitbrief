@@ -200,8 +200,9 @@ export function runnerSilenceMs(lifecycle: LifecycleState, now: number): number 
 }
 
 /** The last tool the call opened and has not closed, in the words the activity rows use. */
-function openToolText(tool: OpenTool): string {
+function openToolText(tool: OpenTool): string | null {
   const item = runnerActivityLedgerItem({ stage: 'updated', ...tool });
+  if (item === null) return null;
   return item.label === 'RUN' ? `running ${item.value}` : `${item.groupLabel} ${item.value}`;
 }
 
@@ -215,7 +216,10 @@ export function silenceTail(
   stall: LifecycleState['stall'],
 ): string | null {
   const tool = call?.openTools?.at(-1);
-  if (tool !== undefined) return openToolText(tool);
+  if (tool !== undefined) {
+    const text = openToolText(tool);
+    if (text !== null) return text;
+  }
   // The call in flight names its runner; the stall's own name stands in between calls.
   if (call?.runnerName !== undefined) {
     return stallRunnerHint(runnerTool(call.runnerName), call.backendKind);

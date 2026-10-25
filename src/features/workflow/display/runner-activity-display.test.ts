@@ -80,7 +80,7 @@ describe('runnerActivityLedgerItem', () => {
   // `…ing the typecheck failure and the pending input`.
   it('keeps the head of a prose value under a file label and the tail of a path', () => {
     const read = (label: string) =>
-      runnerActivityLedgerItem({ stage: 'completed', kind: 'read', label }).fitMode;
+      runnerActivityLedgerItem({ stage: 'completed', kind: 'read', label })?.fitMode;
 
     expect(read('Reading the typecheck failure and the pending input')).toBe('end');
     expect(read('reading src/features/workflow/display/flow.tsx')).toBe('start');
@@ -373,8 +373,8 @@ describe('warning model id resolution', () => {
       { cache: catalog },
     );
 
-    expect(item.value).toBe('Opus 5.5 → Sonnet 5 (overloaded)');
-    expect(item.diagnosticPreview).toBe('Opus 5.5 → Sonnet 5 (overloaded)');
+    expect(item?.value).toBe('Opus 5.5 → Sonnet 5 (overloaded)');
+    expect(item?.diagnosticPreview).toBe('Opus 5.5 → Sonnet 5 (overloaded)');
   });
 
   it('spells an id no catalog knows as its pretty name beside the catalog names', () => {
@@ -388,7 +388,7 @@ describe('warning model id resolution', () => {
       { cache: catalog },
     );
 
-    expect(item.value).toBe('Opus 5.5 → Claude Zeta 9 (overloaded)');
+    expect(item?.value).toBe('Opus 5.5 → Claude Zeta 9 (overloaded)');
   });
 
   it('replaces the longest id first so a shorter sibling cannot rewrite part of it', () => {
@@ -408,7 +408,7 @@ describe('warning model id resolution', () => {
   it('leaves a row with no structured ids exactly as recorded', () => {
     const item = runnerActivityLedgerItem({ ...fallbackRow }, { cache: catalog });
 
-    expect(item.value).toBe('claude-opus-5-5 → claude-sonnet-5 (overloaded)');
+    expect(item?.value).toBe('claude-opus-5-5 → claude-sonnet-5 (overloaded)');
     expect(resolveRunnerActivityModelNames({ ...fallbackRow }, catalog)).toBeNull();
   });
 
@@ -424,7 +424,7 @@ describe('warning model id resolution', () => {
       { cache: catalog },
     );
 
-    expect(item.value).toBe('Claude Opus 5.5 → Claude Sonnet 5 (overloaded)');
+    expect(item?.value).toBe('Claude Opus 5.5 → Claude Sonnet 5 (overloaded)');
   });
 
   it('routes each seat role to the catalog that names its models', () => {

@@ -4907,6 +4907,11 @@ const planActivityProjection: WorkflowFixtureProjection = {
       label: 'reading src/core/crew/identity.ts',
       target: 'src/core/crew/identity.ts',
     }),
+    claudePlanActivity(5, {
+      stage: 'started',
+      kind: 'command',
+      label: 'running command',
+    }),
   ],
 };
 
