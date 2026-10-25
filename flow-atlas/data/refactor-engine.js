@@ -2,8 +2,8 @@ window.ATLAS_REFACTOR = window.ATLAS_REFACTOR || [];
 window.ATLAS_REFACTOR.push({
   part: 'engine',
   title: 'src/engine bez src/engine/orchestrator (runners, cli-tools, implementers, planners, reviewers, providers, calls, detection, streaming, spec, events, hooks, codebase, snapshots, parsers)',
-  summary: `Ta część ma 283 pliki produkcyjne i 55161 linii. 56 plików ma ponad 300 linii, 24 ponad 500. Największe to runners/cli-tools/process-invoke.ts (1013, jedna funkcja invokeProcessCli ma 640 linii), events/schema.ts (887, jeden schemat), implementers/pipeline/run.ts (862, jedna fabryka createImplementerBase) i providers/model/catalog.ts (790). Główne problemy są trzy. (1) Płaskie foldery z grupami prefiksów: runners/ ma 35 plików (custom-*, sandbox-*), runners/cli-tools/ ma 27 (contract-harness-*, cli-probe-*, sondy w registry.ts), providers/ ma 32 (api-*, conformance-*, models-dev.ts obok folderu models-dev-cache/, cost-math.ts obok folderu cost/), streaming/ ma 18 (6 plików parse-*). Razem 25 grup prefiksów i par plik-obok-folderu. (2) Ta sama polityka napisana dwa lub trzy razy: rekorder i kolektor wywołań (limity, ostrzeżenia stderr), bezpieczeństwo komend sond (identyczny zbiór FORBIDDEN w detection/catalog-probe.ts i cli-tools/cli-probe-process.ts), pomocniki harnessu conformance (providers i cli-tools), strażnik przepisania pliku (extracted-code i apply-file-bundle), dwa czytniki rekordów Codex JSONL. Razem 17 klastrów duplikatów, 12 z domem w tej części. (3) Kilka plików ponad 500 linii łączy 3 do 5 odpowiedzialności. Zalecana kolejność: najpierw duplikaty o niskim ryzyku (RF_ENG_01 do RF_ENG_11, bez zmiany zachowania, mały zasięg), potem foldery bez dzielenia kodu (models-dev, cost, contract-harness, conformance, file-bundle), potem podziały dużych plików od najmniejszego zasięgu importów (arg-vector-preflight, runner-evidence, model/catalog, cost/breakdown), na końcu podziały wysokiego ryzyka (process-invoke, pipeline/run, resolve-cli-executable, prepared-execution). Po wszystkich propozycjach szacunkowo: ponad 500 linii zostaje 5 plików (wszystkie w keep), grup prefiksów zostaje około 7.`,
-  stats: { files: 283, prodLines: 55161, over300: 56, over500: 24, prefixGroups: 25, duplicates: 17 },
+  summary: `Ta część ma 283 pliki produkcyjne i 55344 linie (stan po synchronizacji z main 2026-10: liczba plików bez zmian, linie głównie z process-invoke.ts, events/schema.ts, plan-checks.ts). 56 plików ma ponad 300 linii, 24 ponad 500. Największe to runners/cli-tools/process-invoke.ts (1037, jedna funkcja invokeProcessCli ma 631 linii), events/schema.ts (900, jeden schemat), implementers/pipeline/run.ts (861, jedna fabryka createImplementerBase) i providers/model/catalog.ts (790). Główne problemy są trzy. (1) Płaskie foldery z grupami prefiksów: runners/ ma 35 plików (custom-*, sandbox-*), runners/cli-tools/ ma 27 (contract-harness-*, cli-probe-*, sondy w registry.ts), providers/ ma 32 (api-*, conformance-*, models-dev.ts obok folderu models-dev-cache/, cost-math.ts obok folderu cost/), streaming/ ma 18 (6 plików parse-*). Razem 25 grup prefiksów i par plik-obok-folderu. (2) Ta sama polityka napisana dwa lub trzy razy: rekorder i kolektor wywołań (limity, ostrzeżenia stderr), bezpieczeństwo komend sond (identyczny zbiór FORBIDDEN w detection/catalog-probe.ts i cli-tools/cli-probe-process.ts), pomocniki harnessu conformance (providers i cli-tools), strażnik przepisania pliku (extracted-code i apply-file-bundle), dwa czytniki rekordów Codex JSONL. Razem 17 klastrów duplikatów, 12 z domem w tej części. (3) Kilka plików ponad 500 linii łączy 3 do 5 odpowiedzialności. Zalecana kolejność: najpierw duplikaty o niskim ryzyku (RF_ENG_01 do RF_ENG_11, bez zmiany zachowania, mały zasięg), potem foldery bez dzielenia kodu (models-dev, cost, contract-harness, conformance, file-bundle), potem podziały dużych plików od najmniejszego zasięgu importów (arg-vector-preflight, runner-evidence, model/catalog, cost/breakdown), na końcu podziały wysokiego ryzyka (process-invoke, pipeline/run, resolve-cli-executable, prepared-execution). Po wszystkich propozycjach szacunkowo: ponad 500 linii zostaje 5 plików (wszystkie w keep), grup prefiksów zostaje około 7.`,
+  stats: { files: 283, prodLines: 55344, over300: 56, over500: 24, prefixGroups: 25, duplicates: 17 },
   proposals: [
     {
       id: 'RF_ENG_01',
@@ -126,18 +126,18 @@ window.ATLAS_REFACTOR.push({
       effort: 'S',
       risk: 'low',
       title: 'contract-harness-*.ts → runners/cli-tools/contract-harness/',
-      why: 'Pięć plików z prefiksem contract-harness (contract-harness.ts 285, -raw 266, -production 418, -cwd 267, -effects 285; razem 1521 linii) leży płasko w cli-tools/ obok 22 plików adapterów i sond. Prod importuje z nich tylko src/cli/commands/doctor.ts; reszta to scripts/cli-conformance.ts i testy.',
+      why: 'Pięć plików z prefiksem contract-harness (contract-harness.ts 285, -raw 266, -production 421, -cwd 267, -effects 285; razem 1524 linie) leży płasko w cli-tools/ obok 22 plików adapterów i sond. Prod importuje z nich tylko src/cli/commands/doctor.ts; reszta to scripts/cli-conformance.ts i testy.',
       before: [
         { path: 'src/engine/runners/cli-tools/contract-harness.ts', lines: 285, note: 'typy, procesy ograniczone, projekt tymczasowy' },
         { path: 'src/engine/runners/cli-tools/contract-harness-raw.ts', lines: 266, note: 'runRawCliConformance' },
-        { path: 'src/engine/runners/cli-tools/contract-harness-production.ts', lines: 418, note: 'runProductionCliConformance' },
+        { path: 'src/engine/runners/cli-tools/contract-harness-production.ts', lines: 421, note: 'runProductionCliConformance' },
         { path: 'src/engine/runners/cli-tools/contract-harness-cwd.ts', lines: 267, note: 'runCwdCliConformance' },
         { path: 'src/engine/runners/cli-tools/contract-harness-effects.ts', lines: 285, note: 'runFactoryEffectConformance' }
       ],
       after: [
         { path: 'src/engine/runners/cli-tools/contract-harness/harness.ts', lines: 260, note: 'po RF_ENG_03 bez kopii pomocników' },
         { path: 'src/engine/runners/cli-tools/contract-harness/raw.ts', lines: 262, note: 'bez lokalnego writeRawRecord' },
-        { path: 'src/engine/runners/cli-tools/contract-harness/production.ts', lines: 395, note: 'bez lokalnego readRawRecord' },
+        { path: 'src/engine/runners/cli-tools/contract-harness/production.ts', lines: 398, note: 'bez lokalnego readRawRecord' },
         { path: 'src/engine/runners/cli-tools/contract-harness/cwd.ts', lines: 267, note: '' },
         { path: 'src/engine/runners/cli-tools/contract-harness/effects.ts', lines: 285, note: '' }
       ],
@@ -272,17 +272,17 @@ window.ATLAS_REFACTOR.push({
       effort: 'S',
       risk: 'low',
       title: 'Wartości poświadczeń ze środowiska: jeden dom w runners/sandbox-credential-values.ts',
-      why: 'Wybór wartości poświadczeń ze środowiska jest napisany dwa razy: credentialValuesFromEnvironment (streaming/spawn-collect.ts:401) i selectedCredentialValues (runners/cli-tools/process-invoke.ts:919; ta sama logika plus nazwy z descriptor.auth.channels). Doczepienie nieliczalnej własności SANDBOX_CREDENTIAL_VALUES do nowego obiektu env jest napisane trzy razy: sandbox-env.ts:65, sandbox-env.ts:343, invoke-cli-adapter.ts:35. To kod redakcji sekretów; rozjechanie kopii zostawi sekret w logu.',
+      why: 'Wybór wartości poświadczeń ze środowiska jest napisany dwa razy: credentialValuesFromEnvironment (streaming/spawn-collect.ts:401) i selectedCredentialValues (runners/cli-tools/process-invoke.ts:931; ta sama logika plus nazwy z descriptor.auth.channels). Doczepienie nieliczalnej własności SANDBOX_CREDENTIAL_VALUES do nowego obiektu env jest napisane trzy razy: sandbox-env.ts:65, sandbox-env.ts:343, invoke-cli-adapter.ts:35. To kod redakcji sekretów; rozjechanie kopii zostawi sekret w logu.',
       before: [
         { path: 'src/engine/runners/sandbox-credential-values.ts', lines: 53, note: 'SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues' },
         { path: 'src/engine/streaming/spawn-collect.ts', lines: 434, note: 'credentialValuesFromEnvironment' },
-        { path: 'src/engine/runners/cli-tools/process-invoke.ts', lines: 1013, note: 'selectedCredentialValues' }
+        { path: 'src/engine/runners/cli-tools/process-invoke.ts', lines: 1037, note: 'selectedCredentialValues' }
       ],
       after: [
         { path: 'src/engine/runners/sandbox-credential-values.ts', lines: 90, note: '+ credentialValuesFromEnvironment(env, declaredNames?), withSandboxCredentialValues(target, values)' }
       ],
       moves: [
-        'credentialValuesFromEnvironment (spawn-collect.ts:401) + selectedCredentialValues (process-invoke.ts:919) → sandbox-credential-values.ts jako credentialValuesFromEnvironment(environment, declaredNames = [])',
+        'credentialValuesFromEnvironment (spawn-collect.ts:401) + selectedCredentialValues (process-invoke.ts:931) → sandbox-credential-values.ts jako credentialValuesFromEnvironment(environment, declaredNames = [])',
         'Object.defineProperty(result, SANDBOX_CREDENTIAL_VALUES, …) ×3 (sandbox-env.ts:65, :343, invoke-cli-adapter.ts:35) → withSandboxCredentialValues(target, values)'
       ],
       tests: 'sandbox-env.test.ts, spawn-collect.integration.test.ts, process-invoke.integration.test.ts zostają. Nowy sandbox-credential-values.test.ts testuje wybór nazw i nieliczalność własności bez spawnu.',
@@ -357,9 +357,9 @@ window.ATLAS_REFACTOR.push({
       priority: 2,
       effort: 'L',
       risk: 'medium',
-      title: 'Podzielić runners/cli-tools/process-invoke.ts (1013) na folder process-invoke/',
-      why: 'Największy plik części. invokeProcessCli (172-812) to jedna funkcja na 640 linii z domknięciem execute (334-671, 337 linii) i ponad 20 zmiennymi stanu (let w 176-330). W jednym pliku są: zapis eventu protokołu (recordCliProtocolEvent 101-171), walidacja przed startem (176-262), bufor linii i stosowanie eventów (execute 59-116), mapowanie zamknięcia procesu i terminala na wynik (execute 212-340), klasyfikacja haltów i błędów (813-1013). Klasyfikacja błędów jest czysta, ale prywatna, więc testuje się ją tylko przez spawn w process-invoke.integration.test.ts.',
-      before: [ { path: 'src/engine/runners/cli-tools/process-invoke.ts', lines: 1013, note: 'invokeProcessCli + recordCliProtocolEvent + klasyfikacja błędów' } ],
+      title: 'Podzielić runners/cli-tools/process-invoke.ts (1037) na folder process-invoke/',
+      why: 'Największy plik części. invokeProcessCli (173-804) to jedna funkcja na 631 linii z domknięciem execute (326-663, 337 linii) i ponad 20 zmiennymi stanu (let w 177-324). W jednym pliku są: zapis eventu protokołu (recordCliProtocolEvent 101-172), walidacja przed startem (177-263), bufor linii i stosowanie eventów (execute 59-116), mapowanie zamknięcia procesu i terminala na wynik (execute 213-332), klasyfikacja haltów i błędów (805-1037; main dołożył tu odmowę konta na stderr jako Seat down w f307dcb i błąd przed startem argv-prompt-too-large w afbb4ea). Klasyfikacja błędów jest czysta, ale prywatna, więc testuje się ją tylko przez spawn w process-invoke.integration.test.ts.',
+      before: [ { path: 'src/engine/runners/cli-tools/process-invoke.ts', lines: 1037, note: 'invokeProcessCli + recordCliProtocolEvent + klasyfikacja błędów' } ],
       after: [
         { path: 'src/engine/runners/cli-tools/process-invoke/invoke.ts', lines: 420, note: 'invokeProcessCli, CLI_RAW_OUTPUT_MAX_BYTES, typy kontekstu; jedno życie procesu' },
         { path: 'src/engine/runners/cli-tools/process-invoke/prelaunch.ts', lines: 110, note: 'poświadczenia, rekorder, walidacja argumentów przed startem → wynik albo porażka' },
@@ -369,18 +369,18 @@ window.ATLAS_REFACTOR.push({
         { path: 'src/engine/runners/cli-tools/process-invoke/failures.ts', lines: 175, note: 'HALT_FAILURES, haltFailure, namesHalt, callbackFailure, finishFailureSafely, fail, fatal, fatalSignal, fatalStateOf, prelaunchErrorCode, errorMessage, prelaunchErrorMessage' }
       ],
       moves: [
-        'recordCliProtocolEvent (101-171) → protocol-event.ts',
-        'HALT_FAILURES, haltFailure, HALT_CODES, namesHalt, callbackFailure, finishFailureSafely (813-886) i fail, isFailureExit, fatal, fatalSignal, fatalStateOf, prelaunchErrorCode, errorMessage, prelaunchErrorMessage (932-1013) → failures.ts',
-        'normalizeCliArgumentValidation, formatArgumentConflicts (888-918) → validate-args.ts (RF_ENG_11); selectedCredentialValues (919) → sandbox-credential-values.ts (RF_ENG_09)',
-        'kod 176-262 invokeProcessCli → prelaunch.ts jako preparePrelaunch(context) zwracające { recorder, credentialValues, args } albo wynik porażki',
+        'recordCliProtocolEvent (101-172) → protocol-event.ts',
+        'HALT_FAILURES, haltFailure, HALT_CODES, namesHalt, callbackFailure, finishFailureSafely (805-898) i fail, isFailureExit, fatal, fatalSignal, fatalStateOf, prelaunchErrorCode, errorMessage, prelaunchErrorMessage (944-1037) → failures.ts',
+        'normalizeCliArgumentValidation, formatArgumentConflicts (900-930) → validate-args.ts (RF_ENG_11); selectedCredentialValues (931) → sandbox-credential-values.ts (RF_ENG_09)',
+        'kod 177-263 invokeProcessCli → prelaunch.ts jako preparePrelaunch(context) zwracające { recorder, credentialValues, args } albo wynik porażki',
         'execute 59-116 (applyProtocolEvent, lineBuffer, allowInputEcho) → stream.ts jako createProtocolStream(state)',
-        'execute 212-340 (sygnał, brak terminala, wynik terminala, halty) → terminal.ts jako resolveTerminalResult(closed, stan)'
+        'execute 213-332 (sygnał, brak terminala, wynik terminala, halty) → terminal.ts jako resolveTerminalResult(closed, stan)'
       ],
       tests: 'process-invoke.integration.test.ts → process-invoke/invoke.integration.test.ts (zostaje test kompozycji). Nowe czyste testy: failures.test.ts (klasyfikacja haltów i błędów z samych danych), terminal.test.ts (zamknięcie + terminal → wynik bez spawnu), protocol-event.test.ts. vi.mock w invocation-identity-routing.test.ts:54-55 zmienia ścieżkę.',
       importers: 13,
       references: [ 'docs/PLANNERS-AND-IMPLEMENTERS.md:440', 'docs/PLANNERS-AND-IMPLEMENTERS.md:446', 'docs/APPROVAL-AND-RECOVERY.md:189', 'src/engine/runners/invocation-identity-routing.test.ts:54 (vi.mock)' ],
       steps: [ '1. Najpierw RF_ENG_09 i RF_ENG_11.', '2. Przenieś czyste funkcje (failures.ts, protocol-event.ts) bez zmian ciał.', '3. Zamień zmienne let domknięcia na jeden obiekt stanu przekazywany do stream.ts i terminal.ts.', '4. Wydziel prelaunch.ts.', '5. git mv do process-invoke/invoke.ts; zmień 13 importerów.', '6. npm run typecheck && npm run lint; potem process-invoke.integration.test.ts i testy adapterów.' ],
-      risks: 'Średnie: domknięcie dzieli stan między timerem, kontrolerami abort i parserem; przeniesienie do obiektu stanu może zmienić kolejność sprzątania (finally 798-804). Łapie to process-invoke.integration.test.ts (1800+ linii scenariuszy). Bez zmiany zachowania z punktu widzenia użytkownika.'
+      risks: 'Średnie: domknięcie dzieli stan między timerem, kontrolerami abort i parserem; przeniesienie do obiektu stanu może zmienić kolejność sprzątania (finally 790-796). Łapie to process-invoke.integration.test.ts (1800+ linii scenariuszy). Bez zmiany zachowania z punktu widzenia użytkownika.'
     },
     {
       id: 'RF_ENG_13',
@@ -388,16 +388,16 @@ window.ATLAS_REFACTOR.push({
       priority: 2,
       effort: 'L',
       risk: 'medium',
-      title: 'Podzielić implementers/pipeline/run.ts (862)',
-      why: 'createImplementerBase (179-862) to jedna fabryka na 680 linii z wewnętrznymi funkcjami: przygotowanie i zastosowanie paczki plików (bundleFailure 232, prepareCall 253, applyBundleOutput 302 — razem 155 linii), odczyt checkoutu i wykrycie ucieczki zapisu (readCheckout 389, checkoutEscape 423, warnChangedBetweenCalls 464 — 100 linii, plus moduł lastInPlaceByRun:80), i runCall (516-820, 300 linii), w którym druga połowa (662-820) mapuje wynik wywołania na ImplementerResult. Każda część zależy od baseConfig tylko przez kilka pól.',
-      before: [ { path: 'src/engine/implementers/pipeline/run.ts', lines: 862, note: 'createImplementerBase' } ],
+      title: 'Podzielić implementers/pipeline/run.ts (861)',
+      why: 'createImplementerBase (178-861) to jedna fabryka na 680 linii z wewnętrznymi funkcjami: przygotowanie i zastosowanie paczki plików (bundleFailure 232, prepareCall 253, applyBundleOutput 302 — razem 155 linii), odczyt checkoutu i wykrycie ucieczki zapisu (readCheckout 389, checkoutEscape 423, warnChangedBetweenCalls 464 — 100 linii, plus moduł lastInPlaceByRun:80), i runCall (515-819, 300 linii), w którym druga połowa (661-819) mapuje wynik wywołania na ImplementerResult. Każda część zależy od baseConfig tylko przez kilka pól.',
+      before: [ { path: 'src/engine/implementers/pipeline/run.ts', lines: 861, note: 'createImplementerBase' } ],
       after: [
         { path: 'src/engine/implementers/pipeline/run.ts', lines: 380, note: 'createImplementerBase: implement, retry, runPipeline, runCall do wywołania' },
         { path: 'src/engine/implementers/pipeline/bundle-io.ts', lines: 220, note: 'refreshTaskCode, aggregateApplied, bundleFailure, prepareCall, applyBundleOutput' },
         { path: 'src/engine/implementers/pipeline/checkout-guard.ts', lines: 130, note: 'CheckoutRead, lastInPlaceByRun, worksInPlace, readCheckout, checkoutEscape, warnChangedBetweenCalls' },
         { path: 'src/engine/implementers/pipeline/call-outcome.ts', lines: 170, note: 'mapowanie RunnerCallResult → ImplementerResult (ucieczka, status, raport blocked, parseImplementerReport)' }
       ],
-      moves: [ 'refreshTaskCode, aggregateApplied, bundleFailure, prepareCall, applyBundleOutput → bundle-io.ts (parametry: baseConfig.writes, createdByTask)', 'lastInPlaceByRun, worksInPlace, readCheckout, checkoutEscape, warnChangedBetweenCalls → checkout-guard.ts', 'runCall 662-820 + parseImplementerReport → call-outcome.ts', 'retryTemperature, MAX_RETRY_TEMPERATURE zostają w run.ts' ],
+      moves: [ 'refreshTaskCode, aggregateApplied, bundleFailure, prepareCall, applyBundleOutput → bundle-io.ts (parametry: baseConfig.writes, createdByTask)', 'lastInPlaceByRun, worksInPlace, readCheckout, checkoutEscape, warnChangedBetweenCalls → checkout-guard.ts', 'runCall 661-819 + parseImplementerReport → call-outcome.ts', 'retryTemperature, MAX_RETRY_TEMPERATURE zostają w run.ts' ],
       tests: 'run.integration.test.ts i run-events.integration.test.ts zostają. Nowe: checkout-guard.test.ts (porównanie stanów checkoutu bez wywołania modelu), call-outcome.test.ts (mapowanie wyniku z samych danych).',
       importers: 18,
       references: [ 'docs/APPROVAL-AND-RECOVERY.md:175', 'docs/EXTENDING.md:82', 'docs/PLANNERS-AND-IMPLEMENTERS.md:322', 'docs/TROUBLESHOOTING.md:545' ],
@@ -445,10 +445,10 @@ window.ATLAS_REFACTOR.push({
       priority: 2,
       effort: 'M',
       risk: 'low',
-      title: 'Parsery strumienia streaming/parse-*.ts → streaming/parse/ i podział parse-stream-json.ts (634)',
-      why: 'streaming/ ma 18 plików, 6 z prefiksem parse- plus output-parsers.ts i parser-warnings.ts. parse-stream-json.ts (634) łączy parser Claude stream-json (59-292, 491-634) z ramkami systemowymi i limitami (293-490: apiRetryWarning, modelFallbackWarning, modelRefusalWarning, permissionDeniedWarning, noticeWarning, systemFrameWarning, parseSystemProgress, parseRateLimitEvent, rateLimitWarning, rateLimitResetLabel — około 200 linii).',
+      title: 'Parsery strumienia streaming/parse-*.ts → streaming/parse/ i podział parse-stream-json.ts (635)',
+      why: 'streaming/ ma 18 plików, 6 z prefiksem parse- plus output-parsers.ts i parser-warnings.ts. parse-stream-json.ts (635) łączy parser Claude stream-json (63-296, 492-635) z ramkami systemowymi i limitami (297-491: apiRetryWarning, modelFallbackWarning, modelRefusalWarning, permissionDeniedWarning, noticeWarning, systemFrameWarning, parseSystemProgress, parseRateLimitEvent — około 195 linii; od a9f2ab9 parseRateLimitEvent sam buduje ostrzeżenia progów 70–95 % z core/recovery/usage-limit-step.ts, a rateLimitWarning i rateLimitResetLabel zniknęły).',
       before: [
-        { path: 'src/engine/streaming/parse-stream-json.ts', lines: 634, note: 'parser + ramki systemowe' },
+        { path: 'src/engine/streaming/parse-stream-json.ts', lines: 635, note: 'parser + ramki systemowe' },
         { path: 'src/engine/streaming/parse-jsonl.ts', lines: 208, note: '' },
         { path: 'src/engine/streaming/parse-opencode.ts', lines: 202, note: '' },
         { path: 'src/engine/streaming/parse-antigravity.ts', lines: 166, note: '' },
@@ -459,7 +459,7 @@ window.ATLAS_REFACTOR.push({
       ],
       after: [
         { path: 'src/engine/streaming/parse/stream-json.ts', lines: 430, note: 'createStreamParser, parseStreamLine, schematy, narzędzia' },
-        { path: 'src/engine/streaming/parse/system-frames.ts', lines: 205, note: 'ostrzeżenia ramek system i rate_limit_event' },
+        { path: 'src/engine/streaming/parse/system-frames.ts', lines: 195, note: 'ostrzeżenia ramek system i rate_limit_event (progi usage z core/recovery/usage-limit-step.ts)' },
         { path: 'src/engine/streaming/parse/jsonl.ts', lines: 200, note: '' },
         { path: 'src/engine/streaming/parse/opencode.ts', lines: 202, note: '' },
         { path: 'src/engine/streaming/parse/antigravity.ts', lines: 166, note: '' },
@@ -469,7 +469,7 @@ window.ATLAS_REFACTOR.push({
         { path: 'src/engine/streaming/parse/warnings.ts', lines: 90, note: 'dawny parser-warnings.ts' },
         { path: 'src/engine/streaming/parse/fields.ts', lines: 10, note: 'firstString (RF_ENG_11)' }
       ],
-      moves: [ 'parse-stream-json.ts 293-490 → parse/system-frames.ts', 'parse-<x>.ts → parse/<x>.ts (6 plików)', 'output-parsers.ts → parse/select.ts', 'parser-warnings.ts → parse/warnings.ts' ],
+      moves: [ 'parse-stream-json.ts 297-491 → parse/system-frames.ts', 'parse-<x>.ts → parse/<x>.ts (6 plików)', 'output-parsers.ts → parse/select.ts', 'parser-warnings.ts → parse/warnings.ts' ],
       tests: 'parse-*.test.ts (6) → parse/*.test.ts, output-parsers.test.ts → parse/select.test.ts. Nowy parse/system-frames.test.ts testuje ostrzeżenia z pojedynczej ramki; dziś wymaga to całego parsera. parsed-line-recorder.ts zostaje w streaming/ (to rekorder, nie parser).',
       importers: 12,
       references: [ 'docs/PLANNERS-AND-IMPLEMENTERS.md:450', 'docs/PLANNERS-AND-IMPLEMENTERS.md:655', 'docs/PLANNERS-AND-IMPLEMENTERS.md:656', 'docs/PLANNERS-AND-IMPLEMENTERS.md:657', 'docs/PLANNERS-AND-IMPLEMENTERS.md:660', 'docs/PLANNERS-AND-IMPLEMENTERS.md:662', 'docs/PLANNERS-AND-IMPLEMENTERS.md:668', 'docs/PLANNERS-AND-IMPLEMENTERS.md:681', 'docs/ARCHITECTURE.md:707' ],
@@ -685,9 +685,9 @@ window.ATLAS_REFACTOR.push({
       effort: 'M',
       risk: 'low',
       title: 'Adapter Claude Code jako folder runners/cli-tools/claude-code/',
-      why: 'cli-tools/claude-code.ts (558) łączy pięć części: budowę argv i ustawień piaskownicy (87-209), mapowanie stream-json na eventy protokołu (210-314), transport sterowania CLAUDE_STEERING i inputLine (315-424), sondę i fabrykę adaptera (425-491), surowy kontrakt conformance CLI_CONFORMANCE_CANDIDATES (493-558). Obok leży claude-reply-parser.ts (114), którego używa tylko claude-code.ts.',
+      why: 'cli-tools/claude-code.ts (559) łączy pięć części: budowę argv i ustawień piaskownicy (87-209), mapowanie stream-json na eventy protokołu (210-315), transport sterowania CLAUDE_STEERING i inputLine (316-425), sondę i fabrykę adaptera (426-492), surowy kontrakt conformance CLI_CONFORMANCE_CANDIDATES (494-559). Obok leży claude-reply-parser.ts (114), którego używa tylko claude-code.ts.',
       before: [
-        { path: 'src/engine/runners/cli-tools/claude-code.ts', lines: 558, note: '' },
+        { path: 'src/engine/runners/cli-tools/claude-code.ts', lines: 559, note: '' },
         { path: 'src/engine/runners/cli-tools/claude-reply-parser.ts', lines: 114, note: 'createClaudeReplyParser' }
       ],
       after: [
@@ -698,7 +698,7 @@ window.ATLAS_REFACTOR.push({
         { path: 'src/engine/runners/cli-tools/claude-code/conformance.ts', lines: 70, note: 'RawClaudeCliContract, rawContract, CLI_CONFORMANCE_CANDIDATES (moduł dla --module)' },
         { path: 'src/engine/runners/cli-tools/claude-code/reply-parser.ts', lines: 114, note: 'dawny claude-reply-parser.ts' }
       ],
-      moves: [ '87-209 → args.ts', '210-314 + claudeProtocolEvents (556) → protocol.ts', '315-424 → steering.ts', '425-491 → adapter.ts', '493-555 → conformance.ts', 'claude-reply-parser.ts → claude-code/reply-parser.ts' ],
+      moves: [ '87-209 → args.ts', '210-315 + claudeProtocolEvents (557) → protocol.ts', '316-425 → steering.ts', '426-492 → adapter.ts', '494-556 → conformance.ts', 'claude-reply-parser.ts → claude-code/reply-parser.ts' ],
       tests: 'claude-code.test.ts (1000+ linii) dzieli się na args.test.ts, protocol.test.ts, conformance.test.ts. Import zmieniają: usage-limit.test.ts, typed-output-replay.test.ts, typed-output-seat-kinds.integration.test.ts, invoke-cli-adapter.test.ts, contract.test.ts, output-format.test.ts, process-invoke.integration.test.ts, testing/integration/ui/thinking-freshness.test.ts, testing/visual/fixtures/workflow/projections.ts.',
       importers: 13,
       references: [ 'docs/PLANNERS-AND-IMPLEMENTERS.md:450', 'docs/PLANNERS-AND-IMPLEMENTERS.md:515', 'docs/PLANNERS-AND-IMPLEMENTERS.md:685', 'docs/TROUBLESHOOTING.md:638', 'skills/splitbrief/references/tool-recipes.md:5', 'skills/splitbrief-run/references/tool-recipes.md:5', 'skills/splitbrief-review/references/tool-recipes.md:5' ],
@@ -858,16 +858,16 @@ window.ATLAS_REFACTOR.push({
       effort: 'M',
       risk: 'low',
       title: 'spec/plan-*.ts → spec/plan/ i prompt-formatter.ts do spec/prompts/',
-      why: 'Trzy pliki z prefiksem plan- (plan-checks 371, plan-markdown 79, plan-tasks 48). prompt-formatter.ts (362) buduje prompt zadania i retry, a docs/STRUCTURE.md (Prompts folder) mówi: każdy szablon promptu żyje w spec/prompts/ — dziś ten jeden leży obok folderu prompts/. prompts/tasks.ts (7 linii, 2 stałe) importuje tylko prompts/plan-session.ts.',
+      why: 'Trzy pliki z prefiksem plan- (plan-checks 418, plan-markdown 79, plan-tasks 48). prompt-formatter.ts (362) buduje prompt zadania i retry, a docs/STRUCTURE.md (Prompts folder) mówi: każdy szablon promptu żyje w spec/prompts/ — dziś ten jeden leży obok folderu prompts/. prompts/tasks.ts (7 linii, 2 stałe) importuje tylko prompts/plan-session.ts.',
       before: [
-        { path: 'src/engine/spec/plan-checks.ts', lines: 371, note: 'checkPlan' },
+        { path: 'src/engine/spec/plan-checks.ts', lines: 418, note: 'checkPlan' },
         { path: 'src/engine/spec/plan-markdown.ts', lines: 79, note: 'formatPlanMarkdown' },
         { path: 'src/engine/spec/plan-tasks.ts', lines: 48, note: 'taskFromSpec, formatCheck, anchorAction' },
         { path: 'src/engine/spec/prompt-formatter.ts', lines: 362, note: 'formatTaskPrompt, formatRetryPrompt' },
         { path: 'src/engine/spec/prompts/tasks.ts', lines: 7, note: 'GATES_ARE_SPLITBRIEFS, SKILLS_WITH_EVERY_BRIEF' }
       ],
       after: [
-        { path: 'src/engine/spec/plan/checks.ts', lines: 371, note: '' },
+        { path: 'src/engine/spec/plan/checks.ts', lines: 418, note: '' },
         { path: 'src/engine/spec/plan/markdown.ts', lines: 79, note: '' },
         { path: 'src/engine/spec/plan/tasks.ts', lines: 48, note: '' },
         { path: 'src/engine/spec/prompts/task.ts', lines: 360, note: 'dawny prompt-formatter.ts' },
@@ -959,7 +959,7 @@ window.ATLAS_REFACTOR.push({
     }
   ],
   keep: [
-    { path: 'src/engine/events/schema.ts', lines: 887, reason: 'Jeden schemat: EngineEventPayloadSchema to jedna dyskryminowana unia po type (258-866) plus kilka podschematów. Podział na rodziny eventów rozbiłby jedno źródło prawdy zapisywane do session.jsonl; 15 miejsc w docs nazywa ten plik.' },
+    { path: 'src/engine/events/schema.ts', lines: 900, reason: 'Jeden schemat: EngineEventPayloadSchema to jedna dyskryminowana unia po type (258-866) plus kilka podschematów. Podział na rodziny eventów rozbiłby jedno źródło prawdy zapisywane do session.jsonl; 15 miejsc w docs nazywa ten plik.' },
     { path: 'src/engine/calls/recorder.ts', lines: 767, reason: 'Jedna maszyna stanu w domknięciu: createRunnerCallRecorder (131-689) dzieli 20 zmiennych między 16 metod. Po RF_ENG_01 spada do około 725 linii. Dalszy podział wymagałby obiektu stanu bez zysku dla testów, bo metody są testowane przez kontrakt rekordera.' },
     { path: 'src/engine/detection/service.ts', lines: 565, reason: 'Jedna maszyna stanu usługi detekcji: createDetectionService (260-560) trzyma generację, oczekujące ładowania i projekcję. Pomocniki 123-254 służą tylko jej. Ewentualny podział tylko po RF_ENG_10 (usunięcie reeksportu).' },
     { path: 'src/engine/implementers/isolation/shell-paths.ts', lines: 589, reason: 'Jedna tabela danych: COMMANDS (453) i handlery komend powłoki (132-452), czytane przez readShellCommand. Handlery są małe i sens mają tylko razem z tabelą. Jedyny kandydat do wycięcia to parser argumentów (parseArgs, valuesOf, hasFlag; 30-98).' },

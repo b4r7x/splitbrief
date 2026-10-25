@@ -2,8 +2,8 @@ window.ATLAS_REFACTOR = window.ATLAS_REFACTOR || [];
 window.ATLAS_REFACTOR.push({
   part: 'react',
   title: 'React / Ink: src/app, src/features, src/components, src/hooks',
-  summary: `Warstwa React ma 279 plików produkcyjnych (46339 linii), 89 z nich to komponenty .tsx; 20 komponentów ma ponad 250 linii, 38 ponad 150. Problem nie jest tylko w długości: strony są kontenerem, maszyną stanów fokusu, kalkulatorem layoutu i drzewem JSX naraz. workflow.tsx (679 linii) ma 8 useState, 6 useLayoutEffect, 16 odczytów ze store, 13 inline handlerów i 8-poziomowy ternary na podpowiedź kompozytora; trzy panele (recovery, wynik, sprawdzenia recenzenta) trzymają ten sam stan fokusu skopiowany trzy razy. setup.tsx (729) zawiera trzy komponenty i dwa czyste planery; composer.tsx (787) trzyma kolejkę wklejania obrazów, zapis szkicu, wysyłkę i 28 propsów, z których 4 służą tylko ekranowi home. Te same wzorce UI są pisane ręcznie wiele razy: ramka menu inline (stop, wynik, sprawdzenia), host przygotowania narzędzi (home, setup, session-preparation), lustrzany ref na odczyt klawiszy w tym samym stdin (4 miejsca), legendy klawiszy budowane trzema stylami w 13 plikach, nagłówki sekcji listy (5 miejsc), mapowanie akcji przewijania (3 kopie). Kolejność: najpierw prymitywy o niskim ryzyku (useKeyState, InlineMenuPanel, czyste byline lead dla InputFooter), potem rozbicie workflow.tsx na hooki i czyste derive, potem setup (bez zmiany reguły: wnętrze idzie do features/crew i features/runners), wspólny host przygotowania, home i composer. Po wykonaniu propozycji pliki ponad 500 linii w tej części spadają z 16 do około 11, ponad 300 z 47 do około 36; reszta ponad 500 to moduły .ts, które ocenia część ui. Decyzje dla właściciela: czy strona rozpuszczona (setup, help, skills) może dostać features/x, czy kompozytor ma dalej znać ekran home, oraz czy wprowadzić limit rozmiaru komponentu jako bramkę.`,
-  stats: { files: 279, prodLines: 46339, over300: 47, over500: 16, prefixGroups: 6, duplicates: 9 },
+  summary: `Warstwa React ma 282 pliki produkcyjne (46774 linie; stan po synchronizacji z main 2026-10, doszły running-seats.ts, use-running-seats.ts i entry-config.ts), 89 z nich to komponenty .tsx; 20 komponentów ma ponad 250 linii, 38 ponad 150. Problem nie jest tylko w długości: strony są kontenerem, maszyną stanów fokusu, kalkulatorem layoutu i drzewem JSX naraz. workflow.tsx (679 linii) ma 8 useState, 6 useLayoutEffect, 16 odczytów ze store, 13 inline handlerów i 8-poziomowy ternary na podpowiedź kompozytora; trzy panele (recovery, wynik, sprawdzenia recenzenta) trzymają ten sam stan fokusu skopiowany trzy razy. setup.tsx (729) zawiera trzy komponenty i dwa czyste planery; composer.tsx (787) trzyma kolejkę wklejania obrazów, zapis szkicu, wysyłkę i 28 propsów, z których 4 służą tylko ekranowi home. Te same wzorce UI są pisane ręcznie wiele razy: ramka menu inline (stop, wynik, sprawdzenia), host przygotowania narzędzi (home, setup, session-preparation), lustrzany ref na odczyt klawiszy w tym samym stdin (4 miejsca), legendy klawiszy budowane trzema stylami w 13 plikach, nagłówki sekcji listy (5 miejsc), mapowanie akcji przewijania (3 kopie). Kolejność: najpierw prymitywy o niskim ryzyku (useKeyState, InlineMenuPanel, czyste byline lead dla InputFooter), potem rozbicie workflow.tsx na hooki i czyste derive, potem setup (bez zmiany reguły: wnętrze idzie do features/crew i features/runners), wspólny host przygotowania, home i composer. Po wykonaniu propozycji pliki ponad 500 linii w tej części spadają z 16 do około 11, ponad 300 z 47 do około 36; reszta ponad 500 to moduły .ts, które ocenia część ui. Decyzje dla właściciela: czy strona rozpuszczona (setup, help, skills) może dostać features/x, czy kompozytor ma dalej znać ekran home, oraz czy wprowadzić limit rozmiaru komponentu jako bramkę.`,
+  stats: { files: 282, prodLines: 46774, over300: 47, over500: 16, prefixGroups: 6, duplicates: 9 },
   proposals: [
     {
       id: 'RF_REACT_01',
@@ -352,7 +352,7 @@ window.ATLAS_REFACTOR.push({
       why: "Komentarz w prompt-rows/approval.ts:45 mówi 'One legend grammar everywhere', ale KeyHint, formatKeyHints, SELECT_HINT, CONFIRM_HINT, DENY_HINT (approval.ts:40-61) mieszkają w features/workflow, więc src/components i inne feature nie mogą ich użyć. Skutek: legendy z '↑↓ select' są budowane trzema stylami w 13 plikach — tablica .join(SOFT_SEP) (palette.tsx:175-176, completion/command/menu.tsx:40, completion/reference/menu.tsx:26), template literal z SOFT_SEP (settings.tsx:155-156, skills.tsx:147, setup.tsx:403, recent-sessions-list.tsx:17, local-connection-form.tsx:488, contract-choice-overlay.tsx:135) i gotowy string z ' · ' (stop/options.ts:38-39, result/options.ts:24, review-checks/options.ts:16). fitKeyLegend już jest w core/key-legend.ts.",
       before: [
         { path: 'src/features/workflow/prompt-rows/approval.ts', lines: 556, note: 'KeyHint, formatKeyHints, SELECT_HINT, CONFIRM_HINT, DENY_HINT (40-61)' },
-        { path: 'src/core/key-legend.ts', lines: 22, note: 'KEY_LEGEND_LEADING, fitKeyLegend' }
+        { path: 'src/core/key-legend.ts', lines: 23, note: 'KEY_LEGEND_LEADING, fitKeyLegend' }
       ],
       after: [
         { path: 'src/core/key-legend.ts', lines: 60, note: "+ interface KeyHint { key: string; verb: string }, formatKeyHints(hints: readonly KeyHint[]): string, SELECT_HINT, CONFIRM_HINT, DENY_HINT, CLOSE_HINT ({ key: 'esc', verb: 'close' }), TAB_HINT(verb)" },
@@ -427,15 +427,15 @@ window.ATLAS_REFACTOR.push({
       effort: 'S',
       risk: 'low',
       title: 'FramePanel do src/components — ma konsumentów w dwóch feature',
-      why: "features/workflow/components/frame-panel.tsx (73 linie) jest używany przez app/overlays/editor.tsx (powierzchnia feature editor) i workflow/components/review-view.tsx. docs/STRUCTURE.md:614 opisuje to jako import strona → feature workflow. Reguła z docs/STRUCTURE.md:365 ('Shared across ≥2 features → src/components/') mówi, że to prymityw współdzielony; edytor nie powinien zależeć od feature workflow dla ramki.",
-      before: [ { path: 'src/features/workflow/components/frame-panel.tsx', lines: 73, note: 'FramePanel, OVERLAY_FRAME_COLS' } ],
-      after: [ { path: 'src/components/frame-panel.tsx', lines: 73, note: "FramePanel({ filePath: string; aside?: string; width: number; height: number; children: ReactNode }), OVERLAY_FRAME_COLS" } ],
+      why: "features/workflow/components/frame-panel.tsx (75 linii; od ff47a03 sam liczy ścieżkę od korzenia projektu z configStore i skraca ją w środku) jest używany przez app/overlays/editor.tsx (powierzchnia feature editor) i workflow/components/review-view.tsx. docs/STRUCTURE.md:614 opisuje to jako import strona → feature workflow. Reguła z docs/STRUCTURE.md:365 ('Shared across ≥2 features → src/components/') mówi, że to prymityw współdzielony; edytor nie powinien zależeć od feature workflow dla ramki.",
+      before: [ { path: 'src/features/workflow/components/frame-panel.tsx', lines: 75, note: 'FramePanel, OVERLAY_FRAME_COLS' } ],
+      after: [ { path: 'src/components/frame-panel.tsx', lines: 75, note: "FramePanel({ filePath: string; aside?: string; width: number; height: number; children: ReactNode }), OVERLAY_FRAME_COLS" } ],
       moves: [ 'frame-panel.tsx + frame-panel.test.tsx → src/components/' ],
       tests: 'frame-panel.test.tsx przechodzi razem z plikiem.',
       importers: 2,
       references: [ 'docs/STRUCTURE.md:611', 'docs/STRUCTURE.md:614', 'docs/STRUCTURE.md:616', 'docs/ARCHITECTURE.md:757' ],
       steps: [ '1. Przenieś plik i test.', '2. Zmień 2 importy.', '3. Uaktualnij 4 wzmianki w docs.' ],
-      risks: 'Niskie. Pokrywa się z RF_UI_?? (jeśli ui proponuje to samo jako przeniesienie).'
+      risks: 'Niskie. Po ff47a03 FramePanel czyta configStore.get().projectDir; components może importować stores (rank 3 < 4), więc przeniesienie nie łamie warstw, ale lepiej podać projectDir propsem. Pokrywa się z RF_UI_?? (jeśli ui proponuje to samo jako przeniesienie).'
     },
     {
       id: 'RF_REACT_15',
@@ -483,8 +483,8 @@ window.ATLAS_REFACTOR.push({
       effort: 'M',
       risk: 'low',
       title: 'TwoColumnPicker i PickerView: podpowiedź, karta terminala i podgląd jako czyste moduły',
-      why: "two-column-picker/picker.tsx (506 linii) trzyma czyste getHint z ESCAPE_HINTS (95-167), bylineLines (69-86), wrapValueLine i komponent TerminalPaneCard (168-230), buildRightDisplay (231-267) obok samego TwoColumnPicker (268-506). picker-view.tsx (473) trzyma czyste staleModelCopy, localConnectionPaneLines, postureLine (70-114), komponent ModelGuidance (115-142) oraz dwa duże domknięcia w renderze: terminalPaneFor (199-235) i resolvePreview (267-378, około 110 linii, z zagnieżdżonymi remedyFor, toolsByline, modelsByline).",
-      before: [ { path: 'src/features/runners/two-column-picker/picker.tsx', lines: 506, note: 'hint, karta terminala, right display, picker' }, { path: 'src/features/runners/picker-view.tsx', lines: 473, note: 'kopia, ModelGuidance, terminalPaneFor, resolvePreview, PickerView' } ],
+      why: "two-column-picker/picker.tsx (506 linii) trzyma czyste getHint z ESCAPE_HINTS (95-167), bylineLines (69-86), wrapValueLine i komponent TerminalPaneCard (168-230), buildRightDisplay (231-267) obok samego TwoColumnPicker (268-506). picker-view.tsx (472) trzyma czyste staleModelCopy, localConnectionPaneLines, postureLine (70-114), komponent ModelGuidance (115-142) oraz dwa duże domknięcia w renderze: terminalPaneFor (199-235) i resolvePreview (267-378, około 110 linii, z zagnieżdżonymi remedyFor, toolsByline, modelsByline).",
+      before: [ { path: 'src/features/runners/two-column-picker/picker.tsx', lines: 506, note: 'hint, karta terminala, right display, picker' }, { path: 'src/features/runners/picker-view.tsx', lines: 472, note: 'kopia, ModelGuidance, terminalPaneFor, resolvePreview, PickerView' } ],
       after: [
         { path: 'src/features/runners/two-column-picker/hint.ts', lines: 80, note: 'PickerHintKind, ESCAPE_HINTS, getHint, bylineLines' },
         { path: 'src/features/runners/two-column-picker/terminal-pane-card.tsx', lines: 65, note: 'wrapValueLine, TerminalPaneCard' },
@@ -508,15 +508,15 @@ window.ATLAS_REFACTOR.push({
       effort: 'S',
       risk: 'low',
       title: 'Sidebar: czysty deriveSidebarView i podkomponenty TaskRow, SidebarWaiting',
-      why: "workflow/components/sidebar.tsx ma 411 linii, 3 komponenty (SidebarWaiting 160-211, TaskRow 212-244, Sidebar 277-411) i czyste helpery (statusGlyph, rowSpec 94-158, anchorIndex, overflowLabel, combinedOverflowLabel, taskHasStatusTail 245-276). Ciało Sidebar 278-345 to około 70 linii czystego okna listy i wierszy załogi przed pierwszym JSX.",
-      before: [ { path: 'src/features/workflow/components/sidebar.tsx', lines: 411, note: 'SidebarWaiting, TaskRow, Sidebar + helpery' } ],
+      why: "workflow/components/sidebar.tsx ma 436 linii, 3 komponenty (SidebarWaiting 161-212, TaskRow 213-245, Sidebar 292-436) i czyste helpery (statusGlyph, rowSpec 95-159, anchorIndex, overflowLabel, combinedOverflowLabel, taskHasStatusTail 246-277, packPieces 278-291 z dee6b6c). Ciało Sidebar 293-370 to około 80 linii czystego okna listy i wierszy załogi przed pierwszym JSX; od 016daca wiersz załogi bierze najpierw seat z useRunningSeats (deriveRunningSeats), potem seat zapisany.",
+      before: [ { path: 'src/features/workflow/components/sidebar.tsx', lines: 436, note: 'SidebarWaiting, TaskRow, Sidebar + helpery' } ],
       after: [
         { path: 'src/features/workflow/layout/sidebar-view.ts', lines: 120, note: 'deriveSidebarView({ view, seats, recordedCrew, displayNames, width, height }) + anchorIndex, overflowLabel, combinedOverflowLabel, taskHasStatusTail — obok getSidebar* w layout/rect.ts' },
         { path: 'src/features/workflow/components/sidebar/task-row.tsx', lines: 100, note: 'TaskRow, rowSpec, statusGlyph, TASK_STATUS_GLYPH_NAME' },
         { path: 'src/features/workflow/components/sidebar/waiting.tsx', lines: 55, note: 'SidebarWaiting' },
         { path: 'src/features/workflow/components/sidebar/panel.tsx', lines: 120, note: 'Sidebar — render' }
       ],
-      moves: [ 'linie 278-345 → deriveSidebarView', 'TaskRow + rowSpec → sidebar/task-row.tsx', 'SidebarWaiting → sidebar/waiting.tsx' ],
+      moves: [ 'linie 293-370 → deriveSidebarView', 'TaskRow + rowSpec → sidebar/task-row.tsx', 'SidebarWaiting → sidebar/waiting.tsx' ],
       tests: 'sidebar.test.tsx (1157 linii): przypadki okna i etykiet przepełnienia → layout/sidebar-view.test.ts bez Ink; reszta zostaje przy panel.tsx.',
       importers: 1,
       references: [ 'docs/design/tui-concepts/README.md:34' ],

@@ -89,7 +89,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
   ST_TTY -->|"nie"| E1["interactive mode needs a TTY<br/>exit 1"]
   ST_TTY -->|"tak"| ST_GIT_REPO{"Projekt to repo git?"}
   ST_GIT_REPO -->|"nie"| E2["not a git repository<br/>exit 1"]
-  ST_GIT_REPO -->|"tak"| REAP["reapOrphanRunners<br/>ST_RENDER_FLAGS: fullscreen, mouse, hover"]
+  ST_GIT_REPO -->|"tak"| REAP["reapOrphanRunners, removeClosedRunWorkspaces<br/>ST_RENDER_FLAGS: fullscreen, mouse, hover"]
   REAP --> ST_NEEDS_SETUP{"Plik .splitbrief/config.yaml istnieje?"}
   ST_NEEDS_SETUP -->|"nie: needsSetup"| B["initStoresForTuiMount"]
   ST_NEEDS_SETUP -->|"tak"| B
@@ -146,7 +146,10 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
   ST_ISOLATION_STACK -->|"nie albo isolation none"| ST_SANDBOX{"Linux, BUILD claude-code, brak bwrap lub socat?"}
   ST_SANDBOX -->|"domyślny profil BUILD"| BL
   ST_SANDBOX -->|"inny profil"| W
-  ST_SANDBOX -->|"nie"| ST_READINESS_STATUS{"Liczba blokerów > 0?"}
+  ST_SANDBOX -->|"nie"| ST_RUNNER_AVAILABILITY{"Seat API odpowiada i serwuje model?"}
+  ST_RUNNER_AVAILABILITY -->|"nie: PLAN, REVIEW, domyślny BUILD"| BL
+  ST_RUNNER_AVAILABILITY -->|"nie: inny profil BUILD"| W
+  ST_RUNNER_AVAILABILITY -->|"tak albo bez sondy"| ST_READINESS_STATUS{"Liczba blokerów > 0?"}
   BL --> ST_READINESS_STATUS
   W --> ST_READINESS_STATUS
   ST_READINESS_STATUS -->|"tak"| OUTB["outcome blocked"]
@@ -273,7 +276,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       title: 'Tryb headless (--json, --plain): od startu do kodu wyjścia',
       caption: 'Headless nie ma ekranu ani pytań. Plan jest zatwierdzany bez człowieka, a każda sytuacja, która w TUI czeka na człowieka, kończy proces kodem 1 i linią splitbrief continue.',
       mermaid: `flowchart TD
-  H0["runHeadlessStart"] --> SW["setupWorkflow: repo git, reapOrphanRunners"]
+  H0["runHeadlessStart"] --> SW["setupWorkflow: repo git, reapOrphanRunners, removeClosedRunWorkspaces"]
   SW --> ST_NEEDS_SETUP{"Brak config.yaml?"}
   ST_NEEDS_SETUP -->|"tak"| EHC["ensureHeadlessConfig: diagram pierwszego uruchomienia"]
   ST_NEEDS_SETUP -->|"nie"| ST_SKILLS{"--skills: każde id znalezione?"}
@@ -472,15 +475,16 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_PROJECT_ROOT',
       title: 'Kanonizacja katalogu projektu',
       question: 'Czy podany katalog leży wewnątrz repo git?',
-      where: 'src/cli/setup.ts:34',
-      inputs: ['--project lub cwd', 'git rev-parse --show-toplevel'],
+      where: 'src/cli/setup.ts:39',
+      inputs: ['--project lub cwd', 'realpath podanej ścieżki', 'git rev-parse --show-toplevel'],
       branches: [
-        { if: 'nie ma repo (toplevel null)', then: 'projectDir = podana ścieżka (później bloker / błąd git)' },
-        { if: 'ścieżka to już toplevel (po realpath)', then: 'projectDir = toplevel' },
+        { if: 'nie ma repo (toplevel null)', then: 'projectDir = ścieżka po realpath (od e473b3d, wcześniej sama resolve()); `setProjectRoot` dostaje tę ścieżkę (później bloker / błąd git)' },
+        { if: 'ścieżka to już toplevel (po realpath)', then: 'projectDir = toplevel; `setProjectRoot(toplevel)`' },
         { if: 'podkatalog i podano --project', then: 'ostrzeżenie `--project X is inside git repository Y; using repository root.`, projectDir = toplevel' },
         { if: 'podkatalog bez --project', then: 'projectDir = toplevel bez komunikatu' }
       ],
-      default: 'Każda komenda przechodzi przez tę funkcję.'
+      default: 'Każda komenda przechodzi przez tę funkcję.',
+      notes: 'Od e473b3d funkcja ustawia też korzeń projektu w utils/format-errors.ts (`setProjectRoot`, src/cli/setup.ts:41 i :45). `toErrorMessage` nazywa wtedy plik z błędu fs (EACCES, ENOENT) ścieżką od korzenia projektu, także uruchomione z podkatalogu albo z --project; plik w workspace runu nazywa od korzenia workspace (`addWorkspaceRoot` w isolation/create.ts).'
     },
     {
       id: 'ST_AT_FILES',
@@ -531,7 +535,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       inputs: ['git'],
       branches: [
         { if: 'nie', then: 'CliError `not a git repository. Run git init first.`, exit 1' },
-        { if: 'tak', then: 'reapOrphanRunners (sprząta osierocone procesy narzędzi → zobacz lifecycle), potem flagi ekranu' }
+        { if: 'tak', then: 'reapOrphanRunners (sprząta osierocone procesy narzędzi → zobacz lifecycle), potem removeClosedRunWorkspaces (src/cli/setup.ts:160, od 48dc6c2: usuwa worktree lub staged copy runu zamkniętego, którego zamknięcie nie usunęło workspace), potem flagi ekranu' }
       ],
       default: 'Używane przez start (obie drogi), spec i review. init, status, doctor tego nie wołają (doctor zgłasza bloker `repo.not-git`).'
     },
@@ -786,6 +790,23 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
         { if: 'brak, profil niedomyślny', then: 'ostrzeżenie' }
       ],
       default: 'Sprawdzane tylko, gdy run woła BUILD (nie dla spec ani review).'
+    },
+    {
+      id: 'ST_RUNNER_AVAILABILITY',
+      title: 'Sonda dostępności seatu API w raporcie',
+      question: 'Co raport gotowości mówi o seacie, którego sonda endpointu nie wypadła dobrze?',
+      where: 'src/core/readiness/checks/availability.ts:109',
+      inputs: ['RunnerAvailabilityFact (slot, provider, endpoint, verdict)', 'czy to domyślny profil BUILD'],
+      branches: [
+        { if: 'available', then: 'ok: `<SEAT> <tool · model> is available at <endpoint>.`' },
+        { if: 'unavailable / timeout', then: '`is not reachable` / `did not answer in time` + `Probe: …`; fix: polecenie startu lokalnego providera albo `Check the <Provider> endpoint and network`' },
+        { if: 'no-models / missing-model', then: '`offers no models` / `does not serve "<id>"`; fix `Install a model for <Provider>` / `Select a model <Provider> serves`' },
+        { if: 'unauthorized / missing-credential', then: '`rejected the configured credential` / `has no credential configured`; fix `Check the credential for <Provider>` albo `Set an apiKey for <Provider>` / `Export <ENV>`' },
+        { if: 'not-probed', then: 'info, bez fix' },
+        { if: 'stan inny niż available i not-probed', then: 'PLAN i REVIEW oraz domyślny BUILD: BLOKER (`nextAction: prepare-runner`); inny profil BUILD: ostrzeżenie (availabilitySeverity, :158)' }
+      ],
+      default: 'Każdy fix kończy się `or choose another tool in Settings > Crew > <SEAT>` (profil niedomyślny: `change <slot> in .splitbrief/config.yaml`) `, then run splitbrief doctor again.`',
+      notes: 'Od 283c8e6 fix nazywa providera nazwą z katalogu (`Ollama`, `LM Studio`, `llama.cpp`; provider własny zostaje id), nie id z configu (providerName, :76). Ta sama zmiana daje nazwy z katalogu w komunikatach haltów i w `spec` (`Planning feature: … (planner: Claude Code CLI)`, src/cli/commands/spec.ts:188).'
     },
     {
       id: 'ST_READINESS_STATUS',
@@ -1350,7 +1371,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       inputs: ['opts.json', 'opts.plain'],
       branches: [
         { if: 'headless', then: 'prepareExecution(resume, headless) i runHeadless; bez setupWorkflow i bez pytania o hooki' },
-        { if: 'TUI', then: '`Resuming: <feature> (task n/m)`, setupWorkflow, initStores (pytanie o hooki), prepareExecution(resume), hydrateRun, ekran workflow' }
+        { if: 'TUI', then: '`Resuming: <feature> (task n/m)` (od d26097d bez pozycji, gdy run nie ma jeszcze briefów: `briefPosition`, src/core/state/selectors.ts:23), setupWorkflow, initStores (pytanie o hooki), prepareExecution(resume), hydrateRun, ekran workflow' }
       ],
       default: 'Przed przygotowaniem: uwagi o zmianie seatów na stderr.'
     },
@@ -1389,7 +1410,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       inputs: ['.splitbrief/active', 'state.json'],
       branches: [
         { if: 'nie', then: '`No active workflow.`' },
-        { if: 'tak', then: 'Feature, Status (słowo statusu runu), Task n/m, Started, Session, PLAN/BUILD/REVIEW (z uwzględnieniem seatSwitches), Done/Escalated/Failed' }
+        { if: 'tak', then: 'Feature, Status (słowo statusu runu), Task n/m (od d26097d brak wiersza Task, gdy run nie ma briefów), Started, Session, PLAN/BUILD/REVIEW (z uwzględnieniem seatSwitches), Done/Escalated/Failed' }
       ],
       default: 'Zawsze exit 0. Nie wczytuje configu jako warunku.'
     },
@@ -1473,6 +1494,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
     { key: 'doctor --json / --probe-seat', values: 'flaga / plan|build|review', default: 'brak', effect: '--json: rekord readiness_report i interakcja headless; --probe-seat: jedno płatne wywołanie.', where: 'src/cli/commands/doctor.ts:411' },
     { key: 'review --reviewer / --base', values: '<tool>[:<model>][@<effort>] / git ref', default: 'skonfigurowany reviewer lub planner / drzewo robocze', effect: 'Seat review na to jedno wywołanie; ref nie może zaczynać się od `-`.', where: 'src/cli/commands/review.ts:114' },
     { key: 'env CI', values: 'dowolna wartość', default: 'brak', effect: 'Wyłącza fullscreen i mysz; nie wymusza headless.', where: 'src/cli/setup.ts:57' },
+    { key: 'env NODE_ENV', values: 'dowolna wartość lub brak', default: 'production w procesie SPLITBRIEF', effect: 'node-env.ts (pierwszy import cli.ts) zapamiętuje wartość użytkownika i ustawia production dla Reacta (runAsProduction). Od c947aa6 checki, hooki, rendery, Show diff i edytor dostają z powrotem wartość użytkownika albo nie dostają zmiennej wcale (withUserNodeEnv w spawnPipe i spawnEditorProcess).', where: 'src/node-env.ts:6; src/lib/process/spawn/child-env.ts:81' },
     { key: 'HOME (~/.splitbrief/trust/)', values: 'katalog', default: 'katalog domowy', effect: 'Magazyn receiptów zaufania (hooki, komendy własne); inny HOME = brak zaufania.', where: 'src/core/trust/receipt-store.ts:23' }
   ],
   states: [
@@ -1491,7 +1513,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       steps: [
         '1. Node 22, brak usuniętych flag, operand ze spacją: strażniki przepuszczają.',
         '2. start: argumenty ok, projectDir = toplevel repo, brak @plików, brak --json/--plain → TUI.',
-        '3. stdin TTY, repo git, reapOrphanRunners, fullscreen + mysz.',
+        '3. stdin TTY, repo git, reapOrphanRunners, removeClosedRunWorkspaces, fullscreen + mysz.',
         '4. initStoresForTuiMount: config wczytany (ewentualne `⚠ ... retired` wstrzymane do montażu), brak hooków.',
         '5. Ink montuje home; preparationStore.submit z `Checking tools`.',
         '6. prepareStartOutcome: martwy wskaźnik active usunięty, raport ready-with-warnings (np. brudne drzewo), każdy seat admitted, preflight argumentów ok.',
@@ -1599,7 +1621,10 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
     { path: 'src/cli/unknown-command.ts', role: 'Usunięte flagi i komendy, literówki w nazwie komendy' },
     { path: 'src/cli/options.ts', role: 'Wszystkie flagi workflow, parsery, --action, wykluczenie --json/--plain' },
     { path: 'src/cli/errors.ts', role: 'CliError z exitCode' },
-    { path: 'src/cli/setup.ts', role: 'canonicalizeProjectDir, setupWorkflow (git, TTY, needsSetup), ensureHeadlessConfig' },
+    { path: 'src/cli/setup.ts', role: 'canonicalizeProjectDir (z setProjectRoot), setupWorkflow (git, reap, removeClosedRunWorkspaces, TTY, needsSetup), ensureHeadlessConfig' },
+    { path: 'src/node-env.ts', role: 'Pierwszy import: runAsProduction (NODE_ENV=production w procesie, wartość użytkownika dla dzieci)' },
+    { path: 'src/engine/orchestrator/run/close.ts', role: 'removeClosedRunWorkspaces: sprzątanie workspace zamkniętych runów przy starcie' },
+    { path: 'src/core/readiness/checks/availability.ts', role: 'Wpis raportu o sondzie seatu API: tekst, fix z nazwą providera z katalogu, waga' },
     { path: 'src/cli/commands/start/register.ts', role: 'Komenda start: walidacja argumentów, @pliki, wybór TUI/headless' },
     { path: 'src/cli/commands/start/interactive.ts', role: 'Start w TUI: bootstrap, Setup/home, przygotowanie w tle, wyjście przy blokadzie' },
     { path: 'src/cli/commands/start/streaming.ts', role: 'Start headless: zapis configu, skille, przygotowanie, runHeadless' },
@@ -1638,7 +1663,11 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
     'Strażnik Node odrzuca tylko major < 22. package.json deklaruje `^22 || ^24`, więc Node 23 i 25 przechodzą strażnika.',
     '`--on-seat-down switch` bez żadnego fallback daje exit 2 dopiero po przygotowaniu (`src/cli/headless.ts:365`), czyli po utworzeniu folderu sesji i wskaźnika active. Następny start uzna ten wskaźnik za martwy i go wyczyści, ale folder sesji zostaje.',
     '`review` woła `ensureHeadlessConfig` przed sprawdzeniem diffu: bez configu zapisuje config nawet przy `nothing to review`. Docs mówią, że czysty tree kończy „before any runner is constructed”; to prawda, ale detekcja narzędzi i zapis configu już się odbyły. `review` kończy exit 0 także przy werdykcie z blokującymi uwagami.',
-    'Headless resume/continue pomijają `setupWorkflow`: brak sprawdzenia repo git i brak `reapOrphanRunners` w tej drodze (TUI resume je robi).',
+    'Headless resume/continue pomijają `setupWorkflow`: brak sprawdzenia repo git, brak `reapOrphanRunners` i brak `removeClosedRunWorkspaces` w tej drodze (TUI resume je robi; `src/cli/commands/continue/resume.ts:130` woła setupWorkflow tylko w gałęzi TUI). `spec`, `review`, `doctor`, `status`, `init` też go nie wołają, więc workspace zamkniętego runu sprząta dopiero `start` albo TUI resume/continue.',
+    'Zmiana na main (2026-10): start sprząta workspace runów zamkniętych, których zamknięcie nie usunęło worktree lub staged copy, wraz z wpisem git worktree i gałęzią (48dc6c2, `removeClosedRunWorkspaces`, src/engine/orchestrator/run/close.ts:88). Błąd przy jednym runie daje ostrzeżenie `Could not remove the run workspace at …` i start idzie dalej.',
+    'Zmiana na main (2026-10): katalog projektu bez repo git jest teraz kanonizowany przez realpath, a `setProjectRoot` sprawia, że błędy plików nazywają plik od korzenia projektu (e473b3d).',
+    'Zmiana na main (2026-10): checki, hooki, rendery i edytor dostają NODE_ENV użytkownika zamiast production (c947aa6); wcześniej npm pomijał devDependencies, a testy Reacta traciły act().',
+    'Zmiana na main (2026-10): `status` i `Resuming:` nie pokazują pozycji briefu dla runu bez briefów (d26097d); fix-y readiness i `spec` nazywają narzędzia i providerów nazwą z katalogu (283c8e6).',
     'W TUI start z wiersza poleceń, który trafi na blokadę, zamyka cały TUI i drukuje raport na stdout. Ten sam bloker przy starcie z ekranu home lub Setup pokazuje panel `Tool preparation · Blocked` (r retry, esc back, s settings) i TUI zostaje.',
     'Zaufanie do hooków jest pytane przez readline na stderr PRZED montażem Ink, więc w TUI pytanie pojawia się w zwykłym terminalu, a nie w panelu.',
     'Uwagi o wycofanych kluczach configu pokazują się raz na proces i projekt; w TUI czekają do montażu ekranu (withHeldDiagnostics), potem trafiają do linii feedback i na stderr przy wyjściu.',

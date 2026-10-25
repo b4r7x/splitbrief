@@ -2,12 +2,12 @@ window.ATLAS_REFACTOR = window.ATLAS_REFACTOR || [];
 window.ATLAS_REFACTOR.push({
   part: 'engine-orch',
   title: 'src/engine/orchestrator',
-  summary: `Orchestrator to 205 plików produkcyjnych i 39 348 linii (wc -l, bez testów), prawie połowa engine. Podfoldery są w większości dobrze nazwane (planning, task, escalation, recovery, apply, isolation), a średni plik ma ok. 190 linii. Problem skupia się w 15 plikach powyżej 500 linii (razem ok. 12 tys. linii) i w korzeniu folderu: 21 luźnych plików, w tym klaster review (final-review.ts, review-call, review-checks, review-plan, review-renders, api-review-context, triage), który prosi się o własny folder.
+  summary: `Orchestrator to 206 plików produkcyjnych i 39 803 linie (wc -l, bez testów; stan po synchronizacji z main 2026-10, doszedł usage-limit-gate.ts, 53 linie), prawie połowa engine. Podfoldery są w większości dobrze nazwane (planning, task, escalation, recovery, apply, isolation), a średni plik ma ok. 190 linii. Problem skupia się w 15 plikach powyżej 500 linii (razem ok. 12 tys. linii) i w korzeniu folderu: 21 luźnych plików, w tym klaster review (final-review.ts, review-call, review-checks, review-plan, review-renders, api-review-context, triage), który prosi się o własny folder.
 
-Główne problemy: (1) jedna funkcja runFinalReviewPhase ma 806 linii, a recovery/actions.ts i recovery/builders/task.ts mają po ok. 1185 linii mieszanych odpowiedzialności; (2) polityka komend recenzenta (1106 linii) i allowlista planu (561 linii) leżą w dwóch folderach, a validation importuje stałe z planning; (3) prawdziwe duplikaty: halt seat-down i runner-defect budowany dwa razy (task/implementation-failure.ts trzy razy oraz escalation/handle.ts), halt consult-bound dwa razy, rozpisanie tożsamości seatów na SummaryBase dwa razy, własne kopie uniquePush, isENOENT i sha256Hex; (4) grupy prefiksowe w 15 miejscach (review-*, init-*, *-worktree, routing-*, seat-* i switch-seat-*, artifact-stage-*, *-gate).
+Główne problemy: (1) jedna funkcja runFinalReviewPhase ma 821 linii, a recovery/actions.ts (1212) i recovery/builders/task.ts (1190) mają po ok. 1200 linii mieszanych odpowiedzialności; (2) polityka komend recenzenta (1106 linii) i allowlista planu (577 linii) leżą w dwóch folderach, a validation importuje stałe z planning; (3) prawdziwe duplikaty: halt seat-down i runner-defect budowany dwa razy (task/implementation-failure.ts trzy razy oraz escalation/handle.ts), halt consult-bound dwa razy, rozpisanie tożsamości seatów na SummaryBase dwa razy, własne kopie uniquePush, isENOENT i sha256Hex; (4) grupy prefiksowe w 15 miejscach (review-*, init-*, *-worktree, routing-*, seat-* i switch-seat-*, artifact-stage-*, *-gate).
 
 Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poniżej godziny, mały zasięg). Potem podział builders/task.ts, polityk komend i recovery/actions.ts oraz folder review/ (RF_ORCH_01 do RF_ORCH_04). Na końcu mechaniczne podziały o dużym zasięgu (state-ops.ts ma 76 importerów, events.ts 60) i porządki folderów. Szacunek po wszystkich propozycjach: ok. 252 pliki, ok. 30 plików powyżej 300 linii (było 40), 1 plik powyżej 500 linii (isolation/create.ts, uzasadniony w keep).`,
-  stats: { files: 205, prodLines: 39348, over300: 40, over500: 15, prefixGroups: 15, duplicates: 14 },
+  stats: { files: 206, prodLines: 39803, over300: 41, over500: 15, prefixGroups: 15, duplicates: 14 },
   proposals: [
     {
       id: 'RF_ORCH_01',
@@ -16,11 +16,11 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'L',
       risk: 'medium',
       title: 'Folder review/: podział final-review.ts i review-checks.ts, przeniesienie klastra review z korzenia',
-      why: 'final-review.ts ma 1103 linie, z czego runFinalReviewPhase (linie 298-1103) to jedna funkcja na 806 linii. Robi ona osiem rzeczy: rebase stanu i ALL_DONE, pre-review, zbieranie wejść (universe, scope, ledger, drift, rendery), schemat werdyktu z superRefine, budowę promptu (pakiet API albo fitReviewPrompt), pętlę wywołań z kontynuacją, weryfikację twierdzeń, zapis rekordu i mapowanie błędu na FinalReviewFailure. Nic z tego nie da się dziś przetestować osobno. review-checks.ts (678 linii) łączy odczyt plików projektu, ponowne uruchomienie na bazie runu (preExistingKeys, 98 linii), uruchomienie jednego checku i orkiestrację runReviewChecks (215 linii). Do tego 7 plików review w korzeniu orchestratora tworzy grupę prefiksową review-* (review-call, review-checks, review-plan, review-renders) plus final-review, api-review-context i triage.',
+      why: 'final-review.ts ma 1119 linie, z czego runFinalReviewPhase (linie 299-1119) to jedna funkcja na 821 linii (main dołożył m.in. odmowę checku, którego nie da się uruchomić, w befef41). Robi ona osiem rzeczy: rebase stanu i ALL_DONE, pre-review, zbieranie wejść (universe, scope, ledger, drift, rendery), schemat werdyktu z superRefine, budowę promptu (pakiet API albo fitReviewPrompt), pętlę wywołań z kontynuacją, weryfikację twierdzeń, zapis rekordu i mapowanie błędu na FinalReviewFailure. Nic z tego nie da się dziś przetestować osobno. review-checks.ts (676 linii) łączy odczyt plików projektu, ponowne uruchomienie na bazie runu (preExistingKeys, 98 linii), uruchomienie jednego checku i orkiestrację runReviewChecks (215 linii). Do tego 7 plików review w korzeniu orchestratora tworzy grupę prefiksową review-* (review-call, review-checks, review-plan, review-renders) plus final-review, api-review-context i triage.',
       before: [
-        { path: 'src/engine/orchestrator/final-review.ts', lines: 1103, note: 'typy FinalReview*, reviewCheckResults, reviewConsultLog, reviewPlanningAnswers, verifyReviewClaims, runFinalReviewPhase (806 linii)' },
-        { path: 'src/engine/orchestrator/review-checks.ts', lines: 678, note: 'PROJECT_FILES, readProjectFiles, preExistingKeys, splitAtRunBase, runReviewCheck, skipReason, skippedSection, runReviewChecks' },
-        { path: 'src/engine/orchestrator/triage.ts', lines: 393, note: 'triageContractErrors, fixTaskTargetErrors, verifyClaimChecks, applyTriage, startFixCycle' },
+        { path: 'src/engine/orchestrator/final-review.ts', lines: 1119, note: 'typy FinalReview*, reviewCheckResults, reviewConsultLog, reviewPlanningAnswers, verifyReviewClaims, runFinalReviewPhase (821 linii)' },
+        { path: 'src/engine/orchestrator/review-checks.ts', lines: 676, note: 'PROJECT_FILES, readProjectFiles, preExistingKeys, splitAtRunBase, runReviewCheck, skipReason, skippedSection, runReviewChecks' },
+        { path: 'src/engine/orchestrator/triage.ts', lines: 401, note: 'triageContractErrors, fixTaskTargetErrors, verifyClaimChecks, applyTriage, startFixCycle' },
         { path: 'src/engine/orchestrator/api-review-context.ts', lines: 297, note: 'buildApiReviewContext' },
         { path: 'src/engine/orchestrator/review-renders.ts', lines: 232, note: 'reviewRenders, forceUnverifiedRenderCriteria' },
         { path: 'src/engine/orchestrator/review-call.ts', lines: 77, note: 'runReviewerCall' },
@@ -47,14 +47,14 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
         { path: 'src/engine/orchestrator/review/checks/skip.ts', lines: 70, note: 'REVIEW_CHECKS_SKIP_REASON, OFF_SECTION, skipReason, skippedSection, planLines' }
       ],
       moves: [
-        'REVIEW_UNAVAILABLE, FinalReviewFailure, ReviewPhaseStatus, FinalReview, FinalReviewResult, finalReviewError (final-review.ts:138-195) → review/types.ts',
-        'reviewCheckResults, reviewConsultLog, reviewPlanningAnswers (final-review.ts:198-233) oraz preparePrompt i budowa touchedNotSuggested (final-review.ts:551-748) → review/prompt.ts',
-        'odczyt ledgera, buildChecks, analyzeBriefDrift, writeDriftReport, currentCandidateId, reviewRenders (final-review.ts:478-585) → review/inputs.ts',
-        'verdictSchema (final-review.ts:524-546) → review/verdict-schema.ts jako reviewVerdictSchema(input)',
-        'verifyReviewClaims, ReviewVerification (final-review.ts:235-296) i blok forceUnverifiedRenderCriteria (final-review.ts:868-893) → review/verify-claims.ts',
-        'zapis RECORD_REVIEW, persistReviewEvidence, pendingCommands, RECORD_TRIAGE, writeSpecFile REVIEW_JSON_FILE i REVIEW_FILE (final-review.ts:894-971) → review/record.ts',
-        'blok catch z diagnosePlannerCallFailure i readApiContextDiagnostic (final-review.ts:972-1031), errorKind → review/failure.ts',
-        'callReviewer i pętla settleMidCallDeliveries (final-review.ts:750-866) + cały review-call.ts → review/call.ts',
+        'REVIEW_UNAVAILABLE, FinalReviewFailure, ReviewPhaseStatus, FinalReview, FinalReviewResult, finalReviewError (final-review.ts:139-196) → review/types.ts',
+        'reviewCheckResults, reviewConsultLog, reviewPlanningAnswers (final-review.ts:199-234) oraz preparePrompt i budowa touchedNotSuggested (final-review.ts:558-764) → review/prompt.ts',
+        'odczyt ledgera, buildChecks, analyzeBriefDrift, writeDriftReport, currentCandidateId, reviewRenders (final-review.ts:479-601) → review/inputs.ts',
+        'verdictSchema (final-review.ts:525-547) → review/verdict-schema.ts jako reviewVerdictSchema(input)',
+        'verifyReviewClaims, ReviewVerification (final-review.ts:236-297) i blok forceUnverifiedRenderCriteria (final-review.ts:884-909) → review/verify-claims.ts',
+        'zapis RECORD_REVIEW, persistReviewEvidence, pendingCommands, RECORD_TRIAGE, writeSpecFile REVIEW_JSON_FILE i REVIEW_FILE (final-review.ts:910-987) → review/record.ts',
+        'blok catch z diagnosePlannerCallFailure i readApiContextDiagnostic (final-review.ts:988-1047), errorKind → review/failure.ts',
+        'callReviewer i pętla settleMidCallDeliveries (final-review.ts:766-882) + cały review-call.ts → review/call.ts',
         'review-plan.ts → review/plan.ts; review-renders.ts → review/renders.ts; api-review-context.ts → review/api-context.ts; triage.ts → review/triage.ts',
         'review-checks.ts: runReviewChecks → review/checks/run-all.ts; runReviewCheck → review/checks/run-one.ts; preExistingKeys, noRunBase, splitAtRunBase, notVerifiedReason → review/checks/run-base.ts; PROJECT_FILES, readText, readProjectFiles → review/checks/project-files.ts; skipReason, skippedSection, planLines, REVIEW_CHECKS_SKIP_REASON → review/checks/skip.ts'
       ],
@@ -84,9 +84,9 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'M',
       risk: 'low',
       title: 'Podział recovery/builders/task.ts na buildery według rodzaju haltu',
-      why: 'recovery/builders/task.ts ma 1186 linii i 22 eksportowane funkcje sześciu różnych rodzin: seat-down (switchSeatOffer, autoSwitchIntent, buildSeatDownIssue), wyczerpane próby i kontekst (retry exhausted, context overflow, implementer unavailable, dependency blocked), defekty runnera (recipe, missing model, repeated timeout, input too large, RUNNER_DEFECT_BUILDERS), izolacja (left isolation, checkout changed), approval i snapshot, review failed. Nazwa task.ts nie mówi, co tu jest. Typy SeatSwapContext i DetectedSeatTool są zdefiniowane w builderze, a importuje je loader recovery/seat-swap-context.ts. Plik ma 42 importerów, w tym 26 testów i fikstury testing/visual.',
+      why: 'recovery/builders/task.ts ma 1190 linii i 22 eksportowane funkcje sześciu różnych rodzin: seat-down (switchSeatOffer, autoSwitchIntent, buildSeatDownIssue), wyczerpane próby i kontekst (retry exhausted, context overflow, implementer unavailable, dependency blocked), defekty runnera (recipe, missing model, repeated timeout, input too large, RUNNER_DEFECT_BUILDERS), izolacja (left isolation, checkout changed), approval i snapshot, review failed. Nazwa task.ts nie mówi, co tu jest. Main przerobił builder promptu za dużego (afbb4ea: inputTooLargeDetail, rozmiar w bajtach albo znakach, także dla odmowy argv przed startem narzędzia) i nazwy narzędzi z katalogu (283c8e6), bez zmiany podziału na rodziny. Typy SeatSwapContext i DetectedSeatTool są zdefiniowane w builderze, a importuje je loader recovery/seat-swap-context.ts. Plik ma 42 importerów, w tym 26 testów i fikstury testing/visual.',
       before: [
-        { path: 'src/engine/orchestrator/recovery/builders/task.ts', lines: 1186, note: '6 rodzin builderów, typy SeatSwapContext i DetectedSeatTool' }
+        { path: 'src/engine/orchestrator/recovery/builders/task.ts', lines: 1190, note: '6 rodzin builderów, typy SeatSwapContext i DetectedSeatTool' }
       ],
       after: [
         { path: 'src/engine/orchestrator/recovery/builders/seat-down.ts', lines: 330, note: 'DetectedSeatTool, SeatSwapContext, switchSeatOffer, seatHostableTools, modelRefusalSeatOffer, SeatDownRecoveryOptions, fallbackDetail, toolReported, reportedDetail, autoSwitchIntent, buildSeatDownIssue, runnerModel, refusalStopDetail, seatRouteRefusal, modelRefusalHalt' },
@@ -100,12 +100,12 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       moves: [
         'linie 140-430, 665-672, 742-759 (seat-down i odmowy modelu) → builders/seat-down.ts',
         'linie 76-111 (opcje) i 467-663 (retry, context overflow, implementer unavailable, dependency) → builders/retry.ts',
-        'linie 120-132, 438-452, 678-1005 (defekty runnera, RUNNER_DEFECT_BUILDERS, recoveryBuilderForRunnerOutcome) → builders/runner-defect.ts',
-        'linie 843-931 → builders/isolation.ts; linie 1007-1073 → builders/approval.ts; linie 1076-1186 → builders/review.ts',
+        'linie 120-132, 438-452, 678-1009 (defekty runnera, RUNNER_DEFECT_BUILDERS, recoveryBuilderForRunnerOutcome) → builders/runner-defect.ts',
+        'linie 843-931 → builders/isolation.ts; linie 1011-1077 → builders/approval.ts; linie 1080-1190 → builders/review.ts',
         'lastErrorDetail, handBackQuote (linie 455-465) → builders/details.ts',
         'gdy wejdzie RF_ORCH_14: typy SeatSwapContext i DetectedSeatTool → recovery/seat/swap-context.ts (loader jest ich właścicielem), builder importuje je jako type'
       ],
-      tests: 'builders/task.test.ts dzieli się na seat-down.test.ts, retry.test.ts, runner-defect.test.ts, isolation.test.ts, approval.test.ts i review.test.ts. Każda rodzina haltów dostaje własny plik testu bez importu 1186 linii. Fikstury testing/visual/fixtures/workflow/projections.ts i at-rest-projections.ts zmieniają importy na nowe pliki.',
+      tests: 'builders/task.test.ts dzieli się na seat-down.test.ts, retry.test.ts, runner-defect.test.ts, isolation.test.ts, approval.test.ts i review.test.ts. Każda rodzina haltów dostaje własny plik testu bez importu 1190 linii. Fikstury testing/visual/fixtures/workflow/projections.ts i at-rest-projections.ts zmieniają importy na nowe pliki.',
       importers: 42,
       references: [
         'docs/APPROVAL-AND-RECOVERY.md:201', 'docs/TESTING.md:157',
@@ -127,9 +127,9 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'M',
       risk: 'medium',
       title: 'Podział recovery/actions.ts: jedna akcja recovery na moduł',
-      why: 'recovery/actions.ts ma 1184 linie: typy wyniku, dispatcher applyRecoveryAction (89 linii) i 12 funkcji akcji (continue, consult grant 86 linii, revise, accept as is, review correction, skip task 72 linie, retry same worker, plan switch seat 110 linii, commit seat switch 93 linie, retry later, retry current task) plus 7 wspólnych helperów. Część switch-seat (linie 605-880) jest importowana przez recovery/switch-seat-resume.ts, więc dwa pliki o przełączaniu seatu zależą od siebie przez plik o wszystkich akcjach. 35 testów importuje ten plik.',
+      why: 'recovery/actions.ts ma 1212 linie: typy wyniku, dispatcher applyRecoveryAction (89 linii) i 12 funkcji akcji (continue, consult grant 86 linii, revise, accept as is, review correction, skip task 72 linie, retry same worker, plan switch seat 110 linii, commit seat switch 93 linie, retry later, retry current task) plus 7 wspólnych helperów. Main dołożył tu 28 linii: retry later zapisuje teraz w seatWait narzędzie wywołania i trzymany seat (`holds`) z configu następnego wejścia (890d992, 42fb57f), a komunikaty używają nazwy z katalogu (283c8e6). Część switch-seat (linie 610-885) jest importowana przez recovery/switch-seat-resume.ts, więc dwa pliki o przełączaniu seatu zależą od siebie przez plik o wszystkich akcjach. 35 testów importuje ten plik.',
       before: [
-        { path: 'src/engine/orchestrator/recovery/actions.ts', lines: 1184, note: 'typy, applyRecoveryAction, 12 akcji, helpery zapisu odpowiedzi i blokady' }
+        { path: 'src/engine/orchestrator/recovery/actions.ts', lines: 1212, note: 'typy, applyRecoveryAction, 12 akcji, helpery zapisu odpowiedzi i blokady' }
       ],
       after: [
         { path: 'src/engine/orchestrator/recovery/actions/types.ts', lines: 80, note: 'RecoveryActionBlockedCode, RecoveryActionAppliedStatus, ApplyRecoveryActionResult, ApplyRecoveryActionBlocked, ApplyRecoveryActionOptions' },
@@ -142,11 +142,11 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
         { path: 'src/engine/orchestrator/recovery/seat/switch-action.ts', lines: 340, note: 'SeatSwitchPlan, SeatSwitchPlanResult, ApplySwitchSeatResult, planSwitchSeatRecoveryAction, commitSeatSwitch, applySwitchSeatRecoveryAction, seatRunnerValue' }
       ],
       moves: [
-        'linie 59-129 → actions/types.ts; linie 131-223 → actions/apply.ts',
-        'linie 1039-1184 i 1096-1100 (helpery) → actions/shared.ts',
-        'linie 225-268, 576-602, 886-1012 → actions/retry.ts',
-        'linie 276-361 → actions/consult-grant.ts; linie 368-495 → actions/review.ts; linie 497-568 → actions/skip-task.ts',
-        'linie 605-880 i 1015-1037 → recovery/seat/switch-action.ts (folder z RF_ORCH_14; bez niego: actions/switch-seat.ts)'
+        'linie 62-134 → actions/types.ts; linie 136-228 → actions/apply.ts',
+        'linie 1067-1212 i 1124-1128 (helpery) → actions/shared.ts',
+        'linie 230-273, 581-607, 891-1040 → actions/retry.ts',
+        'linie 281-366 → actions/consult-grant.ts; linie 373-500 → actions/review.ts; linie 502-573 → actions/skip-task.ts',
+        'linie 610-885 i 1043-1065 → recovery/seat/switch-action.ts (folder z RF_ORCH_14; bez niego: actions/switch-seat.ts)'
       ],
       tests: 'actions.test.ts, actions-persistence.test.ts, actions-one-write.test.ts zostają testami dispatchera w actions/ (apply.test.ts, apply-persistence.test.ts, apply-one-write.test.ts); przypadki pojedynczych akcji można przenieść do testów modułów (consult-grant.test.ts, skip-task.test.ts, review.test.ts). switch-seat-resume.test.ts importuje commitSeatSwitch z seat/switch-action.js. Nowa testowalność: akcja consult grant albo accept-as-is bez ładowania dispatchera i wszystkich zależności 12 akcji.',
       importers: 40,
@@ -170,10 +170,10 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'M',
       risk: 'medium',
       title: 'Polityki komend w validation/: reviewer-policy/, plan-policy/ i wspólne flagi interpreterów',
-      why: 'validation/reviewer-command-policy.ts ma 1106 linii: ok. 500 linii tabel (linie 9-531), REVIEWER_COMMAND_RULES (opis reguł słowami), ok. 290 linii analizy argv, ok. 180 linii odmów i ok. 100 linii checkDefinition. planning/sanitize-discovered-validation.ts (561 linii) to allowlista komend planu; nie jest częścią sesji planowania, a validation/reviewer-command-policy.ts importuje z niej INLINE_CODE_FLAGS, NODE_SYNTAX_CHECK_FLAGS i nodeParsesOnly (krawędź validation → planning). Oba pliki trzymają osobny regex składni powłoki (SHELL_OPERATORS bez <> i SHELL_SYNTAX z <>). Konsumenci są też w engine/spec (plan-checks.ts, prompts/plan-session.ts, prompts/review-checks.ts).',
+      why: 'validation/reviewer-command-policy.ts ma 1106 linii: ok. 500 linii tabel (linie 9-531), REVIEWER_COMMAND_RULES (opis reguł słowami), ok. 290 linii analizy argv, ok. 180 linii odmów i ok. 100 linii checkDefinition. planning/sanitize-discovered-validation.ts (577 linii) to allowlista komend planu; nie jest częścią sesji planowania, a validation/reviewer-command-policy.ts importuje z niej INLINE_CODE_FLAGS, NODE_SYNTAX_CHECK_FLAGS i nodeParsesOnly (krawędź validation → planning). Oba pliki trzymają osobny regex składni powłoki (SHELL_OPERATORS bez <> i SHELL_SYNTAX z <>). Konsumenci są też w engine/spec (plan-checks.ts, prompts/plan-session.ts, prompts/review-checks.ts).',
       before: [
         { path: 'src/engine/orchestrator/validation/reviewer-command-policy.ts', lines: 1106, note: 'tabele programów i menedżerów pakietów, REVIEWER_COMMAND_RULES, walker argv, tokensRefusal, checkDefinition' },
-        { path: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts', lines: 561, note: 'tabele allowlisty, flagi interpreterów, odmowy, sanitizeDiscoveredValidation' }
+        { path: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts', lines: 577, note: 'tabele allowlisty, flagi interpreterów, odmowy, sanitizeDiscoveredValidation' }
       ],
       after: [
         { path: 'src/engine/orchestrator/validation/interpreter-flags.ts', lines: 65, note: 'CODE_LOAD_FLAGS, INLINE_CODE_FLAGS, NODE_TEST_REPORTERS, NODE_TEST_BOOLEAN_FLAGS, NODE_TEST_VALUE_FLAGS, NODE_SYNTAX_CHECK_FLAGS, nodeParsesOnly' },
@@ -188,9 +188,9 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
         { path: 'src/engine/orchestrator/validation/reviewer-policy/definition.ts', lines: 110, note: 'CheckDefinition, directoryOf, packageScript, definitionOf, checkDefinition' }
       ],
       moves: [
-        'sanitize-discovered-validation.ts:30-83 (flagi kodu i node --test, nodeParsesOnly) → validation/interpreter-flags.ts',
-        'sanitize-discovered-validation.ts:18-27, 85-156 → validation/plan-policy/tables.ts',
-        'sanitize-discovered-validation.ts:159-493 → validation/plan-policy/refusal.ts; :495-561 → validation/plan-policy/sanitize.ts',
+        'sanitize-discovered-validation.ts:32-85 (flagi kodu i node --test, nodeParsesOnly) → validation/interpreter-flags.ts',
+        'sanitize-discovered-validation.ts:20-29, 87-158 → validation/plan-policy/tables.ts',
+        'sanitize-discovered-validation.ts:161-509 → validation/plan-policy/refusal.ts; :511-577 → validation/plan-policy/sanitize.ts',
         'reviewer-command-policy.ts:9-202 i 421-513 → reviewer-policy/programs.ts; :207-414 → reviewer-policy/package-managers.ts; :505-531 → reviewer-policy/rules.ts',
         'reviewer-command-policy.ts:533-825 → reviewer-policy/argv.ts; :827-1006 → reviewer-policy/refusal.ts; :1009-1106 → reviewer-policy/definition.ts'
       ],
@@ -216,10 +216,10 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'S',
       risk: 'low',
       title: 'Jeden halt seat-down i runner-defect dla seatu build',
-      why: 'Ten sam halt seatu build jest zbudowany w dwóch miejscach. task/implementation-failure.ts ma trzy prawie identyczne bloki (unauthenticated linie 67-110, usage-limit 114-158, defekt runnera 160-194): loadSeatSwapContext, buildSeatDownIssue albo builder defektu, publishError z runnerHaltRow lub runnerDefectRow, INTERRUPT_STEP, raisePendingRecovery. escalation/handle.ts powtarza to w seatDownHalt (linie 82-138) i runnerDefectHalt (145-191). Razem ok. 230 linii. flow-atlas już opisuje to jako ten sam halt (journey.js:612, recovery.js:467-468).',
+      why: 'Ten sam halt seatu build jest zbudowany w dwóch miejscach. task/implementation-failure.ts ma trzy prawie identyczne bloki (unauthenticated linie 67-114, usage-limit 118-166, defekt runnera 168-206): loadSeatSwapContext, buildSeatDownIssue albo builder defektu, publishError z runnerHaltRow lub runnerDefectRow, INTERRUPT_STEP, raisePendingRecovery. escalation/handle.ts powtarza to w seatDownHalt (linie 82-142) i runnerDefectHalt (149-199). Razem ok. 230 linii. flow-atlas już opisuje to jako ten sam halt (journey.js:612, recovery.js:467-468).',
       before: [
-        { path: 'src/engine/orchestrator/task/implementation-failure.ts', lines: 218, note: 'handleFailedImplementation z trzema blokami haltu' },
-        { path: 'src/engine/orchestrator/escalation/handle.ts', lines: 559, note: 'seatDownHalt, runnerDefectHalt, runnerHalt' }
+        { path: 'src/engine/orchestrator/task/implementation-failure.ts', lines: 230, note: 'handleFailedImplementation z trzema blokami haltu' },
+        { path: 'src/engine/orchestrator/escalation/handle.ts', lines: 567, note: 'seatDownHalt, runnerDefectHalt, runnerHalt' }
       ],
       after: [
         { path: 'src/engine/orchestrator/escalation/halts.ts', lines: 170, note: 'buildSeatHalt({ ctx, state, task, failure: { outcome, runner, message }, booked }) → { issue, row, resetAt } lub null; raiseBuildSeatHalt (publish, INTERRUPT_STEP dla seat-down, raisePendingRecovery); także halt consult-bound z RF_ORCH_06' },
@@ -227,8 +227,8 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
         { path: 'src/engine/orchestrator/escalation/handle.ts', lines: 400, note: 'runnerHalt deleguje do raiseBuildSeatHalt, consultBoundHalt znika (RF_ORCH_06)' }
       ],
       moves: [
-        'wspólna część seatDownHalt i runnerDefectHalt (escalation/handle.ts:82-191) → escalation/halts.ts',
-        'trzy bloki task/implementation-failure.ts:67-194 → wywołanie raiseBuildSeatHalt z outcome z implResult',
+        'wspólna część seatDownHalt i runnerDefectHalt (escalation/handle.ts:82-199) → escalation/halts.ts',
+        'trzy bloki task/implementation-failure.ts:67-206 → wywołanie raiseBuildSeatHalt z outcome z implResult',
         'różnice zostają parametrami: booked dla runner-timeout-repeated, inPlace.revertedDir dla checkout, cleanup workspace przed defektem zostaje u wywołującego'
       ],
       tests: 'implementation-failure.integration.test.ts i handle.integration.test.ts oraz handle-blocked.integration.test.ts zostają i potwierdzają zachowanie. Nowy escalation/halts.test.ts sprawdza wybór buildera (unauthenticated, usage-limit, RUNNER_DEFECT_BUILDERS) bez pętli retry.',
@@ -251,9 +251,9 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'S',
       risk: 'low',
       title: 'Jeden halt consult-bound w escalation',
-      why: 'consultBoundHalt (escalation/handle.ts:215-257, 43 linie) i raiseConsultBound (escalation/local-retries.ts:78-117, 40 linii) budują ten sam buildConsultBoundRecoveryIssue z tymi samymi 11 polami, publikują publishConsultBoundSpent i ten sam publishError z kodem planner_calls_spent lub consult_bound_spent, a potem raisePendingRecovery. Różnią się tylko kształtem zwracanego wyniku.',
+      why: 'consultBoundHalt (escalation/handle.ts:223-265, 43 linie) i raiseConsultBound (escalation/local-retries.ts:78-117, 40 linii) budują ten sam buildConsultBoundRecoveryIssue z tymi samymi 11 polami, publikują publishConsultBoundSpent i ten sam publishError z kodem planner_calls_spent lub consult_bound_spent, a potem raisePendingRecovery. Różnią się tylko kształtem zwracanego wyniku.',
       before: [
-        { path: 'src/engine/orchestrator/escalation/handle.ts', lines: 559, note: 'consultBoundHalt' },
+        { path: 'src/engine/orchestrator/escalation/handle.ts', lines: 567, note: 'consultBoundHalt' },
         { path: 'src/engine/orchestrator/escalation/local-retries.ts', lines: 303, note: 'raiseConsultBound' }
       ],
       after: [
@@ -281,11 +281,11 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'S',
       risk: 'low',
       title: 'Jedno rozpisanie tożsamości seatów na SummaryBase',
-      why: 'run/workflow.ts:120-139 (seatIdentityOf) i session-lifecycle/finalize.ts:71-88 rozpisują te same 12 opcjonalnych pól SeatIdentity (planner, implementer, reviewer × tool, model, kind, axes) na SummaryBase linia w linię. run/init.ts:443-458 robi to samo dla 9 pól stanu z summaryBase. Nowe pole seatu wymaga dziś trzech zmian.',
+      why: 'run/workflow.ts:120-139 (seatIdentityOf) i session-lifecycle/finalize.ts:71-88 rozpisują te same 12 opcjonalnych pól SeatIdentity (planner, implementer, reviewer × tool, model, kind, axes) na SummaryBase linia w linię. run/init.ts:448-463 robi to samo dla 9 pól stanu z summaryBase. Nowe pole seatu wymaga dziś trzech zmian.',
       before: [
         { path: 'src/engine/orchestrator/run/workflow.ts', lines: 472, note: 'seatIdentityOf' },
         { path: 'src/engine/orchestrator/session-lifecycle/finalize.ts', lines: 155, note: 'finalizeEndedRun rozpisuje ident' },
-        { path: 'src/engine/orchestrator/run/init.ts', lines: 790, note: 'kopiowanie pól seatów do nowego stanu' }
+        { path: 'src/engine/orchestrator/run/init.ts', lines: 801, note: 'kopiowanie pól seatów do nowego stanu' }
       ],
       after: [
         { path: 'src/engine/orchestrator/summary/build.ts', lines: 280, note: 'summaryBaseFromIdentity(ident, { feature, startTime, projectDir, sessionId, modelCache }) i seatFieldsOf(summaryBase) obok typu SummaryBase' }
@@ -293,7 +293,7 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       moves: [
         'ciało seatIdentityOf (run/workflow.ts:120-139) → summary/build.ts summaryBaseFromIdentity',
         'finalize.ts:71-88 → wywołanie summaryBaseFromIdentity(recordedSeatIdentity(ref, state), …)',
-        'run/init.ts:443-458 → wywołanie seatFieldsOf(summaryBase)'
+        'run/init.ts:448-463 → wywołanie seatFieldsOf(summaryBase)'
       ],
       tests: 'build.test.ts dostaje test helpera (pola opcjonalne nie pojawiają się jako undefined). finalize.test.ts i workflow-summary.integration.test.ts zostają.',
       importers: 0,
@@ -379,8 +379,8 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'M',
       risk: 'low',
       title: 'state-ops.ts → folder state-ops/ (błędy, głowa stanu, CAS, operacje)',
-      why: 'state-ops.ts ma 808 linii i dwie odpowiedzialności: mechanikę zapisu state.json z porównaniem rewizji (readStateHead, commitState, commitWorkflowState, mutateState z pętlą konfliktów, linie 34-546) i nazwane operacje domenowe (transitionAndSave, recordBriefCorrection, recordResumeUserMessage, pruneResumeUserMessages, recordLastFailure, raisePendingRecovery, parkStoppedRun, addUsageAndSave, linie 548-808). Mechanika CAS jest dziś testowalna tylko przez operacje. Plik ma 76 importerów (56 produkcyjnych), z czego 47 importuje transitionAndSave.',
-      before: [ { path: 'src/engine/orchestrator/state-ops.ts', lines: 808, note: 'błędy, head, rebase, CAS, operacje domenowe' } ],
+      why: 'state-ops.ts ma 819 linii i dwie odpowiedzialności: mechanikę zapisu state.json z porównaniem rewizji (readStateHead, commitState, commitWorkflowState, mutateState z pętlą konfliktów, linie 34-557) i nazwane operacje domenowe (transitionAndSave, recordBriefCorrection, recordResumeUserMessage, pruneResumeUserMessages, recordLastFailure, raisePendingRecovery, parkStoppedRun, addUsageAndSave, linie 559-819). Mechanika CAS jest dziś testowalna tylko przez operacje. Plik ma 76 importerów (56 produkcyjnych), z czego 47 importuje transitionAndSave.',
+      before: [ { path: 'src/engine/orchestrator/state-ops.ts', lines: 819, note: 'błędy, head, rebase, CAS, operacje domenowe' } ],
       after: [
         { path: 'src/engine/orchestrator/state-ops/errors.ts', lines: 85, note: 'MAX_STATE_CONFLICT_RETRIES, StateOperationExpectedRevision, StateOperationContext, StateOperationConflictData, StateOperationConflictError, stateOpsError' },
         { path: 'src/engine/orchestrator/state-ops/head.ts', lines: 180, note: 'workflowStatePath, followCommittedState, revisionsMatch, readStateHead, WorkflowStateHead, readWorkflowStateHead, mergeNativeDeliveryState, mergeQueues, rebaseOnPersistedWorkflowState' },
@@ -388,10 +388,10 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
         { path: 'src/engine/orchestrator/state-ops/ops.ts', lines: 280, note: 'transitionAndSave, transitionsAndSave, recordBriefCorrection, briefCorrectionStep, recordResumeUserMessage, pruneResumeUserMessages, recordLastFailure, raisePendingRecovery, parkStoppedRun, addUsageAndSave' }
       ],
       moves: [
-        'linie 34-111 → state-ops/errors.ts',
-        'linie 113-278 → state-ops/head.ts',
-        'linie 280-546 → state-ops/commit.ts',
-        'linie 548-808 → state-ops/ops.ts'
+        'linie 34-118 → state-ops/errors.ts',
+        'linie 120-285 → state-ops/head.ts',
+        'linie 287-557 → state-ops/commit.ts',
+        'linie 559-819 → state-ops/ops.ts'
       ],
       tests: 'state-ops.test.ts dzieli się na commit.test.ts (konflikty, retry, durability-uncertain), head.test.ts (rebase, mergeQueues) i ops.test.ts. Nowa testowalność: mutateState i mergeQueues osobno.',
       importers: 76,
@@ -410,9 +410,9 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'M',
       risk: 'low',
       title: 'events.ts → folder publish/ według dziedziny zdarzeń',
-      why: 'events.ts ma 742 linie i 41 eksportowanych helperów: zdarzenia runnera i plannera, briefów, review, recovery i seatów oraz komunikaty (error, warning, info). 52 pliki produkcyjne importują go, z czego 20 bierze tylko publishWarning, publishError, publishWarningFromError lub publishInfo; 18 helperów ma po jednym importerze produkcyjnym. Nazwa events.ts myli się z src/engine/events/ (bus i schemat) i z approval/events.ts.',
+      why: 'events.ts ma 746 linie i 41 eksportowanych helperów: zdarzenia runnera i plannera, briefów, review, recovery i seatów oraz komunikaty (error, warning, info). 52 pliki produkcyjne importują go, z czego 20 bierze tylko publishWarning, publishError, publishWarningFromError lub publishInfo; 18 helperów ma po jednym importerze produkcyjnym. Nazwa events.ts myli się z src/engine/events/ (bus i schemat) i z approval/events.ts.',
       before: [
-        { path: 'src/engine/orchestrator/events.ts', lines: 742, note: '41 helperów publish* i create*' },
+        { path: 'src/engine/orchestrator/events.ts', lines: 746, note: '41 helperów publish* i create*' },
         { path: 'src/engine/orchestrator/approval/events.ts', lines: 57, note: 'publishApprovalRejected, publishApprovalGranted, publishApprovalPrompted' }
       ],
       after: [
@@ -442,24 +442,24 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'M',
       risk: 'medium',
       title: 'run/init.ts i run/init-* → folder run/init/',
-      why: 'run/init.ts ma 790 linii: initializeWorkflow to 361 linii (przypięcie approve, recordInterruptedCalls, uzgodnienie rekordu seatów, seat wait, kontynuacja, skille, seaty, nowy stan albo wznowienie, WorkflowContext), a linie 560-790 to osobny temat: naprawa stanu przy wznowieniu (stale halt, realignPassedTaskIndex, restoreUnresumedBriefCut, restartInterruptedTask). Obok leżą init-seats.ts i init-sinks.ts: plik x.ts obok rodzeństwa x-*.ts.',
+      why: 'run/init.ts ma 801 linii: initializeWorkflow to 379 linii (przypięcie approve, recordInterruptedCalls, seedUsageLimitSteps z a9f2ab9, uzgodnienie rekordu seatów, seat wait (od 42fb57f resumeSeatWait dostaje config), workflow_config z rodzajem i osiami seatów (016daca), kontynuacja, skille, seaty, nowy stan albo wznowienie, WorkflowContext), a linie 571-801 to osobny temat: naprawa stanu przy wznowieniu (stale halt, realignPassedTaskIndex, restoreUnresumedBriefCut, restartInterruptedTask). Obok leżą init-seats.ts i init-sinks.ts: plik x.ts obok rodzeństwa x-*.ts.',
       before: [
-        { path: 'src/engine/orchestrator/run/init.ts', lines: 790, note: 'opcje, initializeWorkflow, naprawy wznowienia' },
+        { path: 'src/engine/orchestrator/run/init.ts', lines: 801, note: 'opcje, initializeWorkflow, naprawy wznowienia' },
         { path: 'src/engine/orchestrator/run/init-seats.ts', lines: 101, note: 'createPlannerSeat, createImplementerSeat' },
         { path: 'src/engine/orchestrator/run/init-sinks.ts', lines: 87, note: 'attachRunSinks' }
       ],
       after: [
         { path: 'src/engine/orchestrator/run/init/initialize.ts', lines: 260, note: 'initializeWorkflow jako sekwencja kroków' },
         { path: 'src/engine/orchestrator/run/init/options.ts', lines: 65, note: 'RunWorkflowOptions, InitResult, InitializeWorkflowArgs' },
-        { path: 'src/engine/orchestrator/run/init/saved-state.ts', lines: 110, note: 'przypięcie approve (linie 230-252) i uzgodnienie rekordu seatów z publishSeatSwitched (linie 262-312)' },
-        { path: 'src/engine/orchestrator/run/init/start-state.ts', lines: 75, note: 'nowy stan: START, workflow_started, wiadomość użytkownika, ostrzeżenia gotowości, gałąź git (linie 433-489)' },
+        { path: 'src/engine/orchestrator/run/init/saved-state.ts', lines: 110, note: 'przypięcie approve (linie 231-253) i uzgodnienie rekordu seatów z publishSeatSwitched (linie 266-316)' },
+        { path: 'src/engine/orchestrator/run/init/start-state.ts', lines: 75, note: 'nowy stan: START, workflow_started, wiadomość użytkownika, ostrzeżenia gotowości, gałąź git (linie 438-494)' },
         { path: 'src/engine/orchestrator/run/init/resume-repair.ts', lines: 240, note: 'publishResumedSteer, resumeContinuation, isStaleHalt, hasStaleHalt, settleStaleHalt, realignPassedTaskIndex, restoreUnresumedBriefCut, isTaskInFlight, restartInterruptedTask, shouldPublishResumePlannerStatus' },
         { path: 'src/engine/orchestrator/run/init/custom-runtime.ts', lines: 45, note: 'composeWorkflowCustomRunnerRuntime, plannerUnavailableMessage' },
         { path: 'src/engine/orchestrator/run/init/seats.ts', lines: 101, note: 'z run/init-seats.ts' },
         { path: 'src/engine/orchestrator/run/init/sinks.ts', lines: 87, note: 'z run/init-sinks.ts' }
       ],
       moves: [
-        'run/init.ts:107-164 → init/options.ts; :166-189 i :97-105 → init/custom-runtime.ts; :560-790 → init/resume-repair.ts',
+        'run/init.ts:108-165 → init/options.ts; :167-190 i :98-106 → init/custom-runtime.ts; :571-801 → init/resume-repair.ts',
         'bloki z initializeWorkflow → init/saved-state.ts i init/start-state.ts; reszta → init/initialize.ts',
         'run/init-seats.ts → run/init/seats.ts; run/init-sinks.ts → run/init/sinks.ts'
       ],
@@ -558,8 +558,8 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'M',
       risk: 'low',
       title: 'planning/session.ts: tekst tury, kompilacja planu, karta planu i odpowiedzi',
-      why: 'planning/session.ts ma 792 linie, z czego 110 to importy. Poza runPlanningSession (242) mieści planTurnText (82, opisany w REPOMAP.md jako jedyny budowniczy promptu planu), compilePlan i checkFullPlan, runPlanApproval z applyPlanEdit (karta planu, 116 linii) oraz recordAnswers i settle.',
-      before: [ { path: 'src/engine/orchestrator/planning/session.ts', lines: 792, note: 'buildSeat, earlierPlanning, planTurnText, discoveredValidation, runPlanningSession, recordAnswers, settle, compilePlan, checkFullPlan, applyPlanEdit, runPlanApproval' } ],
+      why: 'planning/session.ts ma 786 linie, z czego 110 to importy. Poza runPlanningSession (242) mieści planTurnText (82, opisany w REPOMAP.md jako jedyny budowniczy promptu planu), compilePlan i checkFullPlan, runPlanApproval z applyPlanEdit (karta planu, 116 linii) oraz recordAnswers i settle.',
+      before: [ { path: 'src/engine/orchestrator/planning/session.ts', lines: 786, note: 'buildSeat, earlierPlanning, planTurnText, discoveredValidation, runPlanningSession, recordAnswers, settle, compilePlan, checkFullPlan, applyPlanEdit, runPlanApproval' } ],
       after: [
         { path: 'src/engine/orchestrator/planning/session.ts', lines: 310, note: 'Terminal, buildSeat, runPlanningSession' },
         { path: 'src/engine/orchestrator/planning/turn-text.ts', lines: 125, note: 'earlierPlanning, PlanTurnText, planTurnText' },
@@ -567,7 +567,7 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
         { path: 'src/engine/orchestrator/planning/approval.ts', lines: 130, note: 'applyPlanEdit, runPlanApproval' },
         { path: 'src/engine/orchestrator/planning/answers.ts', lines: 95, note: 'recordAnswers, settle' }
       ],
-      moves: [ 'linie 137-256 → turn-text.ts', 'linie 258-266, 606-664 → compile.ts', 'linie 670-792 → approval.ts', 'linie 518-603 → answers.ts' ],
+      moves: [ 'linie 137-256 → turn-text.ts', 'linie 258-266, 600-658 → compile.ts', 'linie 664-786 → approval.ts', 'linie 518-597 → answers.ts' ],
       tests: 'session.test.ts dzieli się na turn-text.test.ts (czysty tekst promptu), compile.test.ts i approval.test.ts. Nowa testowalność: planTurnText bez sesji.',
       importers: 7,
       references: [ 'docs/TASK-CONTRACT.md:100', 'docs/CONCEPTS.md:202', 'docs/PLANNERS-AND-IMPLEMENTERS.md:65', 'docs/REPOMAP.md:118,122', 'docs/HOW-IT-WORKS.md:110,114', 'docs/ARCHITECTURE.md:866,868', 'docs/WORKFLOW.md:330,332', 'docs/STRUCTURE.md:643', 'flow-atlas/data/planning.js:401,413,437,449,473,690,705,744,755,771,783,798,933-941,1091' ],
@@ -708,16 +708,16 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
       effort: 'S',
       risk: 'low',
       title: 'task/*-gate.ts → folder task/gates/',
-      why: 'task/ ma 26 plików produkcyjnych, w tym cztery bramki z sufiksem -gate: attempt-gate.ts (97), brief-gate.ts (146), dependency-gate.ts (53), pre-validation-gate.ts (64). Folder skraca listę task/ i nazywa wspólną rolę.',
+      why: 'task/ ma 26 plików produkcyjnych, w tym cztery bramki z sufiksem -gate: attempt-gate.ts (97), brief-gate.ts (162), dependency-gate.ts (53), pre-validation-gate.ts (64). Folder skraca listę task/ i nazywa wspólną rolę.',
       before: [
         { path: 'src/engine/orchestrator/task/attempt-gate.ts', lines: 97, note: 'gateAttemptChanges, denialMessage' },
-        { path: 'src/engine/orchestrator/task/brief-gate.ts', lines: 146, note: 'runBriefGate, CORRECTION_AFTER_CHECKS' },
+        { path: 'src/engine/orchestrator/task/brief-gate.ts', lines: 162, note: 'runBriefGate, CORRECTION_AFTER_CHECKS' },
         { path: 'src/engine/orchestrator/task/dependency-gate.ts', lines: 53, note: 'checkDependencyGate' },
         { path: 'src/engine/orchestrator/task/pre-validation-gate.ts', lines: 64, note: 'runPreValidationGate' }
       ],
       after: [
         { path: 'src/engine/orchestrator/task/gates/attempt.ts', lines: 97, note: 'z attempt-gate.ts' },
-        { path: 'src/engine/orchestrator/task/gates/brief.ts', lines: 146, note: 'z brief-gate.ts' },
+        { path: 'src/engine/orchestrator/task/gates/brief.ts', lines: 162, note: 'z brief-gate.ts' },
         { path: 'src/engine/orchestrator/task/gates/dependency.ts', lines: 53, note: 'z dependency-gate.ts' },
         { path: 'src/engine/orchestrator/task/gates/pre-validation.ts', lines: 64, note: 'z pre-validation-gate.ts' }
       ],
@@ -730,13 +730,13 @@ Kolejność: najpierw tanie deduplikacje (RF_ORCH_05 do RF_ORCH_10, każda poni�
     }
   ],
   keep: [
-    { path: 'src/engine/orchestrator/isolation/create.ts', lines: 537, reason: 'Jedna fabryka createRunIsolation (475 linii) z cyklem życia jednego workspace: open, acquire, dispose dzielą ok. 20 zmiennych domknięcia (latchedStrategy, worktreeDir, pendingCleanup, inFlightOperations, disposed). Podział wymagałby jawnego obiektu stanu, czyli zmiany projektu. Opcjonalnie można wydzielić memo env sandboxa (linie 177-225) jako fabrykę.' },
+    { path: 'src/engine/orchestrator/isolation/create.ts', lines: 541, reason: 'Jedna fabryka createRunIsolation (475 linii) z cyklem życia jednego workspace: open, acquire, dispose dzielą ok. 20 zmiennych domknięcia (latchedStrategy, worktreeDir, pendingCleanup, inFlightOperations, disposed). Podział wymagałby jawnego obiektu stanu, czyli zmiany projektu. Opcjonalnie można wydzielić memo env sandboxa (linie 177-225) jako fabrykę.' },
     { path: 'src/engine/orchestrator/run/workflow.ts', lines: 472, reason: 'Korzeń kompozycji jednego runu: runWorkflow (375 linii) trzyma trackedState, workflowBus, workflowPhase, parkRun i isolation w domknięciach, z których korzysta blok finally. Poniżej 500 linii; RF_ORCH_07 zabiera z niego rozpisanie tożsamości.' },
     { path: 'src/engine/orchestrator/consult/apply.ts', lines: 476, reason: 'Jeden aplikator odpowiedzi konsultacji: guard i pięć akcji (rewrite, split, verify, ask-user, confirm) po 20-50 linii. Spójny; poniżej 500.' },
     { path: 'src/engine/orchestrator/run/review.ts', lines: 451, reason: 'Pętla review runu: haltFailedReview, haltVerdictlessReview, followReviewAnswer, runScheduledReview. Jeden temat.' },
-    { path: 'src/engine/orchestrator/validation/run-checks.ts', lines: 444, reason: 'createCheckRunner z trzema rodzajami checków (test, command, render) i rejestrem. Spójny; runRenderCheck (102 linie) można wydzielić później.' },
+    { path: 'src/engine/orchestrator/validation/run-checks.ts', lines: 474, reason: 'createCheckRunner z trzema rodzajami checków (test, command, render) i rejestrem. Spójny; runRenderCheck (102 linie) można wydzielić później.' },
     { path: 'src/engine/orchestrator/apply/run.ts', lines: 416, reason: 'Przepływ Apply jako jedna maszyna stanów applyRun (259 linii) z haltami Apply.' },
-    { path: 'src/engine/orchestrator/consult/request.ts', lines: 412, reason: 'Jedno wywołanie konsultacji: kontrakty, diff briefu, prompt, requestConsult.' },
+    { path: 'src/engine/orchestrator/consult/request.ts', lines: 441, reason: 'Jedno wywołanie konsultacji: kontrakty, diff briefu, prompt, requestConsult.' },
     { path: 'src/engine/orchestrator/approval/file-snapshots/entry.ts', lines: 411, reason: 'Prymitywy odczytu i zapisu wpisów w granicy projektu (lstat, symlinki, pliki tymczasowe); jedna granica bezpieczeństwa z 39 importerami. Po RF_ORCH_10 ok. 392 linie.' },
     { path: 'src/engine/orchestrator/evidence/task.ts', lines: 402, reason: 'Płaska lista małych zapisów do ledgera (po 10-30 linii) dla każdego wyniku briefu; jeden temat.' },
     { path: 'src/engine/orchestrator/tokens.ts', lines: 344, reason: 'Księgowanie tokenów według kategorii seatu z jedną tabelą categoryFields; spójne.' },

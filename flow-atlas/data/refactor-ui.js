@@ -2,8 +2,8 @@ window.ATLAS_REFACTOR = window.ATLAS_REFACTOR || [];
 window.ATLAS_REFACTOR.push({
   part: 'ui',
   title: 'src/features, src/components, src/app, src/stores, src/hooks',
-  summary: `Warstwa UI ma 351 plików produkcyjnych i 54 222 linie. Reguły warstw są czyste: feature nie importuje innego feature, strony nie importują siebie nawzajem, brak barreli i memoizacji. Problemy są trzy. Po pierwsze 17 plików ma ponad 500 linii, a 13 z nich miesza kilka odpowiedzialności (dispatch.ts 845, usage-details-model.ts 761, picker-format.ts 694, recovery-prompt.ts 658, transcript-walk.ts 558, prompt-rows/approval.ts 556). Po drugie korzeń features/workflow ma 23 pliki z prefiksami recovery-, review-, usage-, resume-, prompt-, a conversation-rows ma 26 płaskich plików z grupami activity-, row-, *-block i dwoma parami plik+folder. Po trzecie wspólne kawałki mieszkają u przypadkowego właściciela: stopMenuLayout w stop/options.ts używają result i review-checks, KeyHint i formatKeyHints siedzą w prompt-rows/approval.ts, a ponad 20 legend klawiszy jest pisanych ręcznie. Kolejność: najpierw podziały plików o 1-9 importerach i wspólny układ menu (RF_UI_01, 02, 03, 08, 13, 21), potem foldery w features/workflow i runners (RF_UI_04, 05, 06, 07, 22), potem jeden dom legend klawiszy (RF_UI_14), na końcu przenosiny w stores o dużym zasięgu (RF_UI_17, 18) i trudny podział use-run-loop (RF_UI_16). Strony app/screens i composer.tsx zostawiam części react.`,
-  stats: { files: 351, prodLines: 54222, over300: 54, over500: 17, prefixGroups: 27, duplicates: 7 },
+  summary: `Warstwa UI ma 354 pliki produkcyjne i 54 698 linii (stan po synchronizacji z main 2026-10; doszły features/workflow/display/running-seats.ts 154, hooks/use-running-seats.ts 33 i entry-config.ts 40; żaden nowy plik nie przekroczył 300 linii). Reguły warstw są czyste: feature nie importuje innego feature, strony nie importują siebie nawzajem, brak barreli i memoizacji. Problemy są trzy. Po pierwsze 17 plików ma ponad 500 linii, a 13 z nich miesza kilka odpowiedzialności (dispatch.ts 845, usage-details-model.ts 761, picker-format.ts 694, recovery-prompt.ts 655, transcript-walk.ts 558, prompt-rows/approval.ts 556). Po drugie korzeń features/workflow ma 23 pliki z prefiksami recovery-, review-, usage-, resume-, prompt-, a conversation-rows ma 26 płaskich plików z grupami activity-, row-, *-block i dwoma parami plik+folder. Po trzecie wspólne kawałki mieszkają u przypadkowego właściciela: stopMenuLayout w stop/options.ts używają result i review-checks, KeyHint i formatKeyHints siedzą w prompt-rows/approval.ts, a ponad 20 legend klawiszy jest pisanych ręcznie. Kolejność: najpierw podziały plików o 1-9 importerach i wspólny układ menu (RF_UI_01, 02, 03, 08, 13, 21), potem foldery w features/workflow i runners (RF_UI_04, 05, 06, 07, 22), potem jeden dom legend klawiszy (RF_UI_14), na końcu przenosiny w stores o dużym zasięgu (RF_UI_17, 18) i trudny podział use-run-loop (RF_UI_16). Strony app/screens i composer.tsx zostawiam części react.`,
+  stats: { files: 354, prodLines: 54698, over300: 54, over500: 17, prefixGroups: 27, duplicates: 7 },
   proposals: [
     {
       id: 'RF_UI_01',
@@ -95,10 +95,10 @@ window.ATLAS_REFACTOR.push({
       effort: 'M',
       risk: 'low',
       title: 'recovery-prompt.ts i recovery-driver.ts → folder features/workflow/recovery/',
-      why: 'recovery-prompt.ts ma 658 linii i pięć grup: klucze i aliasy akcji, wiersze switch-seat, etykiety menu, tekst promptu (PromptRow, promptRowsToString) i nagłówek (recoveryCauseParts, recoveryHeadlineParts). Konsumenci biorą rozłączne części: closed/byline.ts bierze tylko nagłówek i etykietę, prompt-body.tsx tylko FACT_INDENT i PromptRow, recovery-driver.ts tylko parsowanie odpowiedzi. recovery-driver.ts (476) to sąsiad z tym samym prefiksem.',
+      why: 'recovery-prompt.ts ma 655 linii i pięć grup: klucze i aliasy akcji, wiersze switch-seat, etykiety menu, tekst promptu (PromptRow, promptRowsToString) i nagłówek (recoveryCauseParts, recoveryHeadlineParts). Konsumenci biorą rozłączne części: closed/byline.ts bierze tylko nagłówek i etykietę, prompt-body.tsx tylko FACT_INDENT i PromptRow, recovery-driver.ts tylko parsowanie odpowiedzi. recovery-driver.ts (484) to sąsiad z tym samym prefiksem.',
       before: [
-        { path: 'src/features/workflow/recovery-prompt.ts', lines: 658, note: 'akcje, switch-seat, menu, tekst promptu, nagłówek' },
-        { path: 'src/features/workflow/recovery-driver.ts', lines: 476, note: 'createRecoveryDriver i pickSwappedSeat' }
+        { path: 'src/features/workflow/recovery-prompt.ts', lines: 655, note: 'akcje, switch-seat, menu, tekst promptu, nagłówek' },
+        { path: 'src/features/workflow/recovery-driver.ts', lines: 484, note: 'createRecoveryDriver i pickSwappedSeat' }
       ],
       after: [
         { path: 'src/features/workflow/recovery/actions.ts', lines: 140, note: 'ACTION_ORDER, ACTION_KEYS, ACTION_ALIASES, recoveryActionKey, getRecoveryPromptActions, correctionActionFor, recoveryComposerHint, recommendedRecoveryAction, parseRecoveryActionAnswer, findAliasedActionAmong, resolveRecommendedAction' },
@@ -106,14 +106,14 @@ window.ATLAS_REFACTOR.push({
         { path: 'src/features/workflow/recovery/menu-label.ts', lines: 135, note: 'recoveryMenuLabel, recoveryMenuActionLabel, recoveryMenuParts, recoveryMenuContext, recoveryMenuConsequence, formatRecoveryActionText, applyRecoveryConsequence, formatRecoveryActionChoice' },
         { path: 'src/features/workflow/recovery/prompt-text.ts', lines: 235, note: 'PromptRow, FACT_INDENT, FAILED_REVIEW_MARKER, recommendedRowPrefix, passHeadlinePrefix, formatActionRow, isActionRowLine, buildRecoveryPromptRows, promptRowsToString, formatRecoveryPrompt, recoveryPromptSummaryRows, formatMiddotList, formatSubjectLines, fitFileList, formatDetailLines' },
         { path: 'src/features/workflow/recovery/headline.ts', lines: 75, note: 'formatRecoveryHeaderParts, recoveryCauseParts, recoveryHeadlineParts' },
-        { path: 'src/features/workflow/recovery/driver.ts', lines: 476, note: 'dawny recovery-driver.ts bez zmian (jedna fabryka, patrz keep)' }
+        { path: 'src/features/workflow/recovery/driver.ts', lines: 484, note: 'dawny recovery-driver.ts bez zmian (jedna fabryka, patrz keep)' }
       ],
       moves: [
-        'linie 45, 101-164, 488-537 → recovery/actions.ts',
-        'linie 131-132, 219-239, 296-363, 401-411, 509-519 → recovery/switch-seat.ts',
-        'linie 165-218, 240-295, 364-370 → recovery/menu-label.ts',
-        'linie 46-100, 371-487, 600-658 → recovery/prompt-text.ts',
-        'linie 538-599 → recovery/headline.ts',
+        'linie 45, 101-164, 484-533 → recovery/actions.ts',
+        'linie 131-132, 221-234, 292-359, 397-407, 505-515 → recovery/switch-seat.ts',
+        'linie 167-220, 234-291, 360-366 → recovery/menu-label.ts',
+        'linie 46-100, 367-483, 597-655 → recovery/prompt-text.ts',
+        'linie 534-596 → recovery/headline.ts',
         'recovery-driver.ts → recovery/driver.ts'
       ],
       tests: 'recovery-prompt.test.ts (1034) dzieli się na actions.test.ts, switch-seat.test.ts, menu-label.test.ts i prompt-text.test.ts. recovery-driver.test.ts (1731) i recovery-driver-composer.test.tsx (209) idą do recovery/ jako driver.test.ts i driver-composer.test.tsx. Parsowanie odpowiedzi i aliasy akcji można testować bez budowania promptu.',
@@ -136,9 +136,9 @@ window.ATLAS_REFACTOR.push({
       effort: 'M',
       risk: 'low',
       title: 'review-* i editor-command.ts → review-gate/ i external-editor/',
-      why: 'review-parser.ts (375) nie parsuje niczego: ma runEditor i spawnEditorProcess (uruchomienie edytora), openReviewFileExternally (edycja zewnętrzna pliku review) i createReviewInputHandler (obsługa wejścia bramki). docs/ARCHITECTURE.md:783 opisuje go błędnie jako parser. Obok leżą review-commands.ts (85) i review-editor.ts (38) z tym samym prefiksem oraz editor-command.ts (193), którego używają review-parser.ts i result/show-diff.ts. Nazwa review- koliduje z folderem review-checks/, który dotyczy innej rzeczy (karta Run all / Skip all).',
+      why: 'review-parser.ts (376) nie parsuje niczego: ma runEditor i spawnEditorProcess (uruchomienie edytora), openReviewFileExternally (edycja zewnętrzna pliku review) i createReviewInputHandler (obsługa wejścia bramki). docs/ARCHITECTURE.md:783 opisuje go błędnie jako parser. Obok leżą review-commands.ts (85) i review-editor.ts (38) z tym samym prefiksem oraz editor-command.ts (193), którego używają review-parser.ts i result/show-diff.ts. Nazwa review- koliduje z folderem review-checks/, który dotyczy innej rzeczy (karta Run all / Skip all).',
       before: [
-        { path: 'src/features/workflow/review-parser.ts', lines: 375, note: 'spawn edytora, edycja zewnętrzna, input handler bramki' },
+        { path: 'src/features/workflow/review-parser.ts', lines: 376, note: 'spawn edytora, edycja zewnętrzna, input handler bramki' },
         { path: 'src/features/workflow/review-commands.ts', lines: 85, note: 'komendy approve / comment / end-run / edit' },
         { path: 'src/features/workflow/review-editor.ts', lines: 38, note: 'otwarcie plan.json w overlayu edytora' },
         { path: 'src/features/workflow/editor-command.ts', lines: 193, note: 'resolveEditorArgv, resolveViewerArgv' }
@@ -153,9 +153,9 @@ window.ATLAS_REFACTOR.push({
       ],
       moves: [
         'editor-command.ts → external-editor/command.ts',
-        'review-parser.ts:43-95 → external-editor/spawn.ts',
-        'review-parser.ts:96-251 → review-gate/external-edit.ts',
-        'review-parser.ts:252-375 → review-gate/input-handler.ts',
+        'review-parser.ts:44-96 → external-editor/spawn.ts',
+        'review-parser.ts:97-252 → review-gate/external-edit.ts',
+        'review-parser.ts:253-376 → review-gate/input-handler.ts',
         'review-commands.ts → review-gate/commands.ts; review-editor.ts → review-gate/plan-editor.ts'
       ],
       tests: 'review-parser.test.ts (685) dzieli się na review-gate/external-edit.test.ts i review-gate/input-handler.test.ts; review-commands.test.ts, review-editor.test.tsx i editor-command.test.ts idą za plikami. Spawn edytora dostaje test bez stores bramki.',
@@ -181,7 +181,7 @@ window.ATLAS_REFACTOR.push({
       why: 'conversation-rows ma 26 plików produkcyjnych w korzeniu obok trzech podfolderów. Grupy prefiksu: activity- (3), row- (3) i siedem plików z sufiksem -block. Dwie pary plik+folder: markdown-rows.ts obok markdown-rows/ oraz event-format.ts obok event-rows/. row-markers.ts (15 importerów) to gramatyka wierszy, a leży poza row-format/.',
       before: [
         { path: 'src/features/workflow/conversation-rows/activity-batch-key.ts', lines: 3, note: 'klucz batcha' },
-        { path: 'src/features/workflow/conversation-rows/activity-batch-model.ts', lines: 309, note: 'model batcha aktywności' },
+        { path: 'src/features/workflow/conversation-rows/activity-batch-model.ts', lines: 311, note: 'model batcha aktywności' },
         { path: 'src/features/workflow/conversation-rows/activity-rows.ts', lines: 274, note: 'wiersze batcha' },
         { path: 'src/features/workflow/conversation-rows/bordered-card-block.ts', lines: 45, note: 'blok karty z ramką' },
         { path: 'src/features/workflow/conversation-rows/callout-block.ts', lines: 46, note: 'blok callout' },
@@ -193,14 +193,14 @@ window.ATLAS_REFACTOR.push({
         { path: 'src/features/workflow/conversation-rows/block-cache.ts', lines: 95, note: 'cache bloków' },
         { path: 'src/features/workflow/conversation-rows/projection-cache.ts', lines: 122, note: 'cache projekcji' },
         { path: 'src/features/workflow/conversation-rows/markdown-rows.ts', lines: 72, note: 'plik obok folderu markdown-rows/' },
-        { path: 'src/features/workflow/conversation-rows/event-format.ts', lines: 345, note: 'plik obok folderu event-rows/' },
+        { path: 'src/features/workflow/conversation-rows/event-format.ts', lines: 347, note: 'plik obok folderu event-rows/' },
         { path: 'src/features/workflow/conversation-rows/row-actions.ts', lines: 110, note: 'akcje wierszy' },
         { path: 'src/features/workflow/conversation-rows/read-row-actions.ts', lines: 18, note: 'odczyt akcji' },
         { path: 'src/features/workflow/conversation-rows/row-markers.ts', lines: 35, note: 'znaczniki i szerokości wierszy' }
       ],
       after: [
         { path: 'src/features/workflow/conversation-rows/activity/batch-key.ts', lines: 3, note: '' },
-        { path: 'src/features/workflow/conversation-rows/activity/batch-model.ts', lines: 309, note: '' },
+        { path: 'src/features/workflow/conversation-rows/activity/batch-model.ts', lines: 311, note: '' },
         { path: 'src/features/workflow/conversation-rows/activity/rows.ts', lines: 274, note: '' },
         { path: 'src/features/workflow/conversation-rows/blocks/bordered-card.ts', lines: 45, note: '' },
         { path: 'src/features/workflow/conversation-rows/blocks/callout.ts', lines: 46, note: '' },
@@ -212,7 +212,7 @@ window.ATLAS_REFACTOR.push({
         { path: 'src/features/workflow/conversation-rows/cache/block.ts', lines: 95, note: '' },
         { path: 'src/features/workflow/conversation-rows/cache/projection.ts', lines: 122, note: '' },
         { path: 'src/features/workflow/conversation-rows/markdown-rows/build.ts', lines: 72, note: '' },
-        { path: 'src/features/workflow/conversation-rows/event-rows/format.ts', lines: 345, note: '' },
+        { path: 'src/features/workflow/conversation-rows/event-rows/format.ts', lines: 347, note: '' },
         { path: 'src/features/workflow/conversation-rows/row-actions/build.ts', lines: 110, note: '' },
         { path: 'src/features/workflow/conversation-rows/row-actions/read.ts', lines: 18, note: '' },
         { path: 'src/features/workflow/conversation-rows/row-format/markers.ts', lines: 35, note: '' }
@@ -275,7 +275,7 @@ window.ATLAS_REFACTOR.push({
       before: [
         { path: 'src/features/runners/picker-format.ts', lines: 694, note: 'patrz RF_UI_08' },
         { path: 'src/features/runners/picker-profile.ts', lines: 29, note: '' },
-        { path: 'src/features/runners/picker-view.tsx', lines: 473, note: '' },
+        { path: 'src/features/runners/picker-view.tsx', lines: 472, note: '' },
         { path: 'src/features/runners/use-picker-actions.ts', lines: 671, note: 'patrz RF_UI_09' },
         { path: 'src/features/runners/use-picker-catalog.ts', lines: 397, note: '' },
         { path: 'src/features/runners/contract-chip.tsx', lines: 59, note: '' },
@@ -284,7 +284,7 @@ window.ATLAS_REFACTOR.push({
       ],
       after: [
         { path: 'src/features/runners/picker/profile.ts', lines: 29, note: '' },
-        { path: 'src/features/runners/picker/view.tsx', lines: 473, note: 'szczegóły komponentów: część react' },
+        { path: 'src/features/runners/picker/view.tsx', lines: 472, note: 'szczegóły komponentów: część react' },
         { path: 'src/features/runners/picker/use-actions.ts', lines: 671, note: 'przed RF_UI_09' },
         { path: 'src/features/runners/picker/use-catalog.ts', lines: 397, note: '' },
         { path: 'src/features/runners/contract/chip.tsx', lines: 59, note: '' },
@@ -448,7 +448,7 @@ window.ATLAS_REFACTOR.push({
       title: 'Jeden dom legend klawiszy: src/components/key-legend.ts',
       why: 'Legenda klawiszy ma dziś trzy domy. src/core/key-legend.ts (KEY_LEGEND_LEADING, fitKeyLegend) ma 11 importerów i wszystkie są w UI (components/overlays, features/workflow), więc to nie jest logika domeny. KeyHint i formatKeyHints mieszkają w prompt-rows/approval.ts. Ponad 20 miejsc składa legendę ręcznie z tych samych słów: stop/options.ts:38-39, result/options.ts:24, review-checks/options.ts:16, app/overlays/palette.tsx:175-176, app/overlays/settings.tsx:153-156, app/overlays/skills.tsx:146-147, app/screens/setup.tsx:403, home/components/recent-sessions-list.tsx:17, runners/local-connection-form.tsx:488, runners/contract-choice-overlay.tsx:135, runners/two-column-picker/picker.tsx:125, runners/right-column-policy.ts:170-176, components/composer/completion/command/menu.tsx:39-40, completion/reference/menu.tsx:25-26. Cztery z nich wpisują separator jako literał zamiast SOFT_SEP.',
       before: [
-        { path: 'src/core/key-legend.ts', lines: 22, note: 'KEY_LEGEND_LEADING, fitKeyLegend' },
+        { path: 'src/core/key-legend.ts', lines: 23, note: 'KEY_LEGEND_LEADING, fitKeyLegend' },
         { path: 'src/features/workflow/prompt-rows/approval.ts', lines: 23, note: 'KeyHint, formatKeyHints, DENY_HINT, CONFIRM_HINT, SELECT_HINT (linie 41-63)' }
       ],
       after: [ { path: 'src/components/key-legend.ts', lines: 80, note: 'KEY_LEGEND_LEADING, fitKeyLegend, KeyHint, formatKeyHints, SELECT_HINT, CONFIRM_HINT, DENY_HINT, CLOSE_HINT (esc close) i inne wspólne tokeny' } ],
@@ -494,18 +494,18 @@ window.ATLAS_REFACTOR.push({
       effort: 'L',
       risk: 'high',
       title: 'use-run-loop.ts: ciało runu jako funkcja async poza hookiem',
-      why: 'use-run-loop.ts ma 665 linii, a useRunLoop ma 518. Prawie całość to startWorkflow, jeden useEffectEvent (166-620), który hydratuje resume, buduje sinks, uruchamia runWorkflow i pętlę recovery między turami. Hook nie ma testów jednostkowych, tylko integracyjne (use-run-loop.integration.test.tsx 3182, use-run-loop-stop 793, use-run-loop-abort-race 206). prompt-callbacks.ts (95) ma jednego importera: ten hook. Szczegóły hooka: część react.',
+      why: 'use-run-loop.ts ma 647 linii, a useRunLoop ma 515. Prawie całość to startWorkflow, jeden useEffectEvent (151-602), który hydratuje resume, buduje sinks, uruchamia runWorkflow i pętlę recovery między turami. Hook nie ma testów jednostkowych, tylko integracyjne (use-run-loop.integration.test.tsx 3182, use-run-loop-stop 793, use-run-loop-abort-race 206). prompt-callbacks.ts (95) ma jednego importera: ten hook. Szczegóły hooka: część react.',
       before: [
-        { path: 'src/features/workflow/hooks/use-run-loop.ts', lines: 665, note: 'swapBaseConfig, pinnedSeatSaved, useRunLoop ze startWorkflow' },
+        { path: 'src/features/workflow/hooks/use-run-loop.ts', lines: 647, note: 'swapBaseConfig, useRunLoop ze startWorkflow (pinnedSeatSaved przeszedł w 42fb57f do features/workflow/entry-config.ts)' },
         { path: 'src/features/workflow/prompt-callbacks.ts', lines: 95, note: 'callbacki promptów dla orkiestratora' }
       ],
       after: [
         { path: 'src/features/workflow/run-loop/start.ts', lines: 420, note: 'runTuiWorkflow(prepared, options, refs): ciało startWorkflow z jawnymi parametrami' },
-        { path: 'src/features/workflow/run-loop/seat-config.ts', lines: 45, note: 'swapBaseConfig, pinnedSeatSaved' },
+        { path: 'src/features/workflow/run-loop/seat-config.ts', lines: 60, note: 'swapBaseConfig + nextEntryConfig i pinnedSeatSaved z entry-config.ts' },
         { path: 'src/features/workflow/run-loop/prompt-callbacks.ts', lines: 95, note: 'dawny prompt-callbacks.ts' },
         { path: 'src/features/workflow/hooks/use-run-loop.ts', lines: 200, note: 'cykl życia React: efekty, abort, settleRun' }
       ],
-      moves: [ 'linie 86-124 → run-loop/seat-config.ts', 'ciało startWorkflow (166-620) → run-loop/start.ts', 'prompt-callbacks.ts → run-loop/prompt-callbacks.ts' ],
+      moves: [ 'linie 85-104 (swapBaseConfig) i cały entry-config.ts (nextEntryConfig, pinnedSeatSaved; czyta go też recovery-driver.ts) → run-loop/seat-config.ts', 'ciało startWorkflow (151-602) → run-loop/start.ts', 'prompt-callbacks.ts → run-loop/prompt-callbacks.ts' ],
       tests: 'Nowy start.test.ts testuje runTuiWorkflow z fałszywym runWorkflow bez renderu Ink. Testy integracyjne zostają przy hooku.',
       importers: 1,
       references: [ 'docs/STORES-AND-UI.md:56', 'docs/STORES-AND-UI.md:163', 'docs/WORKFLOW.md:570', 'docs/ARCHITECTURE.md:161', 'docs/HOW-IT-WORKS.md:63' ],
@@ -630,18 +630,18 @@ window.ATLAS_REFACTOR.push({
       effort: 'S',
       risk: 'low',
       title: 'Drobne porządki w korzeniu features/workflow',
-      why: 'Korzeń features/workflow ma 23 pliki. Po RF_UI_02, 03, 04 zostają jeszcze: para resume- (resume-hydration.ts 27, resume-policy.ts 54); prompt-body-rows.ts (281) obok folderu prompt-rows/; components/approval-prompt.tsx obok folderu components/approval-prompt/; copy/resolve.ts, jedyny plik w folderze copy/, który rozwiązuje cel komendy /copy (schowek), podczas gdy stop/copy.ts, closed/copy.ts i queue-copy.ts to słowa UI.',
+      why: 'Korzeń features/workflow ma 23 pliki. Po RF_UI_02, 03, 04 zostają jeszcze: para resume- (resume-hydration.ts 27, resume-policy.ts 54); prompt-body-rows.ts (299) obok folderu prompt-rows/; components/approval-prompt.tsx obok folderu components/approval-prompt/; copy/resolve.ts, jedyny plik w folderze copy/, który rozwiązuje cel komendy /copy (schowek), podczas gdy stop/copy.ts, closed/copy.ts i queue-copy.ts to słowa UI.',
       before: [
         { path: 'src/features/workflow/resume-hydration.ts', lines: 27, note: '' },
         { path: 'src/features/workflow/resume-policy.ts', lines: 54, note: '' },
-        { path: 'src/features/workflow/prompt-body-rows.ts', lines: 281, note: 'plik obok prompt-rows/' },
+        { path: 'src/features/workflow/prompt-body-rows.ts', lines: 299, note: 'plik obok prompt-rows/' },
         { path: 'src/features/workflow/components/approval-prompt.tsx', lines: 89, note: 'plik obok approval-prompt/' },
         { path: 'src/features/workflow/copy/resolve.ts', lines: 60, note: 'jednoplikowy folder, dwuznaczna nazwa' }
       ],
       after: [
         { path: 'src/features/workflow/resume/hydration.ts', lines: 27, note: '' },
         { path: 'src/features/workflow/resume/policy.ts', lines: 54, note: '' },
-        { path: 'src/features/workflow/prompt-rows/body.ts', lines: 281, note: '' },
+        { path: 'src/features/workflow/prompt-rows/body.ts', lines: 299, note: '' },
         { path: 'src/features/workflow/components/approval-prompt/prompt.tsx', lines: 89, note: '' },
         { path: 'src/features/workflow/copy-target.ts', lines: 60, note: 'resolveCopyValue' }
       ],
@@ -694,14 +694,14 @@ window.ATLAS_REFACTOR.push({
       effort: 'S',
       risk: 'low',
       title: 'closed/projections.ts → seat-views, brief-rows, projections',
-      why: 'projections.ts ma 517 linii i trzy projekcje rekordu runu: widoki seat-ów (41-194), wiersze briefów (195-399) oraz review, scope, pliki i czasy faz (400-517). view-model.ts importuje 10 funkcji z trzech grup naraz.',
-      before: [ { path: 'src/features/workflow/closed/projections.ts', lines: 517, note: 'seat, brief, review/files' } ],
+      why: 'projections.ts ma 519 linii i trzy projekcje rekordu runu: widoki seat-ów (41-196), wiersze briefów (197-401) oraz review, scope, pliki i czasy faz (402-519). view-model.ts importuje 10 funkcji z trzech grup naraz.',
+      before: [ { path: 'src/features/workflow/closed/projections.ts', lines: 519, note: 'seat, brief, review/files' } ],
       after: [
         { path: 'src/features/workflow/closed/seat-views.ts', lines: 175, note: 'seatView, recordedSeatKind, plannerSeatView, buildSeatView, movedBuildSeat, eachRunsOneStretch, reviewSeatView' },
         { path: 'src/features/workflow/closed/brief-rows.ts', lines: 220, note: 'briefRows, foldBriefSpend, stoppedAtForCurrentPlan, briefRow, rowMethod, briefRowState' },
         { path: 'src/features/workflow/closed/projections.ts', lines: 140, note: 'reviewView, failedReviewViews, scopeView, filesView, changedFileCount, phaseTimings' }
       ],
-      moves: [ 'linie 41-194 → seat-views.ts', 'linie 195-399 → brief-rows.ts' ],
+      moves: [ 'linie 41-196 → seat-views.ts', 'linie 197-401 → brief-rows.ts' ],
       tests: 'projections.test.ts dzieli się na seat-views.test.ts i brief-rows.test.ts.',
       importers: 3,
       references: [],
@@ -752,9 +752,9 @@ window.ATLAS_REFACTOR.push({
   ],
   keep: [
     { path: 'src/stores/workflow/lifecycle.ts', lines: 615, reason: 'Jedna maszyna stanu: unia LifecycleState (idle, running, interrupted, paused, complete, cancelled) i jej przejścia (updatePhase, markLifecycle*, lifecycleStateFromReset). 37 produkcyjnych importerów. Wydzielenie typów (126 linii) jest możliwe, ale rozdzieliłoby unię od jedynych funkcji, które ją budują.' },
-    { path: 'src/features/workflow/recovery-driver.ts', lines: 476, reason: 'Po RF_UI_03: recovery/driver.ts. createRecoveryDriver to jedna fabryka (285 linii) z domkniętym stanem pending recovery; pickSwappedSeat i pomocnicze są jej prywatne. Tylko przeniesienie w RF_UI_03.' },
+    { path: 'src/features/workflow/recovery-driver.ts', lines: 484, reason: 'Po RF_UI_03: recovery/driver.ts. createRecoveryDriver to jedna fabryka (285 linii) z domkniętym stanem pending recovery; pickSwappedSeat i pomocnicze są jej prywatne. Tylko przeniesienie w RF_UI_03.' },
     { path: 'src/stores/discovery/model-cache/state.ts', lines: 430, reason: 'Jeden store (modelCacheStore, 307 linii). Pomocnicze funkcje reconcile i lanes są już w osobnych plikach folderu model-cache/.' },
-    { path: 'src/features/workflow/display/build-progress.ts', lines: 431, reason: 'Jedna derywacja (deriveBuildProgress) z jej wierszami; CLAUDE.md nazywa ten plik jako dom bloku Build progress. Poniżej 500 linii.' },
+    { path: 'src/features/workflow/display/build-progress.ts', lines: 435, reason: 'Jedna derywacja (deriveBuildProgress) z jej wierszami; CLAUDE.md nazywa ten plik jako dom bloku Build progress. Poniżej 500 linii.' },
     { path: 'src/features/workflow/handlers.ts', lines: 425, reason: 'Poniżej 500 linii, jedna rodzina żądań runu (stop, resume, steer, end, departure). Ma 8 produkcyjnych i 25 testowych importerów; zmiana nazwy tylko w conventions.' },
     { path: 'src/features/runners/config-transforms.ts', lines: 453, reason: 'Poniżej 500. Dwie warstwy (decideEffort/decideVariant 93-180 i commit* 181-453), ale commit* zawsze woła decide*. Podział na effort-decision.ts możliwy później, gdy plik urośnie.' },
     { path: 'src/features/runners/model-row-plan.ts', lines: 402, reason: 'Po RF_UI_07: model-catalog/row-plan.ts. Jeden algorytm planModelRows (cięcie etykiet, kolizje bliźniaków); funkcje pomocnicze są prywatne. Tylko przeniesienie w RF_UI_07.' },

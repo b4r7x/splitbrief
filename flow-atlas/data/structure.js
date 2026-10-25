@@ -11,9 +11,9 @@ window.ATLAS = window.ATLAS || [];
   }
 
   var tree = build('', [
-    ['src', 'other', "Cały kod produkcyjny: 1250 plików .ts/.tsx (~198 tys. linii) i 1149 plików testów obok kodu.", true, [
+    ['src', 'other', "Cały kod produkcyjny: 1255 plików .ts/.tsx (~199 tys. linii) i 1168 plików testów obok kodu (stan po synchronizacji z main 2026-10).", true, [
       ['cli.ts', 'cli', "Binarka `splitbrief` (commander): rejestruje 8 podkomend — start, doctor, spec, init, status, resume, review, continue.", true],
-      ['node-env.ts', 'cli', "Pierwszy import `cli.ts`: ustawia `NODE_ENV=production`, żeby React nie zapychał pamięci pomiarami renderów."],
+      ['node-env.ts', 'cli', "Pierwszy import `cli.ts`: woła `runAsProduction` (lib/process/spawn/child-env.ts), który zapamiętuje NODE_ENV użytkownika i ustawia `production`, żeby React nie zapychał pamięci pomiarami renderów. Dzieci (checki, hooki, rendery, edytor) dostają z powrotem wartość użytkownika przez `withUserNodeEnv` (c947aa6)."],
       ['app', 'app', "Powłoka Ink: korzeń kompozycji, router, layout, globalne klawisze i mysz, płaskie strony ekranów i overlayów.", true, [
         ['root.tsx', 'app', "Komponent `App`: czyta routerStore/overlayStore, podpina useRuntimeCommands, useAppKeys, useAppMouse, renderuje <AppProvider><Router/>.", true],
         ['router.tsx', 'app', "`renderScreen` (3 ekrany) i `renderOverlay` (13 id overlayów → 8 stron); wynik trafia do <Layout>.", true],
@@ -110,7 +110,8 @@ window.ATLAS = window.ATLAS || [];
           ['checks', 'core', "Buildery checków: config, repo, workflow, runners, context, validation (`build.ts`)."]
         ]],
         ['recovery', 'core', "Jak czyta się halt: `halt.ts` (Needs you / Seat down), nagłówek, etykiety akcji, zegar resetu.", false, [
-          ['halt.ts', 'core', "`REASON_HALT`: przyczyna → halt → dozwolone akcje.", true]
+          ['halt.ts', 'core', "`REASON_HALT`: przyczyna → halt → dozwolone akcje.", true],
+          ['usage-limit-step.ts', 'core', "Nowy (a9f2ab9): progi 70–95 % okien 5-hour i weekly (`USAGE_LIMIT_STEPS`, `usageLimitStep`) i tekst ostrzeżenia `You've used N% of your <tool> <window> limit · resets …`."]
         ]],
         ['review', 'core', "Werdykt, zadania naprawcze, base split, odczyt rekordu przeglądu."],
         ['runners', 'core', "Katalog narzędzi CLI, role seat-ów, capability, kanał effort, wybór auth.", false, [
@@ -178,9 +179,10 @@ window.ATLAS = window.ATLAS || [];
           ['isolation', 'engine', "Granice zapisu implementera: lexer shella, audyt checkoutu, ścieżki narzędzi."],
           ['pipeline', 'engine', "`createImplementerBase`: wspólny przebieg wywołania i mapowanie wyniku."]
         ]],
-        ['orchestrator', 'engine', "Główna pętla runu: 205 plików, ~39 tys. linii; planowanie, briefy, review, recovery, Apply.", true, [
+        ['orchestrator', 'engine', "Główna pętla runu: 206 plików, ~40 tys. linii; planowanie, briefy, review, recovery, Apply.", true, [
           ['final-review.ts', 'engine', "Końcowy przegląd runu (→ obszar review).", false],
-          ['events.ts', 'engine', "36 typowanych helperów `publish*` dla EventBus."],
+          ['events.ts', 'engine', "36 typowanych helperów `publish*` dla EventBus; `publishRunnerCallEvent` przepuszcza ostrzeżenie limitu przez `admitUsageLimitWarning`."],
+          ['usage-limit-gate.ts', 'engine', "Nowy (a9f2ab9): każdy próg ostrzeżenia limitu Claude Code raz na run i okno (`admitUsageLimitWarning`), także po kontynuacji (`seedUsageLimitSteps` z session.jsonl w init.ts)."],
           ['apply', 'engine', "Apply / Discard: zapis łatki do checkoutu, backup, restore, merge, wariant at-rest."],
           ['approval', 'engine', "Bramki zatwierdzania: klasyfikacja akcji, tiered approval, staged project.", false, [
             ['file-snapshots', 'engine', "Przechwyt i przywracanie plików przed zatwierdzeniem."]
@@ -271,9 +273,10 @@ window.ATLAS = window.ATLAS || [];
           ['hooks', 'features', "Edytor i bufor wartości ustawienia."]
         ]],
         ['start-preparation', 'features', "Panel gotowości startu i jego cykl (`useStartPreparation`)."],
-        ['workflow', 'features', "Ekran runu: transkrypt, chrome, byline, prompty, stop, wynik, run zamknięty (143 pliki).", false, [
+        ['workflow', 'features', "Ekran runu: transkrypt, chrome, byline, prompty, stop, wynik, run zamknięty (146 plików).", false, [
           ['tui-sink.ts', 'features', "`addTuiEvent`: sink TUI; bounduje event i woła `addEvent`.", true],
           ['run-history.ts', 'features', "`hydrateRun`: replay session.jsonl do stores (run at-rest)."],
+          ['entry-config.ts', 'features', "Nowy (42fb57f): `nextEntryConfig` — config następnego wejścia runu (zapisany, gdy seat zmienił się od przygotowania, inaczej przygotowany); czytają go use-run-loop i recovery-driver (Retry at)."],
           ['at-rest.ts', 'features', "Szyna at-rest: znak etapu, na którym run stanął."],
           ['closed', 'features', "Blok `Closed ─` zamkniętego runu: view model, copy, byline.", false, [
             ['rows', 'features', "Wiersze Briefs / Files / Run / lead bloku zamkniętego."]
@@ -290,9 +293,12 @@ window.ATLAS = window.ATLAS || [];
             ['row-format', 'features', "Formatowanie wierszy, kart i etykiet."]
           ]],
           ['copy', 'features', "Rozwiązywanie tekstów UI workflow."],
-          ['display', 'features', "Byline i aktywność: `deriveBuildProgress`, live activity, tożsamość seat-u z zapisu."],
+          ['display', 'features', "Byline i aktywność: `deriveBuildProgress`, live activity, tożsamość seat-u z zapisu.", false, [
+            ['running-seats.ts', 'features', "Nowy (016daca): `deriveRunningSeats` — seat, na którym naprawdę biegnie praca (wywołanie, trasa briefu, seat przebiegu z `workflow_config`), gdy różni się od zapisanego; nagłówek i sidebar pokazują go do punktu zmiany seat-u."]
+          ]],
           ['hooks', 'features', "Klawisze, mysz, kontynuacja runu, pętla runu.", false, [
             ['use-run-loop.ts', 'features', "Pętla TUI: woła runWorkflow z `tuiSink: addTuiEvent`, recovery między turami."],
+            ['use-running-seats.ts', 'features', "Nowy (016daca): `useRunningSeats` — hook nad `deriveRunningSeats` (tasks, lifecycle, operations, tokens.passSeats, stop, recovery notice)."],
             ['workflow-screen', 'features', "`useWorkflowScreen`: model ekranu i edycja inline."]
           ]],
           ['layout', 'features', "Wiersze chrome, hit-test, prostokąty, okno przewijania."],
@@ -357,7 +363,7 @@ window.ATLAS = window.ATLAS || [];
           ['tokens.ts', 'stores', "`updateTokens`: drugi wyczerpujący switch po EngineEvent (assertNever)."]
         ]]
       ]],
-      ['utils', 'utils', "Czyste prymitywy, liść grafu (0 importów wychodzących do innych warstw).", false, [
+      ['utils', 'utils', "Czyste prymitywy, liść grafu (0 importów wychodzących do innych warstw). Jeden wyjątek od bezstanowości: `format-errors.ts` trzyma korzenie ścieżek (`setProjectRoot` z cli/setup.ts, `addWorkspaceRoot` z izolacji runu), żeby błąd pliku nazywał plik od korzenia projektu (e473b3d, docs/LAYERS.md:31).", false, [
         ['error.ts', 'utils', "Fabryka `error(kind, msg, …)` i predykat `matches` (ERRORS.md).", false],
         ['type-guards.ts', 'utils', "`assertNever`, `isRecord`, `typedEntries`."],
         ['markdown', 'utils', "Parser i layout markdownu bez UI (GFM, tabele, highlight lowlight)."]
@@ -495,20 +501,20 @@ Ten obszar opisuje tylko statyczną architekturę. Przepływy w czasie działani
     APP["app/ · 21 plików"]
   end
   subgraph UIL["rank 4 — UI React/Ink"]
-    FEAT["features/ · 206 plików"]
+    FEAT["features/ · 209 plików"]
     COMP["components/ · 47 plików"]
     HOOKS["hooks/ · 5 plików"]
   end
   subgraph MID["rank 3"]
     STORES["stores/ · 72 pliki"]
-    ENGINE["engine/ · 488 plików"]
+    ENGINE["engine/ · 489 plików"]
   end
-  CORE["core/ · 278 plików · rank 2"]
+  CORE["core/ · 279 plików · rank 2"]
   LIB["lib/ · 55 plików · rank 1"]
   UTILS["utils/ · 40 plików · rank 0"]
   ROOT -->|"13"| CLI
   ROOT -->|"4"| CORE
-  ROOT -->|"1"| LIB
+  ROOT -->|"2"| LIB
   ROOT -->|"1"| UTILS
   CLI -->|"3"| APP
   CLI -.->|"1 run-history"| FEAT
@@ -589,7 +595,7 @@ Ten obszar opisuje tylko statyczną architekturę. Przepływy w czasie działani
         title: 'Mapa podfolderów engine/ (policzone importy)',
         caption: 'Liczba = importy między podfolderami engine/. orchestrator jest hubem: woła runners, spec, providers, events, snapshots. runners i planners/implementers zależą od siebie w obie strony na poziomie folderów, ale bez cykli runtime na poziomie modułów (gate 19). Z zewnątrz najczęściej importowane: orchestrator (64), runners (63), detection (46), events (43, prawie wszystko import type ze stores), providers (31).',
         mermaid: `flowchart LR
-  E_ORCH["orchestrator · 205 plików<br/>pętla runu"]
+  E_ORCH["orchestrator · 206 plików<br/>pętla runu"]
   E_RUN["runners · 69<br/>fabryka, adaptery CLI"]
   E_PLAN["planners · 14"]
   E_IMPL["implementers · 19"]
@@ -1649,7 +1655,7 @@ Ten obszar opisuje tylko statyczną architekturę. Przepływy w czasie działani
       { key: 'tsconfig.json exclude', values: 'lista', default: 'node_modules, dist, testing, **/*.test.ts(x)', effect: 'Build produkcyjny nie widzi testów ani testing/.', where: 'tsconfig.json:25' },
       { key: 'knip.json project / entry', values: 'globy', default: 'src, scripts, evals, testing bez testów i fixtures', effect: 'Zakres gate 18 (martwy kod).', where: 'knip.json:3' },
       { key: 'vitest.config.ts projects', values: 'unit | integration | workflow-screen', default: 'jak obok', effect: 'Testy kolokowane *.test.ts to unit; *.integration.test.ts i testing/integration to integration.', where: 'vitest.config.ts:54' },
-      { key: 'NODE_ENV', values: 'production', default: 'ustawiane zawsze przez node-env.ts', effect: 'React w wersji produkcyjnej; bez tego pomiary renderów zapychały stertę.', where: 'src/node-env.ts:4' },
+      { key: 'NODE_ENV', values: 'production w procesie SPLITBRIEF; u dzieci wartość użytkownika albo brak', default: 'ustawiane zawsze przez node-env.ts (runAsProduction)', effect: 'React w wersji produkcyjnej; bez tego pomiary renderów zapychały stertę. Od c947aa6 spawnPipe i edytor oddają dzieciom NODE_ENV, z którym użytkownik uruchomił SPLITBRIEF, albo usuwają zmienną (withUserNodeEnv).', where: 'src/node-env.ts:6; src/lib/process/spawn/child-env.ts:75; src/lib/process/spawn/lifecycle.ts:343' },
       { key: 'SPLITBRIEF_OWNER_COMMIT=1 (prefiks komendy)', values: 'prefiks', default: 'brak', effect: 'Jedyny sposób, by hook block-git-commits.sh przepuścił commit sesji orkiestrującej.', where: '.claude/hooks/block-git-commits.sh:26' }
     ],
     states: [
@@ -1826,11 +1832,14 @@ Ten obszar opisuje tylko statyczną architekturę. Przepływy w czasie działani
       'router.tsx importuje type AppInteractionDeps z root.tsx, a root.tsx importuje router.tsx: cykl tylko typów, dozwolony przez viaOnly type-only.',
       'Planner claude-code omija rejestr adapterów CLI w fabryce: factory.ts:56 ładuje planners/claude-code.ts, a inne narzędzia idą przez planners/cli.ts. Rejestr i tak zawiera claudeCodePlannerAdapter (registry.ts:587).',
       'core/runtime/ nie ma żadnego pliku, tylko commands/. src/features/ też nie ma plików w korzeniu.',
-      'engine ma więcej plików testów (498) niż produkcyjnych (488); orchestrator to 205 plików i ~39 tys. linii, prawie połowa engine.',
+      'engine ma więcej plików testów (506) niż produkcyjnych (489); orchestrator to 206 plików i ~40 tys. linii, prawie połowa engine.',
       'STRUCTURE.md każe przemyśleć plik ponad 500 linii; w src jest 65 takich plików, a największy (1533 linie) leży w lib: lib/confined-fs-atomic.ts.',
       'Biome wyłącza noNonNullAssertion i noExplicitAny; zakaz !, any i szerokiego as trzymają tylko bramy 17, 17b, 17c.',
       'Numeracja bram ma luki: runner ma 53 bramy o id do 59 (brak 7 i 36–45). Gate 12c w INVARIANTS.md opisuje components/hooks/cli, a kod zabrania też stores.',
-      'core importuje pakiety, które nie są czysto domenowe: chalk (core/theme/paint.ts, resolve.ts) i fzf (core/runtime/commands/lookup.ts). lib/clipboard/image.ts wywołuje AppKit przez osascript.'
+      'core importuje pakiety, które nie są czysto domenowe: chalk (core/theme/paint.ts, resolve.ts) i fzf (core/runtime/commands/lookup.ts). lib/clipboard/image.ts wywołuje AppKit przez osascript.',
+      'Zmiana na main (2026-10): src/node-env.ts nie jest już liściem — importuje runAsProduction z lib/process/spawn/child-env.ts (c947aa6), więc krawędź ROOT → lib ma 2 importy.',
+      'Zmiana na main (2026-10): utils/format-errors.ts ma stan modułu (korzeń projektu i stos korzeni workspace, e473b3d); docs/LAYERS.md:31 i :36 nazywa to jedynym stanowym wyjątkiem w utils/. Brama utils-is-a-leaf dalej przechodzi, bo stan nie wymaga importów.',
+      'Zmiana na main (2026-10): 5 nowych plików produkcyjnych — core/recovery/usage-limit-step.ts, engine/orchestrator/usage-limit-gate.ts (a9f2ab9), features/workflow/display/running-seats.ts, features/workflow/hooks/use-running-seats.ts (016daca) i features/workflow/entry-config.ts (42fb57f); żaden nie przekracza 160 linii i żaden nie zmienia kierunku warstw.'
     ],
     tree: tree
   });
