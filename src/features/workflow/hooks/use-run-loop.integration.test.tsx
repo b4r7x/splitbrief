@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { Box, Text } from 'ink';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { tick } from '#testing/helpers/ink.js';
 import { execFileSync } from 'node:child_process';
@@ -421,7 +421,7 @@ describe('useRunLoop', () => {
       expect(errorMessages()).toEqual([
         record === 'malformed'
           ? 'The stopped workspace could not be verified. Its files were left in place; automatic continuation is blocked.'
-          : `permission denied · ${path}`,
+          : `Could not read the kept workspace record: permission denied · ${relative(projectDir, path)}`,
       ]);
       expect(
         eventsStore
