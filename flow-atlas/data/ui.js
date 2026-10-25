@@ -142,10 +142,8 @@ window.ATLAS.push({
       mermaid: `flowchart TD
   CC["ctrl+c"] --> UI_CTRLC{"Drugie naciśnięcie w 2 s, stop w toku albo Apply tego procesu?"}
   UI_CTRLC -->|"tak"| RQ["requestQuit(exit)"]
-  UI_CTRLC -->|"nie"| ARM["'Press ctrl+c again to quit' przez 2 s"]
-  ARM --> LIVE{"Workflow local i nic się nie zatrzymuje?"}
-  LIVE -->|"tak"| SN["zamknij stop-sheet + requestStopNow"]
-  LIVE -->|"nie"| WAITK["tylko uzbrojenie"]
+  UI_CTRLC -->|"pierwsze, workflow local, nic się nie zatrzymuje"| SN["'Press ctrl+c again to quit' + zamknij stop-sheet + requestStopNow"]
+  UI_CTRLC -->|"pierwsze, gdzie indziej"| ARM["tylko 'Press ctrl+c again to quit' przez 2 s"]
   Q2["/quit, ctrl+q"] --> RQ
   H2["esc w domu, Back to sessions, pusty ⏎ przy Apply"] --> RL["requestLeaveSession"]
   RQ --> UI_DEPART_QUEUE{"Kolejka już ma quit albo ten sam rodzaj?"}
@@ -156,10 +154,9 @@ window.ATLAS.push({
   UI_DEPART_AFTER_APPLY -->|"quit"| LEAVE["leave()"]
   UI_DEPART_AFTER_APPLY -->|"home i run closed as applied"| LEAVE
   UI_DEPART_AFTER_APPLY -->|"home, a Apply zatrzymał się"| STAY["zostań: widać halt"]
-  UI_DEPART_APPLY -->|"nie"| STOPQ{"Jest co zatrzymać?"}
-  STOPQ -->|"tak"| WSTOP["czekaj na parked lub ended; failed porzuca wyjście"]
+  UI_DEPART_APPLY -->|"nie, jest co zatrzymać"| WSTOP["czekaj na parked lub ended; failed porzuca wyjście"]
   WSTOP --> LEAVE
-  STOPQ -->|"nie"| LEAVE
+  UI_DEPART_APPLY -->|"nie, nic do zatrzymania"| LEAVE
   LEAVE --> UI_DRAFT_LEAVE{"flushSessionDrafts się udał?"}
   UI_DRAFT_LEAVE -->|"tak"| GO["nawigacja do home albo exit()"]
   UI_DRAFT_LEAVE -->|"nie, pierwszy raz na tym ekranie"| HOLD["zostań: 'Draft not saved · esc or quit again leaves without it'"]
@@ -212,9 +209,8 @@ window.ATLAS.push({
   UI_BYLINE_LEAD -->|"praca trwa"| L6["spinner + czynność + zegar etapu"]
   UI_WF_EXEC -->|"local, Apply tego procesu"| AP["Applying to your checkout · zegar; tylko komendy"]
   UI_WF_EXEC -->|"at-rest"| UI_WF_STATUS{"record.status.kind?"}
-  UI_WF_STATUS -->|"running"| UI_WF_RUNNING_WHO{"To Apply tego procesu?"}
-  UI_WF_RUNNING_WHO -->|"tak"| AP
-  UI_WF_RUNNING_WHO -->|"nie"| OTH["Running in another process; esc i ⏎ = dom od razu"]
+  UI_WF_STATUS -->|"running, Apply tego procesu"| AP
+  UI_WF_STATUS -->|"running, inny proces"| OTH["Running in another process; esc i ⏎ = dom od razu"]
   UI_WF_STATUS -->|"open"| UI_AT_REST_COMPOSER{"Stan czytelny i co przyjmuje composer?"}
   UI_AT_REST_COMPOSER -->|"nieczytelny"| UNR["Saved state unreadable · Start it again from home"]
   UI_AT_REST_COMPOSER -->|"czytelny"| UI_OPEN_BYLINE{"Na czym stoi run?"}
@@ -389,7 +385,7 @@ window.ATLAS.push({
       title: 'Usunięta albo nieznana nazwa',
       question: 'Jaki komunikat dostaje nieznana komenda?',
       where: 'src/core/runtime/commands/dispatch.ts:27',
-      inputs: ['REMOVED_COMMANDS (types.ts:191)', 'fzf po nazwach'],
+      inputs: ['REMOVED_COMMANDS (types.ts:174)', 'fzf po nazwach'],
       branches: [
         { if: 'nazwa w REMOVED_COMMANDS (np. `/planner`, `/yolo`, `/mode`, `/accept-run`)', then: '`/x was removed: <wskazówka>`, np. `the PLAN seat is chosen with /crew plan`' },
         { if: 'nazwa zaczyna się od `/skill:`', then: '`Unknown command: /skill:x. Did you mean /skills x?`' },
@@ -428,7 +424,7 @@ window.ATLAS.push({
         { if: 'brak powodu', then: 'handler wykonuje się', next: 'UI_CMD_CHAIN' }
       ],
       default: 'Brak guard-a = komenda działa.',
-      notes: 'Ta sama funkcja guard ukrywa wiersz w palecie (src/features/palette/sources.ts:114), w pomocy i w liście `/`. Fazy live to tylko: researching, specifying, planning, implementing, escalating, final-review (src/core/phases.ts:42). Handler może odmówić później: `Nothing to resume.`, `Nothing to steer.`, `Usage: /steer <correction>`, `No active run to end.`, `Usage: /run <accept|reject>`, `Usage: /run reject confirm`.'
+      notes: 'Ta sama funkcja guard ukrywa wiersz w palecie (src/features/palette/sources.ts:114), w pomocy i w liście `/`. Fazy live to tylko: researching, specifying, planning, implementing, escalating, final-review (src/core/phases.ts:40). Handler może odmówić później: `Nothing to resume.`, `Nothing to steer.`, `Usage: /steer <correction>`, `No active run to end.`, `Usage: /run <accept|reject>`, `Usage: /run reject confirm`.'
     },
     {
       id: 'UI_CMD_CHAIN',
@@ -793,7 +789,7 @@ window.ATLAS.push({
         { if: 'esc', then: 'stop-sheet z `Stop now` i `End run`' }
       ],
       default: 'Menu zostaje, dopóki akcja się nie powiedzie.',
-      notes: 'Akcja zablokowana daje błąd i menu pyta znowu (recovery-driver.ts:404).'
+      notes: 'Akcja zablokowana daje błąd i menu pyta znowu (recovery-driver.ts:405).'
     },
     {
       id: 'UI_SWITCH_SEAT',
@@ -877,6 +873,22 @@ window.ATLAS.push({
       ],
       default: '—',
       notes: 'Ekran at rest obserwuje state.json, lock, session.jsonl i summary (watchFile co 100 ms) i czyta rekord ponownie, gdy inny proces coś zmieni (use-model.ts:98).'
+    },
+    {
+      id: 'UI_WF_STATUS',
+      title: 'Run w spoczynku: według statusu rekordu',
+      question: 'Co pokazuje ekran workflow dla runu at rest?',
+      where: 'src/features/workflow/closed/byline.ts:193',
+      inputs: ['record.status.kind', 'activeApply() tego procesu', 'deriveSummaryView'],
+      branches: [
+        { if: 'running i Apply tego procesu', then: '`Applying to your checkout · 0:07`, Apply aktywny na pasku, bez menu wyniku; tylko komendy' },
+        { if: 'running w innym procesie', then: '`Running in another process`; esc, ⏎ i `/home` idą do domu od razu' },
+        { if: 'open', then: 'byline miejsca zatrzymania; composer bierze korektę, ⏎ kontynuuje', next: 'UI_AT_REST_COMPOSER' },
+        { if: 'ready-to-apply', then: 'menu wyniku nad composerem', next: 'UI_RESULT_ROW' },
+        { if: 'closed', then: 'blok `Closed ─` (Briefs, Files, Run) na końcu transkryptu, bez sidebara, tylko komendy, ⏎ = dom' }
+      ],
+      default: '—',
+      notes: 'Fakty bloku zamknięcia liczy raz `deriveSummaryView` (src/features/workflow/closed/view-model.ts). Brak wartości to `not run` / `not checked` / `not estimated`, nigdy `—`.'
     },
     {
       id: 'UI_CONTINUE_AT_REST',

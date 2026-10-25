@@ -262,6 +262,76 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
   AFTER -->|"tak"| I
   AFTER -->|"nie"| DONE["koniec: sukces, halt (exit 1)<br/>lub stop"]`,
     },
+    {
+      id: "rc-build-halt",
+      title: "BUILD: od outcome implementera do halt-u i rekomendacji",
+      caption: "Pierwsza próba briefu i każdy szczebel drabiny czytają outcome tak samo. Seat-down i defekt runnera halt-ują od razu; reszta idzie do drabiny eskalacji (obszar build). Lista akcji i rekomendacja zależą od oferty, resetu i briefu.",
+      mermaid: `flowchart TD
+  A["Porażka wywołania implementera<br/>(po runSeatCall)"] --> RC_IMPL_OUTCOME{"implResult.outcome?"}
+  RC_IMPL_OUTCOME -->|"unauthenticated"| SD["buildSeatDownIssue<br/>account · auth → runner-unauthenticated"]
+  RC_IMPL_OUTCOME -->|"usage-limit"| CL["classifySeatFailure(outcome usage-limit)"]
+  CL --> SD2["buildSeatDownIssue<br/>rate-limited / quota / balance / billing<br/>→ runner-usage-limit"]
+  RC_IMPL_OUTCOME -->|"missing-model"| RC_MODEL_REFUSAL_ROUTE{"seatRouteRefusal:<br/>listing poświadczeń trasy?"}
+  RC_MODEL_REFUSAL_ROUTE -->|"signed-out"| SD3["buildSeatDownIssue<br/>no credential for provider"]
+  RC_MODEL_REFUSAL_ROUTE -->|"wrong-model"| MR1["implementer-recipe-invalid<br/>Model not listed by tool<br/>oferta kończy się własnym narzędziem"]
+  RC_MODEL_REFUSAL_ROUTE -->|"unknown"| MR2["implementer-recipe-invalid<br/>Model refused by tool"]
+  RC_IMPL_OUTCOME -->|"recipe-invalid / left-isolation /<br/>checkout-changed / timeout-repeated /<br/>input-too-large"| DF["builder defektu<br/>RUNNER_DEFECT_BUILDERS"]
+  RC_IMPL_OUTCOME -->|"inny / brak"| RC_LADDER_HALT{"Drabina eskalacji:<br/>szczebel kończy się na seat-down,<br/>defekcie, bound lub hooku?"}
+  RC_LADDER_HALT -->|"seat-down"| SD2
+  RC_LADDER_HALT -->|"defekt runnera"| DF
+  RC_LADDER_HALT -->|"consult / attempt / planner-calls bound"| CB["consult-bound-spent /<br/>planner-calls-spent (Needs you)"]
+  RC_LADDER_HALT -->|"pre_escalation odmówił"| RX["retry-exhausted<br/>allowRetryOverride"]
+  RC_LADDER_HALT -->|"nie"| NEXT["kolejny szczebel (build)"]
+  SD --> RC_SEAT_DOWN_ACTIONS
+  SD2 --> RC_SEAT_DOWN_ACTIONS
+  SD3 --> RC_SEAT_DOWN_ACTIONS{"Jakie akcje?<br/>oferta switch · resetAt · brief"}
+  RC_SEAT_DOWN_ACTIONS -->|"zawsze"| A1["Try again · End run"]
+  RC_SEAT_DOWN_ACTIONS -->|"oferta"| A2["Change BUILD tool<br/>(do 3 wierszy switch BUILD to …)"]
+  RC_SEAT_DOWN_ACTIONS -->|"resetAt"| A3["Retry at HH:MM"]
+  RC_SEAT_DOWN_ACTIONS -->|"brief"| A4["Skip task"]
+  A1 --> RC_RECOMMENDED{"chooseRecommended"}
+  A2 --> RC_RECOMMENDED
+  A3 --> RC_RECOMMENDED
+  A4 --> RC_RECOMMENDED
+  RC_RECOMMENDED -->|"oferta istnieje"| R1["switch-seat"]
+  RC_RECOMMENDED -->|"brak oferty, jest reset"| R2["retry-later"]
+  RC_RECOMMENDED -->|"ani oferta, ani reset"| R3["retry-same-worker"]`,
+    },
+    {
+      id: "rc-tui-panel",
+      title: "TUI: wejście z haltem, panel i słowa z composera",
+      caption: "Run loop wchodzi z zapisanym haltem. Najpierw rozwiązuje się to, co nie wymaga pytania: stale halt, intencja automatyczna, odgrywana akcja. Dopiero potem panel. Słowa wpisane w composerze są korektą tylko dla akcji, która je czyta.",
+      mermaid: `flowchart TD
+  A["Wejście run loop<br/>state.pendingRecovery != undefined"] --> RC_STALE_HALT{"Halt stale?<br/>reason retired lub checkout-changed<br/>tylko HEAD/branch bez workspace"}
+  RC_STALE_HALT -->|"tak"| ST["init.ts settleStaleHalt: RESOLVE,<br/>warning: no longer applies"]
+  RC_STALE_HALT -->|"nie"| RC_CREW_CHANGED{"Seat w config.yaml inny<br/>niż w seats.json runu?"}
+  RC_CREW_CHANGED -->|"tak"| CC["seat_switched cause crew-changed<br/>PLAN: plannerSessionId = null"]
+  RC_CREW_CHANGED -->|"nie"| DRV
+  CC --> DRV["createRecoveryDriver → promptPendingRecovery"]
+  DRV --> RC_TUI_AUTO{"issue.switchSeat.auto?<br/>albo status applying + selectedAction?"}
+  RC_TUI_AUTO -->|"auto"| SW["switchSeat = fallback<br/>→ applyOfferedSeatSwap, bez panelu"]
+  RC_TUI_AUTO -->|"applying"| RP["odegraj selectedAction<br/>ze słowami wejścia jako notatką"]
+  RC_TUI_AUTO -->|"nie"| OPEN["recoveryNoticeStore.open<br/>nagłówek: zegar resetu przy seat<br/>recovery_prompted"]
+  OPEN --> MENU["RecoveryMenu: Needs you · cause / Seat down · cause<br/>wiersze akcji, recommended, Tab = composer"]
+  MENU --> RC_TUI_ANSWER{"Odpowiedź: klawisz,<br/>pusty ⏎ czy tekst?"}
+  RC_TUI_ANSWER -->|"pusty ⏎"| REC["akcja rekomendowana"]
+  RC_TUI_ANSWER -->|"w / w2 / w3"| PK["picker seat-a na kandydacie n<br/>Escape = halt zostaje"]
+  RC_TUI_ANSWER -->|"r l v k c s a"| ACT["akcja z klawisza"]
+  RC_TUI_ANSWER -->|"tekst"| COR["correctionActionFor: retry → steer,<br/>revise → korekta, bound → continue"]
+  ACT --> RC_WORDS_UNREAD{"Słowa w composerze,<br/>a akcja ich nie czyta?"}
+  REC --> RC_WORDS_UNREAD
+  RC_WORDS_UNREAD -->|"tak"| ERR["Cannot send words with label. Clear them."]
+  RC_WORDS_UNREAD -->|"nie"| APPLY["applyRecoveryAction<br/>(revise: najpierw pytanie o notatkę)"]
+  COR --> APPLY
+  ERR --> MENU
+  APPLY -->|"blocked"| MENU
+  APPLY -->|"closed"| CLOSED["Run ended · finalizeEndedRun"]
+  APPLY -->|"continued / retry-current-task"| RUN["runWorkflow na zwróconym stanie<br/>steer = korekta"]
+  RUN --> RC_RESUME_SEAT_WAIT{"state.seatWait<br/>(po Retry at lub stopie w czekaniu)?"}
+  RC_RESUME_SEAT_WAIT -->|"deadline w przyszłości"| WAIT["resumeSeatWait śpi do resetu"]
+  RC_RESUME_SEAT_WAIT -->|"minął / brak"| GO["krok rusza"]
+  WAIT --> GO`,
+    },
   ],
   decisions: [
     {

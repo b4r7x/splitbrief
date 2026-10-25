@@ -123,20 +123,20 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       caption: 'openWorkspace w isolation/create.ts. Tryb zapisuje się raz w state.workspace.kind; późniejsza zmiana config nie przenosi runu. Każda awaria worktree kończy się fallbackiem na staged-copy z jednym ostrzeżeniem.',
       mermaid: `flowchart TD
   A["runTasksAndReview: snapshot workspace-base"] --> LC_PREVIOUS_RECORD{"retained-workspace.json istnieje?"}
-  LC_PREVIOUS_RECORD -->|"tak, staged-copy"| P1["dir = sessions/<id>/<leaf>/workspace;<br/>strategy worktree → fallback reported"]
-  LC_PREVIOUS_RECORD -->|"tak, worktree"| P2["dir = trees/<repo-key>/<session-id>"]
+  LC_PREVIOUS_RECORD -->|"tak, staged-copy"| P1["dir = sessions/‹id›/‹leaf›/workspace;<br/>strategy worktree → fallback reported"]
+  LC_PREVIOUS_RECORD -->|"tak, worktree"| P2["dir = trees/‹repo-key›/‹session-id›"]
   P1 --> P3{"retainedDirectoryMatches<br/>(dev, ino, birthtime)?"}
   P2 --> P3
   P3 -->|"nie"| ERR["isolation-retention-unavailable:<br/>pliki zostaja, kontynuacja zablokowana"]
   P3 -->|"tak"| OPEN["prepareWorktreeAcquisition + snapshot<br/>+ keptFiles z retained snapshot"]
   LC_PREVIOUS_RECORD -->|"nie"| LC_ISOLATION_STRATEGY{"workflow.isolation<br/>lub recorded kind?"}
   LC_ISOLATION_STRATEGY -->|"none / checkout"| CK["kind checkout: projectDir, head = HEAD,<br/>bez rekordu workspace"]
-  LC_ISOLATION_STRATEGY -->|"staged-copy"| SC["createStagedProject pod<br/>sessions/<id>/stage-<hex>/workspace"]
+  LC_ISOLATION_STRATEGY -->|"staged-copy"| SC["createStagedProject pod<br/>sessions/‹id›/stage-‹hex›/workspace"]
   LC_ISOLATION_STRATEGY -->|"worktree (domyslne)"| LC_WORKTREE_AVAILABLE{"resolveWorktreeDir"}
   LC_WORKTREE_AVAILABLE -->|"nie repo git"| FB1["fallback: project is not a git repository"]
   LC_WORKTREE_AVAILABLE -->|"brak commitow"| FB2["fallback: repository has no commits"]
   LC_WORKTREE_AVAILABLE -->|"katalog istnieje, marker innej sesji"| FB3["fallback: directory already exists<br/>and is not owned by session"]
-  LC_WORKTREE_AVAILABLE -->|"branch splitbrief/<slug> istnieje"| FB4["fallback: worktree-branch-exists<br/>(worktree porzucony i usuwany przy dispose)"]
+  LC_WORKTREE_AVAILABLE -->|"branch splitbrief/‹slug› istnieje"| FB4["fallback: worktree-branch-exists<br/>(worktree porzucony i usuwany przy dispose)"]
   LC_WORKTREE_AVAILABLE -->|"repo nie ignoruje node_modules"| FB5["fallback: dependency symlink<br/>would appear in every changed set"]
   LC_WORKTREE_AVAILABLE -->|"ok"| WT["git worktree add + seed dirty files<br/>+ marker + link node_modules"]
   FB1 --> SC
@@ -172,7 +172,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
   LC_CONFLICT_TEXT_ONLY -->|"nie: binary, delete-modify, add-add,<br/>mode, symlink, unsupported-entry"| HC2["halt apply-conflict: rozwiaz pliki w workspace,<br/>potem Re-run Apply lub End run"]
   LC_MERGE_CONFLICT -->|"nie"| LC_CANDIDATE_CHANGED{"kandydat po merge rozni sie<br/>od reviewedCandidate?"}
   LC_CANDIDATE_CHANGED -->|"tak"| RV["APPLY_REVIEW_START (fix cycle +1):<br/>checki i review jeszcze raz, potem Apply"]
-  LC_CANDIDATE_CHANGED -->|"nie"| BK["writeApplyBackup: replaced, created,<br/>expected, candidate pod sessions/<id>/apply/<backupId>"]
+  LC_CANDIDATE_CHANGED -->|"nie"| BK["writeApplyBackup: replaced, created,<br/>expected, candidate pod sessions/‹id›/apply/‹backupId›"]
   BK --> LC_BACKUP_CHANGED{"checkout zmienil plik<br/>od capture?"}
   LC_BACKUP_CHANGED -->|"tak"| HC3["halt apply-conflict: checkout-changed"]
   LC_BACKUP_CHANGED -->|"nie"| ST["APPLY_START(backupId) → state.applying"]
@@ -228,7 +228,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
   D -->|"nie"| LC_APPLY_UNFINISHED{"state.applying ustawione?"}
   LC_APPLY_UNFINISHED -->|"tak"| E1["blad end-run-while-applying:<br/>Apply did not finish. Restore or retry Apply first"]
   LC_APPLY_UNFINISHED -->|"nie"| LC_CLOSE_PATCH{"workspace worktree / staged-copy?"}
-  LC_CLOSE_PATCH -->|"tak, katalog istnieje"| P1["writeRunPatch: git diff --no-index base vs workspace<br/>→ sessions/<id>/run.patch (brak zmian = brak pliku)"]
+  LC_CLOSE_PATCH -->|"tak, katalog istnieje"| P1["writeRunPatch: git diff --no-index base vs workspace<br/>→ sessions/‹id›/run.patch (brak zmian = brak pliku)"]
   LC_CLOSE_PATCH -->|"tak, katalog zniknal"| P2["warning: workspace is gone; no run patch"]
   LC_CLOSE_PATCH -->|"checkout lub brak"| P3["bez patcha"]
   P1 --> LC_CLOSE_AS{"jak zamknac?"}
@@ -256,7 +256,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
   subgraph PROJ[".splitbrief/ w projekcie"]
     ACT["active<br/>wskaznik aktywnej sesji (legacy id lub receipt v1)"]
     CFG["config.yaml"]
-    subgraph SESS["sessions/<id>/"]
+    subgraph SESS["sessions/‹id›/"]
       ST["state.json (v4, stateRevision)"]
       LOG["session.jsonl (events, messages, summary)"]
       LOCK["lockfile.json (pid, startTimeMs, lastAliveMs, exitedAt)"]
@@ -269,17 +269,17 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       PATCH["run.patch (po Discard / End run)"]
       PLANF["plan.json, plan.md, tasks.md, review.json, evidence.json"]
       SNAP["snapshots/baseline, workspace-base, post-task-N,<br/>pre-final-review, run-ledger.json"]
-      APPLYD["apply/<backupId>/manifest.json, blobs/, candidate/"]
+      APPLYD["apply/‹backupId›/manifest.json, blobs/, candidate/"]
       ENT["entries/ (content-addressed bajty snapshotow)"]
-      REV["reverted/<stamp>/ (bajty zastapione w checkout)"]
-      STAGE["stage-<hex>/workspace (staged-copy)"]
+      REV["reverted/‹stamp›/ (bajty zastapione w checkout)"]
+      STAGE["stage-‹hex›/workspace (staged-copy)"]
       OWN[".prepare-owner.json (marker wlasnosci przy tworzeniu)"]
     end
   end
   subgraph XDG["~/.local/state/splitbrief/ (XDG_STATE_HOME)"]
-    TREES["trees/<sha12 git-common-dir>/<session-id>/<br/>worktree runu, branch splitbrief/<slug>"]
+    TREES["trees/‹sha12 git-common-dir›/‹session-id›/<br/>worktree runu, branch splitbrief/‹slug›"]
     MARK["trees/.../.splitbrief/isolation-marker"]
-    BASES["bases/base-<pid>-<rand>/ (drzewo bazy do base re-run)"]
+    BASES["bases/base-‹pid›-‹rand›/ (drzewo bazy do base re-run)"]
   end
   ACT -.->|"nazywa"| SESS
   RET -.->|"wskazuje"| TREES

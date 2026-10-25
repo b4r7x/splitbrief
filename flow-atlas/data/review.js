@@ -5,13 +5,13 @@ window.ATLAS.push({
   title: 'Review końcowy: checki, werdykt, fix loop',
   tagline:
     'Seat review wybiera komendy, SPLITBRIEF je uruchamia, reviewer wydaje typowany werdykt; fail daje fix tasks albo halt, pass daje ready-to-apply albo zamknięty run.',
-  summary: `Review to ostatni etap runu i jedyny etap, który decyduje, czy zmiana jest gotowa. Seat review to runner z bloku **reviewer** w config.yaml, a gdy go nie ma, planner (\`resolveReviewerRunner\`). Każde wywołanie seat-a review jest jedną bezstanową, typowaną rozmową (\`requestTyped\`) z jedną naprawą odpowiedzi; nigdy nie wznawia sesji.
+  summary: `Review to ostatni etap runu i jedyny etap, który decyduje, czy zmiana jest gotowa. Seat review to runner z bloku **reviewer** w config.yaml, a gdy go nie ma, planner (resolveReviewerRunner). Każde wywołanie seat-a review jest jedną bezstanową, typowaną rozmową (requestTyped) z jedną naprawą odpowiedzi; nigdy nie wznawia sesji.
 
-Kolejność jest zawsze taka sama. Najpierw **pre-review**: SPLITBRIEF uruchamia każdy check planu i briefów; required check, który nie może biec, zatrzymuje run halt-em \`required-checks-unrunnable\`, a required check czerwony staje się pending inputem (\`P1\`, \`P2\`...). Potem **plan call**: reviewer czyta projekt i wybiera do 6 komend (\`V1\`..\`V6\`), które weryfikują zmianę. SPLITBRIEF uruchamia je w run workspace pod polityką komend reviewera, czerwoną komendę uruchamia drugi raz na kopii run base (**base re-run**) i rozdziela jej failures na nowe i pre-existing. Pierwsza komenda z nowymi failures zatrzymuje listę; jej failures stają się inputami \`V1.1\`, \`V1.2\`... Potem **rendery** (\`validation.render\`): do 4 PNG na check trafiają do promptu, gdy seat przyjmuje obrazy. Na końcu **verdict call**: reviewer odpowiada jednym \`ReviewAnswer\` (werdykt plus fix work), a SPLITBRIEF weryfikuje jego claimy własnymi checkami i wylicza \`pass\`, \`pass-with-notes\` albo \`fail\`.
+Kolejność jest zawsze taka sama. Najpierw **pre-review**: SPLITBRIEF uruchamia każdy check planu i briefów; required check, który nie może biec, zatrzymuje run halt-em required-checks-unrunnable, a required check czerwony staje się pending inputem (P1, P2...). Potem **plan call**: reviewer czyta projekt i wybiera do 6 komend (V1..V6), które weryfikują zmianę. SPLITBRIEF uruchamia je w run workspace pod polityką komend reviewera, czerwoną komendę uruchamia drugi raz na kopii run base (**base re-run**) i rozdziela jej failures na nowe i pre-existing. Pierwsza komenda z nowymi failures zatrzymuje listę; jej failures stają się inputami V1.1, V1.2... Potem **rendery** (validation.render): do 4 PNG na check trafiają do promptu, gdy seat przyjmuje obrazy. Na końcu **verdict call**: reviewer odpowiada jednym ReviewAnswer (werdykt plus fix work), a SPLITBRIEF weryfikuje jego claimy własnymi checkami i wylicza pass, pass-with-notes albo fail.
 
-Nieudane wywołanie (transport, limit konta, błąd protokołu, zbyt duży input) **nigdy nie jest pass**: run staje na halt-cie w fazie \`final-review\` i czeka na użytkownika (→ zobacz recovery). Werdykt \`fail\` z fix tasks wydaje jeden z 2 cykli naprawczych (\`REVIEW_CYCLE_CAP\`), wstawia fix tasks do listy i wraca do pętli briefów; po nich checki reviewera i review biegną od nowa. Po wyczerpaniu cykli lub bez niczego do naprawy run staje na \`review-failed\` z akcjami **fix again** (+1 cykl), **Accept as is** (tylko final review bez blokującego czerwonego checku) i **End run**.
+Nieudane wywołanie (transport, limit konta, błąd protokołu, zbyt duży input) **nigdy nie jest pass**: run staje na halt-cie w fazie final-review i czeka na użytkownika (→ zobacz recovery). Werdykt fail z fix tasks wydaje jeden z 2 cykli naprawczych (REVIEW_CYCLE_CAP), wstawia fix tasks do listy i wraca do pętli briefów; po nich checki reviewera i review biegną od nowa. Po wyczerpaniu cykli lub bez niczego do naprawy run staje na review-failed z akcjami **fix again** (+1 cykl), **Accept as is** (tylko final review bez blokującego czerwonego checku) i **End run**.
 
-Pass w trybie worktree lub staged-copy daje \`ready-to-apply\`; Apply, Discard albo End run zamyka run (→ zobacz lifecycle). W trybie checkout (\`workflow.isolation: none\`) lub na starszym runie bez workspace pass zamyka run od razu jako \`closed complete\`, bo zmiany już są na dysku. Accept as is zachowuje nieudany werdykt: Apply nazywa się wtedy **Apply as is** i pyta raz.`,
+Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo End run zamyka run (→ zobacz lifecycle). W trybie checkout (workflow.isolation: none) lub na starszym runie bez workspace pass zamyka run od razu jako closed complete, bo zmiany już są na dysku. Accept as is zachowuje nieudany werdykt: Apply nazywa się wtedy **Apply as is** i pyta raz.`,
   entry: [
     'src/engine/orchestrator/run/task-execution.ts:392',
     'src/engine/orchestrator/task/loop.ts:270',
@@ -829,6 +829,20 @@ Pass w trybie worktree lub staged-copy daje \`ready-to-apply\`; Apply, Discard a
       notes: 'Render check też biegnie tu przez runChecks i może dać pass, gdy komenda renderu wyjdzie z kodem 0; dopiero RV_RENDER_FORCED wymusza unverified, gdy obraz nie dotarł.',
     },
     {
+      id: 'RV_CLAIM_STATUS',
+      title: 'Status weryfikacji jednego claimu',
+      question: 'Co dały checki uruchomione za kryterium lub finding unverified?',
+      where: 'src/engine/orchestrator/triage.ts:42',
+      inputs: ['CheckRunResult[] z runChecks', 'newFailureKeys (klucze poza pre-existing)', 'preExistingChecks tego review'],
+      branches: [
+        { if: 'któryś bieg ma nowe failure keys', then: 'fail: claim obalony; kryterium fail / finding blocking zostaje', next: 'RV_RENDER_FORCED' },
+        { if: 'każdy bieg pass, albo fail tylko z kluczami, które preExistingChecks tego samego checku widział na run base', then: 'pass: kryterium pass, finding unverified staje się notatką', next: 'RV_RENDER_FORCED' },
+        { if: 'któryś bieg refused / not-runnable / unknown, albo brak biegów', then: 'unverified: claim niepotwierdzony; kryterium unverified = fail review', next: 'RV_RENDER_FORCED' },
+      ],
+      default: 'Wynik i output idą do review.json verification[] i do Checks Log (recordCheckRuns).',
+      notes: 'Ta sama funkcja ocenia wpisy verify reviewera (runTriageVerification), ale ich wynik ląduje tylko w triage[].verification, nie w mapie werdyktu.',
+    },
+    {
       id: 'RV_RENDER_FORCED',
       title: 'Render bez obrazu nigdy nie przechodzi',
       question: 'Czy kryterium ma render check, którego żaden obraz nie dotarł do reviewera?',
@@ -1052,7 +1066,7 @@ Pass w trybie worktree lub staged-copy daje \`ready-to-apply\`; Apply, Discard a
     { name: 'acceptedAsIs', meaning: 'Override użytkownika: findings i notatka. Daje ready-to-apply override albo closed complete; REVIEW_DONE czyści go.', where: 'src/core/state/machine.ts:548' },
     { name: 'review.outcome: pass | pass-with-notes | fail', meaning: 'Wynik wyliczony przez deriveReviewOutcome, zapisany w state.review i review.json.', where: 'src/core/review/verdict.ts:202' },
     { name: 'CheckStatus: pass | fail | refused | not-runnable | unknown', meaning: 'Status jednego biegu checku. Tylko pass i fail są wynikami; reszta to brak możliwości osądu (required → halt).', where: 'src/engine/orchestrator/validation/run-checks.ts:45' },
-    { name: 'full_suite moment: plan | pre-review | base | brief', meaning: 'Wiersz checku: plan = pre-review checków planu/briefów; pre-review = komenda reviewera; base = base re-run; brief = fix check w bramce briefu.', where: 'src/engine/orchestrator/events.ts:258' },
+    { name: 'full_suite moment: plan | pre-review | base | brief', meaning: 'Wiersz checku: plan = pre-review checków planu/briefów; pre-review = komenda reviewera; base = base re-run; brief = fix check w bramce briefu.', where: 'src/engine/orchestrator/events.ts:263' },
     { name: 'pending input ids: P n / V k.n / A n / U n', meaning: 'P = required check pre-review; V k.n = komenda reviewera V k; A n = recheck po Apply lub odpowiedź użytkownika (kind answer); U n = korekta użytkownika (revise).', where: 'src/engine/orchestrator/run/pre-review-checks.ts:81; src/engine/orchestrator/review-checks.ts:626; src/core/state/machine.ts:485' },
     { name: 'pendingReviewCommands', meaning: 'Komendy reviewera, które fix check uruchomił od ostatniego review; następny plan call musi wybrać je pierwsze; zdejmowane po biegu (discharged).', where: 'src/engine/orchestrator/final-review.ts:925' },
     { name: 'fixCycles { used, allowance, notes }', meaning: 'Wydane i dozwolone cykle naprawcze; notes = korekty, które dodały cykl.', where: 'src/core/schemas/workflow.ts:530' },

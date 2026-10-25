@@ -257,7 +257,7 @@ a.stat:hover { border-color: var(--accent); text-decoration: none; }
 
 .card {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow); scroll-margin-top: 24px;
+  box-shadow: var(--shadow); scroll-margin-top: 60px;
 }
 
 .area-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin: 18px 0 30px; }
@@ -278,7 +278,7 @@ a.stat:hover { border-color: var(--accent); text-decoration: none; }
 .area-card.is-missing .area-card-order { background: var(--surface-2); color: var(--faint); }
 .area-card.is-missing .area-card-tag { font-style: italic; }
 
-.section { margin-top: 34px; scroll-margin-top: 16px; }
+.section { margin-top: 34px; scroll-margin-top: 50px; }
 .section-title { font-size: 19px; font-weight: 650; margin: 30px 0 12px; display: flex; align-items: baseline; gap: 8px; }
 .section > .section-title { margin-top: 0; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .section-title .muted { font-size: 14px; font-weight: 500; }
@@ -427,9 +427,11 @@ a.stat:hover { border-color: var(--accent); text-decoration: none; }
 .branches td:last-child { width: 1%; white-space: nowrap; }
 .row-default td { background: var(--surface-2); color: var(--muted); }
 .decision .tbl-wrap { border-radius: 7px; }
-.tbl-decisions td:nth-child(1), .tbl-decisions td:nth-child(2) { width: 1%; white-space: nowrap; }
-.tbl-decisions td:nth-child(3) { width: 30%; }
-.tbl-decisions td:nth-child(5) { width: 21%; }
+.tbl-decisions td:nth-child(1) { width: 15%; }
+.tbl-decisions td:nth-child(2) { width: 25%; }
+.tbl-decisions td:nth-child(4) { width: 20%; }
+.cell-area { margin-top: 5px; font-size: 12px; line-height: 1.35; }
+.cell-area a { color: var(--muted); }
 .q-title { font-weight: 600; }
 .q-text { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .b-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
@@ -580,7 +582,6 @@ tr.flash td, li.flash { animation: flash-bg 1.8s ease-out; }
   .dg-head { flex-direction: column; }
   .tree-row { grid-template-columns: minmax(0, 1fr) auto; }
   .tree-role, .tree-path { grid-column: 1 / -1; }
-  .tbl-decisions td:nth-child(2) { white-space: normal; }
 }
 .dg-view.is-wide::after {
   content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 36px; pointer-events: none;

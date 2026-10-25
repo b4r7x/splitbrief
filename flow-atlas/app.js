@@ -773,8 +773,7 @@
         rows.push({
           attrs: ' data-area="' + esc(a.id) + '" data-text="' + esc(fold([d.id, d.title, d.question, d.where, d.default, d.notes].concat(d.branches.map(function (b) { return str(b && b.if) + ' ' + str(b && b.then) + ' ' + str(b && b.next); })).join(' '))) + '"',
           cells: [
-            '<a class="badge badge-link" href="#decision/' + esc(d.id) + '">' + esc(d.id) + '</a>',
-            areaPill(a),
+            '<a class="badge badge-link" href="#decision/' + esc(d.id) + '">' + esc(d.id) + '</a><div class="cell-area"><a href="#area/' + esc(a.id) + '">' + esc(a.order + ' · ' + a.title) + '</a></div>',
             '<div class="q-title">' + inline(d.title) + '</div><div class="q-text">' + inline(d.question) + '</div>',
             branchSummary(d),
             refs(d.where)
@@ -785,7 +784,7 @@
     var html = pageHead('Przekrój', 'Wszystkie decyzje', 'Każde rozgałęzienie, które zmienia to, co dzieje się dalej, ze wszystkich obszarów.');
     html += filterBar('f-dec', 'Filtruj: id, pytanie, gałąź, plik…', areaSelect('f-dec-area'));
     if (!rows.length) return html + '<div class="empty">Brak decyzji w danych.</div>';
-    return html + table(['ID', 'Obszar', 'Pytanie', 'Gałęzie', 'Gdzie'], rows, 'tbl-decisions filterable');
+    return html + table(['Decyzja', 'Pytanie', 'Gałęzie', 'Gdzie'], rows, 'tbl-decisions filterable');
   }
 
   function mergedConfig() {
