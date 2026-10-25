@@ -305,7 +305,7 @@ a.stat:hover { border-color: var(--accent); text-decoration: none; }
 .prose li { margin: 2px 0; }
 
 .pill {
-  display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; font-size: 12.5px;
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12.5px; line-height: 1.5;
   background: var(--surface-2); border: 1px solid var(--border); color: var(--text); white-space: nowrap;
 }
 .pill code { background: none; border: 0; padding: 0; }
@@ -587,3 +587,20 @@ tr.flash td, li.flash { animation: flash-bg 1.8s ease-out; }
   content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 36px; pointer-events: none;
   background: linear-gradient(to right, transparent, var(--surface));
 }
+.link-matrix { margin: 0 0 16px; }
+.link-matrix > summary { cursor: pointer; padding: 11px 14px; list-style: none; }
+.link-matrix > summary::-webkit-details-marker { display: none; }
+.link-matrix > summary::before { content: "▶"; display: inline-block; font-size: 9px; margin-right: 8px; color: var(--muted); vertical-align: 2px; transition: transform 0.12s; }
+.link-matrix[open] > summary::before { transform: rotate(90deg); }
+.link-matrix .tbl-wrap { border: 0; border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); }
+.lm { border-collapse: collapse; font-size: 13px; width: 100%; }
+.lm th, .lm td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: center; }
+.lm thead th, .lm tr:first-child th { font: 600 12px var(--font-mono); color: var(--muted); background: var(--surface-2); }
+.lm th.lm-row { text-align: left; font-weight: 500; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.lm th.lm-row a { color: var(--text); }
+.lm-num { display: inline-block; width: 22px; font: 600 12px var(--font-mono); color: var(--muted); }
+.lm td { width: 36px; }
+.lm-self { background: var(--surface-2); }
+.lm-hit a { color: var(--accent); font-size: 11px; }
+.lm-hit:hover { background: var(--accent-soft); }
+.lm tr:last-child th, .lm tr:last-child td { border-bottom: 0; }

@@ -100,7 +100,8 @@
       var e = errors.filter(function (x) {
         return x.src === 'data/' + id + '.js';
       });
-      return e.length ? e.map(function (x) { return x.message; }).join('; ') : '';
+      if (e.length) return e.map(function (x) { return x.message; }).join('; ');
+      return 'Plik się załadował, ale nie dodał obszaru do window.ATLAS. Najczęściej to błąd składni; szczegóły pokaże: node flow-atlas/check.mjs';
     }
     var list = AREAS.map(function (pair, i) {
       var a = given.get(pair[0]);
@@ -109,6 +110,7 @@
         var empty = normalize({ id: pair[0], title: pair[1], order: i }, i);
         empty.missing = true;
         empty.error = errorFor(pair[0]);
+        empty.broken = empty.error.indexOf('Plik się załadował') === 0;
         return empty;
       }
       return normalize(a, i);
@@ -396,7 +398,7 @@
     document.getElementById('nav-areas').innerHTML = S.areas.map(function (a) {
       var c = counts(a);
       var meta = a.missing
-        ? '<span class="nav-missing">brak danych</span>'
+        ? '<span class="nav-missing">' + (a.broken ? 'błąd w pliku' : 'brak danych') + '</span>'
         : '<span title="diagramy">' + c.d + ' diagr.</span><span title="decyzje">' + c.dec + ' dec.</span><span title="scenariusze">' + c.sc + ' scen.</span>';
       return '<a class="nav-area' + (a.missing ? ' is-missing' : '') + '" data-key="area:' + esc(a.id) + '" href="#area/' + esc(a.id) + '">' +
         '<span class="nav-order">' + esc(a.order) + '</span><span class="nav-body"><span class="nav-title">' + esc(a.title) + '</span>' +
@@ -500,14 +502,20 @@
   }
 
   function loadProblems() {
-    var missing = S.areas.filter(function (a) { return a.missing; });
+    var missing = S.areas.filter(function (a) { return a.missing && !a.broken; });
+    var broken = S.areas.filter(function (a) { return a.broken; });
     var errs = arr(window.ATLAS_LOAD_ERRORS).filter(function (e) { return e.kind === 'error'; });
-    if (!missing.length && !errs.length && !S.duplicates.length) return '';
+    if (!missing.length && !broken.length && !errs.length && !S.duplicates.length) return '';
     var html = '<div class="notice">';
     if (missing.length) {
       html += '<div><strong>Brak danych:</strong> ' + missing.map(function (a) {
         return '<a href="#area/' + esc(a.id) + '">' + esc(a.id) + '</a>';
       }).join(', ') + '</div>';
+    }
+    if (broken.length) {
+      html += '<div><strong>Błąd w pliku danych:</strong> ' + broken.map(function (a) {
+        return '<a href="#area/' + esc(a.id) + '">data/' + esc(a.id) + '.js</a>';
+      }).join(', ') + ' — plik się wczytał, ale nie dodał obszaru. Uruchom <code>node flow-atlas/check.mjs</code>.</div>';
     }
     errs.forEach(function (e) {
       html += '<div><strong>Błąd w ' + esc(e.src) + ':</strong> ' + esc(e.message) + '</div>';
@@ -516,37 +524,46 @@
     return html + '</div>';
   }
 
+  function mermaidText(t) {
+    return str(t).replace(/[`*]/g, '').replace(/"/g, '#quot;').replace(/[|<>{}\[\]]/g, ' ');
+  }
+
   function mapSource() {
     S.mapNodes = new Map();
-    var lines = ['flowchart LR'];
+    var lines = ['flowchart TD'];
     S.areas.forEach(function (a) {
       var nid = 'area_' + a.id.replace(/[^A-Za-z0-9]/g, '_');
       S.mapNodes.set(nid, '#area/' + a.id);
       var c = counts(a);
       var sub = a.missing ? 'brak danych' : nDiagrams(c.d) + ' · ' + nDecisions(c.dec);
-      var label = (a.order + ' · ' + a.title).replace(/"/g, '#quot;') + '<br/>' + sub;
+      var label = mermaidText(a.order + ' · ' + a.title) + '<br/>' + sub;
       lines.push('  ' + nid + '["' + label + '"]' + (a.missing ? ':::missing' : ''));
     });
     var edges = new Map();
     S.areas.forEach(function (a) {
       if (a.missing) return;
+      if (a.id === 'journey') return;
       a.links.forEach(function (l) {
         if (!S.areaById.has(l.to) || l.to === a.id) return;
-        var k = a.id + '>' + l.to;
-        if (!edges.has(k)) edges.set(k, []);
-        if (l.label) edges.get(k).push(str(l.label));
+        edges.set(a.id + '>' + l.to, true);
       });
     });
-    edges.forEach(function (labels, k) {
+    var done = new Set();
+    edges.forEach(function (v, k) {
+      if (done.has(k)) return;
       var p = k.split('>');
+      var back = p[1] + '>' + p[0];
+      var both = edges.has(back);
+      done.add(k);
+      if (both) done.add(back);
       var from = 'area_' + p[0].replace(/[^A-Za-z0-9]/g, '_');
       var to = 'area_' + p[1].replace(/[^A-Za-z0-9]/g, '_');
-      var label = labels.length ? labels[0] : '';
-      if (label.length > 42) label = label.slice(0, 40) + '…';
-      if (labels.length > 1) label += ' (+' + (labels.length - 1) + ')';
-      label = label.replace(/"/g, '#quot;');
-      lines.push('  ' + from + (label ? ' -->|"' + label + '"| ' : ' --> ') + to);
+      lines.push('  ' + from + (both ? ' <--> ' : ' --> ') + to);
     });
+    var journey = S.areaById.get('journey');
+    var first = S.areas.filter(function (a) { return a.id !== 'journey'; })[0];
+    if (journey && first) lines.push('  area_journey ~~~ area_' + first.id.replace(/[^A-Za-z0-9]/g, '_'));
+    lines.push('  linkStyle default stroke-width:1px');
     lines.push('  classDef missing stroke-dasharray: 5 4,opacity:0.55');
     return lines.join('\n');
   }
@@ -563,7 +580,8 @@
       stat(t.cfg, 'kluczy konfiguracji', '#view/config') +
       '</div>';
     html += loadProblems();
-    html += diagramCard({ id: '__map', title: 'Obszary i przejścia między nimi', caption: 'Strzałka to przejście sterowania z jednego obszaru do drugiego (pole links w danych). Kliknij węzeł, aby otworzyć obszar.', mermaid: mapSource() }, { generated: true });
+    html += diagramCard({ id: '__map', title: 'Obszary i przejścia między nimi', caption: 'Strzałka to przejście sterowania między obszarami (pole links), dwie groty to przejście w obie strony. Obszar „Podróż” prowadzi do wszystkich, więc jego strzałek tu nie ma. Opis każdego przejścia jest w macierzy poniżej i na stronie obszaru. Kliknij węzeł, aby otworzyć obszar.', mermaid: mapSource() }, { generated: true });
+    html += linkMatrix();
     html += '<div class="area-grid">' + S.areas.map(function (a) {
       var c = counts(a);
       return '<a class="area-card' + (a.missing ? ' is-missing' : '') + '" href="#area/' + esc(a.id) + '">' +
@@ -579,6 +597,26 @@
       html += journey.diagrams.map(function (g) { return diagramCard(g); }).join('');
     }
     return html;
+  }
+
+  function linkMatrix() {
+    var list = S.areas;
+    var any = false;
+    var head = '<tr><th class="lm-corner">z ↓ / do →</th>' + list.map(function (a) {
+      return '<th title="' + esc(a.title) + '"><a href="#area/' + esc(a.id) + '">' + esc(a.order) + '</a></th>';
+    }).join('') + '</tr>';
+    var body = list.map(function (from) {
+      return '<tr><th class="lm-row"><a href="#area/' + esc(from.id) + '"><span class="lm-num">' + esc(from.order) + '</span>' + esc(from.title) + '</a></th>' + list.map(function (to) {
+        if (from === to) return '<td class="lm-self"></td>';
+        var labels = from.missing ? [] : from.links.filter(function (l) { return l.to === to.id; }).map(function (l) { return plain(l.label) || '(bez opisu)'; });
+        if (!labels.length) return '<td></td>';
+        any = true;
+        return '<td class="lm-hit"><a href="#area/' + esc(from.id) + '/sec-top" title="' + esc(from.title + ' → ' + to.title + ':\n' + labels.join('\n')) + '">●</a></td>';
+      }).join('') + '</tr>';
+    }).join('');
+    if (!any) return '';
+    return '<details class="card link-matrix"><summary><strong>Macierz przejść</strong> <span class="muted">— kto do kogo przekazuje sterowanie; najedź na kropkę, aby zobaczyć opis</span></summary>' +
+      '<div class="tbl-wrap"><table class="lm">' + head + body + '</table></div></details>';
   }
 
   function stat(value, label, href) {
@@ -624,8 +662,10 @@
     var kicker = 'Obszar ' + esc(a.order) + ' · <code>' + esc(a.id) + '</code>';
     if (a.missing) {
       html += pageHead(kicker, esc(a.title), '');
-      html += '<div class="empty"><strong>brak danych</strong><p>Plik <code>flow-atlas/data/' + esc(a.id) + '.js</code> nie istnieje albo nie załadował się.</p>' +
-        (a.error ? '<pre class="err-text">' + esc(a.error) + '</pre>' : '') + '<p class="muted">Kontrakt pliku opisuje <code>flow-atlas/SCHEMA.md</code>.</p></div>';
+      html += '<div class="empty"><strong>' + (a.broken ? 'błąd w pliku danych' : 'brak danych') + '</strong><p>Plik <code>flow-atlas/data/' + esc(a.id) + '.js</code> ' + (a.broken ? 'wczytał się, ale nie dodał obszaru.' : 'nie istnieje albo nie załadował się.') + '</p>' +
+        (a.error && !a.broken ? '<pre class="err-text">' + esc(a.error) + '</pre>' : '') +
+        (a.broken ? '<p>Najczęściej to błąd składni. Szczegóły z numerem linii pokaże <code>node flow-atlas/check.mjs</code>.</p>' : '') +
+        '<p class="muted">Kontrakt pliku opisuje <code>flow-atlas/SCHEMA.md</code>.</p></div>';
       return html + pager(prev, next);
     }
     html += pageHead(kicker, esc(a.title), inline(a.tagline));
@@ -1158,7 +1198,7 @@
         decorateSvg(svg, el.getAttribute('data-generated') === '1');
         view.setAttribute('data-state', 'done');
         status.textContent = '';
-        var pz = makePanZoom(view, stage, false);
+        var pz = makePanZoom(view, stage, false, el.getAttribute('data-generated') === '1' ? 0.45 : 0.8);
         S.panzoom.set(el, pz);
         pz.fit();
       })
@@ -1215,7 +1255,7 @@
     });
   }
 
-  function makePanZoom(viewport, content, freeWheel) {
+  function makePanZoom(viewport, content, freeWheel, minFit) {
     var st = { x: 0, y: 0, s: 1 };
     var svg = content.querySelector('svg');
     function size() {
@@ -1244,7 +1284,7 @@
         st.y = (vh - z.h * st.s) / 2;
       } else {
         var maxH = Math.max(1400, window.innerHeight * 0.9);
-        var s = Math.min(1, Math.max((vw - 16) / z.w, 0.8));
+        var s = Math.min(1, Math.max((vw - 16) / z.w, minFit || 0.8));
         st.s = s;
         viewport.classList.toggle('is-wide', z.w * s > vw - 8);
         var height = Math.min(z.h * s, maxH) + 16;
