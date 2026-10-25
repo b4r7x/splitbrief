@@ -354,4 +354,74 @@ describe('a planner call the tool refused as too large', () => {
     expect(issue.facts).toMatchObject({ chars: 5_000_000, maxChars: 1_000_000 });
     expect(issue.availableActions).not.toContain('retry-same-worker');
   });
+
+  function callFailure(code: string, message: string): unknown {
+    return error('runner-call-failed', 'Planner call failed', {
+      status: 'failed',
+      error: { code, message },
+    });
+  }
+
+  const calls = [
+    { seat: 'plan', label: 'Planning failed' },
+    { seat: 'plan', label: 'Planner consult for T001 failed' },
+    { seat: 'review', label: 'Final review failed' },
+  ] as const;
+
+  it.each(calls)('$label: a command-line refusal reads in its own words', ({ seat, label }) => {
+    const diagnosis = diagnosePlannerCallFailure({
+      err: callFailure(
+        'argv-prompt-too-large',
+        'CLI prompt is 186486 bytes and exceeds the 120000-byte argv limit',
+      ),
+      label,
+      runner: cliSeat('opencode'),
+      seat,
+    });
+    const issue = buildPlannerCallFailedRecoveryIssue({
+      diagnosis,
+      seat,
+      phase: seat === 'review' ? 'final-review' : 'planning',
+      runner: cliSeat('opencode'),
+      createdAt: '2026-10-19T12:00:00.000Z',
+    });
+
+    expect(diagnosis.failure).toBe('input-too-large');
+    expect(diagnosis.message).toBe(`${label}: the prompt is too large`);
+    expect(diagnosis.details).toEqual([
+      'The prompt is 186,486 bytes; OpenCode CLI takes at most 120,000 on its command line.',
+    ]);
+    expect(issue.facts).toMatchObject({ bytes: 186_486, maxBytes: 120_000 });
+    expect(issue.facts).not.toHaveProperty('chars');
+  });
+
+  it.each(calls)(
+    '$label: a command-line refusal with no figures shows no number',
+    ({ seat, label }) => {
+      const diagnosis = diagnosePlannerCallFailure({
+        err: callFailure('argv-prompt-too-large', 'CLI prompt exceeds the argv limit'),
+        label,
+        runner: cliSeat('opencode'),
+        seat,
+      });
+
+      expect(diagnosis.details).toEqual(['The prompt is too large for OpenCode CLI.']);
+    },
+  );
+
+  it.each(calls)('$label: a Codex refusal that names only its limit', ({ seat, label }) => {
+    const diagnosis = diagnosePlannerCallFailure({
+      err: callFailure(
+        'input-too-large',
+        'Input exceeds the maximum length of 1000000 characters.',
+      ),
+      label,
+      runner: cliSeat('codex'),
+      seat,
+    });
+
+    expect(diagnosis.details).toEqual([
+      'The prompt is larger than the 1,000,000 characters OpenAI Codex CLI takes.',
+    ]);
+  });
 });

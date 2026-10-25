@@ -11,6 +11,7 @@ import type { RecoveryBuilderBase } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
 import { chooseRecommended, haltActions } from './actions.js';
 import { taskFiles } from './details.js';
+import { inputTooLargeFacts } from './review-input.js';
 import type { SeatFailureClassification } from '../../../runners/seat-failure.js';
 import {
   buildSeatDownIssue,
@@ -138,8 +139,7 @@ export function buildPlannerCallFailedRecoveryIssue(
     facts: compactFacts({
       tool: diagnosis.tool,
       refusal: modelRefusalKind,
-      chars: diagnosis.inputSize?.chars ?? undefined,
-      maxChars: diagnosis.inputSize?.maxChars ?? undefined,
+      ...(diagnosis.inputSize !== undefined && inputTooLargeFacts(diagnosis.inputSize)),
       ...opts.facts,
     }),
     availableActions: actions,

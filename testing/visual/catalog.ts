@@ -2182,6 +2182,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-prompt-too-large',
+      title: 'Workflow · a run halted on a BUILD prompt too large for the tool, at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-prompt-too-large',
+        title: 'Prompt-too-large halt at rest',
+        kind: 'ready',
+        marker: 'Seat down',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-halted-chosen',
       title: 'Workflow · a halted run killed after its action was chosen',
       surface: screenSurface('workflow'),
@@ -3532,6 +3548,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Apply-partial recovery menu after the resume',
         kind: 'question',
         marker: 'Re-run Apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-build-prompt-too-large',
+      title: 'Workflow · a BUILD prompt larger than the tool takes on its command line',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-build-prompt-too-large',
+        title: 'BUILD prompt command-line limit recovery menu',
+        kind: 'question',
+        marker: 'Change BUILD tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-review-prompt-too-large',
+      title: 'Workflow · a final review prompt larger than the tool takes on its command line',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-review-prompt-too-large',
+        title: 'Review prompt command-line limit recovery menu',
+        kind: 'question',
+        marker: 'Change REVIEW tool',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

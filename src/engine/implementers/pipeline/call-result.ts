@@ -89,6 +89,9 @@ function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
   switch (code) {
     case 'runner_call_tool_use_count_limit':
       return 'tool-use-limit';
+    // SPLITBRIEF refused the prompt before the tool started; every attempt sends it again.
+    case 'argv-prompt-too-large':
+      return 'input-too-large';
     case 'spawn-not-found':
     case 'incompatible-version':
     case 'unauthenticated':

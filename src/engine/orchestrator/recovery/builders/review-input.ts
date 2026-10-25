@@ -1,27 +1,49 @@
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { FinalReviewFailure } from '../../final-review.js';
+import type { PromptSize } from '../../../runners/input-limit.js';
 import { haltActions } from './actions.js';
 import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './issue.js';
 
-export function inputTooLargeSentence(
-  subject: string,
-  figures: { chars: number; maxChars: number | null },
-  tool: string,
-): string {
-  const { chars, maxChars } = figures;
-  return `${subject} is ${chars.toLocaleString('en-US')} characters; ${tool} ${
-    maxChars === null
+/**
+ * A too-large prompt in SPLITBRIEF's words: its size and the tool's limit where the refusal
+ * named them, never a figure it did not name. Bytes are the command line's limit.
+ */
+export function inputTooLargeSentence(subject: string, figures: PromptSize, tool: string): string {
+  const { unit, size, limit } = figures;
+  const where = unit === 'bytes' ? ' on its command line' : '';
+  if (size === null) {
+    return limit === null
+      ? `${subject} is too large for ${tool}`
+      : `${subject} is larger than the ${limit.toLocaleString('en-US')} ${unit} ${tool} takes${where}`;
+  }
+  return `${subject} is ${size.toLocaleString('en-US')} ${unit}; ${tool} ${
+    limit === null
       ? 'refused it as too large'
-      : `takes at most ${maxChars.toLocaleString('en-US')}`
+      : `takes at most ${limit.toLocaleString('en-US')}${where}`
   }`;
+}
+
+/** The facts a halt keeps for a too-large prompt, named by the unit the refusal counted. */
+export function inputTooLargeFacts({
+  unit,
+  size,
+  limit,
+}: PromptSize): Record<string, number | undefined> {
+  return unit === 'bytes'
+    ? { bytes: size ?? undefined, maxBytes: limit ?? undefined }
+    : { chars: size ?? undefined, maxChars: limit ?? undefined };
 }
 
 export function reviewInputTooLargeMessage(
   failure: Extract<FinalReviewFailure, { kind: 'input-too-large' }>,
   tool: string,
 ): string {
-  return inputTooLargeSentence('Review input', failure, tool);
+  return inputTooLargeSentence(
+    'Review input',
+    { unit: 'characters', size: failure.chars, limit: failure.maxChars },
+    tool,
+  );
 }
 
 export function buildReviewInputTooLargeRecoveryIssue(

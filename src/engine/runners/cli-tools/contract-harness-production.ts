@@ -189,7 +189,10 @@ async function projectFingerprint(projectDir: string): Promise<string> {
 function productionFailureIsHarness(result: RunnerCallResult): boolean {
   const code = result.error?.code;
   return (
-    code === 'prompt-transport-error' || code === 'argument-conflict' || code === 'callback-failure'
+    code === 'prompt-transport-error' ||
+    code === 'argv-prompt-too-large' ||
+    code === 'argument-conflict' ||
+    code === 'callback-failure'
   );
 }
 

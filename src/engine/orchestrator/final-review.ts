@@ -1001,8 +1001,8 @@ export async function runFinalReviewPhase(opts: {
       const figures = inputTooLargeFigures(typedRunnerCallErrorMessage(err) ?? '');
       failure = {
         kind: 'input-too-large',
-        chars: figures.chars ?? fullPrompt.length,
-        maxChars: figures.maxChars ?? maxInputChars ?? null,
+        chars: figures.size ?? fullPrompt.length,
+        maxChars: figures.limit ?? maxInputChars ?? null,
         largestFiles: largestReviewFiles({
           files: reviewScope?.files,
           workspaceContext: reviewScope?.workspaceContext,

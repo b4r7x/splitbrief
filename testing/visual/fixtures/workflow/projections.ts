@@ -1,5 +1,11 @@
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';
+import {
+  buildPromptTooLargeProjection,
+  buildPromptTooLargeRecoveryIssue,
+  reviewPromptTooLargeProjection,
+  reviewPromptTooLargeRecoveryIssue,
+} from './halt-text-projections.js';
 import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifact-card.js';
 import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
@@ -6954,6 +6960,8 @@ const projections = [
   applyConflictRecoveryProjection,
   applyConflictSentenceProjection,
   resumedApplyPartialRecoveryProjection,
+  reviewPromptTooLargeProjection,
+  buildPromptTooLargeProjection,
   reviewContextRecoveryProjection,
   reviewCallFailedRecoveryProjection,
   taskReviewCallFailedRecoveryProjection,
@@ -7090,6 +7098,8 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     modelRefusalRecoveryIssue(ROUTE_SIGNED_OUT_AUTH),
     modelRefusalRecoveryIssue(MODEL_NOT_LISTED_AUTH),
     modelRefusalRecoveryIssue(MODEL_REFUSED_AUTH),
+    reviewPromptTooLargeRecoveryIssue,
+    buildPromptTooLargeRecoveryIssue,
   ];
   const engineHaltText = [
     ...halts.flatMap((issue) => [issue.message, ...issue.details]),
