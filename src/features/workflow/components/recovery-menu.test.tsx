@@ -19,7 +19,7 @@ import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import {
   getRecoveryPromptActions,
   recoveryActionKey,
-  recoveryMenuLabel,
+  recoveryMenuParts,
 } from '../recovery-prompt.js';
 
 afterEach(() => composerLiveStore.reset());
@@ -315,6 +315,41 @@ it('says what ⏎ in the composer does while it holds focus, and lists no live k
   ui.unmount();
 });
 
+it.each<[string, Partial<RecoveryIssue>, string]>([
+  [
+    'a failed review',
+    {
+      reason: 'review-failed',
+      phase: 'final-review',
+      availableActions: ['revise', 'accept-as-is', 'end-run'],
+      recommendedAction: 'revise',
+    },
+    'Fix again',
+  ],
+  ['a PLAN halt on a brief', { seat: 'plan', phase: 'escalating' }, 'Try again'],
+  ['a REVIEW halt on a brief', { seat: 'review', phase: 'implementing' }, 'Try again'],
+  ['a BUILD halt', { seat: 'build', phase: 'implementing' }, 'Try again'],
+  ['a brief that ran out of attempts', {}, 'Try again'],
+])(
+  'names the action without its consequence while the composer holds focus after %s',
+  async (_label, overrides, action) => {
+    const ui = renderFeature(
+      <RecoveryMenu
+        issue={makeRecoveryIssue(overrides)}
+        width={120}
+        clampedBoxRows={14}
+        focused={false}
+        onFocusChange={() => {}}
+        onResolve={() => {}}
+      />,
+    );
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain(`⏎ ${action} with the typed correction · tab back to the actions`);
+    ui.unmount();
+  },
+);
+
 it('says ⏎ runs the command when the composer holds a slash command', async () => {
   composerLiveStore.setDraft(createDraftDocument('/scroll top'));
   const ui = renderFeature(
@@ -524,7 +559,10 @@ function frameRows(ui: ReturnType<typeof renderFeature>): string[] {
 }
 
 function actionShown(rows: readonly string[], issue: RecoveryIssue, action: RecoveryAction) {
-  const label = recoveryMenuLabel(action, issue).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const label = recoveryMenuParts(action, issue)
+    .map((part) => part.text)
+    .join('')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const row = new RegExp(`\\b${recoveryActionKey(action)}\\s+${label}`);
   return rows.some((text) => row.test(text));
 }

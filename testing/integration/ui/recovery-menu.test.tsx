@@ -236,7 +236,7 @@ describe('recovery menu and composer keyboard ownership', () => {
       const screen = ui;
       await vi.waitFor(() =>
         expect(stripAnsiStyles(screen.lastFrame())).toContain(
-          'Fix again · add a note, grant one more fix cycle',
+          'Fix again · grants one more fix cycle',
         ),
       );
       await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);

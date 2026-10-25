@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createElement } from 'react';
+import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { RecoveryIssue, SwitchSeatOffer } from '../../core/schemas/recovery/schemas.js';
 import { taskId } from '../../core/schemas/task.js';
 import { glyph } from '../../lib/glyphs.js';
@@ -26,7 +27,6 @@ import {
   parseRecoveryActionAnswer,
   passHeadlinePrefix,
   recoveryComposerHint,
-  recoveryMenuLabel,
   recoveryMenuParts,
   recoveryPromptSummaryRows,
   recommendedRowPrefix,
@@ -67,6 +67,12 @@ const baseIssue: RecoveryIssue = {
   recommendedAction: 'retry-same-worker',
   createdAt: '2026-04-29T12:00:00.000Z',
 };
+
+function recoveryMenuText(action: RecoveryAction, issue: RecoveryIssue): string {
+  return recoveryMenuParts(action, issue)
+    .map((part) => part.text)
+    .join('');
+}
 
 it('builds a context cause from its recorded seat, with dim separators', () => {
   const issue = makeRecoveryIssue({
@@ -221,7 +227,7 @@ it('keeps a fix action hint dim', () => {
   expect(recoveryMenuParts('revise', makeRecoveryIssue({ reason: 'review-failed' }))).toEqual([
     { text: 'Fix again', tone: 'text' },
     { text: ' · ', tone: 'textDim' },
-    { text: 'add a note, grant one more fix cycle', tone: 'textDim' },
+    { text: 'grants one more fix cycle', tone: 'textDim' },
   ]);
 });
 
@@ -390,7 +396,7 @@ describe('recovery prompt', () => {
       facts: { tool: 'OpenCode CLI' },
     };
 
-    expect(recoveryMenuLabel('switch-seat', issue)).toBe(
+    expect(recoveryMenuText('switch-seat', issue)).toBe(
       'Pick another BUILD model · restarts this brief',
     );
   });
@@ -895,6 +901,7 @@ describe('recovery prompt', () => {
     expect(visible).toContain('Needs you · Final review failed with 2 blocking findings');
     expect(visible).not.toContain('Nothing was sent');
     expect(visible).not.toContain('retry');
+    expect(formatRecoveryPrompt(issue)).toContain('fix again · grants one more fix cycle');
   });
 
   it('offers the Apply halts a re-run of Apply, never a brief or a retry of a worker', async () => {
@@ -922,10 +929,10 @@ describe('recovery prompt', () => {
       details: ['Wrote 1 of 2 files; b.txt failed: disk full'],
     };
 
-    expect(recoveryMenuLabel('retry-same-worker', conflict)).toBe(
+    expect(recoveryMenuText('retry-same-worker', conflict)).toBe(
       'Re-run Apply · after you resolve the files in the workspace',
     );
-    expect(recoveryMenuLabel('retry-same-worker', partial)).toBe(
+    expect(recoveryMenuText('retry-same-worker', partial)).toBe(
       'Re-run Apply · writes the files still missing',
     );
     const offered: RecoveryIssue = {
@@ -933,7 +940,7 @@ describe('recovery prompt', () => {
       availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
       recommendedAction: 'retry-same-worker',
     };
-    expect(recoveryMenuLabel('restore-backup', offered)).toBe(
+    expect(recoveryMenuText('restore-backup', offered)).toBe(
       'Restore backup · puts back the files Apply replaced and removes the ones it created',
     );
     expect(getRecoveryPromptActions(offered)).toContain('restore-backup');
