@@ -104,7 +104,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
   J --> K
   K --> LC_TASK_IN_FLIGHT{"brief in_progress bez parku<br/>(crash)?"}
   LC_TASK_IN_FLIGHT -->|"tak"| L["restoreInterruptedTaskFiles ze snapshotu startu<br/>+ RESET_TASK (attempt 0)"]
-  LC_TASK_IN_FLIGHT -->|"nie"| M["seatWait? → resumeSeatWait czeka do resetAt"]
+  LC_TASK_IN_FLIGHT -->|"nie"| M["seatWait? → resumeSeatWait czeka do resetAt,<br/>chyba że seat biegnie już na innym narzędziu"]
   L --> M
   M --> N["resumeContinuation: partial + steer + keepWorkspace"]
   N --> O["workflow_resumed"]
@@ -244,7 +244,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
   G --> LC_CLOSE_CHECKOUT_FILES{"checkout run i pliki runu<br/>nadal w checkout?"}
   LC_CLOSE_CHECKOUT_FILES -->|"tak"| H1["warning: This run edited your checkout directly...<br/>no run patch was written"]
   LC_CLOSE_CHECKOUT_FILES -->|"nie"| H2["bez notki"]
-  H1 --> I["removeClosedRunWorkspace: git worktree remove + branch -D<br/>lub rm staged root; clearWorkspaceRecord; workspace_closed"]
+  H1 --> I["removeClosedRunWorkspace: git worktree remove + branch -D<br/>lub rm staged root; clearWorkspaceRecord; workspace_closed<br/>(gdy się nie uda: następny start sprząta, LC_LEFTOVER_WORKSPACE)"]
   H2 --> I
   I --> J["finalizeRunAtRest: summary.json, clearActiveReceipt"]`,
     },
@@ -279,7 +279,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
   subgraph XDG["~/.local/state/splitbrief/ (XDG_STATE_HOME)"]
     TREES["trees/‹sha12 git-common-dir›/‹session-id›/<br/>worktree runu, branch splitbrief/‹slug›"]
     MARK["trees/.../.splitbrief/isolation-marker"]
-    BASES["bases/base-‹pid›-‹rand›/ (drzewo bazy do base re-run)"]
+    BASES["bases/base-‹pid›-‹wypełnienie›‹rand›/ (drzewo bazy do base re-run,<br/>ścieżka tej samej długości co workspace)"]
   end
   ACT -.->|"nazywa"| SESS
   RET -.->|"wskazuje"| TREES
@@ -293,8 +293,12 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
   A["Nastepny start: runWorkflow lub otwarcie runu w TUI"] --> LC_ORPHAN_RUNNER{"runner-pids.jsonl ma pidy<br/>i lock wlasciciela dead / exited?"}
   LC_ORPHAN_RUNNER -->|"tak"| K1["SIGTERM grupy, 2 s, SIGKILL;<br/>releaseRunnerPids tylko zreapowanych"]
   LC_ORPHAN_RUNNER -->|"wlasciciel live / stale / brak locka"| K2["nic: narzedzia moga byc czyjes"]
-  K1 --> LC_ORPHAN_SESSION{"folder sesji pusty lub z samym<br/>readiness.json, starszy niz 24 h, nieaktywny?"}
-  K2 --> LC_ORPHAN_SESSION
+  K1 --> LC_LEFTOVER_WORKSPACE{"start CLI (start / resume / continue):<br/>run closed, a jego worktree / staged copy<br/>i rekord workspace nadal są?"}
+  K2 --> LC_LEFTOVER_WORKSPACE
+  LC_LEFTOVER_WORKSPACE -->|"tak"| W1["removeRunWorkspace: worktree, wpis git worktree<br/>i branch albo stage-‹hex›; błąd = ostrzeżenie"]
+  LC_LEFTOVER_WORKSPACE -->|"nie"| W2["nic"]
+  W1 --> LC_ORPHAN_SESSION{"folder sesji pusty lub z samym<br/>readiness.json, starszy niz 24 h, nieaktywny?"}
+  W2 --> LC_ORPHAN_SESSION
   LC_ORPHAN_SESSION -->|"tak"| P1["rename do .claim + rm"]
   LC_ORPHAN_SESSION -->|"nie"| P2["folder zostaje"]
   P1 --> LC_LIVENESS_RESULT{"inspectSessionLiveness(ref)"}
@@ -429,9 +433,9 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       title: 'Seat czeka na reset limitu',
       question: 'Czy state.seatWait jest ustawione?',
       where: 'src/core/sessions/run-status.ts:224',
-      inputs: ['state.seatWait.seat', 'state.seatWait.resetAt', 'plannerTool / implementerTool / reviewerTool'],
+      inputs: ['state.seatWait.seat', 'state.seatWait.resetAt', 'state.seatWait.tool / kind (runner, który trafił limit)', 'plannerTool / implementerTool / reviewerTool (stary wait bez tool)'],
       branches: [
-        { if: 'tak', then: 'open · stopped · seat-wait (seat, tool, resetAt); continue czeka do resetAt (resumeSeatWait)' },
+        { if: 'tak', then: 'open · stopped · seat-wait (seat, tool, resetAt); tool to pełna nazwa z katalogu narzędzia, które trafiło limit (seatWaitToolWord, run-status.ts:159), np. Waiting for OpenAI Codex CLI · resets 15:27; continue czeka do resetAt (resumeSeatWait), chyba że config wejścia uruchamia seat na innym narzędziu: wtedy czekanie znika i krok rusza od razu (→ recovery)' },
       ],
       default: 'Dalej: pytanie plannera.',
       notes: 'Dokumentacja WORKFLOW.md wymienia tylko paused / failed / interrupted jako powody stopped; kod ma też seat-wait.',
@@ -932,7 +936,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
         { if: 'inaczej (End run wcześniej, sygnał z powodem)', then: 'closed · ended' },
         { if: 'już closed', then: 'closedNow = false, nic nie pisze' },
       ],
-      default: 'CAS do 3 prób; durability-uncertain = błąd.',
+      default: 'CAS do 3 prób; durability-uncertain = błąd. Wyczerpane próby: Another process kept changing the run state, so this change was not saved · .splitbrief/sessions/<id>/state.json (state-ops.ts:76).',
       notes: 'End run na ready nie pisze workflow_cancelled i nie pokazuje „Stopped by you” (userStopStoppedWork: tylko open lub ended).',
     },
     {
@@ -1095,10 +1099,25 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       inputs: ['DraftDocument', 'draftLength', 'sessions/<id>/draft.json'],
       branches: [
         { if: 'draft niepusty', then: 'zapis draft.json (confined)' },
-        { if: 'pusty i plik istnieje', then: 'unlink; błąd session-draft-not-removed gdy się nie uda' },
+        { if: 'pusty i plik istnieje', then: 'unlink; błąd session-draft-not-removed gdy się nie uda. Pusty draft (np. po wysłaniu tekstu) zapisuje się od razu, bez czekania timera (saveSessionDraft, session-drafts.ts:125), więc stop zaraz po wysłaniu nie przywraca wysłanego tekstu jako draftu' },
         { if: 'zapis się nie uda', then: 'session-draft-not-saved: pierwszy Esc / quit zostaje i nazywa plik, następny wychodzi bez draftu' },
       ],
       default: 'Pusty draft nie pisze pliku. Odczyt sanitizuje tekst jak wklejkę (sanitizePasteBody).',
+    },
+    {
+      id: 'LC_LEFTOVER_WORKSPACE',
+      title: 'Workspace zamkniętego runu, który został na dysku',
+      question: 'Czy zamknięty run zostawił worktree albo staged copy, które trzeba usunąć?',
+      where: 'src/engine/orchestrator/run/close.ts:88',
+      inputs: ['listSessionIds(projectDir)', 'readWorkflowStateHead + deriveRunStatus(not-alive)', 'state.workspace.kind i path', 'readWorkspaceRecord (retained-workspace.json)'],
+      branches: [
+        { if: 'katalogu sesji nie da się wylistować', then: 'ostrzeżenie Could not list …, so leftover workspaces from closed runs may remain; start idzie dalej' },
+        { if: 'run nie jest closed, workspace to checkout albo brak, albo rekord workspace już zniknął', then: 'pominięty' },
+        { if: 'run closed (applied, discarded, ended), workspace worktree / staged-copy i rekord istnieje', then: 'removeRunWorkspace: worktree z wpisem git worktree i branchem albo stage-<hex>' },
+        { if: 'usunięcie rzuca', then: 'ostrzeżenie Could not remove the run workspace at <path>; następne sesje dalej' },
+      ],
+      default: 'Woła to setupWorkflow (cli/setup.ts:160) przy każdym splitbrief start (TUI i headless) i continue / resume z terminala, zaraz po reapOrphanRunners.',
+      notes: 'Pokrywa przypadek, gdy End run, Discard albo Apply zamknęły run, ale nie potwierdziły zapisu stanu albo nie usunęły workspace (crash, błąd git). Otwarcie runu z /sessions w TUI tego nie robi.',
     },
   ],
   config: [
@@ -1286,7 +1305,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
     {
       title: 'Esc na zaparkowanym runie z niewysłanym tekstem',
       steps: [
-        '1. Esc wraca home; writeSessionDraft zapisuje draft.json pod sesją (pusty draft nie pisze pliku).',
+        '1. Esc wraca home; writeSessionDraft zapisuje draft.json pod sesją (pusty draft nie pisze pliku). Tekst wysłany tuż przed stopem nie wraca: puste composer usuwa draft.json od razu.',
         '2. Zapis się nie udaje (pełny dysk): session-draft-not-saved → pierwszy Esc zostaje i nazywa plik i przyczynę; drugi wychodzi bez draftu; komunikat zostaje jako Warning na końcu transkryptu.',
         '3. Ponowne otwarcie runu: readSessionDraft przywraca tekst (sanitizePasteBody); bare Enter wysyła go jako steer kontynuacji.',
       ],
@@ -1319,7 +1338,8 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
     { path: 'src/engine/orchestrator/run/init.ts', role: 'initializeWorkflow: naprawa zapisanego stanu, stale halt, crash restart, resumeContinuation, workflow_resumed' },
     { path: 'src/engine/orchestrator/run/phases.ts', role: 'runPlanningPhases: RESUME_STEP, rozdział po resumeStep (apply / brief / review / gate / planner)' },
     { path: 'src/engine/orchestrator/run/continue.ts', role: 'continueRun: jedna droga kontynuacji i jej odmowy' },
-    { path: 'src/engine/orchestrator/run/close.ts', role: 'closeRunIfOpen, endRun, endRunAtRest, rejectCheckoutRun, assertCanCloseRun' },
+    { path: 'src/engine/orchestrator/run/close.ts', role: 'closeRunIfOpen, endRun, endRunAtRest, rejectCheckoutRun, assertCanCloseRun, removeClosedRunWorkspaces (sprzątanie na starcie)' },
+    { path: 'src/stores/ui/session-drafts.ts', role: 'saveSessionDraft: debounce zapisu draftu, pusty draft od razu; flush przy wyjściu' },
     { path: 'src/engine/orchestrator/run/liveness.ts', role: 'acquireLiveness / heldLiveness' },
     { path: 'src/engine/orchestrator/run/orphan-reaper.ts', role: 'reapOrphanRunners: SIGTERM, 2 s, SIGKILL dla narzędzi martwego właściciela' },
     { path: 'src/engine/orchestrator/run/heartbeat.ts', role: 'ping co HEARTBEAT_STALENESS_MS / 4' },
@@ -1358,7 +1378,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
     { path: 'src/app/command-context.ts', role: 'acceptRun / rejectRun: odmowy i drogi Apply, Discard, undo' },
   ],
   gotchas: [
-    'WORKFLOW.md (Run status) mówi, że stopped ma powody paused / failed / interrupted. Kod ma czwarty: seat-wait (run-status.ts:23, 210), sprawdzany między halt a pytaniem plannera.',
+    'WORKFLOW.md (Run status, linia 274) mówi, że stopped ma powody paused / failed / interrupted. Kod ma czwarty: seat-wait (run-status.ts:24, 224), sprawdzany między halt a pytaniem plannera.',
     'Kolejność w deriveRunStatus jest regułą: closed → complete-checkout → alive → ready → halt → seat-wait → question → park → gate → failed → interrupted. Run z halt i parkiem naraz czyta się jako waiting-for-you · halt.',
     'Lock stale (proces żyje, heartbeat > 8 s) blokuje przejęcie: takeoverMayBeAttempted = false. Trzeba zabić proces ręcznie; resume mówi to wprost.',
     'Apply at rest bierze lock liveness, więc run w Apply czyta się jako running na każdej liście, a /stop mówi „Nothing to stop: Apply finishes on its own.”',
@@ -1374,5 +1394,10 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
     'saveFinalSession czyści .splitbrief/active tylko dla runu closed. Otwarty run zostaje tym, co podnosi splitbrief resume; home i setup nigdy nie kasują wskaźnika.',
     'pruneOrphanSessions usuwa tylko puste foldery (lub z samym readiness.json) starsze niż 24 h. Folder z state.json nigdy nie znika sam.',
     'Zamknięty run applied można cofnąć: /run reject confirm → undoApply → closed · undone; summary.json dostaje nowy wiersz przez refreshSessionRow.',
+    'Zmiana na main (2026-10): następny start CLI usuwa worktree albo staged copy zamkniętego runu, których zamknięcie nie usunęło, z wpisem git worktree i branchem (48dc6c2).',
+    'Zmiana na main (2026-10): konflikt zapisu stanu z innym procesem mówi Another process changed the run state, so this change was not saved i nazywa state.json runu (f028729).',
+    'Zmiana na main (2026-10): tekst wysłany tuż przed stopem nie wraca jako draft, bo pusty composer usuwa draft.json od razu (2fef31b).',
+    'Zmiana na main (2026-10): drzewo bazy pod bases/ ma ścieżkę tej samej długości co workspace runu (0a3650b); halt izolacji nazywa plik raz, bez powtórzenia w wycinku komendy (7cdad88).',
+    'Zmiana na main (2026-10): status stopped · seat-wait nazywa narzędzie, które trafiło limit, pełną nazwą z katalogu; kontynuacja na innym narzędziu nie czeka (890d992, 42fb57f).',
   ],
 });

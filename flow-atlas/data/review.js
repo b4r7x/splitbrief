@@ -154,7 +154,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       mermaid: `flowchart TD
   A["Komenda reviewera Vk czerwona w run workspace"] --> RV_RUN_BASE_AVAILABLE{"runBaseOf: state.workspace zapisany?"}
   RV_RUN_BASE_AVAILABLE -->|"nie (starszy run bez workspace)"| U["not run · this run recorded no run base; każda failure nowa"]
-  RV_RUN_BASE_AVAILABLE -->|"tak"| T["withRunBaseTree: worktree na commit bazowy + snapshot plików z startu runu"]
+  RV_RUN_BASE_AVAILABLE -->|"tak"| T["withRunBaseTree: worktree na commit bazowy + snapshot plików z startu runu;<br/>ścieżka drzewa ma tyle znaków co ścieżka workspace"]
   T --> RV_BASE_TREE_PREP{"Przygotowanie i cleanup drzewa bez błędu?"}
   RV_BASE_TREE_PREP -->|"błąd"| NV["not verified at the run base · treść błędu; 0 pre-existing"]
   RV_BASE_TREE_PREP -->|"ok"| R["Ta sama komenda w kopii bazowej (bez base, bez checkoutDir)"]
@@ -226,8 +226,8 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
   RV_NOTHING_TO_FIX -->|"nie"| T["applyTriage: INSERT_TASKS fix tasks (nowe T###, batch = max + cykl, task.fix z findingami)"]
   T --> S["START_FIX_CYCLE: used + 1, phase implementing, review_fix_started"]
   S --> B["Pętla briefów: fix tasks; bramka briefu dodaje fixReviewChecks (te same komendy V)"]
-  B --> RV_FIX_CHECK_JUDGE{"judgeFixCheck: własne failure keys zniknęły i źródło failure udowodnione?"}
-  RV_FIX_CHECK_JUDGE -->|"tak"| B2["Check briefu pass, także gdy inne failures zostały"]
+  B --> RV_FIX_CHECK_JUDGE{"judgeFixCheck: każda własna failure zniknęła<br/>albo niesie ją niedokończony fix task tego cyklu?"}
+  RV_FIX_CHECK_JUDGE -->|"tak"| B2["Check briefu pass, także gdy cudze failures zostały<br/>(your 2 failures gone · 3 others left …)"]
   RV_FIX_CHECK_JUDGE -->|"nie"| B3["Brief fail: 1 retry, potem konsultacja seat-a review (→ build)"]
   B2 --> R["Następny review: checki reviewera znów; pendingReviewCommands muszą być pierwsze"]
   B3 --> R
@@ -359,7 +359,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       inputs: ['CheckRunResult.status', 'check.required'],
       branches: [
         { if: 'co najmniej jeden required check ma status refused, not-runnable lub unknown', then: 'haltRequiredChecksUnrunnable: halt required-checks-unrunnable · Needs you, akcje retry-same-worker / end-run; review nie startuje', next: 'RV_VERDICTLESS_HALT' },
-        { if: 'required check fail', then: 'buildPreReviewInputs: input P n (source check) na każdy plik z failure keys, z ownerem pliku; QUEUE_TRIAGE', next: 'RV_END_CHECKS' },
+        { if: 'required check fail', then: 'buildPreReviewInputs: input P n (source check) na każdy plik z failure keys, z ownerem pliku; QUEUE_TRIAGE. Fail, który nie uruchomił komendy (brak pliku testu, brak skryptu npm), ma wiersz z powodem w miejscu komendy (pre-review-checks.ts:169)', next: 'RV_END_CHECKS' },
         { if: 'wszystko pass', then: 'brak inputów', next: 'RV_END_CHECKS' },
       ],
       default: 'Optional checki nie dają inputów ani halt-u; ich wynik idzie tylko do Checks Log.',
@@ -447,11 +447,11 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_COMMAND_POLICY',
       title: 'Która polityka komend: reviewera czy planu',
       question: 'Czy to check reviewera (id V n), czy check planu / briefu?',
-      where: 'src/engine/orchestrator/validation/run-checks.ts:212',
-      inputs: ['reviewIds (z reviewChecks)', 'check.value', 'opts.base (run base)'],
+      where: 'src/engine/orchestrator/validation/run-checks.ts:227',
+      inputs: ['reviewIds (z reviewChecks)', 'check.value', 'opts.base (run base)', 'package.json workspace (readPackageScripts)'],
       branches: [
         { if: 'check reviewera', then: 'reviewerCommandRefusal (brak allowlisty programów, tylko reguły zagrożeń), potem changedDefinitionRefusal wobec run base', next: 'RV_POLICY_SYNTAX' },
-        { if: 'check planu / briefu', then: 'checkCommandRefusal: allowlista (package managery, make, just, narzędzia 5 stacków, test -e/-f/-x/-L); npm run <script> tylko z zatwierdzonym planem (workflow.approve plan) i skryptem z package.json', next: 'RV_CHECK_RUN_STATUS' },
+        { if: 'check planu / briefu', then: 'commandTextRefusal: allowlista (package managery, make, just, narzędzia 5 stacków, test -e/-f/-x/-L); npm run <script> tylko z zatwierdzonym planem (workflow.approve plan). Brak skryptu w package.json to nie odmowa: missingNpmScript daje fail z placeholderem no npm script, który fix task może naprawić', next: 'RV_CHECK_RUN_STATUS' },
         { if: 'odmowa', then: 'status refused, output = powód; ani pass, ani fail', next: 'RV_NEW_FAILURES' },
       ],
       default: 'Komenda biegnie.',
@@ -604,8 +604,9 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
         { if: 'kind render i id nie pasuje do ^[a-z0-9-]+$', then: 'refused · render id must match' },
         { if: 'kind render', then: 'szablon z {id} i {out}; PNG kopiowane do rendersDir sesji z sha256; exit 0 = pass, inny = fail; timeout = fail' },
         { if: 'kind cmd', then: 'runCommandCheck pod właściwą polityką', next: 'RV_COMMAND_POLICY' },
-        { if: 'kind test i planTestCheck = skip (brak komendy testów dla stacku poza 5 rejestrowymi, brak pliku)', then: 'not-runnable · powód' },
-        { if: 'kind test', then: 'drabinka test_command → manifest → discovered → stack default; cargo bez uruchomionego testu = not-runnable' },
+        { if: 'kind test i brak komendy testów (stack poza 5 rejestrowymi bez validation.test_command)', then: 'not-runnable · no test command for an unrecognised stack; set validation.test_command' },
+        { if: 'kind test i workspace nie ma pliku, który check nazywa', then: 'fail · the workspace has no test file for <plik> (placeholder no test file): builder albo reviewer to naprawia' },
+        { if: 'kind test', then: 'drabinka test_command → manifest → discovered → stack default; zawężony bieg cargo bez uruchomionego testu = fail (placeholder no test ran)' },
       ],
       default: 'Patrz CONFIGURATION.md § How a test check resolves its command.',
     },
@@ -641,14 +642,14 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       title: 'Przygotowanie kopii run base',
       question: 'Czy drzewo bazowe dało się zbudować i posprzątać?',
       where: 'src/engine/orchestrator/review-checks.ts:189',
-      inputs: ['withRunBaseTree: worktree na commit bazowy + rekoncyliacja snapshotu; cleanupError'],
+      inputs: ['withRunBaseTree(base, workspaceDir): worktree na commit bazowy + rekoncyliacja snapshotu; cleanupError', 'baseTreePrefix (base-tree.ts:40): nazwa base-<pid>-<wypełnienie _><rand> dopełniona tak, by ścieżka po rozwiązaniu linków miała długość ścieżki workspace (najwyżej 255 bajtów nazwy)'],
       branches: [
         { if: 'runBaseTreeError.isPreparationFailed', then: 'wiersz Base re-run done · passed false · detail = błąd · notVerified = liczba kluczy; keys = []', next: 'RV_NEW_FAILURES' },
         { if: 'komenda biegła, ale cleanup zawiódł', then: 'to samo: not verified z błędem cleanupu w detail' },
         { if: 'inny wyjątek', then: 'rzucony dalej' },
         { if: 'ok', then: 'wynik komendy na bazie', next: 'RV_BASE_RESULT' },
       ],
-      default: 'Drzewo nie dodaje refa Git i jest usuwane po biegu.',
+      default: 'Drzewo nie dodaje refa Git i jest usuwane po biegu. Test zależny od długości ścieżki daje ten sam wynik na bazie i w workspace, więc nie czyta się jako nowa failure; workspace krótszy niż najkrótsza ścieżka bazy (checkout przy workflow.isolation: none) nie dostaje dopełnienia.',
     },
     {
       id: 'RV_BASE_RESULT',
@@ -753,16 +754,16 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       title: 'Kontrakt odpowiedzi: co odrzuca schemat przed przyjęciem werdyktu',
       question: 'Czy ReviewAnswer jest kompletny i spójny?',
       where: 'src/engine/orchestrator/final-review.ts:560',
-      inputs: ['verdictCoverageErrors', 'triageContractErrors', 'fixTaskTargetErrors', 'refusedCheckErrors'],
+      inputs: ['verdictCoverageErrors', 'triageContractErrors', 'fixTaskTargetErrors', 'refusedCheckErrors', 'unconfiguredRenderCheckErrors', 'unresolvedTestCheckErrors'],
       branches: [
         { if: 'task zakresu brakuje, powtarza się lub nie istnieje; kryterium podobnie; finding powtarza id', then: 'odrzucenie: seat dostaje jedną naprawę' },
         { if: 'task partial/missed lub kryterium fail bez blokującego findingu, który je nazywa', then: 'odrzucenie' },
         { if: 'finding unverified bez checkIds i bez criterionId', then: 'odrzucenie' },
-        { if: 'ask = null i blokujący finding (nie unverified) lub pending input nie ma dokładnie jednej odpowiedzi w fixTasks / rejected / verify', then: 'odrzucenie' },
+        { if: 'ask = null i blokujący finding (nie unverified) lub pending input bez odpowiedzi, albo z więcej niż jedną, gdy nie jest to tylko findingIds kilku fix tasks (każdy raz): kilka fix tasks może dzielić failures jednego inputu, ale nie razem z rejected / verify', then: 'odrzucenie' },
         { if: 'rejected wskazuje coś, co nie jest pending inputem', then: 'odrzucenie: Rejected X is not a pending input' },
         { if: 'fix task przypisany do findingu minor, unverified lub spoza zakresu; nieznany check lub kryterium', then: 'odrzucenie' },
         { if: 'fix task wskazuje plik użytkownika (userFiles)', then: 'odrzucenie', next: 'RV_FIX_TASK_TARGETS' },
-        { if: 'cmd check fix tasku odrzucony przez politykę planu, test check z więcej niż 1 słowem', then: 'odrzucenie' },
+        { if: 'cmd check fix tasku odrzucony przez politykę planu, npm run ze skryptem, którego package.json nie ma (chyba że fix task wymienia package.json), test check z więcej niż 1 słowem albo z plikiem, którego nie ma w workspace ani w plikach fix tasków, render check z id spoza ^[a-z0-9-]+$ albo bez validation.render', then: 'odrzucenie: seat poprawia check w jednej naprawie zamiast halt-u required-checks-unrunnable' },
         { if: 'druga odpowiedź też zła', then: 'seat-protocol-error', next: 'RV_VERDICTLESS_HALT' },
       ],
       default: 'Odpowiedź przyjęta: werdykt + fix work.',
@@ -1001,16 +1002,17 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       title: 'Bramka fix tasku: czy czerwona komenda reviewera jest naprawiona',
       question: 'Jak SPLITBRIEF ocenia ponowny bieg komendy V w bramce fix briefu?',
       where: 'src/core/review/fix-task.ts:164',
-      inputs: ['carried: failureKeys (własne klucze fix tasku) i redKeys (wszystkie klucze oryginalnego czerwonego)', 'wynik ponownego biegu'],
+      inputs: ['carried (fixCheckKeys, fix-task.ts:76): failureKeys (własne klucze fix tasku), sharedWith (klucz → niedokończone fix tasks tego cyklu, które niosą ten sam klucz pod tym samym check id albo pod innym id z tej samej komendy), exempt', 'wynik ponownego biegu'],
       branches: [
-        { if: 'brak własnych kluczy albo placeholder w wyniku (timeout, niekompletny capture)', then: 'brak osądu: komenda musi po prostu przejść' },
-        { if: 'komenda pass', then: 'proven = true: wszystkie własne failures zniknęły' },
-        { if: 'któryś własny klucz nadal czerwony (dokładnie lub tą samą tożsamością diagnostyki)', then: 'brief fail: your N failures remain' },
-        { if: 'własne zniknęły, ale ponowny bieg nie pokazuje żadnego klucza z oryginalnego czerwonego (źródło nie dowiedzione)', then: 'not proven fixed: brief fail' },
-        { if: 'własne zniknęły i inny oryginalny klucz nadal widoczny', then: 'pass: your N failures gone, M others left; inne failures należą do innych fix tasków lub następnego review' },
+        { if: 'brak carried, placeholder w wyniku (timeout, niekompletny capture) albo 0 własnych kluczy i check nie jest exempt', then: 'brak osądu: komenda musi po prostu przejść' },
+        { if: 'exempt: findings nazywają check bez własnych kluczy, ale niosą failures innego check id', then: 'nie blokuje briefu: no failure of yours' },
+        { if: 'komenda pass', then: 'wszystkie własne failures zniknęły: settled' },
+        { if: 'któryś własny klucz nadal czerwony i żaden niedokończony fix task go nie niesie', then: 'left > 0 → brief fail: 1 of your 2 failures remains' },
+        { if: 'pozostałe własne klucze niesie niedokończony fix task (deferred)', then: 'settled: 1 left to T025; failure czeka na ostatni fix task, który ją niesie' },
+        { if: 'własne zniknęły, cudze zostały', then: 'settled: your 2 failures gone · 3 others left for their fix tasks or the next review' },
       ],
-      default: 'Fail briefu idzie w drabinkę: 1 retry, potem konsultacja seat-a review (fix task konsultuje reviewera, nie plannera) (→ build).',
-      notes: 'fixReviewChecks buduje checki z finding.commands[id] dla id V n; fix check nigdy nie wraca na run base, ale run base dalej daje odmowę zmienionej definicji.',
+      default: 'Fail briefu idzie w drabinkę: 1 retry (framing fix briefu: napraw tylko swoje), potem konsultacja seat-a review (fix task konsultuje reviewera, nie plannera) (→ build).',
+      notes: 'fixReviewChecks buduje checki z finding.commands[id] dla id V n; findingFor zapisuje też komendę plan checku, więc fix task z plan checku i fix task z reviewer checku tej samej komendy dzielą failure. redKeys idą tylko do promptu konsultacji, bramka ich nie czyta. Fix check nigdy nie wraca na run base, ale run base dalej daje odmowę zmienionej definicji. Gdy każda własna failure to test, bramka uruchamia tylko pliki tych testów.',
     },
     {
       id: 'RV_SCHEDULED_PASS',
@@ -1044,15 +1046,15 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
   config: [
     { key: 'validation.end_checks', values: 'true | false', default: 'true', effect: 'Włącza plan call i checki reviewera przed każdym review (final i task). Off: wiersz End-of-run checks · off; biegną tylko checki planu i briefów.', where: 'src/core/config/runtime/resolve.ts:10' },
     { key: 'validation.approve_checks', values: 'auto | ask', default: 'auto', effect: 'ask: karta Reviewer checks z Run all / Skip all przed biegiem komend; headless bez ekranu = żadna nie biegnie; skip nigdy nie jest pass. Bez efektu gdy end_checks off.', where: 'src/core/config/runtime/resolve.ts:15' },
-    { key: 'validation.render', values: 'komenda z {id} i {out}', default: 'brak', effect: 'Szablon render checków planu. Brak = każdy render check not-runnable (required → halt). PNG z {out} trafiają do rendersDir sesji i do promptu reviewera (do 4 na check).', where: 'src/engine/orchestrator/validation/run-checks.ts:313' },
-    { key: 'validation.test_command', values: 'argv bez shella', default: 'brak', effect: 'Pierwszy szczebel drabinki komendy dla planner test check; biegnie as-is, bez dopisania pliku. Bez niego stack poza 5 rejestrowymi daje not-runnable.', where: 'src/engine/orchestrator/validation/run.ts (planTestCheck); docs/CONFIGURATION.md §How a test check resolves its command' },
+    { key: 'validation.render', values: 'komenda z {id} i {out}', default: 'brak', effect: 'Szablon render checków planu. Brak = każdy render check not-runnable (required → halt); fix task reviewera albo rewrite konsultacji z render checkiem jest wtedy odrzucany schematem i wraca do seat-a. PNG z {out} trafiają do rendersDir sesji i do promptu reviewera (do 4 na check).', where: 'src/engine/orchestrator/validation/run-checks.ts:315' },
+    { key: 'validation.test_command', values: 'argv bez shella', default: 'brak', effect: 'Pierwszy szczebel drabinki komendy dla planner test check; biegnie as-is, bez dopisania pliku. Bez niego stack poza 5 rejestrowymi daje not-runnable.', where: 'src/engine/orchestrator/validation/run.ts:136' },
     { key: 'validation.test_pattern', values: 'wzorzec z jednym *', default: 'wzorce stacku', effect: 'Jak SPLITBRIEF znajduje pliki testów obok zmienionego pliku dla test check.', where: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts:516' },
     { key: 'validation.timeout_ms', values: 'int >= 1000', default: 'STAGE_TIMEOUT_MS', effect: 'Limit czasu każdej komendy checku, także base re-run i renderów. Timeout = fail z placeholderem timed out (zawsze zatrzymuje listę, nigdy pre-existing).', where: 'src/engine/orchestrator/validation/run-checks.ts:138' },
     { key: 'validation.stack', values: 'typescript | javascript | python | go | rust', default: 'detekcja', effect: 'Przypina stack dla drabinki test check i wzorców testów.', where: 'src/core/schemas/config.ts:82' },
     { key: 'workflow.review', values: 'end | task', default: 'end', effect: 'task: zawężony review (pre-review required checków, plan call tylko testy związane, werdykt na ukończone taski i due criteria) po każdym briefie, który przeszedł walidację.', where: 'src/engine/orchestrator/task/loop.ts:271' },
     { key: 'workflow.isolation', values: 'worktree | staged-copy | none', default: '→ lifecycle', effect: 'Decyduje, co dzieje się po pass: worktree/staged-copy → ready-to-apply; none (checkout) → closed complete bez Apply. W checkout komendy biegną w Twoim checkoutcie.', where: 'src/core/sessions/run-status.ts:192' },
     { key: 'workflow.approve', values: 'plan | none', default: 'plan', effect: 'planApprovesNpmScripts: tylko zatwierdzony plan pozwala plan check uruchomić npm run <script>. Reviewer checks nie potrzebują tej zgody (porównanie z run base zamiast niej).', where: 'src/engine/orchestrator/validation/run-checks.ts:96' },
-    { key: 'reviewer (blok)', values: 'runner kind cli | api | shell | agent', default: 'planner trzyma seat review', effect: 'Kto wykonuje plan call, verdict call i konsultacje fix tasków. api dostaje pakiet (bez narzędzi), reszta czyta workspace. imageInput narzędzia decyduje o renderach.', where: 'src/core/config/accessors/reviewer-runner.ts (resolveReviewerRunner); → runners' },
+    { key: 'reviewer (blok)', values: 'runner kind cli | api | shell | agent', default: 'planner trzyma seat review', effect: 'Kto wykonuje plan call, verdict call i konsultacje fix tasków. api dostaje pakiet (bez narzędzi), reszta czyta workspace. imageInput narzędzia decyduje o renderach.', where: 'src/core/config/accessors/reviewer-runner.ts:9' },
     { key: 'REVIEW_CYCLE_CAP (stała)', values: '2', default: '2', effect: 'Automatyczne cykle naprawcze na run. Każda korekta przy wyczerpanym capie dodaje BOUNDS.extraFixCyclesPerRun = 1.', where: 'src/core/pipeline-spec/review.ts:3; src/core/pipeline-spec/bounds.ts:8' },
     { key: 'MAX_REVIEW_CHECKS (stała)', values: '6', default: '6', effect: 'Najwięcej komend w jednym planie reviewera; komendy pending ponad limit czekają z wierszem not run.', where: 'src/core/schemas/review.ts:94' },
     { key: 'MAX_RENDER_IMAGES_PER_CHECK (stała)', values: '4', default: '4', effect: 'PNG na render check w promptcie; frame.png najpierw.', where: 'src/engine/orchestrator/review-renders.ts:10' },
@@ -1094,8 +1096,8 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
         '2. Base re-run V1 na kopii run base: pass. Wiersz Base re-run · 2 new, 0 pre-existing.',
         '3. fresh = 2 → stoppedBy = V1; V2 dostaje wiersz not run · V1 failed. Inputy V1.1 (plik test/a.test.ts) i V1.2 (plik src/x.ts).',
         '4. Verdict call: reviewer odpowiada fixTasks [T007 z findingIds [V1.1, V1.2]], tasks met, criteria pass. Outcome fail (redInputs blokują).',
-        '5. reviewPassed false; followReviewAnswer: ask null, used 0 < 2, fixTasks > 0 → applyTriage: T007 batch = max+1, task.fix z commands {V1: npm test}, failureKeys, redKeys.',
-        '6. START_FIX_CYCLE used = 1, phase implementing, review_fix_started. Pętla buduje T007; bramka briefu uruchamia npm test (fixReviewChecks) i judgeFixCheck: własne klucze zniknęły, proven → pass.',
+        '5. reviewPassed false; followReviewAnswer: ask null, used 0 < 2, fixTasks > 0 → applyTriage: T007 batch = max+1, task.fix z commands {V1: npm test}, failureKeys, redKeys; brief wymienia własne failures w Your failures, which this brief fixes.',
+        '6. START_FIX_CYCLE used = 1, phase implementing, review_fix_started. Pętla buduje T007; bramka briefu uruchamia npm test (fixReviewChecks); src/x.ts:12 error to nie test, więc komenda biegnie w całości; judgeFixCheck: własne klucze zniknęły → settled, wiersz Fix check V1 · npm test · your 2 failures gone.',
         '7. Komenda npm test ląduje w pendingReviewCommands. Następny review: plan call musi wybrać npm test jako V1; przechodzi; verdict pass.',
       ],
       outcome: 'REVIEW_DONE passed po 1 cyklu; ready-to-apply. Gdyby T007 nie naprawił własnych kluczy: retry, konsultacja seat-a review, ewentualnie halt (→ build).',
@@ -1246,7 +1248,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
   ],
   gotchas: [
     'Nieudane wywołanie (plan call lub verdict call) nigdy nie jest pass: run stoi na halt-cie i czeka. Jedyna droga naprzód bez werdyktu to Skip review / Accept as is (gdy oferowane) albo End run.',
-    'Komenda refused lub not-runnable to nie fail i nie pass: optional nic nie zmienia, required zatrzymuje run halt-em required-checks-unrunnable zanim reviewer cokolwiek zobaczy.',
+    'Komenda refused lub not-runnable to nie fail i nie pass: optional nic nie zmienia, required zatrzymuje run halt-em required-checks-unrunnable zanim reviewer cokolwiek zobaczy. Brak pliku testu, brak skryptu npm i zawężony bieg cargo bez testu to nie not-runnable, tylko fail z placeholderem: wchodzą do review jak każdy czerwony check i fix task może je naprawić.',
     'Reguła stopu: pierwsza komenda reviewera z NOWYMI failures zatrzymuje listę. Komenda pre-existing, refused ani not-runnable nie zatrzymuje. Timeout ma jeden klucz-placeholder, więc zawsze zatrzymuje i nigdy nie jest pre-existing.',
     'Pre-existing jest tylko identyczny klucz failure po obu stronach. Placeholder (timeout, brak diagnostyki, ucięty output) po dowolnej stronie daje not verified at the run base: input zostaje, reviewer decyduje, i to jedyny czerwony, który reviewer może odrzucić (blockingRedInputs). Każdy inny czerwony check i każdy input Apply blokuje niezależnie od odpowiedzi reviewera.',
     'Gdy w pendingTriage jest jakikolwiek input source check, SPLITBRIEF w ogóle nie weryfikuje claimów unverified (final-review.ts:260): każde unverified zostaje unverified i review fail.',
@@ -1259,7 +1261,13 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
     'approve_checks: ask bez ekranu (headless) uruchamia zero komend reviewera i mówi to w wierszu; nie jest to błąd konfiguracji, ale skip nigdy nie jest pass.',
     'Przy end_checks off lub planie skipped enabledReviewChecks = []: komenda reviewera nie jest zarejestrowanym checkiem, więc verify / unverified z checkIds V n nic nie uruchamia i fix task jej nie dostaje.',
     'Checki biegną z Twoimi uprawnieniami, bez sandboxa plików, sieci i procesów; SPLITBRIEF zdejmuje tylko sekrety z env, ogranicza czas (timeout_ms) i output oraz zabija grupę procesów. W trybie checkout biegną w Twoim checkoutcie.',
-    'Base re-run i checki fix tasku nie są tym samym: fix check nigdy nie wraca na run base (judgeFixCheck porównuje klucze z oryginalnym czerwonym), ale run base dalej daje odmowę zmienionej definicji.',
+    'Base re-run i checki fix tasku nie są tym samym: fix check nigdy nie wraca na run base (judgeFixCheck porównuje tylko własne klucze fix tasku), ale run base dalej daje odmowę zmienionej definicji.',
     'Review packet (review-packet.json / .md) jest pisany tylko dla scope final i tylko gdy summaryBase jest podane; task review pisze tylko review.json i review.md. Sam pakiet jest artefaktem, nie bramką.',
+    'Klucze failures Biome nie kończą się linią ciężkich kresek ━: extractFailureKeys obcina ją (extract-failure-keys.ts:319), więc ten sam output daje te same klucze przy ponownym biegu i fix check nie widzi fałszywej pozostałej failure.',
+    'Akcja revise na review-failed czyta się Fix again · grants one more fix cycle, a legenda przy composerze ⏎ Fix again with the typed correction (nazwa akcji bez konsekwencji).',
+    'Zmiana na main (2026-10): fix task przechodzi, gdy znikną jego własne failures; dzielona failure czeka na ostatni niedokończony fix task z tą samą komendą (też plan check vs reviewer check); zniknął wymóg dowodu not proven fixed; fix check z samymi testami biegnie tylko na ich plikach (0b28a3f).',
+    'Zmiana na main (2026-10): check fix tasku z literówką w pliku testu, złym id renderu, skryptem npm, którego package.json nie ma, albo plikiem Rust bez testu jest odrzucany w odpowiedzi review / konsultacji (jedna naprawa seat-a), a w biegu brak pliku lub skryptu to czerwony check, nie halt z samym End run (befef41).',
+    'Zmiana na main (2026-10): drzewo run base ma ścieżkę tej samej długości co workspace, więc test zależny od długości ścieżki nie jest nową failure i nie blokuje review ani Accept as is (0a3650b).',
+    'Zmiana na main (2026-10): klucze failures Biome bez końcowej linii ━ (0416b45); etykieta Fix again · grants one more fix cycle (bab3404); błąd kontraktu plan call / werdyktu wymienia każdy błąd (cf71fe6).',
   ],
 });

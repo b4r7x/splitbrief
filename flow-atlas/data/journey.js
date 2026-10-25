@@ -263,7 +263,7 @@ Ta strona pokazuje całość. Szczegóły każdego etapu są w obszarach, do kt�
   JR_SEAT_RUNG -->|"BUILD attempt, BUILD retry, konsultacja"| RETRY["withSeatRetry: do 3 powtórzeń, backoff 2s 4s 8s"]
   RETRY --> JR_RESET_WAIT
   JR_SEAT_RUNG -->|"plan call sesji planowania, review plan call, verdict"| OTHER
-  JR_RESET_WAIT -->|"tak"| WAIT["SET_SEAT_WAIT, seat_wait_started; po resecie to samo wywołanie jeszcze raz"]
+  JR_RESET_WAIT -->|"tak"| WAIT["SET_SEAT_WAIT (narzędzie i trzymany seat), seat_wait_started;<br/>po resecie to samo wywołanie jeszcze raz"]
   WAIT --> CALL
   JR_RESET_WAIT -->|"nie: reset dalej niż 10 min, brak daty, lub krok bez runSeatCall"| SD
   SD --> JR_AUTO_SWITCH{"switchSeat.auto?"}
@@ -569,7 +569,7 @@ Ta strona pokazuje całość. Szczegóły każdego etapu są w obszarach, do kt�
       inputs: ['message (słowa narzędzia)', 'outcome / code wywołania', 'status HTTP w tekście', 'parseUsageLimitReset (src/engine/runners/usage-limit.ts:315)'],
       branches: [
         { if: 'outcome lub code w AUTHORITATIVE_OUTCOMES', then: 'authoritative: własny werdykt wywołania, bez retry' },
-        { if: 'konto: balance / billing / quota / auth (401, 403, "sign in", wyczerpane saldo)', then: 'account → Seat down: runner-unauthenticated (auth) lub runner-usage-limit (reszta)', next: 'JR_AUTO_SWITCH' },
+        { if: 'konto: balance / billing / quota / auth (401, 403, "sign in", wyczerpane saldo; także odmowa wypisana tylko na stderr narzędzia CLI, np. Cursor not included in your weekly usage)', then: 'account → Seat down: runner-unauthenticated (auth) lub runner-usage-limit (reszta), przy pierwszym wywołaniu', next: 'JR_AUTO_SWITCH' },
         { if: 'limit z parsowalną datą resetu', then: 'rate-limited { resetAt }', next: 'JR_RESET_WAIT' },
         { if: 'sieć, DNS, reset połączenia, 5xx, 408, gołe 429 bez resetu', then: 'transient', next: 'JR_SEAT_RUNG' },
       ],
@@ -580,7 +580,7 @@ Ta strona pokazuje całość. Szczegóły każdego etapu są w obszarach, do kt�
       title: 'Które wywołania mają retry transientów i czekanie na reset',
       question: 'Czy ten krok przechodzi przez runSeatCall?',
       where: 'src/engine/orchestrator/escalation/seat-wait.ts:199',
-      inputs: ['miejsce wywołania: run-implementation.ts:286 (BUILD attempt), make-implementer-retry-invoker.ts:125 (BUILD retry), consult/request.ts:339 (konsultacja PLAN lub REVIEW)'],
+      inputs: ['miejsce wywołania: run-implementation.ts:286 (BUILD attempt), make-implementer-retry-invoker.ts:125 (BUILD retry), consult/request.ts:367 (konsultacja PLAN lub REVIEW)'],
       branches: [
         { if: 'BUILD attempt, BUILD retry, konsultacja', then: 'withSeatRetry: transient powtarzany do BOUNDS.transientRetries = 3 z backoffem 2s, 4s, 8s (transient.ts:91); potem seatResetWaitDeadline', next: 'JR_RESET_WAIT' },
         { if: 'plan call sesji planowania', then: 'brak runSeatCall: handlePlanningFailure → diagnosePlannerCallFailure → halt od razu (planning/failure.ts:96)', next: 'JR_HALT_KIND' },
@@ -595,10 +595,10 @@ Ta strona pokazuje całość. Szczegóły każdego etapu są w obszarach, do kt�
       where: 'src/engine/orchestrator/escalation/seat-wait.ts:76',
       inputs: ['classifySeatFailure.class = rate-limited', 'parseUsageLimitReset(message, now)', 'BOUNDS.rateLimitResetWaitMs = 600 000'],
       branches: [
-        { if: '0 < wait ≤ 10 min (tylko krok z runSeatCall)', then: 'waitForSeatReset (seat-wait.ts:91): SET_SEAT_WAIT w state.json, seat_wait_started; status open · stopped · seat-wait; po deadline to samo wywołanie; resume w init.ts:331 czeka dalej', next: 'JR_SEAT_CLASS' },
+        { if: '0 < wait ≤ 10 min (tylko krok z runSeatCall)', then: 'waitForSeatReset (seat-wait.ts:103): SET_SEAT_WAIT {seat, resetAt, tool, kind, holds} w state.json, seat_wait_started; po deadline to samo wywołanie; resume w init.ts:335 czeka dalej, chyba że config wejścia uruchamia seat na innym narzędziu (wtedy CLEAR_SEAT_WAIT i start od razu)', next: 'JR_SEAT_CLASS' },
         { if: 'reset > 10 min, brak daty, reset w przeszłości', then: 'Seat down runner-usage-limit z resetAt; retry-later oferowane gdy data znana; klasa rate-limited z resetem > 10 min kwalifikuje auto switch', next: 'JR_AUTO_SWITCH' },
       ],
-      default: 'Abort w trakcie czekania zostawia state.seatWait; kontynuacja czyta deadline i czeka resztę.',
+      default: 'Abort w trakcie czekania zostawia state.seatWait (status open · stopped · seat-wait, byline Waiting for <pełna nazwa narzędzia> · resets HH:MM); kontynuacja czyta deadline i czeka resztę, chyba że seat przeniesiono na inne narzędzie (→ recovery RC_SEAT_WAIT_HELD).',
     },
     {
       id: 'JR_BUILD_SEAT_DOWN',
@@ -733,7 +733,7 @@ Ta strona pokazuje całość. Szczegóły każdego etapu są w obszarach, do kt�
     {
       title: 'Limit trafia w brief (BUILD): reset krótki, reset długi, fallback',
       steps: [
-        '1. implement() zwraca outcome usage-limit z resetem za 6 minut. runSeatCall: klasa rate-limited, reset ≤ 10 min → SET_SEAT_WAIT, seat_wait_started, status open · stopped · seat-wait. Po resecie ta sama próba biegnie znowu. Kill w trakcie: kontynuacja czyta seatWait i czeka resztę (init.ts:331).',
+        '1. implement() zwraca outcome usage-limit z resetem za 6 minut. runSeatCall: klasa rate-limited, reset ≤ 10 min → SET_SEAT_WAIT, seat_wait_started, status open · stopped · seat-wait. Po resecie ta sama próba biegnie znowu. Kill w trakcie: kontynuacja czyta seatWait i czeka resztę (init.ts:335); po zmianie BUILD na inne narzędzie kontynuacja nie czeka.',
         '2. Reset za 3 godziny: brak czekania. handleFailedImplementation → runner-usage-limit · Seat down, INTERRUPT_STEP source: seat cut: mid-step na briefie T002 attempt 0. Brief jest sparkowany; częściowe pliki zostają w workspace.',
         '3. Z fallbackiem BUILD (implementer.fallback) i pierwszym auto switchem: switch od razu; RESTART_ATTEMPT_ON_SEAT wznawia T002 na nowym implementerze od tej samej próby; stary seat CLI zapisany jako nowy fallback.',
         '4. Bez fallbacku, lub gdy BUILD był już raz przełączony automatycznie: panel Seat down z wierszem "fallback: … · automatic switch already used in this run"; akcje: Change BUILD tool, retry-later (reset znany), Try again, Skip this brief, End run.',
@@ -859,6 +859,9 @@ Ta strona pokazuje całość. Szczegóły każdego etapu są w obszarach, do kt�
     'Jedna sesja aktywna na projekt (.splitbrief/active). Równoległe runy wymagają osobnych git worktree projektu, bo każdy ma własny .splitbrief/.',
     'Każda planner-tier porażka halthuje na własnym seacie: konsultacja fix taska halthuje na review, konsultacja plan taska na plan, review na review. Bez bloku reviewer REVIEW dziedziczy narzędzie i fallback PLAN; jego switch pisze nowy blok reviewer i nie rusza planner.',
     'Headless zatwierdza kartę planu bez pytania, ale zapis na ścieżkę chronioną zawsze pyta, więc headless go odmawia (APPROVAL_REQUIRED). Pytania plannera kończą headless z input_required i kodem ≠ 0.',
+    'Zmiana na main (2026-10): czekanie na reset zdejmuje się, gdy run kontynuuje seat na innym narzędziu; Retry at trzyma seat z configu, na którym run ruszy (42fb57f).',
+    'Zmiana na main (2026-10): odmowa konta wypisana tylko na stderr narzędzia CLI daje Seat down przy pierwszym wywołaniu każdego seat-a (f307dcb); prompt dłuższy niż linia poleceń narzędzia halt-uje od razu bez Try again (afbb4ea).',
+    'Zmiana na main (2026-10): fix task przechodzi, gdy znikną jego własne failures, a check, którego nie da się uruchomić, wraca do seat-a do poprawy albo jest czerwony, zamiast halt-u z samym End run (0b28a3f, befef41).',
   ],
   glossary: [
     { term: 'run', meaning: 'Jedna praca od "splitbrief start" do zamknięcia. Trwały rekord w .splitbrief/sessions/<id>/ (state.json, session.jsonl, …). Status: running, open, ready-to-apply, closed.', where: 'src/core/sessions/run-status.ts:35' },
@@ -873,7 +876,7 @@ Ta strona pokazuje całość. Szczegóły każdego etapu są w obszarach, do kt�
     { term: 'reviewer checks i end checks', meaning: 'Komendy, które reviewer wybiera przed review (V1, V2, …, max 6) i które SPLITBRIEF uruchamia pod polityką komend reviewera. validation.end_checks (End-of-run checks) włącza je; approve_checks: ask pyta Run all / Skip all. Czerwony check powtarza się na run base; porażki czerwone też tam są pre-existing.', where: 'src/engine/orchestrator/review-checks.ts:462' },
     { term: 'halt', meaning: 'pendingRecovery zapisane na fazie; run jest open · waiting-for-you. Dwa rodzaje: Needs you (decyzja tylko twoja) i Seat down (seat nie może działać). Każda przyczyna mapuje się na jeden.', where: 'src/core/recovery/halt.ts:14' },
     { term: 'fallback', meaning: 'Runner CLI, który seat autoryzuje do jednego automatycznego switchu na run i seat przy odmowie konta lub długim resecie. Ustawiany w Settings › Fallback lub config.yaml. REVIEW bez bloku reviewer dziedziczy fallback PLAN.', where: 'src/core/crew/fallback.ts:19' },
-    { term: 'seat wait', meaning: 'Czekanie na reset limitu ≤ 10 min (BOUNDS.rateLimitResetWaitMs) zapisane w state.seatWait; status open · stopped · seat-wait. Tylko dla wywołań przez runSeatCall.', where: 'src/engine/orchestrator/escalation/seat-wait.ts:103' },
+    { term: 'seat wait', meaning: 'Czekanie na reset limitu ≤ 10 min (BOUNDS.rateLimitResetWaitMs) albo do godziny z Retry at, zapisane w state.seatWait z narzędziem, które trafiło limit, i trzymanym seatem; status open · stopped · seat-wait. Automatycznie tylko dla wywołań przez runSeatCall. Kontynuacja na innym narzędziu zdejmuje czekanie.', where: 'src/engine/orchestrator/escalation/seat-wait.ts:103' },
     { term: 'ready-to-apply', meaning: 'Workspace run z passed review lub Accept as is, bez halt, parku i Apply w toku. Czeka na Apply lub Discard; nie jest kontynuowany.', where: 'src/core/sessions/run-status.ts:119' },
     { term: 'Apply / Discard / End run', meaning: 'Apply merguje checkout do workspace (base/ours/theirs), robi backup i raz zapisuje wynik do checkoutu (closed applied). Discard i End run zapisują run.patch i zamykają (discarded / ended). Na checkout nie ma Apply.', where: 'src/engine/orchestrator/apply/run.ts:116' },
     { term: 'override (Accept as is)', meaning: 'Akcja na review-failed po wyczerpanym limicie cykli: zapisuje otwarte findings i notę, robi workspace run ready-to-apply z override: true; Apply pyta raz (Apply as is). Werdykt failed zostaje.', where: 'src/core/state/machine.ts:548' },

@@ -180,7 +180,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
   F --> BD_BRIEF_GATE_CHECKS{"które checks wg workflow.review?"}
   BD_BRIEF_GATE_CHECKS -->|"end, brief zwykły"| NONE["checkIds puste: bez komend"]
   BD_BRIEF_GATE_CHECKS -->|"task"| TC["task.checks + checks due kryteriów"]
-  BD_BRIEF_GATE_CHECKS -->|"fix task"| FC["+ checks z findings (judgeFixCheck)"]
+  BD_BRIEF_GATE_CHECKS -->|"fix task"| FC["+ checks z findings (judgeFixCheck);<br/>same testy: tylko pliki własnych failures"]
   BD_BRIEF_GATE_CHECKS -->|"verify z konsultacji"| VC["dokładnie wybrane checkIds"]
   TC --> BD_PRE_VALIDATION_HOOK{"hook pre_validation pozwala?"}
   FC --> BD_PRE_VALIDATION_HOOK
@@ -191,6 +191,8 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
   BD_CHECK_POLICY -->|"polityka odrzuca komendę"| ST1["refused"]
   BD_CHECK_POLICY -->|"brak programu / brak komendy testowej"| ST2["not-runnable"]
   BD_CHECK_POLICY -->|"exit != 0 / timeout"| ST3["fail + failureKeys"]
+  BD_CHECK_POLICY -->|"brak pliku testu, skryptu npm<br/>albo test cargo nie biegł"| ST5["fail z placeholderem:<br/>builder albo reviewer to naprawia"]
+  ST5 --> REC
   BD_CHECK_POLICY -->|"exit 0"| ST4["pass"]
   ST1 --> REC["RECORD_CHECK_RESULTS; checks_run; evidence"]
   ST2 --> REC
@@ -592,7 +594,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
         { if: 'applyResult partial albo failed write-uncertain', then: 'raiseApiApplyRecovery: halt implementation-error; w checkout mode pliki wracają', next: 'recovery' },
         { if: 'outcome unauthenticated', then: 'buildSeatDownIssue (account/auth); INTERRUPT_STEP mid-step source=seat; raisePendingRecovery', next: 'recovery' },
         { if: 'outcome usage-limit', then: 'classifySeatFailure (reset?); buildSeatDownIssue; INTERRUPT_STEP; raisePendingRecovery (resetAt w error row)', next: 'recovery' },
-        { if: 'outcome w RUNNER_DEFECT_BUILDERS (implementer-recipe-invalid, implementer-left-isolation, checkout-changed, missing-model, runner-timeout-repeated, input-too-large)', then: 'cleanup; halt defektu bez drabiny', next: 'recovery' },
+        { if: 'outcome w RUNNER_DEFECT_BUILDERS (implementer-recipe-invalid, implementer-left-isolation, checkout-changed, missing-model, runner-timeout-repeated, input-too-large)', then: 'cleanup; halt defektu bez drabiny. input-too-large obejmuje prompt dłuższy niż linia poleceń narzędzia (argv-prompt-too-large, call-result.ts:93): Seat down · Prompt too large for <tool> on T001 z akcjami switch-seat / skip / end', next: 'recovery' },
       ],
       default: 'cleanup; retryAndRecord z initialFailure (outcome, runner, handBack ≤ 2000 znaków) i initialBlocked (pytanie + filesNeeded).',
       notes: 'Pierwsza próba usage-limit/unauthenticated nigdy nie wchodzi w retry ani konsultację: retry nie pomoże, a eskalacja po cichu przeniosłaby pracę na plannera (komentarz w kodzie, linie 64-66).',
@@ -700,7 +702,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       branches: [
         { if: 'review=task', then: 'task.checks + checkIds kryteriów, które ten brief domyka (każdy task kryterium done albo ten)' },
         { if: 'review=end (domyślnie)', then: 'żaden check planu/taska; tylko fix checks i checks nazwane przez wołającego' },
-        { if: 'fix task', then: 'dodatkowo każdy check z findings, który brief naprawia (judgeFixCheck decyduje settled)' },
+        { if: 'fix task', then: 'dodatkowo każdy check z findings, który brief naprawia (judgeFixCheck decyduje settled); gdy każda własna failure checku to test, check biegnie tylko na plikach tych testów (ownTestFiles, task-checks.ts:47), jeśli komenda to komenda testów stacku, a stack umie je wybrać; następny review uruchamia całą komendę' },
         { if: 'verify z konsultacji', then: 'dokładnie opts.checkIds; każdy musi przejść' },
       ],
       default: 'Zawsze najpierw validator.formatChangedFiles (formatter projektu na zmienionych plikach, run.ts:88); checkIds puste → bez pre_validation i bez komend.',
@@ -725,9 +727,9 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       where: 'src/engine/orchestrator/task/brief-gate.ts:125',
       inputs: ['runs (CheckRunResult[])', 'settled', 'registry required', 'state.messageQueue pending'],
       branches: [
-        { if: 'check wybrany (verify) albo fix check: status != pass i nie settled', then: 'failedChecks' },
+        { if: 'check wybrany (verify) albo fix check: status != pass i nie settled', then: 'failedChecks; fix check jest settled, gdy jego własne failures zniknęły albo każdą pozostałą niesie też niedokończony fix task tego samego cyklu (ta sama komenda, także plan check vs reviewer check); cudze failures nie blokują' },
         { if: 'inny check: status fail, nie settled, required=true', then: 'failedChecks' },
-        { if: 'failedChecks niepuste', then: 'accepted=false; error = checkFailureText każdego; diagnosis = check <id> failed → retryAndRecord' },
+        { if: 'failedChecks niepuste', then: 'accepted=false; error = checkFailureText każdego (własne, Left to <task>:, Other failures, not this brief\'s job:); diagnosis = check <id> failed, a dla fix checku z werdyktem, np. check V1 failed: 1 of your 2 failures remains → retryAndRecord' },
         { if: 'pass, ale isQueuedMessagePendingDelivery', then: 'correction=true; error = CORRECTION_AFTER_CHECKS; RESUME_TASK; retryAndRecord(initialAnswer) → próba dostarczająca bez rungu, potem checks znowu' },
       ],
       default: 'accepted=true → validateCommitAndAdvance.',
@@ -738,11 +740,15 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       title: 'Jak biegnie jeden check',
       question: 'Jaki status dostaje pojedynczy check (cmd / test / render)?',
       where: 'src/engine/orchestrator/validation/run-checks.ts:411',
-      inputs: ['check.kind', 'checkCommandRefusal (plan policy) / reviewerCommandRefusal', 'changedDefinitionRefusal', 'config.validation.timeoutMs', 'notRunnableReason'],
+      inputs: ['check.kind', 'commandTextRefusal (plan policy) / reviewerCommandRefusal', 'missingNpmScript', 'changedDefinitionRefusal', 'opts.testFiles (fix check: pliki własnych testów)', 'config.validation.timeoutMs', 'notRunnableReason'],
       branches: [
         { if: 'cmd odrzucony polityką (plan: allowlist; reviewer: zmieniony skrypt, shell syntax)', then: 'refused' },
+        { if: 'plan check npm run <script>, a package.json nie ma skryptu albo pliku', then: 'fail z placeholderem no npm script: zmiana nie ma skryptu, fix go doda (run-checks.ts:241)' },
         { if: 'program nie istnieje (ENOENT / exit 127)', then: 'not-runnable, missingProgram' },
-        { if: 'test: brak komendy testowej dla stacku albo brak dotkniętych plików testowych', then: 'not-runnable' },
+        { if: 'test: brak komendy testowej dla stacku', then: 'not-runnable: no test command for an unrecognised stack; set validation.test_command' },
+        { if: 'test: workspace nie ma pliku testu, który check nazywa', then: 'fail z placeholderem no test file (the workspace has no test file for …, run-checks.ts:150)' },
+        { if: 'test zawężony do celu cargo, a output nie pokazuje uruchomionego testu', then: 'fail z placeholderem no test ran' },
+        { if: 'fix check cmd z własnymi failures tylko testowymi, komenda = komenda testów stacku', then: 'biegnie test runner stacku tylko na tych plikach (narrowed, run-checks.ts:431)' },
         { if: 'render bez validation.render', then: 'not-runnable; zły id → refused' },
         { if: 'exit != 0 albo timeout', then: 'fail z failureKeys (output ≤ 4096 znaków)' },
         { if: 'nieznany id', then: 'unknown' },
@@ -817,6 +823,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
         { if: 'timeout albo no-progress-cut drugi raz z rzędu', then: 'lastFailure = runner-timeout-repeated → halt defektu' },
       ],
       default: 'COUNT_ATTEMPT; rung wyczerpany (1) → eskalacja. VALIDATION_FAIL przy attempt >= 1 przełącza phase na escalating (machine.ts:370).',
+      notes: 'Pierwszy retry fix tasku ma własny framing (framingForAttempt, ladder.ts:31): napraw to, co błąd nazywa twoim; failures nazwane jako nie twoje zostają dla ich fix tasków albo następnego review. Brief fix tasku wymienia własne failures w sekcji Your failures, which this brief fixes.',
     },
     {
       id: 'BD_RUNNER_HALT',
@@ -901,7 +908,8 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
         { if: 'ask-user', then: 'applyAskUser: QuestionPrompt; odpowiedź → RECORD_CORRECTION; zwrot jako guidance' },
         { if: 'confirm', then: 'CONFIRM_DECISIONS: zaakceptowane decyzje w słowach implementera do plan.decisions' },
       ],
-      default: 'assertNever: schemat Zod dopuszcza tylko te sześć akcji. Schemat odrzuca też rewrite z innym id, split dziecka (parentId) i check cmd poza polityką planu (refusedCheckErrors).',
+      default: 'assertNever: schemat Zod dopuszcza tylko te sześć akcji. Schemat odrzuca też rewrite z innym id, split dziecka (parentId), check cmd poza polityką planu, npm run ze skryptem, którego package.json nie ma (gdy żaden task go nie pisze), render bez validation.render albo ze złym id i test check z plikiem, którego nie ma w workspace ani w plikach odpowiedzi lub czekających tasków (answerContract, consult/request.ts:134); seat dostaje jedną naprawę.',
+      notes: 'Konsultacja nie oferuje wyborów, których odpowiedź użytkownika nie wykona (zmiana narzędzia lub modelu seat-a, kupno kredytów, czekanie na reset): reguła answer rule w kontrakcie konsultacji; gdy seat w ogóle nie może obsłużyć wywołania, mówi to w answer.diagnosis, a zmiana seat-a idzie przez /crew.',
     },
     {
       id: 'BD_GUARD_VIOLATION',
@@ -990,7 +998,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       inputs: ['withSeatRetry (BOUNDS.transientRetries = 3)', 'classifySeatFailure', 'parseUsageLimitReset', 'BOUNDS.rateLimitResetWaitMs = 600 000'],
       branches: [
         { if: 'błąd przejściowy', then: 'do 3 powtórzeń z backoff; seat_retry; usage odrzuconych prób doliczone' },
-        { if: 'rate-limited z resetem ≤ 10 min', then: 'SET_SEAT_WAIT; seat_wait_started; czeka; CLEAR_SEAT_WAIT; to samo wywołanie raz jeszcze' },
+        { if: 'rate-limited z resetem ≤ 10 min', then: 'SET_SEAT_WAIT {seat, resetAt, tool, kind, holds}; seat_wait_started; czeka; CLEAR_SEAT_WAIT; to samo wywołanie raz jeszcze. Stop w trakcie i kontynuacja na innym narzędziu BUILD zdejmuje czekanie (recovery RC_SEAT_WAIT_HELD)' },
         { if: 'reset dalszy albo nieznany', then: 'porażka wraca do wołającego: usage-limit → Seat down', next: 'recovery' },
       ],
       default: 'Sukces. Żadna z tych prób nie jest próbą lineage. → zobacz runners.',
@@ -1120,11 +1128,11 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
     { key: 'implementer_profiles', values: 'mapa profili + default', default: 'brak (jeden implementer)', effect: 'Routing wybiera profil o najmniejszym oknie, które mieści prompt. Recovery może przypiąć profil (retryProfile).', where: 'src/core/schemas/config.ts:62; src/engine/orchestrator/task/routing-selection.ts:29' },
     { key: 'implementer.context_length', values: 'liczba tokenów', default: 'katalog modelu albo 32768', effect: 'Jawny budżet promptu profilu; bez niego katalog, wykrycie albo conservative-fallback.', where: 'src/engine/orchestrator/context-routing/context-length.ts:107' },
     { key: 'implementer.idle_kill_ms / implementer.timeout', values: 'ms', default: 'brak (tylko ostrzeżenie po 5 min)', effect: 'Cięcie wywołania przy ciszy albo po czasie. Cut liczy się jako próba; dwa z rzędu → runner-timeout-repeated.', where: 'src/engine/orchestrator/escalation/local-retries.ts:57; src/core/pipeline-spec/timeouts.ts:1' },
-    { key: 'validation.test_command', values: 'komenda', default: 'z registry stacku', effect: 'Komenda dla checków test; poza pięcioma stackami bez niej check jest not-runnable.', where: 'src/core/schemas/config.ts:78; src/engine/orchestrator/validation/run.ts:131' },
+    { key: 'validation.test_command', values: 'komenda', default: 'z registry stacku', effect: 'Komenda dla checków test; poza pięcioma stackami bez niej check jest not-runnable (powód kończy się na set validation.test_command). Ustawiona komenda wyłącza też zawężanie fix checku do plików testów.', where: 'src/core/schemas/config.ts:78; src/engine/orchestrator/validation/run.ts:136' },
     { key: 'validation.test_pattern', values: 'glob', default: 'wykryty', effect: 'Jak check test znajduje pliki testowe dotknięte przez plik briefu.', where: 'src/engine/orchestrator/validation/commands.ts:45' },
     { key: 'validation.timeout_ms', values: 'ms ≥ 1000', default: '3 600 000 (STAGE_TIMEOUT_MS)', effect: 'Limit czasu każdego checku i formattera.', where: 'src/engine/orchestrator/validation/run-checks.ts:138; src/core/pipeline-spec/gates.ts:8' },
     { key: 'validation.stack', values: 'typescript | javascript | python | go | rust', default: 'wykryty', effect: 'Wymusza stack dla komend testowych i narrowing.', where: 'src/engine/orchestrator/validation/run.ts:68' },
-    { key: 'validation.render', values: 'szablon komendy z {id} i {out}', default: 'brak', effect: 'Bez niego check render jest not-runnable. PNG kopiowane do renders dir sesji.', where: 'src/engine/orchestrator/validation/run-checks.ts:313' },
+    { key: 'validation.render', values: 'szablon komendy z {id} i {out}', default: 'brak', effect: 'Bez niego check render jest not-runnable. PNG kopiowane do renders dir sesji. Fix task z review albo rewrite z konsultacji z checkiem render bez tego klucza jest odrzucany schematem i wraca do seat-a.', where: 'src/engine/orchestrator/validation/run-checks.ts:315' },
     { key: 'hooks.pre_task / pre_validation / pre_escalation', values: 'komendy hooków', default: 'brak', effect: 'Odmowa pre_task i pre_validation → SKIP_TASK z rollbackiem; odmowa pre_escalation → halt retry-exhausted.', where: 'src/engine/orchestrator/task/pre-task.ts:61; src/engine/orchestrator/task/pre-validation-gate.ts:40; src/engine/orchestrator/escalation/handle.ts:346' },
     { key: 'BOUNDS (stałe)', values: 'consultsPerLineage 2, attemptsPerLineage 8, plannerCallsPerRun 10, extra +1/+4/+5, rateLimitResetWaitMs 600 000, transientRetries 3', default: 'stałe', effect: 'Limity drabiny i seat retry; Continue w recovery podnosi je przez GRANT_ALLOWANCE.', where: 'src/core/pipeline-spec/bounds.ts:1' },
     { key: 'CONTEXT_CODE_BUDGET_CHARS', values: '40 000', default: 'stała', effect: 'Łączny budżet znaków dla contextFiles briefu; plik, który go przekracza, jest przycięty z markerem.', where: 'src/engine/orchestrator/task/refresh-code.ts:35' },
@@ -1256,6 +1264,17 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       ],
       outcome: 'Brief rusza z wiedzą o nowym stanie plików. Druga stale konsultacja tej rewizji nie wystąpi.',
     },
+    {
+      title: 'Dwa fix tasks dzielą failure jednego czerwonego npm test',
+      steps: [
+        '1. Review: V1 npm test czerwone z kluczami test/a.test.ts::parses i test/b.test.ts::loads. Reviewer daje T024 (oba klucze) i T025 (klucz b), ten sam cykl.',
+        '2. T024 w bramce: fixCheckKeys widzi, że T025 (niedokończony, ten sam cykl, ta sama komenda) niesie test/b.test.ts::loads → sharedWith.',
+        '3. Własne failures to same testy → check biegnie test runner stacku tylko na test/a.test.ts i test/b.test.ts.',
+        '4. a przechodzi, b nadal czerwony: left puste, deferred [b → T025]. Wiersz: Fix check V1 · npm test · 1 of your 2 failures gone · 1 left to T025. T024 settled.',
+        '5. T025 w bramce: brak niedokończonych rodzeństwa z kluczem b → b musi zniknąć; jeśli zostaje: your 1 failure remains → retry z framingiem fix briefu, potem konsultacja REVIEW.',
+      ],
+      outcome: 'Dzielona failure blokuje tylko ostatni fix task, który ją niesie. Następny review i tak uruchamia całe npm test.',
+    },
   ],
   files: [
     { path: 'src/engine/orchestrator/run/task-execution.ts', role: 'runTasksAndReview: workspace, pętla, pauza na granicy, hand-off do final review i fix cycles' },
@@ -1320,5 +1339,9 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
     'Korekta, która przyjdzie, gdy checks są już zielone, nie jest ignorowana: brief wraca do próby dostarczającej (CORRECTION_AFTER_CHECKS) i checks biegną jeszcze raz. Ta próba liczy się do 8, ale nie zużywa rungu.',
     'Przy bundle API status partial albo failed write-uncertain brief haluje implementation-error zamiast retry; w checkout mode zmiany próby są cofane, w worktree zostają do ręcznego pogodzenia.',
     'Routing wybiera NAJMNIEJSZE okno kontekstu, które mieści prompt (compareProfileRouteRank), nie największe. Brak katalogu modelu → 32768 jako conservative-fallback, co łatwo daje overflow na jedynym profilu.',
+    'Zmiana na main (2026-10): fix task przechodzi, gdy znikną jego własne failures; failure, którą niesie też niedokończony fix task tego samego cyklu i tej samej komendy, czeka na niego (1 left to T025), a fix check z samymi testami biegnie tylko na ich plikach (0b28a3f).',
+    'Zmiana na main (2026-10): check, którego plik testu, skrypt npm albo test cargo nie istnieje w zmianie, jest czerwony (fail z placeholderem), nie not-runnable, więc builder go naprawia zamiast halt-u (befef41).',
+    'Zmiana na main (2026-10): prompt BUILD dłuższy niż linia poleceń narzędzia nie wchodzi w drabinę: halt Prompt too large for <tool> on T001 od razu, bez retry i konsultacji (afbb4ea).',
+    'Zmiana na main (2026-10): czekanie na reset BUILD zdejmuje się, gdy kontynuacja uruchamia BUILD na innym narzędziu (42fb57f).',
   ],
 });

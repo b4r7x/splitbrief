@@ -10,7 +10,9 @@ Halt to obiekt RecoveryIssue zapisany w state.json jako pendingRecovery. Ma reas
 
 Automatyczny fallback działa tylko dla halt-u Seat down zbudowanego przez buildSeatDownIssue (runner-usage-limit, runner-unauthenticated). Seat przechodzi na zadeklarowany fallback bez pytania, gdy spełnione są cztery warunki: fallback jest zadeklarowany i prowadzi listę kandydatów, przyczyna to odmowa konta albo limit z resetem dalej niż 10 minut, ten run nie przełączył jeszcze tego seat-a automatycznie, a halt zna rewizję config.yaml. Każde przełączenie ląduje w seatSwitches.
 
-Krótki reset (do 10 minut) nie tworzy halt-u na BUILD i w konsultacjach: wywołanie czeka w miejscu (state.seatWait) i powtarza się raz. PLAN i werdykt REVIEW nie mają tego czekania: ich błąd od razu jest haltem, a czekanie oferuje dopiero akcja Retry at HH:MM.
+Krótki reset (do 10 minut) nie tworzy halt-u na BUILD i w konsultacjach: wywołanie czeka w miejscu (state.seatWait) i powtarza się raz. PLAN i werdykt REVIEW nie mają tego czekania: ich błąd od razu jest haltem, a czekanie oferuje dopiero akcja Retry at HH:MM. Czekanie zapisuje narzędzie, które trafiło limit (\`tool\`, \`kind\`), i seat, który trzyma (\`holds\`). Gdy następne wejście uruchamia ten seat na innym narzędziu, czekanie znika i nowe narzędzie rusza od razu.
+
+Odmowę konta, którą narzędzie CLI pisze tylko na stderr (np. Cursor: \`<model> is not included in your weekly usage\`), czyta pełny klasyfikator. Seat staje jako Seat down przy pierwszym odrzuconym wywołaniu, bez retry briefu i bez konsultacji. Prompt większy niż linia poleceń narzędzia (\`argv-prompt-too-large\`) też halt-uje od razu: na BUILD jako \`context-overflow\`, na PLAN i REVIEW jako \`planner-call-failed\`, z ofertą zmiany narzędzia i bez Try again.
 
 Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners; pętla briefów i drabina eskalacji → zobacz build; werdykt i fix-loop → zobacz review; status runu, park i wznowienie → zobacz lifecycle; panel, picker, Settings › Fallback → zobacz ui.`,
   entry: [
@@ -195,8 +197,9 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
   alt użytkownik wybiera Retry at 15:27
     U->>RD: l
     RD->>AC: retry-later
-    AC->>ST: SET_SEAT_WAIT build 15:27 · RESOLVE_PENDING_RECOVERY
+    AC->>ST: SET_SEAT_WAIT build 15:27, tool codex, holds = BUILD z configu · RESOLVE_PENDING_RECOVERY
     RD->>RD: run wchodzi ponownie, init.ts resumeSeatWait śpi do 15:27 (bez limitu 10 min)
+    RD->>RD: gdy przed ⏎ BUILD zapisano na innym narzędziu, czekanie znika i nowe narzędzie rusza od razu
   else użytkownik wybiera switch BUILD
     U->>RD: w
     RD->>U: otwiera picker BUILD na claude-code (model, effort do wyboru)
@@ -229,9 +232,9 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
   RC_ACTION -->|"retry-same-worker"| RC_SEAT_LEVEL_RETRY{"isSeatLevelRetry:<br/>brak taskId i seat plan/review?"}
   RC_SEAT_LEVEL_RETRY -->|"tak"| RS1["RESOLVE (+ ENQUEUE_USER_MSG z korektą)<br/>ten sam krok: plan / werdykt"]
   RC_SEAT_LEVEL_RETRY -->|"nie"| RT["RESET_TASK (status pending, attempt 0)<br/>+ korekta briefu · retry-current-task"]
-  RC_ACTION -->|"retry-later"| RC_RETRY_LATER_OK{"issue.resetAt i issue.seat znane?"}
+  RC_ACTION -->|"retry-later"| RC_RETRY_LATER_OK{"issue.resetAt, issue.seat<br/>i config następnego wejścia znane?"}
   RC_RETRY_LATER_OK -->|"nie"| BLK
-  RC_RETRY_LATER_OK -->|"tak"| SWT["SET_SEAT_WAIT · RESOLVE<br/>init.ts czeka do resetu, potem krok"]
+  RC_RETRY_LATER_OK -->|"tak"| SWT["SET_SEAT_WAIT (holds = seat z configu<br/>następnego wejścia) · RESOLVE<br/>init.ts czeka do resetu, potem krok"]
   RC_ACTION -->|"switch-seat"| SWS["diagram rc-switch-commit<br/>(TUI: najpierw picker seat-a)"]
   RC_ACTION -->|"skip-current-task"| SK["evidence: skipped · skipHaltedBrief<br/>przywraca pliki · RESOLVE → następny brief"]
   RC_ACTION -->|"revise"| RV["reason == review-failed?"]
@@ -311,7 +314,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
   DRV --> RC_TUI_AUTO{"issue.switchSeat.auto?<br/>albo status applying + selectedAction?"}
   RC_TUI_AUTO -->|"auto"| SW["switchSeat = fallback<br/>→ applyOfferedSeatSwap, bez panelu"]
   RC_TUI_AUTO -->|"applying"| RP["odegraj selectedAction<br/>ze słowami wejścia jako notatką"]
-  RC_TUI_AUTO -->|"nie"| OPEN["recoveryNoticeStore.open<br/>nagłówek: zegar resetu przy seat<br/>recovery_prompted"]
+  RC_TUI_AUTO -->|"nie"| OPEN["recoveryNoticeStore.open<br/>nagłówek: zegar resetu przy seat, tylko gdy<br/>ma narzędzie i model z halt-u · recovery_prompted"]
   OPEN --> MENU["RecoveryMenu: Needs you · cause / Seat down · cause<br/>wiersze akcji, recommended, Tab = composer"]
   MENU --> RC_TUI_ANSWER{"Odpowiedź: klawisz,<br/>pusty ⏎ czy tekst?"}
   RC_TUI_ANSWER -->|"pusty ⏎"| REC["akcja rekomendowana"]
@@ -328,9 +331,12 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
   APPLY -->|"closed"| CLOSED["Run ended · finalizeEndedRun"]
   APPLY -->|"continued / retry-current-task"| RUN["runWorkflow na zwróconym stanie<br/>steer = korekta"]
   RUN --> RC_RESUME_SEAT_WAIT{"state.seatWait<br/>(po Retry at lub stopie w czekaniu)?"}
-  RC_RESUME_SEAT_WAIT -->|"deadline w przyszłości"| WAIT["resumeSeatWait śpi do resetu"]
+  RC_RESUME_SEAT_WAIT -->|"deadline w przyszłości"| RC_SEAT_WAIT_HELD{"config wejścia uruchamia seat<br/>na narzędziu z holds albo na tym,<br/>które trafiło limit?"}
+  RC_SEAT_WAIT_HELD -->|"tak (lub stary wait bez holds)"| WAIT["resumeSeatWait śpi do resetu"]
+  RC_SEAT_WAIT_HELD -->|"nie: seat przeniesiony"| CLR["CLEAR_SEAT_WAIT: nowe narzędzie rusza od razu"]
   RC_RESUME_SEAT_WAIT -->|"minął / brak"| GO["krok rusza"]
-  WAIT --> GO`,
+  WAIT --> GO
+  CLR --> GO`,
     },
   ],
   decisions: [
@@ -342,7 +348,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       inputs: ["seat (plan/build/review)", "rodzaj wywołania: brief, konsultacja, krok planowania, werdykt"],
       branches: [
         { if: "wywołanie implementera (pierwsza próba `run-implementation.ts:286` lub próba drabiny `make-implementer-retry-invoker.ts:125`)", then: "przechodzi przez `runSeatCall`: retry transient ×3, czekanie na reset ≤ 10 min; porażka wraca jako `implResult.outcome`", next: "RC_IMPL_OUTCOME" },
-        { if: "konsultacja PLAN lub REVIEW (`consult/request.ts:339`)", then: "też przez `runSeatCall`; wyjątek jest rzucany dalej i ląduje w `task/retry.ts:171`", next: "RC_PLANNER_DIAGNOSIS" },
+        { if: "konsultacja PLAN lub REVIEW (`consult/request.ts:367`)", then: "też przez `runSeatCall`; wyjątek jest rzucany dalej i ląduje w `task/retry.ts:171`", next: "RC_PLANNER_DIAGNOSIS" },
         { if: "krok sesji planowania rzuca (`planning/session.ts:513`, `:771`)", then: "`handlePlanningFailure` bez żadnego retry i bez czekania", next: "RC_PLANNER_DIAGNOSIS" },
         { if: "wywołanie werdyktu rzuca (`final-review.ts:970`)", then: "catch klasyfikuje porażkę na `FinalReviewFailure`, potem `haltVerdictlessReview`", next: "RC_REVIEW_FAILURE_KIND" },
       ],
@@ -365,16 +371,16 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       title: "Odmowa konta: auth, quota, balance, billing",
       question: "Czy słowa albo status HTTP mówią, że konto nie obsłuży wywołania?",
       where: "src/engine/runners/seat-failure.ts:135",
-      inputs: ["status HTTP", "frazy `HALT_SIGNATURES.auth` / `ACCOUNT_PHRASES`", "`providerType`", "źródło słów (stderr-tail / stdout-tail matchują tylko frazy haltu)"],
+      inputs: ["status HTTP", "frazy `HALT_SIGNATURES.auth` / `ACCOUNT_PHRASES`", "`providerType`", "źródło słów: `stdout-tail` (ostatnia linia stdout) matchuje tylko frazy haltu; `stderr` (cała diagnostyka nieudanego wywołania CLI) idzie przez pełny klasyfikator"],
       branches: [
         { if: "status 402", then: "`account · balance`", next: "RC_HALT_OF" },
         { if: "status 401 lub 403, albo fraza auth (`please run /login`, `401 unauthorized`, `not logged in`…)", then: "`account · auth` → reason `runner-unauthenticated`", next: "RC_HALT_OF" },
-        { if: "fraza z `ACCOUNT_PHRASES` (`insufficient balance`, `payment required`, `billing_hard_limit`, `account suspended`…)", then: "`account · balance|billing`", next: "RC_HALT_OF" },
+        { if: "fraza z `ACCOUNT_PHRASES` (`insufficient balance`, `not included in your weekly usage` (Cursor), `payment required`, `billing_hard_limit`, `account suspended`…)", then: "`account · balance|billing`", next: "RC_HALT_OF" },
         { if: "limit z parsowalnym resetem", then: "to NIE jest konto: zwraca null, dalej klasa rate-limited", next: "RC_RATE_LIMITED" },
         { if: "fraza wyczerpania (`usage limit`, `quota exceeded`, `exhausted your`…) bez resetu, status 429 albo `providerType provider.quota`", then: "`account · quota` → reason `runner-usage-limit`, `facts.cause = quota`", next: "RC_HALT_OF" },
       ],
       default: "Brak przyczyny konta.",
-      notes: "Limit odczytany ze słów bez godziny resetu jest `quota`, czyli odmową konta: kwalifikuje się do automatycznego fallbacku nawet gdy prawdziwy reset jest za chwilę. Logowanie nigdy nie jest doradzane przy limicie (`usageLimitAdvice`).",
+      notes: "Limit odczytany ze słów bez godziny resetu jest `quota`, czyli odmową konta: kwalifikuje się do automatycznego fallbacku nawet gdy prawdziwy reset jest za chwilę. Logowanie nigdy nie jest doradzane przy limicie (`usageLimitAdvice`). Nieudane wywołanie CLI bez frazy haltu: `haltFailure` (`process-invoke.ts:820`) daje całe stderr klasyfikatorowi ze źródłem `stderr`; `account` daje kod `unauthenticated` albo `usage-limit`, `rate-limited` daje `usage-limit`, a halt cytuje całą diagnostykę. Dzięki temu taka odmowa jest Seat down przy pierwszym wywołaniu na każdym seacie.",
     },
     {
       id: "RC_RATE_LIMITED",
@@ -423,7 +429,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       branches: [
         { if: "klasa != rate-limited albo reset nieparsowalny", then: "bez czekania; porażka wraca do wywołującego, który buduje halt", next: "RC_IMPL_OUTCOME" },
         { if: "reset ≤ 0 ms albo > 10 min", then: "bez czekania; halt (z fallbackiem: intencja automatyczna, bo reset > 10 min)", next: "RC_AUTO_SWITCHABLE" },
-        { if: "0 < reset ≤ 10 min", then: "`waitForSeatReset`: `SET_SEAT_WAIT`, `seat_wait_started`, sen do deadline, `CLEAR_SEAT_WAIT`, potem TA SAMA próba jeszcze raz (jedna powtórka)", next: "RC_RESUME_SEAT_WAIT" },
+        { if: "0 < reset ≤ 10 min", then: "`waitForSeatReset`: `SET_SEAT_WAIT {seat, resetAt, tool, kind, holds}` (narzędzie wywołania i seat, który czekanie trzyma, z profilem BUILD), `seat_wait_started`, sen do deadline, `CLEAR_SEAT_WAIT`, potem TA SAMA próba jeszcze raz (jedna powtórka)", next: "RC_RESUME_SEAT_WAIT" },
       ],
       default: "Po jednym czekaniu drugi limit nie czeka: `runSeatCall` zwraca porażkę i powstaje halt.",
       notes: "Dotyczy tylko `runSeatCall` (BUILD, konsultacje). Czekanie nie jest widoczne jako halt: status runu to `running`, w transkrypcie jest wiersz `seat_wait_started`.",
@@ -433,13 +439,27 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       title: "Czekanie przeżywa stop runu",
       question: "Co z `state.seatWait`, gdy run został zatrzymany w trakcie czekania?",
       where: "src/engine/orchestrator/run/init.ts:334",
-      inputs: ["`savedState.seatWait`", "`savedState.pendingRecovery`", "zegar"],
+      inputs: ["`savedState.seatWait` (seat, resetAt, tool, kind, holds)", "`savedState.pendingRecovery`", "config tego wejścia", "zegar"],
       branches: [
-        { if: "abort w trakcie `abortableDelay`", then: "`seatWait` zostaje w state.json; `deriveRunStatus` daje `stopped · seat-wait`, byline `Waiting for <tool> · resets HH:MM` (`run-status.ts:210`, `closed/byline.ts:271`)" },
-        { if: "wznowienie, brak pendingRecovery, `seatWait` ustawiony, deadline w przyszłości", then: "`resumeSeatWait` czeka resztę czasu, potem krok rusza (`seat-wait.ts:120`)" },
+        { if: "abort w trakcie `abortableDelay`", then: "`seatWait` zostaje w state.json; `deriveRunStatus` daje `stopped · seat-wait`, byline `Waiting for <tool> · resets HH:MM`; `<tool>` to pełna nazwa z katalogu narzędzia, które trafiło limit (`wait.tool`), np. `OpenAI Codex CLI`; stary wait bez `tool` bierze narzędzie seat-a ze startu runu (`run-status.ts:159`)" },
+        { if: "wznowienie, brak pendingRecovery, `seatWait` ustawiony, deadline w przyszłości", then: "sprawdza, czy seat nadal biegnie na narzędziu z czekania", next: "RC_SEAT_WAIT_HELD" },
         { if: "deadline już minął albo nieparsowalny", then: "`CLEAR_SEAT_WAIT` i krok rusza od razu" },
       ],
       default: "Bez `seatWait` nic się nie dzieje.",
+    },
+    {
+      id: "RC_SEAT_WAIT_HELD",
+      title: "Czekanie znika, gdy seat przeszedł na inne narzędzie",
+      question: "Czy config tego wejścia uruchamia czekający seat na narzędziu, na które czekanie czeka?",
+      where: "src/engine/orchestrator/escalation/seat-wait.ts:179",
+      inputs: ["`wait.holds` {tool, kind, profile?}", "`wait.tool` / `wait.kind` (narzędzie, które trafiło limit)", "`configuredHeldSeat(config, seat, holds.profile)`: BUILD z profilu z czekania, REVIEW bez bloku `reviewer` czyta PLAN"],
+      branches: [
+        { if: "`holds` brak (stan zapisany przed tą zmianą)", then: "czeka jak dawniej: `waitForSeatReset` do deadline" },
+        { if: "seat z configu ma narzędzie i kind z `holds` albo z `wait.tool`/`wait.kind` (kind brak = dowolny)", then: "czeka resztę czasu, potem krok rusza (`seat-wait.ts:183`); zmiana samego modelu na tym samym narzędziu też czeka" },
+        { if: "inne narzędzie albo profil BUILD, którego config już nie ma", then: "`moved`: `CLEAR_SEAT_WAIT` i krok rusza od razu na nowym narzędziu" },
+      ],
+      default: "Narzędzie porównuje `getRunnerDisplayName` (id narzędzia CLI, provider api, `shell`, `agent`) i `kind`.",
+      notes: "Czekanie z `runSeatCall` trzyma runner wywołania i jego profil. `retry-later` trzyma seat z configu, na którym run naprawdę ruszy (`nextEntryConfig`, `entry-config.ts:27`: plik plus flagi seatów tej sesji), więc seat zapisany przed Retry at dalej czeka, a zmiana po nim czekanie zdejmuje. Run loop i recovery-driver czytają ten config jedną funkcją.",
     },
     {
       id: "RC_IMPL_OUTCOME",
@@ -453,6 +473,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
         { if: "outcome `unauthenticated`", then: "`buildSeatDownIssue` class account·auth → `runner-unauthenticated`; `INTERRUPT_STEP source: seat cut: mid-step`; workspace zachowany", next: "RC_FALLBACK_DECLARED" },
         { if: "outcome `usage-limit`", then: "`classifySeatFailure(outcome usage-limit)` → `buildSeatDownIssue` → `runner-usage-limit`; `INTERRUPT_STEP source: seat`; wiersz błędu z `resetAt`", next: "RC_FALLBACK_DECLARED" },
         { if: "outcome w `RUNNER_DEFECT_BUILDERS` (`implementer-recipe-invalid`, `implementer-left-isolation`, `checkout-changed`, `missing-model`, `runner-timeout-repeated`, `input-too-large`)", then: "builder defektu; `missing-model` sprawdza trasę (`seatRouteRefusal`)", next: "RC_MODEL_REFUSAL_ROUTE" },
+        { if: "outcome `input-too-large`: narzędzie odrzuciło prompt (Codex `input_too_large`, Claude Code `Prompt is too long`) albo SPLITBRIEF przed startem odmówił promptu dłuższego niż linia poleceń narzędzia (`argv-prompt-too-large` → `input-too-large`, `call-result.ts:93`)", then: "`buildRunnerInputTooLargeRecoveryIssue` (`builders/task.ts:952`): `context-overflow` · Seat down, tytuł `Prompt too large for <tool> on T001`, pierwszy detal rozmiar i limit gdy znane (`The prompt is 195,203 bytes; OpenCode CLI takes at most 120,000 on its command line.`); akcje `switch-seat` (gdy oferta, fallback pierwszy), `skip-current-task`, `end-run`; bez retry i bez konsultacji" },
       ],
       default: "`retryAndRecord`: drabina eskalacji (→ zobacz build). Drabina sama halt-uje na seat-down między szczeblami (`handle.ts:193`).",
       notes: "Przy `usage-limit`/`unauthenticated` `run-implementation.ts:324` wywołuje `workspace.retain`, by wznowiona próba czytała częściowe edycje.",
@@ -479,7 +500,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       inputs: ["kod typowanego błędu (`missing-model`, `input-too-large`, `timeout`)", "`thrownSeatFailure(err)`: słowa i klasyfikacja", "runner seat-a"],
       branches: [
         { if: "kod `missing-model`", then: "failure `missing-model`; halt pyta listing poświadczeń trasy, czy to sign-out czy zły model", next: "RC_MODEL_REFUSAL_ROUTE" },
-        { if: "kod `input-too-large`", then: "failure `input-too-large`: retry wysłałby ten sam prompt, więc Try again nieoferowane", next: "RC_PLANNER_BUILDER" },
+        { if: "kod `input-too-large` albo `argv-prompt-too-large` (prompt dłuższy niż linia poleceń narzędzia; SPLITBRIEF odmawia przed startem, więc nie ma słów narzędzia)", then: "failure `input-too-large`: retry wysłałby ten sam prompt, więc Try again nieoferowane; detal `The prompt is 186,486 bytes; OpenCode CLI takes at most 120,000 on its command line.` (`inputTooLargeDetail`)", next: "RC_PLANNER_BUILDER" },
         { if: "klasa `rate-limited` albo `account` z cause != auth", then: "failure `usage-limit`, `resetsAt` z klasyfikacji, porada `usageLimitAdvice` (nigdy login)", next: "RC_PLANNER_BUILDER" },
         { if: "klasa `account · auth`", then: "failure `unauthenticated` z `runnerLoginInstruction` (np. `codex login`)", next: "RC_PLANNER_BUILDER" },
       ],
@@ -510,6 +531,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
         { if: "odpowiedź poza kontraktem po powtórce", then: "`seat-protocol-error` (Seat down): retry, switch-seat (gdy oferta), end-run (`builders/seat-protocol.ts:24`)" },
         { if: "`insufficient-context` (pakiet nie wysłany)", then: "`review-failed` bez werdyktu na seat `review`: retry, end-run; detail „Pick a review seat with a larger context in /crew review”" },
         { if: "diagnoza `usage-limit` / `unauthenticated`", then: "`seat-blocked` → `plannerCallHaltIssue(seat review)` → Seat down z fallbackiem REVIEW (lub PLAN, gdy brak bloku `reviewer`)", next: "RC_FALLBACK_DECLARED" },
+        { if: "kod `argv-prompt-too-large` (prompt werdyktu dłuższy niż linia poleceń narzędzia)", then: "nie jest `input-too-large` werdyktu: diagnoza `input-too-large` → `seat-blocked` → `planner-call-failed` na seat review: bez Try again, `switch-seat` gdy oferta (rekomendowane), `end-run`", next: "RC_PLANNER_BUILDER" },
         { if: "diagnoza `call-failed`", then: "`review-failed` bez werdyktu (`reviewFailureKind: call-failed`): Try again with REVIEW, end-run" },
       ],
       default: "Werdykt z blokerami to nie błąd wywołania: `review-failed` z `revise`/`accept-as-is` (→ zobacz review).",
@@ -538,7 +560,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
         { if: "każdy inny reason (`review-failed`, `retry-exhausted`, `consult-bound-spent`, `planner-calls-spent`, `dependency-blocked`, `checkout-changed`, `review-input-too-large`, `required-checks-unrunnable`, `approval-denied`, `snapshot-failed`, `plan-questions-exhausted`, `plan-checks-failed`, `apply-conflict`, `apply-partial`, reasons retired)", then: "`needs-you` → `Needs you · <cause>`; dozwolone: continue, retry-same-worker, revise, accept-as-is, restore-backup, skip-current-task, end-run", next: "RC_ACTION_ALLOWED" },
       ],
       default: "Tabela jest wyczerpująca (`satisfies Record<RecoveryReason, RecoveryHalt>`); kod reason zostaje w issue, zdarzeniu i logu, tytuł jest tylko dla człowieka.",
-      notes: "Cause w tytule to `formatRecoveryHeadlineSpans` (`headline.ts:104`), np. `Usage limit on OpenAI Codex CLI · resets 15:27`, `Signed out of Claude Code`, `Quota spent on …`, `Planner call failed`, `Seat answer did not match its contract`.",
+      notes: "Cause w tytule to `formatRecoveryHeadlineSpans` (`headline.ts:104`), np. `Usage limit on OpenAI Codex CLI · resets 15:27`, `Signed out of Claude Code`, `Quota spent on …`, `Planner call failed`, `Seat answer did not match its contract`, `Prompt too large for OpenCode CLI on T001`. Liczbę mówi raz: dwa timeouty z rzędu czytają się `Seat down · Two timeouts in a row on T003` (`recovery-prompt.ts:571`). Narzędzie zawsze ma pełną nazwę z katalogu (`getRunnerCatalogDisplayName`).",
     },
     {
       id: "RC_CONFIG_LOADS",
@@ -755,10 +777,11 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       title: "Retry at HH:MM: czekanie bez limitu 10 minut",
       question: "Czy halt zna reset i seat, by zaparkować czekanie?",
       where: "src/engine/orchestrator/recovery/actions.ts:928",
-      inputs: ["`issue.resetAt`", "`issue.seat`"],
+      inputs: ["`issue.resetAt`", "`issue.seat`", "`opts.entryConfig`: config następnego wejścia (`nextEntryConfig`, recovery-driver)", "`haltedSeatIds`: narzędzie, na którym biegło wywołanie halt-u"],
       branches: [
         { if: "brak `resetAt` lub `seat`", then: "`blocked · action-not-available` („needs the reset the halt names”)" },
-        { if: "oba znane", then: "`SET_SEAT_WAIT {seat, resetAt}` i `RESOLVE_PENDING_RECOVERY`; run wchodzi ponownie, `init.ts:330 resumeSeatWait` śpi do resetu, choćby to było 5 godzin, potem krok rusza", next: "RC_RESUME_SEAT_WAIT" },
+        { if: "brak `entryConfig`", then: "`blocked · action-not-available` („needs the config the run continues on”, `actions.ts:945`)" },
+        { if: "wszystko znane", then: "`SET_SEAT_WAIT {seat, resetAt, tool, kind, holds}`: `tool`/`kind` z wywołania halt-u, `holds` = seat z `entryConfig` (BUILD: profil z halt-u); `RESOLVE_PENDING_RECOVERY`; run wchodzi ponownie, `init.ts:335 resumeSeatWait` śpi do resetu, choćby to było 5 godzin, potem krok rusza", next: "RC_RESUME_SEAT_WAIT" },
       ],
       default: "Czekanie wybrane przez operatora nie ma granicy `rateLimitResetWaitMs`; granica dotyczy tylko czekania automatycznego.",
     },
@@ -802,7 +825,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       inputs: ["`preparation.kind`", "`signal.aborted`"],
       branches: [
         { if: "`aborted` lub sygnał przerwany po przygotowaniu", then: "`unswitched · aborted`: nic nie zapisane, halt z intencją zostaje; stop raportuje ścieżka stopu" },
-        { if: "`failed` / nie `prepared`", then: "`unswitched · unadmitted`: warning `The build seat was not switched to 'x': preparing it failed: …; the halt stays.`" },
+        { if: "`failed` / nie `prepared`", then: "`unswitched · unadmitted`: warning `The build seat was not switched to OpenCode CLI: preparing it failed: …; the halt stays.` (narzędzie nazwane pełną nazwą z katalogu, nie id z configu)" },
         { if: "`prepared`", then: "zapis jednego seat-a", next: "RC_REVISION_MATCH" },
       ],
       default: "Seat, który padł, nie jest ponownie admitowany: przełączenie jest jedyną preparacją tego wejścia, więc narzędzie bez limitu nie blokuje ucieczki od siebie.",
@@ -931,7 +954,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
     { name: "pendingRecovery (status applying, selectedAction)", meaning: "Akcja wybrana, zapis stanu w toku; przy ponownym wejściu driver odgrywa `selectedAction` bez pytania.", where: "src/core/state/machine.ts:281" },
     { name: "pendingRecovery.switchSeat.auto", meaning: "Intencja automatycznego fallbacku {candidate, configRevision}; TUI i headless wykonują ją przed panelem.", where: "src/core/schemas/recovery/schemas.ts:34" },
     { name: "interruptedStep (source: seat, cut: mid-step)", meaning: "Brief ucięty przez seat-down; workspace zachowany; switch wznawia tę samą próbę.", where: "src/engine/orchestrator/task/implementation-failure.ts:101" },
-    { name: "seatWait {seat, resetAt}", meaning: "Run czeka na reset (auto ≤ 10 min lub Retry at). Proces żywy: `running`; zatrzymany: `stopped · seat-wait`, byline `Waiting for <tool> · resets HH:MM`.", where: "src/core/schemas/workflow.ts:294" },
+    { name: "seatWait {seat, resetAt, tool?, kind?, holds?}", meaning: "Run czeka na reset (auto ≤ 10 min lub Retry at). `tool`/`kind`: narzędzie, które trafiło limit; `holds`: seat, który czekanie trzyma. Proces żywy: `running`; zatrzymany: `stopped · seat-wait`, byline `Waiting for <pełna nazwa narzędzia> · resets HH:MM`. Wejście na innym narzędziu zdejmuje czekanie.", where: "src/core/schemas/workflow.ts:294" },
     { name: "seatSwitches[]", meaning: "Każde przełączenie seat-a: seat, from, to, cause, accountCause?, headline, auto, configRevision, ts. Wpis `auto: true` blokuje drugą intencję dla tego seat-a w runie.", where: "src/core/schemas/workflow.ts:307" },
     { name: "retryProfile {taskId, profile}", meaning: "Brief przypięty do profilu BUILD po Retry/switch, aż przejdzie lub zostanie pominięty.", where: "src/core/state/machine.ts:300" },
     { name: "halt `needs-you`", meaning: "Decyzja tylko człowieka: wyczerpane bound-y, failed review po limicie cykli, chroniona ścieżka, konflikt Apply.", where: "src/core/recovery/halt.ts:14" },
@@ -970,7 +993,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
         "1. Jak wyżej do kroku 4, ale `loadSeatSwapContext`: `no fallback set`; detekcja pamięta claude-code ready → oferta [claude-code].",
         "2. Akcje: `retry-same-worker`, `switch-seat`, `retry-later` (jest resetAt), `skip-current-task`, `end-run`; recommended `switch-seat`.",
         "3. Panel: `Seat down · Usage limit on OpenAI Codex CLI · resets 15:27`; wiersze `[r] Try again`, `[w] switch BUILD to claude-code · restarts this brief` (recommended), `[l] Retry at 15:27`, `[s] Skip task`, `[a] End run`; nagłówek workflow dopisuje zegar resetu przy BUILD.",
-        "4. Użytkownik wybiera `l`: `applyRetryLaterRecoveryAction` → `SET_SEAT_WAIT build 15:27`, `RESOLVE`.",
+        "4. Użytkownik wybiera `l`: `applyRetryLaterRecoveryAction` → `SET_SEAT_WAIT {build, 15:27, tool codex, holds: BUILD z configu następnego wejścia}`, `RESOLVE`.",
         "5. Run wchodzi ponownie; `init.ts:330 resumeSeatWait` śpi do 15:27 (bez granicy 10 min); status `running`; stop w trakcie → `stopped · Waiting for OpenAI Codex CLI · resets 15:27`, ⏎ wznawia i czeka resztę.",
         "6. Po resecie brief startuje; `restoreUnresumedBriefCut` przywraca park, więc kontynuuje od ciętej próby.",
       ],
@@ -1022,7 +1045,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
         "1. Reviewer odpowiada poza schematem dwa razy (`error.data.attempts`); `final-review.ts:842` ustawia `seat-protocol-error`.",
         "2. `haltVerdictlessReview` → `haltProtocolError` → `seatProtocolHaltIssue`: seat `review`, `loadSeatSwapContext(review, runner reviewer ?? planner)`.",
         "3. `buildSeatProtocolErrorRecoveryIssue`: akcje `retry-same-worker`, `switch-seat` (gdy oferta), `end-run`; recommended pierwsza = retry; brak intencji auto (to nie `buildSeatDownIssue`).",
-        "4. Panel: `Seat down · Seat answer did not match its contract`, detale z błędami parsera; `[r] Try again with REVIEW · runs the review again`.",
+        "4. Wiersz błędu w transkrypcie wymienia każdy błąd kontraktu (ścieżka pola: komunikat Zod). Panel: `Seat down · Seat answer did not match its contract`, jeden błąd na linię faktów (linia zawinięta nie jest cięta w połowie); `[r] Try again with REVIEW · runs the review again`.",
         "5. Try again: `resolveSeatIssueWithoutTask` → `RESOLVE`; run wraca do final-review i woła werdykt ponownie bez powtarzania gate-ów.",
       ],
       outcome: "Błąd protokołu to Seat down bez automatycznego fallbacku; człowiek wybiera retry lub zmianę narzędzia.",
@@ -1070,6 +1093,37 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       ],
       outcome: "REVIEW dostaje własny blok; PLAN zostaje na starym narzędziu i zachowuje własny licznik auto.",
     },
+    {
+      title: "Retry at 15:27, potem zmiana narzędzia BUILD w Settings i ⏎",
+      steps: [
+        "1. Panel Seat down bez fallbacku; użytkownik wybiera `[l] Retry at 15:27`. `nextEntryConfig` czyta config, na którym run ruszy (codex): `SET_SEAT_WAIT {build, 15:27, tool codex, holds codex}`.",
+        "2. Użytkownik zatrzymuje run (esc esc): status `stopped · Waiting for OpenAI Codex CLI · resets 15:27`.",
+        "3. W Settings › Crew zmienia BUILD na claude-code i naciska ⏎ o 13:10.",
+        "4. `init.ts:335 resumeSeatWait`: deadline w przyszłości, ale `configuredHeldSeat` daje claude-code, a ani `holds`, ani `wait.tool` to nie claude-code → `CLEAR_SEAT_WAIT`.",
+        "5. Brief rusza od razu na claude-code. Wariant: zmiana tylko modelu codex albo zapis claude-code przed wyborem Retry at → czekanie zostaje.",
+      ],
+      outcome: "Run nie czeka na reset narzędzia, którego już nie używa.",
+    },
+    {
+      title: "Cursor odmawia modelu na stderr (weekly usage)",
+      steps: [
+        "1. Cursor kończy wywołanie BUILD exit 1 ze stderr `claude-4-opus is not included in your weekly usage. Buy credits or switch to a … model`.",
+        "2. `haltFailure`: żadna fraza `HALT_SIGNATURES`; `classifySeatFailure({source: stderr})` znajduje `not included in your weekly usage` → `account · balance` → kod `usage-limit`, wiadomość = całe stderr.",
+        "3. `implementation-failure.ts`: outcome `usage-limit` → `buildSeatDownIssue` przy pierwszej próbie, bez retry i bez konsultacji; halt cytuje całą wiadomość narzędzia.",
+        "4. Z `implementer.fallback`: intencja auto (konto zawsze switchable) → przełączenie bez pytania. Bez fallbacku: panel Seat down.",
+      ],
+      outcome: "Odmowa konta na stderr działa jak każda odmowa konta: Seat down na każdym seacie, a planner nie dostaje pytania o kupno kredytów.",
+    },
+    {
+      title: "Prompt BUILD większy niż linia poleceń OpenCode",
+      steps: [
+        "1. `preparePrompt`: transport argv, prompt 195 203 bajtów > 120 000 → `argvPromptTooLarge` (kod `argv-prompt-too-large`), narzędzie nie startuje.",
+        "2. `call-result.ts:93`: kod → outcome `input-too-large` (autorytatywny, bez retry).",
+        "3. `buildRunnerInputTooLargeRecoveryIssue`: `Seat down · Prompt too large for OpenCode CLI on T001`, detal `The prompt is 195,203 bytes; OpenCode CLI takes at most 120,000 on its command line.`, `A retry sends the same prompt.`",
+        "4. Akcje: `switch-seat` (fallback pierwszy, rekomendowany), `skip-current-task`, `end-run`. Na PLAN i REVIEW ten sam przypadek daje `planner-call-failed` bez Try again.",
+      ],
+      outcome: "Run nie powtarza promptu, który i tak nie wejdzie; wybierasz inne narzędzie, pomijasz brief albo kończysz run.",
+    },
   ],
   files: [
     { path: "src/core/recovery/halt.ts", role: "`REASON_HALT`, `haltOf`, `allowedActionsForHalt`, `recoveryHaltLabel` (Needs you / Seat down)" },
@@ -1084,7 +1138,9 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
     { path: "src/engine/runners/seat-failure.ts", role: "`classifySeatFailure`: authoritative → account → rate-limited → transient → other" },
     { path: "src/engine/runners/usage-limit.ts", role: "`parseUsageLimitReset`, `isUsageLimitDiagnostic`, `usageLimitAdvice`" },
     { path: "src/engine/runners/transient.ts", role: "`withSeatRetry` (3 powtórki, 2s/4s/8s), `abortableDelay`" },
-    { path: "src/engine/orchestrator/escalation/seat-wait.ts", role: "`runSeatCall`, `seatResetWaitDeadline` (≤ 10 min), `waitForSeatReset`, `resumeSeatWait`" },
+    { path: "src/engine/orchestrator/escalation/seat-wait.ts", role: "`runSeatCall`, `seatResetWaitDeadline` (≤ 10 min), `waitForSeatReset`, `resumeSeatWait`, `configuredHeldSeat` (czy seat przeszedł na inne narzędzie)" },
+    { path: "src/features/workflow/entry-config.ts", role: "`nextEntryConfig`: config następnego wejścia (plik plus flagi seatów sesji); run loop i `retry-later` czytają go jedną funkcją" },
+    { path: "src/engine/runners/input-limit.ts", role: "`argvPromptTooLarge`, `inputTooLargeFigures` (bajty linii poleceń albo znaki narzędzia)" },
     { path: "src/engine/orchestrator/task/implementation-failure.ts", role: "pierwsza porażka implementera → seat-down / defekt / drabina" },
     { path: "src/engine/orchestrator/escalation/handle.ts", role: "`seatDownHalt`, `runnerDefectHalt`, `consultBoundHalt`, halt `pre_escalation`" },
     { path: "src/engine/orchestrator/task/retry.ts", role: "nieudana konsultacja → halt na seat plan/review z briefem" },
@@ -1114,7 +1170,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
     { path: "src/core/sessions/run-status.ts", role: "`pendingRecovery` → waiting-for-you · halt; `seatWait` → stopped · seat-wait" },
   ],
   gotchas: [
-    "Cicha drabina (3 powtórki transient, czekanie na reset ≤ 10 min) obejmuje tylko wywołania przez `runSeatCall`: implementer (pierwsza próba i próby drabiny) oraz konsultacje. Sesja planowania i wywołanie werdyktu REVIEW nie mają jej: błąd transportu lub krótki limit na PLAN/REVIEW jest od razu haltem. WORKFLOW.md:532 mówi ogólnie o „seat call”; APPROVAL-AND-RECOVERY.md (sekcja Every planner-tier call) opisuje to poprawnie tylko dla konsultacji.",
+    "Cicha drabina (3 powtórki transient, czekanie na reset ≤ 10 min) obejmuje tylko wywołania przez `runSeatCall`: implementer (pierwsza próba i próby drabiny) oraz konsultacje. Sesja planowania i wywołanie werdyktu REVIEW nie mają jej: błąd transportu lub krótki limit na PLAN/REVIEW jest od razu haltem. WORKFLOW.md:534 mówi ogólnie o „seat call”; APPROVAL-AND-RECOVERY.md (sekcja Every planner-tier call) opisuje to poprawnie tylko dla konsultacji.",
     "Granica 10 minut (`BOUNDS.rateLimitResetWaitMs`) dotyczy czekania automatycznego i progu intencji auto. `Retry at HH:MM` wybrane przez człowieka czeka bez granicy: `SET_SEAT_WAIT` z `issue.resetAt`, a `resumeSeatWait` śpi do końca, choćby 5 godzin.",
     "Automatyczny fallback podmienia role: po przełączeniu stary seat staje się fallbackiem nowego (`switchedRunner`, tylko dla starego seat-a `cli`). Licznik „raz na run i seat” liczy wpisy `auto: true` w `seatSwitches`; ręczne przełączenia i `crew-changed` go nie zużywają.",
     "Limit bez parsowalnej godziny resetu jest klasyfikowany jako `account · quota`, czyli jak odmowa konta: przełącza automatycznie nawet, gdy prawdziwy reset jest za 2 minuty. `Request rejected (429)` bez rzeczownika limitu jest transient i jest powtarzany.",
@@ -1128,5 +1184,12 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
     "Wiersz błędu w transkrypcie przy intencji auto jest cause-only (`runnerHaltRow`), a porada (`Wait for the limit to reset or change the BUILD tool`) zostaje tylko w issue; zegar resetu jest zdejmowany ze słów narzędzia (`stripRecoveryResetClause`) i pisany raz z `resetAt`.",
     "Przy `missing-model` na opencode te same słowa (`provider.no-route`) dają trzy różne halty zależnie od listingu poświadczeń odczytanego na świeżo: sign-out (Seat down z fallbackiem), `Model not listed` (picker modelu), `Model refused` (nic samo nie rusza).",
     "Zmiana seat-a w Settings, gdy run stoi na halcie, jest zapisywana przy wznowieniu jako `seat_switched cause: crew-changed, auto: false`, a zmiana PLAN kasuje `plannerSessionId`.",
+    "Zegar resetu w nagłówku stoi przy seacie tylko, gdy ten seat ma narzędzie i model, które trafiły limit (`recoveryNoticeStore.ranOn` z `haltedSeatIds`). Po zapisie innego narzędzia lub modelu, albo gdy limit trafił nazwany profil BUILD, zegar jest tylko w tytule halt-u.",
+    "Zmiana na main (2026-10): czekanie na reset (`seatWait`) zapisuje narzędzie i trzymany seat; kontynuacja na innym narzędziu zdejmuje czekanie i rusza od razu, a Retry at trzyma seat z configu następnego wejścia (42fb57f, 890d992).",
+    "Zmiana na main (2026-10): zegar resetu w nagłówku stoi tylko przy seacie z narzędziem i modelem, które trafiły limit (dc91b4f).",
+    "Zmiana na main (2026-10): odmowa konta tylko na stderr (np. Cursor `not included in your weekly usage`) to Seat down przy pierwszym wywołaniu na każdym seacie; konsultacja nie oferuje już wyborów, których odpowiedź nie wykona (zmiana narzędzia, kupno kredytów) (f307dcb).",
+    "Zmiana na main (2026-10): prompt dłuższy niż linia poleceń narzędzia halt-uje od razu: BUILD `Prompt too large for <tool> on T001` (context-overflow, switch-seat / skip / end), PLAN i REVIEW `planner-call-failed` bez Try again (afbb4ea).",
+    "Zmiana na main (2026-10): halt `seat-protocol-error` wymienia każdy błąd kontraktu, w panelu jeden na linię (cf71fe6); tytuł dwóch timeoutów liczy próby raz: `Two timeouts in a row on T003` (aad79db).",
+    "Zmiana na main (2026-10): komunikaty halt-ów i ostrzeżenia switcha nazywają narzędzie pełną nazwą z katalogu, np. `OpenAI Codex CLI`, nie id z configu (283c8e6).",
   ],
 });

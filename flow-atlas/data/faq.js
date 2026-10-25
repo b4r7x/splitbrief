@@ -3,8 +3,8 @@ window.ATLAS_FAQ.push(
   {
     id: 'limit',
     q: 'Co się dzieje, gdy walnie limit konta?',
-    a: 'Limit kończy się haltem `Seat down` na seacie, który go trafił, chyba że run może krótko poczekać. Na BUILD i w konsultacjach reset za nie więcej niż 10 minut daje ciche czekanie i jedną powtórkę tego samego wywołania. Na PLAN i REVIEW nie ma czekania: halt powstaje od razu, a panel oferuje `Retry at HH:MM`, gdy godzina resetu jest znana. Gdy seat deklaruje `fallback`, a limit to odmowa konta albo reset dalej niż 10 minut, seat przełącza się sam, raz na run i seat. Bez fallbacku run czeka na twój wybór: zmiana narzędzia, `Retry at`, Try again, Skip task albo End run. Reviewer checks i Apply nie wołają modelu, więc limit ich nie dotyczy.',
-    refs: ['JR_SEAT_CLASS', 'JR_SEAT_RUNG', 'JR_RESET_WAIT', 'JR_AUTO_SWITCH', 'RC_FAILURE_SOURCE', 'diagram:journey-seat-failure', 'area:recovery'],
+    a: 'Limit kończy się haltem `Seat down` na seacie, który go trafił, chyba że run może krótko poczekać. Na BUILD i w konsultacjach reset za nie więcej niż 10 minut daje ciche czekanie i jedną powtórkę tego samego wywołania. Na PLAN i REVIEW nie ma czekania: halt powstaje od razu, a panel oferuje `Retry at HH:MM`, gdy godzina resetu jest znana. Gdy seat deklaruje `fallback`, a limit to odmowa konta albo reset dalej niż 10 minut, seat przełącza się sam, raz na run i seat. Bez fallbacku run czeka na twój wybór: zmiana narzędzia, `Retry at`, Try again, Skip task albo End run; gdy przed kontynuacją przeniesiesz seat na inne narzędzie, run nie czeka na reset starego narzędzia i od razu startuje nowe. Odmowę konta, którą narzędzie wypisuje tylko na stderr (np. Cursor: `not included in your weekly usage`), SPLITBRIEF też czyta jako `Seat down` przy pierwszym wywołaniu. Reviewer checks i Apply nie wołają modelu, więc limit ich nie dotyczy.',
+    refs: ['JR_SEAT_CLASS', 'JR_SEAT_RUNG', 'JR_RESET_WAIT', 'JR_AUTO_SWITCH', 'RC_FAILURE_SOURCE', 'RC_SEAT_WAIT_HELD', 'RC_ACCOUNT_CAUSE', 'diagram:journey-seat-failure', 'area:recovery'],
     tags: ['limity', 'fallback']
   },
   {
@@ -17,8 +17,8 @@ window.ATLAS_FAQ.push(
   {
     id: 'limit-build',
     q: 'Co się dzieje, gdy limit trafi w build (brief)?',
-    a: 'Krótki limit (reset do 10 minut) build przeczekuje sam; dłuższy limit albo odmowa konta zatrzymuje brief na halcie `Seat down`. Przy krótkim resecie run czeka w miejscu i powtarza tę samą próbę raz; stop w trakcie czekania daje `stopped · seat-wait`, a ⏎ czeka resztę. Reset dalej, bez godziny albo odmowa konta: halt `Seat down` od razu, bez lokalnego retry i bez konsultacji. Brief jest zaparkowany jak po stopie, a częściowe pliki zostają w workspace. Z `implementer.fallback` seat przełącza się sam i wznawia tę samą próbę na nowym narzędziu. Bez fallbacku panel oferuje zmianę narzędzia BUILD, `Retry at HH:MM`, Try again, Skip task i End run.',
-    refs: ['JR_BUILD_SEAT_DOWN', 'BD_SEAT_RETRY', 'RC_RESET_WAIT_ONCE', 'RC_IMPL_OUTCOME', 'RC_SWITCH_COMMIT_KIND', 'diagram:rc-seq-limit-fallback', 'diagram:rc-seq-limit-nofallback'],
+    a: 'Krótki limit (reset do 10 minut) build przeczekuje sam; dłuższy limit albo odmowa konta zatrzymuje brief na halcie `Seat down`. Przy krótkim resecie run czeka w miejscu i powtarza tę samą próbę raz; stop w trakcie czekania daje `stopped · seat-wait`, a ⏎ czeka resztę, chyba że BUILD zmienisz na inne narzędzie: wtedy brief rusza od razu. Reset dalej, bez godziny albo odmowa konta: halt `Seat down` od razu, bez lokalnego retry i bez konsultacji. Brief jest zaparkowany jak po stopie, a częściowe pliki zostają w workspace. Z `implementer.fallback` seat przełącza się sam i wznawia tę samą próbę na nowym narzędziu. Bez fallbacku panel oferuje zmianę narzędzia BUILD, `Retry at HH:MM`, Try again, Skip task i End run.',
+    refs: ['JR_BUILD_SEAT_DOWN', 'BD_SEAT_RETRY', 'RC_RESET_WAIT_ONCE', 'RC_SEAT_WAIT_HELD', 'RC_IMPL_OUTCOME', 'RC_SWITCH_COMMIT_KIND', 'diagram:rc-seq-limit-fallback', 'diagram:rc-seq-limit-nofallback'],
     tags: ['limity', 'build']
   },
   {
@@ -52,29 +52,29 @@ window.ATLAS_FAQ.push(
   {
     id: 'retries',
     q: 'Ile razy SPLITBRIEF ponawia i ile czeka?',
-    a: 'Błąd przejściowy (sieć, DNS, 5xx, 408, gołe 429 bez resetu) jest powtarzany do 3 razy, z przerwą 2 s, 4 s i 8 s. Limit z resetem za nie więcej niż 10 minut daje jedno ciche czekanie i jedną powtórkę tego samego wywołania; drugi limit po czekaniu jest już haltem. To dotyczy tylko wywołań BUILD i konsultacji. Plan call, review plan call i werdykt halthują od razu, więc trzeba wybrać Try again. `Retry at HH:MM` wybrane przez ciebie czeka bez granicy 10 minut, nawet kilka godzin. Te powtórki nie liczą się do limitu prób briefu.',
-    refs: ['RC_TRANSIENT', 'RC_TRANSIENT_RETRY', 'RC_RESET_WAIT_ONCE', 'RC_RETRY_LATER_OK', 'JR_SEAT_RUNG', 'BD_SEAT_RETRY', 'diagram:rc-seat-call'],
+    a: 'Błąd przejściowy (sieć, DNS, 5xx, 408, gołe 429 bez resetu) jest powtarzany do 3 razy, z przerwą 2 s, 4 s i 8 s. Limit z resetem za nie więcej niż 10 minut daje jedno ciche czekanie i jedną powtórkę tego samego wywołania; drugi limit po czekaniu jest już haltem. To dotyczy tylko wywołań BUILD i konsultacji. Plan call, review plan call i werdykt halthują od razu, więc trzeba wybrać Try again. `Retry at HH:MM` wybrane przez ciebie czeka bez granicy 10 minut, nawet kilka godzin, chyba że przed kontynuacją zmienisz narzędzie tego seatu. Te powtórki nie liczą się do limitu prób briefu.',
+    refs: ['RC_TRANSIENT', 'RC_TRANSIENT_RETRY', 'RC_RESET_WAIT_ONCE', 'RC_RETRY_LATER_OK', 'RC_SEAT_WAIT_HELD', 'JR_SEAT_RUNG', 'BD_SEAT_RETRY', 'diagram:rc-seat-call'],
     tags: ['limity', 'recovery']
   },
   {
     id: 'needs-you-vs-seat-down',
     q: 'Czym różni się Needs you od Seat down?',
-    a: '`Needs you` to decyzja, którą może podjąć tylko człowiek; `Seat down` znaczy, że seat nie może pracować. Needs you dostajesz przy wyczerpanych limitach prób, nieudanym review po cyklach naprawczych, odmowie zapisu chronionej ścieżki, konflikcie Apply i planie po dwóch nieudanych sprawdzeniach. Seat down dostajesz, gdy seat jest wylogowany, nie ma limitu, dwa razy przekroczył czas, odrzucił model albo odpowiedział poza kontraktem. Seat down oferuje zmianę narzędzia, `Retry at`, Try again, Skip task i End run. Needs you oferuje Continue, Try again, revise, Accept as is, Restore backup, Skip task i End run, zależnie od przyczyny. Tylko Seat down z limitu albo odmowy konta przełącza się automatycznie na fallback; tytuł wybiera jedna funkcja `haltOf`.',
-    refs: ['JR_HALT_KIND', 'RC_HALT_OF', 'RC_SEAT_DOWN_ACTIONS', 'RC_ACTION_ALLOWED', 'diagram:rc-master', 'area:recovery'],
+    a: '`Needs you` to decyzja, którą może podjąć tylko człowiek; `Seat down` znaczy, że seat nie może pracować. Needs you dostajesz przy wyczerpanych limitach prób, nieudanym review po cyklach naprawczych, odmowie zapisu chronionej ścieżki, konflikcie Apply i planie po dwóch nieudanych sprawdzeniach. Seat down dostajesz, gdy seat jest wylogowany, nie ma limitu, dwa razy przekroczył czas, odrzucił model, nie przyjął promptu jako za dużego albo odpowiedział poza kontraktem. Seat down oferuje, zależnie od przyczyny, zmianę narzędzia, `Retry at`, Try again, Skip task i End run. Needs you oferuje Continue, Try again, revise, Accept as is, Restore backup, Skip task i End run, zależnie od przyczyny. Tylko Seat down z limitu albo odmowy konta przełącza się automatycznie na fallback; tytuł wybiera jedna funkcja `haltOf`.',
+    refs: ['JR_HALT_KIND', 'RC_HALT_OF', 'RC_SEAT_DOWN_ACTIONS', 'RC_ACTION_ALLOWED', 'RC_IMPL_OUTCOME', 'diagram:rc-master', 'area:recovery'],
     tags: ['recovery']
   },
   {
     id: 'halt-panel',
     q: 'Co robią akcje w panelu recovery?',
-    a: 'Pusty ⏎ bierze akcję rekomendowaną, a tekst, który nie jest akcją, staje się korektą akcji, która go czyta (retry, revise albo continue). Try again na briefie zeruje próby i buduje brief od nowa; switch zachowuje próbę i wznawia ją na nowym seacie. `Retry at HH:MM` parkuje run do resetu i sam go wznawia. Skip task zapisuje brief jako pominięty i cofa jego pliki. End run zamyka run i jest dozwolony przy każdym halcie. Silnik odmawia akcji spoza listy halta, a ten sam halt zostaje do odpowiedzi.',
-    refs: ['RC_TUI_ANSWER', 'RC_RECOMMENDED', 'RC_ACTION', 'RC_SEAT_LEVEL_RETRY', 'RC_ACTION_ALLOWED', 'JR_RECOVERY_ACTION', 'diagram:rc-actions-resume', 'diagram:rc-tui-panel'],
+    a: 'Pusty ⏎ bierze akcję rekomendowaną, a tekst, który nie jest akcją, staje się korektą akcji, która go czyta (retry, revise albo continue). Try again na briefie zeruje próby i buduje brief od nowa; switch zachowuje próbę i wznawia ją na nowym seacie. `Retry at HH:MM` parkuje run do resetu i sam go wznawia; zmiana narzędzia seatu przed kontynuacją zdejmuje to czekanie. Skip task zapisuje brief jako pominięty i cofa jego pliki. End run zamyka run i jest dozwolony przy każdym halcie. Silnik odmawia akcji spoza listy halta, a ten sam halt zostaje do odpowiedzi.',
+    refs: ['RC_TUI_ANSWER', 'RC_RECOMMENDED', 'RC_ACTION', 'RC_SEAT_LEVEL_RETRY', 'RC_RETRY_LATER_OK', 'RC_ACTION_ALLOWED', 'JR_RECOVERY_ACTION', 'diagram:rc-actions-resume', 'diagram:rc-tui-panel'],
     tags: ['recovery']
   },
   {
     id: 'crash',
     q: 'Co się dzieje po crashu (kill -9, brak prądu)?',
-    a: 'Crash nie gubi runu: następny start czyta go jako `open · stopped · interrupted`, a ⏎ kontynuuje od briefu, który był w toku. Wcześniejsze briefy zostają w workspace, a planowanie nie jest powtarzane. Crash nie zapisuje parku ani błędu, więc przerwany brief wraca do snapshotu ze swojego startu i rusza od próby 0. Gdy `session.jsonl` dowodzi, że brief był zaparkowany i nie biegł ponownie, park wraca i częściowa praca zostaje. Otwarte wywołania są zapisane jako przerwane, a osierocone procesy narzędzi są zabijane. Katalog sesji, który nigdy nie wystartował, znika po 24 h.',
-    refs: ['LC_FAILED', 'LC_TASK_IN_FLIGHT', 'LC_UNRESUMED_CUT', 'LC_ORPHAN_RUNNER', 'LC_ORPHAN_SESSION', 'diagram:lc-crash-detect', 'diagram:journey-exits'],
+    a: 'Crash nie gubi runu: następny start czyta go jako `open · stopped · interrupted`, a ⏎ kontynuuje od briefu, który był w toku. Wcześniejsze briefy zostają w workspace, a planowanie nie jest powtarzane. Crash nie zapisuje parku ani błędu, więc przerwany brief wraca do snapshotu ze swojego startu i rusza od próby 0. Gdy `session.jsonl` dowodzi, że brief był zaparkowany i nie biegł ponownie, park wraca i częściowa praca zostaje. Otwarte wywołania są zapisane jako przerwane, a osierocone procesy narzędzi są zabijane. Gdy proces padł po zamknięciu runu, ale przed usunięciem jego worktree albo staged copy, następny start z terminala usuwa je razem z wpisem git worktree i branchem. Katalog sesji, który nigdy nie wystartował, znika po 24 h.',
+    refs: ['LC_FAILED', 'LC_TASK_IN_FLIGHT', 'LC_UNRESUMED_CUT', 'LC_ORPHAN_RUNNER', 'LC_LEFTOVER_WORKSPACE', 'LC_ORPHAN_SESSION', 'diagram:lc-crash-detect', 'diagram:journey-exits'],
     tags: ['stop']
   },
   {
@@ -94,8 +94,8 @@ window.ATLAS_FAQ.push(
   {
     id: 'apply-fails',
     q: 'Co, jeśli Apply padnie w połowie?',
-    a: 'Nic nie ginie po cichu: Apply robi backup przed pierwszym zapisem, a przerwany zapis daje halt `apply-partial · Needs you` z akcjami Retry i Restore. Backup leży w `.splitbrief/sessions/<id>/apply/<backupId>/`, a każdy zapis jest strzeżony hashem bajtów, które Apply przeczytał do merge. Halt powstaje, gdy część zapisów się nie uda albo proces zniknie w trakcie („wrote N of M files”). End run i Discard odmawiają, dopóki Apply nie jest dokończony albo cofnięty. Restore przywraca bajty sprzed Apply, a pliki zmienione przez ciebie później zostawia; run wraca do ready-to-apply. Retry używa tego samego backupu i zapisuje od nowa.',
-    refs: ['JR_APPLY_OUTCOME', 'LC_APPLY_CUT', 'LC_WRITE_RESULT', 'LC_RESTORE_FILE', 'LC_APPLY_UNFINISHED', 'LC_BACKUP_CHANGED', 'diagram:lc-apply'],
+    a: 'Nic nie ginie po cichu: Apply robi backup przed pierwszym zapisem, a przerwany zapis daje halt `apply-partial · Needs you` z akcjami Retry i Restore. Backup leży w `.splitbrief/sessions/<id>/apply/<backupId>/`, a każdy zapis jest strzeżony hashem bajtów, które Apply przeczytał do merge. Halt powstaje, gdy część zapisów się nie uda albo proces zniknie w trakcie („wrote N of M files”). End run i Discard odmawiają, dopóki Apply nie jest dokończony albo cofnięty. Restore przywraca bajty sprzed Apply, a pliki zmienione przez ciebie później zostawia; run wraca do ready-to-apply. Retry używa tego samego backupu i zapisuje od nowa. Gdy Apply zapisał wszystko i zamknął run, ale nie usunął worktree albo staged copy, następny start z terminala je usuwa.',
+    refs: ['JR_APPLY_OUTCOME', 'LC_APPLY_CUT', 'LC_WRITE_RESULT', 'LC_RESTORE_FILE', 'LC_APPLY_UNFINISHED', 'LC_BACKUP_CHANGED', 'LC_LEFTOVER_WORKSPACE', 'diagram:lc-apply'],
     tags: ['apply']
   },
   {
@@ -136,7 +136,7 @@ window.ATLAS_FAQ.push(
   {
     id: 'brief-tests',
     q: 'Czy testy biegną po każdym briefie?',
-    a: 'Z domyślnym `workflow.review: end` nie. Po briefie biegnie tylko formatter projektu na zmienionych plikach, a brief jest akceptowany bez komend. Checki planu i briefów biegną dopiero przed review końcowym. Z `workflow.review: task` po każdym briefie biegną jego checki i checki kryteriów, które ten brief domyka, a potem zawężony review. Fix task i akcja verify z konsultacji zawsze uruchamiają swoje checki.',
+    a: 'Z domyślnym `workflow.review: end` nie. Po briefie biegnie tylko formatter projektu na zmienionych plikach, a brief jest akceptowany bez komend. Checki planu i briefów biegną dopiero przed review końcowym. Z `workflow.review: task` po każdym briefie biegną jego checki i checki kryteriów, które ten brief domyka, a potem zawężony review. Fix task i akcja verify z konsultacji zawsze uruchamiają swoje checki; fix task, którego własne failures to same testy, uruchamia tylko pliki tych testów.',
     refs: ['BD_BRIEF_GATE_CHECKS', 'BD_CHECK_VERDICT', 'RV_CADENCE', 'RV_PRE_REVIEW_SCOPE', 'diagram:build-gate', 'diagram:review-task-cadence'],
     tags: ['build', 'review']
   },
@@ -150,8 +150,8 @@ window.ATLAS_FAQ.push(
   {
     id: 'review-loop',
     q: 'Co sprawdza review i kiedy fix loop się kończy?',
-    a: 'Najpierw SPLITBRIEF uruchamia wszystkie checki planu i briefów; czerwony required check staje się wejściem dla reviewera. Potem reviewer wybiera do 6 komend (V1…V6), a SPLITBRIEF uruchamia je w workspace pod polityką komend reviewera. Czerwona komenda biegnie drugi raz na run base, więc porażka sprzed runu nie blokuje. Na końcu reviewer daje werdykt, a SPLITBRIEF sam liczy pass, pass-with-notes albo fail. Fail z fix tasks wydaje jeden z 2 cykli naprawczych: fix tasks wracają do pętli briefów, a review biegnie od nowa. Fix loop kończy się passem albo haltem `review-failed · Needs you`, gdy cykle się skończą albo nie ma nic do naprawy. Nieudane wywołanie reviewera i pominięty check nigdy nie są passem.',
-    refs: ['RV_PRE_REVIEW_SCOPE', 'RV_END_CHECKS', 'RV_BASE_RESULT', 'RV_OUTCOME', 'RV_PASSED', 'RV_CAP', 'RV_NOTHING_TO_FIX', 'RV_BLOCKING_RED', 'diagram:review-master', 'diagram:review-fix-loop'],
+    a: 'Najpierw SPLITBRIEF uruchamia wszystkie checki planu i briefów; czerwony required check staje się wejściem dla reviewera. Potem reviewer wybiera do 6 komend (V1…V6), a SPLITBRIEF uruchamia je w workspace pod polityką komend reviewera. Czerwona komenda biegnie drugi raz na run base, więc porażka sprzed runu nie blokuje. Na końcu reviewer daje werdykt, a SPLITBRIEF sam liczy pass, pass-with-notes albo fail. Fail z fix tasks wydaje jeden z 2 cykli naprawczych: fix tasks wracają do pętli briefów, każdy przechodzi, gdy znikną jego własne failures, a review biegnie od nowa. Check fix tasku, którego nie da się uruchomić (zły plik testu, brak skryptu npm), wraca do reviewera do poprawy albo jest czerwony, ale nie zatrzymuje runu. Fix loop kończy się passem albo haltem `review-failed · Needs you`, gdy cykle się skończą albo nie ma nic do naprawy. Nieudane wywołanie reviewera i pominięty check nigdy nie są passem.',
+    refs: ['RV_PRE_REVIEW_SCOPE', 'RV_END_CHECKS', 'RV_BASE_RESULT', 'RV_OUTCOME', 'RV_PASSED', 'RV_CAP', 'RV_NOTHING_TO_FIX', 'RV_BLOCKING_RED', 'RV_FIX_CHECK_JUDGE', 'RV_ANSWER_SCHEMA', 'diagram:review-master', 'diagram:review-fix-loop'],
     tags: ['review']
   },
   {
@@ -178,8 +178,8 @@ window.ATLAS_FAQ.push(
   {
     id: 'plan-checks',
     q: 'Co, jeśli plan nie przejdzie sprawdzeń?',
-    a: 'Plan przechodzi deterministyczne sprawdzenia `checkPlan` i dopasowanie do kontekstu seatu BUILD. Plan z błędami wraca do plannera raz, z listą błędów. Drugi nieudany plan daje halt `plan-checks-failed · Needs you`, a rekomendowana akcja to revise. Jedyny błąd, który nie blokuje, to check render bez `validation.render`: plan przechodzi z notą „Before you approve”. Naprawa odpowiedzi poza schematem JSON liczy się osobno od tej jednej naprawy.',
-    refs: ['JR_PLAN_CHECKS', 'PL_CHECK_ERRORS', 'PL_BLOCKS_PLAN', 'PL_TYPED_REPAIR', 'RC_RECOMMENDED', 'diagram:planning-checks'],
+    a: 'Plan przechodzi deterministyczne sprawdzenia `checkPlan` i dopasowanie do kontekstu seatu BUILD. Plan z błędami wraca do plannera raz, z listą błędów. Drugi nieudany plan daje halt `plan-checks-failed · Needs you`, a rekomendowana akcja to revise. Check `npm run <skrypt>`, którego `package.json` nie definiuje, też wraca do plannera, chyba że któryś task wymienia `package.json`. Jedyny błąd, który nie blokuje, to check render bez `validation.render`: plan przechodzi z notą „Before you approve”. Naprawa odpowiedzi poza schematem JSON liczy się osobno od tej jednej naprawy.',
+    refs: ['JR_PLAN_CHECKS', 'PL_CHECK_ERRORS', 'PL_BLOCKS_PLAN', 'PL_CMD_REFUSAL', 'PL_TYPED_REPAIR', 'RC_RECOMMENDED', 'diagram:planning-checks'],
     tags: ['planowanie']
   },
   {

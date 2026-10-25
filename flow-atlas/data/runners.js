@@ -8,9 +8,11 @@ window.ATLAS.push({
 
 Jedno wywołanie CLI przechodzi zawsze tą samą drogą: środowisko sandbox dla dziecka, bramka startowa (receipt binarki), budowa argv przez adapter narzędzia, 'invokeCliAdapter' → 'invokeProcessCli', spawn, parsowanie linii, zdarzenie terminalne, 'RunnerCallResult'. Każda awaria dostaje kod ('code') i status ('failed', 'timeout', 'aborted', ...).
 
-Wykrycie limitu lub wylogowania to czysta analiza tekstu. Trzy warstwy czytają słowa narzędzia: frazy haltu ('HALT_SIGNATURES') w ogonie stderr i w ostatniej linii stdout, klasyfikator 'classifySeatFailure' (konto → rate-limited → transient → other) i parser zegara resetu 'parseUsageLimitReset'. Wynik tej klasyfikacji trafia do obszaru recovery jako halt 'Seat down' albo do pętli oczekiwania na reset.
+Wykrycie limitu lub wylogowania to czysta analiza tekstu. Trzy warstwy czytają słowa narzędzia: frazy haltu ('HALT_SIGNATURES') w stderr i w ostatniej linii stdout, klasyfikator 'classifySeatFailure' (konto → rate-limited → transient → other) i parser zegara resetu 'parseUsageLimitReset'. Gdy stderr nieudanego wywołania CLI nie ma frazy haltu, klasyfikator czyta całe stderr (źródło 'stderr'), więc odmowa konta wypisana tylko tam też jest Seat down. Wynik tej klasyfikacji trafia do obszaru recovery jako halt 'Seat down' albo do pętli oczekiwania na reset.
 
-Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl'; księga runu ('state.tokenUsage') ma cztery kategorie (planner, implementer, escalation, reviewer); 'reconcileTokenUsage' uzgadnia księgę z logiem; '/usage' czyta księgę na żywo lub podsumowanie zamkniętego runu. Narzędzie CLI jest zawsze 'unpriced': dolary liczy się tylko dla runnera 'api'.`,
+Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl'; księga runu ('state.tokenUsage') ma cztery kategorie (planner, implementer, escalation, reviewer); 'reconcileTokenUsage' uzgadnia księgę z logiem; '/usage' czyta księgę na żywo lub podsumowanie zamkniętego runu. Narzędzie CLI jest zawsze 'unpriced': dolary liczy się tylko dla runnera 'api'.
+
+Claude Code wysyła ramki 'rate_limit_event' z wykorzystaniem okna 5-godzinnego i tygodniowego. Od 70% do 95% (co 5) każdy próg daje jedno ostrzeżenie 'claude_rate_limit' z procentem i godziną resetu; bramka 'admitUsageLimitWarning' pokazuje każdy próg raz na run, także po kontynuacji. Procesy dzieci (narzędzia, checki, hooki, rendery, edytor) dostają NODE_ENV użytkownika, nie 'production' SPLITBRIEF.`,
   entry: [
     'src/engine/runners/factory.ts:91',
     'src/engine/runners/factory.ts:133',
@@ -164,7 +166,8 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
   T2 --> RN_PROMPT_TRANSPORT
   T3 --> RN_PROMPT_TRANSPORT
   RN_PROMPT_TRANSPORT -->|"stdin"| P1["prompt na stdin"]
-  RN_PROMPT_TRANSPORT -->|"argv, za duży lub zaczyna się od -"| P2["prompt-transport-error"]
+  RN_PROMPT_TRANSPORT -->|"argv za duży (bytes > maxBytes)"| P2B["argv-prompt-too-large<br/>→ outcome input-too-large, halt bez retry (recovery)"]
+  RN_PROMPT_TRANSPORT -->|"argv zaczyna się od -"| P2["prompt-transport-error"]
   RN_PROMPT_TRANSPORT -->|"argv OK"| P3["sentinel <PROMPT> zastąpiony"]
   RN_PROMPT_TRANSPORT -->|"file"| P4["prompt.txt 0600"]
   P1 --> RN_EXE_REVALIDATE{"receipt binarki nadal pasuje?"}
@@ -183,14 +186,14 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
     {
       id: 'rn-cli-outcome',
       title: 'Po zamknięciu procesu: który kod awarii i dlaczego',
-      caption: 'Frazy haltu w stderr i w ostatniej linii stdout wygrywają nad gołym kodem wyjścia. Narzędzie z kontraktem structured-terminal bez wyniku terminalnego kończy jako protocol-failure (status incomplete). Kontrakt text-exit zachowuje odpowiedź przy niezerowym wyjściu, gdy ostatnie zdarzenie to tekst asystenta.',
+      caption: 'Frazy haltu w stderr i w ostatniej linii stdout wygrywają nad gołym kodem wyjścia; bez frazy całe stderr idzie do classifySeatFailure (odmowa konta lub limit daje kod unauthenticated / usage-limit). Narzędzie z kontraktem structured-terminal bez wyniku terminalnego kończy jako protocol-failure (status incomplete). Kontrakt text-exit zachowuje odpowiedź przy niezerowym wyjściu, gdy ostatnie zdarzenie to tekst asystenta.',
       mermaid: `flowchart TD
   A["spawnPipe zwraca {exitCode, signal, stderr}"] --> G0{"toolUseGuard zgłosił<br/>naruszenie izolacji?"}
   G0 -->|"tak"| G1["failed: kod z guardu<br/>(implementer-left-isolation)"]
   G0 -->|"nie"| RN_CLOSE_SIGNAL{"closed.signal !== null?"}
-  RN_CLOSE_SIGNAL -->|"tak"| S1["haltFailure(haltLines) ??<br/>signal-exit"]
+  RN_CLOSE_SIGNAL -->|"tak"| S1["haltFailure(stderr, ogon stdout) ??<br/>signal-exit"]
   RN_CLOSE_SIGNAL -->|"nie"| RN_NO_TERMINAL{"structured-terminal<br/>i brak result?"}
-  RN_NO_TERMINAL -->|"exit != 0"| N1["haltFailure(haltLines) ??<br/>non-zero-exit"]
+  RN_NO_TERMINAL -->|"exit != 0"| N1["haltFailure(stderr, ogon stdout) ??<br/>non-zero-exit"]
   RN_NO_TERMINAL -->|"exit 0, stderr ma halt"| N2["kod haltu ze stderr"]
   RN_NO_TERMINAL -->|"exit 0, bez haltu"| N3["incomplete: protocol-failure<br/>CLI ended without its required terminal result"]
   RN_NO_TERMINAL -->|"jest result / text-exit"| T["adapter.terminal(...)"]
@@ -210,7 +213,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
   RN_CATCH_ARM -->|"signal.aborted, TimeoutError"| X1["status timeout, code timeout"]
   RN_CATCH_ARM -->|"signal.aborted, inne"| X2["status aborted, runner_interrupted"]
   RN_CATCH_ARM -->|"idle kill"| X3["no-progress-cut"]
-  RN_CATCH_ARM -->|"stdin incomplete"| X4["haltFailure(haltLines) ??<br/>prompt-transport-error"]
+  RN_CATCH_ARM -->|"stdin incomplete"| X4["haltFailure(stderr, ogon stdout) ??<br/>prompt-transport-error"]
   RN_CATCH_ARM -->|"ENOENT"| X5["spawn-not-found"]
   RN_CATCH_ARM -->|"output > 64 MB"| X6["truncated: output-budget-breach"]`,
     },
@@ -269,7 +272,11 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
   H0 --> S
   H1 --> S
   H2 --> S
-  S --> T["toCliEnvironment: wartości sekretów<br/>zapisane niejawnie do redakcji logów"]`,
+  S --> T["toCliEnvironment: wartości sekretów<br/>zapisane niejawnie do redakcji logów"]
+  T --> RN_CHILD_NODE_ENV{"spawnPipe (withUserNodeEnv):<br/>NODE_ENV w env to production SPLITBRIEF?"}
+  RN_CHILD_NODE_ENV -->|"tak, użytkownik miał wartość"| NE1["dziecko dostaje NODE_ENV użytkownika"]
+  RN_CHILD_NODE_ENV -->|"tak, użytkownik nie miał"| NE2["NODE_ENV usunięte z env dziecka"]
+  RN_CHILD_NODE_ENV -->|"nie (inna wartość w env)"| NE3["env bez zmian"]`,
     },
     {
       id: 'rn-api-call',
@@ -366,6 +373,21 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
   R2 --> V2
   V2 -->|"tak"| V3["value, usage = suma obu wywołań"]
   V2 -->|"nie"| V4["seat-protocol-error po 2 próbach → recovery Seat down"]`,
+    },
+    {
+      id: 'rn-usage-warning',
+      title: 'Ostrzeżenie o zużyciu limitu Claude Code: próg i jedno pokazanie na run',
+      caption: 'Ramka rate_limit_event zawsze jest heartbeatem. Okno 5-godzinne i tygodniowe daje ostrzeżenie tylko na progu 70–95%. Bramka na EventBus przepuszcza każdy próg raz na okno i godzinę resetu; kontynuacja odtwarza pokazane progi z session.jsonl.',
+      mermaid: `flowchart TD
+  A["Claude Code: ramka rate_limit_event<br/>rate_limit_info.unifiedWindows"] --> H["heartbeat (zawsze)"]
+  A --> RN_USAGE_STEP{"okno five_hour / seven_day:<br/>floor(utilization·100) w 70..99?"}
+  RN_USAGE_STEP -->|"nie (poniżej 70 albo 100 i więcej)"| N["bez ostrzeżenia"]
+  RN_USAGE_STEP -->|"tak"| W["claude_rate_limit, severity warning:<br/>You've used 75% of your Claude Code weekly limit · resets …<br/>usage {window, step, resetsAt}"]
+  W --> RN_USAGE_GATE{"admitUsageLimitWarning:<br/>ten próg (code, window, resetsAt)<br/>wyższy niż już pokazany?"}
+  RN_USAGE_GATE -->|"tak"| P["wiersz aktywności i runner_call_warning w session.jsonl"]
+  RN_USAGE_GATE -->|"nie"| D["odrzucone przed projekcją: brak wiersza i zapisu"]
+  R["initializeWorkflow (resume / continue)"] --> S["seedUsageLimitSteps: progi z runner_call_warning w session.jsonl"]
+  S --> RN_USAGE_GATE`,
     },
   ],
   decisions: [
@@ -651,12 +673,12 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       inputs: ['adapter.promptTransport.kind', 'argv z sentinelem <PROMPT>', 'rozmiar promptu'],
       branches: [
         { if: 'stdin (claude-code, codex)', then: 'prompt na stdin; sentinel w argv jest błędem', next: '' },
-        { if: 'argv (opencode, copilot, kilo, cursor, command-code, antigravity) i bytes > maxBytes', then: 'throw prompt-transport-error: exceeds the N-byte argv limit', next: '' },
+        { if: 'argv (opencode, copilot, kilo, cursor, command-code, antigravity) i bytes > maxBytes', then: 'throw argv-prompt-too-large: CLI prompt is N bytes and exceeds the M-byte argv limit (argvPromptTooLarge, input-limit.ts:34); call-result.ts:93 mapuje kod na outcome input-too-large, planner-call-failure.ts:111 na failure input-too-large → halt bez Try again (recovery)', next: '' },
         { if: 'argv positional i prompt zaczyna się od -', then: 'throw prompt-transport-error (parser narzędzia wziąłby prompt za opcję)', next: '' },
         { if: 'file', then: 'plik prompt.txt 0600 w mkdtemp, usunięty po wywołaniu', next: '' },
         { if: 'liczba sentineli != 1', then: 'throw prompt-transport-error', next: '' },
       ],
-      default: 'Błąd przed spawn ma kod prompt-transport-error (process-invoke.ts:388).',
+      default: 'Błąd przed spawn ma kod prompt-transport-error albo argv-prompt-too-large (prelaunchErrorCode, process-invoke.ts:994).',
     },
     {
       id: 'RN_EXE_REVALIDATE',
@@ -676,9 +698,10 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       title: 'Proces zakończył się sygnałem',
       question: 'Czy closed.signal !== null?',
       where: 'src/engine/runners/cli-tools/process-invoke.ts:542',
-      inputs: ['closed.signal', 'haltLines(): stderr + ostatnia linia stdout'],
+      inputs: ['closed.signal', 'haltFailure(stderr, [ostatnia linia stdout]): frazy haltu w obu, potem classifySeatFailure na całym stderr'],
       branches: [
-        { if: 'ogon zawiera frazę haltu', then: 'kod haltu (unauthenticated / usage-limit / input-too-large / missing-model / implementer-recipe-invalid)', next: 'RN_HALT_SIGNATURE' },
+        { if: 'stderr lub ostatnia linia stdout zawiera frazę haltu', then: 'kod haltu (unauthenticated / usage-limit / input-too-large / missing-model / implementer-recipe-invalid)', next: 'RN_HALT_SIGNATURE' },
+        { if: 'bez frazy, ale classifySeatFailure(całe stderr, source stderr) = account lub rate-limited', then: 'kod unauthenticated (account auth) albo usage-limit; wiadomość = cała diagnostyka', next: 'RN_ACCOUNT_CAUSE' },
         { if: 'bez frazy', then: 'failed: signal-exit, CLI exited from signal <sig>', next: '' },
       ],
       default: 'Idzie dalej do kontroli terminalu.',
@@ -691,8 +714,8 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       where: 'src/engine/runners/cli-tools/process-invoke.ts:553',
       inputs: ['adapter.outputContract.kind', 'terminalSeen', 'closed.exitCode', 'closed.stderr'],
       branches: [
-        { if: 'exitCode !== 0', then: 'haltFailure(haltLines) ?? non-zero-exit', next: '' },
-        { if: 'exitCode 0 i stderr ma frazę haltu', then: 'kod haltu (tylko stderr; stdout może powtarzać prozę modelu)', next: '' },
+        { if: 'exitCode !== 0', then: 'haltFailure(stderr, ogon stdout) ?? non-zero-exit', next: '' },
+        { if: 'exitCode 0 i haltFailure(stderr) coś znajduje (fraza haltu albo odmowa konta / limit w całym stderr)', then: 'kod haltu (tylko stderr; stdout może powtarzać prozę modelu)', next: '' },
         { if: 'exitCode 0 bez frazy', then: 'status incomplete, code protocol-failure: CLI ended without its required terminal result', next: '' },
       ],
       default: 'Kontrakty: structured-terminal — claude-code, codex, cursor, command-code, antigravity; text-exit successfulExitCodes [0] — opencode, copilot, kilo-code.',
@@ -704,7 +727,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       where: 'src/engine/runners/cli-tools/process-invoke.ts:601',
       inputs: ['isFailureExit(contract, exitCode)', 'terminal.status', 'ostatnie zdarzenie protokołu'],
       branches: [
-        { if: 'ogon ma frazę haltu', then: 'kod haltu', next: '' },
+        { if: 'haltFailure(stderr, ogon stdout) coś znajduje', then: 'kod haltu', next: '' },
         { if: 'text-exit, terminal.text niepusty, ostatni event to tekst assistant/result', then: 'warning non_zero_exit_after_answer; odpowiedź zachowana jako completed', next: '' },
         { if: 'inaczej (structured-terminal zawsze)', then: 'failed: non-zero-exit', next: '' },
       ],
@@ -714,10 +737,10 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_TERMINAL_FAILED_HALT',
       title: 'Terminal failed: czyje słowa zostają diagnozą',
       question: 'Czy terminal.error sam nazywa halt, czy stderr ma go za niego?',
-      where: 'src/engine/runners/cli-tools/process-invoke.ts:651',
-      inputs: ['terminal.error {code, message, status, providerType}', 'closed.stderr', 'namesHalt: HALT_CODES, haltFailure, classifySeatFailure != other'],
+      where: 'src/engine/runners/cli-tools/process-invoke.ts:643',
+      inputs: ['terminal.error {code, message, status, providerType}', 'closed.stderr', 'namesHalt: HALT_CODES, classifyHaltSignature(message), classifySeatFailure(result-error) != other'],
       branches: [
-        { if: 'namesHalt(error) false i stderr ma frazę haltu', then: 'error := kod haltu ze stderr, status failed', next: '' },
+        { if: 'namesHalt(error) false i haltFailure(stderr) coś znajduje (fraza haltu albo odmowa konta / limit w całym stderr)', then: 'error := kod haltu ze stderr, status failed', next: '' },
         { if: 'classifyHaltSignature(error.message) = input-too-large lub missing-model', then: 'error.code := input-too-large / missing-model (Claude: Prompt is too long; OpenCode: provider.no-route)', next: '' },
         { if: 'inaczej', then: 'finishFailed(terminal.status, terminal.error) — np. runner_result_error (claude is_error), codex-turn-failed z providerType', next: 'RN_CALL_OUTCOME' },
       ],
@@ -728,7 +751,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       title: 'Frazy haltu: słowa narzędzia, które kończą drabinę',
       question: 'Czy ogon (60 ostatnich linii) zawiera frazę z HALT_SIGNATURES?',
       where: 'src/core/pipeline-spec/halts.ts:85',
-      inputs: ['stderr.split(newline) + stdoutLastLine + stdoutTailCarry', 'HALT_SIGNATURES (halts.ts:15)'],
+      inputs: ['stderr.split(newline) + stdoutLastLine + stdoutTailCarry (haltFailure, process-invoke.ts:820)', 'HALT_SIGNATURES (halts.ts:15)'],
       branches: [
         { if: 'inputTooLarge: input_too_large, input exceeds the maximum length, prompt is too long', then: 'code input-too-large', next: '' },
         { if: 'auth: please run /login, log out and sign in again, 401 unauthorized, invalid api key, oauth token has expired, not logged in, authentication_error, ...', then: 'code unauthenticated', next: '' },
@@ -736,8 +759,8 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
         { if: 'missingModel: unknown model, model not found, invalid model, provider.no-route', then: 'code missing-model', next: '' },
         { if: 'spawnFailure: requires permissions, use --yolo, unknown option, unknown flag, sandbox required but unavailable, ...', then: 'code implementer-recipe-invalid', next: '' },
       ],
-      default: 'null → kod wyjścia lub protokół decyduje. Kolejność grup: input-too-large, auth, usage, missing-model, spawn.',
-      notes: 'Komunikat haltu to dopasowana linia narzędzia (haltFailure, process-invoke.ts:821). Frazy są celowo pełnymi zdaniami narzędzi: gołe billing lub rate limit w promptcie briefu nie mogą zrobić haltu. Transkrypt powyżej ostatniej linii stdout nie jest sprawdzany.',
+      default: 'null → haltFailure daje całe stderr do classifySeatFailure (source stderr): account auth → unauthenticated, inne account lub rate-limited → usage-limit z całą diagnostyką; inaczej kod wyjścia lub protokół decyduje. Kolejność grup: input-too-large, auth, usage, missing-model, spawn.',
+      notes: 'Komunikat haltu to dopasowana linia narzędzia (haltFailure, process-invoke.ts:820). Frazy są celowo pełnymi zdaniami narzędzi: gołe billing lub rate limit w promptcie briefu nie mogą zrobić haltu. Transkrypt powyżej ostatniej linii stdout nie jest sprawdzany.',
     },
     {
       id: 'RN_CATCH_ARM',
@@ -752,7 +775,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
         { if: 'signal.aborted i reason TimeoutError (timeout seatu)', then: 'status timeout, code timeout, <tool> timed out after <ms>', next: '' },
         { if: 'signal.aborted inny (Esc, abort runu)', then: 'status aborted, runner_interrupted: stopped by you', next: '' },
         { if: 'idle kill (idleKillMs bez bajtów)', then: 'failed: no-progress-cut, <tool> sent no output for m:ss; SPLITBRIEF stopped it', next: '' },
-        { if: 'stdin pękł pod promptem', then: 'haltFailure(haltLines) ?? prompt-transport-error (narzędzie zdążyło wypisać limit lub wylogowanie)', next: '' },
+        { if: 'stdin pękł pod promptem', then: 'haltFailure(stderr, ogon stdout) ?? prompt-transport-error (narzędzie zdążyło wypisać limit lub wylogowanie)', next: '' },
         { if: 'fatal state output-budget-breach (> 64 MB)', then: 'status truncated', next: '' },
         { if: 'ENOENT', then: 'spawn-not-found', next: '' },
       ],
@@ -789,19 +812,19 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       title: 'Odmowa konta: balance, billing, quota czy auth',
       question: 'Czy słowa narzędzia mówią, że konto nie obsłuży wywołania?',
       where: 'src/engine/runners/seat-failure.ts:135',
-      inputs: ['status HTTP', 'message lowercase', 'source (result-error | thrown | stderr-tail | stdout-tail)', 'providerType'],
+      inputs: ['status HTTP', 'message lowercase', 'source (result-error | thrown | stderr | stdout-tail)', 'providerType'],
       branches: [
         { if: 'status 402', then: 'balance', next: '' },
         { if: 'status 401 lub 403', then: 'auth', next: '' },
         { if: 'fraza auth (HALT_SIGNATURES.auth; dla result-error/thrown także 403, unauthenticated, sign in)', then: 'auth', next: '' },
-        { if: 'source nie jest ogonem i ACCOUNT_PHRASES: insufficient balance/credits, credit balance is too low, out of credits → balance; payment required, billing_hard_limit, billing_not_active, account suspended → billing', then: 'balance / billing', next: '' },
+        { if: 'source nie jest stdout-tail i ACCOUNT_PHRASES: insufficient balance/credits, credit balance is too low, out of credits, not included in your weekly usage (Cursor) → balance; payment required, billing_hard_limit, billing_not_active, account suspended → billing', then: 'balance / billing', next: '' },
         { if: 'rateLimitedReset != null', then: 'null — limit z resetem nie jest śmiercią konta', next: 'RN_RATE_LIMITED_RESET' },
         { if: 'isExhaustion (fraza usage; w ogonie tylko HALT_SIGNATURES.usage; 429 tylko z rzeczownikiem limit/quota/too many requests/retry-after)', then: 'quota', next: '' },
         { if: 'status 429 bez znanej frazy', then: 'quota', next: '' },
         { if: 'providerType provider.quota (OpenCode 2)', then: 'quota', next: '' },
       ],
       default: 'null → dalej rate-limited / transient.',
-      notes: 'Źródła ogonowe (stderr-tail, stdout-tail) dopasowują wyłącznie frazy HALT_SIGNATURES, bo stdout niesie logi testów. Claude Code Request rejected (429) bez rzeczownika to pojemność, nie wyczerpanie → retry.',
+      notes: 'Tylko stdout-tail (ostatnia linia stdout) dopasowuje wyłącznie frazy HALT_SIGNATURES, bo stdout niesie logi testów i prozę modelu (isTailSource, seat-failure.ts:94). Źródło stderr to cała diagnostyka nieudanego wywołania CLI i przechodzi pełny klasyfikator, więc saldo czy plan wypisany tylko na stderr jest odmową konta na każdym seacie. Claude Code Request rejected (429) bez rzeczownika to pojemność, nie wyczerpanie → retry.',
     },
     {
       id: 'RN_RATE_LIMITED_RESET',
@@ -888,8 +911,8 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       branches: [
         { if: 'class !== rate-limited lub reset null', then: 'undefined → caller zachowuje halt runner-usage-limit', next: 'RN_SEAT_DOWN_HALT' },
         { if: 'waitMs <= 0 lub > 10 min', then: 'undefined → halt', next: 'RN_SEAT_DOWN_HALT' },
-        { if: '0 < waitMs <= 10 min', then: 'SET_SEAT_WAIT{seat, resetAt}, publishSeatWaitStarted, abortableDelay, CLEAR_SEAT_WAIT, powtórz withSeatRetry raz (runSeatCall, seat-wait.ts:150)', next: '' },
-        { if: 'resume runu ze state.seatWait w przyszłości', then: 'resumeSeatWait (seat-wait.ts:120) czeka dalej przed kontynuacją (orchestrator/run/init.ts:330)', next: '' },
+        { if: '0 < waitMs <= 10 min', then: 'SET_SEAT_WAIT{seat, resetAt, tool, kind, holds} (runner wywołania i jego profil BUILD), publishSeatWaitStarted, abortableDelay, CLEAR_SEAT_WAIT, powtórz withSeatRetry raz (runSeatCall, seat-wait.ts:199)', next: '' },
+        { if: 'resume runu ze state.seatWait w przyszłości', then: 'resumeSeatWait (seat-wait.ts:165) czeka dalej przed kontynuacją (orchestrator/run/init.ts:335), chyba że config wejścia uruchamia seat na innym narzędziu niż holds i wait.tool: wtedy CLEAR_SEAT_WAIT i nowe narzędzie rusza od razu (recovery RC_SEAT_WAIT_HELD)', next: '' },
       ],
       default: 'Abort w trakcie czekania zostawia state.seatWait; resume czyta deadline.',
     },
@@ -918,7 +941,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       inputs: ['typedRunnerCallErrorCode(err)', 'thrownSeatFailure(err) (słowa + klasyfikacja; dla shell/agent także ostatnia linia stdout)', 'runner'],
       branches: [
         { if: 'code missing-model', then: 'failure missing-model: runnerDefectRow, pick a listed model; route credential decyduje czy to sign-in', next: '' },
-        { if: 'code input-too-large', then: 'failure input-too-large: the prompt is too large, rozmiar i limit gdy znane', next: '' },
+        { if: 'code input-too-large albo argv-prompt-too-large', then: 'failure input-too-large: the prompt is too large; detal z rozmiarem i limitem gdy znane, w bajtach linii poleceń dla argv (inputTooLargeDetail); bez Try again', next: '' },
         { if: 'class rate-limited lub account != auth', then: 'failure usage-limit, resetsAt, seatDown.classification; zdanie usageLimitAdvice', next: 'RN_SEAT_DOWN_HALT' },
         { if: 'class account auth', then: 'failure unauthenticated + runnerLoginInstruction, seatDown', next: 'RN_SEAT_DOWN_HALT' },
       ],
@@ -1081,6 +1104,49 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
         { if: 'druga odpowiedź nadal zła', then: 'seat-protocol-error attempts 2 → recovery (haltOf → seat-down)', next: '' },
       ],
       default: 'usage obu wywołań jest sumowane (totalUsage).',
+      notes: 'checkAnswer (typed-output.ts:283) zwraca listę błędów, po jednym na issue Zod (ścieżka pola: komunikat). Prompt naprawy wymienia je w liniach; komunikat seat-protocol-error to nagłówek (seatProtocolHeadline, typed-output.ts:88) plus każdy błąd jako zdanie, a halt dostaje błędy jako osobne detale.',
+    },
+    {
+      id: 'RN_USAGE_STEP',
+      title: 'Próg ostrzeżenia o zużyciu okna Claude Code',
+      question: 'Czy ramka rate_limit_event daje ostrzeżenie dla okna 5-godzinnego albo tygodniowego?',
+      where: 'src/engine/streaming/parse-stream-json.ts:444',
+      inputs: ['rate_limit_info.unifiedWindows.five_hour / seven_day', 'utilization (0..1)', 'resetsAt (sekundy epoch)', 'USAGE_LIMIT_STEPS = 70, 75, 80, 85, 90, 95 (usage-limit-step.ts:4)'],
+      branches: [
+        { if: 'okno brak albo utilization nie jest liczbą', then: 'to okno nic nie daje', next: '' },
+        { if: 'floor(utilization·100) < 70 albo ≥ 100', then: 'usageLimitStep = null: bez ostrzeżenia; osiągnięty limit to halt usage-limit, nie próg', next: '' },
+        { if: '70 ≤ procent < 100', then: 'najwyższy próg ≤ procent; warning claude_rate_limit severity warning, tekst formatUsageLimitWarning: You\'ve used 75% of your Claude Code weekly limit · resets Oct 29, 10:00 (reset z formatStoredReset, zawsze z datą); usage {window, step, resetsAt ms}', next: 'RN_USAGE_GATE' },
+      ],
+      default: 'Ramka zawsze jest heartbeatem i nigdy nie zmyśla wyniku terminalnego; status allowed / allowed_warning / rejected nie jest już czytany.',
+      notes: 'Okna nazywają się 5-hour limit i weekly limit (usage-limit-step.ts:21). Ostrzeżenie trafia do wiersza aktywności wywołania i session.jsonl (runner_call_warning z polem usage).',
+    },
+    {
+      id: 'RN_USAGE_GATE',
+      title: 'Każdy próg ostrzeżenia raz na run',
+      question: 'Czy ten próg dla tego okna i tej godziny resetu był już pokazany?',
+      where: 'src/engine/orchestrator/usage-limit-gate.ts:19',
+      inputs: ['event.warning.usage {window, step, resetsAt}', 'klucz code:window:resetsAt', 'mapa pokazanych progów na EventBus (WeakMap)', 'seedUsageLimitSteps(bus, session.jsonl) przy wejściu (init.ts:258)'],
+      branches: [
+        { if: 'zdarzenie nie jest call_warning albo nie ma usage', then: 'przepuszczone bez zmian', next: '' },
+        { if: 'step > zapisany próg dla klucza (albo brak wpisu)', then: 'przepuszczone; próg zapisany', next: '' },
+        { if: 'step ≤ zapisany próg', then: 'odrzucone w publishRunnerCallEvent (events.ts:64) przed projekcją: brak wiersza i brak zapisu w session.jsonl', next: '' },
+      ],
+      default: 'Nowa godzina resetu to nowy klucz, więc progi liczą się od nowa.',
+      notes: 'Kontynuacja runu odtwarza pokazane progi z runner_call_warning w session.jsonl, więc ⏎ po stopie nie powtarza progu.',
+    },
+    {
+      id: 'RN_CHILD_NODE_ENV',
+      title: 'NODE_ENV procesów dzieci',
+      question: 'Jaki NODE_ENV dostaje proces, który SPLITBRIEF uruchamia?',
+      where: 'src/lib/process/spawn/child-env.ts:81',
+      inputs: ['wartość NODE_ENV użytkownika zapisana w runAsProduction (child-env.ts:75, wołane z node-env.ts)', 'env przekazany do spawn'],
+      branches: [
+        { if: 'env ma NODE_ENV=production i użytkownik miał własną wartość', then: 'dziecko dostaje wartość użytkownika', next: '' },
+        { if: 'env ma NODE_ENV=production, a użytkownik nie miał żadnej', then: 'NODE_ENV usunięte z env dziecka', next: '' },
+        { if: 'env ma inną wartość albo runAsProduction nie było wołane', then: 'env bez zmian', next: '' },
+      ],
+      default: 'SPLITBRIEF sam biegnie z NODE_ENV=production (produkcyjny build React i Ink).',
+      notes: 'Wspólna droga spawnPipe (lifecycle.ts:343) obejmuje narzędzia, checki, hooki, rendery i formatter; edytor planu dostaje to samo przez spawnEditorProcess. Bez tego npm pomijał devDependencies, a testy React traciły act(), więc check zielony w shellu użytkownika padał w review.',
     },
     {
       id: 'RN_USAGE_NORMALIZE',
@@ -1215,7 +1281,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
     { name: 'RunnerBillingPosture', meaning: 'local | subscription-included | api-metered | provider-dependent | unknown — wyświetlane słowo billingu; każdy CLI dziś unknown w runnerBillingPosture.', where: 'src/core/runners/runner-billing.ts:13' },
     { name: 'CliEffortChannel', meaning: 'effort-flag | variant | model-id | none — jak effort dociera do narzędzia.', where: 'src/core/runners/effort-channel.ts:7' },
     { name: 'TypedOutputCapability', meaning: 'native | strict-native | fallback — jak seat przyjmuje schemat JSON.', where: 'src/core/runners/cli-tool-catalog.ts:178' },
-    { name: 'state.seatWait', meaning: '{seat, resetAt} — BUILD czeka na reset limitu; resume honoruje deadline.', where: 'src/engine/orchestrator/escalation/seat-wait.ts:103' },
+    { name: 'state.seatWait', meaning: '{seat, resetAt, tool?, kind?, holds?} — BUILD lub konsultacja czeka na reset limitu; tool/kind to runner, który trafił limit (byline nazywa go pełną nazwą z katalogu); holds to seat, który czekanie trzyma. Resume honoruje deadline, chyba że seat biegnie już na innym narzędziu.', where: 'src/engine/orchestrator/escalation/seat-wait.ts:103' },
     { name: 'PlannerCapabilities', meaning: 'supportsConversationalPlanning, supportsSessionResume, supportsEffort, supportsImages, supportsSelfSummarisation; CONVERSATIONAL_CAPS tylko Claude Code, ONE_SHOT_API_CAPS reszta z nadpisaniami adaptera.', where: 'src/engine/planners/types.ts:34' },
   ],
   scenarios: [
@@ -1354,8 +1420,12 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
     { path: 'src/engine/runners/cli-tools/kilo-code.ts', role: 'adapter Kilo: --variant, --auto' },
     { path: 'src/engine/runners/cli-tools/cursor.ts', role: 'adapter Cursor: effort w id modelu, --force' },
     { path: 'src/engine/runners/cli-tools/command-code.ts', role: 'adapter Command Code: --effort, --yolo, --no-auto-update' },
-    { path: 'src/engine/runners/cli-tools/antigravity.ts', role: 'adapter Antigravity: --model <id z effortem>, --json-schema' },
-    { path: 'src/engine/runners/cli-tools/process-invoke.ts', role: 'invokeProcessCli: spawn, parsowanie, terminal, kody awarii, frazy haltu' },
+    { path: 'src/engine/runners/cli-tools/antigravity.ts', role: 'adapter Antigravity: --model <id z effortem>, --json-schema; planner: --mode plan --sandbox --dangerously-skip-permissions' },
+    { path: 'src/engine/runners/cli-tools/process-invoke.ts', role: 'invokeProcessCli: spawn, parsowanie, terminal, kody awarii, haltFailure (frazy haltu, potem pełna klasyfikacja stderr)' },
+    { path: 'src/engine/runners/input-limit.ts', role: 'argvPromptTooLarge (prompt ponad limit argv narzędzia), inputTooLargeFigures' },
+    { path: 'src/core/recovery/usage-limit-step.ts', role: 'USAGE_LIMIT_STEPS 70–95, usageLimitStep, formatUsageLimitWarning' },
+    { path: 'src/engine/orchestrator/usage-limit-gate.ts', role: 'admitUsageLimitWarning, seedUsageLimitSteps: każdy próg raz na run' },
+    { path: 'src/lib/process/spawn/child-env.ts', role: 'runAsProduction, withUserNodeEnv: NODE_ENV użytkownika dla dzieci; createSanitizedChildEnv' },
     { path: 'src/engine/runners/cli-tools/prompt-transport.ts', role: 'preparePrompt: stdin | argv | file' },
     { path: 'src/engine/runners/invoke-cli-adapter.ts', role: 'invokeCliAdapter: redakcja, onSessionId w strumieniu, idle warn domyślny' },
     { path: 'src/engine/planners/cli.ts', role: 'createCliPlanner: wspólny planner CLI, resume, mutation guard' },
@@ -1378,7 +1448,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
     { path: 'src/core/pipeline-spec/halts.ts', role: 'HALT_SIGNATURES, classifyHaltSignature' },
     { path: 'src/core/pipeline-spec/bounds.ts', role: 'transientRetries 3, rateLimitResetWaitMs 600 000' },
     { path: 'src/core/pipeline-spec/timeouts.ts', role: 'implementerMs, reviewerMs, consecutiveTimeoutsHalt 2' },
-    { path: 'src/engine/orchestrator/escalation/seat-wait.ts', role: 'runSeatCall, seatResetWaitDeadline, waitForSeatReset, resumeSeatWait' },
+    { path: 'src/engine/orchestrator/escalation/seat-wait.ts', role: 'runSeatCall, seatResetWaitDeadline, waitForSeatReset, resumeSeatWait, configuredHeldSeat' },
     { path: 'src/engine/orchestrator/cancellable-call.ts', role: 'withPerCallAbort: anulowanie z UI przerywa tylko wywołanie' },
     { path: 'src/engine/orchestrator/recovery/planner-call-failure.ts', role: 'diagnosePlannerCallFailure: hand-off PLAN/REVIEW do recovery' },
     { path: 'src/engine/orchestrator/recovery/builders/task.ts', role: 'buildSeatDownIssue, autoSwitchIntent (recovery)' },
@@ -1404,9 +1474,9 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
   ],
   gotchas: [
     'Wywołanie CLI nie ma domyślnego timeoutu: tylko <seat>.timeout uzbraja deadline (process-invoke.ts:285). Domyślny idleWarnMs 300 000 tylko ostrzega; idleKillMs trzeba ustawić, by cisza coś zakończyła.',
-    'Jedno słowo decyduje o retry: klasyfikator czyta tekst narzędzia. Ogon stdout/stderr dopasowuje wyłącznie frazy HALT_SIGNATURES, więc gołe billing czy rate limit w promptcie briefu nie robi haltu; ale result-error narzędzia dopasowuje szersze wzory (np. 403, sign in).',
+    'Jedno słowo decyduje o retry: klasyfikator czyta tekst narzędzia. Ostatnia linia stdout dopasowuje wyłącznie frazy HALT_SIGNATURES, więc gołe billing czy rate limit w promptcie briefu nie robi haltu; stderr nieudanego wywołania i result-error narzędzia idą przez pełny klasyfikator (np. 403, sign in, insufficient balance).',
     'Odmowa konta wygrywa nad 429 w tym samym tekście, a 429 z parsowalnym resetem wygrywa nad quota. Claude Request rejected (429) bez rzeczownika limit/quota to pojemność → transient → retry.',
-    'Powtórki transient (2/4/8 s) i czekanie na reset (<= 10 min) działają tylko na BUILD (runSeatCall). PLAN i REVIEW przy tym samym błędzie haltują od razu (planner-call-failed / review-failed).',
+    'Powtórki transient (2/4/8 s) i czekanie na reset (<= 10 min) działają tylko na BUILD i w konsultacjach (runSeatCall). PLAN i REVIEW przy tym samym błędzie haltują od razu (planner-call-failed / review-failed).',
     'Codex liczy cached_input_tokens wewnątrz input_tokens; normalizacja odejmuje je, żeby input i cacheRead były rozłączne. Brak licznika zostaje absent, nigdy 0.',
     'Każdy CLI jest unpriced i ma billing posture unknown w runnerBillingPosture, bo macierz enforcement jest pusta; katalogowe billing: subscription-included to deklaracja narzędzia, nie dowód metody.',
     'Jawny authChannel: session lub api-key blokuje start (readiness blocker), chociaż schemat go przyjmuje. docs/CONFIGURATION.md to opisuje; mylące jest to, że walidacja YAML przechodzi.',
@@ -1419,5 +1489,14 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
     'Runner api nie ma retry w transporcie; SDK client też nie (celowo, by nie mnożyć deadline). 5xx wraca przez withSeatRetry tylko na BUILD.',
     'docs/PLANNERS-AND-IMPLEMENTERS.md mówi, że Claude Code używa wspólnego invokeCliAdapter — zgodne z kodem (claude-invoke.ts:72), ale planner Claude ma osobny moduł (planners/claude-code.ts) z CONVERSATIONAL_CAPS i injectUserTurn, którego inne CLI nie mają.',
     'Słowo escalation w kategoriach tokenów to relikt: żadne bieżące wywołanie nie ma roli escalation (konsult księguje się jako planner); pola zostają dla starych rekordów i są składane na planner przy wycenie.',
+    'Antigravity jako planner lub reviewer biegnie z --mode plan --sandbox --dangerously-skip-permissions (antigravity.ts:26): headless agy kończył turę na pierwszym pytaniu o zgodę, więc komenda shella dawała pustą odpowiedź. --sandbox blokuje zapisy shella; narzędzia plików nie są ogrodzone, a strażnik mutacji planowania kończy wywołanie, które pisze w projekcie. --sandbox jest flagą chronioną adaptera.',
+    'Wiersz aktywności Run command bez komendy (tool Bash/Shell bez celu, wywołanie kind command bez tekstu) nie powstaje: runnerActivityLedgerItem zwraca null (runner-activity-display.ts:100), więc nie dubluje prawdziwego wiersza tego samego wywołania i nie liczy się w nagłówku.',
+    'Zmiana na main (2026-10): odmowa konta lub limit wypisane tylko na stderr nieudanego wywołania CLI są klasyfikowane pełnym klasyfikatorem (źródło stderr zamiast stderr-tail); Cursor not included in your weekly usage to account · balance (f307dcb).',
+    'Zmiana na main (2026-10): prompt ponad limit argv narzędzia ma kod argv-prompt-too-large i outcome input-too-large: halt bez retry zamiast prompt-transport-error w drabinie (afbb4ea).',
+    'Zmiana na main (2026-10): ostrzeżenie Claude Code o limicie to progi 70–95% okna 5-godzinnego i tygodniowego, każdy raz na run, także po kontynuacji; dawne allowed_warning / rejected (7-day rate limit approaching, rate limit reached) zniknęło (a9f2ab9).',
+    'Zmiana na main (2026-10): seatWait zapisuje runner, który trafił limit, i trzymany seat; byline nazywa narzędzie pełną nazwą, a kontynuacja na innym narzędziu nie czeka (890d992, 42fb57f).',
+    'Zmiana na main (2026-10): dzieci SPLITBRIEF (narzędzia, checki, hooki, rendery, edytor) dostają NODE_ENV użytkownika albo żadnego, nie production (c947aa6).',
+    'Zmiana na main (2026-10): planner Antigravity uruchamia shell read-only w sandboxie; minimalna dopuszczona wersja agy to 1.3.2 (cli-tool-catalog.ts:684) (e014c5e).',
+    'Zmiana na main (2026-10): komunikaty i poprawki gotowości nazywają narzędzie pełną nazwą z katalogu (getRunnerCatalogDisplayName); runnerAuthDisplayName zniknął (283c8e6). Pusty wiersz Run command zniknął (7c58ae0).',
   ],
 });
