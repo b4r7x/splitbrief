@@ -596,8 +596,8 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
   function expectTwoAttempts(state: WorkflowState) {
     expect(state.pendingRecovery).toMatchObject({ attempts: 2, maxAttempts: 8 });
     expect(state.pendingRecovery?.details).toContain('Attempts: 2/8');
-    expect(formatRecoveryPrompt(state.pendingRecovery!)).toContain(
-      'timed out twice in a row on T001 after 2 attempts',
+    expect(formatRecoveryPrompt(state.pendingRecovery!).split('\n')[0]).toBe(
+      'Seat down · Two timeouts in a row on T001',
     );
   }
 

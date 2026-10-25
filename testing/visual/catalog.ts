@@ -3655,7 +3655,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'repeated-timeout',
         title: 'Repeated-timeout recovery menu',
         kind: 'question',
-        marker: 'Seat down · Google Antigravity CLI',
+        marker: 'Seat down · Two timeouts in a row',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
