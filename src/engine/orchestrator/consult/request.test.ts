@@ -1177,7 +1177,7 @@ describe('requestConsult seats', () => {
     expect(prompt).toContain('## Task T003 (revision 1)');
     expect(prompt).toContain("You are the run's reviewer");
     expect(prompt).toContain(
-      '- **F1** failure keys: V1: greet > hello; red keys: V1: greet > name',
+      "- **F1** this brief's failures: V1: greet > hello; the whole red: V1: greet > name",
     );
     const after = seen.at(-1)!;
     expect(after.lineages?.T003?.consultRecords.at(-1)?.seat).toBe('review');

@@ -746,11 +746,15 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
      */
     newKeys: z.array(z.string()).optional(),
     preExistingKeys: z.array(z.string()).optional(),
-    /** On fix check done events: carried failures, those still present, and other re-run failures. */
+    /**
+     * On fix check done events: the brief's own failures, those still present, those left to the
+     * unfinished sibling fix tasks `deferredTo`, and the re-run failures the brief does not own.
+     */
     own: z.number().int().nonnegative().optional(),
     ownLeft: z.number().int().nonnegative().optional(),
+    deferred: z.number().int().nonnegative().optional(),
+    deferredTo: z.array(z.string()).optional(),
     others: z.number().int().nonnegative().optional(),
-    proven: z.boolean().optional(),
     /**
      * Why the command did not run or was refused; on a red base re-run, why SPLITBRIEF could not
      * verify that it shows the same failure as the run workspace.

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { resolveApproveChecks, resolveEndChecks } from '../../core/config/runtime/resolve.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
-import { judgeFixCheck, type FixCheckKeys } from '../../core/review/fix-task.js';
+import { fixCheckCounts, judgeFixCheck, type FixCheckKeys } from '../../core/review/fix-task.js';
 import type { Config } from '../../core/schemas/config.js';
 import {
   MAX_REVIEW_CHECKS,
@@ -324,7 +324,7 @@ export async function runReviewCheck(
   input: {
     check: { id: string; command: string };
     checkOptions: RunChecksOptions;
-  } & ({ moment: 'pre-review' } | { moment: 'brief'; carried: FixCheckKeys }),
+  } & ({ moment: 'pre-review' } | { moment: 'brief'; carried: FixCheckKeys | undefined }),
 ): Promise<{
   run: CheckRunResult;
   fresh: string[];
@@ -335,8 +335,9 @@ export async function runReviewCheck(
   const { id, command } = input.check;
   const notices = { bus: checkOptions.bus, phase: checkOptions.phase };
   const startedAt = Date.now();
-  publishReviewCheck(notices, { status: 'running', id, command, moment });
-  const [result] = await runChecks([id], checkOptions);
+  const [result] = await runChecks([id], checkOptions, (_check, prepared) =>
+    publishReviewCheck(notices, { status: 'running', id, command: prepared, moment }),
+  );
   const run: CheckRunResult = result ?? {
     checkId: id,
     status: 'unknown',
@@ -359,21 +360,14 @@ export async function runReviewCheck(
   publishReviewCheck(notices, {
     status: 'done',
     id,
-    command,
+    command: run.command ?? command,
     moment,
-    passed: run.status === 'pass' || (judged?.left.length === 0 && judged.proven),
+    passed: run.status === 'pass' || judged?.left.length === 0,
     duration: Date.now() - startedAt,
-    ...(judged !== null && {
-      own: judged.own,
-      ownLeft: judged.left.length,
-      others: judged.others,
-      proven: judged.proven,
-    }),
+    ...(judged !== null && fixCheckCounts(judged)),
   });
   if (run.status !== 'fail') return { run, fresh: [] };
-  if (moment === 'brief') {
-    return { run, fresh: judged === null || !judged.proven ? run.failure.keys : judged.left };
-  }
+  if (moment === 'brief') return { run, fresh: judged === null ? run.failure.keys : judged.left };
   const { preExisting, base, unavailable, notVerified } = await splitAtRunBase({
     run,
     command,

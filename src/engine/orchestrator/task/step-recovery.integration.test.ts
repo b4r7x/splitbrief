@@ -887,3 +887,131 @@ describe('runSingleTask — usage-limited runner', () => {
     expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe('export const main = 0;\n');
   });
 });
+
+describe('runSingleTask — a fix brief answers only its own failures', () => {
+  const own = 'src/main.ts(1,14): error TS2322: Type number is not assignable to type string.';
+  const shared = 'src/name.ts(2,7): error TS2322: Type number is not assignable to type string.';
+  const other = 'src/other.ts(3,1): error TS2322: Type number is not assignable to type string.';
+
+  function fixOf(id: string, keys: string[], status: 'pending' | 'in_progress', checkId = 'K1') {
+    return makeTask({
+      id,
+      action: 'modify',
+      status,
+      suggestedFiles: ['src/main.ts'],
+      scope: { inBounds: ['src/main.ts'] },
+      checks: BRIEF_CHECKS,
+      fix: {
+        cycle: 1,
+        findings: [
+          {
+            id: `${id}.P1`,
+            text: `Required check ${checkId} did not pass`,
+            acceptance: null,
+            checkIds: [checkId],
+            commands: { [checkId]: 'tsc --noEmit' },
+            failureKeys: { [checkId]: keys },
+          },
+        ],
+      },
+    });
+  }
+
+  async function build(input: {
+    status: 'pending' | 'in_progress';
+    output: string;
+    siblingCheckId?: string;
+  }) {
+    const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
+    const task = fixOf('T023', [own, shared], input.status);
+    let writes = 0;
+    const write = async ({ projectDir: runDir }: ImplementerOptions) => {
+      writes += 1;
+      writeFileSync(join(runDir, 'src/main.ts'), `export const main = [ ${writes} ];\n`);
+      return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+    };
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(write),
+      retry: vi.fn().mockImplementation(write),
+    });
+    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.exitCode({ command: 'tsc', code: 2, stderr: '', output: input.output }),
+    );
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
+        projectDir,
+        sessionId,
+        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
+        callbacks: makeCallbacks().callbacks,
+        implementer,
+        bus: makeBusRecorder().bus,
+        config: makeConfig({ workflow: { review: 'task' } }),
+        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+      }),
+    );
+    const state = await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 2,
+      state: implementingState([task, fixOf('T025', [shared], 'pending', input.siblingCheckId)]),
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+    return { state, implementer };
+  }
+
+  it('completes on the first attempt when the failure left is one a pending sibling also carries', {
+    timeout: 90_000,
+  }, async () => {
+    const { state, implementer } = await build({
+      status: 'pending',
+      output: [shared, other].join('\n'),
+    });
+
+    expect(state.tasks[0]?.status).toBe('done');
+    expect(implementer.retry).not.toHaveBeenCalled();
+  });
+
+  it('completes on the first attempt when the pending sibling carries that failure under a reviewer check of the same command', {
+    timeout: 90_000,
+  }, async () => {
+    const { state, implementer } = await build({
+      status: 'pending',
+      output: [shared, other].join('\n'),
+      siblingCheckId: 'V2',
+    });
+
+    expect(state.tasks[0]?.status).toBe('done');
+    expect(implementer.retry).not.toHaveBeenCalled();
+  });
+
+  it('completes a resumed brief whose remaining failure the sibling carries under another check id', {
+    timeout: 90_000,
+  }, async () => {
+    const { state } = await build({
+      status: 'in_progress',
+      output: [shared, other].join('\n'),
+      siblingCheckId: 'V2',
+    });
+
+    expect(state.tasks[0]?.status).toBe('done');
+  });
+
+  it('completes a resumed brief the same way', { timeout: 90_000 }, async () => {
+    const { state } = await build({ status: 'in_progress', output: other });
+
+    expect(state.tasks[0]?.status).toBe('done');
+  });
+
+  it('names its own failure and the others as the last diagnosis when its own failure remains', {
+    timeout: 90_000,
+  }, async () => {
+    const { state } = await build({ status: 'pending', output: [own, other].join('\n') });
+
+    expect(state.pendingRecovery?.details[0]).toBe(
+      'Last diagnosis: check K1 failed: 1 of your 2 failures remains, 1 other left for their fix tasks or the next review',
+    );
+  });
+});

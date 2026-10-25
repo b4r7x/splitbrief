@@ -2758,12 +2758,13 @@ describe('event row dispatch', () => {
       id: 'V2',
       command: 'npm run test-ci',
       status: 'done',
-      passed: false,
+      passed: true,
       duration: 180_000,
       own: 2,
       ownLeft: 0,
+      deferred: 1,
+      deferredTo: ['T025'],
       others: 3,
-      proven: false,
     };
     const rows = eventRows({
       event,
@@ -2771,7 +2772,7 @@ describe('event row dispatch', () => {
       expanded: false,
       ctx: { width: 80, viewportRows: 20, streaming },
     }).map(rowText);
-    expect(rows.some((row) => row.includes('not\u00a0proven\u00a0fixed'))).toBe(true);
+    expect(rows.some((row) => row.includes('1\u00a0left\u00a0to\u00a0T025'))).toBe(true);
   });
 
   it('turn_interrupted at a gate names the gate and never offers a retry', () => {

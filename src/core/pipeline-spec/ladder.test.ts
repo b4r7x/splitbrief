@@ -28,13 +28,21 @@ describe('LADDER', () => {
 
 describe('framingForAttempt', () => {
   it('returns the framing keyed by attempt', () => {
-    expect(framingForAttempt(1)).toBe(RETRY_FRAMINGS[1]);
-    expect(framingForAttempt(2)).toBe(RETRY_FRAMINGS[2]);
+    expect(framingForAttempt(1, false)).toBe(RETRY_FRAMINGS[1]);
+    expect(framingForAttempt(2, false)).toBe(RETRY_FRAMINGS[2]);
   });
 
   it('framingForAttempt falls back to the third framing past attempt 3', () => {
-    expect(framingForAttempt(4)).toBe(RETRY_FRAMINGS[3]);
-    expect(framingForAttempt(9)).toBe(RETRY_FRAMINGS[3]);
+    expect(framingForAttempt(4, false)).toBe(RETRY_FRAMINGS[3]);
+    expect(framingForAttempt(9, false)).toBe(RETRY_FRAMINGS[3]);
+  });
+
+  it('does not tell a fix brief to fix failures that are not its job', () => {
+    expect(framingForAttempt(1, true)).toBe(
+      "Your previous attempt had an error. Fix what it names as yours; failures it names as not this brief's job are left to their fix tasks or the next review:",
+    );
+    expect(framingForAttempt(1, false)).toBe(RETRY_FRAMINGS[1]);
+    expect(framingForAttempt(2, true)).toBe(RETRY_FRAMINGS[2]);
   });
 });
 

@@ -730,16 +730,18 @@ describe('checkFailureText', () => {
     );
 
     const text = checkFailureText(run, {
-      carried: { failureKeys: [own, gone], redKeys: [own, gone, other] },
+      carried: { failureKeys: [own, gone], sharedWith: new Map(), exempt: false },
     });
 
-    expect(text).toMatch(/^check V1 did not pass \(fail\): 1 of your 2 failures remains\n/);
+    expect(text.split('\n')[0]).toBe(
+      'check V1 did not pass (fail): 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0remains, 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review',
+    );
     expect(text).toContain(
       [
         'Your failures that remain:',
         `- ${own}`,
         '  AssertionError: expected 1 to be 2',
-        'Other failures:',
+        "Other failures, not this brief's job:",
         `- ${other}`,
         'Output tail:',
       ].join('\n'),
@@ -747,15 +749,41 @@ describe('checkFailureText', () => {
     expect(text).not.toContain(gone);
   });
 
+  it('lists a remaining failure an unfinished sibling also carries under that sibling', () => {
+    const own = 'src/a.ts(1,14): error TS2322: Type number is not assignable to type string.';
+    const shared = 'src/b.ts(2,1): error TS2322: Type number is not assignable to type string.';
+    const other = 'src/c.ts(3,7): error TS2322: Type number is not assignable to type string.';
+
+    const text = checkFailureText(red([shared, other].join('\n')), {
+      carried: {
+        failureKeys: [own, shared],
+        sharedWith: new Map([[shared, ['T025']]]),
+        exempt: false,
+      },
+    });
+
+    expect(text).toContain(
+      [
+        'check V1 did not pass (fail): 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0gone, 1\u00a0left\u00a0to\u00a0T025, 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review',
+        'Left to T025:',
+        `- ${shared}`,
+        "Other failures, not this brief's job:",
+        `- ${other}`,
+      ].join('\n'),
+    );
+  });
+
   it('lists a moved diagnostic the fix task owns at its new line', () => {
     const carried = 'src/a.ts(1,14): error TS2322: Type number is not assignable to type string.';
     const moved = 'src/a.ts(5,14): error TS2322: Type number is not assignable to type string.';
 
     const text = checkFailureText(red(moved), {
-      carried: { failureKeys: [carried], redKeys: [carried] },
+      carried: { failureKeys: [carried], sharedWith: new Map(), exempt: false },
     });
 
-    expect(text).toContain(`your 1 failure remains\nYour failures that remain:\n- ${moved}`);
+    expect(text).toContain(
+      `your\u00a01\u00a0failure\u00a0remains\nYour failures that remain:\n- ${moved}`,
+    );
   });
 
   it('shares ten places between Go tests and diagnostics, keeping each listed test message', () => {

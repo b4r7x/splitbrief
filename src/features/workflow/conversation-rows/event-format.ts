@@ -148,12 +148,13 @@ export function fullSuiteSegments(
       ...fixCheckVerdict({
         own: event.own,
         ownLeft: event.ownLeft,
+        deferred: event.deferred ?? 0,
+        deferredTo: event.deferredTo ?? [],
         others: event.others,
-        proven: event.proven ?? true,
       }).map(
         (text, index): ConversationRowSegment => ({
           text,
-          tone: index === (event.proven === false ? 1 : 0) ? fullSuiteTone(event) : 'textDim',
+          tone: index === 0 ? fullSuiteTone(event) : 'textDim',
         }),
       ),
       ...(event.duration === undefined

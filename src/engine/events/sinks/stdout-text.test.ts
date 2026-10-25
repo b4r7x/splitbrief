@@ -497,8 +497,16 @@ describe('createStdoutTextSink', () => {
       check({ moment: 'brief', status: 'refused', detail: 'names no program' }),
       check({ moment: 'brief', passed: true, own: 2, ownLeft: 0, others: 3 }),
       check({ moment: 'brief', own: 2, ownLeft: 1, others: 3 }),
-      check({ moment: 'brief', own: 2, ownLeft: 0, others: 1, proven: false }),
-      check({ moment: 'brief', passed: true, own: 2, ownLeft: 0, others: 0, proven: true }),
+      check({
+        moment: 'brief',
+        passed: true,
+        own: 2,
+        ownLeft: 0,
+        deferred: 1,
+        deferredTo: ['T025'],
+        others: 1,
+      }),
+      check({ moment: 'brief', passed: true, own: 2, ownLeft: 0, others: 0 }),
       check({
         id: 'V3',
         newFailures: 1,
@@ -518,10 +526,10 @@ describe('createStdoutTextSink', () => {
       'fix check V1: failed (npm test)',
       "base re-run V1: pre-existing · the failure also fails before this run's changes",
       'fix check V1: refused (names no program)',
-      'fix check V1: your 2\u00a0failures gone · 3\u00a0others left (npm test)',
-      'fix check V1: 1\u00a0of your 2\u00a0failures remains (npm test)',
-      'fix check V1: your 2\u00a0failures not shown · not\u00a0proven\u00a0fixed (npm test)',
-      'fix check V1: your 2\u00a0failures gone (npm test)',
+      'fix check V1: your\u00a02\u00a0failures\u00a0gone · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
+      'fix check V1: 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0remains · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
+      'fix check V1: 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0gone · 1\u00a0left\u00a0to\u00a0T025 · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
+      'fix check V1: your\u00a02\u00a0failures\u00a0gone (npm test)',
       'base re-run V3: 1\u00a0new, 1\u00a0pre-existing, 1\u00a0not verified at the run base · the run base re-run timed out',
     ]);
   });

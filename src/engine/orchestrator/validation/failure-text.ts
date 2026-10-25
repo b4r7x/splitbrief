@@ -1,8 +1,10 @@
 import {
+  fixCheckCounts,
   fixCheckVerdict,
   fileFromFailureKey,
   isTestNodeKey,
   judgeFixCheck,
+  leftTo,
   pairFailureKeys,
   type FixCheckKeys,
 } from '../../../core/review/fix-task.js';
@@ -41,6 +43,15 @@ export function failureKeysForFile(input: {
   return input.failure.keys.filter((key) => matchesFile({ key, file: input.file }));
 }
 
+/** The keys of `rerun` that pair with `carried`, and the rest, each in re-run order. */
+function pairedKeys(carried: readonly string[], rerun: readonly string[]) {
+  const { remaining } = pairFailureKeys({ carried, rerun });
+  return {
+    paired: rerun.filter((_key, index) => !remaining.has(index)),
+    rest: rerun.filter((_key, index) => remaining.has(index)),
+  };
+}
+
 /** The failures of a red that count against the run: every key its `preExisting` does not name. */
 export function newFailureKeys(run: CheckRunResult): string[] {
   if (run.status !== 'fail') return [];
@@ -53,7 +64,8 @@ export function newFailureKeys(run: CheckRunResult): string[] {
  * with failure keys leads with them, each failing test with its assertion message, before the
  * output tail, so a tail of runner noise still names the failure. Each failure family gets half
  * the listed keys, with unused places going to the other family. With `carried`, the keys a fix
- * task answers, it says which of them remain and lists those first. A file-scoped input lists its
+ * task answers, it lists first those that remain, then those left to a sibling fix task, then the
+ * failures that are not the brief's job. A file-scoped input lists its
  * keys and unassigned keys without the output tail. Reviewer checks name pre-existing failures.
  */
 export function checkFailureText(
@@ -75,20 +87,16 @@ export function checkFailureText(
       matchesFile({ key: message, file: options.file }),
     ),
   );
-  const judged = carried === undefined ? null : judgeFixCheck(carried, run.failure);
+  const judged = judgeFixCheck(carried, run.failure);
+  const counts = judged === null ? null : fixCheckCounts(judged);
   const classified = judged === null && run.preExisting !== undefined;
   // A carried diagnostic may have moved lines; pre-existing keys use this run's positions.
-  const { remaining } = pairFailureKeys({
-    carried: judged?.left ?? run.preExisting ?? [],
-    rerun: keys,
-  });
-  const primary = keys.filter((_key, index) =>
-    classified ? remaining.has(index) : !remaining.has(index),
-  );
-  const others = keys.filter((_key, index) =>
-    classified ? !remaining.has(index) : remaining.has(index),
-  );
-  const ordered = [...primary, ...others];
+  const own = pairedKeys(judged?.left ?? run.preExisting ?? [], keys);
+  const shared = pairedKeys(judged?.deferred.map((entry) => entry.key) ?? [], own.rest);
+  const primary = classified ? own.rest : own.paired;
+  const deferred = shared.paired;
+  const others = classified ? own.paired : shared.rest;
+  const ordered = [...primary, ...deferred, ...others];
   const tests = ordered.filter(
     (key) => isTestNodeKey(key) || fileFromFailureKey(key) === null || messages.has(key),
   );
@@ -100,17 +108,13 @@ export function checkFailureText(
     ...diagnostics.slice(0, LISTED_FAILURE_KEYS - Math.min(testLimit, tests.length)),
   ]);
   const listedPrimary = primary.filter((key) => listed.has(key));
+  const listedDeferred = deferred.filter((key) => listed.has(key));
   const listedOthers = others.filter((key) => listed.has(key));
-  const unlisted = keys.length - listedPrimary.length - listedOthers.length;
+  const unlisted = keys.length - listedPrimary.length - listedDeferred.length - listedOthers.length;
   const summary =
-    judged === null
+    counts === null
       ? `${keys.length} ${keys.length === 1 ? 'failure' : 'failures'}`
-      : fixCheckVerdict({
-          own: judged.own,
-          ownLeft: judged.left.length,
-          others: judged.others,
-          proven: judged.proven,
-        }).join(', ');
+      : fixCheckVerdict(counts).join(', ');
   return [
     `${head}: ${summary}`,
     ...(listedPrimary.length > 0
@@ -119,13 +123,16 @@ export function checkFailureText(
           ...keyLines(listedPrimary, messages),
         ]
       : []),
+    ...(counts !== null && listedDeferred.length > 0
+      ? [`Left to ${leftTo(counts.deferredTo)}:`, ...keyLines(listedDeferred, messages)]
+      : []),
     ...(listedOthers.length > 0
       ? [
           classified
             ? 'Pre-existing failures (also red at the run base):'
             : judged === null
               ? 'Failures:'
-              : 'Other failures:',
+              : "Other failures, not this brief's job:",
           ...keyLines(listedOthers, messages),
         ]
       : []),

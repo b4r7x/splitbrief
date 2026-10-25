@@ -1,4 +1,12 @@
-import { fixCheckKeys, fixReviewChecks, judgeFixCheck } from '../../../core/review/fix-task.js';
+import {
+  fileFromFailureKey,
+  fixCheckCounts,
+  fixCheckKeys,
+  fixReviewChecks,
+  isTestNodeKey,
+  judgeFixCheck,
+  type FixCheckKeys,
+} from '../../../core/review/fix-task.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
@@ -26,9 +34,7 @@ import { withAttemptRestoreScope } from './restore-scope.js';
 export type TaskChecksResult = Readonly<{
   state: WorkflowState;
   runs: CheckRunResult[];
-  /**
-   * The red checks whose carried failures are proven gone from the same failure source.
-   */
+  /** The red checks whose own failures are gone, or left to an unfinished sibling fix task. */
   settled: ReadonlySet<string>;
 }>;
 
@@ -37,14 +43,26 @@ type TaskChecksContext = Pick<
   'projectDir' | 'workspaceDir' | 'sessionId' | 'config' | 'bus' | 'signal'
 >;
 
+/** Per carried check whose own failures are all test failures, the test files they name. */
+function ownTestFiles(carried: ReadonlyMap<string, FixCheckKeys>): Map<string, string[]> {
+  const files = new Map<string, string[]>();
+  for (const [id, { failureKeys }] of carried) {
+    if (failureKeys.length === 0 || !failureKeys.every(isTestNodeKey)) continue;
+    files.set(id, [...new Set(failureKeys.flatMap((key) => fileFromFailureKey(key) ?? []))]);
+  }
+  return files;
+}
+
 /**
  * The options a brief's checks run under. Reviewer commands come from the fix task's findings,
- * under the same command policy, with the run base for changed-script refusal.
+ * under the same command policy, with the run base for changed-script refusal. A check whose own
+ * failures are all test failures runs only their test files.
  */
 function taskCheckOptions(opts: {
   wctx: TaskChecksContext;
   state: WorkflowState;
   task: Task;
+  carried: ReadonlyMap<string, FixCheckKeys>;
   runCommand?: ValidationCommandRunner | undefined;
 }): RunChecksOptions {
   const { wctx, state, task } = opts;
@@ -62,6 +80,7 @@ function taskCheckOptions(opts: {
     bus: wctx.bus,
     phase: state.phase,
     npmScriptsApproved: planApprovesNpmScripts({ config: wctx.config, state }),
+    testFiles: ownTestFiles(opts.carried),
     ...(state.discoveredValidation !== undefined && {
       discoveredValidation: state.discoveredValidation,
     }),
@@ -73,7 +92,8 @@ function taskCheckOptions(opts: {
  * Runs the brief's checks and records them. Each judged fix check gets a verdict row, and each
  * check that did not run gets a refused or not-run row with its reason.
  * Reviewer checks also get a running row and clock, with commands from the fix task's findings.
- * A fix check runs once. `settled` names each red whose carried failures are proven gone.
+ * A fix check runs once. `settled` names each red whose own failures are gone, or left to an
+ * unfinished sibling fix task; failures the brief does not own never gate it.
  */
 export async function runTaskChecks(opts: {
   wctx: TaskChecksContext;
@@ -107,8 +127,8 @@ async function runTaskCheckCommands(
   const { wctx, task } = opts;
   let state = opts.state;
   const settled = new Set<string>();
-  const checkOptions = taskCheckOptions(opts);
-  const carried = fixCheckKeys(task);
+  const carried = fixCheckKeys(task, state.tasks);
+  const checkOptions = taskCheckOptions({ ...opts, carried });
   const reviewCommands = new Map(
     (checkOptions.reviewChecks ?? []).map((check) => [check.id, check.value]),
   );
@@ -135,7 +155,7 @@ async function runTaskCheckCommands(
       continue;
     }
     const judged = judgeFixCheck(
-      carried.get(run.checkId) ?? { failureKeys: [], redKeys: [] },
+      carried.get(run.checkId),
       run.status === 'fail' ? run.failure : null,
     );
     if (judged === null) continue;
@@ -146,15 +166,11 @@ async function runTaskCheckCommands(
         id: run.checkId,
         command: run.command ?? run.checkId,
         moment: 'brief',
-        passed: judged.left.length === 0 && judged.proven,
-        own: judged.own,
-        ownLeft: judged.left.length,
-        others: judged.others,
-        proven: judged.proven,
+        passed: judged.left.length === 0,
+        ...fixCheckCounts(judged),
       },
     );
-    if (run.status === 'fail' && judged.left.length === 0 && judged.proven)
-      settled.add(run.checkId);
+    if (run.status === 'fail' && judged.left.length === 0) settled.add(run.checkId);
   }
   for (const id of new Set(opts.checkIds)) {
     const command = reviewCommands.get(id);
@@ -162,7 +178,7 @@ async function runTaskCheckCommands(
     const { run, fresh } = await runReviewCheck({
       check: { id, command },
       moment: 'brief',
-      carried: carried.get(id) ?? { failureKeys: [], redKeys: [] },
+      carried: carried.get(id),
       checkOptions,
     });
     if (run.status === 'fail' && fresh.length === 0) settled.add(id);

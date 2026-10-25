@@ -533,6 +533,64 @@ describe('applyConsultAnswer verify', () => {
     expect(states.at(-1)?.tasks[0]?.status).toBe('failed');
   });
 
+  it.each([
+    ['the same check', 'K1'],
+    ['a reviewer check of the same command', 'V2'],
+  ])(
+    'completes a fix task whose remaining failure an unfinished sibling fix task also carries under %s',
+    async (_name, siblingCheckId) => {
+      const { projectDir, sessionId } = setupRepo();
+      const own = 'src/greet.ts(1,14): error TS2322: Type number is not assignable to type string.';
+      const shared =
+        'src/name.ts(2,7): error TS2322: Type number is not assignable to type string.';
+      const other =
+        'src/other.ts(3,1): error TS2322: Type number is not assignable to type string.';
+      const fixOf = (id: string, keys: string[], status: Task['status'], checkId = 'K1') =>
+        makeTask({
+          id,
+          suggestedFiles: ['src/greet.ts'],
+          criteria: ['C1'],
+          status,
+          fix: {
+            cycle: 1,
+            findings: [
+              {
+                id: `${id}.P1`,
+                text: `Required check ${checkId} did not pass`,
+                acceptance: null,
+                checkIds: [checkId],
+                commands: { [checkId]: 'tsc --noEmit' },
+                failureKeys: { [checkId]: keys },
+              },
+            ],
+          },
+        });
+      const task = fixOf('T023', [own, shared], 'failed');
+      const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+      const { ctx, states } = harness({
+        projectDir,
+        sessionId,
+        task,
+        plan,
+        otherTasks: [fixOf('T025', [shared], 'pending', siblingCheckId)],
+        runCommand: makeCommandRunner(
+          processError.exitCode({
+            command: 'tsc',
+            code: 1,
+            stderr: '',
+            output: [shared, other].join('\n'),
+          }),
+        ),
+      });
+      const attempt = await getChangedFilesSnapshot(projectDir);
+
+      const result = await applyConsultAnswer(ctx, task, verify(['K1'], 'Verify K1'), attempt);
+
+      expect(result).toMatchObject({ action: 'completed' });
+      expect(states.at(-1)?.tasks[1]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
+    },
+  );
+
   it('completes when only an optional check the planner did not select fails', async () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({

@@ -35,7 +35,7 @@ const FIX_WORK_CONTRACT = `This review call is read-only. Do not write, edit or 
 - verify: { findingId, checkIds } for a finding or input whose work may already be on disk. Name registered run or task checks.
 - ask: { question, whyOnlyUserCanAnswer } or null. Use it only for a change to what is built that the plan and decisions cannot answer.
 
-Unless ask is set, every blocking finding that is not unverified and every pending input id appears exactly once in fixTasks[].findingIds, rejected[].findingId or verify[].findingId. Unverified and minor findings never become fix tasks.`;
+Unless ask is set, every blocking finding that is not unverified appears exactly once in fixTasks[].findingIds, rejected[].findingId or verify[].findingId. Every pending input id appears exactly once in rejected[].findingId or verify[].findingId, or in the findingIds of one or more fix tasks. With ask set, these two rules do not apply. A fix task's acceptance names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review. Unverified and minor findings never become fix tasks.`;
 
 const VALIDATION_EVIDENCE_PREAMBLE = `The orchestrator ran these validation commands and recorded their output. This section is the authoritative record of validation results for this run.`;
 

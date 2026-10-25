@@ -476,7 +476,11 @@ describe('buildConsultPrompt', () => {
     expect(prompt).not.toContain("You are the run's planner.");
     expect(prompt).toContain('### Fix findings');
     expect(prompt).toContain(
-      '- **F1** failure keys: V1: greet > hello, greet > empty; red keys: V1: greet > name',
+      [
+        '### Fix findings',
+        "Other failures are not this brief's job: their fix tasks or the next review answer them. Do not send the implementer after them.",
+        "- **F1** this brief's failures: V1: greet > hello, greet > empty; the whole red: V1: greet > name",
+      ].join('\n'),
     );
     expect(prompt).not.toContain('- **F2**');
   });

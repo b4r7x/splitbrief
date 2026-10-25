@@ -162,19 +162,26 @@ function keyList(keys: Record<string, string[]> | undefined): string | undefined
   return entries.map(([id, values]) => `${id}: ${values.join(', ')}`).join('; ');
 }
 
-/** A fix task's structured red per finding: the failure keys and red keys its checks named. */
+/** A fix task's structured red per finding: its own failures, and the whole red they came from. */
 function fixFindingLines(task: Task): string[] {
   const lines = (task.fix?.findings ?? []).flatMap((finding) => {
     const failure = keyList(finding.failureKeys);
     const red = keyList(finding.redKeys);
     if (failure === undefined && red === undefined) return [];
     const parts = [
-      ...(failure === undefined ? [] : [`failure keys: ${failure}`]),
-      ...(red === undefined ? [] : [`red keys: ${red}`]),
+      ...(failure === undefined ? [] : [`this brief's failures: ${failure}`]),
+      ...(red === undefined ? [] : [`the whole red: ${red}`]),
     ];
     return [`- **${finding.id}** ${parts.join('; ')}`];
   });
-  return lines.length === 0 ? [] : ['', '### Fix findings', ...lines];
+  return lines.length === 0
+    ? []
+    : [
+        '',
+        '### Fix findings',
+        "Other failures are not this brief's job: their fix tasks or the next review answer them. Do not send the implementer after them.",
+        ...lines,
+      ];
 }
 
 function taskBody(task: Task): string {

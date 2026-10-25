@@ -98,9 +98,16 @@ export function triageContractErrors(
     }
     for (const input of inputs) {
       const times = answered.get(input.id) ?? 0;
+      // Fix tasks may share an input's failures: each task names it once, and nothing else does.
+      const sharedByFixTasks =
+        result.fixTasks.every(
+          (task) => task.findingIds.filter((id) => id === input.id).length <= 1,
+        ) &&
+        !result.rejected.some((entry) => entry.findingId === input.id) &&
+        !result.verify.some((entry) => entry.findingId === input.id);
       if (times === 0) {
         errors.push(`Pending input ${input.id} is not fixed, rejected or verified.`);
-      } else if (times > 1) {
+      } else if (times > 1 && !sharedByFixTasks) {
         errors.push(`Pending input ${input.id} is answered more than once.`);
       }
     }
@@ -259,10 +266,11 @@ function findingFor(
     const failureKeys: Record<string, string[]> = {};
     const redKeys: Record<string, string[]> = {};
     for (const id of finding.checkIds ?? []) {
-      if (REVIEW_CHECK_ID.test(id)) {
-        const check = reviewChecks?.plan.commands.find((check) => check.id === id);
-        if (check !== undefined) commands[id] = check.command;
-      }
+      const command = REVIEW_CHECK_ID.test(id)
+        ? reviewChecks?.plan.commands.find((check) => check.id === id)?.command
+        : inputs.find((input) => input.checkIds?.includes(id) && input.command !== undefined)
+            ?.command;
+      if (command !== undefined) commands[id] = command;
       const keys = [
         ...new Set(
           inputs

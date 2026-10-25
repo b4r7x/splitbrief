@@ -85,8 +85,9 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
     const verdict = fixCheckVerdict({
       own: event.own,
       ownLeft: event.ownLeft,
+      deferred: event.deferred ?? 0,
+      deferredTo: event.deferredTo ?? [],
       others: event.others,
-      proven: event.proven ?? true,
     }).join(SOFT_SEP);
     return `${label} ${event.id}: ${verdict} (${event.command})`;
   }
@@ -134,9 +135,10 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   base re-run V1 pre-existing: <test>[ · <test> …][ · +<N> more]
  *   base re-run V1: refused (<detail>) | not run (<detail>)
  *   fix check V1: passed (<command>) | failed (<command>)
- *   fix check V1: your <N> failures gone · <M> others left (<command>)
+ *   fix check V1: your <N> failures gone · <M> others left for their fix tasks or the next review (<command>)
+ *   fix check V1: <J> of your <N> failures gone · <D> left to T025 (<command>)
  *   fix check V1: <K> of your <N> failures remain (<command>)
- *   fix check V1: your <N> failures not shown · not proven fixed (<command>)
+ *   fix check V1: no failure of yours · <M> others left for their fix tasks or the next review (<command>)
  *   fix check V1: refused (<detail>) | not run (<detail>)
  *   stalled: implementer (opencode) · no output for 5:00
  *   review: passed

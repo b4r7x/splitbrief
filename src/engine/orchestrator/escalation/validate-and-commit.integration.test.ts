@@ -1,6 +1,7 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../../../core/schemas/config.js';
+import type { Task } from '../../../core/schemas/task.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -234,6 +235,82 @@ describe('validateAndCommit', () => {
     expect(result).toMatchObject({
       completed: false,
       diagnosis: 'check K1 failed',
+    });
+  });
+
+  describe('a fix task retry', () => {
+    const own = 'src/blocks.ts(1,1): error TS1005: ; expected.';
+    const other = 'src/other.ts(4,2): error TS1005: ; expected.';
+    const fixTask = makeTask({
+      id: 'T023',
+      suggestedFiles: ['src/blocks.ts'],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+      fix: {
+        cycle: 1,
+        findings: [
+          {
+            id: 'P1',
+            text: 'Required check K1 did not pass',
+            acceptance: null,
+            checkIds: ['K1'],
+            commands: { K1: 'tsc --noEmit' },
+            failureKeys: { K1: [own] },
+            redKeys: { K1: [own] },
+          },
+        ],
+      },
+    });
+
+    async function retry(output: string, others: Task[] = []) {
+      const { projectDir, sessionId } = setupProject();
+      vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+        processError.exitCode({ command: 'tsc', code: 2, stderr: '', output }),
+      );
+      const validator: Validator = { formatChangedFiles: vi.fn().mockResolvedValue(undefined) };
+      return validateAndCommit({
+        ctx: await makeValidateCtx({ projectDir, sessionId, validator }),
+        attemptSnapshot: await getChangedFilesSnapshot(projectDir),
+        task: fixTask,
+        state: makeImplState([fixTask, ...others]),
+        method: 'local',
+        transitionType: 'VALIDATION_PASS',
+        retryCount: 1,
+        preApprovedChangedFiles: ['src/blocks.ts'],
+      });
+    }
+
+    it('completes when its own failure is gone and only a failure it does not own is left', async () => {
+      expect(await retry(other)).toMatchObject({ completed: true });
+    });
+
+    it('completes when its remaining failure is one a pending sibling carries under a reviewer check of the same command', async () => {
+      const sibling = makeTask({
+        id: 'T025',
+        fix: {
+          cycle: 1,
+          findings: [
+            {
+              id: 'V2.1',
+              text: 'Reviewer check V2 (tsc --noEmit) failed with new failures.',
+              acceptance: null,
+              checkIds: ['V2'],
+              commands: { V2: 'tsc --noEmit' },
+              failureKeys: { V2: [own] },
+              redKeys: { V2: [own] },
+            },
+          ],
+        },
+      });
+
+      expect(await retry([own, other].join('\n'), [sibling])).toMatchObject({ completed: true });
+    });
+
+    it('names its own failure and the others in the diagnosis when its own failure remains', async () => {
+      expect(await retry([own, other].join('\n'))).toMatchObject({
+        completed: false,
+        diagnosis:
+          'check K1 failed: your\u00a01\u00a0failure\u00a0remains, 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review',
+      });
     });
   });
 });

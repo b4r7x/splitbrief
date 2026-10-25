@@ -1,7 +1,12 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { dueCriterionIds } from '../../../core/review/verdict.js';
-import { fixCheckKeys } from '../../../core/review/fix-task.js';
+import {
+  fixCheckCounts,
+  fixCheckKeys,
+  fixCheckVerdict,
+  judgeFixCheck,
+} from '../../../core/review/fix-task.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
@@ -129,8 +134,12 @@ export async function runBriefGate(opts: {
   track(state);
   const correction = checksAccepted && state.messageQueue.some(isQueuedMessagePendingDelivery);
   const acceptance: ValidationAcceptance = { accepted: checksAccepted && !correction };
-  const carried = fixCheckKeys(task);
+  const carried = fixCheckKeys(task, state.tasks);
   const firstFailedCheck = failedChecks[0];
+  const firstJudged =
+    firstFailedCheck?.status === 'fail'
+      ? judgeFixCheck(carried.get(firstFailedCheck.checkId), firstFailedCheck.failure)
+      : null;
   return {
     state,
     stop: wctx.signal?.aborted ? ('aborted' as const) : undefined,
@@ -141,6 +150,13 @@ export async function runBriefGate(opts: {
       : failedChecks
           .map((run) => checkFailureText(run, { carried: carried.get(run.checkId) }))
           .join('\n\n'),
-    diagnosis: firstFailedCheck === undefined ? '' : `check ${firstFailedCheck.checkId} failed`,
+    diagnosis:
+      firstFailedCheck === undefined
+        ? ''
+        : `check ${firstFailedCheck.checkId} failed${
+            firstJudged === null
+              ? ''
+              : `: ${fixCheckVerdict(fixCheckCounts(firstJudged)).join(', ')}`
+          }`,
   };
 }
