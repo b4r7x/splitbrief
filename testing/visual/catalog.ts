@@ -3028,6 +3028,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-usage-limit-seat-saved',
+      title: 'Workflow · BUILD saved to another tool while its quota halt waits',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery',
+        title: 'The reset clock stays in the halt title, off the saved seat',
+        kind: 'question',
+        marker: 'Change BUILD tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-balance-spent',
       title: 'Workflow · a spent balance on BUILD',
       surface: screenSurface('workflow'),

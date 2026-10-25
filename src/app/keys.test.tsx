@@ -789,6 +789,7 @@ describe('useAppKeys: ESC stop ladder', () => {
       lifecycleStore.__testReset({ phase: 'complete', status: 'complete' });
       recoveryNoticeStore.open({
         seat: null,
+        ranOn: null,
         resetAt: null,
         issue: makeRecoveryIssue({
           reason,

@@ -448,6 +448,7 @@ describe('Rail — completion with a halt open', () => {
     });
     recoveryNoticeStore.open({
       seat: null,
+      ranOn: null,
       resetAt: null,
       issue: makeRecoveryIssue({
         reason: 'review-failed',
@@ -481,6 +482,7 @@ describe('Rail — completion with a halt open', () => {
     });
     recoveryNoticeStore.open({
       seat: null,
+      ranOn: null,
       resetAt: null,
       issue: makeRecoveryIssue({
         reason: 'apply-conflict',
@@ -559,6 +561,7 @@ describe('Rail — a live run resumed into its Apply step', () => {
   it('marks Apply failed when Apply halts after the resume', async () => {
     recoveryNoticeStore.open({
       seat: null,
+      ranOn: null,
       resetAt: null,
       issue: makeRecoveryIssue({
         reason: 'apply-partial',

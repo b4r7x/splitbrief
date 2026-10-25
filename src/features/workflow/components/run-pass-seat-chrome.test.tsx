@@ -411,6 +411,7 @@ describe.each(PLAN_SAVES)('PLAN saved during the run ($save)', ({ pass, saved })
     planUntilCard();
     recoveryNoticeStore.open({
       seat: null,
+      ranOn: null,
       resetAt: null,
       issue: makeRecoveryIssue({ seat: 'plan' }),
       at: { kind: 'planner', call: 'plan' },
@@ -558,6 +559,7 @@ it('a halt on the brief names the saved BUILD seat over the run pass seat', asyn
   save({});
   recoveryNoticeStore.open({
     seat: null,
+    ranOn: null,
     resetAt: null,
     issue: makeRecoveryIssue({ taskId: taskId('T001') }),
     at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
@@ -897,6 +899,7 @@ describe('a stop inside a call', () => {
     void stopInside(BRIEF_STEP);
     recoveryNoticeStore.open({
       seat: null,
+      ranOn: null,
       resetAt: null,
       issue: makeRecoveryIssue({ taskId: taskId('T001') }),
       at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },

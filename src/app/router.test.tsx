@@ -366,6 +366,7 @@ describe('Router usage overlay over a halted run', () => {
     routerStore.init({ screen: 'workflow', run: REPLAYED_RUN, execution: { kind: 'at-rest' } });
     recoveryNoticeStore.open({
       seat: null,
+      ranOn: null,
       resetAt: null,
       issue: CONTEXT_HALT,
       at: { kind: 'review', cycle: 0 },
