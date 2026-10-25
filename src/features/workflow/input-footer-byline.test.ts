@@ -372,7 +372,7 @@ describe('the stop byline through the footer', () => {
       'Stop failed · Could not save the run state: permission denied · .splitbrief/…/state.json',
     ],
     [80, 'Stop failed · Could not save the run state: permission denied · …/state.json'],
-    [60, `${`Stop failed · ${STATE_FAILURE}`.slice(0, 55)}…`],
+    [60, 'Stop failed · Could not save the … denied · …/state.json'],
   ])('keeps the file name of a failed stop at %i columns', (cols, line) => {
     const stopped = stopByline({
       ...running,

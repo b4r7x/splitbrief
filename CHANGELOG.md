@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- A notice that does not fit a narrow terminal keeps the file name and shortens its cause.
 - A notice cut at the end of its row ends on a whole word.
 - Text you send no longer comes back as a draft when SPLITBRIEF stops right after you send it.
 - An isolation halt names the file once.

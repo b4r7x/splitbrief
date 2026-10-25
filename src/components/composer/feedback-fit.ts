@@ -4,6 +4,7 @@ import {
   elidePathMiddle,
   getTerminalCellWidth,
   graphemes,
+  truncateTerminalDisplayTextMiddleAtWords,
 } from '../../utils/display-text.js';
 import { widestPathAwareUnit, wrapPathAware } from '../../utils/wrap.js';
 
@@ -79,15 +80,16 @@ function truncateToBox(text: string, box: FeedbackBox): string {
 
 // A part with `/` and no space is a path. Each path, left to right, takes the most room the text
 // before it leaves (less one cell for the end cut when text follows it), shortened from the middle
-// so its file name stays. A path whose `…/<name>` does not fit there ends the message on the whole
-// parts before it and ` …`, or stays whole for the end cut when they do not fit; a path that opens
-// the message keeps what fits of its name. A message cut after a shortened path ends on its last
-// whole part and ` …`, or on the path when ` …` does not fit.
+// so its file name stays. When `…/<name>` cannot follow the full cause, the code shortens the cause
+// before it in the middle at whole words; a path that opens the message keeps what fits of its name.
+// A message cut after a shortened path ends on its last whole part and ` …`, or on the path when ` …`
+// does not fit.
 function shortenPaths(text: string, box: FeedbackBox): string {
   const parts = text.split(SOFT_SEP);
   let shortened = -1;
   for (const [index, path] of parts.entries()) {
     if (!path.includes('/') || /\s/u.test(path)) continue;
+    const cause = index > 0 ? parts[index - 1] : undefined;
     const before = parts
       .slice(0, index)
       .map((part) => `${part}${SOFT_SEP}`)
@@ -107,9 +109,30 @@ function shortenPaths(text: string, box: FeedbackBox): string {
     if (low >= getTerminalCellWidth(name) || (index === 0 && low > 0)) {
       parts[index] = elidePathMiddle(path, low);
       if (parts[index] !== path) shortened = index;
-    } else if (index > 0) {
-      const head = `${parts.slice(0, index).join(SOFT_SEP)} ${ELLIPSIS}`;
-      if (fitsBox(head, box)) return head;
+    } else if (cause !== undefined) {
+      const beforePrefix = parts
+        .slice(0, index - 1)
+        .map((part) => `${part}${SOFT_SEP}`)
+        .join('');
+      const causeAfter = `${SOFT_SEP}${name}${index < parts.length - 1 ? ` ${ELLIPSIS}` : ''}`;
+      let causeLow = 0;
+      let causeHigh = getTerminalCellWidth(cause);
+      while (causeLow < causeHigh) {
+        const mid = Math.ceil((causeLow + causeHigh) / 2);
+        if (
+          fitsBox(
+            `${beforePrefix}${truncateTerminalDisplayTextMiddleAtWords(cause, mid)}${causeAfter}`,
+            box,
+          )
+        ) {
+          causeLow = mid;
+        } else {
+          causeHigh = mid - 1;
+        }
+      }
+      parts[index - 1] = truncateTerminalDisplayTextMiddleAtWords(cause, causeLow);
+      parts[index] = name;
+      shortened = index;
     }
   }
   const joined = parts.join(SOFT_SEP);

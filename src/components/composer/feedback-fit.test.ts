@@ -279,16 +279,24 @@ describe('fitFeedbackMessage', () => {
       );
     });
 
-    it('drops a path whose file name cannot follow the cause', () => {
+    it('shortens the cause and keeps the file name when the file name cannot follow the full cause', () => {
       expect(fitFeedbackMessage(RELEASE, { width: 56, maxRows: 1 })).toBe(
-        'Could not release the run lock: permission denied …',
+        'Could not … lock: permission denied · …/lockfile.json …',
       );
     });
 
-    it('cuts the end at a whole word when not even the cause and the ellipsis fit', () => {
+    it('shortens the cause and keeps the file name at narrow widths', () => {
       expect(fitFeedbackMessage(RELEASE, { width: 50, maxRows: 1 })).toBe(
-        'Could not release the run lock: permission …',
+        'Could not … permission denied · …/lockfile.json …',
       );
+    });
+
+    it('keeps lockfile.json and shortens the cause at whole words at 60 columns', () => {
+      const message = `Could not release the run lock: operation not permitted · ${LOCK} · other SPLITBRIEF processes can see the run as running for a few more seconds`;
+      const fitted = fitFeedbackMessage(message, { width: 60, maxRows: 1 });
+
+      expect(fitted).toBe('Could not release the … not permitted · …/lockfile.json …');
+      expect(getTerminalCellWidth(fitted)).toBeLessThanOrEqual(60);
     });
 
     it('keeps lockfile.json and ends on a whole word with ellipsis at 80 and 140 columns', () => {
