@@ -26,7 +26,7 @@ const reviewerProtocolError = typedOutputError.seatProtocol({
   seat: 'reviewer',
   attempts: 2,
   transport: 'fallback',
-  errors: 'answer.action: invalid',
+  errors: ['answer.action: invalid'],
   answerPreview: '{}',
 });
 

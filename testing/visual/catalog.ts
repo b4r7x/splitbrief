@@ -3572,6 +3572,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-review-contract',
+      title: 'Workflow · a final review contract halt with two errors',
+      surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 30 })],
+      checkpoint: {
+        id: 'recovery-review-contract',
+        title: 'Review contract halt with multiple errors',
+        kind: 'question',
+        marker: 'Seat down · The reviewer seat',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Workflow transcript' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-review-prompt-too-large',
       title: 'Workflow · a final review prompt larger than the tool takes on its command line',
       surface: screenSurface('workflow'),

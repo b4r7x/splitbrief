@@ -210,6 +210,27 @@ describe('workflow visual fixtures', () => {
     expect(frame).not.toContain('Change REVIEW tool');
   });
 
+  it('renders a REVIEW contract halt with multiple errors in the transcript and panel', async () => {
+    const projection = workflowFixtureProjections.get(
+      scenarioId('workflow-recovery-review-contract'),
+    );
+    if (projection === undefined) throw new Error('Missing REVIEW contract recovery scenario');
+    expect(projection.resumeState?.pendingRecovery).toMatchObject({
+      seat: 'review',
+      reason: 'seat-protocol-error',
+    });
+    const frame = stripTerminalControls(await renderProjection(projection), {
+      preserveLineBreaks: true,
+    }).replace(/[│\s]+/g, ' ');
+    expect(frame).toContain(
+      'The reviewer seat answer did not match its contract after 2 attempts.',
+    );
+    expect(frame).toContain(
+      'result.checks.0.value: The check command contains a shell operator. Choose a single command.',
+    );
+    expect(frame).toContain('result.verdict: Required');
+  });
+
   it.each([
     [
       'workflow-recovery-review-prompt-too-large',

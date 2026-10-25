@@ -483,7 +483,12 @@ it('marks the halt text an 80x24 panel cuts and keeps every action and the legen
   const rows = stripAnsiStyles(ui.lastFrame()).split('\n');
   const separator = rows.findIndex((row) => row.includes('──────'));
   expect(rows).toHaveLength(panelRowsAt80x24);
-  expect(rows[separator - 1]).toMatch(/^[│|] {3}… \d+ more lines +[│|]$/);
+  const isBlank = (row: string | undefined) => /^[│|] +[│|]$/.test(row ?? '');
+  const mark = rows.findIndex((row) => /^[│|] {3}… \d+ more lines +[│|]$/.test(row));
+  expect(mark).toBeGreaterThan(0);
+  expect(mark).toBeLessThan(separator);
+  expect(isBlank(rows[mark - 1])).toBe(false);
+  expect(rows.slice(mark + 1, separator).every(isBlank)).toBe(true);
   expect(rows.some((row) => row.includes('Try again'))).toBe(true);
   expect(rows.some((row) => row.includes('End run'))).toBe(true);
   expect(rows.at(-2)).toContain('↑↓ select · ⏎ confirm');
