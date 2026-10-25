@@ -66,6 +66,14 @@ window.ATLAS.push({
 });
 ```
 
+## FAQ file
+
+`flow-atlas/data/faq.js` is not an area. It pushes question entries into a separate global,
+`window.ATLAS_FAQ`: `{ id, q, a, refs, tags }`. `refs` lists the sources of the answer:
+a decision id (`RC_HALT_OF`), `area:<id>` or `diagram:<id>`. Every ref must resolve; `check.mjs`
+fails on a ref that does not. The first tag picks the group in the view. The first sentence of `a`
+is the short answer. See README.md for the full rules.
+
 ## Rules for authors
 
 - Read the **code**, not only the docs. Every `where` is a real `file:line` in the current tree.

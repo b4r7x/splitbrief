@@ -114,7 +114,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
   S->>G: resolveCliExecutableAliases(trust: gate)
   G-->>S: executable receipt (lub cli-executable-identity-drift)
   S->>AD: baseArgs({model, effort, variant, sessionId, schema, skillRoots})
-  AD-->>S: argv adaptera; args = [...baseArgs, ...configuredArgs]
+  AD-->>S: argv adaptera, args = baseArgs + configuredArgs
   S->>I: invocation {executable, args, env, cwd, timeoutMs, signal}
   I->>P: adapter + context (idle warn/kill, toolUseGuard)
   P->>P: validateArgs (argument-conflict?)

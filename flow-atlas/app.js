@@ -716,7 +716,7 @@
       '<p class="flow-sub">' + esc(st.sub) + '</p>' +
       flowFacts(st.facts) +
       '<a class="flow-foot" href="#area/' + esc(st.area) + '" title="' + esc(a ? a.title : st.area) + '"><span class="flow-foot-area">' + esc(a ? a.title : st.area) + '</span>' +
-      '<span>' + (a && !a.missing ? c.d + ' diagr. · ' + c.dec + ' dec. · ' + c.sc + ' scen.' : 'brak danych') + ' →</span></a>' +
+      '<span>' + (a && !a.missing ? nDecisions(c.dec) + ' · ' + nDiagrams(c.d) : 'brak danych') + ' →</span></a>' +
       '</article>';
   }
 
@@ -765,8 +765,14 @@
     }).join('');
     return '<details class="card faq-item filter-item" id="a-q-' + esc(f.id) + '" data-area="' + esc(f.tags.join(' ')) + '" data-text="' + esc(fold(f.q + ' ' + f.a + ' ' + f.tags.join(' ') + ' ' + f.refs.join(' '))) + '">' +
       '<summary><span class="faq-head"><span class="faq-q">' + esc(f.q) + '</span><span class="faq-lead">' + inlineText(sentences(f.a)[0]) + '</span></span>' + (tags ? '<span class="faq-tags">' + tags + '</span>' : '') + '</summary>' +
-      '<div class="faq-body"><div class="prose faq-a">' + block(f.a) + '</div>' + faqRefs(f.refs) +
+      '<div class="faq-body"><div class="faq-a">' + faqAnswer(f.a) + '</div>' + faqRefs(f.refs) +
       '<div class="faq-link"><a href="' + faqHref(f.id) + '">link do tej odpowiedzi</a></div></div></details>';
+  }
+
+  function faqAnswer(text) {
+    var ss = sentences(text);
+    return '<p class="faq-a-lead">' + inline(ss[0] || '') + '</p>' +
+      (ss.length > 1 ? '<ul class="faq-points">' + ss.slice(1).map(function (x) { return '<li><span>' + inline(x) + '</span></li>'; }).join('') + '</ul>' : '');
   }
 
   function faqView() {
@@ -1422,11 +1428,15 @@
       var width = Math.max(11, Math.round(1.8 * Math.sqrt(label.length)));
       var lines = [];
       var cur = '';
-      label.split(' ').forEach(function (w) {
-        if (cur && (cur + ' ' + w).length > width) {
-          lines.push(cur);
-          cur = w;
-        } else cur = cur ? cur + ' ' + w : w;
+      label.split(' ').forEach(function (word) {
+        var parts = word.length > width && word.indexOf('/') > 0 ? word.split(/(?<=\/)(?=.)/) : [word];
+        parts.forEach(function (w, i) {
+          var sep = i ? '' : ' ';
+          if (cur && (cur + sep + w).length > width) {
+            lines.push(cur);
+            cur = w;
+          } else cur = cur ? cur + sep + w : w;
+        });
       });
       if (cur) lines.push(cur);
       return id + '{"' + lines.join('<br/>') + '"}';
@@ -1499,11 +1509,14 @@
     var z = naturalSize(svg);
     var s = 1;
     var PAD = 16;
+    var centred = /^(?:flowchart|graph)\s+(?:TD|TB|BT)\b|^stateDiagram/.test(sourceOf(card).trim());
     function update() {
       var tall = scroller.scrollHeight > scroller.clientHeight + 4;
+      var wide = scroller.scrollWidth > scroller.clientWidth + 4;
       var atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 32;
       card.classList.toggle('is-tall', tall);
-      card.classList.toggle('is-wide', scroller.scrollWidth > scroller.clientWidth + 4);
+      card.classList.toggle('is-wide', wide);
+      more.firstChild.textContent = 'Diagram jest ' + (wide ? 'większy' : 'wyższy') + ' niż ramka: przewiń w niej albo';
       more.hidden = !tall || atEnd;
     }
     function apply() {
@@ -1516,7 +1529,7 @@
       var avail = (scroller.clientWidth || 800) - PAD;
       s = z.w > avail ? Math.max(MIN_FIT, avail / z.w) : 1;
       apply();
-      scroller.scrollLeft = 0;
+      scroller.scrollLeft = centred ? Math.max(0, (scroller.scrollWidth - scroller.clientWidth) / 2) : 0;
       scroller.scrollTop = 0;
     }
     function zoomAt(factor, cx, cy) {
@@ -1590,17 +1603,24 @@
       st.s = ns;
       apply();
     }
-    function fit() {
+    function fit(whole) {
       var z = naturalSize(svg);
       var vw = viewport.clientWidth || 800;
       var vh = viewport.clientHeight || 600;
-      st.s = Math.min(1.5, vw / z.w, vh / z.h) * 0.96;
+      var all = Math.min(1.5, vw / z.w, vh / z.h) * 0.96;
+      st.s = whole ? all : Math.max(all, Math.min(1.5, (vw - 32) / z.w));
       st.x = (vw - z.w * st.s) / 2;
-      st.y = (vh - z.h * st.s) / 2;
+      st.y = z.h * st.s > vh ? 16 : (vh - z.h * st.s) / 2;
       apply();
     }
     viewport.addEventListener('wheel', function (e) {
       e.preventDefault();
+      if (!e.ctrlKey && !e.metaKey) {
+        st.x -= e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
+        st.y -= e.shiftKey && !e.deltaX ? 0 : e.deltaY;
+        apply();
+        return;
+      }
       var r = viewport.getBoundingClientRect();
       zoomAt(wheelFactor(e), e.clientX - r.left, e.clientY - r.top);
     }, { passive: false });
@@ -1739,7 +1759,7 @@
       });
       if (it.kind === 'decyzja') score += 2;
       if (it.kind === 'obszar') score += 3;
-      if (it.kind === 'pytanie') score += 4;
+      if (it.kind === 'pytanie') score += 8;
       hits.push({ it: it, score: score });
     });
     hits.sort(function (a, b) { return b.score - a.score || a.it.area.order - b.it.area.order; });
@@ -1851,6 +1871,7 @@
         if (k === 'in') modalPz.zoom(1.25);
         if (k === 'out') modalPz.zoom(0.8);
         if (k === 'fit') modalPz.fit();
+        if (k === 'all') modalPz.fit(true);
         return;
       }
       if (t.closest('#modal-close')) {

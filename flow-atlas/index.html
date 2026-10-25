@@ -69,11 +69,12 @@
   <div class="modal" id="modal" hidden>
     <div class="modal-bar">
       <strong id="modal-title"></strong>
-      <span class="modal-hint">kółko: zoom · przeciągnij: przesuń · Esc: zamknij</span>
+      <span class="modal-hint">kółko: przewiń · Ctrl + kółko: zoom · przeciągnij: przesuń · Esc: zamknij</span>
       <span class="spacer"></span>
       <button class="btn" type="button" data-zoom="in">+</button>
       <button class="btn" type="button" data-zoom="out">−</button>
-      <button class="btn" type="button" data-zoom="fit">dopasuj</button>
+      <button class="btn" type="button" data-zoom="fit" title="Dopasuj do szerokości okna">dopasuj</button>
+      <button class="btn" type="button" data-zoom="all" title="Cały diagram w oknie">cały diagram</button>
       <button class="btn" type="button" id="modal-close">zamknij</button>
     </div>
     <div class="modal-body" id="modal-body"></div>
