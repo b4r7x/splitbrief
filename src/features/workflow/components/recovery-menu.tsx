@@ -18,7 +18,7 @@ import {
   recoveryPromptSummaryRows,
   getRecoveryPromptActions,
   recoveryActionKey,
-  recoveryMenuLabel,
+  recoveryMenuActionLabel,
   recoveryMenuParts,
   recommendedRecoveryAction,
 } from '../recovery-prompt.js';
@@ -158,7 +158,7 @@ export function RecoveryMenu({
     ? '⏎ runs the command'
     : correctionAction === undefined
       ? 'typing goes to the composer'
-      : `⏎ ${recoveryMenuLabel(correctionAction, issue)} with the typed correction`;
+      : `⏎ ${recoveryMenuActionLabel(correctionAction, issue)} with the typed correction`;
   const legend = fitKeyLegend(
     focused
       ? formatKeyHints([

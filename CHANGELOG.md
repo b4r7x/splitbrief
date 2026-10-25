@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- The Fix again action now reads `Fix again · grants one more fix cycle`, and its key line reads `⏎ Fix again with the typed correction`, so the note is no longer named twice.
 - A seat answer that fails its contract with several errors now lists every error in the transcript, and the halt panel and --plain show one error per line instead of a line cut in the middle of a word.
 - A PLAN, BUILD or REVIEW prompt larger than the tool takes on its command line no longer halts with only Try again or Continue, which failed the same way. A BUILD brief no longer retries or asks the planner first. The halt states the prompt's size and the tool's limit, and offers a change of that seat's tool, its fallback first, and End run.
 - A BUILD prompt that Claude Code refuses as too long no longer shows a made-up size.
