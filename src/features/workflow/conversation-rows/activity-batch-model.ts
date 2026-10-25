@@ -131,6 +131,7 @@ function activityLedgerItems(
   const items = new Map<string, RunnerActivityLedgerItem>();
   for (const event of events) {
     const item = runnerActivityLedgerItem(event);
+    if (item === null) continue;
     if (items.has(item.visibleKey)) items.delete(item.visibleKey);
     items.set(item.visibleKey, item);
   }
@@ -160,6 +161,7 @@ function collapsedActivityItemsProjection(
 
   for (const event of events) {
     const item = runnerActivityLedgerItem(event);
+    if (item === null) continue;
     summaries.set(item.visibleKey, activityItemSummary(item));
     if (recent.has(item.visibleKey)) recent.delete(item.visibleKey);
     recent.set(item.visibleKey, item);

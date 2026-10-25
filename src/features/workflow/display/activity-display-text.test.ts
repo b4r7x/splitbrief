@@ -96,6 +96,8 @@ describe('fitCompactActivityDisplayLine', () => {
       expect(activity).not.toBeNull();
       if (activity === null) return;
       const item = runnerActivityLedgerItem(activity);
+      expect(item).not.toBeNull();
+      if (item === null) return;
       const prefix = '  └─ ';
       const renderAtWidth = (rowCells: number) =>
         fitCompactActivityDisplayLine({
