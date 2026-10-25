@@ -436,7 +436,15 @@ a.stat:hover { border-color: var(--accent); text-decoration: none; }
 .b-if { color: var(--muted); }
 .arrow { color: var(--faint); }
 .b-default { color: var(--muted); font-style: italic; }
-.tbl-config td:first-child, .tbl-config-all td:first-child { width: 22%; }
+.tbl-config td:first-child { width: 22%; }
+.tbl-config-all th:nth-child(1) { width: 20%; }
+.tbl-config-all th:nth-child(2) { width: 13%; }
+.tbl-config-all th:nth-child(3) { width: 14%; }
+.tbl-config-all th:nth-child(4) { width: 10%; }
+.tbl-config-all th:nth-child(6) { width: 20%; }
+.tbl-config-all tbody.grp + tbody.grp tr:first-child td { border-top: 1px solid var(--border-strong); }
+.tbl-config-all td[rowspan] { background: var(--surface); border-bottom: 0; }
+.tbl-config-all .pill-area { white-space: normal; }
 .tbl-states td:first-child { width: 22%; }
 .tbl-files td:first-child { width: 40%; }
 .tbl-glossary td:first-child { width: 20%; }

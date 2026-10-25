@@ -131,7 +131,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
   SS_HOOK_FAILURE_POLICY -->|"block"| DENY
   SS_HOOK_FAILURE_POLICY -->|"warn, domyślne"| WARN
   SS_HOOK_FAILURE_POLICY -->|"ignore"| ALLOW
-  DENY --> KIND{"Hook pre czy post?"}
+  DENY --> KIND["Rodzaj hooka: pre czy post"]
   WARN --> KIND
   ALLOW --> KIND
   CRASH --> KIND
@@ -187,7 +187,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
       title: 'Kompakcja i odbudowa kontekstu planera przy wznowieniu',
       caption: 'initializeWorkflow przy wznowionym runie bez otwartego recovery próbuje kompakcji. Potem, gdy seat nie może wznowić swojego wątku, planner dostaje odbudowany transkrypt.',
       mermaid: `flowchart TD
-  A["initializeWorkflow, savedState istnieje"] --> REC{"Otwarte recovery?"}
+  A["initializeWorkflow, savedState istnieje"] --> REC["Sprawdź: otwarte recovery"]
   REC -->|"tak"| SKIPALL["Bez kompakcji i odbudowy"]
   REC -->|"nie"| SS_COMPACT_TRIGGER{"Próg ustawiony, planner się streszcza, wiadomości ponad próg?"}
   SS_COMPACT_TRIGGER -->|"nie"| SS_REBUILD_CONTEXT{"Seat zmieniony, brak resume lub brak plannerSessionId?"}
@@ -223,11 +223,11 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
       caption: 'Kiedy powstaje który snapshot i co się dzieje przy błędzie. Snapshoty zawsze opisują katalog projektu (checkout), nigdy worktree.',
       mermaid: `flowchart TD
   A["Plan zatwierdzony, ready-for-tasks"] --> SS_SNAP_BASELINE{"Sesja ma już baseline?"}
-  SS_SNAP_BASELINE -->|"tak, resume"| WSQ{"state.workspace istnieje?"}
+  SS_SNAP_BASELINE -->|"tak, resume"| WSQ["Sprawdź state.workspace"]
   SS_SNAP_BASELINE -->|"nie"| SS_SNAP_CREATE_BRANCH{"Pierwszy snapshot sesji?"}
   SS_SNAP_CREATE_BRANCH -->|"tak"| FULL["baseline: pełna kopia wszystkich plików"]
   SS_SNAP_CREATE_BRANCH -->|"nie"| DIFF["Tylko pliki z innym hashem lub trybem niż baseline"]
-  FULL --> CHECKB{"hasBaseline po próbie?"}
+  FULL --> CHECKB["Sprawdź hasBaseline po próbie"]
   CHECKB -->|"nie"| STOP["throw run-baseline-snapshot-missing, run kończy się błędem"]
   CHECKB -->|"tak"| WSQ
   WSQ -->|"nie"| WB["Snapshot workspace-base, open isolation, RECORD_WORKSPACE"]
@@ -915,7 +915,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
       id: 'SS_EVIDENCE_RECORD_KIND',
       title: 'Zapis wyniku briefu: local czy retry',
       question: 'Jak zapisać wynik tej próby briefu?',
-      where: 'src/engine/orchestrator/evidence/persistence.ts:86',
+      where: 'src/engine/orchestrator/evidence/persistence.ts:88',
       inputs: ['recordKind', 'status', 'method', 'retries', 'durationMs', 'changedFiles', 'initialChangedFiles'],
       branches: [
         { if: 'brak ledgera', then: 'utworzenie z wszystkich zadań state i `briefHash` (src/engine/orchestrator/evidence/persistence.ts:54)' },

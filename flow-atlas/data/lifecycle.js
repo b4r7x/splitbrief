@@ -281,9 +281,86 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
     MARK["trees/.../.splitbrief/isolation-marker"]
     BASES["bases/base-<pid>-<rand>/ (drzewo bazy do base re-run)"]
   end
-  ACT -. "nazywa" .-> SESS
-  RET -. "wskazuje" .-> TREES
-  RET -. "lub" .-> STAGE`,
+  ACT -.->|"nazywa"| SESS
+  RET -.->|"wskazuje"| TREES
+  RET -.->|"lub"| STAGE`,
+    },
+    {
+      id: 'lc-crash-detect',
+      title: 'Co zostawia crash i jak następny start to wykrywa',
+      caption: 'Trzy niezależne ślady: lockfile (kto trzyma run), state.json (gdzie run stał) i runner-pids.jsonl (jakie narzędzia żyły). Każdy start sprawdza wszystkie trzy, zanim coś zapisze.',
+      mermaid: `flowchart TD
+  A["Nastepny start: runWorkflow lub otwarcie runu w TUI"] --> LC_ORPHAN_RUNNER{"runner-pids.jsonl ma pidy<br/>i lock wlasciciela dead / exited?"}
+  LC_ORPHAN_RUNNER -->|"tak"| K1["SIGTERM grupy, 2 s, SIGKILL;<br/>releaseRunnerPids tylko zreapowanych"]
+  LC_ORPHAN_RUNNER -->|"wlasciciel live / stale / brak locka"| K2["nic: narzedzia moga byc czyjes"]
+  K1 --> LC_ORPHAN_SESSION{"folder sesji pusty lub z samym<br/>readiness.json, starszy niz 24 h, nieaktywny?"}
+  K2 --> LC_ORPHAN_SESSION
+  LC_ORPHAN_SESSION -->|"tak"| P1["rename do .claim + rm"]
+  LC_ORPHAN_SESSION -->|"nie"| P2["folder zostaje"]
+  P1 --> LC_LIVENESS_RESULT{"inspectSessionLiveness(ref)"}
+  P2 --> LC_LIVENESS_RESULT
+  LC_LIVENESS_RESULT -->|"state.json brak lub phase terminalna"| V1["not live, takeover zabroniony<br/>(nie ma czego przejmowac)"]
+  LC_LIVENESS_RESULT -->|"lock live"| V2["running: continue / resume odmawiaja"]
+  LC_LIVENESS_RESULT -->|"lock stale"| V3["not live, takeover zabroniony:<br/>kill it first"]
+  LC_LIVENESS_RESULT -->|"lock dead / exited / missing / invalid"| LC_PID_IDENTITY{"checkProcessIdentity:<br/>czas startu pid vs lock"}
+  LC_PID_IDENTITY -->|"pid reused lub ESRCH"| V4["dead: run jest wolny"]
+  LC_PID_IDENTITY -->|"zgodny"| V5["live (ale lock mowi exited):<br/>proces jeszcze sprzata"]
+  V4 --> LC_ACTIVE_TAKEOVER{".splitbrief/active wskazuje<br/>inna sesje?"}
+  LC_ACTIVE_TAKEOVER -->|"tak, jej wlasciciel ma takeover = true"| T1["resume: nowy receipt zastepuje wskaznik"]
+  LC_ACTIVE_TAKEOVER -->|"tak, wlasciciel zywy / stale"| T2["session-still-active"]
+  LC_ACTIVE_TAKEOVER -->|"nie lub ta sama sesja"| T3["receipt tej sesji"]
+  T1 --> LC_STATE_VERSION{"loadState: stateVersion?"}
+  T3 --> LC_STATE_VERSION
+  LC_STATE_VERSION -->|"4, schema ok"| S1["loaded"]
+  LC_STATE_VERSION -->|"3, schema v3 ok"| S2["mapV3StateToV4 w pamieci"]
+  LC_STATE_VERSION -->|"> 4 lub zagniezdzona wersja > 1"| S3["invalid · future-version: odmowa"]
+  LC_STATE_VERSION -->|"zly JSON / symlink / schema"| S4["invalid · malformed: odmowa z komunikatem"]
+  LC_STATE_VERSION -->|"brak pliku"| S5["missing: No saved state"]
+  S1 --> D["deriveRunStatus(not-alive) → stopped · interrupted;<br/>init: recordInterruptedCalls, crash restart briefu"]
+  S2 --> D`,
+    },
+    {
+      id: 'lc-entries',
+      title: 'Wejścia do runu at rest: CLI, lista, komendy /run',
+      caption: 'Każde wejście czyta ten sam RunRecord i te same odmowy. CLI mówi je na stderr i kończy exit 1; TUI pokazuje je w feedbacku.',
+      mermaid: `flowchart TD
+  A["splitbrief resume"] --> LC_CLI_RESUME{"active? lock? stan?"}
+  LC_CLI_RESUME -->|"brak active"| R1["no active session to resume"]
+  LC_CLI_RESUME -->|"lock alive"| R2["is running — stop it before resuming"]
+  LC_CLI_RESUME -->|"lock stale"| R3["process exists but is unresponsive — kill it first"]
+  LC_CLI_RESUME -->|"stan invalid / missing"| R4["has invalid saved state / no usable state.json"]
+  LC_CLI_RESUME -->|"closed / ready"| R5["nothing to resume / ready-to-apply message"]
+  LC_CLI_RESUME -->|"ok"| R6["resumeSavedSession: prepareExecution(resume),<br/>hydrateRun, workflow screen local"]
+  B["splitbrief continue [id] --action"] --> LC_CLI_CONTINUE{"status i akcja"}
+  LC_CLI_CONTINUE -->|"running"| C1["is still running — stop it before continuing"]
+  LC_CLI_CONTINUE -->|"closed"| C2["Run X is closed (as); nothing to end/resume"]
+  LC_CLI_CONTINUE -->|"end-run"| C3["endRunAtRest (applying → exit 1)"]
+  LC_CLI_CONTINUE -->|"apply / discard, status ready"| C4["settleReadyRun: runApplyAtRest / closeRunIfOpen discarded"]
+  LC_CLI_CONTINUE -->|"apply / discard, nie ready"| C5["is not ready to apply"]
+  LC_CLI_CONTINUE -->|"akcja recovery"| C6["applyRecoveryAction, potem resume"]
+  LC_CLI_CONTINUE -->|"bez akcji"| R6
+  D["/sessions, home, palette: wybor runu"] --> LC_SESSION_SELECT{"Apply tego procesu pisze?<br/>run local na ekranie?"}
+  LC_SESSION_SELECT -->|"Apply pisze"| S1["Apply is still writing to your checkout. Cannot open"]
+  LC_SESSION_SELECT -->|"local run na ekranie"| S2["Stop the run on screen first."]
+  LC_SESSION_SELECT -->|"ok"| S3["readRunHistory → replay session.jsonl,<br/>hydrateFromState, execution at-rest"]
+  E["lista sesji"] --> LC_LISTING_ROW{"rowFor(status, summary.json)"}
+  LC_LISTING_ROW -->|"closed"| L1["complete / ended + apply applied / undone / discarded"]
+  LC_LISTING_ROW -->|"ready-to-apply"| L2["open, apply ready → ready to apply"]
+  LC_LISTING_ROW -->|"running"| L3["open bez stop → running"]
+  LC_LISTING_ROW -->|"open"| L4["open, stop → waiting for you / stopped"]
+  S3 --> F["/run accept · /run reject confirm"] --> LC_RUN_COMMAND{"acceptRun / rejectRun"}
+  LC_RUN_COMMAND -->|"accept, ready"| M1["runApplyAtRest → applied / halted / review / confirm-override"]
+  LC_RUN_COMMAND -->|"accept, checkout open"| M2["closeRunIfOpen → ended"]
+  LC_RUN_COMMAND -->|"reject, workspace ready"| M3["closeRunIfOpen discarded + run.patch"]
+  LC_RUN_COMMAND -->|"reject, closed applied"| M4["undoApply → closed · undone"]
+  LC_RUN_COMMAND -->|"reject, checkout"| LC_REJECT_CHECKOUT{"rejectRunSnapshot: konflikty<br/>lub brakujace pliki?"}
+  LC_REJECT_CHECKOUT -->|"nie"| J1["closed · discarded"]
+  LC_REJECT_CHECKOUT -->|"tak"| J2["run zostaje open; RECORD_REJECT<br/>otwiera briefy z cofnietymi plikami"]
+  LC_REJECT_CHECKOUT -->|"brak run snapshot"| J3["No run snapshot to reject."]
+  M4 --> LC_RESTORE_FILE{"restoreApplyBackup: plik pasuje do<br/>expected / before / zadnego?"}
+  LC_RESTORE_FILE -->|"expected"| U1["written → bajty sprzed Apply, created usuniete"]
+  LC_RESTORE_FILE -->|"before"| U2["pending → unchanged"]
+  LC_RESTORE_FILE -->|"zadnego"| U3["ambiguous → left as you changed them"]`,
     },
   ],
   decisions: [

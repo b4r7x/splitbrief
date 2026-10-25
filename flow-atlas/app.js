@@ -810,32 +810,24 @@
 
   function configView() {
     var merged = mergedConfig();
-    var html = pageHead('Przekrój', 'Konfiguracja', 'Klucze konfiguracji, zmienne środowiska i flagi ze wszystkich obszarów. Ten sam klucz z kilku obszarów jest scalony w jeden wiersz.');
+    var html = pageHead('Przekrój', 'Konfiguracja', 'Klucze konfiguracji, zmienne środowiska i flagi ze wszystkich obszarów. Klucz opisany w kilku obszarach ma jeden wiersz na obszar.');
     html += filterBar('f-cfg', 'Filtruj: klucz, wartość, efekt…', areaSelect('f-cfg-area'));
     if (!merged.length) return html + '<div class="empty">Brak kluczy konfiguracji w danych.</div>';
-    var rows = merged.map(function (m) {
+    merged.sort(function (x, y) { return x.key.toLowerCase() < y.key.toLowerCase() ? -1 : 1; });
+    var groups = merged.map(function (m) {
       var areas = uniq(m.items.map(function (x) { return x.area.id; }));
-      var effects = m.items.filter(function (x, i, all) {
-        return all.findIndex(function (y) { return str(y.c.effect).trim() === str(x.c.effect).trim(); }) === i;
-      });
-      var effectHtml = effects.length > 1
-        ? effects.map(function (x) { return '<div class="multi"><span class="pill pill-tiny">' + esc(x.area.id) + '</span> ' + inline(x.c.effect) + '</div>'; }).join('')
-        : inline(effects[0] && effects[0].c.effect);
-      return {
-        attrs: ' data-area="' + esc(areas.join(' ')) + '" data-key="cfg" data-sort-key="' + esc(m.key.toLowerCase()) + '" data-sort-area="' + esc(String(S.areaById.get(areas[0]).order).padStart(3, '0') + m.key.toLowerCase()) + '" data-text="' + esc(fold(m.key + ' ' + m.items.map(function (x) { return [x.c.values, x.c.default, x.c.effect, x.c.where].map(str).join(' '); }).join(' '))) + '"',
-        cells: [
-          '<code class="strong">' + esc(m.key) + '</code>' + (m.items.length > 1 ? ' <span class="pill pill-tiny" title="zdefiniowany w kilku obszarach">×' + m.items.length + '</span>' : ''),
-          areas.map(function (id) { return areaPill(S.areaById.get(id)); }).join(' '),
-          uniq(m.items.map(function (x) { return x.c.values; })).map(inline).join('<br>'),
-          uniq(m.items.map(function (x) { return x.c.default; })).map(inline).join('<br>'),
-          effectHtml,
-          uniq(m.items.map(function (x) { return x.c.where; })).map(refs).join(' ')
-        ]
-      };
+      var n = m.items.length;
+      var text = fold(m.key + ' ' + m.items.map(function (x) { return [x.c.values, x.c.default, x.c.effect, x.c.where].map(str).join(' '); }).join(' '));
+      var minOrder = Math.min.apply(null, m.items.map(function (x) { return x.area.order; }));
+      return '<tbody class="grp filter-item" data-area="' + esc(areas.join(' ')) + '" data-sort-key="' + esc(m.key.toLowerCase()) + '" data-sort-area="' + esc(String(minOrder).padStart(3, '0') + m.key.toLowerCase()) + '" data-text="' + esc(text) + '">' +
+        m.items.map(function (x, i) {
+          return '<tr id="a-cfgv-' + esc(x.area.id) + '-' + x.i + '">' +
+            (i === 0 ? '<td rowspan="' + n + '"><code class="strong">' + esc(m.key) + '</code>' + (n > 1 ? ' <span class="pill pill-tiny" title="opisany w kilku obszarach">×' + n + '</span>' : '') + '</td>' : '') +
+            '<td>' + areaPill(x.area) + '</td><td>' + inline(x.c.values) + '</td><td>' + inline(x.c.default) + '</td><td>' + inline(x.c.effect) + '</td><td>' + refs(x.c.where) + '</td></tr>';
+        }).join('') + '</tbody>';
     });
-    rows.sort(function (x, y) { return x.attrs < y.attrs ? -1 : 1; });
     var heads = ['<button type="button" class="sort" data-sort="key">Klucz <span>↕</span></button>', '<button type="button" class="sort" data-sort="area">Obszar <span>↕</span></button>', 'Wartości', 'Domyślnie', 'Efekt', 'Gdzie'];
-    return html + table(heads, rows, 'tbl-config-all filterable sortable');
+    return html + '<div class="tbl-wrap"><table class="tbl tbl-config-all sortable"><thead><tr>' + heads.map(function (h) { return '<th>' + h + '</th>'; }).join('') + '</tr></thead>' + groups.join('') + '</table></div>';
   }
 
   function scenariosView() {
@@ -993,13 +985,14 @@
 
   function sortTable(btn) {
     var tableEl = btn.closest('table');
-    var tbody = tableEl.querySelector('tbody');
+    var grouped = tableEl.querySelector('tbody.grp');
+    var tbody = grouped ? tableEl : tableEl.querySelector('tbody');
     var by = btn.getAttribute('data-sort');
     var dir = btn.getAttribute('data-dir') === 'asc' ? 'desc' : 'asc';
     tableEl.querySelectorAll('.sort').forEach(function (b) { b.removeAttribute('data-dir'); b.querySelector('span').textContent = '↕'; });
     btn.setAttribute('data-dir', dir);
     btn.querySelector('span').textContent = dir === 'asc' ? '↑' : '↓';
-    var rows = Array.from(tbody.rows);
+    var rows = grouped ? Array.from(tableEl.tBodies) : Array.from(tbody.rows);
     rows.sort(function (x, y) {
       var a = x.getAttribute('data-sort-' + by) || '';
       var b = y.getAttribute('data-sort-' + by) || '';
