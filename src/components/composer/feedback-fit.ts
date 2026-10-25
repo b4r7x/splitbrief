@@ -63,6 +63,17 @@ function truncateToBox(text: string, box: FeedbackBox): string {
   if (box.maxWidth <= 0) return '';
   if (fitsBox(text, box)) return text;
   if (!fitsBox(ELLIPSIS, box)) return '';
+
+  const words = text.split(' ');
+  if (words.length > 1) {
+    for (const [i, word] of [...words.entries()].reverse()) {
+      if (word === '' || word.endsWith('·')) continue;
+      const head = words.slice(0, i + 1).join(' ');
+      const candidate = `${head} ${ELLIPSIS}`;
+      if (fitsBox(candidate, box)) return candidate;
+    }
+  }
+
   return longestFittingHead(text, (head) => `${head}${ELLIPSIS}`, box);
 }
 

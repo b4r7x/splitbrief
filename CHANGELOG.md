@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- A notice cut at the end of its row ends on a whole word.
 - Text you send no longer comes back as a draft when SPLITBRIEF stops right after you send it.
 - An isolation halt names the file once.
 - A file error names the file from the project root, also from a subfolder, with --project and in a run workspace, and an unreadable kept workspace record says what failed.

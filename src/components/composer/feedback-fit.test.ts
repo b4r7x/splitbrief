@@ -174,9 +174,9 @@ describe('fitFeedbackMessage', () => {
     const tabbed = `tab\there ${'x'.repeat(30)}`;
     const colored = `a\u001b[31mred\u001b[0m ${'x'.repeat(30)}`;
 
-    expect(fitFeedbackMessage(tabbed, { width: 12, maxRows: 1 })).toBe('tab\there xx…');
+    expect(fitFeedbackMessage(tabbed, { width: 12, maxRows: 1 })).toBe('tab\there …');
     expect(fitFeedbackMessage(colored, { width: 12, maxRows: 1 })).toBe(
-      'a\u001b[31mred\u001b[0m xxxxxx…',
+      'a\u001b[31mred\u001b[0m …',
     );
   });
 
@@ -265,9 +265,9 @@ describe('fitFeedbackMessage', () => {
       expect(getTerminalCellWidth(fitted)).toBeLessThanOrEqual(width);
     });
 
-    it('cuts the end as before when the whole path fits', () => {
+    it('cuts the end on a whole word when the whole path fits', () => {
       expect(fitFeedbackMessage(RELEASE, { width: 151, maxRows: 1 })).toBe(
-        `${RELEASE.slice(0, 150)}…`,
+        `Could not release the run lock: permission denied · ${LOCK} …`,
       );
     });
 
@@ -285,10 +285,27 @@ describe('fitFeedbackMessage', () => {
       );
     });
 
-    it('cuts the end as before when not even the cause and the ellipsis fit', () => {
+    it('cuts the end at a whole word when not even the cause and the ellipsis fit', () => {
       expect(fitFeedbackMessage(RELEASE, { width: 50, maxRows: 1 })).toBe(
-        `${RELEASE.slice(0, 49)}…`,
+        'Could not release the run lock: permission …',
       );
+    });
+
+    it('keeps lockfile.json and ends on a whole word with ellipsis at 80 and 140 columns', () => {
+      const message = `Could not release the run lock: operation not permitted · ${LOCK} · other SPLITBRIEF processes can see the run as running for a few more seconds`;
+
+      const fitted80 = fitFeedbackMessage(message, { width: 80, maxRows: 1 });
+      expect(fitted80).toBe(
+        'Could not release the run lock: operation not permitted · …/lockfile.json …',
+      );
+      expect(fitted80).toContain('lockfile.json');
+      expect(fitted80.endsWith(' …')).toBe(true);
+      expect(getTerminalCellWidth(fitted80)).toBeLessThanOrEqual(80);
+
+      const fitted140 = fitFeedbackMessage(message, { width: 140, maxRows: 1 });
+      expect(fitted140).toContain('lockfile.json');
+      expect(fitted140.endsWith(' …')).toBe(true);
+      expect(getTerminalCellWidth(fitted140)).toBeLessThanOrEqual(140);
     });
 
     it('shortens a path at the end of the message and cuts nothing else', () => {
@@ -311,7 +328,7 @@ describe('fitFeedbackMessage', () => {
       const message = `Could not read: permission denied · /Users/me/My Projects/app/${STATE}`;
 
       expect(fitFeedbackMessage(message, { width: 60, maxRows: 1 })).toBe(
-        `${message.slice(0, 59)}…`,
+        'Could not read: permission denied · /Users/me/My …',
       );
     });
 
@@ -352,5 +369,15 @@ describe('fitFeedbackMessage', () => {
     expect(shrunk.split('\n')).toHaveLength(2);
     expect(shrunk.endsWith(SUFFIX)).toBe(true);
     expect(shrunk).toContain('…');
+  });
+
+  it('cuts a notice with no path and a long cause at a whole word', () => {
+    const message =
+      'Could not release the run lock: operation not permitted · other SPLITBRIEF processes can see the run as running for a few more seconds';
+    const fitted = fitFeedbackMessage(message, { width: 60, maxRows: 1 });
+
+    expect(fitted).toBe('Could not release the run lock: operation not permitted …');
+    expect(fitted.endsWith(' …')).toBe(true);
+    expect(getTerminalCellWidth(fitted)).toBeLessThanOrEqual(60);
   });
 });
