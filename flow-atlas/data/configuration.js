@@ -698,7 +698,6 @@ window.ATLAS.push({
     'Ostrzeżenia konfiguracji (retired, uprawnienia 0o022, {prompt} w argv) są wypisywane raz na proces i projekt (toldNotices), więc kolejne resolve w tym samym procesie milczą.',
     'SPLITBRIEF_TEST_CLIPBOARD_CALLS jest dźwignią testową w kodzie produkcyjnym (native.ts:34): wydłuża timeout schowka do 15 s.',
     'Notice retired są liczone na surowym rekordzie po scaleniu z domyślnymi, więc approve: all raportuje się jako retired, mimo że załadowany config mówi plan.',
-    'Plik ~/.splitbrief/trust/*.json z bitami grupy/innych (0o077) czyta się jako nieważny: zgoda znika po chmod 644.',
-    'Ta strona nie jest na liście EXPECTED w flow-atlas/check.mjs; check zgłasza dla niej ostrzeżenie „plik spoza listy obszarów”, choć index.html i app.js już ją ładują.'
+    'Plik ~/.splitbrief/trust/*.json z bitami grupy/innych (0o077) czyta się jako nieważny: zgoda znika po chmod 644.'
   ]
 });
