@@ -60,7 +60,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
   RC_RATE_LIMITED -->|"tak"| RC_RESET_WAIT_ONCE{"Reset w ciągu 10 min?"}
   RC_RESET_WAIT_ONCE -->|"tak (BUILD, konsultacja)"| W["Czekaj w miejscu<br/>state.seatWait, powtórz raz"]
   RC_RESET_WAIT_ONCE -->|"nie"| S
-  RC_RATE_LIMITED -->|"nie"| RC_TRANSIENT{"Sieć / 5xx / 408 /<br/>429 bez resetu?"}
+  RC_RATE_LIMITED -->|"nie"| RC_TRANSIENT{"Sieć / 5xx / 408 /<br/>429 w tekście bez rzeczownika limitu?"}
   RC_TRANSIENT -->|"tak"| R["Powtórz z backoffem 2s, 4s, 8s<br/>(max 3 razy)"]
   RC_TRANSIENT -->|"nie: other"| F["Zwykła porażka próby<br/>→ drabina eskalacji (build)"]
   S --> RC_HALT_OF{"haltOf(reason)"}
@@ -397,7 +397,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       branches: [
         { if: "outcome znany i nie należy do `non-zero-exit` / `protocol-failure` / `usage-limit`", then: "nie transient (outcome jest ostateczny)", next: "RC_HALT_OF" },
         { if: "wygląda na offline, marker sieci, status 408 lub 5xx", then: "`transient` → `withSeatRetry` powtarza do 3 razy z backoffem 2s, 4s, 8s", next: "RC_TRANSIENT_RETRY" },
-        { if: "status 429 bez parsowalnego resetu, ale z frazą limitu lub rzeczownikiem (`too many requests`, `quota`, `limit`)", then: "`transient` (pojemnościowe 429, np. Claude Code `Request rejected (429)`) → retry", next: "RC_TRANSIENT_RETRY" },
+        { if: "`429` w tekście (bez pola `status`), bez parsowalnego resetu, z silną frazą limitu (`request rejected (429)`, `api error … 429`), ale bez rzeczownika (`too many requests`, `quota`, `limit`)", then: "`transient` (pojemnościowe 429, np. Claude Code `Request rejected (429)`) → retry. Z rzeczownikiem albo z polem `status: 429` to `account · quota` (seat-failure.ts:129, 143), nie transient", next: "RC_TRANSIENT_RETRY" },
       ],
       default: "`other`: zwykła porażka próby; na BUILD wchodzi drabina eskalacji (→ zobacz build), na PLAN/REVIEW halt `planner-call-failed`.",
     },
