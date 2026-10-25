@@ -14,7 +14,7 @@ const EXPECTED = ['journey', 'startup', 'runners', 'planning', 'build', 'review'
 const ARRAY_FIELDS = ['entry', 'links', 'diagrams', 'decisions', 'config', 'states', 'scenarios', 'files', 'gotchas', 'glossary', 'tree'];
 const DECISION_ID = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
 const DECISION_TOKEN = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g;
-const REF_RE = /(?:[\w@.\-]+\/)+(?:[\w@.\-]+)?(?::\d+(?:-\d+)?)?|[\w@\-]+\.(?:ts|tsx|js|mjs|cjs|json|jsonl|md|ya?ml|sh|toml|txt)(?::\d+(?:-\d+)?)?/g;
+const REF_RE = /(?:[\w@.\-]+\/)+(?:[\w@.\-]+)?(?::\d+(?:-\d+)?)?|\.?[\w@\-]+(?:\.[\w@\-]+)*\.(?:jsonl|json|tsx|ts|mjs|cjs|js|md|yaml|yml|sh|toml|txt)(?![\w.\-])(?::\d+(?:-\d+)?)?/g;
 
 function parseArgs(argv) {
   const out = { data: path.join(HERE, 'data'), repo: path.dirname(HERE), render: true, verbose: false };

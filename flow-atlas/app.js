@@ -16,7 +16,7 @@
   ];
   var DECISION_RE = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g;
   var NODE_ID_RE = /^(?:flowchart|state)-(.+)-\d+$/;
-  var REF_RE = /(?:[\w@.\-]+\/)+(?:[\w@.\-]+)?(?::\d+(?:-\d+)?)?|[\w@\-]+\.(?:ts|tsx|js|mjs|cjs|json|jsonl|md|ya?ml|sh|toml|txt)(?::\d+(?:-\d+)?)?/g;
+  var REF_RE = /(?:[\w@.\-]+\/)+(?:[\w@.\-]+)?(?::\d+(?:-\d+)?)?|\.?[\w@\-]+(?:\.[\w@\-]+)*\.(?:jsonl|json|tsx|ts|mjs|cjs|js|md|yaml|yml|sh|toml|txt)(?![\w.\-])(?::\d+(?:-\d+)?)?/g;
   var VIEWS = [
     ['map', 'Mapa'],
     ['decisions', 'Wszystkie decyzje'],
