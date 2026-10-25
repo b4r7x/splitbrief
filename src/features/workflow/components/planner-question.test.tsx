@@ -12,7 +12,10 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { afterAll, afterEach, expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { questionPromptStore as store } from '../../../stores/question-prompt/prompt.js';
+import {
+  questionOptions,
+  questionPromptStore as store,
+} from '../../../stores/question-prompt/prompt.js';
 import { PlannerQuestion } from './planner-question.js';
 
 const originalForceColor = vi.hoisted(() => {
@@ -611,5 +614,31 @@ it('moves focus from the answer field to the menu on ↑ in a choice question', 
   ui.stdin.write('\u001b[A');
   await flushEffects();
   expect(store.get().focus).toBe('menu');
+  ui.unmount();
+});
+
+it.each<ClarificationQuestion>([
+  {
+    id: 'goal',
+    type: 'choice',
+    text: 'What is the refactor goal?',
+    options: ['Simplify', 'Fix a bug', 'Cleanup'],
+  },
+  {
+    id: 'target',
+    type: 'input',
+    text: 'Which module should change?',
+    default: 'src/features/workflow',
+  },
+])('keeps the question text in view while writing an answer on a short panel', async (question) => {
+  store.setQuestions([question]);
+  store.select(questionOptions(question).length);
+  store.setFocus('answer');
+  const ui = renderQuestion(60, 9);
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame())).toContain(question.text);
+  store.setFocus('menu');
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame())).toContain('Write your own answer…');
   ui.unmount();
 });
