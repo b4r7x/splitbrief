@@ -63,6 +63,7 @@ import type { SkillMeta } from '../../../src/core/skills/types.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { listProjectFiles } from '../../../src/lib/file-listing.js';
 import { saveState } from '../../../src/core/state/persistence.js';
+import { seatIdentitiesFromConfig, writeSeatIdentities } from '../../../src/core/state/seats.js';
 import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { makeConfig } from '../../helpers/factories/config.js';
@@ -308,7 +309,10 @@ export function createWorkflowBaseFixture(
     const sessionId = VISUAL_WORKFLOW_SESSION_ID;
     persistVisualConfig();
     if (resumeState !== undefined) {
-      saveState({ projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId }, resumeState);
+      const ref = { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId };
+      saveState(ref, resumeState);
+      // The pass that left this state recorded its seats when it started, as every run pass does.
+      writeSeatIdentities(ref, seatIdentitiesFromConfig(config));
     }
     const prepared = prepareWorkflowExecution({
       projectDir: VISUAL_FIXTURE_PROJECT_DIR,

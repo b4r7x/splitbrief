@@ -376,6 +376,7 @@ describe('running brief seat chrome', () => {
     startBriefOnCodex();
     recoveryNoticeStore.open({
       seat: null,
+      ranOn: null,
       resetAt: null,
       issue: makeRecoveryIssue({ taskId: taskId('T021') }),
       at: { kind: 'brief', taskId: taskId('T021'), attempt: 0 },
@@ -400,6 +401,7 @@ describe('running brief seat chrome', () => {
     saveCrew({ implementer: CODEX_SEAT });
     recoveryNoticeStore.open({
       seat: 'build',
+      ranOn: null,
       resetAt: null,
       issue: makeRecoveryIssue({ reason: 'runner-usage-limit', taskId: taskId('T021') }),
       at: { kind: 'brief', taskId: taskId('T021'), attempt: 0 },

@@ -1321,6 +1321,7 @@ describe('InputFooter', () => {
     chalk.level = 3;
     recoveryNoticeStore.open({
       seat: 'build',
+      ranOn: null,
       resetAt: null,
       issue: makeRecoveryIssue(),
       at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },

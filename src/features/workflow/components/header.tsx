@@ -4,13 +4,22 @@ import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import {
+  recoveryNoticeStore,
+  type RecoveryNoticeState,
+} from '../../../stores/workflow/recovery-notice.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
-import { formatCollapsedSeatSpans, seatLineText } from '../../../core/crew/identity.js';
+import {
+  formatCollapsedSeatSpans,
+  idsOf,
+  isSeatIdentity,
+  seatLineText,
+  type SeatIds,
+} from '../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import type { CrewSeatId, SeatLineSpan } from '../../../core/crew/identity.js';
@@ -40,15 +49,20 @@ export interface HeaderLayout {
   showSeats: boolean;
 }
 
-/** An open halt annotates its own seat and only while it names both the seat and a reset. */
+/**
+ * An open halt annotates its own seat, only while it names both the seat and a reset, and only
+ * while that seat shows the tool and model the halted call ran on: a seat saved since, or the
+ * default BUILD seat beside a named profile that halted, has no limit to wait for.
+ */
 function seatResetNotes(
-  seat: CrewSeatId | null,
-  resetAt: number | null,
+  notice: Pick<RecoveryNoticeState, 'seat' | 'ranOn' | 'resetAt'>,
+  shown: Readonly<Record<CrewSeatId, SeatIds>>,
 ): Partial<Record<CrewSeatId, string>> | undefined {
-  if (seat === null || resetAt === null) return undefined;
-  const notes: Partial<Record<CrewSeatId, string>> = {};
-  notes[seat] = formatResetNote(resetAt);
-  return notes;
+  const { seat, ranOn, resetAt } = notice;
+  if (seat === null || ranOn === null || resetAt === null) return undefined;
+  const onScreen = shown[seat];
+  if (!isSeatIdentity(onScreen, ranOn) && !isSeatIdentity(ranOn, onScreen)) return undefined;
+  return { [seat]: formatResetNote(resetAt) };
 }
 
 export function getHeaderLayout(input: {
@@ -89,12 +103,18 @@ export function Header({
   // The room does not depend on the line, so the first pass measures it, the
   // line is cut to it, and the second pass lays the bar out around what fits.
   const { seatRoom } = getHeaderLayout({ cols, railCells });
-  const seatNotes = seatResetNotes(recoveryNotice.seat, recoveryNotice.resetAt);
   const seats = config && {
     plan: running.plan?.seat ?? config.planner,
     build: running.build?.seat ?? resolveImplementerProfiles(config).defaultProfile.config,
     review: running.review?.seat ?? configuredReviewerRunner(config),
   };
+  const seatNotes =
+    seats &&
+    seatResetNotes(recoveryNotice, {
+      plan: idsOf(seats.plan),
+      build: idsOf(seats.build),
+      review: idsOf(seats.review ?? seats.plan),
+    });
   const liveSeatLine = seats
     ? formatCollapsedSeatSpans({
         planner: seats.plan,
@@ -102,12 +122,12 @@ export function Header({
         reviewer: seats.review,
         budget: seatRoom,
         haltedSeat: recoveryNotice.seat ?? savedHalt?.seat,
-        ...(seatNotes !== undefined && { notes: seatNotes }),
         displayNames: {
           ...(planDisplay !== undefined && { planner: planDisplay, plan: planDisplay }),
           ...(buildDisplay !== undefined && { build: buildDisplay }),
           ...(reviewDisplay !== undefined && { reviewer: reviewDisplay, review: reviewDisplay }),
         },
+        ...(seatNotes && { notes: seatNotes }),
       })
     : [];
   const seatLine = givenSeatLine ?? liveSeatLine;

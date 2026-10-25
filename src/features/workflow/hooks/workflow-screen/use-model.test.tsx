@@ -248,6 +248,7 @@ describe('useWorkflowScreen continuing a run stopped at Apply', () => {
 
     recoveryNoticeStore.open({
       seat: null,
+      ranOn: null,
       resetAt: null,
       issue: makeRecoveryIssue({ reason: 'apply-partial', phase: 'complete' }),
       at: { kind: 'apply' },

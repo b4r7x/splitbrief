@@ -2883,6 +2883,7 @@ function usageLimitRecoveryIssue(
     seatSwap: {
       seat: 'build',
       currentTool: '',
+      from: { tool: 'ollama', model: BASE_IMPLEMENTER.model },
       fallback: SEAT_FALLBACK,
       detectedTools: ['opencode', 'codex', 'claude-code', 'cursor', 'copilot', 'kilo-code'].map(
         (tool) => ({ tool, ready: true }),
@@ -6161,6 +6162,20 @@ const implementationShellSeatProjection: WorkflowFixtureProjection = {
   }),
 };
 
+// The BUILD seat saved to Claude Code while its Ollama quota halt waits. The clock stays in the
+// halt title; the seat on screen has no limit to wait for, so it carries no reset note.
+const usageLimitSeatSavedProjection: WorkflowFixtureProjection = {
+  ...usageLimitRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-usage-limit-seat-saved'),
+  config: { implementer: CLAUDE_PLAN_SEAT },
+  get events() {
+    return usageLimitRecoveryProjection.events;
+  },
+  get resumeState() {
+    return haltedResumeState(usageLimitRecoveryIssue());
+  },
+};
+
 const finalReviewSeatChangeProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
   scenarioId: scenarioId('workflow-final-review-seat-change'),
@@ -7243,6 +7258,7 @@ const projections = [
   implementationSeatChangeProjection,
   buildBriefCheckSeatChangeProjection,
   implementationShellSeatProjection,
+  usageLimitSeatSavedProjection,
   finalReviewSeatChangeProjection,
   reviewCheckLongCommandProjection,
   reviewChecksApproveProjection,
