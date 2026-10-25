@@ -173,6 +173,16 @@ describe('status command', () => {
     expect(stripVTControlCharacters(captureOutput())).toContain('Task:     2/2');
   });
 
+  it('prints no brief position for a run that has no briefs yet', async () => {
+    writeActiveSession(tmp, '2026-10-25-planning', 'still planning', { phase: 'planning' });
+
+    await runStatus([]);
+
+    const out = stripVTControlCharacters(captureOutput());
+    expect(out).toContain('Status:   stopped');
+    expect(out).not.toContain('Task:');
+  });
+
   it('reports the repository-root session when run from a package subdirectory', async () => {
     createTestGitRepo(tmp);
     const subdir = join(tmp, 'packages', 'web');

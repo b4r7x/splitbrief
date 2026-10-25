@@ -5,6 +5,7 @@ import type { PrepareExecutionInput } from '../../../engine/runners/prepare-exec
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { resumeSavedSession } from './resume.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { saveDetectionCache } from '../../../engine/detection/cache.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
@@ -279,4 +280,79 @@ describe('headless resume on a blocked run', () => {
       });
     },
   );
+});
+
+describe('resume line position display', () => {
+  const threeTasks = [
+    makeTask({ id: 'T001', status: 'pending' }),
+    makeTask({ id: 'T002', status: 'pending' }),
+    makeTask({ id: 'T003', status: 'pending' }),
+  ];
+
+  it.each([
+    {
+      name: 'no tasks (no position parenthetical)',
+      state: { ...createInitialState('resume line test'), tasks: [], currentTaskIndex: 0 },
+      expected: 'Resuming: resume line test',
+    },
+    {
+      name: 'first of three tasks pending',
+      state: {
+        ...createInitialState('resume line test'),
+        phase: 'implementing' as const,
+        tasks: threeTasks,
+        currentTaskIndex: 0,
+      },
+      expected: 'Resuming: resume line test (task 1/3)',
+    },
+    {
+      name: 'all three done with currentTaskIndex 3',
+      state: {
+        ...createInitialState('resume line test'),
+        phase: 'final-review' as const,
+        tasks: [
+          makeTask({ id: 'T001', status: 'done' }),
+          makeTask({ id: 'T002', status: 'done' }),
+          makeTask({ id: 'T003', status: 'done' }),
+        ],
+        currentTaskIndex: 3,
+      },
+      expected: 'Resuming: resume line test (task 3/3)',
+    },
+  ])('$name', async ({ state, expected }) => {
+    await withTempDir('resume-line', async (projectDir) => {
+      const logs: string[] = [];
+      const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        logs.push(args.join(' '));
+      });
+
+      try {
+        await expect(
+          resumeSavedSession({
+            projectDir,
+            sessionId: 'session-resume-line',
+            state,
+            opts: {},
+            deps: {
+              prepareExecution: async () => ({ kind: 'aborted' }),
+              initStores: async () => {},
+              renderApp: async () => {},
+              runHeadless: async () => {},
+              setupWorkflow: async () => ({
+                projectDir,
+                useFullscreen: false,
+                useMouse: false,
+                useHover: false,
+              }),
+            },
+          }),
+        ).rejects.toThrow(/cancelled/);
+
+        const resumingLine = logs.find((line) => line.startsWith('Resuming:'));
+        expect(resumingLine).toBe(expected);
+      } finally {
+        logSpy.mockRestore();
+      }
+    });
+  });
 });

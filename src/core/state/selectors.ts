@@ -15,6 +15,19 @@ export function briefInFlight(
   return current?.status === 'in_progress' ? current : undefined;
 }
 
+/**
+ * The brief a run names as its position, counted from 1. The cursor points one past the last
+ * brief once every brief has settled, so the position never names a brief the run does not have.
+ * A run with no briefs yet has no position.
+ */
+export function briefPosition(
+  state: Pick<WorkflowState, 'tasks' | 'currentTaskIndex'>,
+): { position: number; total: number } | undefined {
+  const total = state.tasks.length;
+  if (total === 0) return undefined;
+  return { position: Math.min(state.currentTaskIndex + 1, total), total };
+}
+
 export function getCompletedTaskIds(state: Pick<WorkflowState, 'tasks'>): TaskId[] {
   return getTaskIdsByStatus(state, 'done');
 }

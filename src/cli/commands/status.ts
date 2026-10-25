@@ -33,6 +33,7 @@ import { oneLineDisplayText, stripTerminalControls } from '../../utils/display-t
 import { recordedSeatIdentityInput } from '../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { loadRememberedCatalog } from '../bootstrap/discovery.js';
+import { briefPosition } from '../../core/state/selectors.js';
 
 /**
  * The kind the displayed seat's own calls recorded for its tool name, when they
@@ -141,10 +142,10 @@ export function registerStatusCommand(program: Command): void {
         console.log(
           `${paint(theme.textDim, 'Status:')}   ${chalk.bold(sessionStatusWord(session))}`,
         );
-        // The cursor points one past the last brief once every brief has settled, so the
-        // position is the brief it names, never a brief the run does not have.
-        const position = Math.min(state.currentTaskIndex + 1, state.tasks.length);
-        console.log(`${paint(theme.textDim, 'Task:')}     ${position}/${state.tasks.length}`);
+        const brief = briefPosition(state);
+        if (brief !== undefined) {
+          console.log(`${paint(theme.textDim, 'Task:')}     ${brief.position}/${brief.total}`);
+        }
         console.log(`${paint(theme.textDim, 'Started:')}  ${state.startedAt}`);
         console.log(`${paint(theme.textDim, 'Session:')}  ${sessionId}`);
 

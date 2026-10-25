@@ -563,7 +563,7 @@ splitbrief init --reconfigure
 splitbrief status [--project <dir>]
 ```
 
-Print the current session's phase, task progress, one `PLAN`, `BUILD` and `REVIEW` line with the tool and model of each seat, and counts for completed / escalated / failed tasks. Task progress names the brief the run is on as `N/M`; once every brief has settled it reads `M/M`, never a brief past the last.
+Print the current session's phase, task progress, one `PLAN`, `BUILD` and `REVIEW` line with the tool and model of each seat, and counts for completed / escalated / failed tasks. Task progress names the brief the run is on as `N/M`; once every brief has settled it reads `M/M`, never a brief past the last. A run with no briefs yet prints no task line.
 
 ### Usage
 
@@ -691,7 +691,7 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 - The version guard rejects resume with: `saved state is from an older version and cannot be resumed. Please start a new workflow with 'splitbrief start'.`
 - A session with a pending recovery is not refused headlessly. `resume --plain` and `resume --json` print the issue, the recommended action and the `splitbrief continue … --action …` line to stderr and exit `1`; pass that action to `continue` to carry on.
 - Any open run resumes. `deriveRunStatus` (`src/core/sessions/run-status.ts`) decides; [WORKFLOW.md §Run status](./WORKFLOW.md#run-status) owns the rules. A ready run is refused with `Run <id> is ready to apply.` and the two lines that apply or discard it (`splitbrief continue <id> --action apply|discard`). A closed run is refused with `Run <id> is closed (<complete|ended|applied|undone|discarded>); nothing to resume.` A run killed during validation or escalation re-enters at the start of the brief it was on, with that brief's files restored from its task-start snapshot.
-- A short `Resuming: <feature> (task N/M)` line prints before the TUI mounts. `N` never exceeds `M`: a run whose briefs have all settled reads `M/M`.
+- A short `Resuming: <feature> (task N/M)` line prints before the TUI mounts. A run with no briefs yet prints `Resuming: <feature>` with no position. `N` never exceeds `M`: a run whose briefs have all settled reads `M/M`.
 - The plan approval level comes from `workflow.approve`, else `plan`. Resume overwrites the level the run saved with that value. A run saved by an older release continues as one planning session if it stopped before its plan: its saved mode is ignored, and only the plan card (or nothing, under `approve: none`) opens before the build.
 
 ---
