@@ -1,5 +1,14 @@
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';
+import {
+  buildPromptTooLargeProjection,
+  buildPromptTooLargeRecoveryIssue,
+  reviewContractErrorMessage,
+  reviewContractProjection,
+  reviewContractRecoveryIssue,
+  reviewPromptTooLargeProjection,
+  reviewPromptTooLargeRecoveryIssue,
+} from './halt-text-projections.js';
 import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifact-card.js';
 import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
@@ -21,6 +30,7 @@ import type { ConsultSeat } from '../../../../src/core/schemas/consult.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeRunRecord } from '../../../helpers/factories/run-record.js';
 import { makeSummary } from '../../../helpers/factories/summary.js';
+import { CURSOR_MODEL_REFUSAL } from '../../../helpers/cursor-refusal.js';
 import { SessionLogEventEntrySchema } from '../../../../src/core/schemas/session-log.js';
 import { engineEventFromLogEntry } from '../../../../src/engine/events/replay.js';
 import { makeReviewFixInsertedEvents } from '../../../helpers/events/task.js';
@@ -30,7 +40,10 @@ import { renderCheckNotes, planRepairWarning } from '../../../../src/engine/spec
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
 import { BOUNDS } from '../../../../src/core/pipeline-spec/bounds.js';
 import { buildConsultBoundRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/consult.js';
-import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/checks.js';
+import {
+  buildRequiredChecksUnrunnableRecoveryIssue,
+  type UnrunnableCheck,
+} from '../../../../src/engine/orchestrator/recovery/builders/checks.js';
 import {
   buildApplyConflictRecoveryIssue,
   buildApplyPartialRecoveryIssue,
@@ -44,6 +57,7 @@ import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-ro
 import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
 import { formatRecoveryPrompt } from '../../../../src/features/workflow/recovery-prompt.js';
 import { projectRunnerCallEvents } from '../../../../src/engine/calls/event-projection.js';
+import { formatUsageLimitWarning } from '../../../../src/core/recovery/usage-limit-step.js';
 import { createRunnerCallRecorder } from '../../../../src/engine/calls/recorder.js';
 import { createImplementerCallContext } from '../../../../src/engine/implementers/pipeline/call-result.js';
 import type { RunnerCallEvent } from '../../../../src/engine/calls/types.js';
@@ -74,7 +88,7 @@ import {
   type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
-import { runnerAuthDisplayName } from '../../../../src/engine/runners/auth-failure.js';
+import { getRunnerCatalogDisplayName } from '../../../../src/core/config/accessors/runner-config.js';
 import { timedOutMessage } from '../../../../src/lib/process/errors.js';
 import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure.js';
 import {
@@ -103,12 +117,13 @@ import type { Config } from '../../../../src/core/schemas/config.js';
 import { error } from '../../../../src/utils/error.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
 import {
-  checkCommandRefusal,
+  commandTextRefusal,
   sanitizeDiscoveredValidation,
 } from '../../../../src/engine/orchestrator/planning/sanitize-discovered-validation.js';
 import {
   BASE_IMPLEMENTER,
   BASE_PLANNER,
+  LONG_SESSION_ID,
   VISUAL_FIXTURE_PROJECT_DIR,
   visualConfig,
   VISUAL_WORKFLOW_SESSION_ID,
@@ -286,6 +301,7 @@ const WORKFLOW_FINAL_REVIEW_ID = scenarioId('workflow-final-review');
 const WORKFLOW_APPROVAL_CONFIRM_ID = scenarioId('workflow-approval-confirm');
 const WORKFLOW_QUESTION_ID = scenarioId('workflow-question');
 const WORKFLOW_PAUSED_MID_BRIEF_ID = scenarioId('workflow-paused-mid-brief');
+const WORKFLOW_PAUSED_CUT_SEAT_ID = scenarioId('workflow-paused-cut-seat');
 const WORKFLOW_RESUMED_KEPT_WORK_ID = scenarioId('workflow-resumed-kept-work');
 const WORKFLOW_PAUSED_BOUNDARY_ID = scenarioId('workflow-paused-boundary');
 const WORKFLOW_STOPPING_ID = scenarioId('workflow-stopping');
@@ -306,6 +322,7 @@ const WORKFLOW_RECOVERY_HINT_SEAT_ID = scenarioId('workflow-recovery-hint-seat')
 const WORKFLOW_PLAN_ACTIVITY_ID = scenarioId('workflow-plan-activity');
 const WORKFLOW_PLANNING_CLAUDE_FRAMES_ID = scenarioId('workflow-planning-claude-frames');
 const WORKFLOW_PLANNER_SESSION_EXPIRED_ID = scenarioId('workflow-planner-session-expired');
+const WORKFLOW_PLAN_USAGE_LIMIT_ID = scenarioId('workflow-plan-usage-limit');
 
 const idleProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IDLE_ID,
@@ -335,7 +352,7 @@ const planningProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       status: 'running',
       tool: 'claude-code',
-      model: 'fixture-planner-v1',
+      model: BASE_PLANNER.model,
       call: 'plan',
     },
     {
@@ -1000,9 +1017,9 @@ const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// An approved plan names `npm run lint`, but package.json defines no lint script. The plan command
-// policy refuses the check, so the brief's checks show it as a refused row with the rule it broke,
-// and the brief completes on the check that ran.
+// A plan names `npm run lint`, and the run no longer approves the plan, so the plan command policy
+// refuses the check: the brief's checks show it as a refused row with the rule it broke, and the
+// brief completes on the check that ran.
 const planCheckRefusedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-plan-check-refused'),
   feature: WORKFLOW_FEATURE,
@@ -1021,11 +1038,7 @@ const planCheckRefusedProjection: WorkflowFixtureProjection = {
       id: 'K2',
       command: 'npm run lint',
       status: 'refused',
-      detail:
-        checkCommandRefusal('npm run lint', {
-          npmScriptsApproved: true,
-          packageScripts: { packageJsonExists: true, scripts: { test: 'node --test' } },
-        }) ?? '',
+      detail: commandTextRefusal('npm run lint', false) ?? '',
     },
     {
       type: 'checks_run',
@@ -1041,7 +1054,7 @@ const planCheckRefusedProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// The plan's test check found no affected test file, so it did not run and has no command to name.
+// The plan's test check resolved no test command, so it did not run and has no command to name.
 const planCheckNotRunProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-plan-check-not-run'),
   feature: WORKFLOW_FEATURE,
@@ -1060,7 +1073,7 @@ const planCheckNotRunProjection: WorkflowFixtureProjection = {
       id: 'K4',
       command: '',
       status: 'not-run',
-      detail: 'no affected test file found',
+      detail: 'no test command for an unrecognised stack; set validation.test_command',
     },
     {
       type: 'checks_run',
@@ -1074,6 +1087,38 @@ const planCheckNotRunProjection: WorkflowFixtureProjection = {
     },
     ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_completed'),
   ],
+};
+
+// The plan's test check names a test file the workspace does not hold, so it failed without a command.
+const planCheckNoTestFileProjection: WorkflowFixtureProjection = {
+  ...planCheckNotRunProjection,
+  scenarioId: scenarioId('workflow-plan-check-no-test-file'),
+  events: planCheckNotRunProjection.events.map((event): EngineEvent => {
+    if (event.type === 'full_suite') {
+      return {
+        type: 'full_suite',
+        ts: event.ts,
+        phase: event.phase,
+        moment: 'plan',
+        id: 'K4',
+        command: '',
+        status: 'done',
+        passed: false,
+        duration: 0,
+        detail: 'the workspace has no test file for src/loud.test.mjs',
+      };
+    }
+    if (event.type === 'checks_run') {
+      return {
+        ...event,
+        results: [
+          { id: 'K1', status: 'pass' },
+          { id: 'K4', status: 'fail' },
+        ],
+      };
+    }
+    return event;
+  }),
 };
 
 /** What production code publishes on a bus of its own, stamped in order from `ts`. */
@@ -1552,8 +1597,9 @@ function reviewCheck(
         preExistingKeys?: string[];
         own?: number;
         ownLeft?: number;
+        deferred?: number;
+        deferredTo?: string[];
         others?: number;
-        proven?: boolean;
         detail?: string;
       },
   phase: 'final-review' | 'implementing' = 'final-review',
@@ -2272,6 +2318,19 @@ const planCardSharedCommandProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The plan card as a run opens it: plan.md in the run's own session folder, under a session id
+// long enough that the frame title has to shorten the path.
+const planCardSessionPathProjection: WorkflowFixtureProjection = {
+  ...planCardProjection,
+  scenarioId: scenarioId('workflow-plan-card-session-path'),
+  review: {
+    filePath: `.splitbrief/sessions/${LONG_SESSION_ID}/plan.md`,
+    source: formatPlanMarkdown(PLAN_CARD_PLAN, []),
+    planJson: `${JSON.stringify(PLAN_CARD_PLAN, null, 2)}\n`,
+    confirms: planCardProjection.review?.confirms ?? [],
+  },
+};
+
 const PLAN_CARD_TASKS = PLAN_CARD_PLAN.tasks.map((spec) => taskFromSpec(spec, '/nonexistent'));
 
 // The planning session right after its plan passed the checks: the two cards it announces, plan.md
@@ -2289,7 +2348,7 @@ const planCompiledProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       status: 'running',
       tool: 'claude-code',
-      model: 'fixture-planner-v1',
+      model: BASE_PLANNER.model,
       call: 'plan',
     },
     {
@@ -2329,7 +2388,7 @@ const questionProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       status: 'running',
       tool: 'claude-code',
-      model: 'fixture-planner-v1',
+      model: BASE_PLANNER.model,
       call: 'plan',
     },
     {
@@ -2824,6 +2883,7 @@ function usageLimitRecoveryIssue(
     seatSwap: {
       seat: 'build',
       currentTool: '',
+      from: { tool: 'ollama', model: BASE_IMPLEMENTER.model },
       fallback: SEAT_FALLBACK,
       detectedTools: ['opencode', 'codex', 'claude-code', 'cursor', 'copilot', 'kilo-code'].map(
         (tool) => ({ tool, ready: true }),
@@ -2879,7 +2939,7 @@ const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
         phase: issue.phase,
         message: runnerHaltRow(
           issue,
-          runnerAuthDisplayName(visualConfig().implementer),
+          getRunnerCatalogDisplayName(visualConfig().implementer),
           OLLAMA_LIMIT_WORDS,
         ),
         resetAt: issue.resetAt,
@@ -2929,12 +2989,66 @@ const balanceSpentRecoveryProjection: WorkflowFixtureProjection = {
       publishError({
         bus,
         phase: issue.phase,
-        message: runnerHaltRow(issue, runnerAuthDisplayName(OPENCODE_BALANCE_SEAT), BALANCE_WORDS),
+        message: runnerHaltRow(
+          issue,
+          getRunnerCatalogDisplayName(OPENCODE_BALANCE_SEAT),
+          BALANCE_WORDS,
+        ),
       }),
     );
   },
   get resumeState() {
     return haltedResumeState(balanceSpentRecoveryIssue());
+  },
+};
+
+const CURSOR_REFUSAL_SEAT = {
+  kind: 'cli',
+  tool: 'cursor',
+  model: 'claude-haiku-5-5-thinking-high',
+} as const;
+
+function cursorRefusalRecoveryIssue(): RecoveryIssue {
+  return buildSeatDownIssue({
+    id: 'rec_visual_cursor_refusal',
+    seat: 'build',
+    runner: CURSOR_REFUSAL_SEAT,
+    classification: { class: 'account', cause: 'balance' },
+    words: CURSOR_MODEL_REFUSAL,
+    task: HALTED_TASK,
+    phase: 'implementing',
+    attempts: 1,
+    maxAttempts: BOUNDS.attemptsPerLineage,
+    selectedImplementerProfile: 'default',
+    seatSwap: {
+      seat: 'build',
+      currentTool: 'cursor',
+      detectedTools: [{ tool: 'claude-code', ready: true }],
+    },
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const cursorRefusalRecoveryProjection: WorkflowFixtureProjection = {
+  ...usageLimitRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-cursor-refusal'),
+  config: { implementer: CURSOR_REFUSAL_SEAT },
+  get events() {
+    const issue = cursorRefusalRecoveryIssue();
+    return publishedEvents(FIXED_TS + 100, (bus) =>
+      publishError({
+        bus,
+        phase: issue.phase,
+        message: runnerHaltRow(
+          issue,
+          getRunnerCatalogDisplayName(CURSOR_REFUSAL_SEAT),
+          CURSOR_MODEL_REFUSAL,
+        ),
+      }),
+    );
+  },
+  get resumeState() {
+    return haltedResumeState(cursorRefusalRecoveryIssue());
   },
 };
 
@@ -2988,7 +3102,7 @@ function modelRefusalProjection(
           phase: issue.phase,
           message: runnerDefectRow(
             issue,
-            runnerAuthDisplayName(OPENCODE_ROUTE_SEAT),
+            getRunnerCatalogDisplayName(OPENCODE_ROUTE_SEAT),
             NO_ROUTE_WORDS,
           ),
         }),
@@ -3049,7 +3163,11 @@ const reviewModelRefusalProjection: WorkflowFixtureProjection = {
       publishError({
         bus,
         phase: issue.phase,
-        message: runnerDefectRow(issue, runnerAuthDisplayName(OPENCODE_ROUTE_SEAT), NO_ROUTE_WORDS),
+        message: runnerDefectRow(
+          issue,
+          getRunnerCatalogDisplayName(OPENCODE_ROUTE_SEAT),
+          NO_ROUTE_WORDS,
+        ),
       }),
     );
   },
@@ -3294,11 +3412,8 @@ const taskReviewCapRecoveryProjection: WorkflowFixtureProjection = {
   ),
 };
 
-/** The final review's required check runs a test script that calls a program not installed. */
-const checksMissingProgramRecoveryProjection: WorkflowFixtureProjection = {
-  ...reviewFailedRecoveryProjection,
-  scenarioId: scenarioId('workflow-recovery-checks-missing-program'),
-  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+function finalReviewHaltState(checks: readonly UnrunnableCheck[]): WorkflowState {
+  return makeImplState([{ ...HALTED_TASK, status: 'done' }], {
     feature: WORKFLOW_FEATURE,
     startedAt: RESUMED_RUN_STARTED_AT,
     phase: 'final-review',
@@ -3308,12 +3423,28 @@ const checksMissingProgramRecoveryProjection: WorkflowFixtureProjection = {
       base: { snapshotId: 'visual-base', head: null },
     },
     pendingRecovery: buildRequiredChecksUnrunnableRecoveryIssue({
-      id: 'rec_visual_checks_missing_program',
+      id: 'rec_visual_checks_unrunnable',
       phase: 'final-review',
-      checks: [{ checkId: 'K1', output: 'sh: mocha: command not found', missingProgram: true }],
+      checks,
       createdAt: new Date(FIXED_TS).toISOString(),
     }),
-  }),
+  });
+}
+
+/** The final review's required check runs a test script that calls a program not installed. */
+const checksMissingProgramRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-checks-missing-program'),
+  resumeState: finalReviewHaltState([
+    { checkId: 'K1', output: 'sh: mocha: command not found', missingProgram: true },
+  ]),
+};
+
+/** The final review's required render check cannot run because no render command is set. */
+const checksUnrunnableRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-checks-unrunnable'),
+  resumeState: finalReviewHaltState([{ checkId: 'K2', output: 'validation.render is not set' }]),
 };
 
 const applyConflictIssue = buildApplyConflictRecoveryIssue({
@@ -3585,7 +3716,7 @@ const repeatedTimeoutRecoveryIssue = buildRepeatedTimeoutRecoveryIssue({
   id: 'rec_visual_repeated_timeout',
   task: HALTED_TASK,
   runner: AGY_BUILD_SEAT,
-  toolMessage: timedOutMessage(runnerAuthDisplayName(AGY_BUILD_SEAT), 900_000),
+  toolMessage: timedOutMessage(getRunnerCatalogDisplayName(AGY_BUILD_SEAT), 900_000),
   attempts: 2,
   maxAttempts: BOUNDS.attemptsPerLineage,
   createdAt: new Date(FIXED_TS).toISOString(),
@@ -4031,7 +4162,7 @@ const planSeatRecoveryProjection: WorkflowFixtureProjection = {
 /** The plan seat's call ran past the seat's `timeout`: the halt names the tool and the deadline. */
 function planTimeoutRecoveryIssue(): RecoveryIssue {
   const planner = visualConfig().planner;
-  const words = timedOutMessage(runnerAuthDisplayName(planner), 4_000);
+  const words = timedOutMessage(getRunnerCatalogDisplayName(planner), 4_000);
   return buildPlannerCallFailedRecoveryIssue({
     id: 'rec_visual_plan_timeout',
     diagnosis: diagnosePlannerCallFailure({
@@ -4788,6 +4919,11 @@ const planActivityProjection: WorkflowFixtureProjection = {
       label: 'reading src/core/crew/identity.ts',
       target: 'src/core/crew/identity.ts',
     }),
+    claudePlanActivity(5, {
+      stage: 'started',
+      kind: 'command',
+      label: 'running command',
+    }),
   ],
 };
 
@@ -5241,6 +5377,17 @@ const pausedMidBriefProjection: WorkflowFixtureProjection = {
   },
 };
 
+/**
+ * The same stop with BUILD saved to another tool while the brief ran: the run goes on with the cut
+ * call, so the header and the sidebar name the seat the brief runs on, not the saved one.
+ */
+const pausedCutSeatProjection: WorkflowFixtureProjection = {
+  ...pausedMidBriefProjection,
+  scenarioId: WORKFLOW_PAUSED_CUT_SEAT_ID,
+  sidebarVisible: true,
+  config: { implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } },
+};
+
 const RESUMED_REPORT_TEXT = JSON.stringify({
   status: 'done',
   filesChanged: [WORKFLOW_FIXTURE_SECOND_FILE],
@@ -5578,6 +5725,80 @@ const plannerSessionExpiredProjection: WorkflowFixtureProjection = {
   },
 };
 
+const PLAN_USAGE_LIMIT_RESET_AT = FIXED_TS + 3 * 86_400_000;
+
+const WORKFLOW_PLAN_USAGE_LIMIT_TEXT = formatUsageLimitWarning({
+  step: 75,
+  tool: 'Claude Code',
+  window: 'seven_day',
+  resetsAt: PLAN_USAGE_LIMIT_RESET_AT,
+});
+
+const PLAN_USAGE_LIMIT_CALL: readonly RunnerCallEvent[] = [
+  {
+    type: 'call_warning',
+    ts: FIXED_TS + 100,
+    callId: 'visual-claude-usage-call',
+    role: 'planner',
+    backendKind: 'cli',
+    runnerName: 'claude',
+    model: CLAUDE_PLAN_SEAT.model,
+    axes: seatAxisWords(CLAUDE_PLAN_SEAT),
+    warning: {
+      code: 'claude_rate_limit',
+      severity: 'warning',
+      source: 'provider',
+      surface: 'activity',
+      fingerprint: 'rw:visual-claude-usage-seven-day',
+      message: WORKFLOW_PLAN_USAGE_LIMIT_TEXT,
+      usage: { window: 'seven_day', step: 75, resetsAt: PLAN_USAGE_LIMIT_RESET_AT },
+    },
+  },
+  {
+    type: 'call_tool_use_done',
+    ts: FIXED_TS + 101,
+    callId: 'visual-claude-usage-call',
+    role: 'planner',
+    backendKind: 'cli',
+    runnerName: 'claude',
+    model: CLAUDE_PLAN_SEAT.model,
+    axes: seatAxisWords(CLAUDE_PLAN_SEAT),
+    channel: 'tool',
+    toolUse: {
+      id: 'visual-claude-usage-read',
+      name: 'Read',
+      input: { file_path: 'CLAUDE.md' },
+    },
+  },
+];
+
+/** A Claude Code planning call whose seven-day window passes 75 percent: one warning, then the call reads on. */
+const planUsageLimitProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_PLAN_USAGE_LIMIT_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { planner: CLAUDE_PLAN_SEAT },
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+    {
+      type: 'planner_status',
+      ts: FIXED_TS + 50,
+      phase: 'planning',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'opus',
+      call: 'plan',
+    },
+    ...PLAN_USAGE_LIMIT_CALL.flatMap((event, index) =>
+      projectRunnerCallEvents(
+        { ...event, ts: FIXED_TS + 100 + index },
+        { rootDir: VISUAL_FIXTURE_PROJECT_DIR, phase: 'planning', sequence: index },
+      ),
+    ),
+  ],
+};
+
 // A CLI seat gone quiet mid-brief. OpenCode reports a tool only once the tool lands, so the idle
 // watchdog warns at its default and the call runs on. The build block's freshness line is the one
 // place that silence is counted; beside it the byline says only that the seat is still working.
@@ -5863,27 +6084,111 @@ const reviewPauseRequestedProjection: WorkflowFixtureProjection = {
 // A seat saved under the run: the run goes on and the legend names the brief the seat waits for.
 const SEAT_CHANGE_STOP: FixtureStopState = { intent: 'none', phase: 'idle', seatChange: true };
 
+/** The seats the base crew's run pass started on, as the run announces them when the pass starts. */
+function baseRunPass(phase: EngineEventOf<'workflow_config'>['phase']): EngineEvent {
+  return {
+    type: 'workflow_config',
+    ts: FIXED_TS,
+    phase,
+    plannerTool: BASE_PLANNER.tool,
+    plannerModel: BASE_PLANNER.model,
+    plannerKind: BASE_PLANNER.kind,
+    plannerAxes: [],
+    implementerTool: BASE_IMPLEMENTER.provider,
+    implementerModel: BASE_IMPLEMENTER.model,
+    implementerKind: BASE_IMPLEMENTER.kind,
+    implementerAxes: [],
+  };
+}
+
+// The PLAN seat saved while the plan is made: the chrome keeps naming the seat the run pass
+// started on until the seat's change point.
 const planningSeatChangeProjection: WorkflowFixtureProjection = {
   ...planningProjection,
   scenarioId: scenarioId('workflow-planning-seat-change'),
+  sidebarVisible: true,
+  config: { planner: CLAUDE_PLAN_SEAT },
+  events: [
+    ...planningProjection.events.slice(0, 1),
+    baseRunPass('planning'),
+    ...planningProjection.events.slice(1),
+  ],
   stop: SEAT_CHANGE_STOP,
 };
 
+// The PLAN seat saved while the plan card waits: the plan is the run pass's, so the chrome keeps
+// naming the seat the pass started on until the plan is approved.
 const planCardSeatChangeProjection: WorkflowFixtureProjection = {
   ...planCardProjection,
   scenarioId: scenarioId('workflow-plan-card-seat-change'),
+  config: { planner: CLAUDE_PLAN_SEAT },
+  events: [...planCardProjection.events, baseRunPass('reviewing-plan')],
   stop: SEAT_CHANGE_STOP,
 };
 
 const implementationSeatChangeProjection: WorkflowFixtureProjection = {
   ...implementationProjection,
   scenarioId: scenarioId('workflow-implementation-seat-change'),
+  config: { implementer: CLAUDE_PLAN_SEAT },
   stop: SEAT_CHANGE_STOP,
+};
+
+const buildBriefCheckSeatChangeProjection: WorkflowFixtureProjection = {
+  ...buildBriefCheckProjection,
+  scenarioId: scenarioId('workflow-build-brief-check-seat-change'),
+  config: { implementer: CLAUDE_PLAN_SEAT },
+  stop: SEAT_CHANGE_STOP,
+};
+
+const SHELL_BUILD_SEAT = { kind: 'shell', command: './impl.sh', model: 'auto' } as const;
+
+// A custom shell BUILD seat mid-brief: every surface names it by its kind, never by its command.
+const implementationShellSeatProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-implementation-shell-seat'),
+  config: { implementer: SHELL_BUILD_SEAT },
+  events: implementationProjection.events.map((event): EngineEvent => {
+    if (event.type === 'task_started') {
+      return {
+        ...event,
+        tool: 'shell',
+        model: SHELL_BUILD_SEAT.model,
+        axes: [],
+        backendKind: 'shell',
+      };
+    }
+    if (event.type === 'runner_call_started' || event.type === 'runner_call_activity') {
+      return {
+        ...event,
+        backendKind: 'shell',
+        runnerName: SHELL_BUILD_SEAT.command,
+        model: SHELL_BUILD_SEAT.model,
+        axes: [],
+      };
+    }
+    return event;
+  }),
+};
+
+// The BUILD seat saved to Claude Code while its Ollama quota halt waits. The clock stays in the
+// halt title; the seat on screen has no limit to wait for, so it carries no reset note.
+const usageLimitSeatSavedProjection: WorkflowFixtureProjection = {
+  ...usageLimitRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-usage-limit-seat-saved'),
+  config: { implementer: CLAUDE_PLAN_SEAT },
+  get events() {
+    return usageLimitRecoveryProjection.events;
+  },
+  get resumeState() {
+    return haltedResumeState(usageLimitRecoveryIssue());
+  },
 };
 
 const finalReviewSeatChangeProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
   scenarioId: scenarioId('workflow-final-review-seat-change'),
+  sidebarVisible: true,
+  config: { reviewer: CLAUDE_PLAN_SEAT },
   stop: SEAT_CHANGE_STOP,
 };
 
@@ -6203,6 +6508,32 @@ const reviewBaseMixedProjection: WorkflowFixtureProjection = {
 };
 
 // Q2 review B2: the fix brief runs the red V2 again under its own row and clock.
+const FIX_CHECK_SIBLING_ID = taskId('T905');
+
+/** The review behind the fix-check scenarios gives a shared failure to a second fix brief too. */
+function withFixCheckSibling(event: EngineEvent): EngineEvent {
+  if (event.type === 'review_fix_started') {
+    return { ...event, taskIds: [...event.taskIds, FIX_CHECK_SIBLING_ID] };
+  }
+  if (event.type === 'tasks_planned') {
+    return {
+      ...event,
+      total: 5,
+      tasks: [
+        ...event.tasks,
+        {
+          id: FIX_CHECK_SIBLING_ID,
+          title: 'Fix the checkout total test',
+          index: 4,
+          file: 'src/checkout/total.test.ts',
+          action: 'modify',
+        },
+      ],
+    };
+  }
+  return event.type === 'task_started' ? { ...event, total: 5 } : event;
+}
+
 const fixCheckRunningProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-fix-check-running'),
   feature: WORKFLOW_FEATURE,
@@ -6292,31 +6623,46 @@ const fixCheckStoppedContinuedProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// Live run 2026-10-09: a fix brief's check says which of the failures it carries remain; the
-// other failures of the same red command belong to other fix briefs.
+// Live run 2026-10-09: a fix brief's check says which of its own failures remain. A failure an
+// unfinished sibling fix brief also carries is left to it, and the other failures of the same red
+// command belong to other fix briefs or the next review.
+const FIX_CHECK_REMAINING = 'a.ts:1: error';
+const FIX_CHECK_SHARED = 'src/checkout/total.test.ts::returns the total';
+const FIX_CHECK_RETRY_TEXT = checkFailureText(
+  {
+    checkId: 'V2',
+    status: 'fail',
+    failure: { keys: [FIX_CHECK_REMAINING, FIX_CHECK_SHARED, 'b.ts:1', 'c.ts:1'] },
+    output: '',
+  },
+  {
+    carried: {
+      failureKeys: [FIX_CHECK_REMAINING, FIX_CHECK_SHARED],
+      sharedWith: new Map([[FIX_CHECK_SHARED, [FIX_CHECK_SIBLING_ID]]]),
+      exempt: false,
+    },
+  },
+);
 const fixCheckDoneProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-fix-check-done'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
   get events(): EngineEvent[] {
-    const testCi = { ...REVIEW_CHECK_TEST, command: 'npm run test-ci' };
-    const remaining = 'a.ts:1: error';
-    const gone = 'src/checkout/total.test.ts::returns the total';
-    const keys = [remaining, 'b.ts:1', 'c.ts:1', 'd.ts:1'];
     return [
-      ...fixCheckRunningProjection.events.slice(0, -1),
+      ...fixCheckRunningProjection.events.slice(0, -1).map(withFixCheckSibling),
       reviewCheck(
         FIXED_TS + 2_000,
-        testCi,
+        REVIEW_CHECK_TEST,
         {
           status: 'done',
           moment: 'brief',
           passed: false,
           own: 2,
           ownLeft: 1,
-          others: 3,
-          proven: true,
+          deferred: 1,
+          deferredTo: [FIX_CHECK_SIBLING_ID],
+          others: 2,
           duration: 181_000,
         },
         'implementing',
@@ -6330,42 +6676,20 @@ const fixCheckDoneProjection: WorkflowFixtureProjection = {
         taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
         attempt: 1,
         maxRetries: 1,
-        error: checkFailureText(
-          {
-            checkId: 'V2',
-            status: 'fail',
-            failure: { keys },
-            output: '',
-          },
-          { carried: { failureKeys: [remaining, gone], redKeys: [...keys, gone] } },
-        ),
+        error: FIX_CHECK_RETRY_TEXT,
       },
       reviewCheck(
         FIXED_TS + 2_200,
-        testCi,
-        {
-          status: 'done',
-          moment: 'brief',
-          passed: false,
-          own: 2,
-          ownLeft: 0,
-          others: 1,
-          proven: false,
-          duration: 180_000,
-        },
-        'implementing',
-      ),
-      reviewCheck(
-        FIXED_TS + 2_300,
-        testCi,
+        REVIEW_CHECK_TEST,
         {
           status: 'done',
           moment: 'brief',
           passed: true,
           own: 2,
           ownLeft: 0,
-          others: 3,
-          proven: true,
+          deferred: 1,
+          deferredTo: [FIX_CHECK_SIBLING_ID],
+          others: 2,
           duration: 180_000,
         },
         'implementing',
@@ -6565,6 +6889,7 @@ const projections = [
     }),
   },
   balanceSpentRecoveryProjection,
+  cursorRefusalRecoveryProjection,
   modelRefusalProjection('workflow-recovery-route-signed-out', ROUTE_SIGNED_OUT_AUTH),
   modelRefusalProjection('workflow-recovery-model-not-listed', MODEL_NOT_LISTED_AUTH),
   modelRefusalProjection('workflow-recovery-model-refused', MODEL_REFUSED_AUTH),
@@ -6642,30 +6967,28 @@ const projections = [
   {
     ...finalReviewProjection,
     scenarioId: scenarioId('workflow-review-after-pause'),
-    events: finalReviewProjection.events
-      .filter((event) => event.type !== 'review_checks')
-      .flatMap((event): EngineEvent[] =>
-        event.type === 'review_started'
-          ? [
-              {
-                type: 'turn_interrupted',
-                ts: event.ts - 20,
-                phase: 'implementing',
-                source: 'user',
-                at: 'boundary',
-                step: { kind: 'review', cycle: 0 },
-              },
-              {
-                type: 'workflow_resumed',
-                ts: event.ts - 10,
-                phase: 'implementing',
-                inProcess: true,
-              },
-              event,
-              { type: 'review_step', ts: event.ts, phase: event.phase, step: 'choosing-checks' },
-            ]
-          : [event],
-      ),
+    events: finalReviewProjection.events.flatMap((event): EngineEvent[] =>
+      event.type === 'review_started'
+        ? [
+            {
+              type: 'turn_interrupted',
+              ts: event.ts - 20,
+              phase: 'implementing',
+              source: 'user',
+              at: 'boundary',
+              step: { kind: 'review', cycle: 0 },
+            },
+            {
+              type: 'workflow_resumed',
+              ts: event.ts - 10,
+              phase: 'implementing',
+              inProcess: true,
+            },
+            event,
+            { type: 'review_step', ts: event.ts, phase: event.phase, step: 'choosing-checks' },
+          ]
+        : [event],
+    ),
   },
   reviewCorrectedProjection,
   reviewTaskCadenceProjection,
@@ -6802,6 +7125,7 @@ const projections = [
   },
   planCardRenderNoteProjection,
   planCardSharedCommandProjection,
+  planCardSessionPathProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },
   tasksCardProjection,
   questionProjection,
@@ -6847,6 +7171,7 @@ const projections = [
     },
   },
   pausedMidBriefProjection,
+  pausedCutSeatProjection,
   resumedKeptWorkProjection,
   pausedBoundaryProjection,
   stoppingProjection,
@@ -6864,6 +7189,8 @@ const projections = [
         : event,
     ),
   },
+  planCheckNoTestFileProjection,
+
   completedOrphanRowsProjection,
   usageLimitRecoveryProjection,
   noFallbackRecoveryProjection,
@@ -6889,9 +7216,17 @@ const projections = [
   reviewUnverifiedRecoveryProjection,
   taskReviewCapRecoveryProjection,
   checksMissingProgramRecoveryProjection,
+  checksUnrunnableRecoveryProjection,
   applyConflictRecoveryProjection,
   applyConflictSentenceProjection,
   resumedApplyPartialRecoveryProjection,
+  {
+    ...resumedApplyPartialRecoveryProjection,
+    scenarioId: scenarioId('workflow-recovery-apply-partial-words'),
+  },
+  reviewContractProjection,
+  reviewPromptTooLargeProjection,
+  buildPromptTooLargeProjection,
   reviewContextRecoveryProjection,
   reviewCallFailedRecoveryProjection,
   taskReviewCallFailedRecoveryProjection,
@@ -6929,6 +7264,9 @@ const projections = [
   planningSeatChangeProjection,
   planCardSeatChangeProjection,
   implementationSeatChangeProjection,
+  buildBriefCheckSeatChangeProjection,
+  implementationShellSeatProjection,
+  usageLimitSeatSavedProjection,
   finalReviewSeatChangeProjection,
   reviewCheckLongCommandProjection,
   reviewChecksApproveProjection,
@@ -6943,6 +7281,7 @@ const projections = [
   reviewBaseRejectedProjection,
   reviewRedGateProjection,
   plannerSessionExpiredProjection,
+  planUsageLimitProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =
@@ -7028,18 +7367,28 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     modelRefusalRecoveryIssue(ROUTE_SIGNED_OUT_AUTH),
     modelRefusalRecoveryIssue(MODEL_NOT_LISTED_AUTH),
     modelRefusalRecoveryIssue(MODEL_REFUSED_AUTH),
+    reviewContractRecoveryIssue,
+    reviewPromptTooLargeRecoveryIssue,
+    buildPromptTooLargeRecoveryIssue,
+    cursorRefusalRecoveryIssue(),
   ];
   const engineHaltText = [
     ...halts.flatMap((issue) => [issue.message, ...issue.details]),
     runnerHaltRow(
       usageLimitRecoveryIssue(),
-      runnerAuthDisplayName(visualConfig().implementer),
+      getRunnerCatalogDisplayName(visualConfig().implementer),
       OLLAMA_LIMIT_WORDS,
     ),
     runnerDefectRow(
       modelRefusalRecoveryIssue(ROUTE_SIGNED_OUT_AUTH),
-      runnerAuthDisplayName(OPENCODE_ROUTE_SEAT),
+      getRunnerCatalogDisplayName(OPENCODE_ROUTE_SEAT),
       NO_ROUTE_WORDS,
+    ),
+    reviewContractErrorMessage,
+    runnerHaltRow(
+      cursorRefusalRecoveryIssue(),
+      getRunnerCatalogDisplayName(CURSOR_REFUSAL_SEAT),
+      CURSOR_MODEL_REFUSAL,
     ),
   ];
   const oversized = projectionStrings(projection).find(
@@ -7048,7 +7397,8 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     // plan.md and plan.json, which the plan formatter and the plan schema write whole, or the
     // implementer's JSON report, which the transcript reads as one summary line, or a start
     // warning, which readiness words as its summary, its details and its fix, or a plan
-    // send-back, which lists the plan checks' own messages.
+    // send-back, which lists the plan checks' own messages, or a fix check's failure text, which
+    // lists its bounded failure keys under the verdict.
     (value) =>
       value !== planCardProjection.review?.source &&
       value !== planCardProjection.review?.planJson &&
@@ -7058,6 +7408,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       value !== planCardSharedCommandProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       value !== RESUMED_REPORT_TEXT &&
+      value !== FIX_CHECK_RETRY_TEXT &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
       !startReadinessWarningText.includes(value) &&

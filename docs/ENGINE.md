@@ -478,7 +478,8 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
   passed?: boolean; detail?: string; duration?: number;
   newFailures?: number; preExisting?: number; notVerified?: number;
   newKeys?: string[]; preExistingKeys?: string[];
-  own?: number; ownLeft?: number; others?: number; proven?: boolean }
+  own?: number; ownLeft?: number; deferred?: number; deferredTo?: string[];
+  others?: number }
 // One reviewer command run, or a judged plan or task check in a fix brief.
 // `id` names the check (V1, K1, …); an event
 // without `id` comes from an older session and carries its full-suite `stage`.
@@ -494,12 +495,13 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // command that a stop cut.
 // A reviewer check uses the command the finding carries, under the reviewer
 // command policy. A fix check
-// done event counts `own` carried failures, `ownLeft` failures still present and
-// `others` every unmatched re-run key. `proven` is true on green, or when the
-// red still shows an original other key. Diagnostics pair by exact key, then
+// done event counts `own` carried failures, `ownLeft` failures still present
+// that no unfinished sibling fix task carries, `deferred` the present ones such
+// a sibling carries (named in `deferredTo`) and `others` every unmatched re-run
+// key. A red settles when `ownLeft` is 0. Diagnostics pair by exact key, then
 // message identity. Test keys match exactly. Keys come from the full capture.
 // An incomplete capture is a placeholder and requires a passing command.
-// A red without proof must pass its command. Green re-runs show the verdict too.
+// Green re-runs show the verdict too. An older session's `proven` is ignored.
 // Plan and task checks a fix finding carries also get a done row when judged. They get no running row or duration.
 
 // Recovery
@@ -531,11 +533,14 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // Planner heartbeat (emitted while the planner is running)
 { type: 'planner_heartbeat'; phase: Phase; elapsedMs: number; callId?: string }
 
-// Workflow config (emitted once at startup); `skills` names the skills every seat call carries
+// Workflow config (emitted at the start of each run pass); `skills` names the skills every seat
+// call carries. Each seat's kind and axis words name the seat the pass runs on, which the header
+// and the sidebar show until that seat's change point; older logs have neither.
 { type: 'workflow_config'; mode?: WorkflowMode;   // older logs only; a new run writes none
-  plannerTool: string; plannerModel?: string;
+  plannerTool: string; plannerModel?: string; plannerKind?: RunnerKind; plannerAxes?: string[];
   implementerTool: string; implementerModel?: string;
-  reviewerTool?: string; reviewerModel?: string;
+  implementerKind?: RunnerKind; implementerAxes?: string[];
+  reviewerTool?: string; reviewerModel?: string; reviewerKind?: RunnerKind; reviewerAxes?: string[];
   skills?: string[] }
 
 // A resumable stop parked the run

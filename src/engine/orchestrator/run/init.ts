@@ -20,7 +20,7 @@ import { NULL_CACHE, type ModelCacheAccessor } from '../../providers/model/resol
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
 import type { RunIsolation } from '../isolation/types.js';
-import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { readConfigDocument } from '../../../core/config/load/document.js';
 import { sameSeatCandidate } from '../../../core/crew/identity.js';
@@ -39,6 +39,7 @@ import type { EventBus, EventSink } from '../../events/types.js';
 import { readRunEvents } from '../../events/replay.js';
 import { recordInterruptedCalls } from '../../calls/interrupted.js';
 import { seatCandidateOfRunner } from '../recovery/switch-seat.js';
+import { seedUsageLimitSteps } from '../usage-limit-gate.js';
 import { createBranch } from '../../../lib/git/refs.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -95,13 +96,13 @@ import { sessionDir } from '../../../core/paths.js';
 const initializedSessionsBySignal = new WeakMap<AbortSignal, Set<string>>();
 
 function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
-  const name = getRunnerDisplayName(plannerConfig);
+  const name = getRunnerCatalogDisplayName(plannerConfig);
   const reason = planner.unavailabilityReason?.();
-  if (reason) return `Planner '${name}' is not available: ${reason}.`;
+  if (reason) return `Planner ${name} is not available: ${reason}.`;
   if (plannerConfig.kind === 'api') {
-    return `Planner '${name}' is not available. Check the API key, endpoint, and model.`;
+    return `Planner ${name} is not available. Check the API key, endpoint, and model.`;
   }
-  return `Planner '${name}' is not available. Make sure it's installed.`;
+  return `Planner ${name} is not available. Make sure it's installed.`;
 }
 
 export type RunWorkflowOptions = {
@@ -237,7 +238,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         next: { ...savedState, approve },
       });
       if (pinned.kind === 'conflict') {
-        throw stateOpsError.conflict({
+        throw stateOpsError.conflict(sessionId, {
           operation: 'transition',
           expectedRevision: savedState.stateRevision ?? null,
           observedRevision:
@@ -253,6 +254,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     setTrackedState(savedState);
   }
   if (savedState) await recordInterruptedCalls({ projectDir, sessionId, bus }, savedState);
+  if (savedState) {
+    seedUsageLimitSteps(bus, (await readRunEvents({ projectDir, sessionId })).events);
+  }
   // Every resume passes here, from the app and from the CLI alike, so this is
   // the one place the record is compared and rewritten. A moved plan seat also drops the
   // saved planner session: it belongs to the tool that left, so the context is
@@ -331,6 +335,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     savedState = await resumeSeatWait({
       ref: { projectDir, sessionId, bus },
       state: savedState,
+      config,
       ...(opts.signal !== undefined && { signal: opts.signal }),
     });
     setTrackedState(savedState);
@@ -499,10 +504,16 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     {
       plannerTool: summaryBase.plannerTool,
       plannerModel: summaryBase.plannerModel,
+      plannerKind: summaryBase.plannerKind,
+      plannerAxes: summaryBase.plannerAxes,
       implementerTool: summaryBase.implementerTool,
       implementerModel: summaryBase.implementerModel,
+      implementerKind: summaryBase.implementerKind,
+      implementerAxes: summaryBase.implementerAxes,
       reviewerTool: reviewerSeat?.tool,
       reviewerModel: reviewerSeat?.model,
+      reviewerKind: reviewerSeat?.kind,
+      reviewerAxes: reviewerSeat?.axes,
       skills: skillIds,
     },
   );

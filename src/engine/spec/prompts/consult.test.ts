@@ -330,6 +330,28 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain(TASK_CMD_CHECK_RULE);
   });
 
+  it.each([
+    ['plan', false],
+    ['review', false],
+    ['plan', true],
+  ] as const)(
+    'tells the %s seat (resumed=%s) that an answer only instructs the next attempt',
+    (seat, resumed) => {
+      const prompt = buildConsultPrompt(consultInput({ seat, resumed }));
+
+      expect(prompt).toContain('Offer only choices that the next attempt can carry out.');
+      if (!resumed) {
+        expect(prompt).toContain(
+          "SPLITBRIEF gives the user's answer to an `ask-user` question to the same implementer, as an instruction for its next attempt.",
+        );
+        expect(prompt).toContain(
+          "An answer cannot change a seat's tool or model, buy credits, or wait for a limit to reset.",
+        );
+        expect(prompt).toContain('the user changes a seat with `/crew`');
+      }
+    },
+  );
+
   it('lets only guidance or a rewrite answer a stale consult', () => {
     const prompt = buildConsultPrompt(consultInput({ reason: 'stale' }));
 
@@ -454,7 +476,11 @@ describe('buildConsultPrompt', () => {
     expect(prompt).not.toContain("You are the run's planner.");
     expect(prompt).toContain('### Fix findings');
     expect(prompt).toContain(
-      '- **F1** failure keys: V1: greet > hello, greet > empty; red keys: V1: greet > name',
+      [
+        '### Fix findings',
+        "Other failures are not this brief's job: their fix tasks or the next review answer them. Do not send the implementer after them.",
+        "- **F1** this brief's failures: V1: greet > hello, greet > empty; the whole red: V1: greet > name",
+      ].join('\n'),
     );
     expect(prompt).not.toContain('- **F2**');
   });

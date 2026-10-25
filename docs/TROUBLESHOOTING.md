@@ -136,6 +136,8 @@ Run `npm rebuild better-sqlite3` in the SPLITBRIEF installation directory to res
 
 ### Symptom: `EACCES: permission denied, open '.splitbrief/...'` or config writes silently fail
 
+The error names the file from the project root, also from a subfolder or with `--project`, and names a run workspace file by its project path.
+
 **Likely cause:** The `.splitbrief/` directory was created by another user (often `root` after a `sudo` invocation), or sits on a filesystem mounted read-only. SPLITBRIEF writes session state, snapshots, and configuration there continuously.
 
 **Fix:**
@@ -739,7 +741,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: A plan check is `refused`
 
-**Likely cause:** The plan command policy refused the planner's command when the check ran. The row names the rule, for example `Plan check K2 · npm run lint · refused · runs the npm script lint, which package.json does not define`. A package script (`npm run <script>`) runs only under an approved plan and only when `package.json` defines the script. `checkPlan` already sends a plan back to the planner when the command text breaks the policy, so a refusal during Build is usually a script that `package.json` does not define.
+**Likely cause:** The plan command policy refused the planner's command when the check ran. The row names the rule, for example `Plan check K2 · npm run lint · refused · runs a package script or binary (npm run)`. A package script (`npm run <script>`) runs only under an approved plan. `checkPlan` already sends a plan back to the planner when a check breaks the policy, so a refusal during Build usually means that `workflow.approve` changed after planning. A check whose script `package.json` does not define is not refused: it fails, and the reviewer can answer it with a fix task.
 
 A refused check did not run. SPLITBRIEF records it as refused, not as failed, and the reviewer sees it as refused. An optional refused check does not stop the run. A required refused check halts the run before the review with `Required checks cannot run: <id>`.
 
@@ -792,9 +794,9 @@ The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, 
 
 A fix check runs once per brief gate. Each new BUILD attempt runs the checks again. A fix check never re-runs at the run base.
 
-It judges the failure keys its findings carry for that check id. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once.
+It judges the failure keys its findings carry for that check id. A red passes when no own failure remains. An own failure that an unfinished fix task of the same cycle also carries is left to that task. Failures the task does not own do not gate it; their fix tasks or the next review answer them. When every own failure is a test failure, it runs the stack's test runner on the own test files only. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once.
 
-Test failures match by name. Keys with no file match exactly. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration. Other failures belong to other fix tasks or the next review.
+Test failures match by name. Keys with no file match exactly. Each judged re-run gets a fix check verdict row. A settled re-run reads `your 2 failures gone · 3 others left for their fix tasks or the next review`. A shared failure reads `1 left to T025`. Plan and task checks get only a done row, with no duration.
 
 A check with no carried keys, or a re-run with no named failure, must pass. Keys come from the full process capture. An incomplete capture gives one placeholder key. The command must pass. Older saved fix tasks without own keys or original red keys must pass their commands.
 
@@ -813,7 +815,7 @@ To measure the project before a run, run its own commands directly. `doctor` run
 
 ---
 
-### Symptom: a planner `test` check is `not-runnable` with `no test command for an unrecognised stack`
+### Symptom: a planner `test` check is `not-runnable` with `no test command for an unrecognised stack; set validation.test_command`
 
 **Likely cause:** The check could not resolve a test command. That happens when the project carries none of the five stack markers (`Cargo.toml`, `go.mod`, `pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`, `tsconfig.json` or a `typescript` dependency, `package.json`), and there is no `validation.test_command`, no `package.json` `test` script / `Makefile` or `justfile` `test` target, and nothing the planner discovered. SPLITBRIEF deliberately does not guess `npm test` at that point — a fabricated check that passes is worse than a stated absence. A required `test` check in this state halts the run with `required-checks-unrunnable`. The reviewer checks do not resolve through the stack: the reviewer still chooses them from the project itself, and the reviewer command policy runs any installed program of any language.
 
@@ -845,7 +847,7 @@ To measure the project before a run, run its own commands directly. `doctor` run
 
 ### Symptom: The base re-run is red although the same commit passes in your checkout
 
-**Likely cause:** The run base copy differs from your checkout. A run that started from a commit gets a detached Git worktree at that commit with the run's starting snapshot on top (`withRunBaseTree`, `src/engine/orchestrator/isolation/base-tree.ts`). The checkout supplies Git history and committed file modes and symlinks. Reconciliation keeps an existing regular file's checked-out mode when replacing its contents. The snapshot does not carry uncommitted mode changes or recreate symlinks, and new regular files get default permissions. The copy does not have ignored files that only your checkout holds, such as `.env` or a build output. A run that recorded no base commit (a staged-copy run, or a repository with no commit) gets only the snapshot copy, without Git history or committed modes and symlinks. There a red base re-run reads `not verified at the run base · the run recorded no base commit, …`, and the reviewer decides.
+**Likely cause:** The run base copy differs from your checkout. A run that started from a commit gets a detached Git worktree at that commit with the run's starting snapshot on top (`withRunBaseTree`, `src/engine/orchestrator/isolation/base-tree.ts`). The checkout supplies Git history and committed file modes and symlinks. Reconciliation keeps an existing regular file's checked-out mode when replacing its contents. The snapshot does not carry uncommitted mode changes or recreate symlinks, and new regular files get default permissions. The copy does not have ignored files that only your checkout holds, such as `.env` or a build output. A run that recorded no base commit (a staged-copy run, or a repository with no commit) gets only the snapshot copy, without Git history or committed modes and symlinks. There a red base re-run reads `not verified at the run base · the run recorded no base commit, …`, and the reviewer decides. In a worktree or staged-copy run, the base tree path has as many characters as the run workspace path, which is usually longer than your checkout path. A test whose result depends on the length of its folder path can then be red in both and pass in your checkout. In a run that started from a commit it then reads as pre-existing; in a run with no base commit it reads `not verified at the run base`.
 
 Any base-tree preparation failure, including listing stale trees, Git checkout, submodule initialization, snapshot reconciliation or dependency-link failure, settles the row as `not verified at the run base` with the error. No base command runs. If cleanup also fails, the detail includes both errors. Cleanup failure after a completed base command settles the row as `not verified at the run base`, with the cleanup error visible. The review continues, but its failure keys stay unverified and the check has no `base` field, even though the command completed. If the callback itself failed, its error propagates unchanged and cleanup failure appears as a warning naming the tree.
 

@@ -307,48 +307,32 @@ describe('e2e: a refused plan check', () => {
     ]);
   });
 
-  it('passes the run with a refused row and shows the reviewer a refused check, never a failed one', async () => {
+  it('sends a plan whose npm run check names a script package.json lacks back to the planner', async () => {
     const { run, state, events, calls } = await runRefusedCheck({
       approve: 'plan',
-      plan: alphaPlan({ value: 'npm run lint', required: false }),
+      plan: alphaPlan({ value: 'npm run lint', required: true }),
+      repair: alphaPlan({ value: 'node --version', required: true }),
     });
-    const reason = 'runs an npm script, but package.json was not found';
 
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
     expect(state.phase).toBe('complete');
-    expect(state.reviewStatus).toBe('passed');
+    expect(state.pendingRecovery).toBeUndefined();
     expect(state.tasks[0]?.checkResults).toEqual([
       { id: 'K1', status: 'pass' },
-      { id: 'K2', status: 'refused' },
+      { id: 'K2', status: 'pass' },
     ]);
-    expect(events.find((event) => event.type === 'checks_run')).toMatchObject({
-      taskId: 'T001',
-      results: [
-        { id: 'K1', status: 'pass' },
-        { id: 'K2', status: 'refused' },
-      ],
-    });
-    const refusedRows = events.filter(
-      (event) => event.type === 'full_suite' && event.id === 'K2' && event.status === 'refused',
-    );
-    expect(refusedRows.length).toBeGreaterThan(0);
-    for (const row of refusedRows) {
-      expect(row).toMatchObject({ moment: 'plan', command: 'npm run lint', detail: reason });
-    }
     expect(
-      events.find((event) => event.type === 'full_suite' && event.id === 'K2' && 'passed' in event),
+      events.find((event) => event.type === 'full_suite' && event.status === 'refused'),
     ).toBeUndefined();
-    expect(events.find((event) => event.type === 'workflow_complete')).toMatchObject({
-      review: 'passed',
-    });
-
-    expect(calls.map((call) => call.kind)).toEqual(['plan', 'task-review', 'final-review']);
-    for (const review of calls.slice(1)) {
-      expect(review.prompt).toContain('T001 check K2: refused');
-      expect(review.prompt).toContain('- K2 T001 (refused): npm run lint');
-      expect(review.prompt).toContain(`  reason: ${reason}`);
-      expect(review.prompt).not.toContain('T001 check K2: fail');
-    }
+    expect(calls.map((call) => call.kind)).toEqual([
+      'plan',
+      'plan-repair',
+      'task-review',
+      'final-review',
+    ]);
+    expect(calls[1]?.prompt).toContain(
+      "- refused-check-command: Check K2 is refused: `npm run lint` runs an npm script, but package.json was not found. Name a script that package.json defines, or list package.json in the task's files and add the script there.",
+    );
   });
 
   it.each([

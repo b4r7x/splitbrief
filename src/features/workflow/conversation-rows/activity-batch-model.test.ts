@@ -422,12 +422,12 @@ describe('activity batch runner identity', () => {
     expect(model.headerRunner).toBe('claude-code · Sonnet');
   });
 
-  it('names a shell call by its own runner word and the pretty model name', () => {
+  it('names a shell call by its kind word and the pretty model name', () => {
     const model = buildActivityBatchViewModel({
       batchKey: 'batch-1',
       events: [activity({ backendKind: 'shell', runnerName: 'opencode', model: 'gpt-5' })],
     });
 
-    expect(model.headerRunner).toBe('opencode · GPT-5');
+    expect(model.headerRunner).toBe('Custom Shell · GPT-5');
   });
 });

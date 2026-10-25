@@ -277,6 +277,7 @@ describe('readStopMenuRows during an unfinished Apply', () => {
   it('offers no End run at a live halt whose actions refuse it', () => {
     recoveryNoticeStore.open({
       seat: 'build',
+      ranOn: null,
       resetAt: null,
       issue: applyPartial,
       at: { kind: 'review', cycle: 0 },
@@ -399,6 +400,7 @@ describe('readStopMenuRows at a recovery halt', () => {
     });
     recoveryNoticeStore.open({
       seat: 'build',
+      ranOn: null,
       resetAt: null,
       issue: makeRecoveryIssue({ reason: 'runner-usage-limit', taskId: taskId('T001') }),
       at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },

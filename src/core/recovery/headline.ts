@@ -222,9 +222,21 @@ export function formatRecoveryHeadlineSpans(
         },
       ];
     }
+    // Only the halt for a prompt the tool refused as too large names its tool; a brief too large
+    // for every profile names none.
+    case 'context-overflow': {
+      const tool = recoveryFactString(issue.facts, 'tool');
+      return [
+        {
+          text:
+            tool === undefined
+              ? `Context overflow on ${taskName(issue)}`
+              : `Prompt too large for ${tool} on ${taskName(issue)}`,
+        },
+      ];
+    }
     case 'implementation-error':
     case 'validation-failed':
-    case 'context-overflow':
     case 'user-edit-conflict':
     case 'approval-promotion-conflict':
     case 'dependency-blocked':

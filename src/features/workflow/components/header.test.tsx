@@ -28,6 +28,7 @@ import {
 } from '../../../core/crew/identity.js';
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { getHeaderLayout, Header } from './header.js';
+import { seatIdsOf } from '../../../core/crew/identity.js';
 
 const originalColorLevel = chalk.level;
 /** Today's local 17:00: the note the bar shows for a same-day reset is the bare clock, in every timezone the suite runs in. */
@@ -239,6 +240,22 @@ describe('Header — seat line', () => {
     expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
   });
 
+  it('names the tool of each automatic seat, and drops a whole tool name on a tight bar', async () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: { kind: 'shell', command: './build.sh', model: 'auto' },
+      reviewer: { kind: 'cli', tool: 'codex' },
+    });
+
+    expect(await seatFrame(200, config)).toContain(
+      'PLAN Claude Code CLI · BUILD Custom Shell · REVIEW OpenAI Codex CLI',
+    );
+    const tight = await seatFrame(110, config);
+    expect(tight).toContain('PLAN Claude Code CLI');
+    expect(tight).not.toContain('auto');
+    expect(tight).not.toContain('…');
+  });
+
   it('sanitizes hostile model ids in the visible seat line', async () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
@@ -262,6 +279,7 @@ describe('Header — seat line', () => {
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
     recoveryNoticeStore.open({
       seat: 'build',
+      ranOn: seatIdsOf(makeConfig().implementer),
       resetAt: RESET_AT,
       issue: QUOTA_HALT,
       at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
@@ -282,6 +300,7 @@ describe('Header — seat line', () => {
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
     recoveryNoticeStore.open({
       seat: 'build',
+      ranOn: seatIdsOf(makeConfig().implementer),
       resetAt: RESET_AT,
       issue: QUOTA_HALT,
       at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
@@ -307,6 +326,7 @@ describe('Header — seat line', () => {
     });
     recoveryNoticeStore.open({
       seat: 'build',
+      ranOn: null,
       resetAt: null,
       issue: BUILD_HALT,
       at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
@@ -370,6 +390,7 @@ describe('Header — seat line', () => {
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
     recoveryNoticeStore.open({
       seat: 'build',
+      ranOn: seatIdsOf(makeConfig().implementer),
       resetAt: RESET_AT,
       issue: QUOTA_HALT,
       at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },

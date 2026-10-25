@@ -15,7 +15,9 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   makeRunnerCallStarted,
   makeRunnerCallCompleted,
+  makeRunnerCallError,
 } from '#testing/helpers/events/runner-call.js';
+import { CURSOR_MODEL_REFUSAL } from '#testing/helpers/cursor-refusal.js';
 import {
   makeReviewFixInsertedEvents,
   makeTaskStart,
@@ -921,6 +923,45 @@ describe('hydrateRun replaying a seat swap', () => {
     const text = await replayedTranscript();
 
     expect(text).toBe(`Recovery  Change PLAN tool${arrowSep()}continued`);
+  });
+});
+
+describe('hydrateRun of a run recorded before account refusals on stderr halted', () => {
+  it('replays the recorded bare exit as it was, not as a Seat down halt', async () => {
+    const T015 = taskId('T015');
+    const message = `CLI exited with code 1: ${CURSOR_MODEL_REFUSAL}`;
+    const call = { taskId: T015, callId: 'implementer-15', role: 'implementer' } as const;
+    writeLog([
+      makeTaskStart({ taskId: T015, ts: 1_000 }),
+      {
+        type: 'implementer_generate_running',
+        ts: 1_100,
+        phase: 'implementing',
+        taskId: T015,
+        file: 'src/test.ts',
+      },
+      makeRunnerCallStarted({ ...call, ts: 1_200 }),
+      makeRunnerCallError({ ...call, ts: 2_000, error: { code: 'non-zero-exit', message } }),
+      {
+        type: 'implementer_generate_failed',
+        ts: 2_000,
+        phase: 'implementing',
+        taskId: T015,
+        error: message,
+      },
+    ]);
+
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: savedState() },
+      }),
+    );
+    const replayed = historyRows([...eventsStore.get().events]).join('\n');
+
+    expect(replayed).toContain('CLI exited with code 1: ActionRequiredError');
+    expect(replayed).not.toContain('Seat down');
+    expect(replayed).not.toContain('Balance spent');
   });
 });
 

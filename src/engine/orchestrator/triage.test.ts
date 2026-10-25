@@ -239,6 +239,36 @@ describe('triageContractErrors', () => {
     ]);
   });
 
+  it('lets two fix tasks share one pending input, but not a fix task and a reject, or one task twice', () => {
+    const input = {
+      id: 'P1',
+      kind: 'defect' as const,
+      source: 'check' as const,
+      text: 'Required check K1 did not pass',
+      file: null,
+    };
+    const empty: TriageResult = { fixTasks: [], rejected: [], verify: [], ask: null };
+    const shared = {
+      ...empty,
+      fixTasks: [
+        { ...fixTaskSpec(), id: taskId('T900'), criteria: [], findingIds: ['P1'] },
+        { ...fixTaskSpec(), id: taskId('T901'), criteria: [], findingIds: ['P1'] },
+      ],
+    };
+    const twice = {
+      ...empty,
+      fixTasks: [{ ...fixTaskSpec(), id: taskId('T900'), criteria: [], findingIds: ['P1', 'P1'] }],
+    };
+    const errors = (answer: TriageResult) =>
+      triageContractErrors(answer, plan, [], [input], [], undefined, TASK_SCOPE);
+
+    expect(errors(shared)).toEqual([]);
+    expect(errors({ ...shared, verify: [{ findingId: 'P1', checkIds: ['K1'] }] })).toEqual([
+      'Pending input P1 is answered more than once.',
+    ]);
+    expect(errors(twice)).toEqual(['Pending input P1 is answered more than once.']);
+  });
+
   it('accepts provisional ids reused across cycles and dependencies on completed tasks', () => {
     const previous = [
       makeTask({ id: 'T001', status: 'done', batch: 1 }),

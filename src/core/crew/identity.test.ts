@@ -469,13 +469,13 @@ describe('formatSeatIdentity', () => {
     expect(identity).not.toContain('›');
   });
 
-  it('names a recorded call by the tool its command starts, and a shell command literally', () => {
+  it('names a recorded call by the tool its command starts, and a shell command by its kind', () => {
     expect(
       formatSeatIdentity({ seat: { tool: 'claude', model: 'sonnet', axes: [], kind: 'cli' } }),
     ).toMatch(/^Claude Code CLI · /);
     expect(
       formatSeatIdentity({ seat: { tool: 'claude', model: 'gpt-5', axes: [], kind: 'shell' } }),
-    ).toBe('claude · GPT-5');
+    ).toBe('Custom Shell · GPT-5');
   });
 
   it('keeps the configured Shell and Agent seat words when their commands are recorded separately', () => {
@@ -505,7 +505,7 @@ describe('formatSeatIdentity', () => {
     ).toBe('Opus');
     expect(
       formatSeatIdentity({ seat: { tool: 'claude-code', model: 'opus', axes: [], kind: 'shell' } }),
-    ).toBe('claude-code · Opus');
+    ).toBe('Custom Shell · Opus');
   });
 
   it('says the automatic word instead of resolving a catalog default', () => {
@@ -708,7 +708,9 @@ describe('formatShortSeatIdentity', () => {
   it('drops the brand and keeps every remaining word', () => {
     expect(formatShortSeatIdentity({ seat: planner })).toBe('Sonnet 4');
     expect(formatShortSeatIdentity({ seat: build })).toBe('Qwen2.5 Coder 7B');
-    expect(formatShortSeatIdentity({ seat: { kind: 'cli', tool: 'claude-code' } })).toBe('auto');
+    expect(formatShortSeatIdentity({ seat: { kind: 'cli', tool: 'claude-code' } })).toBe(
+      'Claude Code CLI',
+    );
   });
 
   it('carries no axis word, in the suffix or inside the model word', () => {
@@ -729,6 +731,80 @@ describe('formatShortSeatIdentity', () => {
     expect(
       formatShortSeatIdentity({ seat: { kind: 'cli', tool: 'claude-code', model: 'claude' } }),
     ).toBe('Claude');
+  });
+});
+
+describe('formatShortSeatIdentity: a seat whose model is automatic', () => {
+  const AUTOMATIC: ReadonlyArray<{ name: string; seat: RunnerConfig; short: string }> = [
+    { name: 'cli with no model', seat: { kind: 'cli', tool: 'codex' }, short: 'OpenAI Codex CLI' },
+    {
+      name: 'cli with the legacy default model',
+      seat: { kind: 'cli', tool: 'claude-code', model: 'default' },
+      short: 'Claude Code CLI',
+    },
+    {
+      name: 'cli with a provider route and no model',
+      seat: { kind: 'cli', tool: 'opencode' },
+      short: 'OpenCode CLI',
+    },
+    {
+      name: 'shell with no model',
+      seat: { kind: 'shell', command: './build.sh' },
+      short: 'Custom Shell',
+    },
+    {
+      name: 'shell with auto',
+      seat: { kind: 'shell', command: './build.sh', model: 'auto' },
+      short: 'Custom Shell',
+    },
+    {
+      name: 'agent',
+      seat: { kind: 'agent', command: './agent.sh', model: 'auto' },
+      short: 'Agent',
+    },
+  ];
+
+  it.each(AUTOMATIC)('names the tool of a $name seat, as the long form does', ({ seat, short }) => {
+    expect(formatShortSeatIdentity({ seat })).toBe(short);
+    expect(formatSeatIdentity({ seat }).startsWith(`${short} · `)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: 'cli with a model',
+      seat: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
+      short: 'GPT-5 Codex',
+    },
+    { name: 'api', seat: build, short: 'Qwen2.5 Coder 7B' },
+    {
+      name: 'shell with a named model',
+      seat: { kind: 'shell', command: './build.sh', model: 'qwen3' },
+      short: 'Qwen3',
+    },
+  ] satisfies ReadonlyArray<{ name: string; seat: RunnerConfig; short: string }>)(
+    'keeps the model word of a $name seat',
+    ({ seat, short }) => {
+      expect(formatShortSeatIdentity({ seat })).toBe(short);
+    },
+  );
+
+  it('names a recorded tool with no catalog name by its own word, never an empty one', () => {
+    expect(formatShortSeatIdentity({ seat: { tool: 'my-tool' } })).toBe('my-tool');
+  });
+
+  it('lays three automatic seats out by tool, and drops a whole tool name that does not fit', () => {
+    const seats = {
+      planner: { kind: 'cli', tool: 'claude-code' },
+      build: { kind: 'shell', command: './build.sh' },
+      reviewer: { kind: 'cli', tool: 'codex' },
+    } satisfies Record<string, RunnerConfig>;
+
+    expect(seatLineText(formatCollapsedSeatSpans(seats))).toBe(
+      'PLAN Claude Code CLI · BUILD Custom Shell · REVIEW OpenAI Codex CLI',
+    );
+    expect(seatLineText(formatCollapsedSeatSpans({ ...seats, budget: 50 }))).toBe(
+      'PLAN Claude Code CLI · BUILD Custom Shell',
+    );
   });
 });
 
@@ -771,7 +847,7 @@ describe('a seat named by the ids a run recorded', () => {
     expect(formatShortSeatIdentity({ seat: { tool: 'cursor', model: 'gpt-5.3-codex-high' } })).toBe(
       'GPT-5.3 Codex',
     );
-    expect(formatShortSeatIdentity({ seat: { tool: 'codex' } })).toBe('auto');
+    expect(formatShortSeatIdentity({ seat: { tool: 'codex' } })).toBe('OpenAI Codex CLI');
   });
 });
 

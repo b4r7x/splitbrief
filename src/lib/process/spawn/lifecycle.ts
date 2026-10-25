@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { error, matches, type AppError } from '../../../utils/error.js';
 import { createBoundedOutput, type BoundedOutputMetadata } from '../bounded-output.js';
+import { withUserNodeEnv } from './child-env.js';
 import { spawnError, processError } from '../errors.js';
 import {
   registerProcess,
@@ -339,7 +340,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     try {
       proc = spawn(opts.command, opts.args, {
         cwd: opts.cwd,
-        env: opts.env,
+        env: withUserNodeEnv(opts.env ?? process.env),
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: opts.detached ?? false,
         shell: false,

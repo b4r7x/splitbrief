@@ -492,6 +492,30 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
+  it('names the tool of each automatic seat on the wake card, as the seat rows do', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'shell', command: './build.sh', model: 'auto' },
+        reviewer: { kind: 'cli', tool: 'codex' },
+      }),
+    });
+    terminalSizeStore.__testReset({ cols: 200, rows: 50, isSmall: false });
+    detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+
+    const ui = renderHome();
+    await flushEffects();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const titleRow = lines.findIndex((line) => line.includes('Checking your tools…'));
+
+    expect(lines[titleRow + 1]).toContain(
+      'PLAN Claude Code CLI · BUILD Custom Shell · REVIEW OpenAI Codex CLI',
+    );
+    expect(lineContaining(ui.lastFrame() ?? '', 'BUILD     ')).toContain('Custom Shell · auto');
+    ui.unmount();
+  });
+
   it('marks an inherited review seat on the wake card', async () => {
     const originalColorLevel = chalk.level;
     chalk.level = 3;

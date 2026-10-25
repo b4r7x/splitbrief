@@ -1,4 +1,8 @@
-import type { DeepReadonly, RunnerConfig } from '../../../core/config/accessors/runner-config.js';
+import {
+  getRunnerCatalogDisplayName,
+  type DeepReadonly,
+  type RunnerConfig,
+} from '../../../core/config/accessors/runner-config.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import {
   runnerOwnWords,
@@ -6,7 +10,7 @@ import {
   typedRunnerCallErrorCode,
   typedRunnerCallErrorMessage,
 } from '../../implementers/pipeline/call-result.js';
-import { runnerAuthDisplayName, runnerLoginInstruction } from '../../runners/auth-failure.js';
+import { runnerLoginInstruction } from '../../runners/auth-failure.js';
 import type { SeatFailureClassification } from '../../runners/seat-failure.js';
 import { usageLimitAdvice } from '../../runners/usage-limit.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
@@ -15,9 +19,13 @@ import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { inputTooLargeFigures } from '../../runners/input-limit.js';
-import { inputTooLargeSentence } from './builders/review-input.js';
-import { runnerDefectRow, runnerHaltRow, toolReported } from './builders/task.js';
+import { inputTooLargeFigures, type PromptSize } from '../../runners/input-limit.js';
+import {
+  inputTooLargeDetail,
+  runnerDefectRow,
+  runnerHaltRow,
+  toolReported,
+} from './builders/task.js';
 import {
   buildPlannerCallFailedRecoveryIssue,
   type PlannerCallFailureRecoveryOptions,
@@ -51,7 +59,7 @@ export type PlannerCallDiagnosis = Readonly<{
   /** When the quota comes back, when the tool's words named it. */
   resetsAt: Date | null;
   /** The prompt's size and the tool's limit, when the tool refused the prompt as too large. */
-  inputSize?: ReturnType<typeof inputTooLargeFigures> | undefined;
+  inputSize?: PromptSize | undefined;
   /** Present when the failure is a seat-down cause: what the one halt builder consumes. */
   seatDown?: PlannerSeatDownDiagnosis | undefined;
 }>;
@@ -87,37 +95,26 @@ export function diagnosePlannerCallFailure(
   const words = thrown.source === 'stdout-tail' ? thrown.words : runnerOwnWords(err);
   const advised =
     words === null ? message : `${input.label}: ${sanitizeTerminalDiagnosticText(words)}`;
-  const tool = runnerAuthDisplayName(runner);
+  const tool = getRunnerCatalogDisplayName(runner);
+  const code = typedRunnerCallErrorCode(err);
   // A timeout's words are SPLITBRIEF's own deadline, already the message: nothing to quote.
-  const details =
-    typed === null || typedRunnerCallErrorCode(err) === 'timeout'
-      ? []
-      : [toolReported(tool, typed)];
+  const details = typed === null || code === 'timeout' ? [] : [toolReported(tool, typed)];
   const said = words ?? message;
   // A model the tool refused is the tool's own verdict on the seat's model: no
   // reading of the words turns it into a quota or a sign-in, and the halt asks
   // the route's credential listing which of the two it is.
-  if (typedRunnerCallErrorCode(err) === 'missing-model') {
+  if (code === 'missing-model') {
     return { failure: 'missing-model', message, tool, details, words: said, resetsAt: null };
   }
-  // A prompt the tool refused as too large is refused again on a retry. Claude Code's refusal
-  // names no figures, so its own words stay the detail; a refusal that names the prompt's size
-  // states the size and the limit in their place.
-  if (typedRunnerCallErrorCode(err) === 'input-too-large') {
+  // A prompt refused as too large is refused again on a retry. SPLITBRIEF refuses an over-long
+  // command line itself, before the tool starts: no tool words to quote.
+  if (code === 'input-too-large' || code === 'argv-prompt-too-large') {
     const inputSize = inputTooLargeFigures(typed ?? '');
-    const { chars } = inputSize;
     return {
       failure: 'input-too-large',
       message: `${input.label}: the prompt is too large`,
       tool,
-      details:
-        chars === null
-          ? details
-          : [
-              endSentence(
-                inputTooLargeSentence('The prompt', { chars, maxChars: inputSize.maxChars }, tool),
-              ),
-            ],
+      details: [inputTooLargeDetail(inputSize, tool, code === 'input-too-large' ? typed : null)],
       words: said,
       resetsAt: null,
       inputSize,

@@ -157,7 +157,28 @@ describe('applyOfferedSeatSwap', () => {
     // Nothing was written, so the halt stays pending and the run stops on it again.
     expect(outcome?.state.pendingRecovery).toBeDefined();
     expect(warningMessages(events)).toEqual([
-      "The build seat was not switched to 'claude-code': it could not be admitted; the halt stays.",
+      'The build seat was not switched to Claude Code CLI: it could not be admitted; the halt stays.',
+    ]);
+  });
+
+  it('names the tool by its catalog name when the seat cannot take it', async () => {
+    const { projectDir, sessionId, savedState, config } = setup('seat-swap-cannot-host', true);
+    const { bus, events } = makeBusRecorder();
+    const prepared = preparedFor(config);
+
+    const outcome = await applyOfferedSeatSwap({
+      choice: { ...CHOICE, candidate: { tool: 'claude-code', model: '' } },
+      projectDir,
+      sessionId,
+      bus,
+      config,
+      prepared,
+      savedState,
+    });
+
+    expect(outcome).toBeUndefined();
+    expect(warningMessages(events)).toEqual([
+      'Could not switch the seat to Claude Code CLI: Claude Code CLI cannot host the build seat.',
     ]);
   });
 

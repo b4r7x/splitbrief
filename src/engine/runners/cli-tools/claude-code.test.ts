@@ -567,6 +567,27 @@ describe('Claude Code role adapters', () => {
 });
 
 describe('Claude Code stream protocol adapter', () => {
+  it('keeps the usage step on a rate_limit_event warning at 75 percent weekly', () => {
+    const events = claudeProtocolEvents(
+      JSON.stringify({
+        type: 'rate_limit_event',
+        session_id: 'sess-weekly',
+        rate_limit_info: {
+          status: 'allowed_warning',
+          unifiedWindows: { seven_day: { utilization: 0.75, resetsAt: 1_794_000_000 } },
+        },
+      }),
+    );
+
+    expect(events.filter((event) => event.type === 'warning')).toMatchObject([
+      {
+        code: 'claude_rate_limit',
+        severity: 'warning',
+        usage: { window: 'seven_day', step: 75, resetsAt: 1_794_000_000_000 },
+      },
+    ]);
+  });
+
   it.each([claudeCodePlannerAdapter, claudeCodeImplementerAdapter])(
     'carries every fragmented tool input with its identity for the $role seat',
     (adapter) => {

@@ -349,9 +349,10 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
         { id: 'V1.1', ...carried },
       ],
     });
-    expect(fixCheckKeys(fixTask).get('V1')).toEqual({
+    expect(fixCheckKeys(fixTask, ready.tasks).get('V1')).toEqual({
       failureKeys: [OWN_KEY],
-      redKeys: [LEGACY_KEY, OWN_KEY],
+      sharedWith: new Map(),
+      exempt: false,
     });
     expect(fixTask.checkResults).toContainEqual({ id: 'V1', status: 'pass' });
     expect(ready.triage).toMatchObject([
@@ -398,8 +399,8 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
               preExisting: event.preExisting,
               own: event.own,
               ownLeft: event.ownLeft,
+              deferred: event.deferred,
               others: event.others,
-              proven: event.proven,
             },
           ]
         : [],
@@ -411,7 +412,7 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
     expect(reviewCheckRows).toMatchObject([
       { moment: 'pre-review', passed: false },
       { moment: 'base', passed: false, newFailures: 1, preExisting: 1 },
-      { moment: 'brief', passed: true, own: 1, ownLeft: 0, others: 1, proven: true },
+      { moment: 'brief', passed: true, own: 1, ownLeft: 0, deferred: 0, others: 1 },
       ...laterReview,
       ...laterReview,
       ...laterReview,

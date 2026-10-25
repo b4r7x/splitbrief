@@ -41,6 +41,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-review-resumed', ['120x40', '80x24', '60x18', '120x60']],
   ['workflow-cli-stop-continued', ['120x40', '80x24', '60x18', '120x60']],
   ['workflow-resumed-kept-work', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-paused-cut-seat', ['120x40', '80x24', '60x18', '160x45']],
   ['home-empty', ['120x40', '80x24', '60x18', '41x18', '40x18']],
   ['home-cold-detecting', ['80x40']],
   ['home-preparation-runner-trust', ['120x40', '80x24', '60x18', '42x30', '39x40']],
@@ -48,6 +49,13 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-crew-wide', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-crew-kilo', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-switched-balance', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-planning-seat-change', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-final-review-seat-change', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-plan-card-seat-change', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-implementation-seat-change', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-build-brief-check-seat-change', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-implementation-shell-seat', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-seat-crew-changed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-fix-cycles', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-corrected', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-settled-passed', ['120x40', '80x24', '60x18', '160x45']],
@@ -59,6 +67,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-review-fix-no-change', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-ready-to-apply', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-ready-crew-saved', ['120x40', '80x24', '60x18', '160x45', '200x50']],
+  ['workflow-ready-seat-moved-auto', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-at-rest-crashed-build', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-at-rest-apply-conflict', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-at-rest-applying', ['120x40', '80x24', '60x18', '160x45']],
@@ -68,6 +77,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-continuous-transcript', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-continuous-transcript-ready', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-recovery-balance-spent', ['120x40', '80x24', '60x18', '160x45', '200x50']],
+  ['workflow-recovery-cursor-refusal', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-route-signed-out', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-model-not-listed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-model-refused', ['120x40', '80x24', '60x18', '160x45']],
@@ -81,6 +91,8 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-spent-b2-replay', ['200x50', '60x18']],
   ['workflow-recovery-fallback-used', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-apply-conflict', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-recovery-apply-partial-words', ['120x40', '80x24', '60x18', '60x30']],
+  ['workflow-recovery-review-contract', ['120x40', '80x24', '60x18', '60x30']],
   ['home-recent-sessions', ['120x40', '80x24']],
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-implementation-silent', ['120x40', '80x24', '60x18', '160x45', '220x45']],
@@ -103,6 +115,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-stop-sheet-fix-inserted', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-stop-sheet', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-stop-menu-pause', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-run-lock-not-released', ['120x40', '80x24', '60x18', '140x40']],
 ]);
 
 afterEach(() => {
@@ -432,9 +445,33 @@ describe('visual catalog', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-      expect(frame).toContain('2\u00a0failures gone');
-      expect(frame).toContain('3\u00a0others left');
-      expect(frame).toContain('not\u00a0proven\u00a0fixed');
+      for (const phrase of [
+        '1 of your 2 failures remains',
+        '1 left to T905',
+        '1 of your 2 failures gone',
+        '2 others left for their fix tasks or the next review',
+      ]) {
+        expect(frame).toContain(phrase.replaceAll(' ', '\u00a0'));
+      }
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it('leaves the shared failure to a fix brief of the same review and re-runs the command of the red', async () => {
+    const scenario = findVisualScenario('workflow-fix-check-done');
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports.find((size) => size.cols === 120);
+    if (scenario === undefined || checkpoint === undefined || viewport === undefined) {
+      throw new Error('Missing fix-check scenario');
+    }
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(frame).toContain('Reviewer check V2 · npm test · failed');
+      expect(frame).toContain('fixes T904 T905');
+      expect(frame.match(/Fix check V2 · npm test · /g)).toHaveLength(2);
+      expect(frame).not.toContain('test-ci');
     } finally {
       await handle.unmount();
     }

@@ -75,7 +75,7 @@ describe('withOutputFormat', () => {
     });
   });
 
-  it('keeps stream-json rate-limit severities and never fabricates a terminal result', () => {
+  it('keeps stream-json rate-limit warnings and never fabricates a terminal result', () => {
     const adapter = withOutputFormat(opencodeImplementerAdapter, 'stream-json');
     const parseRateFrame = (rateLimitInfo: Record<string, unknown>) =>
       adapter.parse(
@@ -93,16 +93,54 @@ describe('withOutputFormat', () => {
       overageStatus: 'rejected',
       rateLimitType: 'seven_day',
     });
-    const approaching = parseRateFrame({ status: 'allowed_warning', rateLimitType: 'seven_day' });
-    const rejected = parseRateFrame({ status: 'rejected', rateLimitType: 'five_hour' });
+    const approaching = parseRateFrame({
+      status: 'allowed_warning',
+      unifiedWindows: { seven_day: { utilization: 0.8, resetsAt: 1_794_000_000 } },
+    });
+    const rejected = parseRateFrame({
+      status: 'rejected',
+      unifiedWindows: { five_hour: { utilization: 0.75, resetsAt: 1_794_000_000 } },
+    });
     const rateEvents = [...allowed, ...approaching, ...rejected];
 
     expect(warningsIn(allowed)).toEqual([]);
     expect(warningsIn(approaching)).toMatchObject([
-      { code: 'claude_rate_limit', severity: 'warning' },
+      {
+        code: 'claude_rate_limit',
+        severity: 'warning',
+        message: expect.stringContaining('80% of your Claude Code weekly limit'),
+      },
     ]);
-    expect(warningsIn(rejected)).toMatchObject([{ code: 'claude_rate_limit', severity: 'error' }]);
+    expect(warningsIn(rejected)).toMatchObject([
+      {
+        code: 'claude_rate_limit',
+        severity: 'warning',
+        message: expect.stringContaining('75% of your Claude Code 5-hour limit'),
+      },
+    ]);
     expect(rateEvents.some((event) => event.type === 'result')).toBe(false);
+  });
+
+  it('keeps the usage step on a rate_limit_event warning at 75 percent weekly', () => {
+    const adapter = withOutputFormat(opencodeImplementerAdapter, 'stream-json');
+    const events = adapter.parse(
+      JSON.stringify({
+        type: 'rate_limit_event',
+        session_id: 'sess-weekly',
+        rate_limit_info: {
+          status: 'allowed_warning',
+          unifiedWindows: { seven_day: { utilization: 0.75, resetsAt: 1_794_000_000 } },
+        },
+      }),
+    );
+
+    expect(events.filter((event) => event.type === 'warning')).toMatchObject([
+      {
+        code: 'claude_rate_limit',
+        severity: 'warning',
+        usage: { window: 'seven_day', step: 75, resetsAt: 1_794_000_000_000 },
+      },
+    ]);
   });
 
   it('carries fallback model ids through the configured stream-json adapter', () => {

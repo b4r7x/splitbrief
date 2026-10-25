@@ -241,6 +241,7 @@ describe('createRecoveryDriver', () => {
     await vi.waitFor(() =>
       expect(recoveryNoticeStore.get()).toEqual({
         seat: 'build',
+        ranOn: null,
         resetAt: Date.parse('2026-10-10T17:00:00.000Z'),
         issue: state.pendingRecovery,
         at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
@@ -250,7 +251,13 @@ describe('createRecoveryDriver', () => {
     controller.abort();
 
     await settled;
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null, at: null });
+    expect(recoveryNoticeStore.get()).toEqual({
+      seat: null,
+      ranOn: null,
+      resetAt: null,
+      issue: null,
+      at: null,
+    });
   });
 
   it('clears the notice if the recovery question fails', async () => {
@@ -884,7 +891,13 @@ describe('createRecoveryDriver', () => {
     if (result.shouldRun) {
       expect(result.switchSeat?.candidate).toEqual({ tool: 'opencode' });
     }
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null, at: null });
+    expect(recoveryNoticeStore.get()).toEqual({
+      seat: null,
+      ranOn: null,
+      resetAt: null,
+      issue: null,
+      at: null,
+    });
   });
 
   it('marks Apply as the step an Apply halt waits at', async () => {
@@ -963,12 +976,19 @@ describe('createRecoveryDriver', () => {
     expect(noticeAtPrompt).toEqual([
       {
         seat: 'build',
+        ranOn: null,
         resetAt: Date.parse('2026-07-13T17:00:00.000Z'),
         issue: state.pendingRecovery,
         at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
       },
     ]);
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null, at: null });
+    expect(recoveryNoticeStore.get()).toEqual({
+      seat: null,
+      ranOn: null,
+      resetAt: null,
+      issue: null,
+      at: null,
+    });
   });
 
   it('opens the PLAN picker for a review halt whose REVIEW follows PLAN, and marks REVIEW', async () => {
@@ -1039,12 +1059,19 @@ describe('createRecoveryDriver', () => {
     expect(noticeAtPrompt).toEqual([
       {
         seat: 'build',
+        ranOn: null,
         resetAt: null,
         issue: state.pendingRecovery,
         at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
       },
     ]);
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null, at: null });
+    expect(recoveryNoticeStore.get()).toEqual({
+      seat: null,
+      ranOn: null,
+      resetAt: null,
+      issue: null,
+      at: null,
+    });
   });
 
   it('publishes the halted seat even when it offers no other tool', async () => {
@@ -1083,12 +1110,19 @@ describe('createRecoveryDriver', () => {
     expect(noticeAtPrompt).toEqual([
       {
         seat: 'review',
+        ranOn: null,
         resetAt: null,
         issue: state.pendingRecovery,
         at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
       },
     ]);
-    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null, at: null });
+    expect(recoveryNoticeStore.get()).toEqual({
+      seat: null,
+      ranOn: null,
+      resetAt: null,
+      issue: null,
+      at: null,
+    });
   });
 
   it('end run closes the run on the state and stops the loop', async () => {

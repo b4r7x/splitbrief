@@ -54,13 +54,17 @@ import {
 } from './projections.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
+const PLAN_USAGE_LIMIT_FRAGMENT = "You've used 75%";
+
 function applyStop(stop: FixtureStopState): void {
   stopStore.__testReset({
     intent: stop.intent,
     phase: stop.phase,
     seatChange: stop.seatChange ?? false,
     requestedAt: Date.now(),
-    parked: stop.parked === undefined ? null : { kept: [], ...stop.parked, resolve: null },
+    // The screen parks a stop with the engine's continuation, so the fixture gives it one.
+    parked:
+      stop.parked === undefined ? null : { kept: [], ...stop.parked, resolve: () => undefined },
   });
   if (stop.phase === 'parked') markWorkflowPaused();
 }
@@ -350,6 +354,23 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       },
     });
   }
+  if (projection.scenarioId === 'workflow-recovery-apply-partial-words') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        const fixedNow = Date.now;
+        Date.now = () => fixedNow() + PROMPT_TYPEAHEAD_GRACE_MS;
+        try {
+          await write.press('\t');
+          await write.press(TYPED_WORDS);
+          await write.press('\t');
+          await write.press('\r');
+        } finally {
+          Date.now = fixedNow;
+        }
+      },
+    });
+  }
   if (projection.scenarioId === 'workflow-recovery-consult-bound-note') {
     return () => ({
       ...base(),
@@ -528,6 +549,8 @@ const checkpointPredicates = [
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
   [checkpointId('build-brief-check'), includesAll('Plan check K2', 'read after its checks')],
+  [checkpointId('build-brief-check-seat-change'), includesAll('Plan check K2')],
+  [checkpointId('implementation-shell-seat'), includesAll('Custom Shell')],
   [
     checkpointId('build-review-consult'),
     includesAll('REVIEW → T904', 'Claude Code CLI', 'answering the consult on T904'),
@@ -585,9 +608,18 @@ const checkpointPredicates = [
   [checkpointId('review-choosing-checks'), includesAll()],
   [
     checkpointId('review-after-pause'),
-    (context) =>
-      includesTranscript('Final review')(context) &&
-      !workflowTranscriptText().includes('Final review stopped'),
+    (context) => {
+      const text = workflowTranscriptText();
+      const continued = text.indexOf('Run continued');
+      const finalReview = text.indexOf('Final review');
+      return (
+        includesTranscript('Final review')(context) &&
+        !text.includes('Final review stopped') &&
+        continued !== -1 &&
+        finalReview !== -1 &&
+        continued < finalReview
+      );
+    },
   ],
   [checkpointId('review-verdict-only'), includesAll()],
   [
@@ -716,6 +748,7 @@ const checkpointPredicates = [
   [checkpointId('plan-check-refused'), includesAll('Plan check K2', 'refused')],
   [checkpointId('plan-check-not-run'), includesAll('Plan check K4 · not')],
   [checkpointId('plan-check-missing-program'), includesAll('Plan check K4 · npm test', 'mocha')],
+  [checkpointId('plan-check-no-test-file'), includesAll('Plan check K4 · failed', 'loud.test.mjs')],
   [
     checkpointId('completed-orphan-rows'),
     includesTranscript(
@@ -752,6 +785,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('plan-card-render-note'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
+  [checkpointId('plan-card-session-path'), planCardReady],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
   [checkpointId('tasks-card'), includesAll('T001', 'T004', 'T006', 'T007')],
   // The subsections the spec card does not nest, and the briefs after T001's unclosed sample.
@@ -783,6 +817,7 @@ const checkpointPredicates = [
     checkpointId('paused-mid-brief'),
     includesAll('⏎ resume', 'Stopped at T', 'Partial changes kept'),
   ],
+  [checkpointId('paused-cut-seat'), includesAll('⏎ resume', 'Stopped at T')],
   [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
   // A run at rest carries its own name: the marker is the session the record names, which the
@@ -791,7 +826,17 @@ const checkpointPredicates = [
   [checkpointId('at-rest-paused'), includesAll()],
   [checkpointId('at-rest-queued'), includesAll('Stopped at T003', '1 queued')],
   [checkpointId('at-rest-halted'), includesAll()],
+  [checkpointId('at-rest-seat-wait'), includesAll()],
   [checkpointId('at-rest-halted-chosen'), includesAll('⏎ to try again')],
+  [
+    checkpointId('at-rest-prompt-too-large'),
+    // Below 80 columns the byline sheds its reason and keeps only "Seat down".
+    (context) =>
+      includesAll()(context) &&
+      excludesAll('Context overflow', 'argv')(context) &&
+      (context.viewport.cols < 80 ||
+        includesAll('Seat down · Prompt too large for OpenCode CLI on T002')(context)),
+  ],
   [
     checkpointId('at-rest-typed-words'),
     includesAll('Cannot send words with Restore backup. Clear them.', TYPED_WORDS),
@@ -816,6 +861,26 @@ const checkpointPredicates = [
     checkpointId('recovery-resumed-apply-partial'),
     (context) =>
       includesAll('Apply stopped part way')(context) && lifecycleStore.get().status === 'running',
+  ],
+  [
+    checkpointId('recovery-build-prompt-too-large'),
+    (context) =>
+      includesAll('Seat down · Prompt too large for', 'Change BUILD tool')(context) &&
+      excludesAll('Try again', 'argv', 'Context overflow')(context),
+  ],
+  [
+    checkpointId('recovery-apply-partial-words'),
+    includesAll('Cannot send words with', TYPED_WORDS, 'tab edit the words'),
+  ],
+  [
+    checkpointId('recovery-review-contract'),
+    includesAll('Seat down · The reviewer seat', 'Try again'),
+  ],
+  [
+    checkpointId('recovery-review-prompt-too-large'),
+    (context) =>
+      includesAll('Seat down · Final review failed', 'Change REVIEW tool')(context) &&
+      excludesAll('Try again')(context),
   ],
   [checkpointId('resuming'), includesAll('Resuming T')],
   [
@@ -858,6 +923,7 @@ const checkpointPredicates = [
   [checkpointId('closed-complete'), includesAll()],
   [checkpointId('ready-to-apply'), includesAll()],
   [checkpointId('ready-crew-saved'), includesAll('PLAN GPT-5.1')],
+  [checkpointId('ready-seat-moved-auto'), includesAll('PLAN GPT-5.1')],
   [
     checkpointId('at-rest-applying'),
     (context) =>
@@ -1044,6 +1110,10 @@ const checkpointPredicates = [
     checkpointId('recovery-checks-missing-program'),
     includesAll('mocha: command not found', 'Run the checks again'),
   ],
+  [
+    checkpointId('recovery-checks-unrunnable'),
+    includesAll('validation.render is not set', 'Run the checks again'),
+  ],
   [checkpointId('left-isolation'), includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],
   [checkpointId('repeated-timeout'), includesAll()],
@@ -1082,7 +1152,12 @@ const checkpointPredicates = [
   [checkpointId('implementation-seat-change'), includesAll(WORKFLOW_FIXTURE_TEXT.implementation)],
   [
     checkpointId('final-review-seat-change'),
-    includesAll('3/3 briefs passed', 'Review · OpenAI Codex CLI'),
+    includesAll(
+      '3/3 briefs passed',
+      'Review · OpenAI Codex CLI',
+      'OpenAI Codex CLI',
+      'GPT-6-Astra',
+    ),
   ],
   [checkpointId('review-check-long-command'), includesAll('Reviewer check V2 · npx vitest')],
   [checkpointId('review-checks-approve'), includesAll('Run all', 'Skip all', 'V1')],
@@ -1125,8 +1200,9 @@ const checkpointPredicates = [
     // The verdict wraps at narrow widths; the earlier red row scrolls out of a 60x18 transcript.
     (context) =>
       includesAll(
-        'your 2 failures gone',
-        ...(context.viewport.cols >= 120 ? ['not proven fixed'] : []),
+        '1 of your 2 failures gone',
+        'left to T905',
+        ...(context.viewport.cols >= 120 ? ['1 of your 2 failures remains'] : []),
       )({
         ...context,
         output: context.output.replace(/\s+/g, ' '),
@@ -1143,6 +1219,12 @@ const checkpointPredicates = [
     includesAll('Final review passed'),
   ],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
+  [
+    checkpointId('plan-usage-limit'),
+    (context) =>
+      includesTranscript()(context) &&
+      workflowTranscriptText().replace(/\s+/g, ' ').split(PLAN_USAGE_LIMIT_FRAGMENT).length === 2,
+  ],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 
 /** Predicates receive ANSI-free frame text from checkpointPredicate or waitForCheckpoint. */

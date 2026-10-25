@@ -4,7 +4,6 @@ import { dirname, join } from 'node:path';
 import { resolveApproveLevel, resolveEndChecks } from '../../../core/config/runtime/resolve.js';
 import { rendersDir } from '../../../core/paths.js';
 import { STAGE_TIMEOUT_MS } from '../../../core/pipeline-spec/gates.js';
-import { readPackageJson } from '../../../core/project-meta.js';
 import type { PackageScriptsReadinessInput } from '../../../core/readiness/checks/validation.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Phase } from '../../../core/schemas/enums.js';
@@ -24,14 +23,19 @@ import {
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { sha256Hex } from '../../../utils/sha256.js';
-import { isRecord } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
 import type { RunBase } from '../isolation/base-tree.js';
-import { checkCommandRefusal } from '../planning/sanitize-discovered-validation.js';
+import {
+  commandTextRefusal,
+  missingNpmScript,
+  readPackageScripts,
+} from '../planning/sanitize-discovered-validation.js';
+import { RENDER_ID_PATTERN } from '../../spec/plan-checks.js';
 import { changedDefinitionRefusal } from './changed-script.js';
 import { failureKeys, type FailureKeys } from './extract-failure-keys.js';
 import type { ValidationResult } from './result.js';
 import { reviewerCommandRefusal } from './reviewer-command-policy.js';
+import { NO_TEST_FILE_FOUND } from './commands.js';
 import { buildStageContext, planTestCheck } from './run.js';
 import { boundedOutputTail, notRunnableReason, runValidationStep } from './stage.js';
 import { countCargoTests } from './test-failures.js';
@@ -82,6 +86,11 @@ export type RunChecksOptions = {
   discoveredValidation?: DiscoveredValidation | undefined;
   signal?: AbortSignal | undefined;
   runCommand?: ValidationCommandRunner | undefined;
+  /**
+   * Per `cmd` check id, the test files it runs alone when its command is the stack's test command
+   * and the stack can select them; the next review runs the whole command.
+   */
+  testFiles?: ReadonlyMap<string, readonly string[]> | undefined;
 };
 
 export function planApprovesNpmScripts(opts: {
@@ -126,27 +135,29 @@ function checkOutput(result: ValidationResult): string {
   return result.passed ? (result.output ?? '') : (result.error ?? result.output ?? '');
 }
 
-function readPackageScripts(projectDir: string): PackageScriptsReadinessInput {
-  const pkg = readPackageJson(projectDir);
-  if (pkg === null) return { packageJsonExists: false, scripts: {} };
-  const scripts = pkg['scripts'];
-  if (!isRecord(scripts)) return { packageJsonExists: true, scripts: {} };
-  const entries = Object.entries(scripts).filter(
-    (entry): entry is [string, string] => typeof entry[1] === 'string',
-  );
-  return { packageJsonExists: true, scripts: Object.fromEntries(entries) };
-}
-
 function validationTimeout(config: Config): number {
   return config.validation.timeoutMs ?? STAGE_TIMEOUT_MS;
 }
+
+type TestCheckPlan = ReturnType<typeof planTestCheck>;
 
 async function runTestCheck(
   check: Check,
   opts: RunChecksOptions,
   run: ValidationCommandRunner,
-  planned: ReturnType<typeof planTestCheck>,
+  planned: TestCheckPlan,
 ): Promise<CheckRunResult> {
+  if (planned.kind === 'skip' && planned.reason === NO_TEST_FILE_FOUND) {
+    // The stack's tests run, but the workspace lacks the test file the check names: the change is
+    // missing it, so the check fails and the builder or the reviewer answers it.
+    const missing = `the workspace has no test file for ${check.value}`;
+    return {
+      checkId: check.id,
+      status: 'fail',
+      output: missing,
+      failure: { keys: ['no test file'], placeholder: missing },
+    };
+  }
   if (planned.kind === 'skip') {
     return { checkId: check.id, status: 'not-runnable', output: planned.reason };
   }
@@ -168,18 +179,21 @@ async function runTestCheck(
       missingProgram: true,
     };
   }
-  // A test that ran shows in the visible counts; a cut-off output cannot show that none ran.
+  // A test that ran shows in the visible counts. A check whose selection runs no test fails, so the
+  // builder or the reviewer answers it; a cut-off output cannot show that one ran.
   if (
     result.passed &&
     planned.countsCargoTests &&
     countCargoTests(captureText(result.capture)) === 0
   ) {
+    const noTest = result.capture.complete
+      ? 'the command ran no test'
+      : 'the test output was cut off before it showed a test that ran';
     return {
       checkId: check.id,
-      status: 'not-runnable',
-      output: result.capture.complete
-        ? 'the command ran no test'
-        : 'the test output was cut off before it showed a test that ran',
+      status: 'fail',
+      output: noTest,
+      failure: { keys: ['no test ran'], placeholder: noTest },
       command: result.command,
     };
   }
@@ -206,26 +220,34 @@ async function runCommandCheck(
   run: ValidationCommandRunner,
   packageScripts: PackageScriptsReadinessInput,
   reviewCheck: boolean,
+  narrowed: TestCheckPlan | null,
 ): Promise<CheckRunResult> {
   // A reviewer check runs under the reviewer policy, any stack's program, and is refused for a
   // changed script; a plan check keeps the plan policy, and a plan may add a script and check it.
-  const refusal =
-    (reviewCheck
-      ? reviewerCommandRefusal(check.value)
-      : checkCommandRefusal(check.value, {
-          npmScriptsApproved: opts.npmScriptsApproved,
-          packageScripts,
-        })) ??
-    (!reviewCheck
-      ? null
-      : await changedDefinitionRefusal({
-          command: check.value,
-          base: opts.base,
-          workspaceDir: opts.projectDir,
-        }));
+  const refusal = reviewCheck
+    ? (reviewerCommandRefusal(check.value) ??
+      (await changedDefinitionRefusal({
+        command: check.value,
+        base: opts.base,
+        workspaceDir: opts.projectDir,
+      })))
+    : commandTextRefusal(check.value, opts.npmScriptsApproved);
   if (refusal !== null) {
     return { checkId: check.id, status: 'refused', output: refusal, command: check.value };
   }
+  // The change lacks the script the check runs, so the check fails and a fix can add it.
+  const missing = reviewCheck
+    ? null
+    : missingNpmScript(check.value, opts.npmScriptsApproved, packageScripts);
+  if (missing !== null) {
+    return {
+      checkId: check.id,
+      status: 'fail',
+      output: missing,
+      failure: { keys: ['no npm script'], placeholder: missing },
+    };
+  }
+  if (narrowed !== null) return runTestCheck(check, opts, run, narrowed);
   const [cmd, ...args] = parseShellCommand(check.value);
   if (cmd === undefined) {
     return { checkId: check.id, status: 'refused', output: 'names no program' };
@@ -282,8 +304,6 @@ async function runCommandCheck(
     throw err;
   }
 }
-
-const RENDER_ID_PATTERN = /^[a-z0-9-]+$/;
 
 async function runRenderCheck(
   check: Check,
@@ -406,12 +426,22 @@ export function createCheckRunner(opts: RunChecksOptions): (check: Check) => {
       return { command: '', run: () => runRenderCheck(check, opts, run) };
     }
     if (check.kind === 'cmd') {
+      const files = opts.testFiles?.get(check.id);
+      const planned = files === undefined ? null : planTestCheck(files, stageContext);
+      const narrowed =
+        planned?.kind === 'run' &&
+        planned.narrowed &&
+        parseShellCommand(check.value).join(' ') ===
+          [planned.resolved.cmd, ...planned.resolved.args].join(' ')
+          ? planned
+          : null;
       return {
-        command: check.value,
-        run: () => runCommandCheck(check, opts, run, packageScripts, reviewIds.has(check.id)),
+        command: narrowed?.command ?? check.value,
+        run: () =>
+          runCommandCheck(check, opts, run, packageScripts, reviewIds.has(check.id), narrowed),
       };
     }
-    const planned = planTestCheck(check.value, stageContext);
+    const planned = planTestCheck([check.value], stageContext);
     return {
       command: planned.kind === 'run' ? planned.command : '',
       run: () => runTestCheck(check, opts, run, planned),

@@ -36,6 +36,9 @@ import { formatRecoveryPrompt } from '../../../features/workflow/recovery-prompt
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
+import { CURSOR_MODEL_REFUSAL, writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
+import { loadState } from '../../../core/state/persistence.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -596,8 +599,8 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
   function expectTwoAttempts(state: WorkflowState) {
     expect(state.pendingRecovery).toMatchObject({ attempts: 2, maxAttempts: 8 });
     expect(state.pendingRecovery?.details).toContain('Attempts: 2/8');
-    expect(formatRecoveryPrompt(state.pendingRecovery!)).toContain(
-      'timed out twice in a row on T001 after 2 attempts',
+    expect(formatRecoveryPrompt(state.pendingRecovery!).split('\n')[0]).toBe(
+      'Seat down · Two timeouts in a row on T001',
     );
   }
 
@@ -708,5 +711,171 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
     });
     expect(state.pendingRecovery?.availableActions).toContain('switch-seat');
     expectTwoAttempts(state);
+  });
+});
+
+describe('runTaskLoop — a Cursor seat that refuses the account is a seat-down halt', () => {
+  const shimDirs: string[] = [];
+  let restorePath: (() => void) | undefined;
+
+  afterEach(() => {
+    restorePath?.();
+    restorePath = undefined;
+    while (shimDirs.length > 0) cleanupTempDir(shimDirs.pop() as string);
+  });
+
+  function cursorSeat(fallback?: CliImplementerConfig['fallback']): CliImplementerConfig {
+    return {
+      kind: 'cli',
+      tool: 'cursor',
+      model: 'claude-haiku-5-5-thinking-high',
+      contextLength: 32768,
+      ...(fallback !== undefined && { fallback }),
+    };
+  }
+
+  async function runCursorSeat(
+    opts: Readonly<{
+      fallback?: CliImplementerConfig['fallback'];
+      firstFailure?: string;
+      state?: (base: WorkflowState) => WorkflowState;
+    }> = {},
+  ) {
+    const shimDir = createTempDir('cursor-refusal-shim');
+    shimDirs.push(shimDir);
+    writeCursorRefusalShim(shimDir, {
+      ...(opts.firstFailure !== undefined && { firstFailure: opts.firstFailure }),
+    });
+    restorePath = prependPath(shimDir);
+    const seat = cursorSeat(opts.fallback);
+    const config = makeConfig({
+      implementer: seat,
+      validation: { endChecks: false, testCommand: 'noop' },
+    });
+    const { projectDir, sessionId } = setupProject();
+    writeConfig(projectDir, config);
+    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['cursor', 'claude-code']));
+    const { bus, events } = makeBusRecorder();
+    const consult = vi.fn(() => guidanceConsult());
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      implementer: createCliImplementer(seat, {
+        trustedCli: trustedShimGate({ dir: shimDir, tool: 'cursor' }),
+      }),
+      planner: makePlanner({ typedCall: consultCallAnswering(consult) }),
+      bus,
+      config,
+    });
+    const base = implementingState([makeTask({ id: 'T001' })]);
+    const { state } = await runTaskLoop({
+      wctx,
+      initialState: opts.state?.(base) ?? base,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+    return { state, events, consult, wctx, projectDir, sessionId, bus };
+  }
+
+  function expectSeatDownOnFirstAttempt(
+    run: Awaited<ReturnType<typeof runCursorSeat>>,
+    attempts = 1,
+  ) {
+    expect(run.state.pendingRecovery).toMatchObject({
+      reason: 'runner-usage-limit',
+      taskId: 'T001',
+      attempts,
+    });
+    expect(run.consult).not.toHaveBeenCalled();
+    expect(run.events.filter((event) => event.type === 'consult_answered')).toEqual([]);
+    expect(formatRecoveryPrompt(run.state.pendingRecovery!).split('\n')[0]).toBe(
+      'Seat down · Balance spent on Cursor Agent CLI',
+    );
+    expect(run.state.pendingRecovery?.details.join('\n')).toContain(CURSOR_MODEL_REFUSAL);
+  }
+
+  it('moves to the unused declared fallback at once, with no retry and no consult', async () => {
+    const run = await runCursorSeat({ fallback: { tool: 'claude-code' } });
+
+    expectSeatDownOnFirstAttempt(run);
+    expect(run.events.filter((event) => event.type === 'task_retry')).toEqual([]);
+    expect(run.state.pendingRecovery?.switchSeat?.auto?.candidate).toEqual({ tool: 'claude-code' });
+  });
+
+  it('offers the seat switch, the retry, the skip and the end when no fallback is declared', async () => {
+    const run = await runCursorSeat();
+
+    expectSeatDownOnFirstAttempt(run);
+    expect(run.state.pendingRecovery?.switchSeat?.auto).toBeUndefined();
+    expect(run.state.pendingRecovery?.recommendedAction).toBe('switch-seat');
+    expect(run.state.pendingRecovery?.switchSeat?.candidates).toEqual([{ tool: 'claude-code' }]);
+    expect(run.state.pendingRecovery?.availableActions).toEqual(
+      expect.arrayContaining(['switch-seat', 'retry-same-worker', 'skip-current-task', 'end-run']),
+    );
+  });
+
+  it('offers no automatic switch when this run already moved the BUILD seat', async () => {
+    const run = await runCursorSeat({
+      fallback: { tool: 'claude-code' },
+      state: (base) => ({
+        ...base,
+        seatSwitches: [
+          {
+            seat: 'build',
+            from: 'antigravity',
+            to: 'cursor',
+            cause: 'runner-usage-limit',
+            auto: true,
+            configRevision: 'abc',
+            ts: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      }),
+    });
+
+    expectSeatDownOnFirstAttempt(run);
+    expect(run.state.pendingRecovery?.switchSeat?.auto).toBeUndefined();
+    expect(run.state.pendingRecovery?.availableActions).toContain('switch-seat');
+  });
+
+  it('halts on the retry rung when the refusal comes on the second attempt', async () => {
+    const run = await runCursorSeat({ firstFailure: 'Error: the agent stopped unexpectedly' });
+
+    expectSeatDownOnFirstAttempt(run, 2);
+  });
+
+  it('halts again at once when the user retries the same seat', async () => {
+    const first = await runCursorSeat();
+    expectSeatDownOnFirstAttempt(first);
+
+    const retried = await applyRecoveryAction({
+      projectDir: first.projectDir,
+      sessionId: first.sessionId,
+      state: first.state,
+      action: 'retry-same-worker',
+      bus: first.bus,
+    });
+    expect(retried.ok).toBe(true);
+    const { state } = await runTaskLoop({
+      wctx: first.wctx,
+      initialState: retried.state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(state.pendingRecovery).toMatchObject({ reason: 'runner-usage-limit', taskId: 'T001' });
+    expect(first.consult).not.toHaveBeenCalled();
+    expect(first.events.filter((event) => event.type === 'task_retry')).toEqual([]);
+  });
+
+  it('keeps the halt and its automatic switch in the saved state of a reopened run', async () => {
+    const run = await runCursorSeat({ fallback: { tool: 'claude-code' } });
+
+    const saved = loadState({ projectDir: run.projectDir, sessionId: run.sessionId });
+    expect(saved?.pendingRecovery).toMatchObject({ reason: 'runner-usage-limit', taskId: 'T001' });
+    expect(saved?.pendingRecovery?.switchSeat?.auto?.candidate).toEqual({ tool: 'claude-code' });
+    expect(formatRecoveryPrompt(saved!.pendingRecovery!).split('\n')[0]).toBe(
+      'Seat down · Balance spent on Cursor Agent CLI',
+    );
   });
 });

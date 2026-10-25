@@ -19,7 +19,7 @@ import {
   readHeadSha,
 } from '../../../lib/git/repository.js';
 import { warnError } from '../../../lib/warn.js';
-import { toErrorMessage } from '../../../utils/format-errors.js';
+import { addWorkspaceRoot, toErrorMessage } from '../../../utils/format-errors.js';
 import {
   createRunnerSandboxEnv,
   pruneSandboxNpmCache,
@@ -77,6 +77,7 @@ export function createRunIsolation(opts: {
   let nodeModulesExcludeFile: string | null = null;
   let worktreeAbandoned = false;
   let runWorkspace: RunWorkspace | undefined;
+  let removeWorkspaceRoot: (() => void) | undefined;
   let location: RetainedWorkspace['location'] | undefined;
   let directory: RetainedWorkspace['directory'] | undefined;
   let owner: WorkspaceOwner | undefined;
@@ -346,6 +347,7 @@ export function createRunIsolation(opts: {
       retainedAttempt === null
         ? []
         : await getChangedFilesSinceSnapshot(dir, retainedAttempt.snapshot);
+    removeWorkspaceRoot = addWorkspaceRoot(dir);
     runWorkspace = {
       kind: location.kind,
       projectDir: dir,
@@ -523,6 +525,8 @@ export function createRunIsolation(opts: {
         }
       }
     } finally {
+      removeWorkspaceRoot?.();
+      removeWorkspaceRoot = undefined;
       for (const root of resumedSandboxRoots) {
         await rm(root, { recursive: true, force: true });
         removeSandboxTempDirs(root);

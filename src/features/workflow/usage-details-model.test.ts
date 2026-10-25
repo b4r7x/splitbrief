@@ -409,28 +409,31 @@ describe('usage details billing', () => {
   it.each([
     ['shell:shell', 'Custom Shell'],
     ['agent:agent', 'Agent'],
-    ['shell:claude', 'claude'],
-    ['shell:opencode', 'opencode'],
-    ['agent:claude', 'claude'],
-    ['agent:opencode', 'opencode'],
-  ])('names billing identity %s without changing real command names', (key, label) => {
-    const input = {
-      tokenUsage: usage({ plannerInput: 10 }),
-      costBreakdown: breakdown({
-        providerRunMetadata: {
-          [key]: {
-            service: key,
-            offering: 'payg',
-            normalizedEndpoint: key,
-            billing: 'unknown',
-            asOf: '',
+    ['shell:claude', 'Custom Shell'],
+    ['shell:opencode', 'Custom Shell'],
+    ['agent:claude', 'Agent'],
+    ['agent:opencode', 'Agent'],
+  ])(
+    'names billing identity %s by its kind word, never by the CLI it shares a name with',
+    (key, label) => {
+      const input = {
+        tokenUsage: usage({ plannerInput: 10 }),
+        costBreakdown: breakdown({
+          providerRunMetadata: {
+            [key]: {
+              service: key,
+              offering: 'payg',
+              normalizedEndpoint: key,
+              billing: 'unknown',
+              asOf: '',
+            },
           },
-        },
-      }),
-    };
-    expect(deriveUsageDetails(input).billing.map((row) => row.tool)).toEqual([label]);
-    expect(rows(input).find((row) => row.key === `billing:${key}`)?.label).toBe(label);
-  });
+        }),
+      };
+      expect(deriveUsageDetails(input).billing.map((row) => row.tool)).toEqual([label]);
+      expect(rows(input).find((row) => row.key === `billing:${key}`)?.label).toBe(label);
+    },
+  );
 
   it('names a kind-qualified identity in its own words, keeping the API twin literal', () => {
     const input = {

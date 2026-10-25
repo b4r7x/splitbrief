@@ -210,6 +210,82 @@ describe('workflow visual fixtures', () => {
     expect(frame).not.toContain('Change REVIEW tool');
   });
 
+  it('renders a REVIEW contract halt with multiple errors in the transcript and panel', async () => {
+    const projection = workflowFixtureProjections.get(
+      scenarioId('workflow-recovery-review-contract'),
+    );
+    if (projection === undefined) throw new Error('Missing REVIEW contract recovery scenario');
+    expect(projection.resumeState?.pendingRecovery).toMatchObject({
+      seat: 'review',
+      reason: 'seat-protocol-error',
+    });
+    const frame = stripTerminalControls(await renderProjection(projection), {
+      preserveLineBreaks: true,
+    }).replace(/[│\s]+/g, ' ');
+    expect(frame).toContain(
+      'The reviewer seat answer did not match its contract after 2 attempts.',
+    );
+    expect(frame).toContain(
+      'result.checks.0.value: The check command contains a shell operator. Choose a single command.',
+    );
+    expect(frame).toContain('result.verdict: Required');
+  });
+
+  it.each([
+    [
+      'workflow-recovery-review-prompt-too-large',
+      'Final review failed: the prompt is too large',
+      'The prompt is 186,486 bytes; OpenCode CLI takes at most 120,000 on its command line.',
+      'Change REVIEW tool',
+    ],
+    [
+      'workflow-recovery-build-prompt-too-large',
+      'Prompt too large for OpenCode CLI on T001',
+      'The prompt is 195,203 bytes; OpenCode CLI takes at most 120,000 on its command line.',
+      'Change BUILD tool',
+    ],
+  ])(
+    '%s states the command-line limit in plain words, with a tool change and no retry',
+    async (id, title, detail, change) => {
+      const projection = workflowFixtureProjections.get(scenarioId(id));
+      if (projection === undefined) throw new Error(`Missing ${id} scenario`);
+      const frame = stripTerminalControls(await renderProjection(projection), {
+        preserveLineBreaks: true,
+      }).replace(/[│\s]+/g, ' ');
+      expect(frame).toContain(title);
+      expect(frame).toContain(detail);
+      expect(frame).toContain(change);
+      expect(frame).not.toContain('Try again');
+      expect(frame).not.toMatch(/argv|reported:|Context overflow/);
+    },
+  );
+
+  it('names a BUILD prompt refused as too large and its brief once, with no Recovery row restating it', async () => {
+    const projection = workflowFixtureProjections.get(
+      scenarioId('workflow-recovery-build-prompt-too-large'),
+    );
+    if (projection === undefined) throw new Error('Missing BUILD prompt-too-large scenario');
+    const frame = stripTerminalControls(await renderProjection(projection), {
+      preserveLineBreaks: true,
+    }).replace(/[│\s]+/g, ' ');
+    expect(frame).toContain(
+      'Seat down · Prompt too large for OpenCode CLI on T001 after 1 attempt',
+    );
+    expect(frame).not.toContain('Recovery Prompt too large');
+  });
+
+  it('names the refused prompt and its tool in the byline of a run parked at that halt', async () => {
+    const projection = workflowFixtureProjections.get(
+      scenarioId('workflow-at-rest-prompt-too-large'),
+    );
+    if (projection === undefined) throw new Error('Missing at-rest prompt-too-large scenario');
+    const frame = stripTerminalControls(await renderProjection(projection), {
+      preserveLineBreaks: true,
+    }).replace(/[│\s]+/g, ' ');
+    expect(frame).toContain('Seat down · Prompt too large for OpenCode CLI on T002');
+    expect(frame).not.toMatch(/argv|Context overflow/);
+  });
+
   it.each([
     ['workflow-recovery-no-fallback', 'no fallback set'],
     [

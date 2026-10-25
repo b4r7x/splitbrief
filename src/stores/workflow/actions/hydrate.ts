@@ -1,5 +1,6 @@
 import { definedTaskUsageFields, TASK_USAGE_ATTEMPT_KEYS } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { briefPosition } from '../../../core/state/selectors.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue-state.js';
 import { _tasksInternal, type TasksState, type WorkflowTask } from '../tasks.js';
 import {
@@ -58,8 +59,7 @@ function tasksStateFromState(
   state: WorkflowState,
 ): Pick<TasksState, 'currentTask' | 'totalTasks' | 'taskMap' | 'tasks'> {
   const totalTasks = state.tasks.length;
-  const currentTask =
-    totalTasks === 0 ? 0 : Math.min(Math.max(0, state.currentTaskIndex) + 1, totalTasks);
+  const currentTask = briefPosition(state)?.position ?? 0;
   const tasks = state.tasks.map<WorkflowTask>((task) => ({
     id: task.id,
     title: task.title,
@@ -81,13 +81,13 @@ function tasksStateFromState(
 
 function tokensStateFromState(
   state: WorkflowState,
-): Pick<TokensState, 'completedTaskCount' | 'tokenUsage' | 'pricingContext' | 'perTask'> {
+): Pick<TokensState, 'completedTaskCount' | 'tokenUsage' | 'passSeats' | 'perTask'> {
   return {
     completedTaskCount: state.tasks.filter(
       (task) => task.status !== 'pending' && task.status !== 'in_progress',
     ).length,
     tokenUsage: state.tokenUsage,
-    pricingContext: pricingContext(state),
+    passSeats: passSeats(state),
     perTask: perTaskTokens(state),
   };
 }
@@ -112,7 +112,8 @@ function perTaskTokens(state: WorkflowState): Record<string, PerTaskTokens> {
   return perTask;
 }
 
-function pricingContext(state: WorkflowState): TokensState['pricingContext'] {
+/** The saved state keeps no axis words, so the chrome does not take these seats as known. */
+function passSeats(state: WorkflowState): TokensState['passSeats'] {
   if (!state.plannerTool || !state.implementerTool) return null;
   return {
     plannerTool: state.plannerTool,

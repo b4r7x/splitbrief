@@ -353,7 +353,7 @@ export function formatRetryPrompt(opts: {
     plan,
     inPlace = false,
   } = opts;
-  const framing = framingForAttempt(attempt);
+  const framing = framingForAttempt(attempt, task.fix !== undefined);
   const sections = buildTaskSections(task, context, writesFiles, outputContract, plan, inPlace);
 
   sections.unshift(framing, '', 'Error from previous attempt:', error, '');

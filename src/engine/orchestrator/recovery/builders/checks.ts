@@ -33,11 +33,7 @@ export function buildRequiredChecksUnrunnableRecoveryIssue(
     message: `Required checks cannot run: ${entries.join('; ')}`,
     details: [
       ...(missingProgram ? ['Install what is missing, then run the checks again.'] : []),
-      ...(otherCause
-        ? [
-            'A refused or not-runnable required check never becomes a fix task. Correct the check policy, validation.render or the registration, then run the checks again.',
-          ]
-        : []),
+      ...(otherCause ? ['Fix the cause below, then run the checks again.'] : []),
       ...entries,
     ],
     facts: compactFacts({ requiredCheckIds: checkIds.join(', ') }),

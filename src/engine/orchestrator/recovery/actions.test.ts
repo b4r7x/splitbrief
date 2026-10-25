@@ -16,10 +16,18 @@ import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { writeSeatIdentities } from '../../../core/state/seats.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import type { CrewSeatId, SeatIds } from '../../../core/crew/identity.js';
 import { applyRecoveryAction, commitSeatSwitch, planSwitchSeatRecoveryAction } from './actions.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
 import { buildConsultBoundRecoveryIssue } from './builders/consult.js';
-import { buildReviewFailedRecoveryIssue, buildSeatDownIssue } from './builders/task.js';
+import {
+  buildReviewFailedRecoveryIssue,
+  buildRunnerInputTooLargeRecoveryIssue,
+  buildSeatDownIssue,
+} from './builders/task.js';
+import { argvPromptTooLarge } from '../../runners/input-limit.js';
 import { EngineEventSchema } from '../../events/schema.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import {
@@ -593,6 +601,42 @@ describe('applyRecoveryAction: switch-seat', () => {
     });
   });
 
+  it('records the refused prompt and its tool as the cause of a BUILD tool change', async () => {
+    const ref = setupSession('prompt-too-large-switch');
+    const task = makeTask({ id: 'T400', status: 'in_progress' });
+    const runner = { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' } as const;
+    const issue = buildRunnerInputTooLargeRecoveryIssue({
+      task,
+      phase: 'implementing',
+      runner,
+      toolMessage: argvPromptTooLarge(195_203, 120_000).message,
+      attempts: 1,
+      maxAttempts: 8,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'opencode',
+        detectedTools: [{ tool: 'claude-code', ready: true }],
+      },
+      createdAt,
+    });
+    const state = { ...makeImplState([task]), pendingRecovery: issue };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const result = await applyRecoveryAction({
+      ...ref,
+      state,
+      bus,
+      action: 'switch-seat',
+      candidate: { tool: 'claude-code' },
+      config: makeConfig({ implementer: runner }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.message);
+    const headline = 'Prompt too large for OpenCode CLI on T400';
+    expect(result.state.seatSwitches?.[0]).toMatchObject({ cause: 'context-overflow', headline });
+    expect(events.find((event) => event.type === 'seat_switched')).toMatchObject({ headline });
+  });
+
   it.each([
     'version: 3\nplanner:\n  kind: cli\n  tool: invalid-tool\n',
     'version: 3\nplanner: [broken\n',
@@ -798,7 +842,39 @@ describe('applyRecoveryAction: switch-seat', () => {
       candidate: { tool: 'cursor' },
     });
 
-    expect(result).toMatchObject({ ok: false, code: 'candidate-not-offered' });
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'candidate-not-offered',
+      message: 'Cursor Agent CLI is not one of the tools offered for the build seat.',
+    });
+  });
+
+  it('names the tool by its catalog name when the seat cannot take it', async () => {
+    const { projectDir, sessionId } = setupSession('switch-seat-cannot-host');
+    const task = makeTask({ id: 'T402', status: 'in_progress' });
+    const issue: RecoveryIssue = {
+      ...usageLimitIssue(task),
+      switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code', model: '' }] },
+    };
+    const base = makeImplState([task]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+      candidate: { tool: 'claude-code', model: '' },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'candidate-not-offered',
+      message: 'Claude Code CLI cannot host the plan seat.',
+    });
   });
 
   it('blocks when the halt carried no seat-swap offer', async () => {
@@ -847,16 +923,19 @@ describe('applyRecoveryAction: retry-later', () => {
       state: { ...base, pendingRecovery: issue },
       action: 'retry-later',
       bus,
+      entryConfig: makeConfig({ reviewer: { kind: 'cli', tool: 'codex' } }),
     });
 
     expect(result).toMatchObject({ ok: true, status: 'continued' });
     if (!result.ok) return;
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.state.seatWait).toEqual({ seat: 'review', resetAt: '2026-05-01T10:00:00.000Z' });
-    expect(loadState({ projectDir, sessionId })?.seatWait).toEqual({
+    const wait = {
       seat: 'review',
       resetAt: '2026-05-01T10:00:00.000Z',
-    });
+      holds: { tool: 'codex', kind: 'cli' },
+    };
+    expect(result.state.seatWait).toEqual(wait);
+    expect(loadState({ projectDir, sessionId })?.seatWait).toEqual(wait);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
     );
@@ -882,6 +961,162 @@ describe('applyRecoveryAction: retry-later', () => {
     expect(result.state.seatWait).toBeUndefined();
   });
 
+  it('blocks when it is not given the config the run continues on', async () => {
+    const { projectDir, sessionId } = setupSession('retry-later-no-config');
+    const issue = seatDownHalt('2026-05-01T10:00:00.000Z');
+    const base = makeImplState([makeTask({ id: 'T001' })]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'retry-later',
+      bus,
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'action-not-available' });
+    expect(result.state.pendingRecovery).toEqual(issue);
+    expect(result.state.seatWait).toBeUndefined();
+  });
+
+  describe('the wait names the runner the halted call ran on', () => {
+    type RecordedIds = SeatIds & Readonly<{ axes: readonly string[] }>;
+    const CLAUDE_IDS: RecordedIds = {
+      tool: 'claude-code',
+      model: 'claude-3-5-sonnet',
+      axes: [],
+      kind: 'cli',
+    };
+    const CODEX_IDS: RecordedIds = { tool: 'codex', model: 'gpt-5-codex', axes: [], kind: 'cli' };
+    const OLLAMA_IDS: RecordedIds = { tool: 'ollama', model: 'llama3', axes: [], kind: 'api' };
+    const SHELL_IDS: RecordedIds = { tool: 'shell', axes: [], kind: 'shell' };
+    const AGENT_IDS: RecordedIds = { tool: 'agent', axes: [], kind: 'agent' };
+    // The run started on Claude Code for every seat; its state keeps that start.
+    const STARTED = {
+      plannerTool: 'claude-code',
+      plannerKind: 'cli',
+      implementerTool: 'claude-code',
+      implementerKind: 'cli',
+    } as const;
+
+    function writeRecord(
+      ref: { projectDir: string; sessionId: string },
+      ids: Partial<Record<CrewSeatId, RecordedIds>>,
+      buildProfiles?: Record<string, RecordedIds>,
+    ): void {
+      writeSeatIdentities(ref, {
+        plan: 'p',
+        build: 'b',
+        review: 'r',
+        ids: { plan: CLAUDE_IDS, build: CLAUDE_IDS, review: CLAUDE_IDS, ...ids },
+        reviewFollowsPlan: false,
+        ...(buildProfiles !== undefined && {
+          buildProfiles: Object.fromEntries(
+            Object.entries(buildProfiles).map(([name, profileIds]) => [
+              name,
+              { identity: name, ids: profileIds },
+            ]),
+          ),
+        }),
+      });
+    }
+
+    async function retryLater(
+      name: string,
+      issue: RecoveryIssue,
+      record: ((ref: { projectDir: string; sessionId: string }) => void) | null,
+      started: Partial<WorkflowState> = STARTED,
+    ): Promise<WorkflowState | null> {
+      const ref = setupSession(name);
+      const base = makeImplState([makeTask({ id: 'T001' })], started);
+      saveState(ref, { ...base, pendingRecovery: issue });
+      record?.(ref);
+      const result = await applyRecoveryAction({
+        ...ref,
+        state: { ...base, pendingRecovery: issue },
+        action: 'retry-later',
+        bus: makeBusRecorder().bus,
+        entryConfig: makeConfig(),
+      });
+      expect(result.ok).toBe(true);
+      return loadState(ref);
+    }
+
+    function waitWord(state: WorkflowState | null): string | undefined {
+      if (state === null) return undefined;
+      const status = deriveRunStatus({ state, liveness: 'not-alive' });
+      return status.kind === 'open' &&
+        status.stop.kind === 'stopped' &&
+        status.stop.on.kind === 'seat-wait'
+        ? status.stop.on.tool
+        : undefined;
+    }
+
+    function halt(seat: CrewSeatId, extra: Partial<RecoveryIssue> = {}): RecoveryIssue {
+      return makeRecoveryIssue({
+        reason: 'runner-usage-limit',
+        phase: seat === 'plan' ? 'planning' : seat === 'build' ? 'implementing' : 'final-review',
+        seat,
+        resetAt: '2026-05-01T10:00:00.000Z',
+        availableActions: ['retry-later', 'end-run'],
+        recommendedAction: 'retry-later',
+        ...extra,
+      });
+    }
+
+    it.each([
+      { seat: 'plan', ids: CODEX_IDS, word: 'OpenAI Codex CLI' },
+      { seat: 'plan', ids: OLLAMA_IDS, word: 'Ollama' },
+      { seat: 'build', ids: SHELL_IDS, word: 'Custom Shell' },
+      { seat: 'build', ids: AGENT_IDS, word: 'Agent' },
+      { seat: 'review', ids: CODEX_IDS, word: 'OpenAI Codex CLI' },
+      { seat: 'review', ids: OLLAMA_IDS, word: 'Ollama' },
+    ] as const)('a $seat seat the latest pass put on $ids.tool', async ({ seat, ids, word }) => {
+      const state = await retryLater(`retry-later-${seat}-${ids.tool}`, halt(seat), (ref) =>
+        writeRecord(ref, { [seat]: ids }),
+      );
+      expect(state?.seatWait).toMatchObject({ seat, tool: ids.tool, kind: ids.kind });
+      expect(waitWord(state)).toBe(word);
+    });
+
+    it('a seat moved by Seat down names the tool the halted call ran on', async () => {
+      const issue = halt('build', {
+        switchSeat: {
+          seat: 'build',
+          from: { tool: 'codex', model: 'gpt-5-codex' },
+          candidates: [{ tool: 'claude-code', model: 'claude-3-5-sonnet' }],
+        },
+      });
+      const state = await retryLater('retry-later-switched', issue, (ref) => writeRecord(ref, {}));
+      expect(state?.seatWait).toMatchObject({ seat: 'build', tool: 'codex' });
+      expect(waitWord(state)).toBe('OpenAI Codex CLI');
+    });
+
+    it('a brief routed to a named profile names that profile tool', async () => {
+      const issue = halt('build', { selectedImplementerProfile: 'large' });
+      const state = await retryLater('retry-later-profile', issue, (ref) =>
+        writeRecord(ref, {}, { large: OLLAMA_IDS }),
+      );
+      expect(state?.seatWait).toMatchObject({ seat: 'build', tool: 'ollama', kind: 'api' });
+      expect(waitWord(state)).toBe('Ollama');
+    });
+
+    it('a run with no seat record names the tool it started on by its catalog name', async () => {
+      const state = await retryLater('retry-later-no-record', halt('build'), null, {
+        implementerTool: 'codex',
+        implementerKind: 'cli',
+      });
+      expect(waitWord(state)).toBe('OpenAI Codex CLI');
+    });
+
+    it('a run with no seat record and no start tool names the seat', async () => {
+      const state = await retryLater('retry-later-no-tool', halt('build'), null, {});
+      expect(waitWord(state)).toBe('BUILD');
+    });
+  });
+
   it('honours a seat wait beyond the rate-limit bound when the run resumes', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-01T00:00:00.000Z'));
@@ -898,6 +1133,7 @@ describe('applyRecoveryAction: retry-later', () => {
       state: { ...base, pendingRecovery: issue },
       action: 'retry-later',
       bus,
+      entryConfig: makeConfig(),
     });
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
@@ -906,6 +1142,7 @@ describe('applyRecoveryAction: retry-later', () => {
     const pending = resumeSeatWait({
       ref: { projectDir, sessionId, bus },
       state: applied.state,
+      config: makeConfig(),
     });
     await vi.advanceTimersByTimeAsync(1);
     expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(1);

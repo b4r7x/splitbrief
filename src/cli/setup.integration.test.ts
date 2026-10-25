@@ -14,6 +14,16 @@ import { readRunnerPids } from '../core/sessions/runner-pids.js';
 import { canSignalProcess } from '../lib/process/liveness.js';
 import { killOrphanRunner, plantOrphanRunner } from '#testing/helpers/orphan-runner.js';
 import { isCliError } from './errors.js';
+import { toErrorMessage } from '../utils/format-errors.js';
+import { execFileSync } from 'node:child_process';
+import type { WorkflowState } from '../core/schemas/workflow.js';
+import { createInitialState, transition } from '../core/state/machine.js';
+import { saveState } from '../core/state/persistence.js';
+import { ensureSessionDir } from '../core/paths-io.js';
+import { readWorkspaceRecord } from '../engine/orchestrator/isolation/retention.js';
+import { closeRunIfOpen } from '../engine/orchestrator/run/close.js';
+import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
+import { startWorkspaceRun } from '#testing/helpers/workspace-run.js';
 
 let tmp: string;
 // console.log is a sanctioned global spy — see docs/TESTING.md core rules.
@@ -147,6 +157,128 @@ describe('setupWorkflow', () => {
       killOrphanRunner(orphan);
     }
   });
+
+  const runId = '2026-10-25-leftover-run';
+  const kept = { workspace: true, worktrees: 1, runBranch: true, record: true, stderr: '' };
+  const gone = { workspace: false, worktrees: 0, runBranch: false, record: false, stderr: '' };
+
+  async function workspaceRun(
+    dirs: string[],
+    strategy: 'worktree' | 'staged-copy',
+    next: (state: WorkflowState) => WorkflowState,
+  ) {
+    const run = await startWorkspaceRun({ strategy, sessionId: runId, dirs });
+    saveState(run.ref, next(run.state));
+    return { projectDir: run.ref.projectDir, workspaceDir: run.workspaceDir };
+  }
+
+  function checkoutRun(dirs: string[], checkoutMode: boolean) {
+    const projectDir = realpathSync(createTempDir('setup-closed-checkout'));
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    ensureSessionDir(projectDir, runId);
+    const state: WorkflowState = {
+      ...createInitialState('Checkout run'),
+      ...RUN_CREW,
+      phase: 'implementing',
+      ...(checkoutMode && {
+        workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head: null } },
+      }),
+    };
+    saveState({ projectDir, sessionId: runId }, transition(state, { type: 'CLOSE_RUN' }));
+    return { projectDir, workspaceDir: null };
+  }
+
+  const close = (state: WorkflowState) => transition(state, { type: 'CLOSE_RUN' });
+
+  it.each([
+    {
+      label: 'a start removes a closed worktree run with its record',
+      arrange: (dirs: string[]) => workspaceRun(dirs, 'worktree', close),
+      expected: gone,
+    },
+    {
+      label: 'a start removes a closed staged-copy run with its record',
+      arrange: (dirs: string[]) => workspaceRun(dirs, 'staged-copy', close),
+      expected: gone,
+    },
+    {
+      label: 'a start goes past an unreadable run and removes a closed run with its record',
+      arrange: async (dirs: string[]) => {
+        const run = await workspaceRun(dirs, 'worktree', close);
+        ensureSessionDir(run.projectDir, '2026-10-25-broken-run');
+        writeFileSync(
+          join(sessionDir(run.projectDir, '2026-10-25-broken-run'), 'state.json'),
+          '{not json',
+        );
+        return run;
+      },
+      expected: {
+        ...gone,
+        stderr:
+          'Warning: skipped .splitbrief/sessions/2026-10-25-broken-run/state.json: it could not be read\n',
+      },
+    },
+    {
+      label: 'a start skips a closed run whose record is already gone',
+      arrange: async (dirs: string[]) => {
+        const run = await startWorkspaceRun({ strategy: 'worktree', sessionId: runId, dirs });
+        await closeRunIfOpen(run.ref, run.state);
+        return { projectDir: run.ref.projectDir, workspaceDir: run.workspaceDir };
+      },
+      expected: gone,
+    },
+    {
+      label: 'a start skips a closed checkout-mode run',
+      arrange: async (dirs: string[]) => checkoutRun(dirs, true),
+      expected: gone,
+    },
+    {
+      label: 'a start skips a closed older run without a workspace',
+      arrange: async (dirs: string[]) => checkoutRun(dirs, false),
+      expected: gone,
+    },
+    {
+      label: 'a start keeps an open run',
+      arrange: (dirs: string[]) => workspaceRun(dirs, 'worktree', (state) => state),
+      expected: kept,
+    },
+    {
+      label: 'a start keeps a ready-to-apply run',
+      arrange: (dirs: string[]) =>
+        workspaceRun(dirs, 'worktree', (state) => ({
+          ...state,
+          phase: 'complete',
+          reviewStatus: 'passed',
+        })),
+      expected: kept,
+    },
+  ])('$label', { timeout: 60_000 }, async ({ arrange, expected }) => {
+    const dirs: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { projectDir, workspaceDir } = await arrange(dirs);
+      stderrSpy.mockClear();
+
+      await setupWorkflow({ project: projectDir, fullscreen: false });
+
+      const git = (args: string[]) =>
+        execFileSync('git', args, { cwd: projectDir, encoding: 'utf8' });
+      expect({
+        workspace: workspaceDir !== null && existsSync(workspaceDir),
+        worktrees:
+          git(['worktree', 'list', '--porcelain'])
+            .split('\n')
+            .filter((line) => line.startsWith('worktree ')).length - 1,
+        runBranch: git(['branch', '--list', `splitbrief/${runId}`]).trim() !== '',
+        record: (await readWorkspaceRecord({ projectDir, sessionId: runId })) !== null,
+        stderr: stderrSpy.mock.calls.map((call) => String(call[0])).join(''),
+      }).toEqual(expected);
+    } finally {
+      stderrSpy.mockRestore();
+      for (const dir of dirs) cleanupTempDir(dir);
+    }
+  });
 });
 
 describe('setupWorkflow render input flags', () => {
@@ -278,6 +410,65 @@ describe('canonicalizeProjectDir', () => {
     } finally {
       process.chdir(previousCwd);
       stderrSpy.mockRestore();
+    }
+  });
+
+  it('formats toErrorMessage project-relative with a subdirectory cwd and with --project pointing at a subdirectory', async () => {
+    const real = realpathSync(tmp);
+    createTestGitRepo(real);
+    const subdir = join(real, 'packages', 'web');
+    mkdirSync(subdir, { recursive: true });
+    const target = join(real, 'packages', 'web', 'file.ts');
+    const err = Object.assign(new Error(`EACCES: permission denied, open '${target}'`), {
+      code: 'EACCES',
+      path: target,
+    });
+    const previousCwd = process.cwd();
+
+    try {
+      process.chdir(subdir);
+      await canonicalizeProjectDir({});
+      expect(toErrorMessage(err)).toBe(`permission denied · ${join('packages', 'web', 'file.ts')}`);
+    } finally {
+      process.chdir(previousCwd);
+    }
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await canonicalizeProjectDir({ project: subdir });
+      expect(toErrorMessage(err)).toBe(`permission denied · ${join('packages', 'web', 'file.ts')}`);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('formats toErrorMessage project-relative in a folder that is not a git repository', async () => {
+    const real = realpathSync(tmp);
+    const link = join(dirname(real), `${tmp.split('/').pop()}-plain-link`);
+    symlinkSync(real, link, 'dir');
+    const target = join(real, SPLITBRIEF_DIR, CONFIG_FILE);
+    const err = Object.assign(new Error(`EACCES: permission denied, open '${target}'`), {
+      code: 'EACCES',
+      path: target,
+    });
+    const expected = `permission denied · ${join(SPLITBRIEF_DIR, CONFIG_FILE)}`;
+    const previousCwd = process.cwd();
+
+    try {
+      process.chdir(real);
+      expect(await canonicalizeProjectDir({})).toBe(real);
+      expect(toErrorMessage(err)).toBe(expected);
+      process.chdir(dirname(real));
+      expect(await canonicalizeProjectDir({ project: real.split('/').pop() })).toBe(real);
+      expect(toErrorMessage(err)).toBe(expected);
+      process.chdir(previousCwd);
+      expect(await canonicalizeProjectDir({ project: real })).toBe(real);
+      expect(toErrorMessage(err)).toBe(expected);
+      expect(await canonicalizeProjectDir({ project: link })).toBe(real);
+      expect(toErrorMessage(err)).toBe(expected);
+    } finally {
+      process.chdir(previousCwd);
+      cleanupTempDir(link);
     }
   });
 });

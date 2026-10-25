@@ -288,6 +288,8 @@ export async function runImplementation(opts: {
                 ref: seatRef,
                 state,
                 seat: 'build',
+                runner: config.implementer,
+                profile: wctx.implementerProfile,
                 signal,
                 onStateChange: (next) => {
                   state = next;

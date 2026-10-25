@@ -1204,7 +1204,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-after-pause',
         title: 'Final review running after the run continued',
         kind: 'implementation',
-        marker: 'choosing checks',
+        marker: 'Final review',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1473,6 +1473,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-plan-check-no-test-file',
+      title: 'Workflow · a plan check that failed because its test file is missing',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-check-no-test-file',
+        title: 'A failed plan check row with its reason and no empty command slot',
+        kind: 'implementation',
+        marker: 'Plan check K4',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-completed-orphan-rows',
       title: 'Workflow · completed briefs retain run-level and boundary rows',
       surface: screenSurface('workflow'),
@@ -1721,6 +1737,25 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       checkpoint: {
         id: 'plan-card-shared-command',
         title: 'Plan card with one command under two check ids',
+        kind: 'review',
+        marker: 'Approve plan and start the build',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // plan.md in a run's session folder: the frame title names it project-relative and shortens
+    // the middle of the path, never its base name.
+    defineScenario({
+      id: 'workflow-plan-card-session-path',
+      title: 'Workflow · plan card naming plan.md in a long session folder',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-card-session-path',
+        title: 'Plan card with a session plan path',
         kind: 'review',
         marker: 'Approve plan and start the build',
       },
@@ -1991,6 +2026,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-paused-cut-seat',
+      title: 'Workflow · parked mid-brief on a seat saved over',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'paused-cut-seat',
+        title: 'Parked mid-brief, BUILD saved over',
+        kind: 'question',
+        marker: 'Stopped at T',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-paused-boundary',
       title: 'Workflow · parked at a brief boundary',
       surface: screenSurface('workflow'),
@@ -2046,11 +2098,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-run-lock-not-released',
       title: 'Workflow · a stop that cannot release the run lock',
       surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 140, rows: 40 })],
       checkpoint: {
         id: 'run-lock-not-released',
         title: 'Run lock not released',
         kind: 'ready',
-        marker: 'Could not release the run lock',
+        marker: 'lockfile.json',
       },
       elements: [{ id: 'composer', title: 'Workflow composer' }],
     }),
@@ -2143,6 +2196,37 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Replayed transcript' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-prompt-too-large',
+      title: 'Workflow · a run halted on a BUILD prompt too large for the tool, at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-prompt-too-large',
+        title: 'Prompt-too-large halt at rest',
+        kind: 'ready',
+        marker: 'Seat down',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-seat-wait',
+      title: 'Workflow · a run waiting for a seat reset, at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-seat-wait',
+        title: 'Run waiting for the reset of the tool it halted on',
+        kind: 'ready',
+        marker: 'Waiting for OpenAI Codex CLI',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer and seat-wait byline' },
       ],
     }),
     defineScenario({
@@ -2370,6 +2454,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Replayed transcript' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-ready-seat-moved-auto',
+      title: 'Workflow · a ready run whose BUILD seat moved to an automatic model',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'ready-seat-moved-auto',
+        title: 'Ready to apply, the moved seat named by its tool',
+        kind: 'ready',
+        marker: 'Ready to apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
       ],
     }),
     defineScenario({
@@ -2959,6 +3059,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-usage-limit-seat-saved',
+      title: 'Workflow · BUILD saved to another tool while its quota halt waits',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery',
+        title: 'The reset clock stays in the halt title, off the saved seat',
+        kind: 'question',
+        marker: 'Change BUILD tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-balance-spent',
       title: 'Workflow · a spent balance on BUILD',
       surface: screenSurface('workflow'),
@@ -2968,6 +3084,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Balance recovery menu',
         kind: 'question',
         marker: 'Seat down · Balance spent on deepseek (OpenCode CLI)',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-cursor-refusal',
+      title: 'Workflow · Cursor refuses the BUILD model on the account',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'recovery',
+        title: 'Cursor account refusal recovery menu',
+        kind: 'question',
+        marker: 'Seat down · Balance spent on',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3212,6 +3345,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-seat-crew-changed',
       title: 'Workflow · BUILD seat changed in the crew before a continue',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'seat-crew-changed',
         title: 'Crew change row in the transcript',
@@ -3504,6 +3638,73 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-build-prompt-too-large',
+      title: 'Workflow · a BUILD prompt larger than the tool takes on its command line',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-build-prompt-too-large',
+        title: 'BUILD prompt command-line limit recovery menu',
+        kind: 'question',
+        marker: 'Change BUILD tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-apply-partial-words',
+      title: 'Workflow · an Apply halt with typed words in the composer',
+      surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 30 })],
+      checkpoint: {
+        id: 'recovery-apply-partial-words',
+        title: 'Apply-partial recovery menu with typed words in the composer',
+        kind: 'question',
+        marker: 'Cannot send words with',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-review-contract',
+      title: 'Workflow · a final review contract halt with two errors',
+      surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 30 })],
+      checkpoint: {
+        id: 'recovery-review-contract',
+        title: 'Review contract halt with multiple errors',
+        kind: 'question',
+        marker: 'Seat down · The reviewer seat',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Workflow transcript' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-review-prompt-too-large',
+      title: 'Workflow · a final review prompt larger than the tool takes on its command line',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-review-prompt-too-large',
+        title: 'Review prompt command-line limit recovery menu',
+        kind: 'question',
+        marker: 'Change REVIEW tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-review-unverified',
       title: 'Workflow · a final review that left criteria unverified',
       surface: screenSurface('workflow'),
@@ -3544,6 +3745,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Required-checks recovery menu that says to install the program',
         kind: 'question',
         marker: 'Install what is missing',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-checks-unrunnable',
+      title: 'Workflow · a required check that cannot run because a setting is missing',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-checks-unrunnable',
+        title: 'Required-checks recovery menu that says to fix the named cause',
+        kind: 'question',
+        marker: 'Fix the cause below',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3623,7 +3840,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'repeated-timeout',
         title: 'Repeated-timeout recovery menu',
         kind: 'question',
-        marker: 'Seat down · Google Antigravity CLI',
+        marker: 'Seat down · Two timeouts in a row',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3905,6 +4122,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-plan-usage-limit',
+      title: 'Workflow · a planning call past 75 percent of its weekly usage',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-usage-limit',
+        title: 'Usage warning shown once in the planning transcript',
+        kind: 'planning',
+        marker: "You've used 75%",
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+        { id: 'activity', title: 'Plan activity block' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-silent',
       title: 'Workflow · a silent seat mid-brief, on a stream that reports tools when done',
       surface: screenSurface('workflow'),
@@ -4020,6 +4253,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-planning-seat-change',
       title: 'Workflow · a seat saved while the plan is made',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'planning-seat-change',
         title: 'Planning goes on and the legend names when the seat changes',
@@ -4028,6 +4262,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -4035,6 +4270,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-plan-card-seat-change',
       title: 'Workflow · a seat saved while the plan card waits',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'plan-card-seat-change',
         title: 'The plan card keeps waiting for an answer',
@@ -4043,6 +4279,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
         { id: 'approval-panel', title: 'Plan card panel' },
         { id: 'composer', title: 'Workflow composer' },
       ],
@@ -4051,6 +4288,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-implementation-seat-change',
       title: 'Workflow · a seat saved under the running brief',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'implementation-seat-change',
         title: 'The brief runs on and the legend names when the seat changes',
@@ -4059,6 +4297,42 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-shell-seat',
+      title: 'Workflow · a custom shell BUILD seat under the running brief',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation-shell-seat',
+        title: 'Every surface names the seat Custom Shell',
+        kind: 'implementation',
+        marker: 'Custom Shell',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-build-brief-check-seat-change',
+      title: 'Workflow · a seat saved while the brief runs its check between attempts',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'build-brief-check-seat-change',
+        title: 'The brief keeps its seat during its checks',
+        kind: 'implementation',
+        marker: 'Plan check K2',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -4066,6 +4340,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-final-review-seat-change',
       title: 'Workflow · a seat saved in the final review',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'final-review-seat-change',
         title: 'The review runs on and the legend names a fix brief or the next run',
@@ -4074,6 +4349,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -4694,7 +4970,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-settings-error-path',
         title: 'Overlay · settings · an error that names a long path',
-        marker: 'Could not release the run lock',
+        marker: 'lockfile.json',
       },
       {
         id: 'overlay-settings-saved-route-sign-in',
@@ -5017,6 +5293,12 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-picker-seat-swap',
         title: 'Overlay · implementer picker · the tool a quota halt offered',
+        marker: PICKER_TITLE_MARKER,
+      },
+      // The open row keeps the drafted variant and effort.
+      {
+        id: 'overlay-picker-seat-swap-expanded',
+        title: 'Overlay · implementer picker · the offered tool with its model row open',
         marker: PICKER_TITLE_MARKER,
       },
     ],

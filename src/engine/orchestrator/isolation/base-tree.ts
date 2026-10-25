@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { runBaseTreesRoot } from '../../../core/paths.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -23,8 +23,30 @@ export type RunBase = {
 
 export type RunBaseTree = { dir: string; incomplete?: string | undefined };
 
-/** A base tree is named after the process that owns it: `base-<pid>-<random>`. */
+/** A base tree is named after the process that owns it: `base-<pid>-<filler><random>`. */
 const BASE_TREE_NAME = /^base-(\d+)-/;
+/** The characters `mkdtemp` appends to its prefix. */
+const MKDTEMP_SUFFIX_LENGTH = 6;
+/** The longest folder name the file systems allow, in bytes; the name is ASCII. */
+const MAX_NAME_BYTES = 255;
+
+/**
+ * The `mkdtemp` prefix of a base tree whose path has as many characters as the run workspace
+ * path, so a check whose result depends on the path length reads the same at the run base. Both
+ * paths are measured with their links resolved, as the check's working directory reads them.
+ * Filler fills the name up to that length. A workspace path shorter than the shortest base tree
+ * path gets no filler, and a name never grows past the 255-byte limit.
+ */
+async function baseTreePrefix(workspaceDir: string): Promise<string> {
+  const prefix = `base-${process.pid}-`;
+  const [workspace, root] = await Promise.all([
+    realpath(workspaceDir),
+    realpath(runBaseTreesRoot()),
+  ]);
+  const filler = workspace.length - join(root, prefix).length - MKDTEMP_SUFFIX_LENGTH;
+  const room = MAX_NAME_BYTES - prefix.length - MKDTEMP_SUFFIX_LENGTH;
+  return prefix + '_'.repeat(Math.max(0, Math.min(filler, room)));
+}
 
 /** Reads the recorded snapshot and commit, or returns undefined when the run recorded no workspace. */
 export function runBaseOf(
@@ -86,13 +108,15 @@ async function removeRunBaseTree(dir: string): Promise<void> {
 /**
  * Materialises the run base outside the project as the run workspace is built: a detached worktree
  * at the base commit reconciled to the base snapshot, or, with no commit, an incomplete snapshot
- * copy. A preparation failure throws `runBaseTreeError.preparationFailed` with the cleanup error
- * attached. A stale tree that cannot be removed is a warning and does not stop preparation. A
- * cleanup error after the callback completes comes back with its result; a callback error
- * propagates unchanged, and its cleanup error is a warning.
+ * copy. Its path has the length of `workspaceDir` (`baseTreePrefix`). A preparation failure throws
+ * `runBaseTreeError.preparationFailed` with the cleanup error attached. A stale tree that cannot be
+ * removed is a warning and does not stop preparation. A cleanup error after the callback completes
+ * comes back with its result; a callback error propagates unchanged, and its cleanup error is a
+ * warning.
  */
 export async function withRunBaseTree<T>(
   base: RunBase,
+  workspaceDir: string,
   use: (tree: RunBaseTree) => Promise<T>,
 ): Promise<{ result: T; cleanupError: string | undefined }> {
   let dir: string | undefined;
@@ -100,7 +124,7 @@ export async function withRunBaseTree<T>(
     const git = createGitClient(base.projectDir);
     await mkdir(runBaseTreesRoot(), { recursive: true });
     await removeStaleRunBaseTrees();
-    dir = await mkdtemp(join(runBaseTreesRoot(), `base-${process.pid}-`));
+    dir = await mkdtemp(join(runBaseTreesRoot(), await baseTreePrefix(workspaceDir)));
     if (base.head !== null) {
       await git.raw(['worktree', 'add', '--quiet', '--detach', dir, base.head]);
       await initWorktreeSubmodules(base.projectDir, dir);

@@ -29,7 +29,7 @@ describe('planTestCheck', () => {
       discoveredValidation: discovered,
       notices: { bus: makeBusRecorder().bus, phase: 'implementing' },
     });
-    return planTestCheck(file, ctx);
+    return planTestCheck([file], ctx);
   }
 
   it('runs a config-pinned command as written, over the planner and the stack', () => {
@@ -185,7 +185,7 @@ describe('planTestCheck', () => {
   it('skips with its reason on an unrecognised stack', () => {
     expect(plan('src/app.ts', makeConfig({ testCommand: undefined }))).toEqual({
       kind: 'skip',
-      reason: 'no test command for an unrecognised stack',
+      reason: 'no test command for an unrecognised stack; set validation.test_command',
     });
   });
 

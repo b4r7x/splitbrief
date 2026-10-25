@@ -12,6 +12,8 @@ import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/rec
 import { sameSeatCandidate, type CrewSeatId } from '../../../core/crew/identity.js';
 import { configWithSwitchedSeat, seatCandidateOfRunner } from './switch-seat.js';
 import { readSeatOfRecord } from './seat-swap-context.js';
+import { haltedSeatIds } from '../../../core/state/seats.js';
+import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
@@ -22,6 +24,7 @@ import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { loadConfig } from '../../../core/config/load/io.js';
+import { configuredHeldSeat } from '../escalation/seat-wait.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import { configError } from '../../../core/config/errors.js';
@@ -126,6 +129,8 @@ export interface ApplyRecoveryActionOptions {
   candidate?: SeatSwapCandidate | undefined;
   /** `revise`, `continue` and a seat-level retry: what the operator wants changed. */
   comment?: UserMessageInput | undefined;
+  /** `retry-later` only: the config the run's next entry runs on, whose seat the wait holds. */
+  entryConfig?: Config | undefined;
 }
 
 export async function applyRecoveryAction(
@@ -713,7 +718,7 @@ export function planSwitchSeatRecoveryAction(
       action,
       issue,
       code: 'candidate-not-offered',
-      message: `'${chosen.tool}' cannot host the ${offer.seat} seat.`,
+      message: `${getProviderDisplayName(chosen.tool)} cannot host the ${offer.seat} seat.`,
       publishSelected: true,
     });
   }
@@ -863,7 +868,7 @@ export function applySwitchSeatRecoveryAction(
       action: 'switch-seat',
       issue,
       code: 'candidate-not-offered',
-      message: `'${chosen.tool}' is not one of the tools offered for the ${offer.seat} seat.`,
+      message: `${getProviderDisplayName(chosen.tool)} is not one of the tools offered for the ${offer.seat} seat.`,
       publishSelected: true,
     });
   }
@@ -932,11 +937,34 @@ function applyRetryLaterRecoveryAction(
       message: `Recovery action "${opts.action}" needs the reset the halt names.`,
     });
   }
+  if (opts.entryConfig === undefined) {
+    return blockRecoveryAction({
+      ...opts,
+      issue,
+      code: 'action-not-available',
+      message: `Recovery action "${opts.action}" needs the config the run continues on.`,
+    });
+  }
+  const ran = haltedSeatIds(opts, issue);
+  const holds = configuredHeldSeat(
+    opts.entryConfig,
+    issue.seat,
+    issue.seat === 'build' ? issue.selectedImplementerProfile : undefined,
+  );
   let state = markRecoveryApplying(opts, issue);
   state = transitionAndSave(
     opts,
     state,
-    { type: 'SET_SEAT_WAIT', seat: issue.seat, resetAt: issue.resetAt },
+    {
+      type: 'SET_SEAT_WAIT',
+      wait: {
+        seat: issue.seat,
+        resetAt: issue.resetAt,
+        ...(ran !== null && { tool: ran.tool }),
+        ...(ran?.kind !== undefined && { kind: ran.kind }),
+        ...(holds !== undefined && { holds }),
+      },
+    },
     { expectedRevision: state.stateRevision ?? 0 },
   );
   state = transitionAndSave(

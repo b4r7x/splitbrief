@@ -840,10 +840,128 @@ describe('requestConsult', () => {
       if (!('error' in result)) throw new Error('expected a seat-protocol error');
       expect(result.error.kind).toBe('seat-protocol-error');
       expect(result.error.message).toContain('after 2 attempts.');
-      expect(result.error.data.errors).toContain('a rewrite-task must keep the task id T003');
+      expect(result.error.data.errors).toEqual([
+        'answer.task.id: a rewrite-task must keep the task id T003; the answer changes it to T009',
+      ]);
       expect(planner.prompts).toHaveLength(2);
     },
   );
+
+  it('repairs a rewrite whose test check names no test file and whose render check names no scenario id', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    writeFileSync(join(projectDir, 'tsconfig.json'), '{}');
+    writeFileSync(join(projectDir, 'package.json'), '{"scripts":{"test":"vitest run"}}');
+    const { bus } = makeBusRecorder();
+    const rewrite = makeTaskSpec({
+      id: 'T003',
+      suggestedFiles: ['src/greet.ts'],
+      checks: [
+        { id: 'K1', kind: 'test', value: 'src/greet.tset.ts', required: true },
+        { id: 'K2', kind: 'render', value: 'workflow-x,', required: true },
+      ],
+    });
+    const planner = consultPlanner(
+      [
+        {
+          text: JSON.stringify({
+            answer: { diagnosis: 'The brief was wrong', action: 'rewrite-task', task: rewrite },
+          }),
+        },
+        guidanceAnswer('Answer', null),
+      ],
+      true,
+    );
+    const state = consultState();
+    saveState({ projectDir, sessionId }, state);
+
+    const result = await requestConsult(
+      {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        bus,
+        config: makeConfig({ validation: { testCommand: undefined } }),
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+      },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'the failure' },
+    );
+
+    expect('answer' in result && result.answer.answer.action).toBe('guidance');
+    expect(planner.prompts[1]).toContain(
+      "Check K1 is refused: a `test` check names one test file, and `src/greet.tset.ts` is no test file in the workspace, and no task lists it. Set its value to an existing test file, or list the new test file in a task's files.",
+    );
+    expect(planner.prompts[1]).toContain(
+      'Check K2 is refused: a `render` check names one scenario id of lowercase letters, digits and hyphens, and `workflow-x,` is not one.',
+    );
+  });
+
+  it('repairs a rewrite whose npm script is undefined and whose render has no command, and takes a test file another pending task writes', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    writeFileSync(join(projectDir, 'tsconfig.json'), '{}');
+    writeFileSync(join(projectDir, 'package.json'), '{"scripts":{"test":"vitest run"}}');
+    const { bus } = makeBusRecorder();
+    const rewrite = makeTaskSpec({
+      id: 'T003',
+      suggestedFiles: ['src/greet.ts'],
+      checks: [
+        { id: 'K1', kind: 'cmd', value: 'npm run tset', required: true },
+        { id: 'K2', kind: 'render', value: 'workflow-x', required: true },
+        { id: 'K3', kind: 'test', value: 'src/hello.test.ts', required: true },
+        { id: 'K4', kind: 'test', value: 'src/later.test.ts', required: true },
+      ],
+    });
+    const planner = consultPlanner(
+      [
+        {
+          text: JSON.stringify({
+            answer: { diagnosis: 'The brief was wrong', action: 'rewrite-task', task: rewrite },
+          }),
+        },
+        guidanceAnswer('Answer', null),
+      ],
+      true,
+    );
+    const base = consultState();
+    const state: WorkflowState = {
+      ...base,
+      approve: 'plan',
+      tasks: [
+        makeTask({ id: 'T002', status: 'pending', suggestedFiles: ['src/hello.test.ts'] }),
+        ...base.tasks,
+        makeTask({ id: 'T004', status: 'pending', suggestedFiles: ['src/later.test.ts'] }),
+      ],
+      currentTaskIndex: 1,
+    };
+    saveState({ projectDir, sessionId }, state);
+
+    await requestConsult(
+      {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        bus,
+        config: makeConfig({
+          validation: { testCommand: undefined },
+          workflow: { approve: 'plan' },
+        }),
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+      },
+      { task: state.tasks[1]!, reason: 'failed', failingOutput: 'the failure' },
+    );
+
+    expect(planner.prompts[1]).toContain(
+      "Check K1 is refused: `npm run tset` runs the npm script tset, which package.json does not define. Name a script that package.json defines, or list package.json in the task's files and add the script there.",
+    );
+    expect(planner.prompts[1]).toContain(
+      'Render check K2 needs validation.render, which is not set; use a check of another kind.',
+    );
+    expect(planner.prompts[1]).not.toContain('Check K3 is refused');
+    expect(planner.prompts[1]).not.toContain('Check K4 is refused');
+  });
 
   it('repairs a split of a subtask once, naming the violation', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
@@ -1059,7 +1177,7 @@ describe('requestConsult seats', () => {
     expect(prompt).toContain('## Task T003 (revision 1)');
     expect(prompt).toContain("You are the run's reviewer");
     expect(prompt).toContain(
-      '- **F1** failure keys: V1: greet > hello; red keys: V1: greet > name',
+      "- **F1** this brief's failures: V1: greet > hello; the whole red: V1: greet > name",
     );
     const after = seen.at(-1)!;
     expect(after.lineages?.T003?.consultRecords.at(-1)?.seat).toBe('review');

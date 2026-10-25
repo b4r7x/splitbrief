@@ -1535,6 +1535,71 @@ describe('buildRunnerInputTooLargeRecoveryIssue', () => {
     expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
     expectValidRecoveryIssue(issue);
   });
+
+  function inputTooLargeHalt(tool: 'codex' | 'claude-code' | 'opencode', toolMessage: string) {
+    const issue = buildRunnerInputTooLargeRecoveryIssue({
+      task: makeTask({ id: 'T030' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool } }).implementer,
+      toolMessage,
+      createdAt,
+    });
+    expectValidRecoveryIssue(issue);
+    return { message: issue.message, details: issue.details, facts: issue.facts };
+  }
+
+  it('states a command-line refusal in its own words, with formatted bytes', () => {
+    const halt = inputTooLargeHalt(
+      'opencode',
+      'CLI prompt is 195203 bytes and exceeds the 120000-byte argv limit',
+    );
+
+    expect(halt).toEqual({
+      message: 'Prompt too large for OpenCode CLI on T030',
+      details: [
+        'The prompt is 195,203 bytes; OpenCode CLI takes at most 120,000 on its command line.',
+        'A retry sends the same prompt.',
+      ],
+      facts: { tool: 'OpenCode CLI', bytes: 195_203, maxBytes: 120_000 },
+    });
+  });
+
+  it('states the figures of a Codex refusal in place of its raw words', () => {
+    const halt = inputTooLargeHalt(
+      'codex',
+      'Input exceeds the maximum length of 1000000 characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":1000000,"actual_chars":5000000}',
+    );
+
+    expect(halt).toEqual({
+      message: 'Prompt too large for OpenAI Codex CLI on T030',
+      details: [
+        'The prompt is 5,000,000 characters; OpenAI Codex CLI takes at most 1,000,000.',
+        'A retry sends the same prompt.',
+      ],
+      facts: { tool: 'OpenAI Codex CLI', chars: 5_000_000, maxChars: 1_000_000 },
+    });
+  });
+
+  it('names only the limit when a Codex refusal names no size', () => {
+    const halt = inputTooLargeHalt(
+      'codex',
+      'Input exceeds the maximum length of 1000000 characters.',
+    );
+
+    expect(halt.details[0]).toBe(
+      'The prompt is larger than the 1,000,000 characters OpenAI Codex CLI takes.',
+    );
+    expect(halt.facts).toEqual({ tool: 'OpenAI Codex CLI', maxChars: 1_000_000 });
+  });
+
+  it('shows no size when a Claude Code refusal names none, and quotes its words', () => {
+    const halt = inputTooLargeHalt('claude-code', 'Prompt is too long');
+
+    expect(halt).toEqual({
+      message: 'Prompt too large for Claude Code CLI on T030',
+      details: ['Claude Code CLI reported: Prompt is too long', 'A retry sends the same prompt.'],
+      facts: { tool: 'Claude Code CLI' },
+    });
+  });
 });
 
 describe('recoveryBuilderForRunnerOutcome', () => {

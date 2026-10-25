@@ -12,7 +12,10 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { afterAll, afterEach, expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { questionPromptStore as store } from '../../../stores/question-prompt/prompt.js';
+import {
+  questionOptions,
+  questionPromptStore as store,
+} from '../../../stores/question-prompt/prompt.js';
 import { PlannerQuestion } from './planner-question.js';
 
 const originalForceColor = vi.hoisted(() => {
@@ -552,4 +555,90 @@ it('parks accumulated answer images in question order after successful preparati
     resetAllStores();
     cleanupTempDir(projectDir);
   }
+});
+
+it.each<[ClarificationQuestion, string]>([
+  [{ id: 'cache', type: 'input', text: 'Which cache key must the repair preserve?' }, ''],
+  [
+    { id: 'cache', type: 'input', text: 'Which cache key must the repair preserve?' },
+    'src/cache.ts',
+  ],
+  [{ id: 'consult-store', type: 'input', text: 'Which store?' }, ''],
+  [{ id: 'consult-store', type: 'input', text: 'Which store?' }, 'src/cache.ts'],
+])(
+  'keeps focus and draft in the answer field on ↑ for a question with no rows',
+  async (question, draft) => {
+    let now = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    store.setQuestions([question]);
+    const ui = renderQuestion();
+    await flushEffects();
+    now += 200;
+    if (draft !== '') {
+      ui.stdin.write(draft);
+      await flushEffects();
+    }
+    ui.stdin.write('\u001b[A');
+    await flushEffects();
+    expect(store.get().focus).toBe('answer');
+    expect(store.get().drafts[0]?.text).toBe(draft);
+    ui.unmount();
+  },
+);
+
+it('moves focus to the composer on ↓ in a question with no rows', async () => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  store.setQuestions([
+    { id: 'cache', type: 'input', text: 'Which cache key must the repair preserve?' },
+  ]);
+  const ui = renderQuestion();
+  await flushEffects();
+  now += 200;
+  ui.stdin.write('\u001b[B');
+  await flushEffects();
+  expect(store.get().focus).toBe('composer');
+  ui.unmount();
+});
+
+it('moves focus from the answer field to the menu on ↑ in a choice question', async () => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  store.setQuestions([
+    { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+  ]);
+  store.setFocus('answer');
+  const ui = renderQuestion();
+  await flushEffects();
+  now += 200;
+  ui.stdin.write('\u001b[A');
+  await flushEffects();
+  expect(store.get().focus).toBe('menu');
+  ui.unmount();
+});
+
+it.each<ClarificationQuestion>([
+  {
+    id: 'goal',
+    type: 'choice',
+    text: 'What is the refactor goal?',
+    options: ['Simplify', 'Fix a bug', 'Cleanup'],
+  },
+  {
+    id: 'target',
+    type: 'input',
+    text: 'Which module should change?',
+    default: 'src/features/workflow',
+  },
+])('keeps the question text in view while writing an answer on a short panel', async (question) => {
+  store.setQuestions([question]);
+  store.select(questionOptions(question).length);
+  store.setFocus('answer');
+  const ui = renderQuestion(60, 9);
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame())).toContain(question.text);
+  store.setFocus('menu');
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame())).toContain('Write your own answer…');
+  ui.unmount();
 });

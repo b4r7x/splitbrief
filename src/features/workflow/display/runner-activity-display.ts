@@ -85,11 +85,32 @@ export function isProtocolActivity(
 export function runnerActivityLedgerItem(
   input: RunnerActivityDisplayInput,
   options: RunnerActivityDisplayOptions = {},
-): RunnerActivityLedgerItem {
+): RunnerActivityLedgerItem | null {
   const resolvedValue = resolveRunnerActivityModelNames(input, options.cache);
   const display: RunnerActivityDisplayInput =
     resolvedValue === null ? input : { ...input, diagnosticPartial: resolvedValue };
   const interrupted = isUserInterruptedActivity(display);
+
+  if (!interrupted && !isDiagnosticActivity(display)) {
+    const hasDetail =
+      (display.target !== undefined && display.target.trim().length > 0) ||
+      (display.diagnosticPartial !== undefined && display.diagnosticPartial.trim().length > 0) ||
+      (display.textPartial !== undefined && display.textPartial.trim().length > 0);
+
+    if (/^tool (Bash|Shell)$/i.test(display.label.trim()) && !hasDetail) {
+      return null;
+    }
+
+    if (
+      display.kind === 'command' &&
+      (display.target === undefined || display.target.trim().length === 0)
+    ) {
+      const commandInLabel = stripActivityVerb(display.label).trim();
+      if (commandInLabel.length === 0 || commandInLabel.toLowerCase() === 'command') {
+        return null;
+      }
+    }
+  }
   const source = display.target ?? display.label;
   const withoutVerb = stripActivityVerb(source);
   const shellCommand =
@@ -234,7 +255,6 @@ function runnerActivityLedgerValue(
   if (detail !== null) return detail;
 
   if (/^tool (Read|Write|Edit|MultiEdit)$/i.test(input.label)) return 'file';
-  if (/^tool (Bash|Shell)$/i.test(input.label)) return 'command';
 
   const source = input.target ?? input.label;
   const withoutVerb = stripActivityVerb(source);
@@ -360,7 +380,8 @@ function activityFitMode(
   if (label === 'READ' || label === 'EDIT' || label === 'LIST' || input.kind === 'file') {
     return isProse(value) ? 'end' : 'start';
   }
-  if (label === 'WARN' || label === 'ERR' || label === 'STOP') return 'middle';
+  if (label === 'WARN') return 'segments';
+  if (label === 'ERR' || label === 'STOP') return 'middle';
   return 'end';
 }
 

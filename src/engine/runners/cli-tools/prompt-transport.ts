@@ -2,6 +2,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { error } from '../../../utils/error.js';
+import { argvPromptTooLarge } from '../input-limit.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import type { CliInvocation, CliProcessAdapter } from './contract.js';
 
@@ -33,9 +34,7 @@ export async function preparePrompt(
   if (transport.kind === 'argv') {
     const bytes = Buffer.byteLength(prompt, 'utf8');
     if (bytes > transport.maxBytes) {
-      throw transportError(
-        `CLI prompt is ${bytes} bytes and exceeds the ${transport.maxBytes}-byte argv limit`,
-      );
+      throw argvPromptTooLarge(bytes, transport.maxBytes);
     }
     if (transport.placement === 'positional' && prompt.startsWith('-')) {
       // The tool's own parser would read the prompt as an option and silently

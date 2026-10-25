@@ -126,7 +126,7 @@ describe('TROUBLESHOOTING diagnostic parity', () => {
 
   it('documents the unrecognised-stack outcome as the run records it', () => {
     expect(troubleshootingDoc).toContain(
-      '### Symptom: a planner `test` check is `not-runnable` with `no test command for an unrecognised stack`',
+      '### Symptom: a planner `test` check is `not-runnable` with `no test command for an unrecognised stack; set validation.test_command`',
     );
   });
 });

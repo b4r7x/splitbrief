@@ -33,6 +33,9 @@ import {
 import { rejectRunSnapshot } from '../../snapshots/run/lifecycle.js';
 import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
 import { APPLY_UNFINISHED_REFUSAL } from '../../../core/runtime/commands/messages.js';
+import { listSessionIds, sessionsRootLabel } from '../../../core/sessions/orphans.js';
+import { readWorkspaceRecord } from '../isolation/retention.js';
+import { warnError } from '../../../lib/warn.js';
 
 /**
  * Whether files the run wrote are still in the checkout. A checkout run's ledger books what each
@@ -80,6 +83,45 @@ export async function removeClosedRunWorkspace(
     }
   }
   scope.bus?.publish({ type: 'workspace_closed', ts: Date.now(), phase });
+}
+
+export async function removeClosedRunWorkspaces(projectDir: string): Promise<void> {
+  let sessionIds: string[];
+  try {
+    sessionIds = listSessionIds(projectDir);
+  } catch (err) {
+    warnError(
+      `Could not list ${sessionsRootLabel(projectDir)}, so leftover workspaces from closed runs may remain`,
+      err,
+    );
+    return;
+  }
+  for (const sessionId of sessionIds) {
+    const ref = { projectDir, sessionId };
+    let workspacePath: string | undefined;
+    try {
+      const head = readWorkflowStateHead(ref);
+      if (head === null) continue;
+      const { state } = head;
+      const status = deriveRunStatus({ state, liveness: 'not-alive' });
+      if (status.kind !== 'closed') continue;
+      const workspace = state.workspace;
+      if (
+        workspace === undefined ||
+        (workspace.kind !== 'worktree' && workspace.kind !== 'staged-copy')
+      ) {
+        continue;
+      }
+      workspacePath = workspace.path;
+      const record = await readWorkspaceRecord(ref);
+      if (record === null) continue;
+      await removeRunWorkspace(projectDir, sessionId, workspace);
+    } catch (err) {
+      if (workspacePath !== undefined) {
+        warnError(`Could not remove the run workspace at ${workspacePath}`, err);
+      }
+    }
+  }
 }
 
 export async function closeRunIfOpen(
@@ -152,7 +194,7 @@ export async function closeRunIfOpen(
     if (result.kind === 'durability-uncertain')
       throw stateOpsError.durabilityUncertain(scope.sessionId);
     if (attempt === MAX_STATE_CONFLICT_RETRIES) {
-      throw stateOpsError.conflictExhausted({
+      throw stateOpsError.conflictExhausted(scope.sessionId, {
         operation: 'transition',
         expectedRevision: latest.stateRevision ?? 0,
         observedRevision: readWorkflowStateHead(scope)?.state.stateRevision ?? null,

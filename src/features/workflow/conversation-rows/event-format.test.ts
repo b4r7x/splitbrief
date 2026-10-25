@@ -405,6 +405,22 @@ describe('fullSuiteRow for a reviewer check', () => {
     ).toBe('Plan check K4 · not\u00a0run · no affected test file found');
   });
 
+  it('names why a plan check that ran no command failed', () => {
+    expect(
+      fullSuiteRow(
+        reviewCheck({
+          id: 'K4',
+          moment: 'plan',
+          command: '',
+          status: 'done',
+          passed: false,
+          duration: 0,
+          detail: 'the workspace has no test file for src/a.test.ts',
+        }),
+      ),
+    ).toBe('Plan check K4 · failed · 0.0s · the workspace has no test file for src/a.test.ts');
+  });
+
   it.each(['pre-review', 'base', 'brief'] as const)(
     'keeps not run whole at 60 columns for a %s check',
     (moment) => {
@@ -473,7 +489,7 @@ describe('fullSuiteRow for a reviewer check', () => {
   });
 
   // Live run 2026-10-09: a fix brief's row said `failed` while only other tasks' failures were left.
-  it('says how many of the failures a fix check answers are gone and how many others are left', () => {
+  it('says how many of the failures a fix check answers are gone, which are left to a sibling, and how many others are left', () => {
     const fix = reviewCheck({
       phase: 'implementing',
       moment: 'brief',
@@ -483,39 +499,53 @@ describe('fullSuiteRow for a reviewer check', () => {
     });
     const gone = { ...fix, passed: true, own: 2, ownLeft: 0, others: 3 };
     expect(fullSuiteRow(gone)).toBe(
-      'Fix check V1 · npm run test-ci · your 2\u00a0failures gone · 3\u00a0others left · 4.0s',
+      'Fix check V1 · npm run test-ci · your\u00a02\u00a0failures\u00a0gone · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
     expect(fullSuiteTone(gone)).toBe('success');
     expect(fullSuiteRow({ ...fix, passed: true, own: 1, ownLeft: 0, others: 1 })).toBe(
-      'Fix check V1 · npm run test-ci · your 1\u00a0failure gone · 1\u00a0other left · 4.0s',
+      'Fix check V1 · npm run test-ci · your\u00a01\u00a0failure\u00a0gone · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
     const remains = { ...fix, passed: false, own: 2, ownLeft: 1, others: 3 };
     expect(fullSuiteRow(remains)).toBe(
-      'Fix check V1 · npm run test-ci · 1\u00a0of your 2\u00a0failures remains · 4.0s',
+      'Fix check V1 · npm run test-ci · 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0remains · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
     expect(fullSuiteTone(remains)).toBe('error');
-    const notProven = { ...gone, passed: false, proven: false };
-    expect(fullSuiteRow(notProven)).toBe(
-      'Fix check V1 · npm run test-ci · your 2\u00a0failures not shown · not\u00a0proven\u00a0fixed · 4.0s',
+    const deferred = {
+      ...fix,
+      passed: true,
+      own: 2,
+      ownLeft: 0,
+      deferred: 1,
+      deferredTo: ['T025'],
+      others: 1,
+    };
+    expect(fullSuiteRow(deferred)).toBe(
+      'Fix check V1 · npm run test-ci · 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0gone · 1\u00a0left\u00a0to\u00a0T025 · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
-    expect(fullSuiteTone(notProven)).toBe('error');
-    expect(fullSuiteSegments(notProven)).toContainEqual({
-      text: 'your 2\u00a0failures not shown',
+    expect(fullSuiteTone(deferred)).toBe('success');
+    expect(fullSuiteSegments(deferred)).toContainEqual({
+      text: '1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0gone',
+      tone: 'success',
+    });
+    expect(fullSuiteSegments(deferred)).toContainEqual({
+      text: '1\u00a0left\u00a0to\u00a0T025',
       tone: 'textDim',
     });
-    expect(fullSuiteSegments(notProven)).toContainEqual({
-      text: 'not\u00a0proven\u00a0fixed',
-      tone: 'error',
+    expect(fullSuiteSegments(gone)).toContainEqual({
+      text: '3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review',
+      tone: 'textDim',
     });
-    expect(fullSuiteSegments(gone)).toContainEqual({ text: '3\u00a0others left', tone: 'textDim' });
-    expect(fullSuiteRow({ ...gone, others: 0, proven: true })).toBe(
-      'Fix check V1 · npm run test-ci · your 2\u00a0failures gone · 4.0s',
+    expect(fullSuiteRow({ ...gone, others: 0 })).toBe(
+      'Fix check V1 · npm run test-ci · your\u00a02\u00a0failures\u00a0gone · 4.0s',
     );
     expect(fullSuiteRow({ ...fix, passed: false, own: 1, ownLeft: 1, others: 0 })).toBe(
-      'Fix check V1 · npm run test-ci · your 1\u00a0failure remains · 4.0s',
+      'Fix check V1 · npm run test-ci · your\u00a01\u00a0failure\u00a0remains · 4.0s',
     );
     expect(fullSuiteRow({ ...fix, passed: false, own: 3, ownLeft: 2, others: 0 })).toBe(
-      'Fix check V1 · npm run test-ci · 2\u00a0of your 3\u00a0failures remain · 4.0s',
+      'Fix check V1 · npm run test-ci · 2\u00a0of\u00a0your\u00a03\u00a0failures\u00a0remain · 4.0s',
+    );
+    expect(fullSuiteRow({ ...fix, passed: true, own: 0, ownLeft: 0, others: 2 })).toBe(
+      'Fix check V1 · npm run test-ci · no\u00a0failure\u00a0of\u00a0yours · 2\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
   });
 
@@ -535,7 +565,7 @@ describe('fullSuiteRow for a reviewer check', () => {
       }),
     );
     expect(row).toBe(
-      'Fix check V1 · npm run test-ci · your 2\u00a0failures gone · 3\u00a0others left · 3m 0s',
+      'Fix check V1 · npm run test-ci · your\u00a02\u00a0failures\u00a0gone · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 3m 0s',
     );
     expect(fullSuiteRow(reviewCheck({ status: 'done', passed: false, duration: 61_000 }))).toBe(
       'Reviewer check V1 · npm test · failed · 1m 1s',
@@ -837,7 +867,7 @@ describe('formatTaskStartedParts', () => {
     for (const command of ['claude', 'opencode']) {
       expect(
         taskStartedPartTexts(taskStartedEvent({ tool: command, model: 'gpt-5', backendKind })),
-      ).toEqual(['src/validate.ts (create)', `${command} · GPT-5`]);
+      ).toEqual(['src/validate.ts (create)', `${label} · GPT-5`]);
     }
   });
 
@@ -858,7 +888,7 @@ describe('formatTaskStartedParts', () => {
       taskStartedPartTexts(
         taskStartedEvent({ tool: 'claude', model: undefined, axes: [], backendKind: 'shell' }),
       ),
-    ).toEqual(['src/validate.ts (create)', 'claude · auto']);
+    ).toEqual(['src/validate.ts (create)', 'Custom Shell · auto']);
   });
 
   it('names the build seat in the words the seat identity uses for it', () => {

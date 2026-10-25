@@ -25,6 +25,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { ContinueDeps } from './command.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../start/readiness.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import { briefPosition } from '../../../core/state/selectors.js';
 
 export type ResumeTailDeps = Pick<
   ContinueDeps,
@@ -122,10 +123,9 @@ export async function resumeSavedSession(args: {
     return;
   }
 
-  // The cursor points one past the last brief once every brief has settled.
-  const position = Math.min(state.currentTaskIndex + 1, state.tasks.length);
+  const brief = briefPosition(state);
   console.log(
-    `Resuming: ${oneLineDisplayText(state.feature)} (task ${position}/${state.tasks.length})`,
+    `Resuming: ${oneLineDisplayText(state.feature)}${brief === undefined ? '' : ` (task ${brief.position}/${brief.total})`}`,
   );
   const renderOptions = await deps.setupWorkflow({ ...opts, project: projectDir });
   await deps.initStores(projectDir, opts);

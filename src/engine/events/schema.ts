@@ -7,6 +7,7 @@ import {
   PhaseSchema,
   RecoveryActionSchema,
   RecoveryReasonSchema,
+  RunnerKindSchema,
   TaskCompletionMethodSchema,
   TaskContextFitSchema,
   TaskStatusSchema,
@@ -286,10 +287,18 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     mode: WorkflowModeSchema.optional(),
     plannerTool: z.string(),
     plannerModel: z.string().optional(),
+    /** Each seat's kind and axis words; logs written before they were kept have none. */
+    plannerKind: RunnerKindSchema.optional(),
+    plannerAxes: z.array(z.string()).optional(),
     implementerTool: z.string(),
     implementerModel: z.string().optional(),
+    implementerKind: RunnerKindSchema.optional(),
+    implementerAxes: z.array(z.string()).optional(),
+    /** Absent when the planner holds the review seat. */
     reviewerTool: z.string().optional(),
     reviewerModel: z.string().optional(),
+    reviewerKind: RunnerKindSchema.optional(),
+    reviewerAxes: z.array(z.string()).optional(),
     /** The ids of the skills every seat call of this run carries. */
     skills: z.array(z.string()).optional(),
   }),
@@ -746,11 +755,15 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
      */
     newKeys: z.array(z.string()).optional(),
     preExistingKeys: z.array(z.string()).optional(),
-    /** On fix check done events: carried failures, those still present, and other re-run failures. */
+    /**
+     * On fix check done events: the brief's own failures, those still present, those left to the
+     * unfinished sibling fix tasks `deferredTo`, and the re-run failures the brief does not own.
+     */
     own: z.number().int().nonnegative().optional(),
     ownLeft: z.number().int().nonnegative().optional(),
+    deferred: z.number().int().nonnegative().optional(),
+    deferredTo: z.array(z.string()).optional(),
     others: z.number().int().nonnegative().optional(),
-    proven: z.boolean().optional(),
     /**
      * Why the command did not run or was refused; on a red base re-run, why SPLITBRIEF could not
      * verify that it shows the same failure as the run workspace.

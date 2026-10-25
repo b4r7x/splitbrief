@@ -45,13 +45,15 @@ export function PlannerQuestion({
   const last = rows.findLastIndex((row) => row.option === selected);
   useLayoutEffect(() => {
     setOffset((current) => {
+      if (writing) return 0;
       if (first < current) return Math.max(0, first);
       if (last >= current + bodyHeight)
         return clamp(last - first >= bodyHeight ? first : last - bodyHeight + 1, 0, maxOffset);
       return clamp(current, 0, maxOffset);
     });
-    // Manual page scrolling must not snap back to the selected option on unrelated renders.
-  }, [first, last, bodyHeight, maxOffset, state.index, state.openedAt]);
+    // The answer field shows the question from its first row; manual page scrolling must
+    // not snap back to the selected option on unrelated renders.
+  }, [first, last, bodyHeight, maxOffset, state.index, state.openedAt, writing]);
 
   useInput(
     (_input, key) => {
@@ -188,12 +190,15 @@ export function PlannerQuestion({
                 return false;
               }}
               onBoundaryNavigate={(direction) => {
-                questionPromptStore.setFocus(
-                  direction === 'down' || (choices.length === 0 && state.index === 0)
-                    ? 'composer'
-                    : 'menu',
-                );
-                return true;
+                if (direction === 'down') {
+                  questionPromptStore.setFocus('composer');
+                  return true;
+                }
+                if (!composerOnly) {
+                  questionPromptStore.setFocus('menu');
+                  return true;
+                }
+                return false;
               }}
             />
           </Box>

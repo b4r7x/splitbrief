@@ -238,6 +238,28 @@ describe('pre-review checks', () => {
     ]);
   });
 
+  it('names why an npm script check that package.json lacks failed, with no command on its row', async () => {
+    const bus = createEventBus();
+    const events: EngineEventOf<'full_suite'>[] = [];
+    bus.subscribe((event) => {
+      if (event.type === 'full_suite') events.push(event);
+    });
+    await runPreReviewChecks(
+      options({
+        bus,
+        state: makeImplState([], {
+          plan: makePlan([{ id: 'K1', kind: 'cmd', value: 'npm run typecheck', required: false }]),
+        }),
+      }),
+    );
+    expect(events.find((event) => event.status === 'done')).toMatchObject({
+      id: 'K1',
+      command: '',
+      passed: false,
+      detail: 'runs the npm script typecheck, which package.json does not define',
+    });
+  });
+
   it('runs optional checks and records results on their task or the last task for a plan check', async () => {
     const first = makeTask({
       id: 'T001',
@@ -562,7 +584,7 @@ describe('pre-review checks', () => {
     expect(issue.message).toContain('K2: npm scripts are not approved by the plan');
     expect(issue.details).toEqual([
       'Install what is missing, then run the checks again.',
-      'A refused or not-runnable required check never becomes a fix task. Correct the check policy, validation.render or the registration, then run the checks again.',
+      'Fix the cause below, then run the checks again.',
       'K1: missing-vitest not found',
       'K2: npm scripts are not approved by the plan',
     ]);
@@ -578,7 +600,7 @@ describe('pre-review checks', () => {
     });
 
     expect(issue.details).toEqual([
-      'A refused or not-runnable required check never becomes a fix task. Correct the check policy, validation.render or the registration, then run the checks again.',
+      'Fix the cause below, then run the checks again.',
       'K3: validation.render is not set',
     ]);
   });

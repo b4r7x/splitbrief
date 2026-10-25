@@ -162,6 +162,8 @@ export function recoveryComposerHint(issue: RecoveryIssue, menuFocused: boolean)
   return correction ? 'Type a correction, or tab to choose an action…' : 'Tab to choose an action…';
 }
 
+const REVIEW_FAILED_REVISE_CONSEQUENCE = 'grants one more fix cycle';
+
 function formatRecoveryActionText(
   action: RecoveryAction,
   context: RecoveryActionChoiceContext = {},
@@ -186,7 +188,7 @@ function formatRecoveryActionText(
     }
     case 'revise':
       return context.reason === 'review-failed'
-        ? 'fix again · add a note, grant one more fix cycle'
+        ? `fix again${SOFT_SEP}${REVIEW_FAILED_REVISE_CONSEQUENCE}`
         : 'revise · send the planner a correction';
     case 'accept-as-is':
       return context.reason === 'review-input-too-large'
@@ -230,19 +232,6 @@ function switchSeatRowKey(index: number, offered: number): string {
   return offered === 1 ? key : `${key}${index + 1}`;
 }
 
-/**
- * A menu row's words. A swap says what it runs again, as the applier decides it
- * (`isSeatLevelRetry`): the step the halted seat was on, else the brief the halt
- * names, from its first attempt. So does a retry after a PLAN or REVIEW halt on
- * a brief: "Try again" alone reads as retrying the call that stopped, but it
- * restarts the brief. On a short panel the facts above the rows are what drops.
- */
-export function recoveryMenuLabel(action: RecoveryAction, issue: RecoveryIssue): string {
-  return recoveryMenuParts(action, issue)
-    .map((part) => part.text)
-    .join('');
-}
-
 function recoveryMenuContext(issue: RecoveryIssue): RecoveryActionChoiceContext {
   return {
     reason: issue.reason,
@@ -258,6 +247,13 @@ export function recoveryMenuActionLabel(action: RecoveryAction, issue: RecoveryI
   return recoveryActionLabel(action, recoveryMenuContext(issue));
 }
 
+/**
+ * A menu row's words. A swap says what it runs again, as the applier decides it
+ * (`isSeatLevelRetry`): the step the halted seat was on, else the brief the halt
+ * names, from its first attempt. So does a retry after a PLAN or REVIEW halt on
+ * a brief: "Try again" alone reads as retrying the call that stopped, but it
+ * restarts the brief. On a short panel the facts above the rows are what drops.
+ */
 export function recoveryMenuParts(
   action: RecoveryAction,
   issue: RecoveryIssue,
@@ -280,7 +276,7 @@ function recoveryMenuConsequence(action: RecoveryAction, issue: RecoveryIssue): 
     if (apply !== undefined) return apply;
   }
   if (action === 'revise')
-    return issue.reason === 'review-failed' ? 'add a note, grant one more fix cycle' : undefined;
+    return issue.reason === 'review-failed' ? REVIEW_FAILED_REVISE_CONSEQUENCE : undefined;
   const seatLevel = isSeatLevelRetry(issue);
   const says =
     action === 'switch-seat' ||
@@ -571,7 +567,8 @@ function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
     issue.reason === 'review-input-too-large' ||
     issue.reason === 'required-checks-unrunnable' ||
     issue.reason === 'plan-questions-exhausted' ||
-    issue.reason === 'plan-checks-failed'
+    issue.reason === 'plan-checks-failed' ||
+    issue.reason === 'runner-timeout-repeated'
   ) {
     return recoveryHeadlineParts(issue);
   }

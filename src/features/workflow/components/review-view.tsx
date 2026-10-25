@@ -3,7 +3,6 @@ import { Box } from 'ink';
 import { useEffect } from 'react';
 import { renderReviewRows } from './review-rows-cache.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { projectRelativePathLabel } from '../../../utils/path-links.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import { ScrollIndicator } from '../../../components/scroll-indicator.js';
@@ -60,10 +59,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
 
   if (!source) return null;
 
-  const reviewLabel =
-    source.kind === 'file'
-      ? projectRelativePathLabel({ path: source.filePath, rootDir: projectDir })
-      : 'Custom planner artifact';
+  const reviewLabel = source.kind === 'file' ? source.filePath : 'Custom planner artifact';
 
   const remaining = Math.max(0, renderedLineCount - clampedOffset - contentHeight);
   const scrollIndicatorText = ` ↓ ${remaining} more`;

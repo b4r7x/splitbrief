@@ -30,7 +30,7 @@ import { formatStageLabel } from '../../../core/phase-display.js';
 import { getActiveRailStage, railStageSeat, type RailHalt } from '../../../core/rail-stages.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { routeBriefMark } from '../at-rest.js';
-import { seatIdentityWord } from '../closed/copy.js';
+import { seatIdentityPieces } from '../closed/copy.js';
 import type { RecordedCrew } from '../closed/view-model.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import {
@@ -48,6 +48,7 @@ import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 import { passedCountSpans, taskOutcomeCountsSpans } from '../display/build-progress.js';
+import { useRunningSeats } from '../hooks/use-running-seats.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import { wrapHard } from '../../../utils/wrap.js';
 
@@ -274,11 +275,26 @@ function taskHasStatusTail(task: WorkflowTask): boolean {
   return task.status === 'escalated' || task.status === 'failed' || task.status === 'skipped';
 }
 
+/** Pieces laid onto as few rows as hold them, broken only between pieces; a piece wider than a row is cut. */
+function packPieces(pieces: readonly string[], width: number): string[] {
+  const rows: string[] = [];
+  for (const piece of pieces) {
+    const last = rows.at(-1);
+    if (last !== undefined && getTerminalCellWidth(`${last} ${piece}`) <= width) {
+      rows[rows.length - 1] = `${last} ${piece}`;
+    } else {
+      rows.push(piece);
+    }
+  }
+  return rows.map((row) => cutSeatIdentity(row, width));
+}
+
 export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
   const tooShortForBorder = height !== undefined && height < 2;
   const t = useTheme();
   const view = tasksStore.use(selectTaskListView);
   const config = configStore.use((s) => s.config);
+  const running = useRunningSeats();
   const displayNames = useCrewDisplayNames(config);
   const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
   const tasks = view.items;
@@ -294,26 +310,35 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
     return spans;
   });
   const identityWidth = innerWidth - CREW_LABEL_WIDTH;
-  const crewRows = (toRows: (identity: string) => string[]): SeatRows[] =>
-    seats.map((seat) => ({
-      seat,
-      rows:
-        recordedCrew !== undefined
-          ? toRows(seatIdentityWord(recordedCrew[seat.id]))
-          : seat.id === 'review' && seat.source === 'planner'
-            ? [PLANNER_INHERITANCE.mark]
-            : toRows(
-                formatSeatIdentity({ seat: seat.runner, displayName: displayNames?.[seat.id] }),
-              ),
-    }));
+  const crewRows = (toRows: (pieces: readonly string[]) => string[]): SeatRows[] =>
+    seats.map((seat) => {
+      const runningSeat = running[seat.id];
+      return {
+        seat,
+        rows:
+          recordedCrew !== undefined
+            ? toRows(seatIdentityPieces(recordedCrew[seat.id]))
+            : runningSeat !== undefined
+              ? toRows([formatSeatIdentity(runningSeat)])
+              : seat.id === 'review' && seat.source === 'planner'
+                ? [PLANNER_INHERITANCE.mark]
+                : toRows([
+                    formatSeatIdentity({ seat: seat.runner, displayName: displayNames?.[seat.id] }),
+                  ]),
+      };
+    });
   const countFooterRows = (crew: readonly SeatRows[]): number =>
     crew.reduce((total, { rows }) => total + rows.length, outcomeRows.length);
-  const wrappedSeatRows = crewRows((identity) => wrapSeatIdentity(identity, identityWidth));
+  const wrappedSeatRows = crewRows((pieces) =>
+    pieces.length === 1
+      ? wrapSeatIdentity(pieces.join(''), identityWidth)
+      : packPieces(pieces, identityWidth),
+  );
   // With the list already at zero rows, a wrapped crew that still overruns the bottom border gives
   // each seat the one row its cut identity takes.
   const seatRows =
     height !== undefined && countFooterRows(wrappedSeatRows) > getSidebarFooterBudget({ height })
-      ? crewRows((identity) => [cutSeatIdentity(identity, identityWidth)])
+      ? crewRows((pieces) => [cutSeatIdentity(pieces.join(' '), identityWidth)])
       : wrappedSeatRows;
 
   const footerRows = countFooterRows(seatRows);

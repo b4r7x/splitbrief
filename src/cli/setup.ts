@@ -11,8 +11,9 @@ import { checkCrewAvailability, selectDetectedDefaultCrew } from '../engine/dete
 import { readConfiguredCliRoutes } from './commands/start/readiness.js';
 import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
 import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
+import { removeClosedRunWorkspaces } from '../engine/orchestrator/run/close.js';
 import { cliError } from './errors.js';
-import { toErrorMessage } from '../utils/format-errors.js';
+import { setProjectRoot, toErrorMessage } from '../utils/format-errors.js';
 import { warnStderr } from '../lib/warn.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 
@@ -30,14 +31,18 @@ export async function canonicalizeProjectDir(opts: {
   project?: string | undefined;
 }): Promise<string> {
   const resolved = resolveProjectDir(opts.project);
-  const toplevel = await getRepoToplevel(resolved);
-  if (toplevel === null) return resolved;
-
   // getRepoToplevel returns a realpath-canonicalized path (git resolves
   // symlinks); resolve() does not, so canonicalize before comparing or a
   // symlinked path component (e.g. macOS /tmp -> /private/tmp) makes an exact
   // repo-root invocation look like a subdirectory.
   const canonical = existsSync(resolved) ? realpathSync(resolved) : resolved;
+  const toplevel = await getRepoToplevel(resolved);
+  if (toplevel === null) {
+    setProjectRoot(canonical);
+    return canonical;
+  }
+
+  setProjectRoot(toplevel);
   if (toplevel === canonical) return toplevel;
 
   if (opts.project !== undefined) {
@@ -152,6 +157,7 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
 
   await assertGitRepo(projectDir);
   await reapOrphanRunners(projectDir);
+  await removeClosedRunWorkspaces(projectDir);
 
   const isInteractive = isInteractiveTty();
   const useFullscreen = opts.fullscreen !== false && isInteractive;

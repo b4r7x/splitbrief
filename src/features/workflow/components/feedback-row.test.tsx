@@ -8,6 +8,7 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
+import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { REVIEW_HINT } from '../review-commands.js';
 import { KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
@@ -302,9 +303,116 @@ describe('FeedbackRow', () => {
     );
   });
 
-  it('drops the path at 60 columns when its file name cannot follow the cause', () => {
+  it('keeps the file name at 60 columns by shortening the cause', () => {
     expect(renderRunLockRelease(60)).toBe(
-      `${' '.repeat(MARK_SLOT_CELLS)}Could not release the run lock: permission denied …`,
+      `${' '.repeat(MARK_SLOT_CELLS)}Could not … lock: permission denied · …/lockfile.json …`,
     );
+  });
+
+  it('shows the running legend after Esc closes a planner question', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    controlsStore.setInputMode('question');
+    questionPromptStore.setQuestions([
+      { id: 'module', type: 'choice', text: 'Which module?', options: ['a', 'b'] },
+    ]);
+    questionPromptStore.close();
+
+    const ui = renderFeature(<FeedbackRow inputHint="Type your answer…" />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('esc stop options');
+    expect(frame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
+    expect(frame).not.toContain('Type your answer');
+
+    ui.unmount();
+  });
+
+  it('shows the running legend after Esc closes a reviewer question', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'final-review' });
+    controlsStore.setInputMode('question');
+    questionPromptStore.setQuestions([
+      { id: 'module', type: 'choice', text: 'Which module?', options: ['a', 'b'] },
+    ]);
+    questionPromptStore.close();
+
+    const ui = renderFeature(<FeedbackRow inputHint="Reply to the reviewer…" />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('esc stop options');
+    expect(frame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
+    expect(frame).not.toContain('Reply to the reviewer');
+
+    ui.unmount();
+  });
+
+  it('shows the running legend while waiting for an ordinary prose planner reply', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    controlsStore.setInputMode('question');
+    questionPromptStore.setQuestions([]);
+
+    const ui = renderFeature(<FeedbackRow inputHint="Reply to the planner…" />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('esc stop options');
+    expect(frame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
+    expect(frame).not.toContain('Reply to the planner');
+
+    ui.unmount();
+  });
+
+  it('stays blank while a structured question panel is open', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    controlsStore.setInputMode('question');
+    questionPromptStore.setQuestions([
+      { id: 'module', type: 'choice', text: 'Which module?', options: ['a', 'b'] },
+    ]);
+
+    const ui = renderFeature(<FeedbackRow inputHint="Type your answer…" />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame.trim()).toBe('');
+
+    ui.unmount();
+  });
+
+  it('stays blank while a recovery panel is up', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    controlsStore.setInputMode('question');
+
+    const ui = renderFeature(<FeedbackRow inputHint="Type your answer…" />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame.trim()).toBe('');
+
+    ui.unmount();
+  });
+
+  it("shows the caller's key legend at rest", () => {
+    controlsStore.setInputMode('normal');
+
+    const ui = renderFeature(
+      <FeedbackRow keyHint="esc home · ctrl+k commands · /sessions · /help" />,
+    );
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('esc home');
+
+    ui.unmount();
+  });
+
+  it('keeps whole keys and no ellipsis at 60 columns in prose-reply state', () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
+    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    controlsStore.setInputMode('question');
+    questionPromptStore.setQuestions([]);
+
+    const ui = renderFeature(<FeedbackRow inputHint="Reply to the planner…" />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
+    expect(frame).toContain('esc stop options');
+    expect(frame).not.toContain('…');
+
+    ui.unmount();
   });
 });

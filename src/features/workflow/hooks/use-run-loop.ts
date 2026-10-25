@@ -64,6 +64,7 @@ import { error } from '../../../utils/error.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildPromptCallbacks } from '../prompt-callbacks.js';
 import { createRecoveryDriver } from '../recovery-driver.js';
+import { nextEntryConfig } from '../entry-config.js';
 import { recordRunTerms, runResumePolicy } from '../resume-policy.js';
 import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
@@ -71,9 +72,7 @@ import { clearSessionScopedStores } from '../session-stores.js';
 import type { UseRunContinueResult } from './use-run-continue.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { sameSeatIds, seatIdsOf, type CrewSeatId } from '../../../core/crew/identity.js';
-import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
+import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 export type RunWorkflowFn = typeof runWorkflow;
@@ -102,20 +101,6 @@ function swapBaseConfig(saved: Config, run: Config, seat: CrewSeatId): Config {
     default:
       return assertNever(seat);
   }
-}
-
-/**
- * Whether the saved config moved the BUILD seat of the profile a recovery pinned the brief to. The
- * crew's BUILD seat is the default profile, so a save to a named profile is not a crew seat change.
- */
-function pinnedSeatSaved(run: Config, saved: Config, state: WorkflowState): boolean {
-  const profile = state.retryProfile?.profile;
-  if (profile === undefined) return false;
-  const before = readImplementerProfileConfig(run, profile);
-  const after = readImplementerProfileConfig(saved, profile);
-  return (
-    before !== undefined && after !== undefined && !sameSeatIds(seatIdsOf(before), seatIdsOf(after))
-  );
 }
 
 function isWorkflowAborted(controller: AbortController, ref: { current: boolean }): boolean {
@@ -384,12 +369,12 @@ export function useRunLoop({
         }
 
         staleHalt = false;
-        configStore.reloadIfChanged();
 
         // A taken seat swap resolves the halt onto the new tool and prepares this session on it.
         // That is this re-entry's preparation: the seat that halted is not admitted again, so a
         // tool that can no longer run cannot block the move away from it.
         if (switchSeat !== undefined && stateForRun !== undefined) {
+          configStore.reloadIfChanged();
           const swappedSeat = stateForRun.pendingRecovery?.switchSeat?.seat;
           const savedConfig = configStore.get().config;
           const swapped = await applyOfferedSeatSwap({
@@ -438,22 +423,19 @@ export function useRunLoop({
         // session only once. Every later entry continues the session, so it is admitted again as a
         // resume before it re-enters the engine. A seat saved since the run was prepared is
         // admitted here on any re-entry, from the saved config, so the run continues on it.
-        const savedConfig = configStore.get().config;
-        const seatsSaved =
-          savedConfig !== null &&
-          (seatIdentityChanges(
-            seatIdentitiesFromConfig(configOfRun),
-            seatIdentitiesFromConfig(savedConfig),
-          ).length > 0 ||
-            (stateForRun !== undefined && pinnedSeatSaved(configOfRun, savedConfig, stateForRun)));
+        const entry = nextEntryConfig({
+          configOfRun,
+          prepared: preparedForRun.config,
+          state: stateForRun,
+        });
         if (
           stateForRun !== undefined &&
-          (preparedForRun.purpose === 'new-workflow' || seatsSaved)
+          (preparedForRun.purpose === 'new-workflow' || entry.seatsSaved)
         ) {
           const reprepared = await prepareExecutionFn({
             existingSession: session.ref,
             feature: stateForRun.feature,
-            effectiveConfig: seatsSaved ? savedConfig : preparedForRun.config,
+            effectiveConfig: entry.config,
             policy: runResumePolicy(preparedForRun.runtime),
             signal: controller.signal,
             resumeState: stateForRun,
@@ -477,7 +459,7 @@ export function useRunLoop({
           }
           preparedForRun = reprepared.execution;
           // The saved seats are taken now, so a change requested for them is spent.
-          if (seatsSaved) {
+          if (entry.seatsSaved) {
             configOfRun = reprepared.execution.sourceConfig;
             spendSeatChange();
           }

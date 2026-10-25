@@ -441,9 +441,12 @@ describe('a spent implementer switches to its declared fallback', { timeout: 90_
 const LIMIT_LINE = "Error: You've hit your usage limit. Your limit resets at 3pm.";
 
 describe('a seat that prints its halt only on stdout', { timeout: 90_000 }, () => {
-  it.each(['agent', 'shell'] as const)(
-    'the %s seat halts on its limit with the reset and switches to its fallback',
-    async (kind) => {
+  it.each([
+    { kind: 'agent', name: 'Agent' },
+    { kind: 'shell', name: 'Custom Shell' },
+  ] as const)(
+    'the $kind seat halts on its limit with the reset and switches to its fallback',
+    async ({ kind, name }) => {
       const run = await runToFirstSeatDown('success', 'remembered', 'gateway', {
         kind,
         stdout: [LIMIT_LINE],
@@ -453,7 +456,7 @@ describe('a seat that prints its halt only on stdout', { timeout: 90_000 }, () =
       const recovery = run.halted.pendingRecovery;
       expect(recovery?.reason).toBe('runner-usage-limit');
       expect(recovery?.attempts).toBe(1);
-      expect(recovery?.details).toContain(`${kind} reported: ${LIMIT_LINE}`);
+      expect(recovery?.details).toContain(`${name} reported: ${LIMIT_LINE}`);
       const resetAt = new Date(recovery?.resetAt ?? Number.NaN);
       expect([resetAt.getHours(), resetAt.getMinutes()]).toEqual([15, 0]);
       expect(recovery?.switchSeat?.auto?.candidate).toEqual({
@@ -482,6 +485,6 @@ describe('a seat that prints its halt only on stdout', { timeout: 90_000 }, () =
     });
 
     expect(run.halted.pendingRecovery?.reason).toBe('runner-usage-limit');
-    expect(run.halted.pendingRecovery?.details).toContain(`agent reported: ${LIMIT_LINE}`);
+    expect(run.halted.pendingRecovery?.details).toContain(`Agent reported: ${LIMIT_LINE}`);
   });
 });

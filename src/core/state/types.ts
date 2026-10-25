@@ -4,10 +4,10 @@ import type {
   WorkflowState,
   PlannerConversation,
   SeatSwitchRecord,
+  SeatWait,
 } from '../schemas/workflow.js';
 import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
 import type { ConsultReason, ConsultSeat, ResolvedConsultAnswer } from '../schemas/consult.js';
-import type { CrewSeatId } from '../crew/identity.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { Plan } from '../schemas/plan.js';
 import type { TriageInput } from '../schemas/review.js';
@@ -128,7 +128,7 @@ export type StateAction =
   | { type: 'CLEAR_SCHEDULED_REVIEW' }
   | { type: 'SET_TASK_INPUT_HASHES'; taskId: TaskId; inputHashes: Record<string, string> }
   | { type: 'RECORD_CHECK_RESULTS'; taskId: TaskId; results: CheckResult[] }
-  | { type: 'SET_SEAT_WAIT'; seat: CrewSeatId; resetAt: string }
+  | { type: 'SET_SEAT_WAIT'; wait: SeatWait }
   | { type: 'CLEAR_SEAT_WAIT' }
   | { type: 'CORRECT_PLAN'; comment: string }
   | { type: 'ENQUEUE_USER_MSG'; message: QueuedMessage }

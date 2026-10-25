@@ -655,7 +655,7 @@ describe('deriveBuildProgress', () => {
     expect(progress.freshness).toBe('No output for 1:00');
   });
 
-  it('shows a shell command named claude literally, as the shell, not the CLI', () => {
+  it('names a shell command named claude by the shell kind, not the CLI', () => {
     const progress = deriveBuildProgress(
       input({
         operations: operationsState({
@@ -667,7 +667,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('claude · auto · working');
+    expect(progress.activity).toBe('Custom Shell · auto · working');
     expect(progress.freshness).toBe('No output for 1:00');
   });
 

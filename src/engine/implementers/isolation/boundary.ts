@@ -300,10 +300,7 @@ function crosses(boundary: IsolationBoundary, reference: PathReference): string 
 
 const EXCERPT_MAX_CHARS = 200;
 
-function excerptOf(toolUse: ToolUse): string {
-  const line = sanitizeTerminalDiagnosticText(toolUseInputText(toolUse))
-    .replaceAll(/\s+/g, ' ')
-    .trim();
+function excerptOf(line: string): string {
   return line.length > EXCERPT_MAX_CHARS ? `${line.slice(0, EXCERPT_MAX_CHARS - 1)}…` : line;
 }
 
@@ -339,7 +336,10 @@ type Inspection = Readonly<{ breaches: readonly IsolationBreach[]; cwd: string }
 function inspect(boundary: IsolationBoundary, toolUse: ToolUse, cwd: string): Inspection {
   const scope = { cwd, home: boundary.home, tmpdir: boundary.tmpdir };
   const reading = readToolUse(toolUse, scope);
-  const excerpt = tildeHomes(boundary, excerptOf(toolUse));
+  const inputLine = tildeHomes(
+    boundary,
+    sanitizeTerminalDiagnosticText(toolUseInputText(toolUse)).replaceAll(/\s+/g, ' ').trim(),
+  );
   const breaches: IsolationBreach[] = [];
   for (const reference of reading.references) {
     const canonical = crosses(boundary, reference);
@@ -351,7 +351,7 @@ function inspect(boundary: IsolationBoundary, toolUse: ToolUse, cwd: string): In
       access: reference.access,
       where: breachWhere(boundary, canonical),
       changesPackages: reference.changesPackages === true,
-      excerpt: excerpt === tildeHomes(boundary, reference.path) ? '' : excerpt,
+      excerpt: inputLine === tildeHomes(boundary, reference.path) ? '' : excerptOf(inputLine),
     });
   }
   return { breaches, cwd: reading.cwd };

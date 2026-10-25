@@ -155,6 +155,7 @@ export function recordCliProtocolEvent(
           ...(event.severity !== undefined && { severity: event.severity }),
           ...(event.originalModel !== undefined && { originalModel: event.originalModel }),
           ...(event.fallbackModel !== undefined && { fallbackModel: event.fallbackModel }),
+          ...(event.usage !== undefined && { usage: event.usage }),
         },
       });
       return;
@@ -321,15 +322,6 @@ export async function invokeProcessCli(
   };
   signal.addEventListener('abort', onAbort, { once: true });
   if (signal.aborted) onAbort();
-  // Halt phrases are the tool's own words for giving up, so only its
-  // diagnostic channel and the last line it printed are candidates: the
-  // transcript above that line is the model's prose, where a path under
-  // `billing/` or a shelled-out `permission denied` is ordinary task output.
-  const haltLines = (): readonly string[] => [
-    ...stderr.split('\n'),
-    stdoutLastLine,
-    stdoutTailCarry,
-  ];
 
   const execute = async (): Promise<() => RunnerCallResult> => {
     let invocation: CliInvocation = { ...context.invocation, signal };
@@ -552,7 +544,7 @@ export async function invokeProcessCli(
         fail({
           recorder,
           status: 'failed',
-          error: haltFailure(haltLines()) ?? {
+          error: haltFailure(stderr, [stdoutLastLine, stdoutTailCarry]) ?? {
             code: 'signal-exit',
             message: `CLI exited from signal ${closed.signal}`,
           },
@@ -565,7 +557,7 @@ export async function invokeProcessCli(
           fail({
             recorder,
             status: 'failed',
-            error: haltFailure(haltLines()) ?? {
+            error: haltFailure(stderr, [stdoutLastLine, stdoutTailCarry]) ?? {
               code: 'non-zero-exit',
               message: `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
             },
@@ -573,7 +565,7 @@ export async function invokeProcessCli(
       }
       // The tool printed no terminal, so its diagnostic channel decides. Only stderr counts
       // here: stdout frames can restate the model's prose.
-      const stderrHalt = haltFailure(closed.stderr.split('\n'));
+      const stderrHalt = haltFailure(closed.stderr);
       if (stderrHalt !== null) return () => fail({ recorder, status: 'failed', error: stderrHalt });
       return () =>
         fail({
@@ -607,7 +599,7 @@ export async function invokeProcessCli(
     // A failure exit preserves a text-exit answer only when it ends the stream without a halt.
     // Parsed failures keep their diagnosis; structured success against a failure exit fails closed.
     if (isFailureExit(adapter.outputContract, closed.exitCode) && terminal.status === 'completed') {
-      const halt = haltFailure(haltLines());
+      const halt = haltFailure(stderr, [stdoutLastLine, stdoutTailCarry]);
       if (halt !== null) return () => fail({ recorder, status: 'failed', error: halt });
       const last = protocolEvents.at(-1);
       if (
@@ -648,7 +640,7 @@ export async function invokeProcessCli(
         });
     }
     // A failed terminal that names no halt of its own leaves the diagnosis to stderr.
-    const stderrHalt = namesHalt(terminal.error) ? null : haltFailure(closed.stderr.split('\n'));
+    const stderrHalt = namesHalt(terminal.error) ? null : haltFailure(closed.stderr);
     // A tool refuses an oversized prompt or a model it cannot serve as an ordinary failed result
     // (Claude Code: "Prompt is too long"; OpenCode: `provider.no-route`). No later reader looks at
     // those words again, so the refusal takes the halt's code here.
@@ -763,7 +755,7 @@ export async function invokeProcessCli(
         context: context.callContext,
         credentialValues,
         status: 'failed',
-        error: haltFailure(haltLines()) ?? {
+        error: haltFailure(stderr, [stdoutLastLine, stdoutTailCarry]) ?? {
           code: 'prompt-transport-error',
           message: 'CLI prompt could not be fully delivered through stdin',
         },
@@ -805,7 +797,7 @@ export async function invokeProcessCli(
 }
 
 /**
- * A halt phrase in the tail of a failed CLI run outranks the bare exit code:
+ * A halt phrase in the words of a failed CLI run outranks the bare exit code:
  * the ladder must not spend retries on a signed-out, out-of-quota, unknown-model
  * or malformed-recipe process. The matched line is the diagnostic, so the user
  * reads the tool's own words.
@@ -818,14 +810,34 @@ const HALT_FAILURES: Readonly<Record<HaltKind, { code: string; phrases: readonly
   spawn: { code: 'implementer-recipe-invalid', phrases: HALT_SIGNATURES.spawnFailure },
 };
 
-function haltFailure(lines: readonly string[]): { code: string; message: string } | null {
+/**
+ * The diagnosis of a failed CLI call. The last line the tool printed on stdout can be the model's
+ * prose, where a path under `billing/` or a shelled-out `permission denied` is task output, so it
+ * matches only the halt phrases. Stderr is the tool's diagnostic channel: when it names no halt
+ * phrase, the seat failure classifier reads all of it, and an account refusal or a limit keeps the
+ * whole diagnostic as the words the halt quotes.
+ */
+function haltFailure(
+  stderr: string,
+  stdoutTail: readonly string[] = [],
+): { code: string; message: string } | null {
+  const lines = [...stderr.split('\n'), ...stdoutTail];
   const kind = classifyHaltSignature(lines);
-  if (kind === null) return null;
-  const { code, phrases } = HALT_FAILURES[kind];
-  const matched = lines.find((line) =>
-    phrases.some((phrase) => line.toLowerCase().includes(phrase)),
-  );
-  return { code, message: matched?.trim() ?? code };
+  if (kind !== null) {
+    const { code, phrases } = HALT_FAILURES[kind];
+    const matched = lines.find((line) =>
+      phrases.some((phrase) => line.toLowerCase().includes(phrase)),
+    );
+    return { code, message: matched?.trim() ?? code };
+  }
+  const diagnostic = stderr.trim();
+  if (diagnostic.length === 0) return null;
+  const seat = classifySeatFailure({ message: diagnostic, source: 'stderr' });
+  if (seat.class === 'account') {
+    return { code: seat.cause === 'auth' ? 'unauthenticated' : 'usage-limit', message: diagnostic };
+  }
+  if (seat.class === 'rate-limited') return { code: 'usage-limit', message: diagnostic };
+  return null;
 }
 
 const HALT_CODES: ReadonlySet<string> = new Set(
@@ -843,7 +855,7 @@ function namesHalt(
 ): boolean {
   return (
     HALT_CODES.has(failure.code) ||
-    haltFailure([failure.message]) !== null ||
+    classifyHaltSignature([failure.message]) !== null ||
     classifySeatFailure({
       message: failure.message,
       ...(failure.status !== undefined && { status: failure.status }),
@@ -981,8 +993,13 @@ function fatalStateOf(
 
 function prelaunchErrorCode(
   cause: unknown,
-): 'callback-failure' | 'prompt-transport-error' | 'steering-transport-error' {
+):
+  | 'argv-prompt-too-large'
+  | 'callback-failure'
+  | 'prompt-transport-error'
+  | 'steering-transport-error' {
   if (isRecord(cause) && cause.kind === 'steering-transport-error') return cause.kind;
+  if (isRecord(cause) && cause.kind === 'argv-prompt-too-large') return cause.kind;
   return isRecord(cause) && cause.kind === 'prompt-transport-error'
     ? 'prompt-transport-error'
     : 'callback-failure';
@@ -1000,6 +1017,13 @@ function prelaunchErrorMessage(cause: unknown): string {
   if (
     isRecord(cause) &&
     cause.kind === 'steering-transport-error' &&
+    typeof cause.message === 'string'
+  ) {
+    return cause.message;
+  }
+  if (
+    isRecord(cause) &&
+    cause.kind === 'argv-prompt-too-large' &&
     typeof cause.message === 'string'
   ) {
     return cause.message;

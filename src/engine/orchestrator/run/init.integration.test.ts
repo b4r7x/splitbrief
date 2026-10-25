@@ -716,7 +716,7 @@ describe('initializeWorkflow', () => {
       const errorEvent = events.find(
         (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
       );
-      expect(errorEvent?.message).toContain("Planner 'custom-endpoint' is not available");
+      expect(errorEvent?.message).toContain('Planner custom-endpoint is not available');
       expect(errorEvent?.message).toContain('HTTP 401');
       expect(errorEvent?.message).not.toContain("Make sure it's installed");
     });
@@ -808,7 +808,7 @@ describe('initializeWorkflow', () => {
         (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
       );
       expect(errorEvent?.message).toBe(
-        "Planner 'claude-code' is not available. Make sure it's installed.",
+        "Planner Claude Code CLI is not available. Make sure it's installed.",
       );
     });
   });
@@ -837,7 +837,7 @@ describe('initializeWorkflow', () => {
         (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
       );
       expect(errorEvent?.message).toBe(
-        "Planner 'claude-code' is not available: probe timed out after 5s.",
+        'Planner Claude Code CLI is not available: probe timed out after 5s.',
       );
     });
   });
@@ -940,6 +940,79 @@ describe('initializeWorkflow', () => {
 
       expect(init.ok).toBe(true);
       expect(loadState({ projectDir, sessionId })?.seatWait).toBeUndefined();
+    });
+  });
+});
+
+const PLANNER_WORDS = [
+  {
+    name: 'cli codex',
+    runner: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
+    word: 'OpenAI Codex CLI',
+  },
+  {
+    name: 'cli claude-code',
+    runner: { kind: 'cli', tool: 'claude-code' },
+    word: 'Claude Code CLI',
+  },
+  {
+    name: 'cli opencode route',
+    runner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-chat' },
+    word: 'OpenCode CLI',
+  },
+  {
+    name: 'api ollama',
+    runner: {
+      kind: 'api',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'llama3',
+    },
+    word: 'Ollama',
+  },
+  {
+    name: 'api custom endpoint',
+    runner: {
+      kind: 'api',
+      provider: 'custom-endpoint',
+      model: 'some-model',
+      apiBase: 'https://api.example.com/v1',
+      apiKey: 'k',
+    },
+    word: 'custom-endpoint',
+  },
+  {
+    name: 'shell',
+    runner: { kind: 'shell', command: './run.sh', model: 'auto' },
+    word: 'Custom Shell',
+  },
+  { name: 'agent', runner: { kind: 'agent', command: './agent.sh', model: 'auto' }, word: 'Agent' },
+] as const;
+
+describe('initializeWorkflow — a planner that is not available', () => {
+  it.each(PLANNER_WORDS)('names a $name planner by its catalog name', async ({ runner, word }) => {
+    await withTempDir('splitbrief-init-planner-word', async (projectDir) => {
+      const events: EngineEvent[] = [];
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId: 'session-init-planner-word',
+        feature: 'needs a planner',
+        configOverrides: { planner: runner },
+        plannerRunner: makePlanner({ isAvailable: vi.fn().mockResolvedValue(false) }),
+        eventSink: (e) => events.push(e),
+      });
+
+      expect(init.ok).toBe(false);
+      const errorEvent = events.find(
+        (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
+      );
+      const hint =
+        runner.kind === 'api'
+          ? 'Check the API key, endpoint, and model.'
+          : "Make sure it's installed.";
+      expect(errorEvent?.message).toBe(`Planner ${word} is not available. ${hint}`);
     });
   });
 });
@@ -1820,6 +1893,38 @@ describe('initializeWorkflow — the mode a run starts in', () => {
       const saved = loadState({ projectDir, sessionId });
       expect(saved).toMatchObject({ approve: 'plan' });
       expect(saved).not.toHaveProperty('mode');
+    });
+  });
+});
+
+describe('initializeWorkflow — a resume that saves a changed approval level', () => {
+  it('names the state file when another write lands first', async () => {
+    await withTempDir('splitbrief-init-approve-conflict', async (projectDir) => {
+      const sessionId = 'session-init-approve-conflict';
+      const started = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature: 'ship the banner',
+        configOverrides: { workflow: { approve: 'plan' } },
+      });
+      if (!started.init.ok) throw new Error('Expected run start');
+      const savedState = started.init.state;
+      saveState(
+        { projectDir, sessionId },
+        { ...savedState, stateRevision: (savedState.stateRevision ?? 0) + 1 },
+      );
+
+      await expect(
+        initializeTestWorkflow({
+          projectDir,
+          sessionId,
+          feature: 'ship the banner',
+          configOverrides: { workflow: { approve: 'none' } },
+          savedState,
+        }),
+      ).rejects.toThrow(
+        `Another process changed the run state, so this change was not saved · .splitbrief/sessions/${sessionId}/state.json`,
+      );
     });
   });
 });

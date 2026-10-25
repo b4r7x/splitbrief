@@ -22,6 +22,7 @@ import { resolveImplementerProfiles } from '../config/accessors/implementer-prof
 import type { CrewSeatId, SeatIds } from '../crew/identity.js';
 import { deriveCrewSeats } from '../crew/seats.js';
 import { RUNNER_KINDS } from '../schemas/enums.js';
+import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import { resolveCliModel } from '../providers/automatic-model.js';
 import { resolveAutoModel } from '../providers/model-selection.js';
@@ -249,6 +250,22 @@ export function reconcileSeatIdentities(
     writeSeatIdentities(ref, current);
   }
   return changes;
+}
+
+/**
+ * The seat a halt's call ran on: the call the halt recorded when it offered another tool, else the
+ * seat the run's latest pass started on, the halted profile's own seat for a BUILD halt on a named
+ * profile. A halt that names no seat, or a run whose record kept no ids, names none.
+ */
+export function haltedSeatIds(ref: SessionRef, issue: RecoveryIssue): SeatIds | null {
+  if (issue.seat === undefined) return null;
+  const from = issue.switchSeat?.from;
+  if (from !== undefined) return { tool: from.tool, model: from.model };
+  const record = readSeatIdentities(ref);
+  if (record?.ids === undefined) return null;
+  const profile = issue.seat === 'build' ? issue.selectedImplementerProfile : undefined;
+  const profileIds = profile === undefined ? undefined : record.buildProfiles?.[profile]?.ids;
+  return profileIds ?? record.ids[issue.seat];
 }
 
 function recordedModel(seat: SeatIds): string | undefined {

@@ -6,7 +6,6 @@ import {
   isAuthFailureDiagnostic,
   modelRefusalMessage,
   runnerAccountDisplayName,
-  runnerAuthDisplayName,
   runnerLoginInstruction,
 } from './auth-failure.js';
 
@@ -121,14 +120,7 @@ describe('modelRefusalMessage', () => {
   });
 });
 
-describe('runnerAuthDisplayName', () => {
-  it('uses catalog display names for CLI tools', () => {
-    const implementer = makeConfig({
-      implementer: { kind: 'cli', tool: 'codex', authChannel: defaultCliAuthChannel('codex').id },
-    }).implementer;
-    expect(runnerAuthDisplayName(implementer)).toBe('OpenAI Codex CLI');
-  });
-
+describe('runnerLoginInstruction for a custom API provider', () => {
   it('keeps a custom API provider literal even when it reuses a CLI tool id', () => {
     const implementer = makeConfig({
       implementer: {
@@ -141,7 +133,6 @@ describe('runnerAuthDisplayName', () => {
       },
     }).implementer;
 
-    expect(runnerAuthDisplayName(implementer)).toBe('opencode');
     expect(runnerLoginInstruction(implementer)).toBe(
       'Provide a valid opencode API key, then retry.',
     );

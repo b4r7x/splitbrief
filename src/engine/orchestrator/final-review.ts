@@ -113,7 +113,8 @@ import {
   enabledReviewChecks,
   planApprovesNpmScripts,
 } from './validation/run-checks.js';
-import { refusedCheckErrors } from '../spec/plan-checks.js';
+import { buildStageContext, unresolvedTestCheckErrors } from './validation/run.js';
+import { refusedCheckErrors, unconfiguredRenderCheckErrors } from '../spec/plan-checks.js';
 import { seatSupportsImages } from '../../core/runners/capabilities.js';
 import { forceUnverifiedRenderCriteria, reviewRenders } from './review-renders.js';
 import { currentCandidateId } from './evidence/record-checks.js';
@@ -548,6 +549,12 @@ export async function runFinalReviewPhase(opts: {
       warnError('Failed to compute drift report', err);
     }
 
+    const testChecks = buildStageContext({
+      projectDir: workspaceDir,
+      config,
+      discoveredValidation: state.discoveredValidation,
+      notices: { bus, phase: state.phase },
+    });
     // Coverage is a contract rule: an incomplete or invented answer fails the
     // schema, so the seat gets its one repair instead of a silent pass.
     const verdictSchema = ReviewAnswerSchema.superRefine((candidate, ctx) => {
@@ -565,8 +572,17 @@ export async function runFinalReviewPhase(opts: {
         ...fixTaskTargetErrors(candidate, userFiles),
         ...refusedCheckErrors(
           candidate.fixTasks.flatMap((task) => task.checks),
-          planApprovesNpmScripts({ config, state }),
+          {
+            npmScriptsApproved: planApprovesNpmScripts({ config, state }),
+            projectDir: workspaceDir,
+            writtenFiles: candidate.fixTasks.flatMap((task) => task.suggestedFiles),
+          },
         ).map((error) => error.message),
+        ...unconfiguredRenderCheckErrors(
+          candidate.fixTasks.flatMap((task) => task.checks),
+          config.validation.render,
+        ),
+        ...unresolvedTestCheckErrors(candidate.fixTasks, testChecks, []),
       ]) {
         ctx.addIssue({ code: 'custom', message });
       }
@@ -985,8 +1001,8 @@ export async function runFinalReviewPhase(opts: {
       const figures = inputTooLargeFigures(typedRunnerCallErrorMessage(err) ?? '');
       failure = {
         kind: 'input-too-large',
-        chars: figures.chars ?? fullPrompt.length,
-        maxChars: figures.maxChars ?? maxInputChars ?? null,
+        chars: figures.size ?? fullPrompt.length,
+        maxChars: figures.limit ?? maxInputChars ?? null,
         largestFiles: largestReviewFiles({
           files: reviewScope?.files,
           workspaceContext: reviewScope?.workspaceContext,

@@ -18,6 +18,7 @@ import type { AnsweredQuestion, ClarificationQuestion } from '../../core/schemas
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
+import type { SeatIdentity } from '../../core/providers/seat-identity.js';
 import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
 import type { ReviewChecksPlan } from '../../core/schemas/review.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
@@ -31,6 +32,7 @@ import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { RejectRunSnapshotResult } from '../../core/runtime/commands/types.js';
 import { runRejectFacts } from '../../core/runtime/commands/messages.js';
+import { admitUsageLimitWarning } from './usage-limit-gate.js';
 
 type BusContext = {
   bus: EventBus;
@@ -59,6 +61,7 @@ export function publishRunnerCallEvent(
   ctx: BusContext & { rootDir: string; taskId?: TaskId | undefined },
   event: RunnerCallEvent,
 ): void {
+  if (!admitUsageLimitWarning(ctx.bus, event)) return;
   const projected = projectRunnerCallEvents(event, {
     phase: ctx.phase,
     rootDir: ctx.rootDir,
@@ -270,8 +273,9 @@ export function publishReviewCheck(
     preExistingKeys?: readonly string[] | undefined;
     own?: number | undefined;
     ownLeft?: number | undefined;
+    deferred?: number | undefined;
+    deferredTo?: readonly string[] | undefined;
     others?: number | undefined;
-    proven?: boolean | undefined;
     detail?: string | undefined;
     duration?: number | undefined;
   },
@@ -297,8 +301,9 @@ export function publishReviewCheck(
       }),
     ...(opts.own !== undefined && { own: opts.own }),
     ...(opts.ownLeft !== undefined && { ownLeft: opts.ownLeft }),
+    ...(opts.deferred !== undefined && { deferred: opts.deferred }),
+    ...(opts.deferredTo !== undefined && { deferredTo: [...opts.deferredTo] }),
     ...(opts.others !== undefined && { others: opts.others }),
-    ...(opts.proven !== undefined && { proven: opts.proven }),
     ...(opts.detail !== undefined && { detail: opts.detail }),
     ...(opts.duration !== undefined && { duration: opts.duration }),
   });
@@ -648,17 +653,10 @@ export function publishRecoveryResolved(
   });
 }
 
+/** The seats this run pass holds, complete, so the chrome names them until their change point. */
 export function publishWorkflowConfig(
   ctx: BusContext,
-  opts: {
-    plannerTool: string;
-    plannerModel?: string | undefined;
-    implementerTool: string;
-    implementerModel?: string | undefined;
-    reviewerTool?: string | undefined;
-    reviewerModel?: string | undefined;
-    skills?: string[] | undefined;
-  },
+  opts: SeatIdentity & { skills?: string[] | undefined },
 ): void {
   ctx.bus.publish({
     type: 'workflow_config',
@@ -666,10 +664,16 @@ export function publishWorkflowConfig(
     phase: ctx.phase,
     plannerTool: opts.plannerTool,
     ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
+    ...(opts.plannerKind !== undefined && { plannerKind: opts.plannerKind }),
+    ...(opts.plannerAxes !== undefined && { plannerAxes: [...opts.plannerAxes] }),
     implementerTool: opts.implementerTool,
     ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
+    ...(opts.implementerKind !== undefined && { implementerKind: opts.implementerKind }),
+    ...(opts.implementerAxes !== undefined && { implementerAxes: [...opts.implementerAxes] }),
     ...(opts.reviewerTool !== undefined && { reviewerTool: opts.reviewerTool }),
     ...(opts.reviewerModel !== undefined && { reviewerModel: opts.reviewerModel }),
+    ...(opts.reviewerKind !== undefined && { reviewerKind: opts.reviewerKind }),
+    ...(opts.reviewerAxes !== undefined && { reviewerAxes: [...opts.reviewerAxes] }),
     ...(opts.skills !== undefined && { skills: opts.skills }),
   });
 }

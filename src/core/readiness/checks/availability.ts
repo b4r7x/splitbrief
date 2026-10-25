@@ -1,5 +1,6 @@
 import type { RunnerConfigSlot } from '../../config/accessors/runner-config.js';
 import { getApiProviderDescriptor } from '../../providers/api-provider-catalog.js';
+import { getRunnerIdentityDisplayName } from '../../providers/catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { CREW_SEAT_LABELS, formatSlotLabel } from '../../crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../runners/seat-roles.js';
@@ -72,12 +73,16 @@ function pickAnother(slot: RunnerAvailabilitySlot): string {
   return `choose another tool in Settings > Crew > ${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[slot.role]]}`;
 }
 
+function providerName(fact: RunnerAvailabilityFact): string {
+  return getRunnerIdentityDisplayName('api', fact.provider);
+}
+
 function unavailableFix(fact: RunnerAvailabilityFact): string {
   const startup = localProviderStartup(fact.provider);
   if (startup !== undefined) {
     return `${startup}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`;
   }
-  return `Check the ${fact.provider} endpoint and network, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`;
+  return `Check the ${providerName(fact)} endpoint and network, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`;
 }
 
 function credentialFix(
@@ -86,7 +91,7 @@ function credentialFix(
 ): string {
   const supply =
     verdict.credentialEnv === undefined
-      ? `Set an apiKey for ${fact.provider}`
+      ? `Set an apiKey for ${providerName(fact)}`
       : `Export ${verdict.credentialEnv}`;
   return `${supply}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`;
 }
@@ -115,13 +120,13 @@ function availabilityCopy(fact: RunnerAvailabilityFact, label: string): Availabi
     case 'no-models':
       return {
         summary: `${label} answered${atEndpoint(fact)} but offers no models.`,
-        fix: `Install a model for ${fact.provider}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
+        fix: `Install a model for ${providerName(fact)}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
       };
     case 'missing-model':
       return {
         summary: `${label} answered${atEndpoint(fact)} but does not serve "${verdict.selectionId}".`,
         // Readiness never substitutes another model the catalog happens to carry.
-        fix: `Select a model ${fact.provider} serves, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
+        fix: `Select a model ${providerName(fact)} serves, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
       };
     case 'timeout':
       return {
@@ -133,7 +138,7 @@ function availabilityCopy(fact: RunnerAvailabilityFact, label: string): Availabi
       return {
         summary: `${label} rejected the configured credential${atEndpoint(fact)}.`,
         details: [`Probe: ${verdict.diagnostic}`],
-        fix: `Check the credential for ${fact.provider}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
+        fix: `Check the credential for ${providerName(fact)}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
       };
     case 'missing-credential':
       return {

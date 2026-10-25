@@ -471,7 +471,7 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 | `kilo-code` | `kilo` | planner, implementer | 0.1.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent | fallback |
 | `cursor` | `cursor-agent` | planner, implementer | 2026.08.25-3e8eec8 | `calver` | 2026-08-27 | optional / optional | `native-cli` (`--list-models`) | subscription-included | fallback |
 | `command-code` | `cmd` | planner, implementer | 1.39.2 | `semver` | 2026-09-01 | optional / optional | `native-cli` (`--list-models`) | subscription-included | fallback |
-| `antigravity` | `agy` | planner, implementer | 1.2.9 | `semver` | 2026-09-23 | optional / optional | `native-cli` (`agy models`) | subscription-included | native from 1.2.14 |
+| `antigravity` | `agy` | planner, implementer | 1.4.7 | `semver` | 2026-10-24 | optional / optional | `native-cli` (`agy models`) | subscription-included | native from 1.2.14 |
 
 **Command Code's row was captured from the real binary on 2026-09-01 against `cmd` 1.39.2**, replacing the hand-authored fixtures that stood in for it. The raw `cli-conformance` leg passes; the production leg records `OMIT` because the conformance sandbox gives the child a fresh `HOME` and never bridges host CLI session state, so a `session`-auth tool reaches the CLI unauthenticated. That gap is the harness's, not the adapter's — the adapter's own argv was replayed against the authenticated binary and its terminal `result` frame parses. See `testing/fixtures/command-code/README.md` for the recorded evidence and the remaining gap.
 
@@ -644,7 +644,7 @@ The role vector is pinned and effect-verified per backend. A role that is missin
 | `cursor` | `--print --output-format stream-json --mode plan --trust --workspace <projectDir>` | `--print --output-format stream-json --force --trust --workspace <projectDir>` |
 | `copilot` | `-p --plan --allow-all-tools --no-ask-user --output-format json` | `-p --allow-all --output-format json` |
 | `command-code` | `-p --output-format json --trust --skip-onboarding --permission-mode plan` | `-p --output-format json --trust --skip-onboarding --yolo` |
-| `antigravity` | `-p --mode plan --add-dir <projectDir> --output-format stream-json` | `-p --dangerously-skip-permissions --add-dir <projectDir> --output-format stream-json` |
+| `antigravity` | `-p --mode plan --sandbox --dangerously-skip-permissions --add-dir <projectDir> --output-format stream-json` | `-p --dangerously-skip-permissions --add-dir <projectDir> --output-format stream-json` |
 
 **Workspace.** Every seat is spawned with its directory as the cwd. A tool that keeps its workspace apart from its cwd also gets that directory on a flag: `codex --cd`, `cursor --workspace`, `agy --add-dir`. Without `--add-dir`, or with a relative `--add-dir .`, `agy -p` has no workspace, and on 1.2.9 its model ran the shell in `~/.gemini/antigravity-cli/scratch` (upstream antigravity-cli issues #231, #253, #507, #598). With the workspace, agy also loads that directory's `AGENTS.md` and `GEMINI.md`; `codex` can skip such files with `--ignore-rules`, but agy has no flag for this. `WORKSPACE_FLAGS` in `testing/integration/orchestrator/cli-adapter-contract.test.ts` pins the flag per tool, and the cwd leg of `scripts/cli-conformance.ts` ([EXTENDING.md](./EXTENDING.md#rawproduction-transaction-cli)) measures where the live tool writes. On 2026-09-23 `claude-code`, `opencode`, `command-code` and `antigravity` passed it; `codex`, `cursor`, `copilot` and `kilo-code` could not be measured on that host.
 
@@ -661,7 +661,7 @@ The role vector is pinned and effect-verified per backend. A role that is missin
 | `command-code` | `--output-format json` | `commandCodeProtocolEvents` (`cli-tools/command-code.ts`) | no — final text only | done only | final only | yes |
 | `antigravity` | `--output-format stream-json` (both roles) | `streaming/parse-antigravity.ts` | token deltas (`text_delta`) | started + done | yes | yes |
 
-Antigravity's `stream-json` evidence exists for agy 1.2.7 and 1.2.9 only, while `minimumAdmittedVersion` stays 1.2.2.
+Antigravity's `stream-json` evidence exists for agy 1.2.7, 1.2.9 and 1.4.7. `minimumAdmittedVersion` is 1.3.2: before it, `--dangerously-skip-permissions`, which the planner seat passes, also approved a plan-mode plan.
 
 Claude Code reports the end of a tool in a `user` record that carries the `tool_result`. That record closes the tool. So while a Claude `Bash` command runs, the freshness line can name it: `No output for m:ss · running <command>`.
 
@@ -678,7 +678,7 @@ Claude Code's `system` frames never reach a transcript as text (`parseSystemProg
 
 A notification without a warning colour and an `info`, `notice` or `suggestion` banner are bookkeeping too. Hook feedback is a `notice` banner, and a warning has no lower severity to show it at.
 
-A top-level `rate_limit_event` is telemetry while its `status` is `allowed` or unread — it becomes a heartbeat, and an `overageStatus` of `rejected` does not change that. An `allowed_warning` or `rejected` status becomes a `claude_rate_limit` warning with severity `warning` or `error` and a message such as `7-day rate limit approaching (resets Nov 3, 16:30)` (the recovery panel's 24-hour clock, always dated because the transcript replays the text on other days: `formatStoredReset`, `src/core/recovery/reset-clock.ts`) or `rate limit reached`. The limit window reads `5-hour` or `7-day`; a window the frame names in other words is left out. The severity reaches the call's activity row (`Warn` / `Err`) and `session.jsonl`, and the frame never fabricates a terminal result — the `result` frame remains the authority for how the call ended (`src/engine/streaming/parse-stream-json.ts`).
+Every top-level `rate_limit_event` is a heartbeat. The 5-hour and weekly windows also give a `claude_rate_limit` warning at 70, 75, 80, 85, 90 and 95 percent of the window, with the dated reset, for example `You've used 75% of your Claude Code weekly limit · resets Oct 29, 10:00`. The warning names the tool, the window, the percent and the reset, and a window at or above 100 percent gives no step warning, because a reached limit is the usage-limit halt. A run shows each step once per window and reset time, also after a resume, so a continued run does not repeat a step it already showed; a new reset time starts the steps again. The warning reaches the call's activity row and `session.jsonl`, and the frame never fabricates a terminal result — the `result` frame remains the authority for how the call ended (`src/engine/streaming/parse-stream-json.ts`).
 
 Antigravity's per-step `usage` is the usage of that response step and its `result` usage is the turn total, so step usage is emitted as a delta and the terminal usage is taken from the explicit result — the accumulator never counts a turn twice.
 
@@ -826,7 +826,7 @@ Versions are the build on this host; the parenthesised value is `compatibility.t
 | `kilo-code` | `/opt/homebrew/bin/kilo` — 7.0.49 (0.1.0) | `provider-dependent` | no | host-configured |
 | `copilot` | `~/.local/bin/copilot` — 1.0.83 (1.0.77) | `session` | no | host-configured |
 | `command-code` | `…/node/v22.22.2/bin/cmd` — 1.54.1 (1.39.2) | `session` | no | host-configured |
-| `antigravity` | `~/.local/bin/agy` — 1.2.4 (1.2.2) | `session` | no | host-configured |
+| `antigravity` | `~/.local/bin/agy` — 1.4.7 (1.3.2) | `session` | no | host-configured |
 
 Every tool declares `roles: ['planner', 'implementer']`; the reviewer seat reuses the planner runner (`resolveReviewerRunner`). The channel set is the tool's `auth.channels` in `cli-tool-catalog.ts`; "method choice offered" requires invocation-enforcement evidence, not merely multiple declared channels. The custom-only tools (`kiro`, `gemini`, `cline`, `qwen`) and the other excluded candidates (`auggie`, `junie`) are not admitted and have no row.
 

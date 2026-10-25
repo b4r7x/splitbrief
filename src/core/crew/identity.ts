@@ -142,7 +142,7 @@ function isSeatIds(seat: RunnerConfig | SeatIds): seat is SeatIds {
   return 'tool' in seat && (seat.kind !== 'cli' || !isCliToolId(seat.tool));
 }
 
-function idsOf(seat: RunnerConfig | SeatIds): SeatIds {
+export function idsOf(seat: RunnerConfig | SeatIds): SeatIds {
   return isSeatIds(seat) ? seat : seatIdsOf(seat);
 }
 
@@ -275,6 +275,7 @@ export function formatSeatChangeIdentities(
 /**
  * The collapsed form names the model without its brand or axes. A provider route keeps its
  * provider, joined by a space because the middle dot already parts the seats on the line.
+ * An automatic model names no seat, so the form names the tool of the long form instead.
  */
 export function formatShortSeatIdentity(input: {
   seat: RunnerConfig | SeatIds;
@@ -284,6 +285,10 @@ export function formatShortSeatIdentity(input: {
   const { seat, displayName } = input;
   const ids = idsOf(seat);
   const kind = input.kind ?? runnerKindOf(seat);
+  const model = modelIdOf(ids, kind);
+  if (model === undefined || model === AUTOMATIC_MODEL) {
+    return sanitizeTerminalDisplayText(toolWord(ids, kind));
+  }
   const words = sanitizeTerminalDisplayText(modelName(ids, displayName, kind))
     .split(' ')
     .filter(Boolean);
@@ -454,9 +459,9 @@ function fitCollapsedSeats(
 
 export function formatCollapsedSeatSpans(
   input: Readonly<{
-    planner: RunnerConfig;
-    build: RunnerConfig;
-    reviewer: RunnerConfig | undefined;
+    planner: RunnerConfig | SeatIds;
+    build: RunnerConfig | SeatIds;
+    reviewer: RunnerConfig | SeatIds | undefined;
     budget?: number | undefined;
     haltedSeat?: CrewSeatId | undefined;
     /** What each seat is carrying right now, e.g. the reset clock of a quota-blocked seat. */

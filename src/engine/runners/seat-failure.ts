@@ -9,8 +9,11 @@ import {
   parseUsageLimitReset,
 } from './usage-limit.js';
 
-/** Where a failed seat call's words came from; tail sources are the tool's own last lines. */
-export type SeatFailureSource = 'result-error' | 'thrown' | 'stderr-tail' | 'stdout-tail';
+/**
+ * Where a failed seat call's words came from. `stderr` is a failed CLI call's diagnostic channel;
+ * `stdout-tail` is the last line the tool printed, where the model's prose can stand.
+ */
+export type SeatFailureSource = 'result-error' | 'thrown' | 'stderr' | 'stdout-tail';
 
 export type SeatFailureClassification =
   | Readonly<{ class: 'authoritative' }>
@@ -45,15 +48,18 @@ const AUTHORITATIVE_OUTCOMES: ReadonlySet<string> = new Set([
 
 /**
  * Account refusals a provider prints when it will not serve the call at all:
- * an empty balance, an inactive or hard-limited billing state, or a suspended
- * account. These are diagnostic-only — the stdout tail carries test logs — and
- * they outrank a 429 in the same text, because retrying cannot restore them.
+ * an empty balance, an inactive or hard-limited billing state, a suspended
+ * account, or a model the plan does not include (Cursor: "<model> is not
+ * included in your weekly usage Buy credits or switch to a … model"). These are
+ * diagnostic-only — the stdout tail carries test logs — and they outrank a 429
+ * in the same text, because retrying cannot restore them.
  */
 const ACCOUNT_PHRASES: readonly (readonly [SeatAccountCause, string])[] = [
   ['balance', 'insufficient balance'],
   ['balance', 'insufficient credits'],
   ['balance', 'credit balance is too low'],
   ['balance', 'out of credits'],
+  ['balance', 'not included in your weekly usage'],
   ['billing', 'payment required'],
   ['billing', 'billing_hard_limit'],
   ['billing', 'billing_not_active'],
@@ -86,7 +92,7 @@ const MESSAGE_CLASSIFIED_OUTCOMES: ReadonlySet<RunnerFailureOutcomeState> = new 
 ]);
 
 function isTailSource(source: SeatFailureSource): boolean {
-  return source === 'stderr-tail' || source === 'stdout-tail';
+  return source === 'stdout-tail';
 }
 
 function httpStatusOf(message: string): number | null {
@@ -100,7 +106,7 @@ function httpStatusOf(message: string): number | null {
 
 /**
  * Whether the words name an exhausted account rather than a momentary refusal.
- * Tail sources match only `HALT_SIGNATURES` phrases, so a transcript's
+ * The stdout tail matches only `HALT_SIGNATURES` phrases, so a transcript's
  * `billing/` path or a shelled-out `permission denied` never classifies. A
  * strong limit phrase that is only an HTTP 429 capacity rejection — Claude
  * Code's "Request rejected (429)" — is not exhaustion; it is retried.

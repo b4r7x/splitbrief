@@ -26,6 +26,7 @@ import {
 } from '../../lib/terminal/editor-handover.js';
 import { cursorUpSequence, terminalSequences } from '../../lib/terminal/control.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { withUserNodeEnv } from '../../lib/process/spawn/child-env.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
@@ -58,7 +59,7 @@ interface EditorProcess {
 export type SpawnEditor = (command: string, args: string[]) => EditorProcess;
 
 export const spawnEditorProcess: SpawnEditor = (command, args) =>
-  spawn(command, args, { stdio: 'inherit' });
+  spawn(command, args, { stdio: 'inherit', env: withUserNodeEnv(process.env) });
 
 interface RunEditorOptions extends ViewerArgv {
   filePath: string;

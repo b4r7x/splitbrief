@@ -1,12 +1,62 @@
 import { join } from 'node:path';
-import { describe, expect, test } from 'vitest';
-import { labelError, toErrorMessage } from './format-errors.js';
+import { beforeEach, describe, expect, test } from 'vitest';
+import { addWorkspaceRoot, labelError, setProjectRoot, toErrorMessage } from './format-errors.js';
 
 const fileError = (message: string, fields: Record<string, string>) =>
   Object.assign(new Error(message), fields);
 
 describe('toErrorMessage', () => {
-  const sessions = join(process.cwd(), '.splitbrief', 'sessions', 'a');
+  const projectRoot = '/workspace/project';
+  const sessions = join(projectRoot, '.splitbrief', 'sessions', 'a');
+
+  beforeEach(() => {
+    setProjectRoot(projectRoot);
+  });
+
+  test('project root set and a path under it reads relative', () => {
+    const path = join(projectRoot, 'src', 'index.ts');
+    expect(
+      toErrorMessage(
+        fileError(`EACCES: permission denied, open '${path}'`, { code: 'EACCES', path }),
+      ),
+    ).toBe(`permission denied · ${join('src', 'index.ts')}`);
+  });
+
+  test('a workspace root added and a path under it reads relative to the workspace', () => {
+    const removeWorkspace = addWorkspaceRoot('/tmp/worktree');
+    try {
+      const path = '/tmp/worktree/src/index.ts';
+      expect(
+        toErrorMessage(
+          fileError(`EACCES: permission denied, open '${path}'`, { code: 'EACCES', path }),
+        ),
+      ).toBe('permission denied · src/index.ts');
+    } finally {
+      removeWorkspace();
+    }
+  });
+
+  test('a workspace nested under the project root reads relative to the workspace and relative to the project after remove', () => {
+    const stagedWorkspace = join(projectRoot, '.splitbrief', 'sessions', 's1', 'stage-copy');
+    const path = join(stagedWorkspace, 'src', 'index.ts');
+    const removeWorkspace = addWorkspaceRoot(stagedWorkspace);
+
+    expect(
+      toErrorMessage(
+        fileError(`EACCES: permission denied, open '${path}'`, { code: 'EACCES', path }),
+      ),
+    ).toBe('permission denied · src/index.ts');
+
+    removeWorkspace();
+
+    expect(
+      toErrorMessage(
+        fileError(`EACCES: permission denied, open '${path}'`, { code: 'EACCES', path }),
+      ),
+    ).toBe(
+      `permission denied · ${join('.splitbrief', 'sessions', 's1', 'stage-copy', 'src', 'index.ts')}`,
+    );
+  });
 
   test.each([
     ['open', 'EACCES', 'permission denied', 'plan.json'],

@@ -339,6 +339,33 @@ describe('openRunByline', () => {
     ).toBe('Seat down · Signed out of codex · ⏎ to decide');
   });
 
+  it('names the tool that refused a brief prompt as too large, not a context overflow', () => {
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'open',
+          stop: {
+            kind: 'waiting-for-you',
+            on: {
+              kind: 'halt',
+              issue: makeRecoveryIssue({
+                reason: 'context-overflow',
+                seat: 'build',
+                taskId: taskId('T002'),
+                message: 'Prompt too large for OpenCode CLI on T002',
+                facts: { tool: 'OpenCode CLI', bytes: 195_203, maxBytes: 120_000 },
+                availableActions: ['switch-seat', 'skip-current-task', 'end-run'],
+                recommendedAction: 'switch-seat',
+              }),
+            },
+          },
+          resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
+        },
+      }),
+    ).toBe('Seat down · Prompt too large for OpenCode CLI on T002 · ⏎ to decide');
+  });
+
   it('names a halt only the operator can decide as needing you', () => {
     expect(
       openRunByline({
@@ -387,12 +414,12 @@ describe('openRunByline', () => {
           kind: 'open',
           stop: {
             kind: 'stopped',
-            on: { kind: 'seat-wait', seat: 'review', tool: 'codex', resetAt },
+            on: { kind: 'seat-wait', seat: 'review', tool: 'OpenAI Codex CLI', resetAt },
           },
           resumeAt: { kind: 'review', cycle: 0 },
         },
       }),
-    ).toBe('Waiting for codex · resets 17:00');
+    ).toBe('Waiting for OpenAI Codex CLI · resets 17:00');
   });
 
   it('names the step an interrupted run picks up at', () => {
@@ -641,9 +668,14 @@ describe('fitted byline parts', () => {
     [
       {
         kind: 'stopped',
-        on: { kind: 'seat-wait', seat: 'build', tool: 'codex', resetAt: '2026-10-10T17:00:00Z' },
+        on: {
+          kind: 'seat-wait',
+          seat: 'build',
+          tool: 'OpenAI Codex CLI',
+          resetAt: '2026-10-10T17:00:00Z',
+        },
       },
-      'Waiting for codex',
+      'Waiting for OpenAI Codex CLI',
       'warning',
     ],
   ] as const)('keeps %s structured and preserves its joined text', (stop, reason, reasonTone) => {

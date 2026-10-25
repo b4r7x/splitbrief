@@ -5,7 +5,7 @@ import { plainTheme } from '../../core/theme/resolve.js';
 import { paint } from '../../core/theme/paint.js';
 import { createPlanner } from '../../engine/runners/factory.js';
 import type { Planner } from '../../engine/planners/types.js';
-import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
+import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
 import {
   assertGitRepo,
   ensureHeadlessConfig,
@@ -185,7 +185,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         throw cause;
       }
       console.log(
-        `Planning feature: ${oneLineDisplayText(feature)} (planner: ${getRunnerDisplayName(config.planner)})\n`,
+        `Planning feature: ${oneLineDisplayText(feature)} (planner: ${getRunnerCatalogDisplayName(config.planner)})\n`,
       );
 
       const ref = { projectDir, sessionId };

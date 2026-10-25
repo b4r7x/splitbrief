@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import type {
   TypedOutputCapability,
   TypedOutputTransport,
@@ -37,11 +37,11 @@ export type TypedSeatCall = Readonly<{
   }) => Promise<RunnerCallResult>;
 }>;
 
-type SeatProtocolErrorData = Readonly<{
+export type SeatProtocolErrorData = Readonly<{
   seat: ActiveRunnerRole;
   attempts: 1 | 2;
   transport: TypedOutputTransport;
-  errors: string;
+  errors: readonly string[];
   answerPreview: string;
 }>;
 
@@ -73,22 +73,34 @@ export function fallbackInstruction(jsonSchema: Readonly<Record<string, unknown>
   return `\n\nReply with exactly one JSON object that matches this schema: ${JSON.stringify(jsonSchema)}. No prose after it.`;
 }
 
-function resumeRepairPrompt(errors: string): string {
-  return `Your previous answer failed validation:\n${errors}\n\nReply again with exactly one JSON object that matches the schema.`;
+function resumeRepairPrompt(errors: readonly string[]): string {
+  return `Your previous answer failed validation:\n${errors.join('\n')}\n\nReply again with exactly one JSON object that matches the schema.`;
 }
 
-function freshRepairPrompt(prompt: string, answer: string, errors: string): string {
-  return `${prompt}\n\nYour previous answer:\n${answer}\n\nIt failed validation:\n${errors}\n\nReply with exactly one JSON object that matches the schema.`;
+function freshRepairPrompt(prompt: string, answer: string, errors: readonly string[]): string {
+  return `${prompt}\n\nYour previous answer:\n${answer}\n\nIt failed validation:\n${errors.join('\n')}\n\nReply with exactly one JSON object that matches the schema.`;
+}
+
+function closeSentence(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
+export function seatProtocolHeadline(
+  data: Pick<SeatProtocolErrorData, 'seat' | 'attempts'>,
+): string {
+  return `The ${data.seat} seat answer did not match its contract after ${countNoun(data.attempts, 'attempt')}.`;
 }
 
 export const typedOutputError = {
   isSeatProtocol: (err: unknown): err is SeatProtocolError => matches('seat-protocol-error')(err),
-  seatProtocol: (data: SeatProtocolErrorData): SeatProtocolError =>
-    error(
-      'seat-protocol-error',
-      `The ${data.seat} seat answer did not match its contract after ${countNoun(data.attempts, 'attempt')}.`,
-      data,
-    ),
+  seatProtocol: (data: SeatProtocolErrorData): SeatProtocolError => {
+    const headline = seatProtocolHeadline(data);
+    const message =
+      data.errors.length === 0
+        ? headline
+        : `${headline} ${data.errors.map(closeSentence).join(' ')}`;
+    return error('seat-protocol-error', message, data);
+  },
 } as const;
 
 const FENCE = /```[\w-]*[ \t]*\n([\s\S]*?)\n```/g;
@@ -262,11 +274,11 @@ const EXTRACTION_ERRORS: Readonly<Record<Exclude<JsonExtraction['kind'], 'ok'>, 
     'The JSON object in the answer is truncated: it never closes. Send the complete object.',
 };
 
-type AnswerFailure = Readonly<{ errors: string; answer: string }>;
+type AnswerFailure = Readonly<{ errors: readonly string[]; answer: string }>;
 
 type CheckedAnswer<T> =
   | Readonly<{ ok: true; value: T }>
-  | Readonly<{ ok: false; errors: string; answer: string }>;
+  | Readonly<{ ok: false; errors: readonly string[]; answer: string }>;
 
 function checkAnswer<T>(schema: z.ZodType<T>, result: RunnerCallResult): CheckedAnswer<T> {
   const structured = result.status === 'completed' ? result.structured : undefined;
@@ -278,14 +290,18 @@ function checkAnswer<T>(schema: z.ZodType<T>, result: RunnerCallResult): Checked
   } else {
     const extracted = extractLastJsonObject(result.text);
     if (extracted.kind !== 'ok') {
-      return { ok: false, errors: EXTRACTION_ERRORS[extracted.kind], answer: result.text };
+      return { ok: false, errors: [EXTRACTION_ERRORS[extracted.kind]], answer: result.text };
     }
     candidate = extracted.value;
     answer = result.text;
   }
   const parsed = schema.safeParse(candidate);
   if (!parsed.success) {
-    return { ok: false, errors: z.prettifyError(parsed.error), answer };
+    const errors = parsed.error.issues.map((issue) => {
+      const path = issue.path.join('.');
+      return path.length === 0 ? issue.message : `${path}: ${issue.message}`;
+    });
+    return { ok: false, errors, answer };
   }
   return { ok: true, value: parsed.data };
 }

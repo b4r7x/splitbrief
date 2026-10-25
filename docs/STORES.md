@@ -75,7 +75,7 @@ src/stores/
 │   ├── streaming-output.ts   # Live streamed runner output
 │   ├── transcript-tail.ts    # What the blocks after the run's events add to the transcript
 │   ├── result-menu.ts        # Measured result menu rows, including Apply confirmation
-│   ├── recovery-notice.ts    # The seat a halt stopped + its quota reset, for the header
+│   ├── recovery-notice.ts    # The seat a halt stopped, what it ran on + its quota reset, for the header
 │   └── review.ts             # Review file path + scroll
 ├── question-prompt/          # Planner questions waiting for answers
 │   └── prompt.ts             # questionPromptStore
@@ -230,7 +230,7 @@ routerStore.navigate({ to: 'home' });
 | `externalEditRequestStore` | `ui/external-edit-request.ts` | the one pending Ctrl+O request | `request()`, `requestApply()`, `consume()` |
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, currentAttempt, attemptAllowance, totalTasks, taskMap, tasks }` | internal writes via `actions.addEvent` |
-| `tokensStore` | `workflow/tokens.ts` | `{ tokenUsage, perPhase, perTask, completedTaskCount, pricingContext }` | internal writes via `actions.addEvent` |
+| `tokensStore` | `workflow/tokens.ts` | `{ tokenUsage, perPhase, perTask, completedTaskCount, passSeats }` | internal writes via `actions.addEvent` |
 | `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, queuedMessageIds, steerableCall, startedAt, endedAt, durationMs, reason, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt }` — `plannerCall` is the call the phase is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it | internal writes via `actions.addEvent` / local cancel intent |
 | `operationsStore` | `workflow/operations/state.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
 | `stopStore` | `workflow/stop.ts` | `{ intent, phase, requestedAt, parked, error? }` — the run's stop intent and where its termination stands | `request(intent)`, phase marks (`markTerminating()`, `markSettling()`, `markForcing()`), `park()`, `resume(steer)`, `end()`, `fail()` |
@@ -241,7 +241,7 @@ routerStore.navigate({ to: 'home' });
 | `streamingOutputStore` | `workflow/streaming-output.ts` | `{ taskId, lines, active }` | `startStreaming()`, `replaceLines()`, `stopStreaming()` |
 | `transcriptTailStore` | `workflow/transcript-tail.ts` | `{ rowCount, renderableUnits }` — what a closed run's ledger adds after the run's own events | `setMetrics()` — written by the transcript, read by the keyboard so both measure one document |
 | `resultMenuStore` | `workflow/result-menu.ts` | `number \| null` — measured result menu height, including Apply confirmation | `setHeight()`, `reset()` — written by the workflow screen, read by the scroll snapshot |
-| `recoveryNoticeStore` | `workflow/recovery-notice.ts` | `{ seat, resetAt, issue, at }` — the seat an open halt stopped on, the clock its quota returns on, the halt itself and the step the run resumes at (`resumeStep`), which the rail reads | `open({ seat, resetAt, issue, at })`, `clear()` — written by the TUI recovery driver |
+| `recoveryNoticeStore` | `workflow/recovery-notice.ts` | `{ seat, ranOn, resetAt, issue, at }` — the seat an open halt stopped on, the tool and model its call ran on (`haltedSeatIds`), the clock its quota returns on, the halt itself and the step the run resumes at (`resumeStep`), which the rail reads | `open({ seat, ranOn, resetAt, issue, at })`, `clear()` — written by the TUI recovery driver |
 | `questionPromptStore` | `question-prompt/prompt.ts` | `{ hint, questions, index, drafts, answers, focus, openedAt, complete, unanswered }` — the planner questions on screen, the answers so far, and the round Esc closed (`unanswered`), kept until its reply answers it | `setHint()`, `setQuestions()`, `close()` (moves the open round to `unanswered`), `select()`, `setFocus()`, `previous()`, `answer()`, `takeAnswerBatch()`, `clearHint()` |
 | `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
 | `reviewChecksPromptStore` | `review-checks-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` — the reviewer's chosen commands waiting for Run all or Skip all | `openReviewChecksPrompt()`, `closeReviewChecksPrompt(answer?)` (via `channels/prompt`); a superseded or cancelled card resolves `undefined`, which the engine never reads as Run all |

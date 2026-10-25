@@ -19,7 +19,7 @@ import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import {
   getRecoveryPromptActions,
   recoveryActionKey,
-  recoveryMenuLabel,
+  recoveryMenuParts,
 } from '../recovery-prompt.js';
 
 afterEach(() => composerLiveStore.reset());
@@ -275,6 +275,15 @@ it('offers the correction key only on a halt that takes typed words', async () =
   );
   accepting.unmount();
 
+  composerLiveStore.setDraft(createDraftDocument('focus on the error'));
+  const acceptingWithWords = mount(vi.fn());
+  await flushEffects();
+  expect(stripAnsiStyles(acceptingWithWords.lastFrame())).toContain(
+    '↑↓ select · ⏎ confirm · tab type a correction',
+  );
+  acceptingWithWords.unmount();
+  composerLiveStore.reset();
+
   const refusing = mount(
     vi.fn(),
     80,
@@ -289,6 +298,38 @@ it('offers the correction key only on a halt that takes typed words', async () =
   expect(frame).toContain('↑↓ select · ⏎ confirm');
   expect(frame).not.toContain('tab type a correction');
   refusing.unmount();
+});
+
+it('offers tab edit the words on an apply-partial halt with words, and no tab hint when empty', async () => {
+  composerLiveStore.setDraft(createDraftDocument('keep going'));
+  const withWords = mount(
+    vi.fn(),
+    56,
+    makeRecoveryIssue({
+      reason: 'apply-partial',
+      availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+    }),
+  );
+  await flushEffects();
+  expect(stripAnsiStyles(withWords.lastFrame())).toContain('tab edit the words');
+  withWords.unmount();
+
+  composerLiveStore.reset();
+  const empty = mount(
+    vi.fn(),
+    56,
+    makeRecoveryIssue({
+      reason: 'apply-partial',
+      availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+    }),
+  );
+  await flushEffects();
+  const frame = stripAnsiStyles(empty.lastFrame());
+  expect(frame).toContain('↑↓ select · ⏎ confirm');
+  expect(frame).not.toContain('tab');
+  empty.unmount();
 });
 
 it('says what ⏎ in the composer does while it holds focus, and lists no live keys', async () => {
@@ -314,6 +355,41 @@ it('says what ⏎ in the composer does while it holds focus, and lists no live k
   expect(frame).not.toContain('c   Continue');
   ui.unmount();
 });
+
+it.each<[string, Partial<RecoveryIssue>, string]>([
+  [
+    'a failed review',
+    {
+      reason: 'review-failed',
+      phase: 'final-review',
+      availableActions: ['revise', 'accept-as-is', 'end-run'],
+      recommendedAction: 'revise',
+    },
+    'Fix again',
+  ],
+  ['a PLAN halt on a brief', { seat: 'plan', phase: 'escalating' }, 'Try again'],
+  ['a REVIEW halt on a brief', { seat: 'review', phase: 'implementing' }, 'Try again'],
+  ['a BUILD halt', { seat: 'build', phase: 'implementing' }, 'Try again'],
+  ['a brief that ran out of attempts', {}, 'Try again'],
+])(
+  'names the action without its consequence while the composer holds focus after %s',
+  async (_label, overrides, action) => {
+    const ui = renderFeature(
+      <RecoveryMenu
+        issue={makeRecoveryIssue(overrides)}
+        width={120}
+        clampedBoxRows={14}
+        focused={false}
+        onFocusChange={() => {}}
+        onResolve={() => {}}
+      />,
+    );
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain(`⏎ ${action} with the typed correction · tab back to the actions`);
+    ui.unmount();
+  },
+);
 
 it('says ⏎ runs the command when the composer holds a slash command', async () => {
   composerLiveStore.setDraft(createDraftDocument('/scroll top'));
@@ -483,7 +559,12 @@ it('marks the halt text an 80x24 panel cuts and keeps every action and the legen
   const rows = stripAnsiStyles(ui.lastFrame()).split('\n');
   const separator = rows.findIndex((row) => row.includes('──────'));
   expect(rows).toHaveLength(panelRowsAt80x24);
-  expect(rows[separator - 1]).toMatch(/^[│|] {3}… \d+ more lines +[│|]$/);
+  const isBlank = (row: string | undefined) => /^[│|] +[│|]$/.test(row ?? '');
+  const mark = rows.findIndex((row) => /^[│|] {3}… \d+ more lines +[│|]$/.test(row));
+  expect(mark).toBeGreaterThan(0);
+  expect(mark).toBeLessThan(separator);
+  expect(isBlank(rows[mark - 1])).toBe(false);
+  expect(rows.slice(mark + 1, separator).every(isBlank)).toBe(true);
   expect(rows.some((row) => row.includes('Try again'))).toBe(true);
   expect(rows.some((row) => row.includes('End run'))).toBe(true);
   expect(rows.at(-2)).toContain('↑↓ select · ⏎ confirm');
@@ -519,7 +600,10 @@ function frameRows(ui: ReturnType<typeof renderFeature>): string[] {
 }
 
 function actionShown(rows: readonly string[], issue: RecoveryIssue, action: RecoveryAction) {
-  const label = recoveryMenuLabel(action, issue).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const label = recoveryMenuParts(action, issue)
+    .map((part) => part.text)
+    .join('')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const row = new RegExp(`\\b${recoveryActionKey(action)}\\s+${label}`);
   return rows.some((text) => row.test(text));
 }

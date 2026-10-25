@@ -6,7 +6,7 @@ import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
 import { TEST_METADATA, TEST_SINKS } from '#testing/helpers/orchestrator-factories.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -484,6 +484,154 @@ describe('runFinalReviewPhase', () => {
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(false);
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_JSON_FILE))).toBe(false);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+  });
+
+  it.each([
+    {
+      name: 'refuses a fix-task test check on a test file the run deleted',
+      value: 'src/a.test.mjs',
+      files: ['src/a.mjs'],
+      refused: true,
+    },
+    {
+      name: 'refuses a fix-task test check on a path with a typo',
+      value: 'src/a.tset.mjs',
+      files: ['src/a.mjs'],
+      refused: true,
+    },
+    {
+      name: 'accepts a fix-task test check on a new test file the fix task lists',
+      value: 'src/new.test.mjs',
+      files: ['src/a.mjs', 'src/new.test.mjs'],
+      refused: false,
+    },
+  ])('$name', async ({ value, files, refused }) => {
+    const { projectDir, sessionId, runStartHead } = setupProject({
+      'package.json': JSON.stringify({ scripts: { test: 'node --test' } }),
+      'src/a.mjs': 'export const a = 1;\n',
+      'src/a.test.mjs': '',
+    });
+    rmSync(join(projectDir, 'src/a.test.mjs'));
+    const refusal = `Check FC1 is refused: a \`test\` check names one test file, and \`${value}\` is no test file in the workspace, and no task lists it. Set its value to an existing test file, or list the new test file in a task's files.`;
+    const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
+    const { reviewer, prompts } = makeReviewer((prompt) => {
+      const failed = failedReviewVerdict(prompt, 'a is wrong');
+      return {
+        ...failed,
+        fixTasks: failed.fixTasks.map((task) => ({
+          ...task,
+          suggestedFiles: files,
+          checks: [{ id: 'FC1', kind: 'test' as const, value, required: true }],
+        })),
+      };
+    });
+
+    await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig({ validation: { testCommand: undefined } }),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state,
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+    });
+
+    if (refused) expect(prompts[1]).toContain(refusal);
+    else expect(prompts).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      name: 'refuses a fix-task npm run check on a script package.json does not define',
+      tasks: [{ files: ['src/a.mjs'], check: { kind: 'cmd' as const, value: 'npm run tset' } }],
+      refusal:
+        "Check FC1 is refused: `npm run tset` runs the npm script tset, which package.json does not define. Name a script that package.json defines, or list package.json in the task's files and add the script there.",
+    },
+    {
+      name: 'accepts a fix-task npm run check on a script the fix task adds to package.json',
+      tasks: [
+        {
+          files: ['src/a.mjs', 'package.json'],
+          check: { kind: 'cmd' as const, value: 'npm run tset' },
+        },
+      ],
+      refusal: null,
+    },
+    {
+      name: 'refuses a fix-task render check when the project sets no render command',
+      tasks: [{ files: ['src/a.mjs'], check: { kind: 'render' as const, value: 'workflow-x' } }],
+      refusal:
+        'Render check FC1 needs validation.render, which is not set; use a check of another kind.',
+    },
+    {
+      name: 'accepts a fix-task test check on a test file an earlier fix task writes',
+      tasks: [
+        {
+          files: ['src/new.test.mjs'],
+          check: { kind: 'test' as const, value: 'src/new.test.mjs' },
+        },
+        { files: ['src/a.mjs'], check: { kind: 'test' as const, value: 'src/new.test.mjs' } },
+      ],
+      refusal: null,
+    },
+    {
+      name: 'accepts a fix-task test check on a test file a later fix task writes',
+      tasks: [
+        { files: ['src/a.mjs'], check: { kind: 'test' as const, value: 'src/new.test.mjs' } },
+        {
+          files: ['src/new.test.mjs'],
+          check: { kind: 'test' as const, value: 'src/new.test.mjs' },
+        },
+      ],
+      refusal: null,
+    },
+  ])('$name', async ({ tasks, refusal }) => {
+    const { projectDir, sessionId, runStartHead } = setupProject({
+      'package.json': JSON.stringify({ scripts: { test: 'node --test' } }),
+      'src/a.mjs': 'export const a = 1;\n',
+    });
+    const state = {
+      ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      approve: 'plan' as const,
+    };
+    const { reviewer, prompts } = makeReviewer((prompt) => {
+      const failed = failedReviewVerdict(prompt, 'a is wrong');
+      const base = failed.fixTasks[0]!;
+      const finding = failed.findings[0]!;
+      return {
+        ...failed,
+        findings: tasks.map((_, index) => ({ ...finding, id: `F${index + 1}` })),
+        fixTasks: tasks.map(({ files, check }, index) => ({
+          ...base,
+          id: `T90${index}`,
+          suggestedFiles: files,
+          checks: [{ id: `FC${index + 1}`, ...check, required: true }],
+          findingIds: [`F${index + 1}`],
+        })),
+      };
+    });
+
+    await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig({
+        validation: { testCommand: undefined },
+        workflow: { approve: 'plan' },
+      }),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state,
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+    });
+
+    if (refusal !== null) expect(prompts[1]).toContain(refusal);
+    else expect(prompts).toHaveLength(1);
   });
 
   it('fails the review, never passes it, when the plan call fails', async () => {

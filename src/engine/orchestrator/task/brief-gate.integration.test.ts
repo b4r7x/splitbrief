@@ -691,7 +691,7 @@ describe('brief gate', () => {
         expect(result.acceptance.accepted).toBe(false);
         expect(result.error).toMatch(/^check V1 did not pass \(fail\): .*TS2322/s);
         expect(result.error).toContain(
-          `your 1\u00a0failure remains\nYour failures that remain:\n- ${NEW_KEY}\nOther failures:\n- ${OLD_RED}\nOutput tail:`,
+          `your\u00a01\u00a0failure\u00a0remains, 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review\nYour failures that remain:\n- ${NEW_KEY}\nOther failures, not this brief's job:\n- ${OLD_RED}\nOutput tail:`,
         );
         expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', status: 'fail' }]);
       });

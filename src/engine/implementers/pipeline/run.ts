@@ -53,10 +53,9 @@ import {
   typedRunnerCallErrorMessage,
 } from './call-result.js';
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
-import { runnerAuthDisplayName } from '../../runners/auth-failure.js';
 import { extractLastJsonObject } from '../../runners/typed-output.js';
 import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
-import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { processError } from '../../../lib/process/errors.js';
 import { isApiDeadlineError } from '../../providers/api-deadlines.js';
 import {
@@ -440,7 +439,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       baseConfig.publisher?.publishWarning({
         phase: opts.phase,
         taskId: opts.task.id,
-        message: `Task ${opts.task.id}: your checkout changed while ${runnerAuthDisplayName(opts.config.implementer)} ran — ${formatCheckoutChanges(files)}; nothing there was reverted`,
+        message: `Task ${opts.task.id}: your checkout changed while ${getRunnerCatalogDisplayName(opts.config.implementer)} ran — ${formatCheckoutChanges(files)}; nothing there was reverted`,
         safety: { category: 'implementer', code: 'checkout_changed_during_call' },
       });
     }
@@ -770,7 +769,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
             baseConfig.publisher?.publishWarning({
               phase,
               taskId: task.id,
-              message: `Implementer ${getRunnerDisplayName(config.implementer)} wrote nothing for task ${task.id}: ${changes.output}`,
+              message: `Implementer ${getRunnerCatalogDisplayName(config.implementer)} wrote nothing for task ${task.id}: ${changes.output}`,
               safety: {
                 category: 'implementer',
                 code: 'implementer_wrote_nothing',

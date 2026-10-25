@@ -2,7 +2,7 @@ import type { Phase } from '../../../../src/core/schemas/enums.js';
 import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../src/core/schemas/evidence.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
-import type { RunStatus } from '../../../../src/core/sessions/run-status.js';
+import { deriveRunStatus, type RunStatus } from '../../../../src/core/sessions/run-status.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import { makeTask } from '../../../helpers/factories/task.js';
@@ -21,7 +21,11 @@ import {
   resolveProviderRunMetadata,
 } from '../../../../src/engine/providers/cost/breakdown.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
-import { buildSeatDownIssue } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import {
+  buildRunnerInputTooLargeRecoveryIssue,
+  buildSeatDownIssue,
+} from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import { argvPromptTooLarge } from '../../../../src/engine/runners/input-limit.js';
 import {
   buildApplyConflictRecoveryIssue,
   buildApplyPartialRecoveryIssue,
@@ -726,6 +730,79 @@ const AT_REST_HALTED = record({
   }),
 });
 
+/** A BUILD seat that takes its prompt on the command line, declaring a fallback that reads stdin. */
+const ARGV_IMPLEMENTER = {
+  kind: 'cli',
+  tool: 'opencode',
+  model: 'opencode-go/deepseek-v4.1-flash',
+  fallback: { tool: 'codex', model: 'gpt-5-codex' },
+} as const;
+
+const AT_REST_PROMPT_TOO_LARGE = record({
+  sessionId: 'visual-at-rest-prompt-too-large',
+  status: {
+    kind: 'open',
+    stop: {
+      kind: 'waiting-for-you',
+      on: {
+        kind: 'halt',
+        issue: buildRunnerInputTooLargeRecoveryIssue({
+          id: 'visual-prompt-too-large',
+          task: makeTask({
+            id: BRIEFS.wire.id,
+            title: BRIEFS.wire.title,
+            suggestedFiles: [BRIEFS.wire.file],
+          }),
+          phase: 'implementing',
+          runner: ARGV_IMPLEMENTER,
+          toolMessage: argvPromptTooLarge(195_203, 120_000).message,
+          attempts: 1,
+          maxAttempts: 8,
+          seatSwap: {
+            seat: 'build',
+            currentTool: 'opencode',
+            fallback: ARGV_IMPLEMENTER.fallback,
+            detectedTools: [{ ...ARGV_IMPLEMENTER.fallback, ready: true }],
+          },
+          createdAt: STARTED_AT_ISO,
+        }),
+      },
+    },
+    resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 1 },
+  },
+  state: savedState({
+    phase: 'implementing',
+    currentTaskIndex: 1,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'in_progress' },
+      { id: BRIEFS.routeTests.id, status: 'pending' },
+    ],
+    implementerTool: ARGV_IMPLEMENTER.tool,
+    implementerModel: ARGV_IMPLEMENTER.model,
+  }),
+});
+
+/**
+ * A brief routed to a Codex profile hit its usage limit and the run waits for the reset; the saved
+ * BUILD seat is Ollama, so the byline names the tool the wait is on, not the saved one.
+ */
+const SEAT_WAIT_STATE = savedState({
+  phase: 'implementing',
+  currentTaskIndex: 1,
+  briefs: [
+    { id: BRIEFS.validator.id, status: 'done' },
+    { id: BRIEFS.wire.id, status: 'in_progress' },
+    { id: BRIEFS.routeTests.id, status: 'pending' },
+  ],
+  seatWait: { seat: 'build', tool: 'codex', kind: 'cli', resetAt: '2026-09-14T17:00:00.000Z' },
+});
+const AT_REST_SEAT_WAIT = record({
+  sessionId: 'visual-at-rest-seat-wait',
+  status: deriveRunStatus({ state: SEAT_WAIT_STATE, liveness: 'not-alive' }),
+  state: SEAT_WAIT_STATE,
+});
+
 /** The same halt with Try again chosen and saved, and the process killed before it ran. */
 const AT_REST_HALTED_CHOSEN = record({
   sessionId: 'visual-at-rest-halted-chosen',
@@ -948,6 +1025,28 @@ const READY_CREW_SAVED = record({
     reviewerAxes: ['high'],
   },
   ledger: { ...READY_LEDGER, sessionId: 'visual-ready-crew-saved' },
+});
+
+/**
+ * A ready run whose BUILD seat moved to Antigravity with its model left automatic after the first
+ * brief: the moved seat names the tool it moved to, and the sidebar breaks it after the arrow.
+ */
+const READY_SEAT_MOVED_AUTO = record({
+  sessionId: 'visual-ready-seat-moved-auto',
+  status: READY_TO_APPLY.status,
+  state: READY_TO_APPLY.hydration.state,
+  summary: {
+    ...workspaceSummary('visual-ready-seat-moved-auto'),
+    implementerTool: 'antigravity',
+    implementerModel: 'auto',
+    taskBreakdown: READY_TASKS.map((task, index) => ({
+      ...task,
+      ...(index === 0
+        ? { tool: 'antigravity', model: 'gemini-3.8-flash-high' }
+        : { tool: 'antigravity', model: 'auto' }),
+    })),
+  },
+  ledger: { ...READY_LEDGER, sessionId: 'visual-ready-seat-moved-auto' },
 });
 
 /** The ready run while an Apply holds it: the record reads running, not ready. */
@@ -2595,10 +2694,18 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   }),
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
+  atRestProjection({ id: 'workflow-at-rest-seat-wait', route: { record: AT_REST_SEAT_WAIT } }),
   atRestProjection({
     id: 'workflow-at-rest-halted-chosen',
     route: { record: AT_REST_HALTED_CHOSEN },
   }),
+  {
+    ...atRestProjection({
+      id: 'workflow-at-rest-prompt-too-large',
+      route: { record: AT_REST_PROMPT_TOO_LARGE },
+    }),
+    config: { implementer: ARGV_IMPLEMENTER },
+  },
   atRestProjection({
     id: 'workflow-at-rest-apply-conflict',
     route: { record: AT_REST_APPLY_CONFLICT, log: APPLY_CONFLICT_LOG },
@@ -2655,6 +2762,13 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     ...atRestProjection({
       id: 'workflow-ready-crew-saved',
       route: { record: READY_CREW_SAVED, log: READY_LOG },
+    }),
+    sidebarVisible: true,
+  },
+  {
+    ...atRestProjection({
+      id: 'workflow-ready-seat-moved-auto',
+      route: { record: READY_SEAT_MOVED_AUTO },
     }),
     sidebarVisible: true,
   },
