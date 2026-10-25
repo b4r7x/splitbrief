@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- On a question with no choices, ↑ in the answer field no longer moves you to the instruction box below it.
 - The Seat down title for two timeouts in a row on one brief no longer counts the attempts a second time.
 - Checks, hooks, renders and the editor now run with your own NODE_ENV, or none if you set none, instead of production. A check that installs packages or runs React tests no longer fails in every review while it passes in your shell.
 - After a failed review, a check that names a missing or mistyped test file, an npm script that package.json does not define, a Rust file with no test, or a render with a bad name or no render command no longer stops the run with only "Run the checks again" and End run. The reviewer corrects the check, or the check fails and the builder fixes it.

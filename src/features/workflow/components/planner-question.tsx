@@ -188,12 +188,15 @@ export function PlannerQuestion({
                 return false;
               }}
               onBoundaryNavigate={(direction) => {
-                questionPromptStore.setFocus(
-                  direction === 'down' || (choices.length === 0 && state.index === 0)
-                    ? 'composer'
-                    : 'menu',
-                );
-                return true;
+                if (direction === 'down') {
+                  questionPromptStore.setFocus('composer');
+                  return true;
+                }
+                if (!composerOnly) {
+                  questionPromptStore.setFocus('menu');
+                  return true;
+                }
+                return false;
               }}
             />
           </Box>

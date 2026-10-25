@@ -553,3 +553,63 @@ it('parks accumulated answer images in question order after successful preparati
     cleanupTempDir(projectDir);
   }
 });
+
+it.each<[ClarificationQuestion, string]>([
+  [{ id: 'cache', type: 'input', text: 'Which cache key must the repair preserve?' }, ''],
+  [
+    { id: 'cache', type: 'input', text: 'Which cache key must the repair preserve?' },
+    'src/cache.ts',
+  ],
+  [{ id: 'consult-store', type: 'input', text: 'Which store?' }, ''],
+  [{ id: 'consult-store', type: 'input', text: 'Which store?' }, 'src/cache.ts'],
+])(
+  'keeps focus and draft in the answer field on ↑ for a question with no rows',
+  async (question, draft) => {
+    let now = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    store.setQuestions([question]);
+    const ui = renderQuestion();
+    await flushEffects();
+    now += 200;
+    if (draft !== '') {
+      ui.stdin.write(draft);
+      await flushEffects();
+    }
+    ui.stdin.write('\u001b[A');
+    await flushEffects();
+    expect(store.get().focus).toBe('answer');
+    expect(store.get().drafts[0]?.text).toBe(draft);
+    ui.unmount();
+  },
+);
+
+it('moves focus to the composer on ↓ in a question with no rows', async () => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  store.setQuestions([
+    { id: 'cache', type: 'input', text: 'Which cache key must the repair preserve?' },
+  ]);
+  const ui = renderQuestion();
+  await flushEffects();
+  now += 200;
+  ui.stdin.write('\u001b[B');
+  await flushEffects();
+  expect(store.get().focus).toBe('composer');
+  ui.unmount();
+});
+
+it('moves focus from the answer field to the menu on ↑ in a choice question', async () => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  store.setQuestions([
+    { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+  ]);
+  store.setFocus('answer');
+  const ui = renderQuestion();
+  await flushEffects();
+  now += 200;
+  ui.stdin.write('\u001b[A');
+  await flushEffects();
+  expect(store.get().focus).toBe('menu');
+  ui.unmount();
+});
