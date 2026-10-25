@@ -142,7 +142,7 @@ function isSeatIds(seat: RunnerConfig | SeatIds): seat is SeatIds {
   return 'tool' in seat && (seat.kind !== 'cli' || !isCliToolId(seat.tool));
 }
 
-function idsOf(seat: RunnerConfig | SeatIds): SeatIds {
+export function idsOf(seat: RunnerConfig | SeatIds): SeatIds {
   return isSeatIds(seat) ? seat : seatIdsOf(seat);
 }
 
@@ -454,9 +454,9 @@ function fitCollapsedSeats(
 
 export function formatCollapsedSeatSpans(
   input: Readonly<{
-    planner: RunnerConfig;
-    build: RunnerConfig;
-    reviewer: RunnerConfig | undefined;
+    planner: RunnerConfig | SeatIds;
+    build: RunnerConfig | SeatIds;
+    reviewer: RunnerConfig | SeatIds | undefined;
     budget?: number | undefined;
     haltedSeat?: CrewSeatId | undefined;
     /** What each seat is carrying right now, e.g. the reset clock of a quota-blocked seat. */

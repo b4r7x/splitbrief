@@ -20,6 +20,7 @@ import type { RailStageState } from '../../../core/rail-stages.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
 import { Rail } from './rail.js';
 import { useRailCells } from '../hooks/use-rail-cells.js';
+import { useRunningSeats } from '../hooks/use-running-seats.js';
 
 interface HeaderProps {
   railForm?: RailForm | undefined;
@@ -72,27 +73,41 @@ export function Header({
 }: HeaderProps) {
   const [{ cols }, recoveryNotice] = useStores(terminalSizeStore, recoveryNoticeStore);
   const config = configStore.use((s) => s.config);
+  const running = useRunningSeats();
   const savedHalt = routerStore.use((state) =>
     state.screen === 'workflow' && state.execution.kind === 'at-rest'
       ? haltedIssue(state.run.status)
       : null,
   );
   const displayNames = useCrewDisplayNames(config);
+  const planDisplay = running.plan !== undefined ? running.plan.displayName : displayNames.plan;
+  const buildDisplay = running.build !== undefined ? running.build.displayName : displayNames.build;
+  const reviewDisplay =
+    running.review !== undefined ? running.review.displayName : displayNames.review;
   const railCells = useRailCells({ form: railForm, buildBlockShown, stages });
 
   // The room does not depend on the line, so the first pass measures it, the
   // line is cut to it, and the second pass lays the bar out around what fits.
   const { seatRoom } = getHeaderLayout({ cols, railCells });
   const seatNotes = seatResetNotes(recoveryNotice.seat, recoveryNotice.resetAt);
-  const liveSeatLine = config
+  const seats = config && {
+    plan: running.plan?.seat ?? config.planner,
+    build: running.build?.seat ?? resolveImplementerProfiles(config).defaultProfile.config,
+    review: running.review?.seat ?? configuredReviewerRunner(config),
+  };
+  const liveSeatLine = seats
     ? formatCollapsedSeatSpans({
-        planner: config.planner,
-        build: resolveImplementerProfiles(config).defaultProfile.config,
-        reviewer: configuredReviewerRunner(config),
+        planner: seats.plan,
+        build: seats.build,
+        reviewer: seats.review,
         budget: seatRoom,
         haltedSeat: recoveryNotice.seat ?? savedHalt?.seat,
-        displayNames,
         ...(seatNotes !== undefined && { notes: seatNotes }),
+        displayNames: {
+          ...(planDisplay !== undefined && { planner: planDisplay, plan: planDisplay }),
+          ...(buildDisplay !== undefined && { build: buildDisplay }),
+          ...(reviewDisplay !== undefined && { reviewer: reviewDisplay, review: reviewDisplay }),
+        },
       })
     : [];
   const seatLine = givenSeatLine ?? liveSeatLine;

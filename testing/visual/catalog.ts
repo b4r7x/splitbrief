@@ -2026,6 +2026,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-paused-cut-seat',
+      title: 'Workflow · parked mid-brief on a seat saved over',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'paused-cut-seat',
+        title: 'Parked mid-brief, BUILD saved over',
+        kind: 'question',
+        marker: 'Stopped at T',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-paused-boundary',
       title: 'Workflow · parked at a brief boundary',
       surface: screenSurface('workflow'),
@@ -3281,6 +3298,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-seat-crew-changed',
       title: 'Workflow · BUILD seat changed in the crew before a continue',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'seat-crew-changed',
         title: 'Crew change row in the transcript',
@@ -4188,6 +4206,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-planning-seat-change',
       title: 'Workflow · a seat saved while the plan is made',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'planning-seat-change',
         title: 'Planning goes on and the legend names when the seat changes',
@@ -4196,6 +4215,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -4203,6 +4223,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-plan-card-seat-change',
       title: 'Workflow · a seat saved while the plan card waits',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'plan-card-seat-change',
         title: 'The plan card keeps waiting for an answer',
@@ -4211,6 +4232,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
         { id: 'approval-panel', title: 'Plan card panel' },
         { id: 'composer', title: 'Workflow composer' },
       ],
@@ -4219,6 +4241,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-implementation-seat-change',
       title: 'Workflow · a seat saved under the running brief',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'implementation-seat-change',
         title: 'The brief runs on and the legend names when the seat changes',
@@ -4227,6 +4250,42 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-shell-seat',
+      title: 'Workflow · a custom shell BUILD seat under the running brief',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation-shell-seat',
+        title: 'Every surface names the seat Custom Shell',
+        kind: 'implementation',
+        marker: 'Custom Shell',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-build-brief-check-seat-change',
+      title: 'Workflow · a seat saved while the brief runs its check between attempts',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'build-brief-check-seat-change',
+        title: 'The brief keeps its seat during its checks',
+        kind: 'implementation',
+        marker: 'Plan check K2',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -4234,6 +4293,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-final-review-seat-change',
       title: 'Workflow · a seat saved in the final review',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'final-review-seat-change',
         title: 'The review runs on and the legend names a fix brief or the next run',
@@ -4242,6 +4302,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

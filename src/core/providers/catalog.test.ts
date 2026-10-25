@@ -18,11 +18,17 @@ describe('provider catalog', () => {
     expect(getRunnerIdentityDisplayName(undefined, kind)).toBe(label);
   });
 
-  it.each(['shell', 'agent'] as const)('keeps real %s command names literal', (kind) => {
-    for (const command of ['claude', 'opencode', 'claude-code', 'custom-command']) {
-      expect(getRunnerIdentityDisplayName(kind, command)).toBe(command);
-    }
-  });
+  it.each([
+    ['shell', 'Custom Shell'],
+    ['agent', 'Agent'],
+  ] as const)(
+    'names every %s command by its kind word, never by the CLI it shares a name with',
+    (kind, word) => {
+      for (const command of [kind, 'claude', 'opencode', 'claude-code', './custom-command']) {
+        expect(getRunnerIdentityDisplayName(kind, command)).toBe(word);
+      }
+    },
+  );
 
   it('projects admitted Cursor as a CLI, not an API provider', () => {
     expect(Object.keys(PROVIDER_CATALOG).sort()).toEqual([...PROVIDER_IDS].sort());

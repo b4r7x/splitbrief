@@ -69,6 +69,11 @@ export function takesSeatAtBoundary(): boolean {
   return (status === 'running' || status === 'paused') && recoveryNoticeStore.get().issue === null;
 }
 
+/** A stop parked the run inside a call, and the run goes on with that call when it continues. */
+export function parksCutCall({ phase, parked }: StopState): boolean {
+  return phase === 'parked' && parked?.kind === 'mid-brief' && parked.resolve !== null;
+}
+
 function markSeatChange(pending: boolean): void {
   store.set((s) => ({ ...s, seatChange: pending }));
 }

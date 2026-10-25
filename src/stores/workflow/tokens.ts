@@ -8,6 +8,7 @@ import {
 } from '../../core/schemas/tokens.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
+import type { SeatIdentity } from '../../core/providers/seat-identity.js';
 import { attributePhaseTokenDelta } from '../../core/state/token-attribution.js';
 import * as typeGuards from '../../utils/type-guards.js';
 
@@ -69,16 +70,8 @@ export interface TokensState {
   perPhase: Partial<Record<Phase, PhaseTokens>>;
   perTask: Record<string, PerTaskTokens>;
   completedTaskCount: number;
-  pricingContext: PricingContext | null;
-}
-
-interface PricingContext {
-  plannerTool: string;
-  implementerTool: string;
-  plannerModel?: string | undefined;
-  implementerModel?: string | undefined;
-  reviewerTool?: string | undefined;
-  reviewerModel?: string | undefined;
+  /** The seats this run pass holds: the run is priced on them, and the chrome names them. */
+  passSeats: SeatIdentity | null;
 }
 
 const initial: TokensState = {
@@ -86,7 +79,7 @@ const initial: TokensState = {
   perPhase: {},
   perTask: {},
   completedTaskCount: 0,
-  pricingContext: null,
+  passSeats: null,
 };
 
 const store = createStore<TokensState>(initial);
@@ -143,13 +136,19 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'workflow_config':
       return {
         ...state,
-        pricingContext: {
+        passSeats: {
           plannerTool: event.plannerTool,
-          implementerTool: event.implementerTool,
           plannerModel: event.plannerModel,
+          plannerKind: event.plannerKind,
+          plannerAxes: event.plannerAxes,
+          implementerTool: event.implementerTool,
           implementerModel: event.implementerModel,
+          implementerKind: event.implementerKind,
+          implementerAxes: event.implementerAxes,
           reviewerTool: event.reviewerTool,
           reviewerModel: event.reviewerModel,
+          reviewerKind: event.reviewerKind,
+          reviewerAxes: event.reviewerAxes,
         },
       };
 

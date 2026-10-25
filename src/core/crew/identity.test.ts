@@ -469,13 +469,13 @@ describe('formatSeatIdentity', () => {
     expect(identity).not.toContain('›');
   });
 
-  it('names a recorded call by the tool its command starts, and a shell command literally', () => {
+  it('names a recorded call by the tool its command starts, and a shell command by its kind', () => {
     expect(
       formatSeatIdentity({ seat: { tool: 'claude', model: 'sonnet', axes: [], kind: 'cli' } }),
     ).toMatch(/^Claude Code CLI · /);
     expect(
       formatSeatIdentity({ seat: { tool: 'claude', model: 'gpt-5', axes: [], kind: 'shell' } }),
-    ).toBe('claude · GPT-5');
+    ).toBe('Custom Shell · GPT-5');
   });
 
   it('keeps the configured Shell and Agent seat words when their commands are recorded separately', () => {
@@ -505,7 +505,7 @@ describe('formatSeatIdentity', () => {
     ).toBe('Opus');
     expect(
       formatSeatIdentity({ seat: { tool: 'claude-code', model: 'opus', axes: [], kind: 'shell' } }),
-    ).toBe('claude-code · Opus');
+    ).toBe('Custom Shell · Opus');
   });
 
   it('says the automatic word instead of resolving a catalog default', () => {

@@ -18,7 +18,7 @@ import { deriveUsageDetails, formatUsageMoney, statesAmount } from './usage-deta
 /** Saved runs keep their saved rates; live runs price the calls they actually recorded. */
 export function usageDetailsForRun(input: {
   route: RouteData;
-  tokens: Pick<TokensState, 'tokenUsage' | 'pricingContext'>;
+  tokens: Pick<TokensState, 'tokenUsage' | 'passSeats'>;
   config: Config | null;
   modelCache: ModelCacheAccessor;
 }): UsageDetailsInput {
@@ -41,7 +41,7 @@ export function usageDetailsForRun(input: {
     evidence.length === 0
       ? tokens.tokenUsage
       : reconcileTokenUsage(tokens.tokenUsage ?? ZERO_TOKEN_USAGE, observed);
-  const identity = tokens.pricingContext ?? (config === null ? null : runSeatIdentity(config));
+  const identity = tokens.passSeats ?? (config === null ? null : runSeatIdentity(config));
   const costBreakdown =
     identity === null
       ? null

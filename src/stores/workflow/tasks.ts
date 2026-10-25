@@ -22,10 +22,13 @@ export interface WorkflowTask {
   file?: string;
   files?: string[];
   action?: FileAction;
+  /** The seat the build started this brief on in the live run; a resume drops it. */
   route?: {
     profile?: string;
     runner?: string;
     model?: string;
+    axes?: readonly string[];
+    backendKind?: EngineEventOf<'task_started'>['backendKind'];
   };
 }
 
@@ -232,9 +235,18 @@ export function updateTaskMap(
           ...(event.implementerProfile !== undefined && { profile: event.implementerProfile }),
           ...(event.tool !== undefined && { runner: event.tool }),
           ...(event.model !== undefined && { model: event.model }),
+          ...(event.axes !== undefined && { axes: event.axes }),
+          ...(event.backendKind !== undefined && { backendKind: event.backendKind }),
         },
       }),
     });
+    return next;
+  }
+  // A resumed run reads its seats again, so a brief it starts again runs on the saved seat.
+  if (event.type === 'workflow_resumed') {
+    if (![...taskMap.values()].some((task) => task.route !== undefined)) return taskMap;
+    const next = new Map<string, WorkflowTask>();
+    for (const [id, { route: _route, ...task }] of taskMap) next.set(id, task);
     return next;
   }
   if (event.type === 'task_completed' || event.type === 'task_skipped') {

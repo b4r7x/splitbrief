@@ -3,6 +3,7 @@ import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifa
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { scenarioId } from '../../contracts/identifiers.js';
+import { BASE_PLANNER } from '../screen-fixtures.js';
 import type { WorkflowFixtureProjection } from './projections.js';
 
 const CARD_TS = 1_783_958_400_000;
@@ -54,7 +55,7 @@ export const tasksCardProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       status: 'running',
       tool: 'claude-code',
-      model: 'fixture-planner-v1',
+      model: BASE_PLANNER.model,
       call: 'plan',
     },
     {
