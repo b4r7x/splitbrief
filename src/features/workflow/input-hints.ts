@@ -30,8 +30,9 @@ export function queuePlaceholder(input: {
       }).placeholder;
 }
 
-// A gate that is on screen is its own legend: the review and question panels spell out every live
-// key inside their own border, so the byline stays silent rather than teaching the keys twice.
+// A review panel spells out its own keys, and a question's hint is the composer's placeholder,
+// which the composer already shows. So neither is the legend row's word, and the row stays silent
+// rather than say it twice.
 export function resolveInputHint(input: InputHintInput): string {
   const { inputHint, inputMode } = input;
   if (inputMode === 'review' || inputMode === 'question') return '';

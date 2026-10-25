@@ -13,7 +13,8 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { fitKeyLegend, KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { fitFeedbackMessage } from '../../../components/composer/feedback-fit.js';
-import { hintStateSeverity } from '../input-hints.js';
+import { hintStateSeverity, resolveInputHint } from '../input-hints.js';
+import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 
 // The keys a run answers to while it is working. `esc` opens the stop sheet rather than stopping,
@@ -43,6 +44,7 @@ export function FeedbackRow({
 }) {
   const [{ message, isError }] = useStores(feedbackStore);
   const inputMode = controlsStore.use((s) => s.inputMode);
+  const questions = questionPromptStore.use((s) => s.questions);
   const approvalPending = approvalPromptStore.use((s) => s.status === 'pending');
   const running = lifecycleStore.use((s) => s.status === 'running');
   const stopped = useStopByline();
@@ -50,8 +52,13 @@ export function FeedbackRow({
   const t = useTheme();
 
   // A panel that is on screen owns the legend. Anything this row could add beside it would either
-  // repeat a key the panel already names or advertise one the panel has taken away.
-  const owned = approvalPending || inputMode !== 'normal';
+  // repeat a key the panel already names or advertise one the panel has taken away. Question mode
+  // owns the row only while a question panel is on screen (questions?.length !== 0): undefined
+  // means a recovery or hint panel is up, and [] means Esc closed the round or the reply is prose.
+  const owned =
+    approvalPending ||
+    inputMode === 'review' ||
+    (inputMode === 'question' && questions?.length !== 0);
   const safeMessage = message === null ? null : summarizeDisplayLine(message);
   // One cell short of the edge: a legend that ends in the last column reads as cut off even when
   // every token it names is whole. The leading is spent before the keys are fitted.
@@ -91,7 +98,7 @@ export function FeedbackRow({
         word = keyHintFitted;
         isLegend = true;
       } else {
-        const inputWord = summarizeDisplayLine(inputHint);
+        const inputWord = summarizeDisplayLine(resolveInputHint({ inputHint, inputMode }));
         if (inputWord !== '') word = inputWord;
         else if (runningHint !== '') {
           word = runningHint;
