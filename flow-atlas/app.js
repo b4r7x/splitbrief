@@ -19,6 +19,7 @@
   var REF_RE = /(?:[\w@.\-]+\/)+(?:[\w@.\-]+)?(?::\d+(?:-\d+)?)?|\.?[\w@\-]+(?:\.[\w@\-]+)*\.(?:jsonl|json|tsx|ts|mjs|cjs|js|md|yaml|yml|sh|toml|txt)(?![\w.\-])(?::\d+(?:-\d+)?)?/g;
   var VIEWS = [
     ['map', 'Mapa'],
+    ['faq', 'Pytania (FAQ)'],
     ['decisions', 'Wszystkie decyzje'],
     ['config', 'Konfiguracja'],
     ['scenarios', 'Scenariusze'],
@@ -39,8 +40,71 @@
     scrollMemo: Object.create(null),
     sources: new WeakMap(),
     panzoom: new WeakMap(),
-    mapNodes: new Map()
+    mapNodes: new Map(),
+    faq: [],
+    faqById: new Map()
   };
+
+  var MIN_FIT = 0.6;
+  var FAQ_PAGE = { id: 'faq', title: 'Pytania (FAQ)', order: -1 };
+  var TOP_FAQ = ['limit', 'fallback', 'needs-you-vs-seat-down', 'crash', 'apply-fails', 'ready-vs-closed'];
+  var FAQ_TAGS = [
+    ['limity', 'Limity'],
+    ['fallback', 'Fallback'],
+    ['recovery', 'Halty i recovery'],
+    ['stop', 'Stop, crash, stan runu'],
+    ['start', 'Start i tryby'],
+    ['planowanie', 'Planowanie'],
+    ['build', 'Build'],
+    ['review', 'Review'],
+    ['apply', 'Apply i zamknięcie'],
+    ['pliki', 'Pliki']
+  ];
+  var FLOW_MAIN = [
+    { area: 'startup', title: 'Start', sub: 'config, gotowość, dopuszczenie seatów', facts: [
+      ['Node 22+, repo git, terminal albo --json', 'ST_GIT_REPO'],
+      ['jeden zablokowany seat blokuje start', 'ST_SEATS_BLOCKED'],
+      ['brak configu otwiera ekran Setup', 'ST_NEEDS_SETUP']
+    ] },
+    { area: 'planning', title: 'Planowanie', sub: 'pytania → plan.json → sprawdzenia → karta', facts: [
+      ['do 3 pytań w 2 rundach', 'PL_ROUNDS_EXHAUSTED'],
+      ['jedna naprawa planu, potem halt', 'PL_CHECK_ERRORS'],
+      ['karta planu przy approve: plan', 'PL_APPROVE_LEVEL']
+    ] },
+    { area: 'build', title: 'Build', sub: 'brief → próba → bramka → retry → konsultacja', facts: [
+      ['1 retry lokalny, potem konsultacja', 'BD_LOCAL_RUNG'],
+      ['8 prób i 2 konsultacje na brief', 'BD_CONSULT_BOUND'],
+      ['testy dopiero przed review (review: end)', 'BD_BRIEF_GATE_CHECKS']
+    ] },
+    { area: 'review', title: 'Review', sub: 'checki → komendy reviewera → werdykt → fix loop', facts: [
+      ['czerwona komenda biegnie też na run base', 'RV_BASE_RESULT'],
+      ['2 cykle naprawcze, potem halt', 'RV_CAP'],
+      ['nieudane wywołanie nigdy nie jest pass', 'RV_PASSED']
+    ] },
+    { area: 'lifecycle', title: 'Apply / zamknięcie', sub: 'ready-to-apply → Apply · Discard · End run', facts: [
+      ['checkout: pass od razu zamyka run', 'RV_AFTER_PASS'],
+      ['merge 3-stronny, backup, osłona hashy', 'LC_BACKUP_CHANGED'],
+      ['Discard i End run zapisują run.patch', 'LC_CLOSE_PATCH']
+    ] }
+  ];
+  var FLOW_EXITS = [
+    { area: 'lifecycle', href: '#diagram/lc-stop-resume', title: 'Stop i wznowienie', sub: 'esc, ctrl+c, Pause after this brief', facts: [
+      ['Stop now: park w połowie kroku, pliki zostają', 'LC_STOP_KIND'],
+      ['⏎ albo tekst w composerze kontynuuje', 'JR_CONTINUE_GUARD'],
+      ['End run to jedyne zamknięcie z klawiatury', 'JR_STOP_KIND']
+    ] },
+    { area: 'recovery', title: 'Halt → recovery', sub: 'Needs you · Seat down · limit · fallback', facts: [
+      ['Needs you albo Seat down: jeden tytuł na halt', 'RC_HALT_OF'],
+      ['reset do 10 min na BUILD: ciche czekanie', 'RC_RESET_WAIT_ONCE'],
+      ['fallback przełącza sam raz na run i seat', 'RC_AUTO_USED']
+    ] },
+    { area: 'lifecycle', href: '#diagram/lc-crash-detect', title: 'Crash', sub: 'kill -9, brak prądu, zamknięty terminal', facts: [
+      ['nic nie zapisane: stopped · interrupted', 'LC_FAILED'],
+      ['brief w toku wraca do snapshotu', 'LC_TASK_IN_FLIGHT'],
+      ['ucięty Apply: halt apply-partial', 'LC_APPLY_CUT']
+    ] }
+  ];
+  var FLOW_SUPPORT = ['journey', 'runners', 'ui', 'subsystems', 'structure'];
 
   function store(key, value) {
     try {
@@ -137,7 +201,25 @@
         S.decisionDiagrams.get(d).push(id);
       });
     });
+    loadFaq();
     buildIndex();
+  }
+
+  function loadFaq() {
+    arr(window.ATLAS_FAQ).forEach(function (f) {
+      if (!f || typeof f !== 'object' || !f.id || S.faqById.has(str(f.id))) return;
+      var item = { id: str(f.id), q: str(f.q), a: str(f.a), refs: arr(f.refs).map(str).filter(Boolean), tags: arr(f.tags).map(str).filter(Boolean) };
+      S.faq.push(item);
+      S.faqById.set(item.id, item);
+    });
+  }
+
+  function faqHref(id) {
+    return '#view/faq/q-' + id;
+  }
+
+  function sentences(text) {
+    return str(text).replace(/\s+/g, ' ').trim().split(/(?<=[.!?”])\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ`„0-9])/);
   }
 
   function normalize(a, fallbackOrder) {
@@ -228,6 +310,9 @@
   }
 
   function buildIndex() {
+    S.faq.forEach(function (f) {
+      addIndex('pytanie', FAQ_PAGE, f.q, [f.a, f.tags.join(' ')], faqHref(f.id));
+    });
     S.areas.forEach(function (a) {
       if (a.missing) return;
       var base = '#area/' + a.id;
@@ -390,7 +475,7 @@
 
   function renderSidebar() {
     var t = totals();
-    var viewCounts = { map: '', decisions: t.dec, config: t.cfg, scenarios: t.sc, structure: t.tree, glossary: t.gl };
+    var viewCounts = { map: '', faq: S.faq.length, decisions: t.dec, config: t.cfg, scenarios: t.sc, structure: t.tree, glossary: t.gl };
     document.getElementById('nav-views').innerHTML = VIEWS.map(function (v) {
       return '<a class="nav-item" data-key="view:' + v[0] + '" href="#view/' + v[0] + '"><span>' + v[1] + '</span>' +
         (viewCounts[v[0]] !== '' ? '<span class="nav-count">' + viewCounts[v[0]] + '</span>' : '') + '</a>';
@@ -442,8 +527,7 @@
         key = 'view:map';
       } else {
         key = 'area:' + g.area.id;
-        if (g.area.id === 'journey' && S.pageKey === 'view:map') key = 'view:map';
-        if (g.area.id === 'structure' && S.pageKey === 'view:structure') key = 'view:structure';
+        if (S.pageKey.indexOf('view:') === 0 && document.getElementById('dg-' + r.id)) key = S.pageKey;
         target = 'dg-' + r.id;
         focusNode = r.extra;
       }
@@ -485,6 +569,7 @@
     var parts = key.split(':');
     var html;
     if (parts[0] === 'area') html = areaPage(S.areaById.get(parts[1]));
+    else if (parts[1] === 'faq') html = faqView();
     else if (parts[1] === 'decisions') html = decisionsView();
     else if (parts[1] === 'config') html = configView();
     else if (parts[1] === 'scenarios') html = scenariosView();
@@ -571,31 +656,142 @@
   function mapView() {
     var t = totals();
     var journey = S.areaById.get('journey');
-    var html = pageHead('Flow Atlas · SPLITBRIEF', 'Mapa', 'Wszystkie przepływy i decyzje SPLITBRIEF w jednym miejscu. Kliknij obszar na grafie albo kartę poniżej.');
-    html += '<div class="stats">' +
-      stat(t.areas + '<small>/' + S.areas.length + '</small>', 'obszarów z danymi') +
-      stat(t.d, plural(t.d, 'diagram', 'diagramy', 'diagramów')) +
-      stat(t.dec, plural(t.dec, 'decyzja', 'decyzje', 'decyzji'), '#view/decisions') +
-      stat(t.sc, plural(t.sc, 'scenariusz', 'scenariusze', 'scenariuszy'), '#view/scenarios') +
-      stat(t.cfg, 'kluczy konfiguracji', '#view/config') +
-      '</div>';
+    var html = pageHead('Flow Atlas · SPLITBRIEF', 'Mapa', 'Jak SPLITBRIEF prowadzi run od startu do zamknięcia i gdzie decyduje. Romb na diagramie to decyzja: kliknij go, aby zobaczyć jej kartę.');
+    html += '<p class="map-stats">' + [
+      '<a href="#view/faq">' + S.faq.length + ' ' + plural(S.faq.length, 'pytanie', 'pytania', 'pytań') + '</a>',
+      '<a href="#view/decisions">' + nDecisions(t.dec) + '</a>',
+      nDiagrams(t.d),
+      '<a href="#view/scenarios">' + nScenarios(t.sc) + '</a>',
+      '<a href="#view/config">' + t.cfg + ' ' + plural(t.cfg, 'klucz', 'klucze', 'kluczy') + ' konfiguracji</a>',
+      t.areas + ' z ' + S.areas.length + ' obszarów z danymi'
+    ].join('<span class="sep">·</span>') + '</p>';
     html += loadProblems();
-    html += diagramCard({ id: '__map', title: 'Obszary i przejścia między nimi', caption: 'Strzałka to przejście sterowania między obszarami (pole links), dwie groty to przejście w obie strony. Obszar „Podróż” prowadzi do wszystkich, więc jego strzałek tu nie ma. Opis każdego przejścia jest w macierzy poniżej i na stronie obszaru. Kliknij węzeł, aby otworzyć obszar.', mermaid: mapSource() }, { generated: true });
-    html += linkMatrix();
-    html += '<div class="area-grid">' + S.areas.map(function (a) {
-      var c = counts(a);
-      return '<a class="area-card' + (a.missing ? ' is-missing' : '') + '" href="#area/' + esc(a.id) + '">' +
-        '<span class="area-card-order">' + esc(a.order) + '</span>' +
-        '<span class="area-card-title">' + esc(a.title) + '</span>' +
-        '<span class="area-card-tag">' + (a.missing ? 'brak danych' : inline(a.tagline)) + '</span>' +
-        (a.missing ? '' : '<span class="area-card-meta">' + nDiagrams(c.d) + ' · ' + nDecisions(c.dec) + ' · ' + nScenarios(c.sc) + '</span>') +
-        '</a>';
-    }).join('') + '</div>';
     if (journey && !journey.missing && journey.diagrams.length) {
-      html += '<h2 class="section-title">' + esc(journey.title) + ' — diagramy</h2>';
-      if (journey.tagline) html += '<p class="section-sub">' + inline(journey.tagline) + ' <a href="#area/journey">Cały obszar →</a></p>';
-      html += journey.diagrams.map(function (g) { return diagramCard(g); }).join('');
+      html += diagramCard(journey.diagrams[0], { hero: true });
+      if (journey.diagrams.length > 1) {
+        html += '<p class="map-more"><span class="muted">Więcej o całym runie:</span> ' + journey.diagrams.slice(1).map(function (g) {
+          return '<a class="pill" href="#diagram/' + esc(g.id) + '">' + esc(g.title) + '</a>';
+        }).join(' ') + '</p>';
+      }
     }
+    html += faqTop();
+    html += flowSection();
+    html += linkMatrix();
+    html += '<details class="card map-graph"><summary><strong>Graf wszystkich przejść</strong> <span class="muted">— gęsty: każdy obszar łączy się z prawie każdym; czytelniej w macierzy</span></summary>' +
+      diagramCard({ id: '__map', title: 'Obszary i przejścia między nimi', caption: 'Strzałka to przejście sterowania między obszarami (pole links), dwie groty to przejście w obie strony. Obszar „Podróż” prowadzi do wszystkich, więc jego strzałek tu nie ma. Kliknij węzeł, aby otworzyć obszar.', mermaid: mapSource() }, { generated: true }) +
+      '</details>';
+    return html;
+  }
+
+  function faqTop() {
+    var items = TOP_FAQ.map(function (id) { return S.faqById.get(id); }).filter(Boolean);
+    if (!items.length) return '';
+    return '<section class="faq-top"><div class="faq-top-head"><h2 class="section-title">Najważniejsze odpowiedzi</h2><a href="#view/faq">Wszystkie pytania (' + S.faq.length + ') →</a></div>' +
+      '<div class="faq-top-grid">' + items.map(function (f) {
+        var lead = sentences(f.a);
+        var text = lead[0] || '';
+        if (lead[1] && (text + ' ' + lead[1]).length <= 240) text += ' ' + lead[1];
+        return '<a class="faq-tile" href="' + faqHref(f.id) + '"><span class="faq-tile-q">' + esc(f.q) + '</span>' +
+          '<span class="faq-tile-a">' + inlineText(text) + '</span><span class="faq-tile-more">Pełna odpowiedź →</span></a>';
+      }).join('') + '</div></section>';
+  }
+
+  function inlineText(s) {
+    return str(s).split('`').map(function (p, i) { return i % 2 ? '<code>' + esc(p) + '</code>' : esc(p); }).join('');
+  }
+
+  function flowFacts(facts) {
+    return '<ul class="flow-facts">' + facts.map(function (f) {
+      var ok = S.decisions.has(f[1]);
+      return '<li>' + (ok ? '<a href="#decision/' + esc(f[1]) + '" title="' + esc(f[1] + ' — ' + S.decisions.get(f[1]).d.title) + '">' + esc(f[0]) + '</a>' : esc(f[0])) + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  function flowCard(st, n, kind) {
+    var a = S.areaById.get(st.area);
+    var c = a ? counts(a) : { d: 0, dec: 0, sc: 0 };
+    var href = st.href || '#area/' + st.area;
+    return '<article class="flow-card flow-' + kind + '">' +
+      '<h3>' + (n ? '<span class="flow-n">' + n + '</span>' : '<span class="flow-n flow-n-side" aria-hidden="true">↳</span>') + '<a href="' + esc(href) + '">' + esc(st.title) + '</a></h3>' +
+      '<p class="flow-sub">' + esc(st.sub) + '</p>' +
+      flowFacts(st.facts) +
+      '<a class="flow-foot" href="#area/' + esc(st.area) + '" title="' + esc(a ? a.title : st.area) + '"><span class="flow-foot-area">' + esc(a ? a.title : st.area) + '</span>' +
+      '<span>' + (a && !a.missing ? c.d + ' diagr. · ' + c.dec + ' dec. · ' + c.sc + ' scen.' : 'brak danych') + ' →</span></a>' +
+      '</article>';
+  }
+
+  function flowSection() {
+    var support = FLOW_SUPPORT.map(function (id) { return S.areaById.get(id); }).filter(Boolean);
+    return '<section class="flow"><h2 class="section-title">Etapy runu</h2>' +
+      '<p class="section-sub">Run idzie od lewej do prawej. Z każdego etapu może zejść w dół do wyjścia bocznego, a wraca z niego przez ⏎, <code>splitbrief continue</code> albo panel recovery.</p>' +
+      '<div class="flow-main">' + FLOW_MAIN.map(function (st, i) { return flowCard(st, i + 1, 'main'); }).join('') + '</div>' +
+      '<div class="flow-bridge"><span>↓ wyjście boczne z dowolnego etapu · ↑ powrót do tego samego kroku</span></div>' +
+      '<div class="flow-exits">' + FLOW_EXITS.map(function (st) { return flowCard(st, 0, 'exit'); }).join('') + '</div>' +
+      (support.length ? '<div class="flow-support"><span class="flow-support-label">Obszary wspierające</span>' + support.map(function (a) {
+        var c = counts(a);
+        return '<a class="flow-chip" href="#area/' + esc(a.id) + '"><strong>' + esc(a.title) + '</strong><small>' + (a.missing ? 'brak danych' : nDiagrams(c.d) + ' · ' + nDecisions(c.dec)) + '</small></a>';
+      }).join('') + '</div>' : '') +
+      '</section>';
+  }
+
+  function faqRefs(refsList) {
+    var dec = [];
+    var dg = [];
+    var ar = [];
+    refsList.forEach(function (r) {
+      var m = /^(area|diagram):(.+)$/.exec(r);
+      if (m && m[1] === 'area') {
+        var a = S.areaById.get(m[2]);
+        ar.push(a && !a.missing ? areaPill(a) : '<span class="pill pill-bad">' + esc(r) + '?</span>');
+      } else if (m) {
+        var g = S.diagrams.get(m[2]);
+        dg.push(g ? '<a class="ref-dg" href="#diagram/' + esc(m[2]) + '"><span aria-hidden="true">◇</span> ' + esc(g.g.title) + ' <span class="muted">· ' + esc(g.area.title) + '</span></a>' : '<span class="pill pill-bad">' + esc(r) + '?</span>');
+      } else {
+        var d = S.decisions.get(r);
+        dec.push(d ? '<a class="badge badge-link" href="#decision/' + esc(r) + '" title="' + esc(d.d.title + (d.d.question ? ' — ' + d.d.question : '')) + '">' + esc(r) + '</a>' : '<span class="pill pill-bad" title="Nie ma takiej karty decyzji">' + esc(r) + '?</span>');
+      }
+    });
+    var rows = '';
+    if (dec.length) rows += '<div class="meta-row"><span class="meta-label">Decyzje</span><span class="meta-val">' + dec.join(' ') + '</span></div>';
+    if (dg.length) rows += '<div class="meta-row"><span class="meta-label">Diagramy</span><span class="meta-val faq-dg">' + dg.join('') + '</span></div>';
+    if (ar.length) rows += '<div class="meta-row"><span class="meta-label">Obszary</span><span class="meta-val">' + ar.join(' ') + '</span></div>';
+    return rows ? '<div class="faq-refs">' + rows + '</div>' : '';
+  }
+
+  function faqItem(f) {
+    var tags = f.tags.slice(1).map(function (t) {
+      var label = FAQ_TAGS.filter(function (x) { return x[0] === t; })[0];
+      return '<span class="faq-tag">' + esc(label ? label[1] : t) + '</span>';
+    }).join('');
+    return '<details class="card faq-item filter-item" id="a-q-' + esc(f.id) + '" data-area="' + esc(f.tags.join(' ')) + '" data-text="' + esc(fold(f.q + ' ' + f.a + ' ' + f.tags.join(' ') + ' ' + f.refs.join(' '))) + '">' +
+      '<summary><span class="faq-head"><span class="faq-q">' + esc(f.q) + '</span><span class="faq-lead">' + inlineText(sentences(f.a)[0]) + '</span></span>' + (tags ? '<span class="faq-tags">' + tags + '</span>' : '') + '</summary>' +
+      '<div class="faq-body"><div class="prose faq-a">' + block(f.a) + '</div>' + faqRefs(f.refs) +
+      '<div class="faq-link"><a href="' + faqHref(f.id) + '">link do tej odpowiedzi</a></div></div></details>';
+  }
+
+  function faqView() {
+    var html = pageHead('Przekrój', 'Pytania (FAQ)', 'Krótkie odpowiedzi na pytania o to, jak SPLITBRIEF decyduje. Każda odpowiedź podaje karty decyzji i diagramy, na których się opiera. Kliknij pytanie, aby rozwinąć odpowiedź.');
+    var faqErr = arr(window.ATLAS_LOAD_ERRORS).filter(function (e) { return e.src === 'data/faq.js'; });
+    if (!S.faq.length) {
+      return html + '<div class="empty"><strong>' + (faqErr.length ? 'błąd w pliku danych' : 'brak danych') + '</strong><p>Pytania pochodzą z pliku <code>flow-atlas/data/faq.js</code> (<code>window.ATLAS_FAQ</code>).</p>' +
+        (faqErr.length ? '<pre class="err-text">' + esc(faqErr.map(function (e) { return e.message; }).join('\n')) + '</pre>' : '') + '</div>';
+    }
+    var used = FAQ_TAGS.filter(function (t) { return S.faq.some(function (f) { return f.tags[0] === t[0] || f.tags.indexOf(t[0]) >= 0; }); });
+    var chips = '<div class="tag-filter" role="group" aria-label="Temat"><button type="button" class="chip-tag" data-tag="" aria-pressed="true">wszystkie</button>' + used.map(function (t) {
+      return '<button type="button" class="chip-tag" data-tag="' + esc(t[0]) + '" aria-pressed="false">' + esc(t[1]) + '</button>';
+    }).join('') + '</div>';
+    html += filterBar('f-faq', 'Filtruj pytania: limit, fallback, crash, Apply…', '<button type="button" class="btn" data-faq="open">rozwiń wszystko</button><button type="button" class="btn" data-faq="close">zwiń wszystko</button>');
+    html += chips;
+    var groups = FAQ_TAGS.map(function (t) {
+      return { tag: t, items: S.faq.filter(function (f) { return f.tags[0] === t[0]; }) };
+    });
+    var rest = S.faq.filter(function (f) { return !FAQ_TAGS.some(function (t) { return t[0] === f.tags[0]; }); });
+    if (rest.length) groups.push({ tag: ['', 'Inne'], items: rest });
+    groups.forEach(function (g) {
+      if (!g.items.length) return;
+      html += '<section class="faq-group filter-group"><h2 class="section-title">' + esc(g.tag[1]) + ' <span class="muted">' + g.items.length + '</span></h2>' +
+        g.items.map(faqItem).join('') + '</section>';
+    });
     return html;
   }
 
@@ -615,13 +811,8 @@
       }).join('') + '</tr>';
     }).join('');
     if (!any) return '';
-    return '<details class="card link-matrix"><summary><strong>Macierz przejść</strong> <span class="muted">— kto do kogo przekazuje sterowanie; najedź na kropkę, aby zobaczyć opis</span></summary>' +
-      '<div class="tbl-wrap"><table class="lm">' + head + body + '</table></div></details>';
-  }
-
-  function stat(value, label, href) {
-    var tag = href ? 'a' : 'div';
-    return '<' + tag + ' class="stat"' + (href ? ' href="' + href + '"' : '') + '><span class="stat-value">' + value + '</span><span class="stat-label">' + label + '</span></' + tag + '>';
+    return '<h2 class="section-title">Macierz przejść</h2><p class="section-sub">Wiersz przekazuje sterowanie do kolumny. Najedź na kropkę, aby zobaczyć opis przejścia; kliknij, aby otworzyć obszar.</p>' +
+      '<div class="card link-matrix"><div class="tbl-wrap"><table class="lm">' + head + body + '</table></div></div>';
   }
 
   function diagramCard(g, opts) {
@@ -632,16 +823,18 @@
         return '<a class="badge badge-link" href="#decision/' + d + '" data-hl="' + d + '">' + d + '</a>';
       }).join(' ') + '</div>'
       : '';
-    return '<section class="card dg" id="dg-' + esc(g.id) + '" data-dg="' + esc(g.id) + '"' + (opts.generated ? ' data-generated="1"' : '') + '>' +
+    return '<section class="card dg' + (opts.hero ? ' dg-hero' : '') + '" id="dg-' + esc(g.id) + '" data-dg="' + esc(g.id) + '"' + (opts.generated ? ' data-generated="1"' : '') + '>' +
       '<header class="dg-head"><div class="dg-titles"><h3>' + esc(g.title) + '</h3>' + (g.caption ? '<p class="caption">' + inline(g.caption) + '</p>' : '') + '</div>' +
       '<div class="dg-tools">' +
-      '<button type="button" class="btn btn-icon" data-act="zoom-in" title="Powiększ">+</button>' +
+      '<span class="dg-zoom" title="Skala diagramu"></span>' +
       '<button type="button" class="btn btn-icon" data-act="zoom-out" title="Pomniejsz">−</button>' +
-      '<button type="button" class="btn" data-act="fit" title="Dopasuj do karty">dopasuj</button>' +
+      '<button type="button" class="btn btn-icon" data-act="zoom-in" title="Powiększ">+</button>' +
+      '<button type="button" class="btn" data-act="fit" title="Dopasuj do szerokości karty">dopasuj</button>' +
       '<button type="button" class="btn" data-act="full">pełny ekran</button>' +
       '<button type="button" class="btn" data-act="src" aria-pressed="false">pokaż źródło</button>' +
       '</div></header>' +
-      '<div class="dg-view" data-state="idle"><div class="dg-stage"></div><div class="dg-status">Diagram wyrenderuje się po przewinięciu…</div></div>' +
+      '<div class="dg-view" data-state="idle"><div class="dg-scroll"><div class="dg-stage"></div></div><div class="dg-status">Diagram wyrenderuje się po przewinięciu…</div>' +
+      '<div class="dg-more" hidden><span>Diagram jest wyższy niż ramka: przewiń w niej albo</span><button type="button" class="btn btn-cta" data-act="full">otwórz na pełnym ekranie</button></div></div>' +
       '<div class="dg-hint">Ctrl + kółko: zoom · przeciągnij: przesuń' + (opts.generated ? ' · kliknij węzeł: obszar' : decs.length ? ' · kliknij romb: karta decyzji' : '') + '</div>' +
       foot +
       '<div class="dg-src" hidden>' + sourceBlock(g.mermaid) + '</div>' +
@@ -1000,9 +1193,19 @@
     if (!input) return;
     var select = root.querySelector('.filter-select');
     var countEl = root.querySelector('.filter-count');
+    var tagBar = root.querySelector('.tag-filter');
+    if (tagBar) {
+      tagBar.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-tag]');
+        if (!b) return;
+        tagBar.querySelectorAll('[data-tag]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+        apply();
+      });
+    }
     function apply() {
       var tokens = fold(input.value).split(/\s+/).filter(Boolean);
-      var area = select ? select.value : '';
+      var pressed = tagBar ? tagBar.querySelector('[aria-pressed="true"]') : null;
+      var area = select ? select.value : pressed ? pressed.getAttribute('data-tag') : '';
       var items = root.querySelectorAll('.filterable tbody tr, .filter-item');
       var shown = 0;
       items.forEach(function (el) {
@@ -1012,7 +1215,7 @@
         el.hidden = !ok;
         if (ok) shown++;
       });
-      root.querySelectorAll('.sc-group').forEach(function (g) {
+      root.querySelectorAll('.sc-group, .filter-group').forEach(function (g) {
         g.hidden = !g.querySelector('.filter-item:not([hidden])');
       });
       if (countEl) countEl.textContent = shown + ' z ' + items.length;
@@ -1186,6 +1389,7 @@
       return Promise.resolve();
     }
     initMermaid();
+    src = compactDiamonds(src);
     var id = 'mmd' + (++renderSeq);
     return Promise.resolve()
       .then(function () { return window.mermaid.parse(src); })
@@ -1198,7 +1402,7 @@
         decorateSvg(svg, el.getAttribute('data-generated') === '1');
         view.setAttribute('data-state', 'done');
         status.textContent = '';
-        var pz = makePanZoom(view, stage, false, el.getAttribute('data-generated') === '1' ? 0.45 : 0.8);
+        var pz = makeCardZoom(el);
         S.panzoom.set(el, pz);
         pz.fit();
       })
@@ -1209,6 +1413,24 @@
         var tmp = document.getElementById('d' + id);
         if (tmp) tmp.remove();
       });
+  }
+
+  function compactDiamonds(src) {
+    if (!/^\s*flowchart\b/.test(src)) return src;
+    return src.replace(/(\b[A-Za-z_]\w*)\{"([^"]*)"\}(?!\})/g, function (m, id, label) {
+      if (/<br\s*\/?>/i.test(label) || label.length <= 16) return m;
+      var width = Math.max(11, Math.round(1.8 * Math.sqrt(label.length)));
+      var lines = [];
+      var cur = '';
+      label.split(' ').forEach(function (w) {
+        if (cur && (cur + ' ' + w).length > width) {
+          lines.push(cur);
+          cur = w;
+        } else cur = cur ? cur + ' ' + w : w;
+      });
+      if (cur) lines.push(cur);
+      return id + '{"' + lines.join('<br/>') + '"}';
+    });
   }
 
   function showError(el, message) {
@@ -1247,6 +1469,9 @@
   }
 
   function flashNodes(el, decId) {
+    var pz = S.panzoom.get(el);
+    var first = el.querySelector('.dg-stage [data-dec="' + decId + '"]');
+    if (pz && pz.reveal && first) pz.reveal(first);
     el.querySelectorAll('[data-dec="' + decId + '"]').forEach(function (n) {
       n.classList.remove('node-flash');
       void n.getBoundingClientRect();
@@ -1255,14 +1480,105 @@
     });
   }
 
-  function makePanZoom(viewport, content, freeWheel, minFit) {
+  function naturalSize(svg) {
+    var vb = svg.viewBox && svg.viewBox.baseVal;
+    var w = (vb && vb.width) || parseFloat(svg.getAttribute('width')) || 400;
+    var h = (vb && vb.height) || parseFloat(svg.getAttribute('height')) || 300;
+    return { w: w, h: h };
+  }
+
+  function wheelFactor(e) {
+    return Math.exp(-e.deltaY * (e.ctrlKey && !e.metaKey && Math.abs(e.deltaY) < 30 ? 0.02 : 0.0018));
+  }
+
+  function makeCardZoom(card) {
+    var scroller = card.querySelector('.dg-scroll');
+    var svg = card.querySelector('.dg-stage svg');
+    var more = card.querySelector('.dg-more');
+    var label = card.querySelector('.dg-zoom');
+    var z = naturalSize(svg);
+    var s = 1;
+    var PAD = 16;
+    function update() {
+      var tall = scroller.scrollHeight > scroller.clientHeight + 4;
+      var atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 32;
+      card.classList.toggle('is-tall', tall);
+      card.classList.toggle('is-wide', scroller.scrollWidth > scroller.clientWidth + 4);
+      more.hidden = !tall || atEnd;
+    }
+    function apply() {
+      svg.setAttribute('width', String(Math.round(z.w * s)));
+      svg.setAttribute('height', String(Math.round(z.h * s)));
+      if (label) label.textContent = Math.round(s * 100) + '%';
+      update();
+    }
+    function fit() {
+      var avail = (scroller.clientWidth || 800) - PAD;
+      s = z.w > avail ? Math.max(MIN_FIT, avail / z.w) : 1;
+      apply();
+      scroller.scrollLeft = 0;
+      scroller.scrollTop = 0;
+    }
+    function zoomAt(factor, cx, cy) {
+      var px = (scroller.scrollLeft + cx) / s;
+      var py = (scroller.scrollTop + cy) / s;
+      s = Math.min(3, Math.max(0.2, s * factor));
+      apply();
+      scroller.scrollLeft = px * s - cx;
+      scroller.scrollTop = py * s - cy;
+    }
+    scroller.addEventListener('scroll', update, { passive: true });
+    scroller.addEventListener('wheel', function (e) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      var r = scroller.getBoundingClientRect();
+      zoomAt(wheelFactor(e), e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+    var drag = null;
+    scroller.addEventListener('pointerdown', function (e) {
+      var r = scroller.getBoundingClientRect();
+      if (e.button !== 0 || e.clientX - r.left > scroller.clientWidth || e.clientY - r.top > scroller.clientHeight) return;
+      drag = { x: e.clientX, y: e.clientY, ox: scroller.scrollLeft, oy: scroller.scrollTop, moved: false, id: e.pointerId };
+    });
+    scroller.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      var dx = e.clientX - drag.x;
+      var dy = e.clientY - drag.y;
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 4) {
+        drag.moved = true;
+        try { scroller.setPointerCapture(drag.id); } catch (err) {}
+        scroller.classList.add('dragging');
+      }
+      if (drag.moved) {
+        scroller.scrollLeft = drag.ox - dx;
+        scroller.scrollTop = drag.oy - dy;
+      }
+    });
+    function end() {
+      if (drag && drag.moved) {
+        scroller.setAttribute('data-just-dragged', '1');
+        setTimeout(function () { scroller.removeAttribute('data-just-dragged'); }, 0);
+      }
+      drag = null;
+      scroller.classList.remove('dragging');
+    }
+    scroller.addEventListener('pointerup', end);
+    scroller.addEventListener('pointercancel', end);
+    return {
+      fit: fit,
+      zoom: function (f) { zoomAt(f, scroller.clientWidth / 2, Math.min(scroller.clientHeight, window.innerHeight) / 2); },
+      reveal: function (node) {
+        var r = node.getBoundingClientRect();
+        var sr = scroller.getBoundingClientRect();
+        scroller.scrollTop += r.top - sr.top - sr.height / 2 + r.height / 2;
+        scroller.scrollLeft += r.left - sr.left - sr.width / 2 + r.width / 2;
+      }
+    };
+  }
+
+  function makePanZoom(viewport, content) {
     var st = { x: 0, y: 0, s: 1 };
     var svg = content.querySelector('svg');
-    function size() {
-      var w = parseFloat(svg.getAttribute('width')) || svg.getBBox().width || 400;
-      var h = parseFloat(svg.getAttribute('height')) || svg.getBBox().height || 300;
-      return { w: w, h: h };
-    }
     function apply() {
       content.style.transform = 'translate(' + st.x + 'px,' + st.y + 'px) scale(' + st.s + ')';
     }
@@ -1275,30 +1591,18 @@
       apply();
     }
     function fit() {
-      var z = size();
+      var z = naturalSize(svg);
       var vw = viewport.clientWidth || 800;
-      if (freeWheel) {
-        var vh = viewport.clientHeight || 600;
-        st.s = Math.min(1.5, vw / z.w, vh / z.h) * 0.96;
-        st.x = (vw - z.w * st.s) / 2;
-        st.y = (vh - z.h * st.s) / 2;
-      } else {
-        var maxH = Math.max(1400, window.innerHeight * 0.9);
-        var s = Math.min(1, Math.max((vw - 16) / z.w, minFit || 0.8));
-        st.s = s;
-        viewport.classList.toggle('is-wide', z.w * s > vw - 8);
-        var height = Math.min(z.h * s, maxH) + 16;
-        viewport.style.height = Math.max(120, height) + 'px';
-        st.x = Math.max(8, (vw - z.w * s) / 2);
-        st.y = 8;
-      }
+      var vh = viewport.clientHeight || 600;
+      st.s = Math.min(1.5, vw / z.w, vh / z.h) * 0.96;
+      st.x = (vw - z.w * st.s) / 2;
+      st.y = (vh - z.h * st.s) / 2;
       apply();
     }
     viewport.addEventListener('wheel', function (e) {
-      if (!freeWheel && !e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       var r = viewport.getBoundingClientRect();
-      zoomAt(Math.exp(-e.deltaY * (e.ctrlKey && !e.metaKey && Math.abs(e.deltaY) < 30 ? 0.02 : 0.0018)), e.clientX - r.left, e.clientY - r.top);
+      zoomAt(wheelFactor(e), e.clientX - r.left, e.clientY - r.top);
     }, { passive: false });
     var drag = null;
     viewport.addEventListener('pointerdown', function (e) {
@@ -1349,14 +1653,18 @@
     } else {
       var stage = document.createElement('div');
       stage.className = 'dg-stage';
-      stage.appendChild(svg.cloneNode(true));
+      var clone = svg.cloneNode(true);
+      var nat = naturalSize(svg);
+      clone.setAttribute('width', String(nat.w));
+      clone.setAttribute('height', String(nat.h));
+      stage.appendChild(clone);
       body.appendChild(stage);
     }
     modal.hidden = false;
     document.body.classList.add('modal-open');
     modal.setAttribute('data-from', el.id);
     if (svg) {
-      modalPz = makePanZoom(body, body.querySelector('.dg-stage'), true);
+      modalPz = makePanZoom(body, body.querySelector('.dg-stage'));
       requestAnimationFrame(function () { modalPz.fit(); });
     }
     document.getElementById('modal-close').focus();
@@ -1431,6 +1739,7 @@
       });
       if (it.kind === 'decyzja') score += 2;
       if (it.kind === 'obszar') score += 3;
+      if (it.kind === 'pytanie') score += 4;
       hits.push({ it: it, score: score });
     });
     hits.sort(function (a, b) { return b.score - a.score || a.it.area.order - b.it.area.order; });
@@ -1512,7 +1821,7 @@
       }
       var node = t.closest('.atlas-node');
       if (node) {
-        var vp = node.closest('.dg-view, .modal-body');
+        var vp = node.closest('.dg-scroll, .modal-body');
         if (vp && vp.getAttribute('data-just-dragged')) return;
         if (node.closest('.modal')) closeModal();
         S.scrollMemo[location.hash] = window.scrollY;
@@ -1546,6 +1855,12 @@
       }
       if (t.closest('#modal-close')) {
         closeModal();
+        return;
+      }
+      var fq = t.closest('[data-faq]');
+      if (fq) {
+        var openAll = fq.getAttribute('data-faq') === 'open';
+        document.querySelectorAll('.faq-item:not([hidden])').forEach(function (d) { d.open = openAll; });
         return;
       }
       var tb = t.closest('[data-tree="open"], [data-tree="close"]');

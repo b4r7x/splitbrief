@@ -10,6 +10,7 @@ import vm from 'node:vm';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js';
+const FAQ_FILE = 'faq.js';
 const EXPECTED = ['journey', 'startup', 'runners', 'planning', 'build', 'review', 'recovery', 'lifecycle', 'ui', 'subsystems', 'structure'];
 const ARRAY_FIELDS = ['entry', 'links', 'diagrams', 'decisions', 'config', 'states', 'scenarios', 'files', 'gotchas', 'glossary', 'tree'];
 const DECISION_ID = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
@@ -51,7 +52,7 @@ function loadAreas() {
     err('data', 'katalog danych nie istnieje: ' + opts.data);
     return areas;
   }
-  const files = fs.readdirSync(opts.data).filter((f) => f.endsWith('.js')).sort();
+  const files = fs.readdirSync(opts.data).filter((f) => f.endsWith('.js') && f !== FAQ_FILE).sort();
   for (const id of EXPECTED) {
     if (!files.includes(id + '.js')) warn(id, 'brak pliku data/' + id + '.js (strona pokaże „brak danych”)');
   }
@@ -307,6 +308,96 @@ function checkLinks(areas) {
   for (const [id, area] of cards) if (!shown.has(id)) warn(area + ' ' + id, 'karta decyzji nie występuje w żadnym diagramie');
 }
 
+function loadFaq() {
+  const file = path.join(opts.data, FAQ_FILE);
+  if (!fs.existsSync(file)) {
+    warn('faq', 'brak pliku data/' + FAQ_FILE + ' (widok Pytania będzie pusty)');
+    return null;
+  }
+  const sandbox = { window: {}, console: { log() {}, warn() {}, error() {} } };
+  vm.createContext(sandbox);
+  try {
+    new vm.Script(fs.readFileSync(file, 'utf8'), { filename: file }).runInContext(sandbox, { timeout: 2000 });
+  } catch (e) {
+    const where = String(e.stack || '').split('\n').slice(0, 3).join(' | ');
+    err('faq', 'plik nie wykonuje się: ' + (e && e.message) + (where ? ' [' + where + ']' : ''));
+    return null;
+  }
+  if (!Array.isArray(sandbox.window.ATLAS_FAQ)) {
+    err('faq', 'plik powinien ustawić tablicę window.ATLAS_FAQ');
+    return null;
+  }
+  if (sandbox.window.ATLAS !== undefined) err('faq', 'plik FAQ nie może dodawać obszarów do window.ATLAS');
+  return sandbox.window.ATLAS_FAQ;
+}
+
+function sentenceCount(text) {
+  return String(text).replace(/\s+/g, ' ').trim().split(/(?<=[.!?”])\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ`„0-9])/).filter(Boolean).length;
+}
+
+function checkFaq(areas, faq) {
+  if (!faq) return;
+  const decisions = new Set();
+  const diagrams = new Set();
+  const areaIds = new Set(areas.map((a) => a.id));
+  for (const a of areas) {
+    for (const d of a.decisions || []) if (d && isStr(d.id)) decisions.add(d.id);
+    for (const g of a.diagrams || []) if (g && isStr(g.id)) diagrams.add(g.id);
+  }
+  const ids = new Set();
+  const questions = new Set();
+  faq.forEach((f, i) => {
+    const c = 'faq[' + i + ']' + (f && f.id ? ' ' + f.id : '');
+    if (!f || typeof f !== 'object') return err(c, 'wpis nie jest obiektem');
+    if (!isStr(f.id)) err(c, 'brak id');
+    else if (!/^[a-z0-9][a-z0-9-]*$/.test(f.id)) err(c, 'id musi być kebab-case');
+    else if (ids.has(f.id)) err(c, 'id „' + f.id + '” powtarza się');
+    else ids.add(f.id);
+    if (!isStr(f.q)) err(c, 'brak pytania q');
+    else if (questions.has(f.q.trim())) warn(c, 'pytanie powtarza się');
+    else questions.add(f.q.trim());
+    if (!isStr(f.a)) err(c, 'brak odpowiedzi a');
+    else {
+      const n = sentenceCount(f.a);
+      if (n < 3 || n > 8) warn(c, 'odpowiedź ma ' + n + ' zdań (oczekiwane 3-8)');
+      const prefixes = new Set(Array.from(decisions, (d) => d.split('_')[0]));
+      for (const t of new Set(f.a.match(DECISION_TOKEN) || [])) {
+        if (!decisions.has(t) && prefixes.has(t.split('_')[0])) err(c, 'tekst wspomina decyzję ' + t + ', której nie ma');
+      }
+    }
+    if (!Array.isArray(f.refs) || !f.refs.length) err(c, 'refs musi być niepustą tablicą');
+    else f.refs.forEach((r, j) => {
+      const rc = c + ' refs[' + j + ']';
+      if (!isStr(r)) return err(rc, 'ref musi być tekstem');
+      const m = /^(area|diagram):(.+)$/.exec(r);
+      if (m && m[1] === 'area') {
+        if (!areaIds.has(m[2])) err(rc, 'obszar „' + m[2] + '” nie istnieje');
+      } else if (m) {
+        if (!diagrams.has(m[2])) err(rc, 'diagram „' + m[2] + '” nie istnieje');
+      } else if (!DECISION_ID.test(r)) err(rc, '„' + r + '” to ani id decyzji, ani area:<id>, ani diagram:<id>');
+      else if (!decisions.has(r)) err(rc, 'decyzja ' + r + ' nie ma karty');
+    });
+    if (f.tags !== undefined && (!Array.isArray(f.tags) || f.tags.some((t) => !isStr(t)))) err(c, 'tags musi być tablicą niepustych tekstów');
+    else if (!f.tags || !f.tags.length) warn(c, 'brak tags (pytanie trafi do grupy Inne)');
+  });
+}
+
+function checkViewerRefs(areas, faq) {
+  const file = path.join(HERE, 'app.js');
+  if (!fs.existsSync(file)) return;
+  const src = fs.readFileSync(file, 'utf8');
+  const decisions = new Set();
+  for (const a of areas) for (const d of a.decisions || []) if (d && isStr(d.id)) decisions.add(d.id);
+  for (const m of src.matchAll(/'([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)'/g)) {
+    if (!decisions.has(m[1])) err('app.js', 'mapa (FLOW_*) wskazuje decyzję ' + m[1] + ', której nie ma');
+  }
+  const top = /TOP_FAQ\s*=\s*\[([^\]]*)\]/.exec(src);
+  if (top && faq) {
+    const have = new Set(faq.map((f) => f && f.id));
+    for (const m of top[1].matchAll(/'([^']+)'/g)) if (!have.has(m[1])) err('app.js', 'TOP_FAQ wskazuje pytanie „' + m[1] + '”, którego nie ma w faq.js');
+  }
+}
+
 async function loadPlaywright() {
   const tries = [() => createRequire(import.meta.url)('playwright')];
   tries.push(() => {
@@ -386,9 +477,12 @@ function print(title, list) {
 }
 
 const areas = loadAreas();
+const faq = loadFaq();
 checkSchema(areas);
 checkRefs(areas);
 checkLinks(areas);
+checkFaq(areas, faq);
+checkViewerRefs(areas, faq);
 let renderInfo = null;
 if (opts.render) renderInfo = await checkRender(areas);
 
@@ -397,6 +491,7 @@ console.log('Flow Atlas check');
 console.log('  dane:   ' + opts.data);
 console.log('  repo:   ' + opts.repo);
 console.log('  obszary: ' + areas.length + '/' + EXPECTED.length + ' (' + areas.map((a) => a.id).join(', ') + ')');
+console.log('  pytania FAQ: ' + (faq ? faq.length : 0));
 console.log('  diagramy: ' + count('diagrams') + ', decyzje: ' + count('decisions') + ', scenariusze: ' + count('scenarios') + ', klucze: ' + count('config'));
 if (renderInfo) console.log('  render Mermaid: ' + (renderInfo.total ? renderInfo.rendered + '/' + renderInfo.total + ' OK' : 'pominięty'));
 else console.log('  render Mermaid: pominięty (--no-render)');
