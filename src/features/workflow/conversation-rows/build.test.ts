@@ -42,7 +42,12 @@ import type { ConversationRow } from './types.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { arrowSep, SOFT_SEP } from '../../../core/separators.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
-import { buildCheckoutChangedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
+import {
+  buildCheckoutChangedRecoveryIssue,
+  buildRunnerInputTooLargeRecoveryIssue,
+  runnerDefectRow,
+} from '../../../engine/orchestrator/recovery/builders/task.js';
+import { argvPromptTooLarge } from '../../../engine/runners/input-limit.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
@@ -3001,6 +3006,25 @@ describe('one recovery reads as one block', () => {
       'Repository changed under T002 · branch fix/implementer-never-runs-gates',
       `Recovery  Try again${arrowSep()}T002 back to pending, retried`,
     ]);
+  });
+
+  it('names a prompt the tool refused as too large once, in the error row', () => {
+    const issue = buildRunnerInputTooLargeRecoveryIssue({
+      task: makeTask({ id: 'T002' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } }).implementer,
+      toolMessage: argvPromptTooLarge(195_203, 120_000).message,
+      attempts: 1,
+      maxAttempts: 8,
+      createdAt: '2026-10-07T05:54:04.413Z',
+    });
+    const headline = formatRecoveryHeadline(issue);
+    const { lines } = transcript([
+      { ...halt, message: runnerDefectRow(issue, 'OpenCode CLI', issue.message) },
+      { ...prompted, reason: 'context-overflow', headline },
+    ]);
+
+    expect(headline).toBe('Prompt too large for OpenCode CLI on T002');
+    expect(lines).toEqual(['Error', headline]);
   });
 
   it('shows a recovery still being applied as its action alone', () => {

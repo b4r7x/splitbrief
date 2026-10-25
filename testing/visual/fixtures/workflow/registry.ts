@@ -795,6 +795,15 @@ const checkpointPredicates = [
   [checkpointId('at-rest-halted'), includesAll()],
   [checkpointId('at-rest-halted-chosen'), includesAll('⏎ to try again')],
   [
+    checkpointId('at-rest-prompt-too-large'),
+    // Below 80 columns the byline sheds its reason and keeps only "Seat down".
+    (context) =>
+      includesAll()(context) &&
+      excludesAll('Context overflow', 'argv')(context) &&
+      (context.viewport.cols < 80 ||
+        includesAll('Seat down · Prompt too large for OpenCode CLI on T002')(context)),
+  ],
+  [
     checkpointId('at-rest-typed-words'),
     includesAll('Cannot send words with Restore backup. Clear them.', TYPED_WORDS),
   ],
@@ -818,6 +827,18 @@ const checkpointPredicates = [
     checkpointId('recovery-resumed-apply-partial'),
     (context) =>
       includesAll('Apply stopped part way')(context) && lifecycleStore.get().status === 'running',
+  ],
+  [
+    checkpointId('recovery-build-prompt-too-large'),
+    (context) =>
+      includesAll('Seat down · Prompt too large for', 'Change BUILD tool')(context) &&
+      excludesAll('Try again', 'argv', 'Context overflow')(context),
+  ],
+  [
+    checkpointId('recovery-review-prompt-too-large'),
+    (context) =>
+      includesAll('Seat down · Final review failed', 'Change REVIEW tool')(context) &&
+      excludesAll('Try again')(context),
   ],
   [checkpointId('resuming'), includesAll('Resuming T')],
   [

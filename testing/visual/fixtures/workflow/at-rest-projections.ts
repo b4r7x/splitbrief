@@ -21,7 +21,11 @@ import {
   resolveProviderRunMetadata,
 } from '../../../../src/engine/providers/cost/breakdown.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
-import { buildSeatDownIssue } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import {
+  buildRunnerInputTooLargeRecoveryIssue,
+  buildSeatDownIssue,
+} from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import { argvPromptTooLarge } from '../../../../src/engine/runners/input-limit.js';
 import {
   buildApplyConflictRecoveryIssue,
   buildApplyPartialRecoveryIssue,
@@ -723,6 +727,59 @@ const AT_REST_HALTED = record({
       { id: BRIEFS.wire.id, status: 'in_progress' },
       { id: BRIEFS.routeTests.id, status: 'pending' },
     ],
+  }),
+});
+
+/** A BUILD seat that takes its prompt on the command line, declaring a fallback that reads stdin. */
+const ARGV_IMPLEMENTER = {
+  kind: 'cli',
+  tool: 'opencode',
+  model: 'opencode-go/deepseek-v4.1-flash',
+  fallback: { tool: 'codex', model: 'gpt-5-codex' },
+} as const;
+
+const AT_REST_PROMPT_TOO_LARGE = record({
+  sessionId: 'visual-at-rest-prompt-too-large',
+  status: {
+    kind: 'open',
+    stop: {
+      kind: 'waiting-for-you',
+      on: {
+        kind: 'halt',
+        issue: buildRunnerInputTooLargeRecoveryIssue({
+          id: 'visual-prompt-too-large',
+          task: makeTask({
+            id: BRIEFS.wire.id,
+            title: BRIEFS.wire.title,
+            suggestedFiles: [BRIEFS.wire.file],
+          }),
+          phase: 'implementing',
+          runner: ARGV_IMPLEMENTER,
+          toolMessage: argvPromptTooLarge(195_203, 120_000).message,
+          attempts: 1,
+          maxAttempts: 8,
+          seatSwap: {
+            seat: 'build',
+            currentTool: 'opencode',
+            fallback: ARGV_IMPLEMENTER.fallback,
+            detectedTools: [{ ...ARGV_IMPLEMENTER.fallback, ready: true }],
+          },
+          createdAt: STARTED_AT_ISO,
+        }),
+      },
+    },
+    resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 1 },
+  },
+  state: savedState({
+    phase: 'implementing',
+    currentTaskIndex: 1,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'in_progress' },
+      { id: BRIEFS.routeTests.id, status: 'pending' },
+    ],
+    implementerTool: ARGV_IMPLEMENTER.tool,
+    implementerModel: ARGV_IMPLEMENTER.model,
   }),
 });
 
@@ -2599,6 +2656,13 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-at-rest-halted-chosen',
     route: { record: AT_REST_HALTED_CHOSEN },
   }),
+  {
+    ...atRestProjection({
+      id: 'workflow-at-rest-prompt-too-large',
+      route: { record: AT_REST_PROMPT_TOO_LARGE },
+    }),
+    config: { implementer: ARGV_IMPLEMENTER },
+  },
   atRestProjection({
     id: 'workflow-at-rest-apply-conflict',
     route: { record: AT_REST_APPLY_CONFLICT, log: APPLY_CONFLICT_LOG },

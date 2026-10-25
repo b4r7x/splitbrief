@@ -487,7 +487,9 @@ describe('invokeProcessCli', () => {
       invocation({ executable: missingExecutable, script: '' }),
     );
 
-    expect(overflow.error?.code).toBe('prompt-transport-error');
+    expect(overflow.error?.code).toBe('argv-prompt-too-large');
+    expect(overflow.error?.message).toContain('120004');
+    expect(overflow.error?.message).toContain('120000');
     expect(placeholder.error?.code).toBe('prompt-transport-error');
     expect(conflict.error?.code).toBe('argument-conflict');
   });

@@ -148,6 +148,29 @@ describe('formatRecoveryHeadline', () => {
     );
   });
 
+  // Only the refused-prompt builder names a tool on a context-overflow halt.
+  it.each([
+    ['OpenCode CLI', { bytes: 195_203, maxBytes: 120_000 }],
+    ['OpenAI Codex CLI', { chars: 5_000_000, maxChars: 1_000_000 }],
+    ['Claude Code CLI', {}],
+  ])('names the tool that refused the prompt as too large: %s', (tool, figures) => {
+    const issue = makeRecoveryIssue({
+      reason: 'context-overflow',
+      seat: 'build',
+      facts: { tool, ...figures },
+    });
+    expect(formatRecoveryHeadline(issue)).toBe(`Prompt too large for ${tool} on T001`);
+  });
+
+  it('keeps the context words for a brief too large for every profile', () => {
+    const issue = makeRecoveryIssue({
+      reason: 'context-overflow',
+      seat: 'build',
+      facts: { estimatedTokens: 90_000, contextLength: 32_000 },
+    });
+    expect(formatRecoveryHeadline(issue)).toBe('Context overflow on T001');
+  });
+
   // A final review halt names no brief: it judged the whole run, or it judged nothing.
   it('names the final review for a review halt, never a brief', () => {
     const review = (facts: RecoveryIssue['facts']): string =>

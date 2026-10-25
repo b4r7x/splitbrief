@@ -19,7 +19,12 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { applyRecoveryAction, commitSeatSwitch, planSwitchSeatRecoveryAction } from './actions.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
 import { buildConsultBoundRecoveryIssue } from './builders/consult.js';
-import { buildReviewFailedRecoveryIssue, buildSeatDownIssue } from './builders/task.js';
+import {
+  buildReviewFailedRecoveryIssue,
+  buildRunnerInputTooLargeRecoveryIssue,
+  buildSeatDownIssue,
+} from './builders/task.js';
+import { argvPromptTooLarge } from '../../runners/input-limit.js';
 import { EngineEventSchema } from '../../events/schema.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import {
@@ -591,6 +596,42 @@ describe('applyRecoveryAction: switch-seat', () => {
       from: 'OpenAI Codex CLI · GPT-6-Luna · low',
       to: 'OpenAI Codex CLI · GPT-6-Luna · high',
     });
+  });
+
+  it('records the refused prompt and its tool as the cause of a BUILD tool change', async () => {
+    const ref = setupSession('prompt-too-large-switch');
+    const task = makeTask({ id: 'T400', status: 'in_progress' });
+    const runner = { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' } as const;
+    const issue = buildRunnerInputTooLargeRecoveryIssue({
+      task,
+      phase: 'implementing',
+      runner,
+      toolMessage: argvPromptTooLarge(195_203, 120_000).message,
+      attempts: 1,
+      maxAttempts: 8,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'opencode',
+        detectedTools: [{ tool: 'claude-code', ready: true }],
+      },
+      createdAt,
+    });
+    const state = { ...makeImplState([task]), pendingRecovery: issue };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const result = await applyRecoveryAction({
+      ...ref,
+      state,
+      bus,
+      action: 'switch-seat',
+      candidate: { tool: 'claude-code' },
+      config: makeConfig({ implementer: runner }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.message);
+    const headline = 'Prompt too large for OpenCode CLI on T400';
+    expect(result.state.seatSwitches?.[0]).toMatchObject({ cause: 'context-overflow', headline });
+    expect(events.find((event) => event.type === 'seat_switched')).toMatchObject({ headline });
   });
 
   it.each([

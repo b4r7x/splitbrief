@@ -50,8 +50,8 @@ import {
   runnerAuthDisplayName,
   runnerLoginInstruction,
 } from '../../../runners/auth-failure.js';
-import { inputTooLargeFigures } from '../../../runners/input-limit.js';
-import { inputTooLargeSentence } from './review-input.js';
+import { inputTooLargeFigures, type PromptSize } from '../../../runners/input-limit.js';
+import { inputTooLargeFacts, inputTooLargeSentence } from './review-input.js';
 import { usageLimitAdvice } from '../../../runners/usage-limit.js';
 import {
   formatRecoveryHeadline,
@@ -931,17 +931,29 @@ export function buildCheckoutChangedRecoveryIssue(
 }
 
 /**
+ * The detail of a prompt refused as too large, on every seat: its size and the limit in
+ * SPLITBRIEF's words where the refusal named one, else the tool's own words when it said any.
+ */
+export function inputTooLargeDetail(
+  figures: PromptSize,
+  tool: string,
+  toolWords: string | null,
+): string {
+  return figures.size === null && figures.limit === null && toolWords !== null
+    ? toolReported(tool, toolWords)
+    : `${inputTooLargeSentence('The prompt', figures, tool)}.`;
+}
+
+/**
  * The prompt SPLITBRIEF built for the implementer is larger than its tool
  * accepts. Every retry sends the same prompt, so the ladder stops and the
- * operator narrows the brief or ends the run. The message reuses the review
- * input-cap wording, named for the implementer's own tool.
+ * operator changes the tool, skips the brief or ends the run.
  */
 export function buildRunnerInputTooLargeRecoveryIssue(
   opts: RunnerFailureRecoveryOptions,
 ): RecoveryIssue {
   const displayName = runnerAuthDisplayName(opts.runner);
   const figures = inputTooLargeFigures(opts.toolMessage);
-  const chars = figures.chars ?? opts.toolMessage.length;
   const seatSwap = switchSeatOffer(opts.seatSwap);
   const actions = haltActions('context-overflow', [
     seatSwap === undefined ? undefined : 'switch-seat',
@@ -956,25 +968,17 @@ export function buildRunnerInputTooLargeRecoveryIssue(
     task: opts.task,
     files: taskFiles(opts.task),
     affectedTaskIds: [opts.task.id],
-    message: inputTooLargeSentence(
-      'Implementer input',
-      { chars, maxChars: figures.maxChars },
-      displayName,
-    ),
+    message: `Prompt too large for ${displayName} on ${opts.task.id}`,
     details: [
-      toolReported(displayName, opts.toolMessage),
-      'A retry sends the same prompt. Narrow the brief or end the run.',
+      inputTooLargeDetail(figures, displayName, opts.toolMessage),
+      'A retry sends the same prompt.',
       ...attemptDetails(opts.attempts, opts.maxAttempts),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
-    facts: compactFacts({
-      tool: displayName,
-      chars,
-      maxChars: figures.maxChars ?? undefined,
-    }),
+    facts: compactFacts({ tool: displayName, ...inputTooLargeFacts(figures) }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions, ['switch-seat']),
     createdAt: opts.createdAt,
