@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- On a short terminal, writing your own answer to a question no longer scrolls the question out of view.
 - After you close a question with Esc, and while the planner or the reviewer waits for your reply, the key legend above the composer is no longer blank: it names the keys the run answers to.
 - On a question with no choices, ↑ in the answer field no longer moves you to the instruction box below it.
 - The Seat down title for two timeouts in a row on one brief no longer counts the attempts a second time.
