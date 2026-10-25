@@ -504,7 +504,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
       id: 'SS_HOOK_PRE_ESCALATION_DENY',
       title: 'Bramka pre_escalation',
       question: 'Czy po wyczerpaniu retry wolno wołać konsultację planera?',
-      where: 'src/engine/orchestrator/escalation/handle.ts:343',
+      where: 'src/engine/orchestrator/escalation/handle.ts:351',
       inputs: ['payload `task_escalating`'],
       branches: [
         { if: 'allow', then: '`task_escalating` na EventBus, konsultacja' },
@@ -528,7 +528,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
         { if: '`config.hooks`', then: 'hook sink jako ostatni; `workspaceDir` brany z aktualnego state' }
       ],
       default: 'JSONL + logger + call-evidence.',
-      notes: 'Kolejność rejestracji = kolejność fan-out. Wywołanie: src/engine/orchestrator/run/init.ts:221.'
+      notes: 'Kolejność rejestracji = kolejność fan-out. Wywołanie: src/engine/orchestrator/run/init.ts:222.'
     },
     {
       id: 'SS_BUS_SINK_ISOLATION',
@@ -579,7 +579,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
       inputs: ['rodzaj wywołania (`typedCall` vs `review` / `summarize`)'],
       branches: [
         { if: '`typedCall` (plan, werdykt, wybór checków)', then: '`onOutput` = no-op; zdarzenia `runner_call_*` nadal idą na EventBus' },
-        { if: 'inne wywołania', then: '`onCallEvent` publikuje przez publishRunnerCallEvent (src/engine/orchestrator/events.ts:58)' }
+        { if: 'inne wywołania', then: '`onCallEvent` publikuje przez publishRunnerCallEvent (src/engine/orchestrator/events.ts:60)' }
       ],
       default: 'Zdarzenia wywołania są publikowane.'
     },
@@ -635,7 +635,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
       where: 'src/engine/orchestrator/run/snapshots.ts:55',
       inputs: ['`state.workspace.kind`'],
       branches: [
-        { if: '`checkout` (`workflow.isolation: none`)', then: 'snapshot `post-task-<currentTaskIndex>` + wpis w ledgerze; po każdym briefie (src/engine/orchestrator/task/loop.ts:260) i raz w spoczynku (src/engine/orchestrator/run/workflow.ts:463)' },
+        { if: '`checkout` (`workflow.isolation: none`)', then: 'snapshot `post-task-<currentTaskIndex>` + wpis w ledgerze; po każdym briefie (src/engine/orchestrator/task/loop.ts:261) i raz w spoczynku (src/engine/orchestrator/run/workflow.ts:463)' },
         { if: 'worktree / staged-copy', then: 'nic; wynik żyje w workspace do Apply' }
       ],
       default: 'Brak snapshotu.'
@@ -800,7 +800,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
       title: 'Wyzwalacz auto-kompakcji',
       question: 'Czy przy tym wznowieniu skompaktować transkrypt planera?',
       where: 'src/engine/orchestrator/resume-context.ts:34',
-      inputs: ['savedState', 'otwarte recovery (src/engine/orchestrator/run/init.ts:364)', '`workflow.compactionThreshold`', '`supportsSelfSummarisation`', 'liczba odbudowanych wiadomości'],
+      inputs: ['savedState', 'otwarte recovery (src/engine/orchestrator/run/init.ts:369)', '`workflow.compactionThreshold`', '`supportsSelfSummarisation`', 'liczba odbudowanych wiadomości'],
       branches: [
         { if: 'nowy run (brak savedState) lub otwarte recovery', then: 'brak kompakcji' },
         { if: 'próg nieustawiony', then: 'brak kompakcji' },
@@ -869,7 +869,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
       id: 'SS_REBUILD_CONTEXT',
       title: 'Odbudowa kontekstu planera z transkryptu',
       question: 'Czy planer dostaje transkrypt jako priorMessages?',
-      where: 'src/engine/orchestrator/run/init.ts:377',
+      where: 'src/engine/orchestrator/run/init.ts:382',
       inputs: ['planSeatChanged', '`supportsSessionResume`', '`state.plannerSessionId`'],
       branches: [
         { if: 'seat planera zmieniony, planer bez resume albo brak plannerSessionId', then: 'applyRebuiltContext: ostatnie summary + wiadomości po nim (src/engine/orchestrator/transcript/rebuild.ts:123)' },
@@ -938,7 +938,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
         { if: 'brief w locie ma snapshot startu', then: 'recordStoppedTaskEvidence' },
         { if: 'otwarty lineage', then: 'reszta plików lineage dla briefu w locie lub ostatniego rozstrzygniętego' }
       ],
-      default: 'Wołane po zatwierdzonym `CLOSE_RUN` (src/engine/orchestrator/run/close.ts:136).',
+      default: 'Wołane po zatwierdzonym `CLOSE_RUN` (src/engine/orchestrator/run/close.ts:178).',
       notes: 'Ta funkcja nie łapie wyjątków sama.'
     },
     {
@@ -982,7 +982,7 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
         { if: 'pusta lista', then: 'brak bloku skilli' }
       ],
       default: 'Brak bloku.',
-      notes: 'Wołane raz w initializeWorkflow (src/engine/orchestrator/run/init.ts:345), przed utworzeniem seatów.'
+      notes: 'Wołane raz w initializeWorkflow (src/engine/orchestrator/run/init.ts:350), przed utworzeniem seatów.'
     },
     {
       id: 'SS_SKILLS_DEDUPE',
@@ -1031,18 +1031,18 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
       where: 'src/engine/change-detection.ts:95',
       inputs: ['istnienie `.git`', 'workspace.changeDetection'],
       branches: [
-        { if: 'workspace próby wymusza `file-hashes` (src/engine/orchestrator/isolation/create.ts:457)', then: 'hashe wszystkich plików' },
+        { if: 'workspace próby wymusza `file-hashes` (src/engine/orchestrator/isolation/create.ts:459)', then: 'hashe wszystkich plików' },
         { if: 'jest `.git`', then: '`git-status`: pliki zmienione już na starcie z treścią i trybem' },
         { if: 'brak `.git`', then: '`file-hashes`' }
       ],
       default: 'Wybór według `.git`.',
-      notes: 'Baseline jest zbierany tylko dla kontraktu wyjścia `direct` (src/engine/implementers/pipeline/run.ts:545).'
+      notes: 'Baseline jest zbierany tylko dla kontraktu wyjścia `direct` (src/engine/implementers/pipeline/run.ts:544).'
     },
     {
       id: 'SS_CHANGE_NO_WRITE',
       title: 'Implementer nic nie zapisał',
       question: 'Czy próba bez żadnej zmiany pliku jest porażką?',
-      where: 'src/engine/implementers/pipeline/run.ts:765',
+      where: 'src/engine/implementers/pipeline/run.ts:764',
       inputs: ['wynik detectChanges', '`allowNoChange`'],
       branches: [
         { if: 'zmiany są', then: 'próba trwa dalej (walidacja)' },
@@ -1365,14 +1365,14 @@ Pozostałe elementy: **skille** (blok \`## Active Project Skills\` dla każdego 
     { path: 'src/core/logger.ts', role: 'włączenie debug.log' }
   ],
   gotchas: [
-    'Dokumentacja (docs/HOOKS-CONFIG.md, quick start) pokazuje `post_task` z `${event.file}`, ale zdarzenie `task_completed` nie ma pola `file` (src/engine/events/schema.ts:517). Placeholder daje pusty string. Kod wygrywa.',
+    'Dokumentacja (docs/HOOKS-CONFIG.md, quick start) pokazuje `post_task` z `${event.file}`, ale zdarzenie `task_completed` nie ma pola `file` (src/engine/events/schema.ts:526). Placeholder daje pusty string. Kod wygrywa.',
     'docs/HOOKS-CONFIG.md mówi, że `post_task` briefu N kończy się przed `pre_task` briefu N+1. Sink odpala hooki przez `void runEntriesAndReport(...)` bez czekania (src/engine/hooks/sink.ts:20), więc mogą się nakładać.',
     'docs/HOOKS-CONFIG.md mówi, że stderr hooka zawsze trafia jako warning. W kodzie pole `stderr` z outcome nie jest publikowane nigdzie; ostrzeżenia hooków pre_* (warn, ENOENT, crash bez block) zbiera runPreHooks, ale żadne wywołanie ich nie publikuje.',
     'docs/SUBSYSTEMS.md §1 wymienia `pre_commit` i `post_commit` jako aktywne. Schemat odrzuca niepustą listę (src/core/schemas/hooks.ts:366); pusta jest usuwana.',
     '`on_error` dokumentacja opisuje jako niemożliwy do naprawienia błąd silnika. Hook odpala się na każde zdarzenie `error`, np. częściowe zastosowanie odpowiedzi API, które kończy się recovery.',
     'Hooki startują w `cwd: projectDir` (checkout), nie w worktree. Pliki runu w trybie worktree hook znajdzie przez `workspaceDir` ze stdin.',
     'Brak zaufania do hooków w trakcie runu działa jak deny: każdy pre_task pomija brief, zamiast zatrzymać run.',
-    'Kompakcja transkryptu działa tylko przy wznowieniu runu (src/engine/orchestrator/run/init.ts:364), nigdy w trakcie żywego runu, i tylko gdy `workflow.compactionThreshold` jest ustawione (domyślnie nie jest).',
+    'Kompakcja transkryptu działa tylko przy wznowieniu runu (src/engine/orchestrator/run/init.ts:369), nigdy w trakcie żywego runu, i tylko gdy `workflow.compactionThreshold` jest ustawione (domyślnie nie jest).',
     'docs/ENGINE.md odsyła do „SUBSYSTEMS.md section 11” po kompakcję; to sekcja 6.',
     'Snapshoty pomijają także pliki ignorowane przez git (checkIgnoredPaths w src/engine/snapshots/files.ts:52), nie tylko `.git`, `.splitbrief`, `node_modules`, `.trees`.',
     'Brak snapshotu bazowego to jedyny błąd snapshotu, który zatrzymuje run; reszta daje warning.',

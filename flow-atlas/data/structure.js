@@ -1684,7 +1684,7 @@ Ten obszar opisuje tylko statyczną architekturę. Przepływy w czasie działani
           '1. W src/engine/events/schema.ts dodaję członka przez phaseEvent(\'my_event\').extend({…}) albo noPhaseEvent dla eventu globalnego, do unii EngineEventSchema (linia 873).',
           '2. Typ EngineEvent w engine/events/types.ts:11 to z.infer, więc nie edytuję typu ręcznie.',
           '3. Dodaję helper publishMyEvent(bus, phase, payload) w src/engine/orchestrator/events.ts i wołam go z modułu orchestratora.',
-          '4. Kompilator wymusza case w dwóch wyczerpujących switchach: updateTokens w src/stores/workflow/tokens.ts:142 i eventRowBlock w src/features/workflow/conversation-rows/event-rows/dispatch.ts:86 (zwracam [] dla eventu cichego).',
+          '4. Kompilator wymusza case w dwóch wyczerpujących switchach: updateTokens w src/stores/workflow/tokens.ts:135 i eventRowBlock w src/features/workflow/conversation-rows/event-rows/dispatch.ts:86 (zwracam [] dla eventu cichego).',
           '5. Gdy event ma zmieniać stan UI, obsługuję go w reduktorach wołanych z addEvent (stores/workflow/actions/event.ts).',
           '6. Gdy hook ma reagować na event, dopisuję mapowanie w eventToHookKey (engine/hooks/sink.ts:105).'
         ],

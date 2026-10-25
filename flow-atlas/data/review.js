@@ -14,8 +14,8 @@ Nieudane wywołanie (transport, limit konta, błąd protokołu, zbyt duży input
 Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo End run zamyka run (→ zobacz lifecycle). W trybie checkout (workflow.isolation: none) lub na starszym runie bez workspace pass zamyka run od razu jako closed complete, bo zmiany już są na dysku. Accept as is zachowuje nieudany werdykt: Apply nazywa się wtedy **Apply as is** i pyta raz.`,
   entry: [
     'src/engine/orchestrator/run/task-execution.ts:392',
-    'src/engine/orchestrator/task/loop.ts:270',
-    'src/engine/orchestrator/final-review.ts:298',
+    'src/engine/orchestrator/task/loop.ts:271',
+    'src/engine/orchestrator/final-review.ts:299',
   ],
   links: [
     { to: 'build', label: 'pętla briefów kończy się status complete; fix tasks wracają do niej (START_FIX_CYCLE)' },
@@ -290,7 +290,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_CADENCE',
       title: 'Kiedy review biegnie: na końcu czy po każdym briefie',
       question: 'Czy po tym briefie SPLITBRIEF uruchamia zawężony review?',
-      where: 'src/engine/orchestrator/task/loop.ts:270',
+      where: 'src/engine/orchestrator/task/loop.ts:271',
       inputs: ['config.workflow.review (end | task)', 'brief, który właśnie przeszedł walidację'],
       branches: [
         { if: 'workflow.review = task', then: 'runScheduledReview z afterTaskId = ukończony brief; scope task', next: 'RV_SCHEDULED_PASS' },
@@ -368,7 +368,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_END_CHECKS',
       title: 'Czy reviewer wybiera i uruchamia komendy',
       question: 'validation.end_checks?',
-      where: 'src/engine/orchestrator/review-checks.ts:468',
+      where: 'src/engine/orchestrator/review-checks.ts:466',
       inputs: ['resolveEndChecks(config): endChecks ?? true', 'opts.reviewChecks (false przy reviewsAgain)'],
       branches: [
         { if: 'end_checks = false', then: 'review_checks status off; sekcja OFF_SECTION mówi reviewerowi, że żaden check reviewera nie biegł; preExistingChecks puste', next: 'RV_PROMPT_KIND' },
@@ -381,7 +381,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_PENDING_COMMANDS_FIRST',
       title: 'Komendy z fix checków muszą być wybrane pierwsze',
       question: 'Czy plan reviewera zaczyna się od komend z state.pendingReviewCommands?',
-      where: 'src/engine/orchestrator/review-checks.ts:498',
+      where: 'src/engine/orchestrator/review-checks.ts:496',
       inputs: ['state.pendingReviewCommands (do 6 pierwszych)', 'plan.commands'],
       branches: [
         { if: 'każda pending komenda jest wśród pierwszych N komend z identycznym tekstem', then: 'odpowiedź przyjęta; RECORD_REVIEW_CHECKS', next: 'RV_APPROVE_CHECKS' },
@@ -394,7 +394,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_PLAN_CALL_RESULT',
       title: 'Wynik plan call',
       question: 'Czy seat review oddał poprawny ReviewChecksPlan?',
-      where: 'src/engine/orchestrator/review-checks.ts:522',
+      where: 'src/engine/orchestrator/review-checks.ts:520',
       inputs: ['runReviewerCall → requestTyped (1 próba + 1 naprawa)'],
       branches: [
         { if: 'odpowiedź pasuje do schematu (ids V1.., unikalne, reason gdy 0 komend)', then: 'plan zapisany; usage dopisane do kubełka reviewer', next: 'RV_APPROVE_CHECKS' },
@@ -407,7 +407,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_APPROVE_CHECKS',
       title: 'Karta Run all / Skip all',
       question: 'Czy komendy biegną od razu, czy czekają na użytkownika?',
-      where: 'src/engine/orchestrator/review-checks.ts:402',
+      where: 'src/engine/orchestrator/review-checks.ts:400',
       inputs: ['resolveApproveChecks(config): approveChecks ?? auto', 'plan.commands.length', 'callbacks.onReviewChecksApproval (tylko TUI)'],
       branches: [
         { if: 'auto, albo ask z 0 komend', then: 'komendy biegną bez pytania', next: 'RV_STOP_RULE' },
@@ -420,7 +420,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_CARD_ANSWER',
       title: 'Odpowiedź karty Reviewer checks',
       question: 'Co wybrał użytkownik na karcie?',
-      where: 'src/engine/orchestrator/review-checks.ts:408',
+      where: 'src/engine/orchestrator/review-checks.ts:406',
       inputs: ['ReviewChecksApprovalAnswer: run | skip | undefined'],
       branches: [
         { if: 'Run all', then: 'komendy biegną jak przy auto', next: 'RV_STOP_RULE' },
@@ -434,7 +434,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_STOP_RULE',
       title: 'Reguła stopu listy komend',
       question: 'Czy wcześniejsza komenda miała nowe failures?',
-      where: 'src/engine/orchestrator/review-checks.ts:579',
+      where: 'src/engine/orchestrator/review-checks.ts:577',
       inputs: ['stoppedBy (id pierwszej komendy z nowymi failures)'],
       branches: [
         { if: 'stoppedBy ustawione', then: 'komenda nie biegnie; wiersz not run · Vk failed', next: 'RV_NEW_FAILURES' },
@@ -597,7 +597,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_CHECK_KIND',
       title: 'Rodzaj checku: render, cmd, test',
       question: 'Jak biegnie check zależnie od kind?',
-      where: 'src/engine/orchestrator/validation/run-checks.ts:404',
+      where: 'src/engine/orchestrator/validation/run-checks.ts:424',
       inputs: ['check.kind', 'config.validation.render', 'config.validation.test_command', 'stack'],
       branches: [
         { if: 'kind render i validation.render nie ustawione', then: 'not-runnable · validation.render is not set' },
@@ -613,7 +613,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_CHECK_RUN_STATUS',
       title: 'Status po uruchomieniu komendy',
       question: 'Jak zakończył się proces checku?',
-      where: 'src/engine/orchestrator/validation/run-checks.ts:233',
+      where: 'src/engine/orchestrator/validation/run-checks.ts:255',
       inputs: ['exit code', 'timeout (validation.timeout_ms ?? STAGE_TIMEOUT_MS)', 'ENOENT programu'],
       branches: [
         { if: 'exit 0', then: 'pass; output = ogon capture' },
@@ -628,7 +628,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_RUN_BASE_AVAILABLE',
       title: 'Czy czerwony check reviewera może wrócić na run base',
       question: 'Czy run zapisał workspace z bazą (snapshotId, head)?',
-      where: 'src/engine/orchestrator/review-checks.ts:299',
+      where: 'src/engine/orchestrator/review-checks.ts:303',
       inputs: ['runBaseOf(ref, state): state.workspace?.base'],
       branches: [
         { if: 'state.workspace = undefined (starszy run)', then: 'noRunBase: wiersz Base re-run · not run · this run recorded no run base; keys = [] → każda failure nowa', next: 'RV_NEW_FAILURES' },
@@ -654,7 +654,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_BASE_RESULT',
       title: 'Podział failures na nowe, pre-existing i not verified',
       question: 'Co pokazała ta sama komenda na run base?',
-      where: 'src/engine/orchestrator/review-checks.ts:220',
+      where: 'src/engine/orchestrator/review-checks.ts:224',
       inputs: ['atBase.run.status', 'failure.placeholder po obu stronach', 'atBase.incomplete', 'klucze obu stron'],
       branches: [
         { if: 'status na bazie refused / not-runnable / unknown', then: 'wiersz refused / not-run; unavailable; keys = [] (wszystko nowe)', next: 'RV_NEW_FAILURES' },
@@ -668,7 +668,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_NEW_FAILURES',
       title: 'Czy czerwona komenda zatrzymuje listę i tworzy inputy',
       question: 'Ile failures po podziale jest nowych (fresh = newFailureKeys)?',
-      where: 'src/engine/orchestrator/review-checks.ts:605',
+      where: 'src/engine/orchestrator/review-checks.ts:603',
       inputs: ['fresh (klucze bez pre-existing)', 'notVerified', 'preExisting'],
       branches: [
         { if: 'fresh = 0 (wszystko pre-existing)', then: 'preExistingChecks += {id, command, keys}; wiersz failed, 0 new, N pre-existing; brak inputu; lista biegnie dalej', next: 'RV_STOP_RULE' },
@@ -694,7 +694,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_PROMPT_KIND',
       title: 'Jak budowany jest prompt werdyktu',
       question: 'Czy seat review czyta pliki sam (cli/shell/agent), czy dostaje wszystko w pakiecie (api)?',
-      where: 'src/engine/orchestrator/final-review.ts:647',
+      where: 'src/engine/orchestrator/final-review.ts:663',
       inputs: ['reviewRunner.kind', 'resolveRunUniverse (fullDiff, changedFiles, preRunFiles)', 'resolveRunReviewScope (diffy per plik z review-changes.json)', 'maxInputChars z CLI_TOOL_CATALOG'],
       branches: [
         { if: 'kind api', then: 'buildApiReviewContext: każda sekcja wymagana (spec lub feature request, tasks.md, cały diff, drift, Checks Log, pending inputs)', next: 'RV_API_PACKET' },
@@ -752,7 +752,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_ANSWER_SCHEMA',
       title: 'Kontrakt odpowiedzi: co odrzuca schemat przed przyjęciem werdyktu',
       question: 'Czy ReviewAnswer jest kompletny i spójny?',
-      where: 'src/engine/orchestrator/final-review.ts:553',
+      where: 'src/engine/orchestrator/final-review.ts:560',
       inputs: ['verdictCoverageErrors', 'triageContractErrors', 'fixTaskTargetErrors', 'refusedCheckErrors'],
       branches: [
         { if: 'task zakresu brakuje, powtarza się lub nie istnieje; kryterium podobnie; finding powtarza id', then: 'odrzucenie: seat dostaje jedną naprawę' },
@@ -771,7 +771,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_FIX_TASK_TARGETS',
       title: 'Fix task nie dotyka pracy użytkownika',
       question: 'Czy fix task wskazuje plik zmieniony przed startem runu, którego run nie zmienił?',
-      where: 'src/engine/orchestrator/triage.ts:172',
+      where: 'src/engine/orchestrator/triage.ts:179',
       inputs: ['task.suggestedFiles', 'task.protectedOperations[].path', 'userFiles z resolveRunUniverse'],
       branches: [
         { if: 'tak', then: 'błąd: Fix task T### targets x: it was already changed when this run started, and this run did not change it; odpowiedź wraca do seat-a na jedną naprawę', next: 'RV_ANSWER_SCHEMA' },
@@ -783,7 +783,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_CALL_FAILURE_KIND',
       title: 'Klasyfikacja nieudanego wywołania review',
       question: 'Dlaczego verdict call (lub plan call) nie dał odpowiedzi?',
-      where: 'src/engine/orchestrator/final-review.ts:970',
+      where: 'src/engine/orchestrator/final-review.ts:986',
       inputs: ['wyjątek', 'opts.signal.aborted', 'typedRunnerCallErrorCode', 'readApiContextDiagnostic', 'diagnosePlannerCallFailure'],
       branches: [
         { if: 'abort (stop użytkownika)', then: 'review_completed verdict stopped; reviewStatus failed bez failure; brak halt-u' },
@@ -816,7 +816,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_CLAIM_VERIFICATION',
       title: 'Weryfikacja claimów unverified własnymi checkami',
       question: 'Czy SPLITBRIEF uruchamia checki za kryteria i findingi, które reviewer zostawił unverified?',
-      where: 'src/engine/orchestrator/final-review.ts:260',
+      where: 'src/engine/orchestrator/final-review.ts:261',
       inputs: ['state.pendingTriage.inputs (source check?)', 'verdict.criteria status unverified', 'findings kind unverified w zakresie', 'criterion.checkIds / finding.checkIds'],
       branches: [
         { if: 'jest pending input source = check (czerwony check pre-review lub reviewera)', then: 'żadna weryfikacja; mapa pusta; unverified zostaje unverified', next: 'RV_RENDER_FORCED' },
@@ -912,7 +912,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_AFTER_PASS',
       title: 'Po pass: ready-to-apply czy closed',
       question: 'Gdzie są zmiany runu po pass lub Accept as is?',
-      where: 'src/core/sessions/run-status.ts:178',
+      where: 'src/core/sessions/run-status.ts:192',
       inputs: ['state.phase complete', 'reviewStatus passed lub acceptedAsIs', 'state.workspace.kind', 'pendingRecovery'],
       branches: [
         { if: 'workspace undefined (starszy run) lub kind checkout', then: 'closed complete: zmiany już w checkoutcie, bez Apply; override zachowuje failed werdykt, blok Closed pokazuje needs attention' },
@@ -1000,7 +1000,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_FIX_CHECK_JUDGE',
       title: 'Bramka fix tasku: czy czerwona komenda reviewera jest naprawiona',
       question: 'Jak SPLITBRIEF ocenia ponowny bieg komendy V w bramce fix briefu?',
-      where: 'src/core/review/fix-task.ts:97',
+      where: 'src/core/review/fix-task.ts:164',
       inputs: ['carried: failureKeys (własne klucze fix tasku) i redKeys (wszystkie klucze oryginalnego czerwonego)', 'wynik ponownego biegu'],
       branches: [
         { if: 'brak własnych kluczy albo placeholder w wyniku (timeout, niekompletny capture)', then: 'brak osądu: komenda musi po prostu przejść' },
@@ -1030,7 +1030,7 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
       id: 'RV_ACCEPT_AS_IS_KIND',
       title: 'Accept as is / Skip review: co zapisuje i gdzie ląduje run',
       question: 'Na jakim halt-cie i w jakiej fazie użytkownik wybrał accept-as-is?',
-      where: 'src/engine/orchestrator/recovery/actions.ts:424',
+      where: 'src/engine/orchestrator/recovery/actions.ts:429',
       inputs: ['issue.reason (review-failed | review-input-too-large)', 'state.phase', 'opts.comment (notatka)', 'readCriticalFindings z review.md'],
       branches: [
         { if: 'review-input-too-large i phase implementing (task review)', then: 'CLEAR_SCHEDULED_REVIEW + ACCEPT_AS_IS findings = [treść halt-u]; następny brief startuje; final review później nadpisze (REVIEW_DONE czyści acceptedAsIs)' },
@@ -1044,20 +1044,20 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
   config: [
     { key: 'validation.end_checks', values: 'true | false', default: 'true', effect: 'Włącza plan call i checki reviewera przed każdym review (final i task). Off: wiersz End-of-run checks · off; biegną tylko checki planu i briefów.', where: 'src/core/config/runtime/resolve.ts:10' },
     { key: 'validation.approve_checks', values: 'auto | ask', default: 'auto', effect: 'ask: karta Reviewer checks z Run all / Skip all przed biegiem komend; headless bez ekranu = żadna nie biegnie; skip nigdy nie jest pass. Bez efektu gdy end_checks off.', where: 'src/core/config/runtime/resolve.ts:15' },
-    { key: 'validation.render', values: 'komenda z {id} i {out}', default: 'brak', effect: 'Szablon render checków planu. Brak = każdy render check not-runnable (required → halt). PNG z {out} trafiają do rendersDir sesji i do promptu reviewera (do 4 na check).', where: 'src/engine/orchestrator/validation/run-checks.ts:293' },
+    { key: 'validation.render', values: 'komenda z {id} i {out}', default: 'brak', effect: 'Szablon render checków planu. Brak = każdy render check not-runnable (required → halt). PNG z {out} trafiają do rendersDir sesji i do promptu reviewera (do 4 na check).', where: 'src/engine/orchestrator/validation/run-checks.ts:313' },
     { key: 'validation.test_command', values: 'argv bez shella', default: 'brak', effect: 'Pierwszy szczebel drabinki komendy dla planner test check; biegnie as-is, bez dopisania pliku. Bez niego stack poza 5 rejestrowymi daje not-runnable.', where: 'src/engine/orchestrator/validation/run.ts (planTestCheck); docs/CONFIGURATION.md §How a test check resolves its command' },
-    { key: 'validation.test_pattern', values: 'wzorzec z jednym *', default: 'wzorce stacku', effect: 'Jak SPLITBRIEF znajduje pliki testów obok zmienionego pliku dla test check.', where: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts:500' },
-    { key: 'validation.timeout_ms', values: 'int >= 1000', default: 'STAGE_TIMEOUT_MS', effect: 'Limit czasu każdej komendy checku, także base re-run i renderów. Timeout = fail z placeholderem timed out (zawsze zatrzymuje listę, nigdy pre-existing).', where: 'src/engine/orchestrator/validation/run-checks.ts:140' },
+    { key: 'validation.test_pattern', values: 'wzorzec z jednym *', default: 'wzorce stacku', effect: 'Jak SPLITBRIEF znajduje pliki testów obok zmienionego pliku dla test check.', where: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts:516' },
+    { key: 'validation.timeout_ms', values: 'int >= 1000', default: 'STAGE_TIMEOUT_MS', effect: 'Limit czasu każdej komendy checku, także base re-run i renderów. Timeout = fail z placeholderem timed out (zawsze zatrzymuje listę, nigdy pre-existing).', where: 'src/engine/orchestrator/validation/run-checks.ts:138' },
     { key: 'validation.stack', values: 'typescript | javascript | python | go | rust', default: 'detekcja', effect: 'Przypina stack dla drabinki test check i wzorców testów.', where: 'src/core/schemas/config.ts:82' },
-    { key: 'workflow.review', values: 'end | task', default: 'end', effect: 'task: zawężony review (pre-review required checków, plan call tylko testy związane, werdykt na ukończone taski i due criteria) po każdym briefie, który przeszedł walidację.', where: 'src/engine/orchestrator/task/loop.ts:270' },
-    { key: 'workflow.isolation', values: 'worktree | staged-copy | none', default: '→ lifecycle', effect: 'Decyduje, co dzieje się po pass: worktree/staged-copy → ready-to-apply; none (checkout) → closed complete bez Apply. W checkout komendy biegną w Twoim checkoutcie.', where: 'src/core/sessions/run-status.ts:178' },
-    { key: 'workflow.approve', values: 'plan | none', default: 'plan', effect: 'planApprovesNpmScripts: tylko zatwierdzony plan pozwala plan check uruchomić npm run <script>. Reviewer checks nie potrzebują tej zgody (porównanie z run base zamiast niej).', where: 'src/engine/orchestrator/validation/run-checks.ts:87' },
+    { key: 'workflow.review', values: 'end | task', default: 'end', effect: 'task: zawężony review (pre-review required checków, plan call tylko testy związane, werdykt na ukończone taski i due criteria) po każdym briefie, który przeszedł walidację.', where: 'src/engine/orchestrator/task/loop.ts:271' },
+    { key: 'workflow.isolation', values: 'worktree | staged-copy | none', default: '→ lifecycle', effect: 'Decyduje, co dzieje się po pass: worktree/staged-copy → ready-to-apply; none (checkout) → closed complete bez Apply. W checkout komendy biegną w Twoim checkoutcie.', where: 'src/core/sessions/run-status.ts:192' },
+    { key: 'workflow.approve', values: 'plan | none', default: 'plan', effect: 'planApprovesNpmScripts: tylko zatwierdzony plan pozwala plan check uruchomić npm run <script>. Reviewer checks nie potrzebują tej zgody (porównanie z run base zamiast niej).', where: 'src/engine/orchestrator/validation/run-checks.ts:96' },
     { key: 'reviewer (blok)', values: 'runner kind cli | api | shell | agent', default: 'planner trzyma seat review', effect: 'Kto wykonuje plan call, verdict call i konsultacje fix tasków. api dostaje pakiet (bez narzędzi), reszta czyta workspace. imageInput narzędzia decyduje o renderach.', where: 'src/core/config/accessors/reviewer-runner.ts (resolveReviewerRunner); → runners' },
     { key: 'REVIEW_CYCLE_CAP (stała)', values: '2', default: '2', effect: 'Automatyczne cykle naprawcze na run. Każda korekta przy wyczerpanym capie dodaje BOUNDS.extraFixCyclesPerRun = 1.', where: 'src/core/pipeline-spec/review.ts:3; src/core/pipeline-spec/bounds.ts:8' },
     { key: 'MAX_REVIEW_CHECKS (stała)', values: '6', default: '6', effect: 'Najwięcej komend w jednym planie reviewera; komendy pending ponad limit czekają z wierszem not run.', where: 'src/core/schemas/review.ts:94' },
     { key: 'MAX_RENDER_IMAGES_PER_CHECK (stała)', values: '4', default: '4', effect: 'PNG na render check w promptcie; frame.png najpierw.', where: 'src/engine/orchestrator/review-renders.ts:10' },
     { key: 'MAX_FILE_CHARS / MAX_PROJECT_CHARS (stałe)', values: '8 000 / 40 000', default: 'jw.', effect: 'Ile tekstu plików projektu (manifesty, Makefile, CI, README) dostaje seat api w plan call.', where: 'src/engine/orchestrator/review-checks.ts:77' },
-    { key: 'CLI_TOOL_CATALOG[tool].maxInputChars', values: 'Codex 1 048 576; inne brak', default: 'brak capu', effect: 'Cap promptu review dla narzędzia cli; uruchamia fitReviewPrompt i halt review-input-too-large.', where: 'src/core/runners/cli-tool-catalog.ts:414; src/engine/orchestrator/final-review.ts:380' },
+    { key: 'CLI_TOOL_CATALOG[tool].maxInputChars', values: 'Codex 1 048 576; inne brak', default: 'brak capu', effect: 'Cap promptu review dla narzędzia cli; uruchamia fitReviewPrompt i halt review-input-too-large.', where: 'src/core/runners/cli-tool-catalog.ts:414; src/engine/orchestrator/final-review.ts:381' },
   ],
   states: [
     { name: 'final-review (phase)', meaning: 'Run jest w review: po ALL_DONE, po REVIEW_CORRECTION, po APPLY_REVIEW_START, albo zatrzymany na halt-cie review bez werdyktu lub z czerwonym inputem.', where: 'src/core/state/machine.ts:415' },
@@ -1065,11 +1065,11 @@ Pass w trybie worktree lub staged-copy daje ready-to-apply; Apply, Discard albo 
     { name: 'complete (phase) + reviewStatus failed', meaning: 'Final review nie przeszedł bez czerwonego inputu; halt review-failed z fix again / Accept as is / End run.', where: 'src/engine/orchestrator/run/review.ts:90' },
     { name: 'acceptedAsIs', meaning: 'Override użytkownika: findings i notatka. Daje ready-to-apply override albo closed complete; REVIEW_DONE czyści go.', where: 'src/core/state/machine.ts:548' },
     { name: 'review.outcome: pass | pass-with-notes | fail', meaning: 'Wynik wyliczony przez deriveReviewOutcome, zapisany w state.review i review.json.', where: 'src/core/review/verdict.ts:202' },
-    { name: 'CheckStatus: pass | fail | refused | not-runnable | unknown', meaning: 'Status jednego biegu checku. Tylko pass i fail są wynikami; reszta to brak możliwości osądu (required → halt).', where: 'src/engine/orchestrator/validation/run-checks.ts:45' },
-    { name: 'full_suite moment: plan | pre-review | base | brief', meaning: 'Wiersz checku: plan = pre-review checków planu/briefów; pre-review = komenda reviewera; base = base re-run; brief = fix check w bramce briefu.', where: 'src/engine/orchestrator/events.ts:263' },
-    { name: 'pending input ids: P n / V k.n / A n / U n', meaning: 'P = required check pre-review; V k.n = komenda reviewera V k; A n = recheck po Apply lub odpowiedź użytkownika (kind answer); U n = korekta użytkownika (revise).', where: 'src/engine/orchestrator/run/pre-review-checks.ts:81; src/engine/orchestrator/review-checks.ts:626; src/core/state/machine.ts:485' },
-    { name: 'pendingReviewCommands', meaning: 'Komendy reviewera, które fix check uruchomił od ostatniego review; następny plan call musi wybrać je pierwsze; zdejmowane po biegu (discharged).', where: 'src/engine/orchestrator/final-review.ts:925' },
-    { name: 'fixCycles { used, allowance, notes }', meaning: 'Wydane i dozwolone cykle naprawcze; notes = korekty, które dodały cykl.', where: 'src/core/schemas/workflow.ts:530' },
+    { name: 'CheckStatus: pass | fail | refused | not-runnable | unknown', meaning: 'Status jednego biegu checku. Tylko pass i fail są wynikami; reszta to brak możliwości osądu (required → halt).', where: 'src/engine/orchestrator/validation/run-checks.ts:49' },
+    { name: 'full_suite moment: plan | pre-review | base | brief', meaning: 'Wiersz checku: plan = pre-review checków planu/briefów; pre-review = komenda reviewera; base = base re-run; brief = fix check w bramce briefu.', where: 'src/engine/orchestrator/events.ts:266' },
+    { name: 'pending input ids: P n / V k.n / A n / U n', meaning: 'P = required check pre-review; V k.n = komenda reviewera V k; A n = recheck po Apply lub odpowiedź użytkownika (kind answer); U n = korekta użytkownika (revise).', where: 'src/engine/orchestrator/run/pre-review-checks.ts:81; src/engine/orchestrator/review-checks.ts:624; src/core/state/machine.ts:485' },
+    { name: 'pendingReviewCommands', meaning: 'Komendy reviewera, które fix check uruchomił od ostatniego review; następny plan call musi wybrać je pierwsze; zdejmowane po biegu (discharged).', where: 'src/engine/orchestrator/final-review.ts:941' },
+    { name: 'fixCycles { used, allowance, notes }', meaning: 'Wydane i dozwolone cykle naprawcze; notes = korekty, które dodały cykl.', where: 'src/core/schemas/workflow.ts:551' },
     { name: 'pendingScheduledReview', meaning: 'Marker scheduled task review (afterTaskId); blokuje start następnego briefu do odpowiedzi; CLEAR_SCHEDULED_REVIEW zdejmuje.', where: 'src/core/state/machine.ts:986' },
   ],
   scenarios: [

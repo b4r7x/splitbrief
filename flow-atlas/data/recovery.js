@@ -15,11 +15,11 @@ Krótki reset (do 10 minut) nie tworzy halt-u na BUILD i w konsultacjach: wywoł
 Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners; pętla briefów i drabina eskalacji → zobacz build; werdykt i fix-loop → zobacz review; status runu, park i wznowienie → zobacz lifecycle; panel, picker, Settings › Fallback → zobacz ui.`,
   entry: [
     "src/engine/orchestrator/task/implementation-failure.ts:67",
-    "src/engine/orchestrator/escalation/handle.ts:193",
+    "src/engine/orchestrator/escalation/handle.ts:201",
     "src/engine/orchestrator/planning/failure.ts:25",
     "src/engine/orchestrator/run/review.ts:149",
     "src/engine/orchestrator/task/retry.ts:171",
-    "src/engine/orchestrator/escalation/seat-wait.ts:150",
+    "src/engine/orchestrator/escalation/seat-wait.ts:199",
   ],
   links: [
     { to: "runners", label: "adapter narzędzia zwraca outcome `usage-limit` / `unauthenticated` i słowa narzędzia; tu są klasyfikowane" },
@@ -338,7 +338,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_FAILURE_SOURCE",
       title: "Którą drogą błąd wywołania dochodzi do recovery",
       question: "Który seat zawiódł i czy jego wywołanie przeszło przez drabinę seat-trouble?",
-      where: "src/engine/orchestrator/escalation/seat-wait.ts:150",
+      where: "src/engine/orchestrator/escalation/seat-wait.ts:199",
       inputs: ["seat (plan/build/review)", "rodzaj wywołania: brief, konsultacja, krok planowania, werdykt"],
       branches: [
         { if: "wywołanie implementera (pierwsza próba `run-implementation.ts:286` lub próba drabiny `make-implementer-retry-invoker.ts:125`)", then: "przechodzi przez `runSeatCall`: retry transient ×3, czekanie na reset ≤ 10 min; porażka wraca jako `implResult.outcome`", next: "RC_IMPL_OUTCOME" },
@@ -353,7 +353,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_AUTHORITATIVE",
       title: "Outcome, którego żadne słowa nie zmienią",
       question: "Czy porażka niesie outcome, który jest własnym werdyktem?",
-      where: "src/engine/runners/seat-failure.ts:171",
+      where: "src/engine/runners/seat-failure.ts:177",
       inputs: ["`outcome` runnera", "`code` błędu"],
       branches: [
         { if: "outcome lub code w `AUTHORITATIVE_OUTCOMES`: `user-abort`, `implementer-left-isolation`, `checkout-changed`, `implementer-recipe-invalid`, `input-too-large`, `missing-model`, `no-progress-cut`", then: "klasa `authoritative`: bez retry, bez czekania; builder defektu z `RUNNER_DEFECT_BUILDERS` (`builders/task.ts:984`) buduje halt", next: "RC_HALT_OF" },
@@ -364,7 +364,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_ACCOUNT_CAUSE",
       title: "Odmowa konta: auth, quota, balance, billing",
       question: "Czy słowa albo status HTTP mówią, że konto nie obsłuży wywołania?",
-      where: "src/engine/runners/seat-failure.ts:129",
+      where: "src/engine/runners/seat-failure.ts:135",
       inputs: ["status HTTP", "frazy `HALT_SIGNATURES.auth` / `ACCOUNT_PHRASES`", "`providerType`", "źródło słów (stderr-tail / stdout-tail matchują tylko frazy haltu)"],
       branches: [
         { if: "status 402", then: "`account · balance`", next: "RC_HALT_OF" },
@@ -380,7 +380,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_RATE_LIMITED",
       title: "Limit z odczytaną godziną resetu",
       question: "Czy tekst nazywa limit i czy `parseUsageLimitReset` odczyta z niego chwilę resetu?",
-      where: "src/engine/runners/seat-failure.ts:123",
+      where: "src/engine/runners/seat-failure.ts:129",
       inputs: ["status 429 lub `429` w tekście lub fraza wyczerpania", "wzorce resetu: `try again at …`, `try again in …`, `resets 3:45pm`, `resets Mon 12:00am`, `Resets in 2h6m30s`, `retry-after: N`, `|<epoch>`"],
       branches: [
         { if: "sygnał limitu i reset parsowalny", then: "`rate-limited · resetAt`; halt niesie `resetAt`, panel i wiersze piszą `resets HH:MM`", next: "RC_RESET_WAIT_ONCE" },
@@ -392,7 +392,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_TRANSIENT",
       title: "Błąd przejściowy sieci lub serwera",
       question: "Czy porażkę można powtórzyć tym samym wywołaniem?",
-      where: "src/engine/runners/seat-failure.ts:148",
+      where: "src/engine/runners/seat-failure.ts:154",
       inputs: ["outcome", "markery sieci (`ECONNRESET`, `fetch failed`, `ENOTFOUND`…)", "status HTTP z tekstu"],
       branches: [
         { if: "outcome znany i nie należy do `non-zero-exit` / `protocol-failure` / `usage-limit`", then: "nie transient (outcome jest ostateczny)", next: "RC_HALT_OF" },
@@ -418,7 +418,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_RESET_WAIT_ONCE",
       title: "Czekać na reset czy halt-ować",
       question: "Czy run może poczekać na reset limitu w miejscu?",
-      where: "src/engine/orchestrator/escalation/seat-wait.ts:64",
+      where: "src/engine/orchestrator/escalation/seat-wait.ts:76",
       inputs: ["klasa porażki", "`parseUsageLimitReset(message)`", "`BOUNDS.rateLimitResetWaitMs = 600 000`"],
       branches: [
         { if: "klasa != rate-limited albo reset nieparsowalny", then: "bez czekania; porażka wraca do wywołującego, który buduje halt", next: "RC_IMPL_OUTCOME" },
@@ -432,7 +432,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_RESUME_SEAT_WAIT",
       title: "Czekanie przeżywa stop runu",
       question: "Co z `state.seatWait`, gdy run został zatrzymany w trakcie czekania?",
-      where: "src/engine/orchestrator/run/init.ts:330",
+      where: "src/engine/orchestrator/run/init.ts:334",
       inputs: ["`savedState.seatWait`", "`savedState.pendingRecovery`", "zegar"],
       branches: [
         { if: "abort w trakcie `abortableDelay`", then: "`seatWait` zostaje w state.json; `deriveRunStatus` daje `stopped · seat-wait`, byline `Waiting for <tool> · resets HH:MM` (`run-status.ts:210`, `closed/byline.ts:271`)" },
@@ -461,7 +461,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_LADDER_HALT",
       title: "Drabina eskalacji przerywa się na seat-down i defekcie",
       question: "Czy ostatnia porażka szczebla drabiny to seat, który nie może pracować?",
-      where: "src/engine/orchestrator/escalation/handle.ts:193",
+      where: "src/engine/orchestrator/escalation/handle.ts:201",
       inputs: ["`stepOutcome.lastFailure.outcome`", "`stepOutcome.lastError`"],
       branches: [
         { if: "outcome `unauthenticated` lub `usage-limit`", then: "`seatDownHalt`: ten sam `buildSeatDownIssue` co pierwsza próba, bez konsultacji; `INTERRUPT_STEP source: seat`; `failedRetry`", next: "RC_FALLBACK_DECLARED" },
@@ -475,7 +475,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_PLANNER_DIAGNOSIS",
       title: "Diagnoza nieudanego wywołania PLAN / REVIEW / konsultacji",
       question: "Co słowa narzędzia mówią o seat planner-tier?",
-      where: "src/engine/orchestrator/recovery/planner-call-failure.ts:64",
+      where: "src/engine/orchestrator/recovery/planner-call-failure.ts:72",
       inputs: ["kod typowanego błędu (`missing-model`, `input-too-large`, `timeout`)", "`thrownSeatFailure(err)`: słowa i klasyfikacja", "runner seat-a"],
       branches: [
         { if: "kod `missing-model`", then: "failure `missing-model`; halt pyta listing poświadczeń trasy, czy to sign-out czy zły model", next: "RC_MODEL_REFUSAL_ROUTE" },
@@ -490,7 +490,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_PLANNER_BUILDER",
       title: "Który halt buduje nieudane wywołanie plannera",
       question: "Czy diagnoza niesie klasyfikację seat-down?",
-      where: "src/engine/orchestrator/recovery/builders/planner.ts:75",
+      where: "src/engine/orchestrator/recovery/builders/planner.ts:76",
       inputs: ["`diagnosis.failure`", "`diagnosis.seatDown.classification`", "`seatRouteRefusal` dla missing-model", "`task` (konsultacja briefu)", "`seatSwitches`"],
       branches: [
         { if: "klasyfikacja seat-down obecna, albo missing-model na trasie `signed-out`", then: "`buildSeatDownIssue` na seat `plan`/`review` (z fallbackiem, intencją auto)", next: "RC_FALLBACK_DECLARED" },
@@ -503,7 +503,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_REVIEW_FAILURE_KIND",
       title: "Nieudany werdykt: który halt",
       question: "Jak padło wywołanie werdyktu?",
-      where: "src/engine/orchestrator/final-review.ts:984",
+      where: "src/engine/orchestrator/final-review.ts:1000",
       inputs: ["kod typowanego błędu", "`readApiContextDiagnostic`", "`diagnosePlannerCallFailure(seat review)`"],
       branches: [
         { if: "kod `input-too-large`", then: "`review-input-too-large` (Needs you): `accept-as-is` = „Skip review with a note” tylko dla final review / task review, `end-run`; recommended end-run (`builders/review-input.ts:27`)" },
@@ -666,7 +666,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_TUI_AUTO",
       title: "TUI: intencja automatyczna omija panel",
       question: "Co recovery-driver robi z halt-em, który niesie `switchSeat.auto`?",
-      where: "src/features/workflow/recovery-driver.ts:223",
+      where: "src/features/workflow/recovery-driver.ts:228",
       inputs: ["`issue.switchSeat.auto`", "`runResumePolicy(prepared.runtime)`"],
       branches: [
         { if: "intencja obecna", then: "zwraca od razu `{shouldRun: true, switchSeat: {candidate: auto.candidate}}`: bez pytania, bez pickera; run loop woła `applyOfferedSeatSwap` (`use-run-loop.ts:395`)", next: "RC_SWITCH_PLAN_OK" },
@@ -679,7 +679,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_TUI_ANSWER",
       title: "TUI: odpowiedź na panel i słowa z composera",
       question: "Jak wpisany tekst albo klawisz staje się akcją?",
-      where: "src/features/workflow/recovery-driver.ts:405",
+      where: "src/features/workflow/recovery-driver.ts:413",
       inputs: ["`parseRecoveryActionAnswer` (klawisze r/w/l/v/k/c/s/a, aliasy, `w2`, `w3`)", "`correctionActionFor(issue)`", "`leavesWordsUnread`"],
       branches: [
         { if: "pusty ⏎", then: "akcja rekomendowana" },
@@ -694,7 +694,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_ACTION_ALLOWED",
       title: "Czy akcja jest dozwolona dla tego halt-u",
       question: "Czy silnik przyjmie akcję, którą wybrał operator lub CLI?",
-      where: "src/engine/orchestrator/recovery/actions.ts:153",
+      where: "src/engine/orchestrator/recovery/actions.ts:158",
       inputs: ["`state.pendingRecovery`", "`issue.availableActions`", "`allowedActionsForHalt(haltOf(reason))`"],
       branches: [
         { if: "brak `pendingRecovery` (i brak uciętego Apply)", then: "`blocked · no-pending-recovery`" },
@@ -710,7 +710,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_ACTION",
       title: "Dispatch akcji recovery",
       question: "Co dokładnie zmienia w stanie każda akcja?",
-      where: "src/engine/orchestrator/recovery/actions.ts:180",
+      where: "src/engine/orchestrator/recovery/actions.ts:185",
       inputs: ["`action`", "`issue.reason`", "`issue.taskId`", "`comment` operatora"],
       branches: [
         { if: "`revise`", then: "review-failed: `REVIEW_CORRECTION` (jeden fix cycle więcej, → zobacz review); inaczej `ENQUEUE_USER_MSG` do kolejki plannera i `RESOLVE`" },
@@ -727,7 +727,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_CONTINUE_SAFE",
       title: "Continue: grant allowance albo stale halt",
       question: "Czy `continue` ma co zrobić?",
-      where: "src/engine/orchestrator/recovery/actions.ts:1178",
+      where: "src/engine/orchestrator/recovery/actions.ts:1206",
       inputs: ["`issue.reason`", "`issue.taskId`", "notatka operatora"],
       branches: [
         { if: "`planner-calls-spent` bez taskId", then: "`GRANT_ALLOWANCE target planner` (+5 wywołań plannera, `BOUNDS.extraPlannerCallsPerRun`), `RESOLVE`" },
@@ -740,7 +740,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_SEAT_LEVEL_RETRY",
       title: "Try again: reset briefu czy ponowne wydanie kroku",
       question: "Czy halt jest o seat (bez briefu), czy o brief?",
-      where: "src/engine/orchestrator/recovery/actions.ts:576",
+      where: "src/engine/orchestrator/recovery/actions.ts:581",
       inputs: ["`issue.taskId`", "`issue.seat`", "`phaseRole(issue.phase)`"],
       branches: [
         { if: "brak taskId i seat `plan`/`review` (lub brak seat w fazie plannera)", then: "`resolveSeatIssueWithoutTask`: `RESOLVE` (+ korekta do kolejki); run wraca do tego samego kroku: planowanie lub werdykt; etykieta `Try again with PLAN/REVIEW`" },
@@ -754,7 +754,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_RETRY_LATER_OK",
       title: "Retry at HH:MM: czekanie bez limitu 10 minut",
       question: "Czy halt zna reset i seat, by zaparkować czekanie?",
-      where: "src/engine/orchestrator/recovery/actions.ts:923",
+      where: "src/engine/orchestrator/recovery/actions.ts:928",
       inputs: ["`issue.resetAt`", "`issue.seat`"],
       branches: [
         { if: "brak `resetAt` lub `seat`", then: "`blocked · action-not-available` („needs the reset the halt names”)" },
@@ -766,7 +766,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_SWITCH_PLAN_OK",
       title: "Plan przełączenia: co musi się zgadzać przed zapisem",
       question: "Czy switch ma wszystko, by zbudować przełączony config?",
-      where: "src/engine/orchestrator/recovery/actions.ts:627",
+      where: "src/engine/orchestrator/recovery/actions.ts:632",
       inputs: ["`issue.switchSeat`", "`opts.candidate`", "`opts.config`", "`issue.selectedImplementerProfile`", "`readSeatOfRecord`"],
       branches: [
         { if: "brak oferty lub `switch-seat` nieoferowane", then: "`seat-swap-unavailable`" },
@@ -824,7 +824,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_SWITCH_COMMIT_KIND",
       title: "Commit przełączenia: wznowić próbę czy krok",
       question: "Czy halt nazywa brief?",
-      where: "src/engine/orchestrator/recovery/actions.ts:760",
+      where: "src/engine/orchestrator/recovery/actions.ts:765",
       inputs: ["`issue.taskId`", "`seat`", "`issue.selectedImplementerProfile`"],
       branches: [
         { if: "brief", then: "`RESTART_ATTEMPT_ON_SEAT {taskId, profile}`: `currentTaskIndex` na brief, `pendingRecovery` czyszczone, `retryProfile` przypięty; attempt i park (`interruptedStep source: seat`) zostają, więc brief wznawia tę samą próbę w zachowanym workspace; outcome `retry-current-task`" },
@@ -866,7 +866,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_STALE_HALT",
       title: "Halt, który już nic nie znaczy, znika przy wejściu",
       question: "Czy zapisany halt dotyczy reguły, której run już nie sprawdza?",
-      where: "src/engine/orchestrator/run/init.ts:619",
+      where: "src/engine/orchestrator/run/init.ts:630",
       inputs: ["`issue.reason`", "`state.workspace`", "treść `checkout-changed`"],
       branches: [
         { if: "reason retired (`validation-failed`, `user-edit-conflict`, `approval-promotion-conflict`, `scope-violation`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`)", then: "stale: `RESOLVE`, `recovery_resolved continue`, warning `The halt this run saved no longer applies; continuing.`" },
@@ -878,7 +878,7 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
       id: "RC_CREW_CHANGED",
       title: "Seat zmieniony w Settings, gdy run stał: to też switch",
       question: "Czy seat w config.yaml różni się od zapisanego w `seats.json` runu?",
-      where: "src/engine/orchestrator/run/init.ts:261",
+      where: "src/engine/orchestrator/run/init.ts:265",
       inputs: ["`reconcileSeatIdentities`", "zdarzenia `seat_switched` od ostatniego `workflow_started`/`workflow_resumed`"],
       branches: [
         { if: "zmiana, której żaden `seat_switched` tego wejścia nie nazwał", then: "publikuje `seat_switched` z `cause: crew-changed`, `auto: false`, rewizja pliku; halt czekający na ten seat wznawia się na nowym (Try again / korekta)" },
@@ -923,16 +923,16 @@ Powiązane obszary: wykrywanie limitu w adapterach narzędzi → zobacz runners;
     { key: "BOUNDS.rateLimitResetWaitMs", values: "stała 600 000 ms (10 min)", default: "600000", effect: "Granica cichego czekania na reset w `runSeatCall` i próg „długiego resetu” dla intencji automatycznej.", where: "src/core/pipeline-spec/bounds.ts:13" },
     { key: "BOUNDS.transientRetries", values: "stała 3", default: "3", effect: "Liczba powtórek błędu przejściowego z backoffem 2s, 4s, 8s.", where: "src/core/pipeline-spec/bounds.ts:14" },
     { key: "BOUNDS.extraConsultsPerLineage / extraAttemptsPerLineage / extraPlannerCallsPerRun", values: "1 / 4 / 5", default: "1 / 4 / 5", effect: "Co daje `Continue` na halcie `consult-bound-spent` / `planner-calls-spent`.", where: "src/core/pipeline-spec/bounds.ts:5" },
-    { key: "OFFERED_SEAT_SWAP_CANDIDATES", values: "stała 3", default: "3", effect: "Ile wierszy `switch <SEAT> to …` pokazuje panel; reszta w notce `(N more ready tools detected)`.", where: "src/features/workflow/recovery-prompt.ts:219" },
+    { key: "OFFERED_SEAT_SWAP_CANDIDATES", values: "stała 3", default: "3", effect: "Ile wierszy `switch <SEAT> to …` pokazuje panel; reszta w notce `(N more ready tools detected)`.", where: "src/features/workflow/recovery-prompt.ts:221" },
     { key: "Settings › Fallback (wiersz `fallback:<seat>`)", values: "picker w slocie `fallback`; wiersz None czyści", default: "`none · pause and ask`", effect: "Zapisuje `fallback` do config.yaml; działa przy najbliższym halcie bieżącego runu (→ zobacz ui).", where: "src/core/crew/fallback.ts:90" },
   ],
   states: [
-    { name: "pendingRecovery (status awaiting-user)", meaning: "Halt czeka na decyzję; `deriveRunStatus` → `open · waiting-for-you · halt`. Panel w TUI, `recovery_required` headless.", where: "src/core/sessions/run-status.ts:207" },
+    { name: "pendingRecovery (status awaiting-user)", meaning: "Halt czeka na decyzję; `deriveRunStatus` → `open · waiting-for-you · halt`. Panel w TUI, `recovery_required` headless.", where: "src/core/sessions/run-status.ts:221" },
     { name: "pendingRecovery (status applying, selectedAction)", meaning: "Akcja wybrana, zapis stanu w toku; przy ponownym wejściu driver odgrywa `selectedAction` bez pytania.", where: "src/core/state/machine.ts:281" },
     { name: "pendingRecovery.switchSeat.auto", meaning: "Intencja automatycznego fallbacku {candidate, configRevision}; TUI i headless wykonują ją przed panelem.", where: "src/core/schemas/recovery/schemas.ts:34" },
-    { name: "interruptedStep (source: seat, cut: mid-step)", meaning: "Brief ucięty przez seat-down; workspace zachowany; switch wznawia tę samą próbę.", where: "src/engine/orchestrator/task/implementation-failure.ts:97" },
-    { name: "seatWait {seat, resetAt}", meaning: "Run czeka na reset (auto ≤ 10 min lub Retry at). Proces żywy: `running`; zatrzymany: `stopped · seat-wait`, byline `Waiting for <tool> · resets HH:MM`.", where: "src/core/schemas/workflow.ts:277" },
-    { name: "seatSwitches[]", meaning: "Każde przełączenie seat-a: seat, from, to, cause, accountCause?, headline, auto, configRevision, ts. Wpis `auto: true` blokuje drugą intencję dla tego seat-a w runie.", where: "src/core/schemas/workflow.ts:286" },
+    { name: "interruptedStep (source: seat, cut: mid-step)", meaning: "Brief ucięty przez seat-down; workspace zachowany; switch wznawia tę samą próbę.", where: "src/engine/orchestrator/task/implementation-failure.ts:101" },
+    { name: "seatWait {seat, resetAt}", meaning: "Run czeka na reset (auto ≤ 10 min lub Retry at). Proces żywy: `running`; zatrzymany: `stopped · seat-wait`, byline `Waiting for <tool> · resets HH:MM`.", where: "src/core/schemas/workflow.ts:294" },
+    { name: "seatSwitches[]", meaning: "Każde przełączenie seat-a: seat, from, to, cause, accountCause?, headline, auto, configRevision, ts. Wpis `auto: true` blokuje drugą intencję dla tego seat-a w runie.", where: "src/core/schemas/workflow.ts:307" },
     { name: "retryProfile {taskId, profile}", meaning: "Brief przypięty do profilu BUILD po Retry/switch, aż przejdzie lub zostanie pominięty.", where: "src/core/state/machine.ts:300" },
     { name: "halt `needs-you`", meaning: "Decyzja tylko człowieka: wyczerpane bound-y, failed review po limicie cykli, chroniona ścieżka, konflikt Apply.", where: "src/core/recovery/halt.ts:14" },
     { name: "halt `seat-down`", meaning: "Seat nie może pracować: wylogowany, bez limitu, odrzucił komendę lub model, dwa timeouty, odpowiedź poza kontraktem.", where: "src/core/recovery/halt.ts:14" },

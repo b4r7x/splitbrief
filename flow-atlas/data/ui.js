@@ -668,7 +668,7 @@ window.ATLAS.push({
       id: 'UI_NORMAL_INPUT',
       title: 'Tekst wysłany w trybie normal',
       question: 'Co dzieje się z tekstem wysłanym, gdy żadna karta nie czeka?',
-      where: 'src/features/workflow/review-parser.ts:278',
+      where: 'src/features/workflow/review-parser.ts:279',
       inputs: ['lifecycle.status', 'phase', 'kolejka (requestEnqueue)'],
       branches: [
         { if: 'interrupted, park jeszcze nie stoi', then: '`Interrupt pending — stopping at the next step boundary.`' },
@@ -699,7 +699,7 @@ window.ATLAS.push({
       id: 'UI_PLAN_CARD_TEXT',
       title: 'Plan card: wysłany tekst',
       question: 'Jak tekst wysłany przy plan card jest czytany?',
-      where: 'src/features/workflow/review-parser.ts:318',
+      where: 'src/features/workflow/review-parser.ts:319',
       inputs: ['reviewKeysStore.requested', 'parseReviewCommand', 'plik do edycji'],
       branches: [
         { if: 'po Request changes', then: 'cały szkic = korekta (`revise`), niezależnie od pierwszego słowa' },
@@ -765,7 +765,7 @@ window.ATLAS.push({
       id: 'UI_RECOVERY_AUTO',
       title: 'Halt z automatycznym fallbackiem',
       question: 'Czy halt pokazuje menu, czy UI od razu zmienia seat?',
-      where: 'src/features/workflow/recovery-driver.ts:223',
+      where: 'src/features/workflow/recovery-driver.ts:228',
       inputs: ['issue.switchSeat.auto'],
       branches: [
         { if: 'halt ma `switchSeat.auto` (zadeklarowany fallback, limit konta albo długi reset)', then: 'bez panelu i bez pickera: `switchSeat` z kandydatem wraca do pętli runu' },
@@ -795,7 +795,7 @@ window.ATLAS.push({
       id: 'UI_SWITCH_SEAT',
       title: 'switch-seat: picker zamiast listy narzędzi',
       question: 'Kiedy wybór w pickerze to zmiana seat-a?',
-      where: 'src/features/workflow/recovery-driver.ts:152',
+      where: 'src/features/workflow/recovery-driver.ts:157',
       inputs: ['oferowany kandydat', 'seat, na którym biegło wywołanie', 'config po zamknięciu pickera'],
       branches: [
         { if: 'picker zamknięty bez wyboru (esc)', then: 'anulowane: menu recovery pyta znowu' },
@@ -1266,7 +1266,7 @@ window.ATLAS.push({
     { path: 'src/features/palette/sources.ts', role: 'źródła palety i ukrywanie przez guard' }
   ],
   gotchas: [
-    '`/home` bez Apply nawiguje od razu, bez drabiny stopu (src/app/command-context.ts:363). Na pracującym runie ekran workflow się odmontowuje, a sprzątanie efektu robi `controller.abort()` (src/features/workflow/hooks/use-run-loop.ts:585). To ten sam abort co Stop now, ale bez czekania na park i bez `settleRun` na ekranie. Esc i `/quit` czekają na stop; `/home` nie.',
+    '`/home` bez Apply nawiguje od razu, bez drabiny stopu (src/app/command-context.ts:363). Na pracującym runie ekran workflow się odmontowuje, a sprzątanie efektu robi `controller.abort()` (src/features/workflow/hooks/use-run-loop.ts:567). To ten sam abort co Stop now, ale bez czekania na park i bez `settleRun` na ekranie. Esc i `/quit` czekają na stop; `/home` nie.',
     'Komunikat commands-only `Only /commands here · ⏎ on an empty line goes home` (src/components/composer/composer.tsx:79) jest nieprawdziwy na runie ready-to-apply: tam pusty ⏎ nie idzie do domu, tylko wraca fokusem do menu wyniku (src/app/screens/workflow.tsx:539). Klasa 2 (mylący tekst).',
     '`/resume`, `/steer` i `/end` są zablokowane w fazach, które nie są live: m.in. `reviewing-plan` (plan card) i `validating-task` (checki briefu) – `No run to end in this phase`. Stop-sheet (esc) i wiersz End run na plan card dalej działają.',
     'Guard komendy robi dwie rzeczy: blokuje wpisaną komendę i ukrywa jej wiersz w palecie, pomocy i liście `/`. Komenda „znika”, gdy nie może działać.',

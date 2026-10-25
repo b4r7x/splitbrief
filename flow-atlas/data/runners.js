@@ -16,7 +16,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
     'src/engine/runners/factory.ts:133',
     'src/engine/runners/factory.ts:175',
     'src/engine/runners/invoke-cli-adapter.ts:134',
-    'src/engine/runners/seat-failure.ts:169',
+    'src/engine/runners/seat-failure.ts:175',
   ],
   links: [
     { to: 'startup', label: 'prepareExecution dostarcza preparedConfig i gates, które fabryka wymaga' },
@@ -621,7 +621,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_ARG_CONFLICT',
       title: 'Walidacja argv przed spawn',
       question: 'Czy końcówka argv skonfigurowana przez użytkownika koliduje z kontraktem adaptera?',
-      where: 'src/engine/runners/cli-tools/process-invoke.ts:222',
+      where: 'src/engine/runners/cli-tools/process-invoke.ts:223',
       inputs: ['invocation.args', 'invocation.baseArgs (prefiks adaptera)', 'adapter.validateArgs'],
       branches: [
         { if: 'validateArgs rzuca lub zwraca niepoprawny kształt', then: 'failed: callback-failure (CLI argument validation failed / returned an invalid result)', next: '' },
@@ -633,7 +633,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_STEERING',
       title: 'Czy wywołanie przyjmuje sterowanie w trakcie',
       question: 'Czy seat ma port sterowania i narzędzie w admitowanej wersji wspiera transport?',
-      where: 'src/engine/runners/cli-tools/process-invoke.ts:337',
+      where: 'src/engine/runners/cli-tools/process-invoke.ts:329',
       inputs: ['context.steering', 'adapter.steering?.supportsVersion(installedVersion)'],
       branches: [
         { if: 'claude-code >= 2.1.296', then: 'argv + --input-format stream-json --replay-user-messages; prompt jako linia JSON; stdin otwarty do pierwszego result', next: '' },
@@ -647,7 +647,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_PROMPT_TRANSPORT',
       title: 'Jak prompt trafia do procesu',
       question: 'Jaki transport deklaruje adapter?',
-      where: 'src/engine/runners/cli-tools/prompt-transport.ts:16',
+      where: 'src/engine/runners/cli-tools/prompt-transport.ts:17',
       inputs: ['adapter.promptTransport.kind', 'argv z sentinelem <PROMPT>', 'rozmiar promptu'],
       branches: [
         { if: 'stdin (claude-code, codex)', then: 'prompt na stdin; sentinel w argv jest błędem', next: '' },
@@ -662,7 +662,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_EXE_REVALIDATE',
       title: 'Binarka tuż przed spawn musi być tą samą, którą admitowało readiness',
       question: 'Czy receipt (dev, ino, size, mtime) nadal pasuje do pliku na dysku?',
-      where: 'src/engine/runners/cli-tools/process-invoke.ts:450',
+      where: 'src/engine/runners/cli-tools/process-invoke.ts:442',
       inputs: ['invocation.executable (receipt z gate)', 'statSync realPath'],
       branches: [
         { if: 'missing', then: 'failed: spawn-not-found', next: '' },
@@ -675,7 +675,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_CLOSE_SIGNAL',
       title: 'Proces zakończył się sygnałem',
       question: 'Czy closed.signal !== null?',
-      where: 'src/engine/runners/cli-tools/process-invoke.ts:550',
+      where: 'src/engine/runners/cli-tools/process-invoke.ts:542',
       inputs: ['closed.signal', 'haltLines(): stderr + ostatnia linia stdout'],
       branches: [
         { if: 'ogon zawiera frazę haltu', then: 'kod haltu (unauthenticated / usage-limit / input-too-large / missing-model / implementer-recipe-invalid)', next: 'RN_HALT_SIGNATURE' },
@@ -688,7 +688,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_NO_TERMINAL',
       title: 'Kontrakt structured-terminal bez wyniku terminalnego',
       question: 'Narzędzie z wymaganym result nie wypisało go — co zdecyduje?',
-      where: 'src/engine/runners/cli-tools/process-invoke.ts:561',
+      where: 'src/engine/runners/cli-tools/process-invoke.ts:553',
       inputs: ['adapter.outputContract.kind', 'terminalSeen', 'closed.exitCode', 'closed.stderr'],
       branches: [
         { if: 'exitCode !== 0', then: 'haltFailure(haltLines) ?? non-zero-exit', next: '' },
@@ -701,7 +701,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_FAILURE_EXIT',
       title: 'Terminal mówi completed, a kod wyjścia mówi błąd',
       question: 'Czy zachować odpowiedź przy niezerowym wyjściu?',
-      where: 'src/engine/runners/cli-tools/process-invoke.ts:609',
+      where: 'src/engine/runners/cli-tools/process-invoke.ts:601',
       inputs: ['isFailureExit(contract, exitCode)', 'terminal.status', 'ostatnie zdarzenie protokołu'],
       branches: [
         { if: 'ogon ma frazę haltu', then: 'kod haltu', next: '' },
@@ -743,7 +743,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_CATCH_ARM',
       title: 'Wyjątek podczas wywołania: które ramię',
       question: 'Co przerwało invokeProcessCli?',
-      where: 'src/engine/runners/cli-tools/process-invoke.ts:691',
+      where: 'src/engine/runners/cli-tools/process-invoke.ts:683',
       inputs: ['signal.reason', 'guardFailure', 'steeringSession.failureSignal', 'processError.isIdleTimeout', 'spawnPipeError.isStdinIncomplete', 'ENOENT'],
       branches: [
         { if: 'cleanupFailed lub platform-limitation', then: 'failed: steering-transport-error / kod przyczyny', next: '' },
@@ -777,7 +777,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_CLASSIFY_AUTHORITATIVE',
       title: 'Awaria, której żadne słowa nie zmienią',
       question: 'Czy outcome lub code jest już własnym werdyktem?',
-      where: 'src/engine/runners/seat-failure.ts:171',
+      where: 'src/engine/runners/seat-failure.ts:177',
       inputs: ['input.outcome', 'input.code', 'AUTHORITATIVE_OUTCOMES (seat-failure.ts:36)'],
       branches: [
         { if: 'user-abort, implementer-left-isolation, checkout-changed, implementer-recipe-invalid, input-too-large, missing-model, no-progress-cut', then: 'class authoritative: brak retry, brak oczekiwania', next: '' },
@@ -788,7 +788,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_ACCOUNT_CAUSE',
       title: 'Odmowa konta: balance, billing, quota czy auth',
       question: 'Czy słowa narzędzia mówią, że konto nie obsłuży wywołania?',
-      where: 'src/engine/runners/seat-failure.ts:129',
+      where: 'src/engine/runners/seat-failure.ts:135',
       inputs: ['status HTTP', 'message lowercase', 'source (result-error | thrown | stderr-tail | stdout-tail)', 'providerType'],
       branches: [
         { if: 'status 402', then: 'balance', next: '' },
@@ -807,7 +807,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_RATE_LIMITED_RESET',
       title: 'Limit z zegarem resetu',
       question: 'Czy tekst niesie sygnał 429/wyczerpania i parsowalny moment resetu?',
-      where: 'src/engine/runners/seat-failure.ts:123',
+      where: 'src/engine/runners/seat-failure.ts:129',
       inputs: ['status === 429 lub 429 w tekście lub isExhaustion', 'parseUsageLimitReset(message)'],
       branches: [
         { if: 'sygnał i reset != null', then: 'class rate-limited, resetAt', next: 'RN_RESET_PARSE' },
@@ -837,7 +837,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_TRANSIENT',
       title: 'Awaria przejściowa sieci lub serwera',
       question: 'Czy to samo wywołanie może przetrwać powtórkę?',
-      where: 'src/engine/runners/seat-failure.ts:148',
+      where: 'src/engine/runners/seat-failure.ts:154',
       inputs: ['outcome', 'looksOfflineDiagnostic (offline, network, connection refused, dns)', 'TRANSIENT_NETWORK_MARKERS (econnreset, econnrefused, socket hang up, fetch failed, eai_again, enotfound, etimedout, ...)', 'httpStatusOf(message)'],
       branches: [
         { if: 'outcome ustawiony i nie w {non-zero-exit, protocol-failure, usage-limit}', then: 'false — outcome jest finalny', next: '' },
@@ -851,7 +851,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_CALL_OUTCOME',
       title: 'RunnerCallResult → RunnerOutcome (stan maszynowy dla drabiny)',
       question: 'Jaki outcome dostaje orkiestrator BUILD z nieudanego wywołania?',
-      where: 'src/engine/implementers/pipeline/call-result.ts:120',
+      where: 'src/engine/implementers/pipeline/call-result.ts:123',
       inputs: ['result.status', 'result.error.code', 'classifySeatFailure(source result-error)'],
       branches: [
         { if: 'code jest stanem stabilnym (spawn-not-found, unauthenticated, usage-limit, input-too-large, timeout, no-progress-cut, implementer-left-isolation, missing-model, ...; runner_call_tool_use_count_limit → tool-use-limit)', then: 'ten stan', next: '' },
@@ -883,7 +883,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_SEAT_WAIT',
       title: 'Czekanie na reset limitu w miejscu',
       question: 'Czy BUILD może doczekać resetu zamiast halt?',
-      where: 'src/engine/orchestrator/escalation/seat-wait.ts:64',
+      where: 'src/engine/orchestrator/escalation/seat-wait.ts:76',
       inputs: ['classifySeatFailure(failure, thrown).class', 'parseUsageLimitReset(message, now)', 'BOUNDS.rateLimitResetWaitMs = 600 000'],
       branches: [
         { if: 'class !== rate-limited lub reset null', then: 'undefined → caller zachowuje halt runner-usage-limit', next: 'RN_SEAT_DOWN_HALT' },
@@ -914,7 +914,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_PLANNER_CALL_DIAGNOSIS',
       title: 'Awaria wywołania PLAN/REVIEW: diagnoza przed haltem',
       question: 'Co nieudane wywołanie planner-tier mówi o seacie?',
-      where: 'src/engine/orchestrator/recovery/planner-call-failure.ts:64',
+      where: 'src/engine/orchestrator/recovery/planner-call-failure.ts:72',
       inputs: ['typedRunnerCallErrorCode(err)', 'thrownSeatFailure(err) (słowa + klasyfikacja; dla shell/agent także ostatnia linia stdout)', 'runner'],
       branches: [
         { if: 'code missing-model', then: 'failure missing-model: runnerDefectRow, pick a listed model; route credential decyduje czy to sign-in', next: '' },
@@ -1055,7 +1055,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_TYPED_TRANSPORT',
       title: 'Transport schematu JSON do seatu',
       question: 'Czy narzędzie bierze schemat natywnie w tej wersji?',
-      where: 'src/core/runners/cli-tool-catalog.ts:878',
+      where: 'src/core/runners/cli-tool-catalog.ts:880',
       inputs: ['CLI_TOOL_CATALOG[tool].typedOutput {kind, since}', 'installedVersion z gate', 'isStrictJsonSchema(schema)'],
       branches: [
         { if: 'kind fallback (opencode, copilot, kilo-code, cursor, command-code)', then: 'fallback: zdanie na końcu promptu', next: '' },
@@ -1071,7 +1071,7 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
       id: 'RN_TYPED_REPAIR',
       title: 'Zła odpowiedź typowana: naprawa czy błąd',
       question: 'Czy seat dostaje drugie wywołanie?',
-      where: 'src/engine/runners/typed-output.ts:358',
+      where: 'src/engine/runners/typed-output.ts:374',
       inputs: ['seat (planner | reviewer | implementer)', 'call.canResume', 'first.nativeSessionId', 'maxInputChars'],
       branches: [
         { if: 'prompt > maxInputChars (codex 1 048 576 znaków)', then: 'throw input-too-large przed wysłaniem', next: '' },
@@ -1191,9 +1191,9 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
     { key: '<seat>.effort', values: 'none | minimal | low | medium | high | xhigh | max', default: 'brak', effect: 'Kanał effort-flag: --effort lub -c model_reasoning_effort. Inne kanały: pole ignorowane z ostrzeżeniem stderr (PLAN/REVIEW) lub cicho (BUILD).', where: 'src/core/runners/effort-channel.ts:97' },
     { key: '<seat>.variant', values: 'string', default: 'brak', effect: 'Kanał variant: kilo --variant; opencode >= 2.0 model#variant, < 2.0 --variant. Poza kanałem: ostrzeżenie.', where: 'src/engine/runners/cli-tools/opencode.ts:138' },
     { key: '<seat>.temperature', values: '0..2', default: 'brak', effect: 'Akceptowane, ale nie wysyłane przez żaden kind; cli/shell/agent ostrzegają na stderr.', where: 'src/engine/runners/factory-gates.ts:255' },
-    { key: '<seat>.timeout', values: 'ms', default: 'cli/shell/agent: brak; api BUILD 1 200 000, api PLAN/REVIEW 600 000', effect: 'Całkowity budżet wywołania. CLI bez timeout nie ma deadline. Status timeout; na BUILD dwa pod rząd → runner-timeout-repeated.', where: 'src/engine/runners/cli-tools/process-invoke.ts:285' },
+    { key: '<seat>.timeout', values: 'ms', default: 'cli/shell/agent: brak; api BUILD 1 200 000, api PLAN/REVIEW 600 000', effect: 'Całkowity budżet wywołania. CLI bez timeout nie ma deadline. Status timeout; na BUILD dwa pod rząd → runner-timeout-repeated.', where: 'src/engine/runners/cli-tools/process-invoke.ts:286' },
     { key: '<seat>.idleWarnMs', values: 'ms', default: '300 000', effect: 'Po tylu ms ciszy bajtowej recorder.stalled → byline ostrzega; nie kończy wywołania.', where: 'src/core/schemas/runner-fields.ts:87' },
-    { key: '<seat>.idleKillMs', values: 'ms >= idleWarnMs', default: 'brak', effect: 'Po tylu ms ciszy SIGTERM, po 2 s SIGKILL grupy procesu; kod no-progress-cut; liczy się jak timeout w drabinie.', where: 'src/lib/process/spawn/lifecycle.ts:301' },
+    { key: '<seat>.idleKillMs', values: 'ms >= idleWarnMs', default: 'brak', effect: 'Po tylu ms ciszy SIGTERM, po 2 s SIGKILL grupy procesu; kod no-progress-cut; liczy się jak timeout w drabinie.', where: 'src/lib/process/spawn/lifecycle.ts:302' },
     { key: '<seat>.contextLength', values: 'int > 0', default: 'kind-zależny (api: configured → observed → 8192; legacy 32768)', effect: 'Budżet aplikacji do pomiaru promptu i routingu; nie zmienia serwera.', where: 'src/engine/providers/api-budget.ts:61' },
     { key: '<seat>.customModels', values: 'string[]', default: '[]', effect: 'Dodatkowe id w pickerze; cennik nieznany bez models.dev/bundled.', where: 'src/core/schemas/runner-fields.ts:379' },
     { key: '<seat>.fallback', values: '{ tool, model?, effort?, variant? }', default: 'brak (none · pause and ask)', effect: 'Runner cli, na który seat przechodzi przy Seat down (odmowa konta lub reset > 10 min), raz na run i seat. Walidowany schematem cli tego seatu; fallback.effort dla narzędzia variant odrzucany.', where: 'src/core/schemas/runner-fields.ts:327' },
@@ -1207,15 +1207,15 @@ Tokeny i koszt: każde wywołanie zapisuje 'runner_call_usage' do 'session.jsonl
     { key: '--on-seat-down', values: 'switch | halt', default: 'switch', effect: 'Headless: czy halt Seat down stosuje zadeklarowany fallback automatycznie (szczegóły: recovery).', where: 'src/cli/options.ts:1' },
   ],
   states: [
-    { name: 'RunnerCallResult.status', meaning: 'completed | failed | refused | incomplete | truncated | aborted | timeout | unsupported_tool — status jednego wywołania; nie-completed niesie error {code, message, status?, providerType?}.', where: 'src/engine/calls/schema.ts:95' },
+    { name: 'RunnerCallResult.status', meaning: 'completed | failed | refused | incomplete | truncated | aborted | timeout | unsupported_tool — status jednego wywołania; nie-completed niesie error {code, message, status?, providerType?}.', where: 'src/engine/calls/schema.ts:96' },
     { name: 'RunnerOutcomeState', meaning: 'spawn-not-found, incompatible-version, unauthenticated, usage-limit, input-too-large, timeout, no-progress-cut, user-abort, signal-exit, non-zero-exit, protocol-failure, output-budget-breach, callback-failure, no-staged-change, platform-limitation, implementer-effect-invalid, implementer-recipe-invalid, implementer-left-isolation, checkout-changed, runner-timeout-repeated, missing-model, tool-use-limit, success — stan maszynowy z remediation dla drabiny BUILD.', where: 'src/engine/runners/errors.ts:5' },
-    { name: 'SeatFailureClassification.class', meaning: 'authoritative | account{balance,billing,quota,auth} | rate-limited{resetAt} | transient | other — wynik jednego klasyfikatora dla każdego kind.', where: 'src/engine/runners/seat-failure.ts:15' },
+    { name: 'SeatFailureClassification.class', meaning: 'authoritative | account{balance,billing,quota,auth} | rate-limited{resetAt} | transient | other — wynik jednego klasyfikatora dla każdego kind.', where: 'src/engine/runners/seat-failure.ts:18' },
     { name: 'CliAuthAdmission.kind', meaning: 'host-configured | enforced | refused — czy seat może deklarować metodę auth; dziś tylko host-configured lub refused.', where: 'src/core/runners/cli-auth-selection.ts:70' },
     { name: 'CliHostStateAccess', meaning: 'none | bridged-files | host-account — jak logowanie hosta dociera do dziecka.', where: 'src/core/runners/cli-tool-catalog.ts:65' },
     { name: 'RunnerBillingPosture', meaning: 'local | subscription-included | api-metered | provider-dependent | unknown — wyświetlane słowo billingu; każdy CLI dziś unknown w runnerBillingPosture.', where: 'src/core/runners/runner-billing.ts:13' },
     { name: 'CliEffortChannel', meaning: 'effort-flag | variant | model-id | none — jak effort dociera do narzędzia.', where: 'src/core/runners/effort-channel.ts:7' },
     { name: 'TypedOutputCapability', meaning: 'native | strict-native | fallback — jak seat przyjmuje schemat JSON.', where: 'src/core/runners/cli-tool-catalog.ts:178' },
-    { name: 'state.seatWait', meaning: '{seat, resetAt} — BUILD czeka na reset limitu; resume honoruje deadline.', where: 'src/engine/orchestrator/escalation/seat-wait.ts:91' },
+    { name: 'state.seatWait', meaning: '{seat, resetAt} — BUILD czeka na reset limitu; resume honoruje deadline.', where: 'src/engine/orchestrator/escalation/seat-wait.ts:103' },
     { name: 'PlannerCapabilities', meaning: 'supportsConversationalPlanning, supportsSessionResume, supportsEffort, supportsImages, supportsSelfSummarisation; CONVERSATIONAL_CAPS tylko Claude Code, ONE_SHOT_API_CAPS reszta z nadpisaniami adaptera.', where: 'src/engine/planners/types.ts:34' },
   ],
   scenarios: [

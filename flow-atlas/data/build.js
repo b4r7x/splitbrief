@@ -13,7 +13,7 @@ Porażka wchodzi w drabinę (\`escalation/handle.ts\`): jeden lokalny retry z do
 Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\`. Dostarcza je albo działające wywołanie (mid-call), albo następny prompt implementera jako \`continuation.steer\`. Korekta czekająca po zielonych checks wymusza jeszcze jedną próbę, która ją dostarcza.`,
   entry: [
     'src/engine/orchestrator/run/task-execution.ts:276',
-    'src/engine/orchestrator/task/loop.ts:49',
+    'src/engine/orchestrator/task/loop.ts:50',
     'src/engine/orchestrator/task/step.ts:252',
   ],
   links: [
@@ -376,7 +376,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_PENDING_RECOVERY',
       title: 'Wejście do pętli: czy run stoi na halcie?',
       question: 'Czy state.pendingRecovery jest ustawione przy wejściu do runTaskLoop?',
-      where: 'src/engine/orchestrator/task/loop.ts:91',
+      where: 'src/engine/orchestrator/task/loop.ts:92',
       inputs: ['state.pendingRecovery'],
       branches: [
         { if: 'pendingRecovery ustawione', then: 'warning recovery_pending_unresolved; status stopped, żaden brief nie startuje', next: 'recovery' },
@@ -388,7 +388,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_SCHEDULED_REVIEW',
       title: 'Zaległy task review przed briefami',
       question: 'Czy po poprzednim briefie został zaplanowany task review (pendingScheduledReview), którego run nie dokończył?',
-      where: 'src/engine/orchestrator/task/loop.ts:101',
+      where: 'src/engine/orchestrator/task/loop.ts:102',
       inputs: ['state.pendingScheduledReview'],
       branches: [
         { if: 'zapisany', then: 'runScheduledReview najpierw; stopped → pętla kończy status stopped', next: 'review' },
@@ -399,7 +399,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_TASK_SETTLED',
       title: 'Pomijanie zakończonych briefów',
       question: 'Czy task ma status done, escalated albo skipped?',
-      where: 'src/engine/orchestrator/task/loop.ts:134',
+      where: 'src/engine/orchestrator/task/loop.ts:135',
       inputs: ['task.status', 'isTaskSettled (src/core/schemas/task.ts:37)'],
       branches: [
         { if: 'settled', then: 'continue: brief nie jest uruchamiany ponownie (resume, fix cycle, split)' },
@@ -504,7 +504,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_IMPL_AVAILABLE',
       title: 'Dostępność implementera',
       question: 'Czy taskImplementer.isAvailable() zwraca true?',
-      where: 'src/engine/orchestrator/task/loop.ts:182',
+      where: 'src/engine/orchestrator/task/loop.ts:183',
       inputs: ['implementer.isAvailable()', 'implementer.unavailabilityReason?.()'],
       branches: [
         { if: 'false albo wyjątek', then: 'error row z powodem; halt implementation-error (buildImplementerUnavailableRecoveryIssue); status stopped', next: 'recovery' },
@@ -579,7 +579,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
         { if: 'success=true', then: 'addUsageAndSave; CLEAR_CARRIED_FAILURE; gateAttemptChanges', next: 'BD_ATTEMPT_GATE' },
       ],
       default: 'Brak.',
-      notes: 'Klasyfikacja outcome dzieje się w pipeline implementera (src/engine/implementers/pipeline/run.ts:614-660): rzucony błąd providera → unauthenticated / usage-limit (isSeatDown), timeout, no-progress-cut; tripwire → implementer-left-isolation / checkout-changed; raport blocked → success=false + blocked; brak zmian bez allowNoChange → no-staged-change. → zobacz runners.',
+      notes: 'Klasyfikacja outcome dzieje się w pipeline implementera (src/engine/implementers/pipeline/run.ts:613-659): rzucony błąd providera → unauthenticated / usage-limit (isSeatDown), timeout, no-progress-cut; tripwire → implementer-left-isolation / checkout-changed; raport blocked → success=false + blocked; brak zmian bez allowNoChange → no-staged-change. → zobacz runners.',
     },
     {
       id: 'BD_FAIL_KIND',
@@ -695,7 +695,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_BRIEF_GATE_CHECKS',
       title: 'Które checks biegną po briefie',
       question: 'Jaki zestaw checks wybiera runBriefGate dla tego briefu?',
-      where: 'src/engine/orchestrator/task/brief-gate.ts:49',
+      where: 'src/engine/orchestrator/task/brief-gate.ts:54',
       inputs: ['config.workflow.review (end|task)', 'task.checks', 'plan.criteria due (dueCriterionIds)', 'task.fix.findings[].checkIds', 'opts.checkIds (verify)'],
       branches: [
         { if: 'review=task', then: 'task.checks + checkIds kryteriów, które ten brief domyka (każdy task kryterium done albo ten)' },
@@ -722,7 +722,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_CHECK_VERDICT',
       title: 'Werdykt brief gate',
       question: 'Czy brief przechodzi, i czy w kolejce czeka korekta?',
-      where: 'src/engine/orchestrator/task/brief-gate.ts:120',
+      where: 'src/engine/orchestrator/task/brief-gate.ts:125',
       inputs: ['runs (CheckRunResult[])', 'settled', 'registry required', 'state.messageQueue pending'],
       branches: [
         { if: 'check wybrany (verify) albo fix check: status != pass i nie settled', then: 'failedChecks' },
@@ -737,7 +737,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_CHECK_POLICY',
       title: 'Jak biegnie jeden check',
       question: 'Jaki status dostaje pojedynczy check (cmd / test / render)?',
-      where: 'src/engine/orchestrator/validation/run-checks.ts:391',
+      where: 'src/engine/orchestrator/validation/run-checks.ts:411',
       inputs: ['check.kind', 'checkCommandRefusal (plan policy) / reviewerCommandRefusal', 'changedDefinitionRefusal', 'config.validation.timeoutMs', 'notRunnableReason'],
       branches: [
         { if: 'cmd odrzucony polityką (plan: allowlist; reviewer: zmieniony skrypt, shell syntax)', then: 'refused' },
@@ -822,7 +822,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_RUNNER_HALT',
       title: 'Halt runnera w drabinie',
       question: 'Czy ostatnia porażka to seat down albo defekt, który każda kolejna próba powtórzy?',
-      where: 'src/engine/orchestrator/escalation/handle.ts:193',
+      where: 'src/engine/orchestrator/escalation/handle.ts:201',
       inputs: ['stepOutcome.lastFailure.outcome', 'loadSeatSwapContext (fallback seat-a)', 'state.seatSwitches'],
       branches: [
         { if: 'unauthenticated / usage-limit', then: 'buildSeatDownIssue z seatSwap; INTERRUPT_STEP mid-step (workspace zostaje); failedRetry', next: 'recovery' },
@@ -834,7 +834,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_BLOCKED',
       title: 'Implementer zgłosił blocked',
       question: 'Czy próba skończyła się raportem blocked (pytanie + filesNeeded)?',
-      where: 'src/engine/orchestrator/escalation/handle.ts:307',
+      where: 'src/engine/orchestrator/escalation/handle.ts:315',
       inputs: ['initialBlocked', 'retries.blocked'],
       branches: [
         { if: 'blocked', then: 'bez lokalnego retry; konsultacja z reason=blocked; report w promptcie' },
@@ -845,7 +845,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_PRE_ESCALATION_HOOK',
       title: 'Hook pre_escalation',
       question: 'Czy hook pozwala eskalować brief do konsultacji?',
-      where: 'src/engine/orchestrator/escalation/handle.ts:331',
+      where: 'src/engine/orchestrator/escalation/handle.ts:339',
       inputs: ['config.hooks', 'payload task_escalating'],
       branches: [
         { if: 'odmowa', then: 'warning pre_escalation blocked; halt retry-exhausted z escalationBlockedBy; retry-same-worker / skip / end', next: 'recovery' },
@@ -856,7 +856,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_ANSWER_PENDING',
       title: 'Odpowiedź użytkownika do dostarczenia',
       question: 'Czy drabina trzyma odpowiedź użytkownika (korekta po checks, ask-user), którą następna próba ma dostarczyć?',
-      where: 'src/engine/orchestrator/escalation/handle.ts:444',
+      where: 'src/engine/orchestrator/escalation/handle.ts:452',
       inputs: ['answer (z confirmAttemptDecisions, brief gate correction, applyConsultAnswer correction)'],
       branches: [
         { if: 'answer != undefined', then: 'attempt(answer, deliversAnswer=true): bez konsultacji, allowNoChange, liczy się COUNT_ATTEMPT, nie zużywa consultAllowance' },
@@ -879,7 +879,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_CONSULT_SEAT',
       title: 'Kto odpowiada na konsultację',
       question: 'Planner czy reviewer?',
-      where: 'src/engine/orchestrator/consult/request.ts:87',
+      where: 'src/engine/orchestrator/consult/request.ts:93',
       inputs: ['task.fix', 'reason'],
       branches: [
         { if: 'task.fix ustawione i reason != deviation', then: 'review: jedno bezstanowe wywołanie reviewera z pełnym promptem (runReviewerCall); usage na reviewerze' },
@@ -986,7 +986,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_SEAT_RETRY',
       title: 'Seat retry wokół wywołania implementera',
       question: 'Co dzieje się z przejściowym błędem albo limitem z bliskim resetem?',
-      where: 'src/engine/orchestrator/escalation/seat-wait.ts:150',
+      where: 'src/engine/orchestrator/escalation/seat-wait.ts:199',
       inputs: ['withSeatRetry (BOUNDS.transientRetries = 3)', 'classifySeatFailure', 'parseUsageLimitReset', 'BOUNDS.rateLimitResetWaitMs = 600 000'],
       branches: [
         { if: 'błąd przejściowy', then: 'do 3 powtórzeń z backoff; seat_retry; usage odrzuconych prób doliczone' },
@@ -1011,7 +1011,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_CADENCE_REVIEW',
       title: 'Review po każdym briefie',
       question: 'Czy po udanym briefie biegnie task review?',
-      where: 'src/engine/orchestrator/task/loop.ts:270',
+      where: 'src/engine/orchestrator/task/loop.ts:271',
       inputs: ['config.workflow.review'],
       branches: [
         { if: 'task', then: 'runScheduledReview(afterTaskId): fix tasks z review doklejone do listy; stopped → pętla stopped', next: 'review' },
@@ -1022,7 +1022,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
       id: 'BD_BOUNDARY_PAUSE',
       title: 'Pause after this brief',
       question: 'Czy użytkownik zażądał pauzy na granicy briefów?',
-      where: 'src/engine/orchestrator/task/loop.ts:285',
+      where: 'src/engine/orchestrator/task/loop.ts:286',
       inputs: ['sinks.consumeBoundaryPause (stop sheet, intent pause-after-brief, src/features/workflow/stop/options.ts:230)'],
       branches: [
         { if: 'tak', then: 'status paused → parkAtBoundary: INTERRUPT_STEP cut=boundary na następnym briefie (albo review); czeka na ⏎/resume; RESUME_STEP; continuation.hold(steer)' },
@@ -1111,9 +1111,9 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
     },
   ],
   config: [
-    { key: 'workflow.review', values: 'end | task', default: 'end', effect: 'end: brief gate nie uruchamia checks planu/taska; wszystko biegnie przed final review. task: checks taska i due kryteriów po każdym briefie, potem task review.', where: 'src/core/schemas/config.ts:87; src/engine/orchestrator/task/brief-gate.ts:52; src/engine/orchestrator/task/loop.ts:270' },
+    { key: 'workflow.review', values: 'end | task', default: 'end', effect: 'end: brief gate nie uruchamia checks planu/taska; wszystko biegnie przed final review. task: checks taska i due kryteriów po każdym briefie, potem task review.', where: 'src/core/schemas/config.ts:87; src/engine/orchestrator/task/brief-gate.ts:57; src/engine/orchestrator/task/loop.ts:271' },
     { key: 'workflow.isolation', values: 'worktree | staged-copy | none', default: 'worktree', effect: 'Gdzie implementer pisze i gdzie biegną checks. none = checkout użytkownika, bez Apply, rollback zapisuje bajty w .splitbrief/sessions/<id>/reverted/.', where: 'src/core/schemas/config.ts:91; src/engine/orchestrator/run/task-execution.ts:322 (→ lifecycle)' },
-    { key: 'workflow.approve', values: 'plan | none', default: 'plan', effect: 'plan: zatwierdzony plan potwierdza protectedOperations i npm run checks (planConfirmations) → bramka nie pyta drugi raz; planApprovesNpmScripts pozwala na npm run w cmd checks.', where: 'src/engine/orchestrator/approval/confirm.ts:54; src/engine/orchestrator/validation/run-checks.ts:87' },
+    { key: 'workflow.approve', values: 'plan | none', default: 'plan', effect: 'plan: zatwierdzony plan potwierdza protectedOperations i npm run checks (planConfirmations) → bramka nie pyta drugi raz; planApprovesNpmScripts pozwala na npm run w cmd checks.', where: 'src/engine/orchestrator/approval/confirm.ts:54; src/engine/orchestrator/validation/run-checks.ts:96' },
     { key: 'workflow.max_retries', values: 'wycofane', default: '—', effect: 'Ładuje się z jednym powiadomieniem i nic nie zmienia. Liczba retry to stała DEFAULT_LOCAL_RETRIES = 1.', where: 'src/core/schemas/config.ts:89; src/core/pipeline-spec/retries.ts:1' },
     { key: 'approval.allowed_paths', values: 'lista globów', default: 'brak', effect: 'Zapis pasujący do globu jest write_in_scope (auto). Nie zwalnia klas chronionych: package_change, sensitive_change i destructive nadal pytają.', where: 'src/core/schemas/config.ts:52; src/engine/orchestrator/approval/action-classifier.ts:151' },
     { key: 'approval.feed_rejections_to_planner', values: 'boolean', default: 'true', effect: 'Czytane przez pętlę wywołań plannera (→ planning); build tylko zapisuje rejection evidence.', where: 'src/core/schemas/config.ts:51; src/engine/orchestrator/planning/call-loop.ts:14' },
@@ -1121,11 +1121,11 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
     { key: 'implementer.context_length', values: 'liczba tokenów', default: 'katalog modelu albo 32768', effect: 'Jawny budżet promptu profilu; bez niego katalog, wykrycie albo conservative-fallback.', where: 'src/engine/orchestrator/context-routing/context-length.ts:107' },
     { key: 'implementer.idle_kill_ms / implementer.timeout', values: 'ms', default: 'brak (tylko ostrzeżenie po 5 min)', effect: 'Cięcie wywołania przy ciszy albo po czasie. Cut liczy się jako próba; dwa z rzędu → runner-timeout-repeated.', where: 'src/engine/orchestrator/escalation/local-retries.ts:57; src/core/pipeline-spec/timeouts.ts:1' },
     { key: 'validation.test_command', values: 'komenda', default: 'z registry stacku', effect: 'Komenda dla checków test; poza pięcioma stackami bez niej check jest not-runnable.', where: 'src/core/schemas/config.ts:78; src/engine/orchestrator/validation/run.ts:131' },
-    { key: 'validation.test_pattern', values: 'glob', default: 'wykryty', effect: 'Jak check test znajduje pliki testowe dotknięte przez plik briefu.', where: 'src/engine/orchestrator/validation/commands.ts:42' },
-    { key: 'validation.timeout_ms', values: 'ms ≥ 1000', default: '3 600 000 (STAGE_TIMEOUT_MS)', effect: 'Limit czasu każdego checku i formattera.', where: 'src/engine/orchestrator/validation/run-checks.ts:140; src/core/pipeline-spec/gates.ts:8' },
-    { key: 'validation.stack', values: 'typescript | javascript | python | go | rust', default: 'wykryty', effect: 'Wymusza stack dla komend testowych i narrowing.', where: 'src/engine/orchestrator/validation/run.ts:63' },
-    { key: 'validation.render', values: 'szablon komendy z {id} i {out}', default: 'brak', effect: 'Bez niego check render jest not-runnable. PNG kopiowane do renders dir sesji.', where: 'src/engine/orchestrator/validation/run-checks.ts:293' },
-    { key: 'hooks.pre_task / pre_validation / pre_escalation', values: 'komendy hooków', default: 'brak', effect: 'Odmowa pre_task i pre_validation → SKIP_TASK z rollbackiem; odmowa pre_escalation → halt retry-exhausted.', where: 'src/engine/orchestrator/task/pre-task.ts:61; src/engine/orchestrator/task/pre-validation-gate.ts:40; src/engine/orchestrator/escalation/handle.ts:338' },
+    { key: 'validation.test_pattern', values: 'glob', default: 'wykryty', effect: 'Jak check test znajduje pliki testowe dotknięte przez plik briefu.', where: 'src/engine/orchestrator/validation/commands.ts:45' },
+    { key: 'validation.timeout_ms', values: 'ms ≥ 1000', default: '3 600 000 (STAGE_TIMEOUT_MS)', effect: 'Limit czasu każdego checku i formattera.', where: 'src/engine/orchestrator/validation/run-checks.ts:138; src/core/pipeline-spec/gates.ts:8' },
+    { key: 'validation.stack', values: 'typescript | javascript | python | go | rust', default: 'wykryty', effect: 'Wymusza stack dla komend testowych i narrowing.', where: 'src/engine/orchestrator/validation/run.ts:68' },
+    { key: 'validation.render', values: 'szablon komendy z {id} i {out}', default: 'brak', effect: 'Bez niego check render jest not-runnable. PNG kopiowane do renders dir sesji.', where: 'src/engine/orchestrator/validation/run-checks.ts:313' },
+    { key: 'hooks.pre_task / pre_validation / pre_escalation', values: 'komendy hooków', default: 'brak', effect: 'Odmowa pre_task i pre_validation → SKIP_TASK z rollbackiem; odmowa pre_escalation → halt retry-exhausted.', where: 'src/engine/orchestrator/task/pre-task.ts:61; src/engine/orchestrator/task/pre-validation-gate.ts:40; src/engine/orchestrator/escalation/handle.ts:346' },
     { key: 'BOUNDS (stałe)', values: 'consultsPerLineage 2, attemptsPerLineage 8, plannerCallsPerRun 10, extra +1/+4/+5, rateLimitResetWaitMs 600 000, transientRetries 3', default: 'stałe', effect: 'Limity drabiny i seat retry; Continue w recovery podnosi je przez GRANT_ALLOWANCE.', where: 'src/core/pipeline-spec/bounds.ts:1' },
     { key: 'CONTEXT_CODE_BUDGET_CHARS', values: '40 000', default: 'stała', effect: 'Łączny budżet znaków dla contextFiles briefu; plik, który go przekracza, jest przycięty z markerem.', where: 'src/engine/orchestrator/task/refresh-code.ts:35' },
     { key: 'MAX_QUEUE_SIZE', values: '50', default: 'stała', effect: 'Maksimum wiadomości czekających na pierwsze dostarczenie.', where: 'src/engine/orchestrator/queue/types.ts:7' },
@@ -1139,7 +1139,7 @@ Korekty użytkownika wpisane w trakcie buildu trafiają do \`state.messageQueue\
     { name: 'LineageRecord', meaning: 'Liczniki wspólne dla briefu, jego rewizji i dzieci splitu: consults, attempts, allowances, consultRecords, attemptFailures, corrections, carriedFailure, startSnapshot, dispatchedRevision, staleConsultedRevision.', where: 'src/core/schemas/workflow.ts:165' },
     { name: 'state.plannerCalls', meaning: 'used / allowance (10) na run; konsultacje plannera i reviewera zużywają ten jeden licznik.', where: 'src/core/schemas/workflow.ts:192' },
     { name: 'state.messageQueue', meaning: 'Wiadomości użytkownika: pending → drained / deliveredViaNative / deliveredMidCall / possibleDuplicate.', where: 'src/core/queue-state.ts:13' },
-    { name: 'TaskLoopResult.status complete | stopped | paused', meaning: 'complete → final review; stopped → halt/stop/park; paused → parkAtBoundary i ponowne wejście.', where: 'src/engine/orchestrator/task/loop.ts:44' },
+    { name: 'TaskLoopResult.status complete | stopped | paused', meaning: 'complete → final review; stopped → halt/stop/park; paused → parkAtBoundary i ponowne wejście.', where: 'src/engine/orchestrator/task/loop.ts:45' },
   ],
   scenarios: [
     {

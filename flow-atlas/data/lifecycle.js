@@ -13,7 +13,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
 **Stop** parkuje run (\`INTERRUPT_STEP\`), zachowuje częściowe zmiany w workspace i pozwala kontynuować od tego samego miejsca. **Crash** nic nie zapisuje: lock czyta się jako \`dead\`, run jako \`stopped · interrupted\`, a następny start domyka osierocone wywołania, zabija osierocone procesy narzędzi, cofa pliki briefu ze snapshotu i startuje brief od nowa.`,
   entry: [
     'src/engine/orchestrator/run/workflow.ts:98',
-    'src/core/sessions/run-status.ts:167',
+    'src/core/sessions/run-status.ts:181',
     'src/engine/orchestrator/run/continue.ts:51',
     'src/engine/orchestrator/apply/run.ts:116',
   ],
@@ -368,7 +368,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_CLOSED',
       title: 'Run zamknięty',
       question: 'Czy stan ma pole closed?',
-      where: 'src/core/sessions/run-status.ts:174',
+      where: 'src/core/sessions/run-status.ts:188',
       inputs: ['state.closed', 'state.applied.undone'],
       branches: [
         { if: 'closed.as = applied i applied.undone ustawione', then: 'status closed · undone (stan dalej trzyma as: applied)', next: 'LC_RUN_COMMAND' },
@@ -381,7 +381,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_COMPLETE_CHECKOUT',
       title: 'Zaliczony run bez workspace do Apply',
       question: 'Czy run skończył review i nie ma czego zastosować?',
-      where: 'src/core/sessions/run-status.ts:178',
+      where: 'src/core/sessions/run-status.ts:192',
       inputs: ['state.phase', 'state.reviewStatus', 'state.acceptedAsIs', 'state.pendingRecovery', 'state.workspace.kind'],
       branches: [
         { if: 'phase = complete, (reviewStatus = passed lub acceptedAsIs), bez pendingRecovery, workspace brak lub kind checkout', then: 'closed · complete (bez Apply)' },
@@ -393,7 +393,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_ALIVE',
       title: 'Proces trzyma run',
       question: 'Czy liveness = alive?',
-      where: 'src/core/sessions/run-status.ts:186',
+      where: 'src/core/sessions/run-status.ts:200',
       inputs: ['checkSessionLiveness(sessionDir).alive'],
       branches: [
         { if: 'alive', then: 'running — także gdy to Apply at rest trzyma lock' },
@@ -405,7 +405,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_READY',
       title: 'Gotowy do Apply',
       question: 'Czy workspace trzyma zrecenzowany wynik, którego checkout jeszcze nie dostał?',
-      where: 'src/core/sessions/run-status.ts:187',
+      where: 'src/core/sessions/run-status.ts:201',
       inputs: ['awaitsApply(state)', 'state.pendingRecovery', 'state.interruptedStep', 'state.applying'],
       branches: [
         { if: 'awaitsApply (worktree lub staged-copy, phase complete, review passed lub acceptedAsIs, bez applied, bez closed) i bez halt, bez parku, bez applying', then: 'ready-to-apply, override = reviewStatus != passed', next: 'LC_APPLY_GATE' },
@@ -416,7 +416,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_HALT',
       title: 'Halt czeka na odpowiedź',
       question: 'Czy pendingRecovery jest ustawione?',
-      where: 'src/core/sessions/run-status.ts:207',
+      where: 'src/core/sessions/run-status.ts:221',
       inputs: ['state.pendingRecovery'],
       branches: [
         { if: 'tak', then: 'open · waiting-for-you · halt(issue); UI pokazuje menu Needs you / Seat down' },
@@ -428,7 +428,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_SEAT_WAIT',
       title: 'Seat czeka na reset limitu',
       question: 'Czy state.seatWait jest ustawione?',
-      where: 'src/core/sessions/run-status.ts:210',
+      where: 'src/core/sessions/run-status.ts:224',
       inputs: ['state.seatWait.seat', 'state.seatWait.resetAt', 'plannerTool / implementerTool / reviewerTool'],
       branches: [
         { if: 'tak', then: 'open · stopped · seat-wait (seat, tool, resetAt); continue czeka do resetAt (resumeSeatWait)' },
@@ -440,7 +440,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_QUESTION',
       title: 'Planner czeka na odpowiedź',
       question: 'Czy pendingPlannerConversation jest bez odpowiedzi?',
-      where: 'src/core/sessions/run-status.ts:218',
+      where: 'src/core/sessions/run-status.ts:232',
       inputs: ['state.pendingPlannerConversation.answered'],
       branches: [
         { if: 'konwersacja istnieje i answered = false', then: 'open · waiting-for-you · question; resumeStep = planner (sesja planowania)' },
@@ -452,7 +452,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_PARKED',
       title: 'Run zaparkowany przez stop',
       question: 'Czy stop zapisał, gdzie przeciął run?',
-      where: 'src/core/sessions/run-status.ts:226',
+      where: 'src/core/sessions/run-status.ts:240',
       inputs: ['state.interruptedStep.cut', 'state.interruptedStep.partialRef', 'state.interruptedStep.kept', 'state.awaitingContinue'],
       branches: [
         { if: 'interruptedStep', then: 'open · stopped · paused, at = cut (mid-step lub boundary; stary stan: partialRef → mid-step, inaczej boundary), kept = pliki briefu' },
@@ -465,7 +465,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_GATE',
       title: 'Run stoi przy bramie',
       question: 'Czy phase to reviewing-spec, reviewing-plan albo reviewing-briefs?',
-      where: 'src/core/sessions/run-status.ts:66',
+      where: 'src/core/sessions/run-status.ts:67',
       inputs: ['state.phase', 'state.plan', 'state.mode', 'state.approve'],
       branches: [
         { if: 'reviewing-plan z zapisanym planem', then: 'waiting-for-you · gate plan, reopens = true: plan card otwiera się bez nowego wywołania plannera' },
@@ -478,7 +478,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_FAILED',
       title: 'Run umarł na błędzie albo proces zniknął',
       question: 'Czy lastFailure jest zapisane?',
-      where: 'src/core/sessions/run-status.ts:240',
+      where: 'src/core/sessions/run-status.ts:254',
       inputs: ['state.lastFailure.message'],
       branches: [
         { if: 'tak', then: 'open · stopped · failed(message); continue powtarza krok, na którym padł' },
@@ -490,7 +490,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_RESUME_STEP',
       title: 'Gdzie run podejmuje pracę',
       question: 'resumeStep(state): pierwsza niedokończona rzecz',
-      where: 'src/core/sessions/run-status.ts:94',
+      where: 'src/core/sessions/run-status.ts:95',
       inputs: ['pendingPlannerConversation', 'awaitsApply', 'parkedGate', 'phase', 'currentTaskIndex', 'attempt', 'fixCycles'],
       branches: [
         { if: 'pendingPlannerConversation', then: 'planner · plan (sesja planowania)' },
@@ -637,7 +637,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_STALE_HALT',
       title: 'Halt, który już nie obowiązuje',
       question: 'isStaleHalt na wejściu do runu',
-      where: 'src/engine/orchestrator/run/init.ts:619',
+      where: 'src/engine/orchestrator/run/init.ts:630',
       inputs: ['pendingRecovery.reason', 'isRetiredRecoveryReason', 'state.workspace'],
       branches: [
         { if: 'powód wycofany', then: 'RESOLVE_PENDING_RECOVERY + warning stale_file_halt_resolved; run idzie dalej' },
@@ -649,7 +649,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_TASK_IN_FLIGHT',
       title: 'Brief po crashu czy po parku',
       question: 'isTaskInFlight: czy brief in_progress nie ma zapisanego parku?',
-      where: 'src/engine/orchestrator/run/init.ts:740',
+      where: 'src/engine/orchestrator/run/init.ts:751',
       inputs: ['interruptedStep', 'phase', 'tasks[currentTaskIndex].status', 'changedFilesBaseline.activeTaskSnapshot', 'evidence promotionAttempts'],
       branches: [
         { if: 'interruptedStep cut mid-step na briefie', then: 'park: pliki zostają, kontynuacja z partialem' },
@@ -664,7 +664,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_UNRESUMED_CUT',
       title: 'Przywrócenie parku z logu',
       question: 'restoreUnresumedBriefCut: log dowodzi cięcia, którego stan już nie ma?',
-      where: 'src/engine/orchestrator/run/init.ts:701',
+      where: 'src/engine/orchestrator/run/init.ts:712',
       inputs: ['session.jsonl: turn_interrupted, runner_call_started, recovery_resolved, task_reset'],
       branches: [
         { if: 'ostatnie turn_interrupted mid-step na bieżącym briefie, bez późniejszego startu wywołania, resetu ani recovery innej niż continued', then: 'RESTORE_BRIEF_PARK: brief wraca do swojej próby w zachowanym workspace' },
@@ -676,7 +676,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_KEEP_WORKSPACE',
       title: 'Czy kontynuacja dziedziczy częściowe pliki',
       question: 'resumeContinuation: keepWorkspace i partial',
-      where: 'src/engine/orchestrator/run/init.ts:579',
+      where: 'src/engine/orchestrator/run/init.ts:590',
       inputs: ['interruptedStep.cut', 'interruptedStep.step', 'tasks[currentTaskIndex]', 'state.attempt', 'closed', 'rewindPending', 'steer'],
       branches: [
         { if: 'cut mid-step, krok to bieżący brief, task in_progress, ten sam attempt, run otwarty, bez rewind', then: 'keepWorkspace + briefFingerprint; partial z readInterruptedPartial (session.jsonl)' },
@@ -707,7 +707,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_ISOLATION_STRATEGY',
       title: 'Tryb workspace',
       question: 'openWorkspace: skąd bierze się kind?',
-      where: 'src/engine/orchestrator/isolation/create.ts:256',
+      where: 'src/engine/orchestrator/isolation/create.ts:257',
       inputs: ['workflow.isolation (domyślnie worktree)', 'state.workspace.kind (recorded)', 'retained-workspace.json'],
       branches: [
         { if: 'brak rekordu i (recorded = checkout lub strategy none)', then: 'kind checkout: projectDir, head = HEAD, keptFiles []' },
@@ -722,7 +722,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_PREVIOUS_RECORD',
       title: 'Powrót do zachowanego workspace',
       question: 'Czy retained-workspace.json wskazuje katalog, który nadal jest tym samym katalogiem?',
-      where: 'src/engine/orchestrator/isolation/create.ts:279',
+      where: 'src/engine/orchestrator/isolation/create.ts:280',
       inputs: ['record.location', 'record.directory (dev, ino, birthtimeMs)', 'record.retained', 'realpath projectDir'],
       branches: [
         { if: 'rekord nie parsuje się, inny projectDir / sessionId, > 8 MiB, hardlink', then: 'isolation-retention-unavailable: „The stopped workspace could not be verified. Its files were left in place; automatic continuation is blocked.”' },
@@ -736,7 +736,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_WORKTREE_AVAILABLE',
       title: 'Czy worktree da się zrobić',
       question: 'resolveWorktreeDir + ensureIsolationWorktree',
-      where: 'src/engine/orchestrator/isolation/create.ts:127',
+      where: 'src/engine/orchestrator/isolation/create.ts:128',
       inputs: ['isGitRepo', 'hasCommits', 'isolation-marker', 'branch splitbrief/<slug>', 'git status node_modules'],
       branches: [
         { if: 'nie repo git', then: 'fallback staged-copy: project is not a git repository' },
@@ -753,7 +753,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_RETAIN',
       title: 'Zachować czy cofnąć pliki próby',
       question: 'Po przerwaniu próby: retain() czy cleanup()?',
-      where: 'src/engine/orchestrator/task/run-implementation.ts:312',
+      where: 'src/engine/orchestrator/task/run-implementation.ts:314',
       inputs: ['isResumableWorkspaceStop(signal) = abort bez powodu workflow_cancelled', 'wynik próby (usage-limit, unauthenticated)', 'decyzja bramy zmian'],
       branches: [
         { if: 'abort użytkownika bez powodu zamknięcia (Stop now)', then: 'workspace.retain(): rekord retained = true, restoreFiles = zmiany od snapshotu; pliki zostają' },
@@ -924,7 +924,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_CLOSE_AS',
       title: 'Jak zamyka się run bez Apply',
       question: 'closeRunIfOpen: as',
-      where: 'src/engine/orchestrator/run/close.ts:125',
+      where: 'src/engine/orchestrator/run/close.ts:167',
       inputs: ['argument as', 'deriveRunStatus(latest, not-alive)'],
       branches: [
         { if: 'as = discarded (Discard, /run reject confirm, --action discard)', then: 'closed · discarded' },
@@ -939,7 +939,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_CLOSE_PATCH',
       title: 'Czy zamknięcie pisze run.patch',
       question: 'Workspace worktree / staged-copy nadal istnieje?',
-      where: 'src/engine/orchestrator/run/close.ts:111',
+      where: 'src/engine/orchestrator/run/close.ts:153',
       inputs: ['latest.workspace.kind', 'existsSync(workspace.path)', 'snapshot base + baseline'],
       branches: [
         { if: 'worktree / staged-copy i katalog istnieje', then: 'writeRunPatch: git diff --no-index --binary base vs workspace; brak zmian → brak pliku; closed.patch = ścieżka' },
@@ -954,7 +954,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_APPLY_UNFINISHED',
       title: 'Zamknięcie podczas niedokończonego Apply',
       question: 'assertCanCloseRun: state.applying?',
-      where: 'src/engine/orchestrator/run/close.ts:210',
+      where: 'src/engine/orchestrator/run/close.ts:252',
       inputs: ['state.applying'],
       branches: [
         { if: 'ustawione', then: 'błąd end-run-while-applying: „Apply did not finish. Restore or retry Apply first, then end the run.”; /end odmawia, stop sheet ukrywa End run, CLI --action end-run kończy exit 1' },
@@ -965,7 +965,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_CLOSE_CHECKOUT_FILES',
       title: 'Czy run zostawił pliki w checkout',
       question: 'runLeftFilesInCheckout przy zamknięciu',
-      where: 'src/engine/orchestrator/run/close.ts:42',
+      where: 'src/engine/orchestrator/run/close.ts:45',
       inputs: ['workspace.kind', 'evidence ledger tasks[].changedFiles', 'tasks[].status (stary run)'],
       branches: [
         { if: 'checkout i ledger ma zmienione pliki, zamknięcie bez as', then: 'warning „This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written.”' },
@@ -977,7 +977,7 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       id: 'LC_REJECT_CHECKOUT',
       title: 'Reject runu w trybie checkout',
       question: 'rejectCheckoutRun: co cofnięto i czy run się zamyka?',
-      where: 'src/engine/orchestrator/run/close.ts:173',
+      where: 'src/engine/orchestrator/run/close.ts:215',
       inputs: ['rejectRunSnapshot: baseline, ostatni run snapshot, bieżący checkout', 'conflictedPaths', 'missingSnapshotFiles', 'evidence ledger'],
       branches: [
         { if: 'brak run snapshot', then: 'not-found: „No run snapshot to reject.”, pliki bez zmian' },
@@ -1121,14 +1121,14 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
       values: 'true | false',
       default: 'wyłączone',
       effect: 'Przy START nowego runu tworzy branch splitbrief/<slug> w checkout; błąd daje tylko ostrzeżenie.',
-      where: 'src/engine/orchestrator/run/init.ts:480',
+      where: 'src/engine/orchestrator/run/init.ts:485',
     },
     {
       key: 'workflow.approve',
       values: 'plan | none',
       default: 'plan',
       effect: 'Przy wznowieniu wartość z config jest przypinana do zapisanego stanu (state.approve) przez CAS; stary stan z inną wartością jest przepisywany.',
-      where: 'src/engine/orchestrator/run/init.ts:231',
+      where: 'src/engine/orchestrator/run/init.ts:232',
     },
     {
       key: 'workflow.compactionThreshold',
@@ -1153,19 +1153,19 @@ Run pracuje w **workspace**: worktree gita poza projektem (domyślnie), staged-c
     },
   ],
   states: [
-    { name: 'running', meaning: 'Żywy proces trzyma lockfile (heartbeat < 8 s). Także Apply at rest.', where: 'src/core/sessions/run-status.ts:186' },
-    { name: 'open · waiting-for-you · question', meaning: 'Planner czeka na odpowiedź; bare Enter bierze domyślne.', where: 'src/core/sessions/run-status.ts:218' },
-    { name: 'open · waiting-for-you · gate', meaning: 'Plan card (reopens) albo stara brama spec/briefs.', where: 'src/core/sessions/run-status.ts:236' },
-    { name: 'open · waiting-for-you · halt', meaning: 'pendingRecovery czeka na akcję: Needs you / Seat down / apply-conflict / apply-partial.', where: 'src/core/sessions/run-status.ts:207' },
-    { name: 'open · stopped · paused (mid-step | boundary)', meaning: 'Stop użytkownika albo watchdog; kept = pliki briefu, które zostały.', where: 'src/core/sessions/run-status.ts:226' },
-    { name: 'open · stopped · seat-wait', meaning: 'Seat czeka do resetAt; continue najpierw odczekuje.', where: 'src/core/sessions/run-status.ts:210' },
-    { name: 'open · stopped · failed', meaning: 'lastFailure: krok umarł na błędzie; continue powtarza krok.', where: 'src/core/sessions/run-status.ts:240' },
-    { name: 'open · stopped · interrupted', meaning: 'Proces zniknął bez zapisu (crash). Brief in_progress restartuje od zera.', where: 'src/core/sessions/run-status.ts:243' },
-    { name: 'ready-to-apply (override)', meaning: 'Worktree / staged-copy z passed review (override = Accept as is). Apply / Show diff / Discard.', where: 'src/core/sessions/run-status.ts:187' },
-    { name: 'closed · complete', meaning: 'Checkout run lub stary run z passed review; bez Apply.', where: 'src/core/sessions/run-status.ts:184' },
+    { name: 'running', meaning: 'Żywy proces trzyma lockfile (heartbeat < 8 s). Także Apply at rest.', where: 'src/core/sessions/run-status.ts:200' },
+    { name: 'open · waiting-for-you · question', meaning: 'Planner czeka na odpowiedź; bare Enter bierze domyślne.', where: 'src/core/sessions/run-status.ts:232' },
+    { name: 'open · waiting-for-you · gate', meaning: 'Plan card (reopens) albo stara brama spec/briefs.', where: 'src/core/sessions/run-status.ts:250' },
+    { name: 'open · waiting-for-you · halt', meaning: 'pendingRecovery czeka na akcję: Needs you / Seat down / apply-conflict / apply-partial.', where: 'src/core/sessions/run-status.ts:221' },
+    { name: 'open · stopped · paused (mid-step | boundary)', meaning: 'Stop użytkownika albo watchdog; kept = pliki briefu, które zostały.', where: 'src/core/sessions/run-status.ts:240' },
+    { name: 'open · stopped · seat-wait', meaning: 'Seat czeka do resetAt; continue najpierw odczekuje.', where: 'src/core/sessions/run-status.ts:224' },
+    { name: 'open · stopped · failed', meaning: 'lastFailure: krok umarł na błędzie; continue powtarza krok.', where: 'src/core/sessions/run-status.ts:254' },
+    { name: 'open · stopped · interrupted', meaning: 'Proces zniknął bez zapisu (crash). Brief in_progress restartuje od zera.', where: 'src/core/sessions/run-status.ts:257' },
+    { name: 'ready-to-apply (override)', meaning: 'Worktree / staged-copy z passed review (override = Accept as is). Apply / Show diff / Discard.', where: 'src/core/sessions/run-status.ts:201' },
+    { name: 'closed · complete', meaning: 'Checkout run lub stary run z passed review; bez Apply.', where: 'src/core/sessions/run-status.ts:198' },
     { name: 'closed · applied', meaning: 'APPLY_DONE zapisał pliki do checkoutu; backup pozwala na undo.', where: 'src/core/state/machine.ts:615' },
-    { name: 'closed · undone', meaning: '/run reject confirm po Apply przywrócił backup; stan trzyma closed.as applied + applied.undone.', where: 'src/core/sessions/run-status.ts:175' },
-    { name: 'closed · discarded', meaning: 'Discard, reject lub End run na ready; run.patch zachowany.', where: 'src/engine/orchestrator/run/close.ts:125' },
+    { name: 'closed · undone', meaning: '/run reject confirm po Apply przywrócił backup; stan trzyma closed.as applied + applied.undone.', where: 'src/core/sessions/run-status.ts:189' },
+    { name: 'closed · discarded', meaning: 'Discard, reject lub End run na ready; run.patch zachowany.', where: 'src/engine/orchestrator/run/close.ts:167' },
     { name: 'closed · ended', meaning: 'End run przed ready (lub sygnał z powodem); run.patch dla workspace runów.', where: 'src/core/state/machine.ts:646' },
     { name: 'lock: missing | invalid | exited | dead | stale | live', meaning: 'Klasyfikacja lockfile; tylko dead/exited/missing/invalid pozwalają na przejęcie.', where: 'src/core/sessions/lockfile-status.ts:145' },
     { name: 'workspace.kind: worktree | staged-copy | checkout', meaning: 'Gdzie leży kod runu; zapisane raz w RECORD_WORKSPACE.', where: 'src/engine/orchestrator/run/task-execution.ts:332' },

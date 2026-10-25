@@ -337,7 +337,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_RESUME_STEP',
       title: 'resumeStep: pierwszy pasujący krok',
       question: 'Jaki krok nazywa zapisany stan?',
-      where: 'src/core/sessions/run-status.ts:94',
+      where: 'src/core/sessions/run-status.ts:95',
       inputs: ['state.pendingPlannerConversation', 'awaitsApply(state)', 'parkedGate(state)', 'state.phase'],
       branches: [
         { if: 'pendingPlannerConversation !== undefined', then: '{ kind: planner, call: plan } — sesja wznawia pytania' },
@@ -352,7 +352,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_REOPENS_CARD',
       title: 'Czy zaparkowana brama ma kartę do ponownego otwarcia',
       question: 'Czy run stoi na karcie typowanego planu?',
-      where: 'src/core/sessions/run-status.ts:77',
+      where: 'src/core/sessions/run-status.ts:78',
       inputs: ['state.phase', 'state.plan'],
       branches: [
         { if: 'phase === reviewing-plan i state.plan !== undefined', then: 'resumeParkedApproval → runPlanApproval bez wywołania plannera; steer z continuation (take gate plan) zamienia pierwszy onApprovalNeeded w { action: revise, recorded: true } (resume-parked-approval.ts:24)', next: 'PL_CARD_RESULT' },
@@ -543,7 +543,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_TYPED_REPAIR',
       title: 'Odpowiedź niezgodna ze schematem: naprawa transportowa',
       question: 'Czy JSON plannera przechodzi PlanAnswerSchema?',
-      where: 'src/engine/runners/typed-output.ts:349',
+      where: 'src/engine/runners/typed-output.ts:365',
       inputs: ['checkAnswer(schema, first)', 'seat', 'call.canResume', 'first.nativeSessionId'],
       branches: [
         { if: 'pierwsza odpowiedź ok', then: 'value + nativeSessionId + usage' },
@@ -559,7 +559,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_TYPED_REPAIR_OK',
       title: 'Drugie sprawdzenie po naprawie transportowej',
       question: 'Czy odpowiedź po naprawie jest zgodna ze schematem?',
-      where: 'src/engine/runners/typed-output.ts:381',
+      where: 'src/engine/runners/typed-output.ts:397',
       inputs: ['checkAnswer(schema, repair)'],
       branches: [
         { if: 'ok', then: 'value, nativeSessionId naprawy, usage = pierwsze + naprawa' },
@@ -570,7 +570,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_TYPED_TRANSPORT',
       title: 'Jak schema dociera do narzędzia',
       question: 'Czy narzędzie przyjmuje schema natywnie?',
-      where: 'src/engine/runners/typed-output.ts:314',
+      where: 'src/engine/runners/typed-output.ts:330',
       inputs: ['call.typedOutput (native / fallback / strict-native)', 'isStrictJsonSchema(PLAN_ANSWER_JSON_SCHEMA)'],
       branches: [
         { if: 'native, albo strict-native ze schematem strict', then: 'schema { json, name: plan_result } idzie w wywołaniu (claude --json-schema, codex, api)' },
@@ -620,7 +620,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_BLOCKS_PLAN',
       title: 'Które błędy blokują po naprawie',
       question: 'Czy po jednej naprawie zostały tylko błędy nieblokujące?',
-      where: 'src/engine/spec/plan-checks.ts:209',
+      where: 'src/engine/spec/plan-checks.ts:223',
       inputs: ['error.code'],
       branches: [
         { if: 'każdy błąd ma code render-check-unconfigured', then: 'outcome plan z checksRepaired false; plan.md dostaje "## Before you approve" z notatką renderCheckNotes: "Render checks V… need validation.render, which is not set. Add it to .splitbrief/config.yaml, or request changes to drop them; without it the run halts before its review." (plan-checks.ts:196)' },
@@ -632,7 +632,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_CMD_REFUSAL',
       title: 'Polityka tekstu polecenia dla checków cmd i test',
       question: 'Czy check planu można w ogóle uruchomić?',
-      where: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts:452',
+      where: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts:453',
       inputs: ['check.kind', 'check.value', 'npmScriptsApproved = resolveApproveLevel(config) === plan'],
       branches: [
         { if: 'kind test i parseShellCommand(value).length !== 1', then: 'refused-check-command: "a test check names one test file, and … is not one file" (plan-checks.ts:225)' },
@@ -648,7 +648,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_PROTECTED_CHECK',
       title: 'protectedOperations kontra klasyfikator zapisów',
       question: 'Czy plan poprawnie wymienia chronione zapisy?',
-      where: 'src/engine/spec/plan-checks.ts:319',
+      where: 'src/engine/spec/plan-checks.ts:366',
       inputs: ['task.protectedOperations[].path', 'task.suggestedFiles', 'protectedWriteClass(path, projectDir)', 'isExactFilePath'],
       branches: [
         { if: 'ścieżka poza projektem', then: 'pominięta tu (path-outside-project zgłasza ją wcześniej, plan-checks.ts:300)' },
@@ -662,7 +662,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_CONTEXT_FIT',
       title: 'Dopasowanie zadania do kontekstu seat-a BUILD',
       question: 'Czy zadanie zmieści się w implementerze i czy ktoś może je wziąć?',
-      where: 'src/engine/spec/plan-checks.ts:348',
+      where: 'src/engine/spec/plan-checks.ts:395',
       inputs: ['taskFits z estimatePlanContextFits', 'TaskContextFit: fits / tight / overflow', 'routingBlockKind no-capable-worker'],
       branches: [
         { if: 'zadanie ma ścieżkę poza projektem lub nie-plik', then: 'bez estymaty (plan-context-fit.ts:17); checkPlan odrzuca je innym kodem' },
@@ -702,7 +702,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_COMPILE',
       title: 'compilePlan: co powstaje z planu',
       question: 'Jakie pliki i akcje stanu produkuje plan, który przeszedł?',
-      where: 'src/engine/orchestrator/planning/session.ts:606',
+      where: 'src/engine/orchestrator/planning/session.ts:600',
       inputs: ['PlanProposal', 'config.validation.render', 'detectStack(projectDir, validation.stack)', 'readManifestCommands'],
       branches: [
         { if: 'zawsze', then: 'tasks = taskFromSpec(spec) (action modify gdy pierwszy suggestedFile istnieje, inaczej create — plan-tasks.ts:18); writePlanJson; plan.md = formatPlanMarkdown(plan, renderCheckNotes); tasks.md = formatTasks; artifact_written ×2' },
@@ -715,7 +715,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_DISCOVERED_VALIDATION',
       title: 'Walidacja odkryta przez plannera',
       question: 'Czy language, test i testPattern z planu trafiają do stanu?',
-      where: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts:512',
+      where: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts:528',
       inputs: ['plan.validation', 'isTestPatternSafe', 'unsafeCommandReason(testCommand)', 'resolveTestCommand bez discovered'],
       branches: [
         { if: 'testPattern ma / \\ lub ..', then: 'warning discovered_validation_refused "The test checks do not take the file pattern …"; wzór z configu lub stacku' },
@@ -741,7 +741,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_CARD_QUEUED',
       title: 'Wiadomość w kolejce przy karcie',
       question: 'Czy użytkownik zdążył coś wpisać, zanim karta się otworzyła?',
-      where: 'src/engine/orchestrator/planning/session.ts:725',
+      where: 'src/engine/orchestrator/planning/session.ts:719',
       inputs: ['drainAndFormat(seat plan)'],
       branches: [
         { if: 'kolejka niepusta', then: 'correction = tekst; karta się nie otwiera; od razu plan_regenerated + CORRECT_PLAN + sesja z planRevisedTurn' },
@@ -752,7 +752,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_CARD_RESULT',
       title: 'Cztery wiersze karty planu',
       question: 'Co użytkownik wybrał na karcie?',
-      where: 'src/engine/orchestrator/planning/session.ts:742',
+      where: 'src/engine/orchestrator/planning/session.ts:736',
       inputs: ['ApprovalReviewResult z onApprovalNeeded', 'signal.aborted'],
       branches: [
         { if: 'signal.aborted po powrocie', then: 'terminal cancelled' },
@@ -768,7 +768,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_UNATTENDED',
       title: 'Zatwierdzenie bez człowieka',
       question: 'Czy ktoś patrzył na plan przed zatwierdzeniem?',
-      where: 'src/engine/orchestrator/planning/session.ts:743',
+      where: 'src/engine/orchestrator/planning/session.ts:737',
       inputs: ['result.unattended'],
       branches: [
         { if: 'unattended !== true (TUI)', then: 'persistApprovalEvidence z confirmApprovals = planConfirmations: każdy chroniony zapis i npm run w ledgerze; brama zapisu w buildzie nie zapyta ponownie (confirm.ts:19)' },
@@ -780,7 +780,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_EDIT_VALID',
       title: 'Edycja plan.json na karcie',
       question: 'Czy edytowany plan.json można skompilować?',
-      where: 'src/engine/orchestrator/planning/session.ts:676',
+      where: 'src/engine/orchestrator/planning/session.ts:670',
       inputs: ['readSpecFileOrEmpty(plan.json)', 'reviewed (tekst przed edycją)', 'parsePlanJson', 'checkFullPlan + blocksPlan'],
       branches: [
         { if: 'tekst identyczny z reviewed', then: 'bez zmian; karta znów' },
@@ -795,7 +795,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_REVISED_RESULT',
       title: 'Wynik sesji po korekcie z karty',
       question: 'Co zwróciła sesja planowania uruchomiona z korektą?',
-      where: 'src/engine/orchestrator/planning/session.ts:782',
+      where: 'src/engine/orchestrator/planning/session.ts:776',
       inputs: ['revised.disposition'],
       branches: [
         { if: 'terminal (halt, stop, closed, input-required)', then: 'zwracany w górę; CORRECT_PLAN zostawił rewindPending, więc kontynuacja wznowi sesję z tą korektą (rewindLead)' },
@@ -836,7 +836,7 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
       id: 'PL_DIAGNOSE',
       title: 'Klasyfikacja nieudanego wywołania plannera',
       question: 'Co nieudane wywołanie mówi o seat-cie plan?',
-      where: 'src/engine/orchestrator/recovery/planner-call-failure.ts:64',
+      where: 'src/engine/orchestrator/recovery/planner-call-failure.ts:72',
       inputs: ['typedRunnerCallErrorCode(err)', 'thrownSeatFailure(err).classification', 'słowa narzędzia'],
       branches: [
         { if: 'code missing-model', then: 'failure missing-model → halt planner-call-failed; builder pyta route o credential (seatRouteRefusal): signed-out → Seat down, inaczej model refusal z ofertą switch-seat' },
@@ -933,9 +933,9 @@ Wywołanie plannera, które się nie powiedzie (limit konta, wylogowanie, za du�
     { key: 'codebase.enabled', values: 'true | false', default: 'true', effect: 'false wyłącza sekcję Repository Map w prompcie plannera.', where: 'src/engine/orchestrator/planning/session.ts:186' },
     { key: 'codebase.token_budget', values: 'int ≤ 50000', default: '4000', effect: 'Budżet tokenów repo-mapy w prompcie.', where: 'src/engine/orchestrator/planning/session.ts:191' },
     { key: 'codebase.include / codebase.exclude', values: 'globy', default: 'brak', effect: 'Zawężają repo-mapę.', where: 'src/engine/orchestrator/planning/session.ts:193' },
-    { key: 'validation.render', values: 'polecenie renderu', default: 'brak', effect: 'Bez niego każdy check render daje nieblokujący błąd render-check-unconfigured i notatkę "Before you approve" na karcie.', where: 'src/engine/spec/plan-checks.ts:180' },
-    { key: 'validation.stack', values: 'typescript | javascript | python | go | rust', default: 'detekcja', effect: 'Stack używany, gdy sanitizer sprawdza, czy odrzucone polecenie test z planu i tak wynika z configu/manifestu/stacku.', where: 'src/engine/orchestrator/planning/session.ts:625' },
-    { key: 'validation.test_command', values: 'polecenie', default: 'brak', effect: 'Wyższy szczebel niż walidacja odkryta przez plannera; plannerowy test command wypełnia tylko lukę.', where: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts:541' },
+    { key: 'validation.render', values: 'polecenie renderu', default: 'brak', effect: 'Bez niego każdy check render daje nieblokujący błąd render-check-unconfigured i notatkę "Before you approve" na karcie.', where: 'src/engine/spec/plan-checks.ts:181' },
+    { key: 'validation.stack', values: 'typescript | javascript | python | go | rust', default: 'detekcja', effect: 'Stack używany, gdy sanitizer sprawdza, czy odrzucone polecenie test z planu i tak wynika z configu/manifestu/stacku.', where: 'src/engine/orchestrator/planning/session.ts:619' },
+    { key: 'validation.test_command', values: 'polecenie', default: 'brak', effect: 'Wyższy szczebel niż walidacja odkryta przez plannera; plannerowy test command wypełnia tylko lukę.', where: 'src/engine/orchestrator/planning/sanitize-discovered-validation.ts:557' },
     { key: 'hooks.pre_planning', values: 'hook', default: 'brak', effect: 'Biegnie raz na proces przed pierwszym wywołaniem plannera; odmowa = terminal cancelled.', where: 'src/engine/orchestrator/run/phases.ts:81' },
     { key: 'planner (seat)', values: 'cli | api | shell | agent', default: 'wymagany', effect: 'Rodzaj decyduje o kontekście (czyta pliki sam vs pakiet API), o wątku sesji (supportsSessionResume) i o transporcie schematu.', where: 'src/engine/orchestrator/planning/session.ts:210' },
     { key: 'implementer (domyślny profil)', values: 'seat', default: 'wymagany', effect: 'Jego model i zmierzony kontekst to sekcja Implementer promptu i granica context-overflow.', where: 'src/engine/orchestrator/planning/session.ts:119' },

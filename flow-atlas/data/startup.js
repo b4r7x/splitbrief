@@ -514,7 +514,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_TTY',
       title: 'Wymóg terminala',
       question: 'Czy stdin to TTY?',
-      where: 'src/cli/setup.ts:59',
+      where: 'src/cli/setup.ts:64',
       inputs: ['process.stdin.isTTY'],
       branches: [
         { if: 'nie', then: 'CliError `interactive mode needs a TTY — use --json or --plain`, exit 1' },
@@ -527,7 +527,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_GIT_REPO',
       title: 'Repo git wymagane',
       question: 'Czy projectDir to repo git?',
-      where: 'src/cli/setup.ts:73',
+      where: 'src/cli/setup.ts:78',
       inputs: ['git'],
       branches: [
         { if: 'nie', then: 'CliError `not a git repository. Run git init first.`, exit 1' },
@@ -539,7 +539,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_RENDER_FLAGS',
       title: 'Fullscreen, mysz, hover',
       question: 'Jak rysować TUI?',
-      where: 'src/cli/setup.ts:157',
+      where: 'src/cli/setup.ts:163',
       inputs: ['stdout.isTTY', 'env CI', '--no-fullscreen', '--no-mouse', '--hover'],
       branches: [
         { if: 'stdout to TTY i brak CI i brak --no-fullscreen', then: 'useFullscreen = true' },
@@ -553,7 +553,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_NEEDS_SETUP',
       title: 'Brak configu: potrzebny Setup',
       question: 'Czy istnieje `.splitbrief/config.yaml`?',
-      where: 'src/cli/setup.ts:161',
+      where: 'src/cli/setup.ts:167',
       inputs: ['existsSync(configPath)'],
       branches: [
         { if: 'nie, TUI', then: 'needsSetup: ekran Setup (nawet gdy podano flagi seatów)', next: 'ST_LIVE_SESSION_TUI' },
@@ -938,7 +938,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_PLANNER_AVAILABLE',
       title: 'Ostatnie sprawdzenie przed planowaniem',
       question: 'Czy komenda plannera odpowiada?',
-      where: 'src/engine/orchestrator/run/init.ts:393',
+      where: 'src/engine/orchestrator/run/init.ts:398',
       inputs: ['planner.isAvailable() (`<cmd> --version`, `src/engine/availability.ts:50`)'],
       branches: [
         { if: 'nie, i brak czekającego recovery', then: 'error event `plannerUnavailableMessage`, initializeWorkflow zwraca ok: false; brak planowania' },
@@ -1051,7 +1051,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_FIRST_RUN_PATH',
       title: 'Kto tworzy pierwszy config',
       question: 'Która droga zapisze pierwszy config.yaml?',
-      where: 'src/cli/setup.ts:85',
+      where: 'src/cli/setup.ts:90',
       inputs: ['komenda', 'tryb'],
       branches: [
         { if: 'start w TUI, init w TUI', then: 'ekran Setup', next: 'ST_SETUP_STEP' },
@@ -1064,7 +1064,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_HEADLESS_CONFIG',
       title: 'Czy zapis headless jest potrzebny',
       question: 'Czy config już istnieje?',
-      where: 'src/cli/setup.ts:85',
+      where: 'src/cli/setup.ts:90',
       inputs: ['revision configu', '--reconfigure (init --yes)'],
       branches: [
         { if: 'config jest i brak --reconfigure', then: 'nic; dalej config z pliku' },
@@ -1091,7 +1091,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_CREW_AVAILABLE',
       title: 'Czy załoga do zapisu jest dostępna',
       question: 'Czy każdy seat efektywnej załogi jest gotowy?',
-      where: 'src/cli/setup.ts:113',
+      where: 'src/cli/setup.ts:118',
       inputs: ['checkCrewAvailability', 'listy modeli tras CLI', 'probe dostawców API'],
       branches: [
         { if: 'niedostępny seat i nic nie wykryto', then: 'CliError `No config found and no ready crew is available. Run splitbrief init to choose and sign in to your tools.`, exit 1, bez zapisu' },
@@ -1104,7 +1104,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_CONFIG_SAVE',
       title: 'Atomowy zapis configu',
       question: 'Czy zapis się udał?',
-      where: 'src/cli/setup.ts:125',
+      where: 'src/cli/setup.ts:130',
       inputs: ['initConfig z expectedRevision'],
       branches: [
         { if: 'conflict (plik zmienił się w trakcie)', then: 'CliError `Config changed during setup. Retry the command.`, exit 1' },
@@ -1346,7 +1346,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_RESUME_MODE',
       title: 'Wznowienie: headless czy TUI',
       question: 'Czy podano --json lub --plain?',
-      where: 'src/cli/commands/continue/resume.ts:113',
+      where: 'src/cli/commands/continue/resume.ts:114',
       inputs: ['opts.json', 'opts.plain'],
       branches: [
         { if: 'headless', then: 'prepareExecution(resume, headless) i runHeadless; bez setupWorkflow i bez pytania o hooki' },
@@ -1385,7 +1385,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
       id: 'ST_STATUS_ACTIVE',
       title: 'status',
       question: 'Czy jest aktywny run ze stanem?',
-      where: 'src/cli/commands/status.ts:80',
+      where: 'src/cli/commands/status.ts:81',
       inputs: ['.splitbrief/active', 'state.json'],
       branches: [
         { if: 'nie', then: '`No active workflow.`' },
@@ -1465,14 +1465,14 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
     { key: '--allow-unverified-auth', values: 'flaga', default: 'false', effect: 'Headless dopuszcza CLI z nieznanym stanem logowania; TUI i tak ujawnia zamiast blokować.', where: 'src/cli/commands/start/readiness.ts:242' },
     { key: '--on-seat-down', values: 'halt | switch', default: 'brak (fallback stosowany, gdy zadeklarowany)', effect: 'Headless: halt zatrzymuje na Seat down; switch bez fallback = exit 2.', where: 'src/cli/headless.ts:365' },
     { key: '--skills', values: 'id,id', default: 'brak', effect: 'Headless start i resume/continue; nieznane id = exit 2.', where: 'src/cli/headless.ts:242' },
-    { key: '--project', values: 'katalog', default: 'cwd', effect: 'Kanonizowany do toplevel repo git (ostrzeżenie przy podkatalogu).', where: 'src/cli/setup.ts:29' },
-    { key: '--no-fullscreen / --no-mouse / --hover', values: 'flagi', default: 'fullscreen i mysz włączone, hover wyłączony', effect: 'Sposób rysowania TUI; w headless bez efektu.', where: 'src/cli/setup.ts:157' },
+    { key: '--project', values: 'katalog', default: 'cwd', effect: 'Kanonizowany do toplevel repo git (ostrzeżenie przy podkatalogu).', where: 'src/cli/setup.ts:30' },
+    { key: '--no-fullscreen / --no-mouse / --hover', values: 'flagi', default: 'fullscreen i mysz włączone, hover wyłączony', effect: 'Sposób rysowania TUI; w headless bez efektu.', where: 'src/cli/setup.ts:163' },
     { key: '--planner*, --implementer*, --reviewer*, --model, --provider, --planner-effort, --reviewer-effort', values: 'zależnie od flagi', default: 'brak', effect: 'Nadpisują seaty tylko dla tego wywołania; flaga niepasująca do rodzaju seatu jest ignorowana z ostrzeżeniem.', where: 'src/core/config/runtime/overrides/from-options.ts:4' },
     { key: 'continue/resume --action', values: 'skip | retry | restore | switch-seat:<tool>[:<model>][@<effort>] | end-run | apply | discard', default: 'brak', effect: 'Odpowiedź na recovery lub rozliczenie runu gotowego do Apply; zła wartość = exit 2. start nie ma tej flagi.', where: 'src/cli/options.ts:126' },
     { key: 'init --yes / --reconfigure', values: 'flagi', default: 'false', effect: '--yes: zapis wykrytej załogi bez ekranu; --reconfigure: nadpisanie istniejącego configu.', where: 'src/cli/commands/init.ts:28' },
     { key: 'doctor --json / --probe-seat', values: 'flaga / plan|build|review', default: 'brak', effect: '--json: rekord readiness_report i interakcja headless; --probe-seat: jedno płatne wywołanie.', where: 'src/cli/commands/doctor.ts:411' },
     { key: 'review --reviewer / --base', values: '<tool>[:<model>][@<effort>] / git ref', default: 'skonfigurowany reviewer lub planner / drzewo robocze', effect: 'Seat review na to jedno wywołanie; ref nie może zaczynać się od `-`.', where: 'src/cli/commands/review.ts:114' },
-    { key: 'env CI', values: 'dowolna wartość', default: 'brak', effect: 'Wyłącza fullscreen i mysz; nie wymusza headless.', where: 'src/cli/setup.ts:52' },
+    { key: 'env CI', values: 'dowolna wartość', default: 'brak', effect: 'Wyłącza fullscreen i mysz; nie wymusza headless.', where: 'src/cli/setup.ts:57' },
     { key: 'HOME (~/.splitbrief/trust/)', values: 'katalog', default: 'katalog domowy', effect: 'Magazyn receiptów zaufania (hooki, komendy własne); inny HOME = brak zaufania.', where: 'src/core/trust/receipt-store.ts:23' }
   ],
   states: [
@@ -1631,7 +1631,7 @@ Po udanym przygotowaniu TUI przechodzi na ekran workflow (\`useRunLoop\` → \`r
     { path: 'src/core/hooks/trust.ts', role: 'Receipt zaufania hooków w magazynie maszyny' }
   ],
   gotchas: [
-    'Headless start (`--json`/`--plain`) oraz headless resume/continue nigdy nie wołają `ensureHooksTrusted`: `runHeadlessStart` (`src/cli/commands/start/streaming.ts:16`) i `resumeSavedSession` w trybie headless (`src/cli/commands/continue/resume.ts:113`) pomijają bootstrap store-ów. `--allow-hooks` trafia tylko do `prepared.runtime.allowHooks`, którego nic nie czyta jako zgody na hooki. Skutek z kodu: niezaufane hooki są odrzucane w trakcie runu (pre_planning anuluje planowanie, `src/engine/orchestrator/run/phases.ts:95`), a docs (CLI-REFERENCE: „pass --allow-hooks in CI to skip the hook-trust prompt”, HOOKS-CONFIG: „Use --allow-hooks in CI”) sugerują, że flaga działa w CI. Potwierdzone tylko czytaniem kodu; wymaga sceptyka i testu na żywo.',
+    'Headless start (`--json`/`--plain`) oraz headless resume/continue nigdy nie wołają `ensureHooksTrusted`: `runHeadlessStart` (`src/cli/commands/start/streaming.ts:16`) i `resumeSavedSession` w trybie headless (`src/cli/commands/continue/resume.ts:114`) pomijają bootstrap store-ów. `--allow-hooks` trafia tylko do `prepared.runtime.allowHooks`, którego nic nie czyta jako zgody na hooki. Skutek z kodu: niezaufane hooki są odrzucane w trakcie runu (pre_planning anuluje planowanie, `src/engine/orchestrator/run/phases.ts:95`), a docs (CLI-REFERENCE: „pass --allow-hooks in CI to skip the hook-trust prompt”, HOOKS-CONFIG: „Use --allow-hooks in CI”) sugerują, że flaga działa w CI. Potwierdzone tylko czytaniem kodu; wymaga sceptyka i testu na żywo.',
     'Brudne drzewo robocze NIGDY nie blokuje startu (`repo.dirty-worktree` to ostrzeżenie). Blokuje natomiast monorepo z workspace-ami lub editable venv, gdy w pliku nie ma klucza `workflow.isolation`, nawet jeśli domyślna izolacja to worktree.',
     'Na Linuksie BUILD na claude-code bez `bwrap` i `socat` w PATH (tylko wpisy absolutne) jest blokerem, zanim planner wyda jakikolwiek token.',
     '`loadConfig` przy braku pliku zwraca config domyślny (PLAN claude-code, BUILD Ollama `qwen3-coder:30b`) bez błędu. Brak configu blokuje tylko w `doctor` (bloker `config.missing`); TUI otwiera Setup, headless zapisuje załogę.',
