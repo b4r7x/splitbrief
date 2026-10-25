@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- Continuing a run that stopped while it planned no longer prints `(task 0/0)`, and `splitbrief status` no longer prints `Task: 0/0` for it; both name no brief position until the run has briefs.
 - A notice that does not fit a narrow terminal keeps the file name and shortens its cause.
 - A notice cut at the end of its row ends on a whole word.
 - Text you send no longer comes back as a draft when SPLITBRIEF stops right after you send it.

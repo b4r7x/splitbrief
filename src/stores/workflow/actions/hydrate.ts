@@ -1,5 +1,6 @@
 import { definedTaskUsageFields, TASK_USAGE_ATTEMPT_KEYS } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { briefPosition } from '../../../core/state/selectors.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue-state.js';
 import { _tasksInternal, type TasksState, type WorkflowTask } from '../tasks.js';
 import {
@@ -58,8 +59,7 @@ function tasksStateFromState(
   state: WorkflowState,
 ): Pick<TasksState, 'currentTask' | 'totalTasks' | 'taskMap' | 'tasks'> {
   const totalTasks = state.tasks.length;
-  const currentTask =
-    totalTasks === 0 ? 0 : Math.min(Math.max(0, state.currentTaskIndex) + 1, totalTasks);
+  const currentTask = briefPosition(state)?.position ?? 0;
   const tasks = state.tasks.map<WorkflowTask>((task) => ({
     id: task.id,
     title: task.title,
