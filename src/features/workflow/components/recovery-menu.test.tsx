@@ -275,6 +275,15 @@ it('offers the correction key only on a halt that takes typed words', async () =
   );
   accepting.unmount();
 
+  composerLiveStore.setDraft(createDraftDocument('focus on the error'));
+  const acceptingWithWords = mount(vi.fn());
+  await flushEffects();
+  expect(stripAnsiStyles(acceptingWithWords.lastFrame())).toContain(
+    '↑↓ select · ⏎ confirm · tab type a correction',
+  );
+  acceptingWithWords.unmount();
+  composerLiveStore.reset();
+
   const refusing = mount(
     vi.fn(),
     80,
@@ -289,6 +298,38 @@ it('offers the correction key only on a halt that takes typed words', async () =
   expect(frame).toContain('↑↓ select · ⏎ confirm');
   expect(frame).not.toContain('tab type a correction');
   refusing.unmount();
+});
+
+it('offers tab edit the words on an apply-partial halt with words, and no tab hint when empty', async () => {
+  composerLiveStore.setDraft(createDraftDocument('keep going'));
+  const withWords = mount(
+    vi.fn(),
+    56,
+    makeRecoveryIssue({
+      reason: 'apply-partial',
+      availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+    }),
+  );
+  await flushEffects();
+  expect(stripAnsiStyles(withWords.lastFrame())).toContain('tab edit the words');
+  withWords.unmount();
+
+  composerLiveStore.reset();
+  const empty = mount(
+    vi.fn(),
+    56,
+    makeRecoveryIssue({
+      reason: 'apply-partial',
+      availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+    }),
+  );
+  await flushEffects();
+  const frame = stripAnsiStyles(empty.lastFrame());
+  expect(frame).toContain('↑↓ select · ⏎ confirm');
+  expect(frame).not.toContain('tab');
+  empty.unmount();
 });
 
 it('says what ⏎ in the composer does while it holds focus, and lists no live keys', async () => {

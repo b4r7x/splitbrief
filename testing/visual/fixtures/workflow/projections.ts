@@ -6963,6 +6963,10 @@ const projections = [
   applyConflictRecoveryProjection,
   applyConflictSentenceProjection,
   resumedApplyPartialRecoveryProjection,
+  {
+    ...resumedApplyPartialRecoveryProjection,
+    scenarioId: scenarioId('workflow-recovery-apply-partial-words'),
+  },
   reviewContractProjection,
   reviewPromptTooLargeProjection,
   buildPromptTooLargeProjection,

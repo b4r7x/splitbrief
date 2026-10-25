@@ -350,6 +350,23 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       },
     });
   }
+  if (projection.scenarioId === 'workflow-recovery-apply-partial-words') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        const fixedNow = Date.now;
+        Date.now = () => fixedNow() + PROMPT_TYPEAHEAD_GRACE_MS;
+        try {
+          await write.press('\t');
+          await write.press(TYPED_WORDS);
+          await write.press('\t');
+          await write.press('\r');
+        } finally {
+          Date.now = fixedNow;
+        }
+      },
+    });
+  }
   if (projection.scenarioId === 'workflow-recovery-consult-bound-note') {
     return () => ({
       ...base(),
@@ -833,6 +850,10 @@ const checkpointPredicates = [
     (context) =>
       includesAll('Seat down · Prompt too large for', 'Change BUILD tool')(context) &&
       excludesAll('Try again', 'argv', 'Context overflow')(context),
+  ],
+  [
+    checkpointId('recovery-apply-partial-words'),
+    includesAll('Cannot send words with', TYPED_WORDS, 'tab edit the words'),
   ],
   [
     checkpointId('recovery-review-contract'),

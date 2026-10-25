@@ -81,6 +81,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-spent-b2-replay', ['200x50', '60x18']],
   ['workflow-recovery-fallback-used', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-apply-conflict', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-recovery-apply-partial-words', ['120x40', '80x24', '60x18', '60x30']],
   ['workflow-recovery-review-contract', ['120x40', '80x24', '60x18', '60x30']],
   ['home-recent-sessions', ['120x40', '80x24']],
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
