@@ -82,7 +82,8 @@ export function getRunnerDisplayName(runner: DeepReadonly<RunnerConfig>): string
   }
 }
 
-export function getRunnerCatalogDisplayName(runner: RunnerConfig): string {
+/** How messages name a runner: its catalog name, not its config id. */
+export function getRunnerCatalogDisplayName(runner: DeepReadonly<RunnerConfig>): string {
   switch (runner.kind) {
     case 'cli':
       return getProviderDisplayName(runner.tool);

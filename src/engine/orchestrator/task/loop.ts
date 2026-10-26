@@ -11,6 +11,7 @@ import {
 } from '../state-ops.js';
 import { refreshAndPersistCode } from './refresh-code.js';
 import {
+  getRunnerCatalogDisplayName,
   getRunnerDisplayName,
   getRunnerModelName,
 } from '../../../core/config/accessors/runner-config.js';
@@ -184,7 +185,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       availabilityError = toErrorMessage(err);
     }
     if (!isImplementerAvailable) {
-      const tool = getRunnerDisplayName(selectedProfile.config);
+      const tool = getRunnerCatalogDisplayName(selectedProfile.config);
       const reason =
         availabilityError ??
         taskImplementer.unavailabilityReason?.() ??

@@ -15,7 +15,7 @@ import {
 } from '../recovery/builders/task.js';
 import { haltAttempts } from '../recovery/builders/details.js';
 import { classifySeatFailure } from '../../runners/seat-failure.js';
-import { runnerAuthDisplayName } from '../../runners/auth-failure.js';
+import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { boundedHandBack } from '../escalation/types.js';
 import { retryAndRecord } from './retry.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
@@ -92,7 +92,11 @@ export async function handleFailedImplementation(opts: {
     publishError({
       bus: wctx.bus,
       phase: state.phase,
-      message: runnerHaltRow(issue, runnerAuthDisplayName(wctx.config.implementer), toolMessage),
+      message: runnerHaltRow(
+        issue,
+        getRunnerCatalogDisplayName(wctx.config.implementer),
+        toolMessage,
+      ),
     });
     state = transitionAndSave(wctx, state, {
       type: 'INTERRUPT_STEP',
@@ -137,7 +141,11 @@ export async function handleFailedImplementation(opts: {
     publishError({
       bus: wctx.bus,
       phase: state.phase,
-      message: runnerHaltRow(issue, runnerAuthDisplayName(wctx.config.implementer), toolMessage),
+      message: runnerHaltRow(
+        issue,
+        getRunnerCatalogDisplayName(wctx.config.implementer),
+        toolMessage,
+      ),
       resetAt: issue.resetAt,
     });
     state = transitionAndSave(wctx, state, {
@@ -183,7 +191,11 @@ export async function handleFailedImplementation(opts: {
     publishError({
       bus: wctx.bus,
       phase: state.phase,
-      message: runnerDefectRow(issue, runnerAuthDisplayName(wctx.config.implementer), toolMessage),
+      message: runnerDefectRow(
+        issue,
+        getRunnerCatalogDisplayName(wctx.config.implementer),
+        toolMessage,
+      ),
     });
     return raisePendingRecovery(wctx, state, issue, setTrackedState);
   }

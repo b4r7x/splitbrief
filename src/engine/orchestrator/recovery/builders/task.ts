@@ -25,9 +25,10 @@ import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { recordedSeatIdentityInput } from '../../../providers/model/display-names.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../../providers/model/resolution.js';
 import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
-import type {
-  DeepReadonly,
-  RunnerConfig,
+import {
+  getRunnerCatalogDisplayName,
+  type DeepReadonly,
+  type RunnerConfig,
 } from '../../../../core/config/accessors/runner-config.js';
 import type { SeatFailureClassification } from '../../../runners/seat-failure.js';
 import { accountCauseAdvice, formatAccountCause } from '../../../../core/recovery/account-cause.js';
@@ -47,7 +48,6 @@ import type { RoutingDecision } from '../../context-routing/types.js';
 import {
   modelRefusalMessage,
   runnerAccountDisplayName,
-  runnerAuthDisplayName,
   runnerLoginInstruction,
 } from '../../../runners/auth-failure.js';
 import { inputTooLargeFigures, type PromptSize } from '../../../runners/input-limit.js';
@@ -349,7 +349,7 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
             cache: opts.seatSwap?.modelCache ?? NULL_CACHE,
           }).displayName,
         );
-  const displayName = runnerAuthDisplayName(opts.runner);
+  const displayName = getRunnerCatalogDisplayName(opts.runner);
   const isAuth = classification.class === 'account' && classification.cause === 'auth';
   const reason = isAuth ? 'runner-unauthenticated' : 'runner-usage-limit';
   const resetAt =
@@ -681,7 +681,7 @@ function recipeHaltIssue(
   seatSwap: SwitchSeatOffer | undefined,
   refusal?: ModelRefusal,
 ): RecoveryIssue {
-  const displayName = runnerAuthDisplayName(opts.runner);
+  const displayName = getRunnerCatalogDisplayName(opts.runner);
   const actions = haltActions('implementer-recipe-invalid', [
     'retry-same-worker',
     seatSwap === undefined ? undefined : 'switch-seat',
@@ -723,7 +723,7 @@ function recipeHaltIssue(
  * attempts on the same rejection, so the recipe is fixed before the run moves.
  */
 export function buildRecipeInvalidRecoveryIssue(opts: RunnerFailureRecoveryOptions): RecoveryIssue {
-  const displayName = runnerAuthDisplayName(opts.runner);
+  const displayName = getRunnerCatalogDisplayName(opts.runner);
   return recipeHaltIssue(
     opts,
     `${displayName} rejected the command SPLITBRIEF built for it`,
@@ -794,7 +794,7 @@ export function buildMissingModelRecoveryIssue(opts: RunnerFailureRecoveryOption
 export function buildRepeatedTimeoutRecoveryIssue(
   opts: RunnerFailureRecoveryOptions,
 ): RecoveryIssue {
-  const displayName = runnerAuthDisplayName(opts.runner);
+  const displayName = getRunnerCatalogDisplayName(opts.runner);
   const seatSwap = switchSeatOffer(opts.seatSwap);
   const actions = haltActions('runner-timeout-repeated', [
     'retry-same-worker',
@@ -864,7 +864,7 @@ function isolationHaltIssue(
     details: [...halt.details],
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
-    facts: compactFacts({ tool: runnerAuthDisplayName(opts.runner), changes: halt.changes }),
+    facts: compactFacts({ tool: getRunnerCatalogDisplayName(opts.runner), changes: halt.changes }),
     availableActions: halt.actions,
     recommendedAction: chooseRecommended(halt.actions),
     createdAt: opts.createdAt,
@@ -873,7 +873,7 @@ function isolationHaltIssue(
 
 /** A tool call named a path the implementer may not reach, and the call was stopped. */
 export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptions): RecoveryIssue {
-  const evidence = `${runnerAuthDisplayName(opts.runner)} ${opts.toolMessage}`;
+  const evidence = `${getRunnerCatalogDisplayName(opts.runner)} ${opts.toolMessage}`;
   const seatSwap = switchSeatOffer(opts.seatSwap);
   return isolationHaltIssue(
     opts,
@@ -915,7 +915,7 @@ export function buildCheckoutChangedRecoveryIssue(
       files: [],
       changes: opts.toolMessage,
       details: [
-        `Changed while ${runnerAuthDisplayName(opts.runner)} ran; the audit cannot tell who made the change.`,
+        `Changed while ${getRunnerCatalogDisplayName(opts.runner)} ran; the audit cannot tell who made the change.`,
         opts.inPlace === undefined
           ? "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted."
           : `SPLITBRIEF put back the files this attempt changed in your checkout (the bytes it replaced are in ${opts.inPlace.revertedDir}); the git change stays for you to check.`,
@@ -952,7 +952,7 @@ export function inputTooLargeDetail(
 export function buildRunnerInputTooLargeRecoveryIssue(
   opts: RunnerFailureRecoveryOptions,
 ): RecoveryIssue {
-  const displayName = runnerAuthDisplayName(opts.runner);
+  const displayName = getRunnerCatalogDisplayName(opts.runner);
   const figures = inputTooLargeFigures(opts.toolMessage);
   const seatSwap = switchSeatOffer(opts.seatSwap);
   const actions = haltActions('context-overflow', [

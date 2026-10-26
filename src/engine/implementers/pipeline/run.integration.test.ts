@@ -633,6 +633,53 @@ describe('createImplementerBase — non-extracting backends (detectChanges)', ()
   });
 });
 
+const IMPLEMENTER_WORDS = [
+  {
+    name: 'cli codex',
+    runner: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
+    word: 'OpenAI Codex CLI',
+  },
+  {
+    name: 'cli claude-code',
+    runner: { kind: 'cli', tool: 'claude-code' },
+    word: 'Claude Code CLI',
+  },
+  {
+    name: 'cli opencode route',
+    runner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-chat' },
+    word: 'OpenCode CLI',
+  },
+  {
+    name: 'api ollama',
+    runner: {
+      kind: 'api',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'llama3',
+    },
+    word: 'Ollama',
+  },
+  {
+    name: 'api custom endpoint',
+    runner: {
+      kind: 'api',
+      provider: 'custom-endpoint',
+      model: 'some-model',
+      apiBase: 'https://api.example.com/v1',
+      apiKey: 'k',
+    },
+    word: 'custom-endpoint',
+  },
+  {
+    name: 'shell',
+    runner: { kind: 'shell', command: './run.sh', model: 'auto' },
+    word: 'Custom Shell',
+  },
+  { name: 'agent', runner: { kind: 'agent', command: './agent.sh', model: 'auto' }, word: 'Agent' },
+] as const;
+
 describe('createImplementerBase — wrote-nothing warning', () => {
   beforeEach(setupProject);
   afterEach(cleanupProject);
@@ -682,6 +729,43 @@ describe('createImplementerBase — wrote-nothing warning', () => {
       expect(warnings[0].message).toContain('codex');
     }
   });
+
+  it.each(IMPLEMENTER_WORDS)(
+    'names a $name implementer by its catalog name',
+    async ({ runner, word }) => {
+      const { bus, events } = makeBusRecorder();
+      const implementer = createImplementerBase(
+        makeBaseConfig({
+          extractsCode: false,
+          publisher: createImplementerPublisher(bus),
+          detectChanges: vi.fn().mockResolvedValue({
+            changed: false,
+            output: 'exited without changing any files',
+            reason: 'no-files-changed',
+          }),
+          invoke: vi
+            .fn()
+            .mockResolvedValue(
+              makeRunnerCallResult({ status: 'completed', text: 'done', usage: null }),
+            ),
+        }),
+      );
+
+      await implementer.implement({
+        task: makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'] }),
+        projectDir,
+        config: makeConfig({ implementer: runner }),
+        context: defaultContext,
+        onOutput: vi.fn(),
+        phase: 'implementing',
+      });
+
+      const warning = events.find((event) => event.type === 'warning');
+      expect(warning?.type === 'warning' && warning.message).toBe(
+        `Implementer ${word} wrote nothing for task T001: exited without changing any files`,
+      );
+    },
+  );
 
   it('lands the wrote-nothing warning in session.jsonl and the review packet warnings list', async () => {
     const sessionId = 't005-wrote-nothing';
