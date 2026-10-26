@@ -1,6 +1,5 @@
 import { toTokenDelta } from '../../calls/usage.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { lastMessageGroupText } from './final-group.js';
@@ -11,11 +10,7 @@ import { error } from '../../../utils/error.js';
 
 const CURSOR_ID = 'cursor' as const;
 const CURSOR_COMMAND = 'cursor-agent' as const;
-const CURSOR_PROMPT_TRANSPORT = Object.freeze({
-  kind: 'argv',
-  maxBytes: 120_000,
-  placement: 'positional',
-} as const);
+const CURSOR_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
 const CURSOR_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 export const CURSOR_PROTECTED_FLAGS = new Set([
@@ -54,7 +49,8 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     ...input,
     protectedFlags: CURSOR_PROTECTED_FLAGS,
     protectedShortValueFlags: CURSOR_PROTECTED_SHORT_VALUE_FLAGS,
-    promptTransport: 'argv',
+    promptTransport: 'stdin',
+    positionalPrompt: true,
   });
 }
 
@@ -71,7 +67,6 @@ function plannerBaseArgs(input: CursorPlannerBuildInput): string[] {
     '--workspace',
     input.projectDir,
     ...(input.model === undefined ? [] : ['--model', input.model]),
-    input.prompt,
   ];
 }
 
@@ -85,7 +80,6 @@ function implementerBaseArgs(input: CursorImplementerBuildInput): string[] {
     '--workspace',
     input.projectDir,
     ...(input.model === undefined ? [] : ['--model', input.model]),
-    input.prompt,
   ];
 }
 
@@ -300,7 +294,7 @@ export type RawCursorCliContract = Readonly<{
   versionArgs: readonly ['--version'];
   auth: Readonly<{ kind: 'env-or-native'; env: readonly ['CURSOR_API_KEY'] }>;
   rawInvocation: readonly string[];
-  promptTransport: 'argv';
+  promptTransport: 'stdin';
   expectedRawTerminal: 'result';
   asOf: '2026-08-27';
 }>;
@@ -322,17 +316,9 @@ function cursorRawContract(role: 'planner' | 'implementer'): RawCursorCliContrac
     auth: { kind: 'env-or-native', env: ['CURSOR_API_KEY'] },
     rawInvocation:
       role === 'planner'
-        ? [
-            '--print',
-            '--output-format',
-            'stream-json',
-            '--mode',
-            'plan',
-            '--trust',
-            CLI_PROMPT_SENTINEL,
-          ]
-        : ['--print', '--output-format', 'stream-json', '--force', '--trust', CLI_PROMPT_SENTINEL],
-    promptTransport: 'argv',
+        ? ['--print', '--output-format', 'stream-json', '--mode', 'plan', '--trust']
+        : ['--print', '--output-format', 'stream-json', '--force', '--trust'],
+    promptTransport: 'stdin',
     expectedRawTerminal: 'result',
     asOf: '2026-08-27',
   };

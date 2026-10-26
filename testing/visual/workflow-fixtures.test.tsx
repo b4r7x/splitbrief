@@ -234,18 +234,18 @@ describe('workflow visual fixtures', () => {
   it.each([
     [
       'workflow-recovery-review-prompt-too-large',
-      'Final review failed: the prompt is too large',
-      'The prompt is 186,486 bytes; OpenCode CLI takes at most 120,000 on its command line.',
+      'Review input too large for OpenAI Codex CLI',
+      'Review input is 1,106,026 characters; OpenAI Codex CLI takes at most 1,048,576',
       'Change REVIEW tool',
     ],
     [
       'workflow-recovery-build-prompt-too-large',
-      'Prompt too large for OpenCode CLI on T001',
-      'The prompt is 195,203 bytes; OpenCode CLI takes at most 120,000 on its command line.',
+      'Prompt too large for OpenAI Codex CLI on T001',
+      'The prompt is 1,106,026 characters; OpenAI Codex CLI takes at most 1,048,576.',
       'Change BUILD tool',
     ],
   ])(
-    '%s states the command-line limit in plain words, with a tool change and no retry',
+    "%s states the tool's prompt limit in plain words, with a tool change and no retry",
     async (id, title, detail, change) => {
       const projection = workflowFixtureProjections.get(scenarioId(id));
       if (projection === undefined) throw new Error(`Missing ${id} scenario`);
@@ -256,7 +256,7 @@ describe('workflow visual fixtures', () => {
       expect(frame).toContain(detail);
       expect(frame).toContain(change);
       expect(frame).not.toContain('Try again');
-      expect(frame).not.toMatch(/argv|reported:|Context overflow/);
+      expect(frame).not.toMatch(/argv|command line|reported:|Context overflow/);
     },
   );
 
@@ -269,7 +269,7 @@ describe('workflow visual fixtures', () => {
       preserveLineBreaks: true,
     }).replace(/[│\s]+/g, ' ');
     expect(frame).toContain(
-      'Seat down · Prompt too large for OpenCode CLI on T001 after 1 attempt',
+      'Seat down · Prompt too large for OpenAI Codex CLI on T001 after 1 attempt',
     );
     expect(frame).not.toContain('Recovery Prompt too large');
   });
@@ -282,7 +282,7 @@ describe('workflow visual fixtures', () => {
     const frame = stripTerminalControls(await renderProjection(projection), {
       preserveLineBreaks: true,
     }).replace(/[│\s]+/g, ' ');
-    expect(frame).toContain('Seat down · Prompt too large for OpenCode CLI on T002');
+    expect(frame).toContain('Seat down · Prompt too large for OpenAI Codex CLI on T002');
     expect(frame).not.toMatch(/argv|Context overflow/);
   });
 

@@ -166,6 +166,29 @@ describe('createPlannerBase — typedCall', () => {
     expect(call.typedOutput).toBe('native');
   });
 
+  it.each([
+    ['codex', { max: 1_048_576, unit: 'characters' }],
+    ['claude-code', undefined],
+    ['antigravity', undefined],
+  ] as const)('carries the %s prompt limit on its typed call', (runnerName, limit) => {
+    const planner = createPlannerBase({
+      invokePlan: async () => completedRunnerCall(''),
+      invokeOneShot: async () => completedRunnerCall(''),
+      runnerName,
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    const call = planner.typedCall({
+      projectDir: '/p',
+      callbacks: { onOutput: () => {} },
+      seat: 'reviewer',
+    });
+
+    expect(call.promptLimit).toEqual(limit);
+    expect('maxInputChars' in call).toBe(false);
+  });
+
   it('routes a review schema call to the stateless backend', async () => {
     const invokePlan = vi.fn(async () => completedRunnerCall(''));
     const invokeOneShot = vi.fn(async () => completedRunnerCall(''));

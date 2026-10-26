@@ -104,7 +104,6 @@ describe('Command Code role adapters', () => {
       '--no-auto-update',
       '--permission-mode',
       'plan',
-      PROMPT,
     ]);
   });
 
@@ -118,25 +117,23 @@ describe('Command Code role adapters', () => {
       '--skip-onboarding',
       '--no-auto-update',
       '--yolo',
-      PROMPT,
     ]);
   });
 
   it('appends -m only when a model is configured', () => {
     const withModel = plannerArgs({ model: 'deepseek/deepseek-v4-flash' });
-    expect(withModel.slice(-3)).toEqual(['-m', 'deepseek/deepseek-v4-flash', PROMPT]);
-    expect(implementerArgs({ model: 'deepseek/deepseek-v4-flash' }).slice(-3)).toEqual([
+    expect(withModel.slice(-2)).toEqual(['-m', 'deepseek/deepseek-v4-flash']);
+    expect(implementerArgs({ model: 'deepseek/deepseek-v4-flash' }).slice(-2)).toEqual([
       '-m',
       'deepseek/deepseek-v4-flash',
-      PROMPT,
     ]);
     expect(plannerArgs({ model: undefined })).not.toContain('-m');
     expect(implementerArgs({ model: undefined })).not.toContain('-m');
   });
 
   it('appends --effort only when an effort level is configured', () => {
-    expect(plannerArgs({ effort: 'high' }).slice(-3)).toEqual(['--effort', 'high', PROMPT]);
-    expect(implementerArgs({ effort: 'low' }).slice(-3)).toEqual(['--effort', 'low', PROMPT]);
+    expect(plannerArgs({ effort: 'high' }).slice(-2)).toEqual(['--effort', 'high']);
+    expect(implementerArgs({ effort: 'low' }).slice(-2)).toEqual(['--effort', 'low']);
     expect(plannerArgs()).not.toContain('--effort');
     expect(implementerArgs()).not.toContain('--effort');
   });
@@ -228,7 +225,7 @@ describe('Command Code role adapters', () => {
         invocationArgs: args,
         baseArgs: base,
         protectedFlags: new Set(),
-        promptTransport: 'argv',
+        promptTransport: 'stdin',
       }),
     ).toEqual(refusal);
   });
@@ -435,7 +432,8 @@ describe('Command Code role adapters', () => {
       expect(candidate.rawContract.auth).toEqual({ kind: 'none', env: [] });
       expect(
         candidate.rawContract.rawInvocation.filter((arg) => arg === CLI_PROMPT_SENTINEL),
-      ).toHaveLength(1);
+      ).toHaveLength(0);
+      expect(candidate.rawContract.promptTransport).toBe('stdin');
     }
     expect(CLI_CONFORMANCE_CANDIDATES[0]?.contractSha256).not.toBe(
       CLI_CONFORMANCE_CANDIDATES[1]?.contractSha256,

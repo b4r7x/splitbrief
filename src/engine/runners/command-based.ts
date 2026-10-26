@@ -17,6 +17,7 @@ import {
   type AdmittedCustomRunnerInvocation,
 } from './custom-launchability.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES } from './cli-tools/process-invoke.js';
+import { argvPromptMaxBytes, argvPromptTooLarge } from './input-limit.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
 const CUSTOM_RUNNER_PROMPT_MAX_BYTES = 1024 * 1024;
@@ -126,10 +127,13 @@ function substitutePromptPlaceholder(
     return { args, useStdin: true };
   }
 
-  return {
-    args: args.map((a) => a.replaceAll(PROMPT_PLACEHOLDER, () => prompt)),
-    useStdin: false,
-  };
+  const substituted = args.map((a) => a.replaceAll(PROMPT_PLACEHOLDER, () => prompt));
+  const maxBytes = argvPromptMaxBytes();
+  for (const arg of substituted) {
+    const bytes = Buffer.byteLength(arg, 'utf8');
+    if (bytes > maxBytes) throw argvPromptTooLarge(bytes, maxBytes);
+  }
+  return { args: substituted, useStdin: false };
 }
 
 /** Runs the already-admitted custom command through the no-shell process path. */

@@ -2,7 +2,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { error } from '../../../utils/error.js';
-import { argvPromptTooLarge } from '../input-limit.js';
+import { argvPromptMaxBytes, argvPromptTooLarge } from '../input-limit.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import type { CliInvocation, CliProcessAdapter } from './contract.js';
 
@@ -18,7 +18,7 @@ export async function preparePrompt(
   adapter: CliProcessAdapter,
   invocation: CliInvocation,
   invocationArgs: readonly string[],
-  prompt: string,
+  raw: string,
 ): Promise<PreparedPrompt> {
   const transport = adapter.promptTransport;
   if (transport.kind !== invocation.promptTransport.kind) {
@@ -27,15 +27,18 @@ export async function preparePrompt(
       'Invocation prompt transport does not match the adapter contract',
     );
   }
+  const prompt =
+    adapter.encodePrompt === undefined
+      ? raw
+      : await adapter.encodePrompt({ invocation, prompt: raw });
   if (transport.kind === 'stdin') {
     rejectPlaceholder(invocationArgs);
     return { args: [...invocationArgs], stdin: prompt, cleanup: async () => {} };
   }
   if (transport.kind === 'argv') {
     const bytes = Buffer.byteLength(prompt, 'utf8');
-    if (bytes > transport.maxBytes) {
-      throw argvPromptTooLarge(bytes, transport.maxBytes);
-    }
+    const maxBytes = argvPromptMaxBytes();
+    if (bytes > maxBytes) throw argvPromptTooLarge(bytes, maxBytes);
     if (transport.placement === 'positional' && prompt.startsWith('-')) {
       // The tool's own parser would read the prompt as an option and silently
       // change its model, sandbox, or permission semantics.

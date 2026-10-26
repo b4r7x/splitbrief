@@ -63,7 +63,7 @@ describe('Kilo Code role adapters', () => {
     ],
     ['absent images', undefined, []],
     ['empty images', [], []],
-  ] as const)('passes %s after the prompt in every role', (_label, imagePaths, imageArgs) => {
+  ] as const)('passes %s after the seat flags in every role', (_label, imagePaths, imageArgs) => {
     for (const [adapter, agent, approvalArgs] of [
       [kiloPlannerAdapter, 'plan', []],
       [kiloImplementerAdapter, 'code', ['--auto']],
@@ -89,16 +89,11 @@ describe('Kilo Code role adapters', () => {
         '--agent',
         agent,
         ...approvalArgs,
-        PROMPT,
         ...imageArgs,
       ];
       const baseArgs = adapter.baseArgs(input);
       const invocationArgs = adapter.buildArgs(input);
-      expect(
-        invocationArgs.every(
-          (arg, index) => arg !== '--file' || invocationArgs.indexOf(PROMPT) < index,
-        ),
-      ).toBe(true);
+      expect(invocationArgs).not.toContain(PROMPT);
       expect(baseArgs).toEqual(expected);
       expect(invocationArgs).toEqual([...expected, '--verbose']);
       expect(adapter.validateArgs({ invocationArgs, baseArgs })).toEqual({ valid: true });
@@ -115,23 +110,16 @@ describe('Kilo Code role adapters', () => {
       expect(candidate.id).toBe('kilo-code');
       expect(candidate.rawContract.id).toBe(candidate.id);
       expect(candidate.rawContract.role).toBe(candidate.role);
-      expect(candidate.rawContract.rawInvocation.filter((arg) => arg === PROMPT)).toHaveLength(1);
+      expect(candidate.rawContract.rawInvocation.filter((arg) => arg === PROMPT)).toHaveLength(0);
+      expect(candidate.rawContract.promptTransport).toBe('stdin');
       expect(candidate.contractSha256).toMatch(/^[a-f0-9]{64}$/);
       expect(candidate.adapter.role).toBe(candidate.role);
       expect(candidate.adapter.descriptor).toBe(CLI_TOOL_CATALOG['kilo-code']);
     }
     const plannerRaw = CLI_CONFORMANCE_CANDIDATES[0]?.rawContract.rawInvocation ?? [];
     const implementerRaw = CLI_CONFORMANCE_CANDIDATES[1]?.rawContract.rawInvocation ?? [];
-    expect(plannerRaw.slice(0, 6)).toEqual(['run', '--format', 'json', '--agent', 'plan', PROMPT]);
-    expect(implementerRaw).toEqual([
-      'run',
-      '--format',
-      'json',
-      '--agent',
-      'code',
-      '--auto',
-      PROMPT,
-    ]);
+    expect(plannerRaw.slice(0, 5)).toEqual(['run', '--format', 'json', '--agent', 'plan']);
+    expect(implementerRaw).toEqual(['run', '--format', 'json', '--agent', 'code', '--auto']);
     expect(CLI_CONFORMANCE_CANDIDATES.map((candidate) => candidate.rawContract.asOf)).toEqual([
       '2026-09-21',
       '2026-09-21',
@@ -159,13 +147,9 @@ describe('Kilo Code role adapters', () => {
     ).toEqual({ valid: false, conflicts: ['--agent', 'plan'] });
   });
 
-  it('keeps argv transport, process-exit completion, and five-second probes explicit', () => {
+  it('keeps stdin transport, process-exit completion, and five-second probes explicit', () => {
     for (const adapter of [kiloPlannerAdapter, kiloImplementerAdapter]) {
-      expect(adapter.promptTransport).toEqual({
-        kind: 'argv',
-        maxBytes: 120_000,
-        placement: 'positional',
-      });
+      expect(adapter.promptTransport).toEqual({ kind: 'stdin' });
       expect(adapter.outputContract).toEqual({ kind: 'text-exit', successfulExitCodes: [0] });
       expect(adapter.probe).toEqual({
         version: {
@@ -191,7 +175,6 @@ describe('Kilo Code role adapters', () => {
       'json',
       '--agent',
       'plan',
-      PROMPT,
       '--verbose',
     ]);
     expect(plannerArgs('claude-sonnet-4-6', [])).toEqual([
@@ -202,7 +185,6 @@ describe('Kilo Code role adapters', () => {
       'json',
       '--agent',
       'plan',
-      PROMPT,
     ]);
     expect(implementerArgs('qwen2.5-coder:7b', ['--verbose'])).toEqual([
       'run',
@@ -213,7 +195,6 @@ describe('Kilo Code role adapters', () => {
       '--agent',
       'code',
       '--auto',
-      PROMPT,
       '--verbose',
     ]);
     const plannerBase = plannerArgs(undefined, []);

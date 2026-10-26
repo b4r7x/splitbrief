@@ -1616,7 +1616,7 @@ describe('runHeadless — the seat-down policy and the record', () => {
     });
 
     expect(error).toMatchObject({ exitCode: 1, message: expect.stringContaining('Seat down') });
-    expect(error?.message).toContain('Balance spent on Cursor Agent CLI');
+    expect(error?.message).toContain('Access refused by Cursor Agent CLI');
   });
 
   it('applies the declared fallback automatically and records the switch', async () => {

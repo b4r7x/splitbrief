@@ -16,6 +16,8 @@ import { error } from '../../../utils/error.js';
 const CODEX_ID = 'codex' as const;
 const CODEX_COMMAND = 'codex' as const;
 const CODEX_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
+// Codex refused a longer turn with input_too_large, captured 2026-10-05.
+const CODEX_PROMPT_LIMIT = Object.freeze({ max: 1_048_576, unit: 'characters' } as const);
 // `-` is the PROMPT value that both `exec` and `exec resume` document as "read from stdin".
 // An omitted PROMPT also reads stdin, but prints `Reading prompt from stdin...` on stderr.
 const CODEX_STDIN_PROMPT = '-';
@@ -161,6 +163,7 @@ function createCodexPlannerAdapter(): CliPlannerAdapter<'codex'> {
     supportsEffort: CLI_TOOL_CATALOG.codex.supportsEffort,
     schemaFile: true,
     promptTransport: CODEX_PROMPT_TRANSPORT,
+    promptLimit: CODEX_PROMPT_LIMIT,
     baseArgs: plannerBaseArgs,
     buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
     validateArgs,
@@ -190,6 +193,7 @@ function createCodexImplementerAdapter(): CliImplementerAdapter<'codex'> {
     descriptor: CLI_TOOL_CATALOG.codex,
     role: 'implementer',
     promptTransport: CODEX_PROMPT_TRANSPORT,
+    promptLimit: CODEX_PROMPT_LIMIT,
     baseArgs: implementerBaseArgs,
     buildArgs: (input) => [...implementerBaseArgs(input), ...input.configuredArgs],
     validateArgs,

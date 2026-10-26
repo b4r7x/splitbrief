@@ -4,6 +4,7 @@ import {
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
+import { accountCauseAdvice } from '../../../core/recovery/account-cause.js';
 import {
   runnerOwnWords,
   thrownSeatFailure,
@@ -133,7 +134,11 @@ export function diagnosePlannerCallFailure(
     const advice = resetsAt === null ? advised : stripRecoveryResetClause(advised);
     return {
       failure: 'usage-limit',
-      message: `${endSentence(advice)} ${usageLimitAdvice({ tool, seat: input.seat })}`,
+      // Access the account lacks is no limit to wait out; the tool's words stay in the details.
+      message:
+        classification.class === 'account' && classification.cause === 'access'
+          ? `${input.label}: ${accountCauseAdvice({ cause: 'access', tool, seat: input.seat })}`
+          : `${endSentence(advice)} ${usageLimitAdvice({ tool, seat: input.seat })}`,
       tool,
       details,
       words: said,

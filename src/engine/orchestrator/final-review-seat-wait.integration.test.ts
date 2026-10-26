@@ -279,8 +279,14 @@ describe('a Cursor reviewer that refuses the account', () => {
         expect(halted.pendingRecovery?.switchSeat?.auto !== undefined).toBe(auto);
         expect(halted.pendingRecovery?.details.join('\n')).toContain(CURSOR_MODEL_REFUSAL);
         const rows = events.filter((event) => event.type === 'error');
-        if (auto) expect(rows[0]?.message).toBe('Balance spent on Cursor Agent CLI');
-        else expect(rows[0]?.message).toContain('Add credit or change the REVIEW tool');
+        expect(halted.pendingRecovery?.facts?.cause).toBe('access');
+        if (auto) {
+          expect(rows[0]?.message).toBe('Access refused by Cursor Agent CLI');
+        } else {
+          expect(rows[0]?.message).toContain(
+            'Check what the Cursor Agent CLI account allows, or change the REVIEW tool',
+          );
+        }
       } finally {
         restorePath();
       }

@@ -18,12 +18,11 @@ import {
 } from './antigravity.js';
 
 const PROMPT = CLI_PROMPT_SENTINEL;
-// Re-pinned 2026-10-24: the planner contract gained `--sandbox --dangerously-skip-permissions`,
-// so a read-only shell command runs without a prompt.
+// Re-pinned 2026-10-26: both contracts read the prompt as one stream-json line on stdin.
 const ANTIGRAVITY_PLANNER_CONTRACT_SHA256 =
-  '8979b3cdc345e2b16541b84da8d7b35077fb96dac9a2fce5d8be00bdac3b3be9';
+  'adacd9ff5406d56d98051d438e4321f0b96991d34e2e969a22a48832717e51ef';
 const ANTIGRAVITY_IMPLEMENTER_CONTRACT_SHA256 =
-  '84bb7b53c1ee6c4eede2fa5b339ee634ecad3d47175f1c2f5fc88a7838440d46';
+  'cbbe550b71df9fd952b68768df7c6de3197cdc387786141854cf7b27d3339666';
 const STREAM_JSON_FIXTURE = join(
   import.meta.dirname,
   '../../../../testing/fixtures/antigravity/stream-json.ndjson',
@@ -102,8 +101,8 @@ describe('Antigravity role adapters', () => {
 
   it("runs the planner in plan mode inside agy's terminal sandbox, so read-only commands need no prompt", () => {
     expect(plannerArgs({ model: 'gemini-3.8-flash-low' })).toEqual([
-      '-p',
-      PROMPT,
+      '--input-format',
+      'stream-json',
       '--mode',
       'plan',
       '--sandbox',
@@ -129,8 +128,8 @@ describe('Antigravity role adapters', () => {
 
   it('builds the implementer argv with the write flag', () => {
     expect(implementerArgs()).toEqual([
-      '-p',
-      PROMPT,
+      '--input-format',
+      'stream-json',
       '--dangerously-skip-permissions',
       '--add-dir',
       '/staged',
@@ -142,8 +141,8 @@ describe('Antigravity role adapters', () => {
   it('appends the inline schema after the planner generation args, and nothing without one', () => {
     const schema = { json: { type: 'object' } };
     expect(plannerArgs({ schema })).toEqual([
-      '-p',
-      PROMPT,
+      '--input-format',
+      'stream-json',
       '--mode',
       'plan',
       '--sandbox',
@@ -156,8 +155,8 @@ describe('Antigravity role adapters', () => {
       '{"type":"object"}',
     ]);
     expect(plannerArgs()).toEqual([
-      '-p',
-      PROMPT,
+      '--input-format',
+      'stream-json',
       '--mode',
       'plan',
       '--sandbox',
@@ -171,8 +170,8 @@ describe('Antigravity role adapters', () => {
 
   it('appends the inline schema after the implementer generation args, and nothing without one', () => {
     expect(implementerArgs({ schema: { json: { type: 'object' } } })).toEqual([
-      '-p',
-      PROMPT,
+      '--input-format',
+      'stream-json',
       '--dangerously-skip-permissions',
       '--add-dir',
       '/staged',
@@ -182,8 +181,8 @@ describe('Antigravity role adapters', () => {
       '{"type":"object"}',
     ]);
     expect(implementerArgs()).toEqual([
-      '-p',
-      PROMPT,
+      '--input-format',
+      'stream-json',
       '--dangerously-skip-permissions',
       '--add-dir',
       '/staged',
@@ -363,6 +362,12 @@ describe('Antigravity role adapters', () => {
       expect(contractSha256(candidate.rawContract)).toBe(candidate.contractSha256);
       expect(candidate.rawContract.expectedRawTerminal).toBe('result');
       expect(candidate.rawContract.asOf).toBe('2026-09-23');
+      expect(candidate.rawContract.promptTransport).toBe('stdin');
+      expect(candidate.rawContract.rawInvocation).not.toContain(PROMPT);
+      expect(candidate.rawContract.rawInvocation.slice(0, 2)).toEqual([
+        '--input-format',
+        'stream-json',
+      ]);
       expect(candidate.rawContract.rawInvocation.slice(-4)).toEqual([
         '--add-dir',
         CLI_PROJECT_DIR_SENTINEL,

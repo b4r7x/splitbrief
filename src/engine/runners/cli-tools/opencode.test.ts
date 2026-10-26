@@ -65,7 +65,6 @@ describe('OpenCode steering invocation', () => {
         'json',
         '--agent',
         adapter.role === 'planner' ? 'plan' : 'build',
-        PROMPT,
         '--title=fixture',
       ]);
       expect(prepared.invocation.baseArgs).toEqual([
@@ -103,7 +102,7 @@ describe('OpenCode steering invocation', () => {
 
   it('protects server selection and only supports known OpenCode 2 releases', () => {
     for (const adapter of [opencodePlannerAdapter, opencodeImplementerAdapter]) {
-      const baseArgs = ['run', '--format', 'json', '--agent', 'build', PROMPT];
+      const baseArgs = ['run', '--format', 'json', '--agent', 'build'];
       for (const configured of [['--server', 'http://elsewhere'], ['--server=http://elsewhere']]) {
         expect(
           adapter.validateArgs({ invocationArgs: [...baseArgs, ...configured], baseArgs }),
@@ -147,42 +146,44 @@ describe('OpenCode role adapters', () => {
     ],
     ['absent images', undefined, []],
     ['empty images', [], []],
-  ] as const)('passes %s before the prompt in every role', (_label, imagePaths, imageArgs) => {
-    for (const installedVersion of [undefined, '2.0.26']) {
-      for (const [adapter, agent] of [
-        [opencodePlannerAdapter, 'plan'],
-        [opencodeImplementerAdapter, 'build'],
-      ] as const) {
-        const input = {
-          prompt: PROMPT,
-          model: 'provider/model',
-          projectDir: PROJECT_DIR,
-          configuredArgs: ['--title=fixture'],
-          sessionId: null,
-          effort: undefined,
-          installedVersion,
-          imagePaths,
-        };
-        const expected = [
-          'run',
-          ...(installedVersion === undefined ? [] : ['--standalone']),
-          '--model',
-          'provider/model',
-          ...imageArgs,
-          '--format',
-          'json',
-          '--agent',
-          agent,
-          PROMPT,
-        ];
-        const baseArgs = adapter.baseArgs(input);
-        const invocationArgs = adapter.buildArgs(input);
-        expect(baseArgs).toEqual(expected);
-        expect(invocationArgs).toEqual([...expected, '--title=fixture']);
-        expect(adapter.validateArgs({ invocationArgs, baseArgs })).toEqual({ valid: true });
+  ] as const)(
+    'passes %s before the output flags in every role',
+    (_label, imagePaths, imageArgs) => {
+      for (const installedVersion of [undefined, '2.0.26']) {
+        for (const [adapter, agent] of [
+          [opencodePlannerAdapter, 'plan'],
+          [opencodeImplementerAdapter, 'build'],
+        ] as const) {
+          const input = {
+            prompt: PROMPT,
+            model: 'provider/model',
+            projectDir: PROJECT_DIR,
+            configuredArgs: ['--title=fixture'],
+            sessionId: null,
+            effort: undefined,
+            installedVersion,
+            imagePaths,
+          };
+          const expected = [
+            'run',
+            ...(installedVersion === undefined ? [] : ['--standalone']),
+            '--model',
+            'provider/model',
+            ...imageArgs,
+            '--format',
+            'json',
+            '--agent',
+            agent,
+          ];
+          const baseArgs = adapter.baseArgs(input);
+          const invocationArgs = adapter.buildArgs(input);
+          expect(baseArgs).toEqual(expected);
+          expect(invocationArgs).toEqual([...expected, '--title=fixture']);
+          expect(adapter.validateArgs({ invocationArgs, baseArgs })).toEqual({ valid: true });
+        }
       }
-    }
-  });
+    },
+  );
 
   it('exports planner then implementer candidates with matching canonical hashes', () => {
     expect(CLI_CONFORMANCE_CANDIDATES).toHaveLength(2);
@@ -194,7 +195,8 @@ describe('OpenCode role adapters', () => {
       expect(candidate.id).toBe('opencode');
       expect(candidate.rawContract.id).toBe(candidate.id);
       expect(candidate.rawContract.role).toBe(candidate.role);
-      expect(candidate.rawContract.rawInvocation.filter((arg) => arg === PROMPT)).toHaveLength(1);
+      expect(candidate.rawContract.rawInvocation.filter((arg) => arg === PROMPT)).toHaveLength(0);
+      expect(candidate.rawContract.promptTransport).toBe('stdin');
       expect(candidate.contractSha256).toMatch(/^[a-f0-9]{64}$/);
       expect(candidate.adapter.role).toBe(candidate.role);
       expect(candidate.adapter.descriptor).toBe(CLI_TOOL_CATALOG.opencode);
@@ -213,13 +215,9 @@ describe('OpenCode role adapters', () => {
     );
   });
 
-  it('keeps JSON argv, process-exit completion, and bounded probes explicit', () => {
+  it('keeps JSON on stdout, the prompt on stdin, process-exit completion, and bounded probes explicit', () => {
     for (const adapter of [opencodePlannerAdapter, opencodeImplementerAdapter]) {
-      expect(adapter.promptTransport).toEqual({
-        kind: 'argv',
-        maxBytes: 120_000,
-        placement: 'positional',
-      });
+      expect(adapter.promptTransport).toEqual({ kind: 'stdin' });
       expect(adapter.outputContract).toEqual({
         kind: 'text-exit',
         successfulExitCodes: [0],
@@ -261,7 +259,6 @@ describe('OpenCode role adapters', () => {
       'json',
       '--agent',
       'plan',
-      PROMPT,
     ]);
     expect(implementer('2.0.12')).toEqual([
       'run',
@@ -270,11 +267,10 @@ describe('OpenCode role adapters', () => {
       'json',
       '--agent',
       'build',
-      PROMPT,
     ]);
     for (const release of ['1.18.15', undefined]) {
-      expect(planner(release)).toEqual(['run', '--format', 'json', '--agent', 'plan', PROMPT]);
-      expect(implementer(release)).toEqual(['run', '--format', 'json', '--agent', 'build', PROMPT]);
+      expect(planner(release)).toEqual(['run', '--format', 'json', '--agent', 'plan']);
+      expect(implementer(release)).toEqual(['run', '--format', 'json', '--agent', 'build']);
     }
     expect(
       opencodeImplementerAdapter.validateArgs({
@@ -285,10 +281,9 @@ describe('OpenCode role adapters', () => {
           'json',
           '--agent',
           'build',
-          PROMPT,
           '--standalone',
         ],
-        baseArgs: ['run', '--standalone', '--format', 'json', '--agent', 'build', PROMPT],
+        baseArgs: ['run', '--standalone', '--format', 'json', '--agent', 'build'],
       }).valid,
     ).toBe(false);
   });
@@ -300,7 +295,6 @@ describe('OpenCode role adapters', () => {
       'json',
       '--agent',
       'plan',
-      PROMPT,
       '--label',
       'one',
     ]);
@@ -312,7 +306,6 @@ describe('OpenCode role adapters', () => {
       'json',
       '--agent',
       'plan',
-      PROMPT,
     ]);
     expect(implementerArgs('anthropic/claude-sonnet', [])).toEqual([
       'run',
@@ -322,7 +315,6 @@ describe('OpenCode role adapters', () => {
       'json',
       '--agent',
       'build',
-      PROMPT,
     ]);
     const plannerBase = plannerArgs(undefined, []);
     const implementerBase = implementerArgs(undefined, []);
@@ -358,7 +350,6 @@ describe('OpenCode role adapters', () => {
       'json',
       '--agent',
       'plan',
-      PROMPT,
     ]);
   });
 
@@ -381,7 +372,6 @@ describe('OpenCode role adapters', () => {
       'json',
       '--agent',
       'build',
-      PROMPT,
     ]);
   });
 
@@ -452,7 +442,6 @@ describe('OpenCode role adapters', () => {
       'json',
       '--agent',
       'plan',
-      PROMPT,
     ]);
     expect(CLI_CONFORMANCE_CANDIDATES[1]?.rawContract.rawInvocation).toEqual([
       'run',
@@ -460,7 +449,6 @@ describe('OpenCode role adapters', () => {
       'json',
       '--agent',
       'build',
-      PROMPT,
     ]);
   });
 

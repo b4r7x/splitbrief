@@ -4,11 +4,7 @@ import { scenarioId } from '../../contracts/identifiers.js';
 import type { WorkflowFixtureProjection } from './projections.js';
 import { typedOutputError } from '../../../../src/engine/runners/typed-output.js';
 import { buildSeatProtocolErrorRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/seat-protocol.js';
-import { buildPlannerCallFailedRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/planner.js';
-import { diagnosePlannerCallFailure } from '../../../../src/engine/orchestrator/recovery/planner-call-failure.js';
-import { reviewSeatDetails } from '../../../../src/engine/orchestrator/recovery/builders/details.js';
-import { error } from '../../../../src/utils/error.js';
-import { argvPromptTooLarge } from '../../../../src/engine/runners/input-limit.js';
+import { buildReviewInputTooLargeRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/review-input.js';
 import {
   buildRunnerInputTooLargeRecoveryIssue,
   runnerDefectRow,
@@ -77,37 +73,36 @@ export const reviewContractProjection: WorkflowFixtureProjection = {
   },
 };
 
-const argvOverflow = argvPromptTooLarge(186_486, 120_000);
-const argvOverflowError = error('runner-call-failed', 'Planner review call failed', {
-  role: 'review',
-  status: 'failed',
-  error: { code: argvOverflow.kind, message: argvOverflow.message },
-});
+/** Codex's own refusal of a prompt over its input limit, as the tool prints it. */
+export const CODEX_INPUT_TOO_LARGE =
+  'Error: turn/start: turn/start failed: Input exceeds the maximum length of 1048576 characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":1048576,"actual_chars":1106026}';
 
-/** A seat that takes its prompt on the command line, with a fallback that reads it on stdin. */
-const ARGV_SEAT = {
+/** A seat on the one tool with an input limit, with a fallback that has none. */
+const CODEX_SEAT = {
   kind: 'cli',
-  tool: 'opencode',
-  model: 'opencode-go/deepseek-v4.1-flash',
-  fallback: { tool: 'codex', model: 'gpt-5-codex' },
+  tool: 'codex',
+  model: 'gpt-5-codex',
+  fallback: { tool: 'claude-code' },
 } as const;
 
-export const reviewPromptTooLargeRecoveryIssue: RecoveryIssue = buildPlannerCallFailedRecoveryIssue(
-  {
+export const reviewPromptTooLargeRecoveryIssue: RecoveryIssue =
+  buildReviewInputTooLargeRecoveryIssue({
     id: 'rec_visual_review_prompt_too_large',
-    diagnosis: diagnosePlannerCallFailure({
-      seat: 'review',
-      err: argvOverflowError,
-      label: 'Final review failed',
-      runner: ARGV_SEAT,
-    }),
-    seat: 'review',
     phase: 'final-review',
-    runner: ARGV_SEAT,
-    details: reviewSeatDetails(true),
+    failure: {
+      kind: 'input-too-large',
+      figures: { unit: 'characters', size: 1_106_026, limit: 1_048_576 },
+      promptSize: { characters: 1_106_026, bytes: 1_106_026 },
+      largestFiles: [
+        { path: 'src/generated/schema.ts', chars: 812_400 },
+        { path: 'src/math.ts', chars: 4_210 },
+      ],
+    },
+    tool: 'OpenAI Codex CLI',
+    acceptAsIs: true,
     seatSwap: {
       seat: 'review',
-      currentTool: 'opencode',
+      currentTool: 'codex',
       detectedTools: [
         { tool: 'codex', ready: true },
         { tool: 'claude-code', ready: true },
@@ -115,15 +110,14 @@ export const reviewPromptTooLargeRecoveryIssue: RecoveryIssue = buildPlannerCall
       ],
     },
     createdAt: new Date(epoch).toISOString(),
-  },
-);
+  });
 
 export const reviewPromptTooLargeProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-recovery-review-prompt-too-large'),
   feature: 'Add a multiply function',
   inputMode: 'question',
   sidebarVisible: false,
-  config: { planner: ARGV_SEAT },
+  config: { planner: CODEX_SEAT },
   get events(): EngineEvent[] {
     return publishedEvents(epoch + 100, (bus) =>
       publishError({
@@ -144,20 +138,18 @@ export const reviewPromptTooLargeProjection: WorkflowFixtureProjection = {
   },
 };
 
-const buildArgvOverflow = argvPromptTooLarge(195_203, 120_000);
-
 export const buildPromptTooLargeRecoveryIssue: RecoveryIssue =
   buildRunnerInputTooLargeRecoveryIssue({
     id: 'rec_visual_build_prompt_too_large',
     task: makeTask({ id: 'T001', title: 'Add multiply' }),
     phase: 'implementing',
-    runner: ARGV_SEAT,
-    toolMessage: buildArgvOverflow.message,
+    runner: CODEX_SEAT,
+    toolMessage: CODEX_INPUT_TOO_LARGE,
     attempts: 1,
     maxAttempts: 8,
     seatSwap: {
       seat: 'build',
-      currentTool: 'opencode',
+      currentTool: 'codex',
       detectedTools: [
         { tool: 'opencode', ready: true },
         { tool: 'claude-code', ready: true },
@@ -172,7 +164,7 @@ export const buildPromptTooLargeProjection: WorkflowFixtureProjection = {
   feature: 'Add a multiply function',
   inputMode: 'question',
   sidebarVisible: false,
-  config: { implementer: ARGV_SEAT },
+  config: { implementer: CODEX_SEAT },
   get events(): EngineEvent[] {
     return publishedEvents(epoch + 100, (bus) =>
       publishError({
@@ -180,8 +172,8 @@ export const buildPromptTooLargeProjection: WorkflowFixtureProjection = {
         phase: buildPromptTooLargeRecoveryIssue.phase,
         message: runnerDefectRow(
           buildPromptTooLargeRecoveryIssue,
-          'OpenCode CLI',
-          buildArgvOverflow.message,
+          'OpenAI Codex CLI',
+          CODEX_INPUT_TOO_LARGE,
         ),
       }),
     );

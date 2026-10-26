@@ -31,6 +31,8 @@ export const HALT_SIGNATURES = {
     '"status":401',
     'login required',
     'authentication failed',
+    // Cursor Agent CLI with no login.
+    'authentication required. please run',
   ],
   usage: [
     'rate limit exceeded',
@@ -69,6 +71,8 @@ export const HALT_SIGNATURES = {
     // Without it Claude Code prints `⚠ Sandbox disabled: sandbox is enabled but …` and runs on,
     // so that reason must not match.
     'sandbox required but unavailable',
+    // GitHub Copilot CLI when no prompt reached it on stdin.
+    'provide a prompt with -p or via standard in',
   ],
 } as const satisfies Record<string, readonly string[]>;
 

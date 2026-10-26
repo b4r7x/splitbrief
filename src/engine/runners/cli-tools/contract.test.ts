@@ -77,19 +77,15 @@ const plannerAllowlist = {
 } as const satisfies CliRoleAllowlist<'planner'>;
 
 describe('CLI adapter contract', () => {
-  it('models stdin, bounded lossless argv, and private-file prompt transports', () => {
+  it('models stdin, lossless argv, and private-file prompt transports', () => {
     const transports = [
       claudeCodePlannerAdapter.promptTransport,
-      opencodePlannerAdapter.promptTransport,
+      { kind: 'argv', placement: 'positional' },
       { kind: 'file', mode: 0o600 },
     ] as const satisfies readonly CliPromptTransport[];
 
     expect(transports.map((transport) => transport.kind)).toEqual(['stdin', 'argv', 'file']);
-    expect(opencodePlannerAdapter.promptTransport).toEqual({
-      kind: 'argv',
-      maxBytes: 120_000,
-      placement: 'positional',
-    });
+    expect(opencodePlannerAdapter.promptTransport).toEqual({ kind: 'stdin' });
   });
 
   it('distinguishes protocol-terminal output from process-exit text output', () => {

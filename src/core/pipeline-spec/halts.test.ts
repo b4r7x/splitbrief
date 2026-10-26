@@ -1,5 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { classifyHaltSignature, HALT_SIGNATURES, HALT_TAIL_LINES } from './halts.js';
+
+const FIXTURES = join(import.meta.dirname, '../../../testing/fixtures');
 
 describe('classifyHaltSignature', () => {
   it("'Not logged in' on the last line classifies auth", () => {
@@ -20,6 +24,14 @@ describe('classifyHaltSignature', () => {
     'AssertionError: expected status 403 to be 200',
   ])('a test log line %j in the tail is not a halt', (line) => {
     expect(classifyHaltSignature(['running tests…', line])).toBeNull();
+  });
+
+  // Captured live from a signed-out `agent -p` and a Copilot that got no prompt on stdin.
+  it.each([
+    [readFileSync(join(FIXTURES, 'cursor/signed-out.stderr.txt'), 'utf8'), 'auth'],
+    [readFileSync(join(FIXTURES, 'copilot/no-prompt.stderr.txt'), 'utf8'), 'spawn'],
+  ] as const)('classifies %j as %s', (stderr, kind) => {
+    expect(classifyHaltSignature(stderr.split('\n'))).toBe(kind);
   });
 
   it('classifies usage, missing-model and spawn phrases', () => {

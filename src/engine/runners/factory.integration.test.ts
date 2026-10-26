@@ -1070,7 +1070,7 @@ describe('planner admission path', () => {
       expect(result.text).toContain('slow response');
       const invocations = readFileSync(argvLog, 'utf8').trim().split('\n').filter(Boolean);
       expect(invocations).toHaveLength(1);
-      expect(invocations[0]).toMatch(/^run --model test --format json --agent plan /);
+      expect(invocations[0]).toBe('run --model test --format json --agent plan');
     } finally {
       restorePath();
       cleanupTempDir(projectDir);

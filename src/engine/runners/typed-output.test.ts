@@ -4,6 +4,7 @@ import type { TypedOutputCapability } from '../../core/runners/cli-tool-catalog.
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import type { RunnerCallResult } from '../calls/types.js';
+import { inputTooLargeFigures } from './input-limit.js';
 import {
   extractLastJsonObject,
   fallbackInstruction,
@@ -306,7 +307,7 @@ describe('requestTyped', () => {
           const first = ++preparations === 1;
           return {
             prompt: first ? 'Review the diff' : 'Queued input '.repeat(100),
-            call: { ...call, maxInputChars: first ? 10_000 : 100 },
+            call: { ...call, promptLimit: { max: first ? 10_000 : 100, unit: 'characters' } },
           };
         },
       }),
@@ -327,7 +328,12 @@ describe('requestTyped', () => {
         typedOutput === 'native' ? prompt : prompt + fallbackInstruction(jsonSchema);
 
       await expect(
-        requestTyped(options({ call: { ...call, maxInputChars }, prompt })),
+        requestTyped(
+          options({
+            call: { ...call, promptLimit: { max: maxInputChars, unit: 'characters' } },
+            prompt,
+          }),
+        ),
       ).rejects.toMatchObject({
         kind: 'input-too-large',
         data: {
@@ -342,6 +348,26 @@ describe('requestTyped', () => {
       expect(invokes).toHaveLength(0);
     },
   );
+
+  it('measures a byte limit in bytes and refuses a multibyte prompt before invoking the seat', async () => {
+    const prompt = 'ż'.repeat(1_000);
+    const { call, invokes } = makeSeatCall({
+      typedOutput: 'native',
+      results: [completed('{"answer":"a","count":1}')],
+    });
+
+    const refusal = requestTyped(
+      options({ call: { ...call, promptLimit: { max: 1_500, unit: 'bytes' } }, prompt }),
+    );
+
+    await expect(refusal).rejects.toMatchObject({ kind: 'input-too-large' });
+    const message = await refusal.then(
+      () => '',
+      (cause: Error) => cause.message,
+    );
+    expect(inputTooLargeFigures(message)).toEqual({ unit: 'bytes', size: 2_000, limit: 1_500 });
+    expect(invokes).toHaveLength(0);
+  });
 
   it.each([
     { typedOutput: 'native', canResume: false },
@@ -369,7 +395,12 @@ describe('requestTyped', () => {
       });
 
       await expect(
-        requestTyped(options({ call: { ...call, maxInputChars }, prompt })),
+        requestTyped(
+          options({
+            call: { ...call, promptLimit: { max: maxInputChars, unit: 'characters' } },
+            prompt,
+          }),
+        ),
       ).rejects.toMatchObject({
         kind: 'input-too-large',
         data: {

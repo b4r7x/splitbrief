@@ -17,7 +17,6 @@ import {
   TASKS_FILE,
   sessionDir,
 } from '../../core/paths.js';
-import { CLI_TOOL_CATALOG, isCliToolId } from '../../core/runners/cli-tool-catalog.js';
 import { reviewName } from '../../core/recovery/headline.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared-set.js';
 import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
@@ -72,7 +71,13 @@ import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
 import { resolveRunReviewScope, type RunReviewScope } from './evidence/review-packet/run-scope.js';
 import { fitReviewPrompt, largestReviewFiles } from './evidence/review-packet/fit.js';
 import type { BuildReviewPacketOptions } from './evidence/review-packet/types.js';
-import { inputTooLargeFigures } from '../runners/input-limit.js';
+import {
+  inputTooLargeFigures,
+  promptLength,
+  type PromptLength,
+  type PromptSize,
+} from '../runners/input-limit.js';
+import { cliPromptLimit } from '../runners/cli-tools/registry.js';
 import {
   typedRunnerCallErrorCode,
   typedRunnerCallErrorMessage,
@@ -151,8 +156,10 @@ export type FinalReviewFailure =
   | Readonly<{ kind: 'seat-blocked'; diagnosis: PlannerCallDiagnosis }>
   | Readonly<{
       kind: 'input-too-large';
-      chars: number;
-      maxChars: number | null;
+      /** The size and the limit in the unit the limit counts, as far as the refusal named them. */
+      figures: PromptSize;
+      /** The prompt the seat was sent, so a seat change offers only the tools that take it. */
+      promptSize: PromptLength;
       largestFiles: readonly Readonly<{ path: string; chars: number }>[];
     }>
   | Readonly<{ kind: 'seat-protocol-error'; error: SeatProtocolError }>;
@@ -378,10 +385,8 @@ export async function runFinalReviewPhase(opts: {
   }
 
   const reviewRunner = resolveReviewerRunner(config).runner;
-  const maxInputChars =
-    reviewRunner.kind === 'cli' && isCliToolId(reviewRunner.tool)
-      ? CLI_TOOL_CATALOG[reviewRunner.tool].maxInputChars
-      : undefined;
+  const limit =
+    reviewRunner.kind === 'cli' ? cliPromptLimit('planner', reviewRunner.tool) : undefined;
   const reviewModel = getRunnerModelName(reviewRunner);
   const reviewAxes = seatAxisWords(reviewRunner);
   const scope = opts.scope ?? 'final';
@@ -433,6 +438,9 @@ export async function runFinalReviewPhase(opts: {
   let reviewScope: RunReviewScope | undefined;
   let failure: FinalReviewResult['failure'];
   let fullPrompt = '';
+  // The text the call appends after the prompt, such as the answer schema; it counts toward the
+  // tool's limit too.
+  let promptSuffix = '';
   let reviewInput: BuildReviewPacketOptions['reviewInput'];
   try {
     const baseline = state.changedFilesBaseline;
@@ -645,7 +653,7 @@ export async function runFinalReviewPhase(opts: {
         (message) =>
           message.deliveredTo?.reviewer !== undefined && !reviewedBeforeStart.has(message.id),
       );
-    const preparePrompt = async (): Promise<string> => {
+    const preparePrompt = async (): Promise<(suffix: string) => string> => {
       throwIfAborted(opts.signal);
       const drain = await drainQueueForReview({ projectDir, sessionId, state, bus });
       state = drain.state;
@@ -658,61 +666,25 @@ export async function runFinalReviewPhase(opts: {
         queueText,
       ].join('\n\n');
 
-      // An API seat reads no file of its own, so it is dispatched only once the
-      // packet it is handed carries every required source, whole and untruncated.
-      if (reviewRunner.kind === 'api') {
-        const packet = buildApiReviewContext({
-          feature: state.feature,
-          spec,
-          taskBriefs,
-          reviewKind: opts.scope ?? 'final',
-          fullDiff: universe.fullDiff,
-          changedFiles: universe.changedFiles,
-          baseline: { head: baseline.head, runStartChangedFiles: universe.preRunFiles },
-          driftSection: driftPromptSection,
-          validation: { recorded: wholeChecksLog !== undefined, evidence: wholeChecksLog },
-          reviewScope: promptScope,
-          queueText: promptPrefix,
-          taskIds: scope.taskIds,
-          criterionIds: scope.criterionIds,
-          plan,
-          touchedNotSuggested,
-          checkResults,
-          consultLog,
-          triageLog,
-          planningAnswers,
-          operatorInstructions,
-          pendingInputs,
-          fixCycle,
-          ...(renders.section !== undefined && { renders: renders.section }),
-          ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
-          ...(reviewRunner.contextLength !== undefined && {
-            contextLength: reviewRunner.contextLength,
-          }),
-          ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
-        });
-        if (packet.kind === 'insufficient-context') {
-          throw apiContextError({
-            code: 'insufficient-context',
-            seat: 'review',
-            cause: packet.cause,
-            missingSections: [...packet.missingSections],
-            ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
-            requiredTokens: packet.requiredTokens,
-            availableTokens: packet.availableTokens,
-          });
-        }
-        fullPrompt = packet.text;
-      } else {
-        const result = fitReviewPrompt({
-          prefix: promptPrefix,
-          prompt: {
+      return (suffix) => {
+        promptSuffix = suffix;
+        // An API seat reads no file of its own, so it is dispatched only once the
+        // packet it is handed carries every required source, whole and untruncated.
+        if (reviewRunner.kind === 'api') {
+          const packet = buildApiReviewContext({
+            feature: state.feature,
             spec,
             taskBriefs,
             reviewKind: opts.scope ?? 'final',
-            files: promptScope.files,
-            laterDiff: promptScope.laterDiff,
-            workspaceContext: promptScope.workspaceContext,
+            fullDiff: universe.fullDiff,
+            changedFiles: universe.changedFiles,
+            baseline: { head: baseline.head, runStartChangedFiles: universe.preRunFiles },
+            driftSection: driftPromptSection,
+            validation: { recorded: wholeChecksLog !== undefined, evidence: wholeChecksLog },
+            reviewScope: promptScope,
+            queueText: promptPrefix,
+            taskIds: scope.taskIds,
+            criterionIds: scope.criterionIds,
             plan,
             touchedNotSuggested,
             checkResults,
@@ -722,44 +694,80 @@ export async function runFinalReviewPhase(opts: {
             operatorInstructions,
             pendingInputs,
             fixCycle,
-            taskIds: scope.taskIds,
-            criterionIds: scope.criterionIds,
-            changeCoverage: promptScope.description,
-            driftReport: driftPromptSection,
-            checksLog,
-            renders: renders.section,
-            skillsContext: opts.skillsContext,
-          },
-          maxChars: maxInputChars,
-          declared: (path) => isInDeclaredSet(path, state.tasks.flatMap(taskDeclaredPatterns)),
-          evidencePaths,
-        });
-        if (maxInputChars !== undefined) {
-          reviewInput = {
-            chars: result.chars,
-            maxChars: maxInputChars,
-            dropped: [...result.dropped],
-          };
-          if (result.dropped.length > 0) {
-            publishWarning({
-              bus,
-              phase: state.phase,
-              message: `Review input trimmed to fit ${getRunnerCatalogDisplayName(reviewRunner)} (${result.chars.toLocaleString('en-US')} of ${maxInputChars.toLocaleString('en-US')} characters): ${result.dropped.map((drop) => `${drop.trim}: ${drop.items.join(', ')}`).join('; ')}`,
+            ...(renders.section !== undefined && { renders: renders.section }),
+            ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
+            ...(reviewRunner.contextLength !== undefined && {
+              contextLength: reviewRunner.contextLength,
+            }),
+            ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
+          });
+          if (packet.kind === 'insufficient-context') {
+            throw apiContextError({
+              code: 'insufficient-context',
+              seat: 'review',
+              cause: packet.cause,
+              missingSections: [...packet.missingSections],
+              ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
+              requiredTokens: packet.requiredTokens,
+              availableTokens: packet.availableTokens,
             });
           }
+          fullPrompt = packet.text;
+        } else {
+          const result = fitReviewPrompt({
+            prefix: promptPrefix,
+            prompt: {
+              spec,
+              taskBriefs,
+              reviewKind: opts.scope ?? 'final',
+              files: promptScope.files,
+              laterDiff: promptScope.laterDiff,
+              workspaceContext: promptScope.workspaceContext,
+              plan,
+              touchedNotSuggested,
+              checkResults,
+              consultLog,
+              triageLog,
+              planningAnswers,
+              operatorInstructions,
+              pendingInputs,
+              fixCycle,
+              taskIds: scope.taskIds,
+              criterionIds: scope.criterionIds,
+              changeCoverage: promptScope.description,
+              driftReport: driftPromptSection,
+              checksLog,
+              renders: renders.section,
+              skillsContext: opts.skillsContext,
+            },
+            limit,
+            suffix,
+            declared: (path) => isInDeclaredSet(path, state.tasks.flatMap(taskDeclaredPatterns)),
+            evidencePaths,
+          });
+          if (limit !== undefined) {
+            reviewInput = { size: result.size, limit, dropped: [...result.dropped] };
+            if (result.dropped.length > 0) {
+              publishWarning({
+                bus,
+                phase: state.phase,
+                message: `Review input trimmed to fit ${getRunnerCatalogDisplayName(reviewRunner)} (${result.size.toLocaleString('en-US')} of ${limit.max.toLocaleString('en-US')} ${limit.unit}): ${result.dropped.map((drop) => `${drop.trim}: ${drop.items.join(', ')}`).join('; ')}`,
+              });
+            }
+          }
+          fullPrompt = result.prompt;
+          if (result.kind === 'too-large') {
+            failure = {
+              kind: 'input-too-large',
+              figures: { unit: result.limit.unit, size: result.size, limit: result.limit.max },
+              promptSize: promptLength(fullPrompt + promptSuffix),
+              largestFiles: result.largestFiles,
+            };
+            throw error('review-input-too-large', 'Review input exceeds the tool cap.');
+          }
         }
-        if (result.kind === 'too-large') {
-          failure = {
-            kind: 'input-too-large',
-            chars: result.chars,
-            maxChars: result.maxChars,
-            largestFiles: result.largestFiles,
-          };
-          throw error('review-input-too-large', 'Review input exceeds the tool cap.');
-        }
-        fullPrompt = result.prompt;
-      }
-      return fullPrompt;
+        return fullPrompt;
+      };
     };
 
     const reviewStep = { kind: 'review' as const, cycle: fixCyclesOf(state).used };
@@ -821,10 +829,10 @@ export async function runFinalReviewPhase(opts: {
             prepareCall: async () => {
               const prompt = await preparePrompt();
               return {
-                prompt:
+                prompt: (suffix) =>
                   partial === undefined && steer === undefined
-                    ? prompt
-                    : composeContinuation({ basePrompt: prompt, partial, steer }),
+                    ? prompt(suffix)
+                    : composeContinuation({ basePrompt: prompt(suffix), partial, steer }),
                 images: reviewImages(),
               };
             },
@@ -998,11 +1006,12 @@ export async function runFinalReviewPhase(opts: {
     let message: string;
     let resetAt: string | undefined;
     if (typedRunnerCallErrorCode(err) === 'input-too-large') {
+      const sent = promptLength(fullPrompt + promptSuffix);
       const figures = inputTooLargeFigures(typedRunnerCallErrorMessage(err) ?? '');
       failure = {
         kind: 'input-too-large',
-        chars: figures.size ?? fullPrompt.length,
-        maxChars: figures.limit ?? maxInputChars ?? null,
+        figures: { ...figures, size: figures.size ?? sent[figures.unit] },
+        promptSize: sent,
         largestFiles: largestReviewFiles({
           files: reviewScope?.files,
           workspaceContext: reviewScope?.workspaceContext,

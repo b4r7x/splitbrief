@@ -47,7 +47,7 @@ const ADMITTED_IMPLEMENTER_IDS = [...IMPLEMENTER_CLI_TOOL_IDS] as const;
 const PROMPT_HEAD = 'HEAD_SENTINEL ';
 const PROMPT_TAIL = ' TAIL_SENTINEL';
 const FULL_PROMPT = `${PROMPT_HEAD}implement src/contract.ts${PROMPT_TAIL}`;
-const LARGE_ARGV_PROMPT = `${PROMPT_HEAD}${'x'.repeat(100_000)}${PROMPT_TAIL}`;
+const LARGE_PROMPT = `${PROMPT_HEAD}${'x'.repeat(100_000)}${PROMPT_TAIL}`;
 
 function canonicalVersionLine(toolId: ImplementerCliToolId, version: string): string {
   switch (toolId) {
@@ -81,25 +81,25 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
     authArgv: ['auth'],
   },
   opencode: {
-    transport: 'argv',
+    transport: 'stdin',
     versionLine: canonicalVersionLine('opencode', '2.0.14'),
     successLines: ['{"type":"text","part":{"type":"text","text":"ok"}}'],
     authArgv: ['auth'],
   },
   copilot: {
-    transport: 'argv',
+    transport: 'stdin',
     versionLine: canonicalVersionLine('copilot', '1.0.77'),
     successLines: ['ok'],
     authArgv: ['auth', 'status'],
   },
   'kilo-code': {
-    transport: 'argv',
+    transport: 'stdin',
     versionLine: canonicalVersionLine('kilo-code', '0.1.0'),
     successLines: ['ok'],
     authArgv: ['auth'],
   },
   cursor: {
-    transport: 'argv',
+    transport: 'stdin',
     versionLine: canonicalVersionLine('cursor', '2026.08.25-3e8eec8'),
     successLines: [
       '{"type":"system","subtype":"init","session_id":"contract-session"}',
@@ -109,7 +109,7 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
     authArgv: ['status'],
   },
   'command-code': {
-    transport: 'argv',
+    transport: 'stdin',
     versionLine: canonicalVersionLine('command-code', '1.39.2'),
     successLines: [
       '{"type":"event","event":{"type":"tool_running","toolCallId":"call_1","toolName":"read_file"}}',
@@ -118,7 +118,7 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
     authArgv: ['status', '--json'],
   },
   antigravity: {
-    transport: 'argv',
+    transport: 'stdin',
     versionLine: canonicalVersionLine('antigravity', '1.4.7'),
     successLines: [
       '{"event":"init","conversation_id":"50328626-c5df-4301-9da7-dee7ce900271","init":{"cwd":"/tmp/probe","tools":["ask_custom_permission","ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","command_status","define_subagent","delete_knowledge","execute_browser_javascript","find_by_name","finish","generate_image","grep_search","invoke_subagent","list_browser_pages","list_dir","list_permissions","list_resources","manage_inbox","manage_subagents","manage_task","multi_replace_file_content","notebook_edit","notebook_execution","open_browser_url","read_browser_page","read_resource","read_url_content","replace_file_content","run_command","schedule","search_web","sed_file","send_command_input","send_message","view_file","wait","wait_5_seconds","write_to_file"],"permission_mode":"always-proceed"}}',
@@ -555,7 +555,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         timeoutMs: 5_000,
         signal: undefined,
       },
-      prompt: LARGE_ARGV_PROMPT,
+      prompt: LARGE_PROMPT,
       callContext: {
         callId: `oversized-${toolId}`,
         role: 'implementer',
@@ -564,10 +564,9 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
       },
     });
     expect(readCapturedPrompt(fixture)).toContain('x'.repeat(100_000));
-    if (SHIM_PROFILES[toolId].transport === 'argv') {
-      expect(readCapturedPrompt(fixture)).toContain(PROMPT_HEAD);
-      expect(readCapturedPrompt(fixture)).toContain(PROMPT_TAIL);
-    }
+    expect(readCapturedPrompt(fixture)).toContain(PROMPT_HEAD);
+    expect(readCapturedPrompt(fixture)).toContain(PROMPT_TAIL);
+    expect(readFileSync(join(fixture.captureDir, 'argv.lines'), 'utf8')).not.toContain(PROMPT_HEAD);
   }, 60_000);
 
   it('spawns the tool in the seat directory, so a relative write lands there', async () => {

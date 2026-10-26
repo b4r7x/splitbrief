@@ -1,4 +1,8 @@
+import { execFileSync } from 'node:child_process';
 import { error, type AppError } from '../../utils/error.js';
+
+/** The largest prompt a seat's tool takes, in the unit the tool counts. */
+export type PromptLimit = Readonly<{ max: number; unit: 'characters' | 'bytes' }>;
 
 /** A too-large prompt's size and the limit it broke, in the unit the refusal counts. */
 export type PromptSize = Readonly<{
@@ -27,6 +31,50 @@ export function inputTooLargeFigures(message: string): PromptSize {
   };
 }
 
+/** The size of `prompt` in the unit `limit` counts. */
+export function promptSizeIn(prompt: string, unit: PromptLimit['unit']): number {
+  return unit === 'bytes' ? Buffer.byteLength(prompt, 'utf8') : prompt.length;
+}
+
+/** A prompt's size in each unit a tool's limit can count. */
+export type PromptLength = Readonly<Record<PromptLimit['unit'], number>>;
+
+export function promptLength(prompt: string): PromptLength {
+  return { characters: promptSizeIn(prompt, 'characters'), bytes: promptSizeIn(prompt, 'bytes') };
+}
+
+const ARGV_MARGIN_BYTES = 16 * 1024;
+let hostArgvBytes: number | undefined;
+
+/**
+ * The largest prompt one command-line argument can carry on this host. Linux caps one argument
+ * at MAX_ARG_STRLEN, 32 pages (execve(2)); macOS caps the arguments and the environment together
+ * at ARG_MAX, so the environment's share is taken off.
+ */
+export function argvPromptMaxBytes(): number {
+  if (process.platform === 'linux') {
+    hostArgvBytes ??= 32 * getconf('PAGESIZE');
+    return hostArgvBytes - ARGV_MARGIN_BYTES;
+  }
+  hostArgvBytes ??= getconf('ARG_MAX');
+  return hostArgvBytes - environmentBytes() - ARGV_MARGIN_BYTES;
+}
+
+function getconf(name: string): number {
+  return Number(execFileSync('getconf', [name], { encoding: 'utf8' }).trim());
+}
+
+function environmentBytes(): number {
+  return Object.entries(process.env).reduce(
+    (total, [key, value]) => total + Buffer.byteLength(`${key}=${value ?? ''}`, 'utf8') + 1,
+    0,
+  );
+}
+
+function argvRefusalMessage(bytes: number, maxBytes: number): string {
+  return `CLI prompt is ${bytes} bytes and exceeds the ${maxBytes}-byte argv limit`;
+}
+
 /**
  * The refusal SPLITBRIEF raises when a prompt is larger than a tool takes on its command line,
  * before it starts the tool. `inputTooLargeFigures` reads its figures back.
@@ -35,10 +83,7 @@ export function argvPromptTooLarge(
   bytes: number,
   maxBytes: number,
 ): AppError<'argv-prompt-too-large'> {
-  return error(
-    'argv-prompt-too-large',
-    `CLI prompt is ${bytes} bytes and exceeds the ${maxBytes}-byte argv limit`,
-  );
+  return error('argv-prompt-too-large', argvRefusalMessage(bytes, maxBytes));
 }
 
 /**
@@ -47,10 +92,13 @@ export function argvPromptTooLarge(
  * reader classifies both the same way.
  */
 export function inputTooLargeRefusal(
-  chars: number,
-  maxChars: number,
+  size: number,
+  limit: PromptLimit,
 ): AppError<'input-too-large', { error: { code: 'input-too-large'; message: string } }> {
-  const message = `Input exceeds the maximum length of ${maxChars} characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":${maxChars},"actual_chars":${chars}}`;
+  const message =
+    limit.unit === 'bytes'
+      ? argvRefusalMessage(size, limit.max)
+      : `Input exceeds the maximum length of ${limit.max} characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":${limit.max},"actual_chars":${size}}`;
   return error('input-too-large', message, {
     error: { code: 'input-too-large' as const, message },
   });

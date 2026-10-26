@@ -789,7 +789,7 @@ describe('runTaskLoop — a Cursor seat that refuses the account is a seat-down 
     expect(run.consult).not.toHaveBeenCalled();
     expect(run.events.filter((event) => event.type === 'consult_answered')).toEqual([]);
     expect(formatRecoveryPrompt(run.state.pendingRecovery!).split('\n')[0]).toBe(
-      'Seat down · Balance spent on Cursor Agent CLI',
+      'Seat down · Access refused by Cursor Agent CLI',
     );
     expect(run.state.pendingRecovery?.details.join('\n')).toContain(CURSOR_MODEL_REFUSAL);
   }
@@ -875,7 +875,7 @@ describe('runTaskLoop — a Cursor seat that refuses the account is a seat-down 
     expect(saved?.pendingRecovery).toMatchObject({ reason: 'runner-usage-limit', taskId: 'T001' });
     expect(saved?.pendingRecovery?.switchSeat?.auto?.candidate).toEqual({ tool: 'claude-code' });
     expect(formatRecoveryPrompt(saved!.pendingRecovery!).split('\n')[0]).toBe(
-      'Seat down · Balance spent on Cursor Agent CLI',
+      'Seat down · Access refused by Cursor Agent CLI',
     );
   });
 });

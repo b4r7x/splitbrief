@@ -1,6 +1,5 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
-import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
@@ -11,11 +10,7 @@ import { createOpencodeSteering } from './opencode-steering.js';
 
 const OPENCODE_ID = 'opencode' as const;
 const OPENCODE_COMMAND = 'opencode' as const;
-const OPENCODE_PROMPT_TRANSPORT = Object.freeze({
-  kind: 'argv',
-  maxBytes: 120_000,
-  placement: 'positional',
-} as const);
+const OPENCODE_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
 const OPENCODE_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 const OPENCODE_PROTECTED_FLAGS = new Set([
@@ -40,7 +35,8 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     ...input,
     protectedFlags: OPENCODE_PROTECTED_FLAGS,
     protectedShortValueFlags: OPENCODE_PROTECTED_SHORT_VALUE_FLAGS,
-    promptTransport: 'argv',
+    promptTransport: 'stdin',
+    positionalPrompt: true,
   });
 }
 
@@ -154,13 +150,12 @@ function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
   const args = runArgs(input);
   args.push('--format', 'json');
   args.push('--agent', 'plan');
-  args.push(input.prompt);
   return args;
 }
 
 function implementerBaseArgs(input: OpenCodeImplementerBuildInput): string[] {
   const args = runArgs(input);
-  args.push('--format', 'json', '--agent', 'build', input.prompt);
+  args.push('--format', 'json', '--agent', 'build');
   return args;
 }
 
@@ -210,7 +205,7 @@ export type RawOpenCodeCliContract = Readonly<{
   versionArgs: readonly ['--version'];
   auth: Readonly<{ kind: 'env-or-native'; env: readonly [] }>;
   rawInvocation: readonly string[];
-  promptTransport: 'argv';
+  promptTransport: 'stdin';
   expectedRawTerminal: 'process-exit';
   asOf: '2026-07-31';
 }>;
@@ -232,9 +227,9 @@ function rawContract(role: 'planner' | 'implementer'): RawOpenCodeCliContract {
     auth: { kind: 'env-or-native', env: [] },
     rawInvocation:
       role === 'planner'
-        ? ['run', '--format', 'json', '--agent', 'plan', CLI_PROMPT_SENTINEL]
-        : ['run', '--format', 'json', '--agent', 'build', CLI_PROMPT_SENTINEL],
-    promptTransport: 'argv',
+        ? ['run', '--format', 'json', '--agent', 'plan']
+        : ['run', '--format', 'json', '--agent', 'build'],
+    promptTransport: 'stdin',
     expectedRawTerminal: 'process-exit',
     asOf: '2026-07-31',
   };

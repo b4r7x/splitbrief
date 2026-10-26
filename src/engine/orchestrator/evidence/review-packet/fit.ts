@@ -6,14 +6,17 @@ import {
   buildFinalReviewPrompt,
   type FinalReviewPromptInput,
 } from '../../../spec/prompts/review.js';
+import { promptSizeIn, type PromptLimit } from '../../../runners/input-limit.js';
 
 export type ReviewInputDrop = Readonly<{ trim: ReviewInputTrim; items: readonly string[] }>;
 export type ReviewInputFit =
-  | Readonly<{ kind: 'fits'; prompt: string; chars: number; dropped: readonly ReviewInputDrop[] }>
+  | Readonly<{ kind: 'fits'; prompt: string; size: number; dropped: readonly ReviewInputDrop[] }>
   | Readonly<{
       kind: 'too-large';
-      chars: number;
-      maxChars: number;
+      /** The packet after every trim, still over the limit. */
+      prompt: string;
+      size: number;
+      limit: PromptLimit;
       dropped: readonly ReviewInputDrop[];
       largestFiles: readonly Readonly<{ path: string; chars: number }>[];
     }>;
@@ -31,16 +34,23 @@ export function fitReviewPrompt(
   input: Readonly<{
     prefix: string;
     prompt: FinalReviewPromptInput;
-    maxChars: number | undefined;
+    limit: PromptLimit | undefined;
+    /** The text the call appends after the packet; it counts toward the limit. */
+    suffix: string;
     declared: (path: string) => boolean;
     evidencePaths: Readonly<{ validation: string; sessionLog: string; drift: string }>;
   }>,
 ): ReviewInputFit {
   const prompt = { ...input.prompt };
   const dropped: ReviewInputDrop[] = [];
+  const { limit } = input;
   let text = input.prefix + buildFinalReviewPrompt(prompt);
-  if (input.maxChars === undefined || text.length <= input.maxChars) {
-    return { kind: 'fits', prompt: text, chars: text.length, dropped };
+  if (limit === undefined) {
+    return { kind: 'fits', prompt: text, size: text.length + input.suffix.length, dropped };
+  }
+  const sizeOf = (packet: string): number => promptSizeIn(packet + input.suffix, limit.unit);
+  if (sizeOf(text) <= limit.max) {
+    return { kind: 'fits', prompt: text, size: sizeOf(text), dropped };
   }
 
   for (const trim of REVIEW_INPUT_TRIMS) {
@@ -95,14 +105,15 @@ export function fitReviewPrompt(
       ].join('\n');
     }
     text = input.prefix + buildFinalReviewPrompt(prompt);
-    if (text.length <= input.maxChars) {
-      return { kind: 'fits', prompt: text, chars: text.length, dropped };
+    if (sizeOf(text) <= limit.max) {
+      return { kind: 'fits', prompt: text, size: sizeOf(text), dropped };
     }
   }
   return {
     kind: 'too-large',
-    chars: text.length,
-    maxChars: input.maxChars,
+    prompt: text,
+    size: sizeOf(text),
+    limit,
     dropped,
     largestFiles: largestReviewFiles(input.prompt),
   };

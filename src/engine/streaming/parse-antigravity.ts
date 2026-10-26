@@ -116,7 +116,10 @@ function parseResult(result: Record<string, unknown>): AntigravityTerminalEvent 
     };
   }
   const message =
-    optionalString(result.error, { trim: true, nonEmpty: true }) ??
+    optionalString(isRecord(result.error) ? result.error.message : result.error, {
+      trim: true,
+      nonEmpty: true,
+    }) ??
     optionalString(result.message, { trim: true, nonEmpty: true }) ??
     `Antigravity result ${status}`;
   return {
@@ -125,7 +128,11 @@ function parseResult(result: Record<string, unknown>): AntigravityTerminalEvent 
     text,
     usage,
     nativeSessionId,
-    error: { code: 'antigravity-result-failed', message },
+    // agy names its stdin "stream input": a line it cannot read is the prompt SPLITBRIEF sent.
+    error: {
+      code: /stream input/i.test(message) ? 'prompt-transport-error' : 'antigravity-result-failed',
+      message,
+    },
     partial: true,
   };
 }

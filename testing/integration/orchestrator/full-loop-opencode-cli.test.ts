@@ -60,6 +60,7 @@ function setupProject(expectedMarker: string): string {
 type FakeOpencodeRun = {
   cwd: string;
   args: string[];
+  stdin: string;
   env: {
     HOME: string | null;
     TMPDIR: string | null;
@@ -79,13 +80,13 @@ function prependFakeOpencodeToPath(opts: { marker: string; requiredPromptText: s
   const runLogPath = join(binDir, 'opencode-run.json');
   const script = [
     '#!/usr/bin/env node',
-    "const { mkdirSync, writeFileSync } = require('node:fs');",
+    "const { mkdirSync, readFileSync, writeFileSync } = require('node:fs');",
     "const { join } = require('node:path');",
     `const marker = ${JSON.stringify(opts.marker)};`,
     `const requiredPromptText = ${JSON.stringify(opts.requiredPromptText)};`,
     `const runLogPath = ${JSON.stringify(runLogPath)};`,
-    'const prompt = process.argv[process.argv.length - 1] ?? "";',
-    'writeFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2), env: { HOME: process.env.HOME ?? null, TMPDIR: process.env.TMPDIR ?? null, XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? null, npm_config_cache: process.env.npm_config_cache ?? null } }));',
+    'const prompt = readFileSync(0, "utf-8");',
+    'writeFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2), stdin: prompt, env: { HOME: process.env.HOME ?? null, TMPDIR: process.env.TMPDIR ?? null, XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? null, npm_config_cache: process.env.npm_config_cache ?? null } }));',
     'if (!prompt.includes(requiredPromptText)) {',
     '  console.error("expected task prompt to include " + requiredPromptText);',
     '  process.exit(2);',
@@ -231,7 +232,8 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'opencode', 'npm-cache')),
     );
     expect(runLog.args[0]).toBe('run');
-    expect(runLog.args[runLog.args.length - 1]).toContain(requiredPromptText);
+    expect(runLog.stdin).toContain(requiredPromptText);
+    expect(runLog.args.join(' ')).not.toContain(requiredPromptText);
     expect(runLog.args).toEqual(expect.arrayContaining(['--model', 'opencode/test-cheap-model']));
     expect(
       readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),

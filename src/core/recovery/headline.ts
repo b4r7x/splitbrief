@@ -116,6 +116,7 @@ export function formatRecoveryHeadlineSpans(
         case 'balance':
         case 'billing':
         case 'quota':
+        case 'access':
           return [{ text: formatAccountCause(cause, toolName(issue)) }];
       }
       const reset = formatResetAt(issue.resetAt, now);

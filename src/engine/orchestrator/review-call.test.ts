@@ -16,6 +16,7 @@ import {
   type ReviewAnswer,
 } from '../../core/schemas/review.js';
 import { taskId } from '../../core/schemas/task.js';
+import { fallbackInstruction } from '../runners/typed-output.js';
 import { runReviewerCall } from './review-call.js';
 
 let dirs: string[] = [];
@@ -109,7 +110,9 @@ describe('runReviewerCall', () => {
           ...ref,
           reviewer,
           workspaceDir: ref.projectDir,
-          ...(inputKind === 'direct' ? input : { prepareCall: async () => input }),
+          ...(inputKind === 'direct'
+            ? input
+            : { prepareCall: async () => ({ ...input, prompt: () => input.prompt }) }),
           schema: ReviewAnswerSchema,
           jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
           schemaName: 'review_answer',
@@ -128,6 +131,37 @@ describe('runReviewerCall', () => {
         }
       },
     );
+  });
+
+  it('completes a prepared prompt with the answer schema a fallback seat is sent', async () => {
+    const ref = setupProjectDir();
+    const { bus } = makeBusRecorder();
+    const suffixes: string[] = [];
+    const sent: string[] = [];
+    const reviewer = typedReviewer(async ({ prompt }) => {
+      sent.push(prompt);
+      return makeRunnerCallResult({ status: 'completed', text: JSON.stringify(VERDICT) });
+    });
+
+    await runReviewerCall({
+      ...ref,
+      reviewer,
+      workspaceDir: ref.projectDir,
+      prepareCall: async () => ({
+        prompt: (suffix) => {
+          suffixes.push(suffix);
+          return 'review the diff';
+        },
+      }),
+      schema: ReviewAnswerSchema,
+      jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
+      schemaName: 'review_answer',
+      bus,
+      state: createInitialState('feature'),
+    });
+
+    expect(suffixes).toEqual([fallbackInstruction(REVIEW_ANSWER_JSON_SCHEMA)]);
+    expect(sent).toEqual([`review the diff${suffixes[0]}`]);
   });
 
   it('passes an explicit port to verdict callbacks and leaves helper callbacks without it', async () => {

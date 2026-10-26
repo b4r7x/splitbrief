@@ -32,6 +32,7 @@ beforeEach(() => {
     'server listening on http://127.0.0.1:1234\nserver password password-1234567890\n';
   vi.mocked(spawn).mockImplementation((_command, args) => {
     const isSidecar = Array.isArray(args) && args[0] === 'serve';
+    const stdin = new PassThrough();
     const stdout = new PassThrough();
     const stderr = new PassThrough();
     const state: { -readonly [Key in 'exitCode' | 'signalCode']: ChildProcess[Key] } = {
@@ -39,7 +40,7 @@ beforeEach(() => {
       signalCode: null,
     };
     const child = Object.assign(new EventEmitter(), {
-      stdin: new PassThrough(),
+      stdin,
       stdout,
       stderr,
       kill: (signal: NodeJS.Signals = 'SIGTERM') => {
@@ -57,27 +58,32 @@ beforeEach(() => {
       signalCode: { get: () => state.signalCode },
     });
     if (Array.isArray(args) && args[0] === 'serve') sidecarChild = child as unknown as ChildProcess;
-    queueMicrotask(() => {
-      if (Array.isArray(args) && args[0] === 'run') {
-        stdout.write(
-          JSON.stringify({
-            type: 'text',
-            sessionID: 'ses-1',
-            part: { type: 'text', text: 'password-1234567890' },
-          }) + '\n',
-        );
-        stdout.write(JSON.stringify({ type: 'unknown_password-1234567890' }) + '\n');
-        stderr.write('password-1234567890');
-        state.exitCode = 0;
-        child.emit('exit', 0, null);
-        stdout.end();
-        stderr.end();
-        child.emit('close', 0, null);
-      } else {
+    if (Array.isArray(args) && args[0] === 'run') {
+      // The tool replies once it has read its prompt from stdin.
+      stdin.once('data', () =>
+        setImmediate(() => {
+          stdout.write(
+            JSON.stringify({
+              type: 'text',
+              sessionID: 'ses-1',
+              part: { type: 'text', text: 'password-1234567890' },
+            }) + '\n',
+          );
+          stdout.write(JSON.stringify({ type: 'unknown_password-1234567890' }) + '\n');
+          stderr.write('password-1234567890');
+          state.exitCode = 0;
+          child.emit('exit', 0, null);
+          stdout.end();
+          stderr.end();
+          child.emit('close', 0, null);
+        }),
+      );
+    } else {
+      queueMicrotask(() => {
         stdout.write(sidecarOutput);
         abortStartup?.();
-      }
-    });
+      });
+    }
     return child as unknown as ChildProcess;
   });
 });
@@ -94,8 +100,8 @@ async function openSession() {
         path,
         fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
       },
-      args: ['run', '--standalone', '<PROMPT>'],
-      promptTransport: { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
+      args: ['run', '--standalone'],
+      promptTransport: { kind: 'stdin' },
       environment: {},
       cwd: process.cwd(),
       signal: undefined,

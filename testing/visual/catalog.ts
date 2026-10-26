@@ -3100,7 +3100,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'recovery',
         title: 'Cursor account refusal recovery menu',
         kind: 'question',
-        marker: 'Seat down · Balance spent on',
+        marker: 'Seat down · Access refused by',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3639,11 +3639,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-build-prompt-too-large',
-      title: 'Workflow · a BUILD prompt larger than the tool takes on its command line',
+      title: 'Workflow · a BUILD prompt larger than the tool takes',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'recovery-build-prompt-too-large',
-        title: 'BUILD prompt command-line limit recovery menu',
+        title: 'BUILD prompt limit recovery menu',
         kind: 'question',
         marker: 'Change BUILD tool',
       },
@@ -3690,11 +3690,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-review-prompt-too-large',
-      title: 'Workflow · a final review prompt larger than the tool takes on its command line',
+      title: 'Workflow · a final review prompt larger than the review tool takes',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'recovery-review-prompt-too-large',
-        title: 'Review prompt command-line limit recovery menu',
+        title: 'Review input limit recovery menu',
         kind: 'question',
         marker: 'Change REVIEW tool',
       },

@@ -242,6 +242,42 @@ describe('createCliPlanner', () => {
     expect(onOutput.mock.calls.flat()).toEqual(chunks);
   });
 
+  it('sends a planning turn whose replayed history is over 130 KB to OpenCode on stdin', async () => {
+    const received = join(shimDir, 'stdin.txt');
+    const argvFile = join(shimDir, 'argv.txt');
+    const answer = JSON.stringify({
+      type: 'text',
+      sessionID: 'ses-open',
+      part: { type: 'text', text: 'Planned.' },
+    });
+    writeFileSync(
+      join(shimDir, 'opencode'),
+      `#!/bin/bash\nprintf '%s\\n' "$@" > '${argvFile}'\ncat > '${received}'\nprintf '%s\\n' '${answer}'\n`,
+      { mode: 0o755 },
+    );
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+    const earlierAnswer = 'An earlier planning answer. '.repeat(5_000);
+
+    const result = await planner
+      .typedCall({
+        projectDir,
+        seat: 'planner',
+        callbacks: { onOutput: vi.fn() },
+        priorMessages: [
+          { role: 'user', content: 'Plan the change.' },
+          { role: 'assistant', content: earlierAnswer },
+        ],
+      })
+      .invoke({ prompt: 'Continue the plan.' });
+
+    expect(result.status).toBe('completed');
+    const stdin = readFileSync(received, 'utf8');
+    expect(Buffer.byteLength(stdin)).toBeGreaterThan(130_000);
+    expect(stdin).toContain(earlierAnswer);
+    expect(stdin).toContain('Continue the plan.');
+    expect(readFileSync(argvFile, 'utf8')).not.toContain('An earlier planning answer.');
+  });
+
   it('capabilities: supportsSessionResume mirrors the tool config (codex yes, opencode no)', () => {
     const withResume = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
     expect(withResume.capabilities.supportsSessionResume).toBe(true);
@@ -1440,7 +1476,7 @@ describe('createCliPlanner — a Cursor seat that refuses the account', () => {
       });
 
       expect(diagnosis.failure).toBe('usage-limit');
-      expect(diagnosis.seatDown?.classification).toEqual({ class: 'account', cause: 'balance' });
+      expect(diagnosis.seatDown?.classification).toEqual({ class: 'account', cause: 'access' });
       expect(diagnosis.words).toContain('Buy credits or switch to a Grok model to continue.');
     },
   );

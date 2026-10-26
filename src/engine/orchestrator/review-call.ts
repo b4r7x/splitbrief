@@ -4,12 +4,26 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { EventBus } from '../events/types.js';
-import { requestTyped, type RequestTypedResult } from '../runners/typed-output.js';
+import {
+  requestTyped,
+  typedPromptSuffix,
+  type RequestTypedResult,
+} from '../runners/typed-output.js';
 import { addUsageAndSave } from './state-ops.js';
 import type { SteeringPort } from '../calls/steering.js';
 
 type ReviewerCallInput = Readonly<{
   prompt: string;
+  images?: readonly Attachment[] | undefined;
+}>;
+
+/**
+ * An input built again for each attempt. The prompt is completed once the seat's binding is
+ * known, with the text the call appends after it, such as the answer schema a seat without
+ * native typed output reads.
+ */
+type PreparedReviewerCallInput = Readonly<{
+  prompt: (suffix: string) => string;
   images?: readonly Attachment[] | undefined;
 }>;
 
@@ -28,7 +42,7 @@ export type RunReviewerCallOptions<T> = {
   steering?: SteeringPort | undefined;
   /** Receives the call's runner events: a consult publishes them under its task. */
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
-} & (ReviewerCallInput | { prepareCall: () => Promise<ReviewerCallInput> });
+} & (ReviewerCallInput | { prepareCall: () => Promise<PreparedReviewerCallInput> });
 
 export type RunReviewerCallResult<T> = {
   state: WorkflowState;
@@ -47,20 +61,23 @@ export async function runReviewerCall<T>(
   const result = await requestTyped({
     prepareCall: async () => {
       const input = 'prepareCall' in opts ? await opts.prepareCall() : opts;
+      const call = reviewer.typedCall({
+        projectDir: workspaceDir,
+        seat: 'reviewer',
+        callbacks: {
+          onOutput: () => {},
+          ...(opts.onCallEvent !== undefined && { onCallEvent: opts.onCallEvent }),
+          signal: opts.signal,
+          ...(opts.steering !== undefined && { steering: opts.steering }),
+        },
+        ...(input.images !== undefined && input.images.length > 0 && { images: [...input.images] }),
+      });
       return {
-        prompt: input.prompt,
-        call: reviewer.typedCall({
-          projectDir: workspaceDir,
-          seat: 'reviewer',
-          callbacks: {
-            onOutput: () => {},
-            ...(opts.onCallEvent !== undefined && { onCallEvent: opts.onCallEvent }),
-            signal: opts.signal,
-            ...(opts.steering !== undefined && { steering: opts.steering }),
-          },
-          ...(input.images !== undefined &&
-            input.images.length > 0 && { images: [...input.images] }),
-        }),
+        prompt:
+          typeof input.prompt === 'string'
+            ? input.prompt
+            : input.prompt(typedPromptSuffix(call.typedOutput, opts.jsonSchema)),
+        call,
       };
     },
     schema: opts.schema,

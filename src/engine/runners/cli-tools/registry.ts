@@ -22,6 +22,7 @@ import type { PlannerCliToolId, ImplementerCliToolId } from '../../../core/schem
 import { includes, isRecord } from '../../../utils/type-guards.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../../constants.js';
 import { runnerConfigError } from '../errors.js';
+import type { PromptLimit } from '../input-limit.js';
 import { antigravityImplementerAdapter, antigravityPlannerAdapter } from './antigravity.js';
 import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './claude-code.js';
 import { codexImplementerAdapter, codexPlannerAdapter } from './codex.js';
@@ -610,6 +611,21 @@ export function lookupCliImplementerAdapter(toolId: string): CliImplementerAdapt
     throw runnerConfigError.missingToolConfig(toolId, 'implementer');
   }
   return CLI_IMPLEMENTER_ADAPTERS[toolId];
+}
+
+/** The prompt limit a CLI tool declares for a seat role; undefined for a tool without one. */
+export function cliPromptLimit(
+  role: 'planner' | 'implementer',
+  toolId: string,
+): PromptLimit | undefined {
+  if (role === 'implementer') {
+    return includes(IMPLEMENTER_CLI_TOOL_IDS, toolId)
+      ? CLI_IMPLEMENTER_ADAPTERS[toolId].promptLimit
+      : undefined;
+  }
+  return includes(PLANNER_CLI_TOOL_IDS, toolId)
+    ? CLI_PLANNER_ADAPTERS[toolId].promptLimit
+    : undefined;
 }
 
 /** Returns the admitted role-bound probe without exposing any probe output. */

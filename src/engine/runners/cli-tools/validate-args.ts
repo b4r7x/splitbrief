@@ -151,12 +151,29 @@ function protectedFlag(input: {
   return null;
 }
 
+/**
+ * A configured argument the tool would read as a positional: not a flag, and not the value of
+ * the configured flag just before it. A flag with its value after `=` takes no next argument.
+ */
+function isPositional(arg: string, index: number, tail: readonly string[]): boolean {
+  if (arg.startsWith('-') && arg !== '-') return false;
+  const previous = index === 0 ? undefined : tail[index - 1];
+  return (
+    previous === undefined ||
+    previous === '--' ||
+    !previous.startsWith('-') ||
+    previous.includes('=')
+  );
+}
+
 export function validateCliArgs(input: {
   readonly invocationArgs: readonly string[];
   readonly baseArgs: readonly string[];
   readonly protectedFlags: ReadonlySet<string>;
   readonly protectedShortValueFlags?: ReadonlySet<string> | undefined;
   readonly promptTransport: 'argv' | 'stdin';
+  /** The tool reads a positional argument as the prompt and then ignores stdin. */
+  readonly positionalPrompt?: boolean | undefined;
 }): CliArgumentValidation {
   const { invocationArgs, baseArgs, protectedFlags, promptTransport } = input;
   const protectedShortValueFlags = input.protectedShortValueFlags ?? new Set<string>();
@@ -167,12 +184,9 @@ export function validateCliArgs(input: {
     baseArgs.some((arg, index) => invocationArgs[index] !== arg);
   if (orderConflict) conflicts.push('argument-order');
 
-  if (
-    promptTransport === 'argv' &&
-    invocationArgs.filter((arg) => arg === CLI_PROMPT_SENTINEL).length !== 1
-  ) {
-    conflicts.push('prompt-transport');
-  }
+  // Argv carries the prompt in exactly one slot; any other transport carries it in none.
+  const promptSlots = invocationArgs.filter((arg) => arg === CLI_PROMPT_SENTINEL).length;
+  if (promptSlots !== (promptTransport === 'argv' ? 1 : 0)) conflicts.push('prompt-transport');
   if (invocationArgs.some((arg) => arg !== CLI_PROMPT_SENTINEL && placeholderConflict(arg))) {
     conflicts.push('prompt-transport');
   }
@@ -187,6 +201,8 @@ export function validateCliArgs(input: {
     for (const arg of parseCliSemanticVector(tail)) {
       if (arg.category !== null) conflicts.push(arg.token);
     }
+    if (input.positionalPrompt === true && tail.some(isPositional))
+      conflicts.push('prompt-transport');
   }
 
   const uniqueConflicts = [...new Set(conflicts)];

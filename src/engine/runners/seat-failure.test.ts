@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { classifyHaltSignature } from '../../core/pipeline-spec/halts.js';
 import { runnerCallOutcome } from '../implementers/pipeline/call-result.js';
@@ -54,6 +56,17 @@ const ANTIGRAVITY_QUOTA =
 // Captured live from `cmd` (command-code) on 2026-09-21.
 const COMMAND_CODE_RUN_ERROR =
   "POST /alpha/generate → 429 error: You've reached your weekly usage limit for your plan. Your limit resets at 2026-09-23T15:50:48.385Z. Please wait for the window to reset or upgrade your plan to continue.";
+
+// Captured live from `copilot --output-format json` (1.0.83, 2026-10-26) on an account its organization's policy blocks.
+const COPILOT_POLICY_DENIAL = readFileSync(
+  join(import.meta.dirname, '../../../testing/fixtures/copilot/access-denied-policy.stderr.txt'),
+  'utf8',
+);
+// Captured live from `opencode run --format json` (2.0.32, 2026-10-26) with a revoked provider credential.
+const OPENCODE_PROVIDER_AUTH = readFileSync(
+  join(import.meta.dirname, '../../../testing/fixtures/opencode/provider-auth-401.ndjson'),
+  'utf8',
+).trim();
 
 const ENVELOPES: readonly Row[] = [
   {
@@ -142,10 +155,26 @@ const ENVELOPES: readonly Row[] = [
     expected: 'rate-limited',
   },
   {
-    name: 'cursor model refusal on stderr',
+    name: 'cursor model refusal on stderr is a model the plan does not include',
     provenance: 'captured',
     input: { message: CURSOR_MODEL_REFUSAL, source: 'stderr' },
-    expected: 'account:balance',
+    expected: 'account:access',
+  },
+  {
+    name: 'copilot access denied by policy settings on stderr',
+    provenance: 'captured',
+    input: { message: COPILOT_POLICY_DENIAL, source: 'stderr' },
+    expected: 'account:access',
+  },
+  {
+    name: 'opencode provider.auth without a status is a sign-out',
+    provenance: 'synthetic',
+    input: {
+      message: 'provider.auth: Upstream request failed: Invalid credential',
+      providerType: 'provider.auth',
+      source: 'result-error',
+    },
+    expected: 'account:auth',
   },
   {
     name: 'command-code weekly limit',
@@ -313,9 +342,9 @@ describe('classifySeatFailure on the stderr of a failed call', () => {
   });
 
   it.each(CURSOR_MODEL_REFUSAL_FORMS)(
-    "reads Cursor's model refusal in the %s form as a spent balance",
+    "reads Cursor's model refusal in the %s form as a model outside the plan",
     (_form, message) => {
-      expect(label(classifySeatFailure({ message, source: 'stderr' }))).toBe('account:balance');
+      expect(label(classifySeatFailure({ message, source: 'stderr' }))).toBe('account:access');
     },
   );
 });
@@ -395,6 +424,22 @@ describe('classifySeatFailure on opencode error envelopes replayed through the a
     );
     expect(outcome.state).toBe('usage-limit');
     expect(outcome.remediation).not.toMatch(/log ?in|log ?out|authenticate/i);
+  });
+});
+
+describe('classifySeatFailure on the recorded opencode provider.auth refusal', () => {
+  it('keeps provider.auth and the 401 through the adapter and reads them as a sign-out', () => {
+    const terminal = opencodeFailure(OPENCODE_PROVIDER_AUTH);
+    expect(terminal.status).toBe('failed');
+    if (terminal.status === 'completed') return;
+    expect(terminal.error.providerType).toBe('provider.auth');
+    expect(terminal.error.status).toBe(401);
+    const classification = classifySeatFailure({
+      message: terminal.error.message,
+      providerType: terminal.error.providerType,
+      source: 'result-error',
+    });
+    expect(label(classification)).toBe('account:auth');
   });
 });
 

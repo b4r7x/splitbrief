@@ -16,6 +16,7 @@ describe('recovery halts', () => {
         'implementer-left-isolation',
         'implementer-recipe-invalid',
         'planner-call-failed',
+        'review-input-too-large',
         'runner-timeout-repeated',
         'runner-unauthenticated',
         'runner-usage-limit',
@@ -31,12 +32,11 @@ describe('recovery halts', () => {
     for (const reason of RETIRED_RECOVERY_REASONS) expect(haltOf(reason)).toBe('needs-you');
   });
 
-  it('offers a seat down halt the seat picker and never a grant or a review decision', () => {
+  it('offers a seat down halt the seat picker and never a grant or a revision', () => {
     const seatDown = allowedActionsForHalt('seat-down');
     expect(seatDown).toContain('switch-seat');
     expect(seatDown).not.toContain('continue');
     expect(seatDown).not.toContain('revise');
-    expect(seatDown).not.toContain('accept-as-is');
     expect(allowedActionsForHalt('needs-you')).not.toContain('switch-seat');
   });
 

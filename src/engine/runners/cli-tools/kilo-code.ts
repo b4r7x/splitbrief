@@ -1,7 +1,6 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { ParsedLine } from '../types.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
-import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { errorLineProtocolEvents, errorLineTerminal } from './final-group.js';
@@ -9,11 +8,7 @@ import { validateCliArgs } from './validate-args.js';
 
 const KILO_ID = 'kilo-code' as const;
 const KILO_COMMAND = 'kilo' as const;
-const KILO_PROMPT_TRANSPORT = Object.freeze({
-  kind: 'argv',
-  maxBytes: 120_000,
-  placement: 'positional',
-} as const);
+const KILO_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
 const KILO_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 const KILO_PROTECTED_FLAGS = new Set([
@@ -38,7 +33,8 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     ...input,
     protectedFlags: KILO_PROTECTED_FLAGS,
     protectedShortValueFlags: KILO_PROTECTED_SHORT_VALUE_FLAGS,
-    promptTransport: 'argv',
+    promptTransport: 'stdin',
+    positionalPrompt: true,
   });
 }
 
@@ -107,7 +103,6 @@ function plannerBaseArgs(input: KiloPlannerBuildInput): string[] {
     'json',
     '--agent',
     'plan',
-    input.prompt,
     ...(input.imagePaths ?? []).flatMap((path) => ['--file', path]),
   ];
 }
@@ -122,7 +117,6 @@ function implementerBaseArgs(input: KiloImplementerBuildInput): string[] {
     '--agent',
     'code',
     '--auto',
-    input.prompt,
     ...(input.imagePaths ?? []).flatMap((path) => ['--file', path]),
   ];
 }
@@ -198,7 +192,7 @@ export type RawKiloCliContract = Readonly<{
   versionArgs: readonly ['--version'];
   auth: Readonly<{ kind: 'env-or-native'; env: readonly [] }>;
   rawInvocation: readonly string[];
-  promptTransport: 'argv';
+  promptTransport: 'stdin';
   expectedRawTerminal: 'process-exit';
   asOf: '2026-09-21';
 }>;
@@ -220,9 +214,9 @@ function rawContract(role: 'planner' | 'implementer'): RawKiloCliContract {
     auth: { kind: 'env-or-native', env: [] },
     rawInvocation:
       role === 'planner'
-        ? ['run', '--format', 'json', '--agent', 'plan', CLI_PROMPT_SENTINEL]
-        : ['run', '--format', 'json', '--agent', 'code', '--auto', CLI_PROMPT_SENTINEL],
-    promptTransport: 'argv',
+        ? ['run', '--format', 'json', '--agent', 'plan']
+        : ['run', '--format', 'json', '--agent', 'code', '--auto'],
+    promptTransport: 'stdin',
     expectedRawTerminal: 'process-exit',
     asOf: '2026-09-21',
   };

@@ -1424,7 +1424,12 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
         pendingRecovery: buildReviewInputTooLargeRecoveryIssue({
           phase: 'implementing',
           createdAt: new Date().toISOString(),
-          failure: { kind: 'input-too-large', chars: 9, maxChars: 5, largestFiles: [] },
+          failure: {
+            kind: 'input-too-large',
+            figures: { unit: 'characters', size: 9, limit: 5 },
+            promptSize: { characters: 9, bytes: 9 },
+            largestFiles: [],
+          },
           tool: 'codex',
           acceptAsIs: true,
         }),

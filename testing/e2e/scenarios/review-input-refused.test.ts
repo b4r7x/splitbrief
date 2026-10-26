@@ -131,7 +131,7 @@ describe('e2e: the review tool refuses its input as too long', { timeout: 240_00
     const haltState = readState(target, sessionId);
 
     expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
-    expect(halted.stderr).toContain('(review-input-too-large)');
+    expect(halted.stderr).toContain('Seat down (review-input-too-large)');
     const issue = haltState.pendingRecovery;
     expect(issue?.reason).toBe('review-input-too-large');
     expect(issue?.availableActions).toEqual(['accept-as-is', 'end-run']);

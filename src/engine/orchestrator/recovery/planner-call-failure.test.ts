@@ -6,7 +6,8 @@ import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factori
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { defaultCliAuthChannel, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { error } from '../../../utils/error.js';
-import { inputTooLargeRefusal } from '../../runners/input-limit.js';
+import { CURSOR_MODEL_REFUSAL } from '#testing/helpers/cursor-refusal.js';
+import { argvPromptTooLarge, inputTooLargeRefusal } from '../../runners/input-limit.js';
 import { streamError } from '../../streaming/stream-errors.js';
 import { buildPlannerCallFailedRecoveryIssue } from './builders/planner.js';
 import {
@@ -184,6 +185,41 @@ describe('diagnosePlannerCallFailure on an API seat', () => {
   });
 });
 
+describe('an account refusal on the review seat', () => {
+  it('reads a 401 the failed call carries as a sign-out', () => {
+    const diagnosis = diagnosePlannerCallFailure({
+      err: error('runner-call-failed', 'Planner review call failed', {
+        status: 'failed',
+        error: {
+          code: 'opencode-error',
+          message: 'provider.auth: Upstream request failed: Invalid credential',
+          status: 401,
+          providerType: 'provider.auth',
+        },
+      }),
+      label: 'Final review failed',
+      runner: cliSeat('opencode'),
+      seat: 'review',
+    });
+
+    expect(diagnosis.failure).toBe('unauthenticated');
+    expect(diagnosis.seatDown?.classification).toEqual({ class: 'account', cause: 'auth' });
+  });
+
+  it("reads Cursor's model refusal as an access refusal", () => {
+    const diagnosis = diagnosePlannerCallFailure({
+      err: failedCall(CURSOR_MODEL_REFUSAL),
+      label: 'Final review failed',
+      runner: cliSeat('cursor'),
+      seat: 'review',
+    });
+
+    expect(diagnosis.seatDown?.classification).toEqual({ class: 'account', cause: 'access' });
+    expect(diagnosis.message).toContain('Access refused by Cursor Agent CLI');
+    expect(diagnosis.message).not.toContain('hit its usage limit');
+  });
+});
+
 describe('a model refusal on a planner-tier seat', () => {
   const route = 'ollama-cloud/glm-5';
   const words = `provider.no-route: Model unavailable: ${route}`;
@@ -344,7 +380,9 @@ describe('a planner call the tool refused as too large', () => {
   });
 
   it('names the figures a refusal carries', () => {
-    const { diagnosis, issue } = haltFor(inputTooLargeRefusal(5_000_000, 1_000_000));
+    const { diagnosis, issue } = haltFor(
+      inputTooLargeRefusal(5_000_000, { max: 1_000_000, unit: 'characters' }),
+    );
 
     expect(diagnosis.failure).toBe('input-too-large');
     expect(issue.message).toBe('Planner consult for T001 failed: the prompt is too large');
@@ -370,10 +408,7 @@ describe('a planner call the tool refused as too large', () => {
 
   it.each(calls)('$label: a command-line refusal reads in its own words', ({ seat, label }) => {
     const diagnosis = diagnosePlannerCallFailure({
-      err: callFailure(
-        'argv-prompt-too-large',
-        'CLI prompt is 186486 bytes and exceeds the 120000-byte argv limit',
-      ),
+      err: callFailure('argv-prompt-too-large', argvPromptTooLarge(186_486, 120_000).message),
       label,
       runner: cliSeat('opencode'),
       seat,

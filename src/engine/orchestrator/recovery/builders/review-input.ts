@@ -4,6 +4,7 @@ import type { FinalReviewFailure } from '../../final-review.js';
 import type { PromptSize } from '../../../runners/input-limit.js';
 import { haltActions } from './actions.js';
 import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './issue.js';
+import { switchSeatOffer, type SeatSwapContext } from './task.js';
 
 /**
  * A too-large prompt in SPLITBRIEF's words: its size and the tool's limit where the refusal
@@ -39,11 +40,7 @@ export function reviewInputTooLargeMessage(
   failure: Extract<FinalReviewFailure, { kind: 'input-too-large' }>,
   tool: string,
 ): string {
-  return inputTooLargeSentence(
-    'Review input',
-    { unit: 'characters', size: failure.chars, limit: failure.maxChars },
-    tool,
-  );
+  return inputTooLargeSentence('Review input', failure.figures, tool);
 }
 
 export function buildReviewInputTooLargeRecoveryIssue(
@@ -52,9 +49,11 @@ export function buildReviewInputTooLargeRecoveryIssue(
     failure: Extract<FinalReviewFailure, { kind: 'input-too-large' }>;
     tool: string;
     acceptAsIs: boolean;
+    seatSwap?: SeatSwapContext | undefined;
   },
 ): RecoveryIssue {
-  const { chars, maxChars, largestFiles } = opts.failure;
+  const { figures, promptSize, largestFiles } = opts.failure;
+  const switchSeat = switchSeatOffer(opts.seatSwap, promptSize);
   return createRecoveryIssue({
     id: opts.id,
     reason: 'review-input-too-large',
@@ -65,16 +64,22 @@ export function buildReviewInputTooLargeRecoveryIssue(
     message: reviewInputTooLargeMessage(opts.failure, opts.tool),
     details: [
       `Largest diffs: ${largestFiles.map((file) => `${file.path} (${file.chars.toLocaleString('en-US')} chars)`).join(', ')}`,
-      opts.acceptAsIs
-        ? 'A retry sends the same input. Skip the review with a note (recorded, not a verification) or End the run (a workspace run saves its changes in run.patch).'
-        : 'A retry sends the same input. End the run (a workspace run saves its changes in run.patch).',
+      `A retry sends the same input. ${new Intl.ListFormat('en-GB', { type: 'disjunction' }).format(
+        [
+          switchSeat === undefined ? '' : 'Change the REVIEW tool to one that takes it',
+          opts.acceptAsIs ? 'Skip the review with a note (recorded, not a verification)' : '',
+          'End the run (a workspace run saves its changes in run.patch)',
+        ].filter((choice) => choice !== ''),
+      )}.`,
     ],
-    facts: compactFacts({ tool: opts.tool, chars, maxChars: maxChars ?? undefined }),
+    facts: compactFacts({ tool: opts.tool, ...inputTooLargeFacts(figures) }),
     availableActions: haltActions('review-input-too-large', [
+      switchSeat === undefined ? undefined : 'switch-seat',
       opts.acceptAsIs ? 'accept-as-is' : undefined,
       'end-run',
     ]),
-    recommendedAction: 'end-run',
+    ...(switchSeat !== undefined && { switchSeat }),
+    recommendedAction: switchSeat === undefined ? 'end-run' : 'switch-seat',
     createdAt: opts.createdAt,
   });
 }

@@ -818,7 +818,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(vectors.map((argv) => argv.join(' '))).toEqual([
-      'run --model openai/gpt-5.6-luna --variant xhigh --format json --agent plan <PROMPT>',
+      'run --model openai/gpt-5.6-luna --variant xhigh --format json --agent plan',
     ]);
   });
 
@@ -849,7 +849,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(vectors.map((argv) => argv.join(' '))).toEqual([
-      'run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build <PROMPT>',
+      'run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build',
     ]);
   });
 
@@ -861,7 +861,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(vectors.map((argv) => argv.join(' '))).toEqual([
-      'run --model opencode-go/deepseek-v4-flash --variant high --format json --agent build <PROMPT>',
+      'run --model opencode-go/deepseek-v4-flash --variant high --format json --agent build',
     ]);
   });
 

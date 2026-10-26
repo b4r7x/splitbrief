@@ -1170,21 +1170,25 @@ describe('createCliImplementer (codex usage capture)', () => {
   });
 });
 
-function installRecordingShim(command: string, writtenRelPath: string): { argvFile: string } {
+function installRecordingShim(
+  command: string,
+  writtenRelPath: string,
+): { argvFile: string; stdinFile: string } {
   const argvFile = join(shimDir, 'argv.txt');
+  const stdinFile = join(shimDir, 'stdin.txt');
   const target = join(projectDir, writtenRelPath);
   const shimPath = join(shimDir, command);
   const script = [
     '#!/bin/bash',
     `printf '%s\\n' "$@" > '${argvFile}'`,
-    'cat > /dev/null',
+    `cat > '${stdinFile}'`,
     `mkdir -p "$(dirname '${target}')"`,
     `printf '%s' 'generated' > '${target}'`,
     `printf '%s\\n' 'done'`,
   ].join('\n');
   writeFileSync(shimPath, `${script}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
-  return { argvFile };
+  return { argvFile, stdinFile };
 }
 
 function readArgv(argvFile: string): string[] {
@@ -1209,8 +1213,8 @@ describe('createCliImplementer (opencode arg vector)', () => {
     temperature: 0.3,
   };
 
-  it('spawns opencode with the `run` subcommand as the first arg so the prompt is not read as a project dir', async () => {
-    const { argvFile } = installRecordingShim('opencode', 'src/hello.ts');
+  it('spawns opencode with the `run` subcommand as the first arg and the prompt on stdin', async () => {
+    const { argvFile, stdinFile } = installRecordingShim('opencode', 'src/hello.ts');
     const config = makeConfig({ implementer: opencodeImplementer });
 
     const implementer = createCliImplementer(opencodeImplementer);
@@ -1225,7 +1229,8 @@ describe('createCliImplementer (opencode arg vector)', () => {
     expect(result.success).toBe(true);
     const argv = readArgv(argvFile);
     expect(argv[0]).toBe('run');
-    expect(argv.at(-1)).toContain('src/hello.ts');
+    expect(argv.join(' ')).not.toContain('src/hello.ts');
+    expect(readFileSync(stdinFile, 'utf8')).toContain('src/hello.ts');
   });
 
   it('checks availability without executing the implementer command', async () => {
@@ -1245,8 +1250,8 @@ describe('createCliImplementer (opencode arg vector)', () => {
     expect(existsSync(markerFile)).toBe(false);
   });
 
-  it('places an explicit --model under the `run` subcommand, before the prompt positional', async () => {
-    const { argvFile } = installRecordingShim('opencode', 'src/hello.ts');
+  it('places an explicit --model under the `run` subcommand', async () => {
+    const { argvFile, stdinFile } = installRecordingShim('opencode', 'src/hello.ts');
     const withModel: CliImplementerConfig = { ...opencodeImplementer, model: 'qwen2.5-coder:7b' };
     const config = makeConfig({ implementer: withModel });
 
@@ -1261,7 +1266,7 @@ describe('createCliImplementer (opencode arg vector)', () => {
 
     const argv = readArgv(argvFile);
     expect(argv.slice(0, 3)).toEqual(['run', '--model', 'qwen2.5-coder:7b']);
-    expect(argv.at(-1)).toContain('src/hello.ts');
+    expect(readFileSync(stdinFile, 'utf8')).toContain('src/hello.ts');
   });
 
   it.each(['auto', 'AUTO', '  auto  ', undefined])(
