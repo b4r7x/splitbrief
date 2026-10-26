@@ -240,6 +240,22 @@ describe('Header — seat line', () => {
     expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
   });
 
+  it('names the tool of each automatic seat, and drops a whole tool name on a tight bar', async () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: { kind: 'shell', command: './build.sh', model: 'auto' },
+      reviewer: { kind: 'cli', tool: 'codex' },
+    });
+
+    expect(await seatFrame(200, config)).toContain(
+      'PLAN Claude Code CLI · BUILD Custom Shell · REVIEW OpenAI Codex CLI',
+    );
+    const tight = await seatFrame(110, config);
+    expect(tight).toContain('PLAN Claude Code CLI');
+    expect(tight).not.toContain('auto');
+    expect(tight).not.toContain('…');
+  });
+
   it('sanitizes hostile model ids in the visible seat line', async () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });

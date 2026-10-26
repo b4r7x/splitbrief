@@ -1027,6 +1027,28 @@ const READY_CREW_SAVED = record({
   ledger: { ...READY_LEDGER, sessionId: 'visual-ready-crew-saved' },
 });
 
+/**
+ * A ready run whose BUILD seat moved to Antigravity with its model left automatic after the first
+ * brief: the moved seat names the tool it moved to, and the sidebar breaks it after the arrow.
+ */
+const READY_SEAT_MOVED_AUTO = record({
+  sessionId: 'visual-ready-seat-moved-auto',
+  status: READY_TO_APPLY.status,
+  state: READY_TO_APPLY.hydration.state,
+  summary: {
+    ...workspaceSummary('visual-ready-seat-moved-auto'),
+    implementerTool: 'antigravity',
+    implementerModel: 'auto',
+    taskBreakdown: READY_TASKS.map((task, index) => ({
+      ...task,
+      ...(index === 0
+        ? { tool: 'antigravity', model: 'gemini-3.8-flash-high' }
+        : { tool: 'antigravity', model: 'auto' }),
+    })),
+  },
+  ledger: { ...READY_LEDGER, sessionId: 'visual-ready-seat-moved-auto' },
+});
+
 /** The ready run while an Apply holds it: the record reads running, not ready. */
 const APPLYING = record({
   sessionId: 'visual-at-rest-applying',
@@ -2740,6 +2762,13 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     ...atRestProjection({
       id: 'workflow-ready-crew-saved',
       route: { record: READY_CREW_SAVED, log: READY_LOG },
+    }),
+    sidebarVisible: true,
+  },
+  {
+    ...atRestProjection({
+      id: 'workflow-ready-seat-moved-auto',
+      route: { record: READY_SEAT_MOVED_AUTO },
     }),
     sidebarVisible: true,
   },

@@ -1471,10 +1471,15 @@ describe('WorkflowScreen showing a run at rest', () => {
     });
     await flushEffects();
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const build = `Haiku 5.5${arrowSep()}auto`;
+    const build = `Haiku 5.5${arrowSep()}Google Antigravity CLI`;
     expect(lines[0]).toContain(`PLAN Opus 5.5 · BUILD ${build}`);
-    // The header and the sidebar crew both name it.
-    expect(lines.filter((line) => line.includes(build))).toHaveLength(2);
+    // The sidebar crew names the move too, broken after the arrow and never inside a name.
+    const sidebarBuild = lines.findIndex((line) =>
+      line.includes(`BUILD   Haiku 5.5${arrowSep().trimEnd()}`),
+    );
+    expect(sidebarBuild).toBeGreaterThan(0);
+    expect(lines[sidebarBuild + 1]).toContain('Google Antigravity CLI');
+    expect(lines.slice(sidebarBuild, sidebarBuild + 2).join('\n')).not.toContain('…');
     expect(lines.join('\n')).not.toContain('Sonnet');
     ui.unmount();
   });
@@ -1592,12 +1597,17 @@ describe('WorkflowScreen showing a run at rest', () => {
       save(halt());
       return builtOnOtherCrew();
     });
-    const build = `Haiku 5.5${arrowSep()}auto`;
+    const build = `Haiku 5.5${arrowSep()}Google Antigravity CLI`;
     const expectRecordedCrew = () => {
       const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
       expect(lines[0]).toContain(`PLAN Opus 5.5 · BUILD ${build}`);
-      // The header and the sidebar crew both name it.
-      expect(lines.filter((line) => line.includes(build))).toHaveLength(2);
+      // The sidebar crew names the move too, broken after the arrow and never inside a name.
+      const sidebarBuild = lines.findIndex((line) =>
+        line.includes(`BUILD   Haiku 5.5${arrowSep().trimEnd()}`),
+      );
+      expect(sidebarBuild).toBeGreaterThan(0);
+      expect(lines[sidebarBuild + 1]).toContain('Google Antigravity CLI');
+      expect(lines.slice(sidebarBuild, sidebarBuild + 2).join('\n')).not.toContain('…');
       expect(lines.join('\n')).not.toContain('Sonnet');
     };
     await flushEffects();
@@ -1664,7 +1674,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
     const live = crew();
     expect(live).toEqual({
-      header: 'PLAN auto · BUILD Sonnet 5.5 · REVIEW = PLAN',
+      header: 'PLAN Claude Code CLI · BUILD Sonnet 5.5 · REVIEW = PLAN',
       build: 'Claude Code CLI · Sonnet 5.5',
     });
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Haiku');
@@ -2320,7 +2330,7 @@ describe('WorkflowScreen when the final review passes', () => {
       expect(stripAnsiStyles(ui.lastFrame())).toContain('Ready to apply');
     });
     const header = stripAnsiStyles(ui.lastFrame()).split('\n')[0] ?? '';
-    expect(header).toContain(`BUILD Haiku 5.5${arrowSep()}auto`);
+    expect(header).toContain(`BUILD Haiku 5.5${arrowSep()}Google Antigravity CLI`);
     expect(header).not.toContain('Sonnet');
     ui.unmount();
   });

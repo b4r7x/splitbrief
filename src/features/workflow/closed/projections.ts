@@ -122,7 +122,8 @@ export function buildSeatView(summary: Summary): SeatView {
 
 /**
  * The seats the briefs ran on, in the order the plan first used each, when there was more than
- * one. Two seats a short form cannot tell apart (`auto` on two tools) are named with their tool.
+ * one. Two seats a short form cannot tell apart (one model on two tools) are named with their
+ * tool; a short form that already is the tool word stays as it is.
  */
 function movedBuildSeat(
   breakdown: readonly TaskTokenUsage[],
@@ -148,12 +149,13 @@ function movedBuildSeat(
   const ambiguous = new Set(shorts).size < shorts.length;
   return {
     kind: 'moved',
-    seats: [...seats.values()].map((seat) => ({
-      short: ambiguous
-        ? sanitizeTerminalDisplayText(`${runnerWord(seat.tool, seat.kind)} ${seat.short}`)
-        : seat.short,
-      briefs: seat.briefs,
-    })),
+    seats: [...seats.values()].map((seat) => {
+      const tool = sanitizeTerminalDisplayText(runnerWord(seat.tool, seat.kind));
+      return {
+        short: ambiguous && seat.short !== tool ? `${tool} ${seat.short}` : seat.short,
+        briefs: seat.briefs,
+      };
+    }),
     contiguous: eachRunsOneStretch(keys),
   };
 }

@@ -298,9 +298,38 @@ export function crewLine(
   });
 }
 
-/** A seat as the sidebar crew names it: a named seat with its tool, like the live crew rows. */
-export function seatIdentityWord(seat: SeatView): string {
-  return seat.kind === 'named' ? seat.full : seatWord(seat);
+/**
+ * A seat as the sidebar crew names it, in the pieces a narrow row breaks between: a named seat
+ * with its tool, like the live crew rows; a move after each arrow; a back-and-forth after each comma.
+ */
+export function seatIdentityPieces(seat: SeatView): string[] {
+  switch (seat.kind) {
+    case 'named':
+      return [seat.full];
+    case 'moved':
+      return movedPieces(seat);
+    default:
+      return [seatWord(seat)];
+  }
+}
+
+// A seat that left one tool for good reads as the move; one that went back and forth has no
+// single move to name, so it says how much each tool did.
+function movedPieces(seat: Extract<SeatView, { kind: 'moved' }>): string[] {
+  const last = seat.seats.length - 1;
+  if (seat.contiguous) {
+    const arrow = arrowSep().trimEnd();
+    return seat.seats.map((moved, index) =>
+      index < last ? `${moved.short}${arrow}` : moved.short,
+    );
+  }
+  return seat.seats.map((moved, index) => {
+    const share =
+      index === 0
+        ? `${countNoun(moved.briefs, 'brief')} on ${moved.short}`
+        : `${moved.briefs} on ${moved.short}`;
+    return index < last ? `${share},` : share;
+  });
 }
 
 function seatWord(seat: SeatView): string {
@@ -311,18 +340,8 @@ function seatWord(seat: SeatView): string {
       return seat.profiles.length === 0
         ? 'mixed workers'
         : `mixed workers (${seat.profiles.join(', ')})`;
-    // A seat that left one tool for good reads as the move; one that went back and forth has no
-    // single move to name, so it says how much each tool did.
     case 'moved':
-      return seat.contiguous
-        ? seat.seats.map((moved) => moved.short).join(arrowSep())
-        : seat.seats
-            .map((moved, index) =>
-              index === 0
-                ? `${countNoun(moved.briefs, 'brief')} on ${moved.short}`
-                : `${moved.briefs} on ${moved.short}`,
-            )
-            .join(', ');
+      return movedPieces(seat).join(' ');
     case 'inherits':
       return PLANNER_INHERITANCE.mark;
     default:

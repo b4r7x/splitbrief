@@ -224,14 +224,33 @@ describe('HomeSeatBlock', () => {
     unmount();
   });
 
+  it('names the tool of each automatic seat on the collapsed line', async () => {
+    seed(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'agent', command: './agent.sh', model: 'auto' },
+        reviewer: { kind: 'cli', tool: 'codex' },
+      }),
+    );
+
+    const wide = await renderBlock(18, 100);
+    expect(wide.lines[0]?.trim()).toBe(
+      'PLAN Claude Code CLI · BUILD Agent · REVIEW OpenAI Codex CLI',
+    );
+    wide.unmount();
+
+    const narrow = await renderBlock(18, 40);
+    expect(narrow.lines[0]?.trim()).toBe('PLAN Claude Code CLI · BUILD Agent');
+    narrow.unmount();
+  });
+
   it('drops a whole identity from the collapsed line instead of cutting one', async () => {
     const width = 40;
 
     const { lines, unmount } = await renderBlock(18, width);
 
     expect(getTerminalCellWidth(lines[0] ?? '')).toBeLessThanOrEqual(width);
-    expect(lines[0]).toContain('PLAN');
-    expect(lines[0]).toContain('BUILD');
+    expect(lines[0]?.trim()).toBe('PLAN Claude Code CLI · REVIEW = PLAN');
     // A seat that does not fit leaves the line rather than standing there unnamed, so no ellipsis
     // reaches the row at all.
     expect(lines[0]).not.toContain('…');
