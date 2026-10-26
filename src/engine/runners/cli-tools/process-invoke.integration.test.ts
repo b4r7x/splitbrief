@@ -64,7 +64,6 @@ import {
   revalidateCliExecutableIdentity,
 } from '../resolve-cli-executable.js';
 import { createRunnerSandboxEnv } from '../sandbox-env.js';
-import { argvPromptMaxBytes, inputTooLargeFigures } from '../input-limit.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -276,10 +275,9 @@ describe('process steering lifecycle boundary', () => {
   itUnix.each(['completion', 'setup'] as const)(
     'records rejected cleanup after %s as one failure',
     async (mode) => {
-      const selected = adapter({ kind: 'file', mode: 0o600 });
+      const selected = adapter({ kind: 'stdin' });
       const events: RunnerCallEvent[] = [];
       const port = createSteeringPort();
-      let promptPath: string | undefined;
       let closed = false;
       const result = await invokeProcessCli(
         {
@@ -291,7 +289,7 @@ describe('process steering lifecycle boundary', () => {
               return {
                 invocation: {
                   ...input.invocation,
-                  promptTransport: mode === 'setup' ? { kind: 'stdin' } : selected.promptTransport,
+                  args: mode === 'setup' ? ['<PROMPT>'] : input.invocation.args,
                 },
                 prompt: input.prompt,
                 parse: selected.parse,
@@ -310,17 +308,10 @@ describe('process steering lifecycle boundary', () => {
           },
         },
         {
-          invocation: invocation({
-            script: "console.log('RESULT')",
-            args: ['<PROMPT>'],
-            promptTransport: selected.promptTransport,
-          }),
+          invocation: invocation({ script: "console.log('RESULT')" }),
           prompt: 'initial',
           steering: port,
           callContext,
-          onSpawned: (proc) => {
-            promptPath = proc.spawnargs.at(-1);
-          },
           onEvent: (event) => {
             events.push(event);
           },
@@ -334,10 +325,6 @@ describe('process steering lifecycle boundary', () => {
       expect(events.filter((event) => event.type === 'call_error')).toHaveLength(1);
       expect(events.filter((event) => event.type === 'call_completed')).toHaveLength(0);
       expect(port.current()).toBeNull();
-      if (mode === 'completion') {
-        expect(promptPath).toBeDefined();
-        expect(existsSync(promptPath ?? '')).toBe(false);
-      }
     },
   );
 
@@ -390,7 +377,7 @@ function opencodeEnvelopeInvocation(envelope: string) {
 }
 
 describe('invokeProcessCli', () => {
-  it('transports multibyte prompts losslessly through stdin, argv, and private files', async () => {
+  it('transports a multibyte prompt losslessly through stdin', async () => {
     const prompt = `${'🙂漢字'.repeat(12_000)}\nFINAL-SENTINEL-Ω`;
     const stdinResult = await run(
       adapter({ kind: 'stdin' }),
@@ -401,32 +388,8 @@ describe('invokeProcessCli', () => {
       }),
       prompt,
     );
-    const fileResult = await run(
-      adapter({ kind: 'file', mode: 0o600 }),
-      invocation({
-        promptTransport: { kind: 'file', mode: 0o600 },
-        args: ['<PROMPT>'],
-        script: emitPromptScript(
-          "const fs=require('node:fs');const p=process.argv[1];if((fs.statSync(p).mode&0o777)!==0o600)process.exit(9);const v=fs.readFileSync(p,'utf8');emit(v)",
-        ),
-      }),
-      prompt,
-    );
-    const argvPrompt = `${'é'.repeat(40_000)}FINAL-SENTINEL`;
-    const argvResult = await run(
-      adapter({ kind: 'argv', placement: 'positional' }),
-      invocation({
-        promptTransport: { kind: 'argv', placement: 'positional' },
-        args: ['<PROMPT>'],
-        script: emitPromptScript('const v=process.argv[1];emit(v)'),
-      }),
-      argvPrompt,
-    );
-
     expect(Buffer.byteLength(prompt, 'utf8')).toBeGreaterThan(120_000);
     expect(stdinResult).toMatchObject({ status: 'completed', text: prompt });
-    expect(fileResult).toMatchObject({ status: 'completed', text: prompt });
-    expect(argvResult).toMatchObject({ status: 'completed', text: argvPrompt });
   });
 
   it('fails when a non-reading child closes before a large stdin prompt is delivered', async () => {
@@ -487,19 +450,8 @@ describe('invokeProcessCli', () => {
     expect(runnerOwnWords(plannerError)).toBe(line);
   });
 
-  it('rejects transport overflow, malformed placeholders, and configured argument conflicts before spawn', async () => {
+  it('rejects malformed placeholders and configured argument conflicts before spawn', async () => {
     const missingExecutable = missingExecutableIdentity();
-    const overflowPrompt = '🙂'.repeat(Math.floor(argvPromptMaxBytes() / 4) + 1);
-    const overflow = await run(
-      adapter({ kind: 'argv', placement: 'positional' }),
-      invocation({
-        executable: missingExecutable,
-        promptTransport: { kind: 'argv', placement: 'positional' },
-        args: ['<PROMPT>'],
-        script: '',
-      }),
-      overflowPrompt,
-    );
     const placeholder = await run(
       adapter({ kind: 'stdin' }),
       invocation({ executable: missingExecutable, args: ['prefix-<PROMPT>'], script: '' }),
@@ -509,45 +461,8 @@ describe('invokeProcessCli', () => {
       invocation({ executable: missingExecutable, script: '' }),
     );
 
-    expect(overflow.error?.code).toBe('argv-prompt-too-large');
-    expect(inputTooLargeFigures(overflow.error?.message ?? '')).toEqual({
-      unit: 'bytes',
-      size: Buffer.byteLength(overflowPrompt, 'utf8'),
-      limit: argvPromptMaxBytes(),
-    });
     expect(placeholder.error?.code).toBe('prompt-transport-error');
     expect(conflict.error?.code).toBe('argument-conflict');
-  });
-
-  it('refuses an option-looking prompt only where argv places it positionally', async () => {
-    const optionPrompt = '--sandbox danger-full-access';
-    const positional = await run(
-      adapter({ kind: 'argv', placement: 'positional' }),
-      invocation({
-        executable: missingExecutableIdentity(),
-        promptTransport: { kind: 'argv', placement: 'positional' },
-        args: ['<PROMPT>'],
-        script: '',
-      }),
-      optionPrompt,
-    );
-    const flagValue = await run(
-      adapter({ kind: 'argv', placement: 'flag-value' }),
-      invocation({
-        promptTransport: { kind: 'argv', placement: 'flag-value' },
-        // `--` keeps node from claiming the fixture's own flag, mirroring a CLI
-        // whose prompt fills the value slot of the flag before it.
-        args: ['--', '--message', '<PROMPT>'],
-        script: emitPromptScript('const v=process.argv[2];emit(v)'),
-      }),
-      optionPrompt,
-    );
-
-    expect(positional).toMatchObject({
-      status: 'failed',
-      error: { code: 'prompt-transport-error' },
-    });
-    expect(flagValue).toMatchObject({ status: 'completed', text: optionPrompt });
   });
 
   it('normalizes adapter validation throws and malformed results before spawning', async () => {
@@ -2478,7 +2393,6 @@ process.stdin.on('end', () => {
 `,
         );
         const baseArgs = selected.baseArgs({
-          prompt: '',
           model: undefined,
           projectDir: dir,
           configuredArgs: [],
@@ -2563,7 +2477,6 @@ process.stdin.on('end', () => {
           ],
         };
         const baseArgs = claudeCodeImplementerAdapter.baseArgs({
-          prompt: '',
           model: undefined,
           projectDir: dir,
           configuredArgs: [],
@@ -2809,7 +2722,6 @@ describe('OpenCode process steering', () => {
       const role = opts.role ?? 'implementer';
       const selected = role === 'implementer' ? opencodeImplementerAdapter : opencodePlannerAdapter;
       const input = {
-        prompt: '<PROMPT>',
         model: 'provider/model',
         variant: 'high',
         projectDir: dir,

@@ -83,7 +83,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         callbacks,
         implementer: defaultImplementer,
         createImplementer: createProfileImplementer,
-        allowRepoRunners: true,
         bus,
       }),
       initialState: state,
@@ -94,7 +93,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(defaultImplementer.implement).not.toHaveBeenCalled();
     expect(selectedImplementer.implement).toHaveBeenCalledTimes(1);
     expect(createProfileImplementer).toHaveBeenCalledWith(
-      expect.objectContaining({ publisher: expect.any(Object), allowRepoRunners: true }),
+      expect.objectContaining({ publisher: expect.any(Object) }),
     );
     expect(events.find((event) => event.type === 'task_started')).toMatchObject({
       type: 'task_started',

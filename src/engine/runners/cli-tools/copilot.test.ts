@@ -18,7 +18,6 @@ const PROJECT_DIR = process.cwd();
 
 function plannerArgs(configuredArgs: readonly string[]) {
   return copilotPlannerAdapter.buildArgs({
-    prompt: PROMPT,
     model: undefined,
     projectDir: PROJECT_DIR,
     configuredArgs,
@@ -29,7 +28,6 @@ function plannerArgs(configuredArgs: readonly string[]) {
 
 function implementerArgs() {
   return copilotImplementerAdapter.buildArgs({
-    prompt: PROMPT,
     model: undefined,
     projectDir: PROJECT_DIR,
     configuredArgs: [],
@@ -64,7 +62,6 @@ describe('Copilot role adapters', () => {
       [copilotImplementerAdapter, ['--allow-all']],
     ] as const) {
       const input = {
-        prompt: PROMPT,
         model: 'gpt-5.2',
         effort: 'high',
         projectDir: PROJECT_DIR,
@@ -137,7 +134,6 @@ describe('Copilot role adapters', () => {
 
   it('preserves planner JSON, model placement, and configured argument order', () => {
     const args = copilotPlannerAdapter.buildArgs({
-      prompt: PROMPT,
       model: 'gpt-5.2',
       projectDir: PROJECT_DIR,
       configuredArgs: ['--label', 'fixture'],
@@ -162,7 +158,6 @@ describe('Copilot role adapters', () => {
 
   it('preserves implementer --allow-all and model placement', () => {
     const args = copilotImplementerAdapter.buildArgs({
-      prompt: PROMPT,
       model: 'claude-sonnet-4-6',
       projectDir: PROJECT_DIR,
       configuredArgs: ['--label', 'fixture'],
@@ -194,7 +189,6 @@ describe('Copilot role adapters', () => {
 
   it('sends the reasoning effort the seat configured, beside the model, on both roles', () => {
     const planner = copilotPlannerAdapter.buildArgs({
-      prompt: PROMPT,
       model: 'gpt-5.2',
       projectDir: PROJECT_DIR,
       configuredArgs: [],
@@ -205,7 +199,6 @@ describe('Copilot role adapters', () => {
     expect(planner[planner.indexOf('--effort') + 1]).toBe('high');
 
     const implementer = copilotImplementerAdapter.buildArgs({
-      prompt: PROMPT,
       model: 'gpt-5.2',
       projectDir: PROJECT_DIR,
       configuredArgs: [],
@@ -224,7 +217,6 @@ describe('Copilot role adapters', () => {
     'refuses a configured %s that would outrank the seat',
     (flag) => {
       const base = copilotPlannerAdapter.buildArgs({
-        prompt: PROMPT,
         model: undefined,
         projectDir: PROJECT_DIR,
         configuredArgs: [],

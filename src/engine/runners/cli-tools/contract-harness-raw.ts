@@ -1,13 +1,6 @@
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
-import {
-  RawCliCandidateContract,
-  replaceProjectDirSentinel,
-  replacePromptSentinel,
-} from './candidate-contract.js';
+import { RawCliCandidateContract, replaceProjectDirSentinel } from './candidate-contract.js';
 import { CONFORMANCE_PROMPT } from '../../providers/candidate-contract.js';
 import {
   CLI_CONFORMANCE_EXIT_CODES,
@@ -32,12 +25,6 @@ import {
 
 const PROBE_TIMEOUT_MS = 5_000;
 
-type PreparedPrompt = Readonly<{
-  args: readonly string[];
-  stdin: string | undefined;
-  cleanup: () => Promise<void>;
-}>;
-
 async function writeRawRecord(recordPath: string, rawCapture: RawCapture): Promise<void> {
   await writeEvidenceFile(recordPath, JSON.stringify({ rawCapture }, null, 2));
 }
@@ -48,35 +35,6 @@ function expectedTerminalSeen(
 ): boolean {
   if (contract.expectedRawTerminal === 'process-exit') return result.exitCode === 0;
   return `${result.stdout}\n${result.stderr}`.includes(contract.expectedRawTerminal);
-}
-
-async function preparePrompt(
-  contract: RawCliCandidateContract,
-  prompt: string,
-  directory: string,
-  projectDir: string,
-): Promise<PreparedPrompt> {
-  const rawInvocation = replaceProjectDirSentinel(contract.rawInvocation, projectDir);
-  if (contract.promptTransport === 'argv') {
-    return {
-      args: replacePromptSentinel(rawInvocation, prompt, 'argv'),
-      stdin: undefined,
-      cleanup: async () => {},
-    };
-  }
-  if (contract.promptTransport === 'stdin') {
-    return { args: rawInvocation, stdin: prompt, cleanup: async () => {} };
-  }
-  const promptPath = join(directory, 'prompt.txt');
-  await writeFile(promptPath, prompt, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-  await chmod(promptPath, 0o600);
-  return {
-    args: [...rawInvocation, promptPath],
-    stdin: undefined,
-    cleanup: async () => {
-      await rm(promptPath, { force: true });
-    },
-  };
 }
 
 async function runRawInvocation(opts: {
@@ -90,28 +48,20 @@ async function runRawInvocation(opts: {
   readonly output: string;
   readonly errorText: string;
 }> {
-  const promptDir = await mkdtemp(join(tmpdir(), 'splitbrief-cli-prompt-'));
-  let prepared: PreparedPrompt | undefined;
-  try {
-    prepared = await preparePrompt(opts.contract, CONFORMANCE_PROMPT, promptDir, opts.projectDir);
-    const result = await opts.processRunner({
-      command: opts.executable.path,
-      args: prepared.args,
-      cwd: opts.projectDir,
-      env: opts.environment,
-      ...(prepared.stdin === undefined ? {} : { stdin: prepared.stdin }),
-      timeoutMs: INVOCATION_TIMEOUT_MS,
-      maxOutputBytes: MAX_PROCESS_OUTPUT_BYTES,
-    });
-    return {
-      result,
-      output: `${result.stdout}\n${result.stderr}`,
-      errorText: result.timedOut ? 'CLI invocation timed out' : '',
-    };
-  } finally {
-    await prepared?.cleanup();
-    await rm(promptDir, { recursive: true, force: true });
-  }
+  const result = await opts.processRunner({
+    command: opts.executable.path,
+    args: replaceProjectDirSentinel(opts.contract.rawInvocation, opts.projectDir),
+    cwd: opts.projectDir,
+    env: opts.environment,
+    stdin: CONFORMANCE_PROMPT,
+    timeoutMs: INVOCATION_TIMEOUT_MS,
+    maxOutputBytes: MAX_PROCESS_OUTPUT_BYTES,
+  });
+  return {
+    result,
+    output: `${result.stdout}\n${result.stderr}`,
+    errorText: result.timedOut ? 'CLI invocation timed out' : '',
+  };
 }
 
 async function runRawProbes(opts: {

@@ -107,15 +107,14 @@ export function diagnosePlannerCallFailure(
   if (code === 'missing-model') {
     return { failure: 'missing-model', message, tool, details, words: said, resetsAt: null };
   }
-  // A prompt refused as too large is refused again on a retry. SPLITBRIEF refuses an over-long
-  // command line itself, before the tool starts: no tool words to quote.
-  if (code === 'input-too-large' || code === 'argv-prompt-too-large') {
+  // A prompt refused as too large is refused again on a retry.
+  if (code === 'input-too-large') {
     const inputSize = inputTooLargeFigures(typed ?? '');
     return {
       failure: 'input-too-large',
       message: `${input.label}: the prompt is too large`,
       tool,
-      details: [inputTooLargeDetail(inputSize, tool, code === 'input-too-large' ? typed : null)],
+      details: [inputTooLargeDetail(inputSize, tool, typed)],
       words: said,
       resetsAt: null,
       inputSize,

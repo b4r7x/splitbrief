@@ -292,7 +292,7 @@ When the command exits non-zero, SPLITBRIEF reads its stderr and the last line i
 | Field | Type | Required | Description |
 |---|---|:---:|---|
 | `command` | non-empty string | yes | Executable path (relative to project or absolute). Availability is an existence/executability check (`fs.access` with `X_OK`, or a `$PATH` lookup for bare names) — SPLITBRIEF never runs your command with `--version`, so the script is not invoked until planning starts. |
-| `args` | string[] | no | Argv |
+| `args` | string[] | no | Argv. An argument that contains `{prompt}` fails the load: SPLITBRIEF sends the prompt on stdin. |
 | `outputFormat` | enum | no | Same values as `cli` |
 | `env` | string[] | no | Uppercase names of the environment variables the command needs, for example `['MY_AGENT_TOKEN']`. The command runs in its staged runner environment: a private `HOME` and `TMPDIR`, your `PATH` without the project's own directories, the locale and terminal keys, and these names. No other variable of your shell reaches it ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md#child-environment)). |
 | `capabilities` | partial object | no | **Planner and reviewer only.** Declares optional planner features such as `supportsConversationalPlanning`, `supportsSessionResume`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. `supportsSessionResume: true`, `supportsEffort: true` and `supportsImages: true` are rejected on `shell`/`agent` planners and reviewers — the command-based adapter has no session-handle contract and no channel to deliver an effort hint or image attachments to the subprocess (use a `cli`/`api` planner or reviewer instead). The value `false` is accepted for each of them. Ignored (and rejected) on `implementer` — implementer write behavior is set via profile `capabilities.writesFiles`. |
@@ -1224,7 +1224,6 @@ Config is validated on every load (`src/core/config/load/io.ts:loadConfig`).
 - Errors → `ConfigError` (`src/core/config/errors.ts`) → top-level catch in `src/cli/setup.ts` → exit code 1.
 - Non-fatal warnings on stderr (`warnStderr` in `src/lib/warn.ts`):
   - Config file permission warning on POSIX (`config-file-permissions`; see §1 **Permissions**).
-  - A `shell` or `agent` runner passing `{prompt}` through argv instead of stdin (`securityWarnings`, `src/core/config/load/validation/warnings.ts`).
 
 Unknown top-level keys are tolerated, apart from the removed root keys named in §16, which fail the load; unknown nested keys in strict blocks (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config, `PlannerCapabilities`) fail validation. The retired keys of §16 are not unknown: each loads with one notice. Each unrecognized key is reported at its own dotted path — `workflow.autoApproveSpec: Unknown config key …`, not just `workflow` — and every error found in one load is reported together, one line per path, so a config with several problems is not corrected one attempt at a time.
 

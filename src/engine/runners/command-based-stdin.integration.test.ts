@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { thrownSeatFailure } from '../implementers/pipeline/call-result.js';
-import { invokeCommandBasedRunner } from './command-based.js';
+import { invokeCommandRunner } from './command-based.js';
 
 // Far past the pipe buffer, so a child that never reads stdin breaks the pipe under the prompt.
 const LARGE_PROMPT = 'x'.repeat(256 * 1024);
 
 const failureOf = (script: string): Promise<unknown> =>
-  invokeCommandBasedRunner({
-    command: 'sh',
-    args: ['-c', script],
+  invokeCommandRunner({
+    source: {
+      kind: 'config',
+      runner: { command: 'sh', args: ['-c', script] },
+      env: process.env,
+      notFoundMessage: 'Shell implementer command not found: sh',
+    },
     prompt: LARGE_PROMPT,
-    projectDir: process.cwd(),
+    cwd: process.cwd(),
+    callContext: { callId: 'call-stdin', role: 'implementer', backendKind: 'shell' },
   }).then(
     () => {
       throw new Error('the runner call resolved');
@@ -18,7 +23,7 @@ const failureOf = (script: string): Promise<unknown> =>
     (err: unknown) => err,
   );
 
-describe('invokeCommandBasedRunner — a child that stops before it reads its prompt', () => {
+describe('invokeCommandRunner — a child that stops before it reads its prompt', () => {
   it('fails with its own words, so a usage limit reads as rate-limited', async () => {
     const err = await failureOf(
       'echo "Error: You have hit your usage limit. Your limit resets at 3pm." >&2; exit 1',

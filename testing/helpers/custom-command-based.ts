@@ -7,8 +7,9 @@ import {
   type ConfiguredCustomRunner,
 } from '../../src/engine/runners/custom-trust.js';
 import {
-  invokeCustomCommandBasedRunner,
-  type CustomCommandBasedOptions,
+  invokeCommandRunner,
+  type CommandRunnerOptions,
+  type CommandRunnerSource,
 } from '../../src/engine/runners/command-based.js';
 import type { RunnerCallEvent } from '../../src/engine/calls/types.js';
 import type { AdmittedCustomRunnerInvocation } from '../../src/engine/runners/custom-launchability.js';
@@ -80,14 +81,35 @@ export async function admittedCustomRunner(
 }
 
 export type CustomInvocationInput = Omit<
-  CustomCommandBasedOptions,
-  'onOutput' | 'onStderr' | 'onSessionId' | 'onCallEvent'
+  Extract<CommandRunnerSource, { kind: 'admitted' }>,
+  'kind'
+> &
+  Pick<CommandRunnerOptions, 'prompt' | 'cwd' | 'signal' | 'timeoutMs'>;
+
+type CustomInvocationListeners = Pick<
+  CommandRunnerOptions,
+  'onOutput' | 'onStderr' | 'onCallEvent'
 >;
+
+/** Runs an admitted custom command the way a configured custom seat does. */
+export function invokeCustomRunner(
+  { prompt, cwd, signal, timeoutMs, ...source }: CustomInvocationInput,
+  listeners: CustomInvocationListeners = {},
+) {
+  return invokeCommandRunner({
+    source: { kind: 'admitted', ...source },
+    prompt,
+    cwd,
+    callContext: { callId: 'call-custom', role: 'implementer', backendKind: 'shell' },
+    signal,
+    timeoutMs,
+    ...listeners,
+  });
+}
 
 export type CustomInvocationCallbacks = Readonly<{
   output: readonly string[];
   stderr: readonly string[];
-  session: readonly string[];
 }>;
 
 export type CustomInvocationObservation = Readonly<{
@@ -110,31 +132,26 @@ export function observableFailure(failure: unknown): unknown {
 
 export async function observeCustomInvocation(
   input: CustomInvocationInput,
-  onCallback?: ((kind: 'output' | 'stderr' | 'session', value: string) => void) | undefined,
+  onCallback?: ((kind: 'output' | 'stderr', value: string) => void) | undefined,
 ): Promise<CustomInvocationObservation> {
-  const callbacks: { output: string[]; stderr: string[]; session: string[] } = {
+  const callbacks: { output: string[]; stderr: string[] } = {
     output: [],
     stderr: [],
-    session: [],
   };
   const events: RunnerCallEvent[] = [];
   let result: unknown;
   let failure: unknown;
-  const recordCallback = (kind: 'output' | 'stderr' | 'session', value: string) => {
+  const recordCallback = (kind: 'output' | 'stderr', value: string) => {
     callbacks[kind].push(value);
     onCallback?.(kind, value);
   };
 
-  const invocation = {
-    ...input,
-    onOutput: (value: string) => recordCallback('output', value),
-    onStderr: (value: string) => recordCallback('stderr', value),
-    onSessionId: (value: string) => recordCallback('session', value),
-    onCallEvent: (event: RunnerCallEvent) => events.push(event),
-  } satisfies CustomCommandBasedOptions;
-
   try {
-    result = await invokeCustomCommandBasedRunner(invocation);
+    result = await invokeCustomRunner(input, {
+      onOutput: (value) => recordCallback('output', value),
+      onStderr: (value) => recordCallback('stderr', value),
+      onCallEvent: (event) => events.push(event),
+    });
   } catch (error) {
     failure = error;
   }

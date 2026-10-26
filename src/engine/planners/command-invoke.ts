@@ -1,11 +1,9 @@
 import type { Planner, PlannerCallbacks, PlannerCapabilities } from './types.js';
-import { createPlannerBase } from './base.js';
-import {
-  invokeCommandBasedRunner,
-  invokeCustomCommandBasedRunner,
-} from '../runners/command-based.js';
+import { createPlannerBase, type PlannerBaseConfig } from './base.js';
+import { invokeCommandRunner } from '../runners/command-based.js';
 import { createCommandExistsAvailability, DEFAULT_AVAILABILITY } from '../availability.js';
-import type { AgentPlannerConfig, ShellPlannerConfig } from '../../core/schemas/planner-config.js';
+import type { Config } from '../../core/schemas/config.js';
+import { assertPlannerKind } from '../config-assertions.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import {
@@ -26,7 +24,7 @@ import {
 import { error } from '../../utils/error.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 
-export function resolveCapabilities(
+function resolveCapabilities(
   override: { [K in keyof PlannerCapabilities]?: boolean | undefined } | undefined,
 ): PlannerCapabilities {
   return {
@@ -38,66 +36,36 @@ export function resolveCapabilities(
   };
 }
 
-export type LegacyCommandInvokeOptions = Readonly<{
-  runner: ShellPlannerConfig | AgentPlannerConfig;
-  notFoundMessage: string;
-}>;
-
-export type LegacyCommandInvokeInput = Readonly<{
-  prompt: string;
-  projectDir: string;
-  callContext: RunnerCallContext;
-  callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onCallEvent'>;
-  signal?: AbortSignal | undefined;
-}>;
-
-export function createLegacyCommandInvoke(
-  options: LegacyCommandInvokeOptions,
-): (input: LegacyCommandInvokeInput) => Promise<RunnerCallResult> {
-  const { runner } = options;
-  return async (input) => {
-    const result = await invokeCommandBasedRunner({
-      command: runner.command,
-      args: runner.args ?? [],
-      outputFormat: runner.outputFormat ?? 'text',
-      notFoundMessage: options.notFoundMessage,
+export function createCommandPlanner(config: Config, kind: 'shell' | 'agent'): Planner {
+  const runner = assertPlannerKind(config, kind);
+  const label = kind === 'shell' ? 'Shell planner' : 'Agent planner';
+  const notFoundMessage = `${label} command not found: ${runner.command}`;
+  const invoke: PlannerBaseConfig['invokePlan'] = async (input) =>
+    invokeCommandRunner({
+      source: {
+        kind: 'config',
+        runner,
+        env: await createRunnerSandboxEnv(input.projectDir, runner, 'planner'),
+        notFoundMessage,
+      },
       prompt: input.prompt,
-      projectDir: input.projectDir,
-      env: await createRunnerSandboxEnv(input.projectDir, runner, 'planner'),
+      cwd: input.projectDir,
+      callContext: input.callContext,
+      timeoutMs: runner.timeout,
+      signal: input.signal,
       onOutput: input.callbacks.onOutput,
       onCallEvent: input.callbacks.onCallEvent,
-      callContext: input.callContext,
-      signal: input.signal,
-      ...(runner.timeout !== undefined && { timeout: runner.timeout }),
-      ...(runner.idleWarnMs !== undefined && { idleWarnMs: runner.idleWarnMs }),
-      ...(runner.idleKillMs !== undefined && { idleKillMs: runner.idleKillMs }),
     });
-
-    return result.callResult;
-  };
-}
-
-export function createCommandBasedPlanner(
-  config: ShellPlannerConfig | AgentPlannerConfig,
-  label: string,
-  overrides?: {
-    capabilities?: PlannerCapabilities | undefined;
-    notFoundMessage?: string | undefined;
-  },
-): Planner {
-  const notFoundMessage =
-    overrides?.notFoundMessage ?? `${label} command not found: ${config.command}`;
-  const invoke = createLegacyCommandInvoke({ runner: config, notFoundMessage });
 
   return createPlannerBase({
     invokePlan: invoke,
     invokeOneShot: invoke,
-    backendKind: config.kind,
-    runnerName: config.command,
-    model: config.model,
-    axes: seatAxisWords(config),
-    capabilities: resolveCapabilities(overrides?.capabilities),
-    ...createCommandExistsAvailability(config.command),
+    backendKind: runner.kind,
+    runnerName: runner.command,
+    model: runner.model,
+    axes: seatAxisWords(runner),
+    capabilities: resolveCapabilities(runner.capabilities),
+    ...createCommandExistsAvailability(runner.command),
   });
 }
 
@@ -157,8 +125,6 @@ export function createConfiguredCustomPlanner(
     await runtime.cleanupStaleArtifactReviews();
 
     try {
-      const authorizationPathEnv = runtime.authorizationPathEnv ?? '';
-      const authorizationPathExt = runtime.authorizationPathExt ?? '';
       const invokeAdmittedRunner = ({
         cwd,
         childPrompt,
@@ -168,22 +134,25 @@ export function createConfiguredCustomPlanner(
         childPrompt: string;
         sourceEnv?: NodeJS.ProcessEnv | undefined;
       }>) =>
-        invokeCustomCommandBasedRunner({
-          admission,
+        invokeCommandRunner({
+          source: {
+            kind: 'admitted',
+            admission,
+            authorizationProjectDir: runtime.authorizationProjectDir,
+            authorizationPathEnv: runtime.authorizationPathEnv,
+            authorizationPathExt: runtime.authorizationPathExt,
+            sourceEnv: sourceEnv ?? runtime.sourceEnv,
+            ...(sourceEnv !== undefined && {
+              preserveEnvironmentKeys: [DECLARED_PLANNER_ARTIFACT_PATH_ENV],
+            }),
+          },
           prompt: childPrompt,
-          authorizationProjectDir: runtime.authorizationProjectDir,
-          authorizationPathEnv,
-          authorizationPathExt,
           cwd,
-          sourceEnv: sourceEnv ?? runtime.sourceEnv,
-          ...(sourceEnv === undefined
-            ? {}
-            : { preserveEnvironmentKeys: [DECLARED_PLANNER_ARTIFACT_PATH_ENV] }),
+          callContext,
+          timeoutMs,
+          signal,
           onOutput: callbacks.onOutput,
           onCallEvent: callbacks.onCallEvent,
-          callContext,
-          signal,
-          timeoutMs,
         });
 
       const staged = await runtime.createStage(projectDir, 'planner');

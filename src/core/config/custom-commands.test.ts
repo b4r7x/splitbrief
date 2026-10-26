@@ -177,7 +177,6 @@ describe('custom command catalog schema', () => {
   it('redacts credential-like literals and rejects shell interpolation rather than storing them', () => {
     const credential = 'sk-live-this-must-never-appear-in-an-error';
     for (const input of [
-      { ...safeDefinition, executable: '{prompt}' },
       { ...safeDefinition, executable: '$(which review)' },
       { ...safeDefinition, argv: [`--token=${credential}`] },
     ]) {
@@ -192,6 +191,22 @@ describe('custom command catalog schema', () => {
         }).success,
       ).toBe(false);
     }
+  });
+
+  it.each([
+    ['executable', { executable: '{prompt}' }, ['executable']],
+    ['argv', { argv: ['--prompt', '{prompt}'] }, ['argv', 1]],
+    ['label', { label: 'Review {prompt}' }, ['label']],
+  ] as const)('rejects {prompt} in the %s with the stdin message', (_field, change, path) => {
+    const result = CustomCommandDefinitionSchema.safeParse({ ...safeDefinition, ...change });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toContainEqual(
+      expect.objectContaining({
+        path,
+        message: '{prompt} is not supported; SPLITBRIEF sends the prompt on stdin',
+      }),
+    );
   });
 
   it('rejects direct and env-wrapped interpreter command strings without rejecting literal argv punctuation', () => {

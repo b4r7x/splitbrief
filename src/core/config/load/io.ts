@@ -49,25 +49,11 @@ export function formatConfigLoaderDiagnostic(diagnostic: ConfigLoaderDiagnostic)
   return `The file's group or other users can change ${CONFIG_RELATIVE_PATH}. SPLITBRIEF still uses it; run chmod 600 on the file to fix this.`;
 }
 
-export function dedupeConfigWarnings(warnings: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const unique: string[] = [];
-  for (const warning of warnings) {
-    if (seen.has(warning)) continue;
-    seen.add(warning);
-    unique.push(warning);
-  }
-  return unique;
-}
-
-function combineLoadWarnings(
-  loaderDiagnostics: readonly ConfigLoaderDiagnostic[],
-  validationWarnings: readonly string[],
+/** One line per distinct notice, in the order the load found them. */
+export function formatConfigLoaderDiagnostics(
+  diagnostics: readonly ConfigLoaderDiagnostic[],
 ): string[] {
-  return dedupeConfigWarnings([
-    ...loaderDiagnostics.map(formatConfigLoaderDiagnostic),
-    ...validationWarnings,
-  ]);
+  return [...new Set(diagnostics.map(formatConfigLoaderDiagnostic))];
 }
 
 export type ConfigDocumentTransactionResult =
@@ -115,7 +101,7 @@ function parseLoadedConfig(
   }
 
   const merged = mergeWithDefaults(camelRecord);
-  const { errors, warnings: validationWarnings, data } = validateConfig(merged);
+  const { errors, data } = validateConfig(merged);
   if (errors.length > 0) {
     const lines = [`Configuration errors in ${SPLITBRIEF_DIR}/${CONFIG_FILE}:`];
     for (const err of errors) lines.push(`  ${err.path}: ${err.message}`);
@@ -138,7 +124,7 @@ function parseLoadedConfig(
   return {
     config: data,
     loaderDiagnostics,
-    warnings: combineLoadWarnings(loaderDiagnostics, validationWarnings),
+    warnings: formatConfigLoaderDiagnostics(loaderDiagnostics),
   };
 }
 

@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { IMPLEMENTER_CLI_TOOL_IDS, PLANNER_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import { ImplementerConfigSchema, ImplementerProfileConfigSchema } from './implementer-config.js';
 import { PlannerConfigSchema } from './planner-config.js';
+import { ReviewerConfigSchema } from './reviewer-config.js';
 import {
   GenerationCommonFields,
   REMOVED_API_PROVIDER_IDS,
   createPlannerConfigSchema,
   createRunnerConfigSchema,
 } from './runner-fields.js';
+
+const PROMPT_NOT_SUPPORTED = '{prompt} is not supported; SPLITBRIEF sends the prompt on stdin';
 
 const LOCAL_API_SEAT_SCHEMAS = [
   createPlannerConfigSchema(GenerationCommonFields),
@@ -527,29 +531,29 @@ describe('createRunnerConfigSchema', () => {
 
       expect(result.success).toBe(false);
       expect(result.error?.issues[0]?.path).toEqual(['command']);
-      expect(result.error?.issues[0]?.message).toContain('must not contain {prompt}');
+      expect(result.error?.issues[0]?.message).toBe(PROMPT_NOT_SUPPORTED);
     }
   });
 
-  it('allows {prompt} in shell and agent args', () => {
-    const schema = createRunnerConfigSchema(GenerationCommonFields);
-
-    expect(
-      schema.safeParse({
-        kind: 'shell',
+  it.each([
+    ['planner', PlannerConfigSchema],
+    ['reviewer', ReviewerConfigSchema],
+    ['implementer', ImplementerConfigSchema],
+    ['implementer profile', ImplementerProfileConfigSchema],
+  ] as const)('rejects {prompt} in the args of a shell or agent %s', (_seat, schema) => {
+    for (const kind of ['shell', 'agent'] as const) {
+      const result = schema.safeParse({
+        kind,
         command: './run',
-        args: ['--prompt', '{prompt}'],
-        model: 'local-shell',
-      }).success,
-    ).toBe(true);
-    expect(
-      schema.safeParse({
-        kind: 'agent',
-        command: './agent',
-        args: ['--prompt={prompt}'],
-        model: 'local-agent',
-      }).success,
-    ).toBe(true);
+        args: ['--json', '--prompt={prompt}'],
+        model: 'local-command',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.issues).toHaveLength(1);
+      expect(result.error?.issues[0]?.path[0]).toBe('args');
+      expect(result.error?.issues[0]?.message).toBe(PROMPT_NOT_SUPPORTED);
+    }
   });
 
   it('rejects unknown keys so misspelled config does not silently pass', () => {

@@ -66,7 +66,6 @@ describe('Claude Code role adapters', () => {
 
   it('preserves Claude planner session/model/effort placement and implementer permissions', () => {
     const plannerArgs = claudeCodePlannerAdapter.buildArgs({
-      prompt: '<brief>',
       model: 'claude-sonnet-4-6',
       projectDir: '/project',
       configuredArgs: ['--label', 'fixture'],
@@ -106,7 +105,6 @@ describe('Claude Code role adapters', () => {
     ).toEqual({ valid: false, conflicts: ['--model'] });
 
     const implementerArgs = claudeCodeImplementerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: ['--label', 'fixture'],
@@ -142,7 +140,6 @@ describe('Claude Code role adapters', () => {
 
   it('places implementer --effort after the model pair and omits it when unset', () => {
     const withEffort = claudeCodeImplementerAdapter.buildArgs({
-      prompt: '<brief>',
       model: 'claude-sonnet-4-6',
       projectDir: '/project',
       configuredArgs: [],
@@ -164,7 +161,6 @@ describe('Claude Code role adapters', () => {
     ]);
 
     const unset = claudeCodeImplementerAdapter.buildArgs({
-      prompt: '<brief>',
       model: 'claude-sonnet-4-6',
       projectDir: '/project',
       configuredArgs: [],
@@ -187,7 +183,6 @@ describe('Claude Code role adapters', () => {
   it('adds --json-schema after --effort only when a schema is given, byte-identical otherwise', () => {
     const schema = { json: { type: 'object' } };
     const withSchema = claudeCodePlannerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -212,7 +207,6 @@ describe('Claude Code role adapters', () => {
     ]);
 
     const withoutSchema = claudeCodePlannerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -236,7 +230,6 @@ describe('Claude Code role adapters', () => {
 
   it('passes the plan schema to --json-schema without a $schema draft ref, which claude rejects', () => {
     const args = claudeCodePlannerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -251,7 +244,6 @@ describe('Claude Code role adapters', () => {
 
   it('carries the implementer schema directly before the acceptEdits permission', () => {
     const args = claudeCodeImplementerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -268,7 +260,6 @@ describe('Claude Code role adapters', () => {
 
   it('refuses a configured --json-schema that would override the adapter schema', () => {
     const base = claudeCodePlannerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -304,7 +295,6 @@ describe('Claude Code role adapters', () => {
 
   it('pins the exact read-only plan init: plan permission, no session flags, no tools flags', () => {
     const init = claudeCodePlannerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -329,7 +319,6 @@ describe('Claude Code role adapters', () => {
 
   it('rejects hostile configuration that could widen the planner plan vector', () => {
     const init = claudeCodePlannerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -364,7 +353,6 @@ describe('Claude Code role adapters', () => {
 
   it('keeps the implementer contained to acceptEdits: bypass and skip permission modes fail', () => {
     const implementerArgs = claudeCodeImplementerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: ['--label', 'fixture'],
@@ -386,7 +374,6 @@ describe('Claude Code role adapters', () => {
 
   it('runs the implementer in the strict native sandbox and records it in the raw contract', () => {
     const args = claudeCodeImplementerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -405,7 +392,6 @@ describe('Claude Code role adapters', () => {
       JSON.parse(
         claudeCodeImplementerAdapter
           .buildArgs({
-            prompt: '<brief>',
             model: undefined,
             projectDir: '/project',
             configuredArgs: [],
@@ -432,7 +418,7 @@ describe('Claude Code role adapters', () => {
       const settingsFor = (projectDir: string) =>
         JSON.parse(
           claudeCodeImplementerAdapter
-            .buildArgs({ prompt: '<brief>', model: undefined, projectDir, configuredArgs: [] })
+            .buildArgs({ model: undefined, projectDir, configuredArgs: [] })
             .at(-1) ?? '',
         );
 
@@ -450,7 +436,6 @@ describe('Claude Code role adapters', () => {
     const settingsFor = (skillRoots?: readonly string[]) =>
       claudeCodeImplementerAdapter
         .buildArgs({
-          prompt: '<brief>',
           model: undefined,
           projectDir: '/project',
           configuredArgs: [],
@@ -484,7 +469,6 @@ describe('Claude Code role adapters', () => {
     const settings = JSON.parse(
       claudeCodeImplementerAdapter
         .buildArgs({
-          prompt: '<brief>',
           model: undefined,
           projectDir: '/project',
           configuredArgs: [],
@@ -500,7 +484,6 @@ describe('Claude Code role adapters', () => {
   it('opens attached global skills to the planner and reviewer reads, never to a write', () => {
     const auth = '/home/me/.claude/skills/auth';
     const args = claudeCodePlannerAdapter.buildArgs({
-      prompt: '<brief>',
       model: 'sonnet',
       projectDir: '/project',
       configuredArgs: [],
@@ -520,7 +503,6 @@ describe('Claude Code role adapters', () => {
 
   it('gives the planner and reviewer vectors no sandbox settings', () => {
     const args = claudeCodePlannerAdapter.buildArgs({
-      prompt: '<brief>',
       model: 'sonnet',
       projectDir: '/project',
       configuredArgs: [],
@@ -533,7 +515,6 @@ describe('Claude Code role adapters', () => {
 
   it('rejects configuration that would replace or widen the implementer sandbox', () => {
     const base = claudeCodeImplementerAdapter.buildArgs({
-      prompt: '<brief>',
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -904,7 +885,6 @@ describe('Claude steering transport', () => {
       const line = (text: string) =>
         JSON.stringify({ type: 'user', message: { role: 'user', content: content(text) } }) + '\n';
       const baseArgs = claudeCodeImplementerAdapter.baseArgs({
-        prompt: '',
         model: undefined,
         projectDir: dir,
         configuredArgs: [],
@@ -1000,7 +980,6 @@ describe('Claude steering transport', () => {
     'protects stream-json image input from configured overrides for the $role seat',
     (adapter) => {
       const baseArgs = adapter.baseArgs({
-        prompt: '',
         model: undefined,
         projectDir: '/project',
         configuredArgs: [],

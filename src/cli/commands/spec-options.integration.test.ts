@@ -50,11 +50,6 @@ afterEach(() => {
   consoleSpy.mockRestore();
 });
 
-function writeConfig(config: Config): void {
-  mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
-  writeFileSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE), JSON.stringify(config, null, 2));
-}
-
 function parseSpec(args: string[]): Promise<unknown> {
   const program = new Command();
   program.exitOverride();
@@ -108,31 +103,5 @@ describe('spec options and config notices', () => {
     expect(
       stderrChunks.filter((chunk) => chunk.includes('workflow.mode was retired')),
     ).toHaveLength(1);
-  });
-
-  it('prints config warnings unchanged', async () => {
-    writeConfig(
-      makeConfig({
-        implementer: {
-          kind: 'shell',
-          command: 'my-implementer',
-          args: ['--task', '{prompt}'],
-          model: 'custom-model',
-        },
-      }),
-    );
-    const stderrChunks: string[] = [];
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-      stderrChunks.push(String(chunk));
-      return true;
-    });
-    createPlannerMock.mockResolvedValue(makePlanner());
-    try {
-      await parseSpec(['warn me']);
-    } finally {
-      stderrSpy.mockRestore();
-    }
-
-    expect(stderrChunks.join('')).toContain('implementer.args contains {prompt}');
   });
 });

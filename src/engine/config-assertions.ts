@@ -14,8 +14,10 @@ import { configError } from '../core/config/errors.js';
 
 export function assertPlannerKind(config: Config, kind: 'api'): ApiPlannerConfig;
 export function assertPlannerKind(config: Config, kind: 'cli'): CliPlannerConfig;
-export function assertPlannerKind(config: Config, kind: 'shell'): ShellPlannerConfig;
-export function assertPlannerKind(config: Config, kind: 'agent'): AgentPlannerConfig;
+export function assertPlannerKind(
+  config: Config,
+  kind: 'shell' | 'agent',
+): ShellPlannerConfig | AgentPlannerConfig;
 export function assertPlannerKind(
   config: Config,
   kind: Config['planner']['kind'],
@@ -25,8 +27,10 @@ export function assertPlannerKind(
 }
 
 export function assertImplementerKind(config: Config, kind: 'api'): ApiImplementerConfig;
-export function assertImplementerKind(config: Config, kind: 'shell'): ShellImplementerConfig;
-export function assertImplementerKind(config: Config, kind: 'agent'): AgentImplementerConfig;
+export function assertImplementerKind(
+  config: Config,
+  kind: 'shell' | 'agent',
+): ShellImplementerConfig | AgentImplementerConfig;
 export function assertImplementerKind(
   config: Config,
   kind: Config['implementer']['kind'],

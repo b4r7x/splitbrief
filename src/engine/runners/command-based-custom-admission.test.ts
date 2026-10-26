@@ -1,19 +1,20 @@
 import { chmodSync, existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { invokeCustomCommandBasedRunner } from './command-based.js';
+import { invokeCommandRunner } from './command-based.js';
 import { customRunnerSecurityPosture } from './custom-trust.js';
 import { admitCustomRunner } from './custom-launchability.js';
 import {
   admittedCustomRunner,
   customRunner,
   executableReceipt,
+  invokeCustomRunner,
 } from '#testing/helpers/custom-command-based.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
-describe('invokeCustomCommandBasedRunner admission', () => {
+describe('custom command runner admission', () => {
   it('uses the exact receipt path with literal argv, stdin-only prompt, and an isolated environment', async () => {
     await withTempDir('splitbrief custom helper path', async (projectDir) => {
       const helperPath = join(projectDir, 'custom helper with spaces.js');
@@ -38,7 +39,7 @@ describe('invokeCustomCommandBasedRunner admission', () => {
       );
       const literalArg = 'literal argument; $(not-evaluated) & [brackets]';
       const prompt = 'stdin-only prompt; $(also-not-evaluated)';
-      const result = await invokeCustomCommandBasedRunner({
+      const result = await invokeCustomRunner({
         admission: await admittedCustomRunner(
           projectDir,
           customRunner({
@@ -86,21 +87,23 @@ describe('invokeCustomCommandBasedRunner admission', () => {
           `require('node:fs').writeFileSync(${JSON.stringify(competingEffect)}, 'competing')`,
         ],
       });
-      const inputWithCompetingFields = {
+      const sourceWithCompetingFields = {
+        kind: 'admitted' as const,
         admission: await admittedCustomRunner(projectDir, admittedRunner),
         runner: competingRunner,
         executable: executableReceipt(),
-        prompt: '',
         authorizationProjectDir: projectDir,
-        cwd: projectDir,
         sourceEnv: {},
       };
 
-      await expect(invokeCustomCommandBasedRunner(inputWithCompetingFields)).resolves.toMatchObject(
-        {
-          status: 'completed',
-        },
-      );
+      await expect(
+        invokeCommandRunner({
+          source: sourceWithCompetingFields,
+          prompt: '',
+          cwd: projectDir,
+          callContext: { callId: 'call-custom', role: 'implementer', backendKind: 'shell' },
+        }),
+      ).resolves.toMatchObject({ status: 'completed' });
       expect(existsSync(admittedEffect)).toBe(true);
       expect(existsSync(competingEffect)).toBe(false);
     });
@@ -111,7 +114,7 @@ describe('invokeCustomCommandBasedRunner admission', () => {
       'splitbrief custom authorization project',
       async (authorizationProjectDir) => {
         await withTempDir('splitbrief custom child cwd', async (cwd) => {
-          const result = await invokeCustomCommandBasedRunner({
+          const result = await invokeCustomRunner({
             admission: await admittedCustomRunner(
               authorizationProjectDir,
               customRunner({ argv: ['-e', 'process.stdout.write(process.cwd())'] }),
@@ -145,7 +148,7 @@ describe('invokeCustomCommandBasedRunner admission', () => {
         const malformedAdmission = JSON.parse('{"kind":"custom-runner-invocation"}');
 
         await expect(
-          invokeCustomCommandBasedRunner({
+          invokeCustomRunner({
             admission,
             prompt: '',
             authorizationProjectDir: otherProjectDir,
@@ -154,7 +157,7 @@ describe('invokeCustomCommandBasedRunner admission', () => {
           }),
         ).rejects.toMatchObject({ kind: 'custom-runner-admission-scope-mismatch' });
         await expect(
-          invokeCustomCommandBasedRunner({
+          invokeCustomRunner({
             admission: malformedAdmission,
             prompt: '',
             authorizationProjectDir,
@@ -204,7 +207,7 @@ describe('invokeCustomCommandBasedRunner admission', () => {
       if (admitted.kind !== 'admitted') throw new Error('Custom runner was not admitted');
 
       await expect(
-        invokeCustomCommandBasedRunner({
+        invokeCustomRunner({
           admission: admitted.invocation,
           prompt: '',
           authorizationProjectDir,
@@ -248,7 +251,7 @@ describe('invokeCustomCommandBasedRunner admission', () => {
         try {
           process.env.PATH = binDir;
           await expect(
-            invokeCustomCommandBasedRunner({
+            invokeCustomRunner({
               admission: admitted.invocation,
               prompt: '',
               authorizationProjectDir,
@@ -286,7 +289,7 @@ describe('invokeCustomCommandBasedRunner admission', () => {
       chmodSync(executablePath, 0o755);
 
       await expect(
-        invokeCustomCommandBasedRunner({
+        invokeCustomRunner({
           admission,
           prompt: '',
           authorizationProjectDir: projectDir,

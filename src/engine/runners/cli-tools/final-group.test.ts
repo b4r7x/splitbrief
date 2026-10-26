@@ -90,11 +90,7 @@ async function call(
         path,
         fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
       },
-      args: [
-        '-e',
-        `process.stdout.write(${JSON.stringify(output)})`,
-        ...(selected.adapter.promptTransport.kind === 'argv' ? ['<PROMPT>'] : []),
-      ],
+      args: ['-e', `process.stdout.write(${JSON.stringify(output)})`],
       promptTransport: selected.adapter.promptTransport,
       environment: {},
       cwd: tmpdir(),

@@ -6,7 +6,6 @@ describe('Codex review image argv', () => {
     'emits one --image pair for each delivered path: %j',
     (imagePaths) => {
       const args = codexPlannerAdapter.buildArgs({
-        prompt: 'Review the dashboard.',
         sessionId: null,
         oneShot: true,
         projectDir: '/project',

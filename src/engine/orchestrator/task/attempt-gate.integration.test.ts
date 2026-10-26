@@ -18,9 +18,8 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { Implementer, ImplementerOptions } from '../../implementers/types.js';
-import { createAgentImplementer } from '../../implementers/agent.js';
+import { createCommandImplementer } from '../../implementers/command-invoke.js';
 import { createApiImplementer } from '../../implementers/api.js';
-import { createShellImplementer } from '../../implementers/shell.js';
 import {
   getChangedFilesSinceSnapshot,
   getChangedFilesSnapshot,
@@ -116,7 +115,7 @@ const TRANSPORTS: Transport[] = [
           ],
         },
       });
-      return { config, implementer: createAgentImplementer(config) };
+      return { config, implementer: createCommandImplementer(config, 'agent') };
     },
   },
   {
@@ -161,7 +160,7 @@ const TRANSPORTS: Transport[] = [
           outputFormat: 'text',
         },
       });
-      return { config, implementer: createShellImplementer(config) };
+      return { config, implementer: createCommandImplementer(config, 'shell') };
     },
   },
 ];

@@ -3,11 +3,15 @@ import { canonicalJSON } from '../../utils/canonical-json.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { storesInterpreterCommandString } from '../trust/interpreter-command-string.js';
 import { OutputFormatSchema, type OutputFormat, type RunnerKind } from '../schemas/enums.js';
-import { EnvironmentReferenceNameSchema, RUNNER_IDLE_WARN_MS } from '../schemas/runner-fields.js';
+import {
+  EnvironmentReferenceNameSchema,
+  PROMPT_PLACEHOLDER_NOT_SUPPORTED,
+  RUNNER_IDLE_WARN_MS,
+  hasPromptPlaceholder,
+} from '../schemas/runner-fields.js';
 import type { ImplementerConfig, ImplementerProfileConfig } from '../schemas/implementer-config.js';
 import type { PlannerConfig } from '../schemas/planner-config.js';
 
-const PROMPT_PLACEHOLDER = '{prompt}';
 const MAX_LITERAL_LENGTH = 4_096;
 const MAX_ARGV_LENGTH = 128;
 const MAX_LABEL_LENGTH = 120;
@@ -98,12 +102,11 @@ export const CustomCommandDefinitionSchema = z
           message: 'Use a declared environment reference instead of a credential-like literal',
         });
       }
-      if (value.includes(PROMPT_PLACEHOLDER)) {
+      if (hasPromptPlaceholder(value)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path,
-          message:
-            'Pass prompt data through stdin; use an environment reference only for credentials',
+          message: PROMPT_PLACEHOLDER_NOT_SUPPORTED,
         });
       }
     }

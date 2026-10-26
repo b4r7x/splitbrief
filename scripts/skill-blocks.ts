@@ -26,7 +26,6 @@ import { TaskSchema } from '../src/core/schemas/task.js';
 import { STACKS } from '../src/core/validation/stacks/registry.js';
 import type { Stack, TestNarrowing } from '../src/core/validation/stacks/types.js';
 import { consultAttemptError } from '../src/engine/orchestrator/escalation/consult-guidance.js';
-import { CLI_PROMPT_SENTINEL } from '../src/engine/runners/cli-tools/candidate-contract.js';
 import type {
   CliImplementerAdapter,
   CliPlannerAdapter,
@@ -110,8 +109,7 @@ function recipeLine(
   adapter: CliPlannerAdapter | CliImplementerAdapter,
   args: readonly string[],
 ): string {
-  const stdin = adapter.promptTransport.kind === 'stdin' ? ' < $P' : '';
-  const argv = `${adapter.descriptor.command} ${args.map(substituteArg).join(' ')}${stdin}`;
+  const argv = `${adapter.descriptor.command} ${args.map(substituteArg).join(' ')} < $P`;
   return `nohup sh -c '${argv} > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`;
 }
 
@@ -145,7 +143,7 @@ function toolRecipe(toolId: string): string | null {
   if (implementer === undefined || planner === undefined) return null;
   const seat = effortInput(implementer.descriptor.effortChannel);
   const bare = { effort: undefined, variant: undefined };
-  const implementerInput = { prompt: CLI_PROMPT_SENTINEL, projectDir: '$D', configuredArgs: [] };
+  const implementerInput = { projectDir: '$D', configuredArgs: [] };
   // A skill's review spawn is detached and never resumed.
   const plannerInput = {
     ...implementerInput,

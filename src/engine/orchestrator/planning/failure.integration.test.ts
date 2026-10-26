@@ -22,7 +22,7 @@ import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-canc
 import { error } from '../../../utils/error.js';
 import { runnerCallInterruptedStatus } from '../../calls/status.js';
 import { createPlannerBase, type PlannerBaseConfig } from '../../planners/base.js';
-import { createShellPlanner } from '../../planners/shell.js';
+import { createCommandPlanner } from '../../planners/command-invoke.js';
 import type { Planner } from '../../planners/types.js';
 import { streamCompletion } from '../../providers/openai-stream/completion.js';
 import { interruptedError } from '../../planners/claude-invoke.js';
@@ -547,8 +547,9 @@ function scriptedPlanner(
 
 // A real shell planner: `sleep` holds the call open until the stop kills it.
 function shellPlanner(inFlight: () => void): Planner {
-  const shell = createShellPlanner(
+  const shell = createCommandPlanner(
     makeConfig({ planner: { kind: 'shell', command: 'bash', args: ['-c', 'sleep 30'] } }),
+    'shell',
   );
   return {
     ...shell,

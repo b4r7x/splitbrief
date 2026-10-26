@@ -44,7 +44,6 @@ function plannerArgs(
   } = {},
 ) {
   return antigravityPlannerAdapter.buildArgs({
-    prompt: PROMPT,
     model: options.model,
     projectDir: '/project',
     configuredArgs: options.configuredArgs ?? [],
@@ -63,7 +62,6 @@ function implementerArgs(
   } = {},
 ) {
   return antigravityImplementerAdapter.buildArgs({
-    prompt: PROMPT,
     model: options.model,
     projectDir: '/staged',
     configuredArgs: options.configuredArgs ?? [],

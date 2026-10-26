@@ -9,7 +9,6 @@ import {
   type CliProcessRunner,
 } from './contract-harness.js';
 import { runRawCliConformance } from './contract-harness-raw.js';
-import { replacePromptSentinel } from './candidate-contract.js';
 import {
   CandidateEvidence,
   CONFORMANCE_PROMPT,
@@ -40,8 +39,8 @@ const baseContract = {
   role: 'planner' as const,
   versionArgs: ['--version'],
   auth: { kind: 'none', env: [] as const },
-  rawInvocation: ['--prompt', '<PROMPT>'],
-  promptTransport: 'argv' as const,
+  rawInvocation: ['--print'],
+  promptTransport: 'stdin' as const,
   expectedRawTerminal: 'process-exit',
   asOf: '2026-07-31',
 };
@@ -57,7 +56,7 @@ function rawOptions(contract: unknown, processRunner: CliProcessRunner, recordPa
 }
 
 describe('CLI raw conformance lane', () => {
-  it('captures raw argv evidence before parser or adapter code exists', async () => {
+  it('captures raw evidence before parser or adapter code exists', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
     try {
       const recordPath = join(directory, 'raw.json');
@@ -74,8 +73,7 @@ describe('CLI raw conformance lane', () => {
       );
       expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
       expect(calls).toHaveLength(2);
-      expect(calls.at(-1)?.args).toEqual(['--prompt', expect.any(String)]);
-      expect(calls.at(-1)?.args.at(-1)).not.toBe('<PROMPT>');
+      expect(calls.at(-1)).toEqual({ args: ['--print'], stdin: CONFORMANCE_PROMPT });
       const evidence = JSON.parse(await readFile(recordPath, 'utf8')) as Record<string, unknown>;
       expect(Object.keys(evidence)).toEqual(['rawCapture']);
       expect(evidence).not.toHaveProperty('verdict');
@@ -132,7 +130,7 @@ describe('CLI raw conformance lane', () => {
         rawOptions(
           {
             ...baseContract,
-            rawInvocation: ['--add-dir', '<PROJECT_DIR>', '--prompt', '<PROMPT>'],
+            rawInvocation: ['--add-dir', '<PROJECT_DIR>', '--print'],
           },
           async (options) => {
             calls.push({ args: options.args, cwd: options.cwd });
@@ -143,12 +141,7 @@ describe('CLI raw conformance lane', () => {
       );
       expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
       const invocation = calls.at(-1);
-      expect(invocation?.args).toEqual([
-        '--add-dir',
-        invocation?.cwd,
-        '--prompt',
-        CONFORMANCE_PROMPT,
-      ]);
+      expect(invocation?.args).toEqual(['--add-dir', invocation?.cwd, '--print']);
       expect(isAbsolute(invocation?.args[1] ?? '')).toBe(true);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -164,11 +157,11 @@ describe('CLI raw conformance lane', () => {
         return processResult();
       };
       const invalid = [
-        ['--prompt'],
-        ['--prompt', '<PROMPT>', '<PROMPT>'],
+        ['--prompt', '<PROMPT>'],
         ['--prompt', 'x<PROMPT>'],
         ['--prompt', '<OTHER>'],
-        ['--add-dir=<PROJECT_DIR>', '--prompt', '<PROMPT>'],
+        ['--prompt', '{prompt}'],
+        ['--add-dir=<PROJECT_DIR>', '--print'],
       ];
       for (const rawInvocation of invalid) {
         const outcome = await runRawCliConformance(
@@ -176,30 +169,6 @@ describe('CLI raw conformance lane', () => {
             { ...baseContract, rawInvocation },
             runner,
             join(directory, `${invalid.indexOf(rawInvocation)}.json`),
-          ),
-        );
-        expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE);
-      }
-      expect(spawned).toBe(false);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it('rejects stdin and file contracts containing any sentinel or angle placeholder', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
-    try {
-      let spawned = false;
-      const runner = async () => {
-        spawned = true;
-        return processResult();
-      };
-      for (const promptTransport of ['stdin', 'file'] as const) {
-        const outcome = await runRawCliConformance(
-          rawOptions(
-            { ...baseContract, promptTransport, rawInvocation: ['--prompt', '<PROMPT>'] },
-            runner,
-            join(directory, `${promptTransport}.json`),
           ),
         );
         expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE);
@@ -235,47 +204,21 @@ describe('CLI raw conformance lane', () => {
     }
   });
 
-  it('delivers the final-line prompt through argv, stdin, and mode-0600 file transport', async () => {
+  it('delivers the prompt on stdin and keeps it out of the arguments', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
-    const expectedPrompt = CONFORMANCE_PROMPT;
-    const multibytePrompt = 'Zażółć gęślą jaźń — 日本語 🧪\nfinál';
     try {
-      const replaced = replacePromptSentinel(['--prompt', '<PROMPT>'], multibytePrompt, 'argv');
-      expect(replaced).toEqual(['--prompt', multibytePrompt]);
-      expect(Buffer.from(replaced[1] ?? '')).toEqual(Buffer.from(multibytePrompt));
-
-      for (const promptTransport of ['argv', 'stdin', 'file'] as const) {
-        const calls: Array<{ args: readonly string[]; stdin: string | undefined }> = [];
-        const runner = async (options: Parameters<CliProcessRunner>[0]) => {
-          calls.push({ args: options.args, stdin: options.stdin });
-          if (options.args[0] === '--version') return processResult('fixture 1.0.0');
-          if (promptTransport === 'argv') {
-            expect(options.args.at(-1)).toBe(expectedPrompt);
-            expect(options.args.at(-1)).not.toBe('<PROMPT>');
-            expect(Buffer.from(options.args.at(-1) ?? '')).toEqual(Buffer.from(expectedPrompt));
-          } else if (promptTransport === 'stdin') {
-            expect(options.stdin).toBe(expectedPrompt);
-            expect(options.args).not.toContain('<PROMPT>');
-          } else {
-            expect(options.stdin).toBeUndefined();
-            const promptPath = options.args.at(-1);
-            expect(promptPath).toBeDefined();
-            expect(promptPath).not.toBe('<PROMPT>');
-            expect(await readFile(promptPath ?? '', 'utf8')).toBe(expectedPrompt);
-            expect((await stat(promptPath ?? '')).mode & 0o777).toBe(0o600);
-          }
-          return processResult('fixture terminal');
-        };
-        const contract =
-          promptTransport === 'argv'
-            ? baseContract
-            : { ...baseContract, promptTransport, rawInvocation: ['--mode', 'final'] };
-        const outcome = await runRawCliConformance(
-          rawOptions(contract, runner, join(directory, `${promptTransport}.json`)),
-        );
-        expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
-        expect(calls).toHaveLength(2);
-      }
+      const calls: Array<{ args: readonly string[]; stdin: string | undefined }> = [];
+      const runner = async (options: Parameters<CliProcessRunner>[0]) => {
+        calls.push({ args: options.args, stdin: options.stdin });
+        if (options.args[0] === '--version') return processResult('fixture 1.0.0');
+        return processResult('fixture terminal');
+      };
+      const outcome = await runRawCliConformance(
+        rawOptions(baseContract, runner, join(directory, 'stdin.json')),
+      );
+      expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
+      expect(calls.at(-1)?.stdin).toBe(CONFORMANCE_PROMPT);
+      expect(calls.at(-1)?.args).not.toContain(CONFORMANCE_PROMPT);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -326,6 +269,36 @@ describe('CLI raw conformance lane', () => {
       expect(invocation).toBe(true);
       expect(timedOut.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);
       expect(timedOut.verdict).toBe('OMIT');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a raw contract that sends the prompt in argv or a file, before any spawn', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
+    try {
+      let spawned = false;
+      const runner = async () => {
+        spawned = true;
+        return processResult();
+      };
+      const contracts = [
+        {
+          ...baseContract,
+          promptTransport: 'argv' as const,
+          rawInvocation: ['--prompt', '<PROMPT>'],
+        },
+        { ...baseContract, promptTransport: 'file' as const, rawInvocation: ['--prompt-file'] },
+      ];
+      for (const contract of contracts) {
+        const outcome = await runRawCliConformance(
+          rawOptions(contract, runner, join(directory, `${contract.promptTransport}.json`)),
+        );
+        expect
+          .soft(outcome.exitCode, contract.promptTransport)
+          .toBe(CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE);
+      }
+      expect(spawned).toBe(false);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -85,7 +85,6 @@ export interface UndeclaredWritesPolicy {
 
 export interface ImplementerFactoryOptions {
   publisher?: ImplementerPublisher | undefined;
-  allowRepoRunners?: boolean | undefined;
   /** Canonical CLI identity admitted by the start-readiness gate. */
   trustedCli?: CliStartGate | undefined;
   customRuntime?: CustomRunnerRuntimePort | undefined;

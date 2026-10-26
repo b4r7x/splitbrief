@@ -5,7 +5,7 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallResult } from '../calls/types.js';
-import { createAgentPlanner } from '../planners/agent.js';
+import { createCommandPlanner } from '../planners/command-invoke.js';
 import { createPlannerBase } from '../planners/base.js';
 import { ONE_SHOT_API_CAPS } from '../planners/types.js';
 import { toOpenAIRequest } from '../providers/openai-stream/request.js';
@@ -173,7 +173,7 @@ describe('requestTyped against the cli, api and agent seat kinds', () => {
     const agentDir = createTempDir('typed-output-agent');
     try {
       createTestGitRepo(agentDir);
-      const planner = createAgentPlanner(
+      const planner = createCommandPlanner(
         makeConfig({
           planner: {
             kind: 'agent',
@@ -184,6 +184,7 @@ describe('requestTyped against the cli, api and agent seat kinds', () => {
             ],
           },
         }),
+        'agent',
       );
 
       const result = await requestTyped({

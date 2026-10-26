@@ -35,14 +35,10 @@ function lazy<T>(load: () => Promise<T>): () => Promise<T> {
 const loadClaudeCodePlanner = lazy(() => import('../planners/claude-code.js'));
 const loadCliPlanner = lazy(() => import('../planners/cli.js'));
 const loadApiPlanner = lazy(() => import('../planners/api.js'));
-const loadShellPlanner = lazy(() => import('../planners/shell.js'));
-const loadAgentPlanner = lazy(() => import('../planners/agent.js'));
-const loadConfiguredCustomPlanner = lazy(() => import('../planners/command-invoke.js'));
+const loadCommandPlanner = lazy(() => import('../planners/command-invoke.js'));
 const loadCliImplementer = lazy(() => import('../implementers/cli.js'));
 const loadApiImplementer = lazy(() => import('../implementers/api.js'));
-const loadShellImplementer = lazy(() => import('../implementers/shell.js'));
-const loadAgentImplementer = lazy(() => import('../implementers/agent.js'));
-const loadConfiguredCustomImplementer = lazy(() => import('../implementers/command-invoke.js'));
+const loadCommandImplementer = lazy(() => import('../implementers/command-invoke.js'));
 
 async function loadPlanner(
   config: Config,
@@ -75,13 +71,10 @@ async function loadPlanner(
       const mod = await loadApiPlanner();
       return mod.createApiPlanner(config, seat);
     }
-    case 'shell': {
-      const mod = await loadShellPlanner();
-      return mod.createShellPlanner(config);
-    }
+    case 'shell':
     case 'agent': {
-      const mod = await loadAgentPlanner();
-      return mod.createAgentPlanner(config);
+      const mod = await loadCommandPlanner();
+      return mod.createCommandPlanner(config, kind);
     }
     default:
       return assertNever(kind);
@@ -103,7 +96,7 @@ export async function createPlanner(
       customRuntime: options.customRuntime,
       role: 'planner',
     });
-    const mod = await loadConfiguredCustomPlanner();
+    const mod = await loadCommandPlanner();
     planner = mod.createConfiguredCustomPlanner(
       configured,
       runtime,
@@ -146,7 +139,7 @@ export async function createReviewer(
       customRuntime: options.customRuntime,
       role: 'reviewer',
     });
-    const mod = await loadConfiguredCustomPlanner();
+    const mod = await loadCommandPlanner();
     reviewer = mod.createConfiguredCustomPlanner(
       configured,
       runtime,
@@ -186,7 +179,7 @@ export async function createImplementer(
       customRuntime: options.customRuntime,
       role: 'implementer',
     });
-    const mod = await loadConfiguredCustomImplementer();
+    const mod = await loadCommandImplementer();
     return mod.createConfiguredCustomImplementer({
       runtime,
       admission: invocation,
@@ -227,13 +220,10 @@ export async function createImplementer(
       const mod = await loadApiImplementer();
       return mod.createApiImplementer(effectiveConfig, adapterOptions);
     }
-    case 'shell': {
-      const mod = await loadShellImplementer();
-      return mod.createShellImplementer(effectiveConfig, adapterOptions);
-    }
+    case 'shell':
     case 'agent': {
-      const mod = await loadAgentImplementer();
-      return mod.createAgentImplementer(effectiveConfig, adapterOptions);
+      const mod = await loadCommandImplementer();
+      return mod.createCommandImplementer(effectiveConfig, kind, adapterOptions);
     }
     default:
       return assertNever(kind);

@@ -238,24 +238,22 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
     expect(issue.files).toEqual(['lib/clamp.js', 'test.js']);
   });
 
-  it('handles a command-line overflow diagnosis with no retry, offering fallback first or end-run only', () => {
-    const argvRunner = makeConfig({
+  it('handles a too-large prompt diagnosis with no retry, offering fallback first or end-run only', () => {
+    const opencodeRunner = makeConfig({
       planner: { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' },
     }).planner;
     const diagnosis = {
       failure: 'input-too-large' as const,
       message: 'Planning failed: the prompt is too large',
       tool: 'OpenCode CLI',
-      details: [
-        'The prompt is 186,486 bytes; OpenCode CLI takes at most 120,000 on its command line.',
-      ],
-      inputSize: { unit: 'bytes', size: 186_486, limit: 120_000 } as const,
+      details: ['The prompt is 186,486 characters; OpenCode CLI takes at most 120,000.'],
+      inputSize: { unit: 'characters', size: 186_486, limit: 120_000 } as const,
     };
 
     const withFallback = buildPlannerCallFailedRecoveryIssue({
       diagnosis,
       phase: 'planning',
-      runner: argvRunner,
+      runner: opencodeRunner,
       seatSwap: {
         seat: 'plan',
         currentTool: 'opencode',
@@ -270,8 +268,8 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
 
     expect(withFallback.facts).toMatchObject({
       tool: 'OpenCode CLI',
-      bytes: 186_486,
-      maxBytes: 120_000,
+      chars: 186_486,
+      maxChars: 120_000,
     });
     expect(withFallback.availableActions).not.toContain('retry-same-worker');
     expect(withFallback.switchSeat?.candidates[0]).toEqual({
@@ -284,7 +282,7 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
     const emptySwap = buildPlannerCallFailedRecoveryIssue({
       diagnosis,
       phase: 'planning',
-      runner: argvRunner,
+      runner: opencodeRunner,
       seatSwap: {
         seat: 'plan',
         currentTool: 'opencode',

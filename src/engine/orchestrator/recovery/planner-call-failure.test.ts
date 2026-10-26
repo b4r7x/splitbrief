@@ -7,7 +7,7 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { defaultCliAuthChannel, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { error } from '../../../utils/error.js';
 import { CURSOR_MODEL_REFUSAL } from '#testing/helpers/cursor-refusal.js';
-import { argvPromptTooLarge, inputTooLargeRefusal } from '../../runners/input-limit.js';
+import { inputTooLargeRefusal } from '../../runners/input-limit.js';
 import { streamError } from '../../streaming/stream-errors.js';
 import { buildPlannerCallFailedRecoveryIssue } from './builders/planner.js';
 import {
@@ -405,44 +405,6 @@ describe('a planner call the tool refused as too large', () => {
     { seat: 'plan', label: 'Planner consult for T001 failed' },
     { seat: 'review', label: 'Final review failed' },
   ] as const;
-
-  it.each(calls)('$label: a command-line refusal reads in its own words', ({ seat, label }) => {
-    const diagnosis = diagnosePlannerCallFailure({
-      err: callFailure('argv-prompt-too-large', argvPromptTooLarge(186_486, 120_000).message),
-      label,
-      runner: cliSeat('opencode'),
-      seat,
-    });
-    const issue = buildPlannerCallFailedRecoveryIssue({
-      diagnosis,
-      seat,
-      phase: seat === 'review' ? 'final-review' : 'planning',
-      runner: cliSeat('opencode'),
-      createdAt: '2026-10-19T12:00:00.000Z',
-    });
-
-    expect(diagnosis.failure).toBe('input-too-large');
-    expect(diagnosis.message).toBe(`${label}: the prompt is too large`);
-    expect(diagnosis.details).toEqual([
-      'The prompt is 186,486 bytes; OpenCode CLI takes at most 120,000 on its command line.',
-    ]);
-    expect(issue.facts).toMatchObject({ bytes: 186_486, maxBytes: 120_000 });
-    expect(issue.facts).not.toHaveProperty('chars');
-  });
-
-  it.each(calls)(
-    '$label: a command-line refusal with no figures shows no number',
-    ({ seat, label }) => {
-      const diagnosis = diagnosePlannerCallFailure({
-        err: callFailure('argv-prompt-too-large', 'CLI prompt exceeds the argv limit'),
-        label,
-        runner: cliSeat('opencode'),
-        seat,
-      });
-
-      expect(diagnosis.details).toEqual(['The prompt is too large for OpenCode CLI.']);
-    },
-  );
 
   it.each(calls)('$label: a Codex refusal that names only its limit', ({ seat, label }) => {
     const diagnosis = diagnosePlannerCallFailure({

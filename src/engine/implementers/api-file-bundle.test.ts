@@ -10,7 +10,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
 import { createApiImplementer } from './api.js';
-import { createShellImplementer } from './shell.js';
+import { createCommandImplementer } from './command-invoke.js';
 
 const LOCAL_CATALOG = ['qwen2.5-coder:7b'];
 
@@ -417,7 +417,7 @@ describe('shell BUILD — the legacy code grammar is untouched', () => {
     });
     const task = makeTask({ id: 'T011', suggestedFiles: ['src/legacy.ts'], action: 'create' });
 
-    const result = await createShellImplementer(config).implement(call(task, config));
+    const result = await createCommandImplementer(config, 'shell').implement(call(task, config));
 
     expect(result.success).toBe(true);
     expect(result.applyResult).toBeUndefined();

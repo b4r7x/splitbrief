@@ -286,21 +286,6 @@ describe('checkRunnerTrust', () => {
     ).not.toThrow();
   });
 
-  it('flags shell-evaluated prompt placeholders for agent implementers', () => {
-    const config = makeConfig({
-      implementer: {
-        kind: 'agent',
-        command: 'bash',
-        args: ['-c', 'printf "%s" "{prompt}"'],
-        model: 'agent-default',
-      },
-    });
-
-    expect(
-      checkRunnerTrust(config, '/tmp/project').violations.map((violation) => violation.command),
-    ).toContain('bash -c printf "%s" "{prompt}"');
-  });
-
   it('skips exact configured custom tuples for planner, default implementer, and profile rows', () => {
     const config = withCustomCommands(
       makeConfig({
@@ -472,8 +457,8 @@ describe('checkRunnerTrust', () => {
           profiles: {
             unsafe: {
               kind: 'agent',
-              command: 'bash',
-              args: ['-c', 'printf "%s" "{prompt}"'],
+              command: './tools/unsafe-agent',
+              args: ['--write'],
               model: 'local-agent',
             },
           },
@@ -494,7 +479,7 @@ describe('checkRunnerTrust', () => {
         { label: 'implementer', command: './tools/not-cataloged --json' },
         {
           label: 'implementer profile unsafe',
-          command: 'bash -c printf "%s" "{prompt}"',
+          command: './tools/unsafe-agent --write',
         },
       ],
     });

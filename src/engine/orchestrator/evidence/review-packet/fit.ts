@@ -6,7 +6,7 @@ import {
   buildFinalReviewPrompt,
   type FinalReviewPromptInput,
 } from '../../../spec/prompts/review.js';
-import { promptSizeIn, type PromptLimit } from '../../../runners/input-limit.js';
+import type { PromptLimit } from '../../../runners/input-limit.js';
 
 export type ReviewInputDrop = Readonly<{ trim: ReviewInputTrim; items: readonly string[] }>;
 export type ReviewInputFit =
@@ -48,7 +48,7 @@ export function fitReviewPrompt(
   if (limit === undefined) {
     return { kind: 'fits', prompt: text, size: text.length + input.suffix.length, dropped };
   }
-  const sizeOf = (packet: string): number => promptSizeIn(packet + input.suffix, limit.unit);
+  const sizeOf = (packet: string): number => packet.length + input.suffix.length;
   if (sizeOf(text) <= limit.max) {
     return { kind: 'fits', prompt: text, size: sizeOf(text), dropped };
   }

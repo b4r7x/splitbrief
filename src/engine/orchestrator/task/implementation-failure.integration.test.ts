@@ -29,7 +29,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { CliImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import type { Implementer } from '../../implementers/types.js';
 import { createCliImplementer } from '../../implementers/cli.js';
-import { createShellImplementer } from '../../implementers/shell.js';
+import { createCommandImplementer } from '../../implementers/command-invoke.js';
 import { createApiImplementer } from '../../implementers/api.js';
 import { runTaskLoop } from './loop.js';
 import { formatRecoveryPrompt } from '../../../features/workflow/recovery-prompt.js';
@@ -652,7 +652,7 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
       validation: { endChecks: false, testCommand: 'noop' },
     });
 
-    const { state } = await runUntilHalt(config, createShellImplementer(config));
+    const { state } = await runUntilHalt(config, createCommandImplementer(config, 'shell'));
 
     expect(state.pendingRecovery).toMatchObject({
       reason: 'runner-timeout-repeated',
@@ -677,7 +677,7 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
       validation: { endChecks: false, testCommand: 'noop' },
     });
 
-    const { state, events } = await runUntilHalt(config, createShellImplementer(config));
+    const { state, events } = await runUntilHalt(config, createCommandImplementer(config, 'shell'));
 
     expect(state.pendingRecovery).toMatchObject({
       reason: 'runner-timeout-repeated',

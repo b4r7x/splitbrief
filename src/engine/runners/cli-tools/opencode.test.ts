@@ -24,7 +24,6 @@ describe('OpenCode steering invocation', () => {
   it('replaces standalone with the call server for both role adapters', () => {
     for (const adapter of [opencodePlannerAdapter, opencodeImplementerAdapter]) {
       const args = adapter.buildArgs({
-        prompt: PROMPT,
         model: 'provider/model',
         variant: 'high',
         installedVersion: '2.0.26',
@@ -119,7 +118,6 @@ describe('OpenCode steering invocation', () => {
 
 function plannerArgs(model: string | undefined, configuredArgs: readonly string[]) {
   return opencodePlannerAdapter.buildArgs({
-    prompt: PROMPT,
     model,
     projectDir: PROJECT_DIR,
     configuredArgs,
@@ -130,7 +128,6 @@ function plannerArgs(model: string | undefined, configuredArgs: readonly string[
 
 function implementerArgs(model: string | undefined, configuredArgs: readonly string[]) {
   return opencodeImplementerAdapter.buildArgs({
-    prompt: PROMPT,
     model,
     projectDir: PROJECT_DIR,
     configuredArgs,
@@ -155,7 +152,6 @@ describe('OpenCode role adapters', () => {
           [opencodeImplementerAdapter, 'build'],
         ] as const) {
           const input = {
-            prompt: PROMPT,
             model: 'provider/model',
             projectDir: PROJECT_DIR,
             configuredArgs: ['--title=fixture'],
@@ -235,7 +231,6 @@ describe('OpenCode role adapters', () => {
   it('runs on a private server from 2.0.0 on and on the background service below it', () => {
     const planner = (installedVersion: string | undefined) =>
       opencodePlannerAdapter.buildArgs({
-        prompt: PROMPT,
         model: undefined,
         projectDir: PROJECT_DIR,
         configuredArgs: [],
@@ -245,7 +240,6 @@ describe('OpenCode role adapters', () => {
       });
     const implementer = (installedVersion: string | undefined) =>
       opencodeImplementerAdapter.buildArgs({
-        prompt: PROMPT,
         model: undefined,
         projectDir: PROJECT_DIR,
         configuredArgs: [],
@@ -332,7 +326,6 @@ describe('OpenCode role adapters', () => {
   it('puts the configured variant on the planner argv', () => {
     expect(
       opencodePlannerAdapter.buildArgs({
-        prompt: PROMPT,
         model: 'openai/gpt-5.6-luna',
         projectDir: PROJECT_DIR,
         configuredArgs: [],
@@ -356,7 +349,6 @@ describe('OpenCode role adapters', () => {
   it('puts the configured variant on the implementer argv', () => {
     expect(
       opencodeImplementerAdapter.buildArgs({
-        prompt: PROMPT,
         model: 'openai/gpt-5.6-luna',
         projectDir: PROJECT_DIR,
         configuredArgs: [],
@@ -377,7 +369,6 @@ describe('OpenCode role adapters', () => {
 
   it('folds the variant into the model from 2.0.0 on, which rejects --variant', () => {
     const seat = (installedVersion: string) => ({
-      prompt: PROMPT,
       model: 'opencode-go/mimo-v2.6-flash',
       projectDir: PROJECT_DIR,
       configuredArgs: [],

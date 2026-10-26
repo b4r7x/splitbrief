@@ -74,7 +74,6 @@ describe('Codex role adapters', () => {
 
   it('preserves planner exec/resume, model, cd, and configured argument order', () => {
     const resumed = codexPlannerAdapter.buildArgs({
-      prompt: PROMPT,
       model: 'gpt-5',
       projectDir: '/project',
       configuredArgs: ['--label', 'fixture'],
@@ -107,7 +106,6 @@ describe('Codex role adapters', () => {
     });
 
     const readOnly = codexPlannerAdapter.buildArgs({
-      prompt: PROMPT,
       model: 'gpt-5',
       projectDir: '/project',
       configuredArgs: [],
@@ -136,7 +134,6 @@ describe('Codex role adapters', () => {
 
   it('spends the configured effort as a config override ahead of exec on every vector', () => {
     const seat = {
-      prompt: PROMPT,
       model: 'gpt-5',
       projectDir: '/project',
       configuredArgs: [],
@@ -160,7 +157,6 @@ describe('Codex role adapters', () => {
 
   it('overrides no configuration when the seat spends no effort', () => {
     const seat = {
-      prompt: PROMPT,
       model: 'gpt-5',
       projectDir: '/project',
       configuredArgs: [],
@@ -186,7 +182,6 @@ describe('Codex role adapters', () => {
 
   it('preserves implementer workspace-write, cd, model, and prompt placement', () => {
     const args = codexImplementerAdapter.buildArgs({
-      prompt: PROMPT,
       model: 'gpt-5.2',
       projectDir: '/staged',
       configuredArgs: ['--label', 'fixture'],
@@ -240,7 +235,6 @@ describe('Codex role adapters', () => {
 
   it('adds --output-schema after --json on the resume vector, ahead of the session id', () => {
     const args = codexPlannerAdapter.buildArgs({
-      prompt: PROMPT,
       sessionId: 'session-1',
       effort: 'high',
       model: 'gpt-5',
@@ -271,7 +265,6 @@ describe('Codex role adapters', () => {
 
   it('adds --output-schema after --json on the fresh one-shot read-only vector', () => {
     const args = codexPlannerAdapter.buildArgs({
-      prompt: PROMPT,
       sessionId: null,
       oneShot: true,
       model: undefined,
@@ -300,7 +293,6 @@ describe('Codex role adapters', () => {
 
   it('refuses a configured --output-schema that would override the adapter schema', () => {
     const base = codexPlannerAdapter.buildArgs({
-      prompt: PROMPT,
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -334,7 +326,6 @@ describe('Codex role adapters', () => {
     ['-s', 'danger-full-access'],
   ])('rejects the configured authority override %j with zero dispatch', (...tokens) => {
     const base = codexPlannerAdapter.buildArgs({
-      prompt: PROMPT,
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
@@ -354,10 +345,9 @@ describe('Codex role adapters', () => {
 });
 
 describe('Codex stdin prompt transport', () => {
-  // Past the 120 000-byte cap of the tools that take the prompt on argv.
+  // Larger than a command line can carry.
   const prompt = `HEAD_SENTINEL ${'x'.repeat(200_000)} 🙂漢字 TAIL_SENTINEL`;
   const seat = {
-    prompt: PROMPT,
     model: 'gpt-5',
     projectDir: '/project',
     configuredArgs: [],

@@ -444,25 +444,6 @@ function inputCapReviewer(): Planner {
   });
 }
 
-function argvOverflowReviewer(): Planner {
-  return makePlanner({
-    typedCall: (ctx) => ({
-      seat: ctx.seat,
-      typedOutput: 'strict-native',
-      canResume: false,
-      invoke: async () =>
-        makeRunnerCallResult({
-          status: 'failed',
-          text: '',
-          error: {
-            code: 'argv-prompt-too-large',
-            message: 'CLI prompt is 186486 bytes and exceeds the 120000-byte argv limit',
-          },
-        }),
-    }),
-  });
-}
-
 function scheduledReviewState(): WorkflowState {
   return makeImplState([makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })], {
     changedFilesBaseline: { ...RUN_BASELINE },
@@ -895,88 +876,6 @@ describe('runScheduledReview saved recovery', () => {
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);
   });
 
-  it('halts an argv prompt overflow as a review planner-call-failed with seat switch and no retry', async () => {
-    const ref = setupProject();
-    const config = makeNoValidationConfig({
-      planner: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex', effort: 'high' },
-    });
-    const fallback = { tool: 'claude-code', model: 'sonnet' };
-    writeConfig(ref.projectDir, {
-      ...config,
-      planner: { ...config.planner, fallback },
-    });
-    await rememberDetectedTools(
-      ref.projectDir,
-      cliDetectionsFor('ready', ['codex', 'claude-code']),
-    );
-    const state = capState();
-    saveState(ref, state);
-    const { bus } = makeBusRecorder();
-    const callbacks = makeCallbacks().callbacks;
-    const reviewer = argvOverflowReviewer();
-    const wctx = makeWctx({
-      ...ref,
-      config,
-      bus,
-      callbacks,
-      planner: reviewer,
-      reviewer,
-    });
-    const halted = await runScheduledReview({
-      wctx,
-      state,
-      callbacks,
-      setTrackedState: vi.fn(),
-      afterTaskId: taskId('T001'),
-    });
-
-    expect(halted.status).toBe('stopped');
-    const issue = halted.state.pendingRecovery;
-    expect(issue?.reason).toBe('planner-call-failed');
-    expect(issue?.seat).toBe('review');
-    expect(issue?.availableActions).not.toContain('retry-same-worker');
-    expect(issue?.switchSeat?.candidates[0]).toMatchObject(fallback);
-    expect(issue?.recommendedAction).toBe('switch-seat');
-  });
-
-  it('offers end run only when an argv overflow has no fallback and no other detected tool', async () => {
-    const ref = setupProject();
-    const config = makeNoValidationConfig({
-      planner: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
-    });
-    writeConfig(ref.projectDir, config);
-    await rememberDetectedTools(ref.projectDir, cliDetectionsFor('ready', ['codex']));
-    const state = capState();
-    saveState(ref, state);
-    const { bus } = makeBusRecorder();
-    const callbacks = makeCallbacks().callbacks;
-    const reviewer = argvOverflowReviewer();
-    const wctx = makeWctx({
-      ...ref,
-      config,
-      bus,
-      callbacks,
-      planner: reviewer,
-      reviewer,
-    });
-    const halted = await runScheduledReview({
-      wctx,
-      state,
-      callbacks,
-      setTrackedState: vi.fn(),
-      afterTaskId: taskId('T001'),
-    });
-
-    expect(halted.status).toBe('stopped');
-    const issue = halted.state.pendingRecovery;
-    expect(issue?.reason).toBe('planner-call-failed');
-    expect(issue?.seat).toBe('review');
-    expect(issue?.availableActions).not.toContain('retry-same-worker');
-    expect(issue?.switchSeat).toBeUndefined();
-    expect(issue?.availableActions).toEqual(['end-run']);
-    expect(issue?.recommendedAction).toBe('end-run');
-  });
-
   it('keeps the scheduled review pending after a verdictless halt and re-runs it on continue', async () => {
     const ref = setupProject();
     const state = scheduledReviewState();
@@ -1046,7 +945,7 @@ describe('runScheduledReview saved recovery', () => {
         failure: {
           kind: 'input-too-large',
           figures: { unit: 'characters', size: 1_106_026, limit: 1_048_576 },
-          promptSize: { characters: 1_106_026, bytes: 1_106_026 },
+          promptSize: { characters: 1_106_026 },
           largestFiles: [],
         },
       };
@@ -1073,50 +972,6 @@ describe('runScheduledReview saved recovery', () => {
       );
     },
   );
-
-  it('halts an argv overflow at final review with planner-call-failed and no retry', async () => {
-    const ref = setupProject();
-    const config = makeNoValidationConfig({
-      planner: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
-    });
-    writeConfig(ref.projectDir, config);
-    await rememberDetectedTools(ref.projectDir, cliDetectionsFor('ready', ['codex']));
-    const state: WorkflowState = {
-      ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
-      phase: 'final-review',
-    };
-    saveState(ref, state);
-    const { bus } = makeBusRecorder();
-    const wctx = makeWctx({ ...ref, config, bus });
-    const diagnosis = diagnosePlannerCallFailure({
-      err: error('runner-call-failed', 'Review failed', {
-        status: 'failed',
-        error: {
-          code: 'argv-prompt-too-large',
-          message: 'CLI prompt is 186486 bytes and exceeds the 120000-byte argv limit',
-        },
-      }),
-      label: 'Final review failed',
-      runner: config.planner,
-      seat: 'review',
-    });
-    const review: FinalReviewResult = {
-      state,
-      verdict: null,
-      fixWork: null,
-      reviewText: '',
-      reviewStatus: 'failed',
-      failure: { kind: 'seat-blocked', diagnosis },
-    };
-
-    const halted = await haltVerdictlessReview({ wctx, state, setTrackedState: vi.fn(), review });
-
-    expect(halted?.pendingRecovery?.reason).toBe('planner-call-failed');
-    expect(halted?.pendingRecovery?.seat).toBe('review');
-    expect(halted?.pendingRecovery?.availableActions).not.toContain('retry-same-worker');
-    expect(halted?.pendingRecovery?.availableActions).toEqual(['end-run']);
-    expect(halted?.pendingRecovery?.recommendedAction).toBe('end-run');
-  });
 
   it('resumes a verdictless scheduled review instead of triaging an older task verdict', async () => {
     const ref = setupProject();

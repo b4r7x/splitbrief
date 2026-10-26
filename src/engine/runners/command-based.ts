@@ -1,14 +1,6 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
-import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
-import { createRunnerCallId } from '../calls/call-id.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
-import { createBoundedOutput } from '../../lib/process/bounded-output.js';
-import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
-import { error } from '../../utils/error.js';
-import { commandName, isShellEvaluatedPromptArg } from '../../core/trust/path-classification.js';
-import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import { createCustomRunnerRedactor, resolveCustomRunnerEnvironment } from './redaction.js';
 import {
   customRunnerAdmissionError,
@@ -17,238 +9,100 @@ import {
   type AdmittedCustomRunnerInvocation,
 } from './custom-launchability.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES } from './cli-tools/process-invoke.js';
-import { argvPromptMaxBytes, argvPromptTooLarge } from './input-limit.js';
 
-const PROMPT_PLACEHOLDER = '{prompt}';
-const CUSTOM_RUNNER_PROMPT_MAX_BYTES = 1024 * 1024;
+/**
+ * Where the command comes from. An admitted custom command runs its revalidated absolute path
+ * with only its declared environment; a config runner runs its command name on the given
+ * (sandbox) environment.
+ */
+export type CommandRunnerSource =
+  | Readonly<{
+      kind: 'admitted';
+      admission: AdmittedCustomRunnerInvocation;
+      authorizationProjectDir: string;
+      authorizationPathEnv?: string | undefined;
+      authorizationPathExt?: string | undefined;
+      sourceEnv: NodeJS.ProcessEnv;
+      preserveEnvironmentKeys?: readonly string[] | undefined;
+    }>
+  | Readonly<{
+      kind: 'config';
+      runner: Readonly<{
+        command: string;
+        args?: readonly string[] | undefined;
+        outputFormat?: OutputFormat | undefined;
+        idleWarnMs?: number | undefined;
+        idleKillMs?: number | undefined;
+      }>;
+      env: NodeJS.ProcessEnv;
+      notFoundMessage: string;
+    }>;
 
-export const commandBasedInvocationError = {
-  promptPlaceholderInCommand: (command: string) =>
-    error(
-      'runner-command-prompt-placeholder',
-      'Runner command must not contain {prompt}; pass the prompt through stdin or args instead.',
-      { command },
-    ),
-  shellEvaluatedPrompt: (opts: { command: string; args: readonly string[] }) =>
-    error(
-      'runner-shell-evaluated-prompt',
-      `Runner args must not pass {prompt} through ${commandName(opts.command)} -c; use stdin or a non-shell argv placeholder instead.`,
-      { command: opts.command, args: opts.args },
-    ),
-  customPromptTooLarge: (maxBytes: number) =>
-    error('custom-runner-prompt-too-large', `Custom runner prompt exceeds ${maxBytes} bytes.`, {
-      maxBytes,
-    }),
-} as const;
-
-export interface CommandBasedOptions {
-  command: string;
-  args?: string[] | undefined;
-  outputFormat?: OutputFormat | undefined;
-  supportPromptPlaceholder?: boolean | undefined;
-  env?: NodeJS.ProcessEnv | undefined;
-  timeout?: number | undefined;
-  notFoundMessage?: string | undefined;
-  allowShellEvaluatedPrompt?: boolean | undefined;
-  idleWarnMs?: number | undefined;
-  idleKillMs?: number | undefined;
-}
-
-export interface CommandBasedResult {
-  stdout: string;
-  stderr: string;
-  usage?: TokenDelta | null;
-  callResult: RunnerCallResult;
-}
-
-export interface CustomCommandBasedOptions {
-  admission: AdmittedCustomRunnerInvocation;
+export type CommandRunnerOptions = Readonly<{
+  source: CommandRunnerSource;
   prompt: string;
-  authorizationProjectDir: string;
-  authorizationPathEnv?: string | undefined;
-  authorizationPathExt?: string | undefined;
   cwd: string;
-  sourceEnv: NodeJS.ProcessEnv;
-  preserveEnvironmentKeys?: readonly string[] | undefined;
-  onOutput?: ((chunk: string) => void) | undefined;
-  onStderr?: ((chunk: string) => void) | undefined;
-  onSessionId?: ((id: string) => void) | undefined;
-  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
-  callContext?: RunnerCallContext | undefined;
-  signal?: AbortSignal | undefined;
+  callContext: RunnerCallContext;
   /** The seat's opt-in total (`timeout`); unset, the call has no deadline. */
   timeoutMs?: number | undefined;
-}
+  signal?: AbortSignal | undefined;
+  onOutput?: ((chunk: string) => void) | undefined;
+  onStderr?: ((chunk: string) => void) | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+}>;
 
-export type CustomCommandBasedResult = Awaited<ReturnType<typeof spawnAndCollect>>;
-
-function rejectPromptPlaceholderCommand(command: string): void {
-  if (!command.includes(PROMPT_PLACEHOLDER)) return;
-
-  throw commandBasedInvocationError.promptPlaceholderInCommand(command);
-}
-
-function rejectShellEvaluatedPrompt(opts: {
-  command: string;
-  args: readonly string[];
-  allowShellEvaluatedPrompt: boolean | undefined;
-}): void {
-  if (opts.allowShellEvaluatedPrompt) return;
-  if (!isShellEvaluatedPromptArg(opts.command, opts.args)) return;
-
-  throw commandBasedInvocationError.shellEvaluatedPrompt({
-    command: opts.command,
-    args: opts.args,
-  });
-}
-
-function createCommandCallContext(opts: {
-  command: string;
-  callContext?: RunnerCallContext | undefined;
-}): RunnerCallContext {
-  return (
-    opts.callContext ?? {
-      callId: createRunnerCallId('command'),
-      role: 'planner',
-      backendKind: 'shell',
-      runnerName: opts.command,
-      axes: [],
-    }
-  );
-}
-
-function substitutePromptPlaceholder(
-  args: string[],
-  prompt: string,
-): { args: string[]; useStdin: boolean } {
-  const argsHavePlaceholder = args.some((a) => a.includes(PROMPT_PLACEHOLDER));
-
-  if (!argsHavePlaceholder) {
-    return { args, useStdin: true };
+async function launchOf(source: CommandRunnerSource) {
+  if (source.kind === 'config') {
+    const { runner } = source;
+    return {
+      command: runner.command,
+      args: runner.args ?? [],
+      env: source.env,
+      format: runner.outputFormat,
+      idle: { warnMs: runner.idleWarnMs, killMs: runner.idleKillMs },
+      notFoundMessage: source.notFoundMessage,
+    };
   }
 
-  const substituted = args.map((a) => a.replaceAll(PROMPT_PLACEHOLDER, () => prompt));
-  const maxBytes = argvPromptMaxBytes();
-  for (const arg of substituted) {
-    const bytes = Buffer.byteLength(arg, 'utf8');
-    if (bytes > maxBytes) throw argvPromptTooLarge(bytes, maxBytes);
-  }
-  return { args: substituted, useStdin: false };
-}
-
-/** Runs the already-admitted custom command through the no-shell process path. */
-export async function invokeCustomCommandBasedRunner(
-  opts: CustomCommandBasedOptions,
-): Promise<CustomCommandBasedResult> {
-  const admission = parseAdmittedCustomRunnerInvocation(opts.admission);
+  const admission = parseAdmittedCustomRunnerInvocation(source.admission);
   if (admission === null) {
     throw customRunnerAdmissionError.invalid();
   }
-  if (Buffer.byteLength(opts.prompt, 'utf8') > CUSTOM_RUNNER_PROMPT_MAX_BYTES) {
-    throw commandBasedInvocationError.customPromptTooLarge(CUSTOM_RUNNER_PROMPT_MAX_BYTES);
-  }
-
-  const environment = resolveCustomRunnerEnvironment(opts.sourceEnv, [
-    ...admission.runner.command.env,
-    ...(opts.preserveEnvironmentKeys ?? []),
+  const { command } = admission.runner;
+  const environment = resolveCustomRunnerEnvironment(source.sourceEnv, [
+    ...command.env,
+    ...(source.preserveEnvironmentKeys ?? []),
   ]);
-  const redact = createCustomRunnerRedactor(environment.redactionValues);
   const executable = await revalidateCustomRunnerInvocation({
     invocation: admission,
-    projectDir: opts.authorizationProjectDir,
-    pathEnv: opts.authorizationPathEnv ?? '',
-    pathExt: opts.authorizationPathExt ?? '',
+    projectDir: source.authorizationProjectDir,
+    pathEnv: source.authorizationPathEnv ?? '',
+    pathExt: source.authorizationPathExt ?? '',
   });
-
-  return spawnAndCollect({
+  return {
     command: executable.path,
-    args: [...admission.runner.command.argv],
-    cwd: opts.cwd,
+    args: command.argv,
     env: environment.env,
+    format: command.outputFormat,
+    idle: { warnMs: command.idleWarnMs, killMs: command.idleKillMs },
+    credentialValues: environment.redactionValues,
+    redact: createCustomRunnerRedactor(environment.redactionValues),
+  };
+}
+
+/** Runs a shell or agent command through the no-shell process path, the prompt on its stdin. */
+export async function invokeCommandRunner(opts: CommandRunnerOptions): Promise<RunnerCallResult> {
+  const launch = await launchOf(opts.source);
+  return spawnAndCollect({
+    ...launch,
+    cwd: opts.cwd,
     stdin: opts.prompt,
-    format: admission.runner.command.outputFormat,
     onText: opts.onOutput,
     onStderr: opts.onStderr,
-    onSessionId: opts.onSessionId,
     onCallEvent: opts.onCallEvent,
     callContext: opts.callContext,
     signal: opts.signal,
     timeoutMs: opts.timeoutMs,
-    idle: {
-      warnMs: admission.runner.command.idleWarnMs,
-      killMs: admission.runner.command.idleKillMs,
-    },
     outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
-    credentialValues: environment.redactionValues,
-    redact,
   });
-}
-
-export async function invokeCommandBasedRunner(
-  opts: CommandBasedOptions & {
-    prompt: string;
-    projectDir: string;
-    onOutput?: ((chunk: string) => void) | undefined;
-    onSessionId?: ((id: string) => void) | undefined;
-    onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
-    callContext?: RunnerCallContext | undefined;
-    signal?: AbortSignal | undefined;
-  },
-): Promise<CommandBasedResult> {
-  const { prompt, projectDir, onOutput, signal } = opts;
-  const rawArgs = opts.args ?? [];
-  const format: OutputFormat = opts.outputFormat ?? 'text';
-  const idleWarnMs = opts.idleWarnMs ?? RUNNER_IDLE_WARN_MS;
-
-  rejectPromptPlaceholderCommand(opts.command);
-  rejectShellEvaluatedPrompt({
-    command: opts.command,
-    args: rawArgs,
-    allowShellEvaluatedPrompt: opts.allowShellEvaluatedPrompt,
-  });
-
-  const finalCommand = opts.command;
-  let finalArgs = rawArgs;
-  let useStdin = true;
-
-  if (opts.supportPromptPlaceholder) {
-    const substituted = substitutePromptPlaceholder(rawArgs, prompt);
-    finalArgs = substituted.args;
-    useStdin = substituted.useStdin;
-  }
-
-  const stderrOutput = createBoundedOutput({
-    maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
-    policy: 'tail',
-  });
-  const result = await spawnAndCollect({
-    command: finalCommand,
-    args: finalArgs,
-    cwd: projectDir,
-    env: opts.env,
-    stdin: useStdin ? prompt : undefined,
-    format,
-    notFoundMessage: opts.notFoundMessage,
-    onText: onOutput,
-    onSessionId: opts.onSessionId,
-    onCallEvent: opts.onCallEvent,
-    callContext: createCommandCallContext({
-      command: finalCommand,
-      callContext: opts.callContext,
-    }),
-    signal,
-    timeoutMs: opts.timeout,
-    idle: { warnMs: idleWarnMs, killMs: opts.idleKillMs },
-    outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
-    onStderr: (chunk) => {
-      stderrOutput.append(chunk);
-    },
-  });
-
-  return {
-    stdout: result.text,
-    stderr: stderrOutput.snapshot().text,
-    usage: toTokenDelta(result.usage),
-    callResult: result,
-  };
 }

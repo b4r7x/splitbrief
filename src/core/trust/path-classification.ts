@@ -63,8 +63,6 @@ const NPM_LIFECYCLE_ALIASES = new Map([
   ['install-clean', 'install'],
   ['isntall-clean', 'install'],
 ]);
-const PROMPT_PLACEHOLDER = '{prompt}';
-const SHELL_EVALUATORS = new Set(['sh', 'bash']);
 const INLINE_PROGRAM_FLAGS = new Map<string, ReadonlySet<string>>([
   ['node', new Set(['-e', '--eval', '-p', '--print'])],
   ['nodejs', new Set(['-e', '--eval', '-p', '--print'])],
@@ -513,30 +511,4 @@ export function isBareCommandResolvedInsideProject(
 ): boolean {
   const resolved = resolveBareCommandOnPath(command, projectDir, pathEnv);
   return resolved !== null && isInsideProject(projectDir, resolved);
-}
-
-export function isShellEvaluatedPromptArg(
-  command: string,
-  args: readonly string[],
-  placeholder = PROMPT_PLACEHOLDER,
-): boolean {
-  const name = commandName(command);
-  if (!SHELL_EVALUATORS.has(name)) return false;
-  return shellArgsEvaluateCommandString(args) && args.some((arg) => arg.includes(placeholder));
-}
-
-export function shellArgsEvaluateCommandString(args: readonly string[]): boolean {
-  for (const arg of args) {
-    if (arg === '--') return false;
-    if (arg === '-c') return true;
-    if (isCombinedShellCommandFlag(arg)) return true;
-    if (!arg.startsWith('-') || arg === '-') return false;
-  }
-  return false;
-}
-
-function isCombinedShellCommandFlag(arg: string): boolean {
-  return (
-    arg.startsWith('-') && !arg.startsWith('--') && arg.length > 2 && arg.slice(1).includes('c')
-  );
 }

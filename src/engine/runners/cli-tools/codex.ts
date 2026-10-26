@@ -71,7 +71,6 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     ...input,
     protectedFlags: CODEX_PROTECTED_FLAGS,
     protectedShortValueFlags: CODEX_PROTECTED_SHORT_VALUE_FLAGS,
-    promptTransport: 'stdin',
   });
 }
 

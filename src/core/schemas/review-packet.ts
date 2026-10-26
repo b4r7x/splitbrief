@@ -406,7 +406,7 @@ export const ReviewPacketSchema = z.object({
       size: z.number().int().nonnegative(),
       limit: z.object({
         max: z.number().int().positive(),
-        unit: z.enum(['characters', 'bytes']),
+        unit: z.literal('characters'),
       }),
       dropped: z.array(z.object({ trim: z.enum(REVIEW_INPUT_TRIMS), items: z.array(z.string()) })),
     })

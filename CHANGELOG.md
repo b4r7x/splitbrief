@@ -65,6 +65,7 @@
 - **Layout.** Panels take their width from the terminal size. The workflow screen aligns every left edge on one column, and the workflow composer and transcript stay full-width.
 - **23 runtime commands in five categories.** `/crew` opens Settings on PLAN, and `/crew <seat>` opens that seat's picker. On a recovery panel, **Change PLAN tool** (or BUILD or REVIEW) opens that seat's picker.
 - **Every CLI tool takes its prompt on stdin.** Antigravity, Cursor, OpenCode, Kilo Code, Copilot and Command Code now read it there too, so a large prompt no longer meets the command-line limit. An expired Codex or Claude Code planner session continues once on a fresh session with the conversation so far.
+- **`shell` and `agent` runners always take the prompt on stdin, with no size limit.** A `shell` or `agent` runner whose `args` contain `{prompt}` no longer loads; before, the prompt was put into that argument.
 - **CLI model lists keep a model through one missing read.** A model is added at once and removed only after two agreeing reads.
 - **Flag precedence is stated.** `--planner`, `--implementer`, `--provider` and `--reviewer` help states that a CLI tool id always selects the CLI. A `--*-api-base` flag on a non-API seat warns and is ignored.
 - Home shows no recent-sessions section when there are none.

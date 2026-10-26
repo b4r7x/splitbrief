@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createAgentPlanner } from './agent.js';
+import { createCommandPlanner } from './command-invoke.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -21,15 +21,15 @@ const defaultAgentConfig = () =>
     planner: { kind: 'agent', command: 'sh', args: ['-c', 'cat >/dev/null; echo test output'] },
   });
 
-describe('createAgentPlanner', () => {
+describe('createCommandPlanner with an agent runner', () => {
   it('throws for wrong config kind', () => {
     const config = makeConfig({ planner: { kind: 'shell', command: 'echo' } });
-    expect(() => createAgentPlanner(config)).toThrow('Expected agent planner config');
+    expect(() => createCommandPlanner(config, 'agent')).toThrow('Expected agent planner config');
   });
 
   it('supports review', async () => {
     const config = defaultAgentConfig();
-    const planner = createAgentPlanner(config);
+    const planner = createCommandPlanner(config, 'agent');
     const callbacks = { onOutput: vi.fn() };
 
     const result = await planner.review('review prompt', projectDir, callbacks);
@@ -39,7 +39,7 @@ describe('createAgentPlanner', () => {
 
   it('handles command not found error', async () => {
     const config = makeConfig({ planner: { kind: 'agent', command: 'nonexistent-command-12345' } });
-    const planner = createAgentPlanner(config);
+    const planner = createCommandPlanner(config, 'agent');
     const callbacks = { onOutput: vi.fn() };
 
     await expect(planner.review('test', projectDir, callbacks)).rejects.toThrow(
@@ -56,7 +56,7 @@ describe('createAgentPlanner', () => {
         idleWarnMs: 30,
       },
     });
-    const planner = createAgentPlanner(config);
+    const planner = createCommandPlanner(config, 'agent');
     const events: RunnerCallEvent[] = [];
 
     await planner.review('prompt', projectDir, {

@@ -1,80 +1,54 @@
 import type { Config } from '../../core/schemas/config.js';
-import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
-import type { RunnerCallContext } from '../calls/types.js';
-import type { ChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './pipeline/run.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { createChangeDetector } from '../change-detection.js';
+import { assertImplementerKind } from '../config-assertions.js';
 import type { AdmittedCustomRunnerInvocation } from '../runners/custom-launchability.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
-import {
-  invokeCommandBasedRunner,
-  invokeCustomCommandBasedRunner,
-} from '../runners/command-based.js';
+import { invokeCommandRunner } from '../runners/command-based.js';
 
-export interface CommandBasedImplementerOpts {
-  initialCommand: string;
-  label: string;
-  extractsCode: boolean;
-  backendKind?: RunnerCallContext['backendKind'] | undefined;
-  supportPromptPlaceholder?: boolean | undefined;
-  getRunnerConfig: (config: Config) => {
-    command: string;
-    args?: string[] | undefined;
-    outputFormat?: OutputFormat | undefined;
-    timeout?: number | undefined;
-    idleWarnMs?: number | undefined;
-    idleKillMs?: number | undefined;
-  };
-  detectChanges?: ChangeDetector | undefined;
-  shouldThrow?: ((err: unknown) => boolean) | undefined;
-}
-
-export function createCommandBasedImplementer(
-  opts: CommandBasedImplementerOpts,
+/** A shell implementer returns code on stdout; an agent implementer writes the files itself. */
+export function createCommandImplementer(
+  initialConfig: Config,
+  kind: 'shell' | 'agent',
   options?: ImplementerFactoryOptions,
 ): Implementer {
-  const notFoundMessage = `${opts.label} command not found: ${opts.initialCommand}`;
+  const { command } = assertImplementerKind(initialConfig, kind);
+  const label = kind === 'shell' ? 'Shell implementer' : 'Agent implementer';
+  const notFoundMessage = `${label} command not found: ${command}`;
 
   return createImplementerBase({
-    extractsCode: opts.extractsCode,
-    backendKind: opts.backendKind ?? (opts.extractsCode ? 'shell' : 'agent'),
+    extractsCode: kind === 'shell',
+    backendKind: kind,
     publisher: options?.publisher,
 
     async invoke(invokeOpts: InvokeOpts) {
-      const { prompt, projectDir, config, onOutput, signal } = invokeOpts;
-      const cfg = opts.getRunnerConfig(config);
+      const { projectDir, config } = invokeOpts;
+      const runner = assertImplementerKind(config, kind);
 
-      const result = await invokeCommandBasedRunner({
-        command: cfg.command,
-        args: cfg.args ?? [],
-        ...(cfg.outputFormat && { outputFormat: cfg.outputFormat }),
-        ...(opts.supportPromptPlaceholder && { supportPromptPlaceholder: true }),
-        ...(opts.supportPromptPlaceholder &&
-          options?.allowRepoRunners && { allowShellEvaluatedPrompt: true }),
-        ...(cfg.timeout !== undefined && { timeout: cfg.timeout }),
-        ...(cfg.idleWarnMs !== undefined && { idleWarnMs: cfg.idleWarnMs }),
-        ...(cfg.idleKillMs !== undefined && { idleKillMs: cfg.idleKillMs }),
-        notFoundMessage,
-        prompt,
-        projectDir,
-        env:
-          invokeOpts.sandboxEnv ??
-          (await createRunnerSandboxEnv(projectDir, config.implementer, 'implementer')),
-        onOutput,
-        onCallEvent: invokeOpts.onCallEvent,
+      return invokeCommandRunner({
+        source: {
+          kind: 'config',
+          runner,
+          env:
+            invokeOpts.sandboxEnv ??
+            (await createRunnerSandboxEnv(projectDir, config.implementer, 'implementer')),
+          notFoundMessage,
+        },
+        prompt: invokeOpts.prompt,
+        cwd: projectDir,
         callContext: invokeOpts.callContext,
-        signal,
+        timeoutMs: runner.timeout,
+        signal: invokeOpts.signal,
+        onOutput: invokeOpts.onOutput,
+        onCallEvent: invokeOpts.onCallEvent,
       });
-
-      return result.callResult;
     },
 
-    ...(opts.detectChanges && { detectChanges: opts.detectChanges }),
-    ...(opts.shouldThrow && { shouldThrow: opts.shouldThrow }),
-    ...createCommandExistsAvailability(opts.initialCommand),
+    ...(kind === 'agent' && { detectChanges: createChangeDetector(label) }),
+    ...createCommandExistsAvailability(command),
   });
 }
 
@@ -107,19 +81,22 @@ export function createConfiguredCustomImplementer({
 
     async invoke(invokeOpts: InvokeOpts) {
       const invokeAdmittedRunner = (cwd: string) =>
-        invokeCustomCommandBasedRunner({
-          admission,
+        invokeCommandRunner({
+          source: {
+            kind: 'admitted',
+            admission,
+            authorizationProjectDir: runtime.authorizationProjectDir,
+            authorizationPathEnv: runtime.authorizationPathEnv,
+            authorizationPathExt: runtime.authorizationPathExt,
+            sourceEnv: runtime.sourceEnv,
+          },
           prompt: invokeOpts.prompt,
-          authorizationProjectDir: runtime.authorizationProjectDir,
-          authorizationPathEnv: runtime.authorizationPathEnv ?? '',
-          authorizationPathExt: runtime.authorizationPathExt ?? '',
           cwd,
-          sourceEnv: runtime.sourceEnv,
+          callContext: invokeOpts.callContext,
+          timeoutMs,
+          signal: invokeOpts.signal,
           onOutput: invokeOpts.onOutput,
           onCallEvent: invokeOpts.onCallEvent,
-          callContext: invokeOpts.callContext,
-          signal: invokeOpts.signal,
-          timeoutMs,
         });
 
       if (!extractsCode) return invokeAdmittedRunner(invokeOpts.projectDir);

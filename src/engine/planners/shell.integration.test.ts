@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createShellPlanner } from './shell.js';
+import { createCommandPlanner } from './command-invoke.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -19,10 +19,10 @@ afterEach(() => {
   cleanupTempDir(projectDir);
 });
 
-describe('createShellPlanner', () => {
+describe('createCommandPlanner with a shell runner', () => {
   it('throws for wrong config kind', () => {
     const config = makeConfig({ planner: { kind: 'agent', command: 'echo' } });
-    expect(() => createShellPlanner(config)).toThrow('Expected shell planner config');
+    expect(() => createCommandPlanner(config, 'shell')).toThrow('Expected shell planner config');
   });
 
   it('serves a typed planner answer from stdout', async () => {
@@ -36,7 +36,7 @@ describe('createShellPlanner', () => {
         ],
       },
     });
-    const planner = createShellPlanner(config);
+    const planner = createCommandPlanner(config, 'shell');
 
     const result = await requestTyped({
       prompt: 'q',
@@ -58,7 +58,7 @@ describe('createShellPlanner', () => {
         idleWarnMs: 30,
       },
     });
-    const planner = createShellPlanner(config);
+    const planner = createCommandPlanner(config, 'shell');
     const events: RunnerCallEvent[] = [];
 
     await planner.review('prompt', projectDir, {
@@ -73,7 +73,7 @@ describe('createShellPlanner', () => {
     const config = makeConfig({
       planner: { kind: 'shell', command: 'bash', args: ['-c', 'sleep 5'], timeout: 150 },
     });
-    const planner = createShellPlanner(config);
+    const planner = createCommandPlanner(config, 'shell');
 
     await expect(planner.review('prompt', projectDir, { onOutput: vi.fn() })).rejects.toSatisfy(
       processError.isTimeout,

@@ -32,7 +32,6 @@ const NARRATED_VERDICT_FIXTURE = join(
 
 function plannerArgs(configuredArgs: readonly string[] = []) {
   return cursorPlannerAdapter.buildArgs({
-    prompt: PROMPT,
     model: undefined,
     projectDir: '/project',
     configuredArgs,
@@ -43,7 +42,6 @@ function plannerArgs(configuredArgs: readonly string[] = []) {
 
 function implementerArgs(configuredArgs: readonly string[] = []) {
   return cursorImplementerAdapter.buildArgs({
-    prompt: PROMPT,
     model: undefined,
     projectDir: '/staged',
     configuredArgs,

@@ -9,8 +9,7 @@ import {
   type BundleApplyResult,
 } from './file-bundle.js';
 import { createApiImplementer } from './api.js';
-import { createShellImplementer } from './shell.js';
-import { createAgentImplementer } from './agent.js';
+import { createCommandImplementer } from './command-invoke.js';
 
 const captured = vi.hoisted(() => ({ configs: [] as unknown[] }));
 
@@ -122,7 +121,7 @@ describe('selectBuildOutputContract', () => {
 
   it('keeps the legacy code grammar for the shell backend', () => {
     const shell = capturedBackend(() =>
-      createShellImplementer(
+      createCommandImplementer(
         makeConfig({
           implementer: {
             model: 'test',
@@ -131,6 +130,7 @@ describe('selectBuildOutputContract', () => {
             outputFormat: 'text',
           },
         }),
+        'shell',
       ),
     );
     expect(selectBuildOutputContract(shell)).toBe('legacy-code-v1');
@@ -138,8 +138,9 @@ describe('selectBuildOutputContract', () => {
 
   it('keeps direct writers direct', () => {
     const agent = capturedBackend(() =>
-      createAgentImplementer(
+      createCommandImplementer(
         makeConfig({ implementer: { model: 'test', kind: 'agent', command: 'my-agent' } }),
+        'agent',
       ),
     );
     expect(selectBuildOutputContract(agent)).toBe('direct');
