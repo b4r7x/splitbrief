@@ -31,6 +31,36 @@ export function inputTooLargeFigures(message: string): PromptSize {
   };
 }
 
+/**
+ * A too-large prompt in SPLITBRIEF's words: its size and the tool's limit where the refusal
+ * named them, never a figure it did not name. Bytes are the command line's limit.
+ */
+export function inputTooLargeSentence(subject: string, figures: PromptSize, tool: string): string {
+  const { unit, size, limit } = figures;
+  const where = unit === 'bytes' ? ' on its command line' : '';
+  if (size === null) {
+    return limit === null
+      ? `${subject} is too large for ${tool}`
+      : `${subject} is larger than the ${limit.toLocaleString('en-US')} ${unit} ${tool} takes${where}`;
+  }
+  return `${subject} is ${size.toLocaleString('en-US')} ${unit}; ${tool} ${
+    limit === null
+      ? 'refused it as too large'
+      : `takes at most ${limit.toLocaleString('en-US')}${where}`
+  }`;
+}
+
+/** The facts a halt keeps for a too-large prompt, named by the unit the refusal counted. */
+export function inputTooLargeFacts({
+  unit,
+  size,
+  limit,
+}: PromptSize): Record<string, number | undefined> {
+  return unit === 'bytes'
+    ? { bytes: size ?? undefined, maxBytes: limit ?? undefined }
+    : { chars: size ?? undefined, maxChars: limit ?? undefined };
+}
+
 /** The size of `prompt` in the unit `limit` counts. */
 export function promptSizeIn(prompt: string, unit: PromptLimit['unit']): number {
   return unit === 'bytes' ? Buffer.byteLength(prompt, 'utf8') : prompt.length;

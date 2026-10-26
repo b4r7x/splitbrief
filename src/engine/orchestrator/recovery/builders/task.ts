@@ -52,8 +52,12 @@ import {
   runnerAccountDisplayName,
   runnerLoginInstruction,
 } from '../../../runners/auth-failure.js';
-import { inputTooLargeFigures, type PromptSize } from '../../../runners/input-limit.js';
-import { inputTooLargeFacts, inputTooLargeSentence } from './review-input.js';
+import {
+  inputTooLargeFacts,
+  inputTooLargeFigures,
+  inputTooLargeSentence,
+  type PromptSize,
+} from '../../../runners/input-limit.js';
 import { usageLimitAdvice } from '../../../runners/usage-limit.js';
 import {
   formatRecoveryHeadline,
