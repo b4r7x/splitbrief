@@ -70,7 +70,7 @@ export const CLI_CONFORMANCE_CANDIDATES = [{
   adapter: {
     descriptor: { id: ${JSON.stringify(candidate.id)} },
     role: ${JSON.stringify(role)},
-    promptTransport: { kind: 'argv', maxBytes: 120000, placement: 'positional' },
+    promptTransport: { kind: 'argv', placement: 'positional' },
     buildArgs: () => ['-e', 'process.stdout.write("ok")', '<PROMPT>'],
     validateArgs: () => ({ valid: true }),
     environment: {},
@@ -90,6 +90,7 @@ type CandidateModuleOptions = Readonly<{
   readonly buildArgs?: string;
   readonly validateArgs?: string;
   readonly promptTransport?: string;
+  readonly encodePrompt?: string;
   readonly outputContract?: string;
   readonly parse?: string;
   readonly terminal?: string;
@@ -109,7 +110,7 @@ async function moduleWithCustomCandidate(
   const promptTransport =
     options.promptTransport ??
     (candidate.promptTransport === 'argv'
-      ? `{ kind: 'argv', maxBytes: 120000, placement: 'positional' }`
+      ? `{ kind: 'argv', placement: 'positional' }`
       : candidate.promptTransport === 'stdin'
         ? `{ kind: 'stdin' }`
         : `{ kind: 'file', mode: 0o600 }`);
@@ -130,6 +131,7 @@ export const CLI_CONFORMANCE_CANDIDATES = [{
     descriptor: { id: ${JSON.stringify(candidate.id)} },
     role: ${JSON.stringify(candidate.role)},
     promptTransport: ${promptTransport},
+    encodePrompt: ${options.encodePrompt ?? 'undefined'},
     buildArgs: ${buildArgs},
     validateArgs: ${validateArgs},
     environment: {},
@@ -222,34 +224,6 @@ describe('CLI production conformance lane', () => {
         projectDir: directory,
       });
       expect(roleMiss.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it('rejects an argv prompt that exceeds the adapter byte budget before spawn', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
-    try {
-      const recordPath = join(directory, 'oversized.json');
-      const raw = await runRawCliConformance(
-        rawOptions(baseContract, async () => processResult(), recordPath),
-      );
-      expect(raw.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
-      const marker = join(directory, 'spawned.txt');
-      const modulePath = await moduleWithCustomCandidate(directory, baseContract, {
-        promptTransport: `{ kind: 'argv', maxBytes: 1, placement: 'positional' }`,
-        buildArgs: `() => ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned')`)}, '<PROMPT>']`,
-      });
-      const production = await runProductionCliConformance({
-        modulePath,
-        role: 'planner',
-        recordPath,
-        projectDir: directory,
-        resolveExecutable: currentExecutableIdentity,
-      });
-      expect(production.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE);
-      expect(production.reason).toContain('adapter rejected');
-      expect(await fileExists(marker)).toBe(false);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -386,6 +360,37 @@ describe('CLI production conformance lane', () => {
       });
       expect(missing.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);
       expect(missing.verdict).toBe('OMIT');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("sends the prompt on stdin in the adapter's own encoding", async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
+    try {
+      const framedContract = {
+        ...baseContract,
+        id: 'fixture-framed-cli',
+        rawInvocation: ['--print'],
+        promptTransport: 'stdin' as const,
+      };
+      const recordPath = join(directory, 'framed.json');
+      const raw = await runRawCliConformance(
+        rawOptions(framedContract, async () => processResult(), recordPath),
+      );
+      expect(raw.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
+      const modulePath = await moduleWithCustomCandidate(directory, framedContract, {
+        encodePrompt: `({ prompt }) => Promise.resolve('framed:' + prompt)`,
+        buildArgs: `() => ['-e', ${JSON.stringify("let s='';process.stdin.on('data',(d)=>{s+=d});process.stdin.on('end',()=>{process.stdout.write('ok');process.exit(s.startsWith('framed:')?0:1)})")}]`,
+      });
+      const production = await runProductionCliConformance({
+        modulePath,
+        role: 'planner',
+        recordPath,
+        projectDir: directory,
+        resolveExecutable: currentExecutableIdentity,
+      });
+      expect(production.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

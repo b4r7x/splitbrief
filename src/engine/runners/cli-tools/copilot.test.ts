@@ -78,8 +78,6 @@ describe('Copilot role adapters', () => {
         '--effort',
         'high',
         ...imageArgs,
-        '-p',
-        PROMPT,
         ...approvalArgs,
         '--output-format',
         'json',
@@ -102,7 +100,8 @@ describe('Copilot role adapters', () => {
       expect(candidate.id).toBe('copilot');
       expect(candidate.rawContract.id).toBe(candidate.id);
       expect(candidate.rawContract.role).toBe(candidate.role);
-      expect(candidate.rawContract.rawInvocation.filter((arg) => arg === PROMPT)).toHaveLength(1);
+      expect(candidate.rawContract.rawInvocation.filter((arg) => arg === PROMPT)).toHaveLength(0);
+      expect(candidate.rawContract.promptTransport).toBe('stdin');
       expect(candidate.contractSha256).toMatch(/^[a-f0-9]{64}$/);
       expect(candidate.adapter.role).toBe(candidate.role);
       expect(candidate.adapter.descriptor).toBe(CLI_TOOL_CATALOG.copilot);
@@ -112,13 +111,9 @@ describe('Copilot role adapters', () => {
     );
   });
 
-  it('keeps argv, process-exit completion, version/auth probes, and output limits explicit', () => {
+  it('keeps stdin, process-exit completion, version/auth probes, and output limits explicit', () => {
     for (const adapter of [copilotPlannerAdapter, copilotImplementerAdapter]) {
-      expect(adapter.promptTransport).toEqual({
-        kind: 'argv',
-        maxBytes: 120_000,
-        placement: 'flag-value',
-      });
+      expect(adapter.promptTransport).toEqual({ kind: 'stdin' });
       expect(adapter.outputContract).toEqual({ kind: 'text-exit', successfulExitCodes: [0] });
       expect(adapter.probe.version).toEqual({
         command: ['copilot', '--version'],
@@ -152,8 +147,6 @@ describe('Copilot role adapters', () => {
     expect(args).toEqual([
       '--model',
       'gpt-5.2',
-      '-p',
-      PROMPT,
       '--plan',
       '--allow-all-tools',
       '--no-ask-user',
@@ -177,8 +170,6 @@ describe('Copilot role adapters', () => {
     expect(args).toEqual([
       '--model',
       'claude-sonnet-4-6',
-      '-p',
-      PROMPT,
       '--allow-all',
       '--output-format',
       'json',
@@ -191,8 +182,6 @@ describe('Copilot role adapters', () => {
       valid: true,
     });
     expect(CLI_CONFORMANCE_CANDIDATES[1]?.rawContract.rawInvocation).toEqual([
-      '-p',
-      PROMPT,
       '--allow-all',
       '--output-format',
       'json',
@@ -255,8 +244,6 @@ describe('Copilot role adapters', () => {
   it('uses plan mode for every planner call', () => {
     const planArgs = plannerArgs([]);
     expect(planArgs).toEqual([
-      '-p',
-      PROMPT,
       '--plan',
       '--allow-all-tools',
       '--no-ask-user',
@@ -511,11 +498,7 @@ describe('Copilot JSON and text protocol adapters', () => {
     const result = await invokeProcessCli(copilotImplementerAdapter, {
       invocation: {
         executable: executableIdentity(process.execPath),
-        args: [
-          '-e',
-          `process.stdout.write(${JSON.stringify(`${lines.join('\n')}\n`)})`,
-          '<PROMPT>',
-        ],
+        args: ['-e', `process.stdout.write(${JSON.stringify(`${lines.join('\n')}\n`)})`],
         promptTransport: copilotImplementerAdapter.promptTransport,
         environment: {},
         cwd: tmpdir(),

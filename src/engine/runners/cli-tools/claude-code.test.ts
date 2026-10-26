@@ -931,7 +931,12 @@ describe('Claude steering transport', () => {
         onAdmissionClosed: () => {},
       });
       try {
-        expect(session.prompt).toBe(line('initial\ntext'));
+        expect(
+          await claudeCodeImplementerAdapter.encodePrompt?.({
+            invocation: session.invocation,
+            prompt: 'initial\ntext',
+          }),
+        ).toBe(line('initial\ntext'));
         expect(session.invocation.args.filter((arg) => arg === '--input-format')).toHaveLength(1);
         expect(session.invocation.args).toContain('--replay-user-messages');
         const writes: string[] = [];
@@ -1127,7 +1132,12 @@ it('opens a Claude steering session with adapter-owned flags and JSON-line stdin
     'stream-json',
     '--replay-user-messages',
   ]);
-  expect(session.prompt).toBe(
+  expect(
+    await claudeCodePlannerAdapter.encodePrompt?.({
+      invocation: session.invocation,
+      prompt: 'initial\ntext',
+    }),
+  ).toBe(
     JSON.stringify({ type: 'user', message: { role: 'user', content: 'initial\ntext' } }) + '\n',
   );
   expect(invocation.args).toEqual(['-p', '--label', 'fixture']);

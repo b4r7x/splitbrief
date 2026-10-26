@@ -152,7 +152,12 @@ const queuedTexts = (state: WorkflowState): string[] =>
 const tooLarge = (phase: WorkflowState['phase']): RecoveryIssue =>
   buildReviewInputTooLargeRecoveryIssue({
     phase,
-    failure: { kind: 'input-too-large', chars: 900_000, maxChars: 400_000, largestFiles: [] },
+    failure: {
+      kind: 'input-too-large',
+      figures: { unit: 'characters', size: 900_000, limit: 400_000 },
+      promptSize: { characters: 900_000, bytes: 900_000 },
+      largestFiles: [],
+    },
     tool: 'codex',
     acceptAsIs: true,
     createdAt,

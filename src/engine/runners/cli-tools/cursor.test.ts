@@ -96,8 +96,8 @@ describe('Cursor role adapters', () => {
       expect(candidate.id).toBe('cursor');
       expect(candidate.rawContract.id).toBe(candidate.id);
       expect(candidate.rawContract.role).toBe(candidate.role);
-      expect(candidate.rawContract.promptTransport).toBe('argv');
-      expect(candidate.rawContract.rawInvocation.filter((arg) => arg === PROMPT)).toHaveLength(1);
+      expect(candidate.rawContract.promptTransport).toBe('stdin');
+      expect(candidate.rawContract.rawInvocation.filter((arg) => arg === PROMPT)).toHaveLength(0);
       expect(candidate.contractSha256).toMatch(/^[a-f0-9]{64}$/);
       expect(candidate.adapter.role).toBe(candidate.role);
       expect(candidate.adapter.descriptor).toBe(CLI_TOOL_CATALOG.cursor);
@@ -118,7 +118,6 @@ describe('Cursor role adapters', () => {
       '--trust',
       '--workspace',
       '/project',
-      PROMPT,
     ]);
     expect(args).toContain('--trust');
     for (const flag of WRITE_ENABLING_FLAGS) {

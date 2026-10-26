@@ -12,7 +12,7 @@ import { toTokenDelta } from '../calls/projection.js';
 import { accumulateTokenUsage } from '../calls/usage.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from '../planners/require-completed-call.js';
-import { inputTooLargeRefusal } from './input-limit.js';
+import { inputTooLargeRefusal, promptSizeIn, type PromptLimit } from './input-limit.js';
 import { isStrictJsonSchema } from './strict-json-schema.js';
 import { countNoun } from '../../utils/pluralize.js';
 
@@ -29,8 +29,8 @@ export type TypedSeatCall = Readonly<{
   seat: ActiveRunnerRole;
   typedOutput: TypedOutputCapability;
   canResume: boolean;
-  /** Largest prompt the seat's tool accepts in characters; omitted when the tool has no cap. */
-  maxInputChars?: number | undefined;
+  /** Largest prompt the seat's tool accepts; omitted when the tool has no limit. */
+  promptLimit?: PromptLimit | undefined;
   invoke: (input: {
     prompt: string;
     schema?: TypedSchemaInput | undefined;
@@ -335,6 +335,20 @@ function transportFor(
   return isStrictJsonSchema(jsonSchema) ? 'native' : 'fallback';
 }
 
+/** The text a typed call appends to its prompt: the answer schema, unless the tool takes it natively. */
+export function typedPromptSuffix(
+  capability: TypedOutputCapability,
+  jsonSchema: Readonly<Record<string, unknown>>,
+): string {
+  return transportFor(capability, jsonSchema) === 'native' ? '' : fallbackInstruction(jsonSchema);
+}
+
+function refuseOverLimit(prompt: string, limit: PromptLimit | undefined): void {
+  if (limit === undefined) return;
+  const size = promptSizeIn(prompt, limit.unit);
+  if (size > limit.max) throw inputTooLargeRefusal(size, limit);
+}
+
 export async function requestTyped<T>(
   opts: RequestTypedOptions<T>,
 ): Promise<RequestTypedResult<T>> {
@@ -343,16 +357,13 @@ export async function requestTyped<T>(
   const { seat } = input.call;
   const transport = transportFor(input.call.typedOutput, opts.jsonSchema);
   const schemaInput: TypedSchemaInput = { json: opts.jsonSchema, name: opts.schemaName };
-  const firstPrompt =
-    transport === 'native' ? input.prompt : input.prompt + fallbackInstruction(opts.jsonSchema);
-  const maxInputChars = input.call.maxInputChars;
+  const suffix = typedPromptSuffix(input.call.typedOutput, opts.jsonSchema);
+  const firstPrompt = input.prompt + suffix;
 
   // A continuation prompt the caller built, and the repair prompt below, can both
   // grow past what the seat's tool accepts. Refuse before sending so the halt is
   // classified from the prompt size, not from a tool that never saw the call.
-  if (maxInputChars !== undefined && firstPrompt.length > maxInputChars) {
-    throw inputTooLargeRefusal(firstPrompt.length, maxInputChars);
-  }
+  refuseOverLimit(firstPrompt, input.call.promptLimit);
 
   const first = requireCompletedCall(
     await input.call.invoke({
@@ -382,12 +393,8 @@ export async function requestTyped<T>(
   const repairPrompt = continuesThread
     ? resumeRepairPrompt(firstCheck.errors)
     : freshRepairPrompt(repairInput.prompt, firstCheck.answer, firstCheck.errors);
-  const repairPromptSent =
-    transport === 'fallback' ? repairPrompt + fallbackInstruction(opts.jsonSchema) : repairPrompt;
-  const repairMaxInputChars = repairInput.call.maxInputChars;
-  if (repairMaxInputChars !== undefined && repairPromptSent.length > repairMaxInputChars) {
-    throw inputTooLargeRefusal(repairPromptSent.length, repairMaxInputChars);
-  }
+  const repairPromptSent = repairPrompt + suffix;
+  refuseOverLimit(repairPromptSent, repairInput.call.promptLimit);
   const repair = requireCompletedCall(
     await repairInput.call.invoke({
       prompt: repairPromptSent,

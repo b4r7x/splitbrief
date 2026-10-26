@@ -61,6 +61,7 @@ describe('formatRecoveryHeadline', () => {
     ['balance', 'Balance spent on OpenCode CLI'],
     ['billing', 'Billing refused by OpenCode CLI'],
     ['quota', 'Quota spent on OpenCode CLI'],
+    ['access', 'Access refused by OpenCode CLI'],
   ] as const)('names an account %s cause instead of a usage limit', (cause, headline) => {
     const issue = makeRecoveryIssue({
       ...usageLimitIssue,

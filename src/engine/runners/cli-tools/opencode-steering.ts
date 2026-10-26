@@ -278,7 +278,6 @@ export function createOpencodeSteering(
       };
       return {
         ...opencodeSteeringInvocation(input.invocation, server.url, server.password),
-        prompt: input.prompt,
         parse,
         failureSignal: failureController.signal,
         onAdmissionClosed: closeAdmission,

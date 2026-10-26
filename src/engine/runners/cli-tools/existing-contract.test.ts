@@ -62,27 +62,27 @@ const SHIM_PROFILES: Readonly<Record<string, ShimProfile>> = {
   },
   copilot: {
     versionLine: 'copilot 0.3.0',
-    transport: 'argv',
+    transport: 'stdin',
     terminal: 'process-exit',
   },
   opencode: {
     versionLine: 'opencode 0.5.0',
-    transport: 'argv',
+    transport: 'stdin',
     terminal: 'process-exit',
   },
   kilo: {
     versionLine: 'kilo 0.1.0',
-    transport: 'argv',
+    transport: 'stdin',
     terminal: 'process-exit',
   },
   'cursor-agent': {
     versionLine: '2026.08.25-3e8eec8',
-    transport: 'argv',
+    transport: 'stdin',
     terminal: 'result',
   },
   cmd: {
     versionLine: '1.4.0',
-    transport: 'argv',
+    transport: 'stdin',
     terminal: 'result',
   },
 };
@@ -222,9 +222,8 @@ function rowKey(id: string, role: CliConformanceRole): string {
   return `${id}:${role}`;
 }
 
-const PROMPT_ARGV_LONG_HEAD = 'HEAD_SENTINEL ';
-const PROMPT_ARGV_LONG_TAIL = ' TAIL_SENTINEL';
-const PROMPT_ARGV_OVERSIZED = PROMPT_ARGV_LONG_HEAD + 'x'.repeat(200_000) + PROMPT_ARGV_LONG_TAIL;
+const PROMPT_HEAD = 'HEAD_SENTINEL ';
+const PROMPT_OVERSIZED = PROMPT_HEAD + 'x'.repeat(200_000);
 
 function buildConformanceAdapterArgs(
   row: (typeof CONFORMANCE_ROWS)[number],
@@ -248,14 +247,14 @@ function buildConformanceAdapterArgs(
   return [...result];
 }
 
-describe('existing CLI prompt argv transport contract', () => {
-  it.each(CONFORMANCE_ROWS.filter((row) => row.rawContract.promptTransport === 'argv'))(
-    '$id $role keeps an oversized prompt byte-for-byte in argv for adapter pre-spawn rejection',
+describe('existing CLI prompt transport contract', () => {
+  it.each(CONFORMANCE_ROWS)(
+    '$id $role takes an oversized prompt on stdin and keeps it out of argv',
     (row) => {
-      const args = buildConformanceAdapterArgs(row, PROMPT_ARGV_OVERSIZED);
-      expect(args).toContain(PROMPT_ARGV_OVERSIZED);
-      expect(args.find((arg) => arg.includes(PROMPT_ARGV_LONG_HEAD))).toBe(PROMPT_ARGV_OVERSIZED);
-      expect(args.find((arg) => arg.includes(PROMPT_ARGV_LONG_TAIL))).toBe(PROMPT_ARGV_OVERSIZED);
+      const args = buildConformanceAdapterArgs(row, PROMPT_OVERSIZED);
+      expect(row.rawContract.promptTransport).toBe('stdin');
+      expect(row.adapter.promptTransport).toEqual({ kind: 'stdin' });
+      expect(args.some((arg) => arg.includes(PROMPT_HEAD))).toBe(false);
     },
   );
 });

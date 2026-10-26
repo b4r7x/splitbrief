@@ -1,9 +1,5 @@
 import type { TypedSchemaInput } from '../runners/typed-output.js';
-import {
-  CLI_TOOL_CATALOG,
-  isCliToolId,
-  type TypedOutputCapability,
-} from '../../core/runners/cli-tool-catalog.js';
+import type { TypedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
@@ -26,6 +22,7 @@ import { summarize, summarizeStructured } from './summary.js';
 import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from './require-completed-call.js';
+import { cliPromptLimit } from '../runners/cli-tools/registry.js';
 
 type InvokeExtras = {
   priorMessages?: PriorMessage[];
@@ -92,10 +89,8 @@ export interface PlannerBaseConfig {
 }
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
   const capabilities = config.capabilities;
-  const maxInputChars =
-    config.runnerName !== undefined && isCliToolId(config.runnerName)
-      ? CLI_TOOL_CATALOG[config.runnerName].maxInputChars
-      : undefined;
+  const limit =
+    config.runnerName === undefined ? undefined : cliPromptLimit('planner', config.runnerName);
 
   const planner: Planner = {
     async review(
@@ -120,7 +115,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       seat: ctx.seat,
       typedOutput: config.typedOutput ?? 'fallback',
       canResume: capabilities.supportsSessionResume,
-      ...(maxInputChars !== undefined && { maxInputChars }),
+      ...(limit !== undefined && { promptLimit: limit }),
       invoke: ({ prompt, schema }) => {
         const callContext = createPlannerCallContext(
           config,

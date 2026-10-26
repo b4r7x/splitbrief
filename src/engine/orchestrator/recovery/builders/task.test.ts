@@ -910,6 +910,52 @@ describe('a seat whose account the provider refuses', () => {
   });
 });
 
+describe('a seat whose plan does not include the model', () => {
+  const cursorRunner = makeConfig({
+    reviewer: { kind: 'cli', tool: 'cursor', model: 'claude-haiku-5.5' },
+  }).reviewer;
+  const copilotRunner = makeConfig({ implementer: { kind: 'cli', tool: 'copilot' } }).implementer;
+
+  it.each([
+    ['cursor', 'review', 'REVIEW', cursorRunner],
+    ['copilot', 'build', 'BUILD', copilotRunner],
+  ] as const)(
+    'halts %s on the %s seat with the access advice, its words kept and the fallback taken',
+    (tool, seat, seatLabel, runner) => {
+      if (runner === undefined) throw new Error('the config has no runner for this seat');
+      const fallback = { tool: 'claude-code', model: 'sonnet' };
+      const issue = buildSeatDownIssue({
+        seat,
+        runner,
+        classification: { class: 'account', cause: 'access' },
+        words: 'Error: Access denied by policy settings',
+        phase: seat === 'review' ? 'final-review' : 'implementing',
+        seatSwap: {
+          seat,
+          currentTool: tool,
+          fallback,
+          configRevision: 'revision',
+          detectedTools: [{ ...fallback, ready: true }],
+        },
+        createdAt,
+      });
+
+      const holder = issue.facts?.tool;
+      expect(issue.reason).toBe('runner-usage-limit');
+      expect(issue.facts?.cause).toBe('access');
+      expect(formatRecoveryHeadline(issue)).toBe(`Access refused by ${holder}`);
+      expect(issue.message).toBe(
+        `Access refused by ${holder}. Check what the ${holder} account allows, or change the ${seatLabel} tool, then continue.`,
+      );
+      expect(issue.message).not.toMatch(/balance|credit|quota|usage limit/i);
+      expect(issue.details[0]).toMatch(/reported: Error: Access denied by policy settings$/);
+      expect(issue.switchSeat?.auto).toEqual({ candidate: fallback, configRevision: 'revision' });
+      expect(issue.recommendedAction).toBe('switch-seat');
+      expectValidRecoveryIssue(issue);
+    },
+  );
+});
+
 describe('switchSeatOffer', () => {
   it('offers only tools the seat can host', () => {
     expect(
@@ -949,6 +995,55 @@ describe('switchSeatOffer', () => {
     ).toEqual({
       seat: 'build',
       candidates: [{ tool: 'codex', model: 'gpt-5-mini', effort: 'high' }],
+    });
+  });
+
+  it('leaves out a tool whose prompt limit the prompt exceeds', () => {
+    expect(
+      switchSeatOffer(
+        {
+          seat: 'review',
+          currentTool: 'claude-code',
+          detectedTools: [
+            { tool: 'codex', ready: true },
+            { tool: 'opencode', ready: true },
+          ],
+        },
+        { characters: 1_048_577, bytes: 1_048_577 },
+      ),
+    ).toEqual({ seat: 'review', candidates: [{ tool: 'opencode' }] });
+  });
+
+  it('offers nothing when every ready tool limits the prompt below its size', () => {
+    expect(
+      switchSeatOffer(
+        {
+          seat: 'review',
+          currentTool: 'claude-code',
+          detectedTools: [{ tool: 'codex', ready: true }],
+        },
+        { characters: 2_000_000, bytes: 2_000_000 },
+      ),
+    ).toBeUndefined();
+  });
+
+  it('lists tools without a prompt limit before a tool whose limit the prompt fits', () => {
+    expect(
+      switchSeatOffer(
+        {
+          seat: 'review',
+          currentTool: 'claude-code',
+          detectedTools: [
+            { tool: 'codex', ready: true },
+            { tool: 'opencode', ready: true },
+            { tool: 'cursor', ready: true },
+          ],
+        },
+        { characters: 600_000, bytes: 1_200_000 },
+      ),
+    ).toEqual({
+      seat: 'review',
+      candidates: [{ tool: 'opencode' }, { tool: 'cursor' }, { tool: 'codex' }],
     });
   });
 

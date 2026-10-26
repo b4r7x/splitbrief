@@ -159,6 +159,7 @@ function processAdapter(
       auth: { channels: [{ env: [...contract.auth.env] }] },
     },
     promptTransport: adapter.promptTransport,
+    encodePrompt: adapter.encodePrompt,
     validateArgs: adapter.validateArgs,
     outputContract: adapter.outputContract,
     parse: adapter.parse,

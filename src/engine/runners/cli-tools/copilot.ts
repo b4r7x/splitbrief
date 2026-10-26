@@ -2,7 +2,6 @@ import { accumulateTokenUsage } from '../../calls/usage.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { ParsedLine } from '../types.js';
-import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
@@ -11,11 +10,7 @@ import { isRecord } from '../../../utils/type-guards.js';
 
 const COPILOT_ID = 'copilot' as const;
 const COPILOT_COMMAND = 'copilot' as const;
-const COPILOT_PROMPT_TRANSPORT = Object.freeze({
-  kind: 'argv',
-  maxBytes: 120_000,
-  placement: 'flag-value',
-} as const);
+const COPILOT_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
 const COPILOT_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 const COPILOT_PROTECTED_FLAGS = new Set([
@@ -45,7 +40,7 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     ...input,
     protectedFlags: COPILOT_PROTECTED_FLAGS,
     protectedShortValueFlags: COPILOT_PROTECTED_SHORT_VALUE_FLAGS,
-    promptTransport: 'argv',
+    promptTransport: 'stdin',
   });
 }
 
@@ -162,8 +157,6 @@ function plannerBaseArgs(input: CopilotPlannerBuildInput): string[] {
     ...(input.model === undefined ? [] : ['--model', input.model]),
     ...(input.effort === undefined ? [] : ['--effort', input.effort]),
     ...(input.imagePaths ?? []).flatMap((path) => ['--attachment', path]),
-    '-p',
-    input.prompt,
     '--plan',
     '--allow-all-tools',
     '--no-ask-user',
@@ -177,8 +170,6 @@ function implementerBaseArgs(input: CopilotImplementerBuildInput): string[] {
     ...(input.model === undefined ? [] : ['--model', input.model]),
     ...(input.effort === undefined ? [] : ['--effort', input.effort]),
     ...(input.imagePaths ?? []).flatMap((path) => ['--attachment', path]),
-    '-p',
-    input.prompt,
     '--allow-all',
     '--output-format',
     'json',
@@ -249,7 +240,7 @@ export type RawCopilotCliContract = Readonly<{
     env: readonly ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'];
   }>;
   rawInvocation: readonly string[];
-  promptTransport: 'argv';
+  promptTransport: 'stdin';
   expectedRawTerminal: 'process-exit';
   asOf: '2026-09-21';
 }>;
@@ -271,17 +262,9 @@ function rawContract(role: 'planner' | 'implementer'): RawCopilotCliContract {
     auth: { kind: 'env-or-native', env: ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'] },
     rawInvocation:
       role === 'planner'
-        ? [
-            '-p',
-            CLI_PROMPT_SENTINEL,
-            '--plan',
-            '--allow-all-tools',
-            '--no-ask-user',
-            '--output-format',
-            'json',
-          ]
-        : ['-p', CLI_PROMPT_SENTINEL, '--allow-all', '--output-format', 'json'],
-    promptTransport: 'argv',
+        ? ['--plan', '--allow-all-tools', '--no-ask-user', '--output-format', 'json']
+        : ['--allow-all', '--output-format', 'json'],
+    promptTransport: 'stdin',
     expectedRawTerminal: 'process-exit',
     asOf: '2026-09-21',
   };

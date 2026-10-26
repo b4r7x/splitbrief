@@ -73,7 +73,7 @@ function adapter(role: 'planner' | 'implementer') {
   return {
     descriptor: { id: 'example-cli' },
     role,
-    promptTransport: { kind: 'argv' as const, maxBytes: 120_000, placement: 'positional' as const },
+    promptTransport: { kind: 'argv' as const, placement: 'positional' as const },
     buildArgs: () => [CLI_PROMPT_SENTINEL],
     validateArgs: () => ({ valid: true as const }),
     environment: {},

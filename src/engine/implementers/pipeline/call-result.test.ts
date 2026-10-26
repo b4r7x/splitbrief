@@ -1,5 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createImplementerCallContext, thrownSeatFailure } from './call-result.js';
+import { requireCompletedCall } from '../../planners/require-completed-call.js';
+import {
+  opencodePlannerAdapter,
+  opencodeProtocolEvents,
+} from '../../runners/cli-tools/opencode.js';
+import type { RunnerCallResult } from '../../calls/types.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { processError } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -76,5 +85,84 @@ describe('thrownSeatFailure', () => {
 
     expect(failure).toMatchObject({ words: 'slow down', source: 'thrown' });
     expect(failure.classification.class).toBe('account');
+  });
+});
+
+describe('thrownSeatFailure on a failed planner or reviewer call', () => {
+  // Captured live from `opencode run --format json` (2.0.32, 2026-10-26) with a revoked provider credential.
+  const providerAuth = readFileSync(
+    join(import.meta.dirname, '../../../../testing/fixtures/opencode/provider-auth-401.ndjson'),
+    'utf8',
+  ).trim();
+
+  function thrownBy(result: RunnerCallResult): unknown {
+    try {
+      requireCompletedCall(result);
+    } catch (err) {
+      return err;
+    }
+    throw new Error('the call did not fail');
+  }
+
+  it('reads the recorded OpenCode 401 as a sign-out, as the BUILD seat does', () => {
+    const terminal = opencodePlannerAdapter.terminal({
+      outputContract: opencodePlannerAdapter.outputContract,
+      events: opencodeProtocolEvents(providerAuth),
+      stderr: '',
+      exitCode: 1,
+      signal: null,
+    });
+    if (terminal.status === 'completed') throw new Error('the replay completed');
+
+    const failure = thrownSeatFailure(
+      thrownBy(
+        makeRunnerCallResult({
+          status: 'failed',
+          role: 'review',
+          text: '',
+          error: terminal.error,
+          backendKind: 'cli',
+        }),
+      ),
+    );
+
+    expect(failure.classification).toEqual({ class: 'account', cause: 'auth' });
+    expect(failure.words).toContain('Invalid credential');
+  });
+
+  it('reads the HTTP status the failed call carries, not the call status', () => {
+    const failure = thrownSeatFailure(
+      thrownBy(
+        makeRunnerCallResult({
+          status: 'failed',
+          role: 'review',
+          text: '',
+          error: { code: 'opencode-error', message: 'Upstream request failed', status: 401 },
+          backendKind: 'cli',
+        }),
+      ),
+    );
+
+    expect(failure.classification).toEqual({ class: 'account', cause: 'auth' });
+  });
+
+  it('reads the provider type the failed call carries', () => {
+    const failure = thrownSeatFailure(
+      thrownBy(
+        makeRunnerCallResult({
+          status: 'failed',
+          role: 'planner',
+          text: '',
+          error: {
+            code: 'opencode-error',
+            message: 'Upstream request failed',
+            providerType: 'provider.quota',
+          },
+          backendKind: 'cli',
+        }),
+      ),
+    );
+
+    expect(failure.classification).toEqual({ class: 'account', cause: 'quota' });
   });
 });

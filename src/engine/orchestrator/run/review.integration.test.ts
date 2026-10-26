@@ -1045,8 +1045,8 @@ describe('runScheduledReview saved recovery', () => {
         reviewStatus: 'failed',
         failure: {
           kind: 'input-too-large',
-          chars: 1_106_026,
-          maxChars: 1_048_576,
+          figures: { unit: 'characters', size: 1_106_026, limit: 1_048_576 },
+          promptSize: { characters: 1_106_026, bytes: 1_106_026 },
           largestFiles: [],
         },
       };

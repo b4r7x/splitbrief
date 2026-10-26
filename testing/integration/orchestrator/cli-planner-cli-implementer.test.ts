@@ -142,7 +142,7 @@ function installFakeOpencodeImplementer(binDir: string, marker: string): string 
   const executablePath = join(binDir, 'opencode');
   const script = [
     '#!/usr/bin/env node',
-    "const { mkdirSync, writeFileSync } = require('node:fs');",
+    "const { mkdirSync, readFileSync, writeFileSync } = require('node:fs');",
     "const { join } = require('node:path');",
     `const marker = ${JSON.stringify(marker)};`,
     `const runLogPath = ${JSON.stringify(runLogPath)};`,
@@ -150,7 +150,7 @@ function installFakeOpencodeImplementer(binDir: string, marker: string): string 
     '  console.log("opencode 1.18.15");',
     '  process.exit(0);',
     '}',
-    'const prompt = process.argv[process.argv.length - 1] ?? "";',
+    'const prompt = readFileSync(0, "utf-8");',
     'writeFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2), env: { HOME: process.env.HOME ?? null, TMPDIR: process.env.TMPDIR ?? null, npm_config_cache: process.env.npm_config_cache ?? null } }));',
     'if (!prompt.includes("CLI planner implementer module")) {',
     '  console.error("missing task title in implementer prompt");',

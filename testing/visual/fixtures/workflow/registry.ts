@@ -835,7 +835,7 @@ const checkpointPredicates = [
       includesAll()(context) &&
       excludesAll('Context overflow', 'argv')(context) &&
       (context.viewport.cols < 80 ||
-        includesAll('Seat down · Prompt too large for OpenCode CLI on T002')(context)),
+        includesAll('Seat down · Prompt too large for OpenAI Codex CLI on T002')(context)),
   ],
   [
     checkpointId('at-rest-typed-words'),
@@ -879,7 +879,7 @@ const checkpointPredicates = [
   [
     checkpointId('recovery-review-prompt-too-large'),
     (context) =>
-      includesAll('Seat down · Final review failed', 'Change REVIEW tool')(context) &&
+      includesAll('Seat down · Review input too large for', 'Change REVIEW tool')(context) &&
       excludesAll('Try again')(context),
   ],
   [checkpointId('resuming'), includesAll('Resuming T')],

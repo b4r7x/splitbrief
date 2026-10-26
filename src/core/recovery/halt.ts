@@ -9,7 +9,8 @@ import { includes } from '../../utils/type-guards.js';
 /**
  * The two halts a person sees. *Needs you*: a decision only the operator can make — a spent bound,
  * a failed review after the cap, a protected write, a conflict at Apply. *Seat down*: the seat
- * cannot run — signed out, out of quota, refused its command, or answered off its contract twice.
+ * cannot run — signed out, out of quota, refused its command or its input, or answered off its
+ * contract twice.
  */
 export type RecoveryHalt = 'needs-you' | 'seat-down';
 
@@ -27,6 +28,7 @@ const SEAT_DOWN_ACTIONS = [
   'switch-seat',
   'retry-later',
   'retry-same-worker',
+  'accept-as-is',
   'skip-current-task',
   'end-run',
 ] as const satisfies readonly RecoveryAction[];
@@ -49,7 +51,7 @@ export const REASON_HALT = {
   'dependency-blocked': 'needs-you',
   'checkout-changed': 'needs-you',
   'review-failed': 'needs-you',
-  'review-input-too-large': 'needs-you',
+  'review-input-too-large': 'seat-down',
   'required-checks-unrunnable': 'needs-you',
   'approval-denied': 'needs-you',
   'snapshot-failed': 'needs-you',

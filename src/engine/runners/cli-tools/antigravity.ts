@@ -1,7 +1,7 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { parseAntigravityLine } from '../../streaming/parse-antigravity.js';
 import { error } from '../../../utils/error.js';
-import { CLI_PROJECT_DIR_SENTINEL, CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import { CLI_PROJECT_DIR_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type {
   CliImplementerAdapter,
@@ -13,12 +13,10 @@ import { validateCliArgs } from './validate-args.js';
 
 const ANTIGRAVITY_ID = 'antigravity' as const;
 const ANTIGRAVITY_COMMAND = 'agy' as const;
-const ANTIGRAVITY_PROMPT_TRANSPORT = Object.freeze({
-  kind: 'argv',
-  maxBytes: 120_000,
-  placement: 'positional',
-} as const);
+const ANTIGRAVITY_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
 const ANTIGRAVITY_VERSION_ARGS = Object.freeze(['--version'] as const);
+// In stream-json input agy reads the turn from stdin and drops a prompt given by flag.
+const ANTIGRAVITY_INPUT_ARGS = Object.freeze(['--input-format', 'stream-json'] as const);
 const ANTIGRAVITY_OUTPUT_ARGS = Object.freeze(['--output-format', 'stream-json'] as const);
 // Headless agy ends the turn at the first permission it cannot prompt for, so the planner skips
 // the prompts. `--sandbox` blocks shell writes; the file tools are not fenced, and the planning
@@ -32,6 +30,8 @@ const ANTIGRAVITY_PLANNER_ARGS = Object.freeze([
 
 const ANTIGRAVITY_PROTECTED_FLAGS = new Set([
   '-p',
+  '--prompt',
+  '--input-format',
   '--dangerously-skip-permissions',
   '--sandbox',
   '--add-dir',
@@ -55,8 +55,14 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     ...input,
     protectedFlags: ANTIGRAVITY_PROTECTED_FLAGS,
     protectedShortValueFlags: ANTIGRAVITY_PROTECTED_SHORT_VALUE_FLAGS,
-    promptTransport: 'argv',
+    promptTransport: 'stdin',
   });
+}
+
+function encodePrompt(input: Readonly<{ prompt: string }>): Promise<string> {
+  return Promise.resolve(
+    `${JSON.stringify({ event: 'user', message: { content: input.prompt } })}\n`,
+  );
 }
 
 // `agy models` lists level-specific ids; the 1.3.4 changelog says a base name picks its default
@@ -69,12 +75,11 @@ function schemaArgs(schema: CliSchemaInput | undefined): string[] {
   return schema === undefined ? [] : ['--json-schema', JSON.stringify(schema.json)];
 }
 
-// `agy -p` does not make its cwd a workspace: the model is told it has none and runs its
+// Headless agy does not make its cwd a workspace: the model is told it has none and runs its
 // commands in `~/.gemini/antigravity-cli/scratch`. `--add-dir` names the seat's directory.
 function plannerBaseArgs(input: AntigravityPlannerBuildInput): string[] {
   return [
-    '-p',
-    input.prompt,
+    ...ANTIGRAVITY_INPUT_ARGS,
     ...ANTIGRAVITY_PLANNER_ARGS,
     '--add-dir',
     input.projectDir,
@@ -86,8 +91,7 @@ function plannerBaseArgs(input: AntigravityPlannerBuildInput): string[] {
 
 function implementerBaseArgs(input: AntigravityImplementerBuildInput): string[] {
   return [
-    '-p',
-    input.prompt,
+    ...ANTIGRAVITY_INPUT_ARGS,
     '--dangerously-skip-permissions',
     '--add-dir',
     input.projectDir,
@@ -140,6 +144,7 @@ function createPlannerAdapter(): CliPlannerAdapter<'antigravity'> {
     supportsSessionResume: false,
     supportsEffort: CLI_TOOL_CATALOG[ANTIGRAVITY_ID].supportsEffort,
     promptTransport: ANTIGRAVITY_PROMPT_TRANSPORT,
+    encodePrompt,
     baseArgs: plannerBaseArgs,
     buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
     validateArgs,
@@ -156,6 +161,7 @@ function createImplementerAdapter(): CliImplementerAdapter<'antigravity'> {
     descriptor: CLI_TOOL_CATALOG[ANTIGRAVITY_ID],
     role: 'implementer',
     promptTransport: ANTIGRAVITY_PROMPT_TRANSPORT,
+    encodePrompt,
     baseArgs: implementerBaseArgs,
     buildArgs: (input) => [...implementerBaseArgs(input), ...input.configuredArgs],
     validateArgs,
@@ -177,7 +183,7 @@ export type RawAntigravityCliContract = Readonly<{
   versionArgs: readonly ['--version'];
   auth: Readonly<{ kind: 'none'; env: readonly [] }>;
   rawInvocation: readonly string[];
-  promptTransport: 'argv';
+  promptTransport: 'stdin';
   expectedRawTerminal: 'result';
   asOf: '2026-09-23';
 }>;
@@ -201,14 +207,13 @@ function rawContract(role: 'planner' | 'implementer'): RawAntigravityCliContract
     // agy 1.2.9 does not resolve a relative `--add-dir`: with `.` its shell still started in
     // `~/.gemini/antigravity-cli/scratch`. The raw harness fills in the absolute project path.
     rawInvocation: [
-      '-p',
-      CLI_PROMPT_SENTINEL,
+      ...ANTIGRAVITY_INPUT_ARGS,
       ...(role === 'planner' ? ANTIGRAVITY_PLANNER_ARGS : ['--dangerously-skip-permissions']),
       '--add-dir',
       CLI_PROJECT_DIR_SENTINEL,
       ...ANTIGRAVITY_OUTPUT_ARGS,
     ],
-    promptTransport: 'argv',
+    promptTransport: 'stdin',
     expectedRawTerminal: 'result',
     asOf: '2026-09-23',
   };

@@ -7,8 +7,7 @@ Every `implementer:` / `reviewer:` line below is generated from the SPLITBRIEF C
 ## Spawn rules (every tool)
 
 - Set cwd to the project root. Use references/run-protocol.md for detached spawning, waiting, and process reconciliation.
-- Argv transport caps the prompt at 120 000 bytes; a longer prompt is refused, never truncated. `claude` and `codex` take the prompt on stdin and have no cap.
-- Prompt transport: stdin (`< $P`) for claude and codex; codex's `-` argument makes it read stdin. The rest take `"$(cat $P)"` as the positional argument: refuse to spawn one of them when the prompt's first character is `-` — the tool would read it as an option.
+- Prompt transport: every tool reads the prompt on stdin (`< $P`), so a prompt of any size reaches it; codex's `-` argument makes it read stdin. `agy` reads one JSON line (see its section).
 - Drop the model flag (`-m $M` / `--model $M`) and the effort flag (`--effort $E` / `--variant $E` / `-c model_reasoning_effort=$E`) when the seat carries no model or no effort.
 - Never add flags beyond the recipe; never pass this session's own permission flags down. A recipe failure halts with the installed tool's diagnosis. Do not improvise flags or edit adapters during the run.
 - Success = exit code 0 AND, for the structured tools, the terminal record named below. Exit 0 without it = failure `ended without a terminal result`.
@@ -51,10 +50,10 @@ Timeouts:
 
 - binary `opencode` · version `opencode --version` · auth `opencode auth list` · models `opencode models` (ids are `provider/model`) · effort = `--variant` (provider vocabulary such as `high`, `max`, `minimal`)
 <!-- generated: recipe:opencode -->
-- implementer: `nohup sh -c 'opencode run --model $M --variant $E --format json --agent build "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'opencode run --format json --agent build "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'opencode run --model $M --variant $E --format json --agent plan "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'opencode run --format json --agent plan "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'opencode run --model $M --variant $E --format json --agent build < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'opencode run --format json --agent build < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'opencode run --model $M --variant $E --format json --agent plan < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'opencode run --format json --agent plan < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - terminal record: none — exit 0 is success; a `{"type":"error"…}` line = failure regardless of exit code. Final text: the text events after the last tool event.
 
@@ -62,10 +61,10 @@ Timeouts:
 
 - binary `kilo` · version `kilo --version` · auth `kilo auth list` · models `kilo models` (`provider/model`) · effort = `--variant`
 <!-- generated: recipe:kilo-code -->
-- implementer: `nohup sh -c 'kilo run --model $M --variant $E --format json --agent code --auto "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'kilo run --format json --agent code --auto "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'kilo run --model $M --variant $E --format json --agent plan "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'kilo run --format json --agent plan "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'kilo run --model $M --variant $E --format json --agent code --auto < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'kilo run --format json --agent code --auto < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'kilo run --model $M --variant $E --format json --agent plan < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'kilo run --format json --agent plan < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - terminal record: none — exit 0; error envelope as opencode.
 
@@ -73,10 +72,10 @@ Timeouts:
 
 - binary `copilot` · version `copilot --version` · auth: no cheap probe — an auth signature in the first spawn's log halts · models: no listing · effort `low|medium|high`
 <!-- generated: recipe:copilot -->
-- implementer: `nohup sh -c 'copilot --model $M --effort $E -p "$(cat $P)" --allow-all --output-format json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'copilot -p "$(cat $P)" --allow-all --output-format json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'copilot --model $M --effort $E -p "$(cat $P)" --plan --allow-all-tools --no-ask-user --output-format json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'copilot -p "$(cat $P)" --plan --allow-all-tools --no-ask-user --output-format json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'copilot --model $M --effort $E --allow-all --output-format json < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'copilot --allow-all --output-format json < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'copilot --model $M --effort $E --plan --allow-all-tools --no-ask-user --output-format json < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'copilot --plan --allow-all-tools --no-ask-user --output-format json < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - terminal record: none — exit 0. The implementer and the reviewer both print JSON records, one per line.
 
@@ -84,10 +83,10 @@ Timeouts:
 
 - binary `cursor-agent` (`agent` is the same binary) · version `cursor-agent --version` · auth `cursor-agent status` · models `cursor-agent --list-models` · effort: part of the model id (`gpt-5.3-codex-high`); an `@effort` on a cursor seat is refused at preflight with `cursor carries effort in the model id`
 <!-- generated: recipe:cursor -->
-- implementer: `nohup sh -c 'cursor-agent --print --output-format stream-json --force --trust --workspace $D --model $M "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'cursor-agent --print --output-format stream-json --force --trust --workspace $D "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'cursor-agent --print --output-format stream-json --mode plan --trust --workspace $D --model $M "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'cursor-agent --print --output-format stream-json --mode plan --trust --workspace $D "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'cursor-agent --print --output-format stream-json --force --trust --workspace $D --model $M < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'cursor-agent --print --output-format stream-json --force --trust --workspace $D < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'cursor-agent --print --output-format stream-json --mode plan --trust --workspace $D --model $M < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'cursor-agent --print --output-format stream-json --mode plan --trust --workspace $D < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - terminal record: `"type":"result"`.
 
@@ -95,10 +94,10 @@ Timeouts:
 
 - binary `cmd` · version `cmd --version` · auth `cmd status` · models `cmd --list-models` (`vendor/model`) · effort `low|medium|high`
 <!-- generated: recipe:command-code -->
-- implementer: `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --yolo -m $M --effort $E "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --yolo "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --permission-mode plan -m $M --effort $E "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --permission-mode plan "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --yolo -m $M --effort $E < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --yolo < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --permission-mode plan -m $M --effort $E < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --permission-mode plan < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
 - `--permission-mode auto-accept` is not enough in `-p` invocation (verified on 1.50.1: every write and shell tool answers `requires permissions. Use --yolo`); `--yolo` is the headless write flag. The implementer recipe was exercised end-to-end on 1.50.1 on 2026-09-08.
 - terminal record: the final `result` line of the NDJSON stream; its `finalText` field is the final text. Exit 8 = the `--max-turns` cap → failure `turn cap hit`.
@@ -107,11 +106,12 @@ Timeouts:
 
 - binary `agy` · version `agy --version` (`agy --help` prints none) · auth `agy models` (fails when signed out) · models `agy models` (`<id>\t<display name>`, one row per effort variant) · effort: part of the model id (`gemini-3.8-flash-low`)
 <!-- generated: recipe:antigravity -->
-- implementer: `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --add-dir $D --output-format stream-json --model $M > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- implementer (no model): `nohup sh -c 'agy -p "$(cat $P)" --dangerously-skip-permissions --add-dir $D --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer: `nohup sh -c 'agy -p "$(cat $P)" --mode plan --sandbox --dangerously-skip-permissions --add-dir $D --output-format stream-json --model $M > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
-- reviewer (no model): `nohup sh -c 'agy -p "$(cat $P)" --mode plan --sandbox --dangerously-skip-permissions --add-dir $D --output-format stream-json > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer: `nohup sh -c 'agy --input-format stream-json --dangerously-skip-permissions --add-dir $D --output-format stream-json --model $M < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- implementer (no model): `nohup sh -c 'agy --input-format stream-json --dangerously-skip-permissions --add-dir $D --output-format stream-json < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer: `nohup sh -c 'agy --input-format stream-json --mode plan --sandbox --dangerously-skip-permissions --add-dir $D --output-format stream-json --model $M < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
+- reviewer (no model): `nohup sh -c 'agy --input-format stream-json --mode plan --sandbox --dangerously-skip-permissions --add-dir $D --output-format stream-json < $P > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
+- prompt file: `$P` holds one line, `{"event":"user","message":{"content":<the prompt as a JSON string>}}`; `--input-format stream-json` makes agy read it from stdin.
 - terminal record: the last `{"event":"result",…}` line: `result.status` `SUCCESS` = success, with `result.response` as the final text; any other status = failure; exit 0 without it = failure `ended without a terminal result`.
 
 ## Halt signatures
@@ -136,10 +136,10 @@ Report the tool's login or plan page, and its model listing when available.
 | Kind | Signatures |
 |---|---|
 | input-too-large | `input_too_large`, `input exceeds the maximum length`, `prompt is too long` |
-| auth | `access token could not be refreshed`, `log out and sign in again`, `401 unauthorized`, `please run /login`, `invalid api key`, `oauth token has expired`, `oauth token revoked`, `authentication_error`, `not logged in`, `not authenticated`, `http 401`, `status 401`, `"status":401`, `login required`, `authentication failed` |
+| auth | `access token could not be refreshed`, `log out and sign in again`, `401 unauthorized`, `please run /login`, `invalid api key`, `oauth token has expired`, `oauth token revoked`, `authentication_error`, `not logged in`, `not authenticated`, `http 401`, `status 401`, `"status":401`, `login required`, `authentication failed`, `authentication required. please run` |
 | usage | `rate limit exceeded`, `rate limit reached`, `usage limit`, `quota exceeded`, `too many requests`, `insufficient_quota`, `exceeded your current quota`, `credit balance is too low`, `http 429`, `status 429`, `"status":429`, `insufficient credits`, `quota reached`, `resource_exhausted`, `exhausted your` |
 | missing-model | `unknown model`, `model not found`, `invalid model`, `provider.no-route` |
-| spawn | `requires permissions`, `use --yolo`, `blocked by permissions`, `not allowed in this mode`, `unknown option`, `unknown flag`, `unrecognized argument`, `sandbox required but unavailable` |
+| spawn | `requires permissions`, `use --yolo`, `blocked by permissions`, `not allowed in this mode`, `unknown option`, `unknown flag`, `unrecognized argument`, `sandbox required but unavailable`, `provide a prompt with -p or via standard in` |
 <!-- /generated -->
 
 A spawn match is seat trouble. Pause with the installed tool's diagnosis and preserve task counters and evidence.

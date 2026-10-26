@@ -2,6 +2,7 @@ import type { Summary } from '../../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 import type { ReviewProvenance } from '../../../../core/schemas/review-changes.js';
+import type { PromptLimit } from '../../../runners/input-limit.js';
 import type { ReviewInputDrop } from './fit.js';
 
 export type BuildReviewPacketOptions = {
@@ -13,7 +14,7 @@ export type BuildReviewPacketOptions = {
   state: WorkflowState;
   finalReviewStatus: 'written' | 'failed';
   provenance?: ReviewProvenance;
-  reviewInput?: { chars: number; maxChars: number; dropped: ReviewInputDrop[] };
+  reviewInput?: { size: number; limit: PromptLimit; dropped: ReviewInputDrop[] };
 };
 
 export type BriefQualityArtifact = {

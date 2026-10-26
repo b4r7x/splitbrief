@@ -129,8 +129,13 @@ describe('handlePlanningFailure', () => {
         expect(result.state.pendingRecovery?.switchSeat?.auto !== undefined).toBe(auto);
         expect(result.state.pendingRecovery?.details.join('\n')).toContain(CURSOR_MODEL_REFUSAL);
         const rows = events.filter((event) => event.type === 'error');
-        if (auto) expect(rows[0]?.message).toBe('Balance spent on Cursor Agent CLI');
-        else expect(rows[0]?.message).toContain('Add credit or change the PLAN tool');
+        if (auto) {
+          expect(rows[0]?.message).toBe('Access refused by Cursor Agent CLI');
+        } else {
+          expect(rows[0]?.message).toContain(
+            'Check what the Cursor Agent CLI account allows, or change the PLAN tool',
+          );
+        }
       } finally {
         restorePath();
       }

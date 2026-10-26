@@ -98,7 +98,6 @@ function indent(text: string): string {
 const SHELL_WORD = /^[\w@%+=:,./$-]+$/;
 
 function substituteArg(arg: string): string {
-  if (arg === CLI_PROMPT_SENTINEL) return '"$(cat $P)"';
   if (arg === 'high') return '$E';
   if (arg.endsWith('=high')) return `${arg.slice(0, -'high'.length)}$E`;
   // The recipe runs inside `sh -c '…'`, so an argument that shell would unquote or split

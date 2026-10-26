@@ -128,7 +128,7 @@ describe('applyRecoveryAction: halt policy', () => {
       taskTitle: task.title,
       files: [task.suggestedFiles[0]],
       affectedTaskIds: [task.id],
-      availableActions: ['retry-same-worker', 'accept-as-is', 'end-run'],
+      availableActions: ['retry-same-worker', 'revise', 'end-run'],
       recommendedAction: 'retry-same-worker',
     });
     const state = { ...makeImplState([task]), pendingRecovery: issue };
@@ -138,7 +138,7 @@ describe('applyRecoveryAction: halt policy', () => {
       projectDir,
       sessionId,
       state,
-      action: 'accept-as-is',
+      action: 'revise',
       bus,
       config: makeConfig(),
     });

@@ -21,6 +21,7 @@ import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/revi
 import { reviewSeatDetails } from '../recovery/builders/details.js';
 import { plannerCallHaltIssue, plannerHaltRow } from '../recovery/planner-call-failure.js';
 import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
+import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
 import { applyTriage, startFixCycle } from '../triage.js';
 import { runPreReview } from './pre-review-checks.js';
@@ -160,11 +161,19 @@ export async function haltVerdictlessReview(args: {
   const failure = noVerdictFailure(args.review, reviewName(judged));
   const state = failure === undefined ? args.state : queueScheduledTriage(ref, args.state);
   if (failure?.kind === 'input-too-large') {
+    const { runner } = resolveReviewerRunner(wctx.config);
     const issue = buildReviewInputTooLargeRecoveryIssue({
       phase: state.phase,
       failure,
-      tool: getRunnerCatalogDisplayName(resolveReviewerRunner(wctx.config).runner),
+      tool: getRunnerCatalogDisplayName(runner),
       acceptAsIs: scheduledTaskReview(state) || state.phase === 'final-review',
+      seatSwap: await loadSeatSwapContext({
+        projectDir: wctx.projectDir,
+        seat: 'review',
+        runner,
+        config: wctx.config,
+        modelCache: wctx.modelCache,
+      }),
       createdAt: nowIso(),
     });
     return raisePendingRecovery(ref, state, issue, setTrackedState);

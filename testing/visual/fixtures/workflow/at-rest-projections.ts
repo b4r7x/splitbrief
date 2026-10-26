@@ -25,7 +25,7 @@ import {
   buildRunnerInputTooLargeRecoveryIssue,
   buildSeatDownIssue,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
-import { argvPromptTooLarge } from '../../../../src/engine/runners/input-limit.js';
+import { CODEX_INPUT_TOO_LARGE } from './halt-text-projections.js';
 import {
   buildApplyConflictRecoveryIssue,
   buildApplyPartialRecoveryIssue,
@@ -730,12 +730,12 @@ const AT_REST_HALTED = record({
   }),
 });
 
-/** A BUILD seat that takes its prompt on the command line, declaring a fallback that reads stdin. */
-const ARGV_IMPLEMENTER = {
+/** A BUILD seat on the one tool with an input limit, declaring a fallback that has none. */
+const LIMITED_IMPLEMENTER = {
   kind: 'cli',
-  tool: 'opencode',
-  model: 'opencode-go/deepseek-v4.1-flash',
-  fallback: { tool: 'codex', model: 'gpt-5-codex' },
+  tool: 'codex',
+  model: 'gpt-5-codex',
+  fallback: { tool: 'claude-code' },
 } as const;
 
 const AT_REST_PROMPT_TOO_LARGE = record({
@@ -754,15 +754,15 @@ const AT_REST_PROMPT_TOO_LARGE = record({
             suggestedFiles: [BRIEFS.wire.file],
           }),
           phase: 'implementing',
-          runner: ARGV_IMPLEMENTER,
-          toolMessage: argvPromptTooLarge(195_203, 120_000).message,
+          runner: LIMITED_IMPLEMENTER,
+          toolMessage: CODEX_INPUT_TOO_LARGE,
           attempts: 1,
           maxAttempts: 8,
           seatSwap: {
             seat: 'build',
-            currentTool: 'opencode',
-            fallback: ARGV_IMPLEMENTER.fallback,
-            detectedTools: [{ ...ARGV_IMPLEMENTER.fallback, ready: true }],
+            currentTool: 'codex',
+            fallback: LIMITED_IMPLEMENTER.fallback,
+            detectedTools: [{ ...LIMITED_IMPLEMENTER.fallback, ready: true }],
           },
           createdAt: STARTED_AT_ISO,
         }),
@@ -778,8 +778,8 @@ const AT_REST_PROMPT_TOO_LARGE = record({
       { id: BRIEFS.wire.id, status: 'in_progress' },
       { id: BRIEFS.routeTests.id, status: 'pending' },
     ],
-    implementerTool: ARGV_IMPLEMENTER.tool,
-    implementerModel: ARGV_IMPLEMENTER.model,
+    implementerTool: LIMITED_IMPLEMENTER.tool,
+    implementerModel: LIMITED_IMPLEMENTER.model,
   }),
 });
 
@@ -2704,7 +2704,7 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
       id: 'workflow-at-rest-prompt-too-large',
       route: { record: AT_REST_PROMPT_TOO_LARGE },
     }),
-    config: { implementer: ARGV_IMPLEMENTER },
+    config: { implementer: LIMITED_IMPLEMENTER },
   },
   atRestProjection({
     id: 'workflow-at-rest-apply-conflict',

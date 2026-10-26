@@ -49,6 +49,8 @@ import { CLI_RAW_OUTPUT_MAX_BYTES, invokeProcessCli } from './process-invoke.js'
 import { runnerCallOutcome, runnerOwnWords } from '../../implementers/pipeline/call-result.js';
 import { requireCompletedCall } from '../../planners/require-completed-call.js';
 import { antigravityImplementerAdapter } from './antigravity.js';
+import { copilotImplementerAdapter } from './copilot.js';
+import { cursorImplementerAdapter } from './cursor.js';
 import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './claude-code.js';
 import { codexImplementerAdapter } from './codex.js';
 import {
@@ -62,6 +64,7 @@ import {
   revalidateCliExecutableIdentity,
 } from '../resolve-cli-executable.js';
 import { createRunnerSandboxEnv } from '../sandbox-env.js';
+import { argvPromptMaxBytes, inputTooLargeFigures } from '../input-limit.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -381,7 +384,7 @@ function o4DirectEnvelopeExitScript(envelope: string): string {
 function opencodeEnvelopeInvocation(envelope: string) {
   return invocation({
     script: o4DirectEnvelopeExitScript(envelope),
-    args: ['<PROMPT>'],
+    args: [],
     promptTransport: opencodeImplementerAdapter.promptTransport,
   });
 }
@@ -411,9 +414,9 @@ describe('invokeProcessCli', () => {
     );
     const argvPrompt = `${'é'.repeat(40_000)}FINAL-SENTINEL`;
     const argvResult = await run(
-      adapter({ kind: 'argv', maxBytes: 120_000, placement: 'positional' }),
+      adapter({ kind: 'argv', placement: 'positional' }),
       invocation({
-        promptTransport: { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
+        promptTransport: { kind: 'argv', placement: 'positional' },
         args: ['<PROMPT>'],
         script: emitPromptScript('const v=process.argv[1];emit(v)'),
       }),
@@ -442,6 +445,19 @@ describe('invokeProcessCli', () => {
       error: { code: 'prompt-transport-error' },
     });
     expect(result.error?.message).not.toContain(promptMarker);
+  });
+
+  it('fails when a child exits 0 with no words before a large stdin prompt is delivered', async () => {
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({ script: "require('node:fs').closeSync(0);process.exit(0)" }),
+      'x'.repeat(8 * 1024 * 1024),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'prompt-transport-error' },
+    });
   });
 
   // The limit line is on stderr before the pipe under the prompt breaks; the broken pipe must not
@@ -473,15 +489,16 @@ describe('invokeProcessCli', () => {
 
   it('rejects transport overflow, malformed placeholders, and configured argument conflicts before spawn', async () => {
     const missingExecutable = missingExecutableIdentity();
+    const overflowPrompt = '🙂'.repeat(Math.floor(argvPromptMaxBytes() / 4) + 1);
     const overflow = await run(
-      adapter({ kind: 'argv', maxBytes: 120_000, placement: 'positional' }),
+      adapter({ kind: 'argv', placement: 'positional' }),
       invocation({
         executable: missingExecutable,
-        promptTransport: { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
+        promptTransport: { kind: 'argv', placement: 'positional' },
         args: ['<PROMPT>'],
         script: '',
       }),
-      '🙂'.repeat(30_001),
+      overflowPrompt,
     );
     const placeholder = await run(
       adapter({ kind: 'stdin' }),
@@ -493,8 +510,11 @@ describe('invokeProcessCli', () => {
     );
 
     expect(overflow.error?.code).toBe('argv-prompt-too-large');
-    expect(overflow.error?.message).toContain('120004');
-    expect(overflow.error?.message).toContain('120000');
+    expect(inputTooLargeFigures(overflow.error?.message ?? '')).toEqual({
+      unit: 'bytes',
+      size: Buffer.byteLength(overflowPrompt, 'utf8'),
+      limit: argvPromptMaxBytes(),
+    });
     expect(placeholder.error?.code).toBe('prompt-transport-error');
     expect(conflict.error?.code).toBe('argument-conflict');
   });
@@ -502,19 +522,19 @@ describe('invokeProcessCli', () => {
   it('refuses an option-looking prompt only where argv places it positionally', async () => {
     const optionPrompt = '--sandbox danger-full-access';
     const positional = await run(
-      adapter({ kind: 'argv', maxBytes: 120_000, placement: 'positional' }),
+      adapter({ kind: 'argv', placement: 'positional' }),
       invocation({
         executable: missingExecutableIdentity(),
-        promptTransport: { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
+        promptTransport: { kind: 'argv', placement: 'positional' },
         args: ['<PROMPT>'],
         script: '',
       }),
       optionPrompt,
     );
     const flagValue = await run(
-      adapter({ kind: 'argv', maxBytes: 120_000, placement: 'flag-value' }),
+      adapter({ kind: 'argv', placement: 'flag-value' }),
       invocation({
-        promptTransport: { kind: 'argv', maxBytes: 120_000, placement: 'flag-value' },
+        promptTransport: { kind: 'argv', placement: 'flag-value' },
         // `--` keeps node from claiming the fixture's own flag, mirroring a CLI
         // whose prompt fills the value slot of the flag before it.
         args: ['--', '--message', '<PROMPT>'],
@@ -782,7 +802,7 @@ describe('invokeProcessCli', () => {
       opencodeImplementerAdapter,
       invocation({
         script: `process.stdout.write(Buffer.from('${encoded}','base64').toString('utf8')+'\\n');process.exitCode=1;`,
-        args: ['<PROMPT>'],
+        args: [],
         promptTransport: opencodeImplementerAdapter.promptTransport,
       }),
       'fixture prompt',
@@ -862,7 +882,7 @@ describe('invokeProcessCli', () => {
           : [`process.stderr.write(${JSON.stringify(opts.stderr)})`]),
         `process.exitCode=${opts.exitCode}`,
       ].join(';'),
-      args: ['<PROMPT>'],
+      args: [],
       promptTransport: opencodeImplementerAdapter.promptTransport,
     });
   const warningsOf = (events: readonly RunnerCallEvent[]) =>
@@ -1704,7 +1724,7 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
     return invokeProcessCli(antigravityImplementerAdapter, {
       invocation: {
         executable: executableIdentity(shimPath),
-        args: ['<PROMPT>'],
+        args: [],
         promptTransport: antigravityImplementerAdapter.promptTransport,
         environment: { PATH: process.env.PATH ?? '' },
         cwd: dir,
@@ -1843,7 +1863,7 @@ describe('invokeProcessCli tool-use guard', () => {
       const result = await invokeProcessCli(antigravityImplementerAdapter, {
         invocation: {
           executable: executableIdentity(shimPath),
-          args: ['<PROMPT>'],
+          args: [],
           promptTransport: antigravityImplementerAdapter.promptTransport,
           environment: { PATH: process.env.PATH ?? '' },
           cwd: dir,
@@ -1882,7 +1902,7 @@ describe('invokeProcessCli tool-use guard', () => {
       const result = await invokeProcessCli(antigravityImplementerAdapter, {
         invocation: {
           executable: executableIdentity(shimPath),
-          args: ['<PROMPT>'],
+          args: [],
           promptTransport: antigravityImplementerAdapter.promptTransport,
           environment: { PATH: process.env.PATH ?? '' },
           cwd: dir,
@@ -1909,7 +1929,7 @@ describe('invokeProcessCli tool-use guard', () => {
       const result = await invokeProcessCli(antigravityImplementerAdapter, {
         invocation: {
           executable: executableIdentity(shimPath),
-          args: ['<PROMPT>'],
+          args: [],
           promptTransport: antigravityImplementerAdapter.promptTransport,
           environment: { PATH: process.env.PATH ?? '' },
           cwd: dir,
@@ -2009,7 +2029,7 @@ describe('invokeProcessCli structured-terminal halts on stderr', () => {
     return invokeProcessCli(antigravityImplementerAdapter, {
       invocation: {
         executable: executableIdentity(shimPath),
-        args: ['<PROMPT>'],
+        args: [],
         promptTransport: antigravityImplementerAdapter.promptTransport,
         environment: { PATH: process.env.PATH ?? '' },
         cwd: dir,
@@ -2217,6 +2237,210 @@ describe('invokeProcessCli reads the stderr of a failed call as its diagnosis', 
     expect(result.error?.message.length).toBeLessThanOrEqual(RUNNER_CALL_MESSAGE_MAX_LENGTH);
     expect(result.error?.message.startsWith(CURSOR_MODEL_REFUSAL)).toBe(true);
   });
+});
+
+describe('invokeProcessCli on the refusals a stdin prompt meets', () => {
+  const FIXTURES = join(import.meta.dirname, '../../../../testing/fixtures');
+
+  /** A tool shim that reads (or ignores) its stdin, replays captured bytes, and exits. */
+  async function runShim(
+    dir: string,
+    selected: CliImplementerAdapter,
+    output: Readonly<{
+      stdin: 'read' | 'ignore';
+      stdout?: string;
+      stderr?: string;
+      stderrText?: string;
+      exit: number;
+      prompt?: string;
+    }>,
+  ) {
+    const shimPath = join(dir, 'tool');
+    const body = [
+      '#!/bin/bash',
+      ...(output.stdin === 'read' ? ['cat >/dev/null'] : []),
+      ...(output.stdout === undefined
+        ? []
+        : [`cat ${JSON.stringify(join(FIXTURES, output.stdout))}`]),
+      ...(output.stderr === undefined
+        ? []
+        : [`cat ${JSON.stringify(join(FIXTURES, output.stderr))} >&2`]),
+      ...(output.stderrText === undefined
+        ? []
+        : [`printf '%s\\n' ${JSON.stringify(output.stderrText)} >&2`]),
+      `exit ${output.exit}`,
+    ];
+    writeFileSync(shimPath, `${body.join('\n')}\n`, { mode: 0o755 });
+    // The real parser and terminal read the bytes; the arguments are not under test here.
+    const stdinAdapter: CliImplementerAdapter = {
+      ...selected,
+      promptTransport: { kind: 'stdin' },
+      validateArgs: () => ({ valid: true }),
+    };
+    return invokeProcessCli(stdinAdapter, {
+      invocation: {
+        executable: executableIdentity(shimPath),
+        args: [],
+        promptTransport: stdinAdapter.promptTransport,
+        environment: { PATH: process.env.PATH ?? '' },
+        cwd: dir,
+        timeoutMs: 15_000,
+        signal: undefined,
+      },
+      prompt: output.prompt ?? 'fixture prompt',
+      callContext,
+    });
+  }
+
+  // The echo record is a real Cursor capture whose prompt text names a 401 and a usage limit.
+  itUnix('never reads the Cursor echo of the prompt as the failure', async () => {
+    await withTempDir('splitbrief-cursor-echo', async (dir) => {
+      const result = await runShim(dir, cursorImplementerAdapter, {
+        stdin: 'read',
+        stdout: 'cursor/stream-json-prompt-echo.ndjson',
+        exit: 1,
+      });
+
+      expect(result.status).toBe('failed');
+      expect(result.error?.code).not.toBe('usage-limit');
+      expect(result.error?.code).not.toBe('unauthenticated');
+      expect(result.error?.message).not.toContain('Brief T001');
+    });
+  });
+
+  itUnix('halts on the Cursor refusal on stderr, not on the echo of the prompt', async () => {
+    await withTempDir('splitbrief-cursor-echo-refusal', async (dir) => {
+      const result = await runShim(dir, cursorImplementerAdapter, {
+        stdin: 'read',
+        stdout: 'cursor/stream-json-prompt-echo.ndjson',
+        stderrText: CURSOR_MODEL_REFUSAL,
+        exit: 1,
+      });
+
+      expect(result).toMatchObject({
+        status: 'failed',
+        error: { code: 'usage-limit', message: CURSOR_MODEL_REFUSAL },
+      });
+    });
+  });
+
+  itUnix('halts on the Copilot policy denial in its own words', async () => {
+    await withTempDir('splitbrief-copilot-policy', async (dir) => {
+      const result = await runShim(dir, copilotImplementerAdapter, {
+        stdin: 'read',
+        stdout: 'copilot/access-denied-policy.stdout.ndjson',
+        stderr: 'copilot/access-denied-policy.stderr.txt',
+        exit: 1,
+      });
+
+      expect(result).toMatchObject({ status: 'failed', error: { code: 'usage-limit' } });
+      expect(result.error?.message).toContain('Access denied by policy settings');
+      expect(runnerCallOutcome(result).state).toBe('usage-limit');
+    });
+  });
+
+  itUnix('names the cause when Copilot says it got no prompt', async () => {
+    await withTempDir('splitbrief-copilot-no-prompt', async (dir) => {
+      const result = await runShim(dir, copilotImplementerAdapter, {
+        stdin: 'ignore',
+        stderr: 'copilot/no-prompt.stderr.txt',
+        exit: 1,
+        prompt: 'x'.repeat(8 * 1024 * 1024),
+      });
+
+      expect(result).toMatchObject({
+        status: 'failed',
+        error: { code: 'implementer-recipe-invalid' },
+      });
+      expect(result.error?.message).toContain('No prompt provided');
+    });
+  });
+
+  // Captured live from `agent -p` with no login: it exits 1 before it reads a prompt larger than
+  // the pipe buffer, so the pipe breaks under the prompt.
+  itUnix(
+    'halts a signed-out Cursor that quits before it reads a large prompt as signed out',
+    async () => {
+      await withTempDir('splitbrief-cursor-signed-out', async (dir) => {
+        const result = await runShim(dir, cursorImplementerAdapter, {
+          stdin: 'ignore',
+          stderr: 'cursor/signed-out.stderr.txt',
+          exit: 1,
+          prompt: 'x'.repeat(300 * 1024),
+        });
+
+        expect(result).toMatchObject({ status: 'failed', error: { code: 'unauthenticated' } });
+        expect(result.error?.message).toContain("Please run 'agent login' first");
+        expect(runnerCallOutcome(result).state).toBe('unauthenticated');
+      });
+    },
+  );
+
+  itUnix.each([
+    [
+      'an unknown failure',
+      'Error: the workspace index is corrupt\\n',
+      'CLI exited with code 1: Error: the workspace index is corrupt',
+    ],
+    ['a silent failure', '', 'CLI exited with code 1'],
+  ])(
+    'reads %s of a tool that quits before it reads a large prompt as its own exit',
+    async (_name, stderrLine, message) => {
+      await withTempDir('splitbrief-stdin-own-exit', async (dir) => {
+        const shimPath = join(dir, 'tool');
+        writeFileSync(shimPath, `#!/bin/bash\nprintf '${stderrLine}' >&2\nexit 1\n`, {
+          mode: 0o755,
+        });
+        const result = await invokeCliAdapter({
+          adapter: { ...cursorImplementerAdapter, validateArgs: () => ({ valid: true }) },
+          invocation: {
+            executable: executableIdentity(shimPath),
+            args: [],
+            promptTransport: { kind: 'stdin' },
+            environment: { PATH: process.env.PATH ?? '' },
+            cwd: dir,
+            timeoutMs: 15_000,
+            signal: undefined,
+          },
+          prompt: 'x'.repeat(300 * 1024),
+          callContext,
+        });
+
+        expect(result).toMatchObject({
+          status: 'failed',
+          error: { code: 'non-zero-exit', message },
+        });
+        expect(runnerCallOutcome(result).state).toBe('non-zero-exit');
+      });
+    },
+  );
+
+  itUnix.each([
+    ['a line that is not JSON', 'bad-json', 'failed to decode stream input'],
+    [
+      'a line with no event field',
+      'missing-event',
+      'stream input message is missing the "event" field',
+    ],
+  ])(
+    'reads an Antigravity refusal of %s as the stdin transport failing, in its words',
+    async (_name, capture, words) => {
+      await withTempDir(`splitbrief-agy-stream-input-${capture}`, async (dir) => {
+        const result = await runShim(dir, antigravityImplementerAdapter, {
+          stdin: 'read',
+          stdout: `antigravity/stream-input-${capture}.ndjson`,
+          stderr: `antigravity/stream-input-${capture}.stderr.txt`,
+          exit: 1,
+        });
+
+        expect(result).toMatchObject({
+          status: 'failed',
+          error: { code: 'prompt-transport-error' },
+        });
+        expect(result.error?.message).toContain(words);
+      });
+    },
+  );
 });
 
 describe('Claude Code process steering', () => {
@@ -2906,7 +3130,6 @@ describe('OpenCode process steering', () => {
               'json',
               '--agent',
               'build',
-              'initial',
               '--title=fixture',
             ]
           : [
@@ -2919,7 +3142,6 @@ describe('OpenCode process steering', () => {
               'json',
               '--agent',
               'build',
-              'initial',
               '--title=fixture',
             ];
       expect(run.args).toEqual(expected);

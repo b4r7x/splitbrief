@@ -366,15 +366,7 @@ export async function invokeProcessCli(
           });
         }
       }
-      prepared = await preparePrompt(
-        adapter,
-        invocation,
-        invocation.args,
-        steeringSession?.prompt ??
-          (adapter.encodePrompt === undefined
-            ? context.prompt
-            : await adapter.encodePrompt({ invocation, prompt: context.prompt })),
-      );
+      prepared = await preparePrompt(adapter, invocation, invocation.args, context.prompt);
     } catch (cause) {
       if (matches('platform-limitation')(cause)) throw cause;
       throw error(prelaunchErrorCode(cause), prelaunchErrorMessage(cause), undefined, cause);
@@ -435,6 +427,8 @@ export async function invokeProcessCli(
       } catch {
         throw fatal('protocol-failure', 'CLI output did not match its structured protocol');
       }
+      // A line the parser drops, such as the tool's echo of the prompt, is not the tool's words.
+      stdoutLastLine = parsed.length === 0 ? '' : line;
       const turnBoundary = terminalSeen ? false : (steeringSession?.onLine(line, parsed) ?? false);
       for (const event of parsed) applyProtocolEvent(event, turnBoundary);
     }, lineBufferOptions);
@@ -511,10 +505,7 @@ export async function invokeProcessCli(
               context.onSpawned?.(proc);
             },
       onStdout(chunk) {
-        const parts = (stdoutTailCarry + chunk).split('\n');
-        stdoutTailCarry = parts.pop() ?? '';
-        const lastComplete = parts.at(-1);
-        if (lastComplete !== undefined) stdoutLastLine = lastComplete;
+        stdoutTailCarry = (stdoutTailCarry + chunk).split('\n').at(-1) ?? '';
         try {
           lineBuffer.push(chunk);
         } catch (cause) {
@@ -530,6 +521,7 @@ export async function invokeProcessCli(
       onClose(exitCode, processSignal) {
         closeAdmission();
         lineBuffer.flush();
+        stdoutTailCarry = '';
         return { exitCode, signal: processSignal, stderr };
       },
     });
@@ -747,18 +739,25 @@ export async function invokeProcessCli(
       });
     }
     if (spawnPipeError.isStdinIncomplete(cause)) {
-      // A tool that quits on a usage limit or a dead login before it reads its
-      // prompt breaks the pipe under that prompt; its own words are the
-      // diagnosis, and they keep the halt and the seat-switch offer it earns.
+      // A tool that quits on its own error (a usage limit, a dead login) before it
+      // reads its prompt breaks the pipe under that prompt. Its failed exit and its
+      // words are the diagnosis, as for any failed exit. A tool that exits 0 may have
+      // answered a cut prompt, and a tool SPLITBRIEF had to stop gave no exit, so for
+      // these the pipe stays the cause.
+      const ownExitCode = cause.data?.code;
       return finishFailureSafely({
         recorder,
         context: context.callContext,
         credentialValues,
         status: 'failed',
-        error: haltFailure(stderr, [stdoutLastLine, stdoutTailCarry]) ?? {
-          code: 'prompt-transport-error',
-          message: 'CLI prompt could not be fully delivered through stdin',
-        },
+        error:
+          haltFailure(stderr, [stdoutLastLine, stdoutTailCarry]) ??
+          (typeof ownExitCode === 'number' && ownExitCode !== 0
+            ? { code: 'non-zero-exit', message: `CLI exited with code ${ownExitCode}` }
+            : {
+                code: 'prompt-transport-error',
+                message: `CLI prompt could not be fully delivered through stdin${stderr.trim() === '' ? '' : `: ${stderr.trim()}`}`,
+              }),
       });
     }
     const fatalState = fatalStateOf(cause);

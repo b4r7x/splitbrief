@@ -292,7 +292,7 @@ describe('production-factory effect conformance', () => {
       const outcome = await runEffect({
         role: 'planner',
         prompt: plannerPrompt,
-        body: `printf '%s\\n' "$*" > "$(dirname "$0")/prompt-received.txt"\nexit 0`,
+        body: `cat > "$(dirname "$0")/prompt-received.txt"\nexit 0`,
         effect: { kind: 'planner-read-only' },
         ...scenario,
       });
@@ -316,7 +316,7 @@ describe('production-factory effect conformance', () => {
       const outcome = await runEffect({
         role: 'implementer',
         prompt: plannerPrompt,
-        body: `mkdir -p src\nprintf '%s' '${EFFECT_NONCE}' > src/hello.ts\nprintf '%s\\n' "$*" > "$(dirname "$0")/prompt-received.txt"\nexit 0`,
+        body: `mkdir -p src\nprintf '%s' '${EFFECT_NONCE}' > src/hello.ts\ncat > "$(dirname "$0")/prompt-received.txt"\nexit 0`,
         effect: { kind: 'direct-write', file: 'src/hello.ts', nonceContent: EFFECT_NONCE },
         task: makeTask(),
         ...scenario,

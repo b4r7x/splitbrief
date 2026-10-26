@@ -37,8 +37,7 @@ Model ids come from the tool (`agy models`, `claude --model` aliases `opus`, `so
 The task is a file attached with `@`, for example `.splitbrief/inbox/<date>-<slug>/tasks.md` (gitignored). If the task file's first line gives the exact launch command, use it without its seat flags; seats come from `.splitbrief/config.yaml`. Write the task for the planner: the goal, the invariants, what is out of scope, and the sizing rule that keeps briefs inside the implementer's limits:
 
 - one module group per brief (a source file plus its colocated test), never two large modules in one brief;
-- a brief must leave typecheck, lint and tests green on its own, so name every call site a deletion touches;
-- an implementer that takes the prompt on argv (antigravity) refuses prompts over 120 KB.
+- a brief must leave typecheck, lint and tests green on its own, so name every call site a deletion touches.
 
 ## 2. Launch and gates
 

@@ -121,6 +121,7 @@ function writeOpencodeSuccessShim(dir: string, authListing: string): void {
     `if [[ "$1" == "auth" ]]; then printf '%s\\n' '${authListing}'; exit 0; fi`,
     `if [[ "$1" == "api" && "$5" == x-opencode-directory:* ]]; then printf '%s\\n' '${PROJECT_LISTING}'; exit 0; fi`,
     `if [[ "$1" == "api" ]]; then printf '%s\\n' '{"data":[]}'; exit 0; fi`,
+    'cat >/dev/null',
     'mkdir -p src',
     `printf '%s\\n' '${COMPLETE}' > src/seat.ts`,
     `printf '%s\\n' '{"type":"text","timestamp":1,"sessionID":"ses_seat","part":{"type":"text","text":"implemented"}}'`,
@@ -138,6 +139,7 @@ function writeOpencodeFailureShim(dir: string): void {
   writeExecutable(join(dir, 'opencode'), [
     '#!/bin/bash',
     'if [[ " $* " == *" --version "* ]]; then printf \'opencode 2.0.14\\n\'; exit 0; fi',
+    'cat >/dev/null',
     'mkdir -p src',
     "printf '%s\\n' 'export const seat = 2;' > src/seat.ts",
     `printf '%s\\n' '${envelope}'`,

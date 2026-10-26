@@ -64,7 +64,7 @@
 - **Readable terminal colours.** Secondary text stays readable on dark and light terminals. The TUI follows the terminal background and uses no faint text.
 - **Layout.** Panels take their width from the terminal size. The workflow screen aligns every left edge on one column, and the workflow composer and transcript stay full-width.
 - **23 runtime commands in five categories.** `/crew` opens Settings on PLAN, and `/crew <seat>` opens that seat's picker. On a recovery panel, **Change PLAN tool** (or BUILD or REVIEW) opens that seat's picker.
-- **Codex takes its prompt on stdin**, so a prompt over 120,000 bytes works. An expired Codex or Claude Code planner session continues once on a fresh session with the conversation so far.
+- **Every CLI tool takes its prompt on stdin.** Antigravity, Cursor, OpenCode, Kilo Code, Copilot and Command Code now read it there too, so a large prompt no longer meets the command-line limit. An expired Codex or Claude Code planner session continues once on a fresh session with the conversation so far.
 - **CLI model lists keep a model through one missing read.** A model is added at once and removed only after two agreeing reads.
 - **Flag precedence is stated.** `--planner`, `--implementer`, `--provider` and `--reviewer` help states that a CLI tool id always selects the CLI. A `--*-api-base` flag on a non-API seat warns and is ignored.
 - Home shows no recent-sessions section when there are none.
@@ -94,6 +94,12 @@
 
 ### Fixed
 
+- A plan, review, consult or brief prompt larger than about 120 KB no longer stops an Antigravity, Cursor, OpenCode, Kilo Code, Copilot or Command Code seat before the tool starts.
+- A review prompt too large for the review tool halts as Seat down and offers **Change REVIEW tool** with the detected tools that take it, beside **Skip review** and **End run**.
+- A tool that refuses the account by policy, such as Copilot's `Access denied by policy settings`, halts as Seat down with `Access refused by GitHub Copilot CLI`, and a seat with a fallback moves to it. A Cursor model that your plan does not include reads `Access refused by Cursor Agent CLI` instead of `Balance spent on`.
+- A tool that repeats your prompt in its output no longer halts the run when the prompt quotes a sign-in error or a usage limit.
+- A sign-out on the PLAN or REVIEW seat, such as an OpenCode or Kilo Code provider that rejects its credential, halts as Seat down with `Signed out of <tool>`, and a seat with a fallback moves to it.
+- A signed-out Cursor seat halts as Seat down with `Signed out of Cursor Agent CLI` for a prompt of any size.
 - A run that waits for a seat's usage limit to reset no longer waits again after you move that seat to another tool and continue: it starts the new tool at once. A seat you save before you choose Retry at still waits.
 - When a seat's model is automatic, the header, the sidebar and the closed run's crew row name the seat's tool instead of `auto`.
 - Messages and readiness fixes now name a tool by its full name, such as `OpenAI Codex CLI` or `Ollama`, instead of its config id.

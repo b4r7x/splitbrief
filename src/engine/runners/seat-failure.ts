@@ -49,8 +49,9 @@ const AUTHORITATIVE_OUTCOMES: ReadonlySet<string> = new Set([
 /**
  * Account refusals a provider prints when it will not serve the call at all:
  * an empty balance, an inactive or hard-limited billing state, a suspended
- * account, or a model the plan does not include (Cursor: "<model> is not
- * included in your weekly usage Buy credits or switch to a … model"). These are
+ * account, or access the account does not have (Cursor: "<model> is not
+ * included in your weekly usage Buy credits or switch to a … model"; Copilot:
+ * "Access denied by policy settings"). These are
  * diagnostic-only — the stdout tail carries test logs — and they outrank a 429
  * in the same text, because retrying cannot restore them.
  */
@@ -59,11 +60,12 @@ const ACCOUNT_PHRASES: readonly (readonly [SeatAccountCause, string])[] = [
   ['balance', 'insufficient credits'],
   ['balance', 'credit balance is too low'],
   ['balance', 'out of credits'],
-  ['balance', 'not included in your weekly usage'],
   ['billing', 'payment required'],
   ['billing', 'billing_hard_limit'],
   ['billing', 'billing_not_active'],
   ['billing', 'account suspended'],
+  ['access', 'not included in your weekly usage'],
+  ['access', 'access denied by policy settings'],
 ];
 
 /** Transient troubles that name the network itself, not a whole-call timeout. */
@@ -135,7 +137,7 @@ function rateLimitedReset(input: SeatFailureInput, text: string): Date | null {
 function accountCause(input: SeatFailureInput, text: string): SeatAccountCause | null {
   if (input.status === 402) return 'balance';
   if (input.status === 401 || input.status === 403) return 'auth';
-  if (isAuthPhrase(input, text)) return 'auth';
+  if (isAuthPhrase(input, text) || input.providerType === 'provider.auth') return 'auth';
   if (!isTailSource(input.source)) {
     for (const [cause, phrase] of ACCOUNT_PHRASES) {
       if (text.includes(phrase)) return cause;

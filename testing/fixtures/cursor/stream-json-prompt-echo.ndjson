@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp/ws","session_id":"379fde9f-49c7-4e0a-bb3f-9c3d6d88dac7","model":"Claude Haiku 5.5 300K High","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Brief T001: when the API returns 401 Unauthorized, show the sign-in screen. When the account hits its usage limit, show the upgrade banner."}]},"session_id":"379fde9f-49c7-4e0a-bb3f-9c3d6d88dac7"}

@@ -71,8 +71,8 @@ function finalResponseBody(): string {
   return [
     `printf '%s\\n' '${draft}'`,
     `printf '%s\\n' '${toolUse}'`,
-    'for last; do :; done',
-    'case "$last" in',
+    'prompt=$(cat)',
+    'case "$prompt" in',
     `  *'first'*) printf '%s\\n' '${sentinelA}' ;;`,
     `  *) printf '%s\\n' '${sentinelB}' ;;`,
     'esac',

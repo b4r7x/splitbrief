@@ -5,6 +5,7 @@ import type {
   CliPlannerBuildArgsInput,
   CliProbeContract,
   CliPromptTransport,
+  CliPromptEncoder,
   CliProtocolEvent,
   CliTerminalInput,
 } from './contract.js';
@@ -98,6 +99,7 @@ type CliArgumentValidation =
 type UnregisteredCliAdapterCommon = Readonly<{
   descriptor: Readonly<{ id: string }>;
   promptTransport: CliPromptTransport;
+  encodePrompt?: CliPromptEncoder | undefined;
   validateArgs: (input: {
     invocationArgs: readonly string[];
     baseArgs: readonly string[];

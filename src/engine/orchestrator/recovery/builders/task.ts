@@ -37,6 +37,8 @@ import {
   PLANNER_CLI_TOOL_IDS,
 } from '../../../../core/runners/cli-tool-catalog.js';
 import { runnerRoleForActiveRole } from '../../../../core/runners/seat-roles.js';
+import { cliPromptLimit } from '../../../runners/cli-tools/registry.js';
+import type { PromptLength } from '../../../runners/input-limit.js';
 import type { RunnerFailureOutcomeState } from '../../../runners/errors.js';
 import {
   apiContextError,
@@ -185,9 +187,13 @@ export type SeatSwapContext = Readonly<{
  * never an empty offer — when the machine has nothing else detected, so the
  * caller omits the action entirely.
  */
-export function switchSeatOffer(context: SeatSwapContext | undefined): SwitchSeatOffer | undefined {
+export function switchSeatOffer(
+  context: SeatSwapContext | undefined,
+  promptSize?: PromptLength,
+): SwitchSeatOffer | undefined {
   if (context === undefined) return undefined;
   const hostable = seatHostableTools(context.seat);
+  const role = seatRunnerRole(context.seat);
   const seen = new Set<string>();
   const candidates: SeatSwapCandidate[] = [];
   for (const detected of context.detectedTools) {
@@ -205,18 +211,40 @@ export function switchSeatOffer(context: SeatSwapContext | undefined): SwitchSea
       ...(detected.variant !== undefined && { variant: detected.variant }),
     });
   }
-  if (candidates.length === 0) return undefined;
+  const offered =
+    promptSize === undefined ? candidates : takingPrompt(candidates, role, promptSize);
+  if (offered.length === 0) return undefined;
   return {
     seat: context.seat,
     ...(context.from !== undefined && { from: context.from }),
-    candidates,
+    candidates: offered,
   };
 }
 
-function seatHostableTools(seat: CrewSeatId): readonly string[] {
+/** The candidates whose tool takes a prompt of this size: tools without a limit first. */
+function takingPrompt(
+  candidates: readonly SeatSwapCandidate[],
+  role: 'planner' | 'implementer',
+  promptSize: PromptLength,
+): SeatSwapCandidate[] {
+  const unlimited: SeatSwapCandidate[] = [];
+  const fitting: SeatSwapCandidate[] = [];
+  for (const candidate of candidates) {
+    const limit = cliPromptLimit(role, candidate.tool);
+    if (limit === undefined) unlimited.push(candidate);
+    else if (promptSize[limit.unit] <= limit.max) fitting.push(candidate);
+  }
+  return [...unlimited, ...fitting];
+}
+
+function seatRunnerRole(seat: CrewSeatId): 'planner' | 'implementer' {
   return runnerRoleForActiveRole(CREW_SEAT_ROLES[seat]) === 'implementer'
-    ? IMPLEMENTER_CLI_TOOL_IDS
-    : PLANNER_CLI_TOOL_IDS;
+    ? 'implementer'
+    : 'planner';
+}
+
+function seatHostableTools(seat: CrewSeatId): readonly string[] {
+  return seatRunnerRole(seat) === 'implementer' ? IMPLEMENTER_CLI_TOOL_IDS : PLANNER_CLI_TOOL_IDS;
 }
 
 /**

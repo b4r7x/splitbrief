@@ -344,7 +344,6 @@ const CLAUDE_STEERING: CliSteeringTransport = {
         baseArgs: [...baseArgs, ...flags],
         args: [...baseArgs, ...flags, ...invocation.args.slice(baseArgs.length)],
       },
-      prompt: await inputLine(prompt, invocation.images),
       parse: createClaudeParser(),
       onAdmissionClosed: closeAdmission,
       onStdinReady: (value) => {
@@ -450,7 +449,7 @@ function createAdapter(
     role,
     promptTransport: CLAUDE_PROMPT_TRANSPORT,
     encodePrompt: ({ invocation, prompt }: { invocation: CliInvocation; prompt: string }) =>
-      invocation.images !== undefined && invocation.images.length > 0
+      invocation.args.includes('--input-format')
         ? inputLine(prompt, invocation.images)
         : Promise.resolve(prompt),
     steering: CLAUDE_STEERING,

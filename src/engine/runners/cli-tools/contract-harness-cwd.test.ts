@@ -15,7 +15,7 @@ type CwdRecord = {
 };
 
 /**
- * An `opencode` stand-in that does what the probe prompt asks: it runs `pwd`
+ * An `opencode` stand-in that does what the probe prompt on stdin asks: it runs `pwd`
  * into the named file from its own cwd, or from `scratchDir` when one is given,
  * and replies with the file's absolute path.
  */
@@ -25,7 +25,7 @@ async function installTool(toolsDir: string, scratchDir?: string): Promise<void>
     '#!/bin/bash',
     'if [[ " $* " == *" --version "* ]]; then echo "opencode v2.0.14"; exit 0; fi',
     'if [[ "$1" != "run" ]]; then exit 1; fi',
-    'for arg in "$@"; do prompt=$arg; done',
+    'prompt=$(cat)',
     'file=$(printf "%s" "$prompt" | grep -oE "hello-[0-9a-f]{8}[.]txt" | head -1)',
     ...(scratchDir === undefined ? [] : [`cd '${scratchDir}'`]),
     'pwd > "$file"',
@@ -80,15 +80,7 @@ describe('CLI cwd conformance leg', () => {
         role: 'implementer',
       });
       const record = await readRecord(fixture.recordPath);
-      expect(record.argv).toEqual([
-        'run',
-        '--standalone',
-        '--format',
-        'json',
-        '--agent',
-        'build',
-        '<PROMPT>',
-      ]);
+      expect(record.argv).toEqual(['run', '--standalone', '--format', 'json', '--agent', 'build']);
       expect(record.shellCwd).toBe('<PROJECT_DIR>');
       expect(record.landedAt).toEqual([expect.stringMatching(/^<PROJECT_DIR>\/hello-/)]);
     } finally {

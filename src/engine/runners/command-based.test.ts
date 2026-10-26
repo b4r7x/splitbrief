@@ -4,6 +4,7 @@ import {
   DEFAULT_PROCESS_STDERR_MAX_BYTES,
 } from '../../lib/process/spawn/lifecycle.js';
 import { invokeCommandBasedRunner } from './command-based.js';
+import { inputTooLargeFigures } from './input-limit.js';
 
 describe('invokeCommandBasedRunner', () => {
   it('writes prompt to stdin when no placeholder present', async () => {
@@ -98,6 +99,27 @@ describe('invokeCommandBasedRunner', () => {
       projectDir: process.cwd(),
     });
     expect(result.stdout.trim()).toBe('x-x');
+  });
+
+  it('refuses a {prompt} placeholder larger than the host command line takes, before it starts', async () => {
+    const prompt = 'x'.repeat(2 * 1024 * 1024);
+    const refusal = invokeCommandBasedRunner({
+      command: process.execPath,
+      args: ['-e', 'process.stdout.write("ran")', '{prompt}'],
+      supportPromptPlaceholder: true,
+      prompt,
+      projectDir: process.cwd(),
+    });
+
+    await expect(refusal).rejects.toMatchObject({ kind: 'argv-prompt-too-large' });
+    const figures = inputTooLargeFigures(
+      await refusal.then(
+        () => '',
+        (cause: Error) => cause.message,
+      ),
+    );
+    expect(figures).toMatchObject({ unit: 'bytes', size: prompt.length });
+    expect(figures.limit).toBeLessThan(prompt.length);
   });
 
   it('uses stdin when supportPromptPlaceholder is enabled but args have no marker', async () => {

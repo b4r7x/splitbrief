@@ -1,6 +1,5 @@
 import { toTokenDelta } from '../../calls/usage.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
@@ -10,11 +9,7 @@ import { error } from '../../../utils/error.js';
 
 const COMMAND_CODE_ID = 'command-code' as const;
 const COMMAND_CODE_COMMAND = 'cmd' as const;
-const COMMAND_CODE_PROMPT_TRANSPORT = Object.freeze({
-  kind: 'argv',
-  maxBytes: 120_000,
-  placement: 'positional',
-} as const);
+const COMMAND_CODE_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
 const COMMAND_CODE_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 export const COMMAND_CODE_PROTECTED_FLAGS = new Set([
@@ -61,7 +56,8 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     ...input,
     protectedFlags: COMMAND_CODE_PROTECTED_FLAGS,
     protectedShortValueFlags: COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS,
-    promptTransport: 'argv',
+    promptTransport: 'stdin',
+    positionalPrompt: true,
   });
 }
 
@@ -77,7 +73,6 @@ function plannerBaseArgs(input: CommandCodePlannerBuildInput): string[] {
     'plan',
     ...(input.model === undefined ? [] : ['-m', input.model]),
     ...(input.effort === undefined ? [] : ['--effort', input.effort]),
-    input.prompt,
   ];
 }
 
@@ -95,7 +90,6 @@ function implementerBaseArgs(input: CommandCodeImplementerBuildInput): string[] 
     '--yolo',
     ...(input.model === undefined ? [] : ['-m', input.model]),
     ...(input.effort === undefined ? [] : ['--effort', input.effort]),
-    input.prompt,
   ];
 }
 
@@ -276,7 +270,7 @@ export type RawCommandCodeCliContract = Readonly<{
   versionArgs: readonly ['--version'];
   auth: Readonly<{ kind: 'none'; env: readonly [] }>;
   rawInvocation: readonly string[];
-  promptTransport: 'argv';
+  promptTransport: 'stdin';
   expectedRawTerminal: 'result';
   asOf: '2026-09-08';
 }>;
@@ -307,9 +301,8 @@ function commandCodeRawContract(role: 'planner' | 'implementer'): RawCommandCode
       '--skip-onboarding',
       '--no-auto-update',
       ...(role === 'planner' ? ['--permission-mode', 'plan'] : ['--yolo']),
-      CLI_PROMPT_SENTINEL,
     ],
-    promptTransport: 'argv',
+    promptTransport: 'stdin',
     expectedRawTerminal: 'result',
     asOf: '2026-09-08',
   };

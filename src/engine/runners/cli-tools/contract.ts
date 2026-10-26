@@ -22,10 +22,10 @@ import type { UsageLimitWindow } from '../../../core/recovery/usage-limit-step.j
 
 import type { SpawnStdinWriter } from '../../../lib/process/spawn/lifecycle.js';
 import type { RunningCall } from '../../calls/steering.js';
+import type { PromptLimit } from '../input-limit.js';
 
 export type CliSteeringSession = Readonly<{
   invocation: CliInvocation;
-  prompt: string;
   parse: (line: string) => readonly CliProtocolEvent[];
   credentialValues?: readonly string[] | undefined;
   failureSignal?: AbortSignal | undefined;
@@ -56,7 +56,7 @@ export type CliPromptTransport =
    * `flag-value` prompt occupies the value slot of its preceding flag and is
    * therefore inert.
    */
-  | Readonly<{ kind: 'argv'; maxBytes: number; placement: 'positional' | 'flag-value' }>
+  | Readonly<{ kind: 'argv'; placement: 'positional' | 'flag-value' }>
   | Readonly<{ kind: 'file'; mode: 0o600 }>;
 
 type CliProtocolTerminalEvent =
@@ -156,7 +156,7 @@ export type CliInvocation = Readonly<{
   signal: AbortSignal | undefined;
 }>;
 
-type CliPromptEncoder = (
+export type CliPromptEncoder = (
   input: Readonly<{
     invocation: CliInvocation;
     prompt: string;
@@ -311,6 +311,8 @@ type CliAdapterContract<
   descriptor: (typeof CLI_TOOL_CATALOG)[Tool];
   role: Role;
   promptTransport: CliPromptTransport;
+  /** The largest prompt the tool accepts; absent when it has no limit. */
+  promptLimit?: PromptLimit | undefined;
   encodePrompt?: CliPromptEncoder | undefined;
   steering?: CliSteeringTransport | undefined;
   baseArgs: (input: BuildArgsInput) => readonly string[];

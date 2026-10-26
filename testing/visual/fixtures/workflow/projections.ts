@@ -3013,7 +3013,7 @@ function cursorRefusalRecoveryIssue(): RecoveryIssue {
     id: 'rec_visual_cursor_refusal',
     seat: 'build',
     runner: CURSOR_REFUSAL_SEAT,
-    classification: { class: 'account', cause: 'balance' },
+    classification: { class: 'account', cause: 'access' },
     words: CURSOR_MODEL_REFUSAL,
     task: HALTED_TASK,
     phase: 'implementing',

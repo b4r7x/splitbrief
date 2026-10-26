@@ -92,6 +92,9 @@ function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
     // SPLITBRIEF refused the prompt before the tool started; every attempt sends it again.
     case 'argv-prompt-too-large':
       return 'input-too-large';
+    // The tool could not read the prompt SPLITBRIEF sent; every attempt sends it the same way.
+    case 'prompt-transport-error':
+      return 'implementer-recipe-invalid';
     case 'spawn-not-found':
     case 'incompatible-version':
     case 'unauthenticated':
@@ -225,7 +228,8 @@ export function isSeatDown(classification: SeatFailureClassification): boolean {
 
 /**
  * The one reading of a thrown runner error: the runner's own words, else the
- * error's message, with the HTTP status an API error carries. A `shell` or
+ * error's message, with the HTTP status an API error carries or the status and
+ * provider type a failed call's own error carries. A `shell` or
  * `agent` seat that exits non-zero keeps its stdout out of the message, so when
  * those words name neither an account refusal nor a limit, the last line it
  * printed is matched against the halt phrases; when it names one, that line is
@@ -234,11 +238,14 @@ export function isSeatDown(classification: SeatFailureClassification): boolean {
  */
 export function thrownSeatFailure(err: unknown): ThrownSeatFailure {
   const data = errorData(err);
-  const status = data?.status ?? data?.statusCode;
+  const callError = isRecord(data?.error) ? data.error : null;
+  const status = callError?.status ?? data?.status ?? data?.statusCode;
+  const providerType = callError?.providerType;
   const words = runnerOwnWords(err) ?? toErrorMessage(err);
   const classification = classifySeatFailure({
     message: words,
     ...(typeof status === 'number' && { status }),
+    ...(typeof providerType === 'string' && { providerType }),
     source: 'thrown',
   });
   if (isSeatDown(classification) || !processError.isExitCode(err)) {
