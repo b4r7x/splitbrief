@@ -1009,7 +1009,7 @@ describe('switchSeatOffer', () => {
             { tool: 'opencode', ready: true },
           ],
         },
-        { characters: 1_048_577, bytes: 1_048_577 },
+        { characters: 1_048_577 },
       ),
     ).toEqual({ seat: 'review', candidates: [{ tool: 'opencode' }] });
   });
@@ -1022,7 +1022,7 @@ describe('switchSeatOffer', () => {
           currentTool: 'claude-code',
           detectedTools: [{ tool: 'codex', ready: true }],
         },
-        { characters: 2_000_000, bytes: 2_000_000 },
+        { characters: 2_000_000 },
       ),
     ).toBeUndefined();
   });
@@ -1039,7 +1039,7 @@ describe('switchSeatOffer', () => {
             { tool: 'cursor', ready: true },
           ],
         },
-        { characters: 600_000, bytes: 1_200_000 },
+        { characters: 600_000 },
       ),
     ).toEqual({
       seat: 'review',
@@ -1641,22 +1641,6 @@ describe('buildRunnerInputTooLargeRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
     return { message: issue.message, details: issue.details, facts: issue.facts };
   }
-
-  it('states a command-line refusal in its own words, with formatted bytes', () => {
-    const halt = inputTooLargeHalt(
-      'opencode',
-      'CLI prompt is 195203 bytes and exceeds the 120000-byte argv limit',
-    );
-
-    expect(halt).toEqual({
-      message: 'Prompt too large for OpenCode CLI on T030',
-      details: [
-        'The prompt is 195,203 bytes; OpenCode CLI takes at most 120,000 on its command line.',
-        'A retry sends the same prompt.',
-      ],
-      facts: { tool: 'OpenCode CLI', bytes: 195_203, maxBytes: 120_000 },
-    });
-  });
 
   it('states the figures of a Codex refusal in place of its raw words', () => {
     const halt = inputTooLargeHalt(

@@ -92,7 +92,7 @@ export const reviewPromptTooLargeRecoveryIssue: RecoveryIssue =
     failure: {
       kind: 'input-too-large',
       figures: { unit: 'characters', size: 1_106_026, limit: 1_048_576 },
-      promptSize: { characters: 1_106_026, bytes: 1_106_026 },
+      promptSize: { characters: 1_106_026 },
       largestFiles: [
         { path: 'src/generated/schema.ts', chars: 812_400 },
         { path: 'src/math.ts', chars: 4_210 },

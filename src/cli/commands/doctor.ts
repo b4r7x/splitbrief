@@ -39,7 +39,6 @@ import {
   classifySeatFailure,
   type SeatFailureClassification,
 } from '../../engine/runners/seat-failure.js';
-import { CLI_PROMPT_SENTINEL } from '../../engine/runners/cli-tools/candidate-contract.js';
 import { createProject, processRunnerOf } from '../../engine/runners/cli-tools/contract-harness.js';
 import type {
   CliImplementerAdapter,
@@ -259,30 +258,26 @@ async function defaultSeatProbeCall(
       signal: undefined,
     };
     const prepared = await preparePrompt(adapter, invocation, args, SEAT_PROBE_PROMPT);
-    try {
-      const result = await processRunnerOf({})({
-        command: executable.path,
-        args: prepared.args,
-        cwd: workspaceDir,
-        env,
-        ...(prepared.stdin === undefined ? {} : { stdin: prepared.stdin }),
-        timeoutMs: SEAT_PROBE_TIMEOUT_MS,
-        maxOutputBytes: SEAT_PROBE_MAX_OUTPUT_BYTES,
-      });
-      const redact = createCustomRunnerRedactor(sandboxCredentialValues(env));
-      return {
-        seat: input.seat,
-        tool: runner.tool,
-        stdout: redact(result.stdout),
-        stderr: redact(result.stderr),
-        exitStatus: result.exitCode,
-        signal: result.signal,
-        timedOut: result.timedOut,
-        outputExceeded: result.outputExceeded,
-      };
-    } finally {
-      await prepared.cleanup();
-    }
+    const result = await processRunnerOf({})({
+      command: executable.path,
+      args: prepared.args,
+      cwd: workspaceDir,
+      env,
+      stdin: prepared.stdin,
+      timeoutMs: SEAT_PROBE_TIMEOUT_MS,
+      maxOutputBytes: SEAT_PROBE_MAX_OUTPUT_BYTES,
+    });
+    const redact = createCustomRunnerRedactor(sandboxCredentialValues(env));
+    return {
+      seat: input.seat,
+      tool: runner.tool,
+      stdout: redact(result.stdout),
+      stderr: redact(result.stderr),
+      exitStatus: result.exitCode,
+      signal: result.signal,
+      timedOut: result.timedOut,
+      outputExceeded: result.outputExceeded,
+    };
   } finally {
     await clearBridgedCliState(workspace.path);
     await workspace.cleanup();
@@ -296,7 +291,6 @@ function seatProbeArgs(
   projectDir: string,
 ): readonly string[] {
   const seatArgs = {
-    prompt: CLI_PROMPT_SENTINEL,
     model: runner.model,
     projectDir,
     configuredArgs: runner.args ?? [],

@@ -27,7 +27,6 @@ import {
 } from '../../../src/engine/runners/cli-tools/registry.js';
 import { probeCliReadiness } from '../../../src/engine/runners/cli-tools/readiness-probe.js';
 import { invokeCliAdapter } from '../../../src/engine/runners/invoke-cli-adapter.js';
-import { CLI_PROMPT_SENTINEL } from '../../../src/engine/runners/cli-tools/candidate-contract.js';
 import { resolveCliExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 import type { CliStartGate } from '../../../src/engine/runners/start-gate.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
@@ -479,7 +478,6 @@ afterEach(() => {
 
 function seatArgs(toolId: ImplementerCliToolId, projectDir: string): readonly string[] {
   return CLI_IMPLEMENTER_ADAPTERS[toolId].buildArgs({
-    prompt: CLI_PROMPT_SENTINEL,
     model: undefined,
     projectDir,
     configuredArgs: [],
@@ -544,7 +542,6 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
       invocation: {
         executable: fixture.trustedGate.executable,
         args: adapter.buildArgs({
-          prompt: CLI_PROMPT_SENTINEL,
           model: undefined,
           projectDir: fixture.projectDir,
           configuredArgs: [],
@@ -631,7 +628,6 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
           fingerprint: { dev: 0, ino: 0, size: 0, mtimeMs: 0 },
         },
         args: CLI_IMPLEMENTER_ADAPTERS[toolId].buildArgs({
-          prompt: CLI_PROMPT_SENTINEL,
           model: undefined,
           projectDir: fixture.projectDir,
           configuredArgs: [],
@@ -753,7 +749,6 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         invocation: {
           executable: fixture.trustedGate.executable,
           args: adapter.buildArgs({
-            prompt: CLI_PROMPT_SENTINEL,
             model: undefined,
             projectDir: fixture.projectDir,
             configuredArgs: [],
@@ -782,7 +777,6 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         invocation: {
           executable: fixture.trustedGate.executable,
           args: adapter.buildArgs({
-            prompt: CLI_PROMPT_SENTINEL,
             model: undefined,
             projectDir: fixture.projectDir,
             configuredArgs: [],
@@ -812,7 +806,6 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         invocation: {
           executable: fixture.trustedGate.executable,
           args: adapter.buildArgs({
-            prompt: CLI_PROMPT_SENTINEL,
             model: undefined,
             projectDir: fixture.projectDir,
             configuredArgs: [],
@@ -860,7 +853,6 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         invocation: {
           executable: fixture.trustedGate.executable,
           args: adapter.buildArgs({
-            prompt: CLI_PROMPT_SENTINEL,
             model: undefined,
             projectDir: fixture.projectDir,
             configuredArgs: [],

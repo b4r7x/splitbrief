@@ -13,7 +13,7 @@ import { invokeCliAdapter, toCliEnvironment } from '../invoke-cli-adapter.js';
 import { resolveCliExecutableAliases } from '../resolve-cli-executable.js';
 import { createRunnerSandboxEnv } from '../sandbox-env.js';
 import { clearBridgedCliState } from '../sandbox-state-bridge.js';
-import { CLI_PROJECT_DIR_SENTINEL, CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import { CLI_PROJECT_DIR_SENTINEL } from './candidate-contract.js';
 import {
   CLI_CONFORMANCE_EXIT_CODES,
   createProject,
@@ -202,7 +202,6 @@ export async function runCwdCliConformance(
     });
     const installedVersion = readiness.installedVersion ?? undefined;
     const baseArgs = adapter.baseArgs({
-      prompt: CLI_PROMPT_SENTINEL,
       model: options.model,
       projectDir,
       configuredArgs: [],

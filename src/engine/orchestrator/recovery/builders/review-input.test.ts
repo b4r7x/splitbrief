@@ -6,7 +6,7 @@ const createdAt = '2026-04-28T12:00:00.000Z';
 const failure = {
   kind: 'input-too-large' as const,
   figures: { unit: 'characters' as const, size: 1_100_000, limit: 1_048_576 },
-  promptSize: { characters: 1_100_000, bytes: 1_150_000 },
+  promptSize: { characters: 1_100_000 },
   largestFiles: [{ path: 'src/big.ts', chars: 500_000 }],
 };
 
@@ -29,17 +29,17 @@ describe('buildReviewInputTooLargeRecoveryIssue', () => {
     expect(RecoveryIssueSchema.safeParse(issue).success).toBe(true);
   });
 
-  it('names the size and the limit in the unit the limit counts', () => {
+  it('names the size and the limit', () => {
     const issue = buildReviewInputTooLargeRecoveryIssue({
       phase: 'final-review',
-      failure: { ...failure, figures: { unit: 'bytes', size: 1_150_000, limit: 1_000_000 } },
+      failure: { ...failure, figures: { unit: 'characters', size: 1_150_000, limit: 1_000_000 } },
       tool: 'Custom reviewer',
       acceptAsIs: true,
       createdAt,
     });
 
     expect(issue.message).toBe(
-      'Review input is 1,150,000 bytes; Custom reviewer takes at most 1,000,000 on its command line',
+      'Review input is 1,150,000 characters; Custom reviewer takes at most 1,000,000',
     );
   });
 

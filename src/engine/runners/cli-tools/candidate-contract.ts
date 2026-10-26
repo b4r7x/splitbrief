@@ -10,7 +10,6 @@ import type {
   CliTerminalInput,
 } from './contract.js';
 import { CandidateEvidence, contractSha256 } from '../../providers/candidate-contract.js';
-import { error } from '../../../utils/error.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
 export const CLI_PROMPT_SENTINEL = '<PROMPT>' as const;
@@ -40,32 +39,9 @@ function hasPlaceholder(value: string): boolean {
   return ANGLE_PLACEHOLDER_PATTERN.test(value) || CURLY_PROMPT_PATTERN.test(value);
 }
 
-function promptTransportIssue(
-  rawInvocation: readonly string[],
-  promptTransport: RawCliPromptTransport,
-): string | null {
-  const args = rawInvocation.filter((arg) => arg !== CLI_PROJECT_DIR_SENTINEL);
-  const sentinelCount = args.filter((arg) => arg === CLI_PROMPT_SENTINEL).length;
-  const hasAnglePlaceholder = args.some((arg) => hasPlaceholder(arg));
-  if (promptTransport === 'argv') {
-    if (sentinelCount !== 1)
-      return 'argv transport requires exactly one standalone <PROMPT> element';
-    if (hasAnglePlaceholder) {
-      const hasOnlySentinel = args.every(
-        (arg) => arg === CLI_PROMPT_SENTINEL || !hasPlaceholder(arg),
-      );
-      if (!hasOnlySentinel) return 'argv transport rejects embedded or alternate placeholders';
-    }
-    return null;
-  }
-  if (sentinelCount > 0 || hasAnglePlaceholder) {
-    return `${promptTransport} transport must not contain a prompt placeholder`;
-  }
-  return null;
+function hasPromptPlaceholder(rawInvocation: readonly string[]): boolean {
+  return rawInvocation.some((arg) => arg !== CLI_PROJECT_DIR_SENTINEL && hasPlaceholder(arg));
 }
-
-const RawCliPromptTransportSchema = z.enum(['stdin', 'argv', 'file']);
-export type RawCliPromptTransport = z.infer<typeof RawCliPromptTransportSchema>;
 
 const RawCliCandidateShape = {
   id: CandidateIdSchema,
@@ -77,7 +53,7 @@ const RawCliCandidateShape = {
   versionArgs: z.array(z.string()).min(1).readonly(),
   auth: CliAuthSchema,
   rawInvocation: z.array(z.string()).readonly(),
-  promptTransport: RawCliPromptTransportSchema,
+  promptTransport: z.literal('stdin'),
   expectedRawTerminal: z.string().min(1),
   asOf: z.string().regex(DATE_PATTERN, 'asOf must be an ISO date'),
 };
@@ -85,9 +61,12 @@ const RawCliCandidateShape = {
 export const RawCliCandidateContract = z
   .strictObject(RawCliCandidateShape)
   .superRefine((contract, ctx) => {
-    const issue = promptTransportIssue(contract.rawInvocation, contract.promptTransport);
-    if (issue !== null) {
-      ctx.addIssue({ code: 'custom', path: ['rawInvocation'], message: issue });
+    if (hasPromptPlaceholder(contract.rawInvocation)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['rawInvocation'],
+        message: 'stdin transport must not contain a prompt placeholder',
+      });
     }
   });
 export type RawCliCandidateContract = z.infer<typeof RawCliCandidateContract>;
@@ -130,6 +109,7 @@ function isCompleteCliAdapter(value: unknown): value is UnregisteredCliAdapter {
     typeof value.descriptor.id === 'string' &&
     (value.role === 'planner' || value.role === 'implementer') &&
     isRecord(value.promptTransport) &&
+    value.promptTransport.kind === 'stdin' &&
     typeof value.buildArgs === 'function' &&
     typeof value.validateArgs === 'function' &&
     isRecord(value.environment) &&
@@ -213,17 +193,6 @@ export const CliConformanceCandidatesSchema = z
 
 export function parseCliConformanceCandidates(value: unknown): readonly UnregisteredCliCandidate[] {
   return CliConformanceCandidatesSchema.parse(value);
-}
-
-export function replacePromptSentinel(
-  rawInvocation: readonly string[],
-  prompt: string,
-  promptTransport: RawCliPromptTransport = 'argv',
-): readonly string[] {
-  const issue = promptTransportIssue(rawInvocation, promptTransport);
-  if (issue !== null) throw error('candidate-prompt-transport-invalid', issue);
-  if (promptTransport !== 'argv') return [...rawInvocation];
-  return rawInvocation.map((argument) => (argument === CLI_PROMPT_SENTINEL ? prompt : argument));
 }
 
 export function replaceProjectDirSentinel(

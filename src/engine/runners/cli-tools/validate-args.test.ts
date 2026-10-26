@@ -6,7 +6,7 @@ import {
 import { CURSOR_PROTECTED_FLAGS, CURSOR_PROTECTED_SHORT_VALUE_FLAGS } from './cursor.js';
 import { parseCliSemanticVector, validateCliArgs } from './validate-args.js';
 
-const BASE_ARGS = ['run', '<PROMPT>'];
+const BASE_ARGS = ['run'];
 
 function validateWithTail(tail: readonly string[]) {
   return validateCliArgs({
@@ -14,18 +14,10 @@ function validateWithTail(tail: readonly string[]) {
     baseArgs: BASE_ARGS,
     protectedFlags: new Set(['--model', '-m', '-p']),
     protectedShortValueFlags: new Set(['-m']),
-    promptTransport: 'argv',
   });
 }
 
-const CURSOR_BASE_ARGS = [
-  '--print',
-  '--output-format',
-  'stream-json',
-  '--mode',
-  'plan',
-  '<PROMPT>',
-];
+const CURSOR_BASE_ARGS = ['--print', '--output-format', 'stream-json', '--mode', 'plan'];
 
 function validateCursorTail(
   tail: readonly string[],
@@ -36,7 +28,6 @@ function validateCursorTail(
     baseArgs: CURSOR_BASE_ARGS,
     protectedFlags: CURSOR_PROTECTED_FLAGS,
     protectedShortValueFlags,
-    promptTransport: 'argv',
   });
 }
 
@@ -142,7 +133,6 @@ describe('validateCliArgs', () => {
       '--skip-onboarding',
       '--permission-mode',
       'plan',
-      '<PROMPT>',
     ];
     function validateCommandCodeTail(tail: readonly string[]) {
       return validateCliArgs({
@@ -150,7 +140,6 @@ describe('validateCliArgs', () => {
         baseArgs: base,
         protectedFlags: COMMAND_CODE_PROTECTED_FLAGS,
         protectedShortValueFlags: COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS,
-        promptTransport: 'argv',
       });
     }
 

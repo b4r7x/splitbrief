@@ -40,7 +40,6 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     ...input,
     protectedFlags: COPILOT_PROTECTED_FLAGS,
     protectedShortValueFlags: COPILOT_PROTECTED_SHORT_VALUE_FLAGS,
-    promptTransport: 'stdin',
   });
 }
 

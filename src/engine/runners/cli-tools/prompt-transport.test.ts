@@ -4,7 +4,6 @@ import { preparePrompt } from './prompt-transport.js';
 import { CLI_IMPLEMENTER_ADAPTERS, CLI_PLANNER_ADAPTERS } from './registry.js';
 import { typedEntries } from '../../../utils/type-guards.js';
 
-const MARKER = 'MARKER-PROMPT-7731';
 // One million bytes of three-byte characters: over every host argv limit, and the
 // leading dash would read as an option if the prompt were a command-line argument.
 const LARGE_PROMPT = `-${'ż'.repeat(500_000)}`;
@@ -19,19 +18,18 @@ const STDIN_TOOLS = [
   'antigravity',
 ] as const;
 
-function plannerInput(prompt: string, configuredArgs: readonly string[] = []) {
+function plannerInput() {
   return {
-    prompt,
     model: undefined,
     projectDir: '/project',
-    configuredArgs,
+    configuredArgs: [],
     sessionId: null,
     effort: undefined,
   };
 }
 
-function implementerInput(prompt: string, configuredArgs: readonly string[] = []) {
-  return { prompt, model: undefined, projectDir: '/staged', configuredArgs };
+function implementerInput() {
+  return { model: undefined, projectDir: '/staged', configuredArgs: [] };
 }
 
 function invocationOf(adapter: CliProcessAdapter, args: readonly string[]): CliInvocation {
@@ -54,17 +52,15 @@ const ROLE_ADAPTERS = [
     name: `${tool} planner`,
     tool,
     adapter,
-    args: (prompt: string, configuredArgs: readonly string[] = []) =>
-      adapter.buildArgs(plannerInput(prompt, configuredArgs)),
-    baseArgs: (prompt: string) => adapter.baseArgs(plannerInput(prompt)),
+    args: () => adapter.buildArgs(plannerInput()),
+    baseArgs: () => adapter.baseArgs(plannerInput()),
   })),
   ...typedEntries(CLI_IMPLEMENTER_ADAPTERS).map(([tool, adapter]) => ({
     name: `${tool} implementer`,
     tool,
     adapter,
-    args: (prompt: string, configuredArgs: readonly string[] = []) =>
-      adapter.buildArgs(implementerInput(prompt, configuredArgs)),
-    baseArgs: (prompt: string) => adapter.baseArgs(implementerInput(prompt)),
+    args: () => adapter.buildArgs(implementerInput()),
+    baseArgs: () => adapter.baseArgs(implementerInput()),
   })),
 ];
 
@@ -79,14 +75,10 @@ describe('CLI prompt transport', () => {
     expect(adapter.promptTransport).toEqual({ kind: 'stdin' });
   });
 
-  it.each(ROLE_ADAPTERS)('$name keeps the prompt out of its arguments', ({ args }) => {
-    expect(args(MARKER).some((arg) => arg.includes(MARKER))).toBe(false);
-  });
-
   it.each(ROLE_ADAPTERS)(
     '$name delivers a one-megabyte multibyte prompt on stdin, whole',
     async ({ adapter, args }) => {
-      const invocationArgs = args(LARGE_PROMPT);
+      const invocationArgs = args();
 
       const prepared = await preparePrompt(
         adapter,
@@ -110,8 +102,8 @@ describe('CLI prompt transport', () => {
     async (_role, adapter) => {
       const args =
         adapter.role === 'planner'
-          ? CLI_PLANNER_ADAPTERS.antigravity.buildArgs(plannerInput(LARGE_PROMPT))
-          : CLI_IMPLEMENTER_ADAPTERS.antigravity.buildArgs(implementerInput(LARGE_PROMPT));
+          ? CLI_PLANNER_ADAPTERS.antigravity.buildArgs(plannerInput())
+          : CLI_IMPLEMENTER_ADAPTERS.antigravity.buildArgs(implementerInput());
       const formatAt = args.indexOf('--input-format');
 
       expect(formatAt).toBeGreaterThanOrEqual(0);
@@ -148,7 +140,7 @@ describe('CLI prompt transport', () => {
     );
 
     it.each(roleCases)('$name refuses "$shown"', ({ adapter, baseArgs, tail }) => {
-      const base = baseArgs(MARKER);
+      const base = baseArgs();
 
       expect(adapter.validateArgs({ invocationArgs: base, baseArgs: base })).toEqual({
         valid: true,

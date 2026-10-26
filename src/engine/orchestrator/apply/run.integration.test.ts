@@ -1427,7 +1427,7 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
           failure: {
             kind: 'input-too-large',
             figures: { unit: 'characters', size: 9, limit: 5 },
-            promptSize: { characters: 9, bytes: 9 },
+            promptSize: { characters: 9 },
             largestFiles: [],
           },
           tool: 'codex',

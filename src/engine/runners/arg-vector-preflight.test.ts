@@ -126,7 +126,6 @@ describe('checkRunnerArgVector', () => {
   it('accepts the schema-bearing Antigravity planner vector against its installed help', () => {
     const outcome = checkRunnerArgVector({
       argv: antigravityPlannerAdapter.baseArgs({
-        prompt: 'x',
         model: undefined,
         projectDir: '/p',
         configuredArgs: [],
@@ -142,7 +141,6 @@ describe('checkRunnerArgVector', () => {
   it('accepts the schema-bearing codex planner fresh vector against its installed help', () => {
     const outcome = checkRunnerArgVector({
       argv: codexPlannerAdapter.baseArgs({
-        prompt: 'x',
         model: undefined,
         projectDir: '/project',
         configuredArgs: [],
@@ -162,7 +160,6 @@ describe('checkRunnerArgVector', () => {
   it('accepts the schema-bearing codex planner resume vector against its installed help', () => {
     const outcome = checkRunnerArgVector({
       argv: codexPlannerAdapter.baseArgs({
-        prompt: 'x',
         model: 'gpt-5',
         projectDir: '/project',
         configuredArgs: [],

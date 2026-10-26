@@ -6,8 +6,7 @@ import { invokeTestClaude } from '#testing/helpers/claude-planner-steer-test-inv
 import { prependPath } from '#testing/helpers/command-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { createAgentPlanner } from '../../planners/agent.js';
-import { createShellPlanner } from '../../planners/shell.js';
+import { createCommandPlanner } from '../../planners/command-invoke.js';
 import { requestTyped } from '../../runners/typed-output.js';
 import { seatFailureFromError, seatResetWaitDeadline } from '../escalation/seat-wait.js';
 import { diagnosePlannerCallFailure } from './planner-call-failure.js';
@@ -40,7 +39,10 @@ async function failedCall(
   stdout: readonly string[],
 ) {
   const config = seatConfig(kind, stdout);
-  const planner = kind === 'shell' ? createShellPlanner(config) : createAgentPlanner(config);
+  const planner =
+    kind === 'shell'
+      ? createCommandPlanner(config, 'shell')
+      : createCommandPlanner(config, 'agent');
   const err = await requestTyped({
     prompt: 'q',
     schema: z.object({ answer: z.string() }),

@@ -203,8 +203,8 @@ Factory dispatch is async and lazy: backend modules are loaded with memoized dyn
 |------|--------------|------------------|------------------------|
 | `cli` | `planners/cli.ts` (+ `claude-code.ts`) | `implementers/cli.ts` | `direct` |
 | `api` | `planners/api.ts` | `implementers/api.ts` | `extracted-code` |
-| `shell` | `planners/shell.ts` | `implementers/shell.ts` | `extracted-code` |
-| `agent` | `planners/agent.ts` | `implementers/agent.ts` | `direct` |
+| `shell` | `planners/command-invoke.ts` | `implementers/command-invoke.ts` | `extracted-code` |
+| `agent` | `planners/command-invoke.ts` | `implementers/command-invoke.ts` | `direct` |
 
 Model strength separates the two roles. The write mode records who writes the file. `direct` runners edit the run workspace; `extracted-code` runners return code that SPLITBRIEF writes there. Both use the same validation and Apply path. See [Run workspace and Apply](./HOW-IT-WORKS.md#run-workspace-and-apply).
 
@@ -587,13 +587,13 @@ src/
 │   │   │                          post_* / on_* hook dispatch
 │   │   ├── substitute.ts          ${event.field} substitution
 │   │   └── types.ts               HookPayload, HookContext
-│   ├── implementers/              4 backends: agent, api, cli,
-│   │                              shell + apply (file-write helpers),
+│   ├── implementers/              backends: api, cli, command-invoke
+│   │                              (shell, agent) + apply (file-write helpers),
 │   │                              pipeline/ (shared pipeline: run,
 │   │                              call-result, extracted-code),
 │   │                              isolation/ (tool-call tripwire and
 │   │                              per-call checkout audit),
-│   │                              command-invoke, types
+│   │                              types
 │   ├── orchestrator/
 │   │   ├── apply/                 states, merge, backup, write, restore,
 │   │   │                          patch + run driver
@@ -650,9 +650,9 @@ src/
 │   ├── parsers/                   code-detection, code-patterns,
 │   │                              final-review, response-extractor,
 │   │                              scope-extractor
-│   ├── planners/                  4 backends: agent, api,
-│   │                              claude-code (cli specialization), cli,
-│   │                              shell + base, api-context, command-invoke,
+│   ├── planners/                  backends: api, claude-code (cli
+│   │                              specialization), cli, command-invoke
+│   │                              (shell, agent) + base, api-context,
 │   │                              context, summary, types
 │   ├── providers/                 candidate-contract, capabilities,
 │   │                              catalog-detection,
@@ -1052,8 +1052,8 @@ The `kind` discriminant is required in every planner / reviewer / implementer co
 |---|---|---|---|---|
 | `cli` | `planners/cli.ts` (+ specialization in `claude-code.ts`) | `implementers/cli.ts` | `direct` | claude-code, codex, opencode, copilot, kilo-code, cursor, command-code, antigravity |
 | `api` | `planners/api.ts` | `implementers/api.ts` | `extracted-code` | ollama, lm-studio, llama-cpp (any OpenAI-compatible) |
-| `shell` | `planners/shell.ts` | `implementers/shell.ts` | `extracted-code` | arbitrary subprocess, stdin-prompt → stdout-response, no shell/network sandbox |
-| `agent` | `planners/agent.ts` | `implementers/agent.ts` | `direct` | subprocess that writes files directly, no stdout extraction or shell/network sandbox |
+| `shell` | `planners/command-invoke.ts` | `implementers/command-invoke.ts` | `extracted-code` | arbitrary subprocess, stdin-prompt → stdout-response, no shell/network sandbox |
+| `agent` | `planners/command-invoke.ts` | `implementers/command-invoke.ts` | `direct` | subprocess that writes files directly, no stdout extraction or shell/network sandbox |
 
 Each backend implements `Planner` / `Implementer` via a `base.ts`-built shared pipeline; only `invoke*` differs per backend. The orchestrator branches on `PlannerCapabilities` (declared per backend), never on backend identity. See Part 1 §Capability matrix for the full capability table and fallback strategy.
 

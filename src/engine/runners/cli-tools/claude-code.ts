@@ -65,7 +65,6 @@ type ClaudeBuildCommon = Readonly<{
 
 type ClaudePlannerBuild = ClaudeBuildCommon &
   Readonly<{
-    prompt: string;
     projectDir: string;
     configuredArgs: readonly string[];
     sessionId: string | null;
@@ -73,7 +72,6 @@ type ClaudePlannerBuild = ClaudeBuildCommon &
   }>;
 
 type ClaudeImplementerBuild = Readonly<{
-  prompt: string;
   model: string | undefined;
   projectDir: string;
   configuredArgs: readonly string[];
@@ -203,7 +201,6 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
   return validateCliArgs({
     ...input,
     protectedFlags: CLAUDE_PROTECTED_FLAGS,
-    promptTransport: 'stdin',
   });
 }
 

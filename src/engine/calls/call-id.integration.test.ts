@@ -17,7 +17,7 @@ import { projectRunnerCallEvent } from './src/engine/calls/event-projection.ts';
 import { createImplementerCallContext } from './src/engine/implementers/pipeline/call-result.ts';
 import { createPlannerCallContext } from './src/engine/planners/call-context.ts';
 import { spawnAndCollect } from './src/engine/streaming/spawn-collect.ts';
-import { invokeCommandBasedRunner } from './src/engine/runners/command-based.ts';
+import { invokeCommandRunner } from './src/engine/runners/command-based.ts';
 import { summarize } from './src/engine/planners/summary.ts';
 import { streamCompletion } from './src/engine/providers/openai-stream/completion.ts';
 
@@ -39,7 +39,10 @@ await invoke({ callContext: createImplementerCallContext({
   config: makeConfig(), taskId: makeTask().id, attempt: 1,
 }) });
 await spawnAndCollect({ command, args: [], cwd: projectDir, stdin: 'brief', onCallEvent });
-await invokeCommandBasedRunner({ command, prompt: 'brief', projectDir, onCallEvent });
+await invokeCommandRunner({
+  source: { kind: 'config', runner: { command }, env: process.env, notFoundMessage: 'not found' },
+  prompt: 'brief', cwd: projectDir, callContext: createPlannerCallContext({}, 'planner'), onCallEvent,
+});
 await summarize({ invokeOneShot: invoke }, [{ role: 'user', text: 'Summarize the run.' }]);
 await streamCompletion({ chat: { completions: { create: async () => (async function* () {
   yield { choices: [{ delta: { content: 'done' }, finish_reason: null }] };

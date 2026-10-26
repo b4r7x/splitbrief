@@ -4,7 +4,6 @@ import { REMOVED_RUNNER_KINDS } from '../../../schemas/runner-fields.js';
 import { RETIRED_APPROVE_LEVELS } from '../../../schemas/enums.js';
 import { includes, narrowRecord } from '../../../../utils/type-guards.js';
 import { apiKeyErrors } from './credentials.js';
-import { securityWarnings } from './warnings.js';
 import type { ConfigError, ConfigValidation } from './types.js';
 
 const UNKNOWN_KEY_MESSAGE =
@@ -214,7 +213,5 @@ export function validateConfig(config: Record<string, unknown>): ConfigValidatio
     errors.push(...apiKeyErrors(result.data));
   }
 
-  const warnings = result.success ? securityWarnings(result.data) : [];
-
-  return { errors, warnings, data: result.success ? result.data : undefined };
+  return { errors, data: result.success ? result.data : undefined };
 }

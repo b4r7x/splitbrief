@@ -607,17 +607,17 @@ Availability is probed, not assumed. An api-kind implementer's `isAvailable()` c
 
 ### shell
 
-`src/engine/planners/shell.ts`, `src/engine/implementers/shell.ts`
+`src/engine/planners/command-invoke.ts`, `src/engine/implementers/command-invoke.ts`
 
-Arbitrary command run via `createCommandBasedPlanner()` / `createCommandBasedImplementer()`. The prompt is piped to stdin, output read from stdout. Config provides `command`, `args`, and `outputFormat`.
+Arbitrary command run via `createCommandPlanner(config, 'shell')` / `createCommandImplementer(config, 'shell')`. The prompt is piped to stdin, output read from stdout. Config provides `command`, `args`, and `outputFormat`.
 
 The implementer extracts code from stdout (`writesFiles: 'extracted-code'`). The planner reads its answer from stdout.
 
 ### agent
 
-`src/engine/planners/agent.ts`, `src/engine/implementers/agent.ts`
+`src/engine/planners/command-invoke.ts`, `src/engine/implementers/command-invoke.ts`
 
-Like shell, but the subprocess writes files to disk directly instead of returning code in stdout. `createChangeDetector()` (`src/engine/change-detection.ts`) compares the workspace after the call with a baseline captured before it (`captureChangeDetectorBaseline`): the changed files with their contents and modes when the directory has `.git`, else a hash of every tracked file. A call that changed nothing fails with `no-files-changed`.
+The same factories with `'agent'`. Like shell, but the subprocess writes files to disk directly instead of returning code in stdout. `createChangeDetector()` (`src/engine/change-detection.ts`) compares the workspace after the call with a baseline captured before it (`captureChangeDetectorBaseline`): the changed files with their contents and modes when the directory has `.git`, else a hash of every tracked file. A call that changed nothing fails with `no-files-changed`.
 
 The planner reads its answer from stdout, like the shell planner. A saved custom command (`customCommands`) with `contract: direct` writes its answer to one declared file instead (see [Planner artifact ownership](#planner-artifact-ownership)). The implementation stays with BUILD.
 

@@ -171,11 +171,10 @@ export function validateCliArgs(input: {
   readonly baseArgs: readonly string[];
   readonly protectedFlags: ReadonlySet<string>;
   readonly protectedShortValueFlags?: ReadonlySet<string> | undefined;
-  readonly promptTransport: 'argv' | 'stdin';
   /** The tool reads a positional argument as the prompt and then ignores stdin. */
   readonly positionalPrompt?: boolean | undefined;
 }): CliArgumentValidation {
-  const { invocationArgs, baseArgs, protectedFlags, promptTransport } = input;
+  const { invocationArgs, baseArgs, protectedFlags } = input;
   const protectedShortValueFlags = input.protectedShortValueFlags ?? new Set<string>();
   const conflicts: string[] = [];
 
@@ -184,12 +183,8 @@ export function validateCliArgs(input: {
     baseArgs.some((arg, index) => invocationArgs[index] !== arg);
   if (orderConflict) conflicts.push('argument-order');
 
-  // Argv carries the prompt in exactly one slot; any other transport carries it in none.
-  const promptSlots = invocationArgs.filter((arg) => arg === CLI_PROMPT_SENTINEL).length;
-  if (promptSlots !== (promptTransport === 'argv' ? 1 : 0)) conflicts.push('prompt-transport');
-  if (invocationArgs.some((arg) => arg !== CLI_PROMPT_SENTINEL && placeholderConflict(arg))) {
-    conflicts.push('prompt-transport');
-  }
+  // The prompt goes on stdin, so no argument may hold it.
+  if (invocationArgs.some(placeholderConflict)) conflicts.push('prompt-transport');
 
   // The configured tail is only identifiable when the adapter-owned prefix is intact.
   if (!orderConflict) {

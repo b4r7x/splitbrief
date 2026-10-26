@@ -10,7 +10,6 @@ import {
   isPathLike,
   isProjectFile,
   isRepoLocal,
-  isShellEvaluatedPromptArg,
   packageManagerScriptName,
   packageManagerScriptNames,
   scriptsRunFor,
@@ -253,19 +252,5 @@ describe('isBareCommandResolvedInsideProject', () => {
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }
-  });
-});
-
-describe('isShellEvaluatedPromptArg', () => {
-  it.each([
-    ['bash -c', 'bash', ['-c', 'printf "%s" "{prompt}"']],
-    ['bash -lc', 'bash', ['-lc', 'printf "%s" "{prompt}"']],
-    ['sh -ec', 'sh', ['-ec', 'printf "%s" "{prompt}"']],
-  ])('flags %s prompt evaluation', (_label, command, args) => {
-    expect(isShellEvaluatedPromptArg(command, args)).toBe(true);
-  });
-
-  it('does not flag non-shell argv placeholders', () => {
-    expect(isShellEvaluatedPromptArg('node', ['runner.js', '{prompt}'])).toBe(false);
   });
 });

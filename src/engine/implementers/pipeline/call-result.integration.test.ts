@@ -214,17 +214,6 @@ describe('runnerCallOutcome — implementer-side failure codes', () => {
     );
     expect(runnerCallOutcome(failed('missing-model', 'no such model')).state).toBe('missing-model');
   });
-
-  it('reads a prompt over the command-line limit as input too large', () => {
-    expect(
-      runnerCallOutcome(
-        failed(
-          'argv-prompt-too-large',
-          'CLI prompt is 186486 bytes and exceeds the 120000-byte argv limit',
-        ),
-      ).state,
-    ).toBe('input-too-large');
-  });
 });
 
 describe('runnerCallOutcome — auth-failure classification', () => {

@@ -5,10 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { runnerCallLogEntry } from '#testing/helpers/runner-call-events.js';
 import { boundEngineEventForConsumer } from '../events/bound.js';
-import { invokeCustomCommandBasedRunner } from './command-based.js';
 import {
   admittedCustomRunner,
   customRunner,
+  invokeCustomRunner,
   observableFailure,
   observeCustomInvocation,
   type CustomInvocationObservation,
@@ -22,7 +22,6 @@ function expectNoDeclaredValues(
   const joinedCallbacks = [
     observation.callbacks.output.join(''),
     observation.callbacks.stderr.join(''),
-    observation.callbacks.session.join(''),
   ].join('');
   const observed = JSON.stringify({
     callbacks: observation.callbacks,
@@ -37,7 +36,7 @@ function expectNoDeclaredValues(
   }
 }
 
-describe('invokeCustomCommandBasedRunner safety', () => {
+describe('custom command runner safety', () => {
   it('redacts split overlapping and marker-colliding declared values before success callbacks, results, and events', async () => {
     const shortValue = 'edge-overlap';
     const longValue = 'prefix-edge-overlap-suffix';
@@ -330,7 +329,7 @@ describe('invokeCustomCommandBasedRunner safety', () => {
     });
   });
 
-  it('fails missing, blocked, oversized environment and oversized prompt preflight before spawn', async () => {
+  it('fails missing, blocked and oversized environment preflight before spawn', async () => {
     await withTempDir('splitbrief custom preflight', async (projectDir) => {
       const sentinel = join(projectDir, 'should-not-exist');
       const argv = [
@@ -343,7 +342,7 @@ describe('invokeCustomCommandBasedRunner safety', () => {
       };
 
       await expect(
-        invokeCustomCommandBasedRunner({
+        invokeCustomRunner({
           ...options,
           admission: await admittedCustomRunner(
             projectDir,
@@ -354,7 +353,7 @@ describe('invokeCustomCommandBasedRunner safety', () => {
         }),
       ).rejects.toMatchObject({ kind: 'custom-runner-environment-missing' });
       await expect(
-        invokeCustomCommandBasedRunner({
+        invokeCustomRunner({
           ...options,
           admission: await admittedCustomRunner(projectDir, customRunner({ argv, env: ['PATH'] })),
           sourceEnv: { PATH: '/host/bin' },
@@ -362,7 +361,7 @@ describe('invokeCustomCommandBasedRunner safety', () => {
         }),
       ).rejects.toMatchObject({ kind: 'custom-runner-environment-blocked' });
       await expect(
-        invokeCustomCommandBasedRunner({
+        invokeCustomRunner({
           ...options,
           admission: await admittedCustomRunner(
             projectDir,
@@ -372,14 +371,6 @@ describe('invokeCustomCommandBasedRunner safety', () => {
           prompt: 'normal prompt',
         }),
       ).rejects.toMatchObject({ kind: 'custom-runner-environment-too-large' });
-      await expect(
-        invokeCustomCommandBasedRunner({
-          ...options,
-          admission: await admittedCustomRunner(projectDir, customRunner({ argv })),
-          sourceEnv: {},
-          prompt: 'x'.repeat(1024 * 1024 + 1),
-        }),
-      ).rejects.toMatchObject({ kind: 'custom-runner-prompt-too-large' });
       expect(existsSync(sentinel)).toBe(false);
     });
   });

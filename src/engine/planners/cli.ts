@@ -8,7 +8,6 @@ import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
 import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
-import { CLI_PROMPT_SENTINEL } from '../runners/cli-tools/candidate-contract.js';
 import { lookupCliPlannerAdapter } from '../runners/cli-tools/registry.js';
 import { typedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
 import { seatSupportsImages } from '../../core/runners/capabilities.js';
@@ -127,7 +126,6 @@ export function createCliPlanner(
 
     const executable = await resolveExecutable(projectDir);
     const baseArgs = adapter.baseArgs({
-      prompt: CLI_PROMPT_SENTINEL,
       model: resolvedModel,
       projectDir,
       configuredArgs: extraArgs,

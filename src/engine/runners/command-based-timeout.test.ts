@@ -1,69 +1,95 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import type { RunnerCallEvent } from '../calls/types.js';
-import { invokeCommandBasedRunner } from './command-based.js';
+import { invokeCommandRunner, type CommandRunnerOptions } from './command-based.js';
 
-describe('invokeCommandBasedRunner with timeout', () => {
-  it('records stderr activity on the timeout branch', async () => {
+type ConfigRunner = Extract<CommandRunnerOptions['source'], { kind: 'config' }>['runner'];
+
+function run(
+  runner: ConfigRunner,
+  extra: Partial<Omit<CommandRunnerOptions, 'source'>> = {},
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  return invokeCommandRunner({
+    source: {
+      kind: 'config',
+      runner,
+      env,
+      notFoundMessage: `Shell implementer command not found: ${runner.command}`,
+    },
+    prompt: '',
+    cwd: process.cwd(),
+    callContext: { callId: 'call-timeout', role: 'implementer', backendKind: 'shell' },
+    ...extra,
+  });
+}
+
+describe('invokeCommandRunner with timeout', () => {
+  it('records stderr activity', async () => {
     const events: RunnerCallEvent[] = [];
-    const result = await invokeCommandBasedRunner({
-      command: 'sh',
-      args: ['-c', 'cat >/dev/null; echo timeout-branch-progress >&2'],
-      timeout: 30_000,
-      prompt: '',
-      projectDir: process.cwd(),
-      onCallEvent: (event) => events.push(event),
-    });
+    const result = await run(
+      {
+        command: 'sh',
+        args: ['-c', 'cat >/dev/null; echo timeout-branch-progress >&2'],
+      },
+      {
+        timeoutMs: 30_000,
+        onCallEvent: (event) => events.push(event),
+      },
+    );
 
-    expect(result.stderr).toContain('timeout-branch-progress');
     expect(
       events.some(
         (event) =>
           event.type === 'call_stderr_delta' && event.text.includes('timeout-branch-progress'),
       ),
     ).toBe(true);
-    expect(result.callResult.warnings).toEqual([]);
+    expect(result.warnings).toEqual([]);
   });
 
-  it('redacts credential values on the timeout branch', async () => {
+  it('redacts credential values', async () => {
     const credential = 'timeout-branch-credential-canary-91ac';
     const events: RunnerCallEvent[] = [];
     const streamed: string[] = [];
 
-    const result = await invokeCommandBasedRunner({
-      command: 'sh',
-      args: [
-        '-c',
-        `cat >/dev/null; echo "answer ${credential}"; echo "diagnostic ${credential}" >&2`,
-      ],
-      env: { ...process.env, OPENAI_API_KEY: credential },
-      timeout: 30_000,
-      prompt: '',
-      projectDir: process.cwd(),
-      onOutput: (chunk) => streamed.push(chunk),
-      onCallEvent: (event) => events.push(event),
-    });
+    const result = await run(
+      {
+        command: 'sh',
+        args: [
+          '-c',
+          `cat >/dev/null; echo "answer ${credential}"; echo "diagnostic ${credential}" >&2`,
+        ],
+      },
+      {
+        timeoutMs: 30_000,
+        onOutput: (chunk) => streamed.push(chunk),
+        onCallEvent: (event) => events.push(event),
+      },
+      { ...process.env, OPENAI_API_KEY: credential },
+    );
 
     expect(streamed.join('')).toContain('***REDACTED***');
     expect(streamed.join('')).not.toContain(credential);
     expect(JSON.stringify(events)).not.toContain(credential);
-    expect(JSON.stringify(result.callResult)).not.toContain(credential);
+    expect(JSON.stringify(result)).not.toContain(credential);
   });
 
-  it('marks an idle kill on the timeout branch with the no-progress-cut code', async () => {
+  it('marks an idle kill with the no-progress-cut code', async () => {
     const events: RunnerCallEvent[] = [];
 
     await expect(
-      invokeCommandBasedRunner({
-        command: 'sleep',
-        args: ['1'],
-        timeout: 30_000,
-        idleWarnMs: 10,
-        idleKillMs: 20,
-        prompt: '',
-        projectDir: process.cwd(),
-        onCallEvent: (event) => events.push(event),
-      }),
+      run(
+        {
+          command: 'sleep',
+          args: ['1'],
+          idleWarnMs: 10,
+          idleKillMs: 20,
+        },
+        {
+          timeoutMs: 30_000,
+          onCallEvent: (event) => events.push(event),
+        },
+      ),
     ).rejects.toThrow();
 
     const errorEvent = events.find((event) => event.type === 'call_error');
@@ -73,38 +99,42 @@ describe('invokeCommandBasedRunner with timeout', () => {
     });
   });
 
-  it('parses stream-json through the format pipeline on the timeout branch', async () => {
+  it('parses stream-json through the format pipeline', async () => {
     const line = JSON.stringify({
       type: 'assistant',
       message: { content: [{ type: 'text', text: 'parsed body' }] },
     });
-    const result = await invokeCommandBasedRunner({
-      command: 'sh',
-      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', line],
-      outputFormat: 'stream-json',
-      timeout: 30_000,
-      prompt: '',
-      projectDir: process.cwd(),
-    });
-    expect(result.stdout).toBe('parsed body');
-    expect(result.stdout).not.toContain('assistant');
+    const result = await run(
+      {
+        command: 'sh',
+        args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', line],
+        outputFormat: 'stream-json',
+      },
+      {
+        timeoutMs: 30_000,
+      },
+    );
+    expect(result.text).toBe('parsed body');
+    expect(result.text).not.toContain('assistant');
   });
 
-  it('accumulates usage from stream-json on the timeout branch', async () => {
+  it('accumulates usage from stream-json', async () => {
     const line = JSON.stringify({
       type: 'result',
       result: 'done',
       usage: { input_tokens: 11, output_tokens: 7 },
     });
-    const result = await invokeCommandBasedRunner({
-      command: 'sh',
-      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', line],
-      outputFormat: 'stream-json',
-      timeout: 30_000,
-      prompt: '',
-      projectDir: process.cwd(),
-    });
-    expect(result.stdout).toBe('done');
+    const result = await run(
+      {
+        command: 'sh',
+        args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', line],
+        outputFormat: 'stream-json',
+      },
+      {
+        timeoutMs: 30_000,
+      },
+    );
+    expect(result.text).toBe('done');
     expect(result.usage).toEqual({
       inputTokens: 11,
       outputTokens: 7,
@@ -132,16 +162,17 @@ describe('invokeCommandBasedRunner with timeout', () => {
         usage: { input_tokens: 11, output_tokens: 7 },
       }),
     ];
-    const result = await invokeCommandBasedRunner({
-      command: 'sh',
-      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
-      outputFormat: 'stream-json',
-      prompt: '',
-      projectDir: process.cwd(),
-      onOutput: (chunk) => chunks.push(chunk),
-    });
-    expect(result.stdout).toBe('final text');
-    expect(result.callResult.text).toBe('final text');
+    const result = await run(
+      {
+        command: 'sh',
+        args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
+        outputFormat: 'stream-json',
+      },
+      {
+        onOutput: (chunk) => chunks.push(chunk),
+      },
+    );
+    expect(result.text).toBe('final text');
     expect(chunks).toEqual(['draft text']);
   });
 
@@ -157,16 +188,18 @@ describe('invokeCommandBasedRunner with timeout', () => {
         result: 'draft final',
       }),
     ];
-    const result = await invokeCommandBasedRunner({
-      command: 'sh',
-      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
-      outputFormat: 'stream-json',
-      prompt: '',
-      projectDir: process.cwd(),
-      onOutput: (chunk) => chunks.push(chunk),
-    });
+    const result = await run(
+      {
+        command: 'sh',
+        args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
+        outputFormat: 'stream-json',
+      },
+      {
+        onOutput: (chunk) => chunks.push(chunk),
+      },
+    );
 
-    expect(result.stdout).toBe('draft final');
+    expect(result.text).toBe('draft final');
     expect(chunks).toEqual(['draft', ' final']);
   });
 
@@ -174,14 +207,16 @@ describe('invokeCommandBasedRunner with timeout', () => {
     const events: RunnerCallEvent[] = [];
 
     await expect(
-      invokeCommandBasedRunner({
-        command: 'sh',
-        args: ['-c', 'sleep 5'],
-        timeout: 200,
-        prompt: '',
-        projectDir: process.cwd(),
-        onCallEvent: (event) => events.push(event),
-      }),
+      run(
+        {
+          command: 'sh',
+          args: ['-c', 'sleep 5'],
+        },
+        {
+          timeoutMs: 200,
+          onCallEvent: (event) => events.push(event),
+        },
+      ),
     ).rejects.toMatchObject({ kind: 'command-timeout' });
 
     expect(events).toContainEqual(
@@ -218,14 +253,16 @@ describe('invokeCommandBasedRunner with timeout', () => {
     ];
     const events: RunnerCallEvent[] = [];
 
-    await invokeCommandBasedRunner({
-      command: 'sh',
-      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
-      outputFormat: 'stream-json',
-      prompt: '',
-      projectDir: process.cwd(),
-      onCallEvent: (event) => events.push(event),
-    });
+    await run(
+      {
+        command: 'sh',
+        args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
+        outputFormat: 'stream-json',
+      },
+      {
+        onCallEvent: (event) => events.push(event),
+      },
+    );
 
     const deltas = events.filter((event) => event.type === 'call_tool_use_delta');
     expect(deltas).toEqual([
@@ -234,7 +271,7 @@ describe('invokeCommandBasedRunner with timeout', () => {
     ]);
   });
 
-  it('preserves session id and tool use from stream-json on the timeout branch', async () => {
+  it('preserves session id and tool use from stream-json', async () => {
     const lines = [
       JSON.stringify({
         type: 'assistant',
@@ -264,47 +301,48 @@ describe('invokeCommandBasedRunner with timeout', () => {
       }),
     ];
     const events: RunnerCallEvent[] = [];
-    const sessionIds: string[] = [];
 
-    const result = await invokeCommandBasedRunner({
-      command: 'sh',
-      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
-      outputFormat: 'stream-json',
-      timeout: 30_000,
-      prompt: '',
-      projectDir: process.cwd(),
-      onSessionId: (id) => sessionIds.push(id),
-      onCallEvent: (event) => events.push(event),
-    });
+    const result = await run(
+      {
+        command: 'sh',
+        args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
+        outputFormat: 'stream-json',
+      },
+      {
+        timeoutMs: 30_000,
+        onCallEvent: (event) => events.push(event),
+      },
+    );
 
-    expect(result.callResult.nativeSessionId).toBe('sess-timeout-structured');
-    expect(sessionIds).toEqual(['sess-timeout-structured']);
-    expect(result.callResult.toolUses).toEqual([
+    expect(result.nativeSessionId).toBe('sess-timeout-structured');
+    expect(result.toolUses).toEqual([
       { id: 'tool-timeout', name: 'read_file', input: { path: 'src/main.ts' } },
     ]);
     expect(events.some((event) => event.type === 'call_session_id')).toBe(true);
     expect(events.some((event) => event.type === 'call_tool_use_done')).toBe(true);
   });
 
-  it('recovers from an unterminated oversized stdout line on the timeout branch', async () => {
+  it('recovers from an unterminated oversized stdout line', async () => {
     const chunks: string[] = [];
-    const result = await invokeCommandBasedRunner({
-      command: 'node',
-      args: [
-        '-e',
-        `require("node:fs").readFileSync(0);process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}))`,
-      ],
-      outputFormat: 'text',
-      timeout: 30_000,
-      prompt: '',
-      projectDir: process.cwd(),
-      onOutput: (chunk) => chunks.push(chunk),
-    });
+    const result = await run(
+      {
+        command: 'node',
+        args: [
+          '-e',
+          `require("node:fs").readFileSync(0);process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}))`,
+        ],
+        outputFormat: 'text',
+      },
+      {
+        timeoutMs: 30_000,
+        onOutput: (chunk) => chunks.push(chunk),
+      },
+    );
 
-    expect(result.stdout).toBe('');
+    expect(result.text).toBe('');
     expect(chunks).toEqual([]);
-    expect(result.callResult).toMatchObject({ status: 'completed' });
-    expect(result.callResult.warnings).toEqual([
+    expect(result).toMatchObject({ status: 'completed' });
+    expect(result.warnings).toEqual([
       expect.objectContaining({
         code: 'stdout_line_overflow',
         message: expect.stringContaining('stdout line exceeded'),

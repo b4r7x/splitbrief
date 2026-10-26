@@ -13,7 +13,6 @@ import { toCliEnvironment } from '../invoke-cli-adapter.js';
 import { invokeProcessCli } from './process-invoke.js';
 import type { CliProcessAdapter } from './contract.js';
 import {
-  CLI_PROMPT_SENTINEL,
   type RawCliCandidateContract,
   type UnregisteredCliAdapter,
   type UnregisteredCliCandidate,
@@ -129,7 +128,6 @@ function adapterArgs(adapter: UnregisteredCliAdapter, projectDir: string): reado
   const result =
     adapter.role === 'planner'
       ? adapter.buildArgs({
-          prompt: CLI_PROMPT_SENTINEL,
           model: undefined,
           projectDir,
           configuredArgs: [],
@@ -137,7 +135,6 @@ function adapterArgs(adapter: UnregisteredCliAdapter, projectDir: string): reado
           effort: undefined,
         })
       : adapter.buildArgs({
-          prompt: CLI_PROMPT_SENTINEL,
           model: undefined,
           projectDir,
           configuredArgs: [],
@@ -190,10 +187,7 @@ async function projectFingerprint(projectDir: string): Promise<string> {
 function productionFailureIsHarness(result: RunnerCallResult): boolean {
   const code = result.error?.code;
   return (
-    code === 'prompt-transport-error' ||
-    code === 'argv-prompt-too-large' ||
-    code === 'argument-conflict' ||
-    code === 'callback-failure'
+    code === 'prompt-transport-error' || code === 'argument-conflict' || code === 'callback-failure'
   );
 }
 
@@ -206,13 +200,7 @@ async function invokeCandidate(opts: {
 }): Promise<RunnerCallResult> {
   const contract = opts.candidate.rawContract;
   const adapter = opts.candidate.adapter;
-  if (adapter.promptTransport.kind !== contract.promptTransport) {
-    throwConformance('harness-failure', 'CLI adapter prompt transport differs from raw contract');
-  }
-  let args = adapterArgs(adapter, opts.projectDir);
-  if (contract.promptTransport === 'file' && !args.some((arg) => arg === CLI_PROMPT_SENTINEL)) {
-    args = [...args, CLI_PROMPT_SENTINEL];
-  }
+  const args = adapterArgs(adapter, opts.projectDir);
   const processInvocation = {
     executable: opts.executable,
     args,

@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createCommandBasedPlanner } from './command-invoke.js';
-import { ONE_SHOT_API_CAPS } from './types.js';
+import { createCommandPlanner } from './command-invoke.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
@@ -23,7 +23,7 @@ afterEach(() => {
   }
 });
 
-describe('createCommandBasedPlanner', () => {
+describe('createCommandPlanner', () => {
   it('runs the command with the runner environment: declared names only, never the host credentials', async () => {
     const projectDir = createTempDir('cmd-planner-env');
     const captureDir = createTempDir('cmd-planner-env-capture');
@@ -31,18 +31,19 @@ describe('createCommandBasedPlanner', () => {
     Object.assign(process.env, PLANTED_ENV);
     try {
       const capture = join(captureDir, 'names.txt');
-      const planner = createCommandBasedPlanner(
-        {
-          kind: 'shell',
-          command: process.execPath,
-          args: [
-            '-e',
-            `const fs = require('node:fs'); fs.readFileSync(0); fs.writeFileSync(${JSON.stringify(capture)}, Object.keys(process.env).join('\\n'))`,
-          ],
-          env: ['SPLITBRIEF_DECLARED_TOKEN'],
-        },
-        'test-planner',
-        { capabilities: ONE_SHOT_API_CAPS },
+      const planner = createCommandPlanner(
+        makeConfig({
+          planner: {
+            kind: 'shell',
+            command: process.execPath,
+            args: [
+              '-e',
+              `const fs = require('node:fs'); fs.readFileSync(0); fs.writeFileSync(${JSON.stringify(capture)}, Object.keys(process.env).join('\\n'))`,
+            ],
+            env: ['SPLITBRIEF_DECLARED_TOKEN'],
+          },
+        }),
+        'shell',
       );
       await planner.review('review the run', projectDir, { onOutput: vi.fn() });
 

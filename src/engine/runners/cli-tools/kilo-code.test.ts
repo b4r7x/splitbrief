@@ -21,7 +21,6 @@ const STREAM_JSON_FIXTURE = join(
 
 function plannerArgs(model: string | undefined, configuredArgs: readonly string[]) {
   return kiloPlannerAdapter.buildArgs({
-    prompt: PROMPT,
     model,
     projectDir: PROJECT_DIR,
     configuredArgs,
@@ -32,7 +31,6 @@ function plannerArgs(model: string | undefined, configuredArgs: readonly string[
 
 function implementerArgs(model: string | undefined, configuredArgs: readonly string[]) {
   return kiloImplementerAdapter.buildArgs({
-    prompt: PROMPT,
     model,
     projectDir: PROJECT_DIR,
     configuredArgs,
@@ -69,7 +67,6 @@ describe('Kilo Code role adapters', () => {
       [kiloImplementerAdapter, 'code', ['--auto']],
     ] as const) {
       const input = {
-        prompt: PROMPT,
         model: 'provider/model',
         variant: 'high',
         projectDir: PROJECT_DIR,
@@ -214,7 +211,6 @@ describe('Kilo Code role adapters', () => {
 
   it('sends the reasoning preset the seat configured, beside the model, on both roles', () => {
     const planner = kiloPlannerAdapter.buildArgs({
-      prompt: PROMPT,
       model: 'openai/gpt-5.6',
       projectDir: PROJECT_DIR,
       configuredArgs: [],
@@ -226,7 +222,6 @@ describe('Kilo Code role adapters', () => {
     expect(planner[planner.indexOf('--variant') + 1]).toBe('max');
 
     const implementer = kiloImplementerAdapter.buildArgs({
-      prompt: PROMPT,
       model: 'openai/gpt-5.6',
       projectDir: PROJECT_DIR,
       configuredArgs: [],
@@ -243,7 +238,6 @@ describe('Kilo Code role adapters', () => {
 
   it('refuses a configured --variant that would outrank the seat', () => {
     const base = kiloPlannerAdapter.buildArgs({
-      prompt: PROMPT,
       model: 'openai/gpt-5.6',
       projectDir: PROJECT_DIR,
       configuredArgs: [],

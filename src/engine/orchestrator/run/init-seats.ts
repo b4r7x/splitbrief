@@ -63,7 +63,6 @@ export async function createPlannerSeat(input: PlannerSeatInput): Promise<Planne
 
 export type ImplementerSeatInput = SeatBase & {
   bus: EventBus;
-  allowRepoRunners: boolean;
   injectedImplementer: Implementer | undefined;
 };
 
@@ -94,7 +93,6 @@ export async function createImplementerSeat(input: ImplementerSeatInput): Promis
     input.injectedImplementer ??
     (await createPreparedImplementer({
       publisher: createImplementerPublisher(input.bus),
-      allowRepoRunners: input.allowRepoRunners,
       slot: { role: 'implementer', profile: defaultProfile },
     }));
   return { implementer, createPreparedImplementer };

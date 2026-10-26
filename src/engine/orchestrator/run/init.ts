@@ -416,7 +416,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     prepared,
     customRuntime,
     bus,
-    allowRepoRunners: runtime.allowRepoRunners,
     injectedImplementer: opts._implementer,
   });
 
@@ -540,7 +539,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     context,
     implementer,
     createImplementer: createPreparedImplementer,
-    allowRepoRunners: runtime.allowRepoRunners,
     signal: opts.signal,
     metadata,
     resumeHolder,

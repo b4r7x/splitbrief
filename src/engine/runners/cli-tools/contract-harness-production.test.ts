@@ -37,8 +37,8 @@ const baseContract = {
   role: 'planner' as const,
   versionArgs: ['--version'],
   auth: { kind: 'none', env: [] as const },
-  rawInvocation: ['--prompt', '<PROMPT>'],
-  promptTransport: 'argv' as const,
+  rawInvocation: ['--print'],
+  promptTransport: 'stdin' as const,
   expectedRawTerminal: 'process-exit',
   asOf: '2026-07-31',
 };
@@ -70,8 +70,8 @@ export const CLI_CONFORMANCE_CANDIDATES = [{
   adapter: {
     descriptor: { id: ${JSON.stringify(candidate.id)} },
     role: ${JSON.stringify(role)},
-    promptTransport: { kind: 'argv', placement: 'positional' },
-    buildArgs: () => ['-e', 'process.stdout.write("ok")', '<PROMPT>'],
+    promptTransport: { kind: 'stdin' },
+    buildArgs: () => ['-e', 'process.stdout.write("ok")'],
     validateArgs: () => ({ valid: true }),
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
@@ -89,7 +89,6 @@ export const CLI_CONFORMANCE_CANDIDATES = [{
 type CandidateModuleOptions = Readonly<{
   readonly buildArgs?: string;
   readonly validateArgs?: string;
-  readonly promptTransport?: string;
   readonly encodePrompt?: string;
   readonly outputContract?: string;
   readonly parse?: string;
@@ -104,16 +103,8 @@ async function moduleWithCustomCandidate(
   const candidate = { ...contract };
   const hash = contractSha256(candidate);
   const buildArgs =
-    options.buildArgs ??
-    `() => ['-e', ${JSON.stringify('process.stdout.write("ok")')}, '<PROMPT>']`;
+    options.buildArgs ?? `() => ['-e', ${JSON.stringify('process.stdout.write("ok")')}]`;
   const validateArgs = options.validateArgs ?? '() => ({ valid: true })';
-  const promptTransport =
-    options.promptTransport ??
-    (candidate.promptTransport === 'argv'
-      ? `{ kind: 'argv', placement: 'positional' }`
-      : candidate.promptTransport === 'stdin'
-        ? `{ kind: 'stdin' }`
-        : `{ kind: 'file', mode: 0o600 }`);
   const outputContract =
     options.outputContract ?? `{ kind: 'text-exit', successfulExitCodes: [0] }`;
   const parse = options.parse ?? '() => []';
@@ -130,7 +121,7 @@ export const CLI_CONFORMANCE_CANDIDATES = [{
   adapter: {
     descriptor: { id: ${JSON.stringify(candidate.id)} },
     role: ${JSON.stringify(candidate.role)},
-    promptTransport: ${promptTransport},
+    promptTransport: { kind: 'stdin' },
     encodePrompt: ${options.encodePrompt ?? 'undefined'},
     buildArgs: ${buildArgs},
     validateArgs: ${validateArgs},
@@ -240,7 +231,7 @@ describe('CLI production conformance lane', () => {
       const marker = join(directory, 'spawned.txt');
       const modulePath = await moduleWithCustomCandidate(directory, baseContract, {
         validateArgs: `() => ({ valid: false, conflicts: ['--prompt', 'secret-value'] })`,
-        buildArgs: `() => ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned')`)}, '<PROMPT>']`,
+        buildArgs: `() => ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned')`)}]`,
       });
       const production = await runProductionCliConformance({
         modulePath,
@@ -274,7 +265,7 @@ describe('CLI production conformance lane', () => {
       expect(raw.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
       const changedPath = join(directory, 'changed.txt');
       const changedModule = await moduleWithCustomCandidate(directory, changedContract, {
-        buildArgs: `() => ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(changedPath)}, 'changed'); process.stdout.write('changed')`)}, '<PROMPT>']`,
+        buildArgs: `() => ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(changedPath)}, 'changed'); process.stdout.write('changed')`)}]`,
       });
       const changed = await runProductionCliConformance({
         modulePath: changedModule,
@@ -327,7 +318,7 @@ describe('CLI production conformance lane', () => {
       const terminalEvent = `({ type: 'result', status: 'completed', text: 'terminal', usage: null, nativeSessionId: null, error: null, partial: false })`;
       const modulePath = await moduleWithCustomCandidate(directory, terminalContract, {
         outputContract: `{ kind: 'structured-terminal', terminalEvent: 'required' }`,
-        buildArgs: `() => ['-e', ${JSON.stringify("process.stdout.write('terminal\\n')")}, '<PROMPT>']`,
+        buildArgs: `() => ['-e', ${JSON.stringify("process.stdout.write('terminal\\n')")}]`,
         parse: `(line) => line === 'terminal' ? [${terminalEvent}] : []`,
         terminal: `() => ${terminalEvent}`,
       });
@@ -348,7 +339,7 @@ describe('CLI production conformance lane', () => {
       expect(missingRaw.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
       const missingModule = await moduleWithCustomCandidate(directory, missingContract, {
         outputContract: `{ kind: 'structured-terminal', terminalEvent: 'required' }`,
-        buildArgs: `() => ['-e', ${JSON.stringify("process.stdout.write('not-terminal\\n')")}, '<PROMPT>']`,
+        buildArgs: `() => ['-e', ${JSON.stringify("process.stdout.write('not-terminal\\n')")}]`,
         parse: `(line) => line === 'not-terminal' ? [{ type: 'text', channel: 'assistant', text: line }] : []`,
       });
       const missing = await runProductionCliConformance({
@@ -368,12 +359,7 @@ describe('CLI production conformance lane', () => {
   it("sends the prompt on stdin in the adapter's own encoding", async () => {
     const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
     try {
-      const framedContract = {
-        ...baseContract,
-        id: 'fixture-framed-cli',
-        rawInvocation: ['--print'],
-        promptTransport: 'stdin' as const,
-      };
+      const framedContract = { ...baseContract, id: 'fixture-framed-cli' };
       const recordPath = join(directory, 'framed.json');
       const raw = await runRawCliConformance(
         rawOptions(framedContract, async () => processResult(), recordPath),

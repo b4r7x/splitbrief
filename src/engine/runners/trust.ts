@@ -5,7 +5,6 @@ import {
 } from '../../core/config/custom-commands.js';
 import { findConfiguredCustomCommand } from '../../core/config/custom-command-catalog.js';
 import { argvIsRepoLocal } from '../../core/trust/command-string-classification.js';
-import { isShellEvaluatedPromptArg } from '../../core/trust/path-classification.js';
 import { stripProfileMetadata } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
@@ -42,17 +41,8 @@ function collectCommandRunnerViolations(
   projectDir: string,
 ): RunnerTrustViolation[] {
   const args = runner.args ?? [];
-  const command = commandDisplay(runner.command, args);
-  const violations: RunnerTrustViolation[] = [];
-
-  if (commandHasRepoLocalPaths(runner.command, args, projectDir)) {
-    violations.push({ label, command });
-  }
-  if (runner.kind === 'agent' && isShellEvaluatedPromptArg(runner.command, args)) {
-    violations.push({ label, command });
-  }
-
-  return violations;
+  if (!commandHasRepoLocalPaths(runner.command, args, projectDir)) return [];
+  return [{ label, command: commandDisplay(runner.command, args) }];
 }
 
 function commandRunnerViolations(config: Config, projectDir: string): RunnerTrustViolation[] {

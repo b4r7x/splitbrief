@@ -10,6 +10,5 @@ export interface ConfigError {
 
 export interface ConfigValidation {
   errors: ConfigError[];
-  warnings: string[];
   data?: Config | undefined;
 }

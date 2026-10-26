@@ -369,6 +369,14 @@ export const gates: readonly Gate[] = [
     command: 'tsx scripts/user-facing-text.ts | wc -l',
     expected: 0,
   },
+  {
+    id: '60',
+    description:
+      'Every shell and agent runner spawns through one call: spawnAndCollect only in src/engine/runners/command-based.ts',
+    command:
+      "{ rg -n \"spawnAndCollect\\(\" src --glob '!**/*.test.ts' --glob '!**/*.test.tsx' | rg -v '^src/engine/runners/command-based.ts:' | rg -v 'function spawnAndCollect\\(' || true; } | wc -l",
+    expected: 0,
+  },
 ];
 
 export function getInvariantGates(id: string): readonly Gate[] {

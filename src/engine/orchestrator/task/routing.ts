@@ -53,7 +53,6 @@ export async function createTaskImplementer(opts: {
   }
   return factory({
     publisher: createImplementerPublisher(opts.wctx.bus),
-    allowRepoRunners: opts.wctx.allowRepoRunners ?? false,
     slot: { role: 'implementer', profile: opts.profile.name },
   });
 }

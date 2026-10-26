@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
-import { createAgentImplementer } from './agent.js';
+import { createCommandImplementer } from './command-invoke.js';
 import { makeConfig as makeBaseConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -50,7 +50,7 @@ describe('agent implementer', () => {
       args: ['-c', `cat >/dev/null; echo "hello" > ${join(testDir, 'undeclared.txt')}`],
     });
 
-    const implementer = createAgentImplementer(config);
+    const implementer = createCommandImplementer(config, 'agent');
     const result = await implementer.implement({
       task: makeTask(),
       projectDir: testDir,
@@ -69,7 +69,7 @@ describe('agent implementer', () => {
       args: ['-c', 'cat >/dev/null; echo no files written'],
     });
 
-    const implementer = createAgentImplementer(config);
+    const implementer = createCommandImplementer(config, 'agent');
     const result = await implementer.implement({
       task: makeTask(),
       projectDir: testDir,
@@ -89,7 +89,7 @@ describe('agent implementer', () => {
       timeout: 50,
     });
 
-    const implementer = createAgentImplementer(config);
+    const implementer = createCommandImplementer(config, 'agent');
     const result = await implementer.implement({
       task: makeTask(),
       projectDir: testDir,
@@ -109,7 +109,7 @@ describe('agent implementer', () => {
     });
 
     const controller = new AbortController();
-    const implementer = createAgentImplementer(config);
+    const implementer = createCommandImplementer(config, 'agent');
     const pending = implementer.implement({
       task: makeTask(),
       projectDir: testDir,
@@ -131,7 +131,7 @@ describe('agent implementer', () => {
       command: 'nonexistent-command-xyz-12345',
     });
 
-    const implementer = createAgentImplementer(config);
+    const implementer = createCommandImplementer(config, 'agent');
     await expect(
       implementer.implement({
         task: makeTask(),
@@ -142,76 +142,6 @@ describe('agent implementer', () => {
       }),
     ).rejects.toThrow('command not found');
   }, 30_000);
-
-  it('replaces {prompt} placeholder in args', async () => {
-    const outFile = join(testDir, 'prompt-out.txt');
-    const config = makeConfig({
-      command: 'node',
-      args: [
-        '-e',
-        'require("node:fs").writeFileSync(process.argv[1], process.argv[2])',
-        outFile,
-        '{prompt}',
-      ],
-    });
-
-    const implementer = createAgentImplementer(config);
-    const task = makeTask({ description: 'test prompt content' });
-    const result = await implementer.implement({
-      task,
-      projectDir: testDir,
-      config,
-      context: { ...context, dir: testDir },
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(true);
-    const prompt = readFileSync(outFile, 'utf-8');
-    expect(prompt).toContain('test prompt content');
-    expect(prompt).toContain(
-      `Edit ${task.suggestedFiles[0]} directly in the isolation directory. SPLITBRIEF runs the checks after you hand back, so run no test, typecheck, lint or other check command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`,
-    );
-    expect(prompt).not.toContain('{prompt}');
-  });
-
-  it('refuses shell-evaluated {prompt} placeholders without repo runner trust', async () => {
-    const config = makeConfig({
-      command: 'bash',
-      args: ['-c', 'printf "%s" "{prompt}"'],
-    });
-
-    const implementer = createAgentImplementer(config);
-    const result = await implementer.implement({
-      task: makeTask({ description: 'unsafe prompt content' }),
-      projectDir: testDir,
-      config,
-      context: { ...context, dir: testDir },
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Runner args must not pass {prompt} through bash -c');
-  });
-
-  it('allows shell-evaluated {prompt} placeholders with explicit repo runner trust', async () => {
-    const outFile = join(testDir, 'trusted-prompt-out.txt');
-    const config = makeConfig({
-      command: 'bash',
-      args: ['-c', `cat > ${outFile} <<'SPLITBRIEF_PROMPT_EOF'\n{prompt}\nSPLITBRIEF_PROMPT_EOF`],
-    });
-
-    const implementer = createAgentImplementer(config, { allowRepoRunners: true });
-    const result = await implementer.implement({
-      task: makeTask({ description: 'trusted prompt content' }),
-      projectDir: testDir,
-      config,
-      context: { ...context, dir: testDir },
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(true);
-    expect(readFileSync(outFile, 'utf-8')).toContain('trusted prompt content');
-  });
 
   it('threads a sandbox env through to the spawned subprocess', async () => {
     const envOutFile = join(testDir, 'env-out.txt');
@@ -226,7 +156,7 @@ describe('agent implementer', () => {
       ],
     });
 
-    const implementer = createAgentImplementer(config);
+    const implementer = createCommandImplementer(config, 'agent');
     const result = await implementer.implement({
       task: makeTask(),
       projectDir: testDir,
@@ -248,7 +178,7 @@ describe('agent implementer', () => {
     });
 
     const chunks: string[] = [];
-    const implementer = createAgentImplementer(config);
+    const implementer = createCommandImplementer(config, 'agent');
     const result = await implementer.implement({
       task: makeTask(),
       projectDir: testDir,
@@ -276,7 +206,7 @@ describe('agent implementer', () => {
       publishWarning: () => {},
     };
 
-    const implementer = createAgentImplementer(config, { publisher });
+    const implementer = createCommandImplementer(config, 'agent', { publisher });
     await implementer.implement({
       task: makeTask(),
       projectDir: testDir,

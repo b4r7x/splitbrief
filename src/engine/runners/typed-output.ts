@@ -12,7 +12,7 @@ import { toTokenDelta } from '../calls/projection.js';
 import { accumulateTokenUsage } from '../calls/usage.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from '../planners/require-completed-call.js';
-import { inputTooLargeRefusal, promptSizeIn, type PromptLimit } from './input-limit.js';
+import { inputTooLargeRefusal, type PromptLimit } from './input-limit.js';
 import { isStrictJsonSchema } from './strict-json-schema.js';
 import { countNoun } from '../../utils/pluralize.js';
 
@@ -345,8 +345,7 @@ export function typedPromptSuffix(
 
 function refuseOverLimit(prompt: string, limit: PromptLimit | undefined): void {
   if (limit === undefined) return;
-  const size = promptSizeIn(prompt, limit.unit);
-  if (size > limit.max) throw inputTooLargeRefusal(size, limit);
+  if (prompt.length > limit.max) throw inputTooLargeRefusal(prompt.length, limit);
 }
 
 export async function requestTyped<T>(

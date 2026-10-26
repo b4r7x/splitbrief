@@ -1,7 +1,6 @@
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { CliSchemaInput } from '../cli-tools/contract.js';
-import { CLI_PROMPT_SENTINEL } from '../cli-tools/candidate-contract.js';
 import { claudeCodePlannerAdapter } from '../cli-tools/claude-code.js';
 import { error } from '../../../utils/error.js';
 
@@ -26,7 +25,6 @@ export function buildClaudeArgs(opts: BuildArgsOpts): string[] {
   const configuredArgs = opts.configuredArgs ?? [];
   const baseArgs = [
     ...claudeCodePlannerAdapter.baseArgs({
-      prompt: CLI_PROMPT_SENTINEL,
       model: opts.model,
       projectDir: opts.projectDir,
       configuredArgs,

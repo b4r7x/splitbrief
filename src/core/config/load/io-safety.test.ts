@@ -216,21 +216,6 @@ describe('config load safety', () => {
       }
     });
 
-    it('returns security warnings in the warnings array', () => {
-      const dir = join(TMP, 'security-warn');
-      writeConfigYaml(dir, {
-        version: 3,
-        planner: {
-          kind: 'shell',
-          command: 'local-planner',
-          args: ['--prompt', '{prompt}'],
-        },
-      });
-
-      const { warnings } = loadConfig(dir);
-      expect(warnings.some((w) => w.includes('planner.args contains {prompt}'))).toBe(true);
-    });
-
     it('returns no warnings when no api keys in config', () => {
       const dir = join(TMP, 'no-warn');
       writeConfigYaml(dir, {

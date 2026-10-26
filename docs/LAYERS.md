@@ -305,8 +305,7 @@ engine/planners/
 ├── claude-code.ts    # ADAPTER — Claude Code subprocess
 ├── cli.ts            # ADAPTER — every other CLI tool, through the CLI adapter registry
 ├── api.ts            # ADAPTER — OpenAI-compatible HTTP
-├── shell.ts          # ADAPTER — arbitrary shell command
-└── agent.ts          # ADAPTER — file-writing agent
+└── command-invoke.ts # ADAPTER — shell command or file-writing agent
 
 engine/implementers/   # mirror of planners/ — same port+adapter pattern
 ```

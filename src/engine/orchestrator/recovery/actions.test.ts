@@ -27,7 +27,7 @@ import {
   buildRunnerInputTooLargeRecoveryIssue,
   buildSeatDownIssue,
 } from './builders/task.js';
-import { argvPromptTooLarge } from '../../runners/input-limit.js';
+import { inputTooLargeRefusal } from '../../runners/input-limit.js';
 import { EngineEventSchema } from '../../events/schema.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import {
@@ -609,7 +609,7 @@ describe('applyRecoveryAction: switch-seat', () => {
       task,
       phase: 'implementing',
       runner,
-      toolMessage: argvPromptTooLarge(195_203, 120_000).message,
+      toolMessage: inputTooLargeRefusal(195_203, { max: 120_000, unit: 'characters' }).message,
       attempts: 1,
       maxAttempts: 8,
       seatSwap: {

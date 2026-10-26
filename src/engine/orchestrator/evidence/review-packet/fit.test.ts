@@ -154,36 +154,6 @@ describe('fitReviewPrompt', () => {
     ]);
     expect(result.largestFiles[0]?.chars).toBeGreaterThan(result.largestFiles[1]?.chars ?? 0);
   });
-  it('measures a byte limit in bytes, so a multibyte packet under the limit in characters is trimmed', () => {
-    const prompt = input({
-      files: [
-        created('src/declared-new.ts', 'ż'.repeat(5_000)),
-        modified('src/declared.ts', 'd'.repeat(500)),
-      ],
-    });
-    const whole = PREFIX + buildFinalReviewPrompt(prompt);
-    expect(whole.length).toBeLessThan(12_000);
-    expect(Buffer.byteLength(whole, 'utf8')).toBeGreaterThan(12_000);
-
-    const result = fitPrompt(prompt, { max: 12_000, unit: 'bytes' });
-
-    if (result.kind !== 'fits') throw new Error(`expected a fit, got ${result.kind}`);
-    expect(result.dropped).toEqual([{ trim: 'full-file-context', items: ['src/declared-new.ts'] }]);
-    expect(result.size).toBe(Buffer.byteLength(result.prompt, 'utf8'));
-    expect(result.size).toBeLessThanOrEqual(12_000);
-    expect(result.prompt).toContain('d'.repeat(500));
-  });
-
-  it('reports a byte size and the byte limit when the trimmed packet stays over', () => {
-    const prompt = input({ files: [modified('src/declared.ts', 'ż'.repeat(5_000))] });
-
-    const result = fitPrompt(prompt, { max: 12_000, unit: 'bytes' });
-
-    if (result.kind !== 'too-large') throw new Error(`expected too-large, got ${result.kind}`);
-    expect(result.limit).toEqual({ max: 12_000, unit: 'bytes' });
-    expect(result.size).toBe(Buffer.byteLength(PREFIX + buildFinalReviewPrompt(prompt), 'utf8'));
-  });
-
   it('counts the text the call appends after the packet, such as the fallback schema', () => {
     const prompt = input({ files: [modified('src/declared.ts', 'd'.repeat(5_000))] });
     const whole = PREFIX + buildFinalReviewPrompt(prompt);

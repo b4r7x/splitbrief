@@ -18,7 +18,6 @@ import {
   CliConformanceCandidatesSchema,
   RawCliCandidateContract,
   UnregisteredCliCandidate,
-  replacePromptSentinel,
 } from '../../src/engine/runners/cli-tools/candidate-contract.js';
 
 const policy: OpenAICompatPolicy = {
@@ -73,8 +72,8 @@ function adapter(role: 'planner' | 'implementer') {
   return {
     descriptor: { id: 'example-cli' },
     role,
-    promptTransport: { kind: 'argv' as const, placement: 'positional' as const },
-    buildArgs: () => [CLI_PROMPT_SENTINEL],
+    promptTransport: { kind: 'stdin' as const },
+    buildArgs: () => [],
     validateArgs: () => ({ valid: true as const }),
     environment: {},
     outputContract: { kind: 'text-exit' as const, successfulExitCodes: [0] as const },
@@ -197,44 +196,27 @@ describe('role-singular CLI contracts and prompt transport', () => {
     role: 'implementer' as const,
     versionArgs: ['--version'],
     auth: { kind: 'env-or-native', env: ['EXAMPLE_API_KEY'] },
-    rawInvocation: ['run', CLI_PROMPT_SENTINEL],
-    promptTransport: 'argv' as const,
+    rawInvocation: ['run'],
+    promptTransport: 'stdin' as const,
     expectedRawTerminal: 'result',
     asOf: '2026-07-31',
   };
 
-  it('accepts exactly one standalone argv sentinel and preserves a multibyte prompt', () => {
-    const contract = RawCliCandidateContract.parse(base);
-    const prompt = 'Zażółć gęślą jaźń — 最后一行 sentinel';
-    expect(replacePromptSentinel(contract.rawInvocation, prompt, contract.promptTransport)).toEqual(
-      ['run', prompt],
-    );
+  it('accepts a stdin contract without a prompt placeholder', () => {
+    expect(RawCliCandidateContract.parse(base)).toEqual(base);
   });
 
   it.each([
-    ['zero sentinel', []],
-    ['duplicate sentinel', [CLI_PROMPT_SENTINEL, CLI_PROMPT_SENTINEL]],
+    ['standalone sentinel', [CLI_PROMPT_SENTINEL]],
     ['embedded sentinel', ['prefix-<PROMPT>']],
     ['alternate placeholder', ['<MESSAGE>']],
-  ])('rejects %s in argv transport', (_label, rawInvocation) => {
+    ['curly placeholder', ['{prompt}']],
+  ])('rejects a %s', (_label, rawInvocation) => {
     expect(RawCliCandidateContract.safeParse({ ...base, rawInvocation }).success).toBe(false);
   });
 
-  it.each(['stdin', 'file'] as const)('rejects sentinels for %s transport', (promptTransport) => {
-    expect(
-      RawCliCandidateContract.safeParse({
-        ...base,
-        promptTransport,
-        rawInvocation: ['run'],
-      }).success,
-    ).toBe(true);
-    expect(
-      RawCliCandidateContract.safeParse({
-        ...base,
-        promptTransport,
-        rawInvocation: ['run', CLI_PROMPT_SENTINEL],
-      }).success,
-    ).toBe(false);
+  it.each(['argv', 'file'] as const)('rejects %s transport', (promptTransport) => {
+    expect(RawCliCandidateContract.safeParse({ ...base, promptTransport }).success).toBe(false);
   });
 
   it('requires one literal role and a matching canonical hash and adapter', () => {
@@ -254,5 +236,11 @@ describe('role-singular CLI contracts and prompt transport', () => {
       UnregisteredCliCandidate.safeParse({ ...candidate, contractSha256: 'b'.repeat(64) }).success,
     ).toBe(false);
     expect(CliConformanceCandidatesSchema.safeParse([candidate, candidate]).success).toBe(false);
+    expect(
+      UnregisteredCliCandidate.safeParse({
+        ...candidate,
+        adapter: { ...candidate.adapter, promptTransport: { kind: 'argv' } },
+      }).success,
+    ).toBe(false);
   });
 });

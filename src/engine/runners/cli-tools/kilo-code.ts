@@ -33,7 +33,6 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     ...input,
     protectedFlags: KILO_PROTECTED_FLAGS,
     protectedShortValueFlags: KILO_PROTECTED_SHORT_VALUE_FLAGS,
-    promptTransport: 'stdin',
     positionalPrompt: true,
   });
 }

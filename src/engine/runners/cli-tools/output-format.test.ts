@@ -3,7 +3,6 @@ import { matches } from '../../../utils/error.js';
 import { claudeCodeImplementerAdapter } from './claude-code.js';
 import { codexImplementerAdapter } from './codex.js';
 import { opencodeImplementerAdapter } from './opencode.js';
-import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { STRUCTURED_TERMINAL_TOOL_IDS } from '../../../core/config/load/validation/config.js';
 import { CLI_IMPLEMENTER_ADAPTERS, CLI_PLANNER_ADAPTERS } from './registry.js';
 import type { CliImplementerAdapter, CliProtocolEvent } from './contract.js';
@@ -23,7 +22,6 @@ function terminalFor(adapter: CliImplementerAdapter, events: readonly CliProtoco
 
 function baseFor(adapter: CliImplementerAdapter) {
   return adapter.baseArgs({
-    prompt: CLI_PROMPT_SENTINEL,
     model: undefined,
     projectDir: '.',
     configuredArgs: [],

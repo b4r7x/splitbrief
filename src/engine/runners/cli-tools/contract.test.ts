@@ -5,7 +5,6 @@ import type {
   CliOutputContract,
   CliPlannerAdapter,
   CliProbeContract,
-  CliPromptTransport,
   CliProtocolEvent,
 } from './contract.js';
 import { claudeCodePlannerAdapter } from './claude-code.js';
@@ -55,15 +54,15 @@ const plannerAdapter = {
   role: 'planner',
   supportsSessionResume: false,
   supportsEffort: false,
-  baseArgs: ({ prompt }) => ['plan', prompt],
-  buildArgs: ({ prompt }) => ['plan', prompt],
+  baseArgs: () => ['plan'],
+  buildArgs: () => ['plan'],
 } satisfies CliPlannerAdapter<'codex'>;
 
 const implementerAdapter = {
   ...adapterMembers,
   role: 'implementer',
-  baseArgs: ({ prompt }) => ['implement', prompt],
-  buildArgs: ({ prompt }) => ['implement', prompt],
+  baseArgs: () => ['implement'],
+  buildArgs: () => ['implement'],
 } satisfies CliImplementerAdapter<'codex'>;
 
 const wrongDescriptorAdapter = {
@@ -77,14 +76,8 @@ const plannerAllowlist = {
 } as const satisfies CliRoleAllowlist<'planner'>;
 
 describe('CLI adapter contract', () => {
-  it('models stdin, lossless argv, and private-file prompt transports', () => {
-    const transports = [
-      claudeCodePlannerAdapter.promptTransport,
-      { kind: 'argv', placement: 'positional' },
-      { kind: 'file', mode: 0o600 },
-    ] as const satisfies readonly CliPromptTransport[];
-
-    expect(transports.map((transport) => transport.kind)).toEqual(['stdin', 'argv', 'file']);
+  it('models the stdin prompt transport', () => {
+    expect(claudeCodePlannerAdapter.promptTransport).toEqual({ kind: 'stdin' });
     expect(opencodePlannerAdapter.promptTransport).toEqual({ kind: 'stdin' });
   });
 

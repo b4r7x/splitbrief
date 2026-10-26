@@ -4,11 +4,7 @@ import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
-import {
-  makeBusRecorder,
-  makeImplementer,
-  makePlanner,
-} from '#testing/helpers/orchestrator-factories.js';
+import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import {
   cleanupTaskProjects,
@@ -18,13 +14,10 @@ import {
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import type { CliImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import { createCliImplementer } from '../../implementers/cli.js';
-import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
-import { argvPromptMaxBytes, argvPromptTooLarge } from '../../runners/input-limit.js';
 import { formatRecoveryPrompt } from '../../../features/workflow/recovery-prompt.js';
 import { runTaskLoop } from './loop.js';
 
@@ -55,7 +48,6 @@ function cliSeat(
       authChannel: 'provider-dependent',
     }),
     contextLength: 2_000_000,
-    timeout: 300,
     ...(fallback !== undefined && { fallback }),
   } as CliImplementerConfig;
 }
@@ -183,69 +175,5 @@ describe('a BUILD tool that takes the prompt on stdin', { timeout: 90_000 }, () 
       'Seat down · Access refused by GitHub Copilot CLI',
     );
     expect(issue.details.join('\n')).toContain('Access denied by policy settings');
-  });
-});
-
-describe('a custom BUILD tool whose {prompt} outgrows the command line', () => {
-  it('halts on a ladder rung whose prompt grew past the limit, without a consult', async () => {
-    const { projectDir, sessionId } = setupProject();
-    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['claude-code']));
-    const limit = argvPromptMaxBytes();
-    const message = argvPromptTooLarge(limit + 450, limit).message;
-    const outcome = runnerCallOutcome(
-      makeRunnerCallResult({
-        status: 'failed',
-        text: '',
-        error: { code: 'argv-prompt-too-large', message },
-        backendKind: 'cli',
-      }),
-    );
-    const implement = vi.fn().mockResolvedValue({
-      success: false,
-      output: '',
-      error: 'Implementer call failed',
-      outcome: 'protocol-failure',
-    });
-    const retry = vi.fn().mockResolvedValue({
-      success: false,
-      output: '',
-      error: message,
-      ...(outcome.state !== 'success' && { outcome: outcome.state }),
-    });
-    const consult = vi.fn(consultCallAnswering(() => guidanceConsult()));
-    const { bus } = makeBusRecorder();
-    const wctx = makeWorkflowContext({
-      projectDir,
-      sessionId,
-      implementer: makeImplementer({ implement, retry }),
-      planner: makePlanner({ typedCall: consult }),
-      bus,
-      config: makeConfig({
-        implementer: {
-          kind: 'agent',
-          command: 'my-agent',
-          model: 'local-agent',
-          args: ['{prompt}'],
-        },
-        validation: { endChecks: false, testCommand: 'noop' },
-      } as Parameters<typeof makeConfig>[0]),
-    });
-
-    const { state } = await runTaskLoop({
-      wctx,
-      initialState: implementingState([makeTask({ id: 'T001' })]),
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(retry).toHaveBeenCalledTimes(1);
-    expect(consult).not.toHaveBeenCalled();
-    expect(state.pendingRecovery).toMatchObject({
-      reason: 'context-overflow',
-      message: 'Prompt too large for Agent on T001',
-    });
-    expect(state.pendingRecovery?.details[0]).toBe(
-      `The prompt is ${(limit + 450).toLocaleString('en-US')} bytes; Agent takes at most ${limit.toLocaleString('en-US')} on its command line.`,
-    );
   });
 });

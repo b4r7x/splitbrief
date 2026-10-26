@@ -419,7 +419,7 @@ export async function invokeProcessCli(
       );
     };
     const onStdinReady = steeringSession?.onStdinReady;
-    if (onStdinReady !== undefined) allowInputEcho(prepared.stdin ?? '');
+    if (onStdinReady !== undefined) allowInputEcho(prepared.stdin);
     const lineBuffer = createLineBuffer((line) => {
       let parsed: readonly CliProtocolEvent[];
       try {
@@ -791,7 +791,6 @@ export async function invokeProcessCli(
     removeTransportListener?.();
     clearTimeout(timeout);
     onAbort();
-    await prepared?.cleanup().catch(() => {});
   }
 }
 
@@ -992,13 +991,8 @@ function fatalStateOf(
 
 function prelaunchErrorCode(
   cause: unknown,
-):
-  | 'argv-prompt-too-large'
-  | 'callback-failure'
-  | 'prompt-transport-error'
-  | 'steering-transport-error' {
+): 'callback-failure' | 'prompt-transport-error' | 'steering-transport-error' {
   if (isRecord(cause) && cause.kind === 'steering-transport-error') return cause.kind;
-  if (isRecord(cause) && cause.kind === 'argv-prompt-too-large') return cause.kind;
   return isRecord(cause) && cause.kind === 'prompt-transport-error'
     ? 'prompt-transport-error'
     : 'callback-failure';
@@ -1016,13 +1010,6 @@ function prelaunchErrorMessage(cause: unknown): string {
   if (
     isRecord(cause) &&
     cause.kind === 'steering-transport-error' &&
-    typeof cause.message === 'string'
-  ) {
-    return cause.message;
-  }
-  if (
-    isRecord(cause) &&
-    cause.kind === 'argv-prompt-too-large' &&
     typeof cause.message === 'string'
   ) {
     return cause.message;

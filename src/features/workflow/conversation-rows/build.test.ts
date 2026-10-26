@@ -47,7 +47,7 @@ import {
   buildRunnerInputTooLargeRecoveryIssue,
   runnerDefectRow,
 } from '../../../engine/orchestrator/recovery/builders/task.js';
-import { argvPromptTooLarge } from '../../../engine/runners/input-limit.js';
+import { inputTooLargeRefusal } from '../../../engine/runners/input-limit.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
@@ -3012,7 +3012,7 @@ describe('one recovery reads as one block', () => {
     const issue = buildRunnerInputTooLargeRecoveryIssue({
       task: makeTask({ id: 'T002' }),
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } }).implementer,
-      toolMessage: argvPromptTooLarge(195_203, 120_000).message,
+      toolMessage: inputTooLargeRefusal(195_203, { max: 120_000, unit: 'characters' }).message,
       attempts: 1,
       maxAttempts: 8,
       createdAt: '2026-10-07T05:54:04.413Z',

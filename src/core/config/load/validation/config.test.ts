@@ -137,16 +137,11 @@ describe('validateConfig', () => {
       },
     });
 
-    const { errors, warnings } = validateConfig(config);
+    const { errors } = validateConfig(config);
 
     expect(
       errors.find((e) => e.path === 'implementerProfiles.profiles.cheap-cloud.apiKey'),
     ).toBeTruthy();
-    expect(
-      warnings.some((w) =>
-        w.includes('Default implementer profile cheap-cloud is missing credentials'),
-      ),
-    ).toBe(false);
   });
 
   it.each(['instant', 'quick', 'standard', 'speckit', 'anything'])(
@@ -343,16 +338,11 @@ describe('validateConfig', () => {
       },
     });
 
-    const { errors, warnings } = validateConfig(config);
+    const { errors } = validateConfig(config);
 
     expect(
       errors.find((e) => e.path === 'implementerProfiles.profiles.cheap-cloud.apiKey'),
     ).toBeTruthy();
-    expect(
-      warnings.some((w) =>
-        w.includes('Non-default implementer profile cheap-cloud is missing credentials'),
-      ),
-    ).toBe(false);
   });
 
   it('loads a retired escalation block with exactly one notice', () => {
@@ -568,7 +558,6 @@ describe('validateConfig', () => {
   it('reports nothing extra for a config without a reviewer block', () => {
     expect(validateConfig(makeConfig())).toEqual({
       errors: [],
-      warnings: [],
       data: expect.anything(),
     });
   });
@@ -641,7 +630,7 @@ describe('validateConfig', () => {
 
     expect(result.errors).toContainEqual({
       path: 'implementer.command',
-      message: expect.stringContaining('must not contain {prompt}'),
+      message: '{prompt} is not supported; SPLITBRIEF sends the prompt on stdin',
     });
   });
 });

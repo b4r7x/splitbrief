@@ -48,16 +48,7 @@ export type CliSteeringTransport = Readonly<{
   ) => Promise<CliSteeringSession>;
 }>;
 
-export type CliPromptTransport =
-  | Readonly<{ kind: 'stdin' }>
-  /**
-   * `placement` records how the tool's own argv parser reads the prompt: a
-   * `positional` prompt is parsed as an option when it starts with `-`, a
-   * `flag-value` prompt occupies the value slot of its preceding flag and is
-   * therefore inert.
-   */
-  | Readonly<{ kind: 'argv'; placement: 'positional' | 'flag-value' }>
-  | Readonly<{ kind: 'file'; mode: 0o600 }>;
+export type CliPromptTransport = Readonly<{ kind: 'stdin' }>;
 
 type CliProtocolTerminalEvent =
   | Readonly<{
@@ -340,7 +331,6 @@ export type CliSchemaInput = Readonly<{
 }>;
 
 export type CliPlannerBuildArgsInput = Readonly<{
-  prompt: string;
   model: string | undefined;
   projectDir: string;
   configuredArgs: readonly string[];
@@ -360,7 +350,6 @@ export type CliPlannerBuildArgsInput = Readonly<{
 }>;
 
 export type CliImplementerBuildArgsInput = Readonly<{
-  prompt: string;
   model: string | undefined;
   projectDir: string;
   configuredArgs: readonly string[];

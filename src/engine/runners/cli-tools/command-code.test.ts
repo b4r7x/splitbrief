@@ -18,7 +18,6 @@ import {
   commandCodeProtocolEvents,
 } from './command-code.js';
 
-const PROMPT = CLI_PROMPT_SENTINEL;
 const NDJSON_FIXTURE = join(
   import.meta.dirname,
   '../../../../testing/fixtures/command-code/json-result.txt',
@@ -32,7 +31,6 @@ function plannerArgs(
   } = {},
 ) {
   return commandCodePlannerAdapter.buildArgs({
-    prompt: PROMPT,
     model: options.model,
     projectDir: '/project',
     configuredArgs: options.configuredArgs ?? [],
@@ -49,7 +47,6 @@ function implementerArgs(
   } = {},
 ) {
   return commandCodeImplementerAdapter.buildArgs({
-    prompt: PROMPT,
     model: options.model,
     projectDir: '/staged',
     configuredArgs: options.configuredArgs ?? [],
@@ -225,7 +222,6 @@ describe('Command Code role adapters', () => {
         invocationArgs: args,
         baseArgs: base,
         protectedFlags: new Set(),
-        promptTransport: 'stdin',
       }),
     ).toEqual(refusal);
   });

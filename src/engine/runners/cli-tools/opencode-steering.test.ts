@@ -132,7 +132,6 @@ describe('OpenCode steering HTTP acknowledgement', () => {
       const info = statSync(path);
       const adapter = opencodeImplementerAdapter;
       const args = adapter.buildArgs({
-        prompt: '<PROMPT>',
         model: undefined,
         projectDir: process.cwd(),
         configuredArgs: [],
@@ -307,7 +306,6 @@ describe('OpenCode steering HTTP acknowledgement', () => {
       const info = statSync(path);
       const adapter = role === 'implementer' ? opencodeImplementerAdapter : opencodePlannerAdapter;
       const args = adapter.buildArgs({
-        prompt: '<PROMPT>',
         model: undefined,
         projectDir: process.cwd(),
         configuredArgs: [],

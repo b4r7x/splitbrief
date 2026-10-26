@@ -1,12 +1,12 @@
-import { formatEffectiveConfigWarning } from '../../config/runtime/effective-config.js';
-import type { EffectiveConfigWarning } from '../../config/runtime/effective-config.js';
+import { formatConfigLoaderDiagnostics } from '../../config/load/io.js';
+import type { ConfigLoaderDiagnostic } from '../../config/load/io.js';
 import type { ReadinessDiagnosticStateId } from '../../schemas/readiness.js';
 import type { ReadinessCheck } from '../types.js';
 
 export interface ConfigReadinessInput {
   state: 'loaded' | 'missing' | 'invalid';
   path: string;
-  warnings: readonly EffectiveConfigWarning[];
+  warnings: readonly ConfigLoaderDiagnostic[];
   error?: string | undefined;
   diagnosticState?: ReadinessDiagnosticStateId | undefined;
 }
@@ -52,12 +52,8 @@ export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCh
     },
   ];
 
-  const displayedWarnings = new Set<string>();
-  for (const warning of configLoad.warnings) {
-    const message = formatEffectiveConfigWarning(warning);
-    if (displayedWarnings.has(message)) continue;
-    displayedWarnings.add(message);
-    checks.push({ id: 'config.warning', severity: 'warning', summary: message });
+  for (const summary of formatConfigLoaderDiagnostics(configLoad.warnings)) {
+    checks.push({ id: 'config.warning', severity: 'warning', summary });
   }
 
   return checks;

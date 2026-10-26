@@ -15,7 +15,6 @@ import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
-import { CLI_PROMPT_SENTINEL } from './cli-tools/candidate-contract.js';
 import type { CliArgumentValidation } from './cli-tools/validate-args.js';
 import { lookupCliImplementerAdapter, lookupCliPlannerAdapter } from './cli-tools/registry.js';
 import { resolveCliExecutableAliases, sanitizedRuntimePath } from './resolve-cli-executable.js';
@@ -489,7 +488,6 @@ function emittedArgVectors(
     case 'implementer':
       return [
         checkedVector(lookupCliImplementerAdapter(runner.tool), {
-          prompt: CLI_PROMPT_SENTINEL,
           model: runner.model,
           projectDir,
           configuredArgs: runner.args ?? [],
@@ -537,7 +535,6 @@ function plannerCommonArgs(
   projectDir: string,
 ) {
   return {
-    prompt: CLI_PROMPT_SENTINEL,
     model: runner.model,
     projectDir,
     configuredArgs: runner.args ?? [],
@@ -690,7 +687,7 @@ function subcommandCandidate(
   const commands = commandNames({ helpText: topLevelHelp, command });
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
-    if (token === undefined || token.startsWith('-') || token === CLI_PROMPT_SENTINEL) continue;
+    if (token === undefined || token.startsWith('-')) continue;
     const previous = argv[index - 1];
     if (previous?.startsWith('-')) continue;
     if (commands.has(token.toLowerCase())) return token;

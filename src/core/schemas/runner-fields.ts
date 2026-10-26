@@ -31,6 +31,12 @@ import {
 import type { RunnerKind } from './enums.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
+export const PROMPT_PLACEHOLDER_NOT_SUPPORTED =
+  '{prompt} is not supported; SPLITBRIEF sends the prompt on stdin';
+
+export function hasPromptPlaceholder(value: string): boolean {
+  return value.includes(PROMPT_PLACEHOLDER);
+}
 
 export const REMOVED_API_PROVIDER_IDS = Object.freeze([
   'anthropic',
@@ -69,12 +75,17 @@ export const EnvironmentReferenceNameSchema = z
   .string()
   .regex(/^[A-Z_][A-Z0-9_]*$/, 'Use an uppercase environment variable name');
 
+const noPromptPlaceholder = [
+  (value: string) => !hasPromptPlaceholder(value),
+  { message: PROMPT_PLACEHOLDER_NOT_SUPPORTED },
+] as const;
+
 const CommandFieldSchema = z
   .string()
   .min(1)
-  .refine((command) => !command.includes(PROMPT_PLACEHOLDER), {
-    message: 'command must not contain {prompt}; pass the prompt through stdin or args instead',
-  });
+  .refine(...noPromptPlaceholder);
+
+const CommandArgsSchema = z.array(z.string().refine(...noPromptPlaceholder));
 
 const PlannerCapabilitiesSchema = z.strictObject({
   supportsConversationalPlanning: z.boolean(),
@@ -359,7 +370,7 @@ const PlannerCapabilitiesField = {
 const ShellRunnerFields = {
   kind: z.literal('shell'),
   command: CommandFieldSchema,
-  args: z.array(z.string()).optional(),
+  args: CommandArgsSchema.optional(),
   outputFormat: OutputFormatSchema.optional(),
   env: z.array(EnvironmentReferenceNameSchema).optional(),
   ...WatchdogFields,
@@ -368,7 +379,7 @@ const ShellRunnerFields = {
 const AgentRunnerFields = {
   kind: z.literal('agent'),
   command: CommandFieldSchema,
-  args: z.array(z.string()).optional(),
+  args: CommandArgsSchema.optional(),
   outputFormat: OutputFormatSchema.optional(),
   env: z.array(EnvironmentReferenceNameSchema).optional(),
   ...WatchdogFields,

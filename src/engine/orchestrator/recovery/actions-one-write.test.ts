@@ -155,7 +155,7 @@ const tooLarge = (phase: WorkflowState['phase']): RecoveryIssue =>
     failure: {
       kind: 'input-too-large',
       figures: { unit: 'characters', size: 900_000, limit: 400_000 },
-      promptSize: { characters: 900_000, bytes: 900_000 },
+      promptSize: { characters: 900_000 },
       largestFiles: [],
     },
     tool: 'codex',

@@ -224,6 +224,48 @@ describe('config loading', () => {
       expect(loadConfig(unset).config.validation.approveChecks).toBeUndefined();
     });
 
+    it.each([
+      ['planner', { planner: { kind: 'shell', command: './plan', args: ['{prompt}'] } }],
+      ['reviewer', { reviewer: { kind: 'agent', command: './review', args: ['--task={prompt}'] } }],
+      [
+        'implementer',
+        { implementer: { kind: 'agent', command: './build', args: ['{prompt}'], model: 'm' } },
+      ],
+      [
+        'implementerProfiles.profiles.fast',
+        {
+          implementer_profiles: {
+            default: 'fast',
+            profiles: {
+              fast: { kind: 'shell', command: './fast', args: ['{prompt}'], model: 'm' },
+            },
+          },
+        },
+      ],
+      [
+        'customCommands.review',
+        {
+          custom_commands: {
+            review: {
+              label: 'Review',
+              contract: 'output',
+              executable: '/usr/bin/review',
+              argv: ['--prompt', '{prompt}'],
+            },
+          },
+        },
+      ],
+    ] as const)('refuses to load a config that puts {prompt} in the %s command', (path, yaml) => {
+      const dir = join(TMP, `prompt-placeholder-${path}`);
+      writeConfigYaml(dir, yaml);
+
+      expect(() => loadConfig(dir)).toThrow(
+        new RegExp(
+          `${path.replaceAll('.', '\\.')}\\.(args|argv)\\S*: \\{prompt\\} is not supported; SPLITBRIEF sends the prompt on stdin`,
+        ),
+      );
+    });
+
     it('rejects a validation.approve_checks value other than ask or auto', () => {
       const dir = join(TMP, 'approve-checks-invalid');
       writeConfigYaml(dir, { validation: { approve_checks: 'always' } });

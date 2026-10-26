@@ -305,7 +305,6 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
           config,
           callbacks,
           bus,
-          allowRepoRunners: true,
           createImplementer: async (options = {}) => {
             if (options.slot === undefined) throw new Error('Expected a named implementer slot.');
             dynamicImplementer = await createImplementer(config, {

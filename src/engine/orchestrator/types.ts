@@ -105,7 +105,6 @@ export interface WorkflowContext {
   createImplementer?:
     | ((options?: ImplementerFactoryOptions) => Implementer | Promise<Implementer>)
     | undefined;
-  allowRepoRunners?: boolean | undefined;
   implementerProfile?: string | undefined;
   routingDecision?: RoutingDecision | undefined;
   signal?: AbortSignal | undefined;

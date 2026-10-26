@@ -147,7 +147,6 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
     it('Codex resume is explicit and read-only; a fresh or detached call never carries a session flag', () => {
       expect(codexPlannerAdapter.supportsSessionResume).toBe(true);
       const resumeArgs = codexPlannerAdapter.buildArgs({
-        prompt: 'review the staged plan',
         model: undefined,
         projectDir: '.',
         configuredArgs: [],
@@ -161,7 +160,6 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
       expect(resumeVector).toContain(SESSION_ID);
 
       const freshArgs = codexPlannerAdapter.buildArgs({
-        prompt: 'review the staged plan',
         model: undefined,
         projectDir: '.',
         configuredArgs: [],
