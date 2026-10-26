@@ -511,7 +511,7 @@ describe('seats', () => {
       crewLine(view, 200)
         .map((span) => span.text)
         .join(''),
-    ).toBe('PLAN auto · BUILD GPT-5.3 Codex · REVIEW = PLAN');
+    ).toBe('PLAN OpenAI Codex CLI · BUILD GPT-5.3 Codex · REVIEW = PLAN');
   });
 
   it('says the build seat moved, from what to what, when each tool ran one stretch', () => {
@@ -759,12 +759,42 @@ describe('seats', () => {
       }),
     );
 
-    // Both short forms are `auto`, so each moved seat is named with its tool.
+    // Neither seat named a model, so each short form is its tool: the API one literal.
     expect(view.seats.build).toEqual({
       kind: 'moved',
       seats: [
-        { short: 'opencode auto', briefs: 1 },
-        { short: 'OpenAI Codex CLI auto', briefs: 1 },
+        { short: 'opencode', briefs: 1 },
+        { short: 'OpenAI Codex CLI', briefs: 1 },
+      ],
+      contiguous: true,
+    });
+  });
+
+  it('names a moved automatic seat by its tool once when two other seats share a short form', () => {
+    const on = (input: { id: string; tool: string; model: string }) =>
+      booked({
+        taskId: taskId(input.id),
+        implementerProfile: 'default',
+        tool: input.tool,
+        model: input.model,
+      });
+    const view = derive(
+      makeSummary({
+        implementerTool: 'codex',
+        taskBreakdown: [
+          on({ id: 'T001', tool: 'codex', model: 'auto' }),
+          on({ id: 'T002', tool: 'codex', model: 'gpt-5' }),
+          on({ id: 'T003', tool: 'cursor', model: 'gpt-5' }),
+        ],
+      }),
+    );
+
+    expect(view.seats.build).toEqual({
+      kind: 'moved',
+      seats: [
+        { short: 'OpenAI Codex CLI', briefs: 1 },
+        { short: 'OpenAI Codex CLI GPT-5', briefs: 1 },
+        { short: 'Cursor Agent CLI GPT-5', briefs: 1 },
       ],
       contiguous: true,
     });
@@ -808,7 +838,7 @@ describe('seats', () => {
         crewLine(derive(summary, { status: ENDED }), 200)
           .map((span) => span.text)
           .join(''),
-      ).toContain(`BUILD Haiku 5.5${arrowSep()}auto`);
+      ).toContain(`BUILD Haiku 5.5${arrowSep()}Google Antigravity CLI`);
     } finally {
       cleanupTempDir(projectDir);
     }

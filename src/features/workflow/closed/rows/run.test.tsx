@@ -214,8 +214,8 @@ describe('runSectionRows', () => {
       stripAnsiStyles(unnamed.lastFrame() ?? '')
         .split('\n')
         .find((line) => line.startsWith('   Crew')) ?? '';
-    // A codex seat that named no model: the rail's own short form says `auto`.
-    expect(crewLine).toContain('PLAN auto');
+    // A codex seat that named no model: the rail's own short form names its tool.
+    expect(crewLine).toContain('PLAN OpenAI Codex CLI');
     expect(crewLine).toContain('BUILD Qwen Small');
     unnamed.unmount();
   });

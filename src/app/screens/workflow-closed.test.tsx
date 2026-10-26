@@ -365,10 +365,9 @@ describe('the workflow screen showing a closed run', () => {
     const lines = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
     const crewRow = lines.find((line) => line.startsWith('Crew')) ?? '';
 
-    // A codex seat that named no model reads `auto`, as the live rail reads it.
-    expect(crewRow).toContain('PLAN auto');
-    expect(crewRow).toContain('Qwen Small');
-    expect(crewRow).toContain(PLANNER_INHERITANCE.mark);
+    // A codex seat that named no model reads its tool, as the live rail reads it.
+    // The review mark gives way to the seats that name a runner.
+    expect(crewRow.trim()).toBe('Crew      PLAN OpenAI Codex CLI · BUILD Qwen Small');
 
     ui.unmount();
   });

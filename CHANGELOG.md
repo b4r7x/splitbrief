@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- When a seat's model is automatic, the header, the sidebar and the closed run's crew row name the seat's tool instead of `auto`.
 - Messages and readiness fixes now name a tool by its full name, such as `OpenAI Codex CLI` or `Ollama`, instead of its config id.
 - The status line of a run that waits for a usage-limit reset now names the tool that hit the limit by its full name, such as `OpenAI Codex CLI`, instead of the config id of the seat it started on.
 - The header shows a usage-limit reset clock beside a seat only while that seat has the tool and model that hit the limit. After you save another tool or model, or when a named BUILD profile hit the limit, the clock stays in the halt title only.

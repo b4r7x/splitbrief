@@ -2457,6 +2457,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-ready-seat-moved-auto',
+      title: 'Workflow · a ready run whose BUILD seat moved to an automatic model',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'ready-seat-moved-auto',
+        title: 'Ready to apply, the moved seat named by its tool',
+        kind: 'ready',
+        marker: 'Ready to apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-ready-crew-saved',
       title: 'Workflow · a ready run after another crew was saved',
       surface: screenSurface('workflow'),

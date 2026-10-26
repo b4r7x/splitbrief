@@ -923,6 +923,7 @@ const checkpointPredicates = [
   [checkpointId('closed-complete'), includesAll()],
   [checkpointId('ready-to-apply'), includesAll()],
   [checkpointId('ready-crew-saved'), includesAll('PLAN GPT-5.1')],
+  [checkpointId('ready-seat-moved-auto'), includesAll('PLAN GPT-5.1')],
   [
     checkpointId('at-rest-applying'),
     (context) =>
