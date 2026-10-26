@@ -142,7 +142,7 @@ describe('StartPreparationPanel', () => {
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Planner Ollama · Qwen3 Coder 30B answered but offers no models.');
-    expect(frame).toContain('Install a model for ollama');
+    expect(frame).toContain('Install a model for Ollama');
     expect(frame).not.toMatch(/\d+ blockers?/);
     expect(frame.indexOf('offers no models')).toBeLessThan(frame.indexOf('Warnings'));
     ui.unmount();
@@ -198,11 +198,11 @@ describe('StartPreparationPanel', () => {
       'Planner Ollama · Qwen3 Coder 30B rejected the configured credential at',
     );
     expect(unauthorized).toContain('http://localhost:11434.');
-    expect(unauthorized).toContain('Check the credential for ollama');
+    expect(unauthorized).toContain('Check the credential for Ollama');
     expect(unauthorized).not.toContain('Run `ollama serve`');
 
     expect(missingModel).toContain('serve "qwen3-coder:30b"');
-    expect(missingModel).toContain('Select a model ollama serves');
+    expect(missingModel).toContain('Select a model Ollama serves');
     expect(missingModel).not.toContain('is not reachable');
 
     expect(timeout).toContain('did not answer in time');

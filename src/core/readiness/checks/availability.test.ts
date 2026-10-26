@@ -120,7 +120,7 @@ describe('runner availability checks', () => {
       nextAction: 'prepare-runner',
       summary:
         'BUILD Ollama · Qwen3 Coder 30B answered at http://localhost:11434/v1 but does not serve "qwen3-coder:30b".',
-      fix: 'Select a model ollama serves, or choose another tool in Settings > Crew > BUILD, then run `splitbrief doctor` again.',
+      fix: 'Select a model Ollama serves, or choose another tool in Settings > Crew > BUILD, then run `splitbrief doctor` again.',
       metadata: { availability: 'missing-model' },
     });
   });
@@ -150,10 +150,52 @@ describe('runner availability checks', () => {
       summary:
         'BUILD Ollama · Qwen3 Coder 30B rejected the configured credential at http://localhost:11434/v1.',
       details: ['Probe: HTTP 401'],
-      fix: 'Check the credential for ollama, or choose another tool in Settings > Crew > BUILD, then run `splitbrief doctor` again.',
+      fix: 'Check the credential for Ollama, or choose another tool in Settings > Crew > BUILD, then run `splitbrief doctor` again.',
       metadata: { availability: 'unauthorized' },
     });
   });
+
+  const PROVIDER_FIXES: ReadonlyArray<{
+    verdict: RunnerAvailabilityFact['verdict'];
+    fix: (name: string) => string;
+  }> = [
+    { verdict: { state: 'no-models' }, fix: (name) => `Install a model for ${name},` },
+    {
+      verdict: { state: 'missing-model', selectionId: 'qwen3-coder:30b' },
+      fix: (name) => `Select a model ${name} serves,`,
+    },
+    {
+      verdict: { state: 'unauthorized', diagnostic: 'HTTP 401' },
+      fix: (name) => `Check the credential for ${name},`,
+    },
+    { verdict: { state: 'missing-credential' }, fix: (name) => `Set an apiKey for ${name},` },
+  ];
+  const PROVIDER_NAMES = [
+    { provider: 'ollama', name: 'Ollama' },
+    { provider: 'lm-studio', name: 'LM Studio' },
+    { provider: 'llama-cpp', name: 'llama.cpp' },
+    { provider: 'my-endpoint', name: 'my-endpoint' },
+  ] as const;
+
+  it.each(
+    PROVIDER_NAMES.flatMap(({ provider, name }) =>
+      PROVIDER_FIXES.map(({ verdict, fix }) => ({
+        provider,
+        state: verdict.state,
+        verdict,
+        fix: fix(name),
+      })),
+    ),
+  )(
+    'names $provider by its catalog name when the fix for $state names the provider',
+    ({ provider, verdict, fix }) => {
+      const [check] = availabilityChecks(ollamaConfig(), [
+        defaultImplementerFact(verdict, provider),
+      ]);
+
+      expect(check?.fix).toContain(fix);
+    },
+  );
 
   it('gives every unhealthy outcome its own check id, summary and availability', () => {
     const outcomes: RunnerAvailabilityFact['verdict'][] = [

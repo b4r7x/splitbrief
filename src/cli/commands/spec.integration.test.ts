@@ -424,7 +424,7 @@ describe('spec command — reporting', () => {
       .split('\n')
       .find((l) => l.startsWith('Planning feature:'));
     expect(line).toBeDefined();
-    expect(line).toContain('(planner: shell)');
+    expect(line).toContain('(planner: Custom Shell)');
   });
 
   it('strips terminal control bytes from the feature argument', async () => {

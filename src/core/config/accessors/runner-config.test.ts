@@ -67,6 +67,11 @@ function inlineProfileConfig(apiKey: string): ProfiledConfig {
 }
 
 describe('getRunnerCatalogDisplayName maps runners to catalog display names', () => {
+  it('cli codex → OpenAI Codex CLI', () => {
+    const config: PlannerConfig = { kind: 'cli', tool: 'codex' };
+    expect(getRunnerCatalogDisplayName(config)).toBe('OpenAI Codex CLI');
+  });
+
   it('cli opencode → OpenCode CLI', () => {
     const config: PlannerConfig = { kind: 'cli', tool: 'opencode' };
     expect(getRunnerCatalogDisplayName(config)).toBe('OpenCode CLI');

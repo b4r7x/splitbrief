@@ -1,5 +1,5 @@
 import {
-  getRunnerDisplayName,
+  getRunnerCatalogDisplayName,
   type DeepReadonly,
   type RunnerConfig,
 } from '../../core/config/accessors/runner-config.js';
@@ -29,13 +29,6 @@ export function isAuthFailureDiagnostic(message: string): boolean {
   );
 }
 
-/** How the runner is named in signed-out messages: catalog names, not config ids. */
-export function runnerAuthDisplayName(runner: DeepReadonly<RunnerConfig>): string {
-  if (runner.kind === 'cli') return CLI_TOOL_CATALOG[runner.tool].displayName;
-  if (runner.kind === 'api') return getRunnerIdentityDisplayName('api', runner.provider);
-  return getRunnerDisplayName(runner);
-}
-
 /** The provider a provider-dependent tool's model route names (`deepseek/…` → `deepseek`). */
 function routeProvider(runner: DeepReadonly<RunnerConfig>): string | undefined {
   if (runner.kind !== 'cli' || CLI_TOOL_CATALOG[runner.tool].auth.kind !== 'provider-dependent') {
@@ -51,7 +44,7 @@ function routeProvider(runner: DeepReadonly<RunnerConfig>): string | undefined {
  */
 export function runnerAccountDisplayName(runner: DeepReadonly<RunnerConfig>): string {
   const provider = routeProvider(runner);
-  const tool = runnerAuthDisplayName(runner);
+  const tool = getRunnerCatalogDisplayName(runner);
   return provider === undefined ? tool : `${provider} (${tool})`;
 }
 
@@ -79,7 +72,7 @@ export function runnerLoginInstruction(runner: DeepReadonly<RunnerConfig>): stri
   if (runner.kind === 'api') {
     return `Provide a valid ${getRunnerIdentityDisplayName('api', runner.provider)} API key, then retry.`;
   }
-  return `Re-authenticate the ${runnerAuthDisplayName(runner)} runner, then retry.`;
+  return `Re-authenticate the ${getRunnerCatalogDisplayName(runner)} runner, then retry.`;
 }
 
 /**
@@ -90,7 +83,7 @@ export function modelRefusalMessage(
   runner: DeepReadonly<RunnerConfig>,
   refusal: ModelRefusal,
 ): string {
-  const tool = runnerAuthDisplayName(runner);
+  const tool = getRunnerCatalogDisplayName(runner);
   const model = 'model' in runner ? runner.model : undefined;
   if (model === undefined) return `${tool} refused its default model; pick a listed model`;
   const provider = routeProvider(runner);

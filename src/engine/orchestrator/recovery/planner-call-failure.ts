@@ -1,4 +1,8 @@
-import type { DeepReadonly, RunnerConfig } from '../../../core/config/accessors/runner-config.js';
+import {
+  getRunnerCatalogDisplayName,
+  type DeepReadonly,
+  type RunnerConfig,
+} from '../../../core/config/accessors/runner-config.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import {
   runnerOwnWords,
@@ -6,7 +10,7 @@ import {
   typedRunnerCallErrorCode,
   typedRunnerCallErrorMessage,
 } from '../../implementers/pipeline/call-result.js';
-import { runnerAuthDisplayName, runnerLoginInstruction } from '../../runners/auth-failure.js';
+import { runnerLoginInstruction } from '../../runners/auth-failure.js';
 import type { SeatFailureClassification } from '../../runners/seat-failure.js';
 import { usageLimitAdvice } from '../../runners/usage-limit.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
@@ -91,7 +95,7 @@ export function diagnosePlannerCallFailure(
   const words = thrown.source === 'stdout-tail' ? thrown.words : runnerOwnWords(err);
   const advised =
     words === null ? message : `${input.label}: ${sanitizeTerminalDiagnosticText(words)}`;
-  const tool = runnerAuthDisplayName(runner);
+  const tool = getRunnerCatalogDisplayName(runner);
   const code = typedRunnerCallErrorCode(err);
   // A timeout's words are SPLITBRIEF's own deadline, already the message: nothing to quote.
   const details = typed === null || code === 'timeout' ? [] : [toolReported(tool, typed)];

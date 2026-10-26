@@ -49,6 +49,53 @@ function setupSessionOnly(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
+const IMPLEMENTER_WORDS = [
+  {
+    name: 'cli codex',
+    runner: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
+    word: 'OpenAI Codex CLI',
+  },
+  {
+    name: 'cli claude-code',
+    runner: { kind: 'cli', tool: 'claude-code' },
+    word: 'Claude Code CLI',
+  },
+  {
+    name: 'cli opencode route',
+    runner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-chat' },
+    word: 'OpenCode CLI',
+  },
+  {
+    name: 'api ollama',
+    runner: {
+      kind: 'api',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'llama3',
+    },
+    word: 'Ollama',
+  },
+  {
+    name: 'api custom endpoint',
+    runner: {
+      kind: 'api',
+      provider: 'custom-endpoint',
+      model: 'some-model',
+      apiBase: 'https://api.example.com/v1',
+      apiKey: 'k',
+    },
+    word: 'custom-endpoint',
+  },
+  {
+    name: 'shell',
+    runner: { kind: 'shell', command: './run.sh', model: 'auto' },
+    word: 'Custom Shell',
+  },
+  { name: 'agent', runner: { kind: 'agent', command: './agent.sh', model: 'auto' }, word: 'Agent' },
+] as const;
+
 describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('task with failed dependency creates dependency-blocked recovery instead of auto-skipping', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -264,6 +311,38 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       details: expect.arrayContaining(['Availability: the endpoint is unreachable']),
     });
   });
+
+  it.each(IMPLEMENTER_WORDS)(
+    'names an unavailable $name implementer by its catalog name',
+    async ({ runner, word }) => {
+      const { projectDir, sessionId } = setupProject();
+      const task = makeTask({ id: 'T001' });
+      const implementer = makeImplementer({
+        implement: vi.fn(),
+        isAvailable: vi.fn().mockResolvedValue(false),
+      });
+
+      const result = await runTaskLoop({
+        wctx: makeWctx({
+          projectDir,
+          sessionId,
+          config: makeNoValidationConfig({ implementer: runner }),
+          implementer,
+          bus: makeBusRecorder().bus,
+        }),
+        initialState: makeImplState([task]),
+        setTrackedState: vi.fn(),
+        setCurrentTask: vi.fn(),
+      });
+
+      expect(result.state.pendingRecovery?.details).toEqual(
+        expect.arrayContaining([
+          `Tool: ${word}`,
+          `Availability: Selected implementer profile default (${word}) is unavailable. Check runner installation, API credentials, or endpoint reachability.`,
+        ]),
+      );
+    },
+  );
 
   it('falls back to the generic guidance when the implementer cannot explain', async () => {
     const { projectDir, sessionId } = setupProject();

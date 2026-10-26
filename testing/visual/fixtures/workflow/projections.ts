@@ -88,7 +88,7 @@ import {
   type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
-import { runnerAuthDisplayName } from '../../../../src/engine/runners/auth-failure.js';
+import { getRunnerCatalogDisplayName } from '../../../../src/core/config/accessors/runner-config.js';
 import { timedOutMessage } from '../../../../src/lib/process/errors.js';
 import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure.js';
 import {
@@ -2939,7 +2939,7 @@ const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
         phase: issue.phase,
         message: runnerHaltRow(
           issue,
-          runnerAuthDisplayName(visualConfig().implementer),
+          getRunnerCatalogDisplayName(visualConfig().implementer),
           OLLAMA_LIMIT_WORDS,
         ),
         resetAt: issue.resetAt,
@@ -2989,7 +2989,11 @@ const balanceSpentRecoveryProjection: WorkflowFixtureProjection = {
       publishError({
         bus,
         phase: issue.phase,
-        message: runnerHaltRow(issue, runnerAuthDisplayName(OPENCODE_BALANCE_SEAT), BALANCE_WORDS),
+        message: runnerHaltRow(
+          issue,
+          getRunnerCatalogDisplayName(OPENCODE_BALANCE_SEAT),
+          BALANCE_WORDS,
+        ),
       }),
     );
   },
@@ -3037,7 +3041,7 @@ const cursorRefusalRecoveryProjection: WorkflowFixtureProjection = {
         phase: issue.phase,
         message: runnerHaltRow(
           issue,
-          runnerAuthDisplayName(CURSOR_REFUSAL_SEAT),
+          getRunnerCatalogDisplayName(CURSOR_REFUSAL_SEAT),
           CURSOR_MODEL_REFUSAL,
         ),
       }),
@@ -3098,7 +3102,7 @@ function modelRefusalProjection(
           phase: issue.phase,
           message: runnerDefectRow(
             issue,
-            runnerAuthDisplayName(OPENCODE_ROUTE_SEAT),
+            getRunnerCatalogDisplayName(OPENCODE_ROUTE_SEAT),
             NO_ROUTE_WORDS,
           ),
         }),
@@ -3159,7 +3163,11 @@ const reviewModelRefusalProjection: WorkflowFixtureProjection = {
       publishError({
         bus,
         phase: issue.phase,
-        message: runnerDefectRow(issue, runnerAuthDisplayName(OPENCODE_ROUTE_SEAT), NO_ROUTE_WORDS),
+        message: runnerDefectRow(
+          issue,
+          getRunnerCatalogDisplayName(OPENCODE_ROUTE_SEAT),
+          NO_ROUTE_WORDS,
+        ),
       }),
     );
   },
@@ -3708,7 +3716,7 @@ const repeatedTimeoutRecoveryIssue = buildRepeatedTimeoutRecoveryIssue({
   id: 'rec_visual_repeated_timeout',
   task: HALTED_TASK,
   runner: AGY_BUILD_SEAT,
-  toolMessage: timedOutMessage(runnerAuthDisplayName(AGY_BUILD_SEAT), 900_000),
+  toolMessage: timedOutMessage(getRunnerCatalogDisplayName(AGY_BUILD_SEAT), 900_000),
   attempts: 2,
   maxAttempts: BOUNDS.attemptsPerLineage,
   createdAt: new Date(FIXED_TS).toISOString(),
@@ -4154,7 +4162,7 @@ const planSeatRecoveryProjection: WorkflowFixtureProjection = {
 /** The plan seat's call ran past the seat's `timeout`: the halt names the tool and the deadline. */
 function planTimeoutRecoveryIssue(): RecoveryIssue {
   const planner = visualConfig().planner;
-  const words = timedOutMessage(runnerAuthDisplayName(planner), 4_000);
+  const words = timedOutMessage(getRunnerCatalogDisplayName(planner), 4_000);
   return buildPlannerCallFailedRecoveryIssue({
     id: 'rec_visual_plan_timeout',
     diagnosis: diagnosePlannerCallFailure({
@@ -7368,18 +7376,18 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     ...halts.flatMap((issue) => [issue.message, ...issue.details]),
     runnerHaltRow(
       usageLimitRecoveryIssue(),
-      runnerAuthDisplayName(visualConfig().implementer),
+      getRunnerCatalogDisplayName(visualConfig().implementer),
       OLLAMA_LIMIT_WORDS,
     ),
     runnerDefectRow(
       modelRefusalRecoveryIssue(ROUTE_SIGNED_OUT_AUTH),
-      runnerAuthDisplayName(OPENCODE_ROUTE_SEAT),
+      getRunnerCatalogDisplayName(OPENCODE_ROUTE_SEAT),
       NO_ROUTE_WORDS,
     ),
     reviewContractErrorMessage,
     runnerHaltRow(
       cursorRefusalRecoveryIssue(),
-      runnerAuthDisplayName(CURSOR_REFUSAL_SEAT),
+      getRunnerCatalogDisplayName(CURSOR_REFUSAL_SEAT),
       CURSOR_MODEL_REFUSAL,
     ),
   ];

@@ -188,7 +188,9 @@ describe('useRunLoop abort race', () => {
     await vi.waitFor(
       () => {
         const errors = eventsStore.get().events.filter((e) => e.type === 'error');
-        expect(errors.some((e) => /Planner 'shell' is not available/i.test(e.message))).toBe(true);
+        expect(errors.some((e) => /Planner Custom Shell is not available/i.test(e.message))).toBe(
+          true,
+        );
       },
       { timeout: 15_000 },
     );

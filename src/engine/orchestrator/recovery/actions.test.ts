@@ -842,7 +842,39 @@ describe('applyRecoveryAction: switch-seat', () => {
       candidate: { tool: 'cursor' },
     });
 
-    expect(result).toMatchObject({ ok: false, code: 'candidate-not-offered' });
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'candidate-not-offered',
+      message: 'Cursor Agent CLI is not one of the tools offered for the build seat.',
+    });
+  });
+
+  it('names the tool by its catalog name when the seat cannot take it', async () => {
+    const { projectDir, sessionId } = setupSession('switch-seat-cannot-host');
+    const task = makeTask({ id: 'T402', status: 'in_progress' });
+    const issue: RecoveryIssue = {
+      ...usageLimitIssue(task),
+      switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code', model: '' }] },
+    };
+    const base = makeImplState([task]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'switch-seat',
+      bus,
+      config: makeConfig(),
+      candidate: { tool: 'claude-code', model: '' },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'candidate-not-offered',
+      message: 'Claude Code CLI cannot host the plan seat.',
+    });
   });
 
   it('blocks when the halt carried no seat-swap offer', async () => {

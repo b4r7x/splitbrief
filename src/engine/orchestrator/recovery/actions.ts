@@ -13,6 +13,7 @@ import { sameSeatCandidate, type CrewSeatId } from '../../../core/crew/identity.
 import { configWithSwitchedSeat, seatCandidateOfRunner } from './switch-seat.js';
 import { readSeatOfRecord } from './seat-swap-context.js';
 import { haltedSeatIds } from '../../../core/state/seats.js';
+import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
@@ -714,7 +715,7 @@ export function planSwitchSeatRecoveryAction(
       action,
       issue,
       code: 'candidate-not-offered',
-      message: `'${chosen.tool}' cannot host the ${offer.seat} seat.`,
+      message: `${getProviderDisplayName(chosen.tool)} cannot host the ${offer.seat} seat.`,
       publishSelected: true,
     });
   }
@@ -864,7 +865,7 @@ export function applySwitchSeatRecoveryAction(
       action: 'switch-seat',
       issue,
       code: 'candidate-not-offered',
-      message: `'${chosen.tool}' is not one of the tools offered for the ${offer.seat} seat.`,
+      message: `${getProviderDisplayName(chosen.tool)} is not one of the tools offered for the ${offer.seat} seat.`,
       publishSelected: true,
     });
   }

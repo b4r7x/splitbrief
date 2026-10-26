@@ -370,7 +370,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
           taskId: 'T001',
           code: 'checkout_changed_during_call',
           message:
-            'Task T001: your checkout changed while agent ran — escaped.txt; nothing there was reverted',
+            'Task T001: your checkout changed while Agent ran — escaped.txt; nothing there was reverted',
         }),
       );
       expect(existsSync(join(projectDir, 'escaped.txt'))).toBe(true);

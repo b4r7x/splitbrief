@@ -1,6 +1,7 @@
 import type { Config } from '../../../core/schemas/config.js';
 import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import type { EventBus } from '../../events/types.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import type { PreparationPolicy } from '../../runners/prepare-execution/types.js';
@@ -80,7 +81,7 @@ export async function applyOfferedSeatSwap(
     publishWarning({
       bus: input.bus,
       phase: savedState.phase,
-      message: `Could not switch the seat to '${choice.candidate.tool}': ${result.message}`,
+      message: `Could not switch the seat to ${getProviderDisplayName(choice.candidate.tool)}: ${result.message}`,
     });
     return undefined;
   }
@@ -103,7 +104,7 @@ export async function applyOfferedSeatSwap(
       publishWarning({
         bus: input.bus,
         phase: result.state.phase,
-        message: `The ${result.seat} seat was not switched to '${result.candidate.tool}': ${reason}; the halt stays.`,
+        message: `The ${result.seat} seat was not switched to ${getProviderDisplayName(result.candidate.tool)}: ${reason}; the halt stays.`,
       });
     }
     return { config: input.config, prepared: input.prepared, state: result.state };

@@ -104,7 +104,7 @@ splitbrief spec "add an isAdult helper that returns true when age >= 18"
 **You'll see:**
 
 ```
-Planning feature: add an isAdult helper that returns true when age >= 18 (planner: claude-code)
+Planning feature: add an isAdult helper that returns true when age >= 18 (planner: Claude Code CLI)
 
 
 Planning complete.

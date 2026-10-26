@@ -304,7 +304,7 @@ describe('e2e: seat down without a fallback, switched by hand', { timeout: 240_0
     );
     expect(refused.exitCode, `${refused.stdout}\n${refused.stderr}`).toBe(1);
     expect(refused.stderr).toContain(
-      "'opencode' is not one of the tools offered for the build seat.",
+      'OpenCode CLI is not one of the tools offered for the build seat.',
     );
     const state = loadState(ref);
     expect(state?.pendingRecovery).toEqual(haltState?.pendingRecovery);

@@ -34,7 +34,7 @@ import {
   runnerHaltRow,
 } from '../recovery/builders/task.js';
 import { classifySeatFailure, type SeatFailureClassification } from '../../runners/seat-failure.js';
-import { runnerAuthDisplayName } from '../../runners/auth-failure.js';
+import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -120,7 +120,11 @@ async function seatDownHalt(
   publishError({
     bus: ctx.bus,
     phase: stepOutcome.state.phase,
-    message: runnerHaltRow(issue, runnerAuthDisplayName(failure.runner), stepOutcome.lastError),
+    message: runnerHaltRow(
+      issue,
+      getRunnerCatalogDisplayName(failure.runner),
+      stepOutcome.lastError,
+    ),
     ...(issue.resetAt !== undefined && { resetAt: issue.resetAt }),
   });
   // A seat that is down cuts the brief it was running: the park names the step
@@ -182,7 +186,11 @@ async function runnerDefectHalt(
   publishError({
     bus: ctx.bus,
     phase: stepOutcome.state.phase,
-    message: runnerDefectRow(issue, runnerAuthDisplayName(failure.runner), stepOutcome.lastError),
+    message: runnerDefectRow(
+      issue,
+      getRunnerCatalogDisplayName(failure.runner),
+      stepOutcome.lastError,
+    ),
   });
   return {
     state: raisePendingRecovery(ctx, stepOutcome.state, issue),
