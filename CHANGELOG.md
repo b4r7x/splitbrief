@@ -94,6 +94,7 @@
 
 ### Fixed
 
+- A run that waits for a seat's usage limit to reset no longer waits again after you move that seat to another tool and continue: it starts the new tool at once. A seat you save before you choose Retry at still waits.
 - When a seat's model is automatic, the header, the sidebar and the closed run's crew row name the seat's tool instead of `auto`.
 - Messages and readiness fixes now name a tool by its full name, such as `OpenAI Codex CLI` or `Ollama`, instead of its config id.
 - The status line of a run that waits for a usage-limit reset now names the tool that hit the limit by its full name, such as `OpenAI Codex CLI`, instead of the config id of the seat it started on.

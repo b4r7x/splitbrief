@@ -28,6 +28,7 @@ import {
 } from '../evidence/task.js';
 import { withContinuationLoop } from '../continuation.js';
 import { addUsageAndSave } from '../state-ops.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 
 const directories: string[] = [];
@@ -205,6 +206,73 @@ describe('makeImplementerRetryInvoker', () => {
       );
     },
   );
+
+  it('waits out a near reset holding the BUILD profile the retry runs on', async () => {
+    const ref = setupProject(directories);
+    const task = makeTask();
+    const state = makeImplState([task]);
+    saveState(ref, state);
+    const claudeCode = { kind: 'cli', tool: 'claude-code' } as const;
+    const config = makeConfig({
+      implementer: claudeCode,
+      implementerProfiles: {
+        default: 'small',
+        profiles: { big: claudeCode, small: { kind: 'cli', tool: 'codex' } },
+      },
+    });
+    const retry = vi
+      .fn()
+      .mockResolvedValueOnce({
+        success: false,
+        output: '',
+        error: "You've hit your usage limit. Try again in 5 minutes.",
+      })
+      .mockResolvedValueOnce({ success: true, output: 'fixed' });
+    const invoker = makeImplementerRetryInvoker({
+      context: defaultContext,
+      kind: 'local',
+      sessionId: ref.sessionId,
+      languageContext: buildLanguageContext('typescript'),
+      phase: 'implementing',
+    });
+
+    vi.useFakeTimers();
+    const pending = invoker({
+      task,
+      lastError: 'check failed',
+      attempts: 1,
+      projectDir: ref.projectDir,
+      implementer: makeImplementer({ retry }),
+      config,
+      seat: {
+        ref: { ...ref, bus: createEventBus(), implementerProfile: 'big' },
+        state,
+        usageCategory: 'implementer',
+      },
+    });
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    let wait: WorkflowState['seatWait'];
+    try {
+      while (!settled) {
+        wait ??= loadState(ref)?.seatWait;
+        await vi.advanceTimersByTimeAsync(vi.getTimerCount() === 0 ? 1 : 30_000);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    await pending;
+
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(wait?.holds).toEqual({ tool: 'claude-code', kind: 'cli', profile: 'big' });
+  });
 
   it('passes one steering port to the retry and its correction pass', async () => {
     const ref = setupProject(directories);
