@@ -153,7 +153,7 @@ if (args[0] === 'serve') {
   }
   if (process.env.OPENCODE_PASSWORD !== password) throw new Error('Missing sidecar password');
   const url = args[args.indexOf('--server') + 1];
-  const text = args[args.indexOf('--agent') + 2];
+  const text = fs.readFileSync(0, 'utf8');
   record({ kind: 'call', text, args });
   const event = entry => emit({ sessionID: session, ...entry });
   event({ type: 'tool_use', part: { type: 'tool', callID: 'build-tool', tool: 'bash', state: { status: 'running', input: { command: 'build fixture' } } } });

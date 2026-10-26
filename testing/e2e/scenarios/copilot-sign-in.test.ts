@@ -54,12 +54,13 @@ function copilotProject(): { target: StopContinueFixture; seen: string; hostHome
     bin,
     'copilot',
     `
-const { mkdirSync, writeFileSync } = require('node:fs');
+const { mkdirSync, readFileSync, writeFileSync } = require('node:fs');
 if (process.argv.includes('--version')) {
   console.log('copilot ${CLI_TOOL_CATALOG.copilot.compatibility.testedVersion}');
   process.exit(0);
 }
-if (!process.argv.includes('-p')) process.exit(0);
+if (!process.argv.includes('--output-format')) process.exit(0);
+readFileSync(0, 'utf8');
 writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ token: process.env.COPILOT_GITHUB_TOKEN ?? null }));
 mkdirSync('src', { recursive: true });
 writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
