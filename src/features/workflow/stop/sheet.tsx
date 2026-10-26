@@ -19,7 +19,6 @@ import {
   requestLeaveSession,
 } from '../handlers.js';
 import {
-  STOP_SHEET_FOOTER,
   STOP_SHEET_LEGEND,
   STOP_SHEET_PARKED_LEGEND,
   STOP_SHEET_TITLE,
@@ -57,15 +56,16 @@ function performStop(id: StopRowId): void {
 export function StopSheet({
   rows,
   height,
-  footer = STOP_SHEET_FOOTER,
+  footer,
 }: {
   rows: readonly StopRow[];
   height?: number | undefined;
-  footer?: string | undefined;
+  footer: string | null;
 }) {
   const t = useTheme();
   const cols = terminalSizeStore.use((state) => state.cols);
   const layout = stopMenuLayout(rows, cols);
+  const title = rows.some((row) => row.id === 'leave') ? 'Session options' : STOP_SHEET_TITLE;
   const legend = fitKeyLegend(
     rows.some((row) => row.id === 'leave') ? STOP_SHEET_PARKED_LEGEND : STOP_SHEET_LEGEND,
     Math.max(1, layout.width - 4),
@@ -100,7 +100,7 @@ export function StopSheet({
     >
       <Text color={t.textDim} wrap="truncate-end">
         {fitKeyLegend(
-          `${rows.some((row) => row.id === 'leave') ? 'Session options' : STOP_SHEET_TITLE} · ${footer}`,
+          footer === null ? title : `${title} · ${footer}`,
           Math.max(1, layout.width - 4),
         )}
       </Text>

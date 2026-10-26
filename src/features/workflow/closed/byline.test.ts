@@ -6,6 +6,11 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { RECOVERY_ACTIONS, type RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { atRestRunStatus } from '../../../core/sessions/run-status.js';
+import { formatResetAt } from '../../../core/recovery/reset-clock.js';
 import { bylineParts, legendText, openRunBylineParts } from './byline.js';
 import { stopPoint } from '../stop/copy.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
@@ -870,4 +875,53 @@ it('keeps the review seat in an at-rest halt title', () => {
     { text: ' · ', tone: 'textDim' },
     { text: '⏎ to decide', tone: 'textDim' },
   ]);
+});
+
+describe('the at-rest byline of a run stopped in a seat wait', () => {
+  const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const record = makeRunRecord({
+    status: {
+      kind: 'open',
+      stop: {
+        kind: 'stopped',
+        on: { kind: 'seat-wait', seat: 'build', tool: 'OpenAI Codex CLI', resetAt },
+      },
+      resumeAt: { kind: 'planner', call: 'plan' },
+    },
+    hydration: {
+      kind: 'loaded',
+      state: {
+        ...createInitialState('feat'),
+        seatWait: {
+          seat: 'build',
+          resetAt,
+          tool: 'codex',
+          kind: 'cli',
+          holds: { tool: 'codex', kind: 'cli' },
+        },
+      },
+    },
+  });
+
+  function atRestByline(config: ReturnType<typeof makeConfig>): string {
+    return joinedByline(
+      openRunBylineParts({
+        status: atRestRunStatus(record, config),
+        continuable: true,
+        width: WIDE,
+      }),
+    );
+  }
+
+  it('names no wait once /crew moved the seat to another tool', () => {
+    expect(atRestByline(makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } }))).toBe(
+      'Stopped at the plan · ⏎ to continue',
+    );
+  });
+
+  it('keeps the wait when only the model of the seat changed', () => {
+    expect(
+      atRestByline(makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.1' } })),
+    ).toBe(`Waiting for OpenAI Codex CLI · ${formatResetAt(resetAt)}`);
+  });
 });

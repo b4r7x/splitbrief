@@ -345,7 +345,7 @@ describe('invokeCommandRunner with timeout', () => {
     expect(result.warnings).toEqual([
       expect.objectContaining({
         code: 'stdout_line_overflow',
-        message: expect.stringContaining('stdout line exceeded'),
+        message: expect.stringContaining('A line of the tool output longer than'),
       }),
     ]);
   });

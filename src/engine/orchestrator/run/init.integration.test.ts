@@ -149,6 +149,7 @@ async function initializeTestWorkflow(
     sessionId: string;
     feature: string;
     steer?: ReturnType<typeof plainUserMessage> | undefined;
+    resumeCause?: 'seat-change';
     savedState?: WorkflowState | undefined;
     newWorkflow?: boolean;
     reviewer?: Config['reviewer'];
@@ -227,6 +228,7 @@ async function initializeTestWorkflow(
       _implementer: implementer,
       _eventSink: input.eventSink,
       ...(input.steer !== undefined && { steer: input.steer }),
+      ...(input.resumeCause !== undefined && { resumeCause: input.resumeCause }),
     },
     config: prepared.config,
     sessionId: input.sessionId,
@@ -256,6 +258,33 @@ afterEach(() => {
 });
 
 describe('initializeWorkflow', () => {
+  it('records that a crew change carried the run on, so its continue shows no row', async () => {
+    await withTempDir('splitbrief-init-seat-change-resume', async (projectDir) => {
+      const sessionId = 'seat-change-resume';
+      const feature = 'continue the run';
+      const events: EngineEvent[] = [];
+      const input = {
+        projectDir,
+        sessionId,
+        feature,
+        eventSink: (event: EngineEvent) => events.push(event),
+      };
+      const started = await initializeTestWorkflow(input);
+      if (!started.init.ok) throw new Error('Expected run start');
+      const savedState = { ...started.init.state, phase: 'implementing' } as const;
+      const continued = await initializeTestWorkflow({
+        ...input,
+        savedState,
+        resumeCause: 'seat-change',
+      });
+      expect(continued.init.ok).toBe(true);
+      const replay = await readRunEvents({ projectDir, sessionId });
+      expect(replay.events.filter((event) => event.type === 'workflow_resumed')).toEqual([
+        expect.objectContaining({ cause: 'seat-change' }),
+      ]);
+    });
+  });
+
   it('records recovery re-entry under the same signal, but a fresh restart has no marker', async () => {
     await withTempDir('splitbrief-init-clock-continuation', async (projectDir) => {
       const sessionId = 'clock-continuation';
@@ -286,6 +315,7 @@ describe('initializeWorkflow', () => {
       expect(resumed[1]).not.toHaveProperty('inProcess');
       const replay = await readRunEvents({ projectDir, sessionId });
       expect(replay.events.filter((event) => event.type === 'workflow_resumed')).toEqual(resumed);
+      expect(resumed[1]).not.toHaveProperty('cause');
     });
   });
 

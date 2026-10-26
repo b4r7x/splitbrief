@@ -37,7 +37,7 @@ import type {
   TriageResult,
 } from '../../../core/schemas/review.js';
 import { taskId, type Check, type Task } from '../../../core/schemas/task.js';
-import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
+import type { BoundaryPark, OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import type { Validator } from '../validation/types.js';
 import type {
   Implementer,
@@ -74,8 +74,8 @@ async function userTurns(ref: { projectDir: string; sessionId: string }, text: s
   return count;
 }
 
-/** The sink the TUI installs, with the boundary pause pending exactly once. */
-function pauseOnceSinks(): WorkflowSinks {
+/** The sink the TUI installs, holding the run once at the boundary with `park`. */
+function pauseOnceSinks(park: BoundaryPark = 'pause'): WorkflowSinks {
   let pending = true;
   return {
     setAbortHandler: () => {},
@@ -83,7 +83,7 @@ function pauseOnceSinks(): WorkflowSinks {
     consumeBoundaryPause: () => {
       const wasPending = pending;
       pending = false;
-      return wasPending;
+      return wasPending ? park : undefined;
     },
   };
 }
@@ -347,11 +347,13 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
     const result = await runTasksAndReview(options);
 
     expect(parks).toEqual([{ partial: '', at: 'boundary' }]);
-    expect(events.find((e) => e.type === 'turn_interrupted')).toMatchObject({
+    const interrupted = events.find((e) => e.type === 'turn_interrupted');
+    expect(interrupted).toMatchObject({
       source: 'user',
       at: 'boundary',
       step: { kind: 'brief', taskId: 'T002', attempt: 0 },
     });
+    expect(interrupted).not.toHaveProperty('cause');
     expect(events.filter((e) => e.type === 'workflow_resumed')).toEqual([
       expect.objectContaining({ phase: 'implementing', inProcess: true, resumedAt }),
     ]);
@@ -360,6 +362,34 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
     expect(result.completed).toBe(true);
     // The park was cleared when the operator continued.
     expect(result.state.interruptedStep).toBeUndefined();
+  });
+
+  it('marks a boundary park that only changes a seat with its cause', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'] }),
+    ];
+    const { events, implementer, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+      sinks: pauseOnceSinks('seat-change'),
+      onContinuationNeeded: async () => plainUserMessage(''),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(events.find((e) => e.type === 'turn_interrupted')).toMatchObject({
+      source: 'user',
+      at: 'boundary',
+      step: { kind: 'brief', taskId: 'T002', attempt: 0 },
+      cause: 'seat-change',
+    });
+    expect(implementer.implement).toHaveBeenCalledTimes(2);
+    expect(result.completed).toBe(true);
   });
 
   // Run 2026-10-05-s6-central-checks-and-renders-plus-the-carried-in--3, 19:05 and 20:36: the

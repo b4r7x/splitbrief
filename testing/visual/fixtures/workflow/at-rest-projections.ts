@@ -803,6 +803,27 @@ const AT_REST_SEAT_WAIT = record({
   state: SEAT_WAIT_STATE,
 });
 
+/**
+ * The same wait after `/crew` moved BUILD off the Codex tool the wait holds: the run stopped, and
+ * the byline names no wait on a tool the seat no longer runs.
+ */
+const SEAT_MOVED_STATE: WorkflowState = {
+  ...SEAT_WAIT_STATE,
+  awaitingContinue: true,
+  seatWait: {
+    seat: 'build',
+    tool: 'codex',
+    kind: 'cli',
+    resetAt: '2026-09-14T17:00:00.000Z',
+    holds: { tool: 'codex', kind: 'cli' },
+  },
+};
+const AT_REST_SEAT_MOVED = record({
+  sessionId: 'visual-at-rest-seat-moved',
+  status: deriveRunStatus({ state: SEAT_MOVED_STATE, liveness: 'not-alive' }),
+  state: SEAT_MOVED_STATE,
+});
+
 /** The same halt with Try again chosen and saved, and the process killed before it ran. */
 const AT_REST_HALTED_CHOSEN = record({
   sessionId: 'visual-at-rest-halted-chosen',
@@ -2695,6 +2716,7 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
   atRestProjection({ id: 'workflow-at-rest-seat-wait', route: { record: AT_REST_SEAT_WAIT } }),
+  atRestProjection({ id: 'workflow-at-rest-seat-moved', route: { record: AT_REST_SEAT_MOVED } }),
   atRestProjection({
     id: 'workflow-at-rest-halted-chosen',
     route: { record: AT_REST_HALTED_CHOSEN },

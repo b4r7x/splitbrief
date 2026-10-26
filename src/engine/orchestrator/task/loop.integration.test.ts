@@ -60,7 +60,7 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
         callbacks: makeCallbacks().callbacks,
         implementer,
         bus,
-        sinks: { ...TEST_SINKS, consumeBoundaryPause: () => true },
+        sinks: { ...TEST_SINKS, consumeBoundaryPause: () => 'pause' },
       }),
       initialState: makeImplState(tasks),
       setTrackedState: vi.fn(),
@@ -68,6 +68,7 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
     });
 
     expect(result.status).toBe('paused');
+    expect(result.status === 'paused' && result.park).toBe('pause');
     expect(implemented).toEqual(['T001']);
     expect(result.state.tasks[0]?.status).toBe('done');
     expect(result.state.tasks[1]?.status).toBe('pending');

@@ -8,6 +8,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { getActiveRailStage, phaseStage, railStageSeat } from '../../../core/rail-stages.js';
 import { deriveLiveStatus } from '../display/live-activity.js';
+import { seatWaitSentence } from '../display/seat-wait-line.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { TextSpans } from '../../../components/text-spans.js';
@@ -220,6 +221,19 @@ export function InputFooter({
           },
         ];
   const stalledHint = stall === null ? null : silenceTail(operations.active, stall);
+  const seatWait =
+    lifecycle.seatWait !== null
+      ? seatWaitSentence(lifecycle.seatWait.tool, lifecycle.seatWait.resetAt)
+      : null;
+  const seatWaitLead: ConversationRowSegment[] =
+    seatWait === null
+      ? []
+      : [
+          {
+            text: `${glyph('statusPending')} ${seatWait}`,
+            tone: stateTone('attention'),
+          },
+        ];
 
   // An actionable prompt takes precedence over the lifecycle state it interrupted.
   // The stop's own keys are the legend row's job: crowding them onto this row would cost the
@@ -252,20 +266,22 @@ export function InputFooter({
               }
             : interrupted
               ? { lead: interruptedLead, hintText: null }
-              : resuming
-                ? { lead: resumingLead, hintText: null }
-                : stall !== null
-                  ? {
-                      lead: stalledLead,
-                      hintText: stalledHint,
-                    }
-                  : liveStatus !== null
+              : seatWait !== null
+                ? { lead: seatWaitLead, hintText: null }
+                : resuming
+                  ? { lead: resumingLead, hintText: null }
+                  : stall !== null
                     ? {
-                        lead: liveLead,
-                        leadClock: elapsed,
-                        hintText: null,
+                        lead: stalledLead,
+                        hintText: stalledHint,
                       }
-                    : { lead: stageLead, hintText: null };
+                    : liveStatus !== null
+                      ? {
+                          lead: liveLead,
+                          leadClock: elapsed,
+                          hintText: null,
+                        }
+                      : { lead: stageLead, hintText: null };
 
   const queuedCopy =
     lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')

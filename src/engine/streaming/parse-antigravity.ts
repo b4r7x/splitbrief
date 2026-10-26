@@ -5,11 +5,15 @@ import type { CliProtocolEvent } from '../runners/cli-tools/contract.js';
 
 type AntigravityTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
-const UNKNOWN_RECORD: CliProtocolEvent = {
-  type: 'warning',
-  code: 'unknown-antigravity-record',
-  message: 'Unknown Antigravity record',
-};
+function unknown(kind: 'record' | 'step', type: unknown): CliProtocolEvent {
+  const named = optionalString(type, { trim: true, nonEmpty: true });
+  const message = `Unknown Antigravity ${kind}`;
+  return {
+    type: 'warning',
+    code: 'unknown-antigravity-record',
+    message: named === undefined ? message : `${message}: ${named}`,
+  };
+}
 
 function protocolFailure(code: string, message: string): AntigravityTerminalEvent {
   return {
@@ -83,17 +87,21 @@ function parseResponseStep(step: Record<string, unknown>): readonly CliProtocolE
 
 // `user_input` and `system_message` are what agy feeds the model (the prompt; its own notices,
 // such as a finished background task or an auto-approved plan) and carry no text, usage or tools.
+// `checkpoint` (written mid-turn on a long call) and `finish` (closes the turn) carry only a
+// duration, nothing SPLITBRIEF uses.
 function parseStep(step: Record<string, unknown>): readonly CliProtocolEvent[] {
   switch (step.step_type) {
     case 'user_input':
     case 'system_message':
+    case 'checkpoint':
+    case 'finish':
       return [];
     case 'tool':
       return parseToolStep(step);
     case 'agent_response':
       return parseResponseStep(step);
     default:
-      return [UNKNOWN_RECORD];
+      return [unknown('step', step.step_type)];
   }
 }
 
@@ -156,7 +164,7 @@ function parseRecord(record: Record<string, unknown>): readonly CliProtocolEvent
         ? [parseResult(record.result)]
         : [malformed('Antigravity result record is malformed')];
     default:
-      return [UNKNOWN_RECORD];
+      return [unknown('record', event)];
   }
 }
 

@@ -2825,6 +2825,48 @@ describe('event row dispatch', () => {
     expect(text).not.toContain('after T002');
   });
 
+  // The walk drops the park of a crew change that carried the run on; a park left on its own stopped it.
+  it('turn_interrupted at a brief boundary that only changes a seat keeps its Stopped row', () => {
+    const event: EngineEventOf<'turn_interrupted'> = {
+      type: 'turn_interrupted',
+      ts: 0,
+      phase: 'implementing',
+      source: 'user',
+      at: 'boundary',
+      step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+      cause: 'seat-change',
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText).join('\n')).toContain('before T002');
+  });
+
+  it('turn_interrupted at a brief boundary the user asked for keeps its Stopped row', () => {
+    const event: EngineEventOf<'turn_interrupted'> = {
+      type: 'turn_interrupted',
+      ts: 0,
+      phase: 'implementing',
+      source: 'user',
+      at: 'boundary',
+      step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map((row) => rowText(row).trimEnd())).toEqual(['Stopped before T002']);
+  });
+
   it('turn_interrupted mid-brief names the brief and leaves the keys to the byline', () => {
     const event: EngineEventOf<'turn_interrupted'> = {
       type: 'turn_interrupted',

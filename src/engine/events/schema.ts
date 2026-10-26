@@ -263,6 +263,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     inProcess: z.literal(true).optional(),
     /** A held continuation's submit time, before persistence and publication completed. */
     resumedAt: z.number().optional(),
+    /** Set when the run continued by itself after a boundary park that only changed a seat. */
+    cause: z.literal('seat-change').optional(),
   }),
   phaseEvent('workflow_complete').extend({
     review: z.enum(['passed', 'failed']).optional(),
@@ -281,6 +283,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     at: StepCutSchema.optional(),
     /** The step the stop parked, as the state records it; absent on logs written before the field. */
     step: StepRefSchema.optional(),
+    /**
+     * Set when a boundary park only changes a seat: no pause was asked for, the run stops so the
+     * next brief starts on the new seat. Absent for a pause the operator asked for.
+     */
+    cause: z.literal('seat-change').optional(),
   }),
   phaseEvent('workflow_config').extend({
     /** Written by runs before modes were retired; read only to replay them. */
@@ -626,6 +633,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('seat_wait_started').extend({
     seat: z.enum(CREW_SEAT_IDS),
     resetAt: z.string(),
+    /** The tool the wait is on, in the catalog's words; absent on logs written before the field. */
+    tool: z.string().optional(),
+  }),
+  phaseEvent('seat_wait_ended').extend({
+    seat: z.enum(CREW_SEAT_IDS),
   }),
   phaseEvent('seat_switched').extend({
     switchId: z.string().optional(),

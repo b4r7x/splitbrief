@@ -1,5 +1,6 @@
 import { baseSplit, baseSplitNames } from '../../../core/review/base-split.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
+import { formatResetAt } from '../../../core/recovery/reset-clock.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { checksSummary } from '../../../core/validation/checks-summary.js';
@@ -140,9 +141,17 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   fix check V1: <K> of your <N> failures remain (<command>)
  *   fix check V1: no failure of yours · <M> others left for their fix tasks or the next review (<command>)
  *   fix check V1: refused (<detail>) | not run (<detail>)
+ *   plan check K1: passed · 14.2s (<command>) | failed · 14.2s (<command>)
+ *   plan check K1: refused (<detail>) | not run (<detail>)
+ *   Render workflow-x: rendered · 14.2s | failed · 14.2s
+ *   Render workflow-x: refused (<detail>) | not run (<detail>)
  *   stalled: implementer (opencode) · no output for 5:00
- *   review: passed
+ *   review: passed | failed [(<n> blocking)] | no verdict | stopped
+ *   task review T002: failed (1 blocking) | task review: no verdict
  *   done: 3 tasks
+ *
+ * A `pass` and a `pass-with-notes` both read `passed`; `fail` carries its
+ * blocking count when the completion records the finding counts.
  */
 export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSink {
   const output = opts.output ?? process.stdout;
@@ -180,6 +189,13 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
       case 'checks_run':
         checks.set(bounded.taskId, checksSummary(bounded.results));
         return;
+      case 'seat_wait_started': {
+        const reset = formatResetAt(bounded.resetAt);
+        if (typeof bounded.tool === 'string' && bounded.tool.trim() !== '' && reset !== undefined) {
+          write(`waiting: ${bounded.tool}${SOFT_SEP}${reset}`);
+        }
+        return;
+      }
       case 'review_checks':
         for (const line of reviewChecksLines(bounded)) write(line);
         return;
@@ -204,15 +220,30 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
         write(`task ${bounded.taskId}: failed (skipped)`);
         return;
       case 'review_completed': {
+        let words: string;
+        switch (bounded.verdict) {
+          case 'pass':
+          case 'pass-with-notes':
+            words = 'passed';
+            break;
+          case 'fail':
+            words =
+              bounded.findings === undefined
+                ? 'failed'
+                : `failed (${bounded.findings.blocking} blocking)`;
+            break;
+          case 'no-verdict':
+            words = 'no verdict';
+            break;
+          case 'stopped':
+            words = 'stopped';
+            break;
+        }
         const scope =
           bounded.scope === 'task'
-            ? `task${bounded.afterTaskId === undefined ? '' : ` ${bounded.afterTaskId}`}`
-            : 'final';
-        write(
-          bounded.findings === undefined
-            ? `review: ${scope} ${bounded.verdict}`
-            : `review: ${scope} ${bounded.verdict} (${bounded.findings.blocking} blocking)`,
-        );
+            ? `task review${bounded.afterTaskId === undefined ? '' : ` ${bounded.afterTaskId}`}: `
+            : 'review: ';
+        write(`${scope}${words}`);
         return;
       }
       case 'workflow_complete': {

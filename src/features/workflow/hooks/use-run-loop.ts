@@ -111,6 +111,8 @@ interface UseRunLoopOptions {
   prepared?: PreparedExecution | undefined;
   /** What the operator typed to continue this run; it seeds the first step of this re-entry. */
   steer?: UserMessageInput | undefined;
+  /** Set when the run continues by itself after a boundary park that only changed a seat. */
+  resumeCause?: 'seat-change' | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   inputMode: UseInputModeResult;
   /** How this run is re-entered — the loop reads its state. */
@@ -118,9 +120,9 @@ interface UseRunLoopOptions {
   runWorkflow?: RunWorkflowFn | undefined;
   prepareExecution?: PrepareExecutionFn | undefined;
   /**
-   * The path a bare ⏎ takes on a run at rest: re-prepare it from the saved config and re-enter it in
-   * place. A run that stopped itself at a brief boundary to pick up a changed seat continues here,
-   * with the words its park was continued with.
+   * How a run that stopped itself at a brief boundary to pick up a changed seat continues: it is
+   * re-prepared from the saved config and re-entered in place, with the words its park was
+   * continued with.
    */
   continueAtRest?: ((record: RunRecord, steer: UserMessageInput) => void) | undefined;
 }
@@ -133,6 +135,7 @@ interface UseRunLoopOptions {
 export function useRunLoop({
   prepared,
   steer,
+  resumeCause,
   selectedSkills,
   inputMode,
   continuation,
@@ -168,6 +171,7 @@ export function useRunLoop({
     // The steer belongs to the first call this re-entry makes; the recovery loop's
     // later iterations are the run continuing, not the operator continuing it.
     let steerForRun = inlineForPrepared?.steer ?? steer;
+    let resumeCauseForRun = resumeCause;
     if (stateForRun === undefined && prepared.runtime.resumeState !== undefined) {
       const hydrated = hydrateResume(session.ref);
       if (hydrated.kind === 'invalid') {
@@ -486,9 +490,11 @@ export function useRunLoop({
           savedState: stateForRun,
           selectedSkills,
           ...(steerForRun !== undefined && { steer: steerForRun }),
+          ...(resumeCauseForRun !== undefined && { resumeCause: resumeCauseForRun }),
           ...(detectedContextLength !== undefined && { detectedContextLength }),
         });
         steerForRun = undefined;
+        resumeCauseForRun = undefined;
 
         if (abortedRef.current) return;
         if (controller.signal.aborted) {

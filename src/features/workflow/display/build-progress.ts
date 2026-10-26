@@ -26,6 +26,7 @@ import { runnerActivityLedgerItem, runnerActivityModelRole } from './runner-acti
 import { buildProgressRowCount } from '../layout/chrome-rows.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { separatedSpans } from '../conversation-rows/row-format/text.js';
+import { seatWaitParts } from './seat-wait-line.js';
 
 /**
  * The floor under the silence warning: the block never paints it for a seat quieter than this,
@@ -286,6 +287,8 @@ function freshnessOf(
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
   const view = selectTaskListView(input.tasks);
   const retrying = isImplementerPhase(input.lifecycle.phase) && input.tasks.currentAttempt >= 2;
+  const wait = input.lifecycle.seatWait;
+  const waitParts = wait === null ? null : seatWaitParts(wait.tool, wait.resetAt, input.now);
   return {
     passed: view.passed,
     total: view.total,
@@ -294,8 +297,12 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
     attempt: retrying
       ? { current: input.tasks.currentAttempt, max: input.tasks.attemptAllowance }
       : null,
-    ...activityLine(input),
-    ...freshnessOf(input),
+    ...(waitParts === null
+      ? { ...activityLine(input), ...freshnessOf(input) }
+      : {
+          ...activityResult([{ text: waitParts[0], tone: 'textDim' }]),
+          ...freshnessResult([{ text: waitParts[1], tone: 'textDim' }], false),
+        }),
   };
 }
 

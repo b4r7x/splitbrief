@@ -85,7 +85,9 @@ export type TranscriptWalkStep =
 // keeps the one header it opened with: the Recovery row already says it went back to pending.
 // A seat switch folds one matching reconciliation notice before the next run starts or resumes.
 // A workspace kept for Continue drops out once the run continues or a close (End run, Discard or
-// Apply) lets it go; a later stop that keeps it again shows its own notice. A batch of a call that
+// Apply) lets it go; a later stop that keeps it again shows its own notice. A crew change at a
+// boundary that carried the run on by itself shows neither its park nor its resume; a park it did
+// not carry on reads as the stop it is. A batch of a call that
 // has ended says so, so no batch of a stopped or finished call carries the live mark. A review opens
 // with its heading while it runs and keeps it once it settles, so no row appears above its rows.
 export function* walkTranscript(
@@ -93,11 +95,22 @@ export function* walkTranscript(
 ): Generator<TranscriptWalkStep> {
   const automatic = automaticRecoveryFolds(sections);
   let workspaceNotice: EngineEventOf<'warning'> | undefined;
+  const carriedOn = new Set<EngineEvent>();
+  let seatChangePark: EngineEventOf<'turn_interrupted'> | undefined;
   for (const section of sections) {
     for (const event of section.items) {
       if (event.type === 'warning' && event.code === WORKSPACE_KEPT_CODE) workspaceNotice = event;
       if (event.type === 'workflow_resumed' || event.type === 'workspace_closed')
         workspaceNotice = undefined;
+      if (event.type === 'turn_interrupted' || event.type === 'workflow_cancelled')
+        seatChangePark =
+          event.type === 'turn_interrupted' && event.cause === 'seat-change' ? event : undefined;
+      if (event.type !== 'workflow_resumed') continue;
+      if (event.cause === 'seat-change') {
+        carriedOn.add(event);
+        if (seatChangePark !== undefined) carriedOn.add(seatChangePark);
+      }
+      seatChangePark = undefined;
     }
   }
   const endedAttempts = endedImplementerAttempts(sections);
@@ -165,7 +178,7 @@ export function* walkTranscript(
         lastRowEvent = event;
         continue;
       }
-      if (automatic.hidden.has(event) || endedAttempts.has(event)) continue;
+      if (automatic.hidden.has(event) || endedAttempts.has(event) || carriedOn.has(event)) continue;
       if (
         event.type === 'warning' &&
         event.code === WORKSPACE_KEPT_CODE &&

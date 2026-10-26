@@ -1,4 +1,5 @@
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
+import { runnerCallLineOutputLimit } from '../calls/output-limit.js';
 import type { RunnerCallRecorder } from '../calls/recorder.js';
 
 const STDERR_LINE_MAX_BYTES = 8 * 1024;
@@ -13,12 +14,15 @@ export function createRunnerCallStderrBuffer(recorder: RunnerCallRecorder): {
     },
     {
       maxLineBytes: STDERR_LINE_MAX_BYTES,
-      onOverflow: () => {
+      onOverflow: (overflow) => {
+        const limit = runnerCallLineOutputLimit({
+          code: 'stderr_line_overflow',
+          label: 'the tool error output',
+          lineBytes: overflow.lineBytes,
+          maxLineBytes: STDERR_LINE_MAX_BYTES,
+        });
         recorder.warning({
-          warning: {
-            code: 'stderr_line_overflow',
-            message: `stderr line exceeded ${STDERR_LINE_MAX_BYTES} bytes and was skipped`,
-          },
+          warning: { code: limit.code, message: limit.message },
         });
       },
     },

@@ -130,7 +130,11 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
 
   // One continuation path for a run at rest: the engine decides whether the run can be picked up,
   // the preparation attempt re-enters it in place, and the screen never moves.
-  const continueAtRest = (message: UserMessageInput, run = atRestRecord): void => {
+  const continueAtRest = (
+    message: UserMessageInput,
+    run = atRestRecord,
+    resumeCause?: 'seat-change',
+  ): void => {
     const sessionSelect = deps?.sessionSelect;
     if (run === undefined || sessionSelect === undefined) return;
     const outcome = continueRun({
@@ -144,6 +148,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
             record: run,
             state,
             ...(steer !== undefined && { steer }),
+            ...(resumeCause !== undefined && { resumeCause }),
             deps: sessionSelect,
           });
         },
@@ -161,11 +166,12 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   useRunLoop({
     prepared,
     ...(local?.steer !== undefined && { steer: local.steer }),
+    ...(local?.resumeCause !== undefined && { resumeCause: local.resumeCause }),
     selectedSkills: selectedSkillMetas,
     inputMode,
     continuation,
     runWorkflow: deps?.runWorkflow,
-    continueAtRest: (run, steer) => continueAtRest(steer, run),
+    continueAtRest: (run, steer) => continueAtRest(steer, run, 'seat-change'),
   });
 
   const approvalPromptState = approvalPromptStore.use((s) => s);

@@ -37,6 +37,7 @@ function lifecycleFromState(current: LifecycleState, state: WorkflowState): Life
     steerableCall: null,
     phaseFirstSeenTs: current.phaseFirstSeenTs,
     stall: null,
+    seatWait: null,
     lastRunnerEventTs: current.lastRunnerEventTs ?? null,
     attemptStartedTs: current.attemptStartedTs ?? null,
     startedAt,

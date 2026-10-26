@@ -229,7 +229,7 @@ describe('WorkflowScreen lifecycle', () => {
         }
         firstPass.resolve();
         await briefDone.promise;
-        if (opts.sinks.consumeBoundaryPause?.() === true) {
+        if (opts.sinks.consumeBoundaryPause?.() !== undefined) {
           const park = opts.callbacks.onContinuationNeeded?.('', 'boundary', []);
           parked.resolve();
           await park;

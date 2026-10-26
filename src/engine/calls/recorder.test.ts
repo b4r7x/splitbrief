@@ -467,11 +467,16 @@ describe('createRunnerCallRecorder', () => {
     expect(result.status).toBe('truncated');
     expect(result.partial).toBe(true);
     expect(result.error?.code).toBe('runner_call_tool_use_count_limit');
+    expect(result.error?.message).toContain(
+      `Only the first ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} tool calls of this call are kept.`,
+    );
+    expect(result.error?.message).toContain('Recent tool calls');
     expect(result.error?.message).toContain(`file-${total - 1}.ts`);
     expect(result.error?.message).not.toContain('file-0.ts');
     expect(result.warnings).toEqual([
       expect.objectContaining({ code: 'runner_call_tool_use_count_limit' }),
     ]);
+    expect(result.warnings[0]?.message).not.toContain('Recent tool calls');
   });
 
   // A tool announcement replays input that `toolUseDone` carries again, so a run with hundreds of

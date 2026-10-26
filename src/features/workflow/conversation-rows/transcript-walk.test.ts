@@ -790,3 +790,72 @@ describe('walkTranscript on a stopped run’s workspace', () => {
     expect(eventsOf([kept, closed])).toEqual([closed]);
   });
 });
+
+describe('walkTranscript after a crew change at a boundary', () => {
+  const parked: EngineEventOf<'turn_interrupted'> = {
+    type: 'turn_interrupted',
+    ts: 1_000,
+    phase: 'implementing',
+    source: 'user',
+    at: 'boundary',
+    step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+    cause: 'seat-change',
+  };
+  const switched: EngineEventOf<'seat_switched'> = {
+    type: 'seat_switched',
+    ts: 1_001,
+    phase: 'implementing',
+    seat: 'build',
+    from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+    to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+    cause: 'crew-changed',
+    auto: false,
+    configRevision: 'test-revision',
+  };
+  const carriedOn: EngineEventOf<'workflow_resumed'> = {
+    type: 'workflow_resumed',
+    ts: 1_002,
+    phase: 'implementing',
+    cause: 'seat-change',
+  };
+  const continued: EngineEventOf<'workflow_resumed'> = {
+    type: 'workflow_resumed',
+    ts: 5_000,
+    phase: 'implementing',
+  };
+  const stopAndContinue = (events: EngineEvent[]) =>
+    [...walkTranscript(groupEventsIntoSections(events))].flatMap((step) =>
+      step.kind === 'event' &&
+      (step.event.type === 'workflow_resumed' || step.event.type === 'turn_interrupted')
+        ? [step.event]
+        : [],
+    );
+
+  // In a real run, a crew change at a brief boundary showed "Run continued" though nobody paused it.
+  it('shows no stop and no continue for the run a crew change carried on', () => {
+    expect(stopAndContinue([parked, switched, carriedOn])).toEqual([]);
+  });
+
+  it('shows the stop when the crew change did not carry the run on', () => {
+    expect(stopAndContinue([parked])).toEqual([parked]);
+  });
+
+  it('shows the stop and the continue of a run continued later', () => {
+    expect(stopAndContinue([parked, switched, continued])).toEqual([parked, continued]);
+  });
+
+  it('shows the continue row of a later stop', () => {
+    const stopped: EngineEventOf<'turn_interrupted'> = {
+      type: 'turn_interrupted',
+      ts: 2_000,
+      phase: 'implementing',
+      source: 'user',
+      at: 'boundary',
+      step: parked.step,
+    };
+    expect(stopAndContinue([parked, switched, carriedOn, stopped, continued])).toEqual([
+      stopped,
+      continued,
+    ]);
+  });
+});

@@ -1658,7 +1658,7 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
     async () => {
       await withTempDir('splitbrief-agy-stream', async (dir) => {
         const events: RunnerCallEvent[] = [];
-        // 0.4 s gaps stay under a quarter of the warn threshold while the 13-frame replay outlasts
+        // 0.4 s gaps stay under a quarter of the warn threshold while the 14-frame replay outlasts
         // twice the threshold, so only a clock that every frame resets stays quiet.
         const script = `while IFS= read -r line; do printf '%s\\n' "$line"; sleep 0.4; done < ${JSON.stringify(FIXTURE)}`;
         const started = Date.now();

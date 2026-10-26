@@ -454,8 +454,24 @@ export function publishChecksRun(
   });
 }
 
-export function publishSeatWaitStarted(ctx: BusContext, seat: CrewSeatId, resetAt: string): void {
-  ctx.bus.publish({ type: 'seat_wait_started', ts: Date.now(), phase: ctx.phase, seat, resetAt });
+export function publishSeatWaitStarted(
+  ctx: BusContext,
+  seat: CrewSeatId,
+  resetAt: string,
+  tool: string,
+): void {
+  ctx.bus.publish({
+    type: 'seat_wait_started',
+    ts: Date.now(),
+    phase: ctx.phase,
+    seat,
+    resetAt,
+    tool,
+  });
+}
+
+export function publishSeatWaitEnded(ctx: BusContext, seat: CrewSeatId): void {
+  ctx.bus.publish({ type: 'seat_wait_ended', ts: Date.now(), phase: ctx.phase, seat });
 }
 
 export function publishSeatSwitched(

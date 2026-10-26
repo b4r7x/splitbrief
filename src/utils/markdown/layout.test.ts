@@ -45,6 +45,34 @@ describe('layoutMarkdown', () => {
     ]);
   });
 
+  it('keeps punctuation on the line of the styled word before it', () => {
+    expect(layoutLines('Read `expandedModelId`, it keeps the drafted option', 20)).toEqual([
+      'Read',
+      'expandedModelId, it',
+      'keeps the drafted',
+      'option',
+    ]);
+    expect(layoutLines('Read `expandedModelId` it keeps the drafted option', 20)).toEqual([
+      'Read expandedModelId',
+      'it keeps the drafted',
+      'option',
+    ]);
+  });
+
+  it('breaks a glued word wider than the line at a styled edge, not inside a part', () => {
+    expect(layoutLines('see `a/very/long/path.ts`/`another/long/path.ts` end', 24)).toEqual([
+      'see a/very/long/path.ts/',
+      'another/long/path.ts end',
+    ]);
+    const report =
+      '- Changed `src/features/workflow/conversation-rows/markdown-rows/chunks.ts`:12, which wraps';
+    for (const width of [66, 68]) {
+      const lines = layoutLines(report, width);
+      expect(lines.some((line) => /^\s*,/.test(line))).toBe(false);
+      expect(lines.some((line) => line.endsWith('chunks.ts:'))).toBe(false);
+    }
+  });
+
   // The session header a generator stamps on a file says nothing a reader wants, and it would
   // take the most valuable rows on the surface. Task Brief metadata is content and still renders.
   it('renders no row for a document frontmatter header', () => {

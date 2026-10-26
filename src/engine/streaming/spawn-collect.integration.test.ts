@@ -763,7 +763,7 @@ describe('spawnAndCollect', () => {
           severity: 'warning',
           source: 'provider',
           surface: 'activity',
-          message: 'stderr line exceeded 8192 bytes and was skipped',
+          message: 'A line of the tool error output longer than 8 KB was skipped.',
         }),
       );
       expect(descendantPid).toBeGreaterThan(1);
@@ -797,7 +797,7 @@ describe('spawnAndCollect', () => {
     expect(result.warnings).toEqual([
       expect.objectContaining({
         code: 'stdout_line_overflow',
-        message: expect.stringContaining('stdout line exceeded'),
+        message: expect.stringContaining('A line of the tool output longer than'),
       }),
     ]);
   });
@@ -821,7 +821,7 @@ describe('spawnAndCollect', () => {
         severity: 'warning',
         source: 'system',
         surface: 'activity',
-        message: expect.stringContaining('stdout line exceeded'),
+        message: expect.stringContaining('A line of the tool output longer than'),
       }),
     ]);
   });

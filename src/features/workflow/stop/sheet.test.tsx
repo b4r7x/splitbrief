@@ -21,9 +21,12 @@ const RUNNING_BRIEF = {
   boundaryPauseRequested: false,
 };
 
-function renderSheet(rows = stopSheetRows(RUNNING_BRIEF)) {
+function renderSheet(
+  rows = stopSheetRows(RUNNING_BRIEF),
+  footer: string | null = 'Changes and draft stay.',
+) {
   overlayStore.open('stop-sheet');
-  return renderFeature(<StopSheet rows={rows} />);
+  return renderFeature(<StopSheet rows={rows} footer={footer} />);
 }
 
 describe('StopSheet', () => {
@@ -48,6 +51,17 @@ describe('StopSheet', () => {
     expect(frame).toContain('End run');
     expect(frame).toContain('Changes and draft stay.');
     expect(frame).toContain('↑↓ select · ⏎ confirm · esc stop · tab close');
+    ui.unmount();
+  });
+
+  it('drops the title suffix when the run keeps nothing', async () => {
+    const ui = renderSheet(stopSheetRows(RUNNING_BRIEF), null);
+    await tick();
+    const lines = (ui.lastFrame() ?? '')
+      .split('\n')
+      .map((line) => line.replace(/[│|]/g, '').trim());
+
+    expect(lines.find((line) => line.includes('Stop options'))).toBe('Stop options');
     ui.unmount();
   });
 
@@ -165,7 +179,7 @@ describe('StopSheet', () => {
     await tick();
 
     expect(stopStore.get().intent).toBe('pause-after-brief');
-    expect(consumeBoundaryPause()).toBe(true);
+    expect(consumeBoundaryPause()).toBe('pause');
     ui.unmount();
   });
 
@@ -203,6 +217,7 @@ describe('StopSheet', () => {
 
     ui.rerender(
       <StopSheet
+        footer="Changes and draft stay."
         rows={stopSheetRows({
           currentTaskId: null,
           nextTaskId: null,

@@ -1,4 +1,5 @@
 import { isApplyUnfinishedAtRest, routerStore } from '../../../stores/navigation/router.js';
+import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import {
   selectRunningBrief,
   selectTaskListView,
@@ -34,7 +35,6 @@ export interface StopRow {
 }
 
 export const STOP_SHEET_TITLE = 'Stop options';
-export const STOP_SHEET_FOOTER = 'Changes and draft stay.';
 export const STOP_SHEET_LEGEND = '↑↓ select · ⏎ confirm · esc stop · tab close';
 export const STOP_SHEET_PARKED_LEGEND = '↑↓ select · ⏎ confirm · esc back · tab close';
 export const STOP_SHEET_COMPOSER_HINT = 'Choose an action above…';
@@ -166,7 +166,9 @@ export function readStopMenuRows(): StopRow[] {
       {
         id: 'leave',
         label: 'Back to sessions',
-        consequence: 'return home; keep the run and draft',
+        consequence: hasDraft()
+          ? 'return home; keep the run and draft'
+          : 'return home; keep the run',
       },
     ];
   if (stop.phase === 'parked' || stop.phase === 'ended' || atRest) {
@@ -191,7 +193,9 @@ export function readStopMenuRows(): StopRow[] {
               {
                 id: 'resume' as const,
                 label: 'Resume',
-                consequence: 'continue this run; keep the unsent draft',
+                consequence: hasDraft()
+                  ? 'continue this run; keep the unsent draft'
+                  : 'continue this run',
               },
               ...(isApplyUnfinishedAtRest(route)
                 ? []
@@ -209,7 +213,9 @@ export function readStopMenuRows(): StopRow[] {
       {
         id: 'leave',
         label: 'Back to sessions',
-        consequence: 'return home; keep the run and draft',
+        consequence: hasDraft()
+          ? 'return home; keep the run and draft'
+          : 'return home; keep the run',
       },
     ];
   }
@@ -256,11 +262,20 @@ function runHasChanges(): boolean {
   return selectRunningBrief(tasks, lifecycleStore.get().phase).current !== null || view.failed > 0;
 }
 
-/** What every row keeps: the draft always, the run's changes once a brief has made some. */
-export function stopSheetFooter(input: { hasChanges: boolean }): string {
-  return input.hasChanges ? STOP_SHEET_FOOTER : 'Draft stays.';
+/**
+ * What every row keeps: the run's changes once a brief has made some, and the draft while the
+ * composer holds one. A run that keeps neither names nothing.
+ */
+export function stopSheetFooter(input: { hasChanges: boolean; hasDraft: boolean }): string | null {
+  if (input.hasChanges) return input.hasDraft ? 'Changes and draft stay.' : 'Changes stay.';
+  if (input.hasDraft) return 'Draft stays.';
+  return null;
 }
 
-export function readStopSheetFooter(): string {
-  return stopSheetFooter({ hasChanges: runHasChanges() });
+export function readStopSheetFooter(): string | null {
+  return stopSheetFooter({ hasChanges: runHasChanges(), hasDraft: hasDraft() });
+}
+
+function hasDraft(): boolean {
+  return !composerLiveStore.get().empty;
 }

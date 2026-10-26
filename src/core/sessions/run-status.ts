@@ -1,10 +1,13 @@
 import { opensPlanGate } from '../pipeline-spec/steps.js';
 import { CREW_SEAT_LABELS, type CrewSeatId } from '../crew/identity.js';
 import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
+import type { Config } from '../schemas/config.js';
 import type { Phase } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { GateName, StepCut, StepRef } from '../schemas/run-step.js';
 import { fixCyclesOf, type SeatWait, type WorkflowState } from '../schemas/workflow.js';
+import { seatWaitMoved } from './held-seat.js';
+import type { RunRecord } from './run-record.js';
 
 /** What a run waiting for you waits on: the planner's question, a gate, or a halt. */
 export type WaitingOn =
@@ -154,9 +157,10 @@ export function isAnsweredApplyRecovery(issue: RecoveryIssue): issue is Recovery
 
 /**
  * The tool a seat wait waits on, in the catalog's words: the runner the halted call ran on, else,
- * for a wait an older state saved without it, the seat's tool from the run's start.
+ * for a wait saved without it, the seat's tool from the run's start. The live wait and the
+ * stopped run both name it through here, so one wait reads the same on both.
  */
-function seatWaitToolWord(state: WorkflowState, wait: SeatWait): string {
+export function seatWaitToolWord(state: WorkflowState, wait: SeatWait): string {
   const started =
     wait.seat === 'plan'
       ? { tool: state.plannerTool, kind: state.plannerKind }
@@ -182,6 +186,7 @@ export function deriveRunStatus(
   input: Readonly<{
     state: WorkflowState;
     liveness: 'alive' | 'not-alive';
+    config?: Config | undefined;
   }>,
 ): RunStatus {
   const { state } = input;
@@ -221,7 +226,10 @@ export function deriveRunStatus(
   if (state.pendingRecovery !== undefined) {
     return waiting({ kind: 'halt', issue: state.pendingRecovery });
   }
-  if (state.seatWait !== undefined) {
+  if (
+    state.seatWait !== undefined &&
+    (input.config === undefined || !seatWaitMoved(state.seatWait, input.config))
+  ) {
     return stopped({
       kind: 'seat-wait',
       seat: state.seatWait.seat,
@@ -255,4 +263,19 @@ export function deriveRunStatus(
     return stopped({ kind: 'failed', message: state.lastFailure.message });
   }
   return stopped({ kind: 'interrupted' });
+}
+
+/**
+ * The status the at-rest screen shows. A run record never reads the config, so a saved seat wait is
+ * checked here against the crew the screen holds: once the seat runs another tool, it waits no more.
+ */
+export function atRestRunStatus(record: RunRecord, config: Config): RunStatus {
+  if (
+    record.status.kind !== 'open' ||
+    record.hydration.kind !== 'loaded' ||
+    record.hydration.state.seatWait === undefined
+  ) {
+    return record.status;
+  }
+  return deriveRunStatus({ state: record.hydration.state, liveness: 'not-alive', config });
 }

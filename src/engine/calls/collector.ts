@@ -8,6 +8,8 @@ import {
   boundRunnerCallArtifact,
   boundRunnerCallToolUse,
   createRunnerCallDeltaLimiter,
+  runnerCallItemLimit,
+  runnerCallLimitError,
   runnerCallLimitWarning,
   runnerCallToolUseCountLimit,
   sanitizeRunnerCallRawPreview,
@@ -81,12 +83,12 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     textLimiter: createTextLimiter(),
     stderrLimiter: createRunnerCallDeltaLimiter({
       code: 'runner_call_stderr_limit',
-      label: 'runner call stderr diagnostics',
+      label: 'The tool error output',
       maxBytes: RUNNER_CALL_STDERR_MAX_BYTES,
     }),
     toolDeltaLimiter: createRunnerCallDeltaLimiter({
       code: 'runner_call_tool_delta_limit',
-      label: 'runner call tool deltas',
+      label: 'The streamed tool input',
     }),
     stderrPreview: '',
     stderrWarningEmitted: false,
@@ -139,9 +141,7 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
       ? { code: 'missing_terminal_event', message: 'Runner call ended without a terminal event' }
       : null;
   const resultLimitError =
-    state.resultLimit === null
-      ? null
-      : { code: state.resultLimit.code, message: state.resultLimit.message };
+    state.resultLimit === null ? null : runnerCallLimitError(state.resultLimit);
 
   const common = {
     callId: state.context.callId,
@@ -315,11 +315,10 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       if (state.artifactCount >= RUNNER_CALL_ARTIFACT_MAX_ITEMS) {
         noteLimit(
           state,
-          itemLimit({
+          runnerCallItemLimit({
             code: 'runner_call_artifact_count_limit',
-            label: 'runner call artifacts',
+            label: 'artifacts',
             maxItems: RUNNER_CALL_ARTIFACT_MAX_ITEMS,
-            nextItemCount: state.artifactCount + 1,
           }),
           true,
         );
@@ -371,11 +370,10 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       if (state.unknownUpstreamCount >= RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS) {
         noteLimit(
           state,
-          itemLimit({
+          runnerCallItemLimit({
             code: 'runner_call_unknown_upstream_count_limit',
-            label: 'runner call unknown upstream diagnostics',
+            label: 'unknown tool records',
             maxItems: RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
-            nextItemCount: state.unknownUpstreamCount + 1,
           }),
           false,
         );
@@ -414,11 +412,10 @@ function appendWarning(
   if (state.warningCount >= RUNNER_CALL_WARNING_MAX_ITEMS && !isLimitWarning) {
     noteLimit(
       state,
-      itemLimit({
+      runnerCallItemLimit({
         code: 'runner_call_warning_count_limit',
-        label: 'runner call warnings',
+        label: 'warnings',
         maxItems: RUNNER_CALL_WARNING_MAX_ITEMS,
-        nextItemCount: state.warningCount + 1,
       }),
       false,
     );
@@ -450,22 +447,10 @@ function noteToolUseCountExceeded(state: RunnerCallCollectionState): void {
   if (state.context?.role === 'implementer') state.toolUseLimitExceeded = true;
 }
 
-function itemLimit(opts: {
-  code: string;
-  label: string;
-  maxItems: number;
-  nextItemCount: number;
-}): RunnerCallOutputLimit {
-  return {
-    code: opts.code,
-    message: `${opts.label} exceeded ${opts.maxItems} items and was truncated`,
-  };
-}
-
 function createTextLimiter(): ReturnType<typeof createRunnerCallDeltaLimiter> {
   return createRunnerCallDeltaLimiter({
     code: 'runner_call_text_limit',
-    label: 'runner call text',
+    label: 'The reply',
   });
 }
 

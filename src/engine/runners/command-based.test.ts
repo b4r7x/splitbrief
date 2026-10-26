@@ -102,7 +102,7 @@ describe('invokeCommandRunner', () => {
     expect(result.warnings).toContainEqual(
       expect.objectContaining({
         code: 'stderr_line_overflow',
-        message: expect.stringContaining('stderr line exceeded'),
+        message: expect.stringContaining('A line of the tool error output longer than'),
       }),
     );
   });
@@ -126,7 +126,7 @@ describe('invokeCommandRunner', () => {
     expect(result.warnings).toContainEqual(
       expect.objectContaining({
         code: 'stdout_line_overflow',
-        message: expect.stringContaining('stdout line exceeded'),
+        message: expect.stringContaining('A line of the tool output longer than'),
       }),
     );
   });

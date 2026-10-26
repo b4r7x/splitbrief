@@ -1,7 +1,7 @@
 import { isTaskSettled, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import type { WorkflowContext } from '../types.js';
+import type { BoundaryPark, WorkflowContext } from '../types.js';
 import { runSingleTask } from './step.js';
 import {
   commitWorkflowState,
@@ -42,10 +42,10 @@ type RunTaskLoopOptions = {
   setCurrentTask: (t: Pick<Task, 'suggestedFiles' | 'action'> | undefined) => void;
 };
 
-export type TaskLoopResult = {
-  state: WorkflowState;
-  status: 'complete' | 'stopped' | 'paused';
-};
+export type TaskLoopResult = { state: WorkflowState } & (
+  | { status: 'complete' | 'stopped' }
+  | { status: 'paused'; park: BoundaryPark }
+);
 
 export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopResult> {
   const { wctx, setTrackedState, setCurrentTask } = opts;
@@ -283,9 +283,10 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       }
     }
 
-    if (wctx.sinks.consumeBoundaryPause?.()) {
+    const park = wctx.sinks.consumeBoundaryPause?.();
+    if (park !== undefined) {
       setCurrentTask(undefined);
-      return { state, status: 'paused' };
+      return { state, status: 'paused', park };
     }
   }
   setCurrentTask(undefined);

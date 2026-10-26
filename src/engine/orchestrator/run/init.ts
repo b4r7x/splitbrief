@@ -117,6 +117,8 @@ export type RunWorkflowOptions = {
    * step's continuation, so that step composes it into its own prompt.
    */
   steer?: UserMessageInput | undefined;
+  /** Set when the run continues by itself after a boundary park that only changed a seat. */
+  resumeCause?: 'seat-change' | undefined;
   /** Headless mode: install one stdout sink (NDJSON, or text under `plain`); the CLI skips the TUI. */
   headless?: boolean | undefined;
   /** `--plain`: the run's single stdout sink renders text instead of NDJSON. */
@@ -432,6 +434,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       ts: Date.now(),
       phase: state.phase,
       ...(initializedSessions?.has(sessionPath) && { inProcess: true }),
+      ...(opts.resumeCause !== undefined && { cause: opts.resumeCause }),
     });
     if (shouldPublishResumePlannerStatus(state)) {
       publishPlannerStatus(bus, state, 'running');

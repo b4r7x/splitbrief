@@ -73,6 +73,7 @@ import { reviewChecksCardLayout } from '../../../../src/features/workflow/review
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
 import { type ScenarioId, scenarioId } from '../../contracts/identifiers.js';
 import { tasksCardProjection } from './artifact-card-projections.js';
+import { outputLimitWarningProjection } from './output-limit-projection.js';
 import {
   buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
@@ -4655,6 +4656,15 @@ const crewChangedSeatProjection: WorkflowFixtureProjection = {
     if (event.type !== 'seat_switched') return [event];
     return [
       {
+        type: 'turn_interrupted',
+        ts: event.ts,
+        phase: event.phase,
+        source: 'user',
+        at: 'boundary',
+        step: { kind: 'brief', taskId: WORKFLOW_FIXTURE_TASK_ID, attempt: 0 },
+        cause: 'seat-change',
+      },
+      {
         type: 'seat_switched',
         ts: event.ts,
         phase: event.phase,
@@ -4665,7 +4675,7 @@ const crewChangedSeatProjection: WorkflowFixtureProjection = {
         auto: false,
         configRevision: event.configRevision,
       },
-      { type: 'workflow_resumed', ts: event.ts, phase: event.phase },
+      { type: 'workflow_resumed', ts: event.ts, phase: event.phase, cause: 'seat-change' },
     ];
   }),
 };
@@ -5910,6 +5920,29 @@ const implementationSilentBareProjection: WorkflowFixtureProjection = {
     }
     return event;
   }),
+};
+
+// The same brief after its seat hit a usage limit that resets inside the wait bound: the run waits
+// in this process, and the build block and the byline name the tool and the reset clock.
+const liveSeatWaitProjection: WorkflowFixtureProjection = {
+  ...implementationSilentBareProjection,
+  scenarioId: scenarioId('workflow-live-seat-wait'),
+  events: [
+    ...implementationSilentBareProjection.events.filter(
+      (event) =>
+        event.type === 'workflow_started' ||
+        event.type === 'tasks_planned' ||
+        event.type === 'task_started',
+    ),
+    {
+      type: 'seat_wait_started',
+      ts: FIXED_TS,
+      phase: 'implementing',
+      seat: 'build',
+      tool: 'OpenAI Codex CLI',
+      resetAt: new Date(FIXED_TS + 9 * 60_000).toISOString(),
+    },
+  ],
 };
 
 const implementationShellWrapperProjection: WorkflowFixtureProjection = {
@@ -7282,6 +7315,8 @@ const projections = [
   reviewRedGateProjection,
   plannerSessionExpiredProjection,
   planUsageLimitProjection,
+  outputLimitWarningProjection,
+  liveSeatWaitProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =

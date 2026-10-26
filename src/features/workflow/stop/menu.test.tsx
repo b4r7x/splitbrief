@@ -4,6 +4,8 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { composerLiveStore } from '../../../stores/ui/composer-live.js';
+import { createDraftDocument } from '../../../core/composer/document.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { StopMenu } from './menu.js';
 
@@ -106,7 +108,8 @@ describe('StopMenu changes copy', () => {
     await tick();
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Stop options · Draft stays.');
+    expect(frame).toContain('Stop options');
+    expect(frame).not.toContain('Stop options ·');
     expect(frame).toContain('Stop now · stop execution; keep the run open');
     const endRun = await selectRow(ui, 1);
     expect(endRun).toContain('End run · stop execution; close this run');
@@ -120,11 +123,23 @@ describe('StopMenu changes copy', () => {
     await tick();
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Stop options · Changes and draft stay.');
+    expect(frame).toContain('Stop options · Changes stay.');
     expect(frame).toContain('Stop now · stop execution; keep partial changes');
     expect(await selectRow(ui, 2)).toContain(
       'End run · stop execution; close this run; keep changes',
     );
+    ui.unmount();
+  });
+
+  it('names the draft in the title once the composer holds one', async () => {
+    const ui = renderFeature(<StopMenu />);
+    await tick();
+
+    expect(ui.lastFrame()).toContain('Stop options');
+    composerLiveStore.setDraft(createDraftDocument('note'));
+    await tick(30);
+
+    expect(ui.lastFrame()).toContain('Stop options · Draft stays.');
     ui.unmount();
   });
 
@@ -155,7 +170,8 @@ describe('StopMenu changes copy', () => {
     const ui = renderFeature(<StopMenu />);
     await tick();
 
-    expect(ui.lastFrame()).toContain('Session options · Draft stays.');
+    expect(ui.lastFrame()).toContain('Session options');
+    expect(ui.lastFrame()).not.toContain('Session options ·');
     const endRun = await selectRow(ui, 1);
     expect(endRun).toContain('End run · close this run');
     expect(endRun).not.toContain('keep changes');

@@ -93,6 +93,7 @@ import type { listProjectFiles } from '../../lib/file-listing.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { prepareDraftSubmission, type DraftSubmission } from '../../core/composer/submission.js';
 import { plannerSupportsImages } from '../../core/runners/capabilities.js';
+import { atRestRunStatus } from '../../core/sessions/run-status.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
@@ -415,6 +416,7 @@ export function WorkflowScreen({
         queued: queuedDeparture,
       }
     : undefined;
+  const config = configStore.useConfig();
   const byline =
     model.atRestRecord === undefined
       ? apply === undefined
@@ -423,7 +425,7 @@ export function WorkflowScreen({
       : model.closedView !== null
         ? bylineParts(model.closedView, bylineWidth)
         : openRunBylineParts({
-            status: model.atRestRecord.status,
+            status: atRestRunStatus(model.atRestRecord, config),
             continuable: model.continuable,
             width: bylineWidth,
             apply,

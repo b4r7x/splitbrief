@@ -9,7 +9,7 @@ import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.
 import { reviewsAgain } from '../../../core/review/verdict.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
-import type { WorkflowContext } from '../types.js';
+import type { BoundaryPark, WorkflowContext } from '../types.js';
 import { recordSteer } from '../continuation.js';
 
 import { buildSummary, type SummaryBase } from '../summary/build.js';
@@ -62,6 +62,7 @@ export type RunTasksAndReviewOptions = {
 async function parkAtBoundary(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
+  park: BoundaryPark;
   setTrackedState: (s: WorkflowState) => void;
 }): Promise<{ state: WorkflowState; continued: boolean }> {
   const { wctx, setTrackedState } = args;
@@ -87,6 +88,7 @@ async function parkAtBoundary(args: {
     source: 'user',
     at: 'boundary',
     step,
+    ...(args.park === 'seat-change' && { cause: 'seat-change' as const }),
   });
 
   // No prompt surface means nothing can continue this run in place; the park is
@@ -366,7 +368,7 @@ export async function runTasksAndReview(
   // Pause after this brief holds the run in place rather than ending it: the
   // operator continues into the next brief, or leaves and resumes later.
   while (taskResult.status === 'paused') {
-    const parked = await parkAtBoundary({ wctx, state, setTrackedState });
+    const parked = await parkAtBoundary({ wctx, state, park: taskResult.park, setTrackedState });
     state = parked.state;
     if (!parked.continued) break;
     taskResult = await runTaskLoop({
@@ -431,7 +433,7 @@ export async function runTasksAndReview(
     let rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
     state = rerun.state;
     while (rerun.status === 'paused') {
-      const parked = await parkAtBoundary({ wctx, state, setTrackedState });
+      const parked = await parkAtBoundary({ wctx, state, park: rerun.park, setTrackedState });
       state = parked.state;
       if (!parked.continued) break;
       rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });

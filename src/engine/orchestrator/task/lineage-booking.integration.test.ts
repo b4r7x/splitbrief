@@ -157,7 +157,7 @@ async function runLineage(opts: {
     consumeBoundaryPause: () => {
       const paused = pause;
       pause = false;
-      return paused;
+      return paused ? 'pause' : undefined;
     },
   };
   const task = makeTask({

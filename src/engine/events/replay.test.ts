@@ -319,6 +319,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     seat: 'build',
     resetAt: '2026-10-03T12:00:00.000Z',
   },
+  seat_wait_ended: { phase: 'implementing', seat: 'build' },
   seat_switched: {
     phase: 'implementing',
     seat: 'build',

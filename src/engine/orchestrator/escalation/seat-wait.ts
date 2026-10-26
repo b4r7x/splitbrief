@@ -2,13 +2,12 @@ import {
   getRunnerDisplayName,
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
-import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
-import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
-import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { HeldSeat, SeatWait, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { SeatWait, WorkflowState } from '../../../core/schemas/workflow.js';
+import { heldSeatOf, seatWaitMoved } from '../../../core/sessions/held-seat.js';
+import { seatWaitToolWord } from '../../../core/sessions/run-status.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { thrownSeatFailure } from '../../implementers/pipeline/call-result.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
@@ -20,7 +19,7 @@ import {
   type SeatFailure,
 } from '../../runners/transient.js';
 import { parseUsageLimitReset } from '../../runners/usage-limit.js';
-import { publishSeatRetry, publishSeatWaitStarted } from '../events.js';
+import { publishSeatRetry, publishSeatWaitEnded, publishSeatWaitStarted } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { WorkflowPersistenceContext } from '../types.js';
 
@@ -97,8 +96,9 @@ export function seatFailureFromError(err: unknown): SeatFailure {
 
 /**
  * Park the seat on the persisted wait, publish it, wait until the deadline,
- * then release it. An abort leaves `state.seatWait` in place, so a resume reads
- * the deadline back and keeps waiting before the task continues.
+ * then release it. An abort ends the live wait but leaves `state.seatWait` in
+ * place, so a resume reads the deadline back and keeps waiting before the task
+ * continues.
  */
 export async function waitForSeatReset(
   input: Readonly<{
@@ -114,46 +114,15 @@ export async function waitForSeatReset(
     { bus: input.ref.bus, phase: state.phase },
     input.wait.seat,
     input.wait.resetAt,
+    seatWaitToolWord(state, input.wait),
   );
-  await abortableDelay(new Date(input.wait.resetAt).getTime() - Date.now(), input.signal);
+  try {
+    await abortableDelay(new Date(input.wait.resetAt).getTime() - Date.now(), input.signal);
+  } finally {
+    publishSeatWaitEnded({ bus: input.ref.bus, phase: state.phase }, input.wait.seat);
+  }
   state = transitionAndSave(input.ref, state, { type: 'CLEAR_SEAT_WAIT' });
   return state;
-}
-
-function heldSeatOf(runner: RunnerConfig, profile: string | undefined): HeldSeat {
-  return {
-    tool: getRunnerDisplayName(runner),
-    kind: runner.kind,
-    ...(profile !== undefined && { profile }),
-  };
-}
-
-/**
- * The seat a config runs for a wait: the BUILD profile the wait names, else the default one, and
- * the planner for a REVIEW seat with no reviewer. A BUILD profile the config no longer has runs none.
- */
-export function configuredHeldSeat(
-  config: Config,
-  seat: CrewSeatId,
-  profile: string | undefined,
-): HeldSeat | undefined {
-  const runner =
-    seat === 'build'
-      ? readImplementerProfileConfig(config, profile)
-      : readActiveRunner({ config, role: CREW_SEAT_ROLES[seat] });
-  return runner === undefined ? undefined : heldSeatOf(runner, profile);
-}
-
-/** Whether a seat runs on a runner; a runner recorded without its kind matches any kind. */
-function runsOn(
-  seat: HeldSeat | undefined,
-  runner: Readonly<{ tool?: string | undefined; kind?: HeldSeat['kind'] | undefined }>,
-): boolean {
-  return (
-    seat !== undefined &&
-    seat.tool === runner.tool &&
-    (runner.kind === undefined || seat.kind === runner.kind)
-  );
 }
 
 /**
@@ -173,11 +142,9 @@ export async function resumeSeatWait(
   const wait = input.state.seatWait;
   if (wait === undefined) return input.state;
   const deadline = new Date(wait.resetAt);
-  const held = wait.holds;
-  const runs =
-    held === undefined ? undefined : configuredHeldSeat(input.config, wait.seat, held.profile);
-  const moved = held !== undefined && !runsOn(runs, held) && !runsOn(runs, wait);
+  const moved = seatWaitMoved(wait, input.config);
   if (Number.isNaN(deadline.getTime()) || deadline.getTime() <= Date.now() || moved) {
+    publishSeatWaitEnded({ bus: input.ref.bus, phase: input.state.phase }, wait.seat);
     return transitionAndSave(input.ref, input.state, { type: 'CLEAR_SEAT_WAIT' });
   }
   return waitForSeatReset({

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { writeConfigYamlText } from '#testing/helpers/config-io.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -10,7 +11,7 @@ import type { WorkflowState } from '../schemas/workflow.js';
 import { saveState } from '../state/persistence.js';
 import { saveSummary } from './io.js';
 import { loadRunRecord } from './run-record.js';
-import { defaultRunRecordDeps } from './run-record-io.js';
+import { defaultRunRecordDeps, readRunRecord } from './run-record-io.js';
 
 let tmp: string;
 
@@ -128,5 +129,13 @@ describe('loadRunRecord', () => {
 
     expect(loaded.ledger).toBeNull();
     expect(loaded.checkpoint).toBeNull();
+  });
+
+  it('reads a run while config.yaml does not load', () => {
+    project();
+    withState({});
+    writeConfigYamlText(tmp, 'version: 99\n');
+
+    expect(readRunRecord(ref()).status.kind).toBe('open');
   });
 });

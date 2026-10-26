@@ -21,6 +21,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { writeConfigYamlText } from '#testing/helpers/config-io.js';
 import { prependPath } from '#testing/helpers/command-shim.js';
+import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import {
@@ -39,6 +41,8 @@ const PARTIAL = 'export const seat = 0;';
 const COMPLETE = 'export const seat = 1;';
 const BALANCE_MESSAGE = 'Insufficient Balance (request_id: 021cfcdf-894e-4f9c-8e1b-85ac99f6a0fe)';
 const BALANCE_LINE = `provider.quota: ${BALANCE_MESSAGE}`;
+const ANTIGRAVITY_QUOTA_LINE =
+  'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s.';
 /** `opencode auth list --standalone --format json` with a credential for the fallback's provider. */
 const AUTH_LISTING = JSON.stringify([
   { id: 'opencode', name: 'OpenCode Zen', connections: [{ type: 'credential' }] },
@@ -89,27 +93,32 @@ function writeExecutable(path: string, lines: readonly string[]): void {
   chmodSync(path, 0o755);
 }
 
-/** The failing seat: its runner kind and the lines it prints on each stream before it exits 1. */
+/**
+ * The failing seat: its runner kind and the lines it prints on each stream before it exits 1. The
+ * Antigravity CLI seat stays alive after its lines, as `agy` does on a quota in the middle of a call.
+ */
 type FailingSeat = Readonly<{
-  kind: 'agent' | 'shell';
+  kind: 'agent' | 'shell' | 'antigravity';
   stdout: readonly string[];
   stderr: readonly string[];
 }>;
 
 const BALANCE_SEAT: FailingSeat = { kind: 'agent', stdout: [], stderr: [BALANCE_LINE] };
 
-/** The failing seat's command: it writes a partial file, prints its lines, and exits. */
+/** The failing seat's command: it writes a partial file, prints its lines, and exits or hangs. */
 function writeSeatShim(dir: string, seat: FailingSeat): void {
   const print = (line: string, redirect: string) =>
     `printf '%s\\n' ${JSON.stringify(line)}${redirect}`;
-  writeExecutable(join(dir, AGENT_COMMAND), [
+  const command =
+    seat.kind === 'antigravity' ? CLI_TOOL_CATALOG.antigravity.command : AGENT_COMMAND;
+  writeExecutable(join(dir, command), [
     '#!/bin/bash',
     'cat >/dev/null 2>/dev/null || true',
     'mkdir -p src',
     `printf '%s\\n' '${PARTIAL}' > src/seat.ts`,
     ...seat.stdout.map((line) => print(line, '')),
     ...seat.stderr.map((line) => print(line, ' >&2')),
-    'exit 1',
+    seat.kind === 'antigravity' ? 'sleep 30' : 'exit 1',
   ]);
 }
 
@@ -208,14 +217,21 @@ async function runToFirstSeatDown(
   } else writeOpencodeFailureShim(shimDir);
   restores.push(prependPath(shimDir));
 
+  const fallback = {
+    tool: 'opencode',
+    model: route === 'gateway' ? FALLBACK_MODEL : PROJECT_MODEL,
+  } as const;
   const config = makeConfig({
-    implementer: {
-      kind: seat.kind,
-      command: AGENT_COMMAND,
-      model: 'agent-model',
-      contextLength: 4096,
-      fallback: { tool: 'opencode', model: route === 'gateway' ? FALLBACK_MODEL : PROJECT_MODEL },
-    },
+    implementer:
+      seat.kind === 'antigravity'
+        ? { kind: 'cli', tool: 'antigravity', contextLength: 4096, fallback }
+        : {
+            kind: seat.kind,
+            command: AGENT_COMMAND,
+            model: 'agent-model',
+            contextLength: 4096,
+            fallback,
+          },
     validation: { endChecks: false, testCommand: 'noop' },
     workflow: { approve: 'none' },
   });
@@ -229,11 +245,28 @@ async function runToFirstSeatDown(
     isolateHome();
   }
 
+  const agy =
+    seat.kind === 'antigravity'
+      ? await resolveCustomExecutable({ command: CLI_TOOL_CATALOG.antigravity.command, projectDir })
+      : undefined;
+  if (agy !== undefined && agy.kind !== 'resolved') throw new Error('the agy shim did not resolve');
   const prepared = makePreparedExecution({
     projectDir,
     sessionId,
     feature: 'seat down and switch',
     config,
+    ...(agy !== undefined && {
+      gates: (preparationId: string) => [
+        makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
+        {
+          kind: 'cli',
+          slot: { role: 'implementer', profile: 'default' },
+          preparationId,
+          tool: 'antigravity',
+          executable: agy.executable,
+        },
+      ],
+    }),
   });
 
   await runTrackedWorkflow({
@@ -420,6 +453,34 @@ describe('a spent implementer switches to its declared fallback', { timeout: 90_
       savedState: swapped.state,
     });
     expect(summary.completedByLocal).toBe(1);
+    expect(summary.implementerTool).toBe('opencode');
+  });
+
+  it('switches when Antigravity reports its quota on stderr while the call stays alive', async () => {
+    const started = Date.now();
+    const run = await runToFirstSeatDown('success', 'remembered', 'gateway', {
+      kind: 'antigravity',
+      stdout: [],
+      stderr: [ANTIGRAVITY_QUOTA_LINE],
+    });
+
+    // The seat sleeps 30 seconds after the line: the halt comes from the line, not from the exit.
+    expect(Date.now() - started).toBeLessThan(20_000);
+    expect(run.halted.pendingRecovery?.reason).toBe('runner-usage-limit');
+    expect(run.halted.pendingRecovery?.switchSeat?.auto?.candidate).toEqual({
+      tool: 'opencode',
+      model: FALLBACK_MODEL,
+    });
+
+    const { swapped } = await applyAutoSwitch(run);
+    expect(swapped.state.seatSwitches?.[0]).toMatchObject({ seat: 'build', auto: true });
+
+    const { summary } = await continueRun({
+      prepared: swapped.prepared,
+      savedState: swapped.state,
+    });
+    expect(summary.completedByLocal).toBe(1);
+    expect(summary.failed).toBe(0);
     expect(summary.implementerTool).toBe('opencode');
   });
 

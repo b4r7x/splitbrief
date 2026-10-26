@@ -51,12 +51,12 @@ function plainStdout(): string {
     'reviewer check V2: failed (npm test)',
     'base re-run V2: not run (this run recorded no run base)',
     'reviewer check V3: not run (V2 failed)',
-    'review: task T001 pass (0 blocking)',
-    'review: task T002 fail (1 blocking)',
-    'review: final no-verdict',
-    'review: final stopped',
-    'review: final pass-with-notes (0 blocking)',
-    'review: final pass (0 blocking)',
+    'task review T001: passed',
+    'task review T002: failed (1 blocking)',
+    'task review: no verdict',
+    'task review: stopped',
+    'review: failed (2 blocking)',
+    'review: passed',
     'done: 2 tasks',
     '',
   ].join('\n');
@@ -229,6 +229,7 @@ describe('assertPlainStdout', () => {
       'Render workflow: rendered · 0.1s (npm run render)',
       'fix check V1: your 2 failures not shown · not proven fixed (npm test)',
       'fix check V1: your\u00a02\u00a0failures\u00a0gone · 3 others left (npm test)',
+      'review: final pass (0 blocking)',
     ]) {
       expect(() => assertPlainStdout(`${plainStdout()}${line}\n`)).toThrow();
     }

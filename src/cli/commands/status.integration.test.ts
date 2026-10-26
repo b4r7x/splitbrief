@@ -151,6 +151,14 @@ describe('status command', () => {
     expect(out).toContain('Status:   stopped');
   });
 
+  it('reports the run while config.yaml does not load', async () => {
+    writeActiveSession(tmp, '2026-10-27-broken-config', 'add auth');
+    writeFileSync(join(tmp, SPLITBRIEF_DIR, 'config.yaml'), 'version: 99\n');
+
+    await runStatus([]);
+    expect(captureOutput()).toContain('Status:   stopped');
+  });
+
   it('keeps the words of a task written on two lines apart on its Feature line', async () => {
     writeActiveSession(tmp, '2026-10-19-two-lines', 'Add fixtures,\nas one task');
 

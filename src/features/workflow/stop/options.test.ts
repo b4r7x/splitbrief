@@ -3,6 +3,8 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { composerLiveStore } from '../../../stores/ui/composer-live.js';
+import { createDraftDocument } from '../../../core/composer/document.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
@@ -20,7 +22,6 @@ import {
 } from '#testing/helpers/events/task.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import {
-  STOP_SHEET_FOOTER,
   STOP_SHEET_LEGEND,
   STOP_SHEET_PARKED_LEGEND,
   readStopMenuRows,
@@ -95,14 +96,15 @@ describe('stopSheetRows', () => {
   });
 
   it('promises no revert and names confirm as the shared key', () => {
-    expect(STOP_SHEET_FOOTER).toBe('Changes and draft stay.');
     expect(STOP_SHEET_LEGEND).toBe('↑↓ select · ⏎ confirm · esc stop · tab close');
     expect(STOP_SHEET_PARKED_LEGEND).toBe('↑↓ select · ⏎ confirm · esc back · tab close');
   });
 
-  it('promises only the draft before a brief has run', () => {
-    expect(stopSheetFooter({ hasChanges: false })).toBe('Draft stays.');
-    expect(stopSheetFooter({ hasChanges: true })).toBe(STOP_SHEET_FOOTER);
+  it('names only what stays: the changes, the draft, both, or nothing', () => {
+    expect(stopSheetFooter({ hasChanges: true, hasDraft: true })).toBe('Changes and draft stay.');
+    expect(stopSheetFooter({ hasChanges: true, hasDraft: false })).toBe('Changes stay.');
+    expect(stopSheetFooter({ hasChanges: false, hasDraft: true })).toBe('Draft stays.');
+    expect(stopSheetFooter({ hasChanges: false, hasDraft: false })).toBeNull();
   });
 
   it('claims partial changes on Stop now only while a brief runs', () => {
@@ -196,7 +198,7 @@ describe('readStopMenuRows on a run another process holds', () => {
       {
         id: 'leave',
         label: 'Back to sessions',
-        consequence: 'return home; keep the run and draft',
+        consequence: 'return home; keep the run',
       },
     ]);
   });
@@ -438,10 +440,10 @@ describe('Session options after a stop cut a brief', () => {
     addEvent(makeTaskStart({ taskId: taskId('T001'), index: 0, total: 1 }));
   });
 
-  it('keeps only the draft when the cut brief had written nothing, as the byline says', () => {
+  it('names nothing kept when the cut brief had written nothing, as the byline says', () => {
     stopStore.park('mid-brief', 'T001', null, []);
 
-    expect(readStopSheetFooter()).toBe('Draft stays.');
+    expect(readStopSheetFooter()).toBeNull();
     expect(readStopMenuRows().find((row) => row.id === 'end-run')?.consequence).toBe(
       'close this run',
     );
@@ -450,7 +452,7 @@ describe('Session options after a stop cut a brief', () => {
   it('keeps changes when the cut brief had written files', () => {
     stopStore.park('mid-brief', 'T001', null, ['src/sum.js']);
 
-    expect(readStopSheetFooter()).toBe(STOP_SHEET_FOOTER);
+    expect(readStopSheetFooter()).toBe('Changes stay.');
     expect(readStopMenuRows().find((row) => row.id === 'end-run')?.consequence).toBe(
       'close this run; keep changes',
     );
@@ -474,8 +476,36 @@ describe('Session options after a stop cut a brief', () => {
       });
 
     atRest();
-    expect(readStopSheetFooter()).toBe('Draft stays.');
+    expect(readStopSheetFooter()).toBeNull();
     atRest(['src/sum.js']);
-    expect(readStopSheetFooter()).toBe(STOP_SHEET_FOOTER);
+    expect(readStopSheetFooter()).toBe('Changes stay.');
+  });
+});
+
+describe('the draft in the stop rows and footer', () => {
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  it('promises a draft only while the composer holds one', () => {
+    stopStore.park('mid-brief', 'T001', null, []);
+
+    expect(readStopSheetFooter()).toBeNull();
+    expect(readStopMenuRows().find((row) => row.id === 'leave')?.consequence).toBe(
+      'return home; keep the run',
+    );
+    expect(readStopMenuRows().find((row) => row.id === 'resume')?.consequence).toBe(
+      'continue this run',
+    );
+
+    composerLiveStore.setDraft(createDraftDocument('note'));
+
+    expect(readStopSheetFooter()).toBe('Draft stays.');
+    expect(readStopMenuRows().find((row) => row.id === 'leave')?.consequence).toBe(
+      'return home; keep the run and draft',
+    );
+    expect(readStopMenuRows().find((row) => row.id === 'resume')?.consequence).toBe(
+      'continue this run; keep the unsent draft',
+    );
   });
 });
