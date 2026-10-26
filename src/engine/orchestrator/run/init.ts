@@ -335,6 +335,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     savedState = await resumeSeatWait({
       ref: { projectDir, sessionId, bus },
       state: savedState,
+      config,
       ...(opts.signal !== undefined && { signal: opts.signal }),
     });
     setTrackedState(savedState);

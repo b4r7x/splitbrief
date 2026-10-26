@@ -184,6 +184,7 @@ describe('a rate-limited codex reviewer', () => {
       state: halted,
       action: 'retry-later',
       bus,
+      entryConfig: CODEX_REVIEWER,
     });
     expect(applied).toMatchObject({ ok: true, status: 'continued' });
     if (!applied.ok) return;
@@ -192,7 +193,11 @@ describe('a rate-limited codex reviewer', () => {
 
     vi.useFakeTimers();
     vi.setSystemTime(new Date(Date.parse(issue.resetAt) - 120_000));
-    const pending = resumeSeatWait({ ref: { ...ref, bus }, state: applied.state });
+    const pending = resumeSeatWait({
+      ref: { ...ref, bus },
+      state: applied.state,
+      config: CODEX_REVIEWER,
+    });
     await vi.advanceTimersByTimeAsync(1);
     expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(120_000);

@@ -2,9 +2,13 @@ import {
   getRunnerDisplayName,
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
+import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
-import type { SeatWait, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { HeldSeat, SeatWait, WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { thrownSeatFailure } from '../../implementers/pipeline/call-result.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
@@ -27,6 +31,8 @@ export type SeatCallContext = Readonly<{
   seat: CrewSeatId;
   /** The runner the call runs on, which a wait for its reset names. */
   runner: RunnerConfig;
+  /** The BUILD profile the runner is, which a wait for its reset holds. */
+  profile?: string | undefined;
   signal?: AbortSignal | undefined;
   onStateChange?: ((state: WorkflowState) => void) | undefined;
 }>;
@@ -114,21 +120,64 @@ export async function waitForSeatReset(
   return state;
 }
 
+function heldSeatOf(runner: RunnerConfig, profile: string | undefined): HeldSeat {
+  return {
+    tool: getRunnerDisplayName(runner),
+    kind: runner.kind,
+    ...(profile !== undefined && { profile }),
+  };
+}
+
+/**
+ * The seat a config runs for a wait: the BUILD profile the wait names, else the default one, and
+ * the planner for a REVIEW seat with no reviewer. A BUILD profile the config no longer has runs none.
+ */
+export function configuredHeldSeat(
+  config: Config,
+  seat: CrewSeatId,
+  profile: string | undefined,
+): HeldSeat | undefined {
+  const runner =
+    seat === 'build'
+      ? readImplementerProfileConfig(config, profile)
+      : readActiveRunner({ config, role: CREW_SEAT_ROLES[seat] });
+  return runner === undefined ? undefined : heldSeatOf(runner, profile);
+}
+
+/** Whether a seat runs on a runner; a runner recorded without its kind matches any kind. */
+function runsOn(
+  seat: HeldSeat | undefined,
+  runner: Readonly<{ tool?: string | undefined; kind?: HeldSeat['kind'] | undefined }>,
+): boolean {
+  return (
+    seat !== undefined &&
+    seat.tool === runner.tool &&
+    (runner.kind === undefined || seat.kind === runner.kind)
+  );
+}
+
 /**
  * A persisted wait is honored on re-entry: a deadline still in the future is
- * waited for before the task continues, one already past is just released.
+ * waited for before the task continues, one already past is just released, and
+ * so is one whose seat this entry's config runs on a tool that is neither the
+ * seat the wait holds nor the runner whose limit it waits out.
  */
 export async function resumeSeatWait(
   input: Readonly<{
     ref: WorkflowPersistenceContext;
     state: WorkflowState;
+    config: Config;
     signal?: AbortSignal | undefined;
   }>,
 ): Promise<WorkflowState> {
   const wait = input.state.seatWait;
   if (wait === undefined) return input.state;
   const deadline = new Date(wait.resetAt);
-  if (Number.isNaN(deadline.getTime()) || deadline.getTime() <= Date.now()) {
+  const held = wait.holds;
+  const runs =
+    held === undefined ? undefined : configuredHeldSeat(input.config, wait.seat, held.profile);
+  const moved = held !== undefined && !runsOn(runs, held) && !runsOn(runs, wait);
+  if (Number.isNaN(deadline.getTime()) || deadline.getTime() <= Date.now() || moved) {
     return transitionAndSave(input.ref, input.state, { type: 'CLEAR_SEAT_WAIT' });
   }
   return waitForSeatReset({
@@ -173,6 +222,7 @@ export async function runSeatCall<T>(
       resetAt: deadline.toISOString(),
       tool: getRunnerDisplayName(ctx.runner),
       kind: ctx.runner.kind,
+      holds: heldSeatOf(ctx.runner, ctx.profile),
     },
     ...(ctx.signal !== undefined && { signal: ctx.signal }),
   });

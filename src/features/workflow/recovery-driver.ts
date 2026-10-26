@@ -42,6 +42,7 @@ import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runResumePolicy } from './resume-policy.js';
+import { nextEntryConfig } from './entry-config.js';
 import {
   correctionActionFor,
   formatRecoveryPrompt,
@@ -313,6 +314,9 @@ export function createRecoveryDriver(
         action,
         bus,
         config,
+        ...(action === 'retry-later' && {
+          entryConfig: nextEntryConfig({ configOfRun, prepared: config, state }).config,
+        }),
         ...(comment === undefined || comment.text.trim() === '' ? {} : { comment }),
       });
 

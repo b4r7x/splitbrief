@@ -603,6 +603,67 @@ describe('runImplementation seat trouble', () => {
     // The surviving attempt's own usage comes back on the result.
     expect(result.implResult.usage).toEqual(secondUsage);
   });
+
+  it('waits out a near reset holding the BUILD profile the brief runs on', async () => {
+    const { projectDir } = setupProject('seat-wait-profile');
+    const sessionId = 'seat-wait-profile-session';
+    ensureSessionDir(projectDir, sessionId);
+    const ref = { projectDir, sessionId };
+    const task = makeTask({ id: 'T061', suggestedFiles: ['src/wait.ts'], action: 'create' });
+    const state = makeImplState([task]);
+    saveState(ref, state);
+    const claudeCode = { kind: 'cli', tool: 'claude-code' } as const;
+    const implement = vi
+      .fn()
+      .mockResolvedValueOnce({
+        success: false,
+        output: '',
+        error: "You've hit your usage limit. Try again in 5 minutes.",
+      })
+      .mockResolvedValueOnce({ success: true, output: '' });
+    const wctx = makeWctx({
+      projectDir,
+      sessionId,
+      implementer: makeImplementer({ implement }),
+      config: makeNoValidationConfig({
+        implementer: claudeCode,
+        implementerProfiles: {
+          default: 'small',
+          profiles: { big: claudeCode, small: { kind: 'cli', tool: 'codex' } },
+        },
+      }),
+      implementerProfile: 'big',
+    });
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+
+    vi.useFakeTimers();
+    const pending = runImplementation({
+      wctx,
+      task,
+      state,
+      taskStartSnapshot,
+      setTrackedState: () => {},
+      recordApprovalDenial: vi.fn(),
+    });
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    let wait: WorkflowState['seatWait'];
+    while (!settled) {
+      wait ??= loadState(ref)?.seatWait;
+      await vi.advanceTimersByTimeAsync(vi.getTimerCount() === 0 ? 1 : 30_000);
+    }
+    await pending;
+
+    expect(implement).toHaveBeenCalledTimes(2);
+    expect(wait?.holds).toEqual({ tool: 'claude-code', kind: 'cli', profile: 'big' });
+  });
 });
 
 describe('runImplementation correction at a stop', () => {

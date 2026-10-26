@@ -923,16 +923,19 @@ describe('applyRecoveryAction: retry-later', () => {
       state: { ...base, pendingRecovery: issue },
       action: 'retry-later',
       bus,
+      entryConfig: makeConfig({ reviewer: { kind: 'cli', tool: 'codex' } }),
     });
 
     expect(result).toMatchObject({ ok: true, status: 'continued' });
     if (!result.ok) return;
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.state.seatWait).toEqual({ seat: 'review', resetAt: '2026-05-01T10:00:00.000Z' });
-    expect(loadState({ projectDir, sessionId })?.seatWait).toEqual({
+    const wait = {
       seat: 'review',
       resetAt: '2026-05-01T10:00:00.000Z',
-    });
+      holds: { tool: 'codex', kind: 'cli' },
+    };
+    expect(result.state.seatWait).toEqual(wait);
+    expect(loadState({ projectDir, sessionId })?.seatWait).toEqual(wait);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
     );
@@ -941,6 +944,26 @@ describe('applyRecoveryAction: retry-later', () => {
   it('blocks when the halt names no reset to wait for', async () => {
     const { projectDir, sessionId } = setupSession('retry-later-no-reset');
     const issue = seatDownHalt(undefined);
+    const base = makeImplState([makeTask({ id: 'T001' })]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'retry-later',
+      bus,
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'action-not-available' });
+    expect(result.state.pendingRecovery).toEqual(issue);
+    expect(result.state.seatWait).toBeUndefined();
+  });
+
+  it('blocks when it is not given the config the run continues on', async () => {
+    const { projectDir, sessionId } = setupSession('retry-later-no-config');
+    const issue = seatDownHalt('2026-05-01T10:00:00.000Z');
     const base = makeImplState([makeTask({ id: 'T001' })]);
     saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
     const { bus } = makeBusRecorder();
@@ -1015,6 +1038,7 @@ describe('applyRecoveryAction: retry-later', () => {
         state: { ...base, pendingRecovery: issue },
         action: 'retry-later',
         bus: makeBusRecorder().bus,
+        entryConfig: makeConfig(),
       });
       expect(result.ok).toBe(true);
       return loadState(ref);
@@ -1109,6 +1133,7 @@ describe('applyRecoveryAction: retry-later', () => {
       state: { ...base, pendingRecovery: issue },
       action: 'retry-later',
       bus,
+      entryConfig: makeConfig(),
     });
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
@@ -1117,6 +1142,7 @@ describe('applyRecoveryAction: retry-later', () => {
     const pending = resumeSeatWait({
       ref: { projectDir, sessionId, bus },
       state: applied.state,
+      config: makeConfig(),
     });
     await vi.advanceTimersByTimeAsync(1);
     expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(1);

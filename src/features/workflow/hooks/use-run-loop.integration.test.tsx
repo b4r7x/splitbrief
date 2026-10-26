@@ -6,7 +6,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { Box, Text } from 'ink';
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { tick } from '#testing/helpers/ink.js';
@@ -80,7 +80,14 @@ import { saveSummary } from '../../../core/sessions/io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { sessionDir } from '../../../core/paths.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowOpts } from '../../../core/types/config-options.js';
+import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrides/from-options.js';
 import type { PrepareExecutionFn, RunWorkflowFn } from './use-run-loop.js';
+import { runSeatCall } from '../../../engine/orchestrator/escalation/seat-wait.js';
+import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
+import { seatIdentitiesFromConfig, writeSeatIdentities } from '../../../core/state/seats.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 
 // Harness mounts the run loop with a bogus planner command so that
 // runWorkflow exits fast via the "planner not available" branch in
@@ -3179,4 +3186,838 @@ describe('useRunLoop', () => {
       inst.unmount();
     });
   });
+});
+
+describe('useRunLoop — a seat wait after the seat changed', () => {
+  type WaitEntry = 'retry-at' | 'auto';
+  type WaitSeat = 'build' | 'plan' | 'review';
+
+  const NO_PLANNER = { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' } as const;
+  const CODEX = { kind: 'cli', tool: 'codex' } as const;
+  const CODEX_MODEL = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } as const;
+  const CLAUDE_CODE = { kind: 'cli', tool: 'claude-code' } as const;
+
+  /** The seat on Codex, on another tool, and on Codex with another model; the planner of the others never starts. */
+  function seatConfigs(seat: WaitSeat): Record<'run' | 'tool' | 'model', Config> {
+    if (seat === 'build') {
+      return {
+        run: makeConfig({ planner: NO_PLANNER, implementer: CODEX }),
+        tool: makeConfig({ planner: NO_PLANNER, implementer: CLAUDE_CODE }),
+        model: makeConfig({ planner: NO_PLANNER, implementer: CODEX_MODEL }),
+      };
+    }
+    if (seat === 'plan') {
+      return {
+        run: makeConfig({ planner: CODEX }),
+        tool: makeConfig({ planner: NO_PLANNER }),
+        model: makeConfig({ planner: CODEX_MODEL }),
+      };
+    }
+    return {
+      run: makeConfig({ planner: NO_PLANNER, reviewer: CODEX }),
+      tool: makeConfig({ planner: NO_PLANNER, reviewer: CLAUDE_CODE }),
+      model: makeConfig({ planner: NO_PLANNER, reviewer: CODEX_MODEL }),
+    };
+  }
+
+  function profileConfig(big: Config['implementer'], small: Config['implementer']): Config {
+    return makeConfig({
+      planner: NO_PLANNER,
+      implementerProfiles: { default: 'small', profiles: { big, small } },
+    });
+  }
+
+  function seatWaits(): number {
+    return eventsStore.get().events.filter((event) => event.type === 'seat_wait_started').length;
+  }
+
+  function mount(
+    input: Readonly<{
+      sessionId: string;
+      config: Config;
+      state: WorkflowState;
+      captureRunner: NonNullable<HarnessProps['captureRunner']>;
+      run: ReturnType<typeof recordedEngine>;
+    }>,
+  ) {
+    configStore.__testReset({ projectDir, config: input.config });
+    return renderHarness({
+      prepared: makePreparedExecution({
+        projectDir,
+        sessionId: input.sessionId,
+        feature: input.state.feature,
+        config: input.config,
+        preparationId: `seat-wait-${input.sessionId}-${input.run.entered.length}`,
+        active: reactivateExistingSession({ projectDir, sessionId: input.sessionId }),
+        resumeState: input.state,
+      }),
+      captureRunner: input.captureRunner,
+      runWorkflow: input.run.engine,
+    });
+  }
+
+  /** A first pass whose seat call hits a limit that resets in five minutes, after an optional save. */
+  function limitedPass(
+    sessionId: string,
+    seat: WaitSeat,
+    profile: string | undefined,
+    savedFirst: Config | undefined,
+  ): RunWorkflowFn {
+    return async (options) => {
+      const ref = { projectDir, sessionId };
+      if (savedFirst !== undefined) {
+        writeConfig(projectDir, savedFirst);
+        configStore.__testReset({ projectDir, config: savedFirst });
+      }
+      const config = options.prepared.config;
+      try {
+        await runSeatCall(
+          {
+            ref: { ...ref, bus: createRecoveryBus({ ...ref, sink: options.tuiSink }) },
+            state: loadState(ref) ?? createInitialState('wait'),
+            seat,
+            runner: readActiveRunner({ config, role: CREW_SEAT_ROLES[seat], profile }),
+            ...(profile !== undefined && { profile }),
+            signal: options.signal,
+          },
+          async () => ({
+            ok: false,
+            failure: { message: "You've hit your usage limit. Try again in 5 minutes." },
+            value: undefined,
+          }),
+          () => {},
+        );
+      } catch {
+        // The stop aborts the wait.
+      }
+      return makeSummary();
+    };
+  }
+
+  /**
+   * A run waits on a seat (Retry at on a halt, or the automatic wait of a seat call), the
+   * operator stops it, saves `continued` and continues it in the same process or reopened.
+   * Reports whether the continued entry waited again.
+   */
+  async function continueAfterWait(
+    input: Readonly<{
+      sessionId: string;
+      entry: WaitEntry;
+      seat: WaitSeat;
+      run: Config;
+      continued: Config;
+      where: 'same' | 'reopened';
+      profile?: string;
+      savedUnderBrief?: Config;
+    }>,
+  ): Promise<{ waited: boolean; seatWait: WorkflowState['seatWait'] }> {
+    const { sessionId, entry, seat } = input;
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    writeSeatIdentities(ref, seatIdentitiesFromConfig(input.run));
+    const state =
+      entry === 'retry-at'
+        ? makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+            ...RUN_CREW,
+            pendingRecovery: makeRecoveryIssue({
+              reason: 'runner-usage-limit',
+              seat,
+              resetAt: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+              availableActions: ['retry-same-worker', 'retry-later', 'end-run'],
+              recommendedAction: 'retry-later',
+              ...(input.profile !== undefined && { selectedImplementerProfile: input.profile }),
+            }),
+          })
+        : makeImplState([makeTask({ id: 'T001', status: 'pending' })], { ...RUN_CREW });
+    saveState(ref, state);
+    writeConfig(projectDir, input.run);
+    const captureRunner: NonNullable<HarnessProps['captureRunner']> = { current: null };
+    let run = recordedEngine(
+      entry === 'auto'
+        ? { 1: limitedPass(sessionId, seat, input.profile, input.savedUnderBrief) }
+        : {},
+    );
+    let inst = mount({ sessionId, config: input.run, state, captureRunner, run });
+    if (entry === 'retry-at') await answerRecoveryPanel(captureRunner, 'l');
+    await vi.waitFor(() => expect(seatWaits()).toBe(1), { timeout: 5000 });
+    expect(loadState(ref)?.seatWait).toBeDefined();
+
+    requestStopNow();
+    await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+    await tick(50);
+    writeConfig(projectDir, input.continued);
+    const enteredBefore = run.entered.length;
+    if (input.where === 'same') {
+      configStore.__testReset({ projectDir, config: input.continued });
+      captureRunner.current?.handleResume();
+    } else {
+      inst.unmount();
+      clearAllHandlers();
+      stopStore.__testReset();
+      resetWorkflow();
+      const reopened = loadState(ref);
+      if (reopened === null) throw new Error('expected the saved state');
+      run = recordedEngine({});
+      inst = mount({ sessionId, config: input.continued, state: reopened, captureRunner, run });
+    }
+    const entered = input.where === 'same' ? enteredBefore + 1 : 1;
+    await vi.waitFor(() => expect(run.entered.length).toBe(entered), { timeout: 5000 });
+    await tick(400);
+    const waited = run.returned() < run.entered.length;
+    const seatWait = loadState(ref)?.seatWait;
+    if (waited) {
+      requestStopNow();
+      await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+    }
+    inst.unmount();
+    return { waited, seatWait };
+  }
+
+  const entries = ['retry-at', 'auto'] as const;
+  const seats = ['build', 'plan', 'review'] as const;
+
+  it.each(
+    entries.flatMap((entry) =>
+      seats.flatMap((seat) =>
+        (['same', 'reopened'] as const).map((where) => ({ entry, seat, where })),
+      ),
+    ),
+  )(
+    '$entry on $seat, tool changed after the wait began, continued $where: runs at once',
+    async ({ entry, seat, where }) => {
+      const configs = seatConfigs(seat);
+      const continued = await continueAfterWait({
+        sessionId: `changed-${entry}-${seat}-${where}`,
+        entry,
+        seat,
+        run: configs.run,
+        continued: configs.tool,
+        where,
+      });
+      expect(continued).toEqual({ waited: false, seatWait: undefined });
+    },
+    20_000,
+  );
+
+  it.each(
+    entries.flatMap((entry) =>
+      seats.flatMap((seat) =>
+        (['run', 'model'] as const).map((change) => ({ entry, seat, change })),
+      ),
+    ),
+  )(
+    '$entry on $seat, continued on the $change config: keeps waiting',
+    async ({ entry, seat, change }) => {
+      const configs = seatConfigs(seat);
+      const continued = await continueAfterWait({
+        sessionId: `kept-${entry}-${seat}-${change}`,
+        entry,
+        seat,
+        run: configs.run,
+        continued: configs[change],
+        where: 'same',
+      });
+      expect(continued.waited).toBe(true);
+      expect(continued.seatWait?.seat).toBe(seat);
+    },
+    20_000,
+  );
+
+  it.each(entries)(
+    '%s on a REVIEW seat that follows PLAN, PLAN changed: runs at once',
+    async (entry) => {
+      const continued = await continueAfterWait({
+        sessionId: `follows-plan-${entry}`,
+        entry,
+        seat: 'review',
+        run: makeConfig({ planner: CODEX }),
+        continued: makeConfig({ planner: NO_PLANNER }),
+        where: 'reopened',
+      });
+      expect(continued).toEqual({ waited: false, seatWait: undefined });
+    },
+    20_000,
+  );
+
+  it.each(
+    entries.flatMap((entry) => (['big', 'small'] as const).map((moved) => ({ entry, moved }))),
+  )(
+    '$entry on the big BUILD profile, the $moved profile moved: waits only for its own profile',
+    async ({ entry, moved }) => {
+      const continued = await continueAfterWait({
+        sessionId: `profile-${entry}-${moved}`,
+        entry,
+        seat: 'build',
+        run: profileConfig(CODEX, CODEX),
+        continued:
+          moved === 'big' ? profileConfig(CLAUDE_CODE, CODEX) : profileConfig(CODEX, CLAUDE_CODE),
+        where: 'reopened',
+        profile: 'big',
+      });
+      expect(continued.waited).toBe(moved === 'small');
+    },
+    20_000,
+  );
+
+  it('the seat saved under the running brief, then its old tool waits: the continue runs at once', async () => {
+    const configs = seatConfigs('build');
+    const continued = await continueAfterWait({
+      sessionId: 'saved-under-brief',
+      entry: 'auto',
+      seat: 'build',
+      run: configs.run,
+      continued: configs.tool,
+      savedUnderBrief: configs.tool,
+      where: 'same',
+    });
+    expect(continued).toEqual({ waited: false, seatWait: undefined });
+  }, 20_000);
+
+  it.each([
+    { name: 'the halted runner', wait: { tool: 'codex', kind: 'cli' } },
+    { name: 'no runner', wait: {} },
+  ] as const)(
+    'a wait an older state saved with $name keeps waiting on a changed seat',
+    async ({ wait }) => {
+      const sessionId = `older-${Object.keys(wait).length}`;
+      const ref = { projectDir, sessionId };
+      ensureSessionDir(projectDir, sessionId);
+      const configs = seatConfigs('build');
+      writeSeatIdentities(ref, seatIdentitiesFromConfig(configs.run));
+      const state = makeImplState([makeTask({ id: 'T001', status: 'pending' })], {
+        ...RUN_CREW,
+        seatWait: {
+          seat: 'build',
+          resetAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+          ...wait,
+        },
+      });
+      saveState(ref, state);
+      writeConfig(projectDir, configs.tool);
+      const run = recordedEngine({});
+      const inst = mount({
+        sessionId,
+        config: configs.tool,
+        state,
+        captureRunner: { current: null },
+        run,
+      });
+      await vi.waitFor(() => expect(run.entered).toHaveLength(1), { timeout: 5000 });
+      await vi.waitFor(() => expect(seatWaits()).toBe(1), { timeout: 5000 });
+      await tick(400);
+      expect(run.returned()).toBe(0);
+      requestStopNow();
+      await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+      inst.unmount();
+    },
+    20_000,
+  );
+
+  it.each(seats)(
+    'the %s seat saved while halted, then Retry at: the run waits',
+    async (seat) => {
+      const sessionId = `owner-${seat}`;
+      const ref = { projectDir, sessionId };
+      ensureSessionDir(projectDir, sessionId);
+      const configs = seatConfigs(seat);
+      writeSeatIdentities(ref, seatIdentitiesFromConfig(configs.run));
+      const state = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+        ...RUN_CREW,
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'runner-usage-limit',
+          seat,
+          resetAt: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+          availableActions: ['retry-same-worker', 'retry-later', 'end-run'],
+          recommendedAction: 'retry-later',
+        }),
+      });
+      saveState(ref, state);
+      writeConfig(projectDir, configs.run);
+      const captureRunner: NonNullable<HarnessProps['captureRunner']> = { current: null };
+      const run = recordedEngine({});
+      const inst = mount({ sessionId, config: configs.run, state, captureRunner, run });
+      await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+      writeConfig(projectDir, configs.tool);
+      configStore.__testReset({ projectDir, config: configs.tool });
+      await answerRecoveryPanel(captureRunner, 'l');
+      await vi.waitFor(() => expect(seatWaits()).toBe(1), { timeout: 5000 });
+      await tick(400);
+      expect(run.entered).toHaveLength(1);
+      expect(run.returned()).toBe(0);
+      expect(loadState(ref)?.seatWait?.seat).toBe(seat);
+      requestStopNow();
+      await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+      inst.unmount();
+    },
+    20_000,
+  );
+
+  // A seat the flags or a save move onto runs one of these when its wait is released: each one
+  // answers as a tool at its usage limit, so no installed tool starts.
+  let pathBefore: string | undefined;
+  beforeEach(() => {
+    pathBefore = process.env.PATH;
+    const bin = join(projectDir, '.fake-tools');
+    mkdirSync(bin, { recursive: true });
+    for (const tool of ['claude', 'codex', 'opencode']) {
+      writeFileSync(
+        join(bin, tool),
+        `#!/bin/sh\necho "You've hit your usage limit. Try again in 3 hours." >&2\nexit 1\n`,
+        { mode: 0o755 },
+      );
+    }
+    process.env.PATH = `${bin}:${pathBefore ?? ''}`;
+  });
+  afterEach(() => {
+    process.env.PATH = pathBefore;
+  });
+
+  /** The config the process runs on: `config.yaml` with the process's seat flags over it, as the CLI loads it. */
+  function loadWithFlags(file: Config, flags: WorkflowOpts): Config {
+    writeConfig(projectDir, file);
+    return loadSaved(flags);
+  }
+
+  /** The config a reopened process runs on: `config.yaml` as it is on disk, with its seat flags. */
+  function loadSaved(flags: WorkflowOpts): Config {
+    configStore.load(projectDir, workflowOptsToCLIOverrides(flags));
+    const config = configStore.get().config;
+    if (config === null) throw new Error('expected the loaded config');
+    return config;
+  }
+
+  async function saveSeat(change: (config: Config) => Config): Promise<void> {
+    const current = configStore.get().config;
+    if (current === null) throw new Error('expected the loaded config');
+    expect((await configStore.save(change(current))).kind).toBe('saved');
+  }
+
+  function mountLoaded(
+    input: Readonly<{
+      sessionId: string;
+      config: Config;
+      state: WorkflowState;
+      captureRunner: NonNullable<HarnessProps['captureRunner']>;
+      run: ReturnType<typeof recordedEngine>;
+    }>,
+  ) {
+    return renderHarness({
+      prepared: makePreparedExecution({
+        projectDir,
+        sessionId: input.sessionId,
+        feature: input.state.feature,
+        config: input.config,
+        preparationId: `seat-wait-${input.sessionId}-${input.run.entered.length}`,
+        active: reactivateExistingSession({ projectDir, sessionId: input.sessionId }),
+        resumeState: input.state,
+      }),
+      captureRunner: input.captureRunner,
+      runWorkflow: input.run.engine,
+    });
+  }
+
+  /** Whether the entry the loop is in waits on the seat, read after a released entry had time to return. */
+  async function entryWaits(
+    ref: Readonly<{ projectDir: string; sessionId: string }>,
+    run: ReturnType<typeof recordedEngine>,
+    entries: number,
+  ) {
+    await vi.waitFor(() => expect(run.entered).toHaveLength(entries), { timeout: 5000 });
+    await tick(400);
+    return run.returned() < run.entered.length && loadState(ref)?.seatWait !== undefined;
+  }
+
+  async function stopWait(): Promise<void> {
+    requestStopNow();
+    await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+    await tick(50);
+  }
+
+  /**
+   * A seat wait in a process started with seat flags over `file`: Retry at on a halt of the seat,
+   * or the automatic wait of its seat call. `saved` saves a seat through the store while the halt
+   * waits, before the choice. `continued` stops the wait, saves `savedAfterStop` when given, and
+   * continues the run in the same process or reopened on `config.yaml` with its own flags. Reports
+   * whether each entry waited.
+   */
+  async function waitUnderFlags(
+    input: Readonly<{
+      sessionId: string;
+      entry: WaitEntry;
+      seat: WaitSeat;
+      file: Config;
+      flags: WorkflowOpts;
+      profile?: string;
+      saved?: (config: Config) => Config;
+      savedAfterStop?: (config: Config) => Config;
+      continued?: Readonly<{ where: 'same' } | { where: 'reopened'; flags: WorkflowOpts }>;
+    }>,
+  ): Promise<{ waited: boolean; continuedWaited?: boolean }> {
+    const { sessionId, entry, seat } = input;
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const config = loadWithFlags(input.file, input.flags);
+    writeSeatIdentities(ref, seatIdentitiesFromConfig(config));
+    const state =
+      entry === 'retry-at'
+        ? makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+            ...RUN_CREW,
+            pendingRecovery: makeRecoveryIssue({
+              reason: 'runner-usage-limit',
+              seat,
+              resetAt: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+              availableActions: ['retry-same-worker', 'retry-later', 'end-run'],
+              recommendedAction: 'retry-later',
+              ...(input.profile !== undefined && { selectedImplementerProfile: input.profile }),
+            }),
+          })
+        : makeImplState([makeTask({ id: 'T001', status: 'pending' })], { ...RUN_CREW });
+    saveState(ref, state);
+    const captureRunner: NonNullable<HarnessProps['captureRunner']> = { current: null };
+    let run = recordedEngine(
+      entry === 'auto' ? { 1: limitedPass(sessionId, seat, input.profile, undefined) } : {},
+    );
+    let inst = mountLoaded({ sessionId, config, state, captureRunner, run });
+    if (entry === 'retry-at') {
+      await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+      if (input.saved !== undefined) await saveSeat(input.saved);
+      await answerRecoveryPanel(captureRunner, 'l');
+    }
+    const waited = await entryWaits(ref, run, 1);
+    let continuedWaited: boolean | undefined;
+    if (waited && input.continued !== undefined) {
+      await stopWait();
+      if (input.savedAfterStop !== undefined) await saveSeat(input.savedAfterStop);
+      const before = run.entered.length;
+      if (input.continued.where === 'same') {
+        captureRunner.current?.handleResume();
+      } else {
+        inst.unmount();
+        clearAllHandlers();
+        stopStore.__testReset();
+        resetWorkflow();
+        const reopened = loadState(ref);
+        if (reopened === null) throw new Error('expected the saved state');
+        run = recordedEngine({});
+        inst = mountLoaded({
+          sessionId,
+          config: loadSaved(input.continued.flags),
+          state: reopened,
+          captureRunner,
+          run,
+        });
+      }
+      continuedWaited = await entryWaits(
+        ref,
+        run,
+        input.continued.where === 'same' ? before + 1 : 1,
+      );
+    }
+    if (run.returned() < run.entered.length) await stopWait();
+    inst.unmount();
+    return { waited, ...(continuedWaited !== undefined && { continuedWaited }) };
+  }
+
+  const OPENCODE = { kind: 'cli', tool: 'opencode' } as const;
+  const flaggedSeats = [
+    { seat: 'build', flag: '--implementer', flags: { implementer: 'claude-code' } },
+    { seat: 'build', flag: '--provider', flags: { provider: 'claude-code' } },
+    { seat: 'plan', flag: '--planner', flags: { planner: 'claude-code' } },
+    { seat: 'review', flag: '--reviewer', flags: { reviewer: 'claude-code' } },
+  ] as const;
+
+  it.each(flaggedSeats)(
+    'Retry at on $seat in a run started with $flag on another tool than the file: the run waits',
+    async ({ seat, flag, flags }) => {
+      const waits = await waitUnderFlags({
+        sessionId: `flag-${seat}-${flag.slice(2)}`,
+        entry: 'retry-at',
+        seat,
+        file: seatConfigs(seat).run,
+        flags,
+      });
+      expect(waits.waited).toBe(true);
+    },
+    20_000,
+  );
+
+  it.each([
+    { label: 'the same process', continued: { where: 'same' } },
+    {
+      label: 'a reopened run with the flag',
+      continued: { where: 'reopened', flags: { implementer: 'claude-code' } },
+    },
+  ] as const)(
+    'Retry at under --implementer, stopped and continued in $label: keeps waiting',
+    async ({ continued }) => {
+      const waits = await waitUnderFlags({
+        sessionId: `flag-continued-${continued.where}`,
+        entry: 'retry-at',
+        seat: 'build',
+        file: seatConfigs('build').run,
+        flags: { implementer: 'claude-code' },
+        continued,
+      });
+      expect(waits).toEqual({ waited: true, continuedWaited: true });
+    },
+    20_000,
+  );
+
+  it('Retry at under --implementer, reopened without the flag: starts the file tool at once', async () => {
+    const waits = await waitUnderFlags({
+      sessionId: 'flag-reopened-unflagged',
+      entry: 'retry-at',
+      seat: 'build',
+      file: seatConfigs('build').run,
+      flags: { implementer: 'claude-code' },
+      continued: { where: 'reopened', flags: {} },
+    });
+    expect(waits).toEqual({ waited: true, continuedWaited: false });
+  }, 20_000);
+
+  it.each([
+    { label: 'the default BUILD profile that --implementer moved', profile: 'big' },
+    { label: 'a named BUILD profile that --implementer leaves', profile: 'small' },
+  ])(
+    'Retry at on $label: the run waits',
+    async ({ profile }) => {
+      const waits = await waitUnderFlags({
+        sessionId: `flag-profile-${profile}`,
+        entry: 'retry-at',
+        seat: 'build',
+        file: makeConfig({
+          planner: NO_PLANNER,
+          implementerProfiles: { default: 'big', profiles: { big: CODEX, small: OPENCODE } },
+        }),
+        flags: { implementer: 'claude-code' },
+        profile,
+      });
+      expect(waits.waited).toBe(true);
+    },
+    20_000,
+  );
+
+  it.each([
+    { label: 'no flag', flags: {} },
+    { label: 'a flag equal to the file', flags: { implementer: 'codex' } },
+    { label: 'a flag on another seat', flags: { reviewer: 'claude-code' } },
+  ] as const)(
+    'Retry at on build with $label: the run waits',
+    async ({ label, flags }) => {
+      const waits = await waitUnderFlags({
+        sessionId: `flag-kept-${label.replace(/ /g, '-')}`,
+        entry: 'retry-at',
+        seat: 'build',
+        file: seatConfigs('build').run,
+        flags,
+      });
+      expect(waits.waited).toBe(true);
+    },
+    20_000,
+  );
+
+  it.each([
+    { label: 'the same seat', flags: { implementer: 'claude-code' } },
+    { label: 'another seat', flags: { reviewer: 'claude-code' } },
+  ] as const)(
+    'the BUILD seat saved while halted in a run with a flag on $label, then Retry at: the run waits',
+    async ({ label, flags }) => {
+      const waits = await waitUnderFlags({
+        sessionId: `flag-owner-${label.replace(/ /g, '-')}`,
+        entry: 'retry-at',
+        seat: 'build',
+        file: seatConfigs('build').run,
+        flags,
+        saved: (config) => ({ ...config, implementer: OPENCODE }),
+      });
+      expect(waits.waited).toBe(true);
+    },
+    20_000,
+  );
+
+  function seatOn(
+    seat: WaitSeat,
+    runner: typeof CODEX | typeof OPENCODE | typeof CLAUDE_CODE,
+  ): (config: Config) => Config {
+    if (seat === 'build') return (config) => ({ ...config, implementer: runner });
+    if (seat === 'plan') return (config) => ({ ...config, planner: runner });
+    return (config) => ({ ...config, reviewer: runner });
+  }
+
+  it.each(
+    seats.flatMap((seat) => (['same', 'reopened'] as const).map((where) => ({ seat, where }))),
+  )(
+    'the $seat seat saved while halted, Retry at, then saved back to the limited tool and continued $where: keeps waiting',
+    async ({ seat, where }) => {
+      const waits = await waitUnderFlags({
+        sessionId: `owner-back-${seat}-${where}`,
+        entry: 'retry-at',
+        seat,
+        file: seatConfigs(seat).run,
+        flags: {},
+        saved: seatOn(seat, OPENCODE),
+        savedAfterStop: seatOn(seat, CODEX),
+        continued: where === 'same' ? { where } : { where, flags: {} },
+      });
+      expect(waits).toEqual({ waited: true, continuedWaited: true });
+    },
+    20_000,
+  );
+
+  it.each(
+    flaggedSeats.flatMap((row) => [
+      { ...row, label: 'the same process', continued: { where: 'same' } as const },
+      {
+        ...row,
+        label: 'a reopened run with the flag',
+        continued: { where: 'reopened', flags: row.flags } as const,
+      },
+      {
+        ...row,
+        label: 'a reopened run without the flag',
+        continued: { where: 'reopened', flags: {} } as const,
+      },
+    ]),
+  )(
+    'the $seat seat saved while halted under $flag, Retry at, continued in $label: keeps waiting',
+    async ({ seat, flag, flags, label, continued }) => {
+      const waits = await waitUnderFlags({
+        sessionId: `flag-owner-back-${seat}-${flag.slice(2)}-${label.replace(/ /g, '-')}`,
+        entry: 'retry-at',
+        seat,
+        file: seatConfigs(seat).run,
+        flags,
+        saved: seatOn(seat, OPENCODE),
+        continued,
+      });
+      expect(waits).toEqual({ waited: true, continuedWaited: true });
+    },
+    20_000,
+  );
+
+  it('the BUILD seat saved while halted, Retry at, then saved on a third tool: runs at once', async () => {
+    const waits = await waitUnderFlags({
+      sessionId: 'owner-third-tool',
+      entry: 'retry-at',
+      seat: 'build',
+      file: seatConfigs('build').run,
+      flags: {},
+      saved: seatOn('build', OPENCODE),
+      savedAfterStop: seatOn('build', CLAUDE_CODE),
+      continued: { where: 'same' },
+    });
+    expect(waits).toEqual({ waited: true, continuedWaited: false });
+  }, 20_000);
+
+  it.each([
+    {
+      label: 'the same process with the flag',
+      flags: { implementer: 'claude-code' },
+      where: 'same',
+      waits: true,
+    },
+    {
+      label: 'a reopened run with the flag',
+      flags: { implementer: 'claude-code' },
+      where: 'reopened',
+      reopenedFlags: { implementer: 'claude-code' },
+      waits: true,
+    },
+    {
+      label: 'a reopened run without the flag',
+      flags: { implementer: 'claude-code' },
+      where: 'reopened',
+      reopenedFlags: {},
+      waits: false,
+    },
+    {
+      label: 'a reopened run with a flag it had not',
+      flags: {},
+      where: 'reopened',
+      reopenedFlags: { implementer: 'claude-code' },
+      waits: false,
+    },
+  ] as const)(
+    'an automatic wait continued in $label: waits only on the same tool',
+    async (row) => {
+      const waits = await waitUnderFlags({
+        sessionId: `flag-auto-${row.label.replace(/ /g, '-')}`,
+        entry: 'auto',
+        seat: 'build',
+        file: seatConfigs('build').run,
+        flags: row.flags,
+        continued:
+          row.where === 'same'
+            ? { where: 'same' }
+            : { where: 'reopened', flags: row.reopenedFlags },
+      });
+      expect(waits).toEqual({ waited: true, continuedWaited: row.waits });
+    },
+    20_000,
+  );
+
+  it('config.yaml edited by hand while halted, then Retry at: the run waits on the edited seat', async () => {
+    const sessionId = 'hand-edit-retry-at';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const configs = seatConfigs('build');
+    const config = loadWithFlags(configs.run, {});
+    writeSeatIdentities(ref, seatIdentitiesFromConfig(config));
+    const state = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+      ...RUN_CREW,
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'runner-usage-limit',
+        seat: 'build',
+        resetAt: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+        availableActions: ['retry-same-worker', 'retry-later', 'end-run'],
+        recommendedAction: 'retry-later',
+      }),
+    });
+    saveState(ref, state);
+    const captureRunner: NonNullable<HarnessProps['captureRunner']> = { current: null };
+    const run = recordedEngine({});
+    const inst = mountLoaded({ sessionId, config, state, captureRunner, run });
+    await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+    writeConfig(projectDir, configs.tool);
+    await answerRecoveryPanel(captureRunner, 'l');
+    expect(await entryWaits(ref, run, 1)).toBe(true);
+    expect(loadState(ref)?.seatWait?.holds).toMatchObject({ tool: 'claude-code', kind: 'cli' });
+    await stopWait();
+    inst.unmount();
+  }, 20_000);
+
+  it('Retry at while config.yaml does not load: names the file, keeps the halt and writes no wait', async () => {
+    const sessionId = 'malformed-retry-at';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const config = loadWithFlags(seatConfigs('build').run, { implementer: 'claude-code' });
+    writeSeatIdentities(ref, seatIdentitiesFromConfig(config));
+    const state = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+      ...RUN_CREW,
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'runner-usage-limit',
+        seat: 'build',
+        resetAt: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+        availableActions: ['retry-same-worker', 'retry-later', 'end-run'],
+        recommendedAction: 'retry-later',
+      }),
+    });
+    saveState(ref, state);
+    const captureRunner: NonNullable<HarnessProps['captureRunner']> = { current: null };
+    const run = recordedEngine({});
+    const inst = mountLoaded({ sessionId, config, state, captureRunner, run });
+    await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+    writeFileSync(
+      join(projectDir, '.splitbrief', 'config.yaml'),
+      'version: 3\nplanner: [unclosed\n',
+    );
+    await answerRecoveryPanel(captureRunner, 'l');
+    await vi.waitFor(() => expect(errorMessages().join('\n')).toContain('Malformed YAML'), {
+      timeout: 5000,
+    });
+    expect(run.entered).toHaveLength(0);
+    expect(loadState(ref)?.pendingRecovery?.reason).toBe('runner-usage-limit');
+    expect(loadState(ref)?.seatWait).toBeUndefined();
+    inst.unmount();
+  }, 20_000);
 });
