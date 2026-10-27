@@ -836,8 +836,8 @@ reviewer check V1: passed (npm test)
 reviewer check V2: failed (npm run lint)
 base re-run V2: pre-existing · all 2 failures also fail before this run's changes
 base re-run V2 pre-existing: src/report.ts:4:3 Unexpected any · src/report.ts:9:1 Missing return type
-phase: complete
 review: passed
+phase: complete
 done: 3 tasks
 ```
 
@@ -860,8 +860,14 @@ done: 3 tasks
   A green re-run reads `your N failures gone`. A check with no own failure reads `no failure of yours`. The line also reports judged plan and task checks. Their fix check row has no running state or duration. The line uses singular forms for one failure. Each fix check runs once, with no base re-run.
 
   A check without carried keys keeps `passed (<command>)` or `failed (<command>)`. A refusal reads `refused (<detail>)`; a check that did not run reads `not run (<detail>)`.
+- `plan check <id>: passed|failed [· <duration>] (<command>)` — a plan or task check SPLITBRIEF ran before the review, with its command and, when recorded, its duration.
+- `plan check <id>: refused|not run [(<detail>)]` — a plan check the command policy refused or that did not run, with the reason the call gave when it gave one.
+- `Render <scenario>: rendered|failed [· <duration>]` — a render check, named by its scenario, with the duration when recorded. Its command text is not part of the line.
+- `Render <scenario>: refused|not run [(<detail>)]` — a render check the command policy refused or that did not run, with the reason the call gave when it gave one.
 - `stalled: <role> (<tool>) · no output for 5:00` — one line when the watchdog warns that a seat call sent no output for 5 minutes (`idleWarnMs`). The call continues.
-- `review: passed|failed [(<n> blocking)]` — the final review verdict. `failed` means the reviewer still reported blocking findings after its fix cycles and carries their count. Without an Accept as is override, the command exits `1` even though every task reached `done`. A checkout run accepted as is exits `0` and keeps the failed verdict.
+- `waiting: <tool> · resets <clock>` — one line when a seat starts waiting for its usage limit to reset. The clock is the local time of that reset. The date is included when that reset is not today. The stream writes this line once, when the wait starts.
+- `review: passed|failed [(<n> blocking)]|no verdict|stopped` — one line for each final review round. A review that fails starts a fix cycle and then reviews again, so a run can write `review: failed` and later `review: passed`. The last `review:` line before `done:` is the outcome, and the exit code states it too. `passed` covers a `pass` and a `pass-with-notes`, a pass that reported notes. `failed` means the reviewer reported blocking findings in that round and carries their count when the completion records the counts. `no verdict` means the review ended without one: its call failed, or its reply could not be read after one re-ask. `stopped` means the review stopped before a verdict. Without an Accept as is override, a last `failed` exits `1` even though every task reached `done`. A checkout run accepted as is exits `0` and keeps the failed verdict.
+- `task review <id>: <words>` or `task review: <words>` — one line for each task review, with the same words as the final review. `<id>` is the task the review followed, and it is absent when the completion names no task.
 - `done: <n> tasks` — the closing line, written on completion whatever the review said. `<n>` is the run's completed tasks, read from its state when it completes (`completedTasks` on `workflow_complete`): a task a review-fix cycle completes again counts once, a `continue` counts the tasks an earlier process completed, and a task that did not complete does not count, so `<n>` can be less than the length of the task list. The line carries no token count: token and money figures belong to the run's own record and `/usage`, not to the plain stream.
 
 Everything else the run emits is dropped — including `recovery_required`, which is a `--json` record. A halt no one is there to answer ends the plain stream: the failing task's `failed` line is the last line written, there is no `review:` or `done:` line, and the command exits 1. The halt itself is not silent — stderr carries the block below in both headless renderings.

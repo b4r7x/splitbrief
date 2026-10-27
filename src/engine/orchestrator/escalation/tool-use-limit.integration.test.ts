@@ -84,6 +84,13 @@ describe('implementer tool-use limit', () => {
     expect(result.error?.code).toBe('runner_call_tool_use_count_limit');
     expect(result.error?.message).toContain('Recent tool calls');
     expect(result.error?.message).toContain('file-');
+    const countLimitWarning = result.warnings.find(
+      (warning) => warning.code === 'runner_call_tool_use_count_limit',
+    );
+    expect(countLimitWarning).toMatchObject({
+      message: `Only the first ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} tool calls of this call are kept.`,
+    });
+    expect(countLimitWarning?.message).not.toContain('Recent tool calls');
     expect(runnerCallOutcome(result).state).toBe('tool-use-limit');
   });
 

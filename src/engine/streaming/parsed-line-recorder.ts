@@ -201,6 +201,6 @@ function contributesToRunnerResult(channel: ParsedTextChannel): boolean {
 function createLiveLimiter(): ReturnType<typeof createRunnerCallDeltaLimiter> {
   return createRunnerCallDeltaLimiter({
     code: 'runner_output_text_limit',
-    label: 'runner output text',
+    label: 'The reply',
   });
 }

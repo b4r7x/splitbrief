@@ -52,6 +52,10 @@ import {
   type FixtureStopState,
   type WorkflowFixtureProjection,
 } from './projections.js';
+import {
+  OUTPUT_LIMIT_TOOL_CALLS_MESSAGE,
+  OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE,
+} from './output-limit-projection.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
 const PLAN_USAGE_LIMIT_FRAGMENT = "You've used 75%";
@@ -827,6 +831,10 @@ const checkpointPredicates = [
   [checkpointId('at-rest-queued'), includesAll('Stopped at T003', '1 queued')],
   [checkpointId('at-rest-halted'), includesAll()],
   [checkpointId('at-rest-seat-wait'), includesAll()],
+  [
+    checkpointId('at-rest-seat-moved'),
+    (context) => includesAll()(context) && excludesAll('Waiting for')(context),
+  ],
   [checkpointId('at-rest-halted-chosen'), includesAll('⏎ to try again')],
   [
     checkpointId('at-rest-prompt-too-large'),
@@ -1037,7 +1045,10 @@ const checkpointPredicates = [
         'BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek',
         '→ OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
         'crew changed',
-      )(context) && excludesAll('automatic fallback', 'Recovery  ', 'Warning')(context),
+      )(context) &&
+      excludesAll('automatic fallback', 'Recovery  ', 'Warning')(context) &&
+      !workflowTranscriptText().includes('Stopped before') &&
+      !workflowTranscriptText().includes('Run continued'),
   ],
   [checkpointId('seat-switched-balance'), includesAll()],
   [
@@ -1145,6 +1156,12 @@ const checkpointPredicates = [
     includesAll('src/loans/renewals.ts', 'renewal window', 'overdue'),
   ],
   [checkpointId('implementation-silent-bare'), includesAll('Implementing…', 'No output for')],
+  [
+    checkpointId('live-seat-wait'),
+    (context) =>
+      includesAll('Waiting for OpenAI Codex CLI')(context) &&
+      excludesAll('Between calls', 'Resuming', 'Implementing…')(context),
+  ],
   [checkpointId('review-check-running'), includesAll('Review · Reviewer check V2')],
   [checkpointId('review-pause-requested'), includesAll('Review · Reviewer check V2')],
   [checkpointId('planning-seat-change'), includesAll('Planning…')],
@@ -1224,6 +1241,19 @@ const checkpointPredicates = [
     (context) =>
       includesTranscript()(context) &&
       workflowTranscriptText().replace(/\s+/g, ' ').split(PLAN_USAGE_LIMIT_FRAGMENT).length === 2,
+  ],
+  [
+    checkpointId('output-limit-warning'),
+    (context) => {
+      if (!includesTranscript()(context)) return false;
+      const text = workflowTranscriptText().replace(/\s+/g, ' ');
+      const sentences = [OUTPUT_LIMIT_TOOL_CALLS_MESSAGE, OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE];
+      return (
+        sentences.every((sentence) => sentence.length > 0 && text.includes(sentence)) &&
+        !text.includes('Recent tool calls') &&
+        !text.includes('runner call')
+      );
+    },
   ],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 

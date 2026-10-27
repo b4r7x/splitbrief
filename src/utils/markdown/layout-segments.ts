@@ -8,6 +8,11 @@ import type { MarkdownInlineToken, MarkdownLayoutLine, MarkdownLayoutSegment } f
 
 type WrapMode = 'word' | 'hard';
 
+interface WrapPart {
+  segment: MarkdownLayoutSegment;
+  text: string;
+}
+
 export function appendSegment(
   target: MarkdownLayoutSegment[],
   segment: MarkdownLayoutSegment,
@@ -111,38 +116,66 @@ export function wrapSegments(input: {
     });
   };
 
-  const appendWord = (segment: MarkdownLayoutSegment, text: string) => {
+  const appendFitted = (segment: MarkdownLayoutSegment, text: string) => {
     const textWidth = getTerminalCellWidth(text);
-    if (/^\s+$/.test(text)) {
-      if (currentLength === prefixLength) return;
-      if (currentLength + textWidth <= wrapWidth) {
-        appendPart(segment, text);
-      } else {
-        startContinuation();
-      }
-      return;
-    }
-
     if (textWidth > wrapWidth - prefixLength) {
       if (currentLength > prefixLength) startContinuation();
       appendHard(segment, text);
       return;
     }
-
-    if (currentLength + textWidth > wrapWidth) {
-      startContinuation();
-    }
+    if (currentLength + textWidth > wrapWidth) startContinuation();
     appendPart(segment, text);
   };
 
-  for (const segment of segments) {
-    if (mode === 'hard') {
+  const appendSpace = (segment: MarkdownLayoutSegment, text: string) => {
+    if (currentLength === prefixLength) return;
+    if (currentLength + getTerminalCellWidth(text) <= wrapWidth) {
+      appendPart(segment, text);
+    } else {
+      startContinuation();
+    }
+  };
+
+  if (mode === 'hard') {
+    for (const segment of segments) {
       appendHard(segment, segment.text);
-      continue;
+    }
+  } else {
+    const parts: WrapPart[] = [];
+    for (const segment of segments) {
+      for (const text of segment.text.split(/(\s+)/)) {
+        if (text.length > 0) parts.push({ segment, text });
+      }
     }
 
-    for (const part of segment.text.split(/(\s+)/)) {
-      appendWord(segment, part);
+    let index = 0;
+    while (index < parts.length) {
+      const part = parts[index];
+      if (part === undefined) break;
+      if (/^\s+$/.test(part.text)) {
+        appendSpace(part.segment, part.text);
+        index += 1;
+        continue;
+      }
+
+      const word: WrapPart[] = [];
+      while (index < parts.length) {
+        const next = parts[index];
+        if (next === undefined || /^\s+$/.test(next.text)) break;
+        word.push(next);
+        index += 1;
+      }
+
+      const wordWidth = word.reduce((sum, entry) => sum + getTerminalCellWidth(entry.text), 0);
+      // A glued word no line can hold breaks at its styled edges; only a part
+      // wider than the line breaks inside itself.
+      if (wordWidth > wrapWidth - prefixLength) {
+        for (const entry of word) appendFitted(entry.segment, entry.text);
+        continue;
+      }
+
+      if (currentLength + wordWidth > wrapWidth) startContinuation();
+      for (const entry of word) appendPart(entry.segment, entry.text);
     }
   }
 

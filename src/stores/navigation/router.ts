@@ -18,6 +18,8 @@ export type WorkflowExecution =
       prepared: PreparedExecution;
       /** What the operator typed to continue this run; it seeds the first step of this re-entry. */
       steer?: UserMessageInput | undefined;
+      /** Set when the run continues by itself after a boundary park that only changed a seat. */
+      resumeCause?: 'seat-change' | undefined;
     }>
   | Readonly<{ kind: 'at-rest' }>;
 

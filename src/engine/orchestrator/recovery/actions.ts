@@ -24,7 +24,7 @@ import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { loadConfig } from '../../../core/config/load/io.js';
-import { configuredHeldSeat } from '../escalation/seat-wait.js';
+import { configuredHeldSeat } from '../../../core/sessions/held-seat.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import { configError } from '../../../core/config/errors.js';

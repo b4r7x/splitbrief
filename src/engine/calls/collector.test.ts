@@ -511,7 +511,10 @@ describe('collectRunnerCallResult', () => {
     expect(result.status).toBe('completed');
     expect(result.toolUses).toHaveLength(RUNNER_CALL_TOOL_USE_MAX_ITEMS);
     expect(result.warnings).toEqual([
-      expect.objectContaining({ code: 'runner_call_tool_use_count_limit' }),
+      expect.objectContaining({
+        code: 'runner_call_tool_use_count_limit',
+        message: `Only the first ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} tool calls of this call are kept.`,
+      }),
     ]);
   });
 

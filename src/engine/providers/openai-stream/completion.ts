@@ -391,11 +391,11 @@ export async function streamCompletion(
   let finishReason: string | null = null;
   const textLimiter = createRunnerCallDeltaLimiter({
     code: 'provider_text_delta_limit',
-    label: 'provider text deltas',
+    label: 'The reply',
   });
   const toolDeltaLimiter = createRunnerCallDeltaLimiter({
     code: 'provider_tool_delta_limit',
-    label: 'provider tool deltas',
+    label: 'The streamed tool input',
   });
   let outputLimit: RunnerCallDeltaLimitResult['limit'] = null;
 

@@ -289,7 +289,7 @@ export async function spawnAndCollect(
           warning: runnerCallLimitWarning(
             runnerCallLineOutputLimit({
               code: 'stdout_line_overflow',
-              label: 'stdout line',
+              label: 'the tool output',
               lineBytes: overflow.lineBytes,
               maxLineBytes: overflow.maxLineBytes,
             }),

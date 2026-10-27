@@ -38,6 +38,7 @@
 - **Stack detection** for TypeScript, JavaScript, Python, Go and Rust. `validation.stack` pins a stack.
 - **Typed seat answers.** Plans, reviews, consults and implementer reports are JSON answers that SPLITBRIEF validates, through each tool's native schema flag where it has one.
 - **Private vulnerability reports.** The security policy describes how to report a vulnerability privately through GitHub.
+- **`--plain` names a seat wait.** When a seat starts waiting for its usage limit to reset, `--plain` writes one line: `waiting: <tool> · resets <clock>`.
 
 ### Changed
 
@@ -95,6 +96,12 @@
 
 ### Fixed
 
+- A warning about a call that hit an output limit now reads as one sentence with its size in KB or MB, for example `Only the first 256 tool calls of this call are kept.`, and the list of recent tool calls no longer runs into the warning line.
+- A wrapped line in a seat report no longer starts with the comma or other text that follows inline code.
+- A crew change that waits for the end of the current brief no longer shows `Stopped before …` in the transcript; a pause you ask for keeps its row.
+- Antigravity planner calls no longer show an `Unknown Antigravity record` warning, and a record that SPLITBRIEF does not know names its type in the warning.
+- The stop options title names only what stays: your changes and your draft, your changes, your draft, or nothing; the title mentions the draft only when the composer holds one.
+- `--plain` writes the final review as `review: passed`, `review: failed (<n> blocking)`, `review: no verdict` or `review: stopped`, and a task review as `task review <id>: …`, as the CLI reference documents; the reference lists the plan check and Render lines.
 - A plan, review, consult or brief prompt larger than about 120 KB no longer stops an Antigravity, Cursor, OpenCode, Kilo Code, Copilot or Command Code seat before the tool starts.
 - A review prompt too large for the review tool halts as Seat down and offers **Change REVIEW tool** with the detected tools that take it, beside **Skip review** and **End run**.
 - A tool that refuses the account by policy, such as Copilot's `Access denied by policy settings`, halts as Seat down with `Access refused by GitHub Copilot CLI`, and a seat with a fallback moves to it. A Cursor model that your plan does not include reads `Access refused by Cursor Agent CLI` instead of `Balance spent on`.
@@ -102,6 +109,9 @@
 - A sign-out on the PLAN or REVIEW seat, such as an OpenCode or Kilo Code provider that rejects its credential, halts as Seat down with `Signed out of <tool>`, and a seat with a fallback moves to it.
 - A signed-out Cursor seat halts as Seat down with `Signed out of Cursor Agent CLI` for a prompt of any size.
 - A run that waits for a seat's usage limit to reset no longer waits again after you move that seat to another tool and continue: it starts the new tool at once. A seat you save before you choose Retry at still waits.
+- While a seat waits for its usage limit to reset, the line under the composer and the build progress block read `Waiting for <tool> · resets <clock>` in planning, the build and the review: in an automatic wait, after **Retry at**, and when you continue a stopped run. Before, they read `Resuming …` or a running clock and named neither the tool nor the reset.
+- A stopped run no longer reads `Waiting for <tool>` with the old tool after you move that seat to another tool in `/crew`. A change of model on the same tool keeps the line.
+- An Antigravity quota that runs out in the middle of a call halts the seat at once as Seat down, and a seat with a fallback moves to it. Before, the call stayed on `No output for …` until you stopped the run.
 - When a seat's model is automatic, the header, the sidebar and the closed run's crew row name the seat's tool instead of `auto`.
 - Messages and readiness fixes now name a tool by its full name, such as `OpenAI Codex CLI` or `Ollama`, instead of its config id.
 - The status line of a run that waits for a usage-limit reset now names the tool that hit the limit by its full name, such as `OpenAI Codex CLI`, instead of the config id of the seat it started on.

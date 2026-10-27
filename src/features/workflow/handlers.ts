@@ -23,6 +23,7 @@ import { stopStore } from '../../stores/workflow/stop.js';
 import { departureStore, type Departure } from '../../stores/workflow/departure.js';
 import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import type {
+  BoundaryPark,
   QueueClearResult,
   QueueHandler,
   QueueSubmissionResult,
@@ -124,11 +125,16 @@ export function requestBoundaryPause(): void {
   pendingBoundaryPause = true;
 }
 
-/** The engine stops at a brief boundary for the operator's pause or for a seat change. */
-export function consumeBoundaryPause(): boolean {
+/**
+ * What holds the run at this brief boundary, or `undefined` to carry on. A pause the operator
+ * asked for wins over a seat change. Reading it clears the pending pause; the seat change is
+ * spent where the run is re-prepared.
+ */
+export function consumeBoundaryPause(): BoundaryPark | undefined {
   const pending = pendingBoundaryPause;
   pendingBoundaryPause = false;
-  return pending || stopStore.get().seatChange;
+  if (pending) return 'pause';
+  return stopStore.get().seatChange ? 'seat-change' : undefined;
 }
 
 export function cancelBoundaryPause(): void {

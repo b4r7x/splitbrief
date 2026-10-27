@@ -27,7 +27,7 @@ describe('createStdoutTextSink', () => {
       verdict: 'no-verdict',
       duration: 49_000,
     });
-    expect(collect([event])).toEqual(['phase: implementing', 'review: task no-verdict']);
+    expect(collect([event])).toEqual(['phase: implementing', 'task review: no verdict']);
   });
 
   it('prints a path with line breaks on the one attached-files line', () => {
@@ -188,7 +188,7 @@ describe('createStdoutTextSink', () => {
       'phase: implementing',
       'task T001: done (1 of 2 checks passed, 1 refused, 1 not run)',
       'phase: final-review',
-      'review: final pass (0 blocking)',
+      'review: passed',
       'phase: complete',
       'done: 1 tasks',
     ]);
@@ -252,7 +252,7 @@ describe('createStdoutTextSink', () => {
     expect(lines).toEqual([
       'phase: implementing',
       'task T002: failed (no checks)',
-      'review: task T002 fail (2 blocking)',
+      'task review T002: failed (2 blocking)',
       'phase: complete',
       'done: 0 tasks',
     ]);
@@ -274,12 +274,166 @@ describe('createStdoutTextSink', () => {
         },
         { type: 'workflow_complete', ts, phase: 'complete', review: 'passed' },
       ]);
-      expect(lines.filter((line) => line.startsWith('review:'))).toEqual([
-        `review: final ${verdict}${verdict === 'pass-with-notes' ? ' (0 blocking)' : ''}`,
-      ]);
+      const words = {
+        'pass-with-notes': 'passed',
+        'no-verdict': 'no verdict',
+        stopped: 'stopped',
+      }[verdict];
+      expect(lines.filter((line) => line.startsWith('review:'))).toEqual([`review: ${words}`]);
       expect(lines.at(-1)).toBe('done: 0 tasks');
     },
   );
+
+  it('prints a passing final review as passed, with no blocking count', () => {
+    const lines = collect([
+      {
+        type: 'review_completed',
+        ts,
+        phase: 'final-review',
+        scope: 'final',
+        tool: 'codex',
+        verdict: 'pass',
+        findings: { blocking: 0, minor: 0 },
+        duration: 12,
+      },
+    ]);
+
+    expect(lines).toEqual(['phase: final-review', 'review: passed']);
+  });
+
+  it('carries the blocking count of a failed final review', () => {
+    const lines = collect([
+      {
+        type: 'review_completed',
+        ts,
+        phase: 'final-review',
+        scope: 'final',
+        tool: 'codex',
+        verdict: 'fail',
+        findings: { blocking: 3, minor: 1 },
+        duration: 12,
+      },
+    ]);
+
+    expect(lines).toEqual(['phase: final-review', 'review: failed (3 blocking)']);
+  });
+
+  it('prints a pass with notes as passed', () => {
+    const lines = collect([
+      {
+        type: 'review_completed',
+        ts,
+        phase: 'final-review',
+        scope: 'final',
+        tool: 'codex',
+        verdict: 'pass-with-notes',
+        findings: { blocking: 0, minor: 4 },
+        duration: 12,
+      },
+    ]);
+
+    expect(lines).toEqual(['phase: final-review', 'review: passed']);
+  });
+
+  it('prints a review with no verdict in words', () => {
+    const lines = collect([
+      {
+        type: 'review_completed',
+        ts,
+        phase: 'final-review',
+        scope: 'final',
+        tool: 'codex',
+        verdict: 'no-verdict',
+        duration: 12,
+      },
+    ]);
+
+    expect(lines).toEqual(['phase: final-review', 'review: no verdict']);
+  });
+
+  it('prints a stopped review as stopped', () => {
+    const lines = collect([
+      {
+        type: 'review_completed',
+        ts,
+        phase: 'final-review',
+        scope: 'final',
+        tool: 'codex',
+        verdict: 'stopped',
+        duration: 12,
+      },
+    ]);
+
+    expect(lines).toEqual(['phase: final-review', 'review: stopped']);
+  });
+
+  it('prints a task review line with its task id, or without one when none is recorded', () => {
+    const lines = collect([
+      {
+        type: 'review_completed',
+        ts,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T002',
+        tool: 'codex',
+        verdict: 'fail',
+        findings: { blocking: 1, minor: 0 },
+        duration: 12,
+      },
+      {
+        type: 'review_completed',
+        ts,
+        phase: 'implementing',
+        scope: 'task',
+        tool: 'codex',
+        verdict: 'no-verdict',
+        duration: 12,
+      },
+    ]);
+
+    expect(lines).toEqual([
+      'phase: implementing',
+      'task review T002: failed (1 blocking)',
+      'task review: no verdict',
+    ]);
+  });
+
+  it('prints a plan check with its verdict, duration and command', () => {
+    const lines = collect([
+      {
+        type: 'full_suite',
+        ts,
+        phase: 'final-review',
+        id: 'K1',
+        moment: 'plan',
+        command: 'npm test',
+        status: 'done',
+        passed: true,
+        duration: 14_200,
+      },
+    ]);
+
+    expect(lines).toEqual(['phase: final-review', 'plan check K1: passed · 14.2s (npm test)']);
+  });
+
+  it('prints a render scenario with its rendered verdict and duration', () => {
+    const lines = collect([
+      {
+        type: 'full_suite',
+        ts,
+        phase: 'final-review',
+        id: 'R1',
+        moment: 'plan',
+        scenario: 'workflow-x',
+        command: 'npm run tui-shots -- --scenario workflow-x',
+        status: 'done',
+        passed: true,
+        duration: 14_200,
+      },
+    ]);
+
+    expect(lines).toEqual(['phase: final-review', 'Render workflow-x: rendered · 14.2s']);
+  });
 
   it('prints only the run completion when no review completion event arrives', () => {
     expect(

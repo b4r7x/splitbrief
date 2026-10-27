@@ -42,6 +42,7 @@ type PreparationRequest = Readonly<{
   state: WorkflowState;
   /** What the operator typed to continue this run; it rides into the first step's own prompt. */
   steer?: UserMessageInput | undefined;
+  resumeCause?: 'seat-change' | undefined;
   deps: SessionSelectDeps;
   returnOverlay: OverlayType;
 }>;
@@ -131,6 +132,7 @@ export function continueRunInPlace(
     record: RunRecord;
     state: WorkflowState;
     steer?: UserMessageInput | undefined;
+    resumeCause?: 'seat-change' | undefined;
     deps: SessionSelectDeps;
   }>,
 ): Promise<void> {
@@ -138,6 +140,7 @@ export function continueRunInPlace(
     record: input.record,
     state: input.state,
     ...(input.steer !== undefined && { steer: input.steer }),
+    ...(input.resumeCause !== undefined && { resumeCause: input.resumeCause }),
     deps: input.deps,
     returnOverlay: overlayStore.get().active,
   });
@@ -158,6 +161,7 @@ function beginPreparation(request: PreparationRequest): Promise<void> {
           kind: 'local',
           prepared: execution,
           ...(request.steer !== undefined && { steer: request.steer }),
+          ...(request.resumeCause !== undefined && { resumeCause: request.resumeCause }),
         },
       });
       lastRequest = undefined;

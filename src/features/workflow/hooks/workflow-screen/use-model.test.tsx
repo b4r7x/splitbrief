@@ -343,3 +343,55 @@ describe('useWorkflowScreen at rest on a run another process owns', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe('useWorkflowScreen continuing a run a crew change carried on', () => {
+  let projectDir = '';
+
+  beforeEach(() => {
+    resetAllStores();
+    clearAllHandlers();
+    projectDir = createTempDir('use-model-seat-change');
+    configStore.__testReset({ projectDir });
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    cleanupTempDir(projectDir);
+  });
+
+  it('hands the cause to the run it starts', async () => {
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord(),
+      execution: {
+        kind: 'local',
+        prepared: prepareWorkflowExecution({
+          projectDir,
+          feature: 'seat change feature',
+          config: makeConfig(),
+          sessionId: 'use-model-seat-change',
+        }),
+        resumeCause: 'seat-change',
+      },
+    });
+    const causes: (string | undefined)[] = [];
+    function CauseHarness() {
+      useWorkflowScreen({
+        onRuntimeCommand: () => {},
+        deps: {
+          runWorkflow: (options) => {
+            causes.push(options.resumeCause);
+            return new Promise(() => {});
+          },
+        },
+      });
+      return <Text>ready</Text>;
+    }
+
+    const inst = renderFeature(<CauseHarness />);
+    await vi.waitFor(() => {
+      expect(causes).toEqual(['seat-change']);
+    });
+    inst.unmount();
+  });
+});

@@ -10,6 +10,19 @@ describe('isTranscriptRowlessEvent', () => {
     ).toBe(true);
   });
 
+  it('keeps a boundary park the user asked for', () => {
+    const park: EngineEvent = {
+      type: 'turn_interrupted',
+      ts: 0,
+      phase: 'implementing',
+      source: 'user',
+      at: 'boundary',
+      step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+    };
+
+    expect(isTranscriptRowlessEvent(park)).toBe(false);
+  });
+
   it('is true for row-less event types and false for visible rows', () => {
     const heartbeat: EngineEvent = {
       type: 'planner_heartbeat',

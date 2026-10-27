@@ -525,6 +525,7 @@ describe('continueRunInPlace', () => {
       record,
       state: savedState,
       steer,
+      resumeCause: 'seat-change',
       deps,
     });
     expect(sessionSelectStore.get().preparation.kind).toBe('preparing');
@@ -536,6 +537,7 @@ describe('continueRunInPlace', () => {
     if (route.screen === 'workflow' && route.execution.kind === 'local') {
       expect(route.execution.prepared).toBe(prepared);
       expect(route.execution.steer).toBe(steer);
+      expect(route.execution.resumeCause).toBe('seat-change');
     }
     expect(sessionSelectStore.get().preparation.kind).toBe('idle');
   });

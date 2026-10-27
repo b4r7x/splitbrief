@@ -219,6 +219,7 @@ function lifecycleState(
     steerableCall: null,
     phaseFirstSeenTs: {},
     stall: null,
+    seatWait: null,
     lastRunnerEventTs: NOW,
     attemptStartedTs: NOW,
     startedAt: NOW,

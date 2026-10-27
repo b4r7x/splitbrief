@@ -28,6 +28,7 @@ export interface RunnerCallOutputLimit {
   message: string;
   bytesSeen?: number | undefined;
   maxBytes?: number | undefined;
+  recentToolCalls?: string | undefined;
 }
 
 export interface RunnerCallDeltaLimitResult {
@@ -41,6 +42,40 @@ type RunnerCallArtifact = Extract<RunnerCallEvent, { type: 'call_artifact' }>['a
 export interface RunnerCallBoundedValue<T> {
   value: T;
   limit: RunnerCallOutputLimit | null;
+}
+
+export function formatLimitSize(bytes: number): string {
+  if (bytes >= 1_048_576 && bytes % 1_048_576 === 0) return `${bytes / 1_048_576} MB`;
+  if (bytes >= 1024 && bytes % 1024 === 0) return `${bytes / 1024} KB`;
+  return `${bytes} bytes`;
+}
+
+export function runnerCallByteLimitMessage(label: string, maxBytes: number): string {
+  return `${label} was larger than ${formatLimitSize(maxBytes)} and was not kept in full.`;
+}
+
+export function runnerCallItemLimit(opts: {
+  code: string;
+  label: string;
+  maxItems: number;
+}): RunnerCallOutputLimit {
+  return {
+    code: opts.code,
+    message: `Only the first ${opts.maxItems} ${opts.label} of this call are kept.`,
+  };
+}
+
+export function runnerCallLimitError(limit: RunnerCallOutputLimit): {
+  code: string;
+  message: string;
+} {
+  return {
+    code: limit.code,
+    message:
+      limit.recentToolCalls === undefined
+        ? limit.message
+        : `${limit.message}\n${limit.recentToolCalls}`,
+  };
 }
 
 export function createRunnerCallDeltaLimiter(opts: {
@@ -72,7 +107,7 @@ export function createRunnerCallDeltaLimiter(opts: {
           text: prefix,
           limit: setLimit({
             code: opts.code,
-            message: `${opts.label} exceeded ${maxBytes} bytes and was truncated`,
+            message: runnerCallByteLimitMessage(opts.label, maxBytes),
             bytesSeen: bytesStored + textBytes - Buffer.byteLength(prefix, 'utf8'),
             maxBytes,
           }),
@@ -95,7 +130,7 @@ export function runnerCallLineOutputLimit(opts: {
 }): RunnerCallOutputLimit {
   return {
     code: opts.code,
-    message: `${opts.label} exceeded ${opts.maxLineBytes} bytes on one line and was truncated`,
+    message: `A line of ${opts.label} longer than ${formatLimitSize(opts.maxLineBytes)} was skipped.`,
     bytesSeen: opts.lineBytes,
     maxBytes: opts.maxLineBytes,
   };
@@ -133,10 +168,12 @@ export function runnerCallToolUseCountLimit(
 ): RunnerCallOutputLimit {
   const summary = runnerCallToolUseSummary(toolUses);
   return {
-    code: 'runner_call_tool_use_count_limit',
-    message: `runner call tool results exceeded ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} items and was truncated${
-      summary.length > 0 ? `\n${summary}` : ''
-    }`,
+    ...runnerCallItemLimit({
+      code: 'runner_call_tool_use_count_limit',
+      label: 'tool calls',
+      maxItems: RUNNER_CALL_TOOL_USE_MAX_ITEMS,
+    }),
+    ...(summary.length > 0 && { recentToolCalls: summary }),
   };
 }
 
@@ -152,7 +189,7 @@ export function boundRunnerCallToolUse(
   const input = boundRunnerCallRecordPayload(
     toolUse.input,
     RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES,
-    'tool input payload',
+    'A tool call input',
     'runner_call_tool_input_limit',
   );
   const output =
@@ -161,7 +198,7 @@ export function boundRunnerCallToolUse(
       : boundRunnerCallPayload(
           toolUse.output,
           RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES,
-          'tool output payload',
+          'A tool call output',
           'runner_call_tool_output_limit',
         );
   return {
@@ -181,7 +218,7 @@ export function boundRunnerCallArtifact(
   const bounded = boundRunnerCallStringPayload(
     artifact.text,
     RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,
-    'artifact text',
+    'An artifact',
     'runner_call_artifact_text_limit',
   );
   return {
@@ -201,10 +238,7 @@ export function finishRunnerCallOutputLimit(
   recorder.warning({ warning: runnerCallLimitWarning(limit) });
   return recorder.finishFailed({
     status: 'truncated',
-    error: {
-      code: limit.code,
-      message: limit.message,
-    },
+    error: runnerCallLimitError(limit),
     usage: opts.usage,
     nativeSessionId: opts.nativeSessionId,
     partial: true,
@@ -262,7 +296,7 @@ function boundRunnerCallStringPayload(
       bounded.truncated || bounded.oversized
         ? {
             code,
-            message: `${label} exceeded ${maxBytes} bytes and was truncated`,
+            message: runnerCallByteLimitMessage(label, maxBytes),
             bytesSeen: bounded.bytes,
             maxBytes,
           }
@@ -287,7 +321,7 @@ function boundRunnerCallPayload(
       bounded.truncated || bounded.oversized
         ? {
             code,
-            message: `${label} exceeded ${maxBytes} bytes and was truncated`,
+            message: runnerCallByteLimitMessage(label, maxBytes),
             bytesSeen: bounded.bytes,
             maxBytes,
           }

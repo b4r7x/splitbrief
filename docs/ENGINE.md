@@ -545,9 +545,11 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 
 // A resumable stop parked the run
 { type: 'turn_interrupted'; source?: 'user' | 'watchdog';
-  at?: StepCut; step?: StepRef }
+  at?: StepCut; step?: StepRef; cause?: 'seat-change' }
 // `at` says where the stop landed: inside the call, or on a boundary (between two briefs,
-// or at a gate). `step` is the step the stop parked. Older logs omit both.
+// or at a gate). `step` is the step the stop parked. `cause` marks a boundary park that only
+// changes a seat, where the run stops so the next brief starts on the new seat. Older logs
+// omit `at`, `step` and `cause`.
 
 // Operational message — `warning` and `info` have the same shape without `resetAt`;
 // `resetAt` is the ISO instant a usage-limit halt's quota comes back. `info` is a status

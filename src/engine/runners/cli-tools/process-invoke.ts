@@ -280,6 +280,7 @@ export async function invokeProcessCli(
   let stdoutLastLine = '';
   let stdoutTailCarry = '';
   let stderr = '';
+  let storedHalt: { code: string; message: string } | undefined;
   let terminalSeen = false;
   const timeoutController = new AbortController();
   // A seat call has no default total: only a configured `timeout` arms one.
@@ -403,7 +404,7 @@ export async function invokeProcessCli(
           warning: runnerCallLimitWarning(
             runnerCallLineOutputLimit({
               code: 'stdout_line_overflow',
-              label: 'stdout line',
+              label: 'the tool output',
               lineBytes: overflow.lineBytes,
               maxLineBytes: overflow.maxLineBytes,
             }),
@@ -517,6 +518,13 @@ export async function invokeProcessCli(
       onStderr(chunk) {
         stderr += chunk;
         recorder.stderr({ text: chunk });
+        if (terminalSeen) return undefined;
+        const halt = haltFailure(stderr);
+        if (halt !== null && (halt.code === 'usage-limit' || halt.code === 'unauthenticated')) {
+          storedHalt = halt;
+          return { state: 'protocol-failure', remediation: halt.message };
+        }
+        return undefined;
       },
       onClose(exitCode, processSignal) {
         closeAdmission();
@@ -758,6 +766,15 @@ export async function invokeProcessCli(
                 code: 'prompt-transport-error',
                 message: `CLI prompt could not be fully delivered through stdin${stderr.trim() === '' ? '' : `: ${stderr.trim()}`}`,
               }),
+      });
+    }
+    if (storedHalt !== undefined) {
+      return finishFailureSafely({
+        recorder,
+        context: context.callContext,
+        credentialValues,
+        status: 'failed',
+        error: storedHalt,
       });
     }
     const fatalState = fatalStateOf(cause);

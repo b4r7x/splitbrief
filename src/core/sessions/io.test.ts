@@ -21,6 +21,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
+import { writeConfigYamlText } from '#testing/helpers/config-io.js';
 import { taskId } from '../schemas/task.js';
 import { installDiagnosticSink } from '../../lib/warn.js';
 
@@ -155,6 +156,14 @@ describe('listSessions', () => {
       '2024-01-02-mid',
       '2024-01-01-old',
     ]);
+  });
+
+  it('lists a run while config.yaml does not load', () => {
+    tmp = createTempDir('sessions-io-test');
+    writeSessionSubdir(tmp, 'run-1', makeSession({ id: 'run-1', feature: 'kept run' }));
+    writeConfigYamlText(tmp, 'version: 99\n');
+
+    expect(listSessions(tmp).map((session) => session.feature)).toEqual(['kept run']);
   });
 
   it('returns every stored session newest first', () => {

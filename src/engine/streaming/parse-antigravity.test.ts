@@ -238,6 +238,41 @@ describe('parseAntigravityLine', () => {
     ).toEqual([]);
   });
 
+  it('skips the finish step that closes the turn', () => {
+    expect(
+      parseAntigravityLine(
+        '{"event":"step_update","step_update":{"conversation_id":"377706fa-fec2-4781-9642-68630a3a2847","step_index":4,"state":"DONE","step_type":"finish","duration_seconds":0.015283}}',
+      ),
+    ).toEqual([]);
+  });
+
+  // Captured live from a 17-minute `agy` review call (antigravity 1.4.7) on 2026-10-27: agy wrote
+  // three of these mid-turn, each with only its duration.
+  it('skips the checkpoint step of a long turn', () => {
+    expect(
+      parseAntigravityLine(
+        '{"event":"step_update","step_update":{"conversation_id":"9f8a10a4-848b-4ad5-8516-1c3ddc81c98f","step_index":46,"state":"DONE","step_type":"checkpoint","duration_seconds":53.875348}}',
+      ),
+    ).toEqual([]);
+  });
+
+  it('names the step type of an unknown step', () => {
+    expect(
+      parseAntigravityLine(
+        JSON.stringify({
+          event: 'step_update',
+          step_update: { step_index: 2, state: 'DONE', step_type: 'compaction' },
+        }),
+      ),
+    ).toEqual([
+      {
+        type: 'warning',
+        code: 'unknown-antigravity-record',
+        message: 'Unknown Antigravity step: compaction',
+      },
+    ]);
+  });
+
   it('skips user input, warns on unknown records, and fails the call on malformed JSON', () => {
     expect(
       parseAntigravityLine(
@@ -251,7 +286,7 @@ describe('parseAntigravityLine', () => {
       {
         type: 'warning',
         code: 'unknown-antigravity-record',
-        message: 'Unknown Antigravity record',
+        message: 'Unknown Antigravity record: heartbeat',
       },
     ]);
     expect(parseAntigravityLine('{not-json')).toEqual([

@@ -129,7 +129,7 @@ describe('createRunnerAttemptCallbackBuffer', () => {
       severity: 'warning',
       source: 'system',
       surface: 'activity',
-      message: expect.stringContaining('Runner callback buffer exceeded'),
+      message: 'Only the first 12288 live updates or 3 MB of this call are shown.',
     });
     expect(warning.warning.message.length).toBeLessThanOrEqual(RUNNER_CALL_MESSAGE_MAX_LENGTH);
     expect(events.at(-1)).toMatchObject({ type: 'call_completed', status: 'completed' });

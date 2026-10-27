@@ -151,15 +151,15 @@ describe('requestBoundaryPause', () => {
     requestBoundaryPause();
 
     expect(stopStore.get().intent).toBe('pause-after-brief');
-    expect(consumeBoundaryPause()).toBe(true);
-    expect(consumeBoundaryPause()).toBe(false);
+    expect(consumeBoundaryPause()).toBe('pause');
+    expect(consumeBoundaryPause()).toBeUndefined();
   });
 
   it('keeps running drops the pending pause', () => {
     requestBoundaryPause();
     cancelBoundaryPause();
 
-    expect(consumeBoundaryPause()).toBe(false);
+    expect(consumeBoundaryPause()).toBeUndefined();
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
   });
 
@@ -167,15 +167,22 @@ describe('requestBoundaryPause', () => {
     requestSeatChangeAtBoundary();
 
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', seatChange: true });
-    expect(consumeBoundaryPause()).toBe(true);
+    expect(consumeBoundaryPause()).toBe('seat-change');
   });
 
   it('spending a seat change leaves no boundary to stop at', () => {
     requestSeatChangeAtBoundary();
     spendSeatChange();
 
-    expect(consumeBoundaryPause()).toBe(false);
+    expect(consumeBoundaryPause()).toBeUndefined();
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', seatChange: false });
+  });
+
+  it('a pause the operator asked for wins over a seat change', () => {
+    requestBoundaryPause();
+    requestSeatChangeAtBoundary();
+
+    expect(consumeBoundaryPause()).toBe('pause');
   });
 
   it('spending a seat change keeps the pause the operator asked for', () => {
@@ -184,7 +191,7 @@ describe('requestBoundaryPause', () => {
     spendSeatChange();
 
     expect(stopStore.get().intent).toBe('pause-after-brief');
-    expect(consumeBoundaryPause()).toBe(true);
+    expect(consumeBoundaryPause()).toBe('pause');
     expect(landBoundaryPause()).toBe('park');
   });
 

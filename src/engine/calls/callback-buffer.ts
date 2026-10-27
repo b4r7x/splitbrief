@@ -1,5 +1,5 @@
 import type { RunnerCallContext, RunnerCallEvent } from './types.js';
-import { RUNNER_CALL_OUTPUT_MAX_BYTES } from './output-limit.js';
+import { formatLimitSize, RUNNER_CALL_OUTPUT_MAX_BYTES } from './output-limit.js';
 import { isRunnerCallTerminalEvent } from './status.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
 
@@ -19,7 +19,7 @@ const CALLBACK_BUFFER_MAX_BYTES = RUNNER_CALL_OUTPUT_MAX_BYTES * 3;
 // Callback fan-out's own bound.
 const CALLBACK_BUFFER_MAX_EVENTS = 12_288;
 const CALLBACK_BUFFER_OVERFLOW_WARNING_CODE = 'callback_buffer_overflow';
-const CALLBACK_BUFFER_OVERFLOW_WARNING_MESSAGE = `Runner callback buffer exceeded ${CALLBACK_BUFFER_MAX_EVENTS} events or ${CALLBACK_BUFFER_MAX_BYTES} bytes; non-terminal callbacks were dropped.`;
+const CALLBACK_BUFFER_OVERFLOW_WARNING_MESSAGE = `Only the first ${CALLBACK_BUFFER_MAX_EVENTS} live updates or ${formatLimitSize(CALLBACK_BUFFER_MAX_BYTES)} of this call are shown.`;
 
 export function createRunnerAttemptCallbackBuffer(
   callbacks: RunnerAttemptCallbacks,

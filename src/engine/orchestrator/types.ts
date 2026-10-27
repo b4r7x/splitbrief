@@ -80,12 +80,20 @@ export type QueueHandler = (
 ) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
 export type ClearQueueHandler = () => QueueClearResult | Promise<QueueClearResult>;
 
+/** Why the engine stopped at a brief boundary: the operator's pause, or a seat change. */
+export type BoundaryPark = 'pause' | 'seat-change';
+
 export interface WorkflowSinks {
   setAbortHandler: (handler: (() => void) | null) => void;
   setQueueHandler: (handler: QueueHandler | null) => void;
   setClearQueueHandler?: ((handler: ClearQueueHandler | null) => void) | undefined;
   consumeBoundaryInterrupt?: () => boolean;
-  consumeBoundaryPause?: () => boolean;
+  /**
+   * What holds the run at this boundary, or `undefined` to carry on: `'pause'` for a pause the
+   * operator asked for, `'seat-change'` for one that only changes a seat. Reading it clears the
+   * pending pause.
+   */
+  consumeBoundaryPause?: () => BoundaryPark | undefined;
   /** When the operator resumed the held continuation, before the engine saved its next state. */
   getContinuationResumedAt?: () => number | null | undefined;
 }

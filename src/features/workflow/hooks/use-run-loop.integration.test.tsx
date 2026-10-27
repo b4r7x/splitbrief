@@ -40,6 +40,7 @@ import { readWorkspaceRecord } from '../../../engine/orchestrator/isolation/rete
 import { createSnapshot } from '../../../engine/snapshots/create.js';
 import { readRunEvents } from '../../../engine/events/replay.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import type { BoundaryPark } from '../../../engine/orchestrator/types.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
@@ -106,6 +107,7 @@ interface RunnerHandle {
 interface HarnessProps {
   prepared: PreparedExecution;
   steer?: UserMessageInput | undefined;
+  resumeCause?: 'seat-change' | undefined;
   captureRunner?: { current: RunnerHandle | null };
   runWorkflow?: RunWorkflowFn | undefined;
   prepareExecution?: PrepareExecutionFn | undefined;
@@ -115,6 +117,7 @@ interface HarnessProps {
 function Harness({
   prepared,
   steer,
+  resumeCause,
   captureRunner,
   runWorkflow,
   prepareExecution = reprepareSameSession(),
@@ -125,6 +128,7 @@ function Harness({
   useRunLoop({
     prepared,
     steer,
+    resumeCause,
     inputMode,
     continuation,
     runWorkflow,
@@ -302,7 +306,11 @@ const CLAUDE_CODE_SEAT_SAVED = makeConfig({
 
 /** The engine entry after a halt, recording what would stop it at its first brief boundary. */
 function engineEntryAfterHalt() {
-  let seen: { intent: string; pausedAtBoundary: boolean | undefined; steer: string | undefined };
+  let seen: {
+    intent: string;
+    pausedAtBoundary: BoundaryPark | undefined;
+    steer: string | undefined;
+  };
   const engine: RunWorkflowFn = async (options) => {
     seen = {
       intent: stopStore.get().intent,
@@ -1300,6 +1308,45 @@ describe('useRunLoop', () => {
     inst.unmount();
   });
 
+  it('marks only the first call of a run a crew change carried on', async () => {
+    const sessionId = '2026-10-27-seat-change-resume';
+    const halted = saveHaltedRun(sessionId);
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: halted,
+    });
+    const seen: (string | undefined)[] = [];
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      seen.push(options.resumeCause);
+      if (seen.length === 1) {
+        const current = loadState({ projectDir, sessionId });
+        if (!current) throw new Error('expected persisted state on disk');
+        saveState({ projectDir, sessionId }, { ...current, pendingRecovery: makeRecoveryIssue() });
+      }
+      return makeSummary();
+    });
+
+    const inst = renderHarness({
+      prepared,
+      resumeCause: 'seat-change',
+      captureRunner,
+      runWorkflow: runWorkflowStub,
+    });
+    await answerRecoveryPanel(captureRunner, 'retry');
+    await vi.waitFor(() => {
+      expect(seen).toEqual(['seat-change']);
+    });
+    await answerRecoveryPanel(captureRunner, 'retry');
+    await vi.waitFor(() => {
+      expect(seen).toEqual(['seat-change', undefined]);
+    });
+
+    inst.unmount();
+  });
+
   it('keeps the re-entry steer when the panel answer carries none', async () => {
     const sessionId = '2026-09-21-recovery-keeps-steer';
     const halted = saveHaltedRun(sessionId);
@@ -1611,7 +1658,7 @@ describe('useRunLoop', () => {
       const prepared = savedRun('2026-10-21-cut-brief-seat-saved');
       configStore.__testReset({ projectDir, config: prepared.config });
       const requests: PrepareExecutionInput[] = [];
-      let pausedAtBoundary: boolean | undefined;
+      let pausedAtBoundary: BoundaryPark | undefined;
       const run = parkingEngine(async (options) => {
         await options.callbacks.onContinuationNeeded?.('', 'mid-step', []);
         pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
@@ -1625,7 +1672,7 @@ describe('useRunLoop', () => {
         expect(run.passes).toHaveLength(2);
       });
 
-      expect(pausedAtBoundary).toBe(true);
+      expect(pausedAtBoundary).toBe('seat-change');
       expect(continueAtRest).toHaveBeenCalledTimes(1);
       expect(run.passes[1]?.prepared.config.implementer).toMatchObject({ tool: 'codex' });
 
@@ -1655,7 +1702,7 @@ describe('useRunLoop', () => {
     /** The engine runs one brief until the save lands, then reaches the brief boundary. */
     function briefUntilSaved() {
       const { promise: saved, resolve: savedNow } = Promise.withResolvers<void>();
-      let pausedAtBoundary: boolean | undefined;
+      let pausedAtBoundary: BoundaryPark | undefined;
       const engine: RunWorkflowFn = vi.fn(async (options) => {
         await saved;
         pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
@@ -1691,7 +1738,7 @@ describe('useRunLoop', () => {
       });
 
       expect(intentAfterSave).toBe('none');
-      expect(brief.pausedAtBoundary()).toBe(false);
+      expect(brief.pausedAtBoundary()).toBeUndefined();
       expect(continueAtRest).not.toHaveBeenCalled();
 
       inst.unmount();
@@ -1727,7 +1774,7 @@ describe('useRunLoop', () => {
 
       expect(saved.kind).toBe('saved');
       expect(intentAfterSave).toBe('none');
-      expect(brief.pausedAtBoundary()).toBe(false);
+      expect(brief.pausedAtBoundary()).toBeUndefined();
       expect(continueAtRest).not.toHaveBeenCalled();
 
       inst.unmount();
@@ -1757,7 +1804,7 @@ describe('useRunLoop', () => {
     /** The engine runs one brief until the test lets it reach the brief boundary. */
     function briefUntilBoundary() {
       const { promise: reached, resolve: reachBoundary } = Promise.withResolvers<void>();
-      let pausedAtBoundary: boolean | undefined;
+      let pausedAtBoundary: BoundaryPark | undefined;
       const engine: RunWorkflowFn = vi.fn(async (options) => {
         await reached;
         pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
@@ -1783,7 +1830,7 @@ describe('useRunLoop', () => {
         expect(continueAtRest).toHaveBeenCalledTimes(1);
       });
 
-      expect(brief.pausedAtBoundary()).toBe(true);
+      expect(brief.pausedAtBoundary()).toBe('seat-change');
       inst.unmount();
     });
 
@@ -1807,7 +1854,7 @@ describe('useRunLoop', () => {
         expect(continueAtRest).toHaveBeenCalledTimes(1);
       });
 
-      expect(brief.pausedAtBoundary()).toBe(true);
+      expect(brief.pausedAtBoundary()).toBe('seat-change');
       inst.unmount();
     });
   });
@@ -2331,7 +2378,7 @@ describe('useRunLoop', () => {
 
         expect(requests).toEqual([expect.objectContaining({ effectiveConfig: CODEX_SEAT_SAVED })]);
         expect(run.entered[1]?.config.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
-        expect(reentry.seen()).toEqual({ pausedAtBoundary: false, intent: 'none', steer });
+        expect(reentry.seen()).toEqual({ pausedAtBoundary: undefined, intent: 'none', steer });
 
         inst.unmount();
       },
@@ -2368,7 +2415,7 @@ describe('useRunLoop', () => {
       });
 
       expect(run.entered[1]?.config.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
-      expect(reentry.seen()).toMatchObject({ pausedAtBoundary: false, intent: 'none' });
+      expect(reentry.seen()).toMatchObject({ pausedAtBoundary: undefined, intent: 'none' });
 
       inst.unmount();
     });
@@ -2412,7 +2459,7 @@ describe('useRunLoop', () => {
         }),
       ]);
       expect(run.entered[0]?.config.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
-      expect(reentry.seen()).toMatchObject({ pausedAtBoundary: false, intent: 'none' });
+      expect(reentry.seen()).toMatchObject({ pausedAtBoundary: undefined, intent: 'none' });
 
       inst.unmount();
     });
@@ -2702,7 +2749,7 @@ describe('useRunLoop', () => {
 
         expect(reentry.seen()).toMatchObject({
           intent: 'pause-after-brief',
-          pausedAtBoundary: true,
+          pausedAtBoundary: 'pause',
         });
 
         inst.unmount();
@@ -2852,7 +2899,10 @@ describe('useRunLoop', () => {
 
           expect(halt.run.entered[1]?.config.implementer).toMatchObject({ tool: 'claude-code' });
           expect(halt.run.entered[1]?.config.reviewer).toEqual(savedUnderBrief.reviewer);
-          expect(halt.reentry.seen()).toMatchObject({ intent: 'none', pausedAtBoundary: false });
+          expect(halt.reentry.seen()).toMatchObject({
+            intent: 'none',
+            pausedAtBoundary: undefined,
+          });
           expect(halt.continueAtRest).not.toHaveBeenCalled();
 
           halt.inst.unmount();
@@ -2996,7 +3046,7 @@ describe('useRunLoop', () => {
         }),
         sourceConfig: parsePreparedConfig(onAuto),
       };
-      let pausedAtBoundary: boolean | undefined;
+      let pausedAtBoundary: BoundaryPark | undefined;
       const run = recordedEngine({
         1: async () => {
           saveHaltedRun(sessionId);
@@ -3025,7 +3075,7 @@ describe('useRunLoop', () => {
       });
 
       expect(saved.kind).toBe('saved');
-      expect(pausedAtBoundary).toBe(false);
+      expect(pausedAtBoundary).toBeUndefined();
       expect(stopStore.get().intent).toBe('none');
 
       inst.unmount();
@@ -3048,7 +3098,7 @@ describe('useRunLoop', () => {
         sourceConfig: parsePreparedConfig(noModel),
       };
       configStore.__testReset({ projectDir, config: noModel });
-      let pausedAtBoundary: boolean | undefined;
+      let pausedAtBoundary: BoundaryPark | undefined;
       const run = recordedEngine({
         1: async (options) => {
           pausedAtBoundary = options.sinks.consumeBoundaryPause?.();
@@ -3061,7 +3111,7 @@ describe('useRunLoop', () => {
         expect(run.returned()).toBe(1);
       });
 
-      expect(pausedAtBoundary).toBe(false);
+      expect(pausedAtBoundary).toBeUndefined();
       expect(stopStore.get().intent).toBe('none');
 
       inst.unmount();

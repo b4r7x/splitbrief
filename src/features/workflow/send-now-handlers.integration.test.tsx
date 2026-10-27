@@ -171,7 +171,7 @@ it.each([false, true])(
     expect(calls[1]?.steer).toContain(message.text);
     expect(calls[1]?.partial).toBe('Partial BUILD output');
     expect(calls[1]?.signal.aborted).toBe(false);
-    expect(consumeBoundaryPause()).toBe(false);
+    expect(consumeBoundaryPause()).toBeUndefined();
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', parked: null });
     expect(loadState(ref)).toMatchObject({
       phase: 'implementing',

@@ -2230,6 +2230,37 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-seat-moved',
+      title: 'Workflow · a run waiting for a seat reset whose seat moved, at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-seat-moved',
+        title: 'Run waiting for a seat reset whose seat moved',
+        kind: 'ready',
+        marker: 'type a correction or ⏎ to continue',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-live-seat-wait',
+      title: 'Workflow · a running workflow waiting for a seat reset',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'live-seat-wait',
+        title: 'Running workflow waiting for a seat reset',
+        kind: 'implementation',
+        marker: 'briefs passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'activity', title: 'Implementation activity block' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-halted-chosen',
       title: 'Workflow · a halted run killed after its action was chosen',
       surface: screenSurface('workflow'),
@@ -4135,6 +4166,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Planning transcript' },
         { id: 'activity', title: 'Plan activity block' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-output-limit-warning',
+      title: 'Workflow · output-limit warnings in a planning call',
+      surface: screenSurface('workflow'),
+      viewports: [viewport({ cols: 120, rows: 40 }), viewport({ cols: 160, rows: 45 })],
+      checkpoint: {
+        id: 'output-limit-warning',
+        title: 'Each limit warning reads as one sentence',
+        kind: 'planning',
+        marker: 'Only the first 256',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
       ],
     }),
     defineScenario({

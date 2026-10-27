@@ -957,6 +957,23 @@ describe('HomeScreen', () => {
       ui.unmount();
     });
 
+    it('keeps listing the runs while an edit does not load', async () => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+      saveSummary(
+        { projectDir, sessionId: 'kept-run' },
+        makeSession({ id: 'kept-run', feature: 'kept feature' }),
+      );
+      const { ui, current } = await homeAfterTicks(() => {
+        writeConfigYaml(projectDir, { ...crewOn('claude-haiku-4-5'), version: 2 });
+        saveSummary(
+          { projectDir, sessionId: 'kept-run' },
+          makeSession({ id: 'kept-run', feature: 'kept feature', status: 'complete' }),
+        );
+      }, 2);
+      expect(lineContaining(current(), 'kept feature')).toContain('complete');
+      ui.unmount();
+    });
+
     it('shows the no-config state once the file is deleted', async () => {
       terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
       const { ui, before, current } = await homeAfterTicks(() =>

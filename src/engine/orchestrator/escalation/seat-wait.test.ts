@@ -104,7 +104,10 @@ describe('runSeatCall', () => {
       kind: 'cli',
       holds: { tool: 'codex', kind: 'cli', profile: 'default' },
     });
-    expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(1);
+    const starts = events.filter((event) => event.type === 'seat_wait_started');
+    expect(starts).toHaveLength(1);
+    expect(starts[0]).toMatchObject({ seat: 'build', tool: 'OpenAI Codex CLI' });
+    expect(events.filter((event) => event.type === 'seat_wait_ended')).toHaveLength(0);
 
     await vi.advanceTimersByTimeAsync(300_000);
     await expect(pending).resolves.toEqual({ ok: true, value: 'done' });
@@ -112,6 +115,9 @@ describe('runSeatCall', () => {
     // The attempt the wait replaces keeps its usage with the caller.
     expect(discarded).toEqual(['limited']);
     expect(loadState(ref)?.seatWait).toBeUndefined();
+    const ends = events.filter((event) => event.type === 'seat_wait_ended');
+    expect(ends).toHaveLength(1);
+    expect(ends[0]).toMatchObject({ seat: 'build' });
   });
 
   it('leaves a two-hour reset to the runner-usage-limit halt without waiting', async () => {
@@ -140,6 +146,7 @@ describe('runSeatCall', () => {
     });
     expect(calls).toBe(1);
     expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'seat_wait_ended')).toHaveLength(0);
     expect(loadState(ref)?.seatWait).toBeUndefined();
   });
 
@@ -160,6 +167,7 @@ describe('runSeatCall', () => {
 
     expect(result.ok).toBe(false);
     expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'seat_wait_ended')).toHaveLength(0);
     expect(loadState(ref)?.seatWait).toBeUndefined();
   });
 
@@ -200,11 +208,11 @@ describe('runSeatCall', () => {
 });
 
 describe('waitForSeatReset', () => {
-  it('leaves the persisted wait in place when the signal aborts it', async () => {
+  it('ends the live wait but keeps the persisted one when the signal aborts it', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
     const { projectDir, sessionId } = setupProject();
-    const { bus } = makeBusRecorder();
+    const { bus, events } = makeBusRecorder();
     const ref = { projectDir, sessionId, bus };
     const state = makeImplState([makeTask()]);
     const controller = new AbortController();
@@ -219,6 +227,10 @@ describe('waitForSeatReset', () => {
     await expect(pending).rejects.toThrow('stopped');
     // The wait survives the stop: a resume reads it back and keeps waiting.
     expect(loadState(ref)?.seatWait?.resetAt).toBe('2026-01-01T00:05:00.000Z');
+    // A steer re-runs the call at once, so the live wait line must not outlive the abort.
+    expect(events.filter((event) => event.type === 'seat_wait_ended')).toEqual([
+      expect.objectContaining({ seat: 'build' }),
+    ]);
   });
 });
 
@@ -238,12 +250,16 @@ describe('resumeSeatWait', () => {
     await vi.advanceTimersByTimeAsync(1);
 
     expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'seat_wait_ended')).toHaveLength(0);
     expect(loadState(ref)?.seatWait?.seat).toBe('plan');
 
     await vi.advanceTimersByTimeAsync(4 * 60_000);
     const resumed = await pending;
     expect(resumed.seatWait).toBeUndefined();
     expect(loadState(ref)?.seatWait).toBeUndefined();
+    const ends = events.filter((event) => event.type === 'seat_wait_ended');
+    expect(ends).toHaveLength(1);
+    expect(ends[0]).toMatchObject({ seat: 'plan' });
   });
 
   it('releases a persisted deadline already in the past without waiting', async () => {
@@ -261,6 +277,9 @@ describe('resumeSeatWait', () => {
 
     expect(resumed.seatWait).toBeUndefined();
     expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(0);
+    const ends = events.filter((event) => event.type === 'seat_wait_ended');
+    expect(ends).toHaveLength(1);
+    expect(ends[0]).toMatchObject({ seat: 'build' });
     expect(loadState(ref)?.seatWait).toBeUndefined();
   });
 
@@ -287,6 +306,9 @@ describe('resumeSeatWait', () => {
 
     expect(resumed.seatWait).toBeUndefined();
     expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(0);
+    const ends = events.filter((event) => event.type === 'seat_wait_ended');
+    expect(ends).toHaveLength(1);
+    expect(ends[0]).toMatchObject({ seat: 'build' });
     expect(loadState(ref)?.seatWait).toBeUndefined();
   });
 
@@ -366,6 +388,7 @@ describe('resumeSeatWait', () => {
       expect(loadState(ref)?.seatWait !== undefined).toBe(waits);
       await vi.advanceTimersByTimeAsync(4 * 60_000);
       await pending;
+      expect(events.filter((event) => event.type === 'seat_wait_ended')).toHaveLength(1);
     },
   );
 });
@@ -461,6 +484,27 @@ describe('the seat wait names the runner it waits on', () => {
       await expect(pending).resolves.toEqual({ ok: true, value: 'done' });
     },
   );
+
+  it('names the tool of a wait saved without one as the stopped run reads it', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const { projectDir, sessionId } = setupProject();
+    const { bus, events } = makeBusRecorder();
+    const ref = { projectDir, sessionId, bus };
+    const seeded = transitionAndSave(ref, makeImplState([makeTask()], STARTED), {
+      type: 'SET_SEAT_WAIT',
+      wait: { seat: 'build', resetAt: '2026-01-01T00:04:00.000Z' },
+    });
+
+    const pending = resumeSeatWait({ ref, state: seeded, config: makeConfig() });
+    await vi.advanceTimersByTimeAsync(1);
+
+    const started = events.find((event) => event.type === 'seat_wait_started');
+    expect(waitWord(loadState(ref))).toBe('Claude Code CLI');
+    expect(started).toMatchObject({ tool: 'Claude Code CLI' });
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    await pending;
+  });
 
   it('keeps the recorded runner while a resumed run waits again', async () => {
     vi.useFakeTimers();

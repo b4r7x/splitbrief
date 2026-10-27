@@ -545,7 +545,7 @@ With `approve: none` the card never opens. A plan that fails its checks still go
 **Run:** press `esc` and pick a row; or press `esc esc` to stop immediately.
 
 ```text
-Stop options · Changes and draft stay.
+Stop options · Changes stay.
 ▌ Stop now · stop execution; keep partial changes
   Pause after this brief
   End run
@@ -659,8 +659,8 @@ task T002: done (no checks)
 task T003: done (1 of 1 checks passed)
 phase: final-review
 reviewer check V1: passed (npm test)
-phase: complete
 review: passed
+phase: complete
 done: 3 tasks
 ```
 

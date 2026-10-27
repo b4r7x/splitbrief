@@ -25,6 +25,9 @@ import {
   boundRunnerCallArtifact,
   boundRunnerCallToolUse,
   createRunnerCallDeltaLimiter,
+  runnerCallByteLimitMessage,
+  runnerCallItemLimit,
+  runnerCallLimitError,
   runnerCallLimitWarning,
   runnerCallToolUseCountLimit,
   sanitizeRunnerCallRawPreview,
@@ -157,12 +160,12 @@ export function createRunnerCallRecorder(opts: {
   const subagentTextLimiter = createTextLimiter();
   const stderrLimiter = createRunnerCallDeltaLimiter({
     code: 'runner_call_stderr_limit',
-    label: 'runner call stderr diagnostics',
+    label: 'The tool error output',
     maxBytes: RUNNER_CALL_STDERR_MAX_BYTES,
   });
   const toolDeltaLimiter = createRunnerCallDeltaLimiter({
     code: 'runner_call_tool_delta_limit',
-    label: 'runner call tool deltas',
+    label: 'The streamed tool input',
   });
 
   /** An event the result does not keep still reaches the feed. */
@@ -214,7 +217,7 @@ export function createRunnerCallRecorder(opts: {
         noteLimit(
           {
             code: 'runner_call_structured_limit',
-            message: `runner call structured answer exceeded ${RUNNER_CALL_OUTPUT_MAX_BYTES} bytes`,
+            message: runnerCallByteLimitMessage('The answer', RUNNER_CALL_OUTPUT_MAX_BYTES),
             bytesSeen: structuredBytes,
             maxBytes: RUNNER_CALL_OUTPUT_MAX_BYTES,
           },
@@ -226,7 +229,7 @@ export function createRunnerCallRecorder(opts: {
     if (resultLimit !== null) {
       return finishFailed({
         status: 'truncated',
-        error: { code: resultLimit.code, message: resultLimit.message },
+        error: runnerCallLimitError(resultLimit),
         usage: defaults.usage,
         nativeSessionId: defaults.nativeSessionId,
         partial: true,
@@ -270,7 +273,10 @@ export function createRunnerCallRecorder(opts: {
           }
         : {
             code: toolUseLimit.code,
-            message: boundedRunnerCallMessage(toolUseLimit.message, opts.credentialValues),
+            message: boundedRunnerCallMessage(
+              runnerCallLimitError(toolUseLimit).message,
+              opts.credentialValues,
+            ),
           };
     const rawTail = runnerCallRawTail(callError.message, opts.credentialValues);
     // Judged on the text the call ends with: a final text that fits replaced
@@ -300,7 +306,7 @@ export function createRunnerCallRecorder(opts: {
     if (resultLimit !== null) {
       return finishFailed({
         status: 'truncated',
-        error: { code: resultLimit.code, message: resultLimit.message },
+        error: runnerCallLimitError(resultLimit),
         partial: true,
         endedAt: finishOpts.endedAt,
       });
@@ -383,18 +389,6 @@ export function createRunnerCallRecorder(opts: {
     if (context.role !== 'implementer' || toolUseLimitExceeded) return;
     toolUseLimitExceeded = true;
     opts.onLimit?.();
-  }
-
-  function itemLimit(opts: {
-    code: string;
-    label: string;
-    maxItems: number;
-    nextItemCount: number;
-  }): RunnerCallOutputLimit {
-    return {
-      code: opts.code,
-      message: `${opts.label} exceeded ${opts.maxItems} items and was truncated`,
-    };
   }
 
   function appendStderrPreview(text: string): void {
@@ -571,11 +565,10 @@ export function createRunnerCallRecorder(opts: {
     artifact: (eventOpts) => {
       if (artifactCount >= RUNNER_CALL_ARTIFACT_MAX_ITEMS) {
         noteLimit(
-          itemLimit({
+          runnerCallItemLimit({
             code: 'runner_call_artifact_count_limit',
-            label: 'runner call artifacts',
+            label: 'artifacts',
             maxItems: RUNNER_CALL_ARTIFACT_MAX_ITEMS,
-            nextItemCount: artifactCount + 1,
           }),
           'truncates-result',
         );
@@ -604,11 +597,10 @@ export function createRunnerCallRecorder(opts: {
     warning: (eventOpts) => {
       if (warningCount >= RUNNER_CALL_WARNING_MAX_ITEMS) {
         noteLimit(
-          itemLimit({
+          runnerCallItemLimit({
             code: 'runner_call_warning_count_limit',
-            label: 'runner call warnings',
+            label: 'warnings',
             maxItems: RUNNER_CALL_WARNING_MAX_ITEMS,
-            nextItemCount: warningCount + 1,
           }),
           'diagnostic-only',
         );
@@ -629,11 +621,10 @@ export function createRunnerCallRecorder(opts: {
     unknownUpstream: (eventOpts) => {
       if (unknownUpstreamCount >= RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS) {
         noteLimit(
-          itemLimit({
+          runnerCallItemLimit({
             code: 'runner_call_unknown_upstream_count_limit',
-            label: 'runner call unknown upstream diagnostics',
+            label: 'unknown tool records',
             maxItems: RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
-            nextItemCount: unknownUpstreamCount + 1,
           }),
           'diagnostic-only',
         );
@@ -753,7 +744,7 @@ function runnerCallRawTail(
 function createTextLimiter(): ReturnType<typeof createRunnerCallDeltaLimiter> {
   return createRunnerCallDeltaLimiter({
     code: 'runner_call_text_limit',
-    label: 'runner call text',
+    label: 'The reply',
   });
 }
 
