@@ -172,8 +172,8 @@ describe('recordCheckRuns', () => {
     expect(second).not.toBe(first);
   });
 
-  it('logs the runs on the first task when no task is named, and writes nothing for no run', async () => {
-    const { projectDir, sessionId, state } = await setup('record-checks-first-task');
+  it('logs the runs on the review when no task is named, and writes nothing for no run', async () => {
+    const { projectDir, sessionId, state } = await setup('record-checks-review');
 
     await recordCheckRuns({ projectDir, sessionId, workspaceDir: projectDir, state, runs: [] });
     expect(readEvidenceLedger({ projectDir, sessionId })).toBeNull();
@@ -189,8 +189,9 @@ describe('recordCheckRuns', () => {
       ],
     });
 
-    const checks = recordedChecks(projectDir, sessionId);
-    expect(checks.map((entry) => entry.id)).toEqual(['V1', 'V2']);
-    expect(checks[1]?.exitCode).toBeUndefined();
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
+    expect(ledger?.verifyChecks?.map((entry) => entry.id)).toEqual(['V1', 'V2']);
+    expect(ledger?.verifyChecks?.[1]?.exitCode).toBeUndefined();
+    expect(recordedChecks(projectDir, sessionId)).toEqual([]);
   });
 });

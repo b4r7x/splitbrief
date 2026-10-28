@@ -2023,6 +2023,58 @@ const finalReviewPlanCheckProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The review's verdict is in; it runs the checks that verify its findings, each on its own row.
+const reviewVerifyProjection: WorkflowFixtureProjection = {
+  ...finalReviewProjection,
+  scenarioId: scenarioId('workflow-review-verify'),
+  get events(): EngineEvent[] {
+    return [
+      ...finalReviewProjection.events,
+      {
+        type: 'runner_call_completed',
+        ts: FIXED_TS + 20_000,
+        phase: 'final-review',
+        callId: 'visual-review-call-001',
+        role: 'review',
+        backendKind: 'cli',
+        runnerName: 'codex',
+        model: CODEX_REVIEW_SEAT.model,
+        axes: seatAxisWords(CODEX_REVIEW_SEAT),
+        attempt: 1,
+        sequence: 1,
+        status: 'completed',
+        error: null,
+        partial: false,
+        startedAt: FIXED_TS + 520,
+        endedAt: FIXED_TS + 20_000,
+        durationMs: 19_480,
+        usage: null,
+        nativeSessionId: null,
+      },
+      {
+        type: 'full_suite',
+        ts: FIXED_TS + 30_000,
+        phase: 'final-review',
+        status: 'done',
+        id: 'K1',
+        command: 'npm run typecheck',
+        moment: 'verify',
+        passed: true,
+        duration: 9_200,
+      },
+      {
+        type: 'full_suite',
+        ts: FIXED_TS + 30_000,
+        phase: 'final-review',
+        status: 'running',
+        id: 'V1',
+        command: 'npm test',
+        moment: 'verify',
+      },
+    ];
+  },
+};
+
 // With End-of-run checks off nothing runs before the review, and one row says so.
 const reviewChecksOffProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
@@ -6998,6 +7050,7 @@ const projections = [
   reviewFixNoChangeProjection,
   finalReviewProjection,
   finalReviewPlanCheckProjection,
+  reviewVerifyProjection,
   {
     ...finalReviewProjection,
     scenarioId: scenarioId('workflow-review-verdict-only'),

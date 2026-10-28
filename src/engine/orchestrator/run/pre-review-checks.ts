@@ -29,6 +29,38 @@ import { checkFailureText, failureKeysForFile } from '../validation/failure-text
 import { throwIfAborted } from '../../../utils/abort.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 
+/** Runs one check between its running row and the row it settles on, with its clock. */
+export async function runCheckWithRows(input: {
+  check: Check;
+  prepare: ReturnType<typeof createCheckRunner>;
+  notices: { bus: EventBus; phase: Phase };
+  moment: 'plan' | 'verify';
+}): Promise<CheckRunResult> {
+  const { check, notices } = input;
+  const prepared = input.prepare(check);
+  const identity = { ...planCheckRow(check.id, prepared.command, check), moment: input.moment };
+  const startedAt = Date.now();
+  publishReviewCheck(notices, { ...identity, status: 'running' });
+  const run = await prepared.run();
+  // A red that ran no command, such as a missing test file or npm script, names why on its row.
+  const unranRed = run.status === 'fail' && run.command === undefined;
+  publishReviewCheck(notices, {
+    ...identity,
+    command: unranRed ? '' : (run.command ?? prepared.command),
+    ...(run.status === 'pass' || run.status === 'fail'
+      ? {
+          status: 'done',
+          passed: run.status === 'pass',
+          ...(run.reusedAt === undefined
+            ? { duration: Date.now() - startedAt }
+            : { reusedAt: run.reusedAt }),
+          ...(unranRed && { detail: run.output }),
+        }
+      : unranCheckRow(run)),
+  });
+  return run;
+}
+
 /** A required check that did not pass: `fail` is a defect, everything else cannot run. */
 export function classifyRequiredChecks(runs: readonly CheckRunResult[]): {
   failed: CheckRunResult[];
@@ -164,28 +196,7 @@ export async function runPreReviewChecks(
   const runs: CheckRunResult[] = [];
   for (const check of checks) {
     throwIfAborted(opts.signal);
-    const prepared = prepare(check);
-    const identity = planCheckRow(check.id, prepared.command, check);
-    const startedAt = Date.now();
-    publishReviewCheck(notices, { ...identity, status: 'running' });
-    const run = await prepared.run();
-    runs.push(run);
-    // A red that ran no command, such as a missing test file or npm script, names why on its row.
-    const unranRed = run.status === 'fail' && run.command === undefined;
-    publishReviewCheck(notices, {
-      ...identity,
-      command: unranRed ? '' : (run.command ?? prepared.command),
-      ...(run.status === 'pass' || run.status === 'fail'
-        ? {
-            status: 'done',
-            passed: run.status === 'pass',
-            ...(run.reusedAt === undefined
-              ? { duration: Date.now() - startedAt }
-              : { reusedAt: run.reusedAt }),
-            ...(unranRed && { detail: run.output }),
-          }
-        : unranCheckRow(run)),
-    });
+    runs.push(await runCheckWithRows({ check, prepare, notices, moment: 'plan' }));
   }
   const { failed, unrunnable } = classifyRequiredChecks(
     runs.filter((run) => registry.get(run.checkId)?.required === true),

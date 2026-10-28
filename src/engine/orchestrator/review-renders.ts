@@ -50,14 +50,16 @@ function collectRenderArtifacts(input: {
   currentCandidateId: string | undefined;
 }): readonly RenderArtifact[] {
   const latest = new Map<string, EvidenceCheckEntry>();
-  for (const task of input.ledger?.tasks ?? []) {
-    for (const entry of task.checks ?? []) {
-      const check = input.registry.get(entry.id);
-      if (check === undefined || check.kind !== 'render') continue;
-      if (entry.workspaceSnapshotId !== input.currentCandidateId) continue;
-      const previous = latest.get(entry.id);
-      if (previous === undefined || entry.ts >= previous.ts) latest.set(entry.id, entry);
-    }
+  const entries = [
+    ...(input.ledger?.tasks ?? []).flatMap((task) => task.checks ?? []),
+    ...(input.ledger?.verifyChecks ?? []),
+  ];
+  for (const entry of entries) {
+    const check = input.registry.get(entry.id);
+    if (check === undefined || check.kind !== 'render') continue;
+    if (entry.workspaceSnapshotId !== input.currentCandidateId) continue;
+    const previous = latest.get(entry.id);
+    if (previous === undefined || entry.ts >= previous.ts) latest.set(entry.id, entry);
   }
   const artifacts: RenderArtifact[] = [];
   const seen = new Set<string>();

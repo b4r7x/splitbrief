@@ -178,6 +178,8 @@ function suiteMomentParts(
       return [{ text: `Base re-run${id}`, tone: leadTone }];
     case 'brief':
       return [{ text: `Fix check${id}`, tone: leadTone }];
+    case 'verify':
+      return [{ text: `Verify${id}`, tone: leadTone }];
     case 'pre-review':
       return suite.id === undefined
         ? [{ text: 'Pre-review suite', tone: 'textDim' }]

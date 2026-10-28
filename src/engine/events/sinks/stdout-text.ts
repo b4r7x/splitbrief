@@ -57,9 +57,13 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
   if (event.id === undefined || event.status === 'running' || event.status === 'stopped')
     return null;
   const reused = event.reusedAt === undefined ? '' : `${SOFT_SEP}${reusedNote(event.reusedAt)}`;
-  if (event.moment === 'plan') {
+  if (event.moment === 'plan' || event.moment === 'verify') {
     const label =
-      event.scenario === undefined ? `plan check ${event.id}` : `Render ${event.scenario}`;
+      event.scenario !== undefined
+        ? `Render ${event.scenario}`
+        : event.moment === 'plan'
+          ? `plan check ${event.id}`
+          : `verify ${event.id}`;
     const detail = event.detail === undefined ? '' : ` (${event.detail})`;
     if (event.status === 'refused') return `${label}: refused${detail}`;
     if (event.status === 'not-run') return `${label}: not run${detail}`;
@@ -148,6 +152,8 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   fix check V1: refused (<detail>) | not run (<detail>)
  *   plan check K1: passed · 14.2s (<command>) | failed · 14.2s (<command>)
  *   plan check K1: refused (<detail>) | not run (<detail>)
+ *   verify K1: passed · 14.2s (<command>) | failed · 14.2s (<command>)
+ *   verify K1: refused (<detail>) | not run (<detail>)
  *   reviewer check V1: passed · reused, ran 11:53 (<command>)   (and on every check verdict above)
  *   Render workflow-x: rendered · 14.2s | failed · 14.2s
  *   Render workflow-x: refused (<detail>) | not run (<detail>)

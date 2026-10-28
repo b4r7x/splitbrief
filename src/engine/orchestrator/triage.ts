@@ -28,10 +28,12 @@ import type { WorkflowContext } from './types.js';
 import {
   checkRegistry,
   enabledReviewChecks,
+  createCheckRunner,
   planApprovesNpmScripts,
-  runChecks,
   type CheckRunResult,
+  type RunChecksOptions,
 } from './validation/run-checks.js';
+import { runCheckWithRows } from './run/pre-review-checks.js';
 import { recordCheckRuns } from './evidence/record-checks.js';
 import { runBaseOf } from './isolation/base-tree.js';
 import type { ValidationCommandRunner } from './validation/types.js';
@@ -215,38 +217,49 @@ export async function verifyClaimChecks(
   checkIds: readonly string[],
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
 ): Promise<{ status: 'pass' | 'fail' | 'unverified'; output: string }> {
-  const runs = (
-    await runChecks(checkIds, {
-      plan: state.plan,
-      tasks: state.tasks,
-      reviewChecks: enabledReviewChecks(ctx.config, state.reviewChecks),
-      base: runBaseOf({ projectDir: ctx.projectDir, sessionId: ctx.sessionId }, state),
-      projectDir: ctx.workspaceDir,
-      sessionId: ctx.sessionId,
-      checkoutDir: ctx.projectDir,
-      config: ctx.config,
-      bus: ctx.bus,
-      phase: state.phase,
-      npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state }),
-      ...(state.discoveredValidation !== undefined && {
-        discoveredValidation: state.discoveredValidation,
-      }),
-      // A verify runs a red command again, so a flaky red does not stand on a stored run.
-      results: {
-        ref: { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
-        state,
-        tree: 'workspace',
-        rerunRedBefore: nowIso(),
-      },
-      ...(ctx.signal !== undefined && { signal: ctx.signal }),
-      ...(ctx.runCommand !== undefined && { runCommand: ctx.runCommand }),
-    })
-  ).map((run): CheckRunResult => {
-    if (run.status !== 'fail' || run.failure.placeholder !== undefined) return run;
-    const atBase = preExistingChecks.find((check) => check.id === run.checkId)?.keys ?? [];
+  const checkOptions: RunChecksOptions = {
+    plan: state.plan,
+    tasks: state.tasks,
+    reviewChecks: enabledReviewChecks(ctx.config, state.reviewChecks),
+    base: runBaseOf({ projectDir: ctx.projectDir, sessionId: ctx.sessionId }, state),
+    projectDir: ctx.workspaceDir,
+    sessionId: ctx.sessionId,
+    checkoutDir: ctx.projectDir,
+    config: ctx.config,
+    bus: ctx.bus,
+    phase: state.phase,
+    npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state }),
+    ...(state.discoveredValidation !== undefined && {
+      discoveredValidation: state.discoveredValidation,
+    }),
+    // A verify runs a red command again, so a flaky red does not stand on a stored run.
+    results: {
+      ref: { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
+      state,
+      tree: 'workspace',
+      rerunRedBefore: nowIso(),
+    },
+    ...(ctx.signal !== undefined && { signal: ctx.signal }),
+    ...(ctx.runCommand !== undefined && { runCommand: ctx.runCommand }),
+  };
+  const prepare = createCheckRunner(checkOptions);
+  const registry = checkRegistry(checkOptions);
+  const notices = { bus: ctx.bus, phase: state.phase };
+  const runs: CheckRunResult[] = [];
+  for (const checkId of new Set(checkIds)) {
+    const check = registry.get(checkId);
+    const run: CheckRunResult =
+      check === undefined
+        ? { checkId, status: 'unknown', output: `no check ${checkId}` }
+        : await runCheckWithRows({ check, prepare, notices, moment: 'verify' });
+    if (run.status !== 'fail' || run.failure.placeholder !== undefined) {
+      runs.push(run);
+      continue;
+    }
+    const atBase = preExistingChecks.find((entry) => entry.id === run.checkId)?.keys ?? [];
     const preExisting = run.failure.keys.filter((key) => atBase.includes(key));
-    return preExisting.length > 0 ? { ...run, preExisting } : run;
-  });
+    runs.push(preExisting.length > 0 ? { ...run, preExisting } : run);
+  }
   await recordCheckRuns({
     projectDir: ctx.projectDir,
     sessionId: ctx.sessionId,

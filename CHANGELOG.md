@@ -99,6 +99,7 @@
 
 ### Fixed
 
+- The screen shows the checks the review runs to verify its findings, each on its own row with its clock.
 - The review counts each problem once: when the reviewer names a red check under that check's id, the problem shows once in the blocking count and list, on every surface, for example `4 blocking` for four problems, not `8 blocking`.
 - The reviewer can set aside a failed check that needs no work, such as a flaky test, with a reason. The run continues, the reason shows on the review row, in `review.md` and in `--plain`, and the run no longer loops on **Fix again**.
 - A warning about a call that hit an output limit now reads as one sentence with its size in KB or MB, for example `Only the first 256 tool calls of this call are kept.`, and the list of recent tool calls no longer runs into the warning line.
