@@ -211,7 +211,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
 
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
-    expect(resumed.stdout).toContain('task T001: done (no checks)');
+    expect(resumed.stdout).toContain('task T001: done (2 of 2 checks passed)');
     expect(invocations(target)).toBe(2);
     expect(await retries(target, parked.sessionId)).toEqual([]);
     // The implementer's own report names one of the two files the brief holds. The call's row is
@@ -331,7 +331,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
 
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
-    expect(resumed.stdout).toContain('task T001: done (no checks)');
+    expect(resumed.stdout).toContain('task T001: done (2 of 2 checks passed)');
     expect(invocations(target)).toBe(3);
     expect(await retries(target, parked.sessionId)).toEqual([]);
 
@@ -355,7 +355,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
 
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
-    expect(resumed.stdout).toContain('task T001: done (no checks)');
+    expect(resumed.stdout).toContain('task T001: done (2 of 2 checks passed)');
     expect(invocations(target)).toBe(2);
     expect(await retries(target, parked.sessionId)).toEqual([]);
     // The call names the file it wrote, and the file the stopped attempt left beside it, once.
@@ -386,7 +386,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
 
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
-    expect(resumed.stdout).toContain('task T001: done (no checks)');
+    expect(resumed.stdout).toContain('task T001: done (2 of 2 checks passed)');
     expect(invocations(target)).toBe(3);
     expect(await retries(target, parked.sessionId)).toHaveLength(1);
   });
