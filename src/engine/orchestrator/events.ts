@@ -137,7 +137,7 @@ export function publishReviewEvent(
       | { type: 'review_started' }
       | Pick<
           EngineEventOf<'review_completed'>,
-          'type' | 'verdict' | 'findings' | 'blockingFindings' | 'duration'
+          'type' | 'verdict' | 'findings' | 'blockingFindings' | 'setAside' | 'duration'
         >
     ),
 ): void {

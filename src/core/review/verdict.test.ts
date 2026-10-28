@@ -4,12 +4,16 @@ import type { ReviewVerdict, TriageInput } from '../schemas/review.js';
 import { taskId } from '../schemas/task.js';
 import type { ReviewRecord } from '../schemas/workflow.js';
 import {
+  blockingRedInputs,
   deriveReviewOutcome,
   findingInReviewScope,
   reviewFindingCounts,
   reviewOutcomeOf,
   type ReviewScope,
   reviewsAgain,
+  setAsideInputs,
+  setAsideLabel,
+  setAsideLine,
   verdictCoverageErrors,
 } from './verdict.js';
 
@@ -492,5 +496,51 @@ describe('reviewsAgain', () => {
   it('answers false when nothing is pending', () => {
     const state = makeImplState([], { review: judged(), fixCycles });
     expect(reviewsAgain(state, 'task', 'T002')).toBe(false);
+  });
+});
+
+describe('red inputs the reviewer sets aside', () => {
+  const red = (id: string, source: TriageInput['source'] = 'check'): TriageInput => ({
+    id,
+    kind: 'defect',
+    source,
+    text: `Check ${id} did not pass`,
+    file: null,
+  });
+  const answer = (rejected: { findingId: string; reason: string }[]) => ({
+    fixTasks: [],
+    rejected,
+    verify: [],
+    ask: null,
+  });
+  const inputs = [red('V6.1'), red('P2'), red('A1'), red('U1', 'user')];
+  const fixWork = answer([
+    { findingId: 'V6.1', reason: 'Transient 60 s timeout,\n passes in 50 s' },
+    { findingId: 'A1', reason: 'The re-check fails on the base too' },
+    { findingId: 'U1', reason: 'Already done' },
+  ]);
+
+  it('stops blocking every rejected red input, whatever check made it', () => {
+    expect(blockingRedInputs(inputs, fixWork).map((input) => input.id)).toEqual(['P2']);
+    expect(blockingRedInputs(inputs, answer([])).map((input) => input.id)).toEqual([
+      'V6.1',
+      'P2',
+      'A1',
+    ]);
+  });
+
+  it('lists each rejected red input with its reason, and never a user input', () => {
+    expect(setAsideInputs(inputs, fixWork)).toEqual([
+      { id: 'V6.1', reason: 'Transient 60 s timeout,\n passes in 50 s' },
+      { id: 'A1', reason: 'The re-check fails on the base too' },
+    ]);
+    expect(setAsideInputs(inputs, answer([]))).toEqual([]);
+  });
+
+  it('spells a set-aside input on one line', () => {
+    expect(setAsideLabel('V6.1')).toBe('Set aside V6.1');
+    expect(setAsideLine({ id: 'V6.1', reason: 'Transient 60 s timeout,\n passes in 50 s' })).toBe(
+      'Set aside V6.1: Transient 60 s timeout, passes in 50 s',
+    );
   });
 });

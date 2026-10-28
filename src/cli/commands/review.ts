@@ -259,7 +259,7 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
         join(relativeDir, REVIEW_JSON_FILE),
         `${JSON.stringify(record)}\n`,
       );
-      const markdown = renderReviewMarkdown(verdict, outcome, []);
+      const markdown = renderReviewMarkdown(verdict, outcome, [], []);
       const relativePath = join(relativeDir, REVIEW_FILE);
       confinedWriteFile(projectDir, relativePath, markdown);
       process.stdout.write(sanitizeTerminalDisplayText(markdown, { preserveLineBreaks: true }));

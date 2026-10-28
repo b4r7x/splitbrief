@@ -722,6 +722,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     findings: ReviewFindingCountsSchema.optional(),
     /** What failed the review: each blocking finding and each red input that still blocks. */
     blockingFindings: z.array(z.object({ id: z.string(), text: z.string() })).optional(),
+    /** Each red input the reviewer rejected, with its reason; it no longer blocks the review. */
+    setAside: z.array(z.object({ id: z.string(), reason: z.string() })).optional(),
     duration: z.number(),
   }),
   phaseEvent('review_step').extend({

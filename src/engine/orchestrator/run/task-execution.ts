@@ -528,14 +528,7 @@ export async function runTasksAndReview(
       return stopHere();
     }
 
-    if (
-      reviewPassed(
-        review.verdict?.outcome,
-        review.fixWork,
-        state.pendingTriage?.inputs ?? [],
-        recheck.failures,
-      )
-    ) {
+    if (reviewPassed(review.verdict?.outcome, review.fixWork, state.pendingTriage?.inputs ?? [])) {
       state = transitionAndSave(ref, state, {
         type: 'REVIEW_DONE',
         reviewStatus: 'passed',
@@ -559,7 +552,6 @@ export async function runTasksAndReview(
       setTrackedState,
       callbacks,
       candidate,
-      recheckFailures: recheck.failures,
       fixWork: review.fixWork,
     });
     state = followed.state;

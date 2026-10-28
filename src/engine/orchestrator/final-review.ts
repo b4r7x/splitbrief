@@ -99,6 +99,7 @@ import {
   ReviewAnswerSchema,
   type ReviewAnswer,
   type ReviewVerdict,
+  type TriageInput,
   type TriageResult,
 } from '../../core/schemas/review.js';
 import {
@@ -106,11 +107,13 @@ import {
   blockingRedInputs,
   deriveReviewOutcome,
   findingInReviewScope,
+  setAsideInputs,
   verificationKey,
   reviewScopeFor,
   verdictCoverageErrors,
   type ReviewOutcome,
   type ReviewScope,
+  type SetAside,
 } from '../../core/review/verdict.js';
 import { renderReviewMarkdown } from '../../core/review/render.js';
 import {
@@ -255,6 +258,7 @@ async function verifyReviewClaims(args: {
   verdict: ReviewVerdict;
   scope: ReviewScope;
   state: WorkflowState;
+  redInputs: readonly TriageInput[];
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>;
   projectDir: string;
   workspaceDir: string;
@@ -265,7 +269,7 @@ async function verifyReviewClaims(args: {
 }): Promise<ReviewVerification> {
   const entries: ReviewRecord['verification'] = [];
   const map = new Map<string, 'pass' | 'fail' | 'unverified'>();
-  if (args.state.pendingTriage?.inputs.some((input) => input.source === 'check')) {
+  if (args.redInputs.some((input) => input.source === 'check')) {
     return { entries, map };
   }
   const criterionCheckIds = (criterionId: string | null): readonly string[] =>
@@ -435,6 +439,7 @@ export async function runFinalReviewPhase(opts: {
   let reviewText = '';
   let verdict: FinalReview | null = null;
   let fixWork: TriageResult | null = null;
+  let setAside: SetAside[] = [];
   let reviewScope: RunReviewScope | undefined;
   let failure: FinalReviewResult['failure'];
   let fullPrompt = '';
@@ -883,10 +888,12 @@ export async function runFinalReviewPhase(opts: {
       ask: answer.ask,
     };
     const fixVerification = await runTriageVerification(opts, state, fixWork, preExistingChecks);
+    const redInputs = blockingRedInputs(state.pendingTriage?.inputs ?? [], fixWork);
     const verification = await verifyReviewClaims({
       verdict: reviewerVerdict,
       scope,
       state,
+      redInputs,
       preExistingChecks,
       projectDir,
       workspaceDir,
@@ -914,12 +921,8 @@ export async function runFinalReviewPhase(opts: {
         );
       }
     }
-    const outcome = deriveReviewOutcome(
-      reviewerVerdict,
-      scope,
-      verification.map,
-      blockingRedInputs(state.pendingTriage?.inputs ?? [], fixWork),
-    );
+    const outcome = deriveReviewOutcome(reviewerVerdict, scope, verification.map, redInputs);
+    setAside = setAsideInputs(state.pendingTriage?.inputs ?? [], fixWork);
     const record: ReviewRecord = {
       scope: opts.scope ?? 'final',
       cycle: fixCyclesOf(state).used,
@@ -983,7 +986,7 @@ export async function runFinalReviewPhase(opts: {
         },
       });
     verdict = { verdict: reviewerVerdict, outcome };
-    reviewText = renderReviewMarkdown(reviewerVerdict, outcome, preExistingChecks);
+    reviewText = renderReviewMarkdown(reviewerVerdict, outcome, preExistingChecks, setAside);
     writeSpecFile(
       { projectDir, sessionId },
       REVIEW_JSON_FILE,
@@ -1081,6 +1084,7 @@ export async function runFinalReviewPhase(opts: {
         },
       }),
       ...(blockingFindings.length > 0 && { blockingFindings }),
+      ...(verdict !== null && setAside.length > 0 && { setAside }),
       duration: Date.now() - finalReviewStart,
     },
   );

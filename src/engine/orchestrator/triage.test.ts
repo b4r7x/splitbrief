@@ -210,11 +210,14 @@ describe('triageContractErrors', () => {
       };
       const rejected = { ...empty, rejected: [{ findingId: 'P1', reason: 'Already correct' }] };
       const verified = { ...empty, verify: [{ findingId: 'P1', checkIds: ['K1'] }] };
-      for (const answer of [fixed, rejected, verified]) {
+      for (const answer of [fixed, verified]) {
         expect(triageContractErrors(answer, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual(
           [],
         );
       }
+      expect(triageContractErrors(rejected, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual(
+        source === 'apply' ? ['Rejected P1 is an Apply conflict; it needs a fix task.'] : [],
+      );
       expect(
         triageContractErrors(
           { ...fixed, rejected: rejected.rejected },
@@ -225,7 +228,10 @@ describe('triageContractErrors', () => {
           undefined,
           TASK_SCOPE,
         ),
-      ).toEqual(['Pending input P1 is answered more than once.']);
+      ).toEqual([
+        'Pending input P1 is answered more than once.',
+        ...(source === 'apply' ? ['Rejected P1 is an Apply conflict; it needs a fix task.'] : []),
+      ]);
     }
     const result = {
       ...fixResult(),
@@ -385,6 +391,26 @@ describe('triageContractErrors', () => {
     expect(triageContractErrors(result, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
       'Blocking finding F1 is answered more than once.',
       'Rejected F1 is not a pending input.',
+    ]);
+  });
+
+  it('refuses a reject that gives no reason', () => {
+    const input = {
+      id: 'V1.1',
+      kind: 'defect' as const,
+      source: 'check' as const,
+      text: 'Reviewer check V1 did not pass',
+      file: null,
+    };
+    const result: TriageResult = {
+      fixTasks: [],
+      rejected: [{ findingId: 'V1.1', reason: '  ' }],
+      verify: [],
+      ask: null,
+    };
+
+    expect(triageContractErrors(result, plan, [], [input], [], undefined, FINAL_SCOPE)).toEqual([
+      'Rejected V1.1 gives no reason.',
     ]);
   });
 

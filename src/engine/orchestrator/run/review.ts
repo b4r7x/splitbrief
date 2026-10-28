@@ -219,7 +219,6 @@ export function reviewPassed(
   outcome: ReviewOutcome | undefined,
   fixWork: TriageResult | null,
   pendingInputs: readonly TriageInput[],
-  recheckFailures: readonly string[],
 ): boolean {
   return (
     outcome !== undefined &&
@@ -228,8 +227,7 @@ export function reviewPassed(
     fixWork.fixTasks.length === 0 &&
     fixWork.verify.length === 0 &&
     fixWork.ask === null &&
-    blockingRedInputs(pendingInputs, fixWork).length === 0 &&
-    recheckFailures.length === 0
+    blockingRedInputs(pendingInputs, fixWork).length === 0
   );
 }
 
@@ -239,7 +237,6 @@ export async function followReviewAnswer(args: {
   setTrackedState: (s: WorkflowState) => void;
   callbacks: OrchestratorCallbacks;
   candidate: Record<string, string> | undefined;
-  recheckFailures: readonly string[];
   fixWork: TriageResult | null;
 }): Promise<{ state: WorkflowState; stopped: boolean; reviewAgain: boolean }> {
   const { wctx, setTrackedState, callbacks } = args;
@@ -321,11 +318,7 @@ export async function followReviewAnswer(args: {
   if (fixWork.fixTasks.length === 0 && fixWork.verify.length === 0) {
     const unverified = reviewOutcomeOf(judged).unverifiedCriteria;
     const detail =
-      args.recheckFailures.length > 0
-        ? args.recheckFailures.join('\n')
-        : unverified.length > 0
-          ? `Unverified criteria: ${unverified.join(', ')}`
-          : undefined;
+      unverified.length > 0 ? `Unverified criteria: ${unverified.join(', ')}` : undefined;
     state = await haltFailedReview({
       wctx,
       state,
@@ -362,13 +355,12 @@ export type ScheduledReviewResult = Readonly<{
 }>;
 
 export async function answerPendingReviewQuestion(
-  args: Omit<Parameters<typeof followReviewAnswer>[0], 'fixWork' | 'recheckFailures'>,
+  args: Omit<Parameters<typeof followReviewAnswer>[0], 'fixWork'>,
 ): Promise<Awaited<ReturnType<typeof followReviewAnswer>> | undefined> {
   const question = args.state.pendingTriage?.question;
   if (question === undefined) return undefined;
   return followReviewAnswer({
     ...args,
-    recheckFailures: [],
     fixWork: { fixTasks: [], rejected: [], verify: [], ask: question },
   });
 }
@@ -437,9 +429,7 @@ export async function runScheduledReview(args: {
     const halted = await haltVerdictlessReview({ wctx, state, setTrackedState, review });
     if (halted !== undefined) return { state: halted, status: 'stopped' };
 
-    if (
-      reviewPassed(review.verdict?.outcome, review.fixWork, state.pendingTriage?.inputs ?? [], [])
-    ) {
+    if (reviewPassed(review.verdict?.outcome, review.fixWork, state.pendingTriage?.inputs ?? [])) {
       state = transitionAndSave(ref, state, { type: 'CLEAR_SCHEDULED_REVIEW' });
       setTrackedState(state);
       return { state, status: 'continue' };
@@ -450,7 +440,6 @@ export async function runScheduledReview(args: {
       setTrackedState,
       callbacks,
       candidate: undefined,
-      recheckFailures: [],
       fixWork: review.fixWork,
     });
     state = followed.state;

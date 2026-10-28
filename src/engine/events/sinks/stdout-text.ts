@@ -1,5 +1,6 @@
 import { baseSplit, baseSplitNames } from '../../../core/review/base-split.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
+import { setAsideLine } from '../../../core/review/verdict.js';
 import { formatResetAt } from '../../../core/recovery/reset-clock.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -147,6 +148,7 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   Render workflow-x: refused (<detail>) | not run (<detail>)
  *   stalled: implementer (opencode) · no output for 5:00
  *   review: passed | failed [(<n> blocking)] | no verdict | stopped
+ *   review: Set aside V6.1: <reason>
  *   task review T002: failed (1 blocking) | task review: no verdict
  *   done: 3 tasks
  *
@@ -244,6 +246,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
             ? `task review${bounded.afterTaskId === undefined ? '' : ` ${bounded.afterTaskId}`}: `
             : 'review: ';
         write(`${scope}${words}`);
+        for (const entry of bounded.setAside ?? []) write(`${scope}${setAsideLine(entry)}`);
         return;
       }
       case 'workflow_complete': {

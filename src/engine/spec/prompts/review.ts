@@ -31,7 +31,7 @@ const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema yo
 const FIX_WORK_CONTRACT = `This review call is read-only. Do not write, edit or delete any file, or run commands that change the project. Return the verdict and the fix work in one review_answer.
 
 - fixTasks: complete TaskSpecs with findingIds. Each may edit any ordinary project file a finding needs, including a file no earlier task suggested. ${TASK_CMD_CHECK_RULE}
-- rejected: { findingId, reason } for a pending input that needs no work. Reject pending inputs only. A finding you would reject is not a blocking finding.
+- rejected: { findingId, reason } for a pending input that needs no work, for example a red check that fails for a reason outside this run. A rejected red check stops blocking the review, and the user sees the reason. Reject pending inputs only. An Apply conflict always needs a fix task. A finding you would reject is not a blocking finding.
 - verify: { findingId, checkIds } for a finding or input whose work may already be on disk. Name registered run or task checks.
 - ask: { question, whyOnlyUserCanAnswer } or null. Use it only for a change to what is built that the plan and decisions cannot answer.
 

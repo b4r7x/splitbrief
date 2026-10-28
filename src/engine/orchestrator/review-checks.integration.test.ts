@@ -742,7 +742,6 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(outcome.state.pendingTriage?.inputs).toEqual([
         expect.objectContaining({ id: 'V1.1', file: null }),
       ]);
-      expect(outcome.state.pendingTriage?.inputs[0]?.notVerified).toBeUndefined();
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
         'failed with new failures.\ncheck V1 did not pass (fail):',
       );
@@ -788,7 +787,6 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           id: 'V1.1',
           file: null,
           checkIds: ['V1'],
-          notVerified: 'both runs timed out',
         }),
       ]);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
@@ -885,7 +883,6 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           file: null,
           checkIds: ['V1'],
           output: red.red,
-          notVerified: red.reason,
         }),
       ]);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(

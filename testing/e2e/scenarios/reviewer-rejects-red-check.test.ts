@@ -17,6 +17,7 @@ import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
+import { assertPlainStdout } from '../helpers/run-dir-assertions.js';
 import {
   applyRun,
   cli,
@@ -233,12 +234,25 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     );
     expect(base).toMatchObject({ id: 'V1', passed: false, notVerified: 1, detail: NOT_VERIFIED });
 
+    const reason =
+      'V1 is a wrong command, not a defect in the code: it names no spec file. The brief check T001-K1 passed.';
     expect(
       events.filter((event) => event.type === 'review_completed' && event.scope === 'final'),
-    ).toMatchObject([{ verdict: 'pass-with-notes', findings: { blocking: 0, minor: 1 } }]);
+    ).toMatchObject([
+      {
+        verdict: 'pass-with-notes',
+        findings: { blocking: 0, minor: 1 },
+        setAside: [{ id: 'V1.1', reason }],
+      },
+    ]);
     expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
       { review: 'passed' },
     ]);
+    assertPlainStdout(run.stdout);
+    expect(run.stdout).toContain(`review: Set aside V1.1: ${reason}`);
+    expect(
+      readFileSync(join(sessionDir(target.projectDir, sessionId), REVIEW_FILE), 'utf8'),
+    ).toContain(`- Set aside V1.1: ${reason}`);
     expect(events.some((event) => event.type === 'recovery_prompted')).toBe(false);
     expect(events.some((event) => event.type === 'error')).toBe(false);
 
