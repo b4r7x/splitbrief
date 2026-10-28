@@ -199,8 +199,14 @@ describe('formatRecoveryHeadline', () => {
       'Final review reached no verdict',
     );
     expect(review(undefined)).toBe('Final review failed');
-    expect(review({ reviewScope: 'final', blocking: 0, fixCycles: 2 })).toBe(
-      'Final review failed after 2 fix cycles',
+    expect(review({ reviewScope: 'final', blocking: 1, noProgress: 'P1' })).toBe(
+      'Final review found no fix for P1',
+    );
+    expect(
+      review({ reviewScope: 'final', blocking: 4, noProgress: 'F1,F2,F3,F4', fixCycle: 5 }),
+    ).toBe('Final review made no progress on F1, F2, F3 +1 more after fix cycle 5');
+    expect(review({ reviewScope: 'final', blocking: 1, fixCycles: 2 })).toBe(
+      'Final review failed with 1 blocking finding',
     );
   });
 
@@ -218,8 +224,8 @@ describe('formatRecoveryHeadline', () => {
       );
     const task = { reviewScope: 'task', afterTaskId: 'T004' };
 
-    expect(review({ ...task, blocking: 1, fixCycles: 2 })).toBe(
-      'Review T004 failed after 2 fix cycles',
+    expect(review({ ...task, blocking: 1, noProgress: 'F1', fixCycle: 2 })).toBe(
+      'Review T004 made no progress on F1 after fix cycle 2',
     );
     expect(review({ ...task, blocking: 1 })).toBe('Review T004 failed with 1 blocking finding');
     expect(review({ ...task, blocking: 0, unverified: 1 })).toBe(

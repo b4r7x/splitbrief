@@ -35,7 +35,7 @@ const SENTINELS: Record<string, string> = {
   timeouts: 'Seat calls have no default deadline',
   'wait-protocol': 'never in the same tool call as the spawn',
   'verdict-rules': 'every task met, every criterion pass, no blocking finding',
-  'fix-cycle': 'Allow 2 fix cycles',
+  'fix-cycle': 'Run fix cycles until the review passes',
   'review-packet': 'The session derives the verdict',
   'recipe:claude-code': `"blockReadsOutsideWorkingDirectories":true}}'\\'' < $P`,
   'recipe:codex': '--sandbox read-only',
@@ -334,8 +334,8 @@ describe('skill-blocks', () => {
     expect(rules).toContain('Pending criteria');
     const fixes = renderBlock('fix-cycle') ?? '';
     expect(fixes).toContain('new ids');
-    expect(fixes).toContain('2 fix cycles');
-    expect(fixes).toContain('3 reviews');
+    expect(fixes).toContain('until the review passes');
+    expect(fixes).toContain('the same blockers');
     expect(fixes).not.toMatch(/reopen|last brief|path substring/iu);
     expect(fixes).toContain('references/gates.md');
     expect(fixes).not.toContain('Re-run the full suite');

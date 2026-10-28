@@ -217,7 +217,7 @@ describe('review fix cycle', { timeout: 90_000 }, () => {
         ],
       },
     });
-    expect(state?.fixCycles).toEqual({ used: 1, allowance: 2, notes: [] });
+    expect(state?.fixCycles).toEqual({ used: 1, notes: [] });
     expect(state?.plannerCalls?.used ?? 0).toBe(0);
     expect(state?.triage?.map((record) => record.result.fixTasks.map((fix) => fix.id))).toEqual([
       ['T002'],

@@ -49,9 +49,20 @@ export function reviewFailedCause(review: string, blocking: number): string {
   return `${review} failed with ${countNoun(blocking, 'blocking finding')}`;
 }
 
-/** A review the fix-cycle cap stopped: the run has spent every cycle it may. */
-export function reviewCapCause(review: string, cycles: number): string {
-  return `${review} failed after ${countNoun(cycles, 'fix cycle')}`;
+/**
+ * A review round that moved nothing: the answer fixed none of its blockers, or a fix cycle left
+ * the same blockers. Names at most three of them.
+ */
+export function reviewNoProgressCause(
+  review: string,
+  blockers: readonly string[],
+  fixCycle?: number,
+): string {
+  const shown = blockers.slice(0, 3).join(', ');
+  const ids = blockers.length > 3 ? `${shown} +${blockers.length - 3} more` : shown;
+  return fixCycle === undefined
+    ? `${review} found no fix for ${ids}`
+    : `${review} made no progress on ${ids} after fix cycle ${fixCycle}`;
 }
 
 /** A review that failed on claims no check could verify, with nothing for the planner to fix. */
@@ -208,8 +219,18 @@ export function formatRecoveryHeadlineSpans(
         scope: recoveryFactString(issue.facts, 'reviewScope'),
         afterTaskId: recoveryFactString(issue.facts, 'afterTaskId'),
       });
-      const cycles = recoveryFactNumber(issue.facts, 'fixCycles');
-      if (cycles !== undefined) return [{ text: reviewCapCause(review, cycles) }];
+      const noProgress = recoveryFactString(issue.facts, 'noProgress');
+      if (noProgress !== undefined) {
+        return [
+          {
+            text: reviewNoProgressCause(
+              review,
+              noProgress.split(','),
+              recoveryFactNumber(issue.facts, 'fixCycle'),
+            ),
+          },
+        ];
+      }
       const unverified = recoveryFactNumber(issue.facts, 'unverified');
       if (unverified !== undefined) return [{ text: reviewUnverifiedCause(review, unverified) }];
       const blocking = recoveryFactNumber(issue.facts, 'blocking');

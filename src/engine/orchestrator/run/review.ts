@@ -1,7 +1,8 @@
 import { isTaskCompleted, type TaskId } from '../../../core/schemas/task.js';
-import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import {
   blockingEntries,
+  blockingKeys,
   blockingRedInputs,
   reviewOutcomeOf,
   reviewsAgain,
@@ -82,7 +83,8 @@ async function haltFailedReview(args: {
   candidate: Record<string, string> | undefined;
   blocking: number;
   redInputs: readonly TriageInput[];
-  fixCycles?: number | undefined;
+  noProgress?: readonly string[] | undefined;
+  fixCycle?: number | undefined;
   unverified?: number | undefined;
   detail?: string | undefined;
 }): Promise<WorkflowState> {
@@ -115,7 +117,8 @@ async function haltFailedReview(args: {
     phase: state.phase,
     createdAt: nowIso(),
     blocking: args.blocking,
-    ...(args.fixCycles !== undefined && { fixCycles: args.fixCycles }),
+    ...(args.noProgress !== undefined && { noProgress: args.noProgress }),
+    ...(args.fixCycle !== undefined && { fixCycle: args.fixCycle }),
     ...(args.unverified !== undefined && { unverified: args.unverified }),
     ...(detail !== '' && { detail }),
     acceptAsIs: !scheduled && !redPending,
@@ -251,9 +254,9 @@ export async function followReviewAnswer(args: {
   if (judged === undefined || fixWork === null) {
     throw error('fix-without-review', 'The run holds no review answer to follow.');
   }
-  const blocking = blockingEntries(reviewOutcomeOf(judged)).length;
+  const blockers = blockingEntries(reviewOutcomeOf(judged)).map((entry) => entry.id);
+  const blocking = blockers.length;
   const inputs = state.pendingTriage?.inputs ?? [];
-  const cycles = fixCyclesOf(state);
   const redInputs = blockingRedInputs(inputs, fixWork);
   if (fixWork.ask !== null) {
     state = transitionAndSave(wctx, state, {
@@ -307,18 +310,6 @@ export async function followReviewAnswer(args: {
     setTrackedState(state);
     return { state, stopped: false, reviewAgain: true };
   }
-  if (cycles.used >= cycles.allowance) {
-    state = await haltFailedReview({
-      wctx,
-      state,
-      setTrackedState,
-      candidate: args.candidate,
-      blocking,
-      redInputs,
-      fixCycles: cycles.used,
-    });
-    return { state, stopped: true, reviewAgain: false };
-  }
   if (fixWork.fixTasks.length === 0 && fixWork.verify.length === 0) {
     const unverified = reviewOutcomeOf(judged).unverifiedCriteria;
     const detail =
@@ -330,8 +321,41 @@ export async function followReviewAnswer(args: {
       candidate: args.candidate,
       blocking,
       redInputs,
-      ...(unverified.length > 0 && { unverified: unverified.length }),
+      ...(blocking > 0
+        ? { noProgress: blockers }
+        : unverified.length > 0 && { unverified: unverified.length }),
       ...(detail !== undefined && { detail }),
+    });
+    return { state, stopped: true, reviewAgain: false };
+  }
+  // A fix cycle that left the same blockers moved nothing; a note from the user always starts the next one.
+  // Only the review that judges the cycle compares. A cycle that ran no fix task only re-ran checks,
+  // so it moved nothing only when this answer again asks for no fix task.
+  const started =
+    judged.judges === undefined
+      ? undefined
+      : state.triage?.findLast((record) => record.cycle === judged.judges);
+  const before =
+    started !== undefined && (started.result.fixTasks.length > 0 || fixWork.fixTasks.length === 0)
+      ? started.blocking
+      : undefined;
+  const after = new Set(blockingKeys(reviewOutcomeOf(judged), inputs));
+  if (
+    before !== undefined &&
+    after.size > 0 &&
+    !inputs.some((input) => input.source === 'user') &&
+    before.length === after.size &&
+    before.every((key) => after.has(key))
+  ) {
+    state = await haltFailedReview({
+      wctx,
+      state,
+      setTrackedState,
+      candidate: args.candidate,
+      blocking,
+      redInputs,
+      noProgress: blockers,
+      fixCycle: started?.cycle,
     });
     return { state, stopped: true, reviewAgain: false };
   }

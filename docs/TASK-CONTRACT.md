@@ -376,9 +376,13 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 | `Task.currentCodeByFile` | only the anchor's `currentCode` was captured |
 | `Task.fix` | the task is a plan task, not a fix task the review answer appended |
 | `WorkflowState.reviewFixes` | no review fix cycle has run. Parse-only now: `fixCycles` is the live home, and `reviewFixes.cycle` is read only when `fixCycles` is absent |
-| `WorkflowState.fixCycles` | no fix cycle has run; a state that carries only the older parse-only counter reads that instead |
+| `WorkflowState.fixCycles` | no fix cycle has run; a state that carries only the older parse-only counter reads that instead. An older `allowance` loads and is ignored |
 | `WorkflowState.review` | no typed review has resolved; `review.json` is the review's other home |
 | `WorkflowState.triage` | no review answer recorded fix work |
+| `TriageRecord.blocking` | the record keeps no keys of the problems that failed its review, so the next review cannot halt as no progress against it |
+| `TriageRecord.scope` | the record does not say whether a task review or the final review wrote it, so no review compares its keys with it |
+| `FixCycles.open` | no fix cycle waits for the review that judges it |
+| `ReviewRecord.judges` | the review judged no fix cycle, so it compares its blockers with no triage record |
 | `WorkflowState.pendingTriage` | no check, operator or Apply input waits for the reviewer |
 | `WorkflowState.reviewStatus` | the final review has not resolved |
 | `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef`. `source` is `user`, `watchdog` or `seat`, the last for a seat halt that cut a brief. `kept` lists the declared files a cut brief had changed when a stop parked it; a record without it claims no kept changes |

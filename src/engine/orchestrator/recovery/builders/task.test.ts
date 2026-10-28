@@ -1483,26 +1483,47 @@ describe('buildReviewFailedRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
   });
 
-  it('names the final review at the fix-cycle cap', () => {
-    const issue = buildReviewFailedRecoveryIssue({
+  it('names the blockers a final review round moved nothing on', () => {
+    const noFix = buildReviewFailedRecoveryIssue({
       createdAt,
       blocking: 1,
-      fixCycles: 2,
+      noProgress: ['P1'],
+      scope: 'final',
+    });
+    const sameBlockers = buildReviewFailedRecoveryIssue({
+      createdAt,
+      blocking: 5,
+      noProgress: ['V1.1', 'V1.2', 'P1', 'F1', 'F2'],
+      fixCycle: 3,
       scope: 'final',
     });
 
-    expect(issue.message).toBe('Final review failed after 2 fix cycles');
-    expect(formatRecoveryHeadline(issue)).toBe('Final review failed after 2 fix cycles');
-    expectValidRecoveryIssue(issue);
+    expect(noFix.message).toBe('Final review found no fix for P1');
+    expect(formatRecoveryHeadline(noFix)).toBe('Final review found no fix for P1');
+    expect(noFix.facts).toMatchObject({ blocking: 1, noProgress: 'P1' });
+    expect(sameBlockers.message).toBe(
+      'Final review made no progress on V1.1, V1.2, P1 +2 more after fix cycle 3',
+    );
+    expect(formatRecoveryHeadline(sameBlockers)).toBe(sameBlockers.message);
+    expect(sameBlockers.facts).toMatchObject({ noProgress: 'V1.1,V1.2,P1,F1,F2', fixCycle: 3 });
+    for (const issue of [noFix, sameBlockers]) expectValidRecoveryIssue(issue);
   });
 
-  it('names the task review of the brief it judged, at the cap and with no fix work', () => {
+  it('reads an older halt stopped at the fix-cycle cap by its blocking count', () => {
+    const issue = buildReviewFailedRecoveryIssue({ createdAt, blocking: 1, scope: 'final' });
+    const older = { ...issue, facts: { ...issue.facts, fixCycles: 2 } };
+
+    expect(formatRecoveryHeadline(older)).toBe('Final review failed with 1 blocking finding');
+  });
+
+  it('names the task review of the brief it judged, with no progress and with no fix work', () => {
     const task = { scope: 'task', afterTaskId: taskId('T004') } as const;
-    const cap = buildReviewFailedRecoveryIssue({
+    const stuck = buildReviewFailedRecoveryIssue({
       createdAt,
       phase: 'implementing',
       blocking: 1,
-      fixCycles: 2,
+      noProgress: ['F1'],
+      fixCycle: 2,
       ...task,
     });
     const blocking = buildReviewFailedRecoveryIssue({
@@ -1519,15 +1540,17 @@ describe('buildReviewFailedRecoveryIssue', () => {
       ...task,
     });
 
-    expect(cap.message).toBe('Review T004 failed after 2 fix cycles');
-    expect(formatRecoveryHeadline(cap)).toBe('Review T004 failed after 2 fix cycles');
+    expect(stuck.message).toBe('Review T004 made no progress on F1 after fix cycle 2');
+    expect(formatRecoveryHeadline(stuck)).toBe(
+      'Review T004 made no progress on F1 after fix cycle 2',
+    );
     expect(blocking.message).toBe('Review T004 failed with 1 blocking finding');
     expect(formatRecoveryHeadline(blocking)).toBe('Review T004 failed with 1 blocking finding');
     expect(unverified.message).toBe('Review T004 failed with 1 unverified criterion');
     expect(formatRecoveryHeadline(unverified)).toBe(
       'Review T004 failed with 1 unverified criterion',
     );
-    for (const issue of [cap, blocking, unverified]) expectValidRecoveryIssue(issue);
+    for (const issue of [stuck, blocking, unverified]) expectValidRecoveryIssue(issue);
   });
 
   it('names the task review that reached no verdict, and the final review unchanged', () => {

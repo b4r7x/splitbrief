@@ -151,7 +151,7 @@ export interface ReviewStage {
   stage: 'review';
   scope: 'final' | 'task';
   afterTaskId?: string | undefined;
-  /** The run's fix cycles before this review, task reviews included: the count the cap halt reads. */
+  /** The run's fix cycles before this review, task reviews included: the count the stage anchor shows. */
   fixCyclesBefore: number;
   /** The final reviews of this fix cycle that came before this one: a re-run, as after a crash. */
   rerunsBefore: number;

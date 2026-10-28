@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -256,7 +257,8 @@ async function review(opts: {
   config: Config;
   reviews?: Array<(prompt: string) => ReviewVerdict | string> | undefined;
   throws?: unknown;
-  cycle?: number | undefined;
+  /** The problems the answer that started fix cycle 2 followed; the review then fails on them again. */
+  stuckOn?: string[] | undefined;
 }): Promise<{
   result: Awaited<ReturnType<typeof runTasksAndReview>>;
   events: EngineEvent[];
@@ -287,7 +289,24 @@ async function review(opts: {
     phase: 'final-review',
     currentTaskIndex: tasks.length,
     changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
-    ...(opts.cycle !== undefined && { reviewFixes: { cycle: opts.cycle, findings: {} } }),
+    ...(opts.stuckOn !== undefined && {
+      fixCycles: { used: 2, notes: [], open: { cycle: 2 } },
+      triage: [
+        {
+          cycle: 2,
+          at: '2026-10-03T00:00:00Z',
+          inputIds: [],
+          result: {
+            fixTasks: [{ ...makeTaskSpec({ id: 'T900' }), findingIds: ['F1'] }],
+            rejected: [],
+            verify: [],
+            ask: null,
+          },
+          blocking: opts.stuckOn,
+          scope: 'final',
+        },
+      ],
+    }),
   };
   saveState(ref, base);
   const state = loadState(ref);
@@ -436,7 +455,7 @@ describe('a REVIEW that reached a verdict', () => {
       ref,
       config: makeNoValidationConfig(),
       reviews: [CRITICAL_REVIEW],
-      cycle: 2,
+      stuckOn: ['finding:F1'],
     });
 
     const issue = result.state.pendingRecovery;

@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import {
   makeCallbacks,
@@ -185,7 +186,24 @@ describe('workflow closure', () => {
       const state: WorkflowState = {
         ...createInitialState('Review closure'),
         phase: 'final-review',
-        ...(review === 'failed' && { fixCycles: { used: 2, allowance: 2, notes: [] } }),
+        ...(review === 'failed' && {
+          fixCycles: { used: 2, notes: [], open: { cycle: 2 } },
+          triage: [
+            {
+              cycle: 2,
+              at: '2026-10-03T00:00:00Z',
+              inputIds: [],
+              result: {
+                fixTasks: [{ ...makeTaskSpec({ id: 'T900' }), findingIds: ['F1'] }],
+                rejected: [],
+                verify: [],
+                ask: null,
+              },
+              blocking: ['finding:F1'],
+              scope: 'final',
+            },
+          ],
+        }),
         changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
       };
       saveState(ref, state);

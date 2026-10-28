@@ -376,7 +376,7 @@ describe('groupEventsIntoSections', () => {
   });
 
   // A `review: task` run: two task reviews and a final review started fixes, a third task review
-  // started the fourth cycle, and the last final review halted on the cap after 4 fix cycles.
+  // started the fourth cycle, and the last final review halted after fix cycle 4.
   it('names each final review by every fix cycle the run spent before it, task reviews included', () => {
     const fail = (scope: 'task' | 'final', ts: number, afterTaskId?: string): EngineEvent[] => {
       const phase = scope === 'final' ? 'final-review' : 'implementing';

@@ -62,7 +62,7 @@ function setupProject(files?: Record<string, string>) {
 function gateState(tasks: readonly Task[], head: string): WorkflowState {
   return makeImplState([...tasks], {
     changedFilesBaseline: { head, fingerprints: {}, runStartChangedFiles: [] },
-    fixCycles: { used: 0, allowance: 2, notes: [] },
+    fixCycles: { used: 0, notes: [] },
     plan: {
       summary: 'Gate cadence',
       decisions: [],
@@ -347,7 +347,7 @@ describe("reviewer checks with workflow.review 'task'", { timeout: 120_000 }, ()
       sessionId,
       state: {
         ...gateState(tasks, head),
-        fixCycles: { used: 2, allowance: 2, notes: [] },
+        fixCycles: { used: 2, notes: [] },
         reviewChecks: {
           scope: 'task',
           cycle: 2,

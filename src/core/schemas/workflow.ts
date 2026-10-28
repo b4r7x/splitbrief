@@ -16,7 +16,6 @@ import {
   TriageInputSchema,
   TriageResultSchema,
 } from './review.js';
-import { REVIEW_CYCLE_CAP } from '../pipeline-spec/review.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { CONSULT_REASONS, CONSULT_SEATS, ResolvedConsultAnswerSchema } from './consult.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
@@ -207,8 +206,9 @@ export function lineageAttemptsOf(
 
 export const FixCyclesSchema = z.object({
   used: nonnegativeInteger,
-  allowance: nonnegativeInteger,
   notes: z.array(z.string()),
+  /** The fix cycle that started and that no review has judged yet, with the id of its last inserted fix task. */
+  open: z.object({ cycle: nonnegativeInteger, lastFixTaskId: TaskIdSchema.optional() }).optional(),
 });
 export type FixCycles = z.infer<typeof FixCyclesSchema>;
 
@@ -216,6 +216,8 @@ export const ReviewRecordSchema = z.object({
   scope: z.enum(['task', 'final']).optional(),
   afterTaskId: TaskIdSchema.optional(),
   cycle: z.number().int(),
+  /** The fix cycle this review judges: it compares its blockers with that cycle's triage record. */
+  judges: z.number().int().optional(),
   verdict: ReviewVerdictSchema,
   outcome: z.enum(['pass', 'pass-with-notes', 'fail']),
   verification: z.array(
@@ -255,6 +257,10 @@ export const TriageRecordSchema = z.object({
   at: z.string(),
   inputIds: z.array(z.string()),
   result: TriageResultSchema,
+  /** The keys of the problems that failed the review this answer followed (`blockingKeys`). */
+  blocking: z.array(z.string()).optional(),
+  /** The kind of that review: it picks the review that judges this cycle (`ReviewRecord.judges`). */
+  scope: z.enum(['task', 'final']).optional(),
   /** The plan checks the triage's verify entries named, run before any fix. */
   verification: z
     .array(
@@ -552,7 +558,6 @@ export function fixCyclesOf(state: Pick<WorkflowState, 'fixCycles' | 'reviewFixe
   return (
     state.fixCycles ?? {
       used: state.reviewFixes?.cycle ?? 0,
-      allowance: REVIEW_CYCLE_CAP,
       notes: [],
     }
   );

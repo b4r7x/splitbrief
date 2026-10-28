@@ -104,9 +104,9 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `implementing` / `validating-task` / `escalating` | `SKIP_TASK` | *(same)* | Marks task `skipped`, advances `currentTaskIndex` |
 | `implementing` / `validating-task` / `escalating` | `RESET_TASK` | `implementing` | Sets task to `pending`, rewinds `currentTaskIndex` to that task's index, resets `attempt`. Tasks after it keep their status. |
 | `implementing` | `ALL_DONE` | `final-review` | — |
-| `final-review` | `START_FIX_CYCLE` | `implementing` | Records the fix cycle (`fixCycles.used` + 1), clears `reviewStatus`, `completedAt` and `pendingTriage`, and sets `currentTaskIndex` to the first open task. Runs the fix tasks from the review answer |
+| `final-review` | `START_FIX_CYCLE` | `implementing` | Records the fix cycle (`fixCycles.used` + 1) and opens it for its judging review (`fixCycles.open`), clears `reviewStatus`, `completedAt` and `pendingTriage`, and sets `currentTaskIndex` to the first open task. Runs the fix tasks from the review answer |
 | `final-review` | `REVIEW_DONE` | `complete` | Records `reviewStatus: 'passed' \| 'failed'` |
-| `complete` (review `failed`) or `final-review` (`review-failed` halt) | `REVIEW_CORRECTION` | `final-review` | The `revise` recovery action: queues the correction as a user triage input of kind `defect` with source `user`, and grants +1 fix cycle (`BOUNDS.extraFixCyclesPerRun`) when the cap is spent. Refused after a passed review |
+| `complete` (review `failed`) or `final-review` (`review-failed` halt) | `REVIEW_CORRECTION` | `final-review` | The `revise` recovery action: queues the correction as a user triage input of kind `defect` with source `user`, and appends the note to `fixCycles.notes`. Refused after a passed review |
 
 `DEFAULT_LOCAL_RETRIES` is 1 (`src/core/pipeline-spec/retries.ts`); `workflow.max_retries` is retired and loads with one notice. The old `HINT_SUCCESS`, `HINT_FAIL` and `FULL_SUCCESS` transitions are gone from the reducer; old `escalated-hint`, `escalated-intermediate` and `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
 
@@ -148,7 +148,7 @@ The fix brief names each command by check id and shows each distinct failing out
 
 A fix attempt may verify the existing code without changing it: `task.fix` permits that attempt, and normal validation decides whether it completes. `implementer_generate_done` records `noChange: true`; its done row reads `verified · no change needed`. The first call of a brief continued after a stop or a *Seat down* halt, with or without a correction, may change nothing in the same way when the brief's declared files already changed since the brief started: the call found the work it wrote before the cut complete, and the brief gate judges that work. That call's `implementer_generate_done` also records `kept`, the declared files the cut attempt left, in the brief's file order. Its done row names those files and reads `verified · kept the interrupted attempt's work · no further change`. When the continued call does change more, its row names the files it changed and adds `kept the interrupted attempt's work`, followed by the kept files it did not change again. Other attempts still fail `no-staged-change` when they change nothing.
 
-`REVIEW_CYCLE_CAP` is 2 fix cycles (`src/core/pipeline-spec/review.ts`), so the run permits 2 automatic fix cycles; each review answer that starts fix work spends one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes.
+Fix cycles have no count limit: they run until the review passes. Each review answer that starts fix work spends one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes. Each triage record keeps the keys of the problems that failed its review (`triage[].blocking`, `blockingKeys` in `src/core/review/verdict.ts`): a finding by its id, a red input by its command and failure keys. The review that judges a fix cycle is the task review after its last inserted fix task, or the next final review for a cycle the final review started (`triage[].scope`). `START_FIX_CYCLE` opens the cycle (`fixCycles.open`) with the id that SPLITBRIEF gave its last fix task (`lastFixTaskId`), not the id in the reviewer's answer; a split of that task hands the id to its last child. The first review that judges the cycle closes it and records it as `review.judges`, whether that review passes or fails. No later review, an Apply review included, compares with it again. When the judging review fails on the same keys, the cycle made no progress and the run halts on `review-failed`. A cycle that ran no fix task only ran checks again: it made no progress only when the next answer again asks for no fix task. A review of another task is judged by its own answer only. A steered round, one with a user input, does not halt on this rule.
 
 `workflow.review` selects the review cadence. The default, `end`, reviews after the final brief.
 `task` also reviews after every brief that passed its validation.
@@ -169,7 +169,7 @@ Pending user, Apply, and check inputs keep their existing rules.
 
 The final review judges every task and every acceptance criterion. It still accepts a finding with no task or criterion id.
 
-A spent cap raises `review-failed`. With a red check or Apply input that still blocks, it keeps the phase open and offers no Accept as is. Every red check or Apply input blocks, except a red check input that the reviewer rejects with a reason. The review record, `review.md` and the review result row count every red input that blocks as a blocking finding. Other failed reviews record `REVIEW_DONE` with a failed status. The run stays open with three actions: fix again with a note, which records the operator's correction as a triage input and grants one more cycle (`BOUNDS.extraFixCyclesPerRun`); [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is), at final review when no red check or Apply input blocks it; and end the run. A `complete`/failed state takes that correction through `REVIEW_CORRECTION`, which moves it back to `final-review` with the input queued, so the reviewer answers the pending inputs in a new call without running the reviewer checks.
+A review answer that fixes nothing, or a fix cycle that leaves the same blockers, raises `review-failed`. Its title names the blockers: `Final review found no fix for F1`, or `Final review made no progress on F1, P2 after fix cycle 2`. With a red check or Apply input that still blocks, it keeps the phase open and offers no Accept as is. Every red check or Apply input blocks, except a red check input that the reviewer rejects with a reason. The review record, `review.md` and the review result row count every red input that blocks as a blocking finding. Other failed reviews record `REVIEW_DONE` with a failed status. The run stays open with three actions: fix again with a note, which records the operator's correction as a triage input and runs another fix cycle; [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is), at final review when no red check or Apply input blocks it; and end the run. A `complete`/failed state takes that correction through `REVIEW_CORRECTION`, which moves it back to `final-review` with the input queued, so the reviewer answers the pending inputs in a new call without running the reviewer checks.
 
 An Apply whose merge writes text conflict markers for a file both sides changed does not halt: it queues one triage input per conflicted file (`source: 'apply'`), re-enters `final-review` through `APPLY_REVIEW_START`, and the review turns them into fix tasks before Apply runs again. Any other conflict still raises the [`apply-conflict` halt](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
 
@@ -299,7 +299,7 @@ Apply merges the current checkout into the run workspace. It uses the three stat
 
 A conflict raises the `apply-conflict` halt. You choose the result for each file in the workspace. Resolve every conflict before checks or review. The available choices and recovery steps are in [Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
 
-If the merge or a repair changes the reviewed candidate, SPLITBRIEF runs validation and the required checks again. The review seat then reviews the whole run diff, from the workspace base to the candidate, with checkout hunks marked. This re-review counts as a final-review fix cycle against `REVIEW_CYCLE_CAP`.
+If the merge or a repair changes the reviewed candidate, SPLITBRIEF runs validation and the required checks again. The review seat then reviews the whole run diff, from the workspace base to the candidate, with checkout hunks marked. This re-review counts as a final-review fix cycle.
 
 Before the first checkout write, Apply saves a backup under `.splitbrief/sessions/<id>/apply/<backup-id>/`. It records replaced files and symlinks, created paths and expected results, and freezes the assessed candidate. `APPLY_START` persists the backup id. The writer uses one hash-guarded call for the result. Its guard compares the checkout with the bytes Apply read for the merge. A later checkout edit cannot silently replace that baseline.
 
@@ -546,7 +546,7 @@ Recovery actions:
 | `retry-same-worker` | Retries the recorded PLAN/REVIEW step, or resets and reruns the matching BUILD task |
 | `switch-seat` | A seat that cannot run at all: moves it to its declared `fallback` or another ready detected tool. The switch prepares the session, writes that one seat to `config.yaml` against the revision the halt read, then resolves the halt. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) |
 | `retry-later` | A *Seat down* action, offered only when the halt names a reset: the seat waits for that reset, then the run continues |
-| `revise` | Clears recovery and queues the operator's correction for the next planner turn; on `review-failed`, records the correction and opens one more review fix cycle |
+| `revise` | Clears recovery and queues the operator's correction for the next planner turn; on `review-failed`, records the correction and runs another review fix cycle |
 | `continue` | Grants extra allowance on `consult-bound-spent` or `planner-calls-spent` |
 | `accept-as-is` | Records an Accept as is override at final review. Workspace runs become ready to apply; checkout runs and older runs without a workspace close. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
 | `restore-backup` | Restores a partial Apply through its backup. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). |
@@ -728,7 +728,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     Apply or Discard closes it. An older run without a workspace closes on pass.
     The same review answer supplies the fix tasks. They are appended
     with new ids and batch = highest plan batch + cycle, one fix cycle is spent,
-    and implementing runs them (START_FIX_CYCLE) up to the review cycle cap.
+    and implementing runs them (START_FIX_CYCLE) until the review passes.
     Each fix task carries own failure keys and all original red keys per check. Its brief gate runs each check
     once, with no base re-run. Full capture supplies the keys.
     Incomplete capture → placeholder → command must pass.
@@ -740,9 +740,10 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     Each judged re-run gets a verdict row, including green re-runs.
     Plan and task checks get only a done row.
     An own failure that remains retries and consults the review seat.
-    With no carried keys or no named failure, the command must pass. The cap is
-    2. After the cap the run halts on review-failed: fix again with a note
-    (+1 cycle), Accept as is when no red check or Apply input blocks it, or end.
+    With no carried keys or no named failure, the command must pass. A review
+    answer that fixes nothing, or a fix cycle that leaves the same blockers,
+    halts on review-failed: fix again with a note, Accept as is when no red
+    check or Apply input blocks it, or end.
 ```
 
 During live model calls, `ctrl+c` stops now and parks the run. `esc` opens the stop menu. Enter with text queues a message for the seat of the active stage: PLAN, BUILD, or REVIEW. That seat reads pending messages at its next safe break. `ctrl+⏎` with text stops now and continues with the text, like `/steer <text>`. Request changes on the plan card to revise the plan.
@@ -784,7 +785,7 @@ type WorkflowState = {
   plan?: Plan                              // PLAN_COMPILED; the checked plan without its tasks
   pendingRecovery?: RecoveryIssue
   review?: ReviewRecord                    // RECORD_REVIEW; the typed verdict and its derived outcome
-  fixCycles?: { used: number; allowance: number; notes: string[] }  // cycle cap and grants
+  fixCycles?: { used: number; notes: string[]; open?: { cycle: number; lastFixTaskId?: string } }  // fix cycles spent, operator notes, the cycle no review has judged yet and its last fix task
   triage?: TriageRecord[]                  // RECORD_TRIAGE; fix part of each review answer
   pendingTriage?: { inputs: TriageInput[] }  // pending inputs waiting for the reviewer
   reviewChecks?: ReviewChecksRecord        // RECORD_REVIEW_CHECKS; the reviewer's chosen commands,

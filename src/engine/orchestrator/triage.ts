@@ -131,6 +131,10 @@ export function triageContractErrors(
       errors.push(`Rejected ${entry.findingId} is an Apply conflict; it needs a fix task.`);
     if (entry.reason.trim() === '') errors.push(`Rejected ${entry.findingId} gives no reason.`);
   }
+  for (const entry of result.verify) {
+    if (pending.get(entry.findingId)?.source === 'apply')
+      errors.push(`Verified ${entry.findingId} is an Apply conflict; it needs a fix task.`);
+  }
 
   const fixBatch = Math.max(1, ...tasks.map((task) => task.batch ?? 1)) + 1;
   errors.push(
@@ -394,10 +398,11 @@ export function startFixCycle(args: {
   taskIds: readonly TaskId[];
 }): WorkflowState {
   const { wctx } = args;
+  const lastFixTaskId = args.taskIds.at(-1);
   const state = transitionAndSave(
     { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
     args.state,
-    { type: 'START_FIX_CYCLE' },
+    { type: 'START_FIX_CYCLE', ...(lastFixTaskId !== undefined && { lastFixTaskId }) },
   );
   args.setTrackedState(state);
   if (args.taskIds.length > 0) {

@@ -101,8 +101,8 @@ function readCalls(path: string): Call[] {
 }
 
 /**
- * The first three final reviews fail, so the third halts at the fix cycle cap. A review that holds
- * the note answers it with a fix brief; every later review passes.
+ * The first two final reviews fail on F1, so the second halts: its fix cycle moved nothing. A review
+ * that holds the note answers it with a fix brief; every later review passes.
  */
 function plannerScript(callsPath: string): string {
   return `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
@@ -136,7 +136,7 @@ if (prompt.includes('# Final Implementation Review')) {
   const note = prompt.match(/^- \\*\\*(U\\d+)\\*\\* (.+)$/m);
   if (note?.[2] === ${JSON.stringify(PENDING_NOTE)}) {
     answer.fixTasks = [{ ...${JSON.stringify(noteFix)}, findingIds: [note[1]] }];
-  } else if (reviews() < 3) {
+  } else if (reviews() < 2) {
     const finding = ${JSON.stringify(finding)};
     answer.criteria = answer.criteria.map((criterion) =>
       criterion.id === finding.criterionId ? { ...criterion, status: 'fail', evidence: finding.text } : criterion,
@@ -246,15 +246,13 @@ describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () 
       'final-review',
       repair.title,
       'final-review',
-      repair.title,
-      'final-review',
       'final-review',
       noteFix.title,
       'final-review',
     ]);
-    expect(calls.slice(0, 7).some((call) => call.prompt?.includes(NOTE))).toBe(false);
-    expect(calls[7]?.prompt).toContain(`- **${inputId}** ${PENDING_NOTE}`);
-    expect(calls[8]?.prompt).toContain(`**${inputId}**: ${NOTE}`);
+    expect(calls.slice(0, 5).some((call) => call.prompt?.includes(NOTE))).toBe(false);
+    expect(calls[5]?.prompt).toContain(`- **${inputId}** ${PENDING_NOTE}`);
+    expect(calls[6]?.prompt).toContain(`**${inputId}**: ${NOTE}`);
 
     const ready = readState(target, sessionId);
     expect(ready.reviewStatus).toBe('passed');

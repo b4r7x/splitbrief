@@ -1118,8 +1118,8 @@ const checkpointPredicates = [
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is', 'unverified criteria'),
   ],
   [
-    checkpointId('task-review-cap'),
-    includesAll('Review T904 failed after 2 fix cycles', WORKFLOW_FIXTURE_TEXT.reviewFailed),
+    checkpointId('task-review-no-progress'),
+    includesAll('Review T904 made no progress on F1', WORKFLOW_FIXTURE_TEXT.reviewFailed),
   ],
   [
     checkpointId('recovery-checks-missing-program'),

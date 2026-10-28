@@ -349,6 +349,15 @@ describe('WorkflowStateSchema v4', () => {
     expect(parsed.pendingTriage?.inputs).toEqual([input]);
   });
 
+  it('loads an older fix-cycle allowance and drops it', () => {
+    const parsed = WorkflowStateSchema.parse({
+      ...state({ phase: 'final-review' }),
+      fixCycles: { used: 1, allowance: 2, notes: [] },
+    });
+
+    expect(parsed.fixCycles).toEqual({ used: 1, notes: [] });
+  });
+
   it('drops the stage an older fix task and pending input carry', () => {
     const red = { checkIds: ['K1'], output: 'broken' };
     const finding = { id: 'P1', text: 'K1 failed', acceptance: null, ...red };

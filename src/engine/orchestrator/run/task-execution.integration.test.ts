@@ -138,7 +138,30 @@ function resumedReviewState(tasks: Task[], head: string, cycle: number): Workflo
   return {
     ...reviewedState(tasks, head, tasks.length),
     phase: 'final-review',
-    fixCycles: { used: cycle, allowance: 2, notes: [] },
+    fixCycles: { used: cycle, notes: [] },
+  };
+}
+
+/** A run at fix cycle 2 whose last answer started that cycle against `blocking`. */
+function stuckReviewState(tasks: Task[], head: string, blocking: string[]): WorkflowState {
+  return {
+    ...resumedReviewState(tasks, head, 2),
+    fixCycles: { used: 2, notes: [], open: { cycle: 2 } },
+    triage: [
+      {
+        cycle: 2,
+        at: '2026-10-03T00:00:00Z',
+        inputIds: [],
+        result: {
+          fixTasks: [{ ...makeTaskSpec({ id: 'T900' }), findingIds: ['F1'] }],
+          rejected: [],
+          verify: [],
+          ask: null,
+        },
+        blocking,
+        scope: 'final',
+      },
+    ],
   };
 }
 
@@ -938,13 +961,13 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     },
   );
 
-  it('the cap halt names the spent cycles and offers the exits', async () => {
+  it('the no-progress halt names the blockers and offers the exits', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { events, options, triagePrompts } = runOptions({
       projectDir,
       sessionId,
-      state: resumedReviewState(tasks, head, 2),
+      state: stuckReviewState(tasks, head, ['finding:F1']),
       review: (prompt) =>
         failedReviewVerdict(prompt, 'src/alpha.ts still crashes', { taskId: 'T001' }),
       onComplete: vi.fn(),
@@ -958,7 +981,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
       seat: 'build',
-      message: 'Final review failed after 2 fix cycles',
+      message: 'Final review made no progress on F1 after fix cycle 2',
     });
     expect(result.state.pendingRecovery?.availableActions).toEqual([
       'revise',
@@ -977,14 +1000,14 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
   // A checkout run has nothing to apply: accepting the failed review as is records the override,
   // keeps the failed verdict and closes the run, as a passing review would.
-  it('the cap halt of a checkout run offers accept as is, which closes the run on the failed verdict', async () => {
+  it('the no-progress halt of a checkout run offers accept as is, which closes the run on the failed verdict', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { options } = runOptions({
       projectDir,
       sessionId,
       state: {
-        ...resumedReviewState(tasks, head, 2),
+        ...stuckReviewState(tasks, head, ['finding:F1']),
         workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head } },
       },
       review: (prompt) =>
@@ -1019,14 +1042,14 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     });
   });
 
-  it('End run at the cap halt of a checkout run closes it as ended and writes no run.patch', async () => {
+  it('End run at the no-progress halt of a checkout run closes it as ended and writes no run.patch', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { options, triagePrompts } = runOptions({
       projectDir,
       sessionId,
       state: {
-        ...resumedReviewState(tasks, head, 2),
+        ...stuckReviewState(tasks, head, ['finding:F1']),
         workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head } },
       },
       review: (prompt) =>
@@ -1042,7 +1065,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
       seat: 'build',
-      message: 'Final review failed after 2 fix cycles',
+      message: 'Final review made no progress on F1 after fix cycle 2',
     });
     expect(triagePrompts).toHaveLength(0);
 
@@ -1075,7 +1098,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       projectDir,
       sessionId,
       state: {
-        ...resumedReviewState(tasks, head, 2),
+        ...stuckReviewState(tasks, head, ['check:make test:']),
         plan: {
           summary: 'Fix the widget.',
           decisions: [],
@@ -1180,7 +1203,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       sessionId,
       state: {
         ...resumedReviewState(tasks, head, 2),
-        fixCycles: { used: 2, allowance: 3, notes: ['log the error, then rethrow it'] },
+        fixCycles: { used: 2, notes: ['log the error, then rethrow it'] },
         reviewStatus: undefined,
         completedAt: undefined,
         pendingTriage: {
@@ -1248,7 +1271,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       reviewFixes: { cycle: 2, findings: { T001: ['Old Markdown defect'] } },
       pendingRecovery: buildReviewFailedRecoveryIssue({
         blocking: 1,
-        fixCycles: 2,
         phase: 'complete',
         createdAt: '2026-10-04T00:00:00Z',
       }),
@@ -1489,7 +1511,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
     const failed = runOptions({
       projectDir,
       sessionId,
-      state: resumedReviewState(tasks, head, 2),
+      state: stuckReviewState(tasks, head, ['finding:F1']),
       review: (prompt) =>
         failedReviewVerdict(prompt, 'src/alpha.ts drops the error', { taskId: 'T001' }),
       onComplete: vi.fn(),
@@ -1527,7 +1549,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
               criteria: [],
               checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
             }),
-            findingIds: ['U2'],
+            findingIds: ['U3'],
           },
         ],
         rejected: [],
@@ -1555,7 +1577,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
     expect(implementer.retry).not.toHaveBeenCalled();
     const fixed = result.state.tasks[1];
     expect(fixed?.fix?.cycle).toBe(3);
-    expect(fixed?.fix?.findings.map((finding) => finding.id)).toEqual(['U2']);
+    expect(fixed?.fix?.findings.map((finding) => finding.id)).toEqual(['U3']);
     expect(events.filter((e) => e.type === 'workflow_complete')).toEqual([
       expect.objectContaining({ review: 'passed' }),
     ]);

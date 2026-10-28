@@ -227,7 +227,7 @@ it('keeps a fix action hint dim', () => {
   expect(recoveryMenuParts('revise', makeRecoveryIssue({ reason: 'review-failed' }))).toEqual([
     { text: 'Fix again', tone: 'text' },
     { text: ' · ', tone: 'textDim' },
-    { text: 'grants one more fix cycle', tone: 'textDim' },
+    { text: 'runs another fix cycle with your note', tone: 'textDim' },
   ]);
 });
 
@@ -901,7 +901,9 @@ describe('recovery prompt', () => {
     expect(visible).toContain('Needs you · Final review failed with 2 blocking findings');
     expect(visible).not.toContain('Nothing was sent');
     expect(visible).not.toContain('retry');
-    expect(formatRecoveryPrompt(issue)).toContain('fix again · grants one more fix cycle');
+    expect(formatRecoveryPrompt(issue)).toContain(
+      'fix again · runs another fix cycle with your note',
+    );
   });
 
   it('offers the Apply halts a re-run of Apply, never a brief or a retry of a worker', async () => {

@@ -8,7 +8,7 @@ import { includes } from '../../utils/type-guards.js';
 
 /**
  * The two halts a person sees. *Needs you*: a decision only the operator can make — a spent bound,
- * a failed review after the cap, a protected write, a conflict at Apply. *Seat down*: the seat
+ * a failed review that made no progress, a protected write, a conflict at Apply. *Seat down*: the seat
  * cannot run — signed out, out of quota, refused its command or its input, or answered off its
  * contract twice.
  */

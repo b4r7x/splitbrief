@@ -104,6 +104,7 @@ import {
 } from '../../core/schemas/review.js';
 import {
   blockingEntries,
+  blockingKeys,
   blockingRedInputs,
   deriveReviewOutcome,
   findingInReviewScope,
@@ -982,6 +983,8 @@ export async function runFinalReviewPhase(opts: {
             ...(state.pendingTriage?.inputs ?? []).map((input) => input.id),
           ],
           result: fixWork,
+          blocking: blockingKeys(outcome, state.pendingTriage?.inputs ?? []),
+          scope: scope.kind,
           ...(fixVerification.length > 0 && { verification: fixVerification }),
         },
       });

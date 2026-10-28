@@ -24,7 +24,7 @@ const alpha = makeTaskSpec({
   suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
   checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
 });
-const fixes = ['T002', 'T003', 'T004'].map((id) =>
+const fixes = ['T002', 'T003'].map((id) =>
   makeTaskSpec({
     id,
     title: `Test the alpha value again ${id}`,
@@ -93,8 +93,8 @@ describe('e2e: a task review halt', () => {
       "globalThis.fetch = async () => { throw new Error('E2E network disabled'); };\n",
     );
     vi.stubEnv('NODE_OPTIONS', `--import=${offlinePath}`);
-    // Every task review fails on F1 with a new fix brief; the first two start a fix cycle, the
-    // third finds the cap spent.
+    // Every task review fails on F1 with a new fix brief; the first starts a fix cycle, the second
+    // finds F1 still open and halts.
     writeFileSync(
       plannerPath,
       `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
@@ -156,7 +156,7 @@ console.log('Implemented ' + title);
     const run = await cli(target, ['start', 'smoke']);
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).not.toBe(0);
     expect(run.stderr).toContain(
-      'Needs you (review-failed): Review T003 failed after 2 fix cycles',
+      'Needs you (review-failed): Review T002 made no progress on F1 after fix cycle 1',
     );
     expect(run.stderr).not.toContain('Final review');
 
@@ -170,25 +170,24 @@ console.log('Implemented ' + title);
     ).toEqual([
       ['task', 'T001', 'fail'],
       ['task', 'T002', 'fail'],
-      ['task', 'T003', 'fail'],
     ]);
     expect(events.filter((event) => event.type === 'error').map((event) => event.message)).toEqual([
-      'Review T003 failed after 2 fix cycles; see review.md',
+      'Review T002 made no progress on F1 after fix cycle 1; see review.md',
     ]);
     expect(
       events.filter((event) => event.type === 'recovery_prompted').map((event) => event.headline),
-    ).toEqual(['Review T003 failed after 2 fix cycles']);
+    ).toEqual(['Review T002 made no progress on F1 after fix cycle 1']);
 
     const state = readState(target, sessionId);
     expect(state.phase).toBe('implementing');
     expect(state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
-      message: 'Review T003 failed after 2 fix cycles',
+      message: 'Review T002 made no progress on F1 after fix cycle 1',
       availableActions: ['revise', 'end-run'],
     });
     if (state.pendingRecovery === undefined) throw new Error('Missing halt');
     expect(formatRecoveryHeadline(state.pendingRecovery)).toBe(
-      'Review T003 failed after 2 fix cycles',
+      'Review T002 made no progress on F1 after fix cycle 1',
     );
   });
 

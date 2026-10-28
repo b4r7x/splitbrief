@@ -471,8 +471,7 @@ function applyAcceptAsIsRecoveryAction(
 /**
  * A failed final review sent back with the operator's words: the correction is queued as a
  * pending input and the run moves back to final-review, where the reviewer judges
- * the candidate again with that input and without running the gates. The cycle cap grants one more
- * fix cycle when the correction arrives at it.
+ * the candidate again with that input and without running the gates.
  */
 function applyReviewCorrectionAction(
   opts: ApplyRecoveryActionOptions,

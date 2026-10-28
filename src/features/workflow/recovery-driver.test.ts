@@ -177,7 +177,7 @@ function runDriver(
   });
 }
 
-/** A run whose final review failed after the repair cycles ran out, with its review on disk. */
+/** A run whose final review failed after two fix cycles, with its review on disk. */
 function setupFailedReview(): { prepared: PreparedExecution; state: WorkflowState } {
   const { prepared } = setupSession();
   const ref = prepared.session.ref;
@@ -186,7 +186,7 @@ function setupFailedReview(): { prepared: PreparedExecution; state: WorkflowStat
     phase: 'complete',
     reviewStatus: 'failed',
     completedAt: '2026-09-24T00:00:00.000Z',
-    fixCycles: { used: 2, allowance: 2, notes: [] },
+    fixCycles: { used: 2, notes: [] },
     pendingRecovery: buildReviewFailedRecoveryIssue({
       blocking: 1,
       phase: 'complete',
@@ -1531,7 +1531,7 @@ describe('createRecoveryDriver', () => {
     ]);
   });
 
-  it('sends a failed review back through one more fix cycle with the correction typed on the panel', async () => {
+  it('sends a failed review back through another fix cycle with the correction typed on the panel', async () => {
     const { prepared, state } = setupFailedReview();
     const { inputMode, feedbackAtPrompt } = makeInputMode(['keep the error, log it and rethrow']);
 
@@ -1556,10 +1556,9 @@ describe('createRecoveryDriver', () => {
         },
       ],
     });
-    // The correction arrives at the cap, so it grants one more fix cycle and is recorded.
+    // The correction is recorded for the next fix cycle.
     expect(result.state.fixCycles).toEqual({
       used: 2,
-      allowance: 3,
       notes: ['keep the error, log it and rethrow'],
     });
     // The correction never resets a brief; the fix work is a new appended task.

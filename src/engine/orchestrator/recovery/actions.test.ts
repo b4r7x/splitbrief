@@ -528,7 +528,7 @@ describe('applyRecoveryAction: revise on a failed review', () => {
       ]),
       phase: 'complete' as const,
       reviewStatus: 'failed' as const,
-      fixCycles: { used: 2, allowance: 2, notes: [] },
+      fixCycles: { used: 2, notes: [] },
       pendingRecovery: issue,
     };
     saveState({ projectDir, sessionId }, state);
@@ -567,10 +567,9 @@ describe('applyRecoveryAction: revise on a failed review', () => {
         },
       ],
     });
-    // The cap grants one more cycle and records the operator's note.
+    // The operator's note is recorded for the next fix cycle.
     expect(result.state.fixCycles).toEqual({
       used: 2,
-      allowance: 3,
       notes: ['log the error, then rethrow it'],
     });
     // The correction never resets a brief; the fix work is triaged into new tasks.

@@ -64,7 +64,7 @@ import {
   leftIsolationCause,
   repositoryChangedCause,
   retryExhaustedCause,
-  reviewCapCause,
+  reviewNoProgressCause,
   reviewFailedCause,
   reviewName,
   reviewUnverifiedCause,
@@ -1123,8 +1123,10 @@ export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   failure?: NoVerdictReviewFailure | undefined;
   /** A final review can be accepted with its open findings instead of repaired. */
   acceptAsIs?: boolean | undefined;
-  /** The fix cycles spent when the cap stopped the review; fixes the halt's words. */
-  fixCycles?: number | undefined;
+  /** The blockers a round moved nothing on: the answer fixed none of them, or a fix cycle left them all. */
+  noProgress?: readonly string[] | undefined;
+  /** The fix cycle that left the same blockers; absent when the answer fixed none. */
+  fixCycle?: number | undefined;
   /** Criteria no check could verify, when the review failed with nothing to fix. */
   unverified?: number | undefined;
   /** The review that judged: a scheduled task review, or the final review when absent. */
@@ -1181,8 +1183,8 @@ function buildNoVerdictReviewIssue(
 }
 
 /**
- * A review still reports blocking findings after the fix cycles ran out, or with nothing to fix.
- * The operator can send them back through one more cycle with a correction of their own (`revise`).
+ * A review still reports blocking findings and its round moved nothing, or it failed with nothing to fix.
+ * The operator can send them back through another cycle with a correction of their own (`revise`).
  */
 export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions): RecoveryIssue {
   if (opts.failure !== undefined) return buildNoVerdictReviewIssue(opts, opts.failure);
@@ -1194,8 +1196,8 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
   ]);
   const review = reviewName(opts);
   const message =
-    opts.fixCycles !== undefined
-      ? reviewCapCause(review, opts.fixCycles)
+    opts.noProgress !== undefined
+      ? reviewNoProgressCause(review, opts.noProgress, opts.fixCycle)
       : opts.unverified !== undefined
         ? reviewUnverifiedCause(review, opts.unverified)
         : reviewFailedCause(review, blocking);
@@ -1210,7 +1212,8 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
     details: [opts.detail].filter((detail): detail is string => detail !== undefined),
     facts: compactFacts({
       blocking,
-      fixCycles: opts.fixCycles,
+      noProgress: opts.noProgress?.join(','),
+      fixCycle: opts.fixCycle,
       unverified: opts.unverified,
       reviewScope: opts.scope,
       afterTaskId: opts.afterTaskId,

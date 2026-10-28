@@ -8,7 +8,6 @@ import { BRIEF_SECTION_ORDER, sliceRuleText } from '../src/core/pipeline-spec/br
 import { CAPTURE_LIMITS, NARROWING_RULE } from '../src/core/pipeline-spec/gates.js';
 import { HALT_SIGNATURES } from '../src/core/pipeline-spec/halts.js';
 import { DEFAULT_LOCAL_RETRIES } from '../src/core/pipeline-spec/retries.js';
-import { REVIEW_CYCLE_CAP } from '../src/core/pipeline-spec/review.js';
 import { PROTECTED_PATHS_TEXT } from '../src/core/pipeline-spec/scope.js';
 import { TIMEOUTS } from '../src/core/pipeline-spec/timeouts.js';
 import type { CliEffortChannel } from '../src/core/runners/effort-channel.js';
@@ -622,9 +621,9 @@ function fixCycle(): string {
     'Read fixTasks, rejected, verify and ask from the saved review fix part. Append fix tasks with new ids; done tasks stay done.',
     'Run registered checks for unverified findings. The reviewer answers question findings from the plan and code before asking the user.',
     'Keep criteria when repairing a check command. Ask the user before changing the accepted outcome.',
-    `Allow ${REVIEW_CYCLE_CAP} fix cycles across the run, up to ${REVIEW_CYCLE_CAP + 1} reviews at end cadence. Task cadence adds reviews and shares this fix cap.`,
+    'Run fix cycles until the review passes, at end and at task cadence.',
     'Prepare each fresh review with references/gates.md.',
-    'After the cap, halt as needs you. Preserve open findings and never claim verification passed.',
+    'When a review answer fixes nothing, or a fix cycle leaves the same blockers, halt as needs you and name them. Preserve open findings and never claim verification passed.',
   ]);
 }
 

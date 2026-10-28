@@ -473,8 +473,7 @@ Explicit anti-goals that MUST NOT be implemented:
    other seat uses and does not create a second moment. Neither does the
    Apply integration re-review: when the merge at Apply changes the
    reviewed result, the review seat reads the whole run diff again, and
-   that re-review counts as one fix cycle of the final review against its
-   cycle cap.
+   that re-review counts as one fix cycle of the final review.
 
 ## Technical Constraints
 

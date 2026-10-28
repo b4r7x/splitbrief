@@ -52,7 +52,7 @@ export type StateAction =
   | { type: 'RECORD_REVIEW_CHECKS'; record: NonNullable<WorkflowState['reviewChecks']> }
   | { type: 'SET_PENDING_REVIEW_COMMANDS'; commands: string[] }
   | { type: 'RECORD_TRIAGE'; record: NonNullable<WorkflowState['triage']>[number] }
-  | { type: 'START_FIX_CYCLE' }
+  | { type: 'START_FIX_CYCLE'; lastFixTaskId?: TaskId }
   | { type: 'REVIEW_CORRECTION'; text: string }
   | {
       type: 'QUEUE_TRIAGE';

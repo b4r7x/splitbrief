@@ -5,6 +5,7 @@ import { taskId } from '../schemas/task.js';
 import type { ReviewRecord } from '../schemas/workflow.js';
 import {
   blockingEntries,
+  blockingKeys,
   blockingRedInputs,
   deriveReviewOutcome,
   findingInReviewScope,
@@ -444,7 +445,7 @@ describe('reviewsAgain', () => {
       },
     ],
   };
-  const fixCycles = { used: 2, allowance: 3, notes: [] };
+  const fixCycles = { used: 2, notes: [] };
 
   it.each([
     {
@@ -543,6 +544,49 @@ describe('red inputs the reviewer sets aside', () => {
     expect(setAsideLine({ id: 'V6.1', reason: 'Transient 60 s timeout,\n passes in 50 s' })).toBe(
       'Set aside V6.1: Transient 60 s timeout, passes in 50 s',
     );
+  });
+});
+
+describe('blockingKeys', () => {
+  const blocker = (id: string): Finding =>
+    finding({ id, severity: 'blocking', text: `${id} text` });
+  const red = (id: string, extra: Partial<TriageInput> = {}): TriageInput => ({
+    id,
+    kind: 'defect',
+    source: 'check',
+    text: `Check ${id} did not pass`,
+    file: null,
+    ...extra,
+  });
+
+  it('keys a finding by its id and a red input by its command and failures, not its id', () => {
+    const inputs = [
+      red('V1.1', { command: 'npm test', failureKeys: ['src/a.test.ts', 'src/b.test.ts'] }),
+      red('P2', { file: 'src/c.ts' }),
+      red('A1', { source: 'apply' }),
+    ];
+    expect(
+      blockingKeys(
+        {
+          blocking: [blocker('F1')],
+          redInputs: inputs.map(({ id, text }) => ({ id, text })),
+        },
+        inputs,
+      ),
+    ).toEqual([
+      'finding:F1',
+      'check:npm test:src/a.test.ts|src/b.test.ts',
+      'check:P2:src/c.ts',
+      'apply:A1:',
+    ]);
+  });
+
+  it('gives the same red check the same key under a new id', () => {
+    const before = red('V1.1', { command: 'npm test', failureKeys: ['src/a.test.ts'] });
+    const after = red('V2.1', { command: 'npm test', failureKeys: ['src/a.test.ts'] });
+    const keys = (input: TriageInput) =>
+      blockingKeys({ blocking: [], redInputs: [{ id: input.id, text: input.text }] }, [input]);
+    expect(keys(after)).toEqual(keys(before));
   });
 });
 

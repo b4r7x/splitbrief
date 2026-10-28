@@ -31,6 +31,8 @@ import {
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
 import { saveState } from '../../../core/state/persistence.js';
+import { transition } from '../../../core/state/machine.js';
+import { blockingKeys, reviewOutcomeOf } from '../../../core/review/verdict.js';
 import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
@@ -39,7 +41,9 @@ import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { createSteeringPort } from '../../calls/steering.js';
 import type { FinalReviewResult } from '../final-review.js';
 import type { Planner, TypedCallContext } from '../../planners/types.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
+import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { diagnosePlannerCallFailure } from '../recovery/planner-call-failure.js';
 import { switchSeatAndPrepareResume } from '../recovery/switch-seat-resume.js';
@@ -233,7 +237,7 @@ describe('review answer follower', () => {
     expect(result.state.pendingTriage?.question?.question).toBe('Change the API?');
   });
 
-  it('halts at the cap with a red input without REVIEW_DONE or Accept as is', async () => {
+  it('halts an answer that fixes nothing and names its blockers, without REVIEW_DONE or Accept as is', async () => {
     const ref = setupProject();
     const state = {
       ...pendingReview(),
@@ -255,7 +259,9 @@ describe('review answer follower', () => {
     expect(result.state.phase).toBe('final-review');
     expect(result.state.completedAt).toBeUndefined();
     expect(result.state.reviewStatus).toBeUndefined();
-    expect(result.state.pendingRecovery?.facts).toMatchObject({ fixCycles: 2 });
+    expect(result.state.pendingRecovery?.message).toBe('Final review found no fix for F1');
+    expect(result.state.pendingRecovery?.facts).toMatchObject({ noProgress: 'F1' });
+    expect(result.state.pendingRecovery?.facts).not.toHaveProperty('fixCycle');
     expect(result.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
     expect(result.state.pendingRecovery?.details?.join('\n')).toContain('P1');
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
@@ -269,11 +275,112 @@ describe('review answer follower', () => {
     expect(corrected.ok).toBe(true);
     if (!corrected.ok) throw new Error(corrected.message);
     expect(corrected.state.phase).toBe('final-review');
-    expect(corrected.state.fixCycles?.allowance).toBe(3);
+    expect(corrected.state.fixCycles).toEqual({ used: 2, notes: ['Fix the typecheck failure'] });
     expect(corrected.state.pendingTriage?.inputs).toEqual([
       input,
       expect.objectContaining({ text: 'Fix the typecheck failure' }),
     ]);
+  });
+
+  const fixF1 = {
+    ...fixWork,
+    fixTasks: [{ ...makeTaskSpec({ id: 'T900', criteria: [] }), findingIds: ['F1'] }],
+  };
+
+  /** The final review after fix cycle 2, whose final review answer started that cycle against `blocking`. */
+  function afterCycle(blocking: string[] | undefined, inputs: TriageInput[] = []): WorkflowState {
+    const state = pendingReview();
+    return {
+      ...state,
+      phase: 'final-review',
+      ...(state.review !== undefined && {
+        review: { ...state.review, scope: 'final' as const, judges: 2 },
+      }),
+      triage: [
+        {
+          cycle: 2,
+          at: '2026-10-03T00:00:00Z',
+          inputIds: ['F1'],
+          result: fixF1,
+          ...(blocking !== undefined && { blocking, scope: 'final' as const }),
+        },
+      ],
+      pendingTriage: { inputs },
+    };
+  }
+
+  async function follow(state: WorkflowState, answer: TriageResult = fixF1) {
+    const ref = setupProject();
+    saveState(ref, state);
+    const callbacks = makeCallbacks().callbacks;
+    return followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus: makeBusRecorder().bus, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      fixWork: answer,
+    });
+  }
+
+  it('halts when a fix cycle leaves the same blockers', async () => {
+    const result = await follow(afterCycle(['finding:F1']));
+    expect(result).toMatchObject({ stopped: true, reviewAgain: false });
+    expect(result.state.pendingRecovery?.message).toBe(
+      'Final review made no progress on F1 after fix cycle 2',
+    );
+    expect(result.state.pendingRecovery?.facts).toMatchObject({ noProgress: 'F1', fixCycle: 2 });
+    expect(result.state.fixCycles?.used).toBe(2);
+    expect(result.state.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
+  });
+
+  it.each([
+    ['the last cycle moved a blocker', afterCycle(['finding:F1', 'finding:F2'])],
+    ['the last cycle met a new blocker', afterCycle(['finding:F2'])],
+    ['an older run recorded no blockers', afterCycle(undefined)],
+  ])('starts fix cycle 3 when %s', async (_name, state) => {
+    const result = await follow(state);
+    expect(result).toMatchObject({ stopped: false, reviewAgain: false });
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.fixCycles?.used).toBe(3);
+    expect(result.state.phase).toBe('implementing');
+  });
+
+  it('starts another fix cycle on a round the user steered, with the same blockers', async () => {
+    const note = {
+      id: 'U1',
+      kind: 'defect' as const,
+      source: 'user' as const,
+      text: 'Keep the error',
+      file: null,
+    };
+    const answer = {
+      ...fixF1,
+      fixTasks: [{ ...makeTaskSpec({ id: 'T900', criteria: [] }), findingIds: ['F1', 'U1'] }],
+    };
+    const result = await follow(afterCycle(['finding:F1'], [note]), answer);
+    expect(result).toMatchObject({ stopped: false, reviewAgain: false });
+    expect(result.state.fixCycles?.used).toBe(3);
+  });
+
+  it('keys a red input by its command and failures, so a renumbered input that still fails halts', async () => {
+    const red = { ...input, id: 'P2', command: 'npm run typecheck', failureKeys: ['src/a.ts'] };
+    const answer = {
+      ...fixWork,
+      fixTasks: [{ ...makeTaskSpec({ id: 'T900', criteria: [] }), findingIds: ['F1', 'P2'] }],
+    };
+    const state = afterCycle(['finding:F1', 'check:npm run typecheck:src/a.ts'], [red]);
+    const review = state.review;
+    if (review === undefined) throw new Error('pendingReview holds a review');
+    const result = await follow(
+      { ...state, review: { ...review, redInputs: [{ id: red.id, text: red.text }] } },
+      answer,
+    );
+    expect(result.stopped).toBe(true);
+    expect(result.state.pendingRecovery?.facts).toMatchObject({
+      noProgress: 'F1,P2',
+      fixCycle: 2,
+    });
   });
 
   it('keeps a pending red input blocking when the reviewer asks a question', async () => {
@@ -285,7 +392,7 @@ describe('review answer follower', () => {
         review: { ...review, redInputs: [{ id: input.id, text: input.text }] },
       }),
       phase: 'final-review',
-      fixCycles: { used: 0, allowance: 2, notes: [] },
+      fixCycles: { used: 0, notes: [] },
       pendingTriage: { inputs: [input] },
     };
     saveState(ref, state);
@@ -325,7 +432,7 @@ describe('review answer follower', () => {
         redInputs: [{ id: input.id, text: input.text }],
       },
       phase: 'final-review',
-      fixCycles: { used: 2, allowance: 2, notes: [] },
+      fixCycles: { used: 2, notes: [] },
       pendingTriage: { inputs: [input] },
     };
     saveState(ref, state);
@@ -352,7 +459,7 @@ describe('review answer follower', () => {
     const state: WorkflowState = {
       ...pendingReview(),
       phase: 'final-review',
-      fixCycles: { used: 0, allowance: 2, notes: [] },
+      fixCycles: { used: 0, notes: [] },
       pendingTriage: { inputs: [red] },
     };
     saveState(ref, state);
@@ -375,6 +482,238 @@ describe('review answer follower', () => {
     expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
       { review: 'failed', blocking: 1 },
     ]);
+  });
+});
+
+describe('the review that judges a fix cycle', () => {
+  const F1 = {
+    id: 'F1',
+    kind: 'defect' as const,
+    severity: 'blocking' as const,
+    taskId: 'T001',
+    file: null,
+    line: null,
+    text: 'Preserve the error',
+    acceptance: null,
+    checkIds: null,
+    criterionId: null,
+  };
+  const conflict: TriageInput = {
+    id: 'A1',
+    kind: 'defect',
+    source: 'apply',
+    text: 'Apply merge conflict in src/a.ts: resolve the conflict markers',
+    file: 'src/a.ts',
+  };
+  const fixTask = (id: string, findingId: string): TriageResult => ({
+    fixTasks: [{ ...makeTaskSpec({ id, criteria: [] }), findingIds: [findingId] }],
+    rejected: [],
+    verify: [],
+    ask: null,
+  });
+
+  function reviewed(state: WorkflowState, outcome: 'pass' | 'fail', red = false): WorkflowState {
+    return transition(state, {
+      type: 'RECORD_REVIEW',
+      review: {
+        scope: 'final',
+        cycle: fixCyclesOf(state).used,
+        at: new Date().toISOString(),
+        outcome,
+        verification: [],
+        verdict: { tasks: [], criteria: [], findings: outcome === 'fail' && !red ? [F1] : [] },
+        ...(red && { redInputs: [{ id: conflict.id, text: conflict.text }] }),
+      },
+    });
+  }
+
+  /** What the final review writes before its answer is followed. */
+  function triaged(state: WorkflowState, fixWork: TriageResult): WorkflowState {
+    const review = state.review;
+    if (review === undefined) throw new Error('expected a review');
+    return transition(state, {
+      type: 'RECORD_TRIAGE',
+      record: {
+        cycle: fixCyclesOf(state).used + 1,
+        at: new Date().toISOString(),
+        reviewAt: review.at,
+        inputIds: [],
+        result: fixWork,
+        blocking: blockingKeys(reviewOutcomeOf(review), state.pendingTriage?.inputs ?? []),
+        scope: review.scope === 'task' ? 'task' : 'final',
+      },
+    });
+  }
+
+  function taskReviewed(state: WorkflowState, afterTaskId: string): WorkflowState {
+    const scheduled = transition(state, {
+      type: 'START_SCHEDULED_REVIEW',
+      afterTaskId: taskId(afterTaskId),
+    });
+    return transition(scheduled, {
+      type: 'RECORD_REVIEW',
+      review: {
+        scope: 'task',
+        cycle: fixCyclesOf(scheduled).used,
+        at: new Date().toISOString(),
+        outcome: 'fail',
+        verification: [],
+        verdict: {
+          tasks: [{ id: taskId(afterTaskId), plan: 'partial', note: '' }],
+          criteria: [],
+          findings: [{ ...F1, taskId: afterTaskId }],
+        },
+      },
+    });
+  }
+
+  function finishCycle(state: WorkflowState): WorkflowState {
+    const done = {
+      ...state,
+      tasks: state.tasks.map((task) => ({ ...task, status: 'done' as const })),
+    };
+    return transition(done, { type: 'ALL_DONE' });
+  }
+
+  async function follow(state: WorkflowState, fixWork: TriageResult) {
+    const ref = setupProject();
+    saveState(ref, state);
+    const callbacks = makeCallbacks().callbacks;
+    return followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus: makeBusRecorder().bus, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      fixWork,
+    });
+  }
+
+  function runState(phase: 'final-review' | 'complete'): WorkflowState {
+    return {
+      ...makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+        changedFilesBaseline: { ...RUN_BASELINE },
+      }),
+      phase,
+      ...(phase === 'complete' && { reviewStatus: 'passed' as const }),
+      workspace: { kind: 'worktree', path: '/tmp/x', base: { snapshotId: 'b', head: null } },
+    };
+  }
+
+  it('fixes a second Apply conflict in the same file after the cycle that fixed the first passed', async () => {
+    let state = transition(runState('complete'), {
+      type: 'APPLY_REVIEW_START',
+      merged: [],
+      triage: [conflict],
+    });
+    let result = await follow(
+      triaged(reviewed(state, 'fail', true), fixTask('T900', 'A1')),
+      fixTask('T900', 'A1'),
+    );
+    state = reviewed(finishCycle(result.state), 'pass');
+    expect(state.review?.judges).toBe(1);
+    state = transition(state, { type: 'REVIEW_DONE', reviewStatus: 'passed' });
+
+    state = transition(state, { type: 'APPLY_REVIEW_START', merged: [], triage: [conflict] });
+    result = await follow(
+      triaged(reviewed(state, 'fail', true), fixTask('T901', 'A1')),
+      fixTask('T901', 'A1'),
+    );
+    expect(result).toMatchObject({ stopped: false, reviewAgain: false });
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.tasks.filter((task) => task.fix?.cycle === 2)).toHaveLength(1);
+  });
+
+  it('fixes after an Apply merge re-review that follows Accept as is, since no cycle ran after the halt', async () => {
+    let state = runState('final-review');
+    let result = await follow(
+      triaged(reviewed(state, 'fail'), fixTask('T900', 'F1')),
+      fixTask('T900', 'F1'),
+    );
+    state = finishCycle(result.state);
+    result = await follow(
+      triaged(reviewed(state, 'fail'), fixTask('T901', 'F1')),
+      fixTask('T901', 'F1'),
+    );
+    expect(result.state.pendingRecovery?.message).toBe(
+      'Final review made no progress on F1 after fix cycle 1',
+    );
+    state = transition(
+      { ...result.state, pendingRecovery: undefined },
+      { type: 'ACCEPT_AS_IS', findings: ['F1'] },
+    );
+
+    state = transition(state, { type: 'APPLY_REVIEW_START', merged: [] });
+    result = await follow(
+      triaged(reviewed(state, 'fail'), fixTask('T902', 'F1')),
+      fixTask('T902', 'F1'),
+    );
+    expect(result).toMatchObject({ stopped: false, reviewAgain: false });
+    expect(result.state.tasks.filter((task) => task.fix?.cycle === 3)).toHaveLength(1);
+  });
+
+  it('halts the task review after the inserted fix task, whatever id the reviewer gave it', async () => {
+    const state = makeImplState(
+      [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })],
+      {
+        changedFilesBaseline: { ...RUN_BASELINE },
+      },
+    );
+    const first = await follow(
+      triaged(taskReviewed(state, 'T001'), fixTask('T900', 'F1')),
+      fixTask('T900', 'F1'),
+    );
+    const inserted = first.state.tasks.find((task) => task.fix?.cycle === 1);
+    expect(inserted?.id).toBe('T003');
+    const done = {
+      ...first.state,
+      tasks: first.state.tasks.map((task) =>
+        task.id === inserted?.id ? { ...task, status: 'done' as const } : task,
+      ),
+    };
+
+    const judged = taskReviewed(done, 'T003');
+    expect(judged.review?.judges).toBe(1);
+    const again = await follow(triaged(judged, fixTask('T901', 'F1')), fixTask('T901', 'F1'));
+    expect(again).toMatchObject({ stopped: true, reviewAgain: false });
+    expect(again.state.pendingRecovery?.message).toBe(
+      'Review T003 made no progress on F1 after fix cycle 1',
+    );
+  });
+
+  it('runs the first fix task after a cycle that only re-ran checks', async () => {
+    const verifyOnly: TriageResult = {
+      fixTasks: [],
+      rejected: [],
+      verify: [{ findingId: 'F1', checkIds: ['V1'] }],
+      ask: null,
+    };
+    let state = runState('final-review');
+    let result = await follow(triaged(reviewed(state, 'fail'), verifyOnly), verifyOnly);
+    expect(fixCyclesOf(result.state).used).toBe(1);
+    state = finishCycle(result.state);
+
+    result = await follow(reviewed(state, 'fail'), fixTask('T900', 'F1'));
+    expect(result).toMatchObject({ stopped: false, reviewAgain: false });
+    expect(result.state.tasks.filter((task) => task.fix?.cycle === 2)).toHaveLength(1);
+  });
+
+  it('halts a cycle that only re-ran checks when the next answer again asks for no fix task', async () => {
+    const verifyOnly: TriageResult = {
+      fixTasks: [],
+      rejected: [],
+      verify: [{ findingId: 'F1', checkIds: ['V1'] }],
+      ask: null,
+    };
+    let state = runState('final-review');
+    const result = await follow(triaged(reviewed(state, 'fail'), verifyOnly), verifyOnly);
+    state = finishCycle(result.state);
+
+    const again = await follow(reviewed(state, 'fail'), verifyOnly);
+    expect(again).toMatchObject({ stopped: true, reviewAgain: false });
+    expect(again.state.pendingRecovery?.message).toBe(
+      'Final review made no progress on F1 after fix cycle 1',
+    );
   });
 });
 
@@ -407,7 +746,7 @@ function pendingReview(): WorkflowState {
         ],
       },
     },
-    fixCycles: { used: 2, allowance: 2, notes: [] },
+    fixCycles: { used: 2, notes: [] },
   });
 }
 
@@ -778,9 +1117,93 @@ describe('runScheduledReview saved recovery', () => {
     ]);
   });
 
-  it('halts a scheduled review at its cap and resumes triage with pending tasks intact', async () => {
+  it('starts a scheduled fix cycle at fix cycle 2 with no cap', async () => {
     const ref = setupProject();
     const state = pendingReview();
+    saveState(ref, state);
+    const planner = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks(state.tasks),
+        (prompt) => failedReviewVerdict(prompt, 'Preserve the error', { taskId: 'T001' }),
+      ),
+    });
+    const callbacks = makeCallbacks().callbacks;
+    const result = await runScheduledReview({
+      wctx: makeWctx({ ...ref, config: makeNoValidationConfig(), callbacks, planner }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      afterTaskId: taskId('T001'),
+    });
+    expect(result.status).toBe('continue');
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.fixCycles?.used).toBe(3);
+    expect(result.state.tasks.map((task) => task.id)).toEqual(['T001', 'T003', 'T002']);
+    expect(result.state.triage?.at(-1)).toMatchObject({ cycle: 3, blocking: ['finding:F1'] });
+  });
+
+  it('judges a review of another task by its own answer, not by the fix cycle before it', async () => {
+    const ref = setupProject();
+    const state: WorkflowState = {
+      ...pendingReview(),
+      fixCycles: { used: 2, notes: [], open: { cycle: 2, lastFixTaskId: taskId('T003') } },
+      triage: [
+        {
+          cycle: 2,
+          at: '2026-10-03T00:00:00Z',
+          inputIds: ['F1'],
+          result: {
+            fixTasks: [{ ...makeTaskSpec({ id: 'T003' }), findingIds: ['F1'] }],
+            rejected: [],
+            verify: [],
+            ask: null,
+          },
+          blocking: ['finding:F1'],
+          scope: 'task',
+        },
+      ],
+    };
+    saveState(ref, state);
+    const planner = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks(state.tasks),
+        (prompt) => failedReviewVerdict(prompt, 'A new problem', { taskId: 'T001' }),
+      ),
+    });
+    const callbacks = makeCallbacks().callbacks;
+    const result = await runScheduledReview({
+      wctx: makeWctx({ ...ref, config: makeNoValidationConfig(), callbacks, planner }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      afterTaskId: taskId('T001'),
+    });
+    expect(result.status).toBe('continue');
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.fixCycles?.used).toBe(3);
+  });
+
+  it('halts a scheduled review whose fix cycle left the same blockers and resumes triage with pending tasks intact', async () => {
+    const ref = setupProject();
+    const state: WorkflowState = {
+      ...pendingReview(),
+      fixCycles: { used: 2, notes: [], open: { cycle: 2, lastFixTaskId: taskId('T001') } },
+      triage: [
+        {
+          cycle: 2,
+          at: '2026-10-03T00:00:00Z',
+          inputIds: ['F1'],
+          result: {
+            fixTasks: [{ ...makeTaskSpec({ id: 'T900' }), findingIds: ['F1'] }],
+            rejected: [],
+            verify: [],
+            ask: null,
+          },
+          blocking: ['finding:F1'],
+          scope: 'task',
+        },
+      ],
+    };
     saveState(ref, state);
     const { bus, events } = makeBusRecorder();
     const triagePrompts: string[] = [];
@@ -794,7 +1217,7 @@ describe('runScheduledReview saved recovery', () => {
           triagePrompts.push(prompt);
           return {
             ...passingReviewVerdict(prompt),
-            rejected: [{ findingId: 'U2', reason: 'The correction guides continuation' }],
+            rejected: [{ findingId: 'U3', reason: 'The correction guides continuation' }],
           };
         },
       ),
@@ -815,7 +1238,11 @@ describe('runScheduledReview saved recovery', () => {
     expect(halted.state.review?.scope).toBe('task');
     expect(halted.state.pendingScheduledReview).toEqual({ afterTaskId: 'T001' });
     expect(halted.state.pendingTriage).toEqual({ inputs: [], reviewAfterTaskId: 'T001' });
-    expect(halted.state.pendingRecovery?.facts?.blocking).toBe(1);
+    expect(halted.state.pendingRecovery?.facts).toMatchObject({
+      blocking: 1,
+      noProgress: 'F1',
+      fixCycle: 2,
+    });
     expect(halted.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);
     expect(triagePrompts).toEqual([]);
@@ -843,7 +1270,7 @@ describe('runScheduledReview saved recovery', () => {
     const ref = setupProject();
     const state = {
       ...pendingReview(),
-      fixCycles: { used: 0, allowance: 2, notes: [] },
+      fixCycles: { used: 0, notes: [] },
       pendingScheduledReview: { afterTaskId: taskId('T001') },
       pendingTriage: { inputs: [], reviewAfterTaskId: taskId('T001') },
     };

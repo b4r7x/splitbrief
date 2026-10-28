@@ -26,7 +26,7 @@ const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from 
 5. **Type Safety**: Are types correct and complete?
 6. **Code Quality**: Are there obvious bugs, security issues, or performance problems?`;
 
-const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. A red pending input already blocks the review: do not restate it as a new finding. When a failed criterion or a task not met needs a finding for that input, give the input's id to one such finding only. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Verify a render only when its current-candidate images are attached and you critique the scenario. A manifest alone leaves the render unverified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
+const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. A red pending input already blocks the review: do not restate it as a new finding. When a failed criterion or a task not met needs a finding for that input, give the input's id to one such finding only. A finding a fix cycle left open keeps its id, and a new finding never takes an id the triage log names. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Verify a render only when its current-candidate images are attached and you critique the scenario. A manifest alone leaves the render unverified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
 
 const FIX_WORK_CONTRACT = `This review call is read-only. Do not write, edit or delete any file, or run commands that change the project. Return the verdict and the fix work in one review_answer.
 
@@ -368,7 +368,9 @@ export function triageLines(records: readonly TriageRecord[]): string | undefine
       const rejected = record.result.rejected
         .map((entry) => `${entry.findingId} rejected: ${entry.reason}`)
         .join('; ');
-      const fixes = record.result.fixTasks.map((task) => task.title).join(', ');
+      const fixes = record.result.fixTasks
+        .map((task) => `${task.title} (${task.findingIds.join(', ')})`)
+        .join(', ');
       const verified = record.result.verify.map((entry) => entry.findingId).join(', ');
       const parts = [
         fixes === '' ? undefined : `fix tasks: ${fixes}`,
