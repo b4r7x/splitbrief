@@ -15,6 +15,7 @@ import {
   captureChangedFilesBaseline,
   changedFilesSinceBaseline,
   deserializeChangedFilesBaseline,
+  fingerprintFiles,
   refreshChangedFilesBaseline,
   serializeChangedFilesBaseline,
   unreadableChangedFiles,
@@ -22,6 +23,7 @@ import {
   withActiveTaskSnapshot,
 } from './changed-files-baseline.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { sha256Hex } from '../../utils/sha256.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -88,6 +90,30 @@ describe('userVisibleChangedFiles', () => {
         '.splitbrief/state.json',
       ]),
     ).toEqual(['src/a.ts']);
+  });
+});
+
+describe('fingerprintFiles', () => {
+  it('tells two binary files apart and keeps a text file at the hash of its text', async () => {
+    const dir = createTempDir('changed-files-baseline-binary');
+    try {
+      writeFileSync(
+        join(dir, 'a.bin'),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe, 0x80, 0x90]),
+      );
+      writeFileSync(
+        join(dir, 'b.bin'),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xc0, 0xa1, 0x81, 0x9f]),
+      );
+      writeFileSync(join(dir, 'note.txt'), 'zażółć\n');
+
+      const fingerprints = await fingerprintFiles(dir, ['a.bin', 'b.bin', 'note.txt']);
+
+      expect(fingerprints.get('a.bin')).not.toBe(fingerprints.get('b.bin'));
+      expect(fingerprints.get('note.txt')).toBe(sha256Hex('zażółć\n'));
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 });
 
