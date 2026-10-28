@@ -63,7 +63,6 @@ const anytimeActions = [
   'COUNT_PLANNER_CALL',
   'CLEAR_CARRIED_FAILURE',
   'GRANT_ALLOWANCE',
-  'SET_TASK_INPUT_HASHES',
   'RECORD_DISPATCH',
   'RECORD_CHECK_RESULTS',
   'SET_PENDING_REVIEW_COMMANDS',
@@ -206,7 +205,6 @@ const EMPTY_LINEAGE: LineageRecord = {
   attempts: 0,
   consultAllowance: BOUNDS.consultsPerLineage,
   attemptAllowance: BOUNDS.attemptsPerLineage,
-  staleConsultedRevision: {},
   dispatchedRevision: {},
   consultRecords: [],
   replacedParents: [],
@@ -1037,20 +1035,6 @@ export function transition(
 
     case 'CLEAR_SCHEDULED_REVIEW':
       return { ...state, pendingScheduledReview: undefined, pendingTriage: undefined };
-
-    case 'SET_TASK_INPUT_HASHES':
-      return {
-        ...withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
-          ...lineage,
-          staleConsultedRevision: {
-            ...lineage.staleConsultedRevision,
-            [action.taskId]: state.tasks.find((task) => task.id === action.taskId)?.revision ?? 1,
-          },
-        })),
-        tasks: state.tasks.map((task) =>
-          task.id === action.taskId ? { ...task, inputHashes: action.inputHashes } : task,
-        ),
-      };
 
     case 'RECORD_DISPATCH':
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({

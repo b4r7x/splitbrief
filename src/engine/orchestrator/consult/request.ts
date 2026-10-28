@@ -1,6 +1,5 @@
 import {
   CONSULT_ANSWER_JSON_SCHEMA,
-  STALE_CONSULT_ANSWER_JSON_SCHEMA,
   consultAnswerSchemaFor,
   type ConsultAnswer,
   type ConsultReason,
@@ -88,22 +87,6 @@ export function consultSeat(task: Task): ConsultSeat {
   return task.fix !== undefined ? 'review' : 'plan';
 }
 
-/** The answer contract a consult reason takes: stale narrows the actions. */
-function reasonContract(task: Task, reason: ConsultReason) {
-  if (reason === 'stale') {
-    return {
-      schema: consultAnswerSchemaFor(task, 'stale'),
-      jsonSchema: STALE_CONSULT_ANSWER_JSON_SCHEMA,
-      schemaName: 'stale_consult_answer',
-    };
-  }
-  return {
-    schema: consultAnswerSchemaFor(task),
-    jsonSchema: CONSULT_ANSWER_JSON_SCHEMA,
-    schemaName: 'consult_answer',
-  };
-}
-
 /**
  * The answer contract of one consult. A rewrite or a split never brings in a `cmd` check that the
  * plan command policy refuses or whose npm script no one adds, a `render` check that names no
@@ -113,7 +96,6 @@ function reasonContract(task: Task, reason: ConsultReason) {
  */
 function answerContract(
   task: Task,
-  reason: ConsultReason,
   checks: {
     npmScriptsApproved: boolean;
     projectDir: string;
@@ -122,10 +104,10 @@ function answerContract(
     pendingFiles: readonly string[];
   },
 ) {
-  const contract = reasonContract(task, reason);
   return {
-    ...contract,
-    schema: contract.schema.superRefine((value, ctx) => {
+    jsonSchema: CONSULT_ANSWER_JSON_SCHEMA,
+    schemaName: 'consult_answer',
+    schema: consultAnswerSchemaFor(task).superRefine((value, ctx) => {
       const specs =
         value.answer.action === 'rewrite-task'
           ? [value.answer.task]
@@ -254,8 +236,8 @@ function publishAnswer(
 /**
  * Asks the consult seat about one task and records its answer: the reviewer for a fix
  * task's repair, the planner for the rest (`consultSeat`). The planner continues its
- * session; the reviewer holds none and reads the full prompt. A stale request spends no
- * consult allowance; both seats share the rest.
+ * session; the reviewer holds none and reads the full prompt. Both seats share one consult
+ * allowance.
  */
 export async function requestConsult(
   ctx: ConsultContext,
@@ -272,7 +254,7 @@ export async function requestConsult(
   const seat = consultSeat(input.task);
   const diff = await taskDiff(ctx.workspaceDir, ctx.state, input.task, ref);
   const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir, seat);
-  const contract = answerContract(input.task, input.reason, {
+  const contract = answerContract(input.task, {
     npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),
     projectDir: ctx.workspaceDir,
     renderCommand: ctx.config.validation.render,
@@ -389,9 +371,7 @@ export async function requestConsult(
     }),
   );
   // One consult allowance: a reviewer consult spends the same count a planner consult does.
-  if (input.reason !== 'stale') {
-    apply(transitionAndSave(ref, state, { type: 'COUNT_PLANNER_CALL' }));
-  }
+  apply(transitionAndSave(ref, state, { type: 'COUNT_PLANNER_CALL' }));
   publishAnswer(ctx, state, input, consulted, seat);
   if (seat === 'plan') apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
   return { answer: consulted };

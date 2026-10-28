@@ -50,7 +50,7 @@ Use this table so the waiter and optional stop hook read the same status column:
 Statuses are `pending`, `running`, `retrying`, `done`, `halted`, or `skipped`.
 Save the active stage and next step beside the table, including review and fixes.
 On a stop, retain the stage to resume and its task id, attempt, or review cycle.
-Save the selected task ids, seats, cadence, approvals, lineage roots, revisions, input hashes, and process artifact paths.
+Save the selected task ids, seats, cadence, approvals, lineage roots, revisions, and process artifact paths.
 Persist attempts, consults, run planner decisions, fix cycles, and extra allowances using references/recovery.md.
 Keep the decisions ledger in `plan.json` using references/planning.md.
 Update progress before each spawn and after each attempt, task, review, or planner decision.
@@ -78,16 +78,15 @@ A completed run needs no dispatch; report its saved completion scope.
 
 For each selected pending task whose dependencies are done:
 
-1. Apply the stale-input procedure in references/recovery.md before dispatch.
-2. Refresh suggested/context code, input hashes, and read-only Plan context from disk.
-3. Save `T00N/attempt-N.prompt.md` using references/implementer-prompt.md.
-4. Check the model context and prompt transport fit; refuse an oversized prompt.
-5. Spawn with references/tool-recipes.md and wait using the protocol below.
-6. Read the terminal result and advisory completion report.
-7. Route blocked reports, proposed decisions, and failures through references/recovery.md.
-8. Record touched files and reasons. At task cadence, run the task's checks and the due checks with references/gates.md. At end cadence, run the task's own checks, except a render check.
-9. Mark the task done only after those checks pass. Update and print progress.
-10. At task cadence, enter review for completed work before dispatching another task. That review runs the related tests the reviewer chooses.
+1. Refresh suggested/context code and read-only Plan context from disk.
+2. Save `T00N/attempt-N.prompt.md` using references/implementer-prompt.md.
+3. Check the model context and prompt transport fit; refuse an oversized prompt.
+4. Spawn with references/tool-recipes.md and wait using the protocol below.
+5. Read the terminal result and advisory completion report.
+6. Route blocked reports, proposed decisions, and failures through references/recovery.md.
+7. Record touched files and reasons. At task cadence, run the task's checks and the due checks with references/gates.md. At end cadence, run the task's own checks, except a render check.
+8. Mark the task done only after those checks pass. Update and print progress.
+9. At task cadence, enter review for completed work before dispatching another task. That review runs the related tests the reviewer chooses.
 
 Take an attempt-start snapshot of candidate bytes for recovery; preserve accepted earlier task changes.
 Record command, exit, terminal result, report, changed paths, check results, and outcome in the evidence trail.

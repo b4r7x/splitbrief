@@ -322,7 +322,6 @@ describe('refreshAndPersistCode', () => {
             attempts: 3,
             consultAllowance: 1,
             attemptAllowance: 0,
-            staleConsultedRevision: {},
             dispatchedRevision: {},
             consultRecords: [],
             replacedParents: [],

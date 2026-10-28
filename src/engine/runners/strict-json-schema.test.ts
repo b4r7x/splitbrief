@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import {
-  CONSULT_ANSWER_JSON_SCHEMA,
-  STALE_CONSULT_ANSWER_JSON_SCHEMA,
-} from '../../core/schemas/consult.js';
+import { CONSULT_ANSWER_JSON_SCHEMA } from '../../core/schemas/consult.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from '../../core/schemas/plan.js';
 import { isStrictJsonSchema } from './strict-json-schema.js';
 
@@ -33,16 +30,13 @@ describe('isStrictJsonSchema', () => {
     expect(isStrictJsonSchema(PLAN_ANSWER_JSON_SCHEMA)).toBe(true);
   });
 
-  it('accepts the consult answers, so a codex consult uses the native transport', () => {
+  it('accepts the consult answer, so a codex consult uses the native transport', () => {
     expect(isStrictJsonSchema(CONSULT_ANSWER_JSON_SCHEMA)).toBe(true);
-    expect(isStrictJsonSchema(STALE_CONSULT_ANSWER_JSON_SCHEMA)).toBe(true);
   });
 
-  it('emits the consult answers as anyOf, which OpenAI strict mode takes', () => {
+  it('emits the consult answer as anyOf, which OpenAI strict mode takes', () => {
     // Live probe 2026-10-06 (codex --output-schema): HTTP 400 "'oneOf' is not permitted".
-    for (const schema of [CONSULT_ANSWER_JSON_SCHEMA, STALE_CONSULT_ANSWER_JSON_SCHEMA]) {
-      expect(JSON.stringify(schema)).not.toContain('"oneOf"');
-    }
+    expect(JSON.stringify(CONSULT_ANSWER_JSON_SCHEMA)).not.toContain('"oneOf"');
   });
 
   it('accepts a strict object reached through $ref', () => {

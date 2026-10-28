@@ -67,7 +67,6 @@ const RecordedRunSchema = z.object({
       status: TaskStatusSchema,
       briefHash: z.string(),
       checkResults: z.array(CheckResultSchema).optional(),
-      refreshedInputHashes: z.record(z.string(), z.string()).optional(),
     }),
   ),
 });
@@ -75,9 +74,9 @@ const RecordedRunSchema = z.object({
 const RECORDED_RUNS = join(import.meta.dirname, '../../../../testing/fixtures/brief-hash');
 
 /**
- * Replays a recorded run the way the engine ran it, in ledger order: a stale refresh writes the
- * brief's input hashes, the brief starts, its checks record their results, it passes or fails, and
- * the engine books its evidence against the brief it dispatched.
+ * Replays a recorded run the way the engine ran it, in ledger order: the brief starts, its checks
+ * record their results, it passes or fails, and the engine books its evidence against the brief it
+ * dispatched.
  */
 async function replayRecordedRun(name: 's9' | 's11') {
   const run = RecordedRunSchema.parse(
@@ -87,13 +86,6 @@ async function replayRecordedRun(name: 's9' | 's11') {
   let state = makeImplState(run.tasks.map((spec) => taskFromSpec(spec, wctx.projectDir)));
   for (const entry of run.ledger) {
     if (entry.status === 'pending') continue;
-    if (entry.refreshedInputHashes !== undefined) {
-      state = transition(state, {
-        type: 'SET_TASK_INPUT_HASHES',
-        taskId: entry.id,
-        inputHashes: entry.refreshedInputHashes,
-      });
-    }
     state = transition(state, { type: 'START_TASK', taskId: entry.id });
     const dispatched = state.tasks.find((task) => task.id === entry.id);
     if (dispatched === undefined) throw new Error(`${entry.id} is not in the plan`);

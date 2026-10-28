@@ -3344,7 +3344,7 @@ describe('consult answer rows', () => {
       ts: 0,
       phase: 'implementing',
       taskId: taskId('T003'),
-      reason: 'stale',
+      reason: 'failed',
       action: 'verify',
       diagnosis: 'The failure may predate the rewrite.',
       newTaskIds: null,

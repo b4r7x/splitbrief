@@ -635,7 +635,7 @@ src/
 │   │   │                          parkStoppedRun
 │   │   ├── summary/               buildSummary (build.ts), artifact rollups, task metrics,
 │   │   │                          call-evidence (createCallEvidenceSink)
-│   │   ├── task/                  loop, step, retry, stale-inputs,
+│   │   ├── task/                  loop, step, retry,
 │   │   │                          attempt-gate, rollback, commit, routing,
 │   │   │                          refresh-code (refreshAndPersistCode),
 │   │   │                          pre-task helpers
@@ -1071,7 +1071,7 @@ The functions other code depends on. All paths absolute under `src/`.
 export function hashTaskBrief(tasks: Task[]): string
 ```
 
-The hash covers the planned brief only. Each task loses the fields the run writes onto it: `status`, `currentCode`, `currentCodeByFile`, `contextCodeByFile`, `checkResults` and `inputHashes`. The rest is serialized as canonical JSON and hashed with SHA-256 (hex).
+The hash covers the planned brief only. Each task loses the fields the run writes onto it: `status`, `currentCode`, `currentCodeByFile`, `contextCodeByFile` and `checkResults`. The rest is serialized as canonical JSON and hashed with SHA-256 (hex).
 
 ### `core/schemas/snapshot.ts`
 

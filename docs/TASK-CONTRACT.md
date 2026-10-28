@@ -3,7 +3,7 @@
 > **Status:** stable (state v4, config v3).
 > **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
 
-A brief that fails after its one retry, reports `blocked`, or is stale goes to a consult, not to a fixed tier chain. A plan task consults the planner; a fix task (`task.fix`) consults the review seat. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
+A brief that fails after its one retry or reports `blocked` goes to a consult, not to a fixed tier chain. A plan task consults the planner; a fix task (`task.fix`) consults the review seat. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
 
 ## v4 contract boundary
 
@@ -169,7 +169,7 @@ type Task = {
   batch?: number;                    // the plan's batch, 1-based
   protectedOperations?: Array<{ path: string; operation: 'write' }>;  // confirmed when the plan card is approved
   revision?: number;                 // 1 at compile; raised by each consult rewrite
-  inputHashes?: Record<string, string>;  // content hashes of this revision's suggested + context files
+  // an older run's task can also hold the content hashes of its input files; the load drops them
   checkResults?: Array<{ id: string; status: 'pass' | 'fail' | 'not-runnable' | 'refused' | 'unknown' }>;  // merged per check id; an older run's `passed` loads as pass or fail
   fix?: {                            // set on a task the review answer appended
     cycle: number;                   // the fix cycle that created it
@@ -186,7 +186,7 @@ type Task = {
 };
 ```
 
-**Fresh code and read-only context.** Before each attempt the task's code is refreshed from disk (`src/engine/orchestrator/task/refresh-code.ts`). `UPDATE_TASK_CODE` replaces all three code fields — `currentCode`, `currentCodeByFile` and `contextCodeByFile` — so a stop and a resume never keep stale code. The code of `contextFiles` goes into `contextCodeByFile`, kept apart from the write targets. Context files share a budget of 40,000 characters per task (`CONTEXT_CODE_BUDGET_CHARS`, about 10K tokens); the file that crosses it is cut and ends with `…truncated`, and the context files after it are left out. Context files are read-only: they are not in the brief's Scope and never count as a write target. The prompt formatter adds each context file under `### Read-only context (do not modify) — <path>`. A prompt measured against a context length gives every target file and every context file an equal share of the code budget, so a large context file never crowds out the code the brief edits; the context-fit estimate counts what is sent. A task over BUILD's context fails the plan checks with its context files and their sizes named. The brief hash (`src/core/evidence/brief-hash.ts`) ignores captured code. It also ignores the run output that the run writes onto a brief: `checkResults` and `inputHashes`. A direct writer gets the read-only context code but not the code of the files it edits: it reads those in place. A writer that answers with whole files gets the first suggested file's code whenever the workspace holds that file, whatever the brief's action. The answer is written against the file the workspace holds: an extracted-code answer with SEARCH/REPLACE markers is applied as a patch, and a whole-file answer that keeps less than half of a file of at least five non-empty lines is refused. A prompt that would cut that code fails the context fit, the same as for a `modify` brief. So a split child that creates a file an earlier child of the split wrote sees that child's code, and its answer goes through the same patch path and the same whole-file check.
+**Fresh code and read-only context.** Before each attempt the task's code is refreshed from disk (`src/engine/orchestrator/task/refresh-code.ts`). `UPDATE_TASK_CODE` replaces all three code fields — `currentCode`, `currentCodeByFile` and `contextCodeByFile` — so a stop and a resume never keep stale code. The code of `contextFiles` goes into `contextCodeByFile`, kept apart from the write targets. Context files share a budget of 40,000 characters per task (`CONTEXT_CODE_BUDGET_CHARS`, about 10K tokens); the file that crosses it is cut and ends with `…truncated`, and the context files after it are left out. Context files are read-only: they are not in the brief's Scope and never count as a write target. The prompt formatter adds each context file under `### Read-only context (do not modify) — <path>`. A prompt measured against a context length gives every target file and every context file an equal share of the code budget, so a large context file never crowds out the code the brief edits; the context-fit estimate counts what is sent. A task over BUILD's context fails the plan checks with its context files and their sizes named. The brief hash (`src/core/evidence/brief-hash.ts`) ignores captured code. It also ignores the run output that the run writes onto a brief: `checkResults`. A direct writer gets the read-only context code but not the code of the files it edits: it reads those in place. A writer that answers with whole files gets the first suggested file's code whenever the workspace holds that file, whatever the brief's action. The answer is written against the file the workspace holds: an extracted-code answer with SEARCH/REPLACE markers is applied as a patch, and a whole-file answer that keeps less than half of a file of at least five non-empty lines is refused. A prompt that would cut that code fails the context fit, the same as for a `modify` brief. So a split child that creates a file an earlier child of the split wrote sees that child's code, and its answer goes through the same patch path and the same whole-file check.
 
 ### `TaskId`
 
@@ -497,7 +497,7 @@ retry callers supply the workspace path. These results do not update
 updates `promotedFiles` from the applied files. This collection keeps only the
 latest receipt for each target path across all tasks. `promotedBriefHash` binds
 it to the single brief definition, excluding runtime status, captured code and
-run output (`checkResults`, `inputHashes`).
+run output (`checkResults`).
 
 The next recorded target write resets the collection when the brief changes.
 `withTargetWrites` replaces receipts for applied paths and removes those paths

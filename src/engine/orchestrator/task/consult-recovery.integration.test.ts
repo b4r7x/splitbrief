@@ -1,6 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -25,16 +23,13 @@ import {
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
-import type { ConsultSeat } from '../../../core/schemas/consult.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowContext } from '../types.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { requestConsult } from '../consult/request.js';
-import { inputHashesNow } from './stale-inputs.js';
 import { retryAndRecord } from './retry.js';
 import { runSingleTask } from './step.js';
-import { SEAT_ANSWER_REFUSED_CODE } from '../../../core/runners/seat-answer-notice.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -284,110 +279,6 @@ describe('consult seat recovery', () => {
       expect(halted.lineages?.T013?.consults).toBe(BOUNDS.consultsPerLineage);
       expect(plannerCall).not.toHaveBeenCalled();
       expect(reviewerCall).not.toHaveBeenCalled();
-    },
-  );
-});
-
-describe('stale consult recovery', () => {
-  it.each([
-    { seat: 'plan', failure: 'thrown' },
-    { seat: 'review', failure: 'thrown' },
-    { seat: 'plan', failure: 'malformed' },
-    { seat: 'review', failure: 'malformed' },
-    { seat: 'review', failure: 'invalid-action' },
-  ] satisfies { seat: ConsultSeat; failure: string }[])(
-    'halts a $failure stale answer on $seat and retries its consult',
-    async ({ seat, failure }) => {
-      const ref = setupTaskProject({ 'src/shared.ts': 'export const key = 1;\n' });
-      await rememberDetectedTools(
-        ref.projectDir,
-        cliDetectionsFor('ready', ['codex', 'claude-code']),
-      );
-      const task = makeTask({
-        id: 'T013',
-        suggestedFiles: ['src/task.ts'],
-        contextFiles: ['src/shared.ts'],
-        criteria: [],
-        inputHashes: inputHashesNow(ref.projectDir, ['src/task.ts', 'src/shared.ts']),
-        ...(seat === 'review' && { fix }),
-      });
-      const invalid =
-        failure === 'invalid-action'
-          ? JSON.stringify({
-              answer: {
-                diagnosis: 'No repair needed.',
-                action: 'verify',
-                checkIds: ['V1'],
-                reason: 'Already fixed.',
-              },
-            })
-          : '{}';
-      const broken = scriptedTypedCall(
-        failure === 'thrown'
-          ? [new Error('The consult process stopped unexpectedly.')]
-          : [invalid, invalid],
-      );
-      const answered = consultCallAnswering(() => guidanceConsult('Read the new cache key.'));
-      const implementer = makeImplementer();
-      const { bus, events } = makeBusRecorder();
-      const wctx = makeTaskWorkflowContext({
-        ...ref,
-        config,
-        bus,
-        implementer,
-        planner: makePlanner({ typedCall: seat === 'plan' ? broken.typedCall : answered }),
-        reviewer: makePlanner({ typedCall: seat === 'review' ? broken.typedCall : answered }),
-      });
-      writeFileSync(join(ref.projectDir, 'src/shared.ts'), 'export const key = 2;\n');
-      const halted = await runTask(wctx, makeImplStateWithMetadata([task]));
-      expect(halted.pendingRecovery).toMatchObject({
-        reason: failure === 'thrown' ? 'planner-call-failed' : 'seat-protocol-error',
-        seat,
-        taskId: task.id,
-        switchSeat: { seat },
-      });
-      expect(loadState(ref)?.pendingRecovery).toEqual(halted.pendingRecovery);
-      expect(implementer.implement).not.toHaveBeenCalled();
-      expect(implementer.retry).not.toHaveBeenCalled();
-      expect(events.filter((event) => event.type === 'warning')).toEqual(
-        failure === 'thrown'
-          ? []
-          : [
-              expect.objectContaining({
-                code: SEAT_ANSWER_REFUSED_CODE,
-                category: seat === 'plan' ? 'planner' : 'reviewer',
-              }),
-            ],
-      );
-      expect(halted.tasks[0]?.inputHashes).toEqual(task.inputHashes);
-      expect(halted.lineages?.T013?.staleConsultedRevision.T013).toBeUndefined();
-
-      const retried = await applyRecoveryAction({
-        ...ref,
-        bus,
-        config,
-        state: halted,
-        action: 'retry-same-worker',
-      });
-      expect(retried.ok).toBe(true);
-      if (!retried.ok) throw new Error(retried.message);
-      const recovered = await runTask(
-        {
-          ...wctx,
-          planner: makePlanner({ typedCall: answered }),
-          reviewer: makePlanner({ typedCall: answered }),
-        },
-        retried.state,
-      );
-      expect(answered.mock.calls.map(([ctx]) => ctx.seat)).toEqual([
-        seat === 'review' ? 'reviewer' : 'planner',
-      ]);
-      expect(recovered.lineages?.T013?.consultRecords).toContainEqual(
-        expect.objectContaining({ seat, reason: 'stale', action: 'guidance' }),
-      );
-      expect(recovered.tasks[0]?.inputHashes?.['src/shared.ts']).toBe(
-        inputHashesNow(ref.projectDir, ['src/shared.ts'])['src/shared.ts'],
-      );
     },
   );
 });

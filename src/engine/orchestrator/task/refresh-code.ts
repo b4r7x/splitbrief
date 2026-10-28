@@ -12,7 +12,6 @@ import type { ContinuationHolder } from '../continuation.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
 import { entryStoreDir } from '../isolation/entry-snapshot.js';
-import { runsOnOwnFiles } from './stale-inputs.js';
 
 const isPathEscape = matches('path-confined-escape');
 
@@ -109,6 +108,27 @@ function hasCode(task: Task): boolean {
     task.currentCode !== undefined ||
     task.currentCodeByFile !== undefined ||
     task.contextCodeByFile !== undefined
+  );
+}
+
+/**
+ * Whether the brief runs on its own files: it resumes its cut attempt, it replays carrying a
+ * failure, or its current revision already dispatched an attempt and runs again on Try again. The
+ * changes in its files are then the brief's own output, not a change under it.
+ */
+export function runsOnOwnFiles(
+  state: WorkflowState,
+  task: Task,
+  continuation: ContinuationHolder | undefined,
+): boolean {
+  const lineage = state.lineages?.[lineageIdOf(task)];
+  return (
+    continuation?.resumesAttempt(
+      { kind: 'brief', taskId: task.id, attempt: state.attempt },
+      hashTaskBrief([task]),
+    ) === true ||
+    lineage?.carriedFailure !== undefined ||
+    lineage?.dispatchedRevision[task.id] === (task.revision ?? 1)
   );
 }
 

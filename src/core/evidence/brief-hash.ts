@@ -10,7 +10,6 @@ export function hashTaskBrief(tasks: Task[]): string {
       contextCodeByFile: _contextCode,
       status: _s,
       checkResults: _checkResults,
-      inputHashes: _inputHashes,
       ...rest
     }) => rest,
   );

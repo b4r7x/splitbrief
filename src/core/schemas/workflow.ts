@@ -152,12 +152,19 @@ export const ConsultRecordSchema = z.object({
 });
 export type ConsultRecord = z.infer<typeof ConsultRecordSchema>;
 
-/** A run saved before decisions went to the ledger kept deviation consults; they load as nothing. */
+/**
+ * A run saved before decisions went to the ledger kept deviation consults, and a run saved before
+ * a brief with moved input files dispatched without a planner call kept stale consults; both load
+ * as nothing.
+ */
 function dropRetiredConsults(value: unknown): unknown {
   return Array.isArray(value)
     ? value.filter(
         (record) =>
-          !isRecord(record) || (record.reason !== 'deviation' && record.action !== 'confirm'),
+          !isRecord(record) ||
+          (record.reason !== 'deviation' &&
+            record.reason !== 'stale' &&
+            record.action !== 'confirm'),
       )
     : value;
 }
@@ -176,8 +183,6 @@ export const LineageRecordSchema = z.object({
   attempts: nonnegativeInteger,
   consultAllowance: nonnegativeInteger,
   attemptAllowance: nonnegativeInteger,
-  /** The revision whose stale guidance applied successfully, saved with its fresh input hashes. */
-  staleConsultedRevision: z.record(z.string(), z.number().int()).default({}),
   /** The revision that already dispatched an attempt; a Try again of it runs on its own files. */
   dispatchedRevision: z.record(z.string(), z.number().int()).default({}),
   consultRecords: z.preprocess(dropRetiredConsults, z.array(ConsultRecordSchema)).default([]),

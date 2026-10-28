@@ -845,7 +845,7 @@ workflow:
 
 ## 6. `escalation` (retired)
 
-The `escalation` block is retired. The planner's consult replaces the intermediate tier: when a brief fails after its one local retry, reports `blocked`, or is stale, SPLITBRIEF asks the planner for one typed answer — `guidance`, `rewrite-task`, `split-task`, `verify` or `ask-user` — instead of running a fixed tier chain. The lineage's 2 consults and 8 attempts and the run's 10 planner calls bound the ladder; `continue` on a spent bound grants the extra allowance ([APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#escalation)).
+The `escalation` block is retired. The planner's consult replaces the intermediate tier: when a brief fails after its one local retry or reports `blocked`, SPLITBRIEF asks the planner for one typed answer — `guidance`, `rewrite-task`, `split-task`, `verify` or `ask-user` — instead of running a fixed tier chain. The lineage's 2 consults and 8 attempts and the run's 10 planner calls bound the ladder; `continue` on a spent bound grants the extra allowance ([APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#escalation)).
 
 A config that still carries the block loads with one notice and changes nothing: `escalation was retired and is ignored: the planner's consult replaces the intermediate tier. Delete escalation.` Delete the block. There is no intermediate provider or model to configure, and the Crew section of Settings never had a row for it.
 

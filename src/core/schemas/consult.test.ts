@@ -6,8 +6,6 @@ import {
   CONSULT_ANSWER_JSON_SCHEMA,
   ConsultAnswerSchema,
   ImplementerReportSchema,
-  STALE_CONSULT_ANSWER_JSON_SCHEMA,
-  StaleConsultAnswerSchema,
   readImplementerReport,
 } from './consult.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from './plan.js';
@@ -84,50 +82,20 @@ describe('ConsultAnswerSchema', () => {
   });
 });
 
-describe('StaleConsultAnswerSchema', () => {
-  it('takes guidance and rewrite-task but not split-task', () => {
-    const guidance = answer({ action: 'guidance', instructions: 'Narrow it', context: null });
-    expect(StaleConsultAnswerSchema.safeParse(guidance).success).toBe(true);
-    const rewrite = answer({ action: 'rewrite-task', task: makeTaskSpec() });
-    expect(StaleConsultAnswerSchema.safeParse(rewrite).success).toBe(true);
-    const split = answer({
-      action: 'split-task',
-      tasks: [makeTaskSpec(), makeTaskSpec({ id: 'T002' })],
-    });
-    expect(StaleConsultAnswerSchema.safeParse(split).success).toBe(false);
-  });
-});
-
-describe('consult answer JSON schemas', () => {
-  const schemas = [
-    { name: 'consult', jsonSchema: CONSULT_ANSWER_JSON_SCHEMA, accepted: actions },
-    {
-      name: 'stale consult',
-      jsonSchema: STALE_CONSULT_ANSWER_JSON_SCHEMA,
-      accepted: actions.filter(({ action }) => action === 'guidance' || action === 'rewrite-task'),
-    },
-  ];
-
-  for (const { name, jsonSchema, accepted } of schemas) {
-    it(`admits every valid ${name} answer in one closed variant`, () => {
-      for (const action of accepted) {
-        const value = answer(action).answer;
-        const variant = variantFor(jsonSchema, action.action);
-        expect(variant, action.action).toBeDefined();
-        expect(variant?.additionalProperties).toBe(false);
-        expect(Object.keys(isRecord(variant?.properties) ? variant.properties : {}).sort()).toEqual(
-          Object.keys(value).sort(),
-        );
-        expect(Array.isArray(variant?.required) ? [...variant.required].sort() : []).toEqual(
-          Object.keys(value).sort(),
-        );
-      }
-    });
-  }
-
-  it('offers the stale consult only guidance and rewrite-task', () => {
-    expect(variantFor(STALE_CONSULT_ANSWER_JSON_SCHEMA, 'split-task')).toBeUndefined();
-    expect(answerVariants(STALE_CONSULT_ANSWER_JSON_SCHEMA)).toHaveLength(2);
+describe('consult answer JSON schema', () => {
+  it('admits every valid consult answer in one closed variant', () => {
+    for (const action of actions) {
+      const value = answer(action).answer;
+      const variant = variantFor(CONSULT_ANSWER_JSON_SCHEMA, action.action);
+      expect(variant, action.action).toBeDefined();
+      expect(variant?.additionalProperties).toBe(false);
+      expect(Object.keys(isRecord(variant?.properties) ? variant.properties : {}).sort()).toEqual(
+        Object.keys(value).sort(),
+      );
+      expect(Array.isArray(variant?.required) ? [...variant.required].sort() : []).toEqual(
+        Object.keys(value).sort(),
+      );
+    }
   });
 });
 
@@ -135,7 +103,6 @@ describe('typed seat contracts', () => {
   it('compose no allOf, which a closed object makes unsatisfiable', () => {
     const contracts = {
       consult: CONSULT_ANSWER_JSON_SCHEMA,
-      staleConsult: STALE_CONSULT_ANSWER_JSON_SCHEMA,
       plan: PLAN_ANSWER_JSON_SCHEMA,
       implementerReport: z.toJSONSchema(ImplementerReportSchema),
     };

@@ -44,8 +44,8 @@ export type ConsultApplyContext = Readonly<{
   seat: ConsultSeat;
   signal?: AbortSignal | undefined;
   changedFiles?: readonly string[] | undefined;
-  /** Where the brief's first attempt started; null before any attempt ran (a stale refresh). */
-  taskStartSnapshot: ChangedFilesSnapshot | null;
+  /** Where the brief's first attempt started. */
+  taskStartSnapshot: ChangedFilesSnapshot;
   runCommand?: ValidationCommandRunner | undefined;
   /** Receives the state after each saved transition: the replacement, the inserted tasks. */
   onStateChange?: ((state: WorkflowState) => void) | undefined;
@@ -159,19 +159,14 @@ async function continuedTask(ctx: ConsultApplyContext, task: Task, earlier: Task
   return { ...task, action };
 }
 
-/**
- * Rewrites the task in place; `attempt` is the current attempt's start snapshot, or
- * null when no attempt ran and there is nothing to roll back.
- */
+/** Rewrites the task in place; `attempt` is the current attempt's start snapshot. */
 async function applyRewrite(
   ctx: ConsultApplyContext,
   task: Task,
   action: RewriteAction,
-  attempt: ChangedFilesSnapshot | null,
+  attempt: ChangedFilesSnapshot,
 ): Promise<ConsultApplyOutcome> {
-  if (attempt !== null) {
-    await restoreAttemptFiles({ wctx: ctx, phase: ctx.state.phase, attemptSnapshot: attempt });
-  }
+  await restoreAttemptFiles({ wctx: ctx, phase: ctx.state.phase, attemptSnapshot: attempt });
   const state = transitionAndSave(
     { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
     ctx.state,
@@ -193,11 +188,9 @@ async function applySplit(
   ctx: ConsultApplyContext,
   task: Task,
   action: SplitAction,
-  attempt: ChangedFilesSnapshot | null,
+  attempt: ChangedFilesSnapshot,
 ): Promise<ConsultApplyOutcome> {
-  if (attempt !== null) {
-    await restoreAttemptFiles({ wctx: ctx, phase: ctx.state.phase, attemptSnapshot: attempt });
-  }
+  await restoreAttemptFiles({ wctx: ctx, phase: ctx.state.phase, attemptSnapshot: attempt });
   const inserted = await Promise.all(
     insertTasks(action.tasks, ctx.state.tasks, (spec) => taskFromSpec(spec, ctx.workspaceDir)).map(
       (child) => continuedTask(ctx, child, task),
@@ -260,7 +253,7 @@ async function applyVerify(
   ctx: ConsultApplyContext,
   task: Task,
   action: VerifyAction,
-  attempt: ChangedFilesSnapshot | null,
+  attempt: ChangedFilesSnapshot,
 ): Promise<ConsultApplyOutcome> {
   const selectionError = verifySelectionError(task, ctx.state, action.checkIds);
   if (selectionError !== null) return { action: 'failed', reason: selectionError };
@@ -423,14 +416,13 @@ async function applyAskUser(
  * one question to the operator and hands the answer back as guidance; an answer that would
  * drop a criterion or one of its checks asks the operator through that same path.
  *
- * `attempt` is the current attempt's start snapshot; null means no attempt ran (a stale
- * refresh before dispatch), so there is nothing to roll back.
+ * `attempt` is the current attempt's start snapshot.
  */
 export async function applyConsultAnswer(
   ctx: ConsultApplyContext,
   task: Task,
   answer: ConsultAnswer,
-  attempt: ChangedFilesSnapshot | null,
+  attempt: ChangedFilesSnapshot,
 ): Promise<ConsultApplyOutcome> {
   const action = answer.answer;
   if (action.action === 'rewrite-task' || action.action === 'split-task') {

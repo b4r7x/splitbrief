@@ -8,7 +8,6 @@ import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { publishError, publishTaskValidating, publishWarning } from '../events.js';
-import { error } from '../../../utils/error.js';
 import {
   addUsageAndSave,
   parkStoppedRun,
@@ -30,12 +29,7 @@ import { denialMessage } from './attempt-gate.js';
 import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
 import { isConsultBoundReason } from '../recovery/builders/consult.js';
 import { nowIso } from '../../../utils/format-time.js';
-import {
-  retryAndRecord,
-  consultFailureLabel,
-  consultHandedBackToLoop,
-  handleTaskPlannerCallFailure,
-} from './retry.js';
+import { retryAndRecord, consultHandedBackToLoop } from './retry.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { runImplementation } from './run-implementation.js';
@@ -44,16 +38,7 @@ import { resolveDependsOnFiles } from './resolve-deps.js';
 import { restoreExhaustedTaskFiles } from './rollback.js';
 import { handleFailedImplementation } from './implementation-failure.js';
 import { runBriefGate } from './brief-gate.js';
-import {
-  inputHashesNow,
-  inputsMovedUnexpectedly,
-  runsOnOwnFiles,
-  taskInputFiles,
-} from './stale-inputs.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
-import { consultSeat, requestConsult } from '../consult/request.js';
-import { applyConsultAnswer } from '../consult/apply.js';
-import { consultAttemptError, guidanceInstructions } from '../escalation/consult-guidance.js';
 
 function recordApprovalDenial(opts: {
   wctx: WorkflowContext;
@@ -124,130 +109,6 @@ async function rerunReplacedTask(
   });
 }
 
-/**
- * What the stale refresh left: the replacement to rerun, or the task to dispatch
- * with the consult seat's guidance when one answered.
- */
-type StaleRefresh =
-  | { kind: 'replaced'; state: WorkflowState }
-  | { kind: 'dispatch'; state: WorkflowState; task: Task; guidance: string | undefined };
-
-/**
- * The stale refresh before dispatch: when the brief's inputs moved under it since
- * the revision recorded their hashes, the task's seat is asked, with reason
- * `stale`, what the new workspace means for the brief. Guidance becomes the first
- * attempt's extra instructions and the fresh hashes are recorded without a new
- * revision; a rewrite records them on its new revision and hands back to the task
- * loop, which dispatches it. Successful guidance marks the revision with its fresh
- * hashes. A failed consult leaves both unchanged and halts on the answering seat.
- */
-async function refreshStaleTask(input: {
-  opts: RunSingleTaskOptions;
-  task: Task;
-  state: WorkflowState;
-}): Promise<StaleRefresh> {
-  const { opts, task } = input;
-  let state = input.state;
-  const revision = task.revision ?? 1;
-  const lineage = state.lineages?.[lineageIdOf(task)];
-  if (lineage?.staleConsultedRevision[task.id] === revision) {
-    return { kind: 'dispatch', state, task, guidance: undefined };
-  }
-  if (
-    runsOnOwnFiles(state, task, opts.wctx.continuation) ||
-    !inputsMovedUnexpectedly(
-      opts.wctx.workspaceDir,
-      task,
-      state.tasks.slice(
-        0,
-        Math.max(
-          0,
-          state.tasks.findIndex((t) => t.id === task.id),
-        ),
-      ),
-    )
-  ) {
-    return { kind: 'dispatch', state, task, guidance: undefined };
-  }
-  const files = taskInputFiles(task);
-  const refreshed = await requestConsult(
-    {
-      projectDir: opts.wctx.projectDir,
-      workspaceDir: opts.wctx.workspaceDir,
-      sessionId: opts.wctx.sessionId,
-      bus: opts.wctx.bus,
-      config: opts.wctx.config,
-      planner: opts.wctx.planner,
-      reviewer: opts.wctx.reviewer,
-      state,
-      ...(opts.wctx.signal !== undefined && { signal: opts.wctx.signal }),
-      onStateChange: (next) => {
-        state = next;
-        opts.setTrackedState(next);
-      },
-    },
-    {
-      task,
-      reason: 'stale',
-      failingOutput: `The task's inputs changed since the brief was compiled: ${files.join(', ')}`,
-    },
-  );
-  if ('error' in refreshed) throw refreshed.error;
-  const applied = await applyConsultAnswer(
-    {
-      projectDir: opts.wctx.projectDir,
-      workspaceDir: opts.wctx.workspaceDir,
-      sessionId: opts.wctx.sessionId,
-      bus: opts.wctx.bus,
-      config: opts.wctx.config,
-      validator: opts.wctx.validator,
-      callbacks: opts.wctx.callbacks,
-      sinks: opts.wctx.sinks,
-      state,
-      seat: consultSeat(task),
-      ...(opts.wctx.signal !== undefined && { signal: opts.wctx.signal }),
-      changedFiles: [],
-      taskStartSnapshot: null,
-      onStateChange: (next) => {
-        state = next;
-        opts.setTrackedState(next);
-      },
-    },
-    task,
-    refreshed.answer,
-    null,
-  );
-  if (applied.action === 'rewrite-task') {
-    return { kind: 'replaced', state };
-  }
-  if (applied.action === 'guidance') {
-    const guidance = guidanceInstructions(applied.instructions, applied.context);
-    state = transitionAndSave(
-      { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },
-      state,
-      {
-        type: 'SET_TASK_INPUT_HASHES',
-        taskId: task.id,
-        inputHashes: inputHashesNow(opts.wctx.workspaceDir, files),
-      },
-    );
-    opts.setTrackedState(state);
-    return { kind: 'dispatch', state, task, guidance };
-  }
-  throw staleConsultError.failedAction({ task, applied });
-}
-
-const staleConsultError = {
-  failedAction: (input: { task: Task; applied: Awaited<ReturnType<typeof applyConsultAnswer>> }) =>
-    error(
-      'stale-consult-failed',
-      `Stale refresh for ${input.task.id} could not apply ${input.applied.action}${
-        input.applied.action === 'failed' ? `: ${input.applied.reason}` : ''
-      }`,
-      { taskId: input.task.id, action: input.applied.action },
-    ),
-} as const;
-
 export async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState> {
   const { wctx, index, totalTasks, taskBreakdowns, setTrackedState, setCurrentTask } = opts;
   const { projectDir, sessionId, config } = wctx;
@@ -273,37 +134,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     setTrackedState(state);
   }
 
-  // A successful stale refresh marks the revision; a halted refresh must consult again on Retry.
-  let staleRefresh: StaleRefresh;
-  try {
-    staleRefresh = await refreshStaleTask({ opts, task, state });
-  } catch (err) {
-    const seat = consultSeat(task);
-    return handleTaskPlannerCallFailure({
-      wctx,
-      task,
-      state,
-      setTrackedState,
-      err,
-      seat,
-      label: consultFailureLabel(seat, task.id),
-    });
-  }
-  if (staleRefresh.kind === 'replaced') {
-    return (await rerunReplacedTask(opts, staleRefresh.state)) ?? staleRefresh.state;
-  }
-  task = staleRefresh.task;
-  state = staleRefresh.state;
-  const guidance = staleRefresh.guidance;
   const carriedFailure = state.lineages?.[lineageIdOf(task)]?.carriedFailure;
-  const retryError =
-    guidance === undefined
-      ? carriedFailure
-      : consultAttemptError({
-          lastError: `The task's inputs changed since the brief was compiled: ${taskInputFiles(task).join(', ')}`,
-          instructions: guidance,
-          seat: consultSeat(task),
-        });
 
   setCurrentTask(task);
 
@@ -321,7 +152,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   if (opts.onTaskStartSnapshot !== undefined) {
     state = opts.onTaskStartSnapshot(state, taskStartSnapshot);
   }
-  // After its stale refresh and task-start snapshot: a Try again of this revision runs on its own files.
+  // After its task-start snapshot: a Try again of this revision runs on its own files.
   state = transitionAndSave(wctx, state, { type: 'RECORD_DISPATCH', taskId: task.id });
   setTrackedState(state);
 
@@ -339,7 +170,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       recordApprovalDenial: (decision, message) =>
         recordApprovalDenial({ wctx, state, task, denials: decision.denials, message }),
       streamingSink: wctx.streamingSink,
-      ...(retryError !== undefined && { retryError }),
+      ...(carriedFailure !== undefined && { retryError: carriedFailure }),
     });
   } catch (err) {
     if (

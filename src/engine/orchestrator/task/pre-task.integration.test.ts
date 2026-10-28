@@ -94,7 +94,6 @@ describe('runPreTaskHooksAndPublish', () => {
           consultAllowance: 2,
           attempts: 3,
           attemptAllowance: 12,
-          staleConsultedRevision: {},
           dispatchedRevision: {},
           consultRecords: [],
           replacedParents: [],

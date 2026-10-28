@@ -248,6 +248,56 @@ describe('loadState', () => {
     expect(loaded?.lineages?.T001?.consultRecords).toEqual([guidance]);
   });
 
+  it('loads an old snapshot that recorded input hashes and a stale consult, and drops both', () => {
+    const dir = makeTmp();
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(stateDir, { recursive: true });
+    const guidance = {
+      reason: 'failed',
+      action: 'guidance',
+      diagnosis: 'The import is wrong.',
+      at: '2026-10-01T00:00:00.000Z',
+      taskId: 'T001',
+      revision: 1,
+      answer: {
+        answer: {
+          diagnosis: 'The import is wrong.',
+          action: 'guidance',
+          instructions: 'Import the schema.',
+          context: null,
+        },
+      },
+    };
+    const initial = createInitialState('old-stale-consults');
+    const legacy = {
+      ...initial,
+      phase: 'implementing',
+      tasks: [
+        {
+          ...makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] }),
+          inputHashes: { 'src/a.ts': 'e3b0c442' },
+        },
+      ],
+      lineages: {
+        T001: {
+          consults: 2,
+          attempts: 1,
+          consultAllowance: 4,
+          attemptAllowance: 8,
+          staleConsultedRevision: { T001: 1 },
+          consultRecords: [guidance, { ...guidance, reason: 'stale' }],
+        },
+      },
+    };
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(legacy));
+
+    const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
+
+    expect(loaded?.lineages?.T001?.consultRecords).toEqual([guidance]);
+    expect(loaded?.lineages?.T001).not.toHaveProperty('staleConsultedRevision');
+    expect(loaded?.tasks[0]).not.toHaveProperty('inputHashes');
+  });
+
   it.each([
     [
       'missing phase',

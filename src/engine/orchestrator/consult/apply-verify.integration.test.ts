@@ -93,7 +93,7 @@ type Harness = {
   validator: Validator;
 };
 
-function harness(opts: {
+async function harness(opts: {
   projectDir: string;
   sessionId: string;
   task: Task;
@@ -104,7 +104,7 @@ function harness(opts: {
   onPlannerReply?: OrchestratorCallbacks['onPlannerReply'];
   changedFiles?: string[];
   taskStartSnapshot?: ChangedFilesSnapshot;
-}): Harness {
+}): Promise<Harness> {
   const otherTasks = opts.otherTasks ?? [];
   const state: WorkflowState = {
     ...makeImplState([...otherTasks, opts.task], {
@@ -134,7 +134,7 @@ function harness(opts: {
       state,
       seat: 'plan',
       changedFiles: opts.changedFiles ?? [],
-      taskStartSnapshot: opts.taskStartSnapshot ?? null,
+      taskStartSnapshot: opts.taskStartSnapshot ?? (await getChangedFilesSnapshot(opts.projectDir)),
       ...(opts.runCommand !== undefined && { runCommand: opts.runCommand }),
       onStateChange: (next) => states.push(next),
     },
@@ -156,7 +156,7 @@ describe('applyConsultAnswer verify', () => {
     writeFileSync(join(ref.projectDir, 'src/greet.ts'), 'first attempt\n');
     const attemptSnapshot = await getChangedFilesSnapshot(ref.projectDir);
     writeFileSync(join(ref.projectDir, 'src/greet.ts'), 'retry attempt\n');
-    const { ctx } = harness({
+    const { ctx } = await harness({
       ...ref,
       task,
       plan: planWith(checks),
@@ -199,7 +199,7 @@ describe('applyConsultAnswer verify', () => {
     const ref = setupRepo();
     const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }];
     const task = makeTask({ id: 'T003', status: 'in_progress', criteria: ['C1'], checks });
-    const { ctx, states, events } = harness({
+    const { ctx, states, events } = await harness({
       ...ref,
       task,
       plan: planWith(checks),
@@ -242,7 +242,7 @@ describe('applyConsultAnswer verify', () => {
     });
     const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
     const commandRunner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
-    const { ctx, states, events, validator } = harness({
+    const { ctx, states, events, validator } = await harness({
       projectDir,
       sessionId,
       task,
@@ -292,7 +292,7 @@ describe('applyConsultAnswer verify', () => {
     writeFileSync(join(ref.projectDir, 'src/added.ts'), 'export const added = true;\n');
     // The retry before the consult starts after the files landed and changes nothing.
     const attempt = await getChangedFilesSnapshot(ref.projectDir);
-    const { ctx } = harness({
+    const { ctx } = await harness({
       ...ref,
       task,
       plan: planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]),
@@ -320,7 +320,7 @@ describe('applyConsultAnswer verify', () => {
       status: 'failed',
     });
     const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
-    const { ctx, events } = harness({
+    const { ctx, events } = await harness({
       projectDir,
       sessionId,
       task,
@@ -351,7 +351,7 @@ describe('applyConsultAnswer verify', () => {
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
     const runner = makeCommandRunner();
-    const { ctx, states, events } = harness({
+    const { ctx, states, events } = await harness({
       projectDir,
       sessionId,
       task,
@@ -374,7 +374,13 @@ describe('applyConsultAnswer verify', () => {
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
     const runner = makeCommandRunner();
-    const { ctx, events } = harness({ projectDir, sessionId, task, plan, runCommand: runner });
+    const { ctx, events } = await harness({
+      projectDir,
+      sessionId,
+      task,
+      plan,
+      runCommand: runner,
+    });
     const attempt = await getChangedFilesSnapshot(projectDir);
 
     const result = await applyConsultAnswer(ctx, task, verify(['K9'], 'Check K9'), attempt);
@@ -396,7 +402,13 @@ describe('applyConsultAnswer verify', () => {
       ['K1', 'K2'],
     );
     const runner = makeCommandRunner();
-    const { ctx, events } = harness({ projectDir, sessionId, task, plan, runCommand: runner });
+    const { ctx, events } = await harness({
+      projectDir,
+      sessionId,
+      task,
+      plan,
+      runCommand: runner,
+    });
     const attempt = await getChangedFilesSnapshot(projectDir);
 
     const result = await applyConsultAnswer(ctx, task, verify(['K1'], 'Only one check'), attempt);
@@ -424,7 +436,7 @@ describe('applyConsultAnswer verify', () => {
     });
     const plan = planWith([], ['K1', 'K5']);
     const runner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
-    const { ctx, states, events } = harness({
+    const { ctx, states, events } = await harness({
       projectDir,
       sessionId,
       task,
@@ -475,7 +487,7 @@ describe('applyConsultAnswer verify', () => {
     });
     const plan = planWith([], ['K1', 'K2']);
     const runner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
-    const { ctx, events } = harness({
+    const { ctx, events } = await harness({
       projectDir,
       sessionId,
       task,
@@ -511,7 +523,7 @@ describe('applyConsultAnswer verify', () => {
     const commandRunner = makeCommandRunner(
       processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' }),
     );
-    const { ctx, states, events } = harness({
+    const { ctx, states, events } = await harness({
       projectDir,
       sessionId,
       task,
@@ -567,7 +579,7 @@ describe('applyConsultAnswer verify', () => {
         });
       const task = fixOf('T023', [own, shared], 'failed');
       const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
-      const { ctx, states } = harness({
+      const { ctx, states } = await harness({
         projectDir,
         sessionId,
         task,
@@ -607,7 +619,7 @@ describe('applyConsultAnswer verify', () => {
       { stdout: 'clean', stderr: '', code: 0 },
       processError.exitCode({ command: 'node', code: 1, stderr: 'optional red', output: '' }),
     );
-    const { ctx, events } = harness({
+    const { ctx, events } = await harness({
       projectDir,
       sessionId,
       task,
@@ -645,7 +657,7 @@ describe('applyConsultAnswer verify', () => {
     });
     const plan = planWith([], ['K1']);
     const commandRunner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
-    const { ctx, states, events } = harness({
+    const { ctx, states, events } = await harness({
       projectDir,
       sessionId,
       task,
@@ -712,7 +724,7 @@ describe('applyConsultAnswer verify under a pre_validation hook', () => {
         restoreFiles: ['src/greet.ts'],
       };
       writeFileSync(join(projectDir, 'src/greet.ts'), 'export const greet = "attempt";\n');
-      const { ctx, events, states } = harness({
+      const { ctx, events, states } = await harness({
         projectDir,
         sessionId,
         task,
@@ -747,7 +759,7 @@ describe('applyConsultAnswer ask-user', () => {
       const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
       const plan = planWith([]);
       const replies: PlannerConversation[] = [];
-      const { ctx, states } = harness({
+      const { ctx, states } = await harness({
         projectDir,
         sessionId,
         task,
@@ -782,7 +794,7 @@ describe('applyConsultAnswer ask-user', () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([]);
-    const { ctx } = harness({
+    const { ctx } = await harness({
       projectDir,
       sessionId,
       task,
@@ -800,7 +812,7 @@ describe('applyConsultAnswer ask-user', () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([]);
-    const { ctx, states } = harness({ projectDir, sessionId, task, plan });
+    const { ctx, states } = await harness({ projectDir, sessionId, task, plan });
     const attempt = await getChangedFilesSnapshot(projectDir);
 
     const result = await applyConsultAnswer(ctx, task, askUser('memory'), attempt);

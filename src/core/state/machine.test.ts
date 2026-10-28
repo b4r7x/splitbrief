@@ -1252,7 +1252,6 @@ describe('consult and split state operations', () => {
       attempts: 0,
       consultAllowance: 2,
       attemptAllowance: 8,
-      staleConsultedRevision: {},
       dispatchedRevision: {},
       consultRecords: [],
       replacedParents: [],
@@ -1289,7 +1288,6 @@ describe('consult and split state operations', () => {
       title: 'Rewritten brief',
       criteria: ['C9'],
       suggestedFiles: ['src/rewritten.ts'],
-      inputHashes: { 'src/rewritten.ts': 'hash' },
     });
 
     const next = transition(state, {
@@ -1304,7 +1302,6 @@ describe('consult and split state operations', () => {
     expect(rewritten?.title).toBe('Rewritten brief');
     expect(rewritten?.status).toBe('pending');
     expect(rewritten?.revision).toBe(3);
-    expect(rewritten?.inputHashes).toEqual({ 'src/rewritten.ts': 'hash' });
     expect(next.currentTaskIndex).toBe(2);
     expect(next.attempt).toBe(0);
     expect(next.tasks[0]).toBe(tasks[0]);
@@ -1348,7 +1345,6 @@ describe('consult and split state operations', () => {
           attempts: 5,
           consultAllowance: 3,
           attemptAllowance: 12,
-          staleConsultedRevision: { T001: 2 },
           notes: ['granted by the user'],
         }),
       },
@@ -1365,7 +1361,6 @@ describe('consult and split state operations', () => {
       attempts: 5,
       consultAllowance: 3,
       attemptAllowance: 12,
-      staleConsultedRevision: { T001: 2 },
       notes: ['granted by the user'],
     });
     expect(split.lineages?.T001?.replacedParents.map((task) => task.id)).toEqual(['T001']);
@@ -1422,8 +1417,8 @@ describe('consult and split state operations', () => {
     expect(next.lineages?.T002?.notes).toEqual(['five more planner calls']);
   });
 
-  it('RECORD_CONSULT records a stale answer without marking it applied or refreshing its hashes', () => {
-    const task = makeTask({ id: 'T002', inputHashes: { 'src/a.ts': 'before' } });
+  it('RECORD_CONSULT records the answer and leaves the task alone', () => {
+    const task = makeTask({ id: 'T002' });
     const state = implementationState([task]);
 
     const next = transition(
@@ -1432,7 +1427,7 @@ describe('consult and split state operations', () => {
         type: 'RECORD_CONSULT',
         taskId: taskId('T002'),
         revision: 2,
-        reason: 'stale',
+        reason: 'failed',
         seat: 'plan',
         answer: {
           answer: {
@@ -1449,11 +1444,9 @@ describe('consult and split state operations', () => {
     expect(next.lineages?.T002).toMatchObject({
       consults: 1,
     });
-    expect(next.lineages?.T002?.staleConsultedRevision).toEqual({});
     expect(next.tasks[0]).toBe(task);
-    expect(next.tasks[0]?.inputHashes).toEqual({ 'src/a.ts': 'before' });
     expect(next.lineages?.T002?.consultRecords[0]).toEqual({
-      reason: 'stale',
+      reason: 'failed',
       action: 'guidance',
       diagnosis: 'The captured code is from an older revision.',
       at: '2026-05-01T10:00:00.000Z',
@@ -1484,18 +1477,10 @@ describe('consult and split state operations', () => {
     expect(state.plannerCalls).toEqual({ used: 1, allowance: 10 });
   });
 
-  it('SET_TASK_INPUT_HASHES and RECORD_CHECK_RESULTS update the task', () => {
+  it('RECORD_CHECK_RESULTS updates the task', () => {
     const state = implementationState([makeTask({ id: 'T002', revision: 2 })]);
 
-    const hashed = transition(state, {
-      type: 'SET_TASK_INPUT_HASHES',
-      taskId: taskId('T002'),
-      inputHashes: { 'src/a.ts': 'sha' },
-    });
-    expect(hashed.tasks[0]?.inputHashes).toEqual({ 'src/a.ts': 'sha' });
-    expect(hashed.lineages?.T002?.staleConsultedRevision).toEqual({ T002: 2 });
-
-    const recorded = transition(hashed, {
+    const recorded = transition(state, {
       type: 'RECORD_CHECK_RESULTS',
       taskId: taskId('T002'),
       results: [
