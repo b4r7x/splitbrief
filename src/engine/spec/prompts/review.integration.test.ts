@@ -17,10 +17,10 @@ import {
   passingReviewVerdict,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
-import { REVIEW_FILE, sessionDir } from '../../../core/paths.js';
+import { REVIEW_FILE, reviewChangeFile, sessionDir } from '../../../core/paths.js';
 import { getChangedFilesSnapshot } from '../../orchestrator/approval/file-snapshots/capture.js';
 import { runFinalReviewPhase } from '../../orchestrator/final-review.js';
-import { buildFinalReviewPrompt, type ReviewPlanData } from './review.js';
+import { buildFinalReviewPrompt, reviewChangeText, type ReviewPlanData } from './review.js';
 import { TASK_CMD_CHECK_RULE } from './plan-session.js';
 
 const SPEC = '## Spec\nAdd a hello function.';
@@ -277,6 +277,51 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain('- Which greeting? → hello');
   });
 
+  it('names the change file instead of the diff when the reviewer reads the change itself', () => {
+    const changeFile = '/work/.splitbrief/reviews/run-1.diff';
+    const result = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      changeFile,
+      changeCoverage: 'Run changes: src/hello.ts',
+    });
+
+    expect(result.split('## Implementation Diff\n')[1]).toMatch(
+      /^The change under review is in `\/work\/\.splitbrief\/reviews\/run-1\.diff`/,
+    );
+    expect(result).toContain(
+      'Read this file whole, then read the changed files themselves in the workspace. Do not report as verified anything you did not read.',
+    );
+    expect(result).toContain('## Changed Files\nRun changes: src/hello.ts');
+    expect(result).toContain('Use the Changed Files provenance');
+    expect(result).not.toContain('```diff');
+    expect(result).not.toContain('## Workspace Context');
+    expect(result).not.toContain('## Trimmed for Size');
+  });
+
+  it('writes the change text with one block per file, the later changes and the workspace context', () => {
+    const change = {
+      files: [{ path: 'src/hello.ts', taskIds: ['T001'], diff: '+export const hello = 1;' }],
+      laterDiff: '+export const operatorFix = true;',
+      workspaceContext: [
+        { path: 'src/tool-fix.ts', taskIds: [], diff: '+export const independentFix = true;' },
+      ],
+    };
+    const text = reviewChangeText(change);
+
+    expect(text).toMatch(/^## Implementation Diff\n### src\/hello\.ts — T001\n/);
+    expect(text).toContain('+export const hello = 1;');
+    expect(text).toContain(
+      '### Changes after the last recorded task completion; authorship unknown',
+    );
+    expect(text.split('## Workspace Context')[1]).toContain('+export const independentFix = true;');
+    expect(
+      buildFinalReviewPrompt({ pendingInputs: [], spec: SPEC, taskBriefs: TASK_BRIEFS, ...change }),
+    ).toContain(text);
+  });
+
   it('states the required result ids, and none when the caller names none', () => {
     const named = buildFinalReviewPrompt({
       pendingInputs: [],
@@ -329,7 +374,7 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).not.toContain('Write `None.` after the label of a category with no findings');
   });
 
-  it('dispatches the workspace directory instruction and keeps review records in the checkout', async () => {
+  it('dispatches the workspace directory instruction, writes the change file there and keeps review records in the checkout', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const workspaceDir = createTempDir('review-workspace');
     dirs.push(workspaceDir);
@@ -370,8 +415,10 @@ describe('buildFinalReviewPrompt', () => {
     expect(result.reviewStatus).toBe('written');
     expect(prompts[0]).toContain(`The run workspace is \`${workspaceDir}\`.`);
     expect(prompts[0]).toContain('Read project files from this directory');
+    expect(prompts[0]).toContain(join(workspaceDir, reviewChangeFile(sessionId)));
+    expect(existsSync(join(workspaceDir, reviewChangeFile(sessionId)))).toBe(true);
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(true);
-    expect(existsSync(join(workspaceDir, '.splitbrief'))).toBe(false);
+    expect(existsSync(sessionDir(workspaceDir, sessionId))).toBe(false);
   });
 
   it('returns a string without a drift section when driftReport is omitted', () => {

@@ -41,6 +41,7 @@ import {
   REVIEW_PACKET_MARKDOWN_FILE,
   EVIDENCE_FILE,
   SESSION_LOG_FILE,
+  reviewChangeFile,
 } from '../../core/paths.js';
 import { hashTaskBrief } from '../../core/evidence/brief-hash.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -146,6 +147,11 @@ function makeReviewer(
     ),
   });
   return { reviewer, prompts };
+}
+
+/** The change the review read: the default Claude Code reviewer reads it from its change file. */
+function reviewedChange(projectDir: string, sessionId: string): string {
+  return readFileSync(join(projectDir, reviewChangeFile(sessionId)), 'utf8');
 }
 
 // The final review attributes run effects from review-changes.json, never from
@@ -1727,7 +1733,7 @@ describe('runFinalReviewPhase', () => {
     expect(prompt).toContain('C1: A name gets a greeting (checks: K1)');
     expect(prompt).toContain('Keep the greeting pure');
     expect(prompt).toContain('T001');
-    expect(prompt).toMatch(/^### \S+ — T001$/m);
+    expect(reviewedChange(projectDir, sessionId)).toMatch(/^### \S+ — T001$/m);
     expect(prompt).toContain('## Touched, Not Suggested');
     expect(prompt).toContain('src/shared.ts');
     expect(prompt).toContain('## Touched, Not Suggested\n- T001: src/shared.ts');
@@ -2598,7 +2604,7 @@ describe('runFinalReviewPhase', () => {
     expect(drift.passed).toBe(true);
   });
 
-  it('includes untracked created-file content in the review prompt diff', async () => {
+  it('includes untracked created-file content in the review diff', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
@@ -2606,7 +2612,7 @@ describe('runFinalReviewPhase', () => {
     const marker = 'UNTRACKED_REVIEW_MARKER_42';
     writeFileSync(join(projectDir, 'src/hello.ts'), `export const x = "${marker}";\n`);
 
-    const { reviewer, prompts } = makeReviewer();
+    const { reviewer } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'], status: 'done' })];
@@ -2624,7 +2630,7 @@ describe('runFinalReviewPhase', () => {
       summaryBase: SUMMARY_BASE,
     });
 
-    expect(prompts[0]).toContain(marker);
+    expect(reviewedChange(projectDir, sessionId)).toContain(marker);
   });
 
   it('derives the review diff and drift universe from recorded promotions when the tree is clean', async () => {
@@ -2645,7 +2651,7 @@ describe('runFinalReviewPhase', () => {
       stdio: 'pipe',
     });
 
-    const { reviewer, prompts } = makeReviewer();
+    const { reviewer } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/feature.ts'], status: 'done' });
@@ -2666,8 +2672,9 @@ describe('runFinalReviewPhase', () => {
       summaryBase: SUMMARY_BASE,
     });
 
-    expect(prompts[0]).toContain(committedMarker);
-    expect(prompts[0]).toMatch(/^### \S+ — T001$/m);
+    const change = reviewedChange(projectDir, sessionId);
+    expect(change).toContain(committedMarker);
+    expect(change).toMatch(/^### \S+ — T001$/m);
 
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
@@ -2733,7 +2740,8 @@ describe('runFinalReviewPhase', () => {
       summaryBase: SUMMARY_BASE,
     });
 
-    expect(prompts[0]).toContain(postRunMarker);
+    expect(reviewedChange(projectDir, sessionId)).toContain(postRunMarker);
+    expect(reviewedChange(projectDir, sessionId)).not.toContain(preRunMarker);
     expect(prompts[0]).not.toContain(preRunMarker);
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
@@ -2753,7 +2761,7 @@ describe('runFinalReviewPhase', () => {
       stdio: 'pipe',
     });
 
-    const { reviewer, prompts } = makeReviewer();
+    const { reviewer } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/from-unborn.ts'], status: 'done' });
@@ -2778,14 +2786,14 @@ describe('runFinalReviewPhase', () => {
       summaryBase: SUMMARY_BASE,
     });
 
-    expect(prompts[0]).toContain(marker);
+    expect(reviewedChange(projectDir, sessionId)).toContain(marker);
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
     );
     expect(drift.changedFiles).toContain('src/from-unborn.ts');
   });
 
-  it('passes the full diff to the review prompt', async () => {
+  it('passes the full diff to the reviewer', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -2795,7 +2803,7 @@ describe('runFinalReviewPhase', () => {
       `${'x'.repeat(101_000)}\n${prohibitedMarker}\n`,
     );
 
-    const { reviewer, prompts } = makeReviewer();
+    const { reviewer } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
     const task = makeTask({
@@ -2817,11 +2825,11 @@ describe('runFinalReviewPhase', () => {
       summaryBase: SUMMARY_BASE,
     });
 
-    const promptDiff = prompts[0]
-      ?.split('## Implementation Diff\n')[1]
+    const diff = reviewedChange(projectDir, sessionId)
+      .split('## Implementation Diff\n')[1]
       ?.split('\n## Workspace Context')[0];
-    expect(promptDiff).toContain(prohibitedMarker);
-    expect(promptDiff).not.toContain('diff truncated');
+    expect(diff).toContain(prohibitedMarker);
+    expect(diff).not.toContain('diff truncated');
   });
 });
 

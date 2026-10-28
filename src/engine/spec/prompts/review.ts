@@ -6,6 +6,7 @@ import {
   instructionsSection,
   skillsSection,
   type PromptPart,
+  type PromptSection,
 } from './builder.js';
 import { TASK_CMD_CHECK_RULE } from './plan-session.js';
 
@@ -143,6 +144,42 @@ function diffBody(entries: readonly ReviewFileDiff[], laterDiff: string | undefi
   return lines.join('\n');
 }
 
+type ReviewChange = Pick<
+  FinalReviewPromptInput,
+  'diff' | 'files' | 'laterDiff' | 'workspaceContext'
+>;
+
+function changeSections(change: ReviewChange): PromptSection[] {
+  return [
+    {
+      heading: 'Implementation Diff',
+      body:
+        change.files === undefined
+          ? fenced(change.diff ?? '', 'diff')
+          : diffBody(change.files, change.laterDiff),
+    },
+    ...(change.workspaceContext !== undefined && change.workspaceContext.length > 0
+      ? [
+          {
+            heading: 'Workspace Context',
+            body: fenced(change.workspaceContext.map((file) => file.diff).join('\n'), 'diff'),
+          },
+        ]
+      : []),
+  ];
+}
+
+/** The change sections of the review prompt as one text, for the change file. */
+export function reviewChangeText(change: ReviewChange): string {
+  return changeSections(change)
+    .map((section) => `## ${section.heading}\n${section.body}`)
+    .join('\n\n');
+}
+
+function changeFileBody(path: string): string {
+  return `The change under review is in \`${path}\`: one block per changed file with the tasks that changed it, then the changes after the last recorded task completion and the Workspace Context, when present. Read this file whole, then read the changed files themselves in the workspace. Do not report as verified anything you did not read.`;
+}
+
 function touchedBody(entries: readonly ReviewTouchedNotSuggested[]): string {
   const lines: string[] = [];
   for (const entry of entries) {
@@ -185,6 +222,8 @@ export type FinalReviewPromptInput = {
   files?: readonly ReviewFileDiff[] | undefined;
   laterDiff?: string | undefined;
   workspaceContext?: readonly ReviewFileDiff[] | undefined;
+  /** The file that holds the change, for a reviewer that reads it; replaces the diff sections. */
+  changeFile?: string | undefined;
   trimmed?: string | undefined;
   /** The plan as data: the criteria with their checks, and the briefs. */
   plan?: ReviewPlanData | undefined;
@@ -265,19 +304,11 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
   if (opts.changeCoverage) {
     sections.push({ heading: 'Changed Files', body: opts.changeCoverage });
   }
-  sections.push({
-    heading: 'Implementation Diff',
-    body:
-      opts.files === undefined
-        ? fenced(opts.diff ?? '', 'diff')
-        : diffBody(opts.files, opts.laterDiff),
-  });
-  if (opts.workspaceContext !== undefined && opts.workspaceContext.length > 0) {
-    sections.push({
-      heading: 'Workspace Context',
-      body: fenced(opts.workspaceContext.map((file) => file.diff).join('\n'), 'diff'),
-    });
-  }
+  sections.push(
+    ...(opts.changeFile === undefined
+      ? changeSections(opts)
+      : [{ heading: 'Implementation Diff', body: changeFileBody(opts.changeFile) }]),
+  );
   if (opts.trimmed !== undefined) {
     sections.push({ heading: 'Trimmed for Size', body: opts.trimmed });
   }
@@ -333,9 +364,12 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
       : REVIEW_CHECKLIST;
   sections.push(
     instructionsSection(
-      [reviewInstructions, ...(opts.files === undefined ? [] : [PROVENANCE_INSTRUCTIONS])].join(
-        '\n\n',
-      ),
+      [
+        reviewInstructions,
+        ...(opts.files === undefined && opts.changeFile === undefined
+          ? []
+          : [PROVENANCE_INSTRUCTIONS]),
+      ].join('\n\n'),
     ),
     { heading: 'Review Checklist', body: reviewChecklist },
     {

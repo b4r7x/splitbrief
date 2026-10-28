@@ -374,6 +374,8 @@ export type CliPlannerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterCo
     supportsEffort: boolean;
     /** The tool reads its schema only from a file, so each typed call writes one (codex). */
     schemaFile?: true | undefined;
+    /** The tool's read-only mode reads workspace files, so a reviewer reads the change from one. */
+    readsFiles?: true | undefined;
   }>;
 
 export type CliImplementerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterContract<
