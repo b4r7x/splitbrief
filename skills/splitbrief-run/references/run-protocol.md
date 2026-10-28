@@ -85,8 +85,8 @@ For each selected pending task whose dependencies are done:
 5. Spawn with references/tool-recipes.md and wait using the protocol below.
 6. Read the terminal result and advisory completion report.
 7. Route blocked reports, proposed decisions, and failures through references/recovery.md.
-8. Record touched files and reasons. At task cadence, run the task's checks and the due checks with references/gates.md. At end cadence, run none.
-9. At task cadence, mark the task done only after those checks pass. Update and print progress.
+8. Record touched files and reasons. At task cadence, run the task's checks and the due checks with references/gates.md. At end cadence, run the task's own checks, except a render check.
+9. Mark the task done only after those checks pass. Update and print progress.
 10. At task cadence, enter review for completed work before dispatching another task. That review runs the related tests the reviewer chooses.
 
 Take an attempt-start snapshot of candidate bytes for recovery; preserve accepted earlier task changes.

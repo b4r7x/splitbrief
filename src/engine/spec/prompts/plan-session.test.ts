@@ -78,6 +78,14 @@ describe('buildPlanSessionPrompt', () => {
     expect(unapproved).not.toContain('the plan approval confirms it');
   });
 
+  it('keeps a task check fast and the full gate in the run checks', () => {
+    const prompt = buildPlanSessionPrompt(input);
+    expect(prompt).toContain(
+      "SPLITBRIEF runs a task's own checks after the task, and every required check before every review. The reviewer chooses the commands that verify the change. A task check is the fastest command that proves the task: its test file, the typecheck or a lint. Put the full gate, such as a release or CI script, in the run checks, never in a task. A `render` check is slow and runs before a review.",
+    );
+    expect(prompt).not.toContain('`batch`: 1, 2, …. SPLITBRIEF runs');
+  });
+
   it('explains that a test check runs the discovered command on its file', () => {
     expect(buildPlanSessionPrompt(input)).toContain(
       'A `test` check runs that command on its file.',

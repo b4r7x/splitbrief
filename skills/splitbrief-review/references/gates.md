@@ -18,7 +18,7 @@ Record the command and its source in plan.json and the plan block. Run commands 
 ## Order, short-circuit, capture
 
 <!-- generated: gate-rules -->
-- At workflow.review: task, run the brief checks and the checks of its due criteria after each brief. At workflow.review: end, an ordinary brief runs no check: only a caller that names checks runs them, such as a consult `verify`.
+- At workflow.review: task, run the brief checks and the checks of its due criteria after each brief. At workflow.review: end, run the brief checks after each brief, except a render check. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers.
 - End-of-run checks are on by default (`validation.end_checks`). With End-of-run checks on, the reviewer makes the plan call before each review. It reads the manifests, scripts, Makefile or justfile, CI configuration and README. It chooses at most 6 reviewer checks (`V1`, `V2`, …), each with a reason. Each reviewer check must verify the change.
 - It names the related tests it declines and gives the reason. If it chooses no reviewer check, record its reason. At end cadence, the reviewer checks verify the whole change. A task-cadence review chooses the tests related to the changed files.
 - A failed plan call halts the review the same way a failed verdict call does. It is never a pass.
@@ -113,7 +113,7 @@ For test checks, run the named test file or pattern. For cmd checks, run the reg
 Allow no package installs, git writes, protected mutations without confirmation, or commands outside the workspace.
 Render checks are unavailable in these skills. Keep a required render criterion unverified.
 At cadence=task, after each task, run its checks and the due checks. A red required check goes to that task's retry ladder.
-At cadence=end, an ordinary task runs no check. Only a caller that names checks runs them, such as a consult `verify`.
+At cadence=end, after each task, run its own checks. A red required check goes to that task's retry ladder. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers.
 A due check is a check of the task, or of a criterion whose serving tasks are all done.
 Before the final review, run every registered check. Only required checks decide a red.
 

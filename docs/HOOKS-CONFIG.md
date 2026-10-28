@@ -39,7 +39,7 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 | `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `headlineSpans`, `recommendedAction`, `resumeCommand` (`sessionId` rides in `context`) |
 | `on_complete`    | `workflow_complete` event                   | (none)                                                               |
 
-`pre_validation` fires when a brief gate has checks to run. In `review: task` cadence, the gate runs the task's checks and its due checks. The gate also runs the checks of the red a fix task answers, or the checks a consult `verify` names. In `review: end` cadence, an ordinary brief runs no check. The `pre_validation` payload is a `validate` event with `status: 'running'` and `taskId`, and no stages.
+`pre_validation` fires when a brief gate has checks to run. In `review: task` cadence, the gate runs the task's checks and its due checks. The gate also runs the checks of the red a fix task answers, or the checks a consult `verify` names. In `review: end` cadence, the gate runs the task's own checks, except a `render` check. The `pre_validation` payload is a `validate` event with `status: 'running'` and `taskId`, and no stages.
 `post_validation` fires on every `checks_run` event: after a brief gate's checks, and after the plan and task checks that run before the final review, once per task that owns them. Each result's `status` is `pass`, `fail`, `not-runnable`, `refused` or `unknown`. Only `pass` and `fail` mean that the check ran.
 The pre-review run of reviewer checks (`V1`, `V2`, …) fires neither validation hook. It publishes `review_checks` and `full_suite` events.
 

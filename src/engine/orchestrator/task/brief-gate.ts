@@ -56,6 +56,9 @@ export async function runBriefGate(opts: {
   );
   const cadence = wctx.config.workflow.review ?? 'end';
   const due = new Set(dueCriterionIds(state, task.id));
+  // At `end` a brief runs its own checks but no render: renders run before the review. A consult
+  // `verify` runs only the checks it names, for a red that may predate the brief. A fix brief
+  // always runs the failed checks it answers.
   const checkIds = [
     ...new Set([
       ...(cadence === 'task'
@@ -68,7 +71,9 @@ export async function runBriefGate(opts: {
               )
               .flatMap((criterion) => criterion.checkIds),
           ]
-        : []),
+        : opts.checkIds === undefined
+          ? (task.checks ?? []).filter((check) => check.kind !== 'render').map((check) => check.id)
+          : []),
       ...fixCheckIds,
       ...(opts.checkIds ?? []),
     ]),

@@ -515,7 +515,7 @@ function gates(): string {
 
 function gateRules(): string {
   return bullets([
-    'At workflow.review: task, run the brief checks and the checks of its due criteria after each brief. At workflow.review: end, an ordinary brief runs no check: only a caller that names checks runs them, such as a consult `verify`.',
+    'At workflow.review: task, run the brief checks and the checks of its due criteria after each brief. At workflow.review: end, run the brief checks after each brief, except a render check. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers.',
     `End-of-run checks are on by default (\`validation.end_checks\`). With End-of-run checks on, the reviewer makes the plan call before each review. It reads the manifests, scripts, Makefile or justfile, CI configuration and README. It chooses at most ${MAX_REVIEW_CHECKS} reviewer checks (\`V1\`, \`V2\`, …), each with a reason. Each reviewer check must verify the change.`,
     'It names the related tests it declines and gives the reason. If it chooses no reviewer check, record its reason. At end cadence, the reviewer checks verify the whole change. A task-cadence review chooses the tests related to the changed files.',
     'A failed plan call halts the review the same way a failed verdict call does. It is never a pass.',
