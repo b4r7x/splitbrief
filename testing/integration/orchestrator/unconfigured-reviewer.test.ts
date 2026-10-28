@@ -176,6 +176,9 @@ describe('run with no reviewer configured', () => {
       'task_started',
       'cost_update',
       'task_validating',
+      // The brief's own check runs at its gate.
+      'task_validating',
+      'checks_run',
       'task_completed',
       'task_tokens',
       'snapshot_created',
