@@ -555,7 +555,11 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
         override: false,
       });
 
-      const logged = readEvidenceLedger(ref)?.tasks.flatMap((task) => task.checks ?? []) ?? [];
+      const ledger = readEvidenceLedger(ref);
+      const logged = [
+        ...(ledger?.tasks.flatMap((task) => task.checks ?? []) ?? []),
+        ...(ledger?.verifyChecks ?? []),
+      ];
       const v1 = logged.filter((entry) => entry.id === 'V1');
       expect(v1).toHaveLength(2);
       for (const entry of v1) expect(entry.preExisting).toEqual([red.key]);

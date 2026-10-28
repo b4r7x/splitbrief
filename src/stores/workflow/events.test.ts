@@ -679,6 +679,7 @@ describe('eventsStore — append via addEvent', () => {
           scenario: 'workflow-x',
           ts: 4_000,
         });
+        const verify = makeFullSuite({ id: 'V6', moment: 'verify', ts: 4_500 });
         const gate = makeValidate({ status: 'running', activeStage: 'test', ts: 5_000 });
         const log = [
           settled,
@@ -686,6 +687,7 @@ describe('eventsStore — append via addEvent', () => {
           { ...settled, status: 'done' as const, passed: false, ts: 2_000 },
           fix,
           render,
+          verify,
           gate,
           { type, ts: 6_000, phase: 'implementing' as const },
         ];
@@ -694,6 +696,7 @@ describe('eventsStore — append via addEvent', () => {
         expect(live).toEqual(mergeEventLog(log));
         expect(live).toContainEqual({ ...fix, status: 'stopped' });
         expect(live).toContainEqual({ ...render, status: 'stopped' });
+        expect(live).toContainEqual({ ...verify, status: 'stopped' });
         expect(live).toContainEqual({ ...gate, status: 'stopped' });
         expect(live[0]).toEqual({ ...settled, status: 'done', passed: false, ts: 2_000 });
         expect(fix.status).toBe('running');
@@ -709,22 +712,24 @@ describe('eventsStore — append via addEvent', () => {
       (processWentAway, status) => {
         const fix = makeFullSuite({ id: 'V1', moment: 'brief', ts: 1_000 });
         const check = makeFullSuite({ id: 'V2', moment: 'pre-review', ts: 2_000 });
+        const verify = makeFullSuite({ id: 'V2', moment: 'verify', ts: 2_500 });
         const gate = makeValidate({ status: 'running', activeStage: 'test', ts: 3_000 });
         const complete: EngineEvent = {
           type: 'replay_complete',
           ts: 3_000,
           phase: 'idle',
-          totalEvents: 3,
+          totalEvents: 4,
           durationMs: 2_000,
           ...(processWentAway && { processWentAway }),
         };
-        const log = [fix, check, gate, complete];
+        const log = [fix, check, verify, gate, complete];
         for (const event of log) addEvent(event);
         const live = eventsStore.get().events;
         expect(live).toEqual(mergeEventLog(log));
         expect(live).toEqual([
           { ...fix, status },
           { ...check, status },
+          { ...verify, status },
           { ...gate, status },
           complete,
         ]);

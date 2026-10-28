@@ -263,7 +263,7 @@ export function publishReviewCheck(
     status: 'running' | 'done' | 'not-run' | 'refused';
     id: string;
     command: string;
-    moment: 'pre-review' | 'base' | 'brief' | 'plan';
+    moment: 'pre-review' | 'base' | 'brief' | 'plan' | 'verify';
     scenario?: string | undefined;
     passed?: boolean | undefined;
     newFailures?: number | undefined;

@@ -5,6 +5,7 @@ import type {
   EvidenceApproval,
   EvidenceRejection,
   EvidenceCommandRun,
+  EvidenceCheckEntry,
 } from '../schemas/evidence.js';
 import { nowIso } from '../../utils/format-time.js';
 import { hashTaskBrief } from './brief-hash.js';
@@ -89,6 +90,17 @@ export function withAppendedRejection(
   entry: EvidenceRejection,
 ): EvidenceLedger {
   return { ...ledger, rejections: [...(ledger.rejections ?? []), entry], generatedAt: nowIso() };
+}
+
+export function withAppendedVerifyChecks(
+  ledger: EvidenceLedger,
+  entries: readonly EvidenceCheckEntry[],
+): EvidenceLedger {
+  return {
+    ...ledger,
+    verifyChecks: [...(ledger.verifyChecks ?? []), ...entries],
+    generatedAt: nowIso(),
+  };
 }
 
 /** Keeps the newest run of a command per tree: a run on a newer tree state replaces the older one. */

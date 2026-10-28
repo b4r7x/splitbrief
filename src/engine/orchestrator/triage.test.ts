@@ -11,6 +11,7 @@ import type { ReviewVerdict, TriageResult } from '../../core/schemas/review.js';
 import type { ReviewScope } from '../../core/review/verdict.js';
 import { taskId } from '../../core/schemas/task.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
+import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import type {
   ReviewChecksRecord,
@@ -568,6 +569,43 @@ describe('review fix work', () => {
     );
     expect(runCommand.calls.map((call) => call.cmd)).toEqual(['tsc']);
     expect(verification).toEqual([{ id: 'finding:F1', status: 'pass', output: 'K1: pass — ok' }]);
+  });
+
+  it('shows each verify check on its own row while it runs and files it under the review', async () => {
+    const ref = setupProject(dirs);
+    const recorder = makeBusRecorder();
+    await runTriageVerification(
+      {
+        ...ref,
+        workspaceDir: ref.projectDir,
+        config: makeConfig({}),
+        bus: recorder.bus,
+        runCommand: makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 }),
+      },
+      { ...triageState(), reviewChecks: REVIEW_CHECKS },
+      {
+        fixTasks: [],
+        rejected: [],
+        verify: [{ findingId: 'F1', checkIds: ['K1', 'V1'] }],
+        ask: null,
+      },
+      [],
+    );
+
+    const rows = recorder.events.flatMap((event) =>
+      event.type === 'full_suite'
+        ? [{ status: event.status, id: event.id, moment: event.moment, command: event.command }]
+        : [],
+    );
+    expect(rows).toEqual([
+      { status: 'running', id: 'K1', moment: 'verify', command: 'tsc --noEmit' },
+      { status: 'done', id: 'K1', moment: 'verify', command: 'tsc --noEmit' },
+      { status: 'running', id: 'V1', moment: 'verify', command: 'node --version' },
+      { status: 'done', id: 'V1', moment: 'verify', command: 'node --version' },
+    ]);
+    const ledger = readEvidenceLedger(ref);
+    expect(ledger?.verifyChecks?.map((entry) => entry.id)).toEqual(['K1', 'V1']);
+    expect(ledger?.tasks.flatMap((task) => task.checks ?? [])).toEqual([]);
   });
 
   it('runs a reviewer check a verify names only while End-of-run checks are on', async () => {

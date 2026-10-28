@@ -141,6 +141,8 @@ describe('createStdoutTextSink', () => {
           passed: false,
           detail: 'the workspace has no test file for src/a.test.ts',
         },
+        { ...render, moment: 'verify', scenario: undefined, id: 'V6', command: 'npm test' },
+        { ...render, moment: 'verify', status: 'stopped', scenario: undefined, id: 'V6' },
       ]),
     ).toEqual([
       'phase: final-review',
@@ -150,6 +152,7 @@ describe('createStdoutTextSink', () => {
       'Render workflow-x: refused (invalid scenario)',
       'plan check K1: passed · 14.2s (npm test)',
       'plan check K2: failed · 14.2s (the workspace has no test file for src/a.test.ts)',
+      'verify V6: passed · 14.2s (npm test)',
     ]);
   });
   it('writes one line per phase change, task, review and completion', () => {

@@ -35,7 +35,7 @@ type FullSuiteEvent = {
   status: 'running' | 'done' | 'not-run' | 'refused' | 'stopped';
   id?: string;
   command: string;
-  moment: 'pre-review' | 'base' | 'brief' | 'plan';
+  moment: 'pre-review' | 'base' | 'brief' | 'plan' | 'verify';
   passed?: boolean;
   newFailures?: number;
   notVerified?: number;

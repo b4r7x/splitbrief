@@ -98,25 +98,29 @@ export function buildChecks(opts: {
   ledger: EvidenceLedger | null;
   events: PacketEvent[];
 }): ReviewPacket['checks'] {
-  const entries = (opts.ledger?.tasks ?? []).flatMap((task) =>
-    (task.checks ?? []).map((entry) => ({
-      taskId: task.id,
-      id: entry.id,
-      ...(entry.status !== undefined && { status: entry.status }),
-      ...(entry.command !== undefined && { command: entry.command }),
-      ...(entry.exitCode !== undefined && { exitCode: entry.exitCode }),
-      ...(entry.output !== undefined && { output: entry.output }),
-      ...(entry.preExisting !== undefined && { preExisting: [...entry.preExisting] }),
-      ...(entry.artifacts !== undefined && {
-        artifacts: entry.artifacts.map((artifact) => ({ ...artifact })),
-      }),
-      ...(entry.workspaceSnapshotId !== undefined && {
-        workspaceSnapshotId: entry.workspaceSnapshotId,
-      }),
-      ts: entry.ts,
-      ...(entry.reusedAt !== undefined && { reusedAt: entry.reusedAt }),
-    })),
-  );
+  const booked = [
+    ...(opts.ledger?.tasks ?? []).flatMap((task) =>
+      (task.checks ?? []).map((entry) => ({ taskId: task.id, entry })),
+    ),
+    ...(opts.ledger?.verifyChecks ?? []).map((entry) => ({ taskId: undefined, entry })),
+  ];
+  const entries = booked.map(({ taskId, entry }) => ({
+    ...(taskId !== undefined && { taskId }),
+    id: entry.id,
+    ...(entry.status !== undefined && { status: entry.status }),
+    ...(entry.command !== undefined && { command: entry.command }),
+    ...(entry.exitCode !== undefined && { exitCode: entry.exitCode }),
+    ...(entry.output !== undefined && { output: entry.output }),
+    ...(entry.preExisting !== undefined && { preExisting: [...entry.preExisting] }),
+    ...(entry.artifacts !== undefined && {
+      artifacts: entry.artifacts.map((artifact) => ({ ...artifact })),
+    }),
+    ...(entry.workspaceSnapshotId !== undefined && {
+      workspaceSnapshotId: entry.workspaceSnapshotId,
+    }),
+    ts: entry.ts,
+    ...(entry.reusedAt !== undefined && { reusedAt: entry.reusedAt }),
+  }));
   const outsideReadPaths = [
     ...new Set(
       opts.events

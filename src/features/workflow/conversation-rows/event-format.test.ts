@@ -378,7 +378,15 @@ describe('fullSuiteRow for a reviewer check', () => {
     );
   });
 
-  it.each(['pre-review', 'base', 'brief', 'plan'] as const)(
+  it('names a verify check by its id while it runs and once it settled', () => {
+    const verify = reviewCheck({ id: 'V6', moment: 'verify' });
+    expect(fullSuiteRow(verify)).toBe('Verify V6 · npm test · running');
+    expect(fullSuiteRow({ ...verify, status: 'done', passed: true, duration: 1_000 })).toBe(
+      'Verify V6 · npm test · passed · 1.0s',
+    );
+  });
+
+  it.each(['pre-review', 'base', 'brief', 'plan', 'verify'] as const)(
     'renders a stopped %s check in the warning tone',
     (moment) => {
       const event = reviewCheck({ moment, status: 'stopped' });

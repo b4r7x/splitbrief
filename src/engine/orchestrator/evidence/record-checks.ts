@@ -4,6 +4,7 @@ import {
   createEvidenceLedger,
   findOrSeed,
   upsertEvidenceTask,
+  withAppendedVerifyChecks,
 } from '../../../core/evidence/ledger-state.js';
 import { mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { EVIDENCE_FILE } from '../../../core/paths.js';
@@ -43,10 +44,10 @@ export type RecordCheckRunsInput = {
   runs?: readonly CheckRunResult[] | undefined;
 };
 
+/** Books the runs on `task`, or with no task on the review that ran them. */
 export async function recordCheckRuns(input: RecordCheckRunsInput): Promise<void> {
-  const task = input.task ?? input.state.tasks[0];
   const runs = [...(input.runs ?? [])];
-  if (task === undefined || runs.length === 0) return;
+  if (runs.length === 0) return;
 
   const ts = nowIso();
   let workspaceSnapshotId: string | undefined;
@@ -78,10 +79,12 @@ export async function recordCheckRuns(input: RecordCheckRunsInput): Promise<void
             tasks: input.state.tasks,
             briefHash,
           });
-        const seeded = findOrSeed(ledger, task);
+        const entries = checkEntries({ runs, workspaceSnapshotId, ts });
+        if (input.task === undefined) return withAppendedVerifyChecks(ledger, entries);
+        const seeded = findOrSeed(ledger, input.task);
         return upsertEvidenceTask(ledger, {
           ...seeded,
-          checks: [...(seeded.checks ?? []), ...checkEntries({ runs, workspaceSnapshotId, ts })],
+          checks: [...(seeded.checks ?? []), ...entries],
         });
       },
     );

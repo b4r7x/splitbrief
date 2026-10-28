@@ -1020,6 +1020,7 @@ describe('buildProgressRows', () => {
     ],
     ['final-review', { id: 'V1', moment: 'base', command: 'npm test' }, 'Base re-run V1'],
     ['implementing', { id: 'V1', moment: 'brief', command: 'npm test' }, 'Fix check V1'],
+    ['final-review', { id: 'V6', moment: 'verify', command: 'npm test' }, 'Verify V6'],
   ] as const)('keeps the %s running lead accent and metadata dim for %s', (phase, suite, lead) => {
     const progress = deriveBuildProgress(
       input({

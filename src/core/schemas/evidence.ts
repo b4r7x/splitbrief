@@ -189,5 +189,7 @@ export const EvidenceLedgerSchema = z.object({
   approvals: z.array(EvidenceApprovalSchema).optional(),
   rejections: z.array(EvidenceRejectionSchema).optional(),
   commandRuns: z.array(EvidenceCommandRunSchema).optional(),
+  /** The checks a review ran to verify its claims: no brief owns them. */
+  verifyChecks: z.array(EvidenceCheckEntrySchema).optional(),
 });
 export type EvidenceLedger = z.infer<typeof EvidenceLedgerSchema>;

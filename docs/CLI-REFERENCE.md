@@ -862,6 +862,7 @@ done: 3 tasks
   A check without carried keys keeps `passed (<command>)` or `failed (<command>)`. A refusal reads `refused (<detail>)`; a check that did not run reads `not run (<detail>)`.
 - `plan check <id>: passed|failed [· <duration>] (<command>)` — a plan or task check SPLITBRIEF ran before the review, with its command and, when recorded, its duration.
 - `plan check <id>: refused|not run [(<detail>)]` — a plan check the command policy refused or that did not run, with the reason the call gave when it gave one.
+- `verify <id>: passed|failed [· <duration>] (<command>)` — a check the review ran to verify one of its findings, with its command and, when recorded, its duration. A refusal or a check that did not run reads `verify <id>: refused|not run [(<detail>)]`. A render check reads as a `Render <scenario>` line.
 - `Render <scenario>: rendered|failed [· <duration>]` — a render check, named by its scenario, with the duration when recorded. Its command text is not part of the line.
 - `Render <scenario>: refused|not run [(<detail>)]` — a render check the command policy refused or that did not run, with the reason the call gave when it gave one.
 - `stalled: <role> (<tool>) · no output for 5:00` — one line when the watchdog warns that a seat call sent no output for 5 minutes (`idleWarnMs`). The call continues.

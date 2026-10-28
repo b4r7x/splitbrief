@@ -1105,6 +1105,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-review-verify',
+      title: 'Workflow · the review verifying its findings',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-verify',
+        title: 'One verify check passed and a second one running',
+        kind: 'review',
+        marker: 'Verify V1',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header and build progress' },
+        { id: 'transcript', title: 'Review transcript with the verify rows' },
+        { id: 'composer', title: 'Review stage, verify check and clock' },
+      ],
+    }),
     ...(['', '-settled'] as const).map((suffix) =>
       defineScenario({
         id: `workflow-review-task-cadence${suffix}`,

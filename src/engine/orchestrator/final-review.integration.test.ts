@@ -845,10 +845,9 @@ describe('runFinalReviewPhase', () => {
     expect(result.reviewStatus).toBe('written');
     expect(result.verdict?.outcome.unverifiedCriteria).toEqual(['C1']);
     expect(result.state.review?.verification).toEqual([]);
-    expect(
-      readEvidenceLedger({ projectDir, sessionId })?.tasks.flatMap((task) => task.checks ?? []) ??
-        [],
-    ).toEqual([]);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
+    expect(ledger?.tasks.flatMap((task) => task.checks ?? []) ?? []).toEqual([]);
+    expect(ledger?.verifyChecks).toBeUndefined();
   });
 
   it('runs the claim checks once the reviewer sets aside the only red suite input', async () => {
@@ -1238,9 +1237,7 @@ describe('runFinalReviewPhase', () => {
     expect(record.outcome).toBe('pass-with-notes');
     expect(result.verdict?.outcome.blocking).toEqual([]);
     expect(result.verdict?.outcome.minor).toEqual([finding]);
-    const logged =
-      readEvidenceLedger({ projectDir, sessionId })?.tasks.flatMap((task) => task.checks ?? []) ??
-      [];
+    const logged = readEvidenceLedger({ projectDir, sessionId })?.verifyChecks ?? [];
     expect(logged.find((entry) => entry.id === 'V1')).toMatchObject({
       command,
       exitCode: 1,

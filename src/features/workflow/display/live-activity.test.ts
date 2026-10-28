@@ -443,6 +443,7 @@ describe('deriveLiveStatus', () => {
     ['pre-review', 'Review · Reviewer check V1 · npm test'],
     ['base', 'Review · Base re-run V1 · npm test'],
     ['brief', 'Review · Fix check V1 · npm test'],
+    ['verify', 'Review · Verify V1 · npm test'],
   ] as const)('names the %s reviewer check by its id on its own clock', (moment, verb) => {
     const status = deriveLiveStatus({
       ...base,
@@ -459,7 +460,14 @@ describe('deriveLiveStatus', () => {
               { text: 'Reviewer', tone: 'reviewer' },
               { text: ' check V1', tone: 'textDim' },
             ]
-          : [{ text: moment === 'base' ? 'Base re-run V1' : 'Fix check V1', tone: 'accent' }]),
+          : [
+              {
+                text: { base: 'Base re-run V1', brief: 'Fix check V1', verify: 'Verify V1' }[
+                  moment
+                ],
+                tone: 'accent',
+              },
+            ]),
         { text: ' · ', tone: 'textDim' },
         { text: 'npm test', tone: 'textDim' },
       ],
