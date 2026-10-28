@@ -1776,6 +1776,46 @@ describe('fix cycles, review and triage records', () => {
     expect(WorkflowStateSchema.safeParse(recorded).success).toBe(true);
   });
 
+  it('SAVE_REVIEW_ANSWER keeps the answer until RECORD_REVIEW replaces it', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'final-review',
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      currentTaskIndex: 1,
+    };
+    const verdict = {
+      tasks: [{ id: taskId('T001'), plan: 'met' as const, note: '' }],
+      criteria: [{ id: 'C1', status: 'pass' as const, evidence: '' }],
+      findings: [],
+    };
+    const answer: NonNullable<WorkflowState['reviewAnswer']> = {
+      scope: 'final',
+      cycle: 0,
+      answer: { ...verdict, fixTasks: [], rejected: [], verify: [], ask: null },
+      preExistingChecks: [],
+      discharged: ['npm test'],
+      at: '2026-10-04T10:00:00.000Z',
+    };
+
+    const saved = transition(state, { type: 'SAVE_REVIEW_ANSWER', answer });
+    expect(saved.reviewAnswer).toEqual(answer);
+    expect(WorkflowStateSchema.safeParse(saved).success).toBe(true);
+
+    const recorded = transition(saved, {
+      type: 'RECORD_REVIEW',
+      review: { cycle: 0, verdict, outcome: 'pass', verification: [], at: answer.at },
+    });
+    expect(recorded.reviewAnswer).toBeUndefined();
+    expect(transition(saved, { type: 'DROP_REVIEW_ANSWER' }).reviewAnswer).toBeUndefined();
+    const rejected = transition(saved, {
+      type: 'RECORD_REJECT',
+      removed: ['a.ts'],
+      booked: [taskId('T001')],
+    });
+    expect(rejected).toMatchObject({ phase: 'implementing', currentTaskIndex: 0 });
+    expect(rejected.reviewAnswer).toBeUndefined();
+  });
+
   it('RECORD_TRIAGE appends a triage recorded while implementing', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -2217,10 +2257,10 @@ describe('the run workspace and Apply', () => {
       'T001 check C1 did not pass (fail): error',
       'plan check P1 did not pass (fail): error',
     ];
-    const recorded = transition(state, { type: 'RECORD_APPLY_RECHECK', failures });
+    const recorded = transition(state, { type: 'RECORD_APPLY_RECHECK', failures, notRun: [] });
 
     expect(recorded.phase).toBe('final-review');
-    expect(recorded.applyReview).toEqual({ merged, failures });
+    expect(recorded.applyReview).toEqual({ merged, failures, notRun: [] });
     expect(state.applyReview?.failures).toEqual([]);
     expect(WorkflowStateSchema.parse(recorded).applyReview?.failures).toEqual(failures);
 
@@ -2230,24 +2270,24 @@ describe('the run workspace and Apply', () => {
     expect(accepted.acceptedAsIs?.findings).toEqual(failures);
     expect(accepted.applyReview).toBeUndefined();
 
-    const rerun = transition(recorded, { type: 'RECORD_APPLY_RECHECK', failures: [] });
-    expect(rerun.applyReview).toEqual({ merged, failures: [] });
+    const rerun = transition(recorded, { type: 'RECORD_APPLY_RECHECK', failures: [], notRun: [] });
+    expect(rerun.applyReview).toEqual({ merged, failures: [], notRun: [] });
   });
 
   it('RECORD_APPLY_RECHECK refuses a final review without applyReview', () => {
     const state: WorkflowState = { ...ready(), phase: 'final-review' };
-    expect(() => transition(state, { type: 'RECORD_APPLY_RECHECK', failures: [] })).toThrow(
-      'Cannot apply RECORD_APPLY_RECHECK while workflow is in final-review.',
-    );
+    expect(() =>
+      transition(state, { type: 'RECORD_APPLY_RECHECK', failures: [], notRun: [] }),
+    ).toThrow('Cannot apply RECORD_APPLY_RECHECK while workflow is in final-review.');
   });
 
   it.each(['implementing', 'complete'] as const)(
     'RECORD_APPLY_RECHECK refuses the %s phase',
     (phase) => {
       const state: WorkflowState = { ...ready(), phase, applyReview: { merged: [], failures: [] } };
-      expect(() => transition(state, { type: 'RECORD_APPLY_RECHECK', failures: [] })).toThrow(
-        `Cannot apply RECORD_APPLY_RECHECK while workflow is in ${phase}.`,
-      );
+      expect(() =>
+        transition(state, { type: 'RECORD_APPLY_RECHECK', failures: [], notRun: [] }),
+      ).toThrow(`Cannot apply RECORD_APPLY_RECHECK while workflow is in ${phase}.`);
     },
   );
 

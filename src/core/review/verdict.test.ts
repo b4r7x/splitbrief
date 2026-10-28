@@ -499,6 +499,25 @@ describe('reviewsAgain', () => {
     const state = makeImplState([], { review: judged(), fixCycles });
     expect(reviewsAgain(state, 'task', 'T002')).toBe(false);
   });
+
+  it.each([
+    { name: 'this task review', kind: 'task' as const, anchor: 'T002', cycle: 2, again: true },
+    { name: 'another brief', kind: 'task' as const, anchor: 'T003', cycle: 2, again: false },
+    { name: 'the final review', kind: 'final' as const, anchor: undefined, cycle: 2, again: false },
+    { name: 'an earlier cycle', kind: 'task' as const, anchor: 'T002', cycle: 1, again: false },
+  ])('answers $again for a saved answer and $name', ({ kind, anchor, cycle, again }) => {
+    const reviewAnswer = {
+      scope: 'task' as const,
+      afterTaskId: taskId('T002'),
+      cycle,
+      answer: { ...makeVerdict(), fixTasks: [], rejected: [], verify: [], ask: null },
+      preExistingChecks: [],
+      discharged: [],
+      at: '2026-10-20T10:05:00.000Z',
+    };
+    const state = makeImplState([], { reviewAnswer, fixCycles });
+    expect(reviewsAgain(state, kind, anchor)).toBe(again);
+  });
 });
 
 describe('red inputs the reviewer sets aside', () => {

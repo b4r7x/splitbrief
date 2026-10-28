@@ -2456,6 +2456,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-stopped-verify',
+      title: 'Workflow · a run stopped while the review verified its findings',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-stopped-verify',
+        title: 'The final review reads as stopped during verify',
+        kind: 'ready',
+        marker: 'stopped during verify',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-question',
       title: 'Workflow · a run parked at a question round',
       surface: screenSurface('workflow'),

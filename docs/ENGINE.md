@@ -116,7 +116,7 @@ The full union has many variants, but the pattern is consistent: every event is 
 
 Task reviews carry `afterTaskId`, the completed brief that scheduled the review. Final reviews omit it. A completion carries the derived verdict and `duration` in milliseconds. `findings` counts blocking and minor findings only when a verdict exists. A failed call records `no-verdict`; a stop records `stopped`. Neither outcome carries findings.
 
-`review_step` names the engine's current step: `choosing-checks` or `verdict`. A review after an answered question starts at `verdict`. The stores carry the recorded step into each review call and the gaps between calls.
+`review_step` names the engine's current step: `choosing-checks`, `verdict` or `verify` (the reviewer answered; its findings are verified). A review after an answered question starts at `verdict`. The stores carry the recorded step into each review call and the gaps between calls.
 
 ### Runner call pipeline
 

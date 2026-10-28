@@ -204,6 +204,31 @@ describe('stageSummaryRow', () => {
     },
   );
 
+  it('names the verify step of a review a stop cut', () => {
+    const ui = renderFeature(
+      createElement(TaskSummary, {
+        ...stageSummaryRow({
+          stage: 'review',
+          scope: 'final',
+          fixCyclesBefore: 0,
+          rerunsBefore: 0,
+          outcome: 'stopped',
+          stoppedDuring: 'verify',
+          failedCommands: [],
+          failedChecks: 0,
+          fixes: [],
+          duration: 62_000,
+        }),
+        width: 120,
+      }),
+      { cols: 120, rows: 24 },
+    );
+    expect(stripAnsiStyles(ui.lastFrame()).trim()).toBe(
+      '× Final review stopped during verify  1m 2s',
+    );
+    ui.unmount();
+  });
+
   it('names a final review after a fix cycle by the cycles before it, not by a bare count', () => {
     const ui = renderFeature(
       createElement(TaskSummary, {

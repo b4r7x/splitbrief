@@ -23,6 +23,7 @@ import {
 import {
   failedReviewVerdict,
   passingReviewVerdict,
+  passingVerdict,
   planFromTasks,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
@@ -64,6 +65,7 @@ import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { formatRetryPrompt } from '../../spec/prompt-formatter.js';
+import { enqueueUserMessage } from '../queue/submit.js';
 
 /** How many times the session transcript holds this user turn. */
 async function userTurns(ref: { projectDir: string; sessionId: string }, text: string) {
@@ -1855,6 +1857,55 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
       expect(result.state.tasks[0]?.checkResults).toEqual([
         { id: 'K-optional', status: 'refused' },
       ]);
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
+  it('a review that answers again after Apply reads the re-run checks the merge already had', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const ref = { projectDir, sessionId };
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    const base = integrationReviewState(tasks, head, 0);
+    const state: WorkflowState = {
+      ...base,
+      applyReview: {
+        merged: base.applyReview?.merged ?? [],
+        failures: ['T001 check K1 did not pass'],
+        notRun: ['T001 check K2 refused: runs a package script or binary'],
+      },
+      reviewAnswer: {
+        scope: 'final',
+        cycle: 0,
+        answer: passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: [] }),
+        preExistingChecks: [],
+        discharged: [],
+        at: '2026-10-28T10:00:00.000Z',
+      },
+    };
+    saveState(ref, state);
+    enqueueUserMessage({
+      ...ref,
+      state,
+      bus: makeBusRecorder().bus,
+      phase: 'final-review',
+      message: plainUserMessage('Look at the merge again'),
+    });
+    const { options, reviewPrompts } = runOptions({
+      ...ref,
+      state: loadState(ref) ?? state,
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+
+    try {
+      await runTasksAndReview(options);
+
+      expect(reviewPrompts).toHaveLength(1);
+      expect(reviewPrompts[0]).toContain(
+        '## Checks re-run at Apply\n- T001 check K1 did not pass\n- T001 check K2 refused: runs a package script or binary',
+      );
+      expect(reviewPrompts[0]).not.toContain('All re-run checks passed.');
     } finally {
       await options.wctx.isolation.dispose();
     }

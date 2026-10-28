@@ -271,7 +271,7 @@ async function recheckMergedCandidate(
     });
     collectRuns('plan', runs);
   }
-  state = transitionAndSave(ref, state, { type: 'RECORD_APPLY_RECHECK', failures });
+  state = transitionAndSave(ref, state, { type: 'RECORD_APPLY_RECHECK', failures, notRun });
   setTrackedState(state);
   return { state, failures, notRun, inputs, unrunnable: [...unrunnable.values()] };
 }
@@ -466,8 +466,15 @@ export async function runTasksAndReview(
       if (answered.stopped) return stopHere();
     }
     const reviewAgain = reviewsAgain(state, 'final');
+    // A review that runs again on the same candidate reads the recheck the candidate already had.
     const recheck = reviewAgain
-      ? { state, failures: [], notRun: [], inputs: [], unrunnable: [] }
+      ? {
+          state,
+          failures: state.applyReview?.failures ?? [],
+          notRun: state.applyReview?.notRun ?? [],
+          inputs: [],
+          unrunnable: [],
+        }
       : await recheckMergedCandidate({ wctx, state, setTrackedState });
     state = recheck.state;
     if (candidate !== undefined) {

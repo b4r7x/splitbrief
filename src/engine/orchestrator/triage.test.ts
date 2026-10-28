@@ -490,6 +490,7 @@ describe('review fix work', () => {
       { ...triageState(), reviewChecks: REVIEW_CHECKS },
       { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['V2'] }], ask: null },
       [],
+      new Date().toISOString(),
     );
 
     expect(verification[0]?.status).toBe('fail');
@@ -520,6 +521,7 @@ describe('review fix work', () => {
         { ...triageState(), reviewChecks: REVIEW_CHECKS },
         { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['V2'] }], ask: null },
         preExistingChecks,
+        new Date().toISOString(),
       );
       return entry;
     };
@@ -566,6 +568,7 @@ describe('review fix work', () => {
       state,
       { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['K1'] }], ask: null },
       [],
+      new Date().toISOString(),
     );
     expect(runCommand.calls.map((call) => call.cmd)).toEqual(['tsc']);
     expect(verification).toEqual([{ id: 'finding:F1', status: 'pass', output: 'K1: pass — ok' }]);
@@ -590,6 +593,7 @@ describe('review fix work', () => {
         ask: null,
       },
       [],
+      new Date().toISOString(),
     );
 
     const rows = recorder.events.flatMap((event) =>
@@ -624,6 +628,7 @@ describe('review fix work', () => {
         state,
         VERIFY_V1,
         [],
+        new Date().toISOString(),
       );
       return { verification, commands: runCommand.calls.map((call) => call.cmd) };
     };

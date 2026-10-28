@@ -922,6 +922,12 @@ const checkpointPredicates = [
       includesAll('Final review stopped', 'Stopped at the review')(context) &&
       excludesAll('· running')(context),
   ],
+  [
+    checkpointId('at-rest-stopped-verify'),
+    (context) =>
+      includesAll('Final review stopped during verify', 'Stopped at the review')(context) &&
+      excludesAll('· running')(context),
+  ],
   [checkpointId('retained-workspace'), includesAll('Workspace kept')],
   [
     checkpointId('cli-stop-continued'),

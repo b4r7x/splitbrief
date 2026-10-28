@@ -11,6 +11,7 @@ import {
 import { TaskSchema, TaskIdSchema, type Task } from './task.js';
 import { PlanSchema } from './plan.js';
 import {
+  ReviewAnswerSchema,
   ReviewChecksPlanObjectSchema,
   ReviewVerdictSchema,
   TriageInputSchema,
@@ -240,6 +241,23 @@ export const ReviewRecordSchema = z.object({
 });
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 
+/**
+ * The reviewer's answer before its verify ends: a continue verifies it instead of asking the
+ * reviewer again. The review record replaces it.
+ */
+export const SavedReviewAnswerSchema = z.object({
+  scope: z.enum(['task', 'final']),
+  afterTaskId: TaskIdSchema.optional(),
+  cycle: z.number().int(),
+  answer: ReviewAnswerSchema,
+  preExistingChecks: ReviewRecordSchema.shape.preExistingChecks.unwrap(),
+  /** The reviewer commands this review's checks ran. */
+  discharged: z.array(z.string()),
+  /** The reviewer checks' results the cut call read. */
+  checksSection: z.string().optional(),
+  at: z.string(),
+});
+
 /** The commands the reviewer chose for one review: they are checks `V1…` until the next review chooses again. */
 export const ReviewChecksRecordSchema = z.object({
   scope: z.enum(['task', 'final']),
@@ -415,6 +433,7 @@ const WorkflowStateFields = {
     .optional(),
   fixCycles: FixCyclesSchema.optional(),
   review: ReviewRecordSchema.optional(),
+  reviewAnswer: SavedReviewAnswerSchema.optional(),
   reviewChecks: ReviewChecksRecordSchema.optional(),
   /** Reviewer commands a fix check ran that no review has run since; the next reviewer-checks plan must choose them first. */
   pendingReviewCommands: z.array(z.string()).optional(),
@@ -463,6 +482,8 @@ const WorkflowStateFields = {
     .object({
       merged: z.array(z.object({ path: z.string(), checkoutHunks: z.string() })),
       failures: z.array(z.string()),
+      /** The re-run checks that did not run to a result; the review reads them beside the failures. */
+      notRun: z.array(z.string()).optional(),
     })
     .optional(),
   /**

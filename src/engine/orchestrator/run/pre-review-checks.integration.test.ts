@@ -763,6 +763,7 @@ describe('pre-review checks run each command once per workspace state', () => {
       run.state,
       ['K1'],
       [],
+      new Date().toISOString(),
     );
     expect(verifyRun.calls).toHaveLength(1);
     expect(verified.status).toBe('pass');
@@ -790,6 +791,7 @@ describe('pre-review checks run each command once per workspace state', () => {
       run.state,
       ['K1', 'K2'],
       [],
+      new Date().toISOString(),
     );
     expect(verifyRun.calls).toHaveLength(0);
     expect(verified.status).toBe('pass');
@@ -813,6 +815,7 @@ describe('pre-review checks run each command once per workspace state', () => {
       run.state,
       ['K1', 'K2'],
       [],
+      new Date().toISOString(),
     );
     expect(verifyRun.calls).toHaveLength(1);
     expect(verified.status).toBe('fail');

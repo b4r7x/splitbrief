@@ -96,7 +96,9 @@ export function reviewActivityParts(
           ? 'choosing checks'
           : operation.reviewStep === 'verdict'
             ? 'reviewing changes'
-            : null;
+            : operation.reviewStep === 'verify'
+              ? 'verifying findings'
+              : null;
       const waiting = isStatusFallback(operation) || step !== null;
       const identity =
         reviewerLabel === null ? null : { text: reviewerLabel, tone: CREW_SEAT_ROLES.review };

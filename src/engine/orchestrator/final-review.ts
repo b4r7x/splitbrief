@@ -111,6 +111,7 @@ import {
   setAsideInputs,
   verificationKey,
   reviewScopeFor,
+  savedReviewAnswer,
   verdictCoverageErrors,
   type ReviewOutcome,
   type ReviewScope,
@@ -261,6 +262,7 @@ async function verifyReviewClaims(args: {
   state: WorkflowState;
   redInputs: readonly TriageInput[];
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>;
+  answeredAt: string;
   projectDir: string;
   workspaceDir: string;
   sessionId: string;
@@ -286,6 +288,7 @@ async function verifyReviewClaims(args: {
       args.state,
       checkIds,
       args.preExistingChecks,
+      args.answeredAt,
     );
     const key = verificationKey(kind, id);
     map.set(key, status);
@@ -473,10 +476,12 @@ export async function runFinalReviewPhase(opts: {
       }),
     });
     const scope = reviewScopeFor(state, opts.scope ?? 'final');
-    let reviewChecksSection: string | undefined;
-    let dischargedReviewCommands: string[] = [];
+    // A review whose verify a stop or a crash cut runs again on the inputs of the cut call.
+    const cut = savedReviewAnswer(state, opts.scope ?? 'final', opts.afterTaskId);
+    let reviewChecksSection = cut?.checksSection;
+    let dischargedReviewCommands = cut?.discharged ?? [];
     // A review that only re-answers its question on the same candidate keeps the checks it ran.
-    let preExistingChecks = state.review?.preExistingChecks ?? [];
+    let preExistingChecks = cut?.preExistingChecks ?? state.review?.preExistingChecks ?? [];
     if (opts.reviewChecks === true) {
       const changedFiles =
         opts.scope === 'task'
@@ -860,26 +865,60 @@ export async function runFinalReviewPhase(opts: {
       return loop.value;
     };
 
-    let typed = await callReviewer();
-    while (true) {
-      await settleMidCallDeliveries({ projectDir, sessionId });
-      state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, {
-        keepUnsaved: true,
+    const messagePendingReviewer = () =>
+      phaseStage(state.phase) === 'review' &&
+      state.messageQueue.some(isQueuedMessagePendingReviewer);
+    // An answer whose verify a stop or a crash cut is verified again, unless the operator said
+    // something to the reviewer since, in either review scope.
+    const saved =
+      seed === undefined && !state.messageQueue.some(isQueuedMessagePendingReviewer)
+        ? cut
+        : undefined;
+    let answer: ReviewAnswer;
+    let answeredAt: string;
+    if (saved !== undefined) {
+      answer = saved.answer;
+      answeredAt = saved.at;
+    } else {
+      // The operator's words supersede the cut answer: a failed call must not leave it to a retry.
+      if (cut !== undefined) {
+        state = transitionAndSave({ projectDir, sessionId }, state, { type: 'DROP_REVIEW_ANSWER' });
+        opts.setTrackedState?.(state);
+      }
+      let typed = await callReviewer();
+      while (true) {
+        await settleMidCallDeliveries({ projectDir, sessionId });
+        state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, {
+          keepUnsaved: true,
+        });
+        opts.setTrackedState?.(state);
+        if (opts.signal?.aborted) return interrupted();
+        if ('error' in typed) {
+          failure = { kind: 'seat-protocol-error', error: typed.error };
+          throw typed.error;
+        }
+        if (!messagePendingReviewer()) break;
+        typed = await callReviewer();
+      }
+      answer = typed.value;
+      answeredAt = nowIso();
+      state = transitionAndSave({ projectDir, sessionId }, state, {
+        type: 'SAVE_REVIEW_ANSWER',
+        answer: {
+          scope: opts.scope ?? 'final',
+          ...(opts.scope === 'task' &&
+            opts.afterTaskId !== undefined && { afterTaskId: opts.afterTaskId }),
+          cycle: fixCyclesOf(state).used,
+          answer,
+          preExistingChecks,
+          discharged: dischargedReviewCommands,
+          ...(reviewChecksSection !== undefined && { checksSection: reviewChecksSection }),
+          at: answeredAt,
+        },
       });
       opts.setTrackedState?.(state);
-      if (opts.signal?.aborted) return interrupted();
-      if ('error' in typed) {
-        failure = { kind: 'seat-protocol-error', error: typed.error };
-        throw typed.error;
-      }
-      if (
-        phaseStage(state.phase) !== 'review' ||
-        !state.messageQueue.some(isQueuedMessagePendingReviewer)
-      )
-        break;
-      typed = await callReviewer();
     }
-    const answer = typed.value;
+    bus.publish({ type: 'review_step', ts: Date.now(), phase: state.phase, step: 'verify' });
     const { tasks, criteria, findings } = answer;
     let reviewerVerdict: ReviewVerdict = { tasks, criteria, findings };
     fixWork = {
@@ -888,7 +927,13 @@ export async function runFinalReviewPhase(opts: {
       verify: answer.verify,
       ask: answer.ask,
     };
-    const fixVerification = await runTriageVerification(opts, state, fixWork, preExistingChecks);
+    const fixVerification = await runTriageVerification(
+      opts,
+      state,
+      fixWork,
+      preExistingChecks,
+      answeredAt,
+    );
     const redInputs = blockingRedInputs(state.pendingTriage?.inputs ?? [], fixWork);
     const verification = await verifyReviewClaims({
       verdict: reviewerVerdict,
@@ -896,6 +941,7 @@ export async function runFinalReviewPhase(opts: {
       state,
       redInputs,
       preExistingChecks,
+      answeredAt,
       projectDir,
       workspaceDir,
       sessionId,

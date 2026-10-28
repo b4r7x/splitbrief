@@ -40,7 +40,10 @@ it.each(['live', 'transcript'] as const)(
   },
 );
 
-it('keeps the review identity separate from the waiting suffix', () => {
+it.each([
+  ['choosing-checks', 'choosing checks'],
+  ['verify', 'verifying findings'],
+] as const)('keeps the review identity separate from the %s suffix', (step, words) => {
   resetWorkflow();
   addEvent({
     type: 'review_started',
@@ -49,7 +52,7 @@ it('keeps the review identity separate from the waiting suffix', () => {
     scope: 'final',
     tool: 'codex',
   });
-  addEvent({ type: 'review_step', ts: 1_000, phase: 'final-review', step: 'choosing-checks' });
+  addEvent({ type: 'review_step', ts: 1_000, phase: 'final-review', step });
   const operation = operationsStore.get().active;
   expect(reviewActivityParts(operation, 'codex · gpt-5')).toEqual({
     prefix: [
@@ -59,7 +62,7 @@ it('keeps the review identity separate from the waiting suffix', () => {
     identity: { text: 'codex · gpt-5', tone: 'reviewer' },
     suffix: [
       { text: ' · ', tone: 'textDim' },
-      { text: 'choosing checks', tone: 'textDim' },
+      { text: words, tone: 'textDim' },
     ],
   });
   resetWorkflow();
