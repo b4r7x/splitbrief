@@ -725,7 +725,7 @@ const checkpointPredicates = [
       'Final review after 1 fix cycle passed',
       'Review T002 failed',
       'Blocking F1',
-      'PLAN rejected 1 decision for T003',
+      'attempt 2 of 4',
       'fixes T003',
     ),
   ],
@@ -824,8 +824,6 @@ const checkpointPredicates = [
   ],
   [checkpointId('consult-answer-default'), includesAll('Which store?', 'You → memory')],
   [checkpointId('consult-answer-typed'), includesAll('Which store?', 'You → redis')],
-  [checkpointId('decision-question'), includesAll('Did you ask for greet')],
-  [checkpointId('decision-guidance'), includesAll('guidance', 'Yes, keep the default export')],
   [
     checkpointId('paused-mid-brief'),
     includesAll('⏎ resume', 'Stopped at T', 'Partial changes kept'),

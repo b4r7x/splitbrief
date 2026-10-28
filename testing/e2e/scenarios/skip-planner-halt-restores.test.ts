@@ -7,11 +7,11 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   ALPHA_FILE,
-  decisionConfirmHaltFixture,
+  consultFailureHaltFixture,
   dependentPlan,
   plan,
   startToHalt,
-} from '../helpers/decision-confirm-halt.js';
+} from '../helpers/consult-failure-halt.js';
 import { cli, readState, type StopContinueFixture } from '../helpers/stop-continue-fixture.js';
 import { transcriptText } from '../helpers/transcript-text.js';
 
@@ -29,18 +29,19 @@ afterEach(() => {
   restorePath = undefined;
 });
 
-async function haltOnDecisionConfirm(planned = plan) {
-  ({ fixture, restorePath } = decisionConfirmHaltFixture(planned));
+async function haltOnFailedConsult(planned = plan) {
+  ({ fixture, restorePath } = consultFailureHaltFixture(planned));
   return { target: fixture, sessionId: await startToHalt(fixture) };
 }
 
 describe('e2e: Skip on a planner-call halt', () => {
-  it('takes back the skipped brief file, so the review and the record do not carry it', async () => {
-    const { target, sessionId } = await haltOnDecisionConfirm();
+  it('leaves no brief file behind, so the review and the record do not carry it', async () => {
+    const { target, sessionId } = await haltOnFailedConsult();
     const halted = readState(target, sessionId);
     expect(halted.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', taskId: 'T001' });
     const workspaceDir = halted.workspace?.path ?? target.projectDir;
-    expect(existsSync(join(workspaceDir, ALPHA_FILE))).toBe(true);
+    // The ladder halt after a failed check takes the brief's file back at once.
+    expect(existsSync(join(workspaceDir, ALPHA_FILE))).toBe(false);
 
     const skipped = await cli(target, ['continue', sessionId, '--plain', '--action', 'skip']);
 
@@ -62,16 +63,16 @@ describe('e2e: Skip on a planner-call halt', () => {
     );
     const lines = transcriptText(events).split('\n');
     const recoveryRows = lines.filter((line) => line.includes('Recovery  '));
-    expect(recoveryRows).toHaveLength(1);
-    expect(recoveryRows[0]).toMatch(/Skip task.*skipped\s*$/);
-    const recoveryAt = lines.findIndex((line) => line.includes('Recovery  '));
-    expect(
-      lines.findIndex((line) => line.includes('Restored 1 failing task change')),
-    ).toBeGreaterThan(recoveryAt);
+    expect(recoveryRows).toHaveLength(2);
+    expect(recoveryRows[0]).toMatch(/Planner call failed\s*$/);
+    expect(recoveryRows[1]).toMatch(/Skip task.*skipped\s*$/);
+    const restoredAt = lines.findIndex((line) => line.includes('Restored 1 failing task change'));
+    expect(restoredAt).toBeGreaterThan(lines.indexOf(recoveryRows[0] ?? ''));
+    expect(lines.indexOf(recoveryRows[1] ?? '')).toBeGreaterThan(restoredAt);
   });
 
   it('shows Skip task on the dependency halt of the next brief as one Recovery row', async () => {
-    const { target, sessionId } = await haltOnDecisionConfirm(dependentPlan);
+    const { target, sessionId } = await haltOnFailedConsult(dependentPlan);
     const firstSkip = await cli(target, ['continue', sessionId, '--plain', '--action', 'skip']);
     expect(firstSkip.exitCode, `${firstSkip.stdout}\n${firstSkip.stderr}`).toBe(1);
     expect(readState(target, sessionId).pendingRecovery).toMatchObject({
@@ -85,10 +86,10 @@ describe('e2e: Skip on a planner-call halt', () => {
     const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
     const lines = transcriptText(events).split('\n');
     const recoveryRows = lines.filter((line) => line.includes('Recovery  '));
-    expect(recoveryRows).toHaveLength(2);
-    expect(recoveryRows[1]).toMatch(/Dependency blocked.*Skip task.*skipped\s*$/);
+    expect(recoveryRows).toHaveLength(3);
+    expect(recoveryRows[2]).toMatch(/Dependency blocked.*Skip task.*skipped\s*$/);
     const settledT002 = lines.findIndex((line) => /T002 Add the beta value .*skipped/.test(line));
-    expect(settledT002).toBeGreaterThan(lines.indexOf(recoveryRows[0] ?? ''));
-    expect(lines.indexOf(recoveryRows[1] ?? '')).toBeGreaterThan(settledT002);
+    expect(settledT002).toBeGreaterThan(lines.indexOf(recoveryRows[1] ?? ''));
+    expect(lines.indexOf(recoveryRows[2] ?? '')).toBeGreaterThan(settledT002);
   });
 });

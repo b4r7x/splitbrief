@@ -100,8 +100,7 @@ const refusedCheck =
   'Check T003-K1 is refused: `grep -F alpha src/alpha.mjs` runs a program outside the allowlist (grep).';
 const refusedTestCheck =
   'Check T003-K2 is refused: a `test` check names one test file, and `node --test src/alpha-type.test.mjs` is not one file.';
-const rejectedDecision = { what: 'Exported beta as a number', why: 'A number is simpler.' };
-const rejectReason = 'Criterion C2 needs beta to be the string beta; keep the string.';
+const numberDecision = { what: 'Exported beta as a number', why: 'A number is simpler.' };
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -130,17 +129,18 @@ function transcriptRows(events: EngineEvent[]): string[] {
 }
 
 /**
- * `needsFix`: the T001 review fails with fix work whose first answer is refused. `rejectDecision`:
- * T002's first attempt reports a decision that PLAN rejects. `testCommand` runs the test checks.
+ * `needsFix`: the T001 review fails with fix work whose first answer is refused. `retryBeta`:
+ * T002's first attempt reports a decision and writes a beta its check fails, so the brief
+ * retries. `testCommand` runs the test checks.
  * A review marks every criterion unverified when its prompt shows a check that did not run.
  */
-async function startCadence(needsFix: boolean, rejectDecision: boolean, testCommand: string) {
+async function startCadence(needsFix: boolean, retryBeta: boolean, testCommand: string) {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
   restorePath = activateSafeCliShimPath(target.tmpDir);
   const callsPath = join(target.tmpDir, 'calls.jsonl');
   const fixStatePath = join(target.tmpDir, 'fix-state.json');
-  const reportedPath = join(target.tmpDir, 'decision-reported');
+  const reportedPath = join(target.tmpDir, 'beta-reported');
   const plannerPath = join(target.tmpDir, 'planner.mjs');
   const implementerPath = join(target.tmpDir, 'implementer.mjs');
   const offlinePath = join(target.tmpDir, 'offline.mjs');
@@ -209,9 +209,6 @@ if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final 
       evidence: 'A required check did not run.',
     }));
   }
-} else if (prompt.includes('Confirm reported decisions')) {
-  kind = 'decision-confirm';
-  answer = ${JSON.stringify({ answer: { diagnosis: rejectReason, action: 'confirm', decisions: [] } })};
 } else if (prompt.includes('# Plan the change')) {
   kind = 'plan';
   answer = ${JSON.stringify({ result: plan })};
@@ -265,7 +262,7 @@ if (entry.task.id === 'T003') {
 }
 appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ kind: 'implement', taskId: entry.task.id }) + '\\n');
 const reports =
-  ${rejectDecision} && entry.task.id === 'T002' && !existsSync(${JSON.stringify(reportedPath)});
+  ${retryBeta} && entry.task.id === 'T002' && !existsSync(${JSON.stringify(reportedPath)});
 const files = reports ? { ...entry.files, 'src/beta.mjs': 'export const beta = 2;\\n' } : entry.files;
 for (const [file, source] of Object.entries(files)) {
   mkdirSync(dirname(file), { recursive: true });
@@ -279,7 +276,7 @@ if (reports) {
     filesChanged: Object.keys(entry.files),
     touchedNotSuggested: [],
     notes: null,
-    decisions: [${JSON.stringify(rejectedDecision)}],
+    decisions: [${JSON.stringify(numberDecision)}],
   }));
 }
 `,
@@ -308,10 +305,10 @@ if (reports) {
   return { run, calls, fixStatePath, target, sessionId };
 }
 
-async function runCadence(needsFix: boolean, rejectDecision = false) {
+async function runCadence(needsFix: boolean, retryBeta = false) {
   const { run, calls, fixStatePath, target, sessionId } = await startCadence(
     needsFix,
-    rejectDecision,
+    retryBeta,
     'node --test',
   );
   expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
@@ -469,35 +466,22 @@ describe('e2e: task review cadence', () => {
     ).toEqual(state.tasks.map((task) => ({ id: task.id, title: task.title, status: task.status })));
   });
 
-  it('sends the brief back to BUILD with the reason when PLAN rejects the decisions it reported', async () => {
+  it('retries a brief whose check fails without a review between, and keeps its decision once', async () => {
     const { state, events, calls, target } = await runCadence(false, true);
     expect(calls.map((call) => call.kind)).toEqual([
       'plan',
       'implement',
       'task-review',
       'implement',
-      'decision-confirm',
       'implement',
       'task-review',
       'final-review',
     ]);
-    expect(events.find((event) => event.type === 'consult_answered')).toMatchObject({
-      taskId: 'T002',
-      reason: 'deviation',
-      action: 'confirm',
-      decisionCount: 0,
-      rejectedCount: 1,
-      diagnosis: rejectReason,
-    });
-    const retry = events.find((event) => event.type === 'task_retry');
-    expect(retry).toMatchObject({ taskId: 'T002' });
-    expect(retry?.type === 'task_retry' ? retry.error : '').toContain(rejectReason);
-    expect(transcriptRows(events)).toContainEqual(
-      expect.stringContaining(`PLAN rejected 1 decision for T002 · ${rejectReason}`),
-    );
-    expect(state.plan?.decisions.map((decision) => decision.text).join('\n')).not.toContain(
-      rejectedDecision.what,
-    );
+    expect(events.some((event) => event.type === 'consult_answered')).toBe(false);
+    expect(events.find((event) => event.type === 'task_retry')).toMatchObject({ taskId: 'T002' });
+    expect(state.plan?.decisions.filter((decision) => decision.taskId === 'T002')).toEqual([
+      { text: `${numberDecision.what} — ${numberDecision.why}`, taskId: 'T002' },
+    ]);
     expect(readFileSync(join(target.projectDir, 'src/beta.mjs'), 'utf8')).toBe(
       "export const beta = 'beta';\n",
     );

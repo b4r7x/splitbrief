@@ -6,7 +6,7 @@ import { resetWorkflowControls } from '../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import { extractLastJsonObject } from '../../engine/runners/typed-output.js';
-import { ImplementerReportSchema } from '../../core/schemas/consult.js';
+import { readImplementerReport } from '../../core/schemas/consult.js';
 import { processWentAway } from '../../core/sessions/run-status.js';
 import { interruptedCallEvents } from '../../engine/calls/interrupted.js';
 
@@ -65,10 +65,8 @@ function restoreCompletionFiles(events: EngineEvent[]): EngineEvent[] {
     ) {
       const extracted = extractLastJsonObject(event.text);
       if (extracted.kind === 'ok') {
-        const report = ImplementerReportSchema.safeParse(extracted.value);
-        if (report.success && report.data.status === 'done') {
-          reportedFiles = [...new Set(report.data.filesChanged)];
-        }
+        const report = readImplementerReport(extracted.value)?.report;
+        if (report?.status === 'done') reportedFiles = [...new Set(report.filesChanged)];
       }
     } else if (
       event.type === 'implementer_generate_done' &&

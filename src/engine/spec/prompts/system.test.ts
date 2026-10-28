@@ -60,7 +60,7 @@ describe('buildImplementerSystemPreamble', () => {
     );
 
     expect(prompt).toContain(
-      '{"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null,"decisions":[]}',
+      '{"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null,"decisions":[{"what":"<decision>","why":"<reason>"}]}',
     );
     expect(prompt).toContain(
       '{"status":"blocked","question":"<question>","filesNeeded":["<file>"]}',

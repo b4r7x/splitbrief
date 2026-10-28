@@ -1091,19 +1091,13 @@ describe('consultSeat', () => {
       seat: 'review',
     },
     {
-      name: 'a fix task that deviated',
-      task: makeTask({ id: 'T003', fix: FIX }),
-      reason: 'deviation',
-      seat: 'plan',
-    },
-    {
       name: 'a rewrite of a fix task',
       task: makeTask({ id: 'T003', fix: FIX, revision: 2 }),
       reason: 'failed',
       seat: 'review',
     },
-  ] as const)('routes $name to the $seat seat', ({ task, reason, seat }) => {
-    expect(consultSeat(task, reason)).toBe(seat);
+  ] as const)('routes $name to the $seat seat', ({ task, seat }) => {
+    expect(consultSeat(task)).toBe(seat);
   });
 });
 
@@ -1130,29 +1124,8 @@ describe('requestConsult seats', () => {
     };
   }
 
-  function request(task: Task, reason: 'failed' | 'deviation') {
-    return {
-      task,
-      reason,
-      failingOutput: 'the fix check is still red',
-      ...(reason === 'deviation' && {
-        report: {
-          status: 'done' as const,
-          filesChanged: [],
-          touchedNotSuggested: [],
-          notes: null,
-          decisions: [{ what: 'Used node:crypto', why: 'It is standard' }],
-        },
-      }),
-    };
-  }
-
-  function confirmAnswer(): ScriptedConsult {
-    return {
-      text: JSON.stringify({
-        answer: { diagnosis: 'A change of how.', action: 'confirm', decisions: [] },
-      }),
-    };
+  function request(task: Task, reason: 'failed') {
+    return { task, reason, failingOutput: 'the fix check is still red' };
   }
 
   it('asks the reviewer about a failed fix task with the full prompt and books its usage', async () => {
@@ -1207,138 +1180,6 @@ describe('requestConsult seats', () => {
     expect(after.lineages?.T003?.consultRecords.at(-1)?.seat).toBe('plan');
     expect(after.tokenUsage.plannerInput).toBe(10);
     expect(after.tokenUsage.reviewerInput).toBe(0);
-  });
-
-  it('keeps a fix task deviation on the planner', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const planner = consultPlanner([confirmAnswer()], true);
-    const reviewer = consultPlanner([], false);
-    const state = fixState();
-    saveState({ projectDir, sessionId }, state);
-    const seen: WorkflowState[] = [];
-    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, reviewer.planner, seen);
-
-    const result = await requestConsult(ctx, request(state.tasks[0]!, 'deviation'));
-
-    expect('answer' in result).toBe(true);
-    expect(reviewer.prompts).toHaveLength(0);
-    expect(planner.contexts.map((context) => context.seat)).toEqual(['planner']);
-    expect(seen.at(-1)?.lineages?.T003?.consultRecords.at(-1)?.seat).toBe('plan');
-  });
-
-  it('applies and counts the reported decisions a confirm names by id, in the implementer words', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const crypto = { what: 'Used node:crypto', why: 'It is standard' };
-    const escaped = { what: 'Wrote the range as \\u0300-\\u036f escapes', why: 'They are exact' };
-    const flag = { what: 'Kept the --json flag', why: 'The criterion needs it' };
-    const renamed = { what: 'Renamed the helper', why: 'The name was taken' };
-    const planner = consultPlanner(
-      [
-        {
-          text: JSON.stringify({
-            answer: {
-              diagnosis:
-                'The node:crypto change and the kept --json output flag keep the criteria.',
-              action: 'confirm',
-              decisionIds: ['d1', 'd3'],
-            },
-          }),
-        },
-      ],
-      true,
-    );
-    const state = consultState();
-    saveState({ projectDir, sessionId }, state);
-    const seen: WorkflowState[] = [];
-    const events = makeBusRecorder();
-    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, planner.planner, seen);
-    const report = {
-      status: 'done' as const,
-      filesChanged: [],
-      touchedNotSuggested: [],
-      notes: null,
-      decisions: [crypto, escaped, flag, renamed],
-    };
-
-    const result = await requestConsult(
-      { ...ctx, bus: events.bus },
-      { ...request(state.tasks[0]!, 'deviation'), report },
-    );
-
-    expect(planner.prompts[0]).toContain(
-      `Decisions: d1: ${crypto.what} — ${crypto.why}; d2: ${escaped.what} — ${escaped.why}; d3: ${flag.what} — ${flag.why}; d4: ${renamed.what} — ${renamed.why}`,
-    );
-    expect('answer' in result && result.answer.answer).toEqual({
-      diagnosis: 'The node:crypto change and the kept --json output flag keep the criteria.',
-      action: 'confirm',
-      decisions: [crypto, flag],
-    });
-    expect(events.events.find((event) => event.type === 'consult_answered')).toMatchObject({
-      action: 'confirm',
-      decisionCount: 2,
-      rejectedCount: 2,
-    });
-    expect(seen.at(-1)?.lineages?.T003?.consultRecords.at(-1)?.answer.answer).toMatchObject({
-      action: 'confirm',
-      decisions: [crypto, flag],
-    });
-  });
-
-  it('accepts no decision from a confirm that names no id, and counts every reported one rejected', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const crypto = { what: 'Used node:crypto', why: 'It is standard' };
-    const planner = consultPlanner(
-      [
-        {
-          text: JSON.stringify({
-            answer: { diagnosis: 'It keeps the criteria.', action: 'confirm', decisions: [crypto] },
-          }),
-        },
-      ],
-      true,
-    );
-    const state = consultState();
-    saveState({ projectDir, sessionId }, state);
-    const events = makeBusRecorder();
-    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, planner.planner, []);
-
-    const result = await requestConsult(
-      { ...ctx, bus: events.bus },
-      request(state.tasks[0]!, 'deviation'),
-    );
-
-    expect('answer' in result && result.answer.answer).toMatchObject({
-      action: 'confirm',
-      decisions: [],
-    });
-    expect(events.events.find((event) => event.type === 'consult_answered')).toMatchObject({
-      decisionCount: 0,
-      rejectedCount: 1,
-    });
-  });
-
-  it('accepts no decision from a confirm on a consult that carries no done report', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const planner = consultPlanner(
-      [
-        {
-          text: JSON.stringify({
-            answer: { diagnosis: 'Nothing was reported.', action: 'confirm', decisionIds: ['d1'] },
-          }),
-        },
-      ],
-      true,
-    );
-    const state = consultState();
-    saveState({ projectDir, sessionId }, state);
-    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, planner.planner, []);
-
-    const result = await requestConsult(ctx, request(state.tasks[0]!, 'failed'));
-
-    expect('answer' in result && result.answer.answer).toMatchObject({
-      action: 'confirm',
-      decisions: [],
-    });
   });
 
   it('lets one planner object answer both seats when no reviewer is configured', async () => {

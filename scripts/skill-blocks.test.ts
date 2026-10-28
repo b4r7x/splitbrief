@@ -182,16 +182,13 @@ describe('skill-blocks', () => {
 
   it('keeps reported decisions out of the consult bounds and replays a continued brief with its errors', () => {
     const contract = renderBlock('consult-table') ?? '';
-    expect(contract).toContain('decision-confirm before validation');
     expect(contract).toContain(
-      "Decision-confirm runs at most once per attempt, bounded by the brief's attempts.",
+      'A done report records its decisions in the plan ledger with the task id before validation.',
     );
     expect(contract).toContain(
-      'It spends no run counter, never a lineage consult or a planner decision.',
+      'Reported decisions spend no run counter, never a lineage consult or a planner decision.',
     );
-    expect(contract).toContain(
-      'A failed or malformed confirm answer warns, leaves the decisions out of the ledger and validates. It never pauses.',
-    );
+    expect(contract).not.toContain('decision-confirm');
     expect(contract).toContain('replays the brief as a retry with the last failing output');
   });
 

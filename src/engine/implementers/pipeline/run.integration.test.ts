@@ -471,11 +471,7 @@ describe('createImplementerBase — typed implementer report', () => {
   });
 
   it('leaves the result unchanged when the reply carries no valid report', async () => {
-    for (const text of [
-      'done, no report',
-      '{"status":"done"}',
-      '{"status":"other","question":"q","filesNeeded":[]}',
-    ]) {
+    for (const text of ['done, no report', '{"status":"other","question":"q","filesNeeded":[]}']) {
       const invoke = vi
         .fn()
         .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text, usage: null }));
@@ -493,6 +489,52 @@ describe('createImplementerBase — typed implementer report', () => {
       expect(result.report).toBeUndefined();
       expect(result.blocked).toBeUndefined();
     }
+  });
+
+  it('keeps the valid fields of a report a weak model shaped wrong, and names the dropped field once', async () => {
+    const { bus, events } = makeBusRecorder();
+    const report = {
+      status: 'done',
+      filesChanged: ['src/hello.ts'],
+      touchedNotSuggested: 'none',
+      notes: 'Wired the export.',
+      decisions: ['Kept the old name'],
+    };
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: `I wrote the module.\n${JSON.stringify(report)}`,
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, invoke, publisher: createImplementerPublisher(bus) }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask({ id: 'T005' }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
+    });
+
+    expect(result.report).toEqual({
+      ...report,
+      touchedNotSuggested: [],
+      decisions: [{ what: 'Kept the old name', why: null }],
+    });
+    const warnings = events.filter((event) => event.type === 'warning');
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        taskId: 'T005',
+        message:
+          'Task T005: the implementer report did not match its contract in touchedNotSuggested; SPLITBRIEF kept the other fields.',
+        category: 'implementer',
+        code: 'implementer_report_field_dropped',
+      }),
+    ]);
   });
 
   it('surfaces a blocked file-bundle as blocked and writes nothing', async () => {

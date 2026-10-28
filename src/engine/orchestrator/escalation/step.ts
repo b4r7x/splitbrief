@@ -1,6 +1,10 @@
 import { loadState } from '../../../core/state/persistence.js';
-import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
-import { addUsageAndSave, rebaseOnPersistedWorkflowState } from '../state-ops.js';
+import { readImplementerReport, type ImplementerReport } from '../../../core/schemas/consult.js';
+import {
+  addUsageAndSave,
+  rebaseOnPersistedWorkflowState,
+  transitionAndSave,
+} from '../state-ops.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAttemptChanges } from '../task/attempt-gate.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
@@ -16,18 +20,17 @@ import { isRecord } from '../../../utils/type-guards.js';
 import { isResumableWorkspaceStop } from '../isolation/retention.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { commitWorkflowState, stateOpsError } from '../state-ops.js';
-import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
 import { withAttemptRestoreScope } from '../task/restore-scope.js';
 
 /** The direct writer's blocked report: the attempt stopped asking for a decision. */
 export type BlockedReport = Extract<ImplementerReport, { status: 'blocked' }>;
 
-/** The direct writer's reported deviation: a done report proposing ledger decisions. */
-type DeviationReport = Extract<ImplementerReport, { status: 'done' }>;
+/** The direct writer's done report: what it changed and the decisions it took. */
+type DoneReport = Extract<ImplementerReport, { status: 'done' }>;
 
 /**
  * A retry outcome, with the blocked report an attempt handed back when it
- * stopped to ask, or the user's answer to a change of what it reported.
+ * stopped to ask, or the user's answer to the brief gate's question.
  */
 export type RetryStepResult = RetryStepOutcome & {
   blocked?: BlockedReport | undefined;
@@ -52,17 +55,13 @@ function blockedReportOf(result: RetryInvokeResult): BlockedReport | undefined {
 }
 
 /**
- * The deviation behind a result, read from the pipeline's own report. A result
- * that carries none — every non-direct writer, every done report that proposes
- * no decision — changes nothing.
+ * The done report behind a result, read from the pipeline's own report. A result
+ * that carries none — every non-direct writer, every blocked report — changes nothing.
  */
-function deviationReportOf(result: RetryInvokeResult): DeviationReport | undefined {
+function doneReportOf(result: RetryInvokeResult): DoneReport | undefined {
   if (!('report' in result)) return undefined;
-  const parsed = ImplementerReportSchema.safeParse(result.report);
-  if (!parsed.success || parsed.data.status !== 'done' || parsed.data.decisions.length === 0) {
-    return undefined;
-  }
-  return parsed.data;
+  const report = readImplementerReport(result.report)?.report;
+  return report?.status === 'done' ? report : undefined;
 }
 
 export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepResult> {
@@ -247,21 +246,14 @@ async function runRetryStepAttempt(
       blocked: false,
     });
   }
-  const actualChangedFiles = gate.approvedFiles;
-  const confirmed = await confirmAttemptDecisions({
-    wctx: ctx,
-    task,
-    state,
-    report: deviationReportOf(retryResult),
-    taskStartSnapshot: ctx.taskStartSnapshot,
-    snapshot: workspace.snapshot,
-    changedFiles: actualChangedFiles,
-  });
-  state = confirmed.state;
-  if (confirmed.kind === 'answer') {
-    return { state, task, lastError: confirmed.answer, attempts, answer: confirmed.answer };
+  const report = doneReportOf(retryResult);
+  if (report !== undefined) {
+    state = transitionAndSave(ctx, state, {
+      type: 'RECORD_DECISIONS',
+      taskId: task.id,
+      decisions: report.decisions,
+    });
   }
-  if (confirmed.kind === 'retry') return { state, task, lastError: confirmed.error, attempts };
   const commitResult = await validateAndCommit({
     ctx,
     task,

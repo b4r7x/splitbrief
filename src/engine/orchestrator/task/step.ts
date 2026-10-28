@@ -54,7 +54,6 @@ import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { consultSeat, requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { consultAttemptError, guidanceInstructions } from '../escalation/consult-guidance.js';
-import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
 
 function recordApprovalDenial(opts: {
   wctx: WorkflowContext;
@@ -205,7 +204,7 @@ async function refreshStaleTask(input: {
       callbacks: opts.wctx.callbacks,
       sinks: opts.wctx.sinks,
       state,
-      seat: consultSeat(task, 'stale'),
+      seat: consultSeat(task),
       ...(opts.wctx.signal !== undefined && { signal: opts.wctx.signal }),
       changedFiles: [],
       taskStartSnapshot: null,
@@ -279,7 +278,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   try {
     staleRefresh = await refreshStaleTask({ opts, task, state });
   } catch (err) {
-    const seat = consultSeat(task, 'stale');
+    const seat = consultSeat(task);
     return handleTaskPlannerCallFailure({
       wctx,
       task,
@@ -303,7 +302,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       : consultAttemptError({
           lastError: `The task's inputs changed since the brief was compiled: ${taskInputFiles(task).join(', ')}`,
           instructions: guidance,
-          seat: consultSeat(task, 'stale'),
+          seat: consultSeat(task),
         });
 
   setCurrentTask(task);
@@ -470,53 +469,13 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   const taskChangedFiles = await getChangedFilesSinceSnapshot(wctx.workspaceDir, taskStartSnapshot);
 
   const report = implState.implResult.report;
-  let confirmed: Awaited<ReturnType<typeof confirmAttemptDecisions>>;
-  try {
-    confirmed = await confirmAttemptDecisions({
-      wctx,
-      task,
-      state,
-      report: report?.status === 'done' ? report : undefined,
-      taskStartSnapshot,
-      snapshot: implState.workspace.snapshot,
-      changedFiles: gate.approvedFiles,
-      onStateChange: (next) => {
-        state = next;
-        setTrackedState(next);
-      },
+  if (report?.status === 'done') {
+    state = transitionAndSave(wctx, state, {
+      type: 'RECORD_DECISIONS',
+      taskId: task.id,
+      decisions: report.decisions,
     });
-  } catch (err) {
-    if (!isAbortError(err) && !wctx.signal?.aborted) {
-      state = transitionAndSave(wctx, state, { type: 'COUNT_ATTEMPT', taskId: task.id });
-      setTrackedState(state);
-    }
-    return handleTaskPlannerCallFailure({
-      wctx,
-      task,
-      state,
-      initialChangedFiles: taskChangedFiles,
-      setTrackedState,
-      err,
-      label: consultFailureLabel('plan', task.id),
-    });
-  }
-  state = confirmed.state;
-  if (confirmed.kind !== 'validate') {
-    const consulted = await retryAndRecord({
-      wctx,
-      task,
-      state,
-      taskStartSnapshot,
-      initialError: confirmed.kind === 'answer' ? confirmed.answer : confirmed.error,
-      ...(confirmed.kind === 'answer' && { initialAnswer: confirmed.answer }),
-      initialChangedFiles: taskChangedFiles,
-      tokensBefore,
-      taskBreakdowns,
-      setTrackedState,
-    });
-    if (consultHandedBackToLoop(consulted.state, task))
-      return (await rerunReplacedTask(opts, consulted.state)) ?? consulted.state;
-    return consulted.state;
+    setTrackedState(state);
   }
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'TASK_SENT' });

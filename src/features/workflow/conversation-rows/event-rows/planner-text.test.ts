@@ -267,6 +267,28 @@ describe('planner text rows', () => {
     expect(lines.every((line) => getTerminalCellWidth(line) <= 2)).toBe(true);
   });
 
+  it('renders a hand-back with string decisions and a bad field as a report row, not raw JSON', () => {
+    const rows = eventRows({
+      event: {
+        type: 'planner_text',
+        ts: 0,
+        phase: 'implementing',
+        role: 'implementer',
+        content: 'markdown',
+        text: [
+          'Implemented the row.',
+          '',
+          '{"status":"done","filesChanged":["src/a.ts"],"touchedNotSuggested":"none","notes":null,"decisions":["kept the old name","added a test"]}',
+        ].join('\n'),
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual(['Implemented the row.', 'Report  done · 2 decisions']);
+  });
+
   it('renders the implementer’s trailing hand-back as one dim report row', () => {
     const event: EngineEvent = {
       type: 'planner_text',

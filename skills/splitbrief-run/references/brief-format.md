@@ -58,7 +58,7 @@ Place batch ordering in depends_on. Keep the numeric batch and registered check 
 
     **Plan context (read-only):**
     <plan summary>
-    Decisions: <confirmed plan decisions, including task ids>
+    Decisions: <plan decisions, including task ids>
     Criteria this task serves: <criterion ids and text>
 
     ### Signature
@@ -107,7 +107,7 @@ Place batch ordering in depends_on. Keep the numeric batch and registered check 
     End with one JSON object and nothing after it. Use decisions: [] when you propose no deviation.
     {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null,"decisions":[{"what":"<proposed deviation>","why":"<reason>"}]}
     If blocked, end with {"status":"blocked","question":"<question>","filesNeeded":["<file>"]} instead. The session consults at once.
-    A decision proposes a deviation. The planner confirms how; the user decides changes to what.
+    A decision states a deviation and why. The plan ledger records it with the task id, and the reviewer judges it.
     No proposed deviation: {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[],"decisions":[],"notes":null}
 <!-- /generated -->
 
@@ -118,7 +118,7 @@ Attach the current code of contextFiles in their read-only context sections.
 ## Plan context and report placement
 
 Keep Plan context in the bold subsection inside Description shown above.
-Its summary, confirmed decisions with task ids, and criterion text come from references/planning.md.
+Its summary, the decisions with task ids, and criterion text come from references/planning.md.
 Append the report from references/implementer-prompt.md after Constraints under the bold label.
 Neither subsection adds a Task Brief heading or frontmatter key.
 Record validation commands and sources in Constraints as session-run commands, per references/gates.md.

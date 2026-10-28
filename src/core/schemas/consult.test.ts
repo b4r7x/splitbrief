@@ -3,17 +3,12 @@ import { z } from 'zod';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { isRecord } from '../../utils/type-guards.js';
 import {
-  ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
-  AnsweredDeviationConsultAnswerSchema,
   CONSULT_ANSWER_JSON_SCHEMA,
   ConsultAnswerSchema,
-  DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
-  DeviationConsultAnswerSchema,
   ImplementerReportSchema,
   STALE_CONSULT_ANSWER_JSON_SCHEMA,
   StaleConsultAnswerSchema,
-  acceptedDecisions,
-  reportedDecisionId,
+  readImplementerReport,
 } from './consult.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from './plan.js';
 
@@ -77,6 +72,12 @@ describe('ConsultAnswerSchema', () => {
     ).toBe(false);
   });
 
+  it('refuses the retired confirm action', () => {
+    expect(
+      ConsultAnswerSchema.safeParse(answer({ action: 'confirm', decisionIds: ['d1'] })).success,
+    ).toBe(false);
+  });
+
   it('strips the draft ref and keeps a root object', () => {
     expect(CONSULT_ANSWER_JSON_SCHEMA).not.toHaveProperty('$schema');
     expect(CONSULT_ANSWER_JSON_SCHEMA.type).toBe('object');
@@ -94,41 +95,6 @@ describe('StaleConsultAnswerSchema', () => {
       tasks: [makeTaskSpec(), makeTaskSpec({ id: 'T002' })],
     });
     expect(StaleConsultAnswerSchema.safeParse(split).success).toBe(false);
-  });
-});
-
-describe.each([
-  ['DeviationConsultAnswerSchema', DeviationConsultAnswerSchema, false],
-  ['AnsweredDeviationConsultAnswerSchema', AnsweredDeviationConsultAnswerSchema, true],
-] as const)('%s', (_name, schema, takesGuidance) => {
-  const takes = (value: unknown): boolean => schema.safeParse(value).success;
-  const confirm = answer({ action: 'confirm', decisionIds: ['d1'] });
-
-  it(`takes confirm and ask-user, and guidance only once the user answered (${takesGuidance})`, () => {
-    expect(takes(confirm)).toBe(true);
-    expect(takes(answer({ action: 'guidance', instructions: 'Narrow it', context: null }))).toBe(
-      takesGuidance,
-    );
-    expect(takes(answer({ action: 'rewrite-task', task: makeTaskSpec() }))).toBe(false);
-    expect(
-      takes(
-        answer({
-          action: 'ask-user',
-          question: 'Keep it?',
-          whyOnlyUserCanAnswer: 'It changes what is built',
-          choices: null,
-          default: null,
-        }),
-      ),
-    ).toBe(true);
-    expect(
-      takes(
-        answer({ action: 'split-task', tasks: [makeTaskSpec(), makeTaskSpec({ id: 'T002' })] }),
-      ),
-    ).toBe(false);
-    expect(takes(answer({ action: 'verify', checkIds: ['K1'], reason: 'Stale check' }))).toBe(
-      false,
-    );
   });
 });
 
@@ -170,53 +136,12 @@ describe('typed seat contracts', () => {
     const contracts = {
       consult: CONSULT_ANSWER_JSON_SCHEMA,
       staleConsult: STALE_CONSULT_ANSWER_JSON_SCHEMA,
-      deviationConsult: DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
-      answeredDeviationConsult: ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
       plan: PLAN_ANSWER_JSON_SCHEMA,
       implementerReport: z.toJSONSchema(ImplementerReportSchema),
     };
     for (const [name, jsonSchema] of Object.entries(contracts)) {
       expect(hasAllOf(jsonSchema), name).toBe(false);
     }
-  });
-
-  it('offers the deviation consult the confirm action as one closed variant', () => {
-    const variant = variantFor(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'confirm');
-    expect(variant).toBeDefined();
-    expect(variant?.additionalProperties).toBe(false);
-    expect(JSON.stringify(variant)).not.toContain('"default"');
-    expect(variantFor(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'split-task')).toBeUndefined();
-    expect(variantFor(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'guidance')).toBeUndefined();
-    expect(variantFor(ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'guidance')).toBeDefined();
-  });
-});
-
-describe('confirm decisions', () => {
-  it('names the accepted reported decisions by id and reads an answer without ids as accepting none', () => {
-    expect(ConsultAnswerSchema.parse(answer({ action: 'confirm', decisionIds: ['d2'] }))).toEqual(
-      answer({ action: 'confirm', decisionIds: ['d2'] }),
-    );
-    const textOnly = answer({
-      action: 'confirm',
-      decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
-    });
-    expect(ConsultAnswerSchema.parse(textOnly)).toEqual(
-      answer({ action: 'confirm', decisionIds: [] }),
-    );
-  });
-
-  it('accepts the reported decisions whose ids the confirm names, in the reported words', () => {
-    const reported = [
-      { what: 'Used node:crypto', why: 'It is standard' },
-      { what: 'Kept the --json flag', why: 'The criterion needs it' },
-      { what: 'Renamed the helper', why: 'The name was taken' },
-    ];
-    expect(reported.map((_, index) => reportedDecisionId(index))).toEqual(['d1', 'd2', 'd3']);
-    expect(acceptedDecisions(reported, ['d3', 'd1', 'd9', 'D2'])).toEqual([
-      reported[0],
-      reported[2],
-    ]);
-    expect(acceptedDecisions(reported, [])).toEqual([]);
   });
 });
 
@@ -261,5 +186,43 @@ describe('ImplementerReportSchema', () => {
       decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
     };
     expect(ImplementerReportSchema.parse(done)).toEqual(done);
+  });
+});
+
+describe('readImplementerReport', () => {
+  const done = {
+    status: 'done',
+    filesChanged: ['src/hello.ts'],
+    touchedNotSuggested: [],
+    notes: 'Wired the export.',
+    decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
+  };
+
+  it('reads a valid report as it is', () => {
+    expect(readImplementerReport(done)).toEqual({ report: done, dropped: [] });
+  });
+
+  it('reads a decision written as text as a decision with no reason', () => {
+    expect(readImplementerReport({ ...done, decisions: ['Kept the old name'] })).toEqual({
+      report: { ...done, decisions: [{ what: 'Kept the old name', why: null }] },
+      dropped: [],
+    });
+  });
+
+  it('keeps every valid field of a done report and names each field it drops', () => {
+    expect(
+      readImplementerReport({ ...done, touchedNotSuggested: 'none', notes: undefined }),
+    ).toEqual({
+      report: { ...done, touchedNotSuggested: [], notes: null },
+      dropped: ['touchedNotSuggested', 'notes'],
+    });
+  });
+
+  it('reads no report without a status it knows, and no blocked report with a bad field', () => {
+    expect(readImplementerReport({ ...done, status: 'finished' })).toBeUndefined();
+    expect(readImplementerReport('done')).toBeUndefined();
+    expect(
+      readImplementerReport({ status: 'blocked', question: 7, filesNeeded: [] }),
+    ).toBeUndefined();
   });
 });

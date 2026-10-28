@@ -31,7 +31,7 @@ const plan = makePlanProposal({
   criteria: [{ id: 'C1', text: 'clamp bounds a number.', checkIds: ['T001-K1'] }],
   tasks: [clamp],
 });
-const decision = { what: 'Kept clamp in one module', why: 'The test imports it from there.' };
+const QUESTION = 'Which module should export clamp?';
 
 let fixture: StopContinueFixture | undefined;
 let ui: ReturnType<typeof renderFeature> | undefined;
@@ -50,7 +50,10 @@ afterEach(() => {
   restorePath = undefined;
 });
 
-/** A run whose planner crashes on the decision confirm, so the two-file brief halts. */
+/**
+ * A run whose implementer reports itself blocked and whose planner crashes on the consult, so the
+ * two-file brief halts.
+ */
 async function haltTwoFileBrief() {
   fixture = createStopContinueFixture(() => '');
   const target = fixture;
@@ -68,7 +71,8 @@ async function haltTwoFileBrief() {
     `const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
-if (prompt.includes('Confirm reported decisions')) {
+const heading = prompt.split('\\n').find((line) => line.startsWith('# '));
+if (heading === '# Consult on a failing task' || heading === '# Consult continued') {
   process.stderr.write('The planner process crashed.\\n');
   process.exit(1);
 }
@@ -84,13 +88,7 @@ mkdirSync('lib', { recursive: true });
 mkdirSync('test', { recursive: true });
 writeFileSync(${JSON.stringify(SOURCE_FILE)}, 'export const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));\\n');
 writeFileSync(${JSON.stringify(TEST_FILE)}, "import { clamp } from '../lib/clamp.mjs';\\nif (clamp(5, 0, 3) !== 3) process.exit(1);\\n");
-console.log(JSON.stringify({
-  status: 'done',
-  filesChanged: [${JSON.stringify(SOURCE_FILE)}, ${JSON.stringify(TEST_FILE)}],
-  touchedNotSuggested: [],
-  notes: null,
-  decisions: [${JSON.stringify(decision)}],
-}));
+console.log(JSON.stringify({ status: 'blocked', question: ${JSON.stringify(QUESTION)}, filesNeeded: [] }));
 `,
   );
   const config = loadConfig(target.projectDir).config;

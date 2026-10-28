@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
-import type { ResolvedConsultAnswer } from '../../../core/schemas/consult.js';
+import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
 import type {
@@ -63,13 +63,13 @@ function planWith(checks: Check[], checkIds: string[] = ['K1']): Plan {
   };
 }
 
-function verify(checkIds: string[], reason: string): ResolvedConsultAnswer {
+function verify(checkIds: string[], reason: string): ConsultAnswer {
   return {
     answer: { diagnosis: 'The check may predate the task', action: 'verify', checkIds, reason },
   };
 }
 
-function askUser(defaultAnswer: string | null): ResolvedConsultAnswer {
+function askUser(defaultAnswer: string | null): ConsultAnswer {
   return {
     answer: {
       diagnosis: 'Only the user knows',

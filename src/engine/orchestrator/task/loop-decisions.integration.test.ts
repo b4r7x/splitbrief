@@ -15,12 +15,11 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import { consultCallAnswering, passingReviewVerdict } from '#testing/helpers/typed-planner.js';
-import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
 import { error } from '../../../utils/error.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
-import type { ConsultAnswer } from '../../../core/schemas/consult.js';
+import type { ConsultAnswer, ReportedDecision } from '../../../core/schemas/consult.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { LineageRecord, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../events/types.js';
@@ -38,7 +37,7 @@ import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 
-type Decision = { what: string; why: string };
+type Decision = ReportedDecision;
 
 const HOW: Decision = {
   what: 'Imported ReviewRecord from schemas/workflow.ts',
@@ -48,8 +47,7 @@ const HOW_TOO: Decision = {
   what: 'Kept the helper private to the module',
   why: 'Only one caller reads it',
 };
-const WHAT: Decision = { what: 'Dropped the --json flag', why: 'It was hard to wire' };
-const ANSWER = 'Keep the --json flag and wire it.';
+const UNREASONED: Decision = { what: 'Kept the old helper name', why: null };
 const TS_ERROR =
   "src/engine/orchestrator/task/loop.ts(5,15): error TS2305: Module '../../../core/schemas/review.js' has no exported member 'ReviewRecord'.";
 const LINT_ERROR = 'prior-run.test.ts:224 Formatter would have printed different content.';
@@ -161,47 +159,6 @@ function scriptedValidator(
   return { formatChangedFiles: vi.fn().mockResolvedValue(undefined), checkRuns };
 }
 
-/** A confirm that accepts the reported decisions with these ids (`d1`, `d2`, …). */
-function confirm(decisionIds: readonly string[]): ConsultAnswer {
-  return {
-    answer: {
-      diagnosis: 'A change of how; every criterion stays.',
-      action: 'confirm',
-      decisionIds: [...decisionIds],
-    },
-  };
-}
-
-function askUser(): ConsultAnswer {
-  return {
-    answer: {
-      diagnosis: 'Dropping the flag changes what is built.',
-      action: 'ask-user',
-      question: 'Keep the --json flag?',
-      whyOnlyUserCanAnswer: 'It changes the accepted outcome.',
-      choices: null,
-      default: null,
-    },
-  };
-}
-
-/** The planner's second decision confirm turns the user's answer into the retry's guidance. */
-function guideAnswer(): ConsultAnswer {
-  return {
-    answer: {
-      diagnosis: 'The user keeps the flag.',
-      action: 'guidance',
-      instructions: ANSWER,
-      context: null,
-    },
-  };
-}
-
-/** Asks about the change of what until the prompt carries the user's answer, then guides. */
-function askThenGuide(prompt: string): ConsultAnswer {
-  return prompt.includes(`Answer: ${ANSWER}`) ? guideAnswer() : askUser();
-}
-
 function guidance(): ConsultAnswer {
   return {
     answer: {
@@ -213,16 +170,12 @@ function guidance(): ConsultAnswer {
   };
 }
 
-/** The planner's prompts, and an answer per kind: decision-confirm prompts carry the deviation reason. */
-function scriptedPlanner(answers: {
-  confirm: (prompt: string) => ConsultAnswer;
-  consult?: () => ConsultAnswer;
-}) {
+/** The planner's consult prompts; with no `consult` answer, a consult fails the test. */
+function scriptedPlanner(answers: { consult?: () => ConsultAnswer }) {
   const prompts: string[] = [];
   const planner = makePlanner({
     typedCall: consultCallAnswering((prompt) => {
       prompts.push(prompt);
-      if (prompt.includes('deviation —')) return answers.confirm(prompt);
       if (answers.consult === undefined) throw new Error('the ladder consulted the planner');
       return answers.consult();
     }),
@@ -230,7 +183,7 @@ function scriptedPlanner(answers: {
   return { planner, prompts };
 }
 
-/** A planner whose every call fails: the decision confirm and the stale consult halt the brief. */
+/** A planner whose every call fails: the failed consult and the stale consult halt the brief. */
 function failingPlanner() {
   return makePlanner({
     typedCall: consultCallAnswering(() => {
@@ -273,10 +226,6 @@ function restoreWarnings(events: readonly EngineEvent[]): string[] {
 function bookedFiles(projectDir: string, sessionId: string, taskId: string): string[] | undefined {
   return readEvidenceLedger({ projectDir, sessionId })?.tasks.find((entry) => entry.id === taskId)
     ?.changedFiles;
-}
-
-function isDecisionConfirm(prompt: string): boolean {
-  return prompt.includes('deviation —');
 }
 
 function eventTypes(events: readonly EngineEvent[]): string[] {
@@ -325,22 +274,49 @@ async function runLoop(opts: {
 }
 
 describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
-  it('confirms how-only decisions, then a red validation retries with the exact errors before any consult', async () => {
+  it('records the decisions of a done report in the plan ledger with the task id, with no planner call', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+    const implementer = decidingImplementer([[HOW, UNREASONED]]);
+    const validator = scriptedValidator({});
+    const { planner, prompts } = scriptedPlanner({});
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runLoop({
+      projectDir,
+      sessionId,
+      state: stateWithPlan([task]),
+      implementer,
+      validator,
+      planner,
+      bus,
+    });
+
+    expect(result.status).toBe('complete');
+    expect(prompts).toEqual([]);
+    expect(eventTypes(events)).toEqual([]);
+    expect(validator.checkRuns).toHaveBeenCalledTimes(1);
+    const ledger = [
+      { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
+      { text: UNREASONED.what, taskId: 'T001' },
+    ];
+    expect(result.state.plan?.decisions).toEqual(ledger);
+    expect(loadState({ projectDir, sessionId })?.plan?.decisions).toEqual(ledger);
+    expect(result.state.plannerCalls?.used ?? 0).toBe(0);
+  });
+
+  it('records a decision once when every retry reports it again, and retries a red validation with the exact errors', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW], [HOW], [HOW]]);
     const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
-    const { planner, prompts } = scriptedPlanner({
-      confirm: () => confirm(['d1']),
-      consult: guidance,
-    });
+    const { planner, prompts } = scriptedPlanner({ consult: guidance });
     const { bus, events } = makeBusRecorder();
 
     const result = await runLoop({
       projectDir,
       sessionId,
-      // The stale consult already spent one of the lineage's two consults, as in a real run.
-      state: stateWithPlan([task], { lineages: { T001: lineage({ consults: 1 }) } }),
+      state: stateWithPlan([task]),
       implementer,
       validator,
       planner,
@@ -349,42 +325,27 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(result.status).toBe('complete');
-    expect(eventTypes(events)).toEqual([
-      'consult:deviation:confirm',
-      'retry',
-      'consult:failed:guidance',
-    ]);
-
-    // The local retry carried the exact failing output; the consult got the retry's own errors.
+    expect(eventTypes(events)).toEqual(['retry', 'consult:failed:guidance']);
     const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
     expect(retries[0]?.kind).toBe('local');
     expect(retries[0]?.error).toContain(TS_ERROR);
     expect(retries[1]?.kind).toBe('consult');
-    const consults = prompts.filter((prompt) => !isDecisionConfirm(prompt));
-    expect(consults).toHaveLength(1);
-    expect(consults[0]).toContain('failed —');
-    expect(consults[0]).toContain(LINT_ERROR);
-
-    // The retries handed back the same decision: confirmed once, recorded once.
-    expect(prompts.filter(isDecisionConfirm)).toHaveLength(1);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('failed —');
+    expect(prompts[0]).toContain(LINT_ERROR);
     expect(result.state.plan?.decisions).toEqual([
       { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
     ]);
-
-    expect(result.state.lineages?.T001).toMatchObject({ consults: 2 });
     expect(result.state.plannerCalls?.used).toBe(1);
   });
 
-  it('confirms only the decisions the ledger does not hold yet', async () => {
+  it('records a new decision a retry reports beside the decision of the attempt before it', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW], [HOW, HOW_TOO]]);
     const validator = scriptedValidator({ T001: [TS_ERROR, null] });
-    const confirmations = [['d1'], ['d1']];
-    const { planner, prompts } = scriptedPlanner({
-      confirm: () => confirm(confirmations.shift() ?? []),
-    });
-    const { bus } = makeBusRecorder();
+    const { planner, prompts } = scriptedPlanner({});
+    const { bus, events } = makeBusRecorder();
 
     const result = await runLoop({
       projectDir,
@@ -397,520 +358,12 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     });
 
     expect(result.status).toBe('complete');
-    const asked = prompts.filter(isDecisionConfirm);
-    expect(asked).toHaveLength(2);
-    expect(asked[1]).toContain(`Decisions: d1: ${HOW_TOO.what}`);
-    expect(asked[1]).not.toContain(`d1: ${HOW.what}`);
+    expect(eventTypes(events)).toEqual(['retry']);
+    expect(prompts).toEqual([]);
     expect(result.state.plan?.decisions).toEqual([
       { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
       { text: `${HOW_TOO.what} — ${HOW_TOO.why}`, taskId: 'T001' },
     ]);
-    expect(result.state.plannerCalls?.used ?? 0).toBe(0);
-  });
-
-  it('retries a rejected decision with the planner diagnosis before any validation', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[WHAT], []]);
-    const validator = scriptedValidator({});
-    const diagnosis = 'Dropping the --json flag breaks the accepted outcome; keep the flag.';
-    const { planner, prompts } = scriptedPlanner({
-      confirm: () => ({ answer: { diagnosis, action: 'confirm', decisionIds: [] } }),
-    });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      bus,
-    });
-
-    expect(result.status).toBe('complete');
-    expect(eventTypes(events)).toEqual(['consult:deviation:confirm', 'retry']);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'consult_answered',
-        action: 'confirm',
-        decisionCount: 0,
-        rejectedCount: 1,
-        diagnosis,
-      }),
-    );
-    // The rejected attempt never reached its brief gate: only the retry's work was validated.
-    // The task review takes that result: no file changed since.
-    expect(validator.checkRuns.mock.calls.filter(([id]) => id === 'T001')).toHaveLength(1);
-    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries).toHaveLength(1);
-    expect(retries[0]?.error).toContain(diagnosis);
-    expect(prompts.filter(isDecisionConfirm)).toHaveLength(1);
-    expect(result.state.plan?.decisions).toEqual([]);
-  });
-
-  it('rejects a reported decision whose id the confirm leaves out, and keeps it out of the ledger', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[WHAT], []]);
-    const validator = scriptedValidator({});
-    const { planner } = scriptedPlanner({ confirm: () => confirm(['d2']) });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      bus,
-    });
-
-    expect(result.status).toBe('complete');
-    expect(eventTypes(events)).toEqual(['consult:deviation:confirm', 'retry']);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'consult_answered',
-        action: 'confirm',
-        decisionCount: 0,
-        rejectedCount: 1,
-      }),
-    );
-    expect(validator.checkRuns.mock.calls.filter(([id]) => id === 'T001')).toHaveLength(1);
-    expect(result.state.plan?.decisions).toEqual([]);
-  });
-
-  it('confirms decisions with the consult and planner-call bounds spent, and never halts', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[HOW, HOW_TOO]]);
-    const validator = scriptedValidator({});
-    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm(['d1', 'd2']) });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task], {
-        lineages: { T001: lineage({ consults: 2 }) },
-        plannerCalls: { used: 10, allowance: 10 },
-      }),
-      implementer,
-      validator,
-      planner,
-      bus,
-    });
-
-    expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.status).toBe('complete');
-    expect(prompts).toHaveLength(1);
-    expect(eventTypes(events)).toEqual(['consult:deviation:confirm']);
-    expect(events.some((event) => event.type === 'task_escalating')).toBe(false);
-    expect(result.state.lineages?.T001?.consults).toBe(2);
-    expect(result.state.plannerCalls).toEqual({ used: 10, allowance: 10 });
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'consult_answered',
-        taskId: 'T001',
-        reason: 'deviation',
-        action: 'confirm',
-        decisionCount: 2,
-      }),
-    );
-  });
-
-  it('puts a change of what to the user, asks the planner again with the answer, and retries on its guidance without a retry row or a consult', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[WHAT], []]);
-    const validator = scriptedValidator({});
-    const { planner, prompts } = scriptedPlanner({ confirm: askThenGuide });
-    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
-      bus,
-    });
-
-    expect(result.status).toBe('complete');
-    expect(onPlannerReply).toHaveBeenCalledTimes(1);
-    expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain(`Question: Keep the --json flag?\nAnswer: ${ANSWER}`);
-    expect(result.state.lineages?.T001?.corrections).toEqual([
-      `Question: Keep the --json flag?\nAnswer: ${ANSWER}`,
-    ]);
-    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries).toHaveLength(1);
-    expect(retries[0]?.error).toContain(ANSWER);
-    // The answer is delivered outside the retry rung: the consult rows record it, no task_retry.
-    expect(eventTypes(events)).toEqual([
-      'consult:deviation:ask-user',
-      'consult:deviation:guidance',
-    ]);
-    expect(result.state.plan?.decisions).toEqual([]);
-    expect(result.state.plannerCalls?.used ?? 0).toBe(0);
-  });
-
-  it('delivers the answer outside the retry rung, so a red validation after it still retries with the exact errors before any consult', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    // The attempt reports a change of what; the answered attempt reports a change of how and
-    // fails typecheck; the one local retry passes. This is T005 of a real run.
-    const implementer = decidingImplementer([[WHAT], [HOW], [HOW]]);
-    const validator = scriptedValidator({ T001: [TS_ERROR, null] });
-    const confirms = [askUser, guideAnswer, () => confirm(['d1'])];
-    const { planner, prompts } = scriptedPlanner({
-      confirm: () => (confirms.shift() ?? askUser)(),
-    });
-    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
-      bus,
-    });
-
-    expect(eventTypes(events)).toEqual([
-      'consult:deviation:ask-user',
-      'consult:deviation:guidance',
-      'consult:deviation:confirm',
-      'retry',
-    ]);
-    expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.status).toBe('complete');
-    const retryRows = events.filter((event) => event.type === 'task_retry');
-    expect(retryRows).toHaveLength(1);
-    expect(retryRows[0]).toMatchObject({ attempt: 1, maxRetries: 1 });
-    expect(retryRows[0]).toMatchObject({ error: expect.stringContaining(TS_ERROR) });
-    expect(events.some((event) => event.type === 'task_escalating')).toBe(false);
-
-    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries).toHaveLength(2);
-    expect(retries[0]?.error).toContain(ANSWER);
-    expect(retries[1]?.kind).toBe('local');
-    expect(retries[1]?.error).toContain(TS_ERROR);
-    expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toEqual([]);
-    expect(result.state.lineages?.T001?.consults ?? 0).toBe(0);
-    // The attempt, the delivery and the retry each count against the lineage.
-    expect(result.state.lineages?.T001?.attempts).toBe(3);
-  });
-
-  it('delivers the answer to an attempt the consult guided without a second consult', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    // Red, red after the local retry, one consult; its attempt reports a change of what, and the
-    // answered attempt passes. The answer spends neither a consult nor the consult's attempt.
-    const implementer = decidingImplementer([[], [], [WHAT], []]);
-    const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
-    const consults = [guidance];
-    const { planner, prompts } = scriptedPlanner({
-      confirm: askThenGuide,
-      consult: () => {
-        const next = consults.shift();
-        if (next === undefined) throw new Error('the ladder consulted the planner twice');
-        return next();
-      },
-    });
-    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
-      bus,
-    });
-
-    expect(eventTypes(events)).toEqual([
-      'retry',
-      'consult:failed:guidance',
-      'consult:deviation:ask-user',
-      'consult:deviation:guidance',
-    ]);
-    expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toHaveLength(1);
-    expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.status).toBe('complete');
-    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries).toHaveLength(3);
-    expect(retries[2]?.error).toContain(ANSWER);
-    expect(result.state.lineages?.T001?.consults).toBe(1);
-  });
-
-  it('halts an answer that arrives with the attempt allowance spent, quoting the answer and not the consult that preceded it', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    // Five attempts are spent already. The attempt, the local retry and the consult-guided attempt
-    // take the lineage to its eighth; that attempt reports a change of what, so the delivery
-    // would be the ninth.
-    const implementer = decidingImplementer([[], [], [WHAT], []]);
-    const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
-    const { planner, prompts } = scriptedPlanner({ confirm: askThenGuide, consult: guidance });
-    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task], { lineages: { T001: lineage({ attempts: 5 }) } }),
-      implementer,
-      validator,
-      planner,
-      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
-      bus,
-    });
-
-    expect(eventTypes(events)).toEqual([
-      'retry',
-      'consult:failed:guidance',
-      'consult:deviation:ask-user',
-      'consult:deviation:guidance',
-      'bound-spent',
-    ]);
-    expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toHaveLength(1);
-    expect(vi.mocked(implementer.retry)).toHaveBeenCalledTimes(2);
-    expect(result.state.lineages?.T001).toMatchObject({ attempts: 8, consults: 1 });
-    expect(result.state.pendingRecovery).toMatchObject({ reason: 'consult-bound-spent' });
-    const lastDiagnosis = result.state.pendingRecovery?.facts?.lastDiagnosis;
-    expect(lastDiagnosis).toContain(ANSWER);
-    expect(lastDiagnosis).not.toContain('The import is still wrong.');
-  });
-
-  it("confirms a brief's decisions however many confirms the briefs before it spent", async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[HOW]]);
-    const validator = scriptedValidator({});
-    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm(['d1']) });
-    const { bus, events } = makeBusRecorder();
-
-    // An older session saved the retired run-wide counter as spent; it no longer bounds a brief.
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task], {
-        decisionConfirms: { used: 20, allowance: 20 },
-      } as Partial<WorkflowState>),
-      implementer,
-      validator,
-      planner,
-      bus,
-    });
-
-    expect(result.status).toBe('complete');
-    expect(prompts.filter(isDecisionConfirm)).toHaveLength(1);
-    expect(result.state.plan?.decisions).toEqual([
-      { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
-    ]);
-    expect(events).not.toContainEqual(
-      expect.objectContaining({ type: 'warning', message: expect.stringContaining('allowance') }),
-    );
-  });
-
-  it('asks the user about a change of what a retry reported, and delivers the answer without a consult', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[], [WHAT], []]);
-    const validator = scriptedValidator({ T001: [TS_ERROR, null] });
-    const { planner, prompts } = scriptedPlanner({ confirm: askThenGuide });
-    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
-      bus,
-    });
-
-    expect(eventTypes(events)).toEqual([
-      'retry',
-      'consult:deviation:ask-user',
-      'consult:deviation:guidance',
-    ]);
-    expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toEqual([]);
-    expect(result.status).toBe('complete');
-    expect(onPlannerReply).toHaveBeenCalledTimes(1);
-    // The attempt that reported the change of what was not validated. The task review takes the
-    // retry's result: no file changed since.
-    expect(validator.checkRuns).toHaveBeenCalledTimes(2);
-    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries).toHaveLength(2);
-    expect(retries[1]?.error).toContain(ANSWER);
-    expect(result.state.plan?.decisions).toEqual([]);
-    expect(result.state.lineages?.T001?.consults ?? 0).toBe(0);
-  });
-
-  it("asks the planner again once at most: a second question's answer goes to the retry", async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[WHAT], []]);
-    const validator = scriptedValidator({});
-    const { planner, prompts } = scriptedPlanner({ confirm: askUser });
-    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
-      bus,
-    });
-
-    expect(result.status).toBe('complete');
-    expect(onPlannerReply).toHaveBeenCalledTimes(2);
-    expect(prompts).toHaveLength(2);
-    expect(eventTypes(events)).toEqual([
-      'consult:deviation:ask-user',
-      'consult:deviation:ask-user',
-    ]);
-    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries).toHaveLength(1);
-    expect(retries[0]?.error).toContain(ANSWER);
-    // The attempt that delivers the answer may find the kept work right and change nothing.
-    expect(retries[0]?.allowNoChange).toBe(true);
-  });
-
-  it("delivers the user's first answer to the retry when the second question stays unanswered", async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[WHAT], []]);
-    const validator = scriptedValidator({});
-    const { planner } = scriptedPlanner({ confirm: askUser });
-    const onPlannerReply = vi
-      .fn()
-      .mockResolvedValueOnce(plainUserMessage(ANSWER))
-      .mockResolvedValueOnce(undefined);
-    const { bus } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
-      bus,
-    });
-
-    expect(result.status).toBe('complete');
-    expect(onPlannerReply).toHaveBeenCalledTimes(2);
-    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries).toHaveLength(1);
-    expect(retries[0]?.error).toContain(ANSWER);
-    expect(retries[0]?.allowNoChange).toBe(true);
-  });
-
-  it("delivers the user's answer to the retry when the planner's second answer is malformed", async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[WHAT], []]);
-    const validator = scriptedValidator({});
-    let confirms = 0;
-    const planner = makePlanner({
-      typedCall: (ctx) => ({
-        seat: ctx.seat,
-        typedOutput: 'fallback',
-        canResume: false,
-        invoke: async ({ prompt }) => {
-          if (ctx.seat === 'reviewer') {
-            return makeRunnerCallResult({
-              status: 'completed',
-              text: JSON.stringify(passingReviewVerdict(prompt)),
-            });
-          }
-          confirms += 1;
-          return makeRunnerCallResult({
-            status: 'completed',
-            text: confirms === 1 ? JSON.stringify(askUser()) : '{}',
-          });
-        },
-      }),
-    });
-    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
-      bus,
-    });
-
-    expect(result.status).toBe('complete');
-    expect(onPlannerReply).toHaveBeenCalledTimes(1);
-    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries).toHaveLength(1);
-    expect(retries[0]?.error).toContain(ANSWER);
-    expect(retries[0]?.allowNoChange).toBe(true);
-    // The gate runs the check once, on the retry: the attempt the user answered about is not
-    // validated. The task review takes that result: no file changed since.
-    expect(validator.checkRuns).toHaveBeenCalledTimes(1);
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: 'warning', message: expect.stringContaining('T001') }),
-    );
-  });
-
-  it('refuses guidance before the user answered: the first decision confirm validates with a warning', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[WHAT]]);
-    const validator = scriptedValidator({});
-    const { planner, prompts } = scriptedPlanner({ confirm: guideAnswer });
-    const onPlannerReply = vi.fn();
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
-      bus,
-    });
-
-    expect(result.status).toBe('complete');
-    expect(prompts.filter(isDecisionConfirm).length).toBeGreaterThan(0);
-    expect(onPlannerReply).not.toHaveBeenCalled();
-    expect(implementer.retry).not.toHaveBeenCalled();
-    expect(validator.checkRuns).toHaveBeenCalledTimes(1);
-    expect(result.state.plan?.decisions).toEqual([]);
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: 'warning', message: expect.stringContaining('T001') }),
-    );
   });
 
   it('shows a message the build absorbed under the operator instructions of the next consult', async () => {
@@ -919,33 +372,32 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const note = 'also log the flag value';
     const { bus } = makeBusRecorder();
     let calls = 0;
-    const implementer = makeImplementer({
-      implement: vi.fn(async (opts: ImplementerOptions) => {
-        calls += 1;
-        mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
-        writeFileSync(join(opts.projectDir, 'src/a.ts'), `implement ${calls}\n`);
-        if (calls === 1) {
-          const state = loadState({ projectDir, sessionId });
-          if (state === null) throw new Error('missing state during the build call');
-          enqueueUserMessage({
-            projectDir,
-            sessionId,
-            state,
-            message: plainUserMessage(note),
-            phase: state.phase,
-            bus,
-          });
-        }
-        return {
-          success: true,
-          output: 'implemented',
-          usage: { inputTokens: 10, outputTokens: 5 },
-          report: doneReport([HOW], 'src/a.ts'),
-        };
-      }),
-    });
-    const validator = scriptedValidator({});
-    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm(['d1']) });
+    const attempt = async (opts: ImplementerOptions | RetryOptions) => {
+      calls += 1;
+      mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+      writeFileSync(join(opts.projectDir, 'src/a.ts'), `attempt ${calls}\n`);
+      if (calls === 1) {
+        const state = loadState({ projectDir, sessionId });
+        if (state === null) throw new Error('missing state during the build call');
+        enqueueUserMessage({
+          projectDir,
+          sessionId,
+          state,
+          message: plainUserMessage(note),
+          phase: state.phase,
+          bus,
+        });
+      }
+      return {
+        success: true,
+        output: 'implemented',
+        usage: { inputTokens: 10, outputTokens: 5 },
+        report: doneReport([HOW], 'src/a.ts'),
+      };
+    };
+    const implementer = makeImplementer({ implement: vi.fn(attempt), retry: vi.fn(attempt) });
+    const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
+    const { planner, prompts } = scriptedPlanner({ consult: guidance });
 
     const result = await runLoop({
       projectDir,
@@ -959,76 +411,12 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
     expect(result.status).toBe('complete');
     expect(implementer.implement).toHaveBeenCalledTimes(2);
-    const confirmPrompt = prompts.find(isDecisionConfirm) ?? '';
-    const instructions = confirmPrompt.slice(confirmPrompt.indexOf('## Operator Instructions'));
-    expect(confirmPrompt).toContain('## Operator Instructions');
+    const consultPrompt = prompts[0] ?? '';
+    const instructions = consultPrompt.slice(consultPrompt.indexOf('## Operator Instructions'));
+    expect(consultPrompt).toContain('## Operator Instructions');
     expect(instructions).toContain(
       `[user also says during implementing]\n${note}\n[/user also says]`,
     );
-  });
-
-  it('validates with a warning when the decision-confirm answer is malformed', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[HOW]]);
-    const validator = scriptedValidator({});
-    const planner = makePlanner({
-      typedCall: (ctx) => ({
-        seat: ctx.seat,
-        typedOutput: 'fallback',
-        canResume: false,
-        invoke: async ({ prompt }) =>
-          makeRunnerCallResult({
-            status: 'completed',
-            text: ctx.seat === 'reviewer' ? JSON.stringify(passingReviewVerdict(prompt)) : '{}',
-          }),
-      }),
-    });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      bus,
-    });
-
-    expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.status).toBe('complete');
-    expect(validator.checkRuns).toHaveBeenCalledTimes(1);
-    expect(result.state.plan?.decisions).toEqual([]);
-    expect(result.state.plannerCalls?.used ?? 0).toBe(0);
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: 'warning', message: expect.stringContaining('T001') }),
-    );
-  });
-
-  it('halts on a recovery when the decision-confirm call itself fails', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[HOW]]);
-    const validator = scriptedValidator({});
-    const planner = failingPlanner();
-    const { bus } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      bus,
-    });
-
-    expect(result.state.pendingRecovery).toMatchObject({ taskId: 'T001' });
-    expect(validator.checkRuns).not.toHaveBeenCalled();
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeDefined();
-    // The implementer attempt behind the failed confirmation still counts on the lineage.
-    expect(result.state.lineages?.T001?.attempts).toBe(1);
   });
 
   const USER_FILE = 'src/mine.ts';
@@ -1042,7 +430,17 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     return project;
   }
 
-  describe('Skip on a halt outside the ladder', () => {
+  /** T001's check never passes, so its ladder reaches the consult after the local retry. */
+  function redValidator() {
+    return scriptedValidator({ T001: Array<string>(8).fill(TS_ERROR) });
+  }
+
+  /** T001 has spent its consults, so its ladder halts with the files of its last attempt. */
+  function spentConsults(): Partial<WorkflowState> {
+    return { lineages: { T001: lineage({ consults: 2 }) } };
+  }
+
+  describe('Skip on a consult-bound halt', () => {
     async function skip(
       projectDir: string,
       sessionId: string,
@@ -1061,7 +459,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       return applied.state;
     }
 
-    it("takes back the brief's file when the decision confirm failed", async () => {
+    it("takes back the brief's file when its consults are spent", async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
       const { bus, events } = makeBusRecorder();
@@ -1069,15 +467,20 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const halted = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task]),
+        state: stateWithPlan([task], spentConsults()),
         implementer: writingImplementer(['src/a.ts']),
-        validator: scriptedValidator({}),
+        validator: redValidator(),
         planner: failingPlanner(),
         bus,
       });
-      expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      expect(halted.state.pendingRecovery?.reason).toBe('consult-bound-spent');
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(true);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual(['src/a.ts']);
+      // The ledger keeps the decisions of the attempts that failed validation.
+      expect(halted.state.plan?.decisions).toEqual([
+        { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
+        { text: `${HOW_TOO.what} — ${HOW_TOO.why}`, taskId: 'T001' },
+      ]);
 
       const skipped = await skip(projectDir, sessionId, halted.state, bus);
 
@@ -1094,42 +497,43 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
     });
 
-    it('takes back the files of every attempt after a Try again', async () => {
+    it('takes back the files of every attempt after a Continue', async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', 'src/b.ts'] });
       const implementer = writingImplementer(['src/a.ts', 'src/b.ts']);
-      const planner = failingPlanner();
-      const validator = scriptedValidator({});
+      // The consult that Continue grants answers, and the next failure spends the bound again.
+      const { planner } = scriptedPlanner({ consult: guidance });
+      const validator = redValidator();
       const { bus, events } = makeBusRecorder();
 
       const first = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task]),
+        state: stateWithPlan([task], spentConsults()),
         implementer,
         validator,
         planner,
         bus,
       });
-      expect(first.state.pendingRecovery?.reason).toBe('planner-call-failed');
-      const retried = await applyRecoveryAction({
+      expect(first.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+      const continued = await applyRecoveryAction({
         projectDir,
         sessionId,
         state: first.state,
-        action: 'retry-same-worker',
+        action: 'continue',
         bus,
       });
-      expect(retried.ok).toBe(true);
+      expect(continued.ok).toBe(true);
       const second = await runLoop({
         projectDir,
         sessionId,
-        state: retried.state,
+        state: continued.state,
         implementer,
         validator,
         planner,
         bus,
       });
-      expect(second.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      expect(second.state.pendingRecovery?.reason).toBe('consult-bound-spent');
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(true);
       expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(true);
 
@@ -1154,13 +558,13 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       });
       const implementer = writingImplementer(['src/a.ts']);
       const planner = failingPlanner();
-      const validator = scriptedValidator({});
+      const validator = redValidator();
       const { bus, events } = makeBusRecorder();
 
       const halted = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([first, next]),
+        state: stateWithPlan([first, next], spentConsults()),
         implementer,
         validator,
         planner,
@@ -1203,13 +607,13 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const halted = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task]),
+        state: stateWithPlan([task], spentConsults()),
         implementer: writingImplementer([USER_FILE]),
-        validator: scriptedValidator({}),
+        validator: redValidator(),
         planner: failingPlanner(),
         bus,
       });
-      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe('attempt 1\n');
+      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe('attempt 2\n');
 
       await skip(projectDir, sessionId, halted.state, bus);
 
@@ -1250,7 +654,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       return hooks;
     }
 
-    it("takes back the brief's file when a pre_task hook denies its Try again", async () => {
+    it("takes back the brief's file when a pre_task hook denies its Continue", async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       // The check passes before the brief wrote its file and fails on the brief's edit.
       const hooks = trustedHooks(projectDir, 'pre_task', [
@@ -1261,34 +665,34 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
       const implementer = writingImplementer(['src/a.ts']);
       const planner = failingPlanner();
-      const validator = scriptedValidator({});
+      const validator = redValidator();
       const { bus, events } = makeBusRecorder();
 
       const first = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task]),
+        state: stateWithPlan([task], spentConsults()),
         implementer,
         validator,
         planner,
         bus,
         hooks,
       });
-      expect(first.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      expect(first.state.pendingRecovery?.reason).toBe('consult-bound-spent');
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual(['src/a.ts']);
-      const retried = await applyRecoveryAction({
+      const continued = await applyRecoveryAction({
         projectDir,
         sessionId,
         state: first.state,
-        action: 'retry-same-worker',
+        action: 'continue',
         bus,
       });
-      expect(retried.ok).toBe(true);
+      expect(continued.ok).toBe(true);
 
       const second = await runLoop({
         projectDir,
         sessionId,
-        state: retried.state,
+        state: continued.state,
         implementer,
         validator,
         planner,
@@ -1298,7 +702,8 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
       expect(second.state.tasks[0]?.status).toBe('skipped');
       expect(implementer.implement).toHaveBeenCalledTimes(1);
-      expect(implementer.retry).not.toHaveBeenCalled();
+      // Only the local retry of the first run: the hook denied the Continue before its attempt.
+      expect(implementer.retry).toHaveBeenCalledTimes(1);
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
       expect(restoreWarnings(events)).toEqual([expect.stringContaining('src/a.ts')]);
@@ -1307,99 +712,35 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
     it('books none of the restored files when a pre_validation hook denies the brief', async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
+      // The hook passes the first attempt and denies the local retry that wrote the user's file.
       const hooks = trustedHooks(projectDir, 'pre_validation', [
-        "console.log(JSON.stringify({ decision: 'deny', message: 'policy' }));",
+        "import { readFileSync } from 'node:fs';",
+        `const file = JSON.parse(input).workspaceDir + '/${USER_FILE}';`,
+        "if (readFileSync(file, 'utf8').startsWith('attempt')) console.log(JSON.stringify({ decision: 'deny', message: 'policy' }));",
       ]);
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', USER_FILE] });
       const implementer = writingImplementer(['src/a.ts', USER_FILE]);
-      let calls = 0;
-      const planner = makePlanner({
-        typedCall: consultCallAnswering(() => {
-          calls += 1;
-          if (calls > 1) return confirm(['d1']);
-          throw error('runner-call-failed', 'Planner escalation call failed', {
-            role: 'escalation',
-            status: 'failed',
-            error: { code: 'turn-failed', message: 'The planner process crashed.' },
-          });
-        }),
-      });
-      const validator = scriptedValidator({});
-      const { bus, events } = makeBusRecorder();
+      const validator = scriptedValidator({ T001: [TS_ERROR] });
+      const { bus } = makeBusRecorder();
 
-      const first = await runLoop({
+      const result = await runLoop({
         projectDir,
         sessionId,
         state: stateWithPlan([task]),
         implementer,
         validator,
-        planner,
-        bus,
-        hooks,
-      });
-      expect(first.state.pendingRecovery?.reason).toBe('planner-call-failed');
-      expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual(['src/a.ts']);
-      const retried = await applyRecoveryAction({
-        projectDir,
-        sessionId,
-        state: first.state,
-        action: 'retry-same-worker',
-        bus,
-      });
-      expect(retried.ok).toBe(true);
-
-      const second = await runLoop({
-        projectDir,
-        sessionId,
-        state: retried.state,
-        implementer,
-        validator,
-        planner,
+        planner: failingPlanner(),
         bus,
         hooks,
       });
 
-      expect(second.state.tasks[0]?.status).toBe('skipped');
-      expect(implementer.implement).toHaveBeenCalledTimes(2);
+      expect(result.state.tasks[0]?.status).toBe('skipped');
+      expect(implementer.implement).toHaveBeenCalledTimes(1);
+      expect(implementer.retry).toHaveBeenCalledTimes(1);
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
-      expect(restoreWarnings(events)).toEqual([
-        expect.stringMatching(/src\/a\.ts.*src\/mine\.ts|src\/mine\.ts.*src\/a\.ts/),
-      ]);
     });
-  });
-
-  it('stops without validation or a recovery when the run is stopped during the decision-confirm', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([[HOW]]);
-    const validator = scriptedValidator({});
-    const controller = new AbortController();
-    const planner = makePlanner({
-      typedCall: consultCallAnswering(() => {
-        controller.abort();
-        throw error('operation-aborted', 'Operation aborted');
-      }),
-    });
-    const { bus } = makeBusRecorder();
-
-    const result = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task]),
-      implementer,
-      validator,
-      planner,
-      bus,
-      signal: controller.signal,
-    });
-
-    expect(result.status).not.toBe('complete');
-    expect(result.state.pendingRecovery).toBeUndefined();
-    expect(validator.checkRuns).not.toHaveBeenCalled();
-    expect(result.state.plan?.decisions).toEqual([]);
-    expect(result.state.tasks[0]?.status).not.toBe('done');
   });
 
   it.each([
@@ -1412,7 +753,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
       const implementer = decidingImplementer([]);
       const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
-      const { planner } = scriptedPlanner({ confirm: () => confirm([]) });
+      const { planner } = scriptedPlanner({});
       const { bus, events } = makeBusRecorder();
 
       const halted = await runLoop({
@@ -1488,7 +829,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       }),
     });
     const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
-    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm([]) });
+    const { planner, prompts } = scriptedPlanner({});
     const { bus, events } = makeBusRecorder();
     const wctx = await openRunWorkspace(
       makeWctx({
@@ -1544,7 +885,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     // The replay is a retry on the last attempt's files, not a rebuild from the pre-task state.
     expect(seenByReplay).toEqual(['export const a = 2;\n']);
     // The files the brief wrote itself are not inputs that moved under it: no stale consult.
-    expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toEqual([]);
+    expect(prompts).toEqual([]);
     expect(eventTypes(events).filter((type) => type.startsWith('consult:'))).toEqual([]);
     // Its validation reads every file the brief changed since it first started.
     const replayValidation = vi.mocked(validator.formatChangedFiles).mock.calls.at(-1)?.[0];
@@ -1557,7 +898,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const validator = scriptedValidator({ T001: [LINT_ERROR] });
-    const { planner } = scriptedPlanner({ confirm: () => confirm([]), consult: guidance });
+    const { planner } = scriptedPlanner({ consult: guidance });
     const { bus } = makeBusRecorder();
     const controller = new AbortController();
     const stopping = makeImplementer({

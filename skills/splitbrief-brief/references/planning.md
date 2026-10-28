@@ -68,9 +68,9 @@ Validate dependencies, id uniqueness, criterion coverage, check references and c
 
 ## Decisions ledger
 
-Read report decisions as proposed deviations; the report contract is in references/implementer-prompt.md.
-The planner confirms a change of how only when the accepted criteria remain intact.
-Ask the user before changing what is built.
-Append confirmed entries to `plan.decisions` as `T001: <what> — <why>` strings.
+Read report decisions as declared deviations; the report contract is in references/implementer-prompt.md.
+Append each new decision of a done report to `plan.decisions` as a `T001: <what> — <why>` string before validation. No seat confirms it.
+Skip a decision the ledger already holds for that task.
+The reviewer judges each decision with a task id against the criteria and the code.
 Render the updated plan and refresh every later brief's read-only Plan context.
 Include the ledger in consults and reviews. Preserve it on continuation and fixes.

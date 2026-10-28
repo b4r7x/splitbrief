@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isRecord } from '../../utils/type-guards.js';
 import { TaskSpecSchema } from './plan.js';
 import type { Task } from './task.js';
 
@@ -39,26 +40,6 @@ const AskUserActionSchema = z.object({
   default: z.string().nullable(),
 });
 
-const deviationDecision = z.object({ what: z.string(), why: z.string() });
-
-/**
- * A confirm names the reported decisions it accepts by id. An answer without ids accepts none, so
- * every reported decision is rejected and the attempt retries. The missing key is read in parsing,
- * not as a JSON Schema `default`, so the contract a strict seat gets keeps the key required.
- */
-const ConfirmActionSchema = z.object({
-  ...diagnosis,
-  action: z.literal('confirm'),
-  decisionIds: z.preprocess((ids) => ids ?? [], z.array(z.string())),
-});
-
-/** A confirm resolved against its report: the decisions it accepted, in the reported words. */
-const ConfirmedDecisionsSchema = z.object({
-  ...diagnosis,
-  action: z.literal('confirm'),
-  decisions: z.array(deviationDecision),
-});
-
 export const ConsultAnswerSchema = z.object({
   answer: z.union([
     GuidanceActionSchema,
@@ -66,52 +47,13 @@ export const ConsultAnswerSchema = z.object({
     SplitTaskActionSchema,
     VerifyActionSchema,
     AskUserActionSchema,
-    ConfirmActionSchema,
   ]),
 });
 export type ConsultAnswer = z.infer<typeof ConsultAnswerSchema>;
 
-/** The consult answer SPLITBRIEF applies and records: a confirm carries its accepted decisions. */
-export const ResolvedConsultAnswerSchema = z.object({
-  answer: z.union([
-    GuidanceActionSchema,
-    RewriteTaskActionSchema,
-    SplitTaskActionSchema,
-    VerifyActionSchema,
-    AskUserActionSchema,
-    ConfirmedDecisionsSchema,
-  ]),
-});
-export type ResolvedConsultAnswer = z.infer<typeof ResolvedConsultAnswerSchema>;
-
-/** The id a consult shows for the reported decision at `index`: `d1`, `d2`, … */
-export function reportedDecisionId(index: number): string {
-  return `d${index + 1}`;
-}
-
-/** The reported decisions whose ids a confirm names. Every other reported decision is rejected. */
-export function acceptedDecisions<T>(reported: readonly T[], ids: readonly string[]): T[] {
-  const named = new Set(ids);
-  return reported.filter((_, index) => named.has(reportedDecisionId(index)));
-}
-
-/**
- * The answer schema of one consult. A deviation consult takes `guidance` only once the user
- * answered its question (`answered`): the guidance carries out that answer.
- */
-export function consultAnswerSchemaFor(
-  task: Task,
-  reason: ConsultReason = 'failed',
-  answered = false,
-) {
-  const schema =
-    reason === 'stale'
-      ? StaleConsultAnswerSchema
-      : reason !== 'deviation'
-        ? ConsultAnswerSchema
-        : answered
-          ? AnsweredDeviationConsultAnswerSchema
-          : DeviationConsultAnswerSchema;
+/** The answer schema of one consult: a stale consult takes guidance or a rewrite only. */
+export function consultAnswerSchemaFor(task: Task, reason: ConsultReason = 'failed') {
+  const schema = reason === 'stale' ? StaleConsultAnswerSchema : ConsultAnswerSchema;
   return schema.superRefine((value, ctx) => {
     if (value.answer.action === 'rewrite-task' && value.answer.task.id !== task.id) {
       ctx.addIssue({
@@ -134,22 +76,23 @@ export const StaleConsultAnswerSchema = z.object({
   answer: z.union([GuidanceActionSchema, RewriteTaskActionSchema]),
 });
 
-export const DeviationConsultAnswerSchema = z.object({
-  answer: z.union([ConfirmActionSchema, AskUserActionSchema]),
-});
+/** A decision the implementer reports; a decision written as text has no reason. */
+const ReportedDecisionSchema = z.preprocess(
+  (decision) => (typeof decision === 'string' ? { what: decision, why: null } : decision),
+  z.object({ what: z.string(), why: z.string().nullable() }),
+);
+export type ReportedDecision = z.infer<typeof ReportedDecisionSchema>;
 
-export const AnsweredDeviationConsultAnswerSchema = z.object({
-  answer: z.union([ConfirmActionSchema, AskUserActionSchema, GuidanceActionSchema]),
+const DoneReportSchema = z.object({
+  status: z.literal('done'),
+  filesChanged: z.array(z.string()),
+  touchedNotSuggested: z.array(z.object({ file: z.string(), reason: z.string().default('') })),
+  notes: z.string().nullable(),
+  decisions: z.array(ReportedDecisionSchema).default([]),
 });
 
 export const ImplementerReportSchema = z.discriminatedUnion('status', [
-  z.object({
-    status: z.literal('done'),
-    filesChanged: z.array(z.string()),
-    touchedNotSuggested: z.array(z.object({ file: z.string(), reason: z.string().default('') })),
-    notes: z.string().nullable(),
-    decisions: z.array(deviationDecision).default([]),
-  }),
+  DoneReportSchema,
   z.object({
     status: z.literal('blocked'),
     question: z.string(),
@@ -158,7 +101,42 @@ export const ImplementerReportSchema = z.discriminatedUnion('status', [
 ]);
 export type ImplementerReport = z.infer<typeof ImplementerReportSchema>;
 
-export const CONSULT_REASONS = ['failed', 'blocked', 'stale', 'deviation'] as const;
+/**
+ * The implementer's report as SPLITBRIEF reads it. A done report keeps every field that matches
+ * its contract; a field that does not, or is missing, reads as empty and is named in `dropped`.
+ * A report without a known status, or a blocked report with a bad field, is not read.
+ */
+export function readImplementerReport(
+  value: unknown,
+): { report: ImplementerReport; dropped: string[] } | undefined {
+  const parsed = ImplementerReportSchema.safeParse(value);
+  if (parsed.success) return { report: parsed.data, dropped: [] };
+  if (!isRecord(value) || value.status !== 'done') return undefined;
+  const dropped: string[] = [];
+  const field = <T>(
+    name: keyof typeof DoneReportSchema.shape,
+    schema: z.ZodType<T>,
+    empty: T,
+  ): T => {
+    const read = schema.safeParse(value[name]);
+    if (read.success) return read.data;
+    dropped.push(name);
+    return empty;
+  };
+  const { shape } = DoneReportSchema;
+  return {
+    report: {
+      status: 'done',
+      filesChanged: field('filesChanged', shape.filesChanged, []),
+      touchedNotSuggested: field('touchedNotSuggested', shape.touchedNotSuggested, []),
+      notes: field('notes', shape.notes, null),
+      decisions: field('decisions', shape.decisions, []),
+    },
+    dropped,
+  };
+}
+
+export const CONSULT_REASONS = ['failed', 'blocked', 'stale'] as const;
 export type ConsultReason = (typeof CONSULT_REASONS)[number];
 
 /** The seat that answers a consult: the reviewer for a fix task's repair, the planner for the rest. */
@@ -172,13 +150,3 @@ export const CONSULT_ANSWER_JSON_SCHEMA = consultAnswerJsonSchema;
 const { $schema: _staleDraftRef, ...staleConsultAnswerJsonSchema } =
   z.toJSONSchema(StaleConsultAnswerSchema);
 export const STALE_CONSULT_ANSWER_JSON_SCHEMA = staleConsultAnswerJsonSchema;
-
-const { $schema: _deviationDraftRef, ...deviationConsultAnswerJsonSchema } = z.toJSONSchema(
-  DeviationConsultAnswerSchema,
-);
-export const DEVIATION_CONSULT_ANSWER_JSON_SCHEMA = deviationConsultAnswerJsonSchema;
-
-const { $schema: _answeredDeviationDraftRef, ...answeredDeviationConsultAnswerJsonSchema } =
-  z.toJSONSchema(AnsweredDeviationConsultAnswerSchema);
-export const ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA =
-  answeredDeviationConsultAnswerJsonSchema;

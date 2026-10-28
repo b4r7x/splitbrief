@@ -18,7 +18,7 @@ import {
   TriageResultSchema,
 } from './review.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
-import { CONSULT_REASONS, CONSULT_SEATS, ResolvedConsultAnswerSchema } from './consult.js';
+import { CONSULT_REASONS, CONSULT_SEATS, ConsultAnswerSchema } from './consult.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema, SeatSwapCandidateSchema } from './recovery/schemas.js';
 import { StepCutSchema, StepRefSchema } from './run-step.js';
@@ -131,13 +131,12 @@ export const ChangedFilesBaselineSchema = z.object({
 
 const TASK_ACTIVE_PHASES = new Set<Phase>(['validating-task', 'escalating']);
 
-const CONSULT_ACTION_KINDS = [
+export const CONSULT_ACTION_KINDS = [
   'guidance',
   'rewrite-task',
   'split-task',
   'verify',
   'ask-user',
-  'confirm',
 ] as const;
 
 export const ConsultRecordSchema = z.object({
@@ -147,11 +146,21 @@ export const ConsultRecordSchema = z.object({
   at: z.string(),
   taskId: TaskIdSchema,
   revision: z.number().int(),
-  answer: ResolvedConsultAnswerSchema,
+  answer: ConsultAnswerSchema,
   /** The seat that answered; an older record without one was a planner consult. */
   seat: z.enum(CONSULT_SEATS).optional(),
 });
 export type ConsultRecord = z.infer<typeof ConsultRecordSchema>;
+
+/** A run saved before decisions went to the ledger kept deviation consults; they load as nothing. */
+function dropRetiredConsults(value: unknown): unknown {
+  return Array.isArray(value)
+    ? value.filter(
+        (record) =>
+          !isRecord(record) || (record.reason !== 'deviation' && record.action !== 'confirm'),
+      )
+    : value;
+}
 
 /** One failed attempt of a lineage: the brief and revision it ran, and its first error line. */
 export const AttemptFailureSchema = z.object({
@@ -171,7 +180,7 @@ export const LineageRecordSchema = z.object({
   staleConsultedRevision: z.record(z.string(), z.number().int()).default({}),
   /** The revision that already dispatched an attempt; a Try again of it runs on its own files. */
   dispatchedRevision: z.record(z.string(), z.number().int()).default({}),
-  consultRecords: z.array(ConsultRecordSchema).default([]),
+  consultRecords: z.preprocess(dropRetiredConsults, z.array(ConsultRecordSchema)).default([]),
   replacedParents: z.array(TaskSchema).default([]),
   notes: z.array(z.string()).default([]),
   carriedFailure: z.string().optional(),

@@ -35,7 +35,7 @@ ${workspaceRules(isolationDir)}
 - The Task Brief inlines the read-only code of the context files it lists. Read the files it suggests before you edit them, and search only for a symbol the brief names.
 - ${IMPLEMENTER_RUNS_NO_CHECKS} Do not run repeated git diffs.
 - Report deviations as decisions with what and why; use [] when none.
-- End your reply with ONE JSON object and nothing after it: {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null,"decisions":[]}. If the brief cannot be completed without a file it does not provide, end with {"status":"blocked","question":"<question>","filesNeeded":["<file>"]} instead. Prose before the object is fine; text after it is not.
+- End your reply with ONE JSON object and nothing after it: {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null,"decisions":[{"what":"<decision>","why":"<reason>"}]}. If the brief cannot be completed without a file it does not provide, end with {"status":"blocked","question":"<question>","filesNeeded":["<file>"]} instead. Prose before the object is fine; text after it is not.
 
 Example: {"status":"done","filesChanged":["src/hello.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}`;
 }

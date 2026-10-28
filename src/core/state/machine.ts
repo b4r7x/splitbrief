@@ -13,6 +13,7 @@ import {
 } from '../schemas/workflow.js';
 import { isTaskCompleted, isTaskSettled, type Task, type TaskId } from '../schemas/task.js';
 import type { TriageInput } from '../schemas/review.js';
+import type { ReportedDecision } from '../schemas/consult.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
 import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue-state.js';
@@ -26,9 +27,9 @@ import { isInDeclaredSet, taskDeclaredPatterns } from '../scope/declared-set.js'
 import { transitionError } from './errors.js';
 import { truncateByChars } from '../../utils/truncate.js';
 
-/** The text a confirmed implementer decision contributes to the plan ledger. */
-export function decisionLedgerText(decision: { what: string; why: string }): string {
-  return `${decision.what} — ${decision.why}`;
+/** The text a reported implementer decision contributes to the plan ledger. */
+export function decisionLedgerText(decision: ReportedDecision): string {
+  return decision.why === null ? decision.what : `${decision.what} — ${decision.why}`;
 }
 
 const anytimeActions = [
@@ -56,7 +57,7 @@ const anytimeActions = [
   'REPLACE_TASK',
   'INSERT_TASKS',
   'RECORD_CONSULT',
-  'CONFIRM_DECISIONS',
+  'RECORD_DECISIONS',
   'RECORD_CORRECTION',
   'COUNT_ATTEMPT',
   'COUNT_PLANNER_CALL',
@@ -948,26 +949,22 @@ export function transition(
       };
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
         ...lineage,
-        consults: lineage.consults + (action.reason === 'deviation' ? 0 : 1),
+        consults: lineage.consults + 1,
         consultRecords: [...lineage.consultRecords, record],
       }));
     }
 
-    case 'CONFIRM_DECISIONS': {
+    case 'RECORD_DECISIONS': {
       if (state.plan === undefined) return state;
-      return {
-        ...state,
-        plan: {
-          ...state.plan,
-          decisions: [
-            ...state.plan.decisions,
-            ...action.decisions.map((decision) => ({
-              text: decisionLedgerText(decision),
-              taskId: action.taskId,
-            })),
-          ],
-        },
-      };
+      const recorded = state.plan.decisions;
+      const added = [...new Set(action.decisions.map(decisionLedgerText))]
+        .filter(
+          (text) =>
+            !recorded.some((entry) => entry.taskId === action.taskId && entry.text === text),
+        )
+        .map((text) => ({ text, taskId: action.taskId }));
+      if (added.length === 0) return state;
+      return { ...state, plan: { ...state.plan, decisions: [...recorded, ...added] } };
     }
 
     case 'RECORD_CORRECTION':

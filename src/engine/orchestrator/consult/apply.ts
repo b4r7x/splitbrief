@@ -1,4 +1,4 @@
-import type { ConsultSeat, ResolvedConsultAnswer } from '../../../core/schemas/consult.js';
+import type { ConsultAnswer, ConsultSeat } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
@@ -51,11 +51,10 @@ export type ConsultApplyContext = Readonly<{
   onStateChange?: ((state: WorkflowState) => void) | undefined;
 }>;
 
-type RewriteAction = ResolvedConsultAnswer['answer'] & { action: 'rewrite-task' };
-type SplitAction = ResolvedConsultAnswer['answer'] & { action: 'split-task' };
-type VerifyAction = ResolvedConsultAnswer['answer'] & { action: 'verify' };
-type AskUserAction = ResolvedConsultAnswer['answer'] & { action: 'ask-user' };
-type ConfirmAction = ResolvedConsultAnswer['answer'] & { action: 'confirm' };
+type RewriteAction = ConsultAnswer['answer'] & { action: 'rewrite-task' };
+type SplitAction = ConsultAnswer['answer'] & { action: 'split-task' };
+type VerifyAction = ConsultAnswer['answer'] & { action: 'verify' };
+type AskUserAction = ConsultAnswer['answer'] & { action: 'ask-user' };
 
 /** What the answer did, with the task or tasks it left behind. */
 export type ConsultApplyOutcome =
@@ -64,7 +63,6 @@ export type ConsultApplyOutcome =
   | Readonly<{ action: 'split-task'; tasks: Task[] }>
   | Readonly<{ action: 'completed'; task: Task; durationMs: number; bookedFiles: string[] }>
   | Readonly<{ action: 'correction'; answer: string }>
-  | Readonly<{ action: 'confirm'; decisions: ConfirmAction['decisions'] }>
   | Readonly<{ action: 'failed'; reason: string }>
   | Readonly<{ action: 'skipped' }>;
 
@@ -368,24 +366,6 @@ export function consultReplyAnswer(
 }
 
 /**
- * The consult seat's confirm: the reported decisions it accepts (`requestConsult` narrows the
- * answer to them) extend the run's ledger on the reporting task.
- */
-function applyConfirm(
-  ctx: ConsultApplyContext,
-  task: Task,
-  action: ConfirmAction,
-): ConsultApplyOutcome {
-  const state = transitionAndSave(
-    { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
-    ctx.state,
-    { type: 'CONFIRM_DECISIONS', taskId: task.id, decisions: action.decisions },
-  );
-  ctx.onStateChange?.(state);
-  return { action: 'confirm', decisions: action.decisions };
-}
-
-/**
  * Puts the seat's question to the user. The answer joins the brief's operator instructions,
  * so every later call on the brief, build or consult, reads it with the user's corrections.
  */
@@ -449,7 +429,7 @@ async function applyAskUser(
 export async function applyConsultAnswer(
   ctx: ConsultApplyContext,
   task: Task,
-  answer: ResolvedConsultAnswer,
+  answer: ConsultAnswer,
   attempt: ChangedFilesSnapshot | null,
 ): Promise<ConsultApplyOutcome> {
   const action = answer.answer;
@@ -468,8 +448,6 @@ export async function applyConsultAnswer(
       return applyVerify(ctx, task, action, attempt);
     case 'ask-user':
       return applyAskUser(ctx, task, action);
-    case 'confirm':
-      return applyConfirm(ctx, task, action);
     default:
       return assertNever(action);
   }

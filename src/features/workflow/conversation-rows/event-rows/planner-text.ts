@@ -1,7 +1,4 @@
-import {
-  ImplementerReportSchema,
-  type ImplementerReport,
-} from '../../../../core/schemas/consult.js';
+import { readImplementerReport, type ImplementerReport } from '../../../../core/schemas/consult.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
 import { extractLastJsonObject } from '../../../../engine/runners/typed-output.js';
@@ -108,8 +105,8 @@ function splitImplementerHandBack(
   while (start !== -1) {
     const extracted = extractLastJsonObject(text.slice(start));
     if (extracted.kind === 'ok') {
-      const parsed = ImplementerReportSchema.safeParse(extracted.value);
-      if (parsed.success) {
+      const read = readImplementerReport(extracted.value);
+      if (read !== undefined) {
         const narration = text.slice(0, start).trimEnd();
         // An odd count of fence lines leaves the last one open: it opens on the report.
         const opensOnReport = (narration.match(FENCE_LINE)?.length ?? 0) % 2 === 1;
@@ -117,7 +114,7 @@ function splitImplementerHandBack(
           narration: opensOnReport
             ? narration.replace(TRAILING_FENCE_LINE, '').trimEnd()
             : narration,
-          report: parsed.data,
+          report: read.report,
         };
       }
     }

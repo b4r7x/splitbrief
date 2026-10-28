@@ -42,7 +42,10 @@ const VALIDATION_EVIDENCE_PREAMBLE = `The orchestrator ran these validation comm
 /** The plan's own data: the criteria and the briefs the verdict must answer for. */
 export type ReviewPlanData = {
   criteria: readonly { id: string; text: string; checkIds: readonly string[] }[];
-  /** The decisions ledger the plan recorded; what the implementation may not deviate from. */
+  /**
+   * The decisions ledger: the plan's decisions, and with a task id the decisions that task's
+   * implementer reported.
+   */
   decisions?: readonly { text: string; taskId: string | null }[] | undefined;
   tasks: readonly {
     id: string;
@@ -61,6 +64,9 @@ export type ReviewFileDiff = { path: string; taskIds: readonly string[]; diff: s
 
 /** What a task wrote outside the set any brief suggested. */
 export type ReviewTouchedNotSuggested = { taskId: string; files: readonly string[] };
+
+const DECLARED_DECISION_NOTE =
+  'The implementer of a task declared each decision that has a task id. Nobody confirmed these decisions: judge them against the criteria and the code.';
 
 export function planBody(plan: ReviewPlanData, taskIds?: readonly string[]): string {
   const tasks =
@@ -108,6 +114,9 @@ export function planBody(plan: ReviewPlanData, taskIds?: readonly string[]): str
   if (decisions.length === 0) {
     lines.push('None.');
   } else {
+    if (decisions.some((decision) => decision.taskId !== null)) {
+      lines.push(DECLARED_DECISION_NOTE, '');
+    }
     for (const decision of decisions) {
       lines.push(`- ${decision.text}${decision.taskId === null ? '' : ` (${decision.taskId})`}`);
     }

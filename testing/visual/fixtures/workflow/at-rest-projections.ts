@@ -35,7 +35,7 @@ import {
   WORKSPACE_KEPT_CODE,
   WORKSPACE_NOTICE_CATEGORY,
 } from '../../../../src/core/sessions/workspace-notice.js';
-import { consultAttemptError } from '../../../../src/engine/orchestrator/escalation/consult-guidance.js';
+import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
 import { retainedWorkspaceNotice } from '../../../../src/engine/orchestrator/isolation/retention.js';
 import { scenarioId } from '../../contracts/identifiers.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
@@ -2194,8 +2194,8 @@ export const reviewTaskOutOfScopeProjection: WorkflowFixtureProjection = {
 };
 
 /**
- * The fix brief's first attempt reports a decision PLAN rejects, so the brief goes back to BUILD
- * with the reason and passes on its second attempt.
+ * The fix brief's first attempt fails its check, so the brief goes back to BUILD with the failure
+ * and passes on its second attempt.
  */
 function cadenceFixBrief(): EngineEvent[] {
   const [started, completed] = cadenceBrief({
@@ -2207,22 +2207,8 @@ function cadenceFixBrief(): EngineEvent[] {
   if (started === undefined || completed?.type !== 'task_completed') {
     throw new Error('A cadence brief starts and completes');
   }
-  const reason = 'The error must name the field; keep the field name in the message.';
   return [
     started,
-    {
-      type: 'consult_answered',
-      ts: CADENCE_TS + 296_000,
-      phase: 'implementing',
-      taskId: taskId('T003'),
-      reason: 'deviation',
-      action: 'confirm',
-      seat: 'plan',
-      diagnosis: reason,
-      newTaskIds: null,
-      decisionCount: 0,
-      rejectedCount: 1,
-    },
     {
       type: 'task_retry',
       ts: CADENCE_TS + 297_000,
@@ -2230,10 +2216,11 @@ function cadenceFixBrief(): EngineEvent[] {
       taskId: taskId('T003'),
       attempt: 1,
       maxRetries: 3,
-      error: consultAttemptError({
-        lastError: 'The planner rejected decisions this attempt reported.',
-        instructions: reason,
-        seat: 'plan',
+      error: checkFailureText({
+        checkId: 'T003-K1',
+        status: 'fail',
+        failure: { keys: ['src/validate.test.ts::rejects an empty email'] },
+        output: '',
       }),
     },
     { ...completed, retries: 1 },

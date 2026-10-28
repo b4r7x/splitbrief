@@ -7,7 +7,12 @@ import type {
   SeatWait,
 } from '../schemas/workflow.js';
 import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
-import type { ConsultReason, ConsultSeat, ResolvedConsultAnswer } from '../schemas/consult.js';
+import type {
+  ConsultAnswer,
+  ConsultReason,
+  ConsultSeat,
+  ReportedDecision,
+} from '../schemas/consult.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { Plan } from '../schemas/plan.js';
 import type { TriageInput } from '../schemas/review.js';
@@ -110,11 +115,11 @@ export type StateAction =
       taskId: TaskId;
       revision: number;
       reason: ConsultReason;
-      answer: ResolvedConsultAnswer;
+      answer: ConsultAnswer;
       /** The seat that answered. */
       seat: ConsultSeat;
     }
-  | { type: 'CONFIRM_DECISIONS'; taskId: TaskId; decisions: { what: string; why: string }[] }
+  | { type: 'RECORD_DECISIONS'; taskId: TaskId; decisions: readonly ReportedDecision[] }
   | { type: 'RECORD_CORRECTION'; taskId: TaskId; text: string }
   | { type: 'COUNT_ATTEMPT'; taskId: TaskId; failure?: string | undefined }
   | { type: 'COUNT_PLANNER_CALL' }

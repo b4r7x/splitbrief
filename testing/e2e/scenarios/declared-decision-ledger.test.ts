@@ -3,12 +3,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
-import { readRunEvents } from '../../../src/engine/events/replay.js';
-import type { EngineEvent } from '../../../src/engine/events/types.js';
-import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
-import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -39,10 +34,7 @@ const ALPHA_FILES = {
   'src/alpha.test.mjs':
     "import { strict as assert } from 'node:assert';\nimport { alpha } from './alpha.mjs';\nassert.equal(alpha, 'alpha');\n",
 };
-// The attempt reports `kept`. PLAN accepts it by its id and restates it in other words.
 const kept = { what: 'Kept alpha in one module', why: 'The test imports it from there.' };
-const keptReworded = { what: 'Kept the alpha value in one module', why: kept.why };
-const confirmReason = 'Keeping the alpha value in one module is a change of how.';
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -58,18 +50,8 @@ afterEach(() => {
   restorePath = undefined;
 });
 
-function transcriptRows(events: EngineEvent[]): string[] {
-  return buildConversationRows({
-    sections: groupEventsIntoSections(events),
-    expandedDiffs: new Set(),
-    expandedActivityBatches: new Set(),
-    cols: 160,
-    viewportHeight: 50,
-    streaming: { taskId: null, lines: [], active: false },
-  }).rows.map((row) => rowText(row).trimEnd());
-}
-
-async function runDecisionConfirms() {
+/** A run whose one attempt reports `kept`; the planner fails the run on any consult. */
+async function runDeclaredDecision() {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
   restorePath = activateSafeCliShimPath(target.tmpDir);
@@ -79,32 +61,23 @@ async function runDecisionConfirms() {
     "globalThis.fetch = async () => { throw new Error('E2E network disabled'); };\n",
   );
   vi.stubEnv('NODE_OPTIONS', `--import=${offlinePath}`);
-  const confirmsPath = join(target.tmpDir, 'confirms');
+  const reviewPath = join(target.tmpDir, 'review.md');
   const attemptsPath = join(target.tmpDir, 'attempts');
   const plannerPath = join(target.tmpDir, 'planner.mjs');
   const implementerPath = join(target.tmpDir, 'implementer.mjs');
   const passing = passingVerdict({ kind: 'final', taskIds: [alpha.id], criterionIds: ['C1'] });
-  const confirm = {
-    answer: {
-      diagnosis: confirmReason,
-      action: 'confirm',
-      decisionIds: ['d1'],
-      decisions: [keptReworded],
-    },
-  };
   writeFileSync(
     plannerPath,
-    `import { existsSync, writeFileSync } from 'node:fs';
+    `import { writeFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
 let answer;
-if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final Implementation Review')) {
+if (prompt.includes('# Final Implementation Review')) {
+  writeFileSync(${JSON.stringify(reviewPath)}, prompt);
   answer = ${JSON.stringify(passing)};
-} else if (prompt.includes('Confirm reported decisions')) {
-  if (existsSync(${JSON.stringify(confirmsPath)})) throw new Error('A second decision confirm');
-  writeFileSync(${JSON.stringify(confirmsPath)}, prompt);
-  answer = ${JSON.stringify(confirm)};
+} else if (prompt.includes('# Task Implementation Review')) {
+  answer = ${JSON.stringify(passing)};
 } else if (prompt.includes('# Plan the change')) {
   answer = ${JSON.stringify({ result: plan })};
 } else {
@@ -149,37 +122,21 @@ console.log(JSON.stringify({
   expect(sessions).toHaveLength(1);
   const sessionId = sessions[0];
   if (sessionId === undefined) throw new Error('Missing session');
-  const replay = await readRunEvents({ projectDir: target.projectDir, sessionId });
   return {
     state: readState(target, sessionId),
-    events: replay.events,
-    confirmPrompt: readFileSync(confirmsPath, 'utf8'),
+    reviewPrompt: readFileSync(reviewPath, 'utf8'),
     attempts: readFileSync(attemptsPath, 'utf8').length,
   };
 }
 
-describe('e2e: decision confirm ledger', () => {
-  it('accepts a decision PLAN names by id in other words, with no rejected row and no retry, and records the implementer words', async () => {
-    const { state, events, confirmPrompt, attempts } = await runDecisionConfirms();
+describe('e2e: a declared decision', () => {
+  it('lands in the plan ledger with its task id, with no consult, and the reviewer reads it as unconfirmed', async () => {
+    const { state, reviewPrompt, attempts } = await runDeclaredDecision();
 
     expect(state.phase).toBe('complete');
-    expect(confirmPrompt).toContain(`Decisions: d1: ${kept.what} — ${kept.why}`);
     expect(attempts).toBe(1);
-    expect(events.some((event) => event.type === 'task_retry')).toBe(false);
-    expect(
-      events
-        .filter((event) => event.type === 'consult_answered')
-        .map((event) =>
-          event.type === 'consult_answered'
-            ? { decisionCount: event.decisionCount, rejectedCount: event.rejectedCount }
-            : null,
-        ),
-    ).toEqual([{ decisionCount: 1, rejectedCount: 0 }]);
-    const rows = transcriptRows(events);
-    expect(rows.filter((row) => row.includes('PLAN rejected'))).toEqual([]);
-    expect(rows).toContainEqual(
-      expect.stringContaining(`PLAN confirmed 1 decision for T001 · ${confirmReason}`),
-    );
     expect(state.plan?.decisions).toEqual([{ text: `${kept.what} — ${kept.why}`, taskId: 'T001' }]);
+    expect(reviewPrompt).toContain('Nobody confirmed these decisions');
+    expect(reviewPrompt).toContain(`- ${kept.what} — ${kept.why} (T001)`);
   });
 });

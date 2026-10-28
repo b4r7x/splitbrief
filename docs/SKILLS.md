@@ -142,7 +142,7 @@ Standalone skill records cannot serve as engine session state for `resume`.
 ## Recovery and review
 
 Recovery actions, persistent bounds, and review fix work live in [recovery.md](../skills/splitbrief/references/recovery.md).
-Confirmed deviations reach later briefs, consults, and reviews through the decisions ledger in planning.md.
+Reported deviations reach later briefs, consults, and reviews through the decisions ledger in planning.md.
 Recorded validation decides task completion. The implementer report remains advisory.
 The review contract derives pass from complete task and criterion coverage with no blocking findings.
 
@@ -158,6 +158,6 @@ The review contract derives pass from complete task and criterion coverage with 
       review-packet.md · review/attempt-N.log · review.json · review.md
 
 Save the baseline bytes as well as hashes; hashes alone cannot reconstruct the diff.
-Keep done rows, counters, consults, confirmed decisions and the original baseline on resume and fixes.
+Keep done rows, counters, consults, the decisions ledger and the original baseline on resume and fixes.
 Record commands, exits, terminal results, checks and touched-file reasons in the evidence trail.
 Print whether `.splitbrief/` is ignored. The session writes run artifacts; the implementer never edits that protected directory.

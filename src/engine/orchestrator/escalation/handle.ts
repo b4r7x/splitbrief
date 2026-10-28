@@ -38,11 +38,7 @@ import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runn
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { nowIso } from '../../../utils/format-time.js';
-import {
-  consultAttemptError,
-  consultSeatRunner,
-  guidanceInstructions,
-} from './consult-guidance.js';
+import { consultAttemptError, guidanceInstructions } from './consult-guidance.js';
 import type {
   EscalationContext,
   RetryAttemptFailure,
@@ -266,11 +262,11 @@ function consultBoundHalt(
 
 /**
  * The ladder: one local rung with the exact errors, then the consult loop. A
- * guidance, ask-user or confirm answer spends one more implementer attempt with
- * the consult seat's instructions in its error block; a rewrite or a split replaces
- * the brief and hands back to the task loop; verify completes in place. The
- * user's answer to a change of what an attempt reported is delivered by the
- * next attempt, with no retry rung and no consult. Every consult and attempt
+ * guidance or ask-user answer spends one more implementer attempt with the
+ * consult seat's instructions in its error block; a rewrite or a split replaces
+ * the brief and hands back to the task loop; verify completes in place. A
+ * correction the user sent while the checks ran is delivered by the next
+ * attempt, with no retry rung and no consult. Every consult and attempt
  * is counted against the lineage and the run's consult allowance, and a spent
  * bound halts for the operator's grant quoting the diagnosis of the failure
  * that raised it.
@@ -472,7 +468,7 @@ export async function handleRetryAndEscalation(
     const snapshot = attemptSnapshot ?? taskStartSnapshot;
     const changedFiles = await attemptChangedFiles(ctx.workspaceDir, snapshot);
     const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
-    const seat = consultSeat(task, reason);
+    const seat = consultSeat(task);
     const consult = await requestConsult(
       {
         projectDir: ctx.projectDir,
@@ -555,12 +551,7 @@ export async function handleRetryAndEscalation(
       continue;
     }
 
-    const instructions =
-      applied.action === 'guidance'
-        ? guidanceInstructions(applied.instructions, applied.context)
-        : `The ${consultSeatRunner(seat)} confirmed the reported decisions:\n${applied.decisions
-            .map((decision) => `- ${decision.what} — ${decision.why}`)
-            .join('\n')}`;
+    const instructions = guidanceInstructions(applied.instructions, applied.context);
     const halted = await attempt(consultAttemptError({ lastError, instructions, seat }), false);
     if (halted) return halted;
   }
