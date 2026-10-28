@@ -1113,7 +1113,9 @@ describe('runScheduledReview saved recovery', () => {
     expect(events.filter((event) => event.type === 'review_step')).toEqual([
       expect.objectContaining({ step: 'choosing-checks' }),
       expect.objectContaining({ step: 'verdict' }),
+      expect.objectContaining({ step: 'verify' }),
       expect.objectContaining({ step: 'verdict' }),
+      expect.objectContaining({ step: 'verify' }),
     ]);
   });
 
