@@ -39,7 +39,6 @@ import { runBaseOf } from './isolation/base-tree.js';
 import type { ValidationCommandRunner } from './validation/types.js';
 import { checkFailureText, newFailureKeys } from './validation/failure-text.js';
 import { uniqueSorted } from '../../utils/collections.js';
-import { nowIso } from '../../utils/format-time.js';
 
 /** A red whose failures were all red at the run base too verifies the claim like a pass. */
 function checkVerificationStatus(runs: readonly CheckRunResult[]): 'pass' | 'fail' | 'unverified' {
@@ -216,6 +215,7 @@ export async function verifyClaimChecks(
   state: WorkflowState,
   checkIds: readonly string[],
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
+  answeredAt: string,
 ): Promise<{ status: 'pass' | 'fail' | 'unverified'; output: string }> {
   const checkOptions: RunChecksOptions = {
     plan: state.plan,
@@ -232,12 +232,13 @@ export async function verifyClaimChecks(
     ...(state.discoveredValidation !== undefined && {
       discoveredValidation: state.discoveredValidation,
     }),
-    // A verify runs a red command again, so a flaky red does not stand on a stored run.
+    // A verify runs a red stored before the reviewer answered again, so a flaky red does not stand
+    // on a stored run. A red this verify stored stands when a continue verifies the same answer.
     results: {
       ref: { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
       state,
       tree: 'workspace',
-      rerunRedBefore: nowIso(),
+      rerunRedBefore: answeredAt,
     },
     ...(ctx.signal !== undefined && { signal: ctx.signal }),
     ...(ctx.runCommand !== undefined && { runCommand: ctx.runCommand }),
@@ -275,12 +276,13 @@ export async function runTriageVerification(
   state: WorkflowState,
   result: TriageResult,
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
+  answeredAt: string,
 ): Promise<NonNullable<TriageRecord['verification']>> {
   const entries: NonNullable<TriageRecord['verification']> = [];
   for (const entry of result.verify) {
     entries.push({
       id: verificationKey('finding', entry.findingId),
-      ...(await verifyClaimChecks(ctx, state, entry.checkIds, preExistingChecks)),
+      ...(await verifyClaimChecks(ctx, state, entry.checkIds, preExistingChecks, answeredAt)),
     });
   }
   return entries;

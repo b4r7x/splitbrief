@@ -89,6 +89,31 @@ describe('groupEventsIntoSections', () => {
     },
   );
 
+  it.each([
+    ['verify', 'verify'],
+    ['verdict', undefined],
+  ] as const)('marks a review stopped at its %s step', (step, stoppedDuring) => {
+    const phase = 'final-review';
+    const events: EngineEvent[] = [
+      { type: 'review_started', ts: 1_000, phase, scope: 'final', tool: 'codex' },
+      { type: 'review_step', ts: 1_000, phase, step: 'verdict' },
+      { type: 'review_step', ts: 3_000, phase, step },
+      { type: 'turn_interrupted', ts: 4_000, phase },
+      {
+        type: 'review_completed',
+        ts: 4_000,
+        phase,
+        scope: 'final',
+        tool: 'codex',
+        verdict: 'stopped',
+        duration: 3_000,
+      },
+    ];
+    const summary = requireSection(groupEventsIntoSections(events), 0, 'settled-stage').summary;
+    expect(summary).toMatchObject({ stage: 'review', outcome: 'stopped' });
+    expect('stoppedDuring' in summary ? summary.stoppedDuring : undefined).toBe(stoppedDuring);
+  });
+
   it.each(['review_fix_started', 'workflow_complete'] as const)(
     'preserves a legacy failed review recorded by %s before a new review passes',
     (terminal) => {

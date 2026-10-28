@@ -2680,6 +2680,72 @@ const CRASHED_REVIEW_CHECK = record({
   }),
 });
 
+/** The reviewer answered with a finding to verify, then the user stopped the run in its verify check. */
+const STOPPED_VERIFY_LOG: readonly EngineEvent[] = [
+  ...CRASHED_REVIEW_LOG,
+  {
+    type: 'runner_call_completed',
+    ts: CRASH_TS + 112_000,
+    phase: 'final-review',
+    ...CRASH_REVIEW_CALL,
+    attempt: 1,
+    sequence: 3,
+    durationMs: 9_900,
+    startedAt: CRASH_TS + 102_100,
+    endedAt: CRASH_TS + 112_000,
+    status: 'completed',
+    error: null,
+    partial: false,
+    usage: null,
+    nativeSessionId: null,
+  },
+  { type: 'review_step', ts: CRASH_TS + 112_100, phase: 'final-review', step: 'verify' },
+  {
+    type: 'full_suite',
+    ts: CRASH_TS + 112_200,
+    phase: 'final-review',
+    status: 'running',
+    id: 'K1',
+    command: 'npm test',
+    moment: 'verify',
+  },
+  {
+    type: 'turn_interrupted',
+    ts: CRASH_TS + 118_000,
+    phase: 'final-review',
+    source: 'user',
+    at: 'mid-step',
+    step: { kind: 'review', cycle: 0 },
+  },
+  {
+    type: 'review_completed',
+    ts: CRASH_TS + 118_000,
+    phase: 'final-review',
+    scope: 'final',
+    tool: 'claude-code',
+    model: 'claude-sonnet-4',
+    verdict: 'stopped',
+    duration: 16_000,
+  },
+];
+
+const STOPPED_VERIFY = record({
+  sessionId: 'visual-at-rest-stopped-verify',
+  status: {
+    kind: 'open',
+    stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
+    resumeAt: { kind: 'review', cycle: 0 },
+  },
+  state: savedState({
+    phase: 'final-review',
+    currentTaskIndex: 2,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'done' },
+    ],
+  }),
+});
+
 export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   {
     ...reviewTaskCadenceProjection,
@@ -2762,6 +2828,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-at-rest-crashed-review-check',
     route: { record: CRASHED_REVIEW_CHECK, log: CRASHED_REVIEW_CHECK_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-stopped-verify',
+    route: { record: STOPPED_VERIFY, log: STOPPED_VERIFY_LOG },
   }),
   atRestProjection({
     id: 'workflow-at-rest-left-isolation',

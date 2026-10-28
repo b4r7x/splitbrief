@@ -105,6 +105,8 @@ const phaseActions = {
     'ALL_DONE',
     'REVIEW_DONE',
     'RECORD_REVIEW',
+    'SAVE_REVIEW_ANSWER',
+    'DROP_REVIEW_ANSWER',
     'RECORD_REVIEW_CHECKS',
     'RECORD_TRIAGE',
     'START_FIX_CYCLE',
@@ -125,6 +127,8 @@ const phaseActions = {
     'RECORD_APPLY_RECHECK',
     'BIND_APPLY_INTEGRATED',
     'RECORD_REVIEW',
+    'SAVE_REVIEW_ANSWER',
+    'DROP_REVIEW_ANSWER',
     'RECORD_REVIEW_CHECKS',
     'RECORD_TRIAGE',
     'START_FIX_CYCLE',
@@ -457,10 +461,21 @@ export function transition(
           : action.review;
       const { open, ...fixCycles } = fixCyclesOf(state);
       if (open === undefined || !judgesCycle(state.triage, open, record)) {
-        return { ...state, review: record };
+        return { ...state, review: record, reviewAnswer: undefined };
       }
-      return { ...state, review: { ...record, judges: open.cycle }, fixCycles };
+      return {
+        ...state,
+        review: { ...record, judges: open.cycle },
+        reviewAnswer: undefined,
+        fixCycles,
+      };
     }
+
+    case 'SAVE_REVIEW_ANSWER':
+      return { ...state, reviewAnswer: action.answer };
+
+    case 'DROP_REVIEW_ANSWER':
+      return { ...state, reviewAnswer: undefined };
 
     case 'RECORD_REVIEW_CHECKS':
       return { ...state, reviewChecks: action.record };
@@ -629,7 +644,10 @@ export function transition(
       if (state.applyReview === undefined) {
         throw transitionError.invalidActionForPhase(state.phase, action.type);
       }
-      return { ...state, applyReview: { ...state.applyReview, failures: action.failures } };
+      return {
+        ...state,
+        applyReview: { ...state.applyReview, failures: action.failures, notRun: action.notRun },
+      };
 
     case 'APPLY_START':
       if (!awaitsApply(state)) {
@@ -740,6 +758,7 @@ export function transition(
           pendingRecovery: undefined,
           pendingTriage: undefined,
           pendingScheduledReview: undefined,
+          reviewAnswer: undefined,
           interruptedStep: {
             step: { kind: 'brief', taskId: firstId, attempt: 0 },
             source: step?.source ?? 'user',

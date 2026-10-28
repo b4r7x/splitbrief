@@ -384,6 +384,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 | `FixCycles.open` | no fix cycle waits for the review that judges it |
 | `ReviewRecord.judges` | the review judged no fix cycle, so it compares its blockers with no triage record |
 | `WorkflowState.pendingTriage` | no check, operator or Apply input waits for the reviewer |
+| `WorkflowState.reviewAnswer` | no reviewer answer waits for its verify; the review record replaced it, or no review answered |
 | `WorkflowState.reviewStatus` | the final review has not resolved |
 | `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef`. `source` is `user`, `watchdog` or `seat`, the last for a seat halt that cut a brief. `kept` lists the declared files a cut brief had changed when a stop parked it; a record without it claims no kept changes |
 | `WorkflowState.closed` | the run was never explicitly ended, so it is still continuable |

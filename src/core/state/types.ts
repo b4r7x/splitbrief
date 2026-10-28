@@ -49,6 +49,8 @@ export type StateAction =
   | { type: 'ALL_DONE' }
   | { type: 'REVIEW_DONE'; reviewStatus: ReviewStatus; candidate?: Record<string, string> }
   | { type: 'RECORD_REVIEW'; review: NonNullable<WorkflowState['review']> }
+  | { type: 'SAVE_REVIEW_ANSWER'; answer: NonNullable<WorkflowState['reviewAnswer']> }
+  | { type: 'DROP_REVIEW_ANSWER' }
   | { type: 'RECORD_REVIEW_CHECKS'; record: NonNullable<WorkflowState['reviewChecks']> }
   | { type: 'SET_PENDING_REVIEW_COMMANDS'; commands: string[] }
   | { type: 'RECORD_TRIAGE'; record: NonNullable<WorkflowState['triage']>[number] }
@@ -69,7 +71,7 @@ export type StateAction =
     }
   | { type: 'RECORD_APPLY_INTEGRATED'; integrated: NonNullable<WorkflowState['applyIntegrated']> }
   | { type: 'BIND_APPLY_INTEGRATED'; candidate: Record<string, string> }
-  | { type: 'RECORD_APPLY_RECHECK'; failures: string[] }
+  | { type: 'RECORD_APPLY_RECHECK'; failures: string[]; notRun: string[] }
   | { type: 'APPLY_START'; backupId: string }
   | { type: 'APPLY_DONE'; files: string[] }
   | { type: 'APPLY_RESTORED' }

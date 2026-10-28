@@ -901,7 +901,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 `recovery/builders/apply.ts` builds the `apply-conflict` and `apply-partial` halts. Their actions are `accept-as-is` and `restore-backup`. [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) owns their policy and behavior.
 
-The state actions are `RECORD_WORKSPACE`, `ACCEPT_AS_IS`, `APPLY_REVIEW_START`, `APPLY_START`, `APPLY_DONE` and `APPLY_RESTORED`. `CLOSE_RUN` also accepts `as: 'discarded'`. `RECORD_REJECT` drops the paths a reject that left files behind put back from the stop's `interruptedStep.kept`. It sets each passed task that booked one of those paths back to `pending`. When the first such task comes before the current one, the run moves back before it and clears its `pendingRecovery`. Their effects are in [WORKFLOW.md](./WORKFLOW.md#apply).
+The state actions are `RECORD_WORKSPACE`, `ACCEPT_AS_IS`, `APPLY_REVIEW_START`, `APPLY_START`, `APPLY_DONE` and `APPLY_RESTORED`. `CLOSE_RUN` also accepts `as: 'discarded'`. `RECORD_REJECT` drops the paths a reject that left files behind put back from the stop's `interruptedStep.kept`. It sets each passed task that booked one of those paths back to `pending`. When the first such task comes before the current one, the run moves back before it and clears its `pendingRecovery` and the saved `reviewAnswer`. Their effects are in [WORKFLOW.md](./WORKFLOW.md#apply).
 
 The old file-halt enums and event schemas remain readers for saved sessions. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) describes continuation.
 
@@ -912,7 +912,7 @@ The old file-halt enums and event schemas remain readers for saved sessions. [Re
 
 **Review lifecycle (3):**
 
-`review_started`, `review_step` (the review's current step: `choosing-checks`, then `verdict`), `review_completed`. `runFinalReviewPhase` publishes both scopes, `task` and `final`, with one completion per start. A `preReview` halt publishes neither. Both events carry the review seat's `tool`, optional `model`, and nonempty effort `axes`. Task scope also carries `afterTaskId`; final scope omits it. The planner holds the review seat when no reviewer is configured.
+`review_started`, `review_step` (the review's current step: `choosing-checks`, then `verdict`, then `verify` once the reviewer answered), `review_completed`. `runFinalReviewPhase` publishes both scopes, `task` and `final`, with one completion per start. A `preReview` halt publishes neither. Both events carry the review seat's `tool`, optional `model`, and nonempty effort `axes`. Task scope also carries `afterTaskId`; final scope omits it. The planner holds the review seat when no reviewer is configured.
 
 `review_completed` carries `duration` in milliseconds and a verdict: `pass`, `pass-with-notes`, `fail`, `no-verdict`, or `stopped`. The first three carry `findings`, with `blocking`, `minor`, and `outOfScope` counts from the derived outcome. Failed calls use `no-verdict`; stops use `stopped`; both omit findings. Neither review event fires a hook. The review seat publishes no `planner_status`.
 

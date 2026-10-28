@@ -727,7 +727,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     duration: z.number(),
   }),
   phaseEvent('review_step').extend({
-    step: z.enum(['choosing-checks', 'verdict']),
+    step: z.enum(['choosing-checks', 'verdict', 'verify']),
   }),
   /**
    * The commands the reviewer chose before a review, the tests it declined, or the checks being off.
