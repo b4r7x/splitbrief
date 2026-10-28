@@ -5,6 +5,7 @@ import type {
 import { narrowRecord } from '../../../../utils/type-guards.js';
 import { CREW_SEAT_LABELS, formatSeatIdentity } from '../../../../core/crew/identity.js';
 import { checksSummary } from '../../../../core/validation/checks-summary.js';
+import { reusedNote } from '../../../../core/validation/reused-note.js';
 import { readinessCheckLines } from '../../../../core/readiness/format.js';
 import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
 import {
@@ -58,6 +59,7 @@ function renderChecksLog(checks: ReviewPacket['checks']): string[] {
         : ` (exit ${entry.exitCode})`;
     const command = entry.command === undefined ? '' : `: ${entry.command}`;
     const lines = [`- ${entry.id}${task}${outcome}${command}`];
+    if (entry.reusedAt !== undefined) lines.push(`  ${reusedNote(entry.reusedAt)}`);
     for (const line of (entry.output ?? '').split('\n')) {
       if (line.trim() !== '') lines.push(`  ${ran ? 'output' : 'reason'}: ${line}`);
     }

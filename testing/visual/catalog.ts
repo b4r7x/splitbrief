@@ -4299,6 +4299,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-check-reused',
+      title: 'Workflow · a command that ran once serves two plan checks and a reviewer check',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'review-check-reused',
+        title: 'Reused check rows show when the command ran in place of a clock',
+        kind: 'review',
+        marker: 'reused,',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan checks and reviewer checks' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-pause-requested',
       title: 'Workflow · pause requested during a reviewer check',
       surface: screenSurface('workflow'),

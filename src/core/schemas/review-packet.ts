@@ -168,6 +168,8 @@ const ReviewPacketCheckEntrySchema = z.object({
   artifacts: z.array(z.object({ path: z.string(), sha256: z.string() })).optional(),
   workspaceSnapshotId: z.string().optional(),
   ts: z.string().optional(),
+  /** When the stored result this check took ran; absent on a check that ran its command. */
+  reusedAt: z.string().optional(),
 });
 
 const ReviewPacketChecksSchema = z.object({

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PassThrough } from 'node:stream';
+import { reusedNote } from '../../../core/validation/reused-note.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../types.js';
 import { EngineEventSchema } from '../schema.js';
@@ -564,6 +565,37 @@ describe('createStdoutTextSink', () => {
     expect(lines).toEqual([
       'phase: final-review',
       'reviewer checks: not run V1, V2 (validation.approve_checks is ask and this run has no screen to ask on)',
+    ]);
+  });
+
+  it('marks a reused reviewer check, plan check and base re-run with the time it ran', () => {
+    const reusedAt = new Date().toISOString();
+    const note = reusedNote(reusedAt);
+    const check = (fields: Partial<EngineEventOf<'full_suite'>>): EngineEventOf<'full_suite'> => ({
+      type: 'full_suite',
+      ts,
+      phase: 'final-review',
+      status: 'done',
+      id: 'V1',
+      command: 'npm test',
+      moment: 'pre-review',
+      passed: true,
+      reusedAt,
+      ...fields,
+    });
+    expect(
+      collect([
+        check({}),
+        check({ id: 'K1', moment: 'plan' }),
+        check({ moment: 'base' }),
+        check({ id: 'K2', moment: 'brief', own: 2, ownLeft: 0, others: 0 }),
+      ]),
+    ).toEqual([
+      'phase: final-review',
+      `reviewer check V1: passed · ${note} (npm test)`,
+      `plan check K1: passed · ${note} (npm test)`,
+      `base re-run V1: passes · ${note}`,
+      `fix check K2: your\u00a02\u00a0failures\u00a0gone · ${note} (npm test)`,
     ]);
   });
 

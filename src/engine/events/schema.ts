@@ -784,6 +784,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
      */
     detail: z.string().optional(),
     duration: z.number().optional(),
+    /** On done events: nothing ran, the result came from the run of the same command at this ISO time. */
+    reusedAt: z.string().optional(),
   }),
   phaseEvent('escalate').extend({
     taskId: TaskIdSchema,

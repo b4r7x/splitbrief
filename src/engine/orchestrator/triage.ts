@@ -37,6 +37,7 @@ import { runBaseOf } from './isolation/base-tree.js';
 import type { ValidationCommandRunner } from './validation/types.js';
 import { checkFailureText, newFailureKeys } from './validation/failure-text.js';
 import { uniqueSorted } from '../../utils/collections.js';
+import { nowIso } from '../../utils/format-time.js';
 
 /** A red whose failures were all red at the run base too verifies the claim like a pass. */
 function checkVerificationStatus(runs: readonly CheckRunResult[]): 'pass' | 'fail' | 'unverified' {
@@ -230,6 +231,13 @@ export async function verifyClaimChecks(
       ...(state.discoveredValidation !== undefined && {
         discoveredValidation: state.discoveredValidation,
       }),
+      // A verify runs a red command again, so a flaky red does not stand on a stored run.
+      results: {
+        ref: { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
+        state,
+        tree: 'workspace',
+        rerunRedBefore: nowIso(),
+      },
       ...(ctx.signal !== undefined && { signal: ctx.signal }),
       ...(ctx.runCommand !== undefined && { runCommand: ctx.runCommand }),
     })

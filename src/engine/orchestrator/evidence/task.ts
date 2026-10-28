@@ -32,6 +32,7 @@ function runCheckEntry(run: CheckRunResult, meta: CheckEntryMeta, ts: string): E
   if (run.command !== undefined) entry.command = run.command;
   if (run.exitCode !== undefined) entry.exitCode = run.exitCode;
   if (run.output.trim() !== '') entry.output = run.output;
+  if (run.reusedAt !== undefined) entry.reusedAt = run.reusedAt;
   if (run.base !== undefined) {
     entry.base = {};
     if (run.base.exitCode !== undefined) entry.base.exitCode = run.base.exitCode;

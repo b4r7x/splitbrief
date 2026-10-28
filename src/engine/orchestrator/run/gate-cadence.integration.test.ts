@@ -391,8 +391,8 @@ describe("reviewer checks with workflow.review 'task'", { timeout: 120_000 }, ()
       harness.log.indexOf('implement:T001'),
       harness.log.indexOf('implement:T002'),
     );
+    // The task review takes the fix check's result: no file changed since it ran.
     expect(betweenFixes.filter((entry) => entry.startsWith('cmd:'))).toEqual([
-      'cmd:tsc --noEmit',
       'cmd:tsc --noEmit',
       'cmd:node --version',
     ]);

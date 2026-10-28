@@ -6281,6 +6281,58 @@ const reviewCorrectedProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// One command under two plan check ids and a reviewer check runs once; the later rows show when it ran.
+const PLAN_TEST_RAN_TS = PRE_REVIEW_TEST_STARTED_TS - 28_000;
+const reviewCheckReusedProjection: WorkflowFixtureProjection = {
+  ...reviewCheckRunningProjection,
+  scenarioId: scenarioId('workflow-review-check-reused'),
+  events: reviewCheckRunningProjection.events.flatMap((event): EngineEvent[] => {
+    if (event.type === 'full_suite') return [];
+    if (event.type !== 'review_checks') return [event];
+    const reusedAt = new Date(PLAN_TEST_RAN_TS).toISOString();
+    return [
+      {
+        type: 'full_suite',
+        ts: PLAN_TEST_RAN_TS,
+        phase: 'final-review',
+        status: 'done',
+        id: 'K1',
+        command: 'npm test',
+        moment: 'plan',
+        passed: true,
+        duration: 112_000,
+      },
+      {
+        type: 'full_suite',
+        ts: PLAN_TEST_RAN_TS + 100,
+        phase: 'final-review',
+        status: 'done',
+        id: 'K2',
+        command: 'npm test',
+        moment: 'plan',
+        passed: true,
+        reusedAt,
+      },
+      event,
+      reviewCheck(PRE_REVIEW_TEST_STARTED_TS - 20_000, REVIEW_CHECK_TYPECHECK, {
+        status: 'done',
+        passed: true,
+        duration: 18_000,
+      }),
+      {
+        type: 'full_suite',
+        ts: PRE_REVIEW_TEST_STARTED_TS - 1_000,
+        phase: 'final-review',
+        status: 'done',
+        ...REVIEW_CHECK_TEST,
+        moment: 'pre-review',
+        passed: true,
+        reusedAt,
+      },
+    ];
+  }),
+};
+
 // The user chose Skip all: one row names every command that did not run and why.
 const reviewChecksSkippedProjection: WorkflowFixtureProjection = {
   ...reviewCheckRunningProjection,
@@ -7335,6 +7387,7 @@ const projections = [
   implementationSilentBareProjection,
   implementationShellWrapperProjection,
   reviewCheckRunningProjection,
+  reviewCheckReusedProjection,
   reviewRenderRunningProjection,
   reviewPauseRequestedProjection,
   planningSeatChangeProjection,

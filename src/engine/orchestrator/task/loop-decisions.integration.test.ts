@@ -441,8 +441,8 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       }),
     );
     // The rejected attempt never reached its brief gate: only the retry's work was validated.
-    // The task review ran the check once more.
-    expect(validator.checkRuns.mock.calls.filter(([id]) => id === 'T001')).toHaveLength(2);
+    // The task review takes that result: no file changed since.
+    expect(validator.checkRuns.mock.calls.filter(([id]) => id === 'T001')).toHaveLength(1);
     const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
     expect(retries).toHaveLength(1);
     expect(retries[0]?.error).toContain(diagnosis);
@@ -478,7 +478,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
         rejectedCount: 1,
       }),
     );
-    expect(validator.checkRuns.mock.calls.filter(([id]) => id === 'T001')).toHaveLength(2);
+    expect(validator.checkRuns.mock.calls.filter(([id]) => id === 'T001')).toHaveLength(1);
     expect(result.state.plan?.decisions).toEqual([]);
   });
 
@@ -753,9 +753,9 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toEqual([]);
     expect(result.status).toBe('complete');
     expect(onPlannerReply).toHaveBeenCalledTimes(1);
-    // The attempt that reported the change of what was not validated. The task review ran the
-    // check once more.
-    expect(validator.checkRuns).toHaveBeenCalledTimes(3);
+    // The attempt that reported the change of what was not validated. The task review takes the
+    // retry's result: no file changed since.
+    expect(validator.checkRuns).toHaveBeenCalledTimes(2);
     const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
     expect(retries).toHaveLength(2);
     expect(retries[1]?.error).toContain(ANSWER);
@@ -875,8 +875,8 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(retries[0]?.error).toContain(ANSWER);
     expect(retries[0]?.allowNoChange).toBe(true);
     // The gate runs the check once, on the retry: the attempt the user answered about is not
-    // validated. The task review runs it once more.
-    expect(validator.checkRuns).toHaveBeenCalledTimes(2);
+    // validated. The task review takes that result: no file changed since.
+    expect(validator.checkRuns).toHaveBeenCalledTimes(1);
     expect(events).toContainEqual(
       expect.objectContaining({ type: 'warning', message: expect.stringContaining('T001') }),
     );
@@ -906,7 +906,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(prompts.filter(isDecisionConfirm).length).toBeGreaterThan(0);
     expect(onPlannerReply).not.toHaveBeenCalled();
     expect(implementer.retry).not.toHaveBeenCalled();
-    expect(validator.checkRuns).toHaveBeenCalledTimes(2);
+    expect(validator.checkRuns).toHaveBeenCalledTimes(1);
     expect(result.state.plan?.decisions).toEqual([]);
     expect(events).toContainEqual(
       expect.objectContaining({ type: 'warning', message: expect.stringContaining('T001') }),
@@ -998,7 +998,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(result.status).toBe('complete');
-    expect(validator.checkRuns).toHaveBeenCalledTimes(2);
+    expect(validator.checkRuns).toHaveBeenCalledTimes(1);
     expect(result.state.plan?.decisions).toEqual([]);
     expect(result.state.plannerCalls?.used ?? 0).toBe(0);
     expect(events).toContainEqual(

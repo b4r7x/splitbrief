@@ -1,3 +1,5 @@
+import { formatDatedClock, formatWallClock } from '../../utils/format-time.js';
+
 /**
  * The reset moment as a clock on the wall: local 24-hour time, plus the date
  * when it is not today — a bare `17:00` would read as this afternoon. One body
@@ -6,8 +8,7 @@
  * instant is never spelled two ways.
  */
 export function formatResetNote(resetAt: number, now: number = Date.now()): string {
-  const reset = new Date(resetAt);
-  return `resets ${isSameLocalDay(reset, new Date(now)) ? wallClock(reset) : datedClock(reset)}`;
+  return `resets ${formatWallClock(resetAt, now)}`;
 }
 
 /**
@@ -28,23 +29,7 @@ export function formatResetAt(
  * where a bare clock would name the wrong one.
  */
 export function formatStoredReset(resetAt: number): string {
-  return datedClock(new Date(resetAt));
-}
-
-function wallClock(reset: Date): string {
-  return reset.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-}
-
-function datedClock(reset: Date): string {
-  return `${reset.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${wallClock(reset)}`;
-}
-
-function isSameLocalDay(left: Date, right: Date): boolean {
-  return (
-    left.getFullYear() === right.getFullYear() &&
-    left.getMonth() === right.getMonth() &&
-    left.getDate() === right.getDate()
-  );
+  return formatDatedClock(resetAt);
 }
 
 // One instant, one spelling: whichever surface carries the reset clock, the others drop the clause

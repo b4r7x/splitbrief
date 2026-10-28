@@ -3,6 +3,7 @@ import { taskId } from '../../../../core/schemas/task.js';
 import { type ReviewPacket, ReviewPacketSchema } from '../../../../core/schemas/review-packet.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { renderChecksLogForPrompt, renderReviewPacketMarkdown } from './render.js';
+import { reusedNote } from '../../../../core/validation/reused-note.js';
 import { NULL_CACHE } from '../../../providers/model/resolution.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
@@ -461,6 +462,29 @@ describe('renderReviewPacketMarkdown checks log', () => {
     expect(rendered).toContain('  artifact: renders/K1/shot.png sha256 deadbeef');
     expect(rendered).toContain('  snapshot: snap-9');
     expect(rendered).toContain('  time: 2026-01-01T00:00:00.000Z');
+  });
+
+  it('prints when a reused check ran', () => {
+    const reusedAt = new Date().toISOString();
+    const packet = makeReviewPacket({
+      checks: {
+        entries: [
+          {
+            taskId: taskId('T001'),
+            id: 'K2',
+            command: 'tsc --noEmit',
+            exitCode: 0,
+            output: 'ok',
+            reusedAt,
+          },
+        ],
+        outsideReadPaths: [],
+      },
+    });
+
+    const rendered = renderReviewPacketMarkdown(packet, NULL_CACHE);
+
+    expect(rendered).toContain(`- K2 T001 (exit 0): tsc --noEmit\n  ${reusedNote(reusedAt)}\n`);
   });
 
   it('marks a refused check as refused and prints why, not as output', () => {

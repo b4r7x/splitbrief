@@ -191,11 +191,13 @@ async function preExistingKeys(input: {
       input.base,
       input.checkOptions.projectDir,
       async ({ dir, incomplete }) => {
+        const { results } = input.checkOptions;
         const [run] = await runChecks([input.id], {
           ...input.checkOptions,
           projectDir: dir,
           base: undefined,
           checkoutDir: undefined,
+          results: results === undefined ? undefined : { ...results, tree: 'run-base' },
         });
         return run === undefined ? undefined : { run, incomplete };
       },
@@ -255,7 +257,9 @@ async function preExistingKeys(input: {
     moment: 'base',
     passed: atBase.run.status === 'pass',
     detail: reason,
-    duration: Date.now() - startedAt,
+    ...(atBase.run.reusedAt === undefined
+      ? { duration: Date.now() - startedAt }
+      : { reusedAt: atBase.run.reusedAt }),
     newFailures: reason === undefined ? input.failure.keys.length - keys.length : 0,
     preExisting: keys.length,
     notVerified: reason === undefined ? undefined : input.failure.keys.length,
@@ -363,7 +367,9 @@ export async function runReviewCheck(
     command: run.command ?? command,
     moment,
     passed: run.status === 'pass' || judged?.left.length === 0,
-    duration: Date.now() - startedAt,
+    ...(run.reusedAt === undefined
+      ? { duration: Date.now() - startedAt }
+      : { reusedAt: run.reusedAt }),
     ...(judged !== null && fixCheckCounts(judged)),
   });
   if (run.status !== 'fail') return { run, fresh: [] };
@@ -564,6 +570,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     npmScriptsApproved,
     discoveredValidation: state.discoveredValidation,
     signal: opts.signal,
+    results: { ref, state, tree: 'workspace' },
   };
   const ledger = readEvidenceLedger(ref);
   const runs: CheckRunResult[] = [];

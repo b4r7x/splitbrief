@@ -27,6 +27,30 @@ export function formatElapsedClock(ms: number): string {
   return `${minutes}:${seconds}`;
 }
 
+/** An instant as a clock on the wall: local 24-hour time, plus the date when it is not today. */
+export function formatWallClock(at: number, now: number = Date.now()): string {
+  const date = new Date(at);
+  return isSameLocalDay(date, new Date(now)) ? hourMinute(date) : formatDatedClock(at);
+}
+
+/** An instant as a dated clock on the wall: `Oct 27, 11:53`. */
+export function formatDatedClock(at: number): string {
+  const date = new Date(at);
+  return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${hourMinute(date)}`;
+}
+
+function hourMinute(date: Date): string {
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function isSameLocalDay(left: Date, right: Date): boolean {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
 export function nowIso(): string {
   return new Date().toISOString();
 }

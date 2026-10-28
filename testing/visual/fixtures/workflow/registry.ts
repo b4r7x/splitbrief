@@ -1167,6 +1167,7 @@ const checkpointPredicates = [
       excludesAll('Between calls', 'Resuming', 'Implementing…')(context),
   ],
   [checkpointId('review-check-running'), includesAll('Review · Reviewer check V2')],
+  [checkpointId('review-check-reused'), includesAll('Reviewer check V2', 'reused,')],
   [checkpointId('review-pause-requested'), includesAll('Review · Reviewer check V2')],
   [checkpointId('planning-seat-change'), includesAll('Planning…')],
   [checkpointId('plan-card-seat-change'), planCardReady],
