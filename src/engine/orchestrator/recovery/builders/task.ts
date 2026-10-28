@@ -285,7 +285,6 @@ export interface SeatDownRecoveryOptions extends RecoveryBuilderBase {
   task?: Task | undefined;
   phase: Phase;
   attempts?: number | undefined;
-  maxAttempts?: number | undefined;
   selectedImplementerProfile?: string | undefined;
   seatSwap?: SeatSwapContext | undefined;
   /**
@@ -438,11 +437,10 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
     details: [
       reportedDetail(displayName, opts),
       fallbackDetail(opts, fallbackIdentity),
-      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...attemptDetails(opts.attempts),
       ...(opts.details ?? []),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
-    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(resetAt !== undefined && { resetAt: resetAt.toISOString() }),
     ...(switchSeat !== undefined && { switchSeat }),
@@ -521,11 +519,10 @@ export function buildRetryExhaustedRecoveryIssue(
     }),
     details: [
       lastErrorDetail(validation),
-      ...(opts.attempts === 0 ? [] : attemptDetails(opts.attempts, opts.maxAttempts)),
+      ...(opts.attempts === 0 ? [] : attemptDetails(opts.attempts)),
       ...(opts.handBack ? [`Implementer said: ${handBackQuote(opts.handBack)}`] : []),
     ],
     attempts: opts.attempts,
-    maxAttempts: opts.maxAttempts,
     selectedImplementerProfile: opts.selectedImplementerProfile,
     facts: compactFacts({
       validationSummary: validation.summary,
@@ -731,10 +728,9 @@ function recipeHaltIssue(
     details: [
       toolReported(displayName, opts.toolMessage),
       refusalStopDetail(refusal),
-      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...attemptDetails(opts.attempts),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
-    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({
@@ -807,7 +803,6 @@ export function buildMissingModelRecoveryIssue(opts: RunnerFailureRecoveryOption
       task: opts.task,
       phase: opts.phase ?? 'implementing',
       attempts: opts.attempts,
-      maxAttempts: opts.maxAttempts,
       selectedImplementerProfile: opts.selectedImplementerProfile,
       seatSwap: opts.seatSwap,
       seatSwitches: opts.seatSwitches,
@@ -846,10 +841,9 @@ export function buildRepeatedTimeoutRecoveryIssue(
     details: [
       opts.toolMessage,
       'The run stopped instead of escalating a brief the implementer cannot finish in time.',
-      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...attemptDetails(opts.attempts),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
-    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({
@@ -1004,10 +998,9 @@ export function buildRunnerInputTooLargeRecoveryIssue(
     details: [
       inputTooLargeDetail(figures, displayName, opts.toolMessage),
       'A retry sends the same prompt.',
-      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...attemptDetails(opts.attempts),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
-    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({ tool: displayName, ...inputTooLargeFacts(figures) }),
@@ -1068,10 +1061,9 @@ export function buildApprovalDeniedRecoveryIssue(
     details: [
       opts.denialReason !== undefined ? `Denied: ${opts.denialReason}` : undefined,
       denied.length > 0 ? `Blocked files: ${denied.join(', ')}` : undefined,
-      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...attemptDetails(opts.attempts),
     ].filter((detail): detail is string => detail !== undefined),
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
-    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     facts: compactFacts({ tool: opts.tool, denialReason: opts.denialReason }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions),

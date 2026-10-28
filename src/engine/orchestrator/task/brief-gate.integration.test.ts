@@ -264,7 +264,9 @@ describe('brief gate', () => {
       expect(result.error).toMatch(
         /^check K1 did not pass \(fail\): exited with code 1 without diagnostics\nOutput tail:\nbroken/,
       );
-    expect(result.diagnosis).toBe(green ? '' : 'check K1 failed');
+    expect(result.failure).toEqual(
+      green ? [] : [{ source: 'check K1', keys: ['exited with code 1'] }],
+    );
     expect(result.state.tasks[0]?.checkResults).toEqual([
       { id: 'K1', status: green ? 'pass' : 'fail' },
     ]);
@@ -446,7 +448,9 @@ describe('brief gate', () => {
       });
       expect(result.acceptance).toEqual({ accepted: !required });
       expect(result.error).toMatch(required ? /^check K1 did not pass \(fail\): .*broken/s : /^$/);
-      expect(result.diagnosis).toBe(required ? 'check K1 failed' : '');
+      expect(result.failure).toEqual(
+        required ? [{ source: 'check K1', keys: ['src/own.ts(2,1): broken'] }] : [],
+      );
       expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'fail' }]);
     }
   });
@@ -525,7 +529,7 @@ describe('brief gate', () => {
     expect(result.error).toMatch(
       /^check K1 did not pass \(fail\): exited with code 1 without diagnostics\nOutput tail:\nbroken/,
     );
-    expect(result.diagnosis).toBe('check K1 failed');
+    expect(result.failure).toEqual([{ source: 'check K1', keys: ['exited with code 1'] }]);
   });
 
   it('fails the gate on a fix check that does not pass, whatever its status', async () => {

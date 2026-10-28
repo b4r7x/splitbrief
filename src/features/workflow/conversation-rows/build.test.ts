@@ -2990,7 +2990,6 @@ describe('one recovery reads as one block', () => {
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } }).implementer,
       toolMessage: 'branch fix/implementer-never-runs-gates',
       attempts: 0,
-      maxAttempts: 2,
       createdAt: '2026-10-07T05:54:04.413Z',
     });
     const { lines } = transcript([
@@ -3014,7 +3013,6 @@ describe('one recovery reads as one block', () => {
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } }).implementer,
       toolMessage: inputTooLargeRefusal(195_203, { max: 120_000, unit: 'characters' }).message,
       attempts: 1,
-      maxAttempts: 8,
       createdAt: '2026-10-07T05:54:04.413Z',
     });
     const headline = formatRecoveryHeadline(issue);

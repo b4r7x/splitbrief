@@ -59,7 +59,7 @@ afterEach(() => {
 });
 
 describe('an attached correction at a taskless recovery halt', () => {
-  it.each(['planner-calls-spent', 'planner-call-failed'] as const)(
+  it.each(['planner-call-failed'] as const)(
     '%s delivers the file body to the planner and records the correction once',
     async (reason) => {
       const sessionId = `attached-${reason}`;
@@ -67,7 +67,6 @@ describe('an attached correction at a taskless recovery halt', () => {
       const state: WorkflowState = {
         ...createInitialState('add auth'),
         phase: 'planning',
-        plannerCalls: { used: 10, allowance: 10 },
         pendingRecovery: makeRecoveryIssue({
           reason,
           phase: 'planning',
@@ -77,11 +76,8 @@ describe('an attached correction at a taskless recovery halt', () => {
           affectedTaskIds: [],
           files: [],
           selectedImplementerProfile: undefined,
-          availableActions:
-            reason === 'planner-calls-spent'
-              ? ['continue', 'end-run']
-              : ['retry-same-worker', 'end-run'],
-          recommendedAction: reason === 'planner-calls-spent' ? 'continue' : 'retry-same-worker',
+          availableActions: ['retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-same-worker',
         }),
       };
       ensureSessionDir(projectDir, sessionId);
@@ -140,7 +136,7 @@ describe('an attached correction at a taskless recovery halt', () => {
         const route = routerStore.get();
         expect(route.screen === 'workflow' && route.execution.kind === 'at-rest').toBe(true);
       });
-      expect(steers).toEqual([reason === 'planner-calls-spent' ? correction : undefined]);
+      expect(steers).toEqual([undefined]);
       await expectCompactMessage(ref, eventsStore.get().events, correction);
       const frame = stripAnsiStyles(ui.lastFrame());
       expect(frame).toContain('Attached files · 1');

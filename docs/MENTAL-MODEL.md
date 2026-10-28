@@ -146,7 +146,7 @@ If validation fails, the implementer retries once with the error message. Then S
 - **Verify** — no implementer call: the validation pipeline and the named checks run again, and a clean run completes the task
 - **Ask-user** — the one question the ladder asks you, with a default; the answer continues as guidance
 
-The planner never writes the implementation itself, and each task's lineage is bounded (2 consults, 8 attempts; 10 planner calls per run). If the ladder cannot go on (a spent bound, a failed consult call, a runner halt), the recovery system takes over: for a spent bound the user can continue with a note to grant the extra allowance, skip the task or end the run; other halts offer retry same worker, switch the seat, skip or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run).
+The planner never writes the implementation itself. It keeps deciding while its answers move the failure; two answers in a row that leave the same failure, or 10 answers on one task, stop the ladder. If the ladder cannot go on (no progress, a failed consult call, a runner halt), the recovery system takes over: on no progress the user can continue with a note so the planner is asked again, skip the task or end the run; other halts offer retry same worker, switch the seat, skip or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run).
 
 ---
 

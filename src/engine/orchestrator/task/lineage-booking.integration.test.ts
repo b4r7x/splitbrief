@@ -413,7 +413,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
         }
       },
     });
-    expect(result.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+    expect(result.state.pendingRecovery?.reason).toBe('no-progress');
     const halted = loadState(ref);
     if (halted === null) throw new Error('Missing halted state');
     const checkoutRun = {
@@ -465,7 +465,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
         }
       },
     });
-    expect(result.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+    expect(result.state.pendingRecovery?.reason).toBe('no-progress');
     const halted = loadState(ref);
     if (halted === null) throw new Error('Missing halted state');
 
@@ -486,7 +486,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
       answers: [(failing) => rewrite(failing, false)],
       afterConsult: (_call, opts) => write(opts.projectDir, 'src/b.ts', 'export const b = 1;\n'),
     });
-    expect(result.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+    expect(result.state.pendingRecovery?.reason).toBe('no-progress');
     const halted = loadState(ref);
     if (halted === null) throw new Error('Missing halted state');
 
@@ -509,7 +509,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
       answers: [(failing) => rewrite(failing, false)],
       afterConsult: (_call, opts) => write(opts.projectDir, 'src/b.ts', 'export const b = 1;\n'),
     });
-    expect(result.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+    expect(result.state.pendingRecovery?.reason).toBe('no-progress');
     const halted = loadState(ref);
     if (halted === null) throw new Error('Missing halted state');
     const checkoutRun = {

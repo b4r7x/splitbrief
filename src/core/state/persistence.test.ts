@@ -201,6 +201,28 @@ describe('loadState', () => {
     expect(readFileSync(statePath, 'utf-8')).toBe(snapshot);
   });
 
+  it('loads an old snapshot with planner-call and consult allowances, and drops them', () => {
+    const dir = makeTmp();
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(stateDir, { recursive: true });
+    const current = createInitialState('old-allowances');
+    const legacy = {
+      ...current,
+      plannerCalls: { used: 10, allowance: 10 },
+      lineages: {
+        T001: { consults: 2, attempts: 8, consultAllowance: 2, attemptAllowance: 8 },
+      },
+    };
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(legacy));
+
+    const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
+    expect(loaded).not.toHaveProperty('plannerCalls');
+    expect(loaded?.lineages?.T001).not.toHaveProperty('consults');
+    expect(loaded?.lineages?.T001).not.toHaveProperty('consultAllowance');
+    expect(loaded?.lineages?.T001).not.toHaveProperty('attemptAllowance');
+    expect(loaded?.lineages?.T001?.attempts).toBe(8);
+  });
+
   it('drops the retired deviation and confirm consult records of an old snapshot', () => {
     const dir = makeTmp();
     const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);

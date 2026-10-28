@@ -312,7 +312,7 @@ async function runRetryStepAttempt(
     state: commitResult.state,
     task,
     lastError: commitResult.error,
-    diagnosis: commitResult.diagnosis,
+    checks: commitResult.failure,
     attempts,
   };
 }

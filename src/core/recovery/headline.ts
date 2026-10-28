@@ -85,6 +85,13 @@ export function retryExhaustedCause(
   return `${cause.task} failed`;
 }
 
+/** A brief the planner's answers did not settle: two answers in a row left its failure, or it used all its answers. */
+export function noProgressCause(task: string, stop: string | undefined, answers: number): string {
+  return stop === 'unconverged'
+    ? `${task} did not settle after ${answers} planner answers`
+    : `${task} is stuck on the same failure`;
+}
+
 /** A repository change under a brief, with the changes the audit saw, in the words every surface shares. */
 export function repositoryChangedCause(task: string, changes: string | undefined): string {
   const lead = `Repository changed under ${task}`;
@@ -154,6 +161,16 @@ export function formatRecoveryHeadlineSpans(
             plannerVerdict: recoveryFactString(issue.facts, 'plannerVerdict'),
             hookReason: recoveryFactString(issue.facts, 'escalationBlockedBy'),
           }),
+        },
+      ];
+    case 'no-progress':
+      return [
+        {
+          text: noProgressCause(
+            taskName(issue),
+            recoveryFactString(issue.facts, 'stop'),
+            recoveryFactNumber(issue.facts, 'answers') ?? 0,
+          ),
         },
       ];
     case 'consult-bound-spent':

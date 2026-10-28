@@ -65,7 +65,7 @@ describe('formatResumeCommand', () => {
 
   // The recovery panel offers every action; `continue` opens it, so the line names the row there.
   it.each([
-    ['consult-bound-spent', 'continue', 'Continue'],
+    ['no-progress', 'continue', 'Continue'],
     ['plan-checks-failed', 'revise', 'Send a correction'],
     ['review-failed', 'revise', 'Fix again'],
     ['review-input-too-large', 'accept-as-is', 'Skip review with a note'],
@@ -92,7 +92,7 @@ describe('continuesHeadless', () => {
     expect(
       continuesHeadless(
         makeRecoveryIssue({
-          reason: 'consult-bound-spent',
+          reason: 'no-progress',
           availableActions: ['continue', 'end-run'],
           recommendedAction: 'continue',
         }),

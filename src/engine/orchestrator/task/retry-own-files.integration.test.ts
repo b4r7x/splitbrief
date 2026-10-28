@@ -135,10 +135,10 @@ async function retryAfterHalt() {
   if (!retried.ok) throw new Error(retried.message);
   failing.value = false;
 
-  const builds: { consults: number | undefined; action: string }[] = [];
+  const builds: { consultRecords: number | undefined; action: string }[] = [];
   const build = async (opts: ImplementerOptions | RetryOptions) => {
     builds.push({
-      consults: loadState(ref)?.lineages?.T001?.consults,
+      consultRecords: loadState(ref)?.lineages?.T001?.consultRecords.length,
       action: opts.task.action,
     });
     writeNewFile(opts.projectDir, 'export const run = 1;\n');
@@ -160,7 +160,7 @@ describe('Try again on a brief whose first attempt wrote its own files', () => {
   it('keeps the consult count and the brief creating its file after a failed-consult halt', async () => {
     const { halted, recovered, builds } = await retryAfterHalt();
 
-    expect(builds[0]?.consults).toBe(halted.lineages?.T001?.consults);
+    expect(builds[0]?.consultRecords).toBe(halted.lineages?.T001?.consultRecords.length);
     expect(builds[0]?.action).toBe('create');
     expect(recovered.tasks[0]?.action).toBe('create');
   });

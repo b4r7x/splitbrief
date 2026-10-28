@@ -51,7 +51,7 @@ Statuses are `pending`, `running`, `retrying`, `done`, `halted`, or `skipped`.
 Save the active stage and next step beside the table, including review and fixes.
 On a stop, retain the stage to resume and its task id, attempt, or review cycle.
 Save the selected task ids, seats, cadence, approvals, lineage roots, revisions, and process artifact paths.
-Persist attempts, consults, run planner decisions, fix cycles, and extra allowances using references/recovery.md.
+Persist attempts, consults, lineage progress, run planner decisions, and fix cycles using references/recovery.md.
 Keep the decisions ledger in `plan.json` using references/planning.md.
 Update progress before each spawn and after each attempt, task, review, or planner decision.
 Only current recorded checks produce `done`. A skipped task prevents a claim that the whole plan passed.

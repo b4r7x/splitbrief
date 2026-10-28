@@ -1402,7 +1402,7 @@ describe('event row dispatch', () => {
     expect(rows).toEqual([]);
   });
 
-  it('states the lineage attempt and allowance on a retry after a grant', () => {
+  it('states the lineage attempt on a retry, without the allowance an old event carries', () => {
     const rows = eventRows({
       event: {
         type: 'task_retry',
@@ -1419,7 +1419,9 @@ describe('event row dispatch', () => {
       expanded: false,
       ctx: { width: 80, viewportRows: 20, streaming },
     });
-    expect(rows.map(rowText).join('\n')).toContain('attempt 7 of 12');
+    const text = rows.map(rowText).join('\n');
+    expect(text).toContain('Retry  attempt 7');
+    expect(text).not.toContain('of 12');
   });
 
   it.each([
@@ -2907,7 +2909,9 @@ describe('event row dispatch', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText).join('\n')).toContain('attempt 2 of 3');
+    const text = rows.map(rowText).join('\n');
+    expect(text).toContain('Retry  attempt 2');
+    expect(text).not.toContain('of 3');
   });
 
   it('message_queued renders a Queued header above the message text', () => {

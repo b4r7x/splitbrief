@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { listRowLead } from '../../../components/list-row.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
@@ -336,7 +337,7 @@ it('says what ⏎ in the composer does while it holds focus, and lists no live k
   const ui = renderFeature(
     <RecoveryMenu
       issue={makeRecoveryIssue({
-        reason: 'consult-bound-spent',
+        reason: 'no-progress',
         availableActions: ['continue', 'skip-current-task', 'end-run'],
         recommendedAction: 'continue',
       })}
@@ -410,12 +411,12 @@ it('says ⏎ runs the command when the composer holds a slash command', async ()
   ui.unmount();
 });
 
-it('offers a typed note on a halt whose Continue grants a spent bound', async () => {
+it('offers a typed note on a no-progress halt, whose Continue takes it', async () => {
   const ui = mount(
     vi.fn(),
     80,
     makeRecoveryIssue({
-      reason: 'consult-bound-spent',
+      reason: 'no-progress',
       availableActions: ['continue', 'skip-current-task', 'end-run'],
       recommendedAction: 'continue',
     }),
@@ -626,14 +627,15 @@ function expectHiddenActionsMarked(rows: readonly string[], issue: RecoveryIssue
   }
 }
 
-function consultBoundIssue() {
+function noProgressIssue() {
   return makeRecoveryIssue({
-    reason: 'consult-bound-spent',
-    message: 'T901 used its consult allowance after 5 attempts',
+    reason: 'no-progress',
+    taskId: taskId('T901'),
+    message: 'T901 is stuck on the same failure',
     details: [
+      'Failure: blocked: Which locale table does greet.ts read?',
       'Last diagnosis: Implementer is blocked on a locale table',
-      'Consults: 2 of 2',
-      'Attempts: 5',
+      "Continuing asks the planner again, starting from the last attempt's files.",
     ],
     availableActions: ['continue', 'skip-current-task', 'end-run'],
     recommendedAction: 'continue',
@@ -643,11 +645,11 @@ function consultBoundIssue() {
 it.each([12, 13, 14, 15, 16])(
   'keeps the headline, the cut mark, the recommended action, the hidden-action marks and the legend at 140x%s',
   async (terminalRows) => {
-    const issue = consultBoundIssue();
+    const issue = noProgressIssue();
     const ui = await mountPanel(issue, terminalRows);
     const rows = frameRows(ui);
     expect(rows).toHaveLength(panelBoxRows(terminalRows));
-    expect(rows.some((row) => row.includes('T901 used its consult allowance'))).toBe(true);
+    expect(rows.some((row) => row.includes('T901 is stuck on the same failure'))).toBe(true);
     expect(rows.some((row) => /… \d+ more lines/.test(row))).toBe(true);
     expect(rows.some((row) => row.includes('Continue recommended'))).toBe(true);
     expectHiddenActionsMarked(rows, issue);
@@ -659,7 +661,7 @@ it.each([12, 13, 14, 15, 16])(
 it.each([12, 13, 14, 15, 16])(
   'keeps the selected action and marks every hidden action after one ↓ press at 140x%s',
   async (terminalRows) => {
-    const issue = consultBoundIssue();
+    const issue = noProgressIssue();
     const ui = await mountPanel(issue, terminalRows);
     ui.stdin.write('\u001b[B');
     await flushEffects();

@@ -328,10 +328,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
             ['T001', 'T002'].map((id) => [
               id,
               LineageRecordSchema.parse({
-                consults: 0,
                 attempts: 0,
-                consultAllowance: 3,
-                attemptAllowance: 2,
                 corrections: [`Also run the ${id} edge cases.`],
               }),
             ]),

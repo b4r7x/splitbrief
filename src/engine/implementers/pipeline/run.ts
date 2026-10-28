@@ -566,7 +566,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         phase,
         taskId: task.id,
         file: task.suggestedFiles[0],
-        lineageAttempts: opts.lineageAttempts,
+        lineageAttempt: opts.lineageAttempt,
       });
     const startTime = Date.now();
     const callContext = createImplementerCallContext({

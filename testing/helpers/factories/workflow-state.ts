@@ -1,5 +1,10 @@
 import type { Task } from '../../../src/core/schemas/task.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import {
+  LineageRecordSchema,
+  type LineageRecord,
+  type WorkflowState,
+} from '../../../src/core/schemas/workflow.js';
+import { BOUNDS } from '../../../src/core/pipeline-spec/bounds.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 
 export function makeImplState(tasks: Task[], overrides?: Partial<WorkflowState>): WorkflowState {
@@ -8,6 +13,15 @@ export function makeImplState(tasks: Task[], overrides?: Partial<WorkflowState>)
   state = { ...state, tasks };
   state = transition(state, { type: 'BEGIN_IMPLEMENTATION' });
   return { ...state, ...overrides };
+}
+
+/** A lineage that got every planner answer it may get: its next judgement halts on no progress. */
+export function spentAnswersLineage(overrides: Partial<LineageRecord> = {}): LineageRecord {
+  return {
+    ...LineageRecordSchema.parse({ attempts: 0 }),
+    progress: { failure: [], unmoved: 0, answers: BOUNDS.answersPerBrief },
+    ...overrides,
+  };
 }
 
 export function makeImplStateWithMetadata(

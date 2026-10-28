@@ -427,8 +427,8 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
   contextLength?: number; currentCodeTruncated?: boolean;
   currentCodeContextMode?: CurrentCodeContextMode;
   routingReason?: string }
-// `lineageAttempt` and `attemptAllowance` are the attempt the brief's lineage is on and its
-// allowance; older logs omit them.
+// `lineageAttempt` is the attempt the brief's lineage is on; older logs omit it. Older logs
+// also carry `attemptAllowance`, which nothing reads.
 
 { type: 'task_completed'; taskId: TaskId; title: string;
   method: TaskCompletionMethod; retries: number; duration: number;
@@ -559,6 +559,6 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'error'; message: string; category?: string; code?: string; resetAt?: string }
 ```
 
-**Where an `error` comes from.** The generic `error` event carries an optional `category`/`code` pair naming the halt that produced it. The codes under `category: 'recovery'` include `retry_exhausted` (the retry ladder ran out for a task, `task/retry.ts`), `consult_bound_spent` and `planner_calls_spent` (a spent bound, `escalation/handle.ts` and `escalation/local-retries.ts`), `review_failed` (the review failed with no fix work, or a fix cycle left the same blockers, or its call failed, `run/review.ts` and `final-review.ts`) and `required_checks_unrunnable` (`run/pre-review-checks.ts`); a `category: 'recovery'` search of `src/engine/orchestrator/` lists every code. An approval gate denial (`approval-denied`) raises its recovery issue without an `error` event. A task-start snapshot that could not be captured (`snapshot-failed`) publishes a plain `error` with no `category`/`code` (`task/pre-task.ts`). Both reach consumers as `recovery_prompted`, which is also what fires the `on_halt` hook. Re-entering the task loop over an unresolved recovery publishes the matching `warning` (`recovery_pending_unresolved`) instead.
+**Where an `error` comes from.** The generic `error` event carries an optional `category`/`code` pair naming the halt that produced it. The codes under `category: 'recovery'` include `retry_exhausted` (the retry ladder ran out for a task, `task/retry.ts`), `no_progress` (two planner answers in a row left the same failure, or a brief used all its answers, `escalation/handle.ts`), `review_failed` (the review failed with no fix work, or a fix cycle left the same blockers, or its call failed, `run/review.ts` and `final-review.ts`) and `required_checks_unrunnable` (`run/pre-review-checks.ts`); a `category: 'recovery'` search of `src/engine/orchestrator/` lists every code. An approval gate denial (`approval-denied`) raises its recovery issue without an `error` event. A task-start snapshot that could not be captured (`snapshot-failed`) publishes a plain `error` with no `category`/`code` (`task/pre-task.ts`). Both reach consumers as `recovery_prompted`, which is also what fires the `on_halt` hook. Re-entering the task loop over an unresolved recovery publishes the matching `warning` (`recovery_pending_unresolved`) instead.
 
 `routingReason` on `task_started` is the router's sentence, for example `Selected profile default (fits, estimated 5075/1000000 tokens)`. The run log and the review packet keep it. The task-start row does not print it. The row names the worker from `implementerProfile`, and only a `tight` or `overflow` fit adds the estimate against the window (`~24,310 of 32K context tokens (tight)`). Fuller context-fit and per-task routing metadata is also retained in the run record; the engine emits it as plain event data and does not import UI code.

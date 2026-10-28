@@ -25,8 +25,8 @@ describe('recovery halts', () => {
     );
   });
 
-  it('puts every decision, spent bound and retired cause on needs you', () => {
-    expect(haltOf('consult-bound-spent')).toBe('needs-you');
+  it('puts every decision, a brief with no progress and a retired cause on needs you', () => {
+    expect(haltOf('no-progress')).toBe('needs-you');
     expect(haltOf('review-failed')).toBe('needs-you');
     expect(haltOf('apply-conflict')).toBe('needs-you');
     for (const reason of RETIRED_RECOVERY_REASONS) expect(haltOf(reason)).toBe('needs-you');

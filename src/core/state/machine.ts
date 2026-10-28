@@ -4,7 +4,6 @@ import type { MachineAction, StateAction } from './types.js';
 import {
   WORKFLOW_STATE_VERSION,
   fixCyclesOf,
-  plannerCallsOf,
   type ConsultRecord,
   type FixCycles,
   type LineageRecord,
@@ -60,9 +59,8 @@ const anytimeActions = [
   'RECORD_DECISIONS',
   'RECORD_CORRECTION',
   'COUNT_ATTEMPT',
-  'COUNT_PLANNER_CALL',
   'CLEAR_CARRIED_FAILURE',
-  'GRANT_ALLOWANCE',
+  'RESET_PROGRESS',
   'RECORD_DISPATCH',
   'RECORD_CHECK_RESULTS',
   'SET_PENDING_REVIEW_COMMANDS',
@@ -201,10 +199,7 @@ function setTaskStatus(state: WorkflowState, taskId: TaskId, status: TaskStatus)
 }
 
 const EMPTY_LINEAGE: LineageRecord = {
-  consults: 0,
   attempts: 0,
-  consultAllowance: BOUNDS.consultsPerLineage,
-  attemptAllowance: BOUNDS.attemptsPerLineage,
   dispatchedRevision: {},
   consultRecords: [],
   replacedParents: [],
@@ -947,7 +942,7 @@ export function transition(
       };
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
         ...lineage,
-        consults: lineage.consults + 1,
+        progress: action.progress,
         consultRecords: [...lineage.consultRecords, record],
       }));
     }
@@ -994,41 +989,21 @@ export function transition(
         }),
       }));
 
-    case 'COUNT_PLANNER_CALL': {
-      // Both consult seats spend this one allowance; the field keeps its planner name.
-      const plannerCalls = plannerCallsOf(state);
-      return { ...state, plannerCalls: { ...plannerCalls, used: plannerCalls.used + 1 } };
-    }
-
     case 'CLEAR_CARRIED_FAILURE':
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => {
         const { carriedFailure: _carriedFailure, ...cleared } = lineage;
         return cleared;
       });
 
-    case 'GRANT_ALLOWANCE': {
-      const granted =
-        action.taskId === null
-          ? state
-          : withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
-              ...lineage,
-              ...(action.target === 'lineage' && {
-                consultAllowance: lineage.consultAllowance + BOUNDS.extraConsultsPerLineage,
-                attemptAllowance: lineage.attemptAllowance + BOUNDS.extraAttemptsPerLineage,
-              }),
-              notes: [...lineage.notes, action.note],
-              ...(action.failingOutput !== undefined && { carriedFailure: action.failingOutput }),
-            }));
-      if (action.target !== 'planner') return granted;
-      const plannerCalls = plannerCallsOf(granted);
-      return {
-        ...granted,
-        plannerCalls: {
-          ...plannerCalls,
-          allowance: plannerCalls.allowance + BOUNDS.extraPlannerCallsPerRun,
-        },
-      };
-    }
+    case 'RESET_PROGRESS':
+      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => {
+        const { progress: _progress, ...reset } = lineage;
+        return {
+          ...reset,
+          notes: [...lineage.notes, action.note],
+          ...(action.failingOutput !== undefined && { carriedFailure: action.failingOutput }),
+        };
+      });
 
     case 'START_SCHEDULED_REVIEW':
       return { ...state, pendingScheduledReview: { afterTaskId: action.afterTaskId } };

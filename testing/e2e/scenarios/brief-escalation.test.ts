@@ -65,7 +65,7 @@ const ALPHA_FILES = {
 const BETA_TEST =
   "import { strict as assert } from 'node:assert';\nimport { beta } from './beta.mjs';\nassert.equal(beta, 'beta');\n";
 const HALT_ACTIONS = ['continue', 'skip-current-task', 'end-run'];
-const HALT_MESSAGE = 'T002 used its consult allowance';
+const HALT_MESSAGE = 'T002 is stuck on the same failure';
 const HALT_CALLS = [
   'plan',
   'implement T001',
@@ -188,7 +188,7 @@ function readCalls(callsPath: string): string[] {
     });
 }
 
-/** Starts the run headless and returns once T002 has spent its consults and the run halted. */
+/** Starts the run headless and returns once the planner's answers did not move T002's failure and the run halted. */
 async function startEscalatingRun(isolation: IsolationStrategy = 'worktree') {
   const target = createStopContinueFixture(() => '', { isolation });
   fixture = target;
@@ -219,7 +219,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     async (halts) => {
       const { target, halted, sessionId, ref } = await startEscalatingRun('none');
       expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
-      expect(readState(target, sessionId).pendingRecovery?.reason).toBe('consult-bound-spent');
+      expect(readState(target, sessionId).pendingRecovery?.reason).toBe('no-progress');
       expect(existsSync(join(target.projectDir, 'src/beta.mjs'))).toBe(true);
       writeFileSync(join(target.projectDir, 'init.txt'), 'edited while halted\n');
       writeFileSync(join(target.projectDir, 'scratch.txt'), 'notes while halted\n');
@@ -238,7 +238,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
           timeoutMs: RUN_TIMEOUT_MS,
         });
         expect(haltedAgain.exitCode, haltedAgain.stderr).toBe(1);
-        expect(readState(target, sessionId).pendingRecovery?.reason).toBe('consult-bound-spent');
+        expect(readState(target, sessionId).pendingRecovery?.reason).toBe('no-progress');
       }
 
       const continued = await cli(target, ['continue', sessionId, '--action', 'skip'], {
@@ -261,12 +261,12 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     },
   );
 
-  it('halts Needs you when a brief spends its consults, waiting for you with its files kept', async () => {
+  it("halts Needs you when the planner's answers do not move a brief's failure, waiting for you with its files kept", async () => {
     const { target, callsPath, halted, sessionId, ref } = await startEscalatingRun();
 
     expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
     expect(halted.stdout).toContain('task T001: done');
-    expect(halted.stderr).toContain(`Needs you (consult-bound-spent): ${HALT_MESSAGE}`);
+    expect(halted.stderr).toContain(`Needs you (no-progress): ${HALT_MESSAGE}`);
     expect(halted.stderr).toContain('Recommended: continue');
     expect(halted.stderr).toContain(
       `Continue with: splitbrief continue ${sessionId}, then choose Continue in the recovery panel`,
@@ -276,7 +276,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
 
     const state = readState(target, sessionId);
     expect(state.pendingRecovery).toMatchObject({
-      reason: 'consult-bound-spent',
+      reason: 'no-progress',
       status: 'awaiting-user',
       seat: 'build',
       taskId: 'T002',
@@ -284,7 +284,11 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
       availableActions: HALT_ACTIONS,
       recommendedAction: 'continue',
       attempts: 4,
-      facts: { consults: 2, consultAllowance: 2, attempts: 4, attemptAllowance: 8 },
+      facts: {
+        answers: 2,
+        stop: 'no-progress',
+        lastDiagnosis: consult.answer.diagnosis,
+      },
     });
     expect(state.tasks.map((task) => ({ id: task.id, status: task.status }))).toEqual([
       { id: 'T001', status: 'done' },
@@ -299,7 +303,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
       kind: 'open',
       stop: {
         kind: 'waiting-for-you',
-        on: { kind: 'halt', issue: { reason: 'consult-bound-spent', taskId: 'T002' } },
+        on: { kind: 'halt', issue: { reason: 'no-progress', taskId: 'T002' } },
       },
       resumeAt: { kind: 'brief', taskId: 'T002' },
     });
@@ -327,12 +331,15 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
         action: 'guidance',
       })),
     );
-    expect(events.filter((event) => event.type === 'consult_bound_spent')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'consult_bound_spent')).toEqual([]);
+    expect(
+      events.filter((event) => event.type === 'error' && event.code === 'no_progress'),
+    ).toHaveLength(1);
     const prompted = events.filter((event) => event.type === 'recovery_prompted');
     expect(prompted).toHaveLength(1);
     expect(prompted[0]).toMatchObject({
       issueId: state.pendingRecovery?.id,
-      reason: 'consult-bound-spent',
+      reason: 'no-progress',
       taskId: 'T002',
       availableActions: HALT_ACTIONS,
       recommendedAction: 'continue',
@@ -343,7 +350,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
   it('continues headless past the halt by skipping the brief and reaches ready to apply', async () => {
     const { target, callsPath, halted, sessionId, ref } = await startEscalatingRun();
     expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
-    expect(readState(target, sessionId).pendingRecovery?.reason).toBe('consult-bound-spent');
+    expect(readState(target, sessionId).pendingRecovery?.reason).toBe('no-progress');
 
     const continued = await cli(target, ['continue', sessionId, '--action', 'skip'], {
       timeoutMs: RUN_TIMEOUT_MS,
@@ -370,7 +377,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     const { events } = await readRunEvents(ref);
     expect(events.filter((event) => event.type === 'recovery_resolved')).toMatchObject([
       {
-        reason: 'consult-bound-spent',
+        reason: 'no-progress',
         action: 'skip-current-task',
         outcome: 'skipped-current-task',
       },

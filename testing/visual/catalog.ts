@@ -1411,14 +1411,14 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-implementation-retry',
-      title: 'Workflow · brief after an attempt allowance grant',
+      title: 'Workflow · retried brief',
       surface: screenSurface('workflow'),
       viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'implementation-retry',
         title: 'Retried brief',
         kind: 'implementation',
-        marker: 'attempt 7 of 12',
+        marker: 'attempt 7',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3535,8 +3535,8 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-recovery-consult-bound',
-      title: 'Workflow · a brief that used its consult allowance',
+      id: 'workflow-recovery-no-progress',
+      title: "Workflow · a brief the planner's answers did not move",
       surface: screenSurface('workflow'),
       viewports: [
         ...REQUIRED_VIEWPORTS,
@@ -3545,11 +3545,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         viewport({ cols: 140, rows: 12 }),
       ],
       checkpoint: {
-        id: 'consult-bound',
-        title: 'Consult-bound recovery menu',
+        id: 'no-progress',
+        title: 'No-progress recovery menu',
         kind: 'question',
         // At 60x18 the panel keeps the headline, the Task row and a mark that counts the cut lines.
-        marker: 'Needs you · T901 used its consult allowance',
+        marker: 'Needs you · T901 is stuck on the same failure',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3574,14 +3574,14 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-recovery-consult-bound-note',
-      title: 'Workflow · a note typed beside the consult-bound menu',
+      id: 'workflow-recovery-no-progress-note',
+      title: 'Workflow · a note typed beside the no-progress menu',
       surface: screenSurface('workflow'),
       checkpoint: {
-        id: 'consult-bound-note',
-        title: 'Consult-bound menu with the composer focused',
+        id: 'no-progress-note',
+        title: 'No-progress menu with the composer focused',
         kind: 'question',
-        marker: 'Needs you · T901 used its consult allowance',
+        marker: 'Needs you · T901 is stuck on the same failure',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3597,7 +3597,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'recovery-slash-draft',
         title: 'Recovery menu legend over a command draft',
         kind: 'question',
-        marker: 'Needs you · T901 used its consult allowance',
+        marker: 'Needs you · T901 is stuck on the same failure',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

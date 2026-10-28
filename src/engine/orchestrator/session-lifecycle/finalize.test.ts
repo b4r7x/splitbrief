@@ -260,7 +260,6 @@ describe('reopenSessionRecord', () => {
         task: makeTask({ id: 'T001' }),
         validationSummary: 'tsc failed',
         attempts: 1,
-        maxAttempts: 2,
         createdAt: '2026-04-29T00:00:00.000Z',
       }),
     };

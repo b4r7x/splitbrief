@@ -9,7 +9,11 @@ import {
 import type { Config } from '../../../core/schemas/config.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type {
+  ChangedFilesSnapshot,
+  LineageProgress,
+  WorkflowState,
+} from '../../../core/schemas/workflow.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
@@ -60,6 +64,7 @@ export type ConsultRequestInput = Readonly<{
   reason: ConsultReason;
   failingOutput: string;
   report?: ImplementerReport | null | undefined;
+  progress: LineageProgress;
 }>;
 
 export type ConsultOutcome =
@@ -236,8 +241,8 @@ function publishAnswer(
 /**
  * Asks the consult seat about one task and records its answer: the reviewer for a fix
  * task's repair, the planner for the rest (`consultSeat`). The planner continues its
- * session; the reviewer holds none and reads the full prompt. Both seats share one consult
- * allowance.
+ * session; the reviewer holds none and reads the full prompt. The answer records the
+ * lineage's progress the caller judged.
  */
 export async function requestConsult(
   ctx: ConsultContext,
@@ -368,10 +373,9 @@ export async function requestConsult(
       reason: input.reason,
       answer: consulted,
       seat,
+      progress: input.progress,
     }),
   );
-  // One consult allowance: a reviewer consult spends the same count a planner consult does.
-  apply(transitionAndSave(ref, state, { type: 'COUNT_PLANNER_CALL' }));
   publishAnswer(ctx, state, input, consulted, seat);
   if (seat === 'plan') apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
   return { answer: consulted };

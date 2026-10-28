@@ -24,7 +24,6 @@ function tasksState(
     totalTasks: tasks.length,
     currentTask: tasks.length,
     currentAttempt: 1,
-    attemptAllowance: 3,
     taskMap: new Map(tasks.map((task) => [task.id, task])),
     ...overrides,
   };

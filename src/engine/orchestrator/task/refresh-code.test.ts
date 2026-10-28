@@ -318,10 +318,7 @@ describe('refreshAndPersistCode', () => {
         tasks: [task],
         lineages: {
           [task.id]: {
-            consults: 2,
             attempts: 3,
-            consultAllowance: 1,
-            attemptAllowance: 0,
             dispatchedRevision: {},
             consultRecords: [],
             replacedParents: [],

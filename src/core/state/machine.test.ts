@@ -1248,10 +1248,7 @@ describe('consult and split state operations', () => {
 
   function lineage(overrides: Partial<LineageRecord> = {}): LineageRecord {
     return {
-      consults: 0,
       attempts: 0,
-      consultAllowance: 2,
-      attemptAllowance: 8,
       dispatchedRevision: {},
       consultRecords: [],
       replacedParents: [],
@@ -1266,7 +1263,7 @@ describe('consult and split state operations', () => {
       phase: 'validating-task',
       attempt: 1,
       tasks: [makeTask({ status: 'in_progress' })],
-      lineages: { T001: lineage({ attempts: 3, consults: 1 }) },
+      lineages: { T001: lineage({ attempts: 3 }) },
       messageQueue: [makeQueuedMessage({ phase: 'validating-task' })],
     };
 
@@ -1341,11 +1338,13 @@ describe('consult and split state operations', () => {
       currentTaskIndex: 0,
       lineages: {
         T001: lineage({
-          consults: 2,
           attempts: 5,
-          consultAllowance: 3,
-          attemptAllowance: 12,
-          notes: ['granted by the user'],
+          progress: {
+            failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
+            unmoved: 1,
+            answers: 2,
+          },
+          notes: ['the user continued'],
         }),
       },
     });
@@ -1357,11 +1356,13 @@ describe('consult and split state operations', () => {
     });
 
     expect(split.lineages?.T001).toMatchObject({
-      consults: 2,
       attempts: 5,
-      consultAllowance: 3,
-      attemptAllowance: 12,
-      notes: ['granted by the user'],
+      progress: {
+        failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
+        unmoved: 1,
+        answers: 2,
+      },
+      notes: ['the user continued'],
     });
     expect(split.lineages?.T001?.replacedParents.map((task) => task.id)).toEqual(['T001']);
 
@@ -1372,52 +1373,59 @@ describe('consult and split state operations', () => {
   it('RESET_TASK leaves the lineage counters alone', () => {
     const state = implementationState([makeTask({ id: 'T002', status: 'failed' })], {
       currentTaskIndex: 0,
-      lineages: { T002: lineage({ consults: 2, attempts: 5 }) },
+      lineages: {
+        T002: lineage({
+          attempts: 5,
+          progress: {
+            failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
+            unmoved: 1,
+            answers: 2,
+          },
+        }),
+      },
     });
 
     const next = transition(state, { type: 'RESET_TASK', taskId: taskId('T002') });
 
     expect(next.tasks[0]?.status).toBe('pending');
-    expect(next.lineages?.T002?.consults).toBe(2);
+    expect(next.lineages?.T002?.progress).toEqual({
+      failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
+      unmoved: 1,
+      answers: 2,
+    });
     expect(next.lineages?.T002?.attempts).toBe(5);
   });
 
-  it('GRANT_ALLOWANCE raises the lineage allowance and records the note', () => {
+  it('RESET_PROGRESS clears the progress, keeps the attempts and records the note', () => {
     const state = implementationState([makeTask({ id: 'T002' })], {
-      lineages: { T002: lineage({ consults: 1, attempts: 2 }) },
+      lineages: {
+        T002: lineage({
+          attempts: 2,
+          progress: {
+            failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
+            unmoved: 1,
+            answers: 2,
+          },
+        }),
+      },
     });
 
     const next = transition(state, {
-      type: 'GRANT_ALLOWANCE',
-      target: 'lineage',
+      type: 'RESET_PROGRESS',
       taskId: taskId('T002'),
-      note: 'The user granted one more consult.',
+      note: 'The user continued the brief.',
+      failingOutput: 'FAIL src/a.test.ts',
     });
 
+    expect(next.lineages?.T002).not.toHaveProperty('progress');
     expect(next.lineages?.T002).toMatchObject({
-      consultAllowance: 3,
-      attemptAllowance: 12,
-      notes: ['The user granted one more consult.'],
+      attempts: 2,
+      notes: ['The user continued the brief.'],
+      carriedFailure: 'FAIL src/a.test.ts',
     });
   });
 
-  it('GRANT_ALLOWANCE for the planner adds calls and records the note on the lineage', () => {
-    const state = implementationState([makeTask({ id: 'T002' })], {
-      plannerCalls: { used: 3, allowance: 10 },
-    });
-
-    const next = transition(state, {
-      type: 'GRANT_ALLOWANCE',
-      target: 'planner',
-      taskId: taskId('T002'),
-      note: 'five more planner calls',
-    });
-
-    expect(next.plannerCalls).toEqual({ used: 3, allowance: 15 });
-    expect(next.lineages?.T002?.notes).toEqual(['five more planner calls']);
-  });
-
-  it('RECORD_CONSULT records the answer and leaves the task alone', () => {
+  it('RECORD_CONSULT records the answer and the progress and leaves the task alone', () => {
     const task = makeTask({ id: 'T002' });
     const state = implementationState([task]);
 
@@ -1429,6 +1437,11 @@ describe('consult and split state operations', () => {
         revision: 2,
         reason: 'failed',
         seat: 'plan',
+        progress: {
+          failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
+          unmoved: 1,
+          answers: 2,
+        },
         answer: {
           answer: {
             action: 'guidance',
@@ -1441,8 +1454,10 @@ describe('consult and split state operations', () => {
       { now: new Date('2026-05-01T10:00:00Z') },
     );
 
-    expect(next.lineages?.T002).toMatchObject({
-      consults: 1,
+    expect(next.lineages?.T002?.progress).toEqual({
+      failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
+      unmoved: 1,
+      answers: 2,
     });
     expect(next.tasks[0]).toBe(task);
     expect(next.lineages?.T002?.consultRecords[0]).toEqual({
@@ -1464,17 +1479,13 @@ describe('consult and split state operations', () => {
     });
   });
 
-  it('COUNT_ATTEMPT and COUNT_PLANNER_CALL raise the lineage counters', () => {
-    let state = implementationState([makeTask({ id: 'T002' })], {
-      plannerCalls: { used: 0, allowance: 10 },
-    });
+  it('COUNT_ATTEMPT raises the lineage attempt count', () => {
+    let state = implementationState([makeTask({ id: 'T002' })]);
 
     state = transition(state, { type: 'COUNT_ATTEMPT', taskId: taskId('T002') });
     state = transition(state, { type: 'COUNT_ATTEMPT', taskId: taskId('T002') });
-    state = transition(state, { type: 'COUNT_PLANNER_CALL' });
 
     expect(state.lineages?.T002?.attempts).toBe(2);
-    expect(state.plannerCalls).toEqual({ used: 1, allowance: 10 });
   });
 
   it('RECORD_CHECK_RESULTS updates the task', () => {

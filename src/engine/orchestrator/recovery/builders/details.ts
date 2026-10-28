@@ -24,30 +24,21 @@ export function summarizeValidation(opts: { validationSummary?: string | undefin
   };
 }
 
-export function attemptDetails(
-  attempts: number | undefined,
-  maxAttempts: number | undefined,
-): string[] {
-  if (attempts === undefined && maxAttempts === undefined) return [];
-  if (attempts !== undefined && maxAttempts !== undefined && attempts <= maxAttempts) {
-    return [`Attempts: ${attempts}/${maxAttempts}`];
-  }
-  if (attempts !== undefined) return [`Attempts: ${attempts}`];
-  return [`Max attempts: ${maxAttempts}`];
+export function attemptDetails(attempts: number | undefined): string[] {
+  return attempts === undefined ? [] : [`Attempts: ${attempts}`];
 }
 
 /**
- * The attempt a halted call ran as on its brief's lineage, out of the lineage's allowance: the
- * `attempt N of M` the transcript showed for that call. A call the lineage booked before the halt
- * is already in `used`.
+ * The attempt a halted call ran as on its brief's lineage: the `attempt N` the transcript showed
+ * for that call. A call the lineage booked before the halt is already in the lineage's count.
  */
 export function haltAttempts(
   state: Pick<WorkflowState, 'lineages'>,
   task: Pick<Task, 'id' | 'parentId'>,
   opts: { booked: boolean },
-): { attempts: number; maxAttempts: number } {
-  const { used, allowance } = lineageAttemptsOf(state, task);
-  return { attempts: opts.booked ? used : used + 1, maxAttempts: allowance };
+): { attempts: number } {
+  const used = lineageAttemptsOf(state, task);
+  return { attempts: opts.booked ? used : used + 1 };
 }
 
 /** An inherited review follows PLAN until its switch gives REVIEW a separate seat. */

@@ -82,7 +82,6 @@ export async function runPreTaskHooksAndPublish(opts: {
     }
   }
 
-  const lineage = lineageAttemptsOf(state, task);
   publishTaskStart(
     { bus: wctx.bus, phase: state.phase },
     {
@@ -90,8 +89,7 @@ export async function runPreTaskHooksAndPublish(opts: {
       title: task.title,
       index,
       total: totalTasks,
-      lineageAttempt: lineage.used + 1,
-      attemptAllowance: lineage.allowance,
+      lineageAttempt: lineageAttemptsOf(state, task) + 1,
       file: task.suggestedFiles[0],
       files: [...task.suggestedFiles],
       action: task.action,

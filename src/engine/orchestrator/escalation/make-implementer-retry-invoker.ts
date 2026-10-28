@@ -78,7 +78,7 @@ export function makeImplementerRetryInvoker(opts: {
         onOutput,
         sessionId: opts.sessionId,
         phase: opts.phase,
-        lineageAttempts: lineageAttemptsOf(state, task),
+        lineageAttempt: lineageAttemptsOf(state, task) + 1,
         signal: attemptSignal,
         sandboxEnv,
         fileIgnoreProjectDir,

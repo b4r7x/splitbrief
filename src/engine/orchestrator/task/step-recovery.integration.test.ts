@@ -47,7 +47,7 @@ function failBriefChecks(): void {
 }
 
 describe('runSingleTask — recovery', () => {
-  it("keeps the brief's files in place when the ladder halts on its consult bound", {
+  it("keeps the brief's files in place when the ladder halts on no progress", {
     timeout: 90_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
@@ -102,14 +102,14 @@ describe('runSingleTask — recovery', () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(result.pendingRecovery?.reason).toBe('consult-bound-spent');
+    expect(result.pendingRecovery?.reason).toBe('no-progress');
     // Continue replays the brief as a retry carrying the failure, so the files it fails on stay.
     expect(readFileSync(join(wctx.workspaceDir, 'src/main.ts'), 'utf-8')).toBe(
       'export const main = 999; // broken\n',
     );
   });
 
-  it("restores the brief's files to the task start when the ladder halts outside the consult bound", {
+  it("restores the brief's files to the task start when the ladder halts on another cause", {
     timeout: 90_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
@@ -273,8 +273,8 @@ describe('runSingleTask — recovery', () => {
       },
     });
 
-    // Task 1 exhausts the ladder; its broken change stays for a Continue to start from.
-    expect(afterTaskOne.pendingRecovery?.reason).toBe('consult-bound-spent');
+    // Task 1 makes no progress; its broken change stays for a Continue to start from.
+    expect(afterTaskOne.pendingRecovery?.reason).toBe('no-progress');
     expect(readFileSync(join(wctx.workspaceDir, 'src/one.ts'), 'utf-8')).toBe(
       'export const one = 999; // broken\n',
     );
@@ -331,7 +331,7 @@ const CODEX_BURNED_REFRESH =
   'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
 
 // A Biome run whose output opens with a config notice before the brief's own diagnostic,
-// the shape a real run's consult-bound panel truncated.
+// the shape a real run's halt panel truncated.
 const BIOME_NOTICE_THEN_FORMAT = [
   'biome.json:38:13 deserialize  DEPRECATED  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
   '',
@@ -346,8 +346,8 @@ const BIOME_NOTICE_THEN_FORMAT = [
   '  × Some errors were emitted while running checks.',
 ].join('\n');
 
-describe('runSingleTask — the consult-bound halt names the last failure', () => {
-  it('names the failing check as the last diagnosis', {
+describe('runSingleTask — the no-progress halt names the last failure', () => {
+  it('names the failing check and the last planner diagnosis', {
     timeout: 90_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
@@ -408,8 +408,9 @@ describe('runSingleTask — the consult-bound halt names the last failure', () =
       setCurrentTask: vi.fn(),
     });
 
-    expect(result.pendingRecovery?.reason).toBe('consult-bound-spent');
-    expect(result.pendingRecovery?.details[0]).toBe('Last diagnosis: check K1 failed');
+    expect(result.pendingRecovery?.reason).toBe('no-progress');
+    expect(result.pendingRecovery?.details[0]).toMatch(/^Failure: check K1/);
+    expect(result.pendingRecovery?.details[1]).toBe('Last diagnosis: The attempt failed');
     // The config notice that opens the output does not crowd out the brief's own diagnostic.
     expect(String(result.pendingRecovery?.facts?.['failingOutput'])).toContain(
       'src/main.ts format',
@@ -1005,13 +1006,11 @@ describe('runSingleTask — a fix brief answers only its own failures', () => {
     expect(state.tasks[0]?.status).toBe('done');
   });
 
-  it('names its own failure and the others as the last diagnosis when its own failure remains', {
+  it('names the failing check and its failures when its own failure remains', {
     timeout: 90_000,
   }, async () => {
     const { state } = await build({ status: 'pending', output: [own, other].join('\n') });
 
-    expect(state.pendingRecovery?.details[0]).toBe(
-      'Last diagnosis: check K1 failed: 1 of your 2 failures remains, 1 other left for their fix tasks or the next review',
-    );
+    expect(state.pendingRecovery?.details[0]).toBe(`Failure: check K1: ${own}, ${other}`);
   });
 });

@@ -76,7 +76,7 @@ describe('config loading', () => {
         'workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.',
         'workflow.approve "all" was retired; using "plan": the plan waits for your approval before the build. Set approve to plan or none.',
         'workflow.task_review was retired and is ignored: the build no longer stops for your review after each brief. Delete workflow.task_review.',
-        'workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.',
+        'workflow.max_retries was retired and is ignored: the planner decides the retries while they make progress. Delete workflow.max_retries.',
         ...['typecheck', 'lint', 'test'].map(
           (name) =>
             `validation.${name} was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.${name}.`,

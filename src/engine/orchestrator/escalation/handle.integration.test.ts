@@ -41,7 +41,6 @@ import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { createImplementerPublisher } from '../events.js';
-import { attemptBoundSpent } from '../recovery/builders/consult.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
@@ -181,7 +180,7 @@ describe('handleRetryAndEscalation', () => {
     expect(steering.current()).toBeNull();
   });
 
-  it('delivers a correction from green verify checks during the final allowed consult without another retry rung', async () => {
+  it('delivers a correction from green verify checks during a consult without another retry rung', async () => {
     const ref = setupProject();
     const task = makeTask({
       id: 'T001',
@@ -214,7 +213,7 @@ describe('handleRetryAndEscalation', () => {
       if (checks === 1) {
         const state = loadState(ref);
         if (state === null) throw new Error('missing state during verify checks');
-        expect(state.lineages?.T001).toMatchObject({ consults: 2, consultAllowance: 2 });
+        expect(state.lineages?.T001?.consultRecords).toHaveLength(2);
         enqueueUserMessage({
           ...ref,
           state,
@@ -246,12 +245,8 @@ describe('handleRetryAndEscalation', () => {
     expect(runCommand).toHaveBeenCalledTimes(2);
     expect(outcome.result).toMatchObject({ completed: true, method: 'consulted', attempts: 3 });
     expect(outcome.state.tasks[0]?.status).toBe('done');
-    expect(outcome.state.lineages?.T001).toMatchObject({
-      consults: 2,
-      consultAllowance: 2,
-      attempts: 4,
-      attemptAllowance: 8,
-    });
+    expect(outcome.state.lineages?.T001).toMatchObject({ attempts: 4 });
+    expect(outcome.state.lineages?.T001?.consultRecords).toHaveLength(2);
     expect(outcome.state.pendingRecovery).toBeUndefined();
     expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
@@ -329,25 +324,29 @@ describe('handleRetryAndEscalation', () => {
     expect(prompts[1]).toContain('Earlier Consults on This Lineage');
     expect(result).toMatchObject({ completed: false, method: 'failed', attempts: 3 });
     expect(state.pendingRecovery).toMatchObject({
-      reason: 'consult-bound-spent',
+      reason: 'no-progress',
       taskId: 'T001',
       availableActions: ['continue', 'skip-current-task', 'end-run'],
     });
-    // The halt was raised by the attempt after the second consult; no consult diagnosed that
-    // failure, so the panel quotes its own error, not the second consult's diagnosis.
-    expect(state.pendingRecovery?.facts?.lastDiagnosis).toBe('still broken');
-    expect(state.pendingRecovery?.details?.[0]).toBe('Last diagnosis: still broken');
-    expect(formatRecoveryHeadline(state.pendingRecovery!)).toBe('T001 used its consult allowance');
+    // Two answers in a row left the same failure: the panel names it and the last diagnosis.
+    expect(state.pendingRecovery?.facts?.lastDiagnosis).toBe('Second diagnosis');
+    expect(state.pendingRecovery?.details?.slice(0, 2)).toEqual([
+      'Failure: error: still broken',
+      'Last diagnosis: Second diagnosis',
+    ]);
+    expect(formatRecoveryHeadline(state.pendingRecovery!)).toBe(
+      'T001 is stuck on the same failure',
+    );
   });
 
-  it.each(['consult', 'answer', 'answer at the bound'] as const)(
+  it.each(['consult', 'answer'] as const)(
     'announces the lineage attempt before the %s call without an extra Retry row',
     async (kind) => {
       resetWorkflow();
       const { projectDir, sessionId } = setupProject();
       const task = makeTask({ id: 'T013' });
       let currentState = transition(makeImplState([task]), { type: 'TASK_SENT' });
-      const used = kind === 'consult' ? 1 : kind === 'answer' ? 2 : 7;
+      const used = kind === 'consult' ? 1 : 2;
       for (let index = 0; index < used; index += 1) {
         currentState = transition(currentState, { type: 'COUNT_ATTEMPT', taskId: task.id });
       }
@@ -388,26 +387,13 @@ describe('handleRetryAndEscalation', () => {
 
       expect(outcome.result.completed).toBe(true);
       expect(counts.map((line) => line.split(' · ').at(-1))).toEqual(
-        kind === 'consult'
-          ? ['attempt 2 of 8', 'attempt 3 of 8']
-          : kind === 'answer'
-            ? ['attempt 3 of 8']
-            : ['attempt 8 of 8'],
+        kind === 'consult' ? ['attempt 2', 'attempt 3'] : ['attempt 3'],
       );
       expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(
         kind === 'consult' ? 1 : 0,
       );
-      const spent = kind === 'answer at the bound' ? 8 : 3;
-      expect(lineageAttemptsOf(outcome.state, task)).toEqual({ used: spent, allowance: 8 });
-      expect(tasksStore.get()).toMatchObject({ currentAttempt: spent, attemptAllowance: 8 });
-      if (kind === 'answer at the bound') {
-        expect(attemptBoundSpent(outcome.state, task)).toMatchObject({
-          attempts: tasksStore.get().currentAttempt,
-          attemptAllowance: tasksStore.get().attemptAllowance,
-        });
-      } else {
-        expect(attemptBoundSpent(outcome.state, task)).toBeUndefined();
-      }
+      expect(lineageAttemptsOf(outcome.state, task)).toBe(3);
+      expect(tasksStore.get()).toMatchObject({ currentAttempt: 3 });
     },
   );
 
@@ -458,7 +444,7 @@ describe('handleRetryAndEscalation', () => {
     expect(consultError.error).toContain('src/greet.ts');
   });
 
-  it('continue with a note grants one consult and four attempts, and the next consult runs', async () => {
+  it('continue with a note clears the progress, and the planner answers again until no progress', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
@@ -482,7 +468,7 @@ describe('handleRetryAndEscalation', () => {
       initialError: 'type error',
       currentState: makeValidatingState(),
     });
-    expect(halted.pendingRecovery?.reason).toBe('consult-bound-spent');
+    expect(halted.pendingRecovery?.reason).toBe('no-progress');
 
     const applied = await applyRecoveryAction({
       projectDir,
@@ -495,16 +481,15 @@ describe('handleRetryAndEscalation', () => {
     expect(applied.ok).toBe(true);
     expect(applied.status).toBe('retry-current-task');
     if (!applied.ok) return;
-    expect(applied.state.lineages?.T001).toMatchObject({
-      consults: 2,
-      consultAllowance: 3,
-      attemptAllowance: 12,
-      notes: ['grant it'],
-    });
+    expect(applied.state.lineages?.T001).toMatchObject({ notes: ['grant it'] });
+    expect(applied.state.lineages?.T001).not.toHaveProperty('progress');
     expect(applied.state.pendingRecovery).toBeUndefined();
     expect(applied.state.phase).toBe('implementing');
 
-    const second = consultPlanner([guidanceAnswer('Third diagnosis', 'Try again.')]);
+    const second = consultPlanner([
+      guidanceAnswer('Third diagnosis', 'Try again.'),
+      guidanceAnswer('Fourth diagnosis', 'Try once more.'),
+    ]);
     const { result, state: after } = await handleRetryAndEscalation({
       wctx: makeWctx({
         projectDir,
@@ -520,15 +505,16 @@ describe('handleRetryAndEscalation', () => {
       currentState: applied.state,
     });
 
-    expect(second.prompts).toHaveLength(1);
+    expect(second.prompts).toHaveLength(2);
     expect(second.prompts[0]).toContain('Earlier Consults on This Lineage');
     expect(second.prompts[0]).toContain('Second diagnosis');
     expect(result).toMatchObject({ completed: false, method: 'failed' });
-    expect(after.pendingRecovery).toMatchObject({ reason: 'consult-bound-spent' });
-    expect(after.lineages?.T001?.consults).toBe(3);
+    expect(after.pendingRecovery).toMatchObject({ reason: 'no-progress' });
+    expect(after.pendingRecovery?.facts?.lastDiagnosis).toBe('Fourth diagnosis');
+    expect(after.lineages?.T001?.consultRecords).toHaveLength(4);
   });
 
-  it('lineage counters persist across a split and a state.json reload', async () => {
+  it('the lineage record persists across a split and a state.json reload', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
@@ -551,24 +537,24 @@ describe('handleRetryAndEscalation', () => {
         bus,
       }),
       task: makeTask(),
-      initialError: 'type error',
+      initialError: 'still broken',
       currentState: makeValidatingState(),
     });
 
     const children = state.tasks.filter((task) => task.parentId === 'T001');
     expect(children.map((child) => child.id)).toEqual(['T002', 'T003']);
     for (const child of children) expect(lineageIdOf(child)).toBe('T001');
-    expect(state.lineages?.T001).toMatchObject({ consults: 1, attempts: 1 });
+    expect(state.lineages?.T001).toMatchObject({ attempts: 1 });
+    expect(state.lineages?.T001?.consultRecords).toHaveLength(1);
 
     const reloaded = loadState({ projectDir, sessionId });
     expect(reloaded?.lineages?.T001).toMatchObject({
-      consults: 1,
       attempts: 1,
-      consultAllowance: 2,
-      attemptAllowance: 8,
+      progress: { answers: 1, unmoved: 0 },
     });
+    expect(reloaded?.lineages?.T001?.consultRecords).toHaveLength(1);
 
-    // A consult on the subtask spends from the parent's lineage, not a fresh one.
+    // A consult on the subtask is judged on the parent's lineage, not a fresh one.
     if (reloaded === null) throw new Error('expected the reloaded state');
     const child = reloaded.tasks[reloaded.currentTaskIndex];
     if (child === undefined) throw new Error('expected a subtask');
@@ -585,12 +571,14 @@ describe('handleRetryAndEscalation', () => {
         bus,
       }),
       task: child,
-      initialError: 'type error',
+      initialError: 'still broken',
       currentState: resumed,
     });
 
     expect(second.prompts[0]).toContain('Earlier Consults on This Lineage');
-    expect(after.lineages?.T001?.consults).toBe(2);
+    expect(after.lineages?.T001?.consultRecords).toHaveLength(2);
+    expect(after.lineages?.T001?.progress?.answers).toBe(2);
+    expect(after.pendingRecovery).toMatchObject({ reason: 'no-progress', taskId: child.id });
   });
 
   it('an exhausted ladder fails without advancing the task', async () => {
@@ -844,9 +832,9 @@ describe('handleRetryAndEscalation', () => {
     expect(formatRecoveryHeadline(finalState.pendingRecovery!)).toBe(
       finalState.pendingRecovery?.message,
     );
-    // The first call and the local retry: the transcript read `attempt 2 of 8` for the retry.
-    expect(finalState.pendingRecovery).toMatchObject({ attempts: 2, maxAttempts: 8 });
-    expect(finalState.pendingRecovery?.details).toContain('Attempts: 2/8');
+    // The first call and the local retry: the transcript read `attempt 2` for the retry.
+    expect(finalState.pendingRecovery).toMatchObject({ attempts: 2 });
+    expect(finalState.pendingRecovery?.details).toContain('Attempts: 2');
   });
 
   it('a pre_validation deny of a consult verify ends the ladder on the skipped task', async () => {

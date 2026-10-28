@@ -8,7 +8,7 @@ import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.j
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeImplState, spentAnswersLineage } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
@@ -21,7 +21,7 @@ import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import type { CrewSeatId, SeatIds } from '../../../core/crew/identity.js';
 import { applyRecoveryAction, commitSeatSwitch, planSwitchSeatRecoveryAction } from './actions.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
-import { buildConsultBoundRecoveryIssue } from './builders/consult.js';
+import { buildNoProgressRecoveryIssue } from './builders/consult.js';
 import {
   buildReviewFailedRecoveryIssue,
   buildRunnerInputTooLargeRecoveryIssue,
@@ -471,19 +471,22 @@ describe('applyRecoveryAction: the run-level answers', () => {
     expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
   });
 
-  it('continue on a task-less planner-calls-spent issue grants five calls without resetting a task', async () => {
-    const { projectDir, sessionId } = setupSession('recovery-planner-calls');
-    const base = makeImplState([makeTask({ id: 'T001', status: 'in_progress' })]);
-    const spent = { ...base, plannerCalls: { used: 10, allowance: 10 } };
-    const issue = buildConsultBoundRecoveryIssue({
-      reason: 'planner-calls-spent',
-      lastDiagnosis: 'The review needs triage',
-      plannerCalls: 10,
-      plannerCallAllowance: 10,
+  it('continue on a no-progress halt clears the progress, keeps the note and resets the brief', async () => {
+    const { projectDir, sessionId } = setupSession('recovery-no-progress');
+    const base = makeImplState([makeTask({ id: 'T001', status: 'in_progress' })], {
+      lineages: { T001: spentAnswersLineage() },
+    });
+    const issue = buildNoProgressRecoveryIssue({
       phase: 'implementing',
+      task: makeTask({ id: 'T001' }),
+      stop: 'unconverged',
+      failure: [{ source: 'check V1', keys: ['src/main.ts: TS2322'] }],
+      answers: 10,
+      lastDiagnosis: 'The brief keeps failing its test',
+      failingOutput: 'src/main.ts: TS2322',
       createdAt,
     });
-    saveState({ projectDir, sessionId }, { ...spent, pendingRecovery: issue });
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
     const state = loadState({ projectDir, sessionId });
     if (state === null) throw new Error('expected the halt to persist');
     const { bus, events } = makeBusRecorder();
@@ -494,23 +497,17 @@ describe('applyRecoveryAction: the run-level answers', () => {
       state,
       action: 'continue',
       bus,
-      comment: plainUserMessage('grant it'),
+      comment: plainUserMessage('try the other file'),
     });
 
-    expect(issue.taskId).toBeUndefined();
-    expect(issue.affectedTaskIds).toEqual([]);
-    expect(issue.details).toContain('Continuing grants five more planner calls.');
-    expect(result).toMatchObject({ ok: true, status: 'continued', correctionRecorded: false });
+    expect(result).toMatchObject({ ok: true, status: 'retry-current-task' });
     if (!result.ok) return;
-    expect(result.state.plannerCalls).toEqual({ used: 10, allowance: 15 });
-    expect(result.state.messageQueue).toEqual([]);
-    expect(events.filter((event) => event.type === 'user_message')).toEqual([]);
-    expect(result.state.tasks).toEqual(state.tasks);
+    const lineage = result.state.lineages?.T001;
+    expect(lineage?.progress).toBeUndefined();
+    expect(lineage?.notes).toEqual(['try the other file']);
+    expect(lineage?.carriedFailure).toBe('src/main.ts: TS2322');
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(events.map((event) => event.type)).not.toContain('task_reset');
-    expect(events.map((event) => event.type)).toEqual(
-      expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
-    );
+    expect(events.map((event) => event.type)).toContain('task_reset');
   });
 });
 
@@ -660,7 +657,6 @@ describe('applyRecoveryAction: switch-seat', () => {
       runner,
       toolMessage: inputTooLargeRefusal(195_203, { max: 120_000, unit: 'characters' }).message,
       attempts: 1,
-      maxAttempts: 8,
       seatSwap: {
         seat: 'build',
         currentTool: 'opencode',

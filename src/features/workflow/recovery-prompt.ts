@@ -48,11 +48,6 @@ const ACTION_ORDER = RECOVERY_ACTIONS;
 export const FACT_INDENT = '  ';
 const FILES_LABEL = 'Files ';
 
-const BOUND_REASONS: ReadonlySet<RecoveryIssue['reason']> = new Set([
-  'consult-bound-spent',
-  'planner-calls-spent',
-]);
-
 export function recommendedRowPrefix(): string {
   return `${glyph('liveBar')} `;
 }
@@ -144,8 +139,8 @@ export function correctionActionFor(issue: RecoveryIssue): RecoveryAction | unde
   const offered: readonly RecoveryAction[] = [
     'retry-same-worker',
     'revise',
-    // A spent bound continues by a grant, and the grant records the note and steers the replay.
-    ...(BOUND_REASONS.has(issue.reason) ? (['continue'] as const) : []),
+    // A no-progress halt continues with the words as its note, and the note steers the replay.
+    ...(issue.reason === 'no-progress' ? (['continue'] as const) : []),
   ];
   return offered.find(
     (action) => issue.availableActions.includes(action) && !leavesWordsUnread(issue.reason, action),
@@ -568,14 +563,15 @@ function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
     issue.reason === 'required-checks-unrunnable' ||
     issue.reason === 'plan-questions-exhausted' ||
     issue.reason === 'plan-checks-failed' ||
-    issue.reason === 'runner-timeout-repeated'
+    issue.reason === 'runner-timeout-repeated' ||
+    issue.reason === 'no-progress'
   ) {
     return recoveryHeadlineParts(issue);
   }
   // "T003 validation failed" takes "after 3 attempts"; a cause that already
   // ends a sentence would read it as part of that sentence ("or abort after 2
   // attempts"), so it keeps its full stop and the attempt count stays in the
-  // facts, where the issue's own `Attempts: n/m` detail already carries it.
+  // facts, where the issue's own `Attempts: n` detail already carries it.
   // A retry-exhausted halt reads the transcript's own sentence, so a halt saved
   // under older words names its cause the way the transcript and the byline do.
   const cause = issue.reason === 'retry-exhausted' ? formatRecoveryHeadline(issue) : issue.message;

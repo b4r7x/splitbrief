@@ -234,7 +234,7 @@ describe('validateAndCommit', () => {
 
     expect(result).toMatchObject({
       completed: false,
-      diagnosis: 'check K1 failed',
+      failure: [{ source: 'check K1', keys: ['src/blocks.ts(1,1): error TS1005'] }],
     });
   });
 
@@ -305,11 +305,10 @@ describe('validateAndCommit', () => {
       expect(await retry([own, other].join('\n'), [sibling])).toMatchObject({ completed: true });
     });
 
-    it('names its own failure and the others in the diagnosis when its own failure remains', async () => {
+    it('marks its own failure and the others when its own failure remains', async () => {
       expect(await retry([own, other].join('\n'))).toMatchObject({
         completed: false,
-        diagnosis:
-          'check K1 failed: your\u00a01\u00a0failure\u00a0remains, 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review',
+        failure: [{ source: 'check K1', keys: [own, other] }],
       });
     });
   });

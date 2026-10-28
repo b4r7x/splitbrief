@@ -163,7 +163,7 @@ export async function runImplementation(opts: {
           fileIgnoreProjectDir: projectDir,
           changeDetection: workspace.changeDetection,
           phase: state.phase,
-          lineageAttempts: lineageAttemptsOf(state, task),
+          lineageAttempt: lineageAttemptsOf(state, task) + 1,
           approveWrite: async (file) => {
             const decision = await gateChangedFiles({
               changedFiles: [file],

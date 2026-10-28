@@ -100,8 +100,7 @@ export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 export const RECOVERY_REASONS = [
   'implementation-error',
   'retry-exhausted',
-  'consult-bound-spent',
-  'planner-calls-spent',
+  'no-progress',
   'runner-unauthenticated',
   'runner-usage-limit',
   'context-overflow',
@@ -135,6 +134,8 @@ export const RETIRED_RECOVERY_REASONS = [
   'constitution-check-failed',
   'brief-review-no-progress',
   'brief-quality-unrepaired',
+  'consult-bound-spent',
+  'planner-calls-spent',
 ] as const;
 export const RecoveryReasonSchema = z.enum([...RECOVERY_REASONS, ...RETIRED_RECOVERY_REASONS]);
 export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;

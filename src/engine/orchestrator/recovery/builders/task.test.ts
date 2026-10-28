@@ -136,7 +136,6 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
       createdAt,
       validationSummary: 'lint failed after all attempts',
       attempts: 3,
-      maxAttempts: 3,
     });
 
     expect(issue.reason).toBe('retry-exhausted');
@@ -152,7 +151,6 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
       createdAt,
       validationSummary: 'lint failed after all attempts',
       attempts: 3,
-      maxAttempts: 3,
       allowRetryOverride: true,
     });
     expect(override.availableActions).toEqual([
@@ -169,7 +167,6 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     createdAt,
     validationSummary: 'tsc failed',
     attempts: 4,
-    maxAttempts: 3,
     allowRetryOverride: true,
   };
 
@@ -203,7 +200,6 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
       createdAt,
       validationSummary: 'tsc failed',
       attempts: 4,
-      maxAttempts: 3,
     });
 
     expect(issue.details[0]).toBe('Last error: tsc failed');
@@ -238,7 +234,6 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     const zeroAttempts = buildRetryExhaustedRecoveryIssue({
       ...bothVoices,
       attempts: 0,
-      maxAttempts: 3,
     });
     expect(zeroAttempts.details.some((row) => row.startsWith('Attempts'))).toBe(false);
 
@@ -246,12 +241,11 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
       ...bothVoices,
       attempts: 1,
     });
-    expect(one.details).toContain('Attempts: 1/3');
+    expect(one.details).toContain('Attempts: 1');
 
     const five = buildRetryExhaustedRecoveryIssue({
       ...bothVoices,
       attempts: 5,
-      maxAttempts: 3,
     });
     expect(five.details).toContain('Attempts: 5');
   });
@@ -292,7 +286,6 @@ describe('buildSeatDownIssue', () => {
       task: makeTask({ id: 'T003' }),
       phase: 'implementing',
       attempts: 1,
-      maxAttempts: 3,
       createdAt,
     });
 
@@ -798,7 +791,6 @@ describe('a seat whose account the provider refuses', () => {
       task: makeTask({ id: 'T001' }),
       phase: 'implementing',
       attempts: 1,
-      maxAttempts: 1,
       seatSwap,
       createdAt,
     });
@@ -866,7 +858,6 @@ describe('a seat whose account the provider refuses', () => {
       task: makeTask({ id: 'T001' }),
       phase: 'implementing',
       attempts: 1,
-      maxAttempts: 1,
       selectedImplementerProfile: 'default',
       seatSwap,
       createdAt,
@@ -885,7 +876,6 @@ describe('a seat whose account the provider refuses', () => {
       task: makeTask({ id: 'T001' }),
       phase: 'implementing',
       attempts: 1,
-      maxAttempts: 1,
       seatSwap,
       createdAt,
     });
@@ -1179,7 +1169,6 @@ describe('buildLeftIsolationRecoveryIssue', () => {
       runner,
       toolMessage,
       attempts: 0,
-      maxAttempts: 2,
       createdAt,
     });
 
@@ -1234,7 +1223,6 @@ describe('isolation halts of a call that ran in the checkout itself', () => {
       runner,
       toolMessage: 'wrote to ~/x with Bash: touch ~/x',
       attempts: 0,
-      maxAttempts: 2,
       inPlace,
       createdAt,
     });
@@ -1243,7 +1231,6 @@ describe('isolation halts of a call that ran in the checkout itself', () => {
       runner,
       toolMessage: 'branch topic',
       attempts: 0,
-      maxAttempts: 2,
       inPlace,
       createdAt,
     });
@@ -1270,7 +1257,6 @@ describe('buildCheckoutChangedRecoveryIssue', () => {
       runner,
       toolMessage: 'branch escaped · hook pre-commit',
       attempts: 0,
-      maxAttempts: 2,
       createdAt,
     });
 
@@ -1303,7 +1289,6 @@ describe('buildCheckoutChangedRecoveryIssue', () => {
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } }).implementer,
       toolMessage: 'branch fix/implementer-never-runs-gates',
       attempts: 0,
-      maxAttempts: 2,
       createdAt,
     });
 
@@ -1390,7 +1375,6 @@ describe('buildRepeatedTimeoutRecoveryIssue', () => {
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
       toolMessage: 'implementer timed out',
       attempts: 2,
-      maxAttempts: 3,
       createdAt,
     });
 
@@ -1409,7 +1393,6 @@ describe('buildRepeatedTimeoutRecoveryIssue', () => {
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
       toolMessage: 'implementer timed out',
       attempts: 2,
-      maxAttempts: 3,
       createdAt,
       seatSwap: {
         seat: 'build',

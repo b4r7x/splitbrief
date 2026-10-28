@@ -639,7 +639,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(fixed?.suggestedFiles[0]).toBe('src/shared/widget.ts');
     expect(result.state.tasks[0]?.status).toBe('done');
     expect(result.state.fixCycles?.used).toBe(1);
-    expect(result.state.plannerCalls?.used ?? 0).toBe(0);
     expect(events.find((e) => e.type === 'review_fix_started')).toMatchObject({
       cycle: 1,
       taskIds: ['T002'],

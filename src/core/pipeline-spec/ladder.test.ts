@@ -3,7 +3,7 @@ import { framingForAttempt, HAND_BACK_MAX_CHARS, LADDER, RETRY_FRAMINGS } from '
 
 describe('LADDER', () => {
   it('lists the rungs in escalation order', () => {
-    expect(LADDER.map((rung) => rung.id)).toEqual(['recipe-fix', 'local', 'consult', 'takeover']);
+    expect(LADDER.map((rung) => rung.id)).toEqual(['recipe-fix', 'local', 'consult']);
   });
 
   it('spends no retry on the recipe-fix rung and counts the local rung', () => {
@@ -17,12 +17,6 @@ describe('LADDER', () => {
 
   it('runs the consult rung with the planner before the implementer', () => {
     expect(LADDER[2]).toEqual({ id: 'consult', who: 'planner-then-implementer' });
-  });
-
-  it('marks takeover as the only rung the engine does not run', () => {
-    expect(LADDER.filter((rung) => rung.engine === false).map((rung) => rung.id)).toEqual([
-      'takeover',
-    ]);
   });
 });
 

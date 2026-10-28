@@ -47,8 +47,8 @@ import { readMessages } from '../../core/sessions/log-reader.js';
 
 let dirs: string[] = [];
 
-const CONSULT_BOUND: Partial<RecoveryIssue> = {
-  reason: 'consult-bound-spent',
+const NO_PROGRESS: Partial<RecoveryIssue> = {
+  reason: 'no-progress',
   availableActions: ['continue', 'skip-current-task', 'end-run'],
   recommendedAction: 'continue',
 };
@@ -447,9 +447,9 @@ describe('createRecoveryDriver', () => {
       expect(result.state?.acceptedAsIs?.note).toBe(words.text);
     });
 
-    it('records them as the note of a replayed Continue on a spent bound', async () => {
+    it('records them as the note of a replayed Continue on a no-progress halt', async () => {
       const { prepared, state } = setupSession({
-        ...CONSULT_BOUND,
+        ...NO_PROGRESS,
         status: 'applying',
         selectedAction: 'continue',
       });
@@ -458,7 +458,7 @@ describe('createRecoveryDriver', () => {
       const result = await runDriver(prepared, state, inputMode, words);
 
       expect(feedbackAtPrompt).toHaveLength(0);
-      if (!result.shouldRun) throw new Error('expected the grant to run');
+      if (!result.shouldRun) throw new Error('expected the brief to run again');
       expect(JSON.stringify(result.state.lineages)).toContain(words.text);
     });
 
@@ -1001,7 +1001,6 @@ describe('createRecoveryDriver', () => {
       files: [],
       affectedTaskIds: [],
       attempts: undefined,
-      maxAttempts: undefined,
       message: 'OpenAI Codex CLI hit its usage limit',
       resetAt: '2026-10-03T13:02:00.000Z',
       switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
@@ -1083,7 +1082,6 @@ describe('createRecoveryDriver', () => {
       files: [],
       affectedTaskIds: [],
       attempts: undefined,
-      maxAttempts: undefined,
       message: 'The review seat was not given the context this call needs.',
       facts: {
         apiContextCode: 'insufficient-context',
@@ -1194,8 +1192,8 @@ describe('createRecoveryDriver', () => {
     }
   });
 
-  it('continues a consult-bound halt with a typed sentence as its note and the brief steer', async () => {
-    const { prepared, state } = setupSession(CONSULT_BOUND);
+  it('continues a no-progress halt with a typed sentence as its note and the brief steer', async () => {
+    const { prepared, state } = setupSession(NO_PROGRESS);
     const { inputMode, feedbackAtPrompt } = makeInputMode(['run the formatter before the tests']);
 
     const result = await runDriver(prepared, state, inputMode);
@@ -1211,7 +1209,7 @@ describe('createRecoveryDriver', () => {
   });
 
   it('takes the composer draft as the note when Continue is chosen on the panel', async () => {
-    const { prepared, state } = setupSession(CONSULT_BOUND);
+    const { prepared, state } = setupSession(NO_PROGRESS);
     composerLiveStore.setDraft(createDraftDocument('run the formatter before the tests'));
     const { inputMode } = makeInputMode(['c']);
 
@@ -1238,7 +1236,7 @@ describe('createRecoveryDriver', () => {
   });
 
   it('leaves the composer draft alone when an action that takes no note is chosen', async () => {
-    const { prepared, state } = setupSession(CONSULT_BOUND);
+    const { prepared, state } = setupSession(NO_PROGRESS);
     composerLiveStore.setDraft(createDraftDocument('run the formatter before the tests'));
     const { inputMode } = makeInputMode(['a']);
 
@@ -1600,7 +1598,7 @@ describe('createRecoveryDriver', () => {
 });
 
 describe('prepared recovery corrections', () => {
-  it.each(['allowance-only', 'plan-retry', 'review-retry', 'task-retry'] as const)(
+  it.each(['plan-retry', 'review-retry', 'task-retry'] as const)(
     'reports recording ownership and preserves the attached correction on %s',
     async (route) => {
       const phase = route === 'review-retry' ? 'final-review' : 'planning';
@@ -1608,15 +1606,12 @@ describe('prepared recovery corrections', () => {
         route === 'task-retry'
           ? {}
           : {
-              reason: route === 'allowance-only' ? 'planner-calls-spent' : 'planner-call-failed',
+              reason: 'planner-call-failed',
               taskId: undefined,
               phase,
               seat: route === 'review-retry' ? 'review' : 'plan',
-              availableActions:
-                route === 'allowance-only'
-                  ? ['continue', 'end-run']
-                  : ['retry-same-worker', 'end-run'],
-              recommendedAction: route === 'allowance-only' ? 'continue' : 'retry-same-worker',
+              availableActions: ['retry-same-worker', 'end-run'],
+              recommendedAction: 'retry-same-worker',
             },
       );
       const halted: WorkflowState = route === 'task-retry' ? state : { ...state, phase, tasks: [] };
@@ -1625,13 +1620,13 @@ describe('prepared recovery corrections', () => {
       dirs.push(outside);
       const correction = attachedMessage(outside);
       composerLiveStore.setDraft(createDraftDocument(correction.displayText));
-      const { inputMode } = makeInputMode([route === 'allowance-only' ? 'c' : 'r']);
+      const { inputMode } = makeInputMode(['r']);
 
       const result = await runDriver(prepared, halted, inputMode);
 
       if (!result.shouldRun) throw new Error('expected recovery to continue');
       const events = eventsStore.get().events;
-      if (route === 'allowance-only' || route === 'task-retry') {
+      if (route === 'task-retry') {
         expect(result.steer).toEqual(correction);
         expect(result.correctionTaken).toBeUndefined();
         expect(events.filter((event) => event.type === 'user_message')).toHaveLength(0);
@@ -1647,24 +1642,6 @@ describe('prepared recovery corrections', () => {
       expect(composerDraftStore.get().request?.value).toBe('');
     },
   );
-
-  it('forwards an unrecorded correction supplied on reentry after allowance-only Continue', async () => {
-    const { prepared, state } = setupSession({
-      reason: 'planner-calls-spent',
-      taskId: undefined,
-      availableActions: ['continue', 'end-run'],
-      recommendedAction: 'continue',
-    });
-    const correction = attachedMessage(prepared.session.ref.projectDir);
-    const { inputMode } = makeInputMode(['c']);
-
-    const result = await runDriver(prepared, state, inputMode, correction);
-
-    if (!result.shouldRun) throw new Error('expected recovery to continue');
-    expect(result.steer).toBe(correction);
-    expect(result.correctionTaken).toBeUndefined();
-    expect(result.state.messageQueue).toEqual([]);
-  });
 
   it('prepares the draft document on a menu retry and keeps text bodies and image atoms', async () => {
     const { prepared, state } = setupSession();

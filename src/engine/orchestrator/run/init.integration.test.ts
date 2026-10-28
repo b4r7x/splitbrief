@@ -2018,6 +2018,8 @@ describe('initializeWorkflow — a file halt saved before the run workspace', ()
     { name: 'user-edit conflict', halt: { reason: 'user-edit-conflict' } },
     { name: 'constitution check', halt: { reason: 'constitution-check-failed' } },
     { name: 'scope violation', halt: { reason: 'scope-violation' } },
+    { name: 'consult allowance', halt: { reason: 'consult-bound-spent' } },
+    { name: 'planner-call allowance', halt: { reason: 'planner-calls-spent' } },
     {
       name: 'partial approval promotion conflict',
       halt: { reason: 'approval-promotion-conflict', facts: { partialPromotion: true } },

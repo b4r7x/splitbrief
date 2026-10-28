@@ -82,16 +82,10 @@ describe('summarizeValidation', () => {
 });
 
 describe('attemptDetails', () => {
-  it('never prints a fraction whose numerator exceeds its denominator', () => {
-    expect(attemptDetails(4, 3)).toEqual(['Attempts: 4']);
-    expect(attemptDetails(5, 3)).toEqual(['Attempts: 5']);
-    expect(attemptDetails(2, 3)).toEqual(['Attempts: 2/3']);
-  });
-
-  it('keeps the two-argument forms unchanged', () => {
-    expect(attemptDetails(undefined, 3)).toEqual(['Max attempts: 3']);
-    expect(attemptDetails(2, undefined)).toEqual(['Attempts: 2']);
-    expect(attemptDetails(undefined, undefined)).toEqual([]);
+  it('states the attempt count without a maximum', () => {
+    expect(attemptDetails(2)).toEqual(['Attempts: 2']);
+    expect(attemptDetails(12)).toEqual(['Attempts: 12']);
+    expect(attemptDetails(undefined)).toEqual([]);
   });
 });
 
