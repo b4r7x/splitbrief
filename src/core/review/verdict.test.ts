@@ -4,6 +4,7 @@ import type { ReviewVerdict, TriageInput } from '../schemas/review.js';
 import { taskId } from '../schemas/task.js';
 import type { ReviewRecord } from '../schemas/workflow.js';
 import {
+  blockingEntries,
   blockingRedInputs,
   deriveReviewOutcome,
   findingInReviewScope,
@@ -542,5 +543,83 @@ describe('red inputs the reviewer sets aside', () => {
     expect(setAsideLine({ id: 'V6.1', reason: 'Transient 60 s timeout,\n passes in 50 s' })).toBe(
       'Set aside V6.1: Transient 60 s timeout, passes in 50 s',
     );
+  });
+});
+
+describe('a finding that restates a red input', () => {
+  const red = (id: string, text = `Check ${id} did not pass`): TriageInput => ({
+    id,
+    kind: 'defect',
+    source: 'check',
+    text,
+    file: null,
+  });
+  const blocker = (id: string, text: string): Finding =>
+    finding({ id, severity: 'blocking', criterionId: 'C1', text });
+  const failing = (findings: Finding[]) =>
+    makeVerdict({ criteria: [criterion('C1', 'fail')], findings });
+
+  it('counts a finding under a red input id once, with the text that says more', () => {
+    const outcome = deriveReviewOutcome(
+      failing([blocker('V1.1', 'Typecheck fails')]),
+      scope,
+      verification(),
+      [red('V1.1', 'V1 (npm run typecheck) failed: src/a.ts(3,1): TS2322')],
+    );
+    expect(blockingEntries(outcome)).toEqual([
+      { id: 'V1.1', text: 'V1 (npm run typecheck) failed: src/a.ts(3,1): TS2322' },
+    ]);
+    expect(reviewFindingCounts(outcome).critical).toBe(1);
+    const told = deriveReviewOutcome(
+      failing([blocker('V1.1', 'src/a.ts assigns a string to the count field in greet()')]),
+      scope,
+      verification(),
+      [red('V1.1', 'Typecheck failed')],
+    );
+    expect(blockingEntries(told)).toEqual([
+      { id: 'V1.1', text: 'src/a.ts assigns a string to the count field in greet()' },
+    ]);
+  });
+
+  it('keeps a finding with its own id and a separate red input as two', () => {
+    const outcome = deriveReviewOutcome(
+      failing([blocker('F1', 'The greeting drops an empty name')]),
+      scope,
+      verification(),
+      [red('V1.1')],
+    );
+    expect(blockingEntries(outcome).map((entry) => entry.id)).toEqual(['F1', 'V1.1']);
+    expect(reviewFindingCounts(outcome).critical).toBe(2);
+  });
+
+  it('counts two red inputs and no findings as two', () => {
+    const outcome = deriveReviewOutcome(makeVerdict(), scope, verification(), [
+      red('V1.1'),
+      red('P1'),
+    ]);
+    expect(blockingEntries(outcome).map((entry) => entry.id)).toEqual(['V1.1', 'P1']);
+    expect(reviewFindingCounts(outcome).critical).toBe(2);
+  });
+
+  it('counts four problems as four when each is a finding and a red input', () => {
+    const ids = ['V1.1', 'V1.2', 'V1.3', 'P1'];
+    const outcome = deriveReviewOutcome(
+      failing(ids.map((id) => blocker(id, `${id} fails`))),
+      scope,
+      verification(),
+      ids.map((id) => red(id)),
+    );
+    expect(blockingEntries(outcome).map((entry) => entry.id)).toEqual(ids);
+    expect(reviewFindingCounts(outcome).critical).toBe(4);
+    const record: ReviewRecord = {
+      scope: 'final',
+      cycle: 0,
+      verdict: failing(ids.map((id) => blocker(id, `${id} fails`))),
+      outcome: outcome.kind,
+      verification: [],
+      redInputs: outcome.redInputs,
+      at: '2026-10-28T10:00:00.000Z',
+    };
+    expect(reviewOutcomeOf(record)).toEqual(outcome);
   });
 });

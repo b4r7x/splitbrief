@@ -42,8 +42,10 @@ export function renderReviewMarkdown(
     lines.push('None.');
   } else {
     for (const finding of outcome.blocking) lines.push(`- ${finding.text}`);
-    for (const input of outcome.redInputs)
-      lines.push(`- ${input.id}: ${input.text.split('\n', 1)[0]}`);
+    for (const input of outcome.redInputs) {
+      const [first, ...rest] = input.text.split('\n');
+      lines.push(`- ${input.id}: ${first}`, ...rest.map((line) => `  ${line}`));
+    }
   }
   if (setAside.length > 0) {
     lines.push('', '**Set aside**', '');

@@ -278,8 +278,12 @@ describe('review answer follower', () => {
 
   it('keeps a pending red input blocking when the reviewer asks a question', async () => {
     const ref = setupProject();
+    const review = pendingReview().review;
     const state: WorkflowState = {
       ...pendingReview(),
+      ...(review !== undefined && {
+        review: { ...review, redInputs: [{ id: input.id, text: input.text }] },
+      }),
       phase: 'final-review',
       fixCycles: { used: 0, allowance: 2, notes: [] },
       pendingTriage: { inputs: [input] },
@@ -306,6 +310,36 @@ describe('review answer follower', () => {
     expect(result.state.pendingRecovery?.details?.join('\n')).toContain('P1: Typecheck failed');
     expect(result.state.pendingRecovery?.facts?.blocking).toBe(2);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+  });
+
+  it('counts a blocking finding that restates a red input once on the halt', async () => {
+    const ref = setupProject();
+    const review = pendingReview().review;
+    if (review === undefined) throw new Error('pendingReview holds a review');
+    const restated = review.verdict.findings.map((finding) => ({ ...finding, id: input.id }));
+    const state: WorkflowState = {
+      ...pendingReview(),
+      review: {
+        ...review,
+        verdict: { ...review.verdict, findings: restated },
+        redInputs: [{ id: input.id, text: input.text }],
+      },
+      phase: 'final-review',
+      fixCycles: { used: 2, allowance: 2, notes: [] },
+      pendingTriage: { inputs: [input] },
+    };
+    saveState(ref, state);
+    const callbacks = makeCallbacks().callbacks;
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus: makeBusRecorder().bus, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      fixWork,
+    });
+    expect(result.stopped).toBe(true);
+    expect(result.state.pendingRecovery?.facts?.blocking).toBe(1);
   });
 
   it.each([

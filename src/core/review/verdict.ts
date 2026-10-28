@@ -252,17 +252,25 @@ export function deriveReviewOutcome(
     redInputs.length > 0 ||
     verdict.tasks.some((task) => task.plan !== 'met') ||
     criteria.some((criterion) => criterion.status !== 'pass');
-  if (failed)
+  if (failed) {
+    // A blocking finding under a red input's id is that one problem: the entry whose text says more stays.
+    const redText = new Map(redInputs.map((input) => [input.id, input.text]));
+    const findingText = new Map(blocking.map((finding) => [finding.id, finding.text]));
     return {
       kind: 'fail',
-      blocking,
+      blocking: blocking.filter(
+        (finding) => finding.text.length > (redText.get(finding.id)?.length ?? -1),
+      ),
       minor,
       outOfScope,
       unverifiedCriteria,
       coverageErrors,
       criteria,
-      redInputs: redInputs.map(({ id, text }) => ({ id, text })),
+      redInputs: redInputs
+        .filter((input) => input.text.length >= (findingText.get(input.id)?.length ?? 0))
+        .map(({ id, text }) => ({ id, text })),
     };
+  }
   return {
     kind: minor.length === 0 && outOfScope.length === 0 ? 'pass' : 'pass-with-notes',
     blocking,

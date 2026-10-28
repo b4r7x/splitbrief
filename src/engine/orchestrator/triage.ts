@@ -88,7 +88,11 @@ export function triageContractErrors(
     for (const task of result.fixTasks) for (const id of task.findingIds) count(id);
     for (const rejected of result.rejected) count(rejected.findingId);
     for (const verified of result.verify) count(verified.findingId);
-    for (const finding of blocking.filter((finding) => findingInReviewScope(finding, scope))) {
+    // A blocking finding under a pending input's id is that input: the input's rule answers it.
+    const inputIds = new Set(inputs.map((input) => input.id));
+    for (const finding of blocking.filter(
+      (finding) => findingInReviewScope(finding, scope) && !inputIds.has(finding.id),
+    )) {
       const times = answered.get(finding.id) ?? 0;
       if (times === 0) {
         errors.push(`Blocking finding ${finding.id} is not fixed, rejected or verified.`);
