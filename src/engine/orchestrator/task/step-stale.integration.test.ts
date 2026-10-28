@@ -379,31 +379,30 @@ describe('runSingleTask — stale refresh', () => {
       inputHashes: inputHashesNow(projectDir, ['src/a.ts']),
     });
     const task = staleTask(projectDir);
-    const state = implementingState([halting, task, trailingTask()]);
-    // T001's decision-confirm stops the planner; T002's stale consult is answered.
-    const typed = consultCallAnswering((prompt) => {
-      if (prompt.includes('# Confirm reported decisions')) {
-        throw new Error('The planner process stopped unexpectedly.');
-      }
-      return guidanceAnswer('Read the new shared file first.');
-    });
-    const planner = makePlanner({ typedCall: typed });
-    const implementer = makeImplementer({
-      implement: async ({ projectDir: runDir }) => {
-        writeFileSync(join(runDir, 'src/a.ts'), 'export const a = 1;\n');
-        return {
-          success: true,
-          output: 'implemented',
-          report: {
-            status: 'done',
-            filesChanged: ['src/a.ts'],
-            touchedNotSuggested: [],
-            notes: null,
-            decisions: [{ what: 'Named the export a', why: 'The brief names none' }],
-          },
-        };
+    // T001 has spent its consults, so its failed attempts halt it with its file kept.
+    const state: WorkflowState = {
+      ...implementingState([halting, task, trailingTask()]),
+      lineages: {
+        T001: {
+          consults: 2,
+          attempts: 0,
+          consultAllowance: 2,
+          attemptAllowance: 8,
+          staleConsultedRevision: {},
+          dispatchedRevision: {},
+          consultRecords: [],
+          replacedParents: [],
+          notes: [],
+        },
       },
-    });
+    };
+    const typed = consultCallAnswering(() => guidanceAnswer('Read the new shared file first.'));
+    const planner = makePlanner({ typedCall: typed });
+    const attempt = async ({ projectDir: runDir }: { projectDir: string }) => {
+      writeFileSync(join(runDir, 'src/a.ts'), 'export const a = 1;\n');
+      return { success: false, output: '', error: 'the attempt failed' };
+    };
+    const implementer = makeImplementer({ implement: attempt, retry: attempt });
     const halted = await runForTask({
       projectDir,
       sessionId,
@@ -412,7 +411,7 @@ describe('runSingleTask — stale refresh', () => {
       planner,
       implementer,
     });
-    expect(halted.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', taskId: 'T001' });
+    expect(halted.pendingRecovery).toMatchObject({ reason: 'consult-bound-spent', taskId: 'T001' });
 
     // The user edits T002's input during the halt, then skips T001.
     writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);

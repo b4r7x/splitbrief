@@ -357,7 +357,9 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
             taskIds: ['T003'],
           });
           expect(prompts[0]).toContain('The reviewer must run npm run check:totals.');
-          expect(prompts[0]).toContain('### Decisions\n\n- Use the project checks');
+          expect(prompts[0]).toContain(
+            '### Decisions\n\nThe implementer of a task declared each decision that has a task id. Nobody confirmed these decisions: judge them against the criteria and the code.\n\n- Use the project checks',
+          );
           expect(prompts[0]).toContain('## Operator Instructions');
           expect(prompts[0]).toContain('Also run the T001 edge cases.');
           expect(prompts[0]).toContain('Check negative totals (T001)');

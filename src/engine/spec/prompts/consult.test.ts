@@ -130,7 +130,6 @@ describe('buildConsultPrompt', () => {
   });
 
   it.each([
-    { form: 'deviation', overrides: { reason: 'deviation' } },
     { form: 'resumed', overrides: { resumed: true } },
     { form: 'full', overrides: {} },
   ] satisfies { form: string; overrides: Partial<ConsultPromptInput> }[])(
@@ -283,25 +282,6 @@ describe('buildConsultPrompt', () => {
     expect(prompt).not.toContain('This task has changed no file since it started.');
   });
 
-  it('shows no failed attempts to a decision confirm', () => {
-    const prompt = buildConsultPrompt(
-      consultInput({
-        reason: 'deviation',
-        failedAttempts: [
-          {
-            attempt: 1,
-            taskId: taskId('T003'),
-            revision: 2,
-            line: 'check K1 did not pass (fail):',
-          },
-        ],
-      }),
-    );
-
-    expect(prompt).toContain('## Task Diff');
-    expect(prompt).not.toContain('## Failed Attempts');
-  });
-
   it('caps the names of the files it leaves out with a count', () => {
     const diffs = Array.from({ length: 2002 }, (_, index) => ({
       path: `src/generated/file-${index}.json`,
@@ -359,65 +339,32 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain('Only guidance or a rewritten task can answer this reason.');
   });
 
-  it.each([false, true])(
-    'shows only the decision-confirm contract and attempt evidence, resumed=%s',
-    (resumed) => {
-      const prompt = buildConsultPrompt(
-        consultInput({
-          resumed,
-          reason: 'deviation',
-          plan: {
-            ...plan,
-            decisions: [{ text: 'Use node:crypto', taskId: taskId('T003') }],
-          },
-          report: {
-            status: 'done',
-            filesChanged: ['src/greet.ts'],
-            touchedNotSuggested: [],
-            notes: null,
-            decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
-          },
-        }),
-      );
+  it('shows the decisions of a done report with and without a reason', () => {
+    const prompt = buildConsultPrompt(
+      consultInput({
+        report: {
+          status: 'done',
+          filesChanged: ['src/greet.ts'],
+          touchedNotSuggested: [],
+          notes: null,
+          decisions: [
+            { what: 'Used node:crypto', why: 'The dependency is standard' },
+            { what: 'Kept the old name', why: null },
+          ],
+        },
+      }),
+    );
 
-      expect(prompt).toContain('deviation — The implementer reported new decisions');
-      expect(prompt).toContain('### Decisions');
-      expect(prompt).toContain('- Use node:crypto (T003)');
-      expect(prompt).toContain('`confirm`');
-      expect(prompt).toContain('Any other change of what is built is `ask-user`');
-      expect(prompt).toContain('## Plan');
-      expect(prompt).toContain('**C1**: A greeting is returned');
-      expect(prompt).toContain('## Task T003');
-      expect(prompt).toContain('## Task Diff');
-      expect(prompt).toContain('## Implementer Report');
-      expect(prompt).toContain('Validation runs after a `confirm` answer');
-      expect(prompt).toContain('its default keeps it');
-      for (const action of ['guidance', 'rewrite-task', 'split-task', 'verify']) {
-        expect(prompt).not.toContain(`\`${action}\``);
-      }
-      for (const section of ['Failing Output', 'Earlier Consults', 'Other Tasks']) {
-        expect(prompt).not.toContain(`## ${section}`);
-      }
-    },
-  );
-
-  it.each([false, true])(
-    'offers a decision confirm guidance only once the user answered (%s)',
-    (answered) => {
-      const prompt = buildConsultPrompt(consultInput({ reason: 'deviation', answered }));
-
-      expect(prompt.includes('- `guidance` with `instructions`')).toBe(answered);
-      expect(prompt.includes('The user answered your question')).toBe(answered);
-      expect(prompt.includes('SPLITBRIEF asks you again with the answer')).toBe(!answered);
-    },
-  );
+    expect(prompt).toContain('## Implementer Report');
+    expect(prompt).toContain(
+      'Decisions: Used node:crypto — The dependency is standard; Kept the old name\n',
+    );
+  });
 
   it.each([
     ['failed', false],
     ['failed', true],
     ['stale', false],
-    ['deviation', false],
-    ['deviation', true],
   ] as const)(
     "shows the brief's operator instructions to a %s consult, resumed=%s",
     (reason, resumed) => {

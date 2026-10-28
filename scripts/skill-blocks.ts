@@ -194,7 +194,7 @@ Read the workspace without editing it. Answer from this packet and the current c
 <plan.json, completed tasks and the criteria due at this review>
 
 ## Plan context
-<summary, confirmed decisions with task ids, and criterion text>
+<summary, decisions with task ids, and criterion text>
 
 ## Task Briefs
 <completed tasks' Markdown briefs in full; pending tasks listed separately>
@@ -253,7 +253,7 @@ function implementerReport(): string {
     'End with one JSON object and nothing after it. Use decisions: [] when you propose no deviation.',
     JSON.stringify({ ...report, decisions: [{ what: '<proposed deviation>', why: '<reason>' }] }),
     `If blocked, end with ${JSON.stringify(blocked)} instead. The session consults at once.`,
-    'A decision proposes a deviation. The planner confirms how; the user decides changes to what.',
+    'A decision states a deviation and why. The plan ledger records it with the task id, and the reviewer judges it.',
   ].join('\n');
 }
 
@@ -264,7 +264,7 @@ function briefTemplate(): string {
       'What to implement and why. Include all context the implementer needs.\n\n' +
         '**Plan context (read-only):**\n' +
         '<plan summary>\n' +
-        'Decisions: <confirmed plan decisions, including task ids>\n' +
+        'Decisions: <plan decisions, including task ids>\n' +
         'Criteria this task serves: <criterion ids and text>',
     )
     .replace('3. 3-5 steps max\n', '')
@@ -330,7 +330,7 @@ function consultContract(): string {
     '',
     `The composed error block is truncated to ${BOUNDS.consultFailingOutputChars} characters.`,
     '',
-    "Attach Plan context: the summary, confirmed decisions with task ids, and the task's criterion text.",
+    "Attach Plan context: the summary, decisions with task ids, and the task's criterion text.",
     'Attach proposed decisions from the report.',
   ].join('\n');
 }
@@ -355,12 +355,10 @@ function consultTable(): string {
     'split-task': 'Keep all criteria. Re-point pending dependents to all children.',
     verify: 'Run the brief gate and named registered checks. Make no implementer call.',
     'ask-user': 'Ask only when the user alone can answer. Record why, choices and a default.',
-    confirm: 'Decision-confirm only: record the accepted decisions, then run the brief gate.',
   };
   return [
     `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a consult.`,
     'A plan task consults the planner. A fix task the reviewer wrote consults the reviewer, also after a rewrite or a split.',
-    'Every decision-confirm stays with the planner.',
     'The planner continues its planning session. The reviewer reads the full fix context without a session.',
     'Record a malformed answer as a failure of the seat that answered. Apply no action.',
     '',
@@ -389,11 +387,9 @@ function consultTable(): string {
     'A failed stale call, malformed answer or unanswered guard leaves the stale revision marker unchanged. Retry consults the same seat before dispatch.',
     'Successful stale guidance records fresh input hashes and marks the revision in one transition. A rewrite records hashes on its new revision.',
     "An answered stale guard question records fresh input hashes and sends the operator's answer as guidance on the first attempt.",
-    'A hand-back with new decisions gets one decision-confirm before validation: confirm (how) or ask-user (what).',
-    'The confirm names the accepted decisions by id (d1, d2, …). A decision whose id it leaves out is rejected. The attempt retries with the diagnosis and never validates.',
-    "Decision-confirm runs at most once per attempt, bounded by the brief's attempts.",
-    'It spends no run counter, never a lineage consult or a planner decision.',
-    'A failed or malformed confirm answer warns, leaves the decisions out of the ledger and validates. It never pauses.',
+    'A done report records its decisions in the plan ledger with the task id before validation. No seat confirms them, and a retry records only a new decision.',
+    'Reported decisions spend no run counter, never a lineage consult or a planner decision.',
+    'A done report field that breaks the contract reads as empty with a warning. The other fields stay.',
     'When a bound is spent, halt as needs you and keep the work. Ask: continue with a note / skip / end.',
     `Continuing grants ${BOUNDS.extraConsultsPerLineage} more consult and ${BOUNDS.extraAttemptsPerLineage} more attempts, or ${BOUNDS.extraPlannerCallsPerRun} more planner decisions, and replays the brief as a retry with the last failing output.`,
   ].join('\n');

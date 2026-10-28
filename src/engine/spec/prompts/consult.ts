@@ -1,13 +1,13 @@
-import {
-  reportedDecisionId,
-  type ConsultReason,
-  type ConsultSeat,
-  type ImplementerReport,
+import type {
+  ConsultReason,
+  ConsultSeat,
+  ImplementerReport,
 } from '../../../core/schemas/consult.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
 import type { AttemptFailure, ConsultRecord } from '../../../core/schemas/workflow.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
+import { decisionLedgerText } from '../../../core/state/machine.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { truncateByChars } from '../../../utils/truncate.js';
 import {
@@ -51,8 +51,6 @@ export type ConsultPromptInput = Readonly<{
    * brief, by queue, mid-call or on resume, and every answer to a question about it.
    */
   operatorInstructions: readonly string[];
-  /** Deviation only: the user answered the planner's question, so `guidance` is offered. */
-  answered?: boolean | undefined;
   /**
    * Planner consults only: the planner's session already holds this run's plan and brief,
    * so the new attempt's evidence goes as a short turn instead of the whole prompt. A
@@ -66,8 +64,6 @@ const REASON_TEXT: Record<ConsultReason, string> = {
   blocked: 'The implementer stopped and needs a decision that is not its own to make.',
   stale:
     'The task went stale: files it captured moved under it since the brief was compiled. Only guidance or a rewritten task can answer this reason.',
-  deviation:
-    'The implementer reported new decisions. Confirm changes of how that keep every criterion, and every decision that carries out an operator instruction. Ask the user about any other change of what. Validation follows confirm. After the user answers, you are asked again with the answer in the operator instructions.',
 };
 
 const CONSULT_ROLE: Record<ConsultSeat, string> = {
@@ -96,26 +92,6 @@ function consultContract(seat: ConsultSeat): string {
 }
 
 const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
-
-/** The decision-confirm contract; `guidance` is offered only after the user answered. */
-function decisionConfirmContract(answered: boolean): string {
-  return `You are the run's planner. This call confirms the new decisions in the implementer's report before validation. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
-
-Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": … } }\`. \`answer.diagnosis\` states your assessment in one or two sentences. Answer with exactly one of these actions:
-- \`confirm\` with \`decisionIds\`: the ids (\`d1\`, \`d2\`, …) of the reported decisions you accept. Accept changes of how that keep every criterion. Accept every decision that carries out an operator instruction: the user made that decision. Accept a change that the user's answer keeps. The accepted decisions extend the plan's confirmed decisions ledger in the implementer's words. A reported decision whose id you leave out is rejected: SPLITBRIEF sends the attempt back to the implementer with your diagnosis, so the diagnosis says what the retry must change. An empty \`decisionIds\` list rejects every reported decision.
-- \`ask-user\` with \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null). Any other change of what is built is \`ask-user\`. Never ask about a decision that an operator instruction or an earlier answer already settles. A question that concerns an operator instruction quotes it, and its default keeps it.${
-    answered
-      ? `
-- \`guidance\` with \`instructions\` and \`context\` (or null), only when the user's answer asks for a change to this attempt. The instructions carry out that answer, and the retry follows them.`
-      : ''
-  }
-
-Validation runs after a \`confirm\` answer that accepts every reported decision. It has not run for this attempt yet. ${
-    answered
-      ? 'The user answered your question: the answer is the last operator instruction. A `guidance` answer sends this attempt to a retry without validation.'
-      : 'After the user answers an `ask-user` question, SPLITBRIEF asks you again with the answer in the operator instructions.'
-  }`;
-}
 
 function checkLine(check: Check): string {
   return `\`${check.id}\` (${check.kind} \`${check.value}\`${check.required ? '' : ', optional'})`;
@@ -233,8 +209,6 @@ function consultAnswerDetail(answer: ConsultRecord['answer']): string {
       return `verify ${action.checkIds.join(', ')}: ${action.reason}`;
     case 'ask-user':
       return `asked the user: ${action.question}`;
-    case 'confirm':
-      return `confirmed ${action.decisions.map((decision) => `${decision.what} — ${decision.why}`).join('; ')}`;
     default:
       return assertNever(action);
   }
@@ -261,14 +235,7 @@ function reportLines(report: ImplementerReport | null): string[] {
           report.touchedNotSuggested
             .map((entry) => `${entry.file}${entry.reason === '' ? '' : ` (${entry.reason})`}`)
             .join(', ') || 'none'
-        }\nDecisions: ${
-          report.decisions
-            .map(
-              (decision, index) =>
-                `${reportedDecisionId(index)}: ${decision.what} — ${decision.why}`,
-            )
-            .join('; ') || 'none'
-        }\nNotes: ${report.notes ?? 'none'}`;
+        }\nDecisions: ${report.decisions.map(decisionLedgerText).join('; ') || 'none'}\nNotes: ${report.notes ?? 'none'}`;
   return ['## Implementer Report', fenced(detail)];
 }
 
@@ -330,22 +297,18 @@ function attemptLines(input: ConsultPromptInput): string[] {
     '## Task Diff',
     'What is on disk now against the start of this task, for the files of this brief: the changes of all its attempts, revisions and split subtasks, not only the latest attempt.',
     ...diffLines(input.taskDiff),
-    ...(input.reason === 'deviation'
+    ...(input.failedAttempts.length === 0
       ? []
       : [
-          ...(input.failedAttempts.length === 0
-            ? []
-            : [
-                '## Failed Attempts',
-                'Each failed attempt of this task, oldest first, with its first error line.',
-                ...input.failedAttempts.map(
-                  (failure) =>
-                    `- Attempt ${failure.attempt} (${failure.taskId} revision ${failure.revision}): ${failure.line}`,
-                ),
-              ]),
-          '## Failing Output',
-          fenced(truncateByChars(input.failingOutput, BOUNDS.consultFailingOutputChars)),
+          '## Failed Attempts',
+          'Each failed attempt of this task, oldest first, with its first error line.',
+          ...input.failedAttempts.map(
+            (failure) =>
+              `- Attempt ${failure.attempt} (${failure.taskId} revision ${failure.revision}): ${failure.line}`,
+          ),
         ]),
+    '## Failing Output',
+    fenced(truncateByChars(input.failingOutput, BOUNDS.consultFailingOutputChars)),
     ...reportLines(input.report),
   ];
 }
@@ -376,25 +339,6 @@ function operatorInstructionsPart(input: ConsultPromptInput): PromptPart[] {
  * reason and the new attempt's evidence.
  */
 export function buildConsultPrompt(input: ConsultPromptInput): string {
-  if (input.reason === 'deviation') {
-    return buildPrompt({
-      title: 'Confirm reported decisions',
-      intro: `Assess the new decisions ${input.task.id} reported against the plan and task below.`,
-      sections: [
-        ...(input.plan === undefined ? [] : [planSection(input.plan)]),
-        {
-          heading: `Task ${input.task.id} (revision ${input.task.revision ?? 1})`,
-          body: taskBody(input.task),
-        },
-        reasonSection(input),
-        ...operatorInstructionsPart(input),
-        ...attemptLines(input),
-        instructionsSection(
-          `${decisionConfirmContract(input.answered === true)}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
-        ),
-      ],
-    });
-  }
   if (input.resumed === true) {
     return buildPrompt({
       title: 'Consult continued',
@@ -402,7 +346,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
       sections: [
         ...(input.plan === undefined
           ? []
-          : [{ heading: 'Confirmed Decisions', body: decisionLines(input.plan).join('\n') }]),
+          : [{ heading: 'Decisions', body: decisionLines(input.plan).join('\n') }]),
         {
           heading: 'Task',
           body: `**${input.task.id}** (revision ${input.task.revision ?? 1}) — ${input.task.title}`,

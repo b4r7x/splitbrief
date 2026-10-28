@@ -70,8 +70,6 @@ function stoppedPlanner() {
   });
 }
 
-type FirstAttempt = 'failed-consult' | 'decision-confirm';
-
 /** The brief's required check fails while `failing` holds, and passes after. */
 function scriptedCheck(failing: { value: boolean }): void {
   vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
@@ -87,12 +85,12 @@ function scriptedCheck(failing: { value: boolean }): void {
 
 /**
  * The brief creates `src/new.ts`. Its first attempt writes the file, then its planner call stops:
- * the consult after the attempt and its local retry fail the brief's check, or the decision-confirm
- * after an attempt that reported a decision. Try again runs the brief once more; each build call
+ * the consult after the attempt and its local retry fail the brief's check. Try again runs the
+ * brief once more; each build call
  * of that run records the lineage's consult count as saved when the call starts, and the action it
  * was dispatched with.
  */
-async function retryAfterHalt(firstAttempt: FirstAttempt) {
+async function retryAfterHalt() {
   const ref = setupTaskProject();
   const task = makeTask({
     id: 'T001',
@@ -104,10 +102,6 @@ async function retryAfterHalt(firstAttempt: FirstAttempt) {
   });
   const failing = { value: true };
   scriptedCheck(failing);
-  const decisions =
-    firstAttempt === 'decision-confirm'
-      ? [{ what: 'Named the export run', why: 'The brief names no export' }]
-      : [];
   const writeAndFail = async (opts: ImplementerOptions | RetryOptions) => {
     writeNewFile(opts.projectDir, 'export const broken = ;\n');
     return {
@@ -118,7 +112,7 @@ async function retryAfterHalt(firstAttempt: FirstAttempt) {
         filesChanged: [NEW_FILE],
         touchedNotSuggested: [],
         notes: null,
-        decisions,
+        decisions: [],
       },
     };
   };
@@ -167,18 +161,15 @@ async function retryAfterHalt(firstAttempt: FirstAttempt) {
 }
 
 describe('Try again on a brief whose first attempt wrote its own files', () => {
-  it.each(['failed-consult', 'decision-confirm'] as const)(
-    'runs no stale consult after a %s halt and keeps the brief creating its file',
-    async (firstAttempt) => {
-      const { halted, recovered, builds } = await retryAfterHalt(firstAttempt);
+  it('runs no stale consult after a failed-consult halt and keeps the brief creating its file', async () => {
+    const { halted, recovered, builds } = await retryAfterHalt();
 
-      expect(recovered.lineages?.T001?.consultRecords ?? []).not.toContainEqual(
-        expect.objectContaining({ reason: 'stale' }),
-      );
-      expect(builds[0]?.consults).toBe(halted.lineages?.T001?.consults);
-      expect(builds[0]?.call).not.toContain(STALE_TEXT);
-      expect(builds[0]?.action).toBe('create');
-      expect(recovered.tasks[0]?.action).toBe('create');
-    },
-  );
+    expect(recovered.lineages?.T001?.consultRecords ?? []).not.toContainEqual(
+      expect.objectContaining({ reason: 'stale' }),
+    );
+    expect(builds[0]?.consults).toBe(halted.lineages?.T001?.consults);
+    expect(builds[0]?.call).not.toContain(STALE_TEXT);
+    expect(builds[0]?.action).toBe('create');
+    expect(recovered.tasks[0]?.action).toBe('create');
+  });
 });

@@ -54,7 +54,7 @@ import {
 } from './call-result.js';
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
 import { extractLastJsonObject } from '../../runners/typed-output.js';
-import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
+import { readImplementerReport } from '../../../core/schemas/consult.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { processError } from '../../../lib/process/errors.js';
 import { isApiDeadlineError } from '../../providers/api-deadlines.js';
@@ -164,15 +164,13 @@ function aggregateApplied(applied: readonly AppliedFile[]): {
 }
 
 /**
- * The direct writer's closing report: the last JSON object of the reply, taken
- * as it is. A report that is missing or does not match the contract changes
+ * The direct writer's closing report: the last JSON object of the reply, read by
+ * `readImplementerReport`. A report that is missing or cannot be read changes
  * nothing, and there is no repair call.
  */
-function parseImplementerReport(text: string): ImplementerReport | undefined {
+function parseImplementerReport(text: string): ReturnType<typeof readImplementerReport> {
   const extracted = extractLastJsonObject(text);
-  if (extracted.kind !== 'ok') return undefined;
-  const parsed = ImplementerReportSchema.safeParse(extracted.value);
-  return parsed.success ? parsed.data : undefined;
+  return extracted.kind === 'ok' ? readImplementerReport(extracted.value) : undefined;
 }
 
 export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implementer {
@@ -707,7 +705,16 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     implBuffer?.flush();
 
-    const report = outputContract === 'direct' ? parseImplementerReport(outputText) : undefined;
+    const read = outputContract === 'direct' ? parseImplementerReport(outputText) : undefined;
+    if (phase && read !== undefined && read.dropped.length > 0) {
+      baseConfig.publisher?.publishWarning({
+        phase,
+        taskId: task.id,
+        message: `Task ${task.id}: the implementer report did not match its contract in ${read.dropped.join(', ')}; SPLITBRIEF kept the other fields.`,
+        safety: { category: 'implementer', code: 'implementer_report_field_dropped' },
+      });
+    }
+    const report = read?.report;
     if (report?.status === 'blocked') {
       return {
         success: false,

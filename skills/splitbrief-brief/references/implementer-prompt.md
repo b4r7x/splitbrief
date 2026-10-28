@@ -24,7 +24,7 @@ This block reuses the engine's workspace rules and the current report schema, wi
     End with one JSON object and nothing after it. Use decisions: [] when you propose no deviation.
     {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null,"decisions":[{"what":"<proposed deviation>","why":"<reason>"}]}
     If blocked, end with {"status":"blocked","question":"<question>","filesNeeded":["<file>"]} instead. The session consults at once.
-    A decision proposes a deviation. The planner confirms how; the user decides changes to what.
+    A decision states a deviation and why. The plan ledger records it with the task id, and the reviewer judges it.
 <!-- /generated -->
 
 Use the project's language and import convention. Apply the protected-operation rules in references/gates.md.
@@ -54,7 +54,7 @@ Use this section order:
 <!-- /generated -->
 
 Inside Description, add read-only Plan context per references/brief-format.md.
-Include the summary, confirmed decisions with task ids, and this task's criterion text.
+Include the summary, the decisions with task ids, and this task's criterion text.
 Keep all TaskSpec fields in their mapped places. Use no extra frontmatter keys.
 Keep the final report contract after Constraints. Send raw context sections even if the parser drops them.
 

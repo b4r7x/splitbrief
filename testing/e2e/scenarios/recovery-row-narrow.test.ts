@@ -3,10 +3,10 @@ import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
-  decisionConfirmHaltFixture,
+  consultFailureHaltFixture,
   dependentPlan,
   startToHalt,
-} from '../helpers/decision-confirm-halt.js';
+} from '../helpers/consult-failure-halt.js';
 import { cli, readState, type StopContinueFixture } from '../helpers/stop-continue-fixture.js';
 import { transcriptText } from '../helpers/transcript-text.js';
 
@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 it('keeps the arrow and the outcome of a Skip task Recovery row together at 60 columns', async () => {
-  ({ fixture, restorePath } = decisionConfirmHaltFixture(dependentPlan));
+  ({ fixture, restorePath } = consultFailureHaltFixture(dependentPlan));
   const sessionId = await startToHalt(fixture);
   const firstSkip = await cli(fixture, ['continue', sessionId, '--plain', '--action', 'skip']);
   expect(firstSkip.exitCode, `${firstSkip.stdout}\n${firstSkip.stderr}`).toBe(1);

@@ -254,8 +254,9 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain('T001 [done] Hello module: Add the hello export');
     expect(result).toContain('Suggested files: src/hello.ts');
     expect(result).toContain('Exclusions: docs/**');
-    expect(result).toContain('### Decisions');
-    expect(result).toContain('- Keep the greeting pure (T001)');
+    expect(result).toContain(
+      '### Decisions\n\nThe implementer of a task declared each decision that has a task id. Nobody confirmed these decisions: judge them against the criteria and the code.\n\n- Keep the greeting pure (T001)',
+    );
     expect(result).toContain('## Implementation Diff');
     expect(result).toContain('### src/hello.ts — T001');
     expect(result).toContain(

@@ -50,13 +50,12 @@ export const dependentPlan = makePlanProposal({
     }),
   ],
 });
-const decision = { what: 'Kept alpha in one module', why: 'The test imports it from there.' };
-
 /**
- * A project whose planner fails the decision confirm, so T001 halts with its file written.
+ * A project whose implementer writes T001's file and reports done, whose check fails on it, and whose
+ * planner crashes on the consult, so T001 halts on the failed planner call after its file landed.
  * The caller keeps both values for its cleanup before it starts the run.
  */
-export function decisionConfirmHaltFixture(planned: PlanProposal): {
+export function consultFailureHaltFixture(planned: PlanProposal): {
   fixture: StopContinueFixture;
   restorePath: () => void;
 } {
@@ -70,6 +69,16 @@ export function decisionConfirmHaltFixture(planned: PlanProposal): {
   vi.stubEnv('NODE_OPTIONS', `--import=${offlinePath}`);
   const plannerPath = join(fixture.tmpDir, 'planner.mjs');
   const implementerPath = join(fixture.tmpDir, 'implementer.mjs');
+  const failingCheckPath = join(fixture.tmpDir, 'failing-check.mjs');
+  // The check fails while the brief's file is in the workspace, so a run that skipped it passes.
+  writeFileSync(
+    failingCheckPath,
+    `if (process.getBuiltinModule('node:fs').existsSync(${JSON.stringify(ALPHA_FILE)})) {
+  console.error('alpha is wrong');
+  process.exit(1);
+}
+`,
+  );
   const passing = passingVerdict({
     kind: 'final',
     taskIds: planned.tasks.map((task) => task.id),
@@ -80,10 +89,11 @@ export function decisionConfirmHaltFixture(planned: PlanProposal): {
     `const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
+const heading = prompt.split('\\n').find((line) => line.startsWith('# '));
 let answer;
 if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final Implementation Review')) {
   answer = ${JSON.stringify(passing)};
-} else if (prompt.includes('Confirm reported decisions')) {
+} else if (heading === '# Consult on a failing task' || heading === '# Consult continued') {
   process.stderr.write('The planner process crashed.\\n');
   process.exit(1);
 } else if (prompt.includes('# Plan the change')) {
@@ -101,13 +111,7 @@ for await (const _chunk of process.stdin);
 mkdirSync('src', { recursive: true });
 writeFileSync(${JSON.stringify(ALPHA_FILE)}, "export const alpha = 'alpha';\\n");
 console.log('Implemented T001');
-console.log(JSON.stringify({
-  status: 'done',
-  filesChanged: [${JSON.stringify(ALPHA_FILE)}],
-  touchedNotSuggested: [],
-  notes: null,
-  decisions: [${JSON.stringify(decision)}],
-}));
+console.log(JSON.stringify({ status: 'done', filesChanged: [${JSON.stringify(ALPHA_FILE)}], touchedNotSuggested: [], notes: null, decisions: [] }));
 `,
   );
   const config = loadConfig(fixture.projectDir).config;
@@ -118,11 +122,12 @@ console.log(JSON.stringify({
     ...config,
     planner: { ...config.planner, args: [plannerPath] },
     implementer: { ...config.implementer, args: [implementerPath] },
+    validation: { ...config.validation, testCommand: `node ${failingCheckPath}` },
   });
   return { fixture, restorePath };
 }
 
-/** Starts the run, which halts on the decision confirm, and returns its session id. */
+/** Starts the run, which halts on the failed consult, and returns its session id. */
 export async function startToHalt(fixture: StopContinueFixture): Promise<string> {
   const halted = await cli(fixture, ['start', 'smoke']);
   expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);

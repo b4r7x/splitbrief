@@ -433,7 +433,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     },
   );
 
-  it('restores a file the brief created when its ladder runs out after a Try again', async () => {
+  it('restores a file the brief created when its ladder runs out after a Continue', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({
       id: 'T001',
@@ -446,7 +446,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       processError.exitCode({ command: 'tsc', code: 2, stderr: 'test failed', output: '' }),
     );
     let attempts = 0;
-    // The first attempt reports a decision, so its decision-confirm halts the brief with the file kept.
     const write = async ({ projectDir: runDir }: ImplementerOptions) => {
       attempts += 1;
       mkdirSync(join(runDir, 'src'), { recursive: true });
@@ -459,10 +458,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           filesChanged: ['src/new.ts'],
           touchedNotSuggested: [],
           notes: null,
-          decisions:
-            attempts === 1
-              ? [{ what: 'Named the export attempt', why: 'The brief names none' }]
-              : [],
+          decisions: [],
         },
       };
     };
@@ -489,20 +485,32 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     const loop = (initialState: ReturnType<typeof makeImplState>) =>
       runTaskLoop({ wctx, initialState, setTrackedState: vi.fn(), setCurrentTask: vi.fn() });
 
-    const halted = await loop(makeImplState([task]));
-    expect(halted.state.pendingRecovery).toMatchObject({ reason: 'planner-call-failed' });
+    // The lineage has spent its consults, so the first ladder halts with the file kept.
+    const spent = {
+      consults: 2,
+      attempts: 0,
+      consultAllowance: 2,
+      attemptAllowance: 8,
+      staleConsultedRevision: {},
+      dispatchedRevision: {},
+      consultRecords: [],
+      replacedParents: [],
+      notes: [],
+    };
+    const halted = await loop(makeImplState([task], { lineages: { T001: spent } }));
+    expect(halted.state.pendingRecovery).toMatchObject({ reason: 'consult-bound-spent' });
     expect(existsSync(join(projectDir, 'src/new.ts'))).toBe(true);
-    const retried = await applyRecoveryAction({
+    const continued = await applyRecoveryAction({
       projectDir,
       sessionId,
       bus,
       config,
       state: halted.state,
-      action: 'retry-same-worker',
+      action: 'continue',
     });
-    if (!retried.ok) throw new Error(retried.message);
+    if (!continued.ok) throw new Error(continued.message);
 
-    const exhausted = await loop(retried.state);
+    const exhausted = await loop(continued.state);
 
     expect(exhausted.state.pendingRecovery).toMatchObject({ reason: 'planner-call-failed' });
     expect(attempts).toBeGreaterThan(1);

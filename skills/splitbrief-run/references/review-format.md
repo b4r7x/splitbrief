@@ -24,7 +24,7 @@ Write review-packet.md with this shape:
     <plan.json, completed tasks and the criteria due at this review>
 
     ## Plan context
-    <summary, confirmed decisions with task ids, and criterion text>
+    <summary, decisions with task ids, and criterion text>
 
     ## Task Briefs
     <completed tasks' Markdown briefs in full; pending tasks listed separately>
@@ -66,7 +66,7 @@ Write review-packet.md with this shape:
     Use empty arrays when there are no entries. Save the whole answer in review.json. The session derives the verdict.
 <!-- /generated -->
 
-Include approved plan.json, all confirmed decisions, criterion text, relevant briefs and the current run diff.
+Include approved plan.json, all ledger decisions, criterion text, relevant briefs and the current run diff.
 Group changes by task. Include touchedNotSuggested paths and their reasons, check results, consults, previous review answers and user answers.
 Use baseline bytes and hashes for the run diff. Exclude unchanged pre-existing edits and run artifacts.
 Save the current reviewer-check and required-check output with commands, exits, ids and artifact paths.

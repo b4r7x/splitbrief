@@ -1,15 +1,11 @@
 import {
-  ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
   CONSULT_ANSWER_JSON_SCHEMA,
-  DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
   STALE_CONSULT_ANSWER_JSON_SCHEMA,
-  acceptedDecisions,
   consultAnswerSchemaFor,
   type ConsultAnswer,
   type ConsultReason,
   type ConsultSeat,
   type ImplementerReport,
-  type ResolvedConsultAnswer,
 } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
@@ -65,12 +61,10 @@ export type ConsultRequestInput = Readonly<{
   reason: ConsultReason;
   failingOutput: string;
   report?: ImplementerReport | null | undefined;
-  /** Deviation only: the user answered the planner's question about the attempt's decisions. */
-  answered?: boolean | undefined;
 }>;
 
 export type ConsultOutcome =
-  | Readonly<{ answer: ResolvedConsultAnswer }>
+  | Readonly<{ answer: ConsultAnswer }>
   | Readonly<{ error: SeatProtocolError }>;
 
 /** What one seat-trouble-wrapped consult attempt produced: an answer, or the error to rethrow. */
@@ -88,33 +82,19 @@ export function thrownConsultSeat(err: unknown): ConsultSeat | undefined {
 
 /**
  * The seat that answers a consult: the reviewer wrote a fix task at the review, so it
- * decides that task's repair; the planner answers every plan task and every deviation.
+ * decides that task's repair; the planner answers every plan task.
  */
-export function consultSeat(task: Task, reason: ConsultReason): ConsultSeat {
-  return task.fix !== undefined && reason !== 'deviation' ? 'review' : 'plan';
+export function consultSeat(task: Task): ConsultSeat {
+  return task.fix !== undefined ? 'review' : 'plan';
 }
 
-/** The answer contract a consult reason takes: stale and deviation narrow the actions. */
-function reasonContract(task: Task, reason: ConsultReason, answered: boolean) {
+/** The answer contract a consult reason takes: stale narrows the actions. */
+function reasonContract(task: Task, reason: ConsultReason) {
   if (reason === 'stale') {
     return {
       schema: consultAnswerSchemaFor(task, 'stale'),
       jsonSchema: STALE_CONSULT_ANSWER_JSON_SCHEMA,
       schemaName: 'stale_consult_answer',
-    };
-  }
-  if (reason === 'deviation' && answered) {
-    return {
-      schema: consultAnswerSchemaFor(task, 'deviation', true),
-      jsonSchema: ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
-      schemaName: 'answered_deviation_consult_answer',
-    };
-  }
-  if (reason === 'deviation') {
-    return {
-      schema: consultAnswerSchemaFor(task, 'deviation'),
-      jsonSchema: DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
-      schemaName: 'deviation_consult_answer',
     };
   }
   return {
@@ -134,7 +114,6 @@ function reasonContract(task: Task, reason: ConsultReason, answered: boolean) {
 function answerContract(
   task: Task,
   reason: ConsultReason,
-  answered: boolean,
   checks: {
     npmScriptsApproved: boolean;
     projectDir: string;
@@ -143,7 +122,7 @@ function answerContract(
     pendingFiles: readonly string[];
   },
 ) {
-  const contract = reasonContract(task, reason, answered);
+  const contract = reasonContract(task, reason);
   return {
     ...contract,
     schema: contract.schema.superRefine((value, ctx) => {
@@ -241,7 +220,6 @@ function promptInput(
     earlierConsults: lineage?.consultRecords ?? [],
     otherTasks: state.tasks.filter((task) => task.id !== input.task.id),
     operatorInstructions: lineage?.corrections ?? [],
-    answered: input.answered === true,
   };
 }
 
@@ -250,7 +228,7 @@ function publishAnswer(
   ctx: ConsultContext,
   state: WorkflowState,
   input: ConsultRequestInput,
-  answer: ResolvedConsultAnswer,
+  answer: ConsultAnswer,
   seat: ConsultSeat,
 ): void {
   publishConsultAnswered(
@@ -269,13 +247,6 @@ function publishAnswer(
         revision: (input.task.revision ?? 1) + 1,
       }),
       ...(answer.answer.action === 'verify' && { checkIds: answer.answer.checkIds }),
-      ...(answer.answer.action === 'confirm' && {
-        decisionCount: answer.answer.decisions.length,
-        rejectedCount:
-          input.report?.status === 'done'
-            ? input.report.decisions.length - answer.answer.decisions.length
-            : 0,
-      }),
     },
   );
 }
@@ -283,9 +254,8 @@ function publishAnswer(
 /**
  * Asks the consult seat about one task and records its answer: the reviewer for a fix
  * task's repair, the planner for the rest (`consultSeat`). The planner continues its
- * session; the reviewer holds none and reads the full prompt. Deviation and stale
- * requests spend no consult allowance; both seats share the rest. A confirm names the reported
- * decisions it accepts by id, and comes back with those decisions in the implementer's words.
+ * session; the reviewer holds none and reads the full prompt. A stale request spends no
+ * consult allowance; both seats share the rest.
  */
 export async function requestConsult(
   ctx: ConsultContext,
@@ -299,10 +269,10 @@ export async function requestConsult(
     ctx.onStateChange?.(next);
   };
 
-  const seat = consultSeat(input.task, input.reason);
+  const seat = consultSeat(input.task);
   const diff = await taskDiff(ctx.workspaceDir, ctx.state, input.task, ref);
   const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir, seat);
-  const contract = answerContract(input.task, input.reason, input.answered === true, {
+  const contract = answerContract(input.task, input.reason, {
     npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),
     projectDir: ctx.workspaceDir,
     renderCommand: ctx.config.validation.render,
@@ -407,20 +377,7 @@ export async function requestConsult(
     return { error: answer.result.error };
   }
 
-  const seatAnswer = answer.result.value.answer;
-  const consulted: ResolvedConsultAnswer =
-    seatAnswer.action === 'confirm'
-      ? {
-          answer: {
-            diagnosis: seatAnswer.diagnosis,
-            action: 'confirm',
-            decisions:
-              input.report?.status === 'done'
-                ? acceptedDecisions(input.report.decisions, seatAnswer.decisionIds)
-                : [],
-          },
-        }
-      : { answer: seatAnswer };
+  const consulted = answer.result.value;
   apply(
     transitionAndSave(ref, state, {
       type: 'RECORD_CONSULT',
@@ -432,7 +389,7 @@ export async function requestConsult(
     }),
   );
   // One consult allowance: a reviewer consult spends the same count a planner consult does.
-  if (input.reason !== 'deviation' && input.reason !== 'stale') {
+  if (input.reason !== 'stale') {
     apply(transitionAndSave(ref, state, { type: 'COUNT_PLANNER_CALL' }));
   }
   publishAnswer(ctx, state, input, consulted, seat);

@@ -2,7 +2,7 @@ import { plainUserMessage } from '../../../core/types/user-input.js';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ResolvedConsultAnswer } from '../../../core/schemas/consult.js';
+import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
@@ -90,15 +90,15 @@ function contextFor(
   };
 }
 
-function guidance(instructions: string, context: string | null): ResolvedConsultAnswer {
+function guidance(instructions: string, context: string | null): ConsultAnswer {
   return { answer: { diagnosis: 'The task failed', action: 'guidance', instructions, context } };
 }
 
-function rewrite(spec: TaskSpec): ResolvedConsultAnswer {
+function rewrite(spec: TaskSpec): ConsultAnswer {
   return { answer: { diagnosis: 'The brief was wrong', action: 'rewrite-task', task: spec } };
 }
 
-function split(specs: TaskSpec[]): ResolvedConsultAnswer {
+function split(specs: TaskSpec[]): ConsultAnswer {
   return { answer: { diagnosis: 'The brief was too big', action: 'split-task', tasks: specs } };
 }
 

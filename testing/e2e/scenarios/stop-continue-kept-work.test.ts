@@ -1,7 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { PlannerConversation } from '../../../src/core/schemas/workflow.js';
 import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
@@ -417,77 +416,14 @@ const CORRECTED_CALL: ImplementerCall = {
 /** A later call writes nothing, as a seat with nothing left to do does. */
 const IDLE_CALL: ImplementerCall = { report: IDLE_REPORT };
 
-const KEEP_ANSWER = 'Yes, keep the default export';
-
-const CONFIRM_ANSWER = {
-  answer: {
-    diagnosis: 'The user asked for the default export.',
-    action: 'confirm',
-    decisionIds: ['d1'],
-  },
-};
-
-const ASK_ANSWER = {
-  answer: {
-    diagnosis: 'The default export changes what is built.',
-    action: 'ask-user',
-    question: 'Did you ask for greet to also be a default export of src/greet.ts?',
-    whyOnlyUserCanAnswer: 'Only the user knows whether they asked for it.',
-    choices: ['No, remove the default export', KEEP_ANSWER],
-    default: 'No, remove the default export',
-  },
-};
-
-const KEEP_GUIDANCE = {
-  answer: {
-    diagnosis: 'The user keeps the default export.',
-    action: 'guidance',
-    instructions: 'Keep the default export as it is.',
-    context: null,
-  },
-};
-
-/**
- * The planner's consults: the final review saves its prompt; a decision confirm saves its prompt,
- * answers `answer` once the prompt carries `answerWhen`, and otherwise asks with a default that
- * removes the default export; a repair consult tells the retry to drop the default export, as
- * the live planner did.
- */
-function consultScript(
-  tmpDir: string,
-  answerWhen: string,
-  answer: Readonly<Record<string, unknown>> = CONFIRM_ANSWER,
-): string {
-  const repair = {
-    answer: {
-      diagnosis: 'The retry changed nothing.',
-      action: 'guidance',
-      instructions: 'Write src/greet.ts again. Do not add a default export.',
-      context: null,
-    },
-  };
+/** The final review saves its prompt; every other planner call takes the fixture's answer. */
+function reviewPromptScript(tmpDir: string): string {
   return `(prompt) => {
-  const fs = process.getBuiltinModule('node:fs');
   if (prompt.includes('Final Implementation Review')) {
-    fs.writeFileSync(${JSON.stringify(join(tmpDir, 'review-prompt'))}, prompt);
-    return undefined;
+    process.getBuiltinModule('node:fs').writeFileSync(${JSON.stringify(join(tmpDir, 'review-prompt'))}, prompt);
   }
-  if (prompt.includes('Confirm reported decisions')) {
-    const dir = ${JSON.stringify(join(tmpDir, 'confirm-prompts'))};
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(dir + '/' + fs.readdirSync(dir).length, prompt);
-    return JSON.stringify(prompt.includes(${JSON.stringify(answerWhen)}) ? ${JSON.stringify(answer)} : ${JSON.stringify(ASK_ANSWER)});
-  }
-  if (prompt.includes('Consult on a failing task') || prompt.includes('Consult continued')) return ${JSON.stringify(JSON.stringify(repair))};
   return undefined;
 }`;
-}
-
-function confirmPrompts(target: StopContinueFixture): string[] {
-  const dir = join(target.tmpDir, 'confirm-prompts');
-  return readdirSync(dir)
-    .sort((a, b) => Number(a) - Number(b))
-    .map((name) => readFileSync(join(dir, name), 'utf8'));
 }
 
 async function eventTypes(target: StopContinueFixture, sessionId: string): Promise<string[]> {
@@ -504,11 +440,11 @@ async function appliedGreet(target: StopContinueFixture, sessionId: string): Pro
   return readFileSync(target.greetPath, 'utf8');
 }
 
-describe('a correction on a stopped run reaches the plan seat', { timeout: 240_000 }, () => {
-  it('confirms the decision the correction caused without a question or a retry', async () => {
+describe('a correction on a stopped run reaches the review', { timeout: 240_000 }, () => {
+  it('records the decision the correction caused without a consult, a question or a retry', async () => {
     fixture = createStopContinueFixture(
       implementerCalls([{ writes: BOTH_FILES, holds: true }, CORRECTED_CALL, IDLE_CALL]),
-      { consult: (tmpDir) => consultScript(tmpDir, DEFAULT_EXPORT_CORRECTION) },
+      { consult: reviewPromptScript },
     );
     const target = fixture;
 
@@ -530,9 +466,9 @@ describe('a correction on a stopped run reaches the plan seat', { timeout: 240_0
 
     expect(resumed.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
     expect(asked).toEqual([]);
-    expect(confirmPrompts(target)).toEqual([expect.stringContaining(DEFAULT_EXPORT_CORRECTION)]);
     expect(invocations(target)).toBe(2);
     const types = await eventTypes(target, parked.sessionId);
+    expect(types).not.toContain('consult_answered');
     expect(types).not.toContain('task_retry');
     expect(types).not.toContain('task_escalating');
     expect(types).not.toContain('implementer_generate_failed');
@@ -546,88 +482,4 @@ describe('a correction on a stopped run reaches the plan seat', { timeout: 240_0
 
     expect(await appliedGreet(target, parked.sessionId)).toBe(GREET_WITH_DEFAULT);
   });
-
-  it('validates the kept work when the user answers keep, with no new build call', async () => {
-    fixture = createStopContinueFixture(
-      implementerCalls([{ writes: BOTH_FILES, holds: true }, CORRECTED_CALL, IDLE_CALL]),
-      { consult: (tmpDir) => consultScript(tmpDir, KEEP_ANSWER) },
-    );
-    const target = fixture;
-
-    const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-    expect(parked.exitCode).toBe(130);
-
-    const asked: PlannerConversation[] = [];
-    const resumed = await continueWithCorrection(
-      target,
-      parked.sessionId,
-      DEFAULT_EXPORT_CORRECTION,
-      {
-        onPlannerReply: async (conversation) => {
-          asked.push(conversation);
-          return plainUserMessage(KEEP_ANSWER);
-        },
-      },
-    );
-
-    expect(resumed.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
-    expect(asked).toHaveLength(1);
-    expect(asked[0]?.questions[0]?.text).toContain(
-      `Your instructions for T001:\n- ${DEFAULT_EXPORT_CORRECTION}`,
-    );
-    const prompts = confirmPrompts(target);
-    expect(prompts).toHaveLength(2);
-    expect(prompts[0]).toContain(DEFAULT_EXPORT_CORRECTION);
-    expect(prompts[1]).toContain(DEFAULT_EXPORT_CORRECTION);
-    expect(prompts[1]).toContain(KEEP_ANSWER);
-    expect(invocations(target)).toBe(2);
-    const types = await eventTypes(target, parked.sessionId);
-    expect(types).not.toContain('task_retry');
-    expect(types).not.toContain('task_escalating');
-    expect(types).not.toContain('implementer_generate_failed');
-
-    expect(await appliedGreet(target, parked.sessionId)).toBe(GREET_WITH_DEFAULT);
-  });
-
-  it.each([
-    ['asks again', ASK_ANSWER, 2],
-    ['answers with guidance', KEEP_GUIDANCE, 1],
-  ] as const)(
-    'passes the kept work when the planner %s after the user answers keep',
-    async (_label, afterKeep, questions) => {
-      fixture = createStopContinueFixture(
-        implementerCalls([{ writes: BOTH_FILES, holds: true }, CORRECTED_CALL, IDLE_CALL]),
-        { consult: (tmpDir) => consultScript(tmpDir, KEEP_ANSWER, afterKeep) },
-      );
-      const target = fixture;
-
-      const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
-      expect(parked.exitCode).toBe(130);
-
-      const asked: PlannerConversation[] = [];
-      const resumed = await continueWithCorrection(
-        target,
-        parked.sessionId,
-        DEFAULT_EXPORT_CORRECTION,
-        {
-          onPlannerReply: async (conversation) => {
-            asked.push(conversation);
-            return plainUserMessage(KEEP_ANSWER);
-          },
-        },
-      );
-
-      expect(resumed.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
-      expect(asked).toHaveLength(questions);
-      expect(confirmPrompts(target)).toHaveLength(2);
-      // The call that delivers the answer finds the kept work right and writes nothing.
-      expect(invocations(target)).toBe(3);
-      const types = await eventTypes(target, parked.sessionId);
-      expect(types).not.toContain('task_retry');
-      expect(types).not.toContain('task_escalating');
-      expect(types).not.toContain('implementer_generate_failed');
-
-      expect(await appliedGreet(target, parked.sessionId)).toBe(GREET_WITH_DEFAULT);
-    },
-  );
 });

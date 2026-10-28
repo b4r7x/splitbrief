@@ -54,7 +54,6 @@ const finding: ReviewAnswer['findings'][number] = {
   acceptance: null,
   checkIds: null,
 };
-const decision = { what: 'Kept alpha in one module', why: 'The test imports it from there.' };
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -71,10 +70,10 @@ afterEach(() => {
 });
 
 /**
- * A run whose planner fails the decision confirm, so T001 halts. Its first final review fails
- * with one fix brief and the next one passes.
+ * A run whose implementer reports T001 blocked and whose planner crashes on the consult, so
+ * T001 halts. Its first final review fails with one fix brief and the next one passes.
  */
-async function haltOnDecisionConfirm() {
+async function haltOnFailedConsult() {
   fixture = createStopContinueFixture(() => '');
   const target = fixture;
   restorePath = activateSafeCliShimPath(target.tmpDir);
@@ -87,7 +86,7 @@ async function haltOnDecisionConfirm() {
   const plannerPath = join(target.tmpDir, 'planner.mjs');
   const implementerPath = join(target.tmpDir, 'implementer.mjs');
   const reviewsPath = join(target.tmpDir, 'reviews.log');
-  const decisionsPath = join(target.tmpDir, 'decisions.log');
+  const callsPath = join(target.tmpDir, 'calls.log');
   writeFileSync(
     plannerPath,
     `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
@@ -98,6 +97,7 @@ const ids = (label) => {
   const value = prompt.match(new RegExp('^' + label + ' (.+)$', 'm'))?.[1].trim() ?? 'none';
   return value === 'none' ? [] : value.split(',').map((id) => id.trim());
 };
+const heading = prompt.split('\\n').find((line) => line.startsWith('# '));
 let answer;
 if (prompt.includes('# Final Implementation Review')) {
   const reviews = existsSync(${JSON.stringify(reviewsPath)})
@@ -115,7 +115,7 @@ if (prompt.includes('# Final Implementation Review')) {
   };
 } else if (prompt.includes('# Choose the checks for this review')) {
   answer = { commands: [], declined: [], reason: null };
-} else if (prompt.includes('Confirm reported decisions')) {
+} else if (heading === '# Consult on a failing task') {
   process.stderr.write('The planner process crashed.\\n');
   process.exit(1);
 } else if (prompt.includes('# Plan the change')) {
@@ -130,17 +130,19 @@ process.stdout.write(JSON.stringify(answer));
     implementerPath,
     `import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 for await (const _chunk of process.stdin);
-const first = !existsSync(${JSON.stringify(decisionsPath)});
-appendFileSync(${JSON.stringify(decisionsPath)}, 'd');
+const first = !existsSync(${JSON.stringify(callsPath)});
+appendFileSync(${JSON.stringify(callsPath)}, 'c');
 mkdirSync('src', { recursive: true });
 writeFileSync(${JSON.stringify(ALPHA_FILE)}, "export const alpha = 'alpha';\\n");
-console.log(JSON.stringify({
-  status: 'done',
-  filesChanged: [${JSON.stringify(ALPHA_FILE)}],
-  touchedNotSuggested: [],
-  notes: null,
-  decisions: first ? [${JSON.stringify(decision)}] : [],
-}));
+console.log(JSON.stringify(first
+  ? { status: 'blocked', question: 'Which module should export alpha?', filesNeeded: [] }
+  : {
+      status: 'done',
+      filesChanged: [${JSON.stringify(ALPHA_FILE)}],
+      touchedNotSuggested: [],
+      notes: null,
+      decisions: [],
+    }));
 `,
   );
   const config = loadConfig(target.projectDir).config;
@@ -161,7 +163,7 @@ console.log(JSON.stringify({
 
 describe('e2e: a skipped brief through a review fix cycle', { timeout: 240_000 }, () => {
   it('runs only the fix brief, and the closed Briefs block keeps the skipped brief skipped', async () => {
-    const { target, sessionId } = await haltOnDecisionConfirm();
+    const { target, sessionId } = await haltOnFailedConsult();
     expect(readState(target, sessionId).pendingRecovery).toMatchObject({
       reason: 'planner-call-failed',
       taskId: 'T001',

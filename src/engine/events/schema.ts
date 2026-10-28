@@ -22,7 +22,12 @@ import {
   ClarificationQuestionSchema,
 } from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
-import { ConsultRecordSchema, SeatSwitchCauseSchema } from '../../core/schemas/workflow.js';
+import {
+  CONSULT_ACTION_KINDS,
+  ConsultRecordSchema,
+  SeatSwitchCauseSchema,
+} from '../../core/schemas/workflow.js';
+import { CONSULT_REASONS } from '../../core/schemas/consult.js';
 import {
   readSavedRecoveryActions,
   SeatSwapCandidateSchema,
@@ -597,15 +602,20 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('hint_failed').extend({ taskId: TaskIdSchema }),
   phaseEvent('consult_answered').extend({
     taskId: TaskIdSchema,
-    reason: ConsultRecordSchema.shape.reason,
-    action: ConsultRecordSchema.shape.action,
+    /**
+     * `deviation` and `confirm` are written by runs before decisions went to the ledger; read
+     * only to replay them.
+     */
+    reason: z.enum([...CONSULT_REASONS, 'deviation']),
+    action: z.enum([...CONSULT_ACTION_KINDS, 'confirm']),
     seat: ConsultRecordSchema.shape.seat,
     diagnosis: z.string(),
     newTaskIds: taskIdArray.nullable(),
     revision: z.number().int().optional(),
     checkIds: z.array(z.string()).optional(),
+    /** Written by runs before decisions went to the ledger; read only to replay them. */
     decisionCount: z.number().int().nonnegative().optional(),
-    /** The reported decisions a decision-confirm left out: each one is rejected. */
+    /** Written by runs before decisions went to the ledger; read only to replay them. */
     rejectedCount: z.number().int().nonnegative().optional(),
   }),
   phaseEvent('task_replaced').extend({

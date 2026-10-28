@@ -201,6 +201,53 @@ describe('loadState', () => {
     expect(readFileSync(statePath, 'utf-8')).toBe(snapshot);
   });
 
+  it('drops the retired deviation and confirm consult records of an old snapshot', () => {
+    const dir = makeTmp();
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(stateDir, { recursive: true });
+    const guidance = {
+      reason: 'failed',
+      action: 'guidance',
+      diagnosis: 'The import is wrong.',
+      at: '2026-10-01T00:00:00.000Z',
+      taskId: 'T001',
+      revision: 1,
+      answer: {
+        answer: {
+          diagnosis: 'The import is wrong.',
+          action: 'guidance',
+          instructions: 'Import the schema.',
+          context: null,
+        },
+      },
+    };
+    const legacy = {
+      ...createInitialState('old-deviation-consults'),
+      lineages: {
+        T001: {
+          consults: 3,
+          attempts: 2,
+          consultAllowance: 4,
+          attemptAllowance: 8,
+          consultRecords: [
+            guidance,
+            { ...guidance, reason: 'deviation' },
+            {
+              ...guidance,
+              action: 'confirm',
+              answer: { answer: { diagnosis: 'Fine.', action: 'confirm', decisions: [] } },
+            },
+          ],
+        },
+      },
+    };
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(legacy));
+
+    const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
+
+    expect(loaded?.lineages?.T001?.consultRecords).toEqual([guidance]);
+  });
+
   it.each([
     [
       'missing phase',
