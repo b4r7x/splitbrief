@@ -309,6 +309,7 @@ function credentialFromCliAuth(
   if (context.credentialPresent) return 'present';
   switch (auth) {
     case 'missing':
+    case 'keyring':
       return 'absent';
     case 'verified':
     case 'invalid':
@@ -354,6 +355,8 @@ function legacyAuthFact(auth: CliReadinessResult['auth']): AuthFact {
       return 'unknown';
     case 'unauthenticated':
       return 'missing';
+    case 'keyring':
+      return 'keyring';
     case 'unknown':
       return 'unknown';
     case 'not-required':

@@ -15,10 +15,11 @@ export type SandboxStateRoot = 'home' | 'config' | 'data';
  * stands, or a folder resolved the way the tool resolves it. `xdg-config` and
  * `xdg-data` are XDG base folders as OpenCode and Kilo Code resolve them
  * (`xdgBaseDir`), so a set `XDG_CONFIG_HOME` or `XDG_DATA_HOME` replaces the
- * HOME default instead of adding to it. `copilot-home` is Copilot's config
- * folder: `COPILOT_HOME` when set, else `HOME/.copilot`.
+ * HOME default instead of adding to it. `tool-home` is the tool's own config
+ * folder as `cliToolHome` resolves it: `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or
+ * `COPILOT_HOME` when set, else the tool's folder under `HOME`.
  */
-export type CliStateSource = HostStateEnvKey | 'xdg-config' | 'xdg-data' | 'copilot-home';
+export type CliStateSource = HostStateEnvKey | 'xdg-config' | 'xdg-data' | 'tool-home';
 
 type CliStatePath = Readonly<{
   source: CliStateSource;
@@ -44,8 +45,8 @@ export const COPILOT_CONFIG_DESTINATION = '.copilot/config.json';
 export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]>> = {
   'claude-code': [
     {
-      source: 'HOME',
-      relativePath: '.claude/.credentials.json',
+      source: 'tool-home',
+      relativePath: '.credentials.json',
       destination: 'home',
       destinationPath: '.claude/.credentials.json',
     },
@@ -58,8 +59,8 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
   ],
   codex: [
     {
-      source: 'HOME',
-      relativePath: '.codex/auth.json',
+      source: 'tool-home',
+      relativePath: 'auth.json',
       destination: 'home',
       destinationPath: '.codex/auth.json',
     },
@@ -92,7 +93,7 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
   ],
   copilot: [
     {
-      source: 'copilot-home',
+      source: 'tool-home',
       relativePath: 'config.json',
       destination: 'home',
       destinationPath: COPILOT_CONFIG_DESTINATION,

@@ -66,6 +66,7 @@ export const AUTH_FACT_KINDS = [
   'verified',
   'unknown',
   'missing',
+  'keyring',
   'invalid',
   'policy-denied',
   'offline',

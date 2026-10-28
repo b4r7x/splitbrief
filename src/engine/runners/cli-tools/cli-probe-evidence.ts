@@ -96,6 +96,8 @@ export function legacyAuthState(auth: AuthFact): CliAuthState {
       return 'authenticated';
     case 'missing':
       return 'unauthenticated';
+    case 'keyring':
+      return 'keyring';
     case 'not-required':
       return 'not-required';
     case 'not-run':

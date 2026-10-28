@@ -207,6 +207,32 @@ describe("isolation boundary around a tool's own state", () => {
   });
 });
 
+describe("isolation boundary around a tool's own config folder", () => {
+  it('counts a set CLAUDE_CONFIG_DIR as Claude Code state', async () => {
+    await withTempDir('splitbrief-isolation-tool-home', async (dir) => {
+      // Outside every temp root, which a call may always use.
+      const configDir = '/srv/probe/claude-second-account';
+      mkdirSync(join(dir, 'checkout'));
+      mkdirSync(join(dir, 'worktree'));
+      const boundary = createIsolationBoundary({
+        isolationDir: join(dir, 'worktree'),
+        checkoutDir: join(dir, 'checkout'),
+        env: { HOME: '/home/probe', PATH: ENV_PATH, CLAUDE_CONFIG_DIR: configDir },
+        tool: 'claude-code',
+      });
+
+      const session = join(configDir, 'projects', 'x', 'session.jsonl');
+      expect(breachOf(boundary, 'Write', { file_path: session, content: '{}' })).toBeNull();
+      expect(
+        breachOf(boundary, 'Read', { file_path: join(configDir, 'settings.json') }),
+      ).toBeNull();
+      expect(breachOf(boundary, 'Write', { file_path: '/srv/probe/other.json' })).toBe(
+        'wrote to /srv/probe/other.json (outside the workspace) with Write',
+      );
+    });
+  });
+});
+
 describe("isolation boundary around the run's attached skills", () => {
   // A skill under another tool's home: codex's own state is `~/.codex`, so `~/.claude` is closed.
   // The home lives outside the temp directories, which the boundary leaves open to every tool.

@@ -43,6 +43,7 @@ import {
   type CliProbeOutput,
 } from './contract.js';
 import { isProviderOracleProbe, providerOracleCommand } from './provider-oracle.js';
+import { readCodexCredentialStore } from '../host-model-selection.js';
 import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
 import { removeSandboxTempDirs } from '../sandbox-state-paths.js';
 
@@ -98,6 +99,17 @@ function selectedAuthChannel(
 ): CliAuthChannel | undefined | null {
   if (authChannel === undefined) return undefined;
   return selectCliAuthChannel(tool, { channel: authChannel }) ?? null;
+}
+
+// Codex keeps its session sign-in in the system keyring under the `keyring` store, and under
+// `auto` when the host has a keyring; neither leaves the file a run reads.
+async function absentCredentialAuth(
+  tool: CliToolId,
+  channel: CliAuthChannel,
+): Promise<'keyring' | 'missing'> {
+  if (tool !== 'codex' || channel.stateBridge !== 'host-cli-state') return 'missing';
+  const store = await readCodexCredentialStore(process.env);
+  return store === 'keyring' || store === 'auto' ? 'keyring' : 'missing';
 }
 
 async function declaredReadinessEvidence({
@@ -164,7 +176,13 @@ async function declaredReadinessEvidence({
   // only truthful answer.
   if (authProbe === null) {
     if (authEnvironment.credential === 'unobservable') return { version, auth: 'unknown' };
-    return { version, auth: authEnvironment.credential === 'present' ? 'verified' : 'missing' };
+    return {
+      version,
+      auth:
+        authEnvironment.credential === 'present'
+          ? 'verified'
+          : await absentCredentialAuth(tool, authChannel),
+    };
   }
   const oracleProbe = isProviderOracleProbe({ tool, command: authProbe });
   // A credential the staged child cannot read is a credential it does not have,
@@ -177,7 +195,7 @@ async function declaredReadinessEvidence({
     authEnvironment.credential === 'absent' &&
     authChannelRequiresCredential(authChannel)
   ) {
-    return { version, auth: 'missing' };
+    return { version, auth: await absentCredentialAuth(tool, authChannel) };
   }
   const authCommand = authProbeCommandForVersion(tool, authProbe, version);
   const output = await runProbe({

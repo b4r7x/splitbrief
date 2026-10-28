@@ -11,7 +11,12 @@ import {
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { admitCliAuthChannel } from '../../../core/runners/cli-auth-selection.js';
-import { cliAuthRemediation, cliReadinessRemediation } from '../../../core/schemas/readiness.js';
+import {
+  CODEX_KEYRING_SIGN_IN,
+  codexKeyringSignInFix,
+  cliAuthRemediation,
+  cliReadinessRemediation,
+} from '../../../core/schemas/readiness.js';
 import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../../core/readiness/format.js';
 import { routeSignInCheck } from '../../../core/readiness/checks/cli-readiness.js';
 import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
@@ -99,6 +104,12 @@ function cliAdmissionProblem({
             message: `${name} is not signed in.`,
             cause: 'unauthenticated',
             fix: cliAuthRemediation({ tool, authChannel }, 'doctor'),
+          };
+        case 'keyring':
+          return {
+            message: CODEX_KEYRING_SIGN_IN,
+            cause: 'unauthenticated',
+            fix: codexKeyringSignInFix('doctor'),
           };
         case 'invalid':
           return {

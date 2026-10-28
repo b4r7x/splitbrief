@@ -42,6 +42,46 @@ export function xdgBaseDir(
   return env[base] || (home === undefined ? undefined : join(home, ...XDG_BASE_DEFAULTS[base]));
 }
 
+/** The variable each tool reads its config folder from before the default under HOME. */
+export const CLI_TOOL_HOME_ENV = {
+  'claude-code': 'CLAUDE_CONFIG_DIR',
+  codex: 'CODEX_HOME',
+  copilot: 'COPILOT_HOME',
+} as const satisfies Partial<Record<CliToolId, string>>;
+
+export type CliToolWithHome = keyof typeof CLI_TOOL_HOME_ENV;
+
+const CLI_TOOL_HOME_DIRS: Readonly<Record<CliToolWithHome, string>> = {
+  'claude-code': '.claude',
+  codex: '.codex',
+  copilot: '.copilot',
+};
+
+export function hasCliToolHome(tool: CliToolId): tool is CliToolWithHome {
+  return Object.hasOwn(CLI_TOOL_HOME_ENV, tool);
+}
+
+/**
+ * A tool's config folder resolved the way the tool resolves it: its variable
+ * when set, else its folder under `home`. Claude Code and Copilot take a set
+ * variable even when it is empty; Codex treats an empty `CODEX_HOME` as unset.
+ */
+export function cliToolHome(tool: CliToolWithHome, env: NodeJS.ProcessEnv, home: string): string;
+export function cliToolHome(
+  tool: CliToolWithHome,
+  env: NodeJS.ProcessEnv,
+  home: string | undefined,
+): string | undefined;
+export function cliToolHome(
+  tool: CliToolWithHome,
+  env: NodeJS.ProcessEnv,
+  home: string | undefined,
+): string | undefined {
+  const value = env[CLI_TOOL_HOME_ENV[tool]];
+  const configured = tool === 'codex' && value === '' ? undefined : value;
+  return configured ?? (home === undefined ? undefined : join(home, CLI_TOOL_HOME_DIRS[tool]));
+}
+
 // A `//` inside a string is a URL, not a comment: `opencode.jsonc` opens with a
 // `$schema` line, and a blind strip would turn it into unparseable JSON.
 function stripJsonComments(text: string): string {
@@ -143,20 +183,35 @@ async function readXdgSelection(
 }
 
 const TOML_MODEL_LINE = /^\s*model\s*=\s*["']([^"']+)["']/;
+const TOML_CREDENTIAL_STORE_LINE = /^\s*cli_auth_credentials_store\s*=\s*["']([^"']+)["']/;
 const TOML_SECTION_LINE = /^\s*\[/;
 
-// Codex keeps its selection as a top-level key; a `model` under a profile or
+// Codex keeps its own settings as top-level keys; a key under a profile or
 // provider section belongs to that section, not to the tool's own default.
-async function readCodexSelection(env: NodeJS.ProcessEnv): Promise<HostModelSelection | null> {
-  const path = join(homeDir(env), '.codex', 'config.toml');
-  const text = await readText(path);
-  if (text === null) return null;
+function topLevelTomlString(text: string, keyLine: RegExp): string | null {
   for (const line of text.split('\n')) {
     if (TOML_SECTION_LINE.test(line)) return null;
-    const model = TOML_MODEL_LINE.exec(line)?.[1];
-    if (model !== undefined) return { model, source: path };
+    const value = keyLine.exec(line)?.[1];
+    if (value !== undefined) return value;
   }
   return null;
+}
+
+function codexConfigPath(env: NodeJS.ProcessEnv): string {
+  return join(cliToolHome('codex', env, homeDir(env)), 'config.toml');
+}
+
+async function readCodexSelection(env: NodeJS.ProcessEnv): Promise<HostModelSelection | null> {
+  const path = codexConfigPath(env);
+  const text = await readText(path);
+  const model = text === null ? null : topLevelTomlString(text, TOML_MODEL_LINE);
+  return model === null ? null : { model, source: path };
+}
+
+/** The store Codex keeps its sign-in in, as the host `config.toml` names it; `null` when it names none. */
+export async function readCodexCredentialStore(env: NodeJS.ProcessEnv): Promise<string | null> {
+  const text = await readText(codexConfigPath(env));
+  return text === null ? null : topLevelTomlString(text, TOML_CREDENTIAL_STORE_LINE);
 }
 
 // Antigravity settings name the model the way its picker spells it, so the id
@@ -193,7 +248,7 @@ export async function readHostModelSelection(
     case 'codex':
       return readCodexSelection(env);
     case 'claude-code': {
-      const path = join(homeDir(env), '.claude', 'settings.json');
+      const path = join(cliToolHome('claude-code', env, homeDir(env)), 'settings.json');
       const model = stringField(await readJson(path), 'model');
       return model === null ? null : { model, source: path };
     }

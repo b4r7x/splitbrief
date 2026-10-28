@@ -189,6 +189,32 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.fix).not.toContain('ANTHROPIC_API_KEY');
   });
 
+  it('names a Codex sign-in kept in the system keyring in the summary and the fix', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
+
+    const check = buildRunnerChecks({
+      config,
+      cliReadiness: [
+        cliReadiness({
+          tool: 'codex',
+          executable: {
+            path: '/usr/local/bin/codex',
+            fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+          },
+          auth: 'keyring',
+          authChannel: 'session',
+        }),
+      ],
+    }).find((candidate) => candidate.id === 'runners.cli.codex.readiness');
+
+    expect(check).toMatchObject({
+      severity: 'blocker',
+      summary:
+        'OpenAI Codex CLI keeps its sign-in in the system keyring, which a run cannot reach.',
+      fix: 'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, or use OPENAI_API_KEY, then run `splitbrief doctor` again.',
+    });
+  });
+
   describe('a signed-in tool on a model route with no credential', () => {
     const config = makeConfig({
       implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },

@@ -180,7 +180,7 @@ export function deriveCliReadinessStatus(
   if (facts.installedVersion === null) return 'unverified';
   if (facts.compatibility === 'incompatible') return 'incompatible';
   if (facts.compatibility !== 'compatible') return 'unverified';
-  if (facts.auth === 'unauthenticated') return 'unauthenticated';
+  if (facts.auth === 'unauthenticated' || facts.auth === 'keyring') return 'unauthenticated';
   if (facts.auth !== 'authenticated' && facts.auth !== 'not-required') return 'unverified';
   return 'ready';
 }
@@ -253,6 +253,14 @@ export function cliAuthRemediation(
   }
 }
 
+/** A Codex sign-in kept in the system keyring, the headline wherever that state shows. */
+export const CODEX_KEYRING_SIGN_IN = `${CLI_TOOL_CATALOG.codex.displayName} keeps its sign-in in the system keyring, which a run cannot reach.`;
+
+/** The step that moves a Codex keyring sign-in to the file a run reads. */
+export function codexKeyringSignInFix(recheck: CliRecheck): string {
+  return `Set cli_auth_credentials_store = "file" in config.toml and run codex login again, or use OPENAI_API_KEY, ${thenRecheck(recheck)}.`;
+}
+
 export function cliExecutableTrustRemediation(name: string, recheck: CliRecheck): string {
   return `Install ${name} outside the project. Put its absolute directory first on PATH, ${thenRecheck(recheck)}.`;
 }
@@ -261,7 +269,8 @@ export function cliReadinessRemediation(
   facts: Pick<
     CliReadinessFacts,
     'tool' | 'authChannel' | 'installedVersion' | 'testedVersion' | 'compatibility'
-  >,
+  > &
+    Partial<Pick<CliReadinessFacts, 'auth'>>,
   status: Exclude<z.infer<typeof CliReadinessStateSchema>, 'ready'>,
   recheck: CliRecheck,
 ): string {
@@ -291,6 +300,7 @@ export function cliReadinessRemediation(
       // change that — only a real call can.
       return `${name} authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real ${name} call settles it; if that call fails to authenticate, sign in to ${name} again.`;
     case 'unauthenticated':
+      if (facts.auth === 'keyring') return codexKeyringSignInFix(recheck);
       return cliAuthRemediation(facts, recheck);
   }
 }
