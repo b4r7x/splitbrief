@@ -58,6 +58,7 @@ const finding: ReviewAnswer['findings'][number] = {
 };
 const refusedCheck = `Check T002-K1 is refused: a \`test\` check names one test file, and \`${TEST_COMMAND}\` is not one file.`;
 const NEW_TEST_FILE = 'src/loud.test.mjs';
+const LOUD_TEST_GUIDANCE = `Write ${NEW_TEST_FILE}: the check runs it.`;
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -120,6 +121,7 @@ process.stdout.write(JSON.stringify(answer));
 `;
 }
 
+/** The fix brief also writes the loud test when its prompt carries the review seat's guidance. */
 function implementerScript(): string {
   const writes = {
     [alpha.title]: {
@@ -130,11 +132,9 @@ function implementerScript(): string {
     [fix.title]: {
       'src/alpha.mjs': "export const alpha = 'alpha';\nexport const loud = 'ALPHA';\n",
     },
-    'Write the loud test': {
-      [NEW_TEST_FILE]:
-        "import { strict as assert } from 'node:assert';\nimport { loud } from './alpha.mjs';\nassert.equal(loud, 'ALPHA');\n",
-    },
   };
+  const loudTest =
+    "import { strict as assert } from 'node:assert';\nimport { loud } from './alpha.mjs';\nassert.equal(loud, 'ALPHA');\n";
   return `import { mkdirSync, writeFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
@@ -144,14 +144,15 @@ const files = ${JSON.stringify(writes)}[title];
 if (!files) throw new Error('Unexpected brief: ' + prompt);
 mkdirSync('src', { recursive: true });
 for (const [file, source] of Object.entries(files)) writeFileSync(file, source);
+if (prompt.includes(${JSON.stringify(LOUD_TEST_GUIDANCE)})) writeFileSync(${JSON.stringify(NEW_TEST_FILE)}, ${JSON.stringify(loudTest)});
 console.log('Implemented ' + title);
 `;
 }
 
 /**
- * The final review fails until T003 exists. Its first fix task T002 lists the new test file
- * `NEW_TEST_FILE` and checks it, but the builder never writes it; the review that reads the red
- * check asks T003 to write it.
+ * The final review fails until the fix task T002 exists. T002 lists the new test file
+ * `NEW_TEST_FILE` and checks it, but the builder does not write it; the review seat, consulted on
+ * the red check, tells the builder to write it.
  */
 function missingTestPlannerScript(callsPath: string): string {
   const passing = passingVerdict({ kind: 'final', taskIds: [], criterionIds: [] });
@@ -161,14 +162,6 @@ function missingTestPlannerScript(callsPath: string): string {
     checks: [{ id: 'T002-K1', kind: 'test', value: NEW_TEST_FILE, required: true }],
     findingIds: ['F1'],
   };
-  const fixT003 = makeTaskSpec({
-    id: 'T003',
-    title: 'Write the loud test',
-    intent: 'Test that loud is ALPHA.',
-    criteria: ['C1'],
-    suggestedFiles: [NEW_TEST_FILE],
-    checks: [{ id: 'T003-K1', kind: 'test', value: NEW_TEST_FILE, required: true }],
-  });
   return `import { appendFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
@@ -191,10 +184,17 @@ if (prompt.includes('# Choose the checks for this review')) {
   if (fails) {
     answer.findings = [${JSON.stringify(finding)}];
     answer.fixTasks = [${JSON.stringify(fixT002)}];
-  } else if (!taskIds.includes('T003')) {
-    kind = 'final-review-red-check';
-    answer.fixTasks = [{ ...${JSON.stringify(fixT003)}, findingIds: ['P1'] }];
   }
+} else if (/^# Consult on a failing task$/m.test(prompt)) {
+  kind = 'consult';
+  answer = {
+    answer: {
+      diagnosis: 'The builder never wrote the test file the check runs.',
+      action: 'guidance',
+      instructions: ${JSON.stringify(LOUD_TEST_GUIDANCE)},
+      context: null,
+    },
+  };
 } else if (prompt.includes('# Plan the change')) {
   kind = 'plan';
   answer = ${JSON.stringify({ result: plan })};
@@ -305,20 +305,18 @@ describe('e2e: a review fix task with a test check', { timeout: 300_000 }, () =>
     },
   );
 
-  it('fails the check on a new test file the builder did not write, and the next fix task writes it', async () => {
+  it('fails the check on a new test file the builder did not write, and the builder writes it on the guided retry', async () => {
     const { run, output, calls, state, unrunnable } = await startRun(missingTestPlannerScript);
     expect(unrunnable, output).toEqual([]);
-    expect(output).toMatch(
-      /plan check T002-K1: failed · \S+ \(the workspace has no test file for src\/loud\.test\.mjs\)/,
+    const consults = calls.filter((call) => call.kind === 'consult');
+    expect(consults, output).toHaveLength(1);
+    expect(consults[0]?.prompt).toContain(
+      `check T002-K1 did not pass (fail): the workspace has no test file for ${NEW_TEST_FILE}`,
     );
-    const red = calls.find((call) => call.kind === 'final-review-red-check');
-    expect(red?.prompt, output).toContain(
-      `Required check T002-K1 did not pass (fail): the workspace has no test file for ${NEW_TEST_FILE}`,
-    );
+    expect(output.split('\n')).toContain('task T002: done (1 of 1 checks passed)');
     expect(state.tasks.map((task) => [task.id, task.status])).toEqual([
       ['T001', 'done'],
       ['T002', 'done'],
-      ['T003', 'done'],
     ]);
     expect(state.phase, output).toBe('complete');
     expect(run.exitCode, output).toBe(0);
