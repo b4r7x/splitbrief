@@ -1,6 +1,6 @@
 import { fixBriefDescription, type FixFinding } from '../../core/review/fix-task.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { Plan } from '../../core/schemas/plan.js';
+import type { Plan, TaskSpec } from '../../core/schemas/plan.js';
 import { REVIEW_CHECK_ID, type TriageInput, type TriageResult } from '../../core/schemas/review.js';
 import type { SpecMetadata } from '../../core/paths-io.js';
 import type { Check, Task, TaskId } from '../../core/schemas/task.js';
@@ -190,10 +190,10 @@ export function triageContractErrors(
 
 /** A fix task never targets a file already changed when the run started that the run left alone. */
 export function fixTaskTargetErrors(
-  result: TriageResult,
+  fixTasks: readonly TaskSpec[],
   userFiles: ReadonlySet<string>,
 ): string[] {
-  return result.fixTasks.flatMap((task) =>
+  return fixTasks.flatMap((task) =>
     uniqueSorted([
       ...task.suggestedFiles,
       ...(task.protectedOperations ?? []).map((operation) => operation.path),

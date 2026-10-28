@@ -559,6 +559,7 @@ export function transition(
           inputs: action.inputs,
           ...(action.question !== undefined && { question: action.question }),
           ...(reviewAfterTaskId !== undefined && { reviewAfterTaskId }),
+          ...(action.plannerConsult === true && { plannerConsult: true }),
         },
         userAnswers: [
           ...(state.userAnswers ?? []),

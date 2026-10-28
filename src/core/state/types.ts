@@ -67,6 +67,7 @@ export type StateAction =
       inputs: NonNullable<WorkflowState['pendingTriage']>['inputs'];
       question?: NonNullable<WorkflowState['pendingTriage']>['question'];
       reviewAfterTaskId?: TaskId;
+      plannerConsult?: true;
     }
   | { type: 'RECORD_WORKSPACE'; workspace: NonNullable<WorkflowState['workspace']> }
   | { type: 'ACCEPT_AS_IS'; findings: string[]; note?: string }

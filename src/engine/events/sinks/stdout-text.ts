@@ -1,12 +1,13 @@
 import { baseSplit, baseSplitNames } from '../../../core/review/base-split.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
+import { stuckAnswerWords } from '../../../core/review/stuck.js';
 import { setAsideLine } from '../../../core/review/verdict.js';
 import { formatResetAt } from '../../../core/recovery/reset-clock.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { checksSummary } from '../../../core/validation/checks-summary.js';
 import { reusedNote } from '../../../core/validation/reused-note.js';
-import { stripTerminalControls } from '../../../utils/display-text.js';
+import { oneLineDisplayText, stripTerminalControls } from '../../../utils/display-text.js';
 import { formatDuration, formatElapsedClock } from '../../../utils/format-time.js';
 import { boundEngineEventForConsumer } from '../bound.js';
 import type { EngineEvent, EventSink } from '../types.js';
@@ -160,6 +161,7 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   stalled: implementer (opencode) · no output for 5:00
  *   review: passed | failed [(<n> blocking)] | no verdict | stopped
  *   review: Set aside V6.1: <reason>
+ *   review: stuck after T004 · planner: new fix brief T006 · <diagnosis>
  *   task review T002: failed (1 blocking) | task review: no verdict
  *   done: 3 tasks
  *
@@ -260,6 +262,12 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
         for (const entry of bounded.setAside ?? []) write(`${scope}${setAsideLine(entry)}`);
         return;
       }
+      case 'consult_answered':
+        if (bounded.reason === 'no-progress')
+          write(
+            `review: stuck after ${bounded.taskId}${SOFT_SEP}planner: ${stuckAnswerWords(bounded.action, bounded.newTaskIds)}${SOFT_SEP}${oneLineDisplayText(bounded.diagnosis)}`,
+          );
+        return;
       case 'workflow_complete': {
         // The run's count from its state: a continue completes only the briefs it had left.
         write(`done: ${bounded.completedTasks ?? 0} tasks`);

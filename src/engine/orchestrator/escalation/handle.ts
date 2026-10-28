@@ -459,7 +459,7 @@ export async function handleRetryAndEscalation(
     const snapshot = attemptSnapshot ?? taskStartSnapshot;
     const changedFiles = await attemptChangedFiles(ctx.workspaceDir, snapshot);
     const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
-    const seat = consultSeat(task);
+    const seat = consultSeat(task, reason);
     const consult = await requestConsult(
       {
         projectDir: ctx.projectDir,

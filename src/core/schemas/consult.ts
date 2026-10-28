@@ -51,9 +51,19 @@ export const ConsultAnswerSchema = z.object({
 });
 export type ConsultAnswer = z.infer<typeof ConsultAnswerSchema>;
 
-/** The answer schema of one consult on the task. */
-export function consultAnswerSchemaFor(task: Task) {
+/**
+ * The answer schema of one consult on the task. A stuck review takes no `verify`, and its split
+ * replaces the reviewer's next fix briefs, so a subtask may take one there.
+ */
+export function consultAnswerSchemaFor(task: Task, reason: ConsultReason) {
   return ConsultAnswerSchema.superRefine((value, ctx) => {
+    if (value.answer.action === 'verify' && reason === 'no-progress') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['answer', 'action'],
+        message: 'a stuck review takes guidance, rewrite-task, split-task or ask-user',
+      });
+    }
     if (value.answer.action === 'rewrite-task' && value.answer.task.id !== task.id) {
       ctx.addIssue({
         code: 'custom',
@@ -61,7 +71,11 @@ export function consultAnswerSchemaFor(task: Task) {
         message: `a rewrite-task must keep the task id ${task.id}; the answer changes it to ${value.answer.task.id}`,
       });
     }
-    if (value.answer.action === 'split-task' && task.parentId !== undefined) {
+    if (
+      value.answer.action === 'split-task' &&
+      task.parentId !== undefined &&
+      reason !== 'no-progress'
+    ) {
       ctx.addIssue({
         code: 'custom',
         path: ['answer', 'tasks'],
@@ -131,7 +145,7 @@ export function readImplementerReport(
   };
 }
 
-export const CONSULT_REASONS = ['failed', 'blocked'] as const;
+export const CONSULT_REASONS = ['failed', 'blocked', 'no-progress'] as const;
 export type ConsultReason = (typeof CONSULT_REASONS)[number];
 
 /** The seat that answers a consult: the reviewer for a fix task's repair, the planner for the rest. */

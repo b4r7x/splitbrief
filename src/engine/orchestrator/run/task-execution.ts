@@ -1,5 +1,5 @@
 import {
-  answerPendingReviewQuestion,
+  followPendingReview,
   haltVerdictlessReview,
   followReviewAnswer,
   reviewPassed,
@@ -454,7 +454,7 @@ export async function runTasksAndReview(
   for (;;) {
     if (wctx.signal?.aborted) return stopHere();
     const candidate = await captureCandidate();
-    const answered = await answerPendingReviewQuestion({
+    const answered = await followPendingReview({
       wctx,
       state,
       setTrackedState,
@@ -464,6 +464,11 @@ export async function runTasksAndReview(
     if (answered !== undefined) {
       state = answered.state;
       if (answered.stopped) return stopHere();
+      if (!answered.reviewAgain) {
+        const stopped = await runFixTasks();
+        if (stopped !== undefined) return stopped;
+        continue;
+      }
     }
     const reviewAgain = reviewsAgain(state, 'final');
     // A review that runs again on the same candidate reads the recheck the candidate already had.

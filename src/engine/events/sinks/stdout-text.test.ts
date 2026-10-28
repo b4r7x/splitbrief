@@ -31,6 +31,24 @@ describe('createStdoutTextSink', () => {
     expect(collect([event])).toEqual(['phase: implementing', 'task review: no verdict']);
   });
 
+  it('prints one line for the planner answer to a stuck review', () => {
+    const event = EngineEventSchema.parse({
+      type: 'consult_answered',
+      ts,
+      phase: 'final-review',
+      taskId: 'T004',
+      seat: 'plan',
+      reason: 'no-progress',
+      action: 'rewrite-task',
+      diagnosis: 'The fix brief edits\nthe wrong file.',
+      newTaskIds: ['T006'],
+    });
+    expect(collect([event])).toEqual([
+      'phase: final-review',
+      'review: stuck after T004 · planner: new fix brief T006 · The fix brief edits the wrong file.',
+    ]);
+  });
+
   it('prints one line per input the reviewer set aside, after the verdict line', () => {
     const event = EngineEventSchema.parse({
       type: 'review_completed',
