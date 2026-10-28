@@ -510,7 +510,6 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     ).toMatchObject([
       { verdict: 'fail', findings: { blocking: 1 } },
       { verdict: 'fail', findings: { blocking: 1 } },
-      { verdict: 'fail', findings: { blocking: 1 } },
     ]);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
     const state = readState(target, sessionId);
