@@ -289,7 +289,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify(passingVerdict({ kind: 'tas
               .trim()
               .split('\n')
               .map((line) => CheckCallSchema.parse(JSON.parse(line)));
-            expect(checkCalls.map((call) => call.buildCalls)).toEqual([1, 1, 2, 2, 2, 2, 2, 2]);
+            expect(checkCalls.map((call) => call.buildCalls)).toEqual(changesFiles ? [1, 2] : [1]);
             expect(
               log.filter((entry) => entry.kind === 'event' && entry.type === 'checks_run'),
             ).toHaveLength(4);

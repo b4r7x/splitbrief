@@ -282,8 +282,7 @@ if (!corrected) throw new Error('Checks ran before the BUILD correction pass');
             .trim()
             .split('\n')
             .map((line) => z.object({ corrected: z.boolean() }).parse(JSON.parse(line)));
-          expect(checkCalls).toHaveLength(2);
-          expect(checkCalls.every((call) => call.corrected)).toBe(true);
+          expect(checkCalls).toEqual([{ corrected: true }]);
           child.write('\x11');
           await expect
             .poll(() => outcome, { ...WAIT, message: 'Quit did not exit after cleanup' })
