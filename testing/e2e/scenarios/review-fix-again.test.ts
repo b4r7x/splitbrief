@@ -36,6 +36,7 @@ test('total adds two numbers', () => {
 `;
 const FAILED = 'total("1", "2") returns "12".';
 const NOTE = 'Make total read numeric strings as numbers.';
+const DIAGNOSIS = 'total concatenates its string operands.';
 
 const brief = makeTaskSpec({
   id: 'T001',
@@ -101,7 +102,8 @@ function readCalls(path: string): Call[] {
 }
 
 /**
- * The first two final reviews fail on F1, so the second halts: its fix cycle moved nothing. A review
+ * The first three final reviews fail on F1. The second finds the fix cycle moved nothing and asks
+ * the planner, whose guidance goes with the next fix brief; the third, stuck again, halts. A review
  * that holds the note answers it with a fix brief; every later review passes.
  */
 function plannerScript(callsPath: string): string {
@@ -136,7 +138,7 @@ if (prompt.includes('# Final Implementation Review')) {
   const note = prompt.match(/^- \\*\\*(U\\d+)\\*\\* (.+)$/m);
   if (note?.[2] === ${JSON.stringify(PENDING_NOTE)}) {
     answer.fixTasks = [{ ...${JSON.stringify(noteFix)}, findingIds: [note[1]] }];
-  } else if (reviews() < 2) {
+  } else if (reviews() < 3) {
     const finding = ${JSON.stringify(finding)};
     answer.criteria = answer.criteria.map((criterion) =>
       criterion.id === finding.criterionId ? { ...criterion, status: 'fail', evidence: finding.text } : criterion,
@@ -144,6 +146,16 @@ if (prompt.includes('# Final Implementation Review')) {
     answer.findings = [finding];
     answer.fixTasks = [{ ...${JSON.stringify(repair)}, findingIds: [finding.id] }];
   }
+} else if (/^# Consult on a failing task$/m.test(prompt)) {
+  call = { kind: 'consult', prompt };
+  answer = {
+    answer: {
+      diagnosis: ${JSON.stringify(DIAGNOSIS)},
+      action: 'guidance',
+      instructions: 'Convert the operands before adding them.',
+      context: null,
+    },
+  };
 } else if (prompt.includes('# Plan the change')) {
   call = { kind: 'plan' };
   answer = ${JSON.stringify({ result: plan })};
@@ -211,11 +223,16 @@ describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () 
     expect(halted.stderr).toContain(
       `Continue with: splitbrief continue ${sessionId}, then choose Fix again in the recovery panel`,
     );
+    expect(halted.stderr).toContain('Final review made no progress on F1 after fix cycle 2');
+    expect(halted.stdout.split('\n')).toContain(
+      `review: stuck after T002 · planner: guidance for T003 · ${DIAGNOSIS}`,
+    );
     const ref = { projectDir: target.projectDir, sessionId };
     const failed = readState(target, sessionId);
     expect(failed.pendingRecovery).toMatchObject({
       reason: 'review-failed',
       recommendedAction: 'revise',
+      details: [`Planner: ${DIAGNOSIS}`, `Reviewer: F1: ${FAILED}`],
     });
     expect(failed.pendingRecovery?.availableActions).toContain('revise');
 
@@ -246,13 +263,20 @@ describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () 
       'final-review',
       repair.title,
       'final-review',
+      'consult',
+      repair.title,
+      'final-review',
       'final-review',
       noteFix.title,
       'final-review',
     ]);
-    expect(calls.slice(0, 5).some((call) => call.prompt?.includes(NOTE))).toBe(false);
-    expect(calls[5]?.prompt).toContain(`- **${inputId}** ${PENDING_NOTE}`);
-    expect(calls[6]?.prompt).toContain(`**${inputId}**: ${NOTE}`);
+    expect(calls[5]?.prompt).toContain('no-progress');
+    expect(calls[6]?.prompt).toContain(
+      'Planner guidance: Convert the operands before adding them.',
+    );
+    expect(calls.slice(0, 8).some((call) => call.prompt?.includes(NOTE))).toBe(false);
+    expect(calls[8]?.prompt).toContain(`- **${inputId}** ${PENDING_NOTE}`);
+    expect(calls[9]?.prompt).toContain(`**${inputId}**: ${NOTE}`);
 
     const ready = readState(target, sessionId);
     expect(ready.reviewStatus).toBe('passed');
