@@ -31,6 +31,7 @@ export function formatModelName(modelId: string, providerId?: string): string {
 }
 
 const DISPLAY_OPTION_WORDS = new Set<string>([...EFFORT_AXIS_TOKENS, 'fast', 'thinking']);
+const DISPLAY_OPTION_PAIRS = new Set<string>(['extra high', 'no thinking']);
 const TRAILING_PARENS_RE = /(\s*\([^()]*\))$/;
 
 /** The context words a vendor spells inside a display name, and the window each states. */
@@ -66,8 +67,7 @@ export function peelDisplayLabel(displayName: string): string {
     const last = words[words.length - 1];
     if (last === undefined) break;
     const lower = last.toLowerCase();
-    const prev = words[words.length - 2];
-    if (lower === 'high' && prev?.toLowerCase() === 'extra') {
+    if (DISPLAY_OPTION_PAIRS.has(words.slice(-2).join(' ').toLowerCase())) {
       words.splice(words.length - 2, 2);
       continue;
     }

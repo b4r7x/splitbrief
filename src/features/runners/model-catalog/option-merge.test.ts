@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cursorModelOptions } from '#testing/helpers/factories/cursor-models.js';
 import { EFFORT_AXIS_TOKENS } from '../../../core/runners/effort-channel.js';
+import { optionAxesOf } from './option-axis.js';
 import { mergeOptionFamilies, peelOptionSuffix } from './option-merge.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 
@@ -135,6 +136,32 @@ describe('mergeOptionFamilies', () => {
     ]);
 
     expect(merged[0]?.displayName).toBe('GPT-5.5');
+  });
+
+  it('peels a two-word No Thinking display name and keeps thinking off and on as the axis', () => {
+    const efforts = [
+      ['low', 'Low'],
+      ['medium', 'Medium'],
+      ['high', 'High'],
+      ['xhigh', 'Extra High'],
+      ['max', 'Max'],
+    ] as const;
+    const merged = mergeOptionFamilies([
+      ...efforts.map(([effort, word]) => ({
+        id: `claude-haiku-5-5-${effort}`,
+        displayName: `Claude Haiku 5.5 ${word} No Thinking`,
+      })),
+      ...efforts.map(([effort, word]) => ({
+        id: `claude-haiku-5-5-thinking-${effort}`,
+        displayName: `Claude Haiku 5.5 ${word}`,
+      })),
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.displayName).toBe('Claude Haiku 5.5');
+    expect(
+      optionAxesOf(merged[0]?.variants ?? []).find((axis) => axis.axis === 'thinking'),
+    ).toEqual({ axis: 'thinking', values: ['off', 'on'] });
   });
 
   it('merges composer-2.5 with composer-2.5-fast', () => {
