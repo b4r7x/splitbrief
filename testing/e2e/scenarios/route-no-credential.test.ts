@@ -101,7 +101,7 @@ if (args[0] === 'auth' && args[1] === 'list') {
   process.exit(0);
 }
 if (args.slice(0, 3).join(' ') === 'api GET /api/model') {
-  const header = args[3] === '-H' ? args[4] : '';
+  const header = args[4] === '-H' ? args[5] : '';
   const directory = header.startsWith('x-opencode-directory:') ? header.slice(21) : '';
   const named =
     directory !== '' &&

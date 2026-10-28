@@ -40,6 +40,7 @@ import {
   authChannelRequiresCredential,
   type AuthProbeRun,
 } from '../runners/cli-tools/readiness-probe.js';
+import { providerOracleCommand } from '../runners/cli-tools/provider-oracle.js';
 import { isCanonicalCliDeclaredProbe } from '../runners/cli-tools/registry.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { sanitizeTerminalDiagnosticText, stripTerminalControls } from '../../utils/display-text.js';
@@ -207,9 +208,8 @@ function catalogProbeForVersion(
       versionScheme: CLI_TOOL_CATALOG[tool].compatibility.versionScheme,
     }) === 'incompatible';
   if (!below) return probe;
-  // The legacy listing is one the sandbox already served, so the host-account
-  // posture and the directory header the newer server needs are dropped rather
-  // than carried down.
+  // The legacy listing is one the sandbox already served, so the directory
+  // header the newer server needs is dropped rather than carried down.
   return Object.freeze({
     kind: 'catalog',
     command: immutableProbeCommand(legacy.command),
@@ -301,16 +301,11 @@ function catalogRuntimePath(): string {
 async function catalogProbeEnvironment(
   operation: AdmittedCatalogOperation,
   neutralDir: string,
-  declaredHostState: 'host-account' | undefined,
 ): Promise<CatalogProbeEnvironment> {
-  const {
-    selectedCli,
-    hostState: channelHostState,
-    preserveEnvKeys,
-  } = cliChannelStaging(operation.context.id, operation.authChannel);
-  // A listing the credential sandbox cannot answer runs with the host account.
-  // Only this probe reads it; dispatch keeps the channel's own staging.
-  const hostState = declaredHostState ?? channelHostState;
+  const { selectedCli, hostState, preserveEnvKeys } = cliChannelStaging(
+    operation.context.id,
+    operation.authChannel,
+  );
   const env = await createSandboxEnv({
     projectDir: neutralDir,
     preserveEnvKeys,
@@ -546,9 +541,13 @@ export async function probeContextCatalog(
   if (reRead.kind !== 'resolved') return { kind: 'cancelled' };
   const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-catalog-'));
   try {
-    const environment = await catalogProbeEnvironment(operation, neutralDir, probe.hostState);
+    const environment = await catalogProbeEnvironment(operation, neutralDir);
     throwIfAborted(input.signal);
+    // A provider-dependent tool reaches some providers with no credential (a
+    // project's own provider, the keyless `opencode` one), so its staged
+    // listing runs and names exactly the providers a run can reach.
     if (
+      providerOracleCommand(operation.context.id) === undefined &&
       !environment.credentialMayBePresent &&
       operation.authChannel !== undefined &&
       authChannelRequiresCredential(operation.authChannel)

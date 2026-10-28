@@ -35,6 +35,8 @@ const FIXTURE_HOST_PATHS = new Set([
   '/Users/me/notes/product-planning/archive/receiving-workflow/',
   '/Volumes/design/receiving-flow.png',
 ]);
+// The HTTP route the OpenCode listing source names in the picker byline; no file system path.
+const PRODUCT_ROUTE_PATHS = new Set(['/api/model']);
 
 export function containsHostPath(value: string): boolean {
   if (
@@ -51,7 +53,7 @@ export function containsHostPath(value: string): boolean {
     const candidate = match[1];
     if (!candidate || SLASH_COMMAND_PATTERN.test(candidate)) continue;
     const path = candidate.replace(TRAILING_PROSE_PUNCTUATION_PATTERN, '');
-    if (FIXTURE_HOST_PATHS.has(path)) continue;
+    if (FIXTURE_HOST_PATHS.has(path) || PRODUCT_ROUTE_PATHS.has(path)) continue;
     if (
       path.endsWith('…') &&
       [...FIXTURE_HOST_PATHS].some((fixture) => fixture.startsWith(path.slice(0, -1)))

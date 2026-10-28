@@ -128,8 +128,8 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
       .filter((line) => line.startsWith('api|'));
     expect(listings).toEqual([
       named
-        ? `api|GET|/api/model|-H|x-opencode-directory:${encodeURIComponent(projectDir)}|`
-        : 'api|GET|/api/model|',
+        ? `api|GET|/api/model|--standalone|-H|x-opencode-directory:${encodeURIComponent(projectDir)}|`
+        : 'api|GET|/api/model|--standalone|',
     ]);
   });
 

@@ -5413,6 +5413,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-implementer-picker-opencode',
+        title: 'Overlay · implementer picker · OpenCode build seat',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-implementer-picker-api-twin',
         title: 'Overlay · implementer picker · API build seat named after a CLI tool',
         marker: PICKER_TITLE_MARKER,

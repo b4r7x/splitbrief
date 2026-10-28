@@ -1,4 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -62,6 +63,10 @@ function installCatalogShim(
             `printf '%s\\n' "${'$'}PATH" > ${JSON.stringify(input.environmentLogPath)}`,
             `printf '%s\\n' "${'$'}{DISCOVERY_SECRET-unset}" >> ${JSON.stringify(input.environmentLogPath)}`,
             `printf '%s\\n' "${'$'}{OPENAI_API_KEY-unset}" >> ${JSON.stringify(input.environmentLogPath)}`,
+            `printf '%s\\n' "${'$'}{HOME-unset}" >> ${JSON.stringify(input.environmentLogPath)}`,
+            `printf '%s\\n' "${'$'}{AWS_ACCESS_KEY_ID-unset}" >> ${JSON.stringify(input.environmentLogPath)}`,
+            `printf '%s\\n' "${'$'}{GOOGLE_APPLICATION_CREDENTIALS-unset}" >> ${JSON.stringify(input.environmentLogPath)}`,
+            `printf '%s\\n' "${'$'}{OPENROUTER_API_KEY-unset}" >> ${JSON.stringify(input.environmentLogPath)}`,
           ]),
       `printf '%s|' "${'$'}@" >> ${JSON.stringify(input.logPath)}`,
       `printf '\\n' >> ${JSON.stringify(input.logPath)}`,
@@ -118,6 +123,16 @@ function context(
   };
 }
 
+/** Points the host roots the sign-in bridge reads at an empty home, never the tester's own. */
+function isolateHostHome(): string {
+  const home = join(shimDir, 'host-home');
+  mkdirSync(home);
+  vi.stubEnv('HOME', home);
+  vi.stubEnv('XDG_CONFIG_HOME', join(home, '.config'));
+  vi.stubEnv('XDG_DATA_HOME', join(home, '.local', 'share'));
+  return home;
+}
+
 function nativeContexts(): readonly RunnerDiscoveryContext[] {
   return [context('codex'), context('opencode'), context('kilo-code')];
 }
@@ -158,6 +173,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   if (originalPath === undefined) delete process.env.PATH;
   else process.env.PATH = originalPath;
   if (originalOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
@@ -453,7 +469,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       'openai/gpt-5.6-luna-fast',
     ]);
     expect(attempts.map((attempt) => attempt.namesProject)).toEqual([false]);
-    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'api|GET|/api/model|']);
+    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'api|GET|/api/model|--standalone|']);
   });
 
   it('names the project directory to an OpenCode 2 listing in the crew, from a neutral cwd', async () => {
@@ -482,7 +498,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     expect(attempts.map((attempt) => attempt.namesProject)).toEqual([true]);
     expect(loggedArgs(opencodeLog)).toEqual([
       '--version|',
-      `api|GET|/api/model|-H|x-opencode-directory:${encodeURIComponent(runDir)}|`,
+      `api|GET|/api/model|--standalone|-H|x-opencode-directory:${encodeURIComponent(runDir)}|`,
     ]);
     const catalogCwd = readFileSync(opencodeCwdLog, 'utf8').trim();
     expect(catalogCwd).not.toBe(runDir);
@@ -505,7 +521,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
 
     expect(loggedArgs(opencodeLog)).toEqual([
       '--version|',
-      version === '1.4.0' ? 'models|--verbose|' : 'api|GET|/api/model|',
+      version === '1.4.0' ? 'models|--verbose|' : 'api|GET|/api/model|--standalone|',
     ]);
   });
 
@@ -520,7 +536,69 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       resolveExecutable: exactResolver,
     });
 
-    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'api|GET|/api/model|']);
+    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'api|GET|/api/model|--standalone|']);
+  });
+
+  it('runs an OpenCode 2 listing in the staging a run gets, so a provider without an API key is not reached', async () => {
+    const opencodeLog = join(shimDir, 'opencode.args');
+    const environmentLog = join(shimDir, 'environment');
+    const hostHome = isolateHostHome();
+    vi.stubEnv('AWS_ACCESS_KEY_ID', 'bedrock-key-must-not-reach-cli');
+    vi.stubEnv('GOOGLE_APPLICATION_CREDENTIALS', join(hostHome, 'vertex.json'));
+    vi.stubEnv('OPENROUTER_API_KEY', 'openrouter-key-canary');
+    installCatalogShim('opencode', {
+      logPath: opencodeLog,
+      environmentLogPath: environmentLog,
+      version: '2.0.32',
+      catalog: JSON.stringify({ data: [{ providerID: 'openrouter', id: 'qwen3' }] }),
+    });
+
+    const attempts = await discoverAllCliTools({
+      contexts: [context('opencode', 'planner', 'provider-dependent')],
+      projectDir,
+      resolveExecutable: exactResolver,
+    });
+
+    expect(successfulModels(attempts, 'opencode')?.map((model) => model.id)).toEqual([
+      'openrouter/qwen3',
+    ]);
+    expect(loggedArgs(opencodeLog).filter((line) => line.startsWith('api|'))).toEqual([
+      'api|GET|/api/model|--standalone|',
+    ]);
+    const [, , , home, aws, google, openrouter] = readFileSync(environmentLog, 'utf8')
+      .trimEnd()
+      .split('\n');
+    expect(home).not.toBe(hostHome);
+    expect(home).not.toBe(userInfo().homedir);
+    expect(aws).toBe('unset');
+    expect(google).toBe('unset');
+    expect(openrouter).toBe('openrouter-key-canary');
+  });
+
+  it('runs the staged OpenCode 2 listing when the shell has no API key and OpenCode stores no sign-in', async () => {
+    const opencodeLog = join(shimDir, 'opencode.args');
+    isolateHostHome();
+    for (const key of Object.keys(process.env)) {
+      if (key.endsWith('_API_KEY')) vi.stubEnv(key, undefined);
+    }
+    installCatalogShim('opencode', {
+      logPath: opencodeLog,
+      version: '2.0.32',
+      catalog: JSON.stringify({ data: [{ providerID: 'opencode', id: 'big-pickle' }] }),
+    });
+
+    const attempts = await discoverAllCliTools({
+      contexts: [context('opencode', 'planner', 'provider-dependent')],
+      projectDir,
+      resolveExecutable: exactResolver,
+    });
+
+    expect(successfulModels(attempts, 'opencode')?.map((model) => model.id)).toEqual([
+      'opencode/big-pickle',
+    ]);
+    expect(loggedArgs(opencodeLog).filter((line) => line.startsWith('api|'))).toEqual([
+      'api|GET|/api/model|--standalone|',
+    ]);
   });
 
   it('uses only the selected channel while keeping ambient secrets and PATH shadows out', async () => {

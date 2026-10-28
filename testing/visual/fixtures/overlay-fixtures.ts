@@ -1762,6 +1762,15 @@ const createCustomModelKiloFixture: FixtureFactory = () =>
   });
 const createImplementerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'implementer-picker' });
+// The build seat on OpenCode: the tools byline names the listing its models come from.
+const createImplementerPickerOpencodeFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'implementer-picker',
+    seed: () => {
+      seedOpencodeReady();
+      seedConfig({ implementer: { kind: 'cli', tool: 'opencode' } })();
+    },
+  });
 // The build seat on Claude Code: the tools byline names the sandbox that seat runs under.
 const createImplementerPickerClaudeFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -2869,6 +2878,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-save-refused'), createSaveRefusedFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
   [scenarioId('overlay-implementer-picker-claude'), createImplementerPickerClaudeFixture],
+  [scenarioId('overlay-implementer-picker-opencode'), createImplementerPickerOpencodeFixture],
   [scenarioId('overlay-implementer-picker-api-twin'), createImplementerPickerApiTwinFixture],
   [scenarioId('overlay-picker-seat-swap'), createSeatSwapPickerFixture],
   [scenarioId('overlay-picker-seat-swap-expanded'), createSeatSwapPickerExpandedFixture],

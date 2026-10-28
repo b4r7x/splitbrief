@@ -350,10 +350,9 @@ export function parseCodexNativeModelCatalog(stdout: string): NativeCliModelCata
   return catalogFromEntries({ tool: 'codex', entries });
 }
 
-// `opencode api GET /api/model` asks the background service for every model it
-// serves. It is the only listing opencode 2 answers from a directory it has not
-// indexed: `opencode models` prints nothing there on first call, and a
-// `--standalone` server enumerates nothing at all.
+// `opencode api GET /api/model --standalone` starts a server of its own and asks
+// it for every model it serves. On opencode 2.0.29 and 2.0.32 it lists the
+// models of every provider the child's environment and sign-in reach.
 //
 // `id` is the selectable name and `modelID` the upstream model it routes to, so
 // an alias repeats a sibling's `modelID` (`gpt-5.6-luna-fast` routes to

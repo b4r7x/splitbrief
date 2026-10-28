@@ -311,6 +311,7 @@ describe('visual contract boundaries', () => {
       '/Users/me/…',
       'File: /Users/me/notes/product-planning/archive/r…╭────╮│ › draft │╰────╯',
       'The plan seat reads no files, so it cannot open /Users/dev/notes/brief.md. Put @ before a file path to attach its text.',
+      'OpenCode CLI · 86 models · from opencode api GET /api/model --standalone',
     ]) {
       expect(containsHostPath(safe)).toBe(false);
       expect(isSafePersistedTerminalText(safe)).toBe(true);
@@ -327,6 +328,7 @@ describe('visual contract boundaries', () => {
       '/Volumes/design/private.png',
       '│/Users/operator/private.md╰────╯',
       'Read /Users/dev/notes/brief.md, then /Users/dev/notes/other.md.',
+      '/api/model/private',
     ]) {
       expect(containsHostPath(hostile)).toBe(true);
       expect(isSafePersistedTerminalText(hostile)).toBe(false);

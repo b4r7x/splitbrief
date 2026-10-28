@@ -128,7 +128,7 @@ function writeOpencodeSuccessShim(dir: string, authListing: string): void {
     '#!/bin/bash',
     'if [[ " $* " == *" --version "* ]]; then printf \'opencode 2.0.14\\n\'; exit 0; fi',
     `if [[ "$1" == "auth" ]]; then printf '%s\\n' '${authListing}'; exit 0; fi`,
-    `if [[ "$1" == "api" && "$5" == x-opencode-directory:* ]]; then printf '%s\\n' '${PROJECT_LISTING}'; exit 0; fi`,
+    `if [[ "$1" == "api" && "$6" == x-opencode-directory:* ]]; then printf '%s\\n' '${PROJECT_LISTING}'; exit 0; fi`,
     `if [[ "$1" == "api" ]]; then printf '%s\\n' '{"data":[]}'; exit 0; fi`,
     'cat >/dev/null',
     'mkdir -p src',

@@ -57,7 +57,7 @@ if [ "$1" = "auth" ] && [ "$2" = "list" ]; then
   printf '%s\\n' '[{"name":"p","connections":[{"type":"credential"}]}]'
   exit 0
 fi
-if [ "$#" -eq 5 ] && [ "$1" = "api" ] && [ "$2" = "GET" ] && [ "$3" = "/api/model" ] && [ "$4" = "-H" ] && [ "$5" = ${shellQuoteArg(`x-opencode-directory:${encodeURIComponent(projectDir)}`)} ]; then
+if [ "$#" -eq 6 ] && [ "$1" = "api" ] && [ "$2" = "GET" ] && [ "$3" = "/api/model" ] && [ "$4" = "--standalone" ] && [ "$5" = "-H" ] && [ "$6" = ${shellQuoteArg(`x-opencode-directory:${encodeURIComponent(projectDir)}`)} ]; then
   exec /bin/cat ${shellQuoteArg(responsePath)}
 fi
 printf 'Unexpected opencode arguments: %s\\n' "$*" >&2
