@@ -1051,7 +1051,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
-  /** A run at rest on a final review that failed after its repair cycles ran out. */
+  /** A run at rest on a final review that failed after two fix cycles. */
   function renderFailedReviewRun() {
     const issue = buildReviewFailedRecoveryIssue({
       blocking: 1,
@@ -1061,7 +1061,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     const halted = makeWorkflowState({
       phase: 'complete',
       reviewStatus: 'failed',
-      fixCycles: { used: 2, allowance: 2, notes: [] },
+      fixCycles: { used: 2, notes: [] },
       tasks: [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })],
       currentTaskIndex: 1,
       pendingRecovery: issue,

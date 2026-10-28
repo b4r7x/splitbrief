@@ -30,8 +30,8 @@ import { loadState } from '../../../core/state/persistence.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { ReviewVerdict, TriageResult } from '../../../core/schemas/review.js';
-import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { taskId, type Task } from '../../../core/schemas/task.js';
+import type { TriageRecord, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
@@ -84,6 +84,26 @@ function cadenceState(
     },
     ...overrides,
   });
+}
+
+/**
+ * The `scope` answer that started fix cycle 2 against `blocking` with fix task `fixTaskId`: the
+ * review that judges that task and fails on them again moved nothing.
+ */
+function stuckRecord(blocking: string[], scope: 'task' | 'final'): TriageRecord {
+  return {
+    cycle: 2,
+    at: '2026-10-03T00:00:00Z',
+    inputIds: [],
+    result: {
+      fixTasks: [{ ...makeTaskSpec({ id: 'T900' }), findingIds: ['F1'] }],
+      rejected: [],
+      verify: [],
+      ask: null,
+    },
+    blocking,
+    scope,
+  };
 }
 
 function runOptions(opts: {
@@ -455,7 +475,10 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
       const first = runOptions({
         projectDir,
         sessionId,
-        state: cadenceState(tasks, head, { fixCycles: { used: 2, allowance: 2, notes: [] } }),
+        state: cadenceState(tasks, head, {
+          fixCycles: { used: 2, notes: [], open: { cycle: 2, lastFixTaskId: taskId('T002') } },
+          triage: [stuckRecord(['finding:F1'], review === 'task' ? 'task' : 'final')],
+        }),
         review: (prompt, call) =>
           call < failsFrom
             ? passingReviewVerdict(prompt)
@@ -500,7 +523,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
 
       await runTasksAndReview(second.options);
 
-      expect(pendingIds(second.reviewPrompts[0] ?? '')).toEqual(['P1', 'U2']);
+      expect(pendingIds(second.reviewPrompts[0] ?? '')).toEqual(['P1', 'U3']);
       expect(second.reviewPrompts[0]).toContain('Also rename beta');
     },
   );
@@ -750,7 +773,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     expect(errors[0]).toMatch(/^Review T001 failed: /);
   });
 
-  it('halts on the cap when a scheduled failure has no fix cycle left', async () => {
+  it('halts a scheduled failure whose fix cycle left the same blockers', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
       makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
@@ -761,7 +784,8 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
       projectDir,
       sessionId,
       state: cadenceState(tasks, head, {
-        fixCycles: { used: 2, allowance: 2, notes: [] },
+        fixCycles: { used: 2, notes: [], open: { cycle: 2, lastFixTaskId: taskId('T001') } },
+        triage: [stuckRecord(['finding:F1'], 'task')],
       }),
       review: (prompt) =>
         failedReviewVerdict(prompt, 'src/alpha.ts drops the error', { taskId: 'T001' }),
@@ -777,7 +801,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     expect(result.state.reviewStatus).toBeUndefined();
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
-      message: 'Review T001 failed after 2 fix cycles',
+      message: 'Review T001 made no progress on F1 after fix cycle 2',
     });
     expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
     expect(result.state.review?.scope).toBe('task');
@@ -802,7 +826,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
       review: (prompt) => passingReviewVerdict(prompt),
       triage: () => ({
         fixTasks: [],
-        rejected: [{ findingId: 'U2', reason: 'The correction guides continuation' }],
+        rejected: [{ findingId: 'U3', reason: 'The correction guides continuation' }],
         verify: [],
         ask: null,
       }),

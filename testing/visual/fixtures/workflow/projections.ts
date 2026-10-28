@@ -3380,10 +3380,10 @@ const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
-/** A scheduled task review still failed once the run's fix cycles ran out: it names its brief. */
-const taskReviewCapRecoveryProjection: WorkflowFixtureProjection = {
+/** A scheduled task review whose fix cycle left the same blockers: it names its brief and them. */
+const taskReviewNoProgressRecoveryProjection: WorkflowFixtureProjection = {
   ...reviewFailedRecoveryProjection,
-  scenarioId: scenarioId('workflow-recovery-task-review-cap'),
+  scenarioId: scenarioId('workflow-recovery-task-review-no-progress'),
   resumeState: makeImplState(
     [
       { ...HALTED_TASK, status: 'done' },
@@ -3404,9 +3404,10 @@ const taskReviewCapRecoveryProjection: WorkflowFixtureProjection = {
         base: { snapshotId: 'visual-base', head: null },
       },
       pendingRecovery: buildReviewFailedRecoveryIssue({
-        id: 'rec_visual_task_review_cap',
+        id: 'rec_visual_task_review_no_progress',
         blocking: 1,
-        fixCycles: 2,
+        noProgress: ['F1'],
+        fixCycle: 2,
         phase: 'implementing',
         scope: 'task',
         afterTaskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
@@ -7289,7 +7290,7 @@ const projections = [
   reviewFailedRecoveryProjection,
   reviewFixAgainProjection,
   reviewUnverifiedRecoveryProjection,
-  taskReviewCapRecoveryProjection,
+  taskReviewNoProgressRecoveryProjection,
   checksMissingProgramRecoveryProjection,
   checksUnrunnableRecoveryProjection,
   applyConflictRecoveryProjection,

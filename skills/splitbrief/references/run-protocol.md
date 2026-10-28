@@ -59,7 +59,7 @@ Only current recorded checks produce `done`. A skipped task prevents a claim tha
 ## Continuation and process reconciliation
 
 Load the saved stage, plan, briefs, progress, decisions, consults, findings, counters, and original baseline.
-Preserve completed tasks, attempts, lineage bounds, run bounds, decisions, and fix allowances.
+Preserve completed tasks, attempts, lineage bounds, run bounds, decisions, and fix cycles.
 Run `scripts/wait-attempt.sh --reconcile <run>` before spawning.
 Also inspect every active attempt's `.pid`, `.done`, and log, including retrying tasks and the `review/` directory.
 The helper reports running task rows only; those additional records still require reconciliation.
@@ -106,7 +106,7 @@ Prepare the current packet and derive the verdict using references/review-format
 Apply the reviewer's fix work using references/recovery.md.
 Persist the whole answer in `review.json` and save appended briefs before executing the fix tasks.
 Execute authorized fix tasks through this same dispatch procedure.
-Keep all reviews and fixes within the saved global allowance; continuation never renews it.
+Keep the saved fix cycle count; continuation never resets it.
 For the review-only entry, hand back the review answer and fix briefs without executing them.
 
 ## Waiting

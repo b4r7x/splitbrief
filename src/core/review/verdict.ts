@@ -85,6 +85,23 @@ export function blockingEntries(
   return [...outcome.blocking, ...outcome.redInputs].map(({ id, text }) => ({ id, text }));
 }
 
+/**
+ * One key per problem that fails a review, stable across reviews: a red input by its command and
+ * failure keys (its id is positional), a finding by its id. Two rounds with equal keys moved nothing.
+ */
+export function blockingKeys(
+  outcome: Pick<ReviewOutcome, 'blocking' | 'redInputs'>,
+  inputs: readonly TriageInput[],
+): string[] {
+  const red = new Map(inputs.filter(isRedInput).map((input) => [input.id, input]));
+  return blockingEntries(outcome).map(({ id }) => {
+    const input = red.get(id);
+    if (input === undefined) return `finding:${id}`;
+    const failures = input.failureKeys ?? (input.file === null ? [] : [input.file]);
+    return `${input.source}:${input.command ?? id}:${failures.join('|')}`;
+  });
+}
+
 /** A failed check or Apply input; a correction or an answer from the user is never red. */
 function isRedInput(input: TriageInput): boolean {
   return input.source === 'check' || input.source === 'apply';

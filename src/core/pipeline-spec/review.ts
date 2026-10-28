@@ -1,7 +1,5 @@
 import { REVIEW_VERDICTS } from '../schemas/enums.js';
 
-export const REVIEW_CYCLE_CAP = 2;
-
 export const VERDICT_RULES = {
   words: REVIEW_VERDICTS,
   exactlyOne: true,

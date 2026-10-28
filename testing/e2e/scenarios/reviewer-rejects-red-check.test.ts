@@ -285,19 +285,17 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
       'final-review',
       'review-checks',
       'final-review',
-      'review-checks',
-      'final-review',
     ]);
 
     const reviews = events.filter(
       (event) => event.type === 'review_completed' && event.scope === 'final',
     );
-    expect(reviews).toHaveLength(3);
+    expect(reviews).toHaveLength(2);
     for (const review of reviews) {
       expect(review).toMatchObject({ verdict: 'fail', findings: { blocking: 1, minor: 1 } });
     }
     expect(events.filter((event) => event.type === 'error').map((event) => event.message)).toEqual([
-      'Final review failed after 2 fix cycles; see review.md',
+      'Final review made no progress on V1.1 after fix cycle 1; see review.md',
     ]);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
 

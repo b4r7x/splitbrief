@@ -162,7 +162,7 @@ export function recoveryComposerHint(issue: RecoveryIssue, menuFocused: boolean)
   return correction ? 'Type a correction, or tab to choose an action…' : 'Tab to choose an action…';
 }
 
-const REVIEW_FAILED_REVISE_CONSEQUENCE = 'grants one more fix cycle';
+const REVIEW_FAILED_REVISE_CONSEQUENCE = 'runs another fix cycle with your note';
 
 function formatRecoveryActionText(
   action: RecoveryAction,

@@ -214,17 +214,17 @@ Never route by a path substring or assign an unmatched finding to the last task.
 Carry rejected finding ids and reasons from the saved fix part into the next review packet.
 Use references/planning.md and references/brief-format.md to admit and render complete fix briefs.
 Use references/run-protocol.md to execute authorized fixes and prepare a fresh review.
-Before starting a fix cycle, persist its allowance use. Never charge the same saved cycle twice on continuation.
+Before starting a fix cycle, persist its number and the blockers it fixes. Never start the same saved cycle twice on continuation.
 
 <!-- generated: fix-cycle -->
 - Read fixTasks, rejected, verify and ask from the saved review fix part. Append fix tasks with new ids; done tasks stay done.
 - Run registered checks for unverified findings. The reviewer answers question findings from the plan and code before asking the user.
 - Keep criteria when repairing a check command. Ask the user before changing the accepted outcome.
-- Allow 2 fix cycles across the run, up to 3 reviews at end cadence. Task cadence adds reviews and shares this fix cap.
+- Run fix cycles until the review passes, at end and at task cadence.
 - Prepare each fresh review with references/gates.md.
-- After the cap, halt as needs you. Preserve open findings and never claim verification passed.
+- When a review answer fixes nothing, or a fix cycle leaves the same blockers, halt as needs you and name them. Preserve open findings and never claim verification passed.
 <!-- /generated -->
 
-When the cap is spent, show remaining findings and ask whether to fix again with a note, accept as is, or end.
-An explicit extra cycle adds one recorded allowance. Acceptance records an override, never a verified pass.
+When the review halts, show the remaining findings and ask whether to fix again with a note, accept as is, or end.
+Fix again with a note starts one more fix cycle. Acceptance records an override, never a verified pass.
 Standalone review saves the complete review answer and new briefs. It never edits source or executes the fixes itself.

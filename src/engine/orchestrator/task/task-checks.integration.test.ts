@@ -317,7 +317,7 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
         wctx,
         state: makeImplState([task, secondTask], {
           workspace: run.workspace,
-          fixCycles: { used: 2, allowance: 2, notes: [] },
+          fixCycles: { used: 2, notes: [] },
           pendingReviewCommands: ['node --version'],
         }),
         task,

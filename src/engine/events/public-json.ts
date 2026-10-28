@@ -50,7 +50,7 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('ready_to_apply'),
     sessionId: z.string(),
-    /** The run was accepted as is after the review cap; Apply confirms its open findings. */
+    /** The run was accepted as is after a failed review; Apply confirms its open findings. */
     override: z.boolean(),
     applyCommand: z.string(),
     discardCommand: z.string(),

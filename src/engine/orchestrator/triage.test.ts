@@ -79,7 +79,7 @@ function triageState(): WorkflowState {
     phase: 'final-review',
     tasks: [makeTask({ id: 'T001', status: 'done', batch: 1 })],
     currentTaskIndex: 1,
-    fixCycles: { used: 0, allowance: 2, notes: [] },
+    fixCycles: { used: 0, notes: [] },
     plan: {
       summary: 'Greet people by name',
       decisions: [{ text: 'Keep the greeting in one shared module', taskId: null }],
@@ -210,11 +210,10 @@ describe('triageContractErrors', () => {
       };
       const rejected = { ...empty, rejected: [{ findingId: 'P1', reason: 'Already correct' }] };
       const verified = { ...empty, verify: [{ findingId: 'P1', checkIds: ['K1'] }] };
-      for (const answer of [fixed, verified]) {
-        expect(triageContractErrors(answer, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual(
-          [],
-        );
-      }
+      expect(triageContractErrors(fixed, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual([]);
+      expect(triageContractErrors(verified, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual(
+        source === 'apply' ? ['Verified P1 is an Apply conflict; it needs a fix task.'] : [],
+      );
       expect(triageContractErrors(rejected, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual(
         source === 'apply' ? ['Rejected P1 is an Apply conflict; it needs a fix task.'] : [],
       );

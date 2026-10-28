@@ -3769,12 +3769,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-recovery-task-review-cap',
-      title: 'Workflow · a task review that failed after the run spent its fix cycles',
+      id: 'workflow-recovery-task-review-no-progress',
+      title: 'Workflow · a task review whose fix cycle left the same blockers',
       surface: screenSurface('workflow'),
       checkpoint: {
-        id: 'task-review-cap',
-        title: 'Task-review cap recovery menu',
+        id: 'task-review-no-progress',
+        title: 'Task-review no-progress recovery menu',
         kind: 'question',
         marker: 'Fix again',
       },

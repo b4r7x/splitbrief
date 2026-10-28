@@ -6,7 +6,9 @@ import {
   fixCyclesOf,
   plannerCallsOf,
   type ConsultRecord,
+  type FixCycles,
   type LineageRecord,
+  type ReviewRecord,
   type WorkflowState,
 } from '../schemas/workflow.js';
 import { isTaskCompleted, isTaskSettled, type Task, type TaskId } from '../schemas/task.js';
@@ -143,6 +145,25 @@ const phaseActions = {
     'APPLY_UNDONE',
   ],
 } as const satisfies Record<Phase, readonly MachineAction['type'][]>;
+
+/**
+ * The review that judges a fix cycle: the next final review for a final review's cycle, the task
+ * review after its last inserted fix task for a task review's cycle.
+ */
+function judgesCycle(
+  triage: WorkflowState['triage'],
+  open: NonNullable<FixCycles['open']>,
+  review: ReviewRecord,
+): boolean {
+  const started = triage?.findLast((record) => record.cycle === open.cycle);
+  if (started?.scope === 'final') return review.scope !== 'task';
+  return (
+    started?.scope === 'task' &&
+    open.lastFixTaskId !== undefined &&
+    review.scope === 'task' &&
+    review.afterTaskId === open.lastFixTaskId
+  );
+}
 
 function canApplyAction(phase: Phase, action: MachineAction['type']): boolean {
   return includes(anytimeActions, action) || includes(phaseActions[phase], action);
@@ -430,14 +451,15 @@ export function transition(
       };
 
     case 'RECORD_REVIEW': {
-      const record = action.review;
-      return {
-        ...state,
-        review:
-          record.scope === 'task' && state.pendingScheduledReview !== undefined
-            ? { ...record, afterTaskId: state.pendingScheduledReview.afterTaskId }
-            : record,
-      };
+      const record =
+        action.review.scope === 'task' && state.pendingScheduledReview !== undefined
+          ? { ...action.review, afterTaskId: state.pendingScheduledReview.afterTaskId }
+          : action.review;
+      const { open, ...fixCycles } = fixCyclesOf(state);
+      if (open === undefined || !judgesCycle(state.triage, open, record)) {
+        return { ...state, review: record };
+      }
+      return { ...state, review: { ...record, judges: open.cycle }, fixCycles };
     }
 
     case 'RECORD_REVIEW_CHECKS':
@@ -461,7 +483,14 @@ export function transition(
         ...state,
         phase: 'implementing',
         currentTaskIndex: nextOpenTaskIndex(state, 0),
-        fixCycles: { ...fixCycles, used: fixCycles.used + 1 },
+        fixCycles: {
+          ...fixCycles,
+          used: fixCycles.used + 1,
+          open: {
+            cycle: fixCycles.used + 1,
+            ...(action.lastFixTaskId !== undefined && { lastFixTaskId: action.lastFixTaskId }),
+          },
+        },
         reviewStatus: undefined,
         completedAt: undefined,
         pendingTriage: undefined,
@@ -504,12 +533,8 @@ export function transition(
             reviewAfterTaskId: state.pendingTriage.reviewAfterTaskId,
           }),
         },
-        ...(fixCycles.used >= fixCycles.allowance && {
-          fixCycles: {
-            ...fixCycles,
-            allowance: fixCycles.allowance + BOUNDS.extraFixCyclesPerRun,
-            notes: [...fixCycles.notes, action.text],
-          },
+        ...(inputs.length > 0 && {
+          fixCycles: { ...fixCycles, notes: [...fixCycles.notes, action.text] },
         }),
       };
     }
@@ -873,6 +898,9 @@ export function transition(
         ...remaining.slice(parentIndex),
       ];
       const shift = parentIndex < state.currentTaskIndex ? children.length - 1 : 0;
+      // A split last fix task hands its open fix cycle to its last child, the brief reviewed last.
+      const open = state.fixCycles?.open;
+      const lastChildId = childIds.at(-1);
       return {
         ...withLineage(state, lineageKey, (lineage) => ({
           ...lineage,
@@ -880,6 +908,11 @@ export function transition(
         })),
         tasks,
         currentTaskIndex: state.currentTaskIndex + shift,
+        ...(state.fixCycles !== undefined &&
+          open?.lastFixTaskId === parent.id &&
+          lastChildId !== undefined && {
+            fixCycles: { ...state.fixCycles, open: { ...open, lastFixTaskId: lastChildId } },
+          }),
       };
     }
 

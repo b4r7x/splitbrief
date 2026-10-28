@@ -506,7 +506,7 @@ describe('the triage, split and rewrite shapes (rows 15-18)', { timeout: 60_000 
       const base = makeImplState([makeTask({ id: 'T001', status: 'done', batch: 1 })], {
         phase: 'final-review',
         currentTaskIndex: 1,
-        fixCycles: { used: 0, allowance: 2, notes: [] },
+        fixCycles: { used: 0, notes: [] },
         plan: {
           summary: 's',
           decisions: [],
@@ -800,7 +800,7 @@ describe('a failure a sibling carries under another check id', { timeout: 60_000
     const state = makeImplState([makeTask({ id: 'T001', status: 'done', batch: 1 })], {
       phase: 'final-review',
       currentTaskIndex: 1,
-      fixCycles: { used: 0, allowance: 2, notes: [] },
+      fixCycles: { used: 0, notes: [] },
       plan: { summary: 's', decisions: [], criteria: [], checks: [UNIT], validation: null },
       reviewChecks: {
         scope: 'final',

@@ -2468,7 +2468,7 @@ describe('review record', () => {
       bus: makeBusRecorder().bus,
       state: {
         ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-        fixCycles: { used: 2, allowance: 2, notes: [] },
+        fixCycles: { used: 2, notes: [] },
       },
       reviewer,
       summaryBase: SUMMARY_BASE,

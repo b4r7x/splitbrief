@@ -1103,13 +1103,13 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
   });
 
   // The run spent its first fix cycle on T002; the integration review spends the second, the
-  // allowance, so its failure halts on the cap after 2 fix cycles.
-  it('names the integration re-review after the fix cycle Apply spent, the count its cap halt reads', async () => {
+  // count a no-progress halt after it names.
+  it('names the integration re-review after the fix cycle Apply spent, the count a halt names', async () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
       writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
       const state = {
         ...(await reviewedReadyState(run)),
-        fixCycles: { used: 1, allowance: 2, notes: [] },
+        fixCycles: { used: 1, notes: [] },
       };
       saveState({ projectDir: run.dir, sessionId: run.sessionId }, state);
       writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'three', 'four', 'FIVE'));
