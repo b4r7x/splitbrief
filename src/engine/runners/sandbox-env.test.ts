@@ -1704,76 +1704,55 @@ describe('backend compatibility fixtures', () => {
     );
   });
 
-  itUnix(
-    'a bridged cursor env links the Cursor sign-in file and seeds its own policy, nothing else',
-    async () => {
-      const hostHome = createTempDir('sandbox-cursor-host');
-      const projectDir = createTempDir('sandbox-cursor-project');
-      dirs.push(hostHome, projectDir);
-      const accessToken = 'cursor-access-token-canary-9f1b';
-      const uiStateToken = 'cursor-agent-state-canary-4e2a';
-      const hostCliConfig = JSON.stringify({
-        approvalMode: 'unrestricted',
-        sandbox: { mode: 'disabled' },
-      });
-      mkdirSync(join(hostHome, '.cursor'), { recursive: true });
-      writeFileSync(join(hostHome, '.cursor', 'cli-config.json'), hostCliConfig);
-      writeFileSync(
-        join(hostHome, '.cursor', 'agent-cli-state.json'),
-        JSON.stringify({ workerIdsByDisplayName: { worker: uiStateToken } }),
-      );
-      writeFileSync(join(hostHome, '.cursor', 'unrelated.json'), '{"not":"admitted"}');
-      const hostAuthDir = join(hostHome, '.config', 'cursor');
-      mkdirSync(hostAuthDir, { recursive: true });
-      writeFileSync(join(hostAuthDir, 'auth.json'), JSON.stringify({ accessToken }));
-      writeFileSync(join(hostAuthDir, 'unrelated.json'), '{"not":"admitted"}');
-      setEnv('HOME', hostHome);
-      unsetEnv('XDG_CONFIG_HOME');
+  itUnix('a bridged cursor env links the Cursor sign-in file, nothing else', async () => {
+    const hostHome = createTempDir('sandbox-cursor-host');
+    const projectDir = createTempDir('sandbox-cursor-project');
+    dirs.push(hostHome, projectDir);
+    const accessToken = 'cursor-access-token-canary-9f1b';
+    const uiStateToken = 'cursor-agent-state-canary-4e2a';
+    mkdirSync(join(hostHome, '.cursor'), { recursive: true });
+    writeFileSync(
+      join(hostHome, '.cursor', 'cli-config.json'),
+      JSON.stringify({ approvalMode: 'unrestricted', sandbox: { mode: 'disabled' } }),
+    );
+    writeFileSync(
+      join(hostHome, '.cursor', 'agent-cli-state.json'),
+      JSON.stringify({ workerIdsByDisplayName: { worker: uiStateToken } }),
+    );
+    const hostAuthDir = join(hostHome, '.config', 'cursor');
+    mkdirSync(hostAuthDir, { recursive: true });
+    writeFileSync(join(hostAuthDir, 'auth.json'), JSON.stringify({ accessToken }));
+    writeFileSync(join(hostAuthDir, 'unrelated.json'), '{"not":"admitted"}');
+    setEnv('HOME', hostHome);
+    unsetEnv('XDG_CONFIG_HOME');
 
-      // The file bridge is asked for directly: on macOS this channel is
-      // host-account, and the isolation under test is the bridged-files
-      // contract Linux runs on.
-      const env = await createSandboxEnv({
-        projectDir,
-        selectedCli: 'cursor',
-        hostState: 'bridged-files',
-        role: 'planner',
-      });
+    // The file bridge is asked for directly: on macOS this channel is
+    // host-account, and the isolation under test is the bridged-files
+    // contract Linux runs on.
+    const env = await createSandboxEnv({
+      projectDir,
+      selectedCli: 'cursor',
+      hostState: 'bridged-files',
+      role: 'planner',
+    });
 
-      const sandboxCursor = join(env.HOME as string, '.cursor');
-      const childCliConfigPath = join(sandboxCursor, 'cli-config.json');
-      const childCliConfig = readFileSync(childCliConfigPath, 'utf8');
-      expect(lstatSync(sandboxCursor).isSymbolicLink()).toBe(false);
-      expect(lstatSync(childCliConfigPath).isSymbolicLink()).toBe(false);
-      expect(childCliConfig).not.toBe(hostCliConfig);
-      expect(JSON.parse(childCliConfig)).toEqual(
-        expect.objectContaining({
-          approvalMode: 'allowlist',
-          sandbox: { mode: 'enabled' },
-        }),
-      );
-      expect(readdirSync(sandboxCursor)).toEqual(['cli-config.json']);
+    expect(existsSync(join(env.HOME as string, '.cursor', 'cli-config.json'))).toBe(false);
+    expect(existsSync(join(env.HOME as string, '.cursor'))).toBe(false);
 
-      const childAuthDir = join(env.XDG_CONFIG_HOME as string, 'cursor');
-      const childAuth = join(childAuthDir, 'auth.json');
-      expect(lstatSync(childAuthDir).isSymbolicLink()).toBe(false);
-      expect(readlinkSync(childAuth)).toBe(realpathSync(join(hostAuthDir, 'auth.json')));
-      expect(readdirSync(childAuthDir)).toEqual(['auth.json']);
-      expect(await bridgedCliStatePresent(env, 'cursor')).toBe(true);
+    const childAuthDir = join(env.XDG_CONFIG_HOME as string, 'cursor');
+    const childAuth = join(childAuthDir, 'auth.json');
+    expect(lstatSync(childAuthDir).isSymbolicLink()).toBe(false);
+    expect(readlinkSync(childAuth)).toBe(realpathSync(join(hostAuthDir, 'auth.json')));
+    expect(readdirSync(childAuthDir)).toEqual(['auth.json']);
+    expect(await bridgedCliStatePresent(env, 'cursor')).toBe(true);
 
-      writeFileSync(childCliConfigPath, JSON.stringify({ token: 'rotated-cli' }));
-      writeFileSync(childAuth, JSON.stringify({ accessToken: 'rotated-access' }));
-      expect(readFileSync(join(hostHome, '.cursor', 'cli-config.json'), 'utf8')).toBe(
-        hostCliConfig,
-      );
-      expect(readFileSync(join(hostAuthDir, 'auth.json'), 'utf8')).toBe(
-        JSON.stringify({ accessToken: 'rotated-access' }),
-      );
-      expect(sandboxCredentialValues(env)).toContain(accessToken);
-      expect(sandboxCredentialValues(env)).not.toContain(uiStateToken);
-      expect(sandboxCredentialValues(env)).not.toContain('unrestricted');
-    },
-  );
+    writeFileSync(childAuth, JSON.stringify({ accessToken: 'rotated-access' }));
+    expect(readFileSync(join(hostAuthDir, 'auth.json'), 'utf8')).toBe(
+      JSON.stringify({ accessToken: 'rotated-access' }),
+    );
+    expect(sandboxCredentialValues(env)).toContain(accessToken);
+    expect(sandboxCredentialValues(env)).not.toContain(uiStateToken);
+  });
 
   itUnix('a bridged cursor env takes the sign-in file from a set XDG_CONFIG_HOME', async () => {
     const hostHome = createTempDir('sandbox-cursor-xdg-home');
@@ -1820,7 +1799,7 @@ describe('backend compatibility fixtures', () => {
     expect(await bridgedCliStatePresent(env, 'cursor')).toBe(false);
   });
 
-  itUnix('bridges the Kilo auth entries as live passthrough links', async () => {
+  itUnix('bridges the Kilo folders as live passthrough links', async () => {
     const hostHome = createTempDir('sandbox-kilo-host');
     const projectDir = createTempDir('sandbox-kilo-project');
     dirs.push(hostHome, projectDir);
@@ -1828,11 +1807,13 @@ describe('backend compatibility fixtures', () => {
     const kilocodeToken = 'kilocode-session-compat-canary-3c4d';
     mkdirSync(join(hostHome, '.config', 'kilo'), { recursive: true });
     mkdirSync(join(hostHome, '.config', 'kilocode'), { recursive: true });
+    mkdirSync(join(hostHome, '.kilocode', 'rules'), { recursive: true });
     writeFileSync(join(hostHome, '.config', 'kilo', 'auth.json'), JSON.stringify({ kiloToken }));
     writeFileSync(
       join(hostHome, '.config', 'kilocode', 'auth.json'),
       JSON.stringify({ kilocodeToken }),
     );
+    writeFileSync(join(hostHome, '.kilocode', 'rules', 'style.md'), 'Use tabs.');
     setEnv('HOME', hostHome);
     unsetEnv('XDG_CONFIG_HOME');
     unsetEnv('XDG_DATA_HOME');
@@ -1844,16 +1825,14 @@ describe('backend compatibility fixtures', () => {
     );
 
     const kiloLink = join(env.XDG_CONFIG_HOME as string, 'kilo');
-    const kilocodeLink = join(env.XDG_CONFIG_HOME as string, 'kilocode');
     expect(readlinkSync(kiloLink)).toBe(realpathSync(join(hostHome, '.config', 'kilo')));
-    expect(readlinkSync(kilocodeLink)).toBe(realpathSync(join(hostHome, '.config', 'kilocode')));
     expect(readFileSync(join(kiloLink, 'auth.json'), 'utf8')).toBe(JSON.stringify({ kiloToken }));
-    expect(readFileSync(join(kilocodeLink, 'auth.json'), 'utf8')).toBe(
-      JSON.stringify({ kilocodeToken }),
+    expect(existsSync(join(env.XDG_CONFIG_HOME as string, 'kilocode'))).toBe(false);
+    expect(readlinkSync(join(env.HOME as string, '.kilocode'))).toBe(
+      realpathSync(join(hostHome, '.kilocode')),
     );
-    expect(sandboxCredentialValues(env)).toEqual(
-      expect.arrayContaining([kiloToken, kilocodeToken]),
-    );
+    expect(sandboxCredentialValues(env)).toContain(kiloToken);
+    expect(sandboxCredentialValues(env)).not.toContain(kilocodeToken);
   });
 
   function seedKiloHome(hostHome: string, token: string): void {
@@ -1878,6 +1857,8 @@ describe('backend compatibility fixtures', () => {
     mkdirSync(join(xdgConfig, 'kilo'), { recursive: true });
     mkdirSync(join(xdgData, 'kilo'), { recursive: true });
     writeFileSync(join(xdgData, 'kilo', 'auth.json'), JSON.stringify({ token: xdgToken }));
+    mkdirSync(join(xdgConfig, 'kilocode'), { recursive: true });
+    writeFileSync(join(xdgConfig, 'kilocode', 'auth.json'), '{"token":"kilocode-xdg-canary"}');
     setEnv('HOME', hostHome);
     setEnv('XDG_CONFIG_HOME', xdgConfig);
     setEnv('XDG_DATA_HOME', xdgData);
@@ -1891,6 +1872,7 @@ describe('backend compatibility fixtures', () => {
     expect(readlinkSync(join(env.XDG_CONFIG_HOME as string, 'kilo'))).toBe(
       realpathSync(join(xdgConfig, 'kilo')),
     );
+    expect(existsSync(join(env.XDG_CONFIG_HOME as string, 'kilocode'))).toBe(false);
     expect(readlinkSync(join(env.XDG_DATA_HOME as string, 'kilo'))).toBe(
       realpathSync(join(xdgData, 'kilo')),
     );
@@ -2116,22 +2098,29 @@ describe('Copilot session staging', () => {
     expect(env.COPILOT_GITHUB_TOKEN).toBe('github_pat_copilot_canary');
   });
 
-  itUnix('does not count Copilot IDE-plugin files alone as a Copilot sign-in', async () => {
+  itUnix('does not bridge the Copilot IDE-plugin files or count them as a sign-in', async () => {
     setPlatform('linux');
     const hostHome = createTempDir('sandbox-copilot-ide-home');
     const projectDir = createTempDir('sandbox-copilot-ide');
     dirs.push(hostHome, projectDir);
+    const pluginToken = 'ide-plugin-canary';
     mkdirSync(join(hostHome, '.config', 'github-copilot'), { recursive: true });
-    writeFileSync(
-      join(hostHome, '.config', 'github-copilot', 'apps.json'),
-      '{"github.com:Iv1":{"oauth_token":"ide-plugin-canary"}}',
-    );
+    for (const file of ['apps.json', 'hosts.json']) {
+      writeFileSync(
+        join(hostHome, '.config', 'github-copilot', file),
+        JSON.stringify({ 'github.com:Iv1': { oauth_token: pluginToken } }),
+      );
+    }
     setEnv('HOME', hostHome);
     unsetEnv('COPILOT_HOME');
     unsetEnv('XDG_CONFIG_HOME');
 
     const env = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
 
+    const pluginDir = join(env.XDG_CONFIG_HOME as string, 'github-copilot');
+    expect(existsSync(join(pluginDir, 'apps.json'))).toBe(false);
+    expect(existsSync(join(pluginDir, 'hosts.json'))).toBe(false);
+    expect(sandboxCredentialValues(env)).not.toContain(pluginToken);
     expect(await bridgedCliStatePresent(env, 'copilot')).toBe(false);
   });
 });

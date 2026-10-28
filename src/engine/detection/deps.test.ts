@@ -213,7 +213,6 @@ const SEEDED_SESSION_STATE_PATHS = [
   '.config/opencode/auth.json',
   '.copilot/config.json',
   '.config/kilo/auth.json',
-  '.cursor/cli-config.json',
   '.config/cursor/auth.json',
   '.commandcode/auth.json',
 ] as const;

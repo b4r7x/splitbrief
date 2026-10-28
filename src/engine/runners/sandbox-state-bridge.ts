@@ -18,21 +18,11 @@ import {
   CLI_CREDENTIAL_MODELS,
   CLI_STATE_PATHS,
   type CliStateSource,
-  COPILOT_CONFIG_DESTINATION,
-  CURSOR_CLI_CONFIG_DESTINATION,
   FILE_LINKED_CREDENTIAL_TOOLS,
   sandboxRoot,
   sandboxRootCandidates,
   type SandboxStateRoot,
 } from './sandbox-state-paths.js';
-
-const CURSOR_SANDBOX_CLI_CONFIG = JSON.stringify({
-  version: 1,
-  editor: { vimMode: false },
-  permissions: { allow: [], deny: [] },
-  approvalMode: 'allowlist',
-  sandbox: { mode: 'enabled' },
-});
 
 const READONLY_STATE_FILE_MODE = 0o400;
 // Keep snapshot directories owner-only and removable by the staged-project
@@ -164,30 +154,6 @@ async function passthroughCredentialValues(
   const stat = await lstat(source);
   if (stat.size > MAX_STATE_FILE_BYTES) throw stateBridgeFailure(tool);
   return collectStateCredentialValues(await readFile(source), tool);
-}
-
-/**
- * Sandbox-owned Cursor policy. `cli-config.json` is not a rotating credential;
- * live-linking the host file would copy `approvalMode: unrestricted` into the
- * planner child. The destination still exists so the child sees the path.
- * Host content is never read.
- */
-async function seedCursorCliConfig(
-  destination: string,
-  tool: CliToolId,
-): Promise<readonly string[]> {
-  const destDir = dirname(destination);
-  const destDirKind = await existingPath(destDir);
-  if (destDirKind !== null && destDirKind !== 'directory') {
-    throw stateBridgeFailure(tool);
-  }
-  await mkdir(destDir, { recursive: true });
-
-  const destKind = await existingPath(destination);
-  if (destKind === 'directory' || destKind === 'other') throw stateBridgeFailure(tool);
-  if (destKind !== null) await rm(destination, { force: true });
-  await writeFile(destination, CURSOR_SANDBOX_CLI_CONFIG, { mode: 0o600, flag: 'wx' });
-  return [];
 }
 
 /**
@@ -323,9 +289,7 @@ export async function bridgeCliState(
         verifiedRoots.add(root);
       }
       let values: readonly string[];
-      if (tool === 'cursor' && statePath.destinationPath === CURSOR_CLI_CONFIG_DESTINATION) {
-        values = await seedCursorCliConfig(destination, tool);
-      } else if (model === 'rotating-oauth') {
+      if (model === 'rotating-oauth') {
         values = FILE_LINKED_CREDENTIAL_TOOLS.has(tool)
           ? await passthroughStateFile(source, destination, tool)
           : await passthroughStateEntry(source, destination, root, tool);
@@ -370,15 +334,6 @@ export async function bridgedCliStatePresent(
     data: env.XDG_DATA_HOME,
   };
   for (const statePath of CLI_STATE_PATHS[tool]) {
-    // Sandbox-owned policy is not a credential; the session file is.
-    if (tool === 'cursor' && statePath.destinationPath === CURSOR_CLI_CONFIG_DESTINATION) {
-      continue;
-    }
-    // The github-copilot files belong to the Copilot IDE plugins: they exist
-    // without a Copilot CLI sign-in.
-    if (tool === 'copilot' && statePath.destinationPath !== COPILOT_CONFIG_DESTINATION) {
-      continue;
-    }
     const root = roots[statePath.destination];
     if (root === undefined) continue;
     const destination = join(root, statePath.destinationPath);
