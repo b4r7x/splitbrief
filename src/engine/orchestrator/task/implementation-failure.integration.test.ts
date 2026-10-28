@@ -89,10 +89,9 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
       reason: 'implementer-recipe-invalid',
       taskId: 'T001',
       attempts: 1,
-      maxAttempts: 8,
     });
     // The halt counts the one call the tool refused, on the brief's lineage.
-    expect(next.pendingRecovery?.details).toContain('Attempts: 1/8');
+    expect(next.pendingRecovery?.details).toContain('Attempts: 1');
     expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
   });
 
@@ -354,9 +353,8 @@ describe('handleFailedImplementation — a seat refused on the retry counts both
     expect(next.pendingRecovery).toMatchObject({
       reason: 'runner-usage-limit',
       attempts: 2,
-      maxAttempts: 8,
     });
-    expect(next.pendingRecovery?.details).toContain('Attempts: 2/8');
+    expect(next.pendingRecovery?.details).toContain('Attempts: 2');
   });
 });
 
@@ -481,11 +479,11 @@ describe('handleFailedImplementation — a stop with a hand-back is consulted', 
     });
 
     // One local retry stopped on the no-change outcome; the two consult answers
-    // each spent one attempt before the lineage bound halted the ladder.
+    // each spent one attempt that left the same failure, so the third consult halts.
     expect(implementer.retry).toHaveBeenCalledTimes(3);
     expect(events.filter((e) => e.type === 'task_retry')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(2);
-    expect(next.pendingRecovery).toMatchObject({ reason: 'consult-bound-spent', taskId: 'T001' });
+    expect(next.pendingRecovery).toMatchObject({ reason: 'no-progress', taskId: 'T001' });
   });
 });
 
@@ -595,10 +593,10 @@ describe('runTaskLoop — a seat that times out twice on one brief is a seat-dow
     return { state, events };
   }
 
-  // The transcript reads `attempt 2 of 8` above the halt; the halt states the same count.
+  // The transcript reads `attempt 2` above the halt; the halt states the same count.
   function expectTwoAttempts(state: WorkflowState) {
-    expect(state.pendingRecovery).toMatchObject({ attempts: 2, maxAttempts: 8 });
-    expect(state.pendingRecovery?.details).toContain('Attempts: 2/8');
+    expect(state.pendingRecovery).toMatchObject({ attempts: 2 });
+    expect(state.pendingRecovery?.details).toContain('Attempts: 2');
     expect(formatRecoveryPrompt(state.pendingRecovery!).split('\n')[0]).toBe(
       'Seat down · Two timeouts in a row on T001',
     );

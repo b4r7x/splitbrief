@@ -377,15 +377,15 @@ function consultTable(): string {
       }),
     ),
     '',
-    `Keep lineage counters across splits and resume: ${BOUNDS.consultsPerLineage} consults and ${BOUNDS.attemptsPerLineage} attempts.`,
-    `Keep the run counter: ${BOUNDS.plannerCallsPerRun} planner decisions after planning. Reviewer consults and review answers spend no planner decision.`,
+    'Before each consult, compare the failure with the failure the last answer saw: the same check ids with the same failure keys, the same call outcome, the same blocked question, or the same first error line.',
+    `Keep the lineage progress across splits and resume: two answers in a row that leave the same failure, or ${BOUNDS.answersPerBrief} answers on one lineage, stop the consults.`,
     'A blocked report consults at once.',
     'A guarded rewrite or split asks the operator on the consulted seat before dispatch.',
     'A done report records its decisions in the plan ledger with the task id before validation. No seat confirms them, and a retry records only a new decision.',
-    'Reported decisions spend no run counter, never a lineage consult or a planner decision.',
+    'Reported decisions are not consult answers, and the progress rule does not count them.',
     'A done report field that breaks the contract reads as empty with a warning. The other fields stay.',
-    'When a bound is spent, halt as needs you and keep the work. Ask: continue with a note / skip / end.',
-    `Continuing grants ${BOUNDS.extraConsultsPerLineage} more consult and ${BOUNDS.extraAttemptsPerLineage} more attempts, or ${BOUNDS.extraPlannerCallsPerRun} more planner decisions, and replays the brief as a retry with the last failing output.`,
+    'When the consults stop, halt as needs you and keep the work. Show the failure and the last diagnosis. Ask: continue with a note / skip / end.',
+    'Continuing clears the lineage progress and replays the brief as a retry with the last failing output.',
   ].join('\n');
 }
 

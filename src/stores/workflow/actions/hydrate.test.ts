@@ -84,13 +84,14 @@ describe('hydrateFromState', () => {
     },
   );
 
-  it('keeps replayed lineage attempts and allowance after state hydration', () => {
+  it('keeps replayed lineage attempts after state hydration', () => {
     loadEvents([
-      makeTaskStart({ lineageAttempt: 6, attemptAllowance: 12 }),
-      makeRetry({ attempt: 1, lineageAttempt: 7, attemptAllowance: 12 }),
+      makeTaskStart({ lineageAttempt: 6 }),
+      makeRetry({ attempt: 1, lineageAttempt: 7 }),
     ]);
     hydrateFromState(makeWorkflowState({ phase: 'implementing', tasks: [makeTask()] }));
-    expect(tasksStore.get()).toMatchObject({ currentAttempt: 7, attemptAllowance: 12 });
+    expect(tasksStore.get()).toMatchObject({ currentAttempt: 7 });
+    expect(tasksStore.get()).not.toHaveProperty('attemptAllowance');
   });
 
   it('restores observable workflow state from a persisted snapshot', () => {

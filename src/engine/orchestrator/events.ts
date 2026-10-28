@@ -188,7 +188,6 @@ export function publishTaskStart(
     index: number;
     total: number;
     lineageAttempt: number;
-    attemptAllowance: number;
     file: string;
     files?: string[];
     action: 'create' | 'modify';
@@ -339,7 +338,6 @@ export function publishRetry(
     attempt: number;
     maxRetries: number;
     lineageAttempt: number;
-    attemptAllowance: number;
     error: string;
   },
 ): void {
@@ -351,7 +349,6 @@ export function publishRetry(
     attempt: opts.attempt,
     maxRetries: opts.maxRetries,
     lineageAttempt: opts.lineageAttempt,
-    attemptAllowance: opts.attemptAllowance,
     error: opts.error,
   });
 }
@@ -502,10 +499,6 @@ export function publishNoProgressCut(
   opts: { taskId: TaskId | null; seat: CrewSeatId; silentMs: number },
 ): void {
   ctx.bus.publish({ type: 'no_progress_cut', ts: Date.now(), phase: ctx.phase, ...opts });
-}
-
-export function publishConsultBoundSpent(ctx: BusContext): void {
-  ctx.bus.publish({ type: 'consult_bound_spent', ts: Date.now(), phase: ctx.phase });
 }
 
 export function publishCostUpdate(ctx: BusContext, tokenUsage: TokenUsage): void {
@@ -702,10 +695,7 @@ export function publishImplementerGenerateRunning(
     phase: ctx.phase,
     taskId: opts.taskId,
     ...(opts.file !== undefined && { file: opts.file }),
-    ...(opts.lineageAttempts !== undefined && {
-      lineageAttempt: opts.lineageAttempts.used + 1,
-      attemptAllowance: opts.lineageAttempts.allowance,
-    }),
+    ...(opts.lineageAttempt !== undefined && { lineageAttempt: opts.lineageAttempt }),
   });
 }
 

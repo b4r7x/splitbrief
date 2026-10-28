@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeImplState, spentAnswersLineage } from '#testing/helpers/factories/workflow-state.js';
 import { makeConfig, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeCallbacks,
@@ -485,19 +485,9 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     const loop = (initialState: ReturnType<typeof makeImplState>) =>
       runTaskLoop({ wctx, initialState, setTrackedState: vi.fn(), setCurrentTask: vi.fn() });
 
-    // The lineage has spent its consults, so the first ladder halts with the file kept.
-    const spent = {
-      consults: 2,
-      attempts: 0,
-      consultAllowance: 2,
-      attemptAllowance: 8,
-      dispatchedRevision: {},
-      consultRecords: [],
-      replacedParents: [],
-      notes: [],
-    };
-    const halted = await loop(makeImplState([task], { lineages: { T001: spent } }));
-    expect(halted.state.pendingRecovery).toMatchObject({ reason: 'consult-bound-spent' });
+    // The lineage has spent its planner answers, so the first ladder halts with the file kept.
+    const halted = await loop(makeImplState([task], { lineages: { T001: spentAnswersLineage() } }));
+    expect(halted.state.pendingRecovery).toMatchObject({ reason: 'no-progress' });
     expect(existsSync(join(projectDir, 'src/new.ts'))).toBe(true);
     const continued = await applyRecoveryAction({
       projectDir,

@@ -1,5 +1,6 @@
 import type { CheckResult, Task, TaskId } from '../schemas/task.js';
 import type {
+  LineageProgress,
   QueuedMessage,
   WorkflowState,
   PlannerConversation,
@@ -118,19 +119,14 @@ export type StateAction =
       answer: ConsultAnswer;
       /** The seat that answered. */
       seat: ConsultSeat;
+      /** The lineage's progress, judged before this answer was asked. */
+      progress: LineageProgress;
     }
   | { type: 'RECORD_DECISIONS'; taskId: TaskId; decisions: readonly ReportedDecision[] }
   | { type: 'RECORD_CORRECTION'; taskId: TaskId; text: string }
   | { type: 'COUNT_ATTEMPT'; taskId: TaskId; failure?: string | undefined }
-  | { type: 'COUNT_PLANNER_CALL' }
   | { type: 'CLEAR_CARRIED_FAILURE'; taskId: TaskId }
-  | {
-      type: 'GRANT_ALLOWANCE';
-      target: 'lineage' | 'planner';
-      taskId: TaskId | null;
-      note: string;
-      failingOutput?: string;
-    }
+  | { type: 'RESET_PROGRESS'; taskId: TaskId; note: string; failingOutput?: string }
   | { type: 'START_SCHEDULED_REVIEW'; afterTaskId: TaskId }
   | { type: 'CLEAR_SCHEDULED_REVIEW' }
   | { type: 'RECORD_CHECK_RESULTS'; taskId: TaskId; results: CheckResult[] }

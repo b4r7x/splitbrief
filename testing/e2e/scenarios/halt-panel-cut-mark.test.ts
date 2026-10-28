@@ -73,18 +73,18 @@ describe('e2e: a halt panel too short for its text', () => {
   it('marks a detail over the cap with …, the cut lines at 80x24, and keeps the actions and the legend', async () => {
     const opened = await openConsultHalt();
     expect(opened.state.pendingRecovery).toMatchObject({
-      reason: 'consult-bound-spent',
+      reason: 'no-progress',
       details: expect.arrayContaining([
-        expect.stringContaining('Last diagnosis: Implementer is blocked: greet.ts needs'),
+        expect.stringContaining('Failure: blocked: greet.ts needs'),
       ]),
     });
 
-    const diagnosis = opened.state.pendingRecovery?.details.find((line) =>
-      line.startsWith('Last diagnosis: '),
+    const failure = opened.state.pendingRecovery?.details.find((line) =>
+      line.startsWith('Failure: '),
     );
-    expect(diagnosis?.endsWith('…')).toBe(true);
+    expect(failure?.endsWith('…')).toBe(true);
     const wide = stripAnsiStyles(opened.screen.lastFrame());
-    expect(wide).toContain(diagnosis?.slice(diagnosis.lastIndexOf(' ') + 1));
+    expect(wide).toContain(failure?.slice(failure.lastIndexOf(' ') + 1));
     expect(wide).not.toContain('...');
 
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });

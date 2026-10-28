@@ -2,22 +2,13 @@ import type { Task } from '../../../core/schemas/task.js';
 import {
   lineageAttemptsOf,
   type ChangedFilesSnapshot,
+  type FailureMark,
   type WorkflowState,
 } from '../../../core/schemas/workflow.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import {
-  publishConsultBoundSpent,
-  publishError,
-  publishNoProgressCut,
-  publishRetry,
-} from '../events.js';
-import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
-import {
-  attemptBoundSpent,
-  buildConsultBoundRecoveryIssue,
-  type ConsultBoundSpent,
-} from '../recovery/builders/consult.js';
+import { publishNoProgressCut, publishRetry } from '../events.js';
+import { transitionAndSave } from '../state-ops.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep, type RetryStepResult } from './step.js';
 import { failedRetry, type EscalationContext, type RetryAttemptFailure } from './types.js';
@@ -25,7 +16,6 @@ import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
 import { recoveryBuilderForRunnerOutcome } from '../recovery/builders/task.js';
-import { nowIso } from '../../../utils/format-time.js';
 
 /**
  * Outcomes every further local attempt reproduces: a signed-out or
@@ -74,57 +64,14 @@ function isUnfinishedCall(failure: RetryAttemptFailure | undefined): boolean {
   return failure?.outcome === 'timeout' || failure?.outcome === 'no-progress-cut';
 }
 
-/** The ladder cannot ask the planner again; the operator decides the grant. */
-function raiseConsultBound(
-  ctx: EscalationContext,
-  state: WorkflowState,
-  task: Task,
-  lastDiagnosis: string,
-  lastError: string,
-  attempts: number,
-  spent: ConsultBoundSpent,
-): RetryStepResult {
-  const issue = buildConsultBoundRecoveryIssue({
-    reason: spent.reason,
-    phase: state.phase,
-    task,
-    lastDiagnosis,
-    failingOutput: lastError,
-    consults: spent.consults,
-    consultAllowance: spent.consultAllowance,
-    attempts: spent.attempts,
-    attemptAllowance: spent.attemptAllowance,
-    plannerCalls: spent.plannerCalls,
-    plannerCallAllowance: spent.plannerCallAllowance,
-    createdAt: nowIso(),
-  });
-  publishConsultBoundSpent({ bus: ctx.bus, phase: state.phase });
-  publishError({
-    bus: ctx.bus,
-    phase: state.phase,
-    message: issue.message,
-    safety: {
-      category: 'recovery',
-      code: spent.reason === 'planner-calls-spent' ? 'planner_calls_spent' : 'consult_bound_spent',
-    },
-  });
-  return {
-    state: raisePendingRecovery(ctx, state, issue),
-    task,
-    lastError,
-    attempts,
-    result: failedRetry(attempts),
-  };
-}
-
 export async function runLocalRetries(
   opts: Readonly<{
     ctx: EscalationContext;
     task: Task;
     state: WorkflowState;
     lastError: string;
-    /** The line a consult-bound halt quotes for `lastError`. */
-    lastDiagnosis: string;
+    /** The checks that failed the attempt behind `lastError`. */
+    checks?: FailureMark | undefined;
     initialFailure?: RetryAttemptFailure | undefined;
     answer?: string | undefined;
   }>,
@@ -133,7 +80,7 @@ export async function runLocalRetries(
   let state = opts.state;
   let task = opts.task;
   let lastError = opts.lastError;
-  let lastDiagnosis = opts.lastDiagnosis;
+  let checks = opts.checks;
   let attempts = 0;
   let consecutiveTimeouts = isUnfinishedCall(opts.initialFailure) ? 1 : 0;
   let lastFailure: RetryAttemptFailure | undefined;
@@ -175,10 +122,6 @@ export async function runLocalRetries(
   // earns the retry with the exact errors.
   while (answer !== undefined || rung < maxRetries) {
     if (ctx.signal?.aborted) break;
-    const spent = attemptBoundSpent(state, task);
-    if (spent !== undefined) {
-      return raiseConsultBound(ctx, state, task, lastDiagnosis, lastError, attempts, spent);
-    }
     if (answer === undefined) {
       rung += 1;
       if (state.phase === 'implementing') {
@@ -186,18 +129,15 @@ export async function runLocalRetries(
       }
       state = persistTransition(state, { type: 'VALIDATION_FAIL' });
       attempts = state.attempt;
-      const lineage = lineageAttemptsOf(state, task);
-      const retryRow = {
+      publishRetry({
         bus: ctx.bus,
         phase: state.phase,
         taskId: task.id,
         attempt: state.attempt,
         maxRetries,
-        lineageAttempt: lineage.used + 1,
-        attemptAllowance: lineage.allowance,
+        lineageAttempt: lineageAttemptsOf(state, task) + 1,
         error: lastError,
-      };
-      publishRetry(retryRow);
+      });
       if (state.phase === 'escalating') break;
     }
 
@@ -228,7 +168,7 @@ export async function runLocalRetries(
     state = outcome.state;
     task = outcome.task;
     lastError = outcome.lastError;
-    lastDiagnosis = outcome.diagnosis ?? outcome.lastError;
+    checks = outcome.checks;
     lastFailure = outcome.lastFailure;
     answer = outcome.answer;
     attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
@@ -295,7 +235,7 @@ export async function runLocalRetries(
     state,
     task,
     lastError,
-    diagnosis: lastDiagnosis,
+    checks,
     attempts,
     ...(lastFailure !== undefined && { lastFailure }),
     ...(attemptSnapshot !== undefined && { attemptSnapshot }),

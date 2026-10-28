@@ -962,7 +962,7 @@ describe('workflow visual fixtures', () => {
       'BUILD activity 1 update [DeepSeek V4.1 Flash · via opencode-go · high]',
     );
     expect(frame).toContain('Read src/text.js');
-    expect(frame).not.toContain('attempt 2 of 8');
+    expect(frame).not.toContain('attempt 2');
   });
 
   it('shows the fallback effort on the BUILD sidebar after a balance switch', async () => {

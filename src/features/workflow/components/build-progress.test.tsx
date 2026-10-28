@@ -87,7 +87,7 @@ describe('BuildProgressBlock', () => {
 
     tasksStore.__testReset({ ...tasksStore.get(), currentAttempt: 2 });
     const retry = renderFeature(<BuildProgressBlock cols={120} />);
-    expect(stripAnsiStyles(retry.lastFrame() ?? '')).toContain('1/3 briefs passed · attempt 2 of');
+    expect(stripAnsiStyles(retry.lastFrame() ?? '')).toContain('1/3 briefs passed · attempt 2');
     retry.unmount();
   });
 

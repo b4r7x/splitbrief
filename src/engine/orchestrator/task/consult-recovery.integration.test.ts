@@ -22,12 +22,10 @@ import {
 } from '#testing/helpers/typed-planner.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
-import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowContext } from '../types.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
-import { requestConsult } from '../consult/request.js';
 import { retryAndRecord } from './retry.js';
 import { runSingleTask } from './step.js';
 
@@ -202,65 +200,21 @@ describe('consult seat recovery', () => {
   );
 
   it.each(['plan', 'review'] as const)(
-    'refuses a %s consult after the other seat spends the run allowance',
-    async (seat) => {
-      const ref = setupTaskProject();
-      const planTask = makeTask({ id: 'T012', criteria: [] });
-      const fixTask = makeTask({ id: 'T013', criteria: [], fix });
-      const task = seat === 'review' ? fixTask : planTask;
-      let state: WorkflowState = {
-        ...makeImplStateWithMetadata([planTask, fixTask]),
-        plannerCalls: { used: BOUNDS.plannerCallsPerRun - 1, allowance: BOUNDS.plannerCallsPerRun },
-      };
-      const plannerCall = consultCallAnswering(() => guidanceConsult());
-      const reviewerCall = consultCallAnswering(() => guidanceConsult());
-      const wctx = makeTaskWorkflowContext({
-        ...ref,
-        config,
-        planner: makePlanner({ typedCall: plannerCall }),
-        reviewer: makePlanner({ typedCall: reviewerCall }),
-      });
-      saveState(ref, state);
-      const otherTask = seat === 'review' ? planTask : fixTask;
-      await requestConsult(
-        {
-          ...wctx,
-          state,
-          onStateChange: (next) => {
-            state = next;
-          },
-        },
-        {
-          task: otherTask,
-          reason: 'failed',
-          failingOutput: failed.error,
-        },
-      );
-      state = { ...state, currentTaskIndex: seat === 'review' ? 1 : 0 };
-      const halted = (await retryTask({ wctx, state, task })).state;
-      expect(halted.pendingRecovery).toMatchObject({
-        reason: 'planner-calls-spent',
-        taskId: task.id,
-      });
-      expect(halted.plannerCalls?.used).toBe(BOUNDS.plannerCallsPerRun);
-      expect(seat === 'review' ? reviewerCall : plannerCall).not.toHaveBeenCalled();
-    },
-  );
-
-  it.each(['plan', 'review'] as const)(
-    'refuses a %s consult after the shared lineage allowance is spent',
+    "halts a %s consult on the progress the other seat's answers left on the lineage",
     async (seat) => {
       const ref = setupTaskProject();
       const task = makeTask({ id: 'T013', criteria: [], ...(seat === 'review' && { fix }) });
+      const failure = [{ source: 'blocked', keys: [blocked.question] }];
       let state = makeImplStateWithMetadata([task]);
-      for (let i = 0; i < BOUNDS.consultsPerLineage; i++) {
+      for (const unmoved of [0, 1]) {
         state = transition(state, {
           type: 'RECORD_CONSULT',
           taskId: task.id,
           revision: 1,
-          reason: 'failed',
+          reason: 'blocked',
           seat: seat === 'review' ? 'plan' : 'review',
           answer: guidanceConsult(),
+          progress: { failure, unmoved, answers: unmoved + 1 },
         });
       }
       const plannerCall = consultCallAnswering(() => guidanceConsult());
@@ -273,10 +227,10 @@ describe('consult seat recovery', () => {
       });
       const halted = (await retryTask({ wctx, state, task })).state;
       expect(halted.pendingRecovery).toMatchObject({
-        reason: 'consult-bound-spent',
+        reason: 'no-progress',
         taskId: task.id,
       });
-      expect(halted.lineages?.T013?.consults).toBe(BOUNDS.consultsPerLineage);
+      expect(halted.lineages?.T013?.consultRecords).toHaveLength(2);
       expect(plannerCall).not.toHaveBeenCalled();
       expect(reviewerCall).not.toHaveBeenCalled();
     },

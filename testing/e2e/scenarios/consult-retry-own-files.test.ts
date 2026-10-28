@@ -449,7 +449,7 @@ describe('e2e: Try again on a brief that wrote its own files', { timeout: 360_00
       reason: 'planner-call-failed',
       taskId: 'T001',
     });
-    const consultsAtHalt = haltState.lineages?.T001?.consults;
+    const consultsAtHalt = haltState.lineages?.T001?.consultRecords.length;
 
     const continued = await cli(target, ['continue', sessionId, '--action', 'retry'], {
       timeoutMs: RUN_TIMEOUT_MS,
@@ -466,7 +466,7 @@ describe('e2e: Try again on a brief that wrote its own files', { timeout: 360_00
 
     const state = readState(target, sessionId);
     expect(state.phase).toBe('complete');
-    expect(state.lineages?.T001?.consults).toBe(consultsAtHalt);
+    expect(state.lineages?.T001?.consultRecords.length).toBe(consultsAtHalt);
     expect(state.tasks[0]?.action).toBe('create');
   });
 });

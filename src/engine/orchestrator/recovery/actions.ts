@@ -241,9 +241,7 @@ function applyContinueRecoveryAction(
     });
   }
 
-  if (issue.reason === 'consult-bound-spent' || issue.reason === 'planner-calls-spent') {
-    return applyConsultGrantRecoveryAction(opts, issue);
-  }
+  if (issue.reason === 'no-progress') return applyNoProgressContinue(opts, issue);
 
   let state = markRecoveryApplying(opts, issue);
   state = transitionAndSave(
@@ -273,48 +271,21 @@ function applyContinueRecoveryAction(
 }
 
 /**
- * A consult-bound halt continues by granting the budget it stopped on, with the
- * operator's note recorded on the lineage, and resetting the brief the grant is
- * for so the run replays it. A planner-call halt raises the run's call
- * allowance; a lineage halt raises the consult and attempt allowances.
+ * A no-progress halt continues by clearing the lineage's progress, with the operator's note
+ * recorded on the lineage, and resetting the brief so the run replays it and the planner is asked
+ * again.
  */
-function applyConsultGrantRecoveryAction(
+function applyNoProgressContinue(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
-  if (issue.reason === 'planner-calls-spent' && issue.taskId === undefined) {
-    const state = saveRecoveryAnswer(opts, issue, [
-      {
-        type: 'GRANT_ALLOWANCE',
-        target: 'planner',
-        taskId: null,
-        note: opts.comment?.displayText.trim() || 'continued',
-      },
-    ]);
-    publishRecoveryResolved({
-      bus: opts.bus,
-      phase: state.phase,
-      issue,
-      action: opts.action,
-      outcome: 'continued',
-    });
-    return {
-      ok: true,
-      action: opts.action,
-      issue,
-      state,
-      status: 'continued',
-      correctionRecorded: false,
-    };
-  }
-
   const taskId = issue.taskId ?? opts.state.tasks[opts.state.currentTaskIndex]?.id;
   if (taskId === undefined) {
     return blockRecoveryAction({
       ...opts,
       issue,
       code: 'missing-current-task',
-      message: 'Granting a consult bound requires the task the halt names.',
+      message: 'Continuing a no-progress halt requires the task the halt names.',
       publishSelected: true,
     });
   }
@@ -326,15 +297,14 @@ function applyConsultGrantRecoveryAction(
       issue,
       code: 'missing-current-task',
       message:
-        'Continuing a consult bound requires the pending recovery task to match the current task index.',
+        'Continuing a no-progress halt requires the pending recovery task to match the current task index.',
       publishSelected: true,
     });
   }
 
   const state = saveRecoveryAnswer(opts, issue, [
     {
-      type: 'GRANT_ALLOWANCE',
-      target: issue.reason === 'planner-calls-spent' ? 'planner' : 'lineage',
+      type: 'RESET_PROGRESS',
       taskId,
       note: opts.comment?.displayText.trim() || 'continued',
       ...(typeof issue.facts?.failingOutput === 'string' && {
@@ -1197,14 +1167,10 @@ function recordRecoverySkipEvidence(opts: {
 }
 
 /**
- * A consult-bound halt continues by a grant the operator chose; it resolves the halt itself, so
+ * A no-progress halt continues by a reset the operator chose; it resolves the halt itself, so
  * there is no state the run must first come back to. A halt on a retired cause names nothing the
  * run still checks, so continuing is all that is left of it.
  */
 function isSafeContinue(issue: RecoveryIssue): boolean {
-  return (
-    issue.reason === 'consult-bound-spent' ||
-    issue.reason === 'planner-calls-spent' ||
-    isRetiredRecoveryReason(issue.reason)
-  );
+  return issue.reason === 'no-progress' || isRetiredRecoveryReason(issue.reason);
 }

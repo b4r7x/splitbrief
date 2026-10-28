@@ -4,7 +4,6 @@ import type { Phase, TaskStatus } from '../../core/schemas/enums.js';
 import { isImplementerPhase } from '../../core/phases.js';
 import type { SeatChangePoint } from '../../core/crew/seats.js';
 import { taskStatusForCompletionMethod } from '../../core/task-completion.js';
-import { BOUNDS } from '../../core/pipeline-spec/bounds.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { countNoun } from '../../utils/pluralize.js';
 import {
@@ -84,7 +83,6 @@ export function taskRowLabel(task: WorkflowTask, cells: number): string {
 export interface TasksState {
   currentTask: number;
   currentAttempt: number;
-  attemptAllowance: number;
   totalTasks: number;
   taskMap: Map<string, WorkflowTask>;
   tasks: WorkflowTask[];
@@ -93,7 +91,6 @@ export interface TasksState {
 const initial: TasksState = {
   currentTask: 0,
   currentAttempt: 1,
-  attemptAllowance: BOUNDS.attemptsPerLineage,
   totalTasks: 0,
   taskMap: new Map(),
   tasks: [],
@@ -286,8 +283,8 @@ export function updateTaskCounts(
   state: TasksState,
   event: EngineEvent,
   tasks: readonly WorkflowTask[],
-): Pick<TasksState, 'currentTask' | 'currentAttempt' | 'attemptAllowance' | 'totalTasks'> {
-  let { currentAttempt, attemptAllowance, totalTasks } = state;
+): Pick<TasksState, 'currentTask' | 'currentAttempt' | 'totalTasks'> {
+  let { currentAttempt, totalTasks } = state;
   const focusedId =
     event.type === 'task_started' || event.type === 'task_reset'
       ? event.taskId
@@ -298,17 +295,14 @@ export function updateTaskCounts(
   }
   if (event.type === 'task_started') {
     currentAttempt = event.lineageAttempt ?? 1;
-    attemptAllowance = event.attemptAllowance ?? BOUNDS.attemptsPerLineage;
     totalTasks = event.total;
   }
   // `attempt` counts the retries already spent, so the attempt now running is one past it.
   if (event.type === 'task_retry') {
     currentAttempt = event.lineageAttempt ?? event.attempt + 1;
-    attemptAllowance = event.attemptAllowance ?? BOUNDS.attemptsPerLineage;
   }
   if (event.type === 'implementer_generate_running') {
     currentAttempt = event.lineageAttempt ?? currentAttempt;
-    attemptAllowance = event.attemptAllowance ?? attemptAllowance;
   }
-  return { currentTask, currentAttempt, attemptAllowance, totalTasks };
+  return { currentTask, currentAttempt, totalTasks };
 }

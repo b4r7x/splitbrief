@@ -64,7 +64,6 @@ describe('runHeadless — recovery stops', () => {
       task,
       validationSummary: 'npm test failed',
       attempts: 2,
-      maxAttempts: 2,
       createdAt: '2026-04-29T00:00:00.000Z',
     });
     const state = transition(

@@ -172,21 +172,21 @@ describe('skill-blocks', () => {
     expect(contract).toContain('"split-task"');
   });
 
-  it('renders the consult bounds from BOUNDS, not by hand', () => {
+  it('renders the progress rule from BOUNDS, not by hand', () => {
     const contract = renderBlock('consult-table') ?? '';
-    expect(contract).toContain('2 consults and 8 attempts');
-    expect(contract).toContain('10 planner decisions');
-    expect(contract).toContain('4 more attempts');
-    expect(contract).toContain('5 more planner decisions');
+    expect(contract).toContain('two answers in a row that leave the same failure');
+    expect(contract).toContain(`${BOUNDS.answersPerBrief} answers on one lineage`);
+    expect(contract).toContain('Show the failure and the last diagnosis');
+    expect(contract).not.toMatch(/consults and \d+ attempts|planner decisions|more attempts/u);
   });
 
-  it('keeps reported decisions out of the consult bounds and replays a continued brief with its errors', () => {
+  it('keeps reported decisions out of the progress rule and replays a continued brief with its errors', () => {
     const contract = renderBlock('consult-table') ?? '';
     expect(contract).toContain(
       'A done report records its decisions in the plan ledger with the task id before validation.',
     );
     expect(contract).toContain(
-      'Reported decisions spend no run counter, never a lineage consult or a planner decision.',
+      'Reported decisions are not consult answers, and the progress rule does not count them.',
     );
     expect(contract).not.toContain('decision-confirm');
     expect(contract).toContain('replays the brief as a retry with the last failing output');
@@ -248,15 +248,14 @@ describe('skill-blocks', () => {
     for (const id of GENERATED_BLOCK_IDS) expect(authored).toContain(`generated: ${id}`);
   });
 
-  it('renders consult actions and shared bounds without a takeover', () => {
+  it('renders consult actions and the progress rule without a takeover', () => {
     const consult = renderBlock('consult-table') ?? '';
     for (const action of ['guidance', 'rewrite-task', 'split-task', 'verify', 'ask-user']) {
       expect(consult).toContain(`| \`${action}\` |`);
     }
     expect(consult).toContain('same id and the same criteria');
     expect(consult).toContain('Replace with 2–4 subtasks');
-    expect(consult).toContain('2 consults and 8 attempts');
-    expect(consult).toContain('10 planner decisions after planning');
+    expect(consult).toContain('Keep the lineage progress across splits and resume');
     expect(consult).not.toMatch(/takeover|ladder/iu);
     expect(renderBlock('ladder-table')).toBeNull();
     expect(renderBlock('takeover-prompt')).toBeNull();
@@ -308,9 +307,6 @@ describe('skill-blocks', () => {
     expect(parsed.ask?.question).toBe(parsed.findings[0]?.text);
     expect(packet).toContain('Save the whole answer in review.json');
     expect(renderBlock('fix-cycle')).toContain('from the saved review fix part');
-    expect(renderBlock('consult-table')).toContain(
-      'Reviewer consults and review answers spend no planner decision',
-    );
     for (const id of ['review-packet', 'fix-cycle', 'consult-table', 'gate-rules']) {
       expect(renderBlock(id)).not.toMatch(/triage log|session for triage|triage turns|and triage/u);
     }

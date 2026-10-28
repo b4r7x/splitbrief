@@ -146,7 +146,6 @@ export const buildPromptTooLargeRecoveryIssue: RecoveryIssue =
     runner: CODEX_SEAT,
     toolMessage: CODEX_INPUT_TOO_LARGE,
     attempts: 1,
-    maxAttempts: 8,
     seatSwap: {
       seat: 'build',
       currentTool: 'codex',

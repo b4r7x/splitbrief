@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeImplState, spentAnswersLineage } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeCopyingIsolation,
@@ -23,7 +23,6 @@ import type { ImplementerOptions, RetryOptions } from '../../implementers/types.
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { runTaskLoop } from './loop.js';
-import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
@@ -85,14 +84,11 @@ async function haltCheckoutBrief() {
   });
   const halted = await runTaskLoop({
     wctx,
-    initialState: {
-      ...makeImplState([task]),
-      plannerCalls: { used: BOUNDS.plannerCallsPerRun, allowance: BOUNDS.plannerCallsPerRun },
-    },
+    initialState: makeImplState([task], { lineages: { [task.id]: spentAnswersLineage() } }),
     setTrackedState: vi.fn(),
     setCurrentTask: vi.fn(),
   });
-  expect(halted.state.pendingRecovery?.reason).toBe('planner-calls-spent');
+  expect(halted.state.pendingRecovery?.reason).toBe('no-progress');
   return {
     ref,
     wctx,
@@ -190,7 +186,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
           setTrackedState: vi.fn(),
           setCurrentTask: vi.fn(),
         });
-        expect(resumed.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+        expect(resumed.state.pendingRecovery?.reason).toBe('no-progress');
       }
 
       const skipped = await applyRecoveryAction({
@@ -286,7 +282,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       });
 
       expect(halted.state.pendingRecovery?.reason).toBe(
-        action === 'skip' ? 'consult-bound-spent' : 'planner-call-failed',
+        action === 'skip' ? 'no-progress' : 'planner-call-failed',
       );
       expect(checks).toBeGreaterThan(2);
       const persisted = loadState(ref);
@@ -406,10 +402,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       suggestedFiles: ['src/attempt.ts'],
       checks: [{ id: 'check', kind: 'cmd', value: 'tsc --noEmit', required: true }],
     });
-    const state = {
-      ...makeImplState([task]),
-      plannerCalls: { used: BOUNDS.plannerCallsPerRun, allowance: BOUNDS.plannerCallsPerRun },
-    };
+    const state = makeImplState([task], { lineages: { [task.id]: spentAnswersLineage() } });
     const writeAttempt = async (opts: ImplementerOptions) => {
       mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
       writeFileSync(join(opts.projectDir, 'src/attempt.ts'), 'failed attempt\n');
@@ -443,7 +436,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
-    expect(halted.state.pendingRecovery?.reason).toBe('planner-calls-spent');
+    expect(halted.state.pendingRecovery?.reason).toBe('no-progress');
     const persisted = loadState(ref);
     if (persisted === null) throw new Error('Missing halted state');
 
@@ -557,7 +550,8 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     expect(byId.get(taskId('T003'))?.status).toBe('done');
 
     // Two implementer attempts on T002, one consult on its lineage.
-    expect(result.state.lineages?.T002).toMatchObject({ attempts: 2, consults: 1 });
+    expect(result.state.lineages?.T002).toMatchObject({ attempts: 2 });
+    expect(result.state.lineages?.T002?.consultRecords).toHaveLength(1);
 
     // T001's work survived the failed retry and the split's rollback, in the run
     // workspace; the checkout never received any of it.

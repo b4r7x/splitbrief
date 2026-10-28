@@ -28,7 +28,7 @@ describe('leavesWordsUnread', () => {
     ['retry-exhausted', 'skip-current-task'],
     ['runner-usage-limit', 'retry-later'],
     ['runner-usage-limit', 'switch-seat'],
-    ['consult-bound-spent', 'continue'],
+    ['no-progress', 'continue'],
     ['implementation-error', 'continue'],
     ['apply-conflict', 'end-run'],
   ] as const satisfies readonly (readonly [RecoveryReason, RecoveryAction])[])(

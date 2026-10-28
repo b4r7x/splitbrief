@@ -39,8 +39,7 @@ import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
 import { renderCheckNotes, planRepairWarning } from '../../../../src/engine/spec/plan-checks.js';
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
-import { BOUNDS } from '../../../../src/core/pipeline-spec/bounds.js';
-import { buildConsultBoundRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/consult.js';
+import { buildNoProgressRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/consult.js';
 import {
   buildRequiredChecksUnrunnableRecoveryIssue,
   type UnrunnableCheck,
@@ -191,7 +190,7 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   recovery: 'Change BUILD tool',
   recoveryPlan: 'Change PLAN tool',
   retryExhausted: 'failed',
-  consultBound: 'used its consult allowance',
+  noProgress: 'is stuck on the same failure',
   reviewFailed: 'Fix again',
   reviewFixTask: 'Fix the finding the review raised',
   leftIsolation: 'Seat down · T901 left the isolation directory',
@@ -310,7 +309,7 @@ const WORKFLOW_STOPPING_ID = scenarioId('workflow-stopping');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
 const WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID = scenarioId('workflow-recovery-retry-exhausted');
-const WORKFLOW_RECOVERY_CONSULT_BOUND_ID = scenarioId('workflow-recovery-consult-bound');
+const WORKFLOW_RECOVERY_NO_PROGRESS_ID = scenarioId('workflow-recovery-no-progress');
 const WORKFLOW_RECOVERY_REVIEW_FAILED_ID = scenarioId('workflow-recovery-review-failed');
 const WORKFLOW_RECOVERY_LEFT_ISOLATION_ID = scenarioId('workflow-recovery-left-isolation');
 const WORKFLOW_RECOVERY_CHECKOUT_CHANGED_ID = scenarioId('workflow-recovery-checkout-changed');
@@ -1178,7 +1177,6 @@ const implementationRetryProjection: WorkflowFixtureProjection = {
     {
       type: 'task_started',
       lineageAttempt: 6,
-      attemptAllowance: 12,
       ts: FIXED_TS + 100,
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
@@ -1202,7 +1200,6 @@ const implementationRetryProjection: WorkflowFixtureProjection = {
     {
       type: 'task_retry',
       lineageAttempt: 7,
-      attemptAllowance: 12,
       ts: FIXED_TS + 400,
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
@@ -1379,7 +1376,6 @@ const buildReviewConsultProjection: WorkflowFixtureProjection = {
       {
         type: 'task_retry',
         lineageAttempt: 2,
-        attemptAllowance: 8,
         ts: FIXED_TS + 550,
         phase: 'implementing',
         taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
@@ -2853,7 +2849,6 @@ function usageLimitRecoveryIssue(
     task: HALTED_TASK,
     phase: 'implementing',
     attempts: 1,
-    maxAttempts: BOUNDS.attemptsPerLineage,
     selectedImplementerProfile: 'local-fixture',
     seatSwap: {
       seat: 'build',
@@ -2943,7 +2938,6 @@ function balanceSpentRecoveryIssue(): RecoveryIssue {
     task: HALTED_TASK,
     phase: 'implementing',
     attempts: 1,
-    maxAttempts: BOUNDS.attemptsPerLineage,
     selectedImplementerProfile: 'default',
     seatSwap: {
       seat: 'build',
@@ -2993,7 +2987,6 @@ function cursorRefusalRecoveryIssue(): RecoveryIssue {
     task: HALTED_TASK,
     phase: 'implementing',
     attempts: 1,
-    maxAttempts: BOUNDS.attemptsPerLineage,
     selectedImplementerProfile: 'default',
     seatSwap: {
       seat: 'build',
@@ -3045,7 +3038,6 @@ function modelRefusalRecoveryIssue(routeAuth: ModelRefusalRouteAuth): RecoveryIs
     runner: OPENCODE_ROUTE_SEAT,
     toolMessage: NO_ROUTE_WORDS,
     attempts: 1,
-    maxAttempts: BOUNDS.attemptsPerLineage,
     selectedImplementerProfile: 'default',
     seatSwap: {
       seat: 'build',
@@ -3182,7 +3174,6 @@ const retryExhaustedRecoveryIssue = buildRetryExhaustedRecoveryIssue({
   phase: 'escalating',
   validationSummary: FIXTURE_TYPECHECK_ERROR,
   attempts: 5,
-  maxAttempts: BOUNDS.attemptsPerLineage,
   allowRetryOverride: true,
   selectedImplementerProfile: 'default',
   handBack:
@@ -3190,20 +3181,18 @@ const retryExhaustedRecoveryIssue = buildRetryExhaustedRecoveryIssue({
   createdAt: new Date(FIXED_TS).toISOString(),
 });
 
-/** Two consults on one brief did not land it; the halt carries the planner's last diagnosis. */
-const consultBoundRecoveryIssue = buildConsultBoundRecoveryIssue({
-  id: 'rec_visual_consult_bound',
-  reason: 'consult-bound-spent',
+/** Two planner answers in a row left one typecheck error; the halt carries it and the last diagnosis. */
+const noProgressRecoveryIssue = buildNoProgressRecoveryIssue({
+  id: 'rec_visual_no_progress',
   task: HALTED_TASK,
   phase: 'escalating',
+  stop: 'no-progress',
+  failure: [{ source: 'check K1', keys: [FIXTURE_TYPECHECK_ERROR] }],
+  answers: 2,
   lastDiagnosis:
     'Projection is declared in src/core/projection.ts, which this brief does not list. Add stop there in its own brief.',
-  consults: BOUNDS.consultsPerLineage,
-  consultAllowance: BOUNDS.consultsPerLineage,
+  failingOutput: FIXTURE_TYPECHECK_ERROR,
   attempts: 5,
-  attemptAllowance: BOUNDS.attemptsPerLineage,
-  plannerCalls: 2,
-  plannerCallAllowance: BOUNDS.plannerCallsPerRun,
   createdAt: new Date(FIXED_TS).toISOString(),
 });
 
@@ -3217,14 +3206,14 @@ const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   resumeState: haltedResumeState(retryExhaustedRecoveryIssue),
 };
 
-const consultBoundRecoveryProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_RECOVERY_CONSULT_BOUND_ID,
+const noProgressRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_NO_PROGRESS_ID,
   feature: WORKFLOW_FEATURE,
   inputMode: 'question',
   sidebarVisible: false,
   events: [],
   config: AGY_CREW,
-  resumeState: haltedResumeState(consultBoundRecoveryIssue),
+  resumeState: haltedResumeState(noProgressRecoveryIssue),
 };
 
 /** The retry-exhausted halt on a brief whose files are many and long. */
@@ -3247,7 +3236,6 @@ const manyFilesRecoveryIssue = buildRetryExhaustedRecoveryIssue({
   phase: 'escalating',
   validationSummary: FIXTURE_TYPECHECK_ERROR,
   attempts: 5,
-  maxAttempts: BOUNDS.attemptsPerLineage,
   allowRetryOverride: true,
   selectedImplementerProfile: 'default',
   handBack:
@@ -3626,7 +3614,6 @@ const leftIsolationInPlaceRecoveryIssue = buildLeftIsolationRecoveryIssue({
   runner: AGY_BUILD_SEAT,
   toolMessage: 'wrote outside the checkout with run_command: touch ../outside.txt',
   attempts: 1,
-  maxAttempts: BOUNDS.attemptsPerLineage,
   inPlace: { revertedDir: `.splitbrief/sessions/${VISUAL_WORKFLOW_SESSION_ID}/reverted` },
   seatSwap: {
     seat: 'build',
@@ -3664,7 +3651,6 @@ const checkoutChangedRecoveryIssue = buildCheckoutChangedRecoveryIssue({
   runner: AGY_BUILD_SEAT,
   toolMessage: 'branch fix/implementer-never-runs-gates',
   attempts: 1,
-  maxAttempts: BOUNDS.attemptsPerLineage,
   createdAt: new Date(FIXED_TS).toISOString(),
 });
 
@@ -3694,7 +3680,6 @@ const repeatedTimeoutRecoveryIssue = buildRepeatedTimeoutRecoveryIssue({
   runner: AGY_BUILD_SEAT,
   toolMessage: timedOutMessage(getRunnerCatalogDisplayName(AGY_BUILD_SEAT), 900_000),
   attempts: 2,
-  maxAttempts: BOUNDS.attemptsPerLineage,
   createdAt: new Date(FIXED_TS).toISOString(),
 });
 
@@ -4452,7 +4437,6 @@ const balanceSeatSwitchProjection: WorkflowFixtureProjection = {
       index: 0,
       total: 1,
       lineageAttempt: 1,
-      attemptAllowance: BOUNDS.attemptsPerLineage,
       file: 'src/text.js',
       files: ['src/text.js', 'test/text.test.js'],
       action: 'modify',
@@ -6661,7 +6645,6 @@ const fixCheckStoppedContinuedProjection: WorkflowFixtureProjection = {
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
       lineageAttempt: 2,
-      attemptAllowance: 8,
       attempt: 1,
       maxRetries: 1,
       error: 'Continue after Stop',
@@ -6730,7 +6713,6 @@ const fixCheckDoneProjection: WorkflowFixtureProjection = {
       {
         type: 'task_retry',
         lineageAttempt: 2,
-        attemptAllowance: 8,
         ts: FIXED_TS + 2_100,
         phase: 'implementing',
         taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
@@ -7346,18 +7328,18 @@ const projections = [
   fallbackUsedRecoveryProjection,
   fallbackNotInstalledRecoveryProjection,
   retryExhaustedRecoveryProjection,
-  consultBoundRecoveryProjection,
+  noProgressRecoveryProjection,
   manyFilesRecoveryProjection,
   {
-    ...consultBoundRecoveryProjection,
-    scenarioId: scenarioId('workflow-recovery-consult-bound-note'),
+    ...noProgressRecoveryProjection,
+    scenarioId: scenarioId('workflow-recovery-no-progress-note'),
   },
   {
-    ...consultBoundRecoveryProjection,
+    ...noProgressRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-slash-draft'),
   },
   {
-    ...consultBoundRecoveryProjection,
+    ...noProgressRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-slash-list'),
   },
   reviewFailedRecoveryProjection,

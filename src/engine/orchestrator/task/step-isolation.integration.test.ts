@@ -121,7 +121,7 @@ describe('runSingleTask — worktree isolation', () => {
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
-    expect(afterFailing.pendingRecovery?.reason).toBe('consult-bound-spent');
+    expect(afterFailing.pendingRecovery?.reason).toBe('no-progress');
     expect(checkoutFiles(projectDir)).toEqual(before);
 
     const afterPassing = await runSingleTask({

@@ -14,7 +14,6 @@ export function makeRecoveryIssue(overrides: Partial<RecoveryIssue> = {}): Recov
     message: 'T001 failed',
     details: ['npm test failed in src/auth/session.test.ts'],
     attempts: 3,
-    maxAttempts: 3,
     selectedImplementerProfile: 'local-qwen',
     availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
     recommendedAction: 'retry-same-worker',

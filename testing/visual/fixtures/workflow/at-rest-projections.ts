@@ -757,7 +757,6 @@ const AT_REST_PROMPT_TOO_LARGE = record({
           runner: LIMITED_IMPLEMENTER,
           toolMessage: CODEX_INPUT_TOO_LARGE,
           attempts: 1,
-          maxAttempts: 8,
           seatSwap: {
             seat: 'build',
             currentTool: 'codex',

@@ -374,7 +374,7 @@ describe('validateConfig', () => {
 
       expect(errors).toEqual([]);
       expect(warnings.filter((w) => w.includes('max_retries'))).toEqual([
-        'workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.',
+        'workflow.max_retries was retired and is ignored: the planner decides the retries while they make progress. Delete workflow.max_retries.',
       ]);
     },
   );

@@ -1662,10 +1662,7 @@ describe('runFinalReviewPhase', () => {
       },
       lineages: {
         T001: {
-          consults: 1,
           attempts: 1,
-          consultAllowance: 3,
-          attemptAllowance: 2,
           dispatchedRevision: {},
           consultRecords: [
             {

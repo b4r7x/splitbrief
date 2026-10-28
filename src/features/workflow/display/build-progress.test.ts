@@ -7,7 +7,6 @@ import {
   type DeriveBuildProgressInput,
 } from './build-progress.js';
 import { getChromeContentWidth, buildProgressRowCount } from '../layout/chrome-rows.js';
-import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import { lifecycleStore, type LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
   OperationsState,
@@ -194,7 +193,6 @@ function tasksState(tasks: WorkflowTask[], overrides: Partial<TasksState> = {}):
   return {
     currentTask: 1,
     currentAttempt: 1,
-    attemptAllowance: BOUNDS.attemptsPerLineage,
     totalTasks: tasks.length,
     taskMap: new Map(tasks.map((task) => [task.id, task])),
     tasks,
@@ -470,7 +468,7 @@ describe('deriveBuildProgress', () => {
     }
   });
 
-  it('states the attempt against the lineage attempt allowance', () => {
+  it('states the attempt number without a maximum', () => {
     const progress = deriveBuildProgress(
       input({
         tasks: tasksState([{ id: 'T001', title: 'One', status: 'in_progress' }], {
@@ -479,41 +477,36 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.attempt).toEqual({ current: 2, max: BOUNDS.attemptsPerLineage });
-    expect(buildProgressRows(progress, getChromeContentWidth(120))[0]?.text).toContain(
-      `attempt 2 of ${BOUNDS.attemptsPerLineage}`,
-    );
+    expect(progress.attempt).toBe(2);
+    const counts = buildProgressRows(progress, getChromeContentWidth(120))[0]?.text;
+    expect(counts).toContain('attempt 2');
+    expect(counts).not.toContain(' of ');
   });
 
-  // A brief resumed after Continue granted more attempts is on its lineage's sixth attempt of
-  // twelve, not on a fresh first one: the block states the count the engine recorded.
-  it('states the lineage attempt and allowance the task events carry, after a grant', () => {
+  // A brief resumed after Continue is on its lineage's sixth attempt, not on a fresh first one:
+  // the block states the count the engine recorded.
+  it('states the lineage attempt the task events carry, after a continue', () => {
     resetWorkflow();
-    addEvent(makeTaskStart({ taskId: taskId('T001'), lineageAttempt: 6, attemptAllowance: 12 }));
+    addEvent(makeTaskStart({ taskId: taskId('T001'), lineageAttempt: 6 }));
 
     const resumed = deriveBuildProgress(input({ tasks: tasksStore.get() }));
-    expect(resumed.attempt).toEqual({ current: 6, max: 12 });
-    expect(buildProgressRows(resumed, getChromeContentWidth(120))[0]?.text).toContain(
-      'attempt 6 of 12',
-    );
+    expect(resumed.attempt).toBe(6);
+    expect(buildProgressRows(resumed, getChromeContentWidth(120))[0]?.text).toContain('attempt 6');
 
-    addEvent(
-      makeRetry({ taskId: taskId('T001'), attempt: 1, lineageAttempt: 7, attemptAllowance: 12 }),
-    );
+    addEvent(makeRetry({ taskId: taskId('T001'), attempt: 1, lineageAttempt: 7 }));
     const retried = deriveBuildProgress(input({ tasks: tasksStore.get() }));
-    expect(retried.attempt).toEqual({ current: 7, max: 12 });
+    expect(retried.attempt).toBe(7);
     addEvent({
       type: 'implementer_generate_running',
       ts: NOW,
       phase: 'implementing',
       taskId: taskId('T001'),
       lineageAttempt: 8,
-      attemptAllowance: 12,
     });
     const consulted = deriveBuildProgress(input({ tasks: tasksStore.get() }));
-    expect(consulted.attempt).toEqual({ current: 8, max: 12 });
+    expect(consulted.attempt).toBe(8);
     expect(buildProgressRows(consulted, getChromeContentWidth(120))[0]?.text).toContain(
-      'attempt 8 of 12',
+      'attempt 8',
     );
     addEvent({
       type: 'implementer_generate_running',
@@ -521,7 +514,7 @@ describe('deriveBuildProgress', () => {
       phase: 'implementing',
       taskId: taskId('T001'),
     });
-    expect(tasksStore.get()).toMatchObject({ currentAttempt: 8, attemptAllowance: 12 });
+    expect(tasksStore.get()).toMatchObject({ currentAttempt: 8 });
     resetWorkflow();
   });
 
@@ -1097,7 +1090,7 @@ describe('buildProgressRows', () => {
       { text: ' · 1 ', tone: 'textDim' },
       { text: 'failed', tone: 'error' },
       { text: ' · ', tone: 'textDim' },
-      { text: `attempt 2 of ${BOUNDS.attemptsPerLineage}`, tone: 'textDim' },
+      { text: 'attempt 2', tone: 'textDim' },
     ]);
   });
 
@@ -1432,7 +1425,7 @@ describe('buildProgressRows', () => {
       expect(buildProgressRows(deriveBuildProgress(input()), width)).toHaveLength(3);
       expect(buildProgressRows(deriveBuildProgress(retry), width)).toHaveLength(3);
       expect(buildProgressRows(deriveBuildProgress(retry), width)[0]?.text).toBe(
-        `0/1 briefs passed · attempt 2 of ${BOUNDS.attemptsPerLineage}`,
+        '0/1 briefs passed · attempt 2',
       );
     }
   });

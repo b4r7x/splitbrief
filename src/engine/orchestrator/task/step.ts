@@ -27,7 +27,6 @@ import {
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { denialMessage } from './attempt-gate.js';
 import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
-import { isConsultBoundReason } from '../recovery/builders/consult.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { retryAndRecord, consultHandedBackToLoop } from './retry.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
@@ -398,7 +397,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     task,
     initialError: gated.error,
     ...(gated.correction && { initialAnswer: gated.error }),
-    initialDiagnosis: gated.diagnosis,
+    initialChecks: gated.failure,
     state,
     taskStartSnapshot,
     tokensBefore,
@@ -411,7 +410,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return rerun ?? retry.state;
   }
   const halt = retry.state.pendingRecovery;
-  if (!retry.completed && halt !== undefined && !isConsultBoundReason(halt.reason)) {
+  if (!retry.completed && halt !== undefined && halt.reason !== 'no-progress') {
     const warning = await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
     if (warning !== undefined) {
       publishWarning({ bus: wctx.bus, phase: retry.state.phase, message: warning });

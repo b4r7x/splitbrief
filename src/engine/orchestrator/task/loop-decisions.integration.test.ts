@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeImplState, spentAnswersLineage } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeBusRecorder,
@@ -70,10 +70,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 
 function lineage(overrides: Partial<LineageRecord>): LineageRecord {
   return {
-    consults: 0,
     attempts: 0,
-    consultAllowance: 2,
-    attemptAllowance: 8,
     dispatchedRevision: {},
     consultRecords: [],
     replacedParents: [],
@@ -230,7 +227,7 @@ function eventTypes(events: readonly EngineEvent[]): string[] {
   return events.flatMap((event) => {
     if (event.type === 'consult_answered') return [`consult:${event.reason}:${event.action}`];
     if (event.type === 'task_retry') return ['retry'];
-    if (event.type === 'consult_bound_spent') return ['bound-spent'];
+    if (event.type === 'error' && event.code === 'no_progress') return ['no-progress'];
     return [];
   });
 }
@@ -300,7 +297,6 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     ];
     expect(result.state.plan?.decisions).toEqual(ledger);
     expect(loadState({ projectDir, sessionId })?.plan?.decisions).toEqual(ledger);
-    expect(result.state.plannerCalls?.used ?? 0).toBe(0);
   });
 
   it('records a decision once when every retry reports it again, and retries a red validation with the exact errors', async () => {
@@ -334,7 +330,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(result.state.plan?.decisions).toEqual([
       { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
     ]);
-    expect(result.state.plannerCalls?.used).toBe(1);
+    expect(result.state.lineages?.T001?.progress?.answers).toBe(1);
   });
 
   it('records a new decision a retry reports beside the decision of the attempt before it', async () => {
@@ -433,12 +429,12 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     return scriptedValidator({ T001: Array<string>(8).fill(TS_ERROR) });
   }
 
-  /** T001 has spent its consults, so its ladder halts with the files of its last attempt. */
-  function spentConsults(): Partial<WorkflowState> {
-    return { lineages: { T001: lineage({ consults: 2 }) } };
+  /** T001 has spent its planner answers, so its ladder halts with the files of its last attempt. */
+  function spentAnswers(): Partial<WorkflowState> {
+    return { lineages: { T001: spentAnswersLineage() } };
   }
 
-  describe('Skip on a consult-bound halt', () => {
+  describe('Skip on a no-progress halt', () => {
     async function skip(
       projectDir: string,
       sessionId: string,
@@ -457,7 +453,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       return applied.state;
     }
 
-    it("takes back the brief's file when its consults are spent", async () => {
+    it("takes back the brief's file when its planner answers are spent", async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
       const { bus, events } = makeBusRecorder();
@@ -465,13 +461,13 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const halted = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task], spentConsults()),
+        state: stateWithPlan([task], spentAnswers()),
         implementer: writingImplementer(['src/a.ts']),
         validator: redValidator(),
         planner: failingPlanner(),
         bus,
       });
-      expect(halted.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+      expect(halted.state.pendingRecovery?.reason).toBe('no-progress');
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(true);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual(['src/a.ts']);
       // The ledger keeps the decisions of the attempts that failed validation.
@@ -499,7 +495,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', 'src/b.ts'] });
       const implementer = writingImplementer(['src/a.ts', 'src/b.ts']);
-      // The consult that Continue grants answers, and the next failure spends the bound again.
+      // After Continue the planner answers again, until the same failure halts the brief again.
       const { planner } = scriptedPlanner({ consult: guidance });
       const validator = redValidator();
       const { bus, events } = makeBusRecorder();
@@ -507,13 +503,13 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const first = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task], spentConsults()),
+        state: stateWithPlan([task], spentAnswers()),
         implementer,
         validator,
         planner,
         bus,
       });
-      expect(first.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+      expect(first.state.pendingRecovery?.reason).toBe('no-progress');
       const continued = await applyRecoveryAction({
         projectDir,
         sessionId,
@@ -531,7 +527,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
         planner,
         bus,
       });
-      expect(second.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+      expect(second.state.pendingRecovery?.reason).toBe('no-progress');
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(true);
       expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(true);
 
@@ -554,7 +550,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const halted = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task], spentConsults()),
+        state: stateWithPlan([task], spentAnswers()),
         implementer: writingImplementer([USER_FILE]),
         validator: redValidator(),
         planner: failingPlanner(),
@@ -618,14 +614,14 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const first = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task], spentConsults()),
+        state: stateWithPlan([task], spentAnswers()),
         implementer,
         validator,
         planner,
         bus,
         hooks,
       });
-      expect(first.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+      expect(first.state.pendingRecovery?.reason).toBe('no-progress');
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual(['src/a.ts']);
       const continued = await applyRecoveryAction({
         projectDir,
@@ -690,65 +686,59 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     });
   });
 
-  it.each([
-    ['consult-bound-spent', { lineages: { T001: lineage({ consults: 2 }) } }],
-    ['planner-calls-spent', { plannerCalls: { used: 10, allowance: 10 } }],
-  ] as const)(
-    'restarts a brief continued past %s with the last failing output',
-    async (reason, bounds) => {
-      const { projectDir, sessionId } = setupProject();
-      const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-      const implementer = decidingImplementer([]);
-      const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
-      const { planner } = scriptedPlanner({});
-      const { bus, events } = makeBusRecorder();
+  it('restarts a brief continued past no-progress with the last failing output', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+    const implementer = decidingImplementer([]);
+    const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
+    const { planner } = scriptedPlanner({});
+    const { bus, events } = makeBusRecorder();
 
-      const halted = await runLoop({
-        projectDir,
-        sessionId,
-        state: stateWithPlan([task], bounds),
-        implementer,
-        validator,
-        planner,
-        bus,
-      });
-      expect(halted.state.pendingRecovery?.reason).toBe(reason);
-      expect(eventTypes(events)).toEqual(['retry', 'bound-spent']);
+    const halted = await runLoop({
+      projectDir,
+      sessionId,
+      state: stateWithPlan([task], spentAnswers()),
+      implementer,
+      validator,
+      planner,
+      bus,
+    });
+    expect(halted.state.pendingRecovery?.reason).toBe('no-progress');
+    expect(eventTypes(events)).toEqual(['retry', 'no-progress']);
 
-      const applied = await applyRecoveryAction({
-        projectDir,
-        sessionId,
-        state: halted.state,
-        action: 'continue',
-        bus,
-      });
-      expect(applied.ok).toBe(true);
-      if (!applied.ok) return;
-      expect(applied.state.lineages?.T001?.carriedFailure).toContain(LINT_ERROR);
+    const applied = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: halted.state,
+      action: 'continue',
+      bus,
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.state.lineages?.T001?.carriedFailure).toContain(LINT_ERROR);
 
-      const resumed = await runLoop({
-        projectDir,
-        sessionId,
-        state: applied.state,
-        implementer,
-        validator,
-        planner,
-        bus,
-      });
+    const resumed = await runLoop({
+      projectDir,
+      sessionId,
+      state: applied.state,
+      implementer,
+      validator,
+      planner,
+      bus,
+    });
 
-      expect(resumed.state.pendingRecovery).toBeUndefined();
-      expect(resumed.status).toBe('complete');
-      // The restart is a retry carrying the last failing output, never a bare re-implement.
-      expect(implementer.implement).toHaveBeenCalledTimes(1);
-      const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-      expect(retries).toHaveLength(2);
-      expect(retries[0]?.error).toContain(TS_ERROR);
-      expect(retries[1]?.error).toContain(LINT_ERROR);
-      expect(resumed.state.lineages?.T001?.carriedFailure).toBeUndefined();
-    },
-  );
+    expect(resumed.state.pendingRecovery).toBeUndefined();
+    expect(resumed.status).toBe('complete');
+    // The restart is a retry carrying the last failing output, never a bare re-implement.
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
+    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
+    expect(retries).toHaveLength(2);
+    expect(retries[0]?.error).toContain(TS_ERROR);
+    expect(retries[1]?.error).toContain(LINT_ERROR);
+    expect(resumed.state.lineages?.T001?.carriedFailure).toBeUndefined();
+  });
 
-  it('continues a brief past consult-bound-spent from the files its last attempt left', async () => {
+  it('continues a brief past no-progress from the files its last attempt left', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', 'src/b.ts'] });
     const usage = { inputTokens: 10, outputTokens: 5 };
@@ -802,10 +792,8 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       base: { snapshotId: base.manifest.id, head: null },
     };
 
-    const halted = await loop(
-      stateWithPlan([task], { lineages: { T001: lineage({ consults: 2 }) }, workspace }),
-    );
-    expect(halted.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+    const halted = await loop(stateWithPlan([task], { ...spentAnswers(), workspace }));
+    expect(halted.state.pendingRecovery?.reason).toBe('no-progress');
     expect(readFileSync(join(wctx.workspaceDir, 'src/a.ts'), 'utf-8')).toBe(
       'export const a = 2;\n',
     );
@@ -850,7 +838,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       }),
     });
     const carried = stateWithPlan([task], {
-      lineages: { T001: lineage({ consults: 2, carriedFailure: LINT_ERROR }) },
+      lineages: { T001: lineage({ carriedFailure: LINT_ERROR }) },
     });
 
     const stopped = await runLoop({

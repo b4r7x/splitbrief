@@ -60,7 +60,6 @@ describe('applyRecoveryAction: persisted success effects', () => {
       createdAt,
       validationSummary: 'all retries failed',
       attempts: 3,
-      maxAttempts: 3,
     });
     const state = { ...implementingState([completedTask, task], 1), pendingRecovery: issue };
     const { bus, events } = makeBus(projectDir, sessionId);
@@ -103,7 +102,6 @@ describe('applyRecoveryAction: persisted success effects', () => {
       createdAt,
       validationSummary: 'failed after retries',
       attempts: 3,
-      maxAttempts: 3,
     });
     const state = { ...implementingState([task]), pendingRecovery: issue };
     const { bus, events } = makeBus(projectDir, sessionId);
@@ -137,7 +135,6 @@ describe('applyRecoveryAction: persisted success effects', () => {
       createdAt,
       validationSummary: 'failed after retries',
       attempts: 3,
-      maxAttempts: 3,
     });
     const state = { ...implementingState([task]), pendingRecovery: issue };
     const { bus } = makeBus(projectDir, sessionId);
@@ -161,7 +158,6 @@ describe('applyRecoveryAction: persisted success effects', () => {
       createdAt,
       validationSummary: 'lint failed',
       attempts: 1,
-      maxAttempts: 3,
       selectedImplementerProfile: 'local-qwen',
       allowRetryOverride: true,
     });

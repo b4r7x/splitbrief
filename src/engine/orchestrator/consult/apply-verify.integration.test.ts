@@ -537,6 +537,7 @@ describe('applyConsultAnswer verify', () => {
     expect(result).toMatchObject({
       action: 'failed',
       reason: expect.stringContaining('K1'),
+      checks: [{ source: 'check K1', keys: ['exited with code 1'] }],
     });
     expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
       { taskId: 'T003', results: [{ id: 'K1', status: 'fail' }] },

@@ -2931,7 +2931,6 @@ describe('runWorkflow — recovery resume', () => {
       task,
       validationSummary: 'failed check',
       attempts: 1,
-      maxAttempts: 2,
       allowRetryOverride: true,
       createdAt: new Date().toISOString(),
     });
@@ -2996,7 +2995,6 @@ describe('runWorkflow — recovery resume', () => {
       task,
       validationSummary: 'tsc failed',
       attempts: 1,
-      maxAttempts: 2,
       createdAt: '2026-04-29T00:00:00.000Z',
     });
     const savedState = transition(implementingState([task]), {
@@ -3046,7 +3044,6 @@ describe('runWorkflow — recovery resume', () => {
       task,
       validationSummary: 'tsc failed',
       attempts: 1,
-      maxAttempts: 2,
       createdAt: '2026-04-29T00:00:00.000Z',
     });
     // The saved session started an hour before this resume. The resumed run must accumulate
@@ -3104,7 +3101,6 @@ describe('runWorkflow — recovery resume', () => {
       task,
       validationSummary: 'tsc failed',
       attempts: 1,
-      maxAttempts: 2,
       createdAt: '2026-04-29T00:00:00.000Z',
     });
     // makeImplStateWithMetadata pins plannerTool 'claude-code' / implementer 'ollama' (qwen2.5).
@@ -3168,7 +3164,6 @@ describe('runWorkflow — recovery resume', () => {
       task,
       validationSummary: 'tsc failed',
       attempts: 1,
-      maxAttempts: 2,
       createdAt: '2026-04-29T00:00:00.000Z',
     });
     const savedState = transition(implementingState([task]), {

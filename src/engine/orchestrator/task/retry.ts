@@ -1,5 +1,9 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type {
+  ChangedFilesSnapshot,
+  FailureMark,
+  WorkflowState,
+} from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
 import type { ReviewerConfig } from '../../../core/schemas/reviewer-config.js';
@@ -46,8 +50,8 @@ export type RetryAndRecordOptions = {
   wctx: WorkflowContext;
   task: Task;
   initialError: string;
-  /** The first attempt's validation failure line, quoted as the diagnosis in place of `initialError`. */
-  initialDiagnosis?: string | undefined;
+  /** The checks that failed the first attempt. */
+  initialChecks?: FailureMark | undefined;
   state: WorkflowState;
   taskStartSnapshot?: ChangedFilesSnapshot;
   initialChangedFiles?: string[] | undefined;
@@ -261,7 +265,7 @@ export async function retryAndRecord(
       wctx,
       task,
       initialError,
-      ...(opts.initialDiagnosis !== undefined && { initialDiagnosis: opts.initialDiagnosis }),
+      ...(opts.initialChecks !== undefined && { initialChecks: opts.initialChecks }),
       currentState: state,
       taskStartSnapshot,
       dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),

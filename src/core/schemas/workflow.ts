@@ -17,7 +17,6 @@ import {
   TriageInputSchema,
   TriageResultSchema,
 } from './review.js';
-import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { CONSULT_REASONS, CONSULT_SEATS, ConsultAnswerSchema } from './consult.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema, SeatSwapCandidateSchema } from './recovery/schemas.js';
@@ -178,11 +177,26 @@ export const AttemptFailureSchema = z.object({
 });
 export type AttemptFailure = z.infer<typeof AttemptFailureSchema>;
 
+/** A failure as the progress judgement compares it: each failing source with its failure keys. */
+export const FailureMarkSchema = z.array(
+  z.object({ source: z.string(), keys: z.array(z.string()) }),
+);
+export type FailureMark = z.infer<typeof FailureMarkSchema>;
+
+/**
+ * The failure the planner saw at its last answer on a lineage, how many answers in a row before
+ * that one did not move it, and how many answers the lineage got.
+ */
+export const LineageProgressSchema = z.object({
+  failure: FailureMarkSchema,
+  unmoved: nonnegativeInteger,
+  answers: nonnegativeInteger,
+});
+export type LineageProgress = z.infer<typeof LineageProgressSchema>;
+
 export const LineageRecordSchema = z.object({
-  consults: nonnegativeInteger,
   attempts: nonnegativeInteger,
-  consultAllowance: nonnegativeInteger,
-  attemptAllowance: nonnegativeInteger,
+  progress: LineageProgressSchema.optional(),
   /** The revision that already dispatched an attempt; a Try again of it runs on its own files. */
   dispatchedRevision: z.record(z.string(), z.number().int()).default({}),
   consultRecords: z.preprocess(dropRetiredConsults, z.array(ConsultRecordSchema)).default([]),
@@ -197,26 +211,12 @@ export const LineageRecordSchema = z.object({
 });
 export type LineageRecord = z.infer<typeof LineageRecordSchema>;
 
-export const PlannerCallsSchema = z.object({
-  used: nonnegativeInteger,
-  allowance: nonnegativeInteger,
-});
-export type PlannerCalls = z.infer<typeof PlannerCallsSchema>;
-
-export function plannerCallsOf(state: Pick<WorkflowState, 'plannerCalls'>): PlannerCalls {
-  return state.plannerCalls ?? { used: 0, allowance: BOUNDS.plannerCallsPerRun };
-}
-
-/** The attempts a task's lineage has spent and may spend; a lineage with no record starts fresh. */
+/** The attempts a task's lineage has spent; a lineage with no record starts fresh. */
 export function lineageAttemptsOf(
   state: Pick<WorkflowState, 'lineages'>,
   task: Pick<Task, 'id' | 'parentId'>,
-): { used: number; allowance: number } {
-  const lineage = state.lineages?.[lineageIdOf(task)];
-  return {
-    used: lineage?.attempts ?? 0,
-    allowance: lineage?.attemptAllowance ?? BOUNDS.attemptsPerLineage,
-  };
+): number {
+  return state.lineages?.[lineageIdOf(task)]?.attempts ?? 0;
 }
 
 export const FixCyclesSchema = z.object({
@@ -422,7 +422,6 @@ const WorkflowStateFields = {
     )
     .optional(),
   lineages: z.record(z.string(), LineageRecordSchema).optional(),
-  plannerCalls: PlannerCallsSchema.optional(),
   userAnswers: PlannerConversationSchema.shape.answers.optional(),
   seatWait: SeatWaitSchema.optional(),
   seatSwitches: z.array(SeatSwitchRecordSchema).optional(),
@@ -530,6 +529,7 @@ const LEGACY_STATE_KEYS = [
   'briefRecovery',
   'budgetPauseAcknowledgedAtCost',
   'decisionConfirms',
+  'plannerCalls',
 ] as const;
 
 function stripLegacyStateKeys(value: unknown): unknown {

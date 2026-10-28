@@ -38,7 +38,6 @@ function makeOperation(overrides: Partial<ActiveOperation> = {}): ActiveOperatio
 const NO_BRIEF: TasksState = {
   currentTask: 0,
   currentAttempt: 1,
-  attemptAllowance: 8,
   totalTasks: 0,
   taskMap: new Map(),
   tasks: [],

@@ -246,7 +246,7 @@ export function eventRowBlock(options: {
         keyPrefix,
         // The build block counts attempts, first try included. A retry index over a retry budget
         // beside it would put two numbers on one screen for one fact.
-        text: `Retry  attempt ${event.lineageAttempt ?? event.attempt + 1} of ${event.attemptAllowance ?? event.maxRetries + 1}`,
+        text: `Retry  attempt ${event.lineageAttempt ?? event.attempt + 1}`,
         width: ctx.width,
         tone: 'textDim',
       });

@@ -76,7 +76,7 @@ function applyStop(stop: FixtureStopState): void {
 // The stop ladder lives in a store, not in the event stream, and the workflow screen resets the
 // session-scoped stores from a mount effect (`use-runner.ts`) and replays the projection after it.
 // Stamping on every run start is what survives that replay.
-const CONSULT_BOUND_NOTE = 'run the formatter first';
+const NO_PROGRESS_NOTE = 'run the formatter first';
 const PLAN_CARD_COMMENT_DRAFT = 'Split the CLI change into a separate task.';
 const TYPED_WORDS = 'keep the old lockfile';
 
@@ -375,12 +375,12 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       },
     });
   }
-  if (projection.scenarioId === 'workflow-recovery-consult-bound-note') {
+  if (projection.scenarioId === 'workflow-recovery-no-progress-note') {
     return () => ({
       ...base(),
       afterMount: async (write) => {
         await write.press('\t');
-        await write.press(CONSULT_BOUND_NOTE);
+        await write.press(NO_PROGRESS_NOTE);
       },
     });
   }
@@ -725,7 +725,7 @@ const checkpointPredicates = [
       'Final review after 1 fix cycle passed',
       'Review T002 failed',
       'Blocking F1',
-      'attempt 2 of 4',
+      'attempt 2',
       'fixes T003',
     ),
   ],
@@ -1109,11 +1109,11 @@ const checkpointPredicates = [
   [checkpointId('spent-b2-replay-t002-completion'), includesAll()],
   [checkpointId('plan-activity'), includesAll('src/core/crew/identity.ts')],
   [checkpointId('retry-exhausted'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
-  [checkpointId('consult-bound'), includesAll(WORKFLOW_FIXTURE_TEXT.consultBound)],
+  [checkpointId('no-progress'), includesAll(WORKFLOW_FIXTURE_TEXT.noProgress)],
   [checkpointId('many-files'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
   [
-    checkpointId('consult-bound-note'),
-    includesAll('Continue with the typed correction', CONSULT_BOUND_NOTE),
+    checkpointId('no-progress-note'),
+    includesAll('Continue with the typed correction', NO_PROGRESS_NOTE),
   ],
   [
     checkpointId('recovery-slash-draft'),

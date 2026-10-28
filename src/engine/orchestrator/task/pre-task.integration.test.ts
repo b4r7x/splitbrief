@@ -84,16 +84,13 @@ describe('runPreTaskHooksAndPublish', () => {
     ).toBe(true);
   });
 
-  it("announces the brief with its lineage's attempt number and allowance", async () => {
+  it("announces the brief with its lineage's attempt number", async () => {
     const task = makeTask({ id: 'T001' });
     const state = {
       ...implementingState([task]),
       lineages: {
         T001: {
-          consults: 0,
-          consultAllowance: 2,
           attempts: 3,
-          attemptAllowance: 12,
           dispatchedRevision: {},
           consultRecords: [],
           replacedParents: [],
@@ -112,10 +109,9 @@ describe('runPreTaskHooksAndPublish', () => {
       setTrackedState: vi.fn(),
     });
 
-    expect(events.find((e) => e.type === 'task_started')).toMatchObject({
-      lineageAttempt: 4,
-      attemptAllowance: 12,
-    });
+    const started = events.find((e) => e.type === 'task_started');
+    expect(started).toMatchObject({ lineageAttempt: 4 });
+    expect(started).not.toHaveProperty('attemptAllowance');
   });
 
   it('a resumed cut attempt keeps the task-start snapshot its brief began from', async () => {

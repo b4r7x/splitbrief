@@ -1,5 +1,11 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type {
+  ChangedFilesSnapshot,
+  FailureMark,
+  WorkflowState,
+} from '../../../core/schemas/workflow.js';
+import { failureMark, judgeProgress, type ProgressStop } from '../../../core/state/progress.js';
+import { lineageIdOf } from '../../../core/state/task-insert.js';
 import type { ConsultReason } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
@@ -7,24 +13,14 @@ import { recordNoProgressCut, runLocalRetries } from './local-retries.js';
 import { runRetryStep, type BlockedReport } from './step.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import {
-  publishConsultBoundSpent,
-  publishError,
-  publishWarning,
-  publishWarningFromError,
-} from '../events.js';
+import { publishError, publishWarning, publishWarningFromError } from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { consultSeat, requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { revertedDir } from '../../../core/paths.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
-import {
-  buildConsultBoundRecoveryIssue,
-  consultBoundSpent,
-  attemptBoundSpent,
-  type ConsultBoundSpent,
-} from '../recovery/builders/consult.js';
+import { buildNoProgressRecoveryIssue } from '../recovery/builders/consult.js';
 import { haltAttempts } from '../recovery/builders/details.js';
 import {
   buildRetryExhaustedRecoveryIssue,
@@ -51,13 +47,13 @@ type HandleRetryOptions = {
   wctx: WorkflowContext;
   task: Task;
   initialError: string;
-  /** The first attempt's validation failure line; the diagnosis falls back to `initialError`. */
-  initialDiagnosis?: string | undefined;
   currentState: WorkflowState;
   taskStartSnapshot?: ChangedFilesSnapshot;
   dependsOnFiles?: string[];
   /** How the first attempt ended, when it ended on a machine outcome. */
   initialFailure?: RetryAttemptFailure | undefined;
+  /** The checks that failed the first attempt. */
+  initialChecks?: FailureMark | undefined;
   /** The first attempt's blocked report, when it stopped asking for a decision. */
   initialBlocked?: BlockedReport | undefined;
   /** The user's answer to a change of what the first attempt reported. */
@@ -216,46 +212,46 @@ async function attemptChangedFiles(
   }
 }
 
-/** The lineage or the run is out of the budget a consult needs; the operator decides the grant. */
-function consultBoundHalt(
+type NoProgress = Readonly<{
+  task: Task;
+  stop: ProgressStop;
+  failure: FailureMark;
+  answers: number;
+  lastError: string;
+  attempts: number;
+  handBack: string | undefined;
+}>;
+
+/** The planner's answers did not move the failure, or the lineage used all its answers; the operator decides. */
+function noProgressHalt(
   ctx: EscalationContext,
-  task: Task,
   state: WorkflowState,
-  lastDiagnosis: string,
-  lastError: string,
-  attempts: number,
-  handBack: string | undefined,
-  spent: ConsultBoundSpent,
+  halt: NoProgress,
 ): { state: WorkflowState; result: RetryResult } {
-  const issue = buildConsultBoundRecoveryIssue({
-    reason: spent.reason,
+  const { task } = halt;
+  const lastConsult = state.lineages?.[lineageIdOf(task)]?.consultRecords.at(-1);
+  const issue = buildNoProgressRecoveryIssue({
     phase: state.phase,
     task,
-    lastDiagnosis,
-    failingOutput: lastError,
-    consults: spent.consults,
-    consultAllowance: spent.consultAllowance,
-    attempts: spent.attempts,
-    attemptAllowance: spent.attemptAllowance,
-    plannerCalls: spent.plannerCalls,
-    plannerCallAllowance: spent.plannerCallAllowance,
+    stop: halt.stop,
+    failure: halt.failure,
+    answers: halt.answers,
+    lastDiagnosis: lastConsult?.diagnosis ?? halt.lastError,
+    failingOutput: halt.lastError,
+    ...haltAttempts(state, task, { booked: true }),
     createdAt: nowIso(),
   });
-  publishConsultBoundSpent({ bus: ctx.bus, phase: state.phase });
   publishError({
     bus: ctx.bus,
     phase: state.phase,
     message: issue.message,
-    safety: {
-      category: 'recovery',
-      code: spent.reason === 'planner-calls-spent' ? 'planner_calls_spent' : 'consult_bound_spent',
-    },
+    safety: { category: 'recovery', code: 'no_progress' },
   });
   return {
     state: raisePendingRecovery(ctx, state, issue),
-    result: failedRetry(attempts, {
-      lastError,
-      ...(handBack !== undefined && { handBack }),
+    result: failedRetry(halt.attempts, {
+      lastError: halt.lastError,
+      ...(halt.handBack !== undefined && { handBack: halt.handBack }),
     }),
   };
 }
@@ -266,10 +262,10 @@ function consultBoundHalt(
  * consult seat's instructions in its error block; a rewrite or a split replaces
  * the brief and hands back to the task loop; verify completes in place. A
  * correction the user sent while the checks ran is delivered by the next
- * attempt, with no retry rung and no consult. Every consult and attempt
- * is counted against the lineage and the run's consult allowance, and a spent
- * bound halts for the operator's grant quoting the diagnosis of the failure
- * that raised it.
+ * attempt, with no retry rung and no consult. Before each consult the failure is
+ * judged against the one the last answer saw: two answers in a row that did not
+ * move it, or too many answers on the lineage, halt for the operator with the
+ * failure and the last diagnosis.
  */
 export async function handleRetryAndEscalation(
   opts: HandleRetryOptions,
@@ -301,7 +297,8 @@ export async function handleRetryAndEscalation(
   let handBack: string | undefined;
   let blocked: BlockedReport | undefined = opts.initialBlocked;
   let attemptSnapshot: ChangedFilesSnapshot = taskStartSnapshot;
-  let lastDiagnosis = opts.initialDiagnosis ?? initialError;
+  let checks = opts.initialChecks;
+  let callOutcome = opts.initialFailure?.outcome;
   let answer: string | undefined;
 
   if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
@@ -314,14 +311,15 @@ export async function handleRetryAndEscalation(
       task,
       state,
       lastError,
-      lastDiagnosis,
+      checks,
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
       ...(opts.initialAnswer !== undefined && { answer: opts.initialAnswer }),
     });
     state = retries.state;
     task = retries.task;
     lastError = retries.lastError;
-    lastDiagnosis = retries.diagnosis ?? lastError;
+    checks = retries.checks;
+    callOutcome = retries.lastFailure?.outcome;
     attempts = retries.attempts;
     handBack = handBackOf(retries) ?? handBack;
     attemptSnapshot = retries.attemptSnapshot ?? attemptSnapshot;
@@ -382,20 +380,6 @@ export async function handleRetryAndEscalation(
     deliversAnswer: boolean,
   ): Promise<{ state: WorkflowState; result: RetryResult } | null> => {
     if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
-    const spentBeforeAttempt = attemptBoundSpent(state, task);
-    if (spentBeforeAttempt !== undefined) {
-      return consultBoundHalt(
-        ctx,
-        task,
-        state,
-        lastDiagnosis,
-        lastError,
-        attempts,
-        handBack,
-        spentBeforeAttempt,
-      );
-    }
-
     const nextAttempts = attempts + 1;
     const outcome = await runRetryStep({
       ctx,
@@ -429,7 +413,8 @@ export async function handleRetryAndEscalation(
     attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
     blocked = outcome.blocked;
     answer = outcome.answer;
-    lastDiagnosis = outcome.diagnosis ?? lastError;
+    checks = outcome.checks;
+    callOutcome = outcome.lastFailure?.outcome;
     state = transitionAndSave(ctx, state, {
       type: 'COUNT_ATTEMPT',
       taskId: task.id,
@@ -451,18 +436,24 @@ export async function handleRetryAndEscalation(
       continue;
     }
 
-    const spent = consultBoundSpent(state, task);
-    if (spent !== undefined) {
-      return consultBoundHalt(
-        ctx,
+    const progress = state.lineages?.[lineageIdOf(task)]?.progress;
+    const failure = failureMark({
+      ...(checks !== undefined && { checks }),
+      ...(callOutcome !== undefined && { callOutcome }),
+      ...(blocked !== undefined && { blocked }),
+      error: lastError,
+    });
+    const judged = judgeProgress(progress, failure);
+    if (judged.stop !== null) {
+      return noProgressHalt(ctx, state, {
         task,
-        state,
-        lastDiagnosis,
+        stop: judged.stop,
+        failure,
+        answers: progress?.answers ?? 0,
         lastError,
         attempts,
         handBack,
-        spent,
-      );
+      });
     }
 
     const snapshot = attemptSnapshot ?? taskStartSnapshot;
@@ -489,10 +480,10 @@ export async function handleRetryAndEscalation(
         reason,
         failingOutput: lastError,
         report: blocked ?? null,
+        progress: judged.next,
       },
     );
     if ('error' in consult) throw consult.error;
-    lastDiagnosis = consult.answer.answer.diagnosis;
 
     const applied = await applyConsultAnswer(
       {
@@ -547,7 +538,8 @@ export async function handleRetryAndEscalation(
     if (applied.action === 'failed') {
       lastError = applied.reason;
       blocked = undefined;
-      lastDiagnosis = applied.reason;
+      checks = applied.checks;
+      callOutcome = undefined;
       continue;
     }
 

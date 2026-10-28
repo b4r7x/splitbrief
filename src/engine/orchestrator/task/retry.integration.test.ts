@@ -178,7 +178,7 @@ describe('retryAndRecord — retry budget', () => {
     );
   });
 
-  it('spends the local retries then the consult budget, persisting the bound halt', async () => {
+  it('spends the local retries then halts when the consults leave the failure unmoved', async () => {
     const task = makeTask({ id: 'T001' });
     let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
@@ -221,14 +221,14 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.tasks[0]?.status).toBe('in_progress');
     expect(res.state.currentTaskIndex).toBe(0);
     expect(res.state.pendingRecovery).toMatchObject({
-      reason: 'consult-bound-spent',
+      reason: 'no-progress',
       taskId: 'T001',
-      // The first attempt, one local retry and the guidance attempt each consult answered with.
+      // The first attempt, one local retry and the attempt after each of the two consults.
       attempts: 4,
       availableActions: ['continue', 'skip-current-task', 'end-run'],
     });
     expect(loadState(wctx)?.pendingRecovery).toMatchObject({
-      reason: 'consult-bound-spent',
+      reason: 'no-progress',
       taskId: 'T001',
     });
 
@@ -273,7 +273,7 @@ describe('retryAndRecord — retry budget', () => {
 
     expect(res.completed).toBe(false);
     const errorIndex = busEvents.findIndex(
-      (e) => e.type === 'error' && e.code === 'consult_bound_spent' && e.category === 'recovery',
+      (e) => e.type === 'error' && e.code === 'no_progress' && e.category === 'recovery',
     );
     const promptedIndex = busEvents.findIndex((e) => e.type === 'recovery_prompted');
     expect(errorIndex).toBeGreaterThanOrEqual(0);
@@ -346,7 +346,7 @@ describe('retryAndRecord — the exhaustion issue', () => {
 
     expect(res.state.pendingRecovery?.details).toEqual([
       'Last error: E',
-      'Attempts: 5/8',
+      'Attempts: 5',
       'Implementer said: H',
     ]);
   });

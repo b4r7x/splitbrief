@@ -7,6 +7,7 @@ import { plainUserMessage, type UserMessageInput } from '../../../core/types/use
 import { recordUserMessage } from '../transcript/user-message.js';
 import type {
   ChangedFilesSnapshot,
+  FailureMark,
   PlannerConversation,
   WorkflowState,
 } from '../../../core/schemas/workflow.js';
@@ -63,7 +64,7 @@ export type ConsultApplyOutcome =
   | Readonly<{ action: 'split-task'; tasks: Task[] }>
   | Readonly<{ action: 'completed'; task: Task; durationMs: number; bookedFiles: string[] }>
   | Readonly<{ action: 'correction'; answer: string }>
-  | Readonly<{ action: 'failed'; reason: string }>
+  | Readonly<{ action: 'failed'; reason: string; checks?: FailureMark }>
   | Readonly<{ action: 'skipped' }>;
 
 const consultApplyError = {
@@ -273,7 +274,11 @@ async function applyVerify(
   if (gated.correction) return { action: 'correction', answer: gated.error };
   const { acceptance } = gated;
   if (gated.stop !== undefined || !acceptance.accepted)
-    return { action: 'failed', reason: gated.error || 'the brief gate stopped' };
+    return {
+      action: 'failed',
+      reason: gated.error || 'the brief gate stopped',
+      checks: gated.failure,
+    };
 
   const commit = await validateCommitAndAdvance({
     task,

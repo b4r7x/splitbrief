@@ -165,7 +165,7 @@ const RETIRED_CONFIG_VALUES: readonly {
   {
     path: ['workflow', 'maxRetries'],
     notice:
-      'workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.',
+      'workflow.max_retries was retired and is ignored: the planner decides the retries while they make progress. Delete workflow.max_retries.',
   },
   ...(
     [

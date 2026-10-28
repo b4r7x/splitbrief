@@ -661,10 +661,7 @@ describe('recordedApiCreatedPaths', () => {
       tasks: [child, other],
       lineages: {
         T003: {
-          consults: 1,
           attempts: 2,
-          consultAllowance: 1,
-          attemptAllowance: 6,
           dispatchedRevision: { T003: 1 },
           consultRecords: [],
           replacedParents: [parent],

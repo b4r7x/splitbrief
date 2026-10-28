@@ -135,7 +135,6 @@ describe('runLocalRetries — corrections during checks', () => {
       task,
       state,
       lastError: 'failed check',
-      lastDiagnosis: 'failed check',
     });
 
     expect(outcome.result).toMatchObject({ completed: true, method: 'local' });
@@ -190,7 +189,6 @@ describe('runLocalRetries — corrections during checks', () => {
       task,
       state,
       lastError: 'check K1 failed',
-      lastDiagnosis: 'check K1 failed',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -198,11 +196,7 @@ describe('runLocalRetries — corrections during checks', () => {
     expect(outcome.result).toMatchObject({ completed: true, method: 'local', attempts: 1 });
     expect(outcome.state.tasks[0]?.status).toBe('done');
     expect(outcome.state.currentTaskIndex).toBe(1);
-    expect(outcome.state.lineages?.T001).toMatchObject({
-      attempts: 2,
-      attemptAllowance: 8,
-      consults: 0,
-    });
+    expect(outcome.state.lineages?.T001).toMatchObject({ attempts: 2, consultRecords: [] });
     expect(briefCorrections(outcome.state, task.id)).toEqual([]);
     expect(outcome.state.messageQueue).toEqual([]);
     expect(loadState(ref)?.messageQueue).toEqual([]);
@@ -255,7 +249,6 @@ describe('runLocalRetries — corrections during checks', () => {
       task,
       state,
       lastError: 'check K1 failed',
-      lastDiagnosis: 'check K1 failed',
     });
 
     expect(retry).toHaveBeenCalledTimes(2);
@@ -264,11 +257,7 @@ describe('runLocalRetries — corrections during checks', () => {
     expect(runCommand).toHaveBeenCalledTimes(2);
     expect(outcome.result).toMatchObject({ completed: true, method: 'local', attempts: 1 });
     expect(outcome.state.tasks[0]?.status).toBe('done');
-    expect(outcome.state.lineages?.T001).toMatchObject({
-      attempts: 3,
-      attemptAllowance: 8,
-      consults: 0,
-    });
+    expect(outcome.state.lineages?.T001).toMatchObject({ attempts: 3, consultRecords: [] });
     expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(1);
     expect(outcome.state.messageQueue[0]?.deliveredTo?.implementer).toBeDefined();
@@ -287,7 +276,6 @@ describe('runLocalRetries — aborted outcomes', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: ABORTED_OUTCOME_TEXT,
-      lastDiagnosis: ABORTED_OUTCOME_TEXT,
     });
 
     expect(outcome.attempts).toBe(0);
@@ -333,7 +321,6 @@ describe('runLocalRetries — aborted outcomes', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
     });
 
     await retryEnteredPromise;
@@ -370,13 +357,13 @@ describe('runLocalRetries — aborted outcomes', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
     });
 
     expect(order).toEqual(['row 1', 'call']);
     const firstRow = events.find((e) => e.type === 'task_retry');
     expect(firstRow?.type === 'task_retry' && firstRow.error).toBe('type error');
-    expect(firstRow).toMatchObject({ lineageAttempt: 1, attemptAllowance: 8 });
+    expect(firstRow).toMatchObject({ lineageAttempt: 1 });
+    expect(firstRow).not.toHaveProperty('attemptAllowance');
   });
 
   it('ordinary failures still consume exactly the local retry', async () => {
@@ -395,7 +382,6 @@ describe('runLocalRetries — aborted outcomes', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
     });
 
     expect(outcome.attempts).toBe(DEFAULT_LOCAL_RETRIES);
@@ -422,7 +408,6 @@ describe('runLocalRetries — attempt that throws', () => {
         task: makeTask(),
         state: makeValidatingState(),
         lastError: 'type error',
-        lastDiagnosis: 'type error',
       }),
     ).rejects.toThrow('implementer crashed');
 
@@ -486,7 +471,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -511,7 +495,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'implementer timed out',
-      lastDiagnosis: 'implementer timed out',
       initialFailure: { outcome: 'timeout', runner: ctx.config.implementer },
     });
 
@@ -536,7 +519,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
     });
 
     // The local rung stops here; no further retry is spent.
@@ -556,7 +538,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'Input exceeds the maximum length of 1048576 characters.',
-      lastDiagnosis: 'Input exceeds the maximum length of 1048576 characters.',
       initialFailure: { outcome: 'input-too-large', runner: ctx.config.implementer },
     });
 
@@ -581,7 +562,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -604,7 +584,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -627,7 +606,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -659,7 +637,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(DEFAULT_LOCAL_RETRIES);
@@ -695,7 +672,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
       initialFailure: { outcome: 'no-progress-cut', runner: config.implementer },
     });
 
@@ -733,7 +709,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: cut,
-      lastDiagnosis: cut,
       initialFailure: { outcome: 'no-progress-cut', runner: config.implementer },
       answer: 'use the existing helper',
     });
@@ -794,7 +769,6 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
-      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);

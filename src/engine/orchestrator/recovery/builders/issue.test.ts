@@ -20,7 +20,6 @@ describe('a retry-exhausted halt panel', () => {
       createdAt: '2026-04-28T12:00:00.000Z',
       validationSummary: `npm test failed: ${'AssertionError: expected the window to close. '.repeat(10)}`,
       attempts: 3,
-      maxAttempts: 3,
       handBack: 'I tried to change the window but the type has no end date. '.repeat(10),
     });
 

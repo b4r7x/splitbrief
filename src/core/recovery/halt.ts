@@ -46,8 +46,7 @@ const HALT_ACTIONS: Record<RecoveryHalt, readonly RecoveryAction[]> = {
 export const REASON_HALT = {
   'implementation-error': 'needs-you',
   'retry-exhausted': 'needs-you',
-  'consult-bound-spent': 'needs-you',
-  'planner-calls-spent': 'needs-you',
+  'no-progress': 'needs-you',
   'dependency-blocked': 'needs-you',
   'checkout-changed': 'needs-you',
   'review-failed': 'needs-you',
@@ -75,6 +74,8 @@ export const REASON_HALT = {
   'constitution-check-failed': 'needs-you',
   'brief-review-no-progress': 'needs-you',
   'brief-quality-unrepaired': 'needs-you',
+  'consult-bound-spent': 'needs-you',
+  'planner-calls-spent': 'needs-you',
 } as const satisfies Record<RecoveryReason, RecoveryHalt>;
 
 export type HaltOf<R extends RecoveryReason> = (typeof REASON_HALT)[R];

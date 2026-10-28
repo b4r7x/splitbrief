@@ -43,10 +43,10 @@ export interface BuildProgress {
   escalated: number;
   failed: number;
   /**
-   * `null` outside the build, where the review seat runs no brief, and on a brief's first attempt,
-   * which is the normal case: the bound matters once a retry has spent one.
+   * The attempt number of the brief now running. `null` outside the build, where the review seat
+   * runs no brief, and on a brief's first attempt, which is the normal case.
    */
-  attempt: { current: number; max: number } | null;
+  attempt: number | null;
   /** What the run is doing: the seat and its operation, or the command it is inside. */
   activity: string;
   activitySpans: readonly BuildProgressSpan[];
@@ -294,9 +294,7 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
     total: view.total,
     escalated: view.escalated,
     failed: view.failed,
-    attempt: retrying
-      ? { current: input.tasks.currentAttempt, max: input.tasks.attemptAllowance }
-      : null,
+    attempt: retrying ? input.tasks.currentAttempt : null,
     ...(waitParts === null
       ? { ...activityLine(input), ...freshnessOf(input) }
       : {
@@ -343,10 +341,7 @@ function countsSpans(progress: BuildProgress): BuildProgressSpan[] {
   if (progress.attempt !== null) {
     parts.push(
       { text: SOFT_SEP, tone: 'textDim' },
-      {
-        text: `attempt ${progress.attempt.current} of ${progress.attempt.max}`,
-        tone: 'textDim',
-      },
+      { text: `attempt ${progress.attempt}`, tone: 'textDim' },
     );
   }
   return parts;

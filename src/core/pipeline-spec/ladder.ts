@@ -1,19 +1,16 @@
-export type LadderRungId = 'recipe-fix' | 'local' | 'consult' | 'takeover';
+export type LadderRungId = 'recipe-fix' | 'local' | 'consult';
 
 export type LadderRung = Readonly<{
   id: LadderRungId;
-  who: 'implementer' | 'planner-then-implementer' | 'planner';
+  who: 'implementer' | 'planner-then-implementer';
   consumesRetry?: boolean;
   count?: 'DEFAULT_LOCAL_RETRIES';
-  /** False for a rung the skill runs but the engine has no call site for. */
-  engine?: boolean;
 }>;
 
 export const LADDER: readonly LadderRung[] = [
   { id: 'recipe-fix', who: 'implementer', consumesRetry: false },
   { id: 'local', who: 'implementer', count: 'DEFAULT_LOCAL_RETRIES' },
   { id: 'consult', who: 'planner-then-implementer' },
-  { id: 'takeover', who: 'planner', engine: false },
 ];
 
 const FINAL_FRAMING = 'Multiple attempts have failed. Try a completely different approach:';

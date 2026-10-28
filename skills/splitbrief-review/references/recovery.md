@@ -53,15 +53,15 @@ Record a malformed answer as a failure of the seat that answered. Apply no actio
 | `verify` | Run the brief gate and named registered checks. Make no implementer call. |
 | `ask-user` | Ask only when the user alone can answer. Record why, choices and a default. |
 
-Keep lineage counters across splits and resume: 2 consults and 8 attempts.
-Keep the run counter: 10 planner decisions after planning. Reviewer consults and review answers spend no planner decision.
+Before each consult, compare the failure with the failure the last answer saw: the same check ids with the same failure keys, the same call outcome, the same blocked question, or the same first error line.
+Keep the lineage progress across splits and resume: two answers in a row that leave the same failure, or 10 answers on one lineage, stop the consults.
 A blocked report consults at once.
 A guarded rewrite or split asks the operator on the consulted seat before dispatch.
 A done report records its decisions in the plan ledger with the task id before validation. No seat confirms them, and a retry records only a new decision.
-Reported decisions spend no run counter, never a lineage consult or a planner decision.
+Reported decisions are not consult answers, and the progress rule does not count them.
 A done report field that breaks the contract reads as empty with a warning. The other fields stay.
-When a bound is spent, halt as needs you and keep the work. Ask: continue with a note / skip / end.
-Continuing grants 1 more consult and 4 more attempts, or 5 more planner decisions, and replays the brief as a retry with the last failing output.
+When the consults stop, halt as needs you and keep the work. Show the failure and the last diagnosis. Ask: continue with a note / skip / end.
+Continuing clears the lineage progress and replays the brief as a retry with the last failing output.
 <!-- /generated -->
 
 The consult input includes the plan, task revisions, the task diff since the task started (every attempt, not only the latest: the diff of the brief's own files, and the names of the other files the task changed: the first 20, then a count of the rest), one line per failed attempt, the latest exact errors, report, earlier consults and other task statuses.
@@ -170,8 +170,8 @@ Ask-user includes why only the user can answer, choices and a default. Feed the 
 Rollback, when needed for rewrite or split, restores only the current attempt's own changed bytes.
 Never restore an earlier task's snapshot over accepted changes. Never use a git write command for rollback.
 
-Record each consult in `consults.jsonl` and `evidence.md`, including diagnosis, action, and its counter effect.
-Persist lineage roots, revisions, consults, attempts, run decisions, fix cycles, and extra allowances in saved progress.
+Record each consult in `consults.jsonl` and `evidence.md`, including diagnosis, action, and the failure it saw.
+Persist lineage roots, revisions, consults, attempts, lineage progress, run decisions, and fix cycles in saved progress.
 
 ## Review fix work
 

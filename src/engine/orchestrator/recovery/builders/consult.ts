@@ -1,150 +1,65 @@
-import type { Phase, RecoveryReason } from '../../../../core/schemas/enums.js';
+import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../../core/schemas/task.js';
-import {
-  lineageAttemptsOf,
-  plannerCallsOf,
-  type WorkflowState,
-} from '../../../../core/schemas/workflow.js';
-import { BOUNDS } from '../../../../core/pipeline-spec/bounds.js';
-import { lineageIdOf } from '../../../../core/state/task-insert.js';
+import type { FailureMark } from '../../../../core/schemas/workflow.js';
+import { noProgressCause } from '../../../../core/recovery/headline.js';
+import type { ProgressStop } from '../../../../core/state/progress.js';
 import { haltActions } from './actions.js';
 import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './issue.js';
 import { taskFiles } from './details.js';
 
-type ConsultBoundReason = Extract<RecoveryReason, 'consult-bound-spent' | 'planner-calls-spent'>;
+const SHOWN_KEYS = 3;
 
-/** A consult-bound halt keeps the brief's files until the operator chooses: Continue retries on them, Skip restores them. */
-export function isConsultBoundReason(reason: RecoveryReason): reason is ConsultBoundReason {
-  return reason === 'consult-bound-spent' || reason === 'planner-calls-spent';
-}
-
-/** Which counter of a lineage or the run is spent, with both sides of the bound. */
-export type ConsultBoundSpent = Readonly<{
-  reason: ConsultBoundReason;
-  consults: number;
-  consultAllowance: number;
-  attempts: number;
-  attemptAllowance: number;
-  plannerCalls: number;
-  plannerCallAllowance: number;
-}>;
-
-type ConsultBudget = Omit<ConsultBoundSpent, 'reason'>;
-
-/**
- * The counters a consult or an attempt checks, with the defaults a lineage or
- * run that holds no record yet starts from: a fresh brief never reads spent.
- */
-function consultBudget(state: WorkflowState, task: Task): ConsultBudget {
-  const lineage = state.lineages?.[lineageIdOf(task)];
-  const attempts = lineageAttemptsOf(state, task);
-  return {
-    consults: lineage?.consults ?? 0,
-    consultAllowance: lineage?.consultAllowance ?? BOUNDS.consultsPerLineage,
-    attempts: attempts.used,
-    attemptAllowance: attempts.allowance,
-    plannerCalls: plannerCallsOf(state).used,
-    plannerCallAllowance: plannerCallsOf(state).allowance,
-  };
-}
-
-export function plannerCallsSpent(state: WorkflowState): boolean {
-  const plannerCalls = plannerCallsOf(state);
-  return plannerCalls.used >= plannerCalls.allowance;
-}
-
-/** The bound a consult would exceed: the lineage's consults or attempts, else the run's planner calls. */
-export function consultBoundSpent(state: WorkflowState, task: Task): ConsultBoundSpent | undefined {
-  const budget = consultBudget(state, task);
-  if (budget.consults >= budget.consultAllowance || budget.attempts >= budget.attemptAllowance) {
-    return { reason: 'consult-bound-spent', ...budget };
-  }
-  if (plannerCallsSpent(state)) {
-    return { reason: 'planner-calls-spent', ...budget };
-  }
-  return undefined;
-}
-
-/** The bound an attempt would exceed: the lineage's attempts. */
-export function attemptBoundSpent(state: WorkflowState, task: Task): ConsultBoundSpent | undefined {
-  const budget = consultBudget(state, task);
-  if (budget.attempts >= budget.attemptAllowance) {
-    return { reason: 'consult-bound-spent', ...budget };
-  }
-  return undefined;
-}
-
-export interface ConsultBoundRecoveryOptions extends RecoveryBuilderBase {
-  reason: ConsultBoundReason;
+export interface NoProgressRecoveryOptions extends RecoveryBuilderBase {
   phase: Phase;
-  task?: Task | undefined;
-  /** The last planner diagnosis, or the error that stopped the last attempt. */
+  task: Task;
+  stop: ProgressStop;
+  /** The failure the last attempt left. */
+  failure: FailureMark;
+  /** The planner answers the lineage got. */
+  answers: number;
+  /** The diagnosis of the lineage's last planner answer. */
   lastDiagnosis: string;
   failingOutput?: string | undefined;
-  consults?: number | undefined;
-  consultAllowance?: number | undefined;
   attempts?: number | undefined;
-  attemptAllowance?: number | undefined;
-  plannerCalls?: number | undefined;
-  plannerCallAllowance?: number | undefined;
 }
 
-function remedyLine(reason: ConsultBoundReason, task: Task | undefined): string {
-  const grant =
-    reason === 'consult-bound-spent'
-      ? 'Continuing grants one more consult and four more attempts'
-      : 'Continuing grants five more planner calls';
-  return task === undefined ? `${grant}.` : `${grant}, starting from the last attempt's files.`;
-}
-
-function countersLine(opts: ConsultBoundRecoveryOptions): string {
-  return (
-    `Consults ${opts.consults ?? 0} of ${opts.consultAllowance ?? 0}; ` +
-    `attempts ${opts.attempts ?? 0} of ${opts.attemptAllowance ?? 0}; ` +
-    `planner calls ${opts.plannerCalls ?? 0} of ${opts.plannerCallAllowance ?? 0}.`
-  );
+function failureLine(failure: FailureMark): string {
+  const parts = failure.map(({ source, keys }) => {
+    if (keys.length === 0) return source;
+    const more = keys.length > SHOWN_KEYS ? ` (+${keys.length - SHOWN_KEYS} more)` : '';
+    return `${source}: ${keys.slice(0, SHOWN_KEYS).join(', ')}${more}`;
+  });
+  return `Failure: ${parts.join('; ')}`;
 }
 
 /**
- * The ladder ran out of the budget it needs to ask the planner: the lineage's
- * consults or attempts, or the run's planner calls. The last diagnosis travels
- * in the details so the operator decides the grant on the evidence.
+ * The planner's answers did not move the brief's failure two times in a row, or the brief
+ * used all its answers. The failure and the last diagnosis travel in the details so the
+ * operator decides on the evidence.
  */
-export function buildConsultBoundRecoveryIssue(opts: ConsultBoundRecoveryOptions): RecoveryIssue {
-  const actions = haltActions(opts.reason, [
-    'continue',
-    opts.task === undefined ? undefined : 'skip-current-task',
-    'end-run',
-  ]);
+export function buildNoProgressRecoveryIssue(opts: NoProgressRecoveryOptions): RecoveryIssue {
   return createRecoveryIssue({
     id: opts.id,
-    seat: opts.task === undefined ? 'plan' : 'build',
-    reason: opts.reason,
+    seat: 'build',
+    reason: 'no-progress',
     phase: opts.phase,
     task: opts.task,
-    files: opts.task === undefined ? [] : taskFiles(opts.task),
-    affectedTaskIds: opts.task === undefined ? [] : [opts.task.id],
-    message:
-      opts.reason === 'consult-bound-spent'
-        ? `${opts.task?.id ?? 'The lineage'} used its consult allowance`
-        : 'The run used its planner-call allowance',
+    files: taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message: noProgressCause(opts.task.id, opts.stop, opts.answers),
     details: [
+      failureLine(opts.failure),
       `Last diagnosis: ${opts.lastDiagnosis}`,
-      remedyLine(opts.reason, opts.task),
-      countersLine(opts),
+      "Continuing asks the planner again, starting from the last attempt's files.",
     ],
     facts: compactFacts({
       lastDiagnosis: opts.lastDiagnosis,
       failingOutput: opts.failingOutput,
-      consults: opts.consults,
-      consultAllowance: opts.consultAllowance,
-      attempts: opts.attempts,
-      attemptAllowance: opts.attemptAllowance,
-      plannerCalls: opts.plannerCalls,
-      plannerCallAllowance: opts.plannerCallAllowance,
+      answers: opts.answers,
+      stop: opts.stop,
     }),
-    availableActions: actions,
+    availableActions: haltActions('no-progress', ['continue', 'skip-current-task', 'end-run']),
     recommendedAction: 'continue',
     ...(opts.attempts !== undefined && { attempts: opts.attempts }),
     createdAt: opts.createdAt,

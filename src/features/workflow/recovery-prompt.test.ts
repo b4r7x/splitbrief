@@ -53,11 +53,10 @@ const baseIssue: RecoveryIssue = {
   message: 'T003 failed',
   details: [
     'Validation test failed: npm test -- auth failed in src/auth/session.test.ts',
-    'Attempts: 3/3',
+    'Attempts: 3',
     'Worker profile: local-qwen',
   ],
   attempts: 3,
-  maxAttempts: 3,
   selectedImplementerProfile: 'local-qwen',
   facts: {
     validationStage: 'test',
@@ -562,11 +561,11 @@ describe('recovery prompt', () => {
 
   it('parses continue only when the issue allows it', () => {
     const issue: RecoveryIssue = {
-      id: 'rec_bound',
-      reason: 'consult-bound-spent',
+      id: 'rec_no_progress',
+      reason: 'no-progress',
       phase: 'implementing',
       status: 'awaiting-user',
-      message: 'T003 used its consult allowance',
+      message: 'T003 is stuck on the same failure',
       files: [],
       affectedTaskIds: [],
       details: [],
@@ -616,7 +615,6 @@ describe('recovery prompt', () => {
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } }).implementer,
       toolMessage: 'branch fix/implementer-never-runs-gates',
       attempts: 0,
-      maxAttempts: 2,
       createdAt: '2026-10-07T05:54:04.413Z',
     });
 

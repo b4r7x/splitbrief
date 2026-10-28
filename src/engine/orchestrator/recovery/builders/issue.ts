@@ -20,7 +20,6 @@ export interface TaskRecoveryContext {
   task: Task;
   phase?: Phase | undefined;
   attempts?: number | undefined;
-  maxAttempts?: number | undefined;
   selectedImplementerProfile?: string | undefined;
 }
 
@@ -52,7 +51,6 @@ export function createRecoveryIssue(opts: {
   message: string;
   details: string[];
   attempts?: number | undefined;
-  maxAttempts?: number | undefined;
   selectedImplementerProfile?: string | undefined;
   resetAt?: string | undefined;
   switchSeat?: SwitchSeatOffer | undefined;
@@ -80,7 +78,6 @@ export function createRecoveryIssue(opts: {
     message: opts.message,
     details: opts.details.map(summarizeText).filter((detail) => detail.length > 0),
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
-    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     ...(opts.selectedImplementerProfile !== undefined
       ? { selectedImplementerProfile: opts.selectedImplementerProfile }
       : {}),
