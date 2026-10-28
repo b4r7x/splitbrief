@@ -1106,6 +1106,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-answering-again',
+      title: 'Workflow · reviewer asked again after an answer that broke its contract',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-answering-again',
+        title: 'Refused answer row and the second reviewer call',
+        kind: 'implementation',
+        marker: 'answering again',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-verify',
       title: 'Workflow · the review verifying its findings',
       surface: screenSurface('workflow'),

@@ -10,6 +10,8 @@ import {
   type RequestTypedResult,
 } from '../runners/typed-output.js';
 import { addUsageAndSave } from './state-ops.js';
+import { publishWarning } from './events.js';
+import { SEAT_ANSWER_REFUSED_CODE } from '../../core/runners/seat-answer-notice.js';
 import type { SteeringPort } from '../calls/steering.js';
 
 type ReviewerCallInput = Readonly<{
@@ -83,6 +85,13 @@ export async function runReviewerCall<T>(
     schema: opts.schema,
     jsonSchema: opts.jsonSchema,
     schemaName: opts.schemaName,
+    onRepair: (message) =>
+      publishWarning({
+        bus,
+        phase: opts.state.phase,
+        message,
+        safety: { category: 'reviewer', code: SEAT_ANSWER_REFUSED_CODE },
+      }),
   });
   const state = addUsageAndSave(
     { projectDir, sessionId, bus },

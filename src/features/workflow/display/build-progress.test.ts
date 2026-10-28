@@ -640,6 +640,23 @@ describe('deriveBuildProgress', () => {
     );
   });
 
+  it('says the review seat answers the consult again after a refused answer', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'escalating' }),
+        operations: operationsState({
+          active: {
+            ...runningOperation({ role: 'review', taskId: 'T013', runnerName: 'codex' }),
+            answeringAgain: true,
+          },
+        }),
+      }),
+    );
+    expect(progress.activity).toBe(
+      'REVIEW · OpenAI Codex CLI · auto · answering the consult again on T013',
+    );
+  });
+
   it('names the tool by its display name, whichever name its runner gave the call', () => {
     const progress = deriveBuildProgress(
       input({

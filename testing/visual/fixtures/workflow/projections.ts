@@ -20,6 +20,7 @@ import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retaine
 import { closedQueueProjection } from './closed-queue-projection.js';
 import { cliStopContinuedProjection } from './cli-stop-continued.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
+import { SEAT_ANSWER_REFUSED_CODE } from '../../../../src/core/runners/seat-answer-notice.js';
 import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
 import {
   createStartReadinessRecord,
@@ -7051,6 +7052,57 @@ const projections = [
   finalReviewProjection,
   finalReviewPlanCheckProjection,
   reviewVerifyProjection,
+  // The reviewer's first answer broke its contract; one row says why, and the second call answers again.
+  {
+    ...finalReviewProjection,
+    scenarioId: scenarioId('workflow-review-answering-again'),
+    events: [
+      ...finalReviewProjection.events,
+      {
+        type: 'runner_call_completed',
+        ts: FIXED_TS + 20_000,
+        phase: 'final-review',
+        callId: 'visual-review-call-001',
+        role: 'review',
+        backendKind: 'cli',
+        runnerName: 'codex',
+        model: CODEX_REVIEW_SEAT.model,
+        axes: seatAxisWords(CODEX_REVIEW_SEAT),
+        attempt: 1,
+        sequence: 0,
+        status: 'completed',
+        error: null,
+        partial: false,
+        startedAt: FIXED_TS + 520,
+        endedAt: FIXED_TS + 20_000,
+        durationMs: 19_480,
+        usage: null,
+        nativeSessionId: null,
+      },
+      {
+        type: 'warning',
+        ts: FIXED_TS + 20_010,
+        phase: 'final-review',
+        message:
+          'The reviewer seat answer did not match its contract. Task T903 is missing from the verdict. Asking the seat again.',
+        category: 'reviewer',
+        code: SEAT_ANSWER_REFUSED_CODE,
+      },
+      {
+        type: 'runner_call_started',
+        ts: FIXED_TS + 20_020,
+        phase: 'final-review',
+        callId: 'visual-review-call-002',
+        role: 'review',
+        backendKind: 'cli',
+        runnerName: 'codex',
+        model: CODEX_REVIEW_SEAT.model,
+        axes: seatAxisWords(CODEX_REVIEW_SEAT),
+        attempt: 1,
+        sequence: 1,
+      },
+    ],
+  },
   {
     ...finalReviewProjection,
     scenarioId: scenarioId('workflow-review-verdict-only'),

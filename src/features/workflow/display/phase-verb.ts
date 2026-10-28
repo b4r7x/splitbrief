@@ -92,13 +92,15 @@ export function reviewActivityParts(
   switch (operation.role) {
     case 'review': {
       const step =
-        operation.reviewStep === 'choosing-checks'
-          ? 'choosing checks'
-          : operation.reviewStep === 'verdict'
-            ? 'reviewing changes'
-            : operation.reviewStep === 'verify'
-              ? 'verifying findings'
-              : null;
+        operation.answeringAgain === true
+          ? 'answering again'
+          : operation.reviewStep === 'choosing-checks'
+            ? 'choosing checks'
+            : operation.reviewStep === 'verdict'
+              ? 'reviewing changes'
+              : operation.reviewStep === 'verify'
+                ? 'verifying findings'
+                : null;
       const waiting = isStatusFallback(operation) || step !== null;
       const identity =
         reviewerLabel === null ? null : { text: reviewerLabel, tone: CREW_SEAT_ROLES.review };

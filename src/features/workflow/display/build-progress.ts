@@ -124,7 +124,7 @@ function activityLine(
       break;
     case 'review':
       seat = 'review';
-      doing = `answering the consult${task}`;
+      doing = `answering the consult${operation.answeringAgain === true ? ' again' : ''}${task}`;
       break;
     case 'planner':
     case 'escalation':

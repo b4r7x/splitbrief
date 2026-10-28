@@ -36,6 +36,8 @@ export interface OpenTool {
 
 interface OperationBase {
   reviewStep?: EngineEventOf<'review_step'>['step'] | undefined;
+  /** The call asks the seat again: its first answer did not match the contract. */
+  answeringAgain?: true;
   callId: string;
   role: OperationRole;
   backendKind?: EngineEventOf<'runner_call_started'>['backendKind'];
@@ -110,6 +112,8 @@ export interface OperationsState {
   validationStage?: RunningValidationStage | null;
   suiteStage?: RunningSuiteStage | null;
   reviewStage?: RunningOperation | null;
+  /** The reviewer's answer was refused: its next call asks it again. */
+  reviewerAnswerRefused?: boolean;
   /**
    * A task review is due inside the build phase: the engine's `pendingScheduledReview`, from the
    * review's start until BUILD starts a brief or the review's fix cycle starts. A halt, a stop or

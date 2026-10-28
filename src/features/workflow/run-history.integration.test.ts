@@ -123,6 +123,30 @@ function historyRows(events: EngineEvent[]): string[] {
   }).rows.map(rowText);
 }
 
+function transcriptAt120x40(): string[] {
+  const { rows } = buildConversationRows({
+    sections: groupEventsIntoSections([...eventsStore.get().events]),
+    expandedDiffs: new Set(),
+    expandedActivityBatches: new Set(),
+    cols: 120,
+    viewportHeight: 40,
+    streaming: { taskId: null, lines: [], active: false },
+  });
+  const ui = renderFeature(
+    createElement(
+      Fragment,
+      null,
+      ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+    ),
+    { cols: 120, rows: 40 },
+  );
+  const lines = stripAnsiStyles(ui.lastFrame())
+    .split('\n')
+    .map((line) => line.trim());
+  ui.unmount();
+  return lines;
+}
+
 describe('hydrateRun', () => {
   it('restores both historical smoke briefs from their taskless implementer reports', async () => {
     const briefs = [
@@ -652,32 +676,9 @@ describe('hydrateRun', () => {
       },
       { type: 'workflow_complete', ts: 61_000, phase: 'complete', review: 'passed' },
     ];
-    const transcript = () => {
-      const { rows } = buildConversationRows({
-        sections: groupEventsIntoSections([...eventsStore.get().events]),
-        expandedDiffs: new Set(),
-        expandedActivityBatches: new Set(),
-        cols: 120,
-        viewportHeight: 40,
-        streaming: { taskId: null, lines: [], active: false },
-      });
-      const ui = renderFeature(
-        createElement(
-          Fragment,
-          null,
-          ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
-        ),
-        { cols: 120, rows: 40 },
-      );
-      const lines = stripAnsiStyles(ui.lastFrame())
-        .split('\n')
-        .map((line) => line.trim());
-      ui.unmount();
-      return lines;
-    };
     writeLog(log);
     for (const event of log) addEvent(event);
-    const live = transcript();
+    const live = transcriptAt120x40();
     expect(live).toContainEqual(expect.stringMatching(new RegExp(`Set aside V6\\.1 +${reason}$`)));
     resetWorkflow();
     await hydrateRun(
@@ -693,7 +694,36 @@ describe('hydrateRun', () => {
         },
       }),
     );
-    expect(transcript()).toEqual(live);
+    expect(transcriptAt120x40()).toEqual(live);
+  });
+
+  it('shows the refused reviewer answer when the run reopens at rest', async () => {
+    const notice =
+      'The reviewer seat answer did not match its contract. Task T001 is missing from the verdict. Asking the seat again.';
+    const log: EngineEvent[] = [
+      ...RUN,
+      { type: 'review_started', ts: 4_000, phase: 'final-review', scope: 'final', tool: 'codex' },
+      {
+        type: 'warning',
+        ts: 30_000,
+        phase: 'final-review',
+        message: notice,
+        category: 'reviewer',
+        code: 'seat_answer_refused',
+      },
+    ];
+    writeLog(log);
+    for (const event of log) addEvent(event);
+    const live = transcriptAt120x40();
+    expect(live.join(' ')).toContain('Task T001 is missing from the verdict.');
+    resetWorkflow();
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: { ...savedState(), phase: 'final-review' } },
+      }),
+    );
+    expect(transcriptAt120x40()).toEqual(live);
   });
 
   it('puts the stores where a live run of the same log would have left them', async () => {

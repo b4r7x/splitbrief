@@ -554,6 +554,50 @@ describe('operationsStore', () => {
     });
   });
 
+  it('marks the one reviewer call that answers again after a refused answer', () => {
+    const review = { phase: 'final-review', role: 'review', taskId: undefined } as const;
+    addEvent({
+      type: 'review_started',
+      ts: 1_000,
+      phase: 'final-review',
+      scope: 'final',
+      tool: 'codex',
+    });
+    addEvent({ type: 'review_step', ts: 1_010, phase: 'final-review', step: 'verdict' });
+    addEvent(runnerStarted({ ...review, ts: 1_100, callId: 'call-1' }));
+    addEvent(runnerCompleted({ ...review, ts: 2_000, callId: 'call-1' }));
+    addEvent({
+      type: 'warning',
+      ts: 2_001,
+      phase: 'final-review',
+      message: 'The reviewer seat answer did not match its contract.',
+      category: 'reviewer',
+      code: 'seat_answer_refused',
+    });
+    addEvent(runnerStarted({ ...review, ts: 2_100, callId: 'call-2' }));
+    expect(operationsStore.get().active).toMatchObject({ callId: 'call-2', answeringAgain: true });
+
+    addEvent(runnerCompleted({ ...review, ts: 3_000, callId: 'call-2' }));
+    addEvent(runnerStarted({ ...review, ts: 3_100, callId: 'call-3' }));
+    expect(operationsStore.get().active?.answeringAgain).toBeUndefined();
+  });
+
+  it('drops a refused answer the stop cut before its second call', () => {
+    addEvent({
+      type: 'warning',
+      ts: 2_001,
+      phase: 'final-review',
+      message: 'The reviewer seat answer did not match its contract.',
+      category: 'reviewer',
+      code: 'seat_answer_refused',
+    });
+    addEvent({ type: 'workflow_cancelled', ts: 2_050, phase: 'final-review' });
+    addEvent(
+      runnerStarted({ ts: 9_000, phase: 'final-review', role: 'review', taskId: undefined }),
+    );
+    expect(operationsStore.get().active?.answeringAgain).toBeUndefined();
+  });
+
   it('keeps planner_status on the planner role and closes it on done', () => {
     addEvent(
       makePlannerStatus({

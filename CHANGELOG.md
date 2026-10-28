@@ -99,6 +99,7 @@
 
 ### Fixed
 
+- The screen now says when a seat's answer did not match its format, why, and that the seat is asked again.
 - Stopping while the review checks its findings no longer repeats the review: a continue verifies the reviewer's saved answer.
 - The screen shows the checks the review runs to verify its findings, each on its own row with its clock.
 - The review counts each problem once: when the reviewer names a red check under that check's id, the problem shows once in the blocking count and list, on every surface, for example `4 blocking` for four problems, not `8 blocking`.

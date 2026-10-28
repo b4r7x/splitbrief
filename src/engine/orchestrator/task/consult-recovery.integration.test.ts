@@ -34,6 +34,7 @@ import { requestConsult } from '../consult/request.js';
 import { inputHashesNow } from './stale-inputs.js';
 import { retryAndRecord } from './retry.js';
 import { runSingleTask } from './step.js';
+import { SEAT_ANSWER_REFUSED_CODE } from '../../../core/runners/seat-answer-notice.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -348,7 +349,16 @@ describe('stale consult recovery', () => {
       expect(loadState(ref)?.pendingRecovery).toEqual(halted.pendingRecovery);
       expect(implementer.implement).not.toHaveBeenCalled();
       expect(implementer.retry).not.toHaveBeenCalled();
-      expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+      expect(events.filter((event) => event.type === 'warning')).toEqual(
+        failure === 'thrown'
+          ? []
+          : [
+              expect.objectContaining({
+                code: SEAT_ANSWER_REFUSED_CODE,
+                category: seat === 'plan' ? 'planner' : 'reviewer',
+              }),
+            ],
+      );
       expect(halted.tasks[0]?.inputHashes).toEqual(task.inputHashes);
       expect(halted.lineages?.T013?.staleConsultedRevision.T013).toBeUndefined();
 
