@@ -1,6 +1,11 @@
 import { isTaskCompleted, type TaskId } from '../../../core/schemas/task.js';
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
-import { blockingRedInputs, reviewOutcomeOf, reviewsAgain } from '../../../core/review/verdict.js';
+import {
+  blockingEntries,
+  blockingRedInputs,
+  reviewOutcomeOf,
+  reviewsAgain,
+} from '../../../core/review/verdict.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
@@ -246,11 +251,10 @@ export async function followReviewAnswer(args: {
   if (judged === undefined || fixWork === null) {
     throw error('fix-without-review', 'The run holds no review answer to follow.');
   }
-  const findings = reviewOutcomeOf(judged).blocking;
+  const blocking = blockingEntries(reviewOutcomeOf(judged)).length;
   const inputs = state.pendingTriage?.inputs ?? [];
   const cycles = fixCyclesOf(state);
   const redInputs = blockingRedInputs(inputs, fixWork);
-  const blocking = findings.length + redInputs.length;
   if (fixWork.ask !== null) {
     state = transitionAndSave(wctx, state, {
       type: 'QUEUE_TRIAGE',

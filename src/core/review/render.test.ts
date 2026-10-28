@@ -86,7 +86,7 @@ describe('renderReviewMarkdown', () => {
     expect(verdictWord(renderReviewMarkdown(failed, failing, [], []))).toBe('fail');
   });
 
-  it('lists each red input that still blocks under Critical with the first line of its text', () => {
+  it('lists each red input that still blocks under Critical with its whole text', () => {
     const verdict = makeVerdict();
     const outcome = deriveReviewOutcome(verdict, scope, new Map(), [
       { id: 'A1', text: 'Apply wrote conflict markers into src/a.ts\n<<<<<<< ours' },
@@ -94,8 +94,34 @@ describe('renderReviewMarkdown', () => {
     const markdown = renderReviewMarkdown(verdict, outcome, [], []);
     expect(verdictWord(markdown)).toBe('fail');
     expect(markdown).toContain(
-      '**Critical**\n\n- A1: Apply wrote conflict markers into src/a.ts\n\n**Note**',
+      '**Critical**\n\n- A1: Apply wrote conflict markers into src/a.ts\n  <<<<<<< ours\n\n**Note**',
     );
+  });
+
+  it('names the failed check of a red input that starts with its owner', () => {
+    const verdict = makeVerdict();
+    const outcome = deriveReviewOutcome(verdict, scope, new Map(), [
+      { id: 'P1', text: 'Last changed by T001.\nRequired check npm test failed in src/a.ts' },
+    ]);
+    expect(renderReviewMarkdown(verdict, outcome, [], [])).toContain(
+      '- P1: Last changed by T001.\n  Required check npm test failed in src/a.ts\n',
+    );
+  });
+
+  it('lists a finding that restates a red input under its id once', () => {
+    const verdict = makeVerdict({
+      criteria: [{ id: 'C1', status: 'fail', evidence: 'V1 is red' }],
+      findings: [
+        makeFinding({ id: 'V1.1', severity: 'blocking', criterionId: 'C1', text: 'Type error' }),
+      ],
+    });
+    const outcome = deriveReviewOutcome(verdict, scope, new Map(), [
+      { id: 'V1.1', text: 'npm run typecheck failed: src/a.ts(3,1): TS2322' },
+    ]);
+    expect(renderReviewMarkdown(verdict, outcome, [], [])).toContain(
+      '**Critical**\n\n- V1.1: npm run typecheck failed: src/a.ts(3,1): TS2322\n\n**Note**',
+    );
+    expect(reviewFindingCounts(outcome).critical).toBe(1);
   });
 
   it('lists each input the reviewer set aside between Critical and Note, and keeps the verdict', () => {

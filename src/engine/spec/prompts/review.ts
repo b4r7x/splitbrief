@@ -26,7 +26,7 @@ const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from 
 5. **Type Safety**: Are types correct and complete?
 6. **Code Quality**: Are there obvious bugs, security issues, or performance problems?`;
 
-const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Verify a render only when its current-candidate images are attached and you critique the scenario. A manifest alone leaves the render unverified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
+const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. A red pending input already blocks the review: do not restate it as a new finding. When a failed criterion or a task not met needs a finding for that input, give the input's id to one such finding only. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Verify a render only when its current-candidate images are attached and you critique the scenario. A manifest alone leaves the render unverified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
 
 const FIX_WORK_CONTRACT = `This review call is read-only. Do not write, edit or delete any file, or run commands that change the project. Return the verdict and the fix work in one review_answer.
 
@@ -35,7 +35,7 @@ const FIX_WORK_CONTRACT = `This review call is read-only. Do not write, edit or 
 - verify: { findingId, checkIds } for a finding or input whose work may already be on disk. Name registered run or task checks.
 - ask: { question, whyOnlyUserCanAnswer } or null. Use it only for a change to what is built that the plan and decisions cannot answer.
 
-Unless ask is set, every blocking finding that is not unverified appears exactly once in fixTasks[].findingIds, rejected[].findingId or verify[].findingId. Every pending input id appears exactly once in rejected[].findingId or verify[].findingId, or in the findingIds of one or more fix tasks. With ask set, these two rules do not apply. A fix task's acceptance names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review. Unverified and minor findings never become fix tasks.`;
+Unless ask is set, every blocking finding that is not unverified appears exactly once in fixTasks[].findingIds, rejected[].findingId or verify[].findingId. Every pending input id appears exactly once in rejected[].findingId or verify[].findingId, or in the findingIds of one or more fix tasks. A blocking finding under a pending input's id follows this rule. With ask set, these two rules do not apply. A fix task's acceptance names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review. Unverified and minor findings never become fix tasks.`;
 
 const VALIDATION_EVIDENCE_PREAMBLE = `The orchestrator ran these validation commands and recorded their output. This section is the authoritative record of validation results for this run.`;
 

@@ -968,6 +968,47 @@ describe('runFinalReviewPhase', () => {
     ]);
   });
 
+  it('counts a blocking finding that restates a red input once on every surface', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const { reviewer } = makeReviewer((prompt) =>
+      failedReviewVerdict(prompt, 'Typecheck fails', { id: 'P2' }),
+    );
+    const { bus, events } = makeBusRecorder();
+    await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        pendingTriage: {
+          inputs: [
+            {
+              id: 'P2',
+              kind: 'defect',
+              source: 'check',
+              file: null,
+              text: 'npm run typecheck failed: src/alpha.ts(3,1): TS2322',
+            },
+          ],
+        },
+      },
+      reviewer,
+    });
+    const entry = { id: 'P2', text: 'npm run typecheck failed: src/alpha.ts(3,1): TS2322' };
+    expect(events.filter((event) => event.type === 'review_completed')).toMatchObject([
+      { verdict: 'fail', findings: { blocking: 1 }, blockingFindings: [entry] },
+    ]);
+    expect(readEvidenceLedger({ projectDir, sessionId })?.reviews?.at(-1)?.blocking).toEqual([
+      entry,
+    ]);
+    expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
+      `**Critical**\n\n- P2: ${entry.text}\n\n**Note**`,
+    );
+  });
+
   it('counts an unverified criterion as pass when its current task check passes', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nGreet people by name.\n', null);

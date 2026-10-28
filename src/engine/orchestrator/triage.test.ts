@@ -273,6 +273,10 @@ describe('triageContractErrors', () => {
       'Pending input P1 is answered more than once.',
     ]);
     expect(errors(twice)).toEqual(['Pending input P1 is answered more than once.']);
+    const restated = [{ ...FAILING_FINDING, id: 'P1', text: 'K1 is red in src/shared/widget.ts' }];
+    expect(
+      triageContractErrors(shared, plan, restated, [input], [], undefined, FINAL_SCOPE),
+    ).toEqual([]);
   });
 
   it('accepts provisional ids reused across cycles and dependencies on completed tasks', () => {
