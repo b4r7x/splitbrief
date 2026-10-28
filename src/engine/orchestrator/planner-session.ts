@@ -7,6 +7,8 @@ import type { EventBus } from '../events/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import { requestTyped, type RequestTypedResult } from '../runners/typed-output.js';
 import { withFreshSessionReissue } from './resume-context.js';
+import { publishWarning } from './events.js';
+import { SEAT_ANSWER_REFUSED_CODE } from '../../core/runners/seat-answer-notice.js';
 import { transitionAndSave } from './state-ops.js';
 
 /** What one typed call on the planner's own thread is built from. */
@@ -89,6 +91,13 @@ export async function askPlannerSession<T>(
         schema: call.schema,
         jsonSchema: call.jsonSchema,
         schemaName: call.schemaName,
+        onRepair: (message) =>
+          publishWarning({
+            bus: ctx.bus,
+            phase: state.phase,
+            message,
+            safety: { category: 'planner', code: SEAT_ANSWER_REFUSED_CODE },
+          }),
         call: ctx.planner.typedCall({
           projectDir: ctx.projectDir,
           seat: 'planner',

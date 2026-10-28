@@ -489,6 +489,54 @@ describe('runFinalReviewPhase', () => {
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
   });
 
+  it('says why it asks the reviewer again, and delivers a queued message once', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+    const { bus, events } = makeBusRecorder();
+    const state = enqueueUserMessage({
+      projectDir,
+      sessionId,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      bus,
+      phase: 'final-review',
+      message: plainUserMessage('Check the missing authentication guard'),
+    }).state;
+    const { reviewer, prompts } = makeReviewer((prompt, call) =>
+      call === 1 ? { ...passingReviewVerdict(prompt), tasks: [] } : passingReviewVerdict(prompt),
+    );
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state,
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+    });
+
+    expect(result.reviewStatus).toBe('written');
+    expect(result.verdict?.outcome.kind).toBe('pass');
+    expect(events.filter((event) => event.type === 'warning')).toEqual([
+      expect.objectContaining({
+        category: 'reviewer',
+        code: 'seat_answer_refused',
+        message:
+          'The reviewer seat answer did not match its contract. Task T001 is missing from the verdict. Asking the seat again.',
+      }),
+    ]);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain('Check the missing authentication guard');
+    expect(prompts[1]).toContain('Check the missing authentication guard');
+    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
+      expect.objectContaining({ seat: 'review', count: 1 }),
+    ]);
+    expect(result.state.messageQueue.filter(isQueuedMessagePendingReviewer)).toHaveLength(0);
+  });
+
   it.each([
     {
       name: 'refuses a fix-task test check on a test file the run deleted',

@@ -53,6 +53,8 @@ export type RequestTypedOptions<T> = Readonly<{
   schema: z.ZodType<T>;
   jsonSchema: Readonly<Record<string, unknown>>;
   schemaName: string;
+  /** Hears, before the seat is asked again, why its first answer was refused. */
+  onRepair?: ((message: string) => void) | undefined;
 }> &
   (TypedRequestInput | Readonly<{ prepareCall: () => Promise<TypedRequestInput> }>);
 
@@ -89,6 +91,15 @@ export function seatProtocolHeadline(
   data: Pick<SeatProtocolErrorData, 'seat' | 'attempts'>,
 ): string {
   return `The ${data.seat} seat answer did not match its contract after ${countNoun(data.attempts, 'attempt')}.`;
+}
+
+const REPAIR_REASONS_SHOWN = 3;
+
+function seatRepairNotice(seat: ActiveRunnerRole, reasons: readonly string[]): string {
+  const shown = reasons.slice(0, REPAIR_REASONS_SHOWN);
+  const more = reasons.length - shown.length;
+  const reason = [...shown, ...(more > 0 ? [`And ${more} more.`] : [])].join(' ');
+  return `The ${seat} seat answer did not match its contract. ${reason} Asking the seat again.`;
 }
 
 export const typedOutputError = {
@@ -274,11 +285,36 @@ const EXTRACTION_ERRORS: Readonly<Record<Exclude<JsonExtraction['kind'], 'ok'>, 
     'The JSON object in the answer is truncated: it never closes. Send the complete object.',
 };
 
-type AnswerFailure = Readonly<{ errors: readonly string[]; answer: string }>;
+/** `errors` go back to the seat and into the halt; `reasons` say the same in a user's words. */
+type AnswerFailure = Readonly<{
+  errors: readonly string[];
+  reasons: readonly string[];
+  answer: string;
+}>;
 
 type CheckedAnswer<T> =
   | Readonly<{ ok: true; value: T }>
-  | Readonly<{ ok: false; errors: readonly string[]; answer: string }>;
+  | (Readonly<{ ok: false }> & AnswerFailure);
+
+// A field is named by its own key, the one nearest the problem: list positions and the path
+// above it are the contract's wiring, not words a user reads.
+function issueReasons(issues: readonly z.core.$ZodIssue[]): string[] {
+  const rules = issues
+    .filter((issue) => issue.path.length === 0)
+    .map((issue) => closeSentence(issue.message));
+  const fields = [
+    ...new Set(
+      issues.flatMap((issue) => {
+        const key = issue.path.findLast((segment) => typeof segment === 'string');
+        return typeof key === 'string' ? [key] : [];
+      }),
+    ),
+  ];
+  return [
+    ...rules,
+    ...(fields.length > 0 ? [`Wrong or missing value in ${fields.join(', ')}.`] : []),
+  ];
+}
 
 function checkAnswer<T>(schema: z.ZodType<T>, result: RunnerCallResult): CheckedAnswer<T> {
   const structured = result.status === 'completed' ? result.structured : undefined;
@@ -290,7 +326,8 @@ function checkAnswer<T>(schema: z.ZodType<T>, result: RunnerCallResult): Checked
   } else {
     const extracted = extractLastJsonObject(result.text);
     if (extracted.kind !== 'ok') {
-      return { ok: false, errors: [EXTRACTION_ERRORS[extracted.kind]], answer: result.text };
+      const reason = EXTRACTION_ERRORS[extracted.kind];
+      return { ok: false, errors: [reason], reasons: [reason], answer: result.text };
     }
     candidate = extracted.value;
     answer = result.text;
@@ -301,7 +338,7 @@ function checkAnswer<T>(schema: z.ZodType<T>, result: RunnerCallResult): Checked
       const path = issue.path.join('.');
       return path.length === 0 ? issue.message : `${path}: ${issue.message}`;
     });
-    return { ok: false, errors, answer };
+    return { ok: false, errors, reasons: issueReasons(parsed.error.issues), answer };
   }
   return { ok: true, value: parsed.data };
 }
@@ -394,6 +431,7 @@ export async function requestTyped<T>(
     : freshRepairPrompt(repairInput.prompt, firstCheck.answer, firstCheck.errors);
   const repairPromptSent = repairPrompt + suffix;
   refuseOverLimit(repairPromptSent, repairInput.call.promptLimit);
+  opts.onRepair?.(seatRepairNotice(seat, firstCheck.reasons));
   const repair = requireCompletedCall(
     await repairInput.call.invoke({
       prompt: repairPromptSent,

@@ -208,3 +208,50 @@ describe('askPlannerSession on a refused thread', () => {
     expect(turns).toHaveLength(1);
   });
 });
+
+describe('askPlannerSession repair', () => {
+  it('says why it asks again on the planner thread', async () => {
+    const ref = setupProject(dirs);
+    const state = { ...makeResearchingState(), plannerSessionId: 'thread' };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const prompts: string[] = [];
+    const answers = ['{"answer":1}', '{"answer":"ok"}'];
+    const planner = makePlanner();
+    planner.capabilities.supportsSessionResume = true;
+    planner.typedCall = (ctx) => ({
+      seat: ctx.seat,
+      typedOutput: 'fallback',
+      canResume: true,
+      invoke: async ({ prompt }) => {
+        prompts.push(prompt);
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: answers[prompts.length - 1] ?? '',
+          nativeSessionId: 'thread',
+        });
+      },
+    });
+
+    const answer = await askPlannerSession(
+      { ...ref, bus, state, planner },
+      {
+        schema: z.object({ answer: z.string() }),
+        jsonSchema: { type: 'object' },
+        schemaName: 'answer',
+        compose: () => 'continue',
+      },
+    );
+
+    expect(answer.result).toMatchObject({ value: { answer: 'ok' } });
+    expect(prompts[1]).toMatch(/^Your previous answer failed validation/);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([
+      expect.objectContaining({
+        category: 'planner',
+        code: 'seat_answer_refused',
+        message:
+          'The planner seat answer did not match its contract. Wrong or missing value in answer. Asking the seat again.',
+      }),
+    ]);
+  });
+});

@@ -296,12 +296,14 @@ describe('requestTyped', () => {
       results: [completed('invalid answer')],
     });
     let preparations = 0;
+    const notices: string[] = [];
 
     await expect(
       requestTyped({
         schema: probeSchema,
         jsonSchema,
         schemaName: 'probe',
+        onRepair: (message) => notices.push(message),
         prepareCall: async () => {
           const first = ++preparations === 1;
           return {
@@ -312,6 +314,7 @@ describe('requestTyped', () => {
       }),
     ).rejects.toMatchObject({ kind: 'input-too-large' });
     expect(invokes).toHaveLength(1);
+    expect(notices).toEqual([]);
   });
 
   it.each(['native', 'fallback'] satisfies TypedOutputCapability[])(
@@ -666,5 +669,132 @@ describe('requestTyped', () => {
     const failure = expectError(await requestTyped(options({ call })));
 
     expect(failure.data.answerPreview.length).toBeLessThanOrEqual(2000);
+  });
+});
+
+describe('requestTyped repair notice', () => {
+  it('names the refused field before it asks the seat again', async () => {
+    const order: string[] = [];
+    const { call } = makeSeatCall({
+      seat: 'reviewer',
+      typedOutput: 'fallback',
+      results: [completed('{"answer":1,"count":2}'), completed('{"answer":"a","count":2}')],
+    });
+    const notices: string[] = [];
+
+    const result = await requestTyped({
+      schema: probeSchema,
+      jsonSchema,
+      schemaName: 'probe',
+      prepareCall: async () => {
+        order.push('prepare');
+        return { prompt: 'Review it', call };
+      },
+      onRepair: (message) => {
+        order.push('repair');
+        notices.push(message);
+      },
+    });
+
+    expect(expectValue(result).value).toEqual({ answer: 'a', count: 2 });
+    expect(notices).toEqual([
+      'The reviewer seat answer did not match its contract. Wrong or missing value in answer. Asking the seat again.',
+    ]);
+    expect(order).toEqual(['prepare', 'prepare', 'repair']);
+  });
+
+  it('says an answer had no JSON object', async () => {
+    const { call } = makeSeatCall({
+      typedOutput: 'fallback',
+      results: [completed('I think it is fine.'), completed('{"answer":"a","count":2}')],
+    });
+    const notices: string[] = [];
+
+    await requestTyped({ ...options({ call }), onRepair: (message) => notices.push(message) });
+
+    expect(notices).toEqual([
+      'The planner seat answer did not match its contract. No JSON object found in the answer. Asking the seat again.',
+    ]);
+  });
+
+  it('names the nearest field once, without list positions, and keeps contract rules whole', async () => {
+    const schema = z
+      .object({ findings: z.array(z.object({ severity: z.enum(['high', 'low']) })) })
+      .superRefine((_value, ctx) => {
+        ctx.addIssue({ code: 'custom', message: 'Task T1 is missing from the verdict.' });
+      });
+    const { call } = makeSeatCall({
+      seat: 'reviewer',
+      typedOutput: 'fallback',
+      results: [
+        completed('{"findings":[{"severity":"x"},{"severity":"y"}]}'),
+        completed('{"findings":[]}'),
+      ],
+    });
+    const notices: string[] = [];
+
+    await requestTyped({
+      prompt: 'Review it',
+      schema,
+      jsonSchema,
+      schemaName: 'probe',
+      call,
+      onRepair: (message) => notices.push(message),
+    });
+
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain('Wrong or missing value in severity.');
+    expect(notices[0]).not.toContain('findings.0');
+  });
+
+  it('lists at most three reasons', async () => {
+    const schema = z.object({}).superRefine((_value, ctx) => {
+      for (const id of ['T1', 'T2', 'T3', 'T4', 'T5']) {
+        ctx.addIssue({ code: 'custom', message: `Task ${id} is missing from the verdict.` });
+      }
+    });
+    const { call } = makeSeatCall({
+      seat: 'reviewer',
+      typedOutput: 'fallback',
+      results: [completed('{}'), completed('{}')],
+    });
+    const notices: string[] = [];
+
+    await requestTyped({
+      prompt: 'Review it',
+      schema,
+      jsonSchema,
+      schemaName: 'probe',
+      call,
+      onRepair: (message) => notices.push(message),
+    });
+
+    expect(notices).toEqual([
+      'The reviewer seat answer did not match its contract. Task T1 is missing from the verdict. Task T2 is missing from the verdict. Task T3 is missing from the verdict. And 2 more. Asking the seat again.',
+    ]);
+  });
+
+  it('gives no notice when the first answer holds or the seat gets no repair', async () => {
+    const valid = makeSeatCall({
+      typedOutput: 'fallback',
+      results: [completed('{"answer":"a","count":2}')],
+    });
+    const implementer = makeSeatCall({
+      seat: 'implementer',
+      typedOutput: 'fallback',
+      results: [completed('{"answer":1}')],
+    });
+    const notices: string[] = [];
+
+    await requestTyped({
+      ...options({ call: valid.call }),
+      onRepair: (message) => notices.push(message),
+    });
+    await requestTyped({
+      ...options({ call: implementer.call }),
+      onRepair: (message) => notices.push(message),
+    });
+
+    expect(notices).toEqual([]);
   });
 });
