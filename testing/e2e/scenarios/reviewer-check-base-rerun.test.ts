@@ -295,7 +295,7 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
 
       assertPlainStdout(run.stdout);
       const lines = run.stdout.split('\n').map((line) => line.trim());
-      expect(lines).toContain(`task ${brief.id}: done (no checks)`);
+      expect(lines).toContain(`task ${brief.id}: done (1 of 1 checks passed)`);
       expect(lines).toContain(`reviewer check V1: failed (${red.command})`);
       expect(lines).toContain(
         "base re-run V1: pre-existing · the failure also fails before this run's changes",
