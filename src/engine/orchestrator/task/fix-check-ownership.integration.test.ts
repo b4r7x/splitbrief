@@ -551,10 +551,13 @@ describe('the triage, split and rewrite shapes (rows 15-18)', { timeout: 60_000 
         {
           fixTasks: [
             {
-              ...makeTaskSpec({ id: 'T023', suggestedFiles: ['src/a.test.ts'] }),
+              ...makeTaskSpec({ id: 'T023', suggestedFiles: ['src/a.test.ts'], checks: [] }),
               findingIds: ['P1'],
             },
-            { ...makeTaskSpec({ id: 'T025', suggestedFiles: ['src/a.ts'] }), findingIds: ['P1'] },
+            {
+              ...makeTaskSpec({ id: 'T025', suggestedFiles: ['src/a.ts'], checks: [] }),
+              findingIds: ['P1'],
+            },
           ],
           rejected: [],
           verify: [],
@@ -850,10 +853,13 @@ describe('a failure a sibling carries under another check id', { timeout: 60_000
       {
         fixTasks: [
           {
-            ...makeTaskSpec({ id: 'T002', suggestedFiles: ['src/a.test.ts'] }),
+            ...makeTaskSpec({ id: 'T002', suggestedFiles: ['src/a.test.ts'], checks: [] }),
             findingIds: assign.a,
           },
-          { ...makeTaskSpec({ id: 'T003', suggestedFiles: ['src/a.ts'] }), findingIds: assign.b },
+          {
+            ...makeTaskSpec({ id: 'T003', suggestedFiles: ['src/a.ts'], checks: [] }),
+            findingIds: assign.b,
+          },
         ],
         rejected: [],
         verify: [],

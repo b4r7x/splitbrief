@@ -150,7 +150,7 @@ A fix attempt may verify the existing code without changing it: `task.fix` permi
 
 Fix cycles have no count limit: they run until the review passes. Each review answer that starts fix work spends one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes. Each triage record keeps the keys of the problems that failed its review (`triage[].blocking`, `blockingKeys` in `src/core/review/verdict.ts`): a finding by its id, a red input by its command and failure keys. The review that judges a fix cycle is the task review after its last inserted fix task, or the next final review for a cycle the final review started (`triage[].scope`). `START_FIX_CYCLE` opens the cycle (`fixCycles.open`) with the id that SPLITBRIEF gave its last fix task (`lastFixTaskId`), not the id in the reviewer's answer; a split of that task hands the id to its last child. The first review that judges the cycle closes it and records it as `review.judges`, whether that review passes or fails. No later review, an Apply review included, compares with it again. When the judging review fails on the same keys, the cycle made no progress and the run halts on `review-failed`. A cycle that ran no fix task only ran checks again: it made no progress only when the next answer again asks for no fix task. A review of another task is judged by its own answer only. A steered round, one with a user input, does not halt on this rule.
 
-`workflow.review` selects the review cadence. The default, `end`, reviews after the final brief.
+`workflow.review` selects the review cadence. The default, `end`, reviews after the final brief. Each brief runs its own checks after its hand-back, except a `render` check, which runs before the review.
 `task` also reviews after every brief that passed its validation.
 A task review judges completed tasks and due criteria. A criterion is due when all tasks that serve it are done.
 
@@ -599,7 +599,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
       → BEGIN_IMPLEMENTATION → implementing
     The run records one workspace and its workspace-base snapshot.
     No command runs before the first task.
-    review: end runs the reviewer checks at the final review over the run workspace.
+    review: end runs each brief's own checks after it, except render checks, and
+    the reviewer checks at the final review over the run workspace.
     review: task also runs due checks after each task, then a task review whose
     reviewer checks run the tests related to the task's changed files.
     validation.end_checks: false runs no reviewer check; one row says so.
@@ -629,7 +630,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
                    guidance → the next attempt carries the instructions
       implementing → TASK_SENT → validating-task
       brief-gate selects checks by workflow.review:
-        end → no checks (only the checks a caller names, e.g. a consult verify)
+        end → the task's own checks, except render checks
+              (a consult verify runs only the checks it names, plus a fix brief's failed checks)
         task → the task's checks and the checks due when this task completes
         a fix task also runs each carried check once per brief gate, with no base re-run
         full capture → keys; incomplete capture → placeholder → command must pass
