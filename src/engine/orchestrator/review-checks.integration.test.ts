@@ -23,6 +23,11 @@ import * as commandRunner from '../../lib/process/spawn/run-command.js';
 import type { EngineEvent, EngineEventOf } from '../events/types.js';
 import { recordLocalTaskEvidence } from './evidence/task.js';
 import {
+  captureChangedFilesBaseline,
+  serializeChangedFilesBaseline,
+} from './changed-files-baseline.js';
+import { runPreReviewChecks } from './run/pre-review-checks.js';
+import {
   REVIEW_CHECKS_SKIP_REASON,
   runReviewCheck,
   runReviewChecks,
@@ -1119,7 +1124,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
     },
   );
 
-  it('warns about a stale tree it cannot remove while repeated base re-runs still compare keys', async () => {
+  it('warns about a stale tree it cannot remove while a repeated base re-run still compares keys', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-checks-stale-cleanup' }, async (run) => {
       mkdirSync(runBaseTreesRoot(), { recursive: true });
       const gone = spawnSync(process.execPath, ['-e', '']).pid;
@@ -1141,15 +1146,17 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
             answer: (command) => (command === 'npm test' ? { red: OLD_RED } : 'pass'),
           });
           expect(outcome.kind).toBe('ran');
+          // The run base does not change, so the second base re-run takes the stored result.
           expect(commands).toEqual([
             { command: 'npm test', at: 'workspace' },
-            { command: 'npm test', at: 'base' },
+            ...(attempt === 0 ? [{ command: 'npm test', at: 'base' }] : []),
             { command: 'npx --no-install vitest run', at: 'workspace' },
           ]);
           const settled = rows(events).find(
             (row) => row.moment === 'base' && row.status === 'done',
           );
           expect(settled).toMatchObject({ passed: false, newFailures: 0, preExisting: 1 });
+          expect(settled?.reusedAt !== undefined).toBe(attempt === 1);
           expect(settled).not.toHaveProperty('detail');
           expect(sectionOf(outcome)).toContain(
             'failed, 0 new failure(s); 1 pre-existing (also red at the run base)\n',
@@ -1759,6 +1766,99 @@ describe('runReviewChecks with validation.approve_checks', { timeout: 60_000 }, 
       expect(onApproval).not.toHaveBeenCalled();
       expect(planned(events).map((event) => event.status)).toEqual(['planned']);
       expect(outcome.state.reviewChecks?.skipped).toBeUndefined();
+    });
+  });
+});
+
+describe('reviewer checks run each command once per tree state', () => {
+  /** A run whose workspace changed `src/a.ts` since the run began, as the run baseline records. */
+  async function changedRun(run: ApplyRun): Promise<Partial<WorkflowState>> {
+    const baseline = await captureChangedFilesBaseline(run.ws);
+    writeFileSync(join(run.ws, 'src', 'a.ts'), 'export const a = 2;\n');
+    return { changedFilesBaseline: serializeChangedFilesBaseline(baseline) };
+  }
+
+  it('reuses the pre-review run of the same command on an unchanged workspace', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-once-pre-review' }, async (run) => {
+      const changed = await changedRun(run);
+      const state = makeImplState(
+        [makeTask({ id: 'T001', status: 'done', suggestedFiles: ['src/a.ts'] })],
+        {
+          phase: 'final-review',
+          workspace: run.workspace,
+          ...changed,
+          plan: {
+            summary: 'Run the tests.',
+            criteria: [],
+            decisions: [],
+            checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+            validation: null,
+          },
+        },
+      );
+      const preReviewCommands: string[] = [];
+      await runPreReviewChecks({
+        state,
+        workspaceDir: run.ws,
+        projectDir: run.dir,
+        sessionId: run.sessionId,
+        config: makeConfig(),
+        bus: makeBusRecorder().bus,
+        phase: 'final-review',
+        npmScriptsApproved: true,
+        runCommand: async (cmd, args) => {
+          preReviewCommands.push([cmd, ...args].join(' '));
+          return { stdout: 'ok', stderr: '', code: 0 };
+        },
+      });
+
+      const { commands, events } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        state: changed,
+      });
+
+      expect(preReviewCommands).toEqual(['npm test']);
+      expect(commands).toEqual([]);
+      expect(rows(events).find((row) => row.status === 'done')).toMatchObject({
+        id: 'V1',
+        passed: true,
+        reusedAt: expect.any(String),
+      });
+    });
+  });
+
+  it('runs a command once in the workspace and once at the run base, and reuses both on the next review', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-once-base' }, async (run) => {
+      const changed = await changedRun(run);
+      const answer = (command: string) => (command === 'npm test' ? { red: OLD_RED } : 'pass');
+      const first = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer,
+        state: changed,
+      });
+      expect(first.commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+        'npm test @ workspace',
+        'npm test @ base',
+      ]);
+
+      const second = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer,
+        state: changed,
+      });
+
+      expect(second.commands).toEqual([]);
+      expect(
+        rows(second.events)
+          .filter((row) => row.status === 'done')
+          .map((row) => [row.moment, row.reusedAt !== undefined]),
+      ).toEqual([
+        ['pre-review', true],
+        ['base', true],
+      ]);
+      expect(second.outcome).toMatchObject({
+        preExistingChecks: [{ id: 'V1', command: 'npm test', keys: [OLD_RED] }],
+      });
     });
   });
 });

@@ -5,6 +5,7 @@ import { formatResetAt } from '../../../core/recovery/reset-clock.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { checksSummary } from '../../../core/validation/checks-summary.js';
+import { reusedNote } from '../../../core/validation/reused-note.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { formatDuration, formatElapsedClock } from '../../../utils/format-time.js';
 import { boundEngineEventForConsumer } from '../bound.js';
@@ -55,6 +56,7 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
   // A `full_suite` without an id is a full-suite stage of a session from before the reviewer chose its checks.
   if (event.id === undefined || event.status === 'running' || event.status === 'stopped')
     return null;
+  const reused = event.reusedAt === undefined ? '' : `${SOFT_SEP}${reusedNote(event.reusedAt)}`;
   if (event.moment === 'plan') {
     const label =
       event.scenario === undefined ? `plan check ${event.id}` : `Render ${event.scenario}`;
@@ -63,11 +65,15 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
     if (event.status === 'not-run') return `${label}: not run${detail}`;
     const verdict =
       event.passed === true ? (event.scenario === undefined ? 'passed' : 'rendered') : 'failed';
-    const duration =
-      event.duration === undefined ? '' : `${SOFT_SEP}${formatDuration(event.duration)}`;
+    const clock =
+      event.reusedAt !== undefined
+        ? reused
+        : event.duration === undefined
+          ? ''
+          : `${SOFT_SEP}${formatDuration(event.duration)}`;
     const command =
       event.scenario !== undefined ? '' : event.command === '' ? detail : ` (${event.command})`;
-    return `${label}: ${verdict}${duration}${command}`;
+    return `${label}: ${verdict}${clock}${command}`;
   }
   const label =
     event.moment === 'base'
@@ -91,7 +97,7 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
       deferredTo: event.deferredTo ?? [],
       others: event.others,
     }).join(SOFT_SEP);
-    return `${label} ${event.id}: ${verdict} (${event.command})`;
+    return `${label} ${event.id}: ${verdict}${reused} (${event.command})`;
   }
   if (event.moment === 'base') {
     if (
@@ -106,13 +112,11 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
         reason: event.detail,
       });
       const why = split.why === null ? '' : `${SOFT_SEP}${split.why}`;
-      return `${label} ${event.id}: ${split.verdict}${why}`;
+      return `${label} ${event.id}: ${split.verdict}${reused}${why}`;
     }
-    return `${label} ${event.id}: ${event.passed === true ? 'passes' : 'fails'}`;
+    return `${label} ${event.id}: ${event.passed === true ? 'passes' : 'fails'}${reused}`;
   }
-  return event.passed === true
-    ? `${label} ${event.id}: passed (${event.command})`
-    : `${label} ${event.id}: failed (${event.command})`;
+  return `${label} ${event.id}: ${event.passed === true ? 'passed' : 'failed'}${reused} (${event.command})`;
 }
 
 /**
@@ -144,6 +148,7 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   fix check V1: refused (<detail>) | not run (<detail>)
  *   plan check K1: passed · 14.2s (<command>) | failed · 14.2s (<command>)
  *   plan check K1: refused (<detail>) | not run (<detail>)
+ *   reviewer check V1: passed · reused, ran 11:53 (<command>)   (and on every check verdict above)
  *   Render workflow-x: rendered · 14.2s | failed · 14.2s
  *   Render workflow-x: refused (<detail>) | not run (<detail>)
  *   stalled: implementer (opencode) · no output for 5:00

@@ -17,10 +17,17 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
-import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../recovery/builders/checks.js';
 import { failingFilesFromKeys } from '../task/file-owner.js';
 import { failureKeys } from '../validation/extract-failure-keys.js';
+import { verifyClaimChecks } from '../triage.js';
+import { setupGitSessionProject } from '#testing/helpers/git-session.js';
+import { abortError } from '../../../utils/abort.js';
+import {
+  captureChangedFilesBaseline,
+  serializeChangedFilesBaseline,
+} from '../changed-files-baseline.js';
 import {
   buildPreReviewInputs,
   classifyRequiredChecks,
@@ -603,5 +610,211 @@ describe('pre-review checks', () => {
       'Fix the cause below, then run the checks again.',
       'K3: validation.render is not set',
     ]);
+  });
+});
+
+describe('pre-review checks run each command once per workspace state', () => {
+  const dirs: string[] = [];
+  const TYPECHECK = 'tsc --noEmit';
+  const RED = "src/a.ts(1,14): error TS2322: Type 'number' is not assignable to type 'string'.";
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const dir of dirs.splice(0)) cleanupTempDir(dir);
+  });
+
+  /** A checkout-mode run: the run workspace is the checkout, with one change since the run began. */
+  async function checkoutRun(prefix: string) {
+    const { projectDir, sessionId } = setupGitSessionProject({
+      prefix,
+      sessionId: `sess-${prefix}`,
+      files: { 'tsconfig.json': '{}', 'src/a.ts': 'export const a = 1;\n' },
+    });
+    dirs.push(projectDir);
+    const baseline = await captureChangedFilesBaseline(projectDir);
+    writeFileSync(join(projectDir, 'src', 'a.ts'), 'export const a = 2;\n');
+    const state = makeImplState([], {
+      phase: 'final-review',
+      changedFilesBaseline: serializeChangedFilesBaseline(baseline),
+      plan: makePlan(
+        ['K1', 'K2', 'K3'].map((id) => ({ id, kind: 'cmd', value: TYPECHECK, required: true })),
+      ),
+    });
+    return { projectDir, sessionId, state };
+  }
+
+  function preReview(
+    run: Awaited<ReturnType<typeof checkoutRun>>,
+    runCommand: ValidationCommandRunner,
+    extra: Partial<RunPreReviewChecksOptions> = {},
+  ) {
+    const bus = createEventBus();
+    const rows: EngineEventOf<'full_suite'>[] = [];
+    bus.subscribe((event) => {
+      if (event.type === 'full_suite' && event.status === 'done') rows.push(event);
+    });
+    const result = runPreReviewChecks({
+      state: run.state,
+      workspaceDir: run.projectDir,
+      projectDir: run.projectDir,
+      sessionId: run.sessionId,
+      config: makeConfig({}),
+      bus,
+      phase: 'final-review',
+      npmScriptsApproved: true,
+      runCommand,
+      ...extra,
+    });
+    return { result, rows };
+  }
+
+  it('runs one command under three check ids once and marks the second and third reused', async () => {
+    const run = await checkoutRun('once-three-ids');
+    const runCommand = makeCommandRunner();
+
+    const { result, rows } = preReview(run, runCommand);
+
+    expect((await result).runs.map((r) => [r.checkId, r.status])).toEqual([
+      ['K1', 'pass'],
+      ['K2', 'pass'],
+      ['K3', 'pass'],
+    ]);
+    expect(runCommand.calls).toHaveLength(1);
+    expect(
+      rows.map((row) => [row.id, row.reusedAt !== undefined, row.duration !== undefined]),
+    ).toEqual([
+      ['K1', false, true],
+      ['K2', true, false],
+      ['K3', true, false],
+    ]);
+    expect(
+      readEvidenceLedger({ projectDir: run.projectDir, sessionId: run.sessionId })?.commandRuns,
+    ).toEqual([expect.objectContaining({ tree: 'workspace', command: TYPECHECK, status: 'pass' })]);
+  });
+
+  it('reuses a stored run after a stop and continue, and runs again once a file changed', async () => {
+    const run = await checkoutRun('once-continue');
+    await preReview(run, makeCommandRunner()).result;
+
+    const continued = makeCommandRunner();
+    await preReview(run, continued).result;
+    expect(continued.calls).toHaveLength(0);
+
+    writeFileSync(join(run.projectDir, 'src', 'a.ts'), 'export const a = 3;\n');
+    const changed = makeCommandRunner();
+    await preReview(run, changed).result;
+    expect(changed.calls).toHaveLength(1);
+  });
+
+  it('reuses a red with its failure keys', async () => {
+    const run = await checkoutRun('once-red');
+    const red = processError.exitCode({ command: 'tsc', code: 2, stderr: RED });
+    const first = await preReview(run, makeCommandRunner(red)).result;
+
+    const again = makeCommandRunner();
+    const second = await preReview(run, again).result;
+
+    expect(again.calls).toHaveLength(0);
+    expect(second.failed.map((r) => r.checkId)).toEqual(['K1', 'K2', 'K3']);
+    expect(second.defects).toEqual(first.defects);
+  });
+
+  it('runs a command again after it timed out', async () => {
+    const run = await checkoutRun('once-timeout');
+    const timedOut = processError.timeout({ command: 'tsc', timeoutMs: 1000, output: '' });
+    const first = makeCommandRunner(timedOut, timedOut, timedOut);
+    await preReview(run, first).result;
+    expect(first.calls).toHaveLength(3);
+
+    const again = makeCommandRunner();
+    await preReview(run, again).result;
+    expect(again.calls).toHaveLength(1);
+  });
+
+  it('runs a command again after a stop cut it off', async () => {
+    const run = await checkoutRun('once-stop');
+    const controller = new AbortController();
+    const stopped: ValidationCommandRunner = async () => {
+      controller.abort();
+      throw abortError(controller.signal);
+    };
+    await expect(preReview(run, stopped, { signal: controller.signal }).result).rejects.toThrow();
+
+    const again = makeCommandRunner();
+    await preReview(run, again).result;
+    expect(again.calls).toHaveLength(1);
+  });
+
+  it('lets a reviewer verify run a stored red again and keeps its result for the next run', async () => {
+    const run = await checkoutRun('once-verify');
+    const red = processError.exitCode({ command: 'tsc', code: 2, stderr: RED });
+    await preReview(run, makeCommandRunner(red)).result;
+
+    const verifyRun = makeCommandRunner();
+    const verified = await verifyClaimChecks(
+      {
+        projectDir: run.projectDir,
+        workspaceDir: run.projectDir,
+        sessionId: run.sessionId,
+        bus: createEventBus(),
+        config: makeConfig({}),
+        runCommand: verifyRun,
+      },
+      run.state,
+      ['K1'],
+      [],
+    );
+    expect(verifyRun.calls).toHaveLength(1);
+    expect(verified.status).toBe('pass');
+
+    const next = makeCommandRunner();
+    const after = await preReview(run, next).result;
+    expect(next.calls).toHaveLength(0);
+    expect(after.failed).toEqual([]);
+  });
+
+  it('lets a reviewer verify take a stored pass', async () => {
+    const run = await checkoutRun('once-verify-pass');
+    await preReview(run, makeCommandRunner()).result;
+
+    const verifyRun = makeCommandRunner();
+    const verified = await verifyClaimChecks(
+      {
+        projectDir: run.projectDir,
+        workspaceDir: run.projectDir,
+        sessionId: run.sessionId,
+        bus: createEventBus(),
+        config: makeConfig({}),
+        runCommand: verifyRun,
+      },
+      run.state,
+      ['K1', 'K2'],
+      [],
+    );
+    expect(verifyRun.calls).toHaveLength(0);
+    expect(verified.status).toBe('pass');
+  });
+
+  it('lets a reviewer verify run a stored red once for two ids with one command', async () => {
+    const run = await checkoutRun('once-verify-two-reds');
+    const red = processError.exitCode({ command: 'tsc', code: 2, stderr: RED });
+    await preReview(run, makeCommandRunner(red)).result;
+
+    const verifyRun = makeCommandRunner(red, red);
+    const verified = await verifyClaimChecks(
+      {
+        projectDir: run.projectDir,
+        workspaceDir: run.projectDir,
+        sessionId: run.sessionId,
+        bus: createEventBus(),
+        config: makeConfig({}),
+        runCommand: verifyRun,
+      },
+      run.state,
+      ['K1', 'K2'],
+      [],
+    );
+    expect(verifyRun.calls).toHaveLength(1);
+    expect(verified.status).toBe('fail');
   });
 });

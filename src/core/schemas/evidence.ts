@@ -40,9 +40,37 @@ const EvidenceCheckEntrySchema = z.object({
     .optional(),
   artifacts: z.array(z.object({ path: z.string(), sha256: z.string() })).optional(),
   workspaceSnapshotId: z.string().optional(),
+  /** The time the run this entry reused ran: the same command on the same files ran once. */
+  reusedAt: z.string().optional(),
   ts: z.string(),
 });
 export type EvidenceCheckEntry = z.infer<typeof EvidenceCheckEntrySchema>;
+
+/**
+ * The latest finished run of one command in one tree: the run's workspace or its run base. A later
+ * check of the same command on the same tree state takes this result and runs nothing.
+ */
+const EvidenceCommandRunFields = z.object({
+  tree: z.enum(['workspace', 'run-base']),
+  /** The tree's state: the workspace's changed files and their contents, or the run base snapshot. */
+  stateId: z.string(),
+  command: z.string(),
+  ts: z.string(),
+  exitCode: z.number().int().optional(),
+  output: z.string(),
+});
+const EvidenceCommandRunSchema = z.discriminatedUnion('status', [
+  EvidenceCommandRunFields.extend({ status: z.literal('pass') }),
+  EvidenceCommandRunFields.extend({
+    status: z.literal('fail'),
+    failure: z.object({
+      keys: z.array(z.string()),
+      placeholder: z.string().optional(),
+      messages: z.record(z.string(), z.string()).optional(),
+    }),
+  }),
+]);
+export type EvidenceCommandRun = z.infer<typeof EvidenceCommandRunSchema>;
 
 const EvidencePromotedFileSchema = z.object({
   path: z.string(),
@@ -160,5 +188,6 @@ export const EvidenceLedgerSchema = z.object({
   briefHash: z.string().nullable().optional(),
   approvals: z.array(EvidenceApprovalSchema).optional(),
   rejections: z.array(EvidenceRejectionSchema).optional(),
+  commandRuns: z.array(EvidenceCommandRunSchema).optional(),
 });
 export type EvidenceLedger = z.infer<typeof EvidenceLedgerSchema>;

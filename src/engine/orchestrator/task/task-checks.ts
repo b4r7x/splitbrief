@@ -64,6 +64,7 @@ function taskCheckOptions(opts: {
   task: Task;
   carried: ReadonlyMap<string, FixCheckKeys>;
   runCommand?: ValidationCommandRunner | undefined;
+  rerunRedBefore?: string | undefined;
 }): RunChecksOptions {
   const { wctx, state, task } = opts;
   return {
@@ -81,6 +82,12 @@ function taskCheckOptions(opts: {
     phase: state.phase,
     npmScriptsApproved: planApprovesNpmScripts({ config: wctx.config, state }),
     testFiles: ownTestFiles(opts.carried),
+    results: {
+      ref: { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
+      state,
+      tree: 'workspace',
+      rerunRedBefore: opts.rerunRedBefore,
+    },
     ...(state.discoveredValidation !== undefined && {
       discoveredValidation: state.discoveredValidation,
     }),
@@ -103,6 +110,8 @@ export async function runTaskChecks(opts: {
   taskStartSnapshot?: ChangedFilesSnapshot | null | undefined;
   attemptSnapshot?: ChangedFilesSnapshot | undefined;
   runCommand?: ValidationCommandRunner | undefined;
+  /** A consult `verify`: a red stored before this time runs again. */
+  rerunRedBefore?: string | undefined;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
 }): Promise<TaskChecksResult> {
   if (opts.checkIds.length === 0) return { state: opts.state, runs: [], settled: new Set() };
@@ -167,6 +176,7 @@ async function runTaskCheckCommands(
         command: run.command ?? run.checkId,
         moment: 'brief',
         passed: judged.left.length === 0,
+        ...(run.reusedAt !== undefined && { reusedAt: run.reusedAt }),
         ...fixCheckCounts(judged),
       },
     );

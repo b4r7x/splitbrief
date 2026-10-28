@@ -98,6 +98,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-implementation-silent', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-review-check-running', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-check-reused', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-implementation-retry', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-implementation-escalated', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-fix-narrow-rail', ['22x45', '160x45']],

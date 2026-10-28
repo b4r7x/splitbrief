@@ -11,6 +11,10 @@ import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import {
+  captureChangedFilesBaseline,
+  serializeChangedFilesBaseline,
+} from '../changed-files-baseline.js';
 import { validateAndCommit } from '../escalation/validate-and-commit.js';
 import type { EscalationContext } from '../escalation/types.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
@@ -580,6 +584,64 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
         },
       ]);
     });
+  });
+
+  it('marks a fix check row reused when the same command already ran on the same files', async () => {
+    const ref = setup('fix-check-reused');
+    const typecheck: Check = { id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true };
+    const task = makeTask({
+      id: 'T002',
+      checks: [typecheck],
+      fix: {
+        cycle: 1,
+        findings: [
+          {
+            id: 'P1',
+            text: 'Required check K2 failed.',
+            acceptance: null,
+            file: 'src/a.ts',
+            checkIds: ['K2'],
+            commands: { K2: 'tsc --noEmit' },
+            output: OWN_RED,
+            failureKeys: { K2: [OWN_KEY] },
+          },
+        ],
+      },
+    });
+    const baseline = await captureChangedFilesBaseline(ref.projectDir);
+    const state = makeImplState([task], {
+      changedFilesBaseline: serializeChangedFilesBaseline(baseline),
+    });
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const check = (runCommand: ValidationCommandRunner) =>
+      runTaskChecks({
+        wctx: makeWctx({ ...ref, bus, config: makeConfig() }),
+        state,
+        task,
+        checkIds: ['K2'],
+        runCommand,
+      });
+
+    await check(
+      makeCommandRunner(
+        processError.exitCode({ command: 'tsc --noEmit', code: 2, stderr: '', output: OWN_RED }),
+      ),
+    );
+    const again = makeCommandRunner();
+    await check(again);
+
+    expect(again.calls).toHaveLength(0);
+    expect(
+      events.flatMap((event) =>
+        event.type === 'full_suite' && event.status === 'done'
+          ? [[event.id, event.passed, event.reusedAt !== undefined]]
+          : [],
+      ),
+    ).toEqual([
+      ['K2', false, false],
+      ['K2', false, true],
+    ]);
   });
 
   // The next review re-runs the whole command and answers the new failure.

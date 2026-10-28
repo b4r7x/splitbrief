@@ -62,13 +62,18 @@ async function runBriefs(opts: {
     return { stdout: '', stderr: '', code: 0 };
   };
   vi.spyOn(commandRunner, 'runCommand').mockImplementation(record);
+  // Each call writes new content, so the checks after it run on a new tree state.
+  let calls = 0;
+  const write = async (call: ImplementerOptions) => {
+    calls += 1;
+    const file = call.task.suggestedFiles[0] ?? 'src/missing.ts';
+    mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
+    writeFileSync(join(call.projectDir, file), `export const value = ${calls};\n`);
+    return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+  };
   const implementer = makeImplementer({
-    implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
-      const file = call.task.suggestedFiles[0] ?? 'src/missing.ts';
-      mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
-      writeFileSync(join(call.projectDir, file), 'export const value = 1;\n');
-      return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
-    }),
+    implement: vi.fn().mockImplementation(write),
+    retry: vi.fn().mockImplementation(write),
   });
   const { bus, events } = makeBusRecorder();
 
@@ -216,8 +221,9 @@ describe('runTaskLoop brief checks', { timeout: 120_000 }, () => {
     const { result, commands, events } = await runTwoBriefs('task');
 
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
-    // T001 gate K1, T001 review K1, T002 gate K2, T002 review K1 and K2.
-    expect(commands).toEqual(Array(5).fill('tsc --noEmit'));
+    // T001 gate K1 and T002 gate K2 run the command. Each task review takes the result of the same
+    // command on the same files.
+    expect(commands).toEqual(Array(2).fill('tsc --noEmit'));
     expect(
       events.flatMap((event) =>
         event.type === 'checks_run' ? [[event.taskId, event.results.map((r) => r.id)]] : [],

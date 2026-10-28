@@ -278,6 +278,7 @@ export function publishReviewCheck(
     others?: number | undefined;
     detail?: string | undefined;
     duration?: number | undefined;
+    reusedAt?: string | undefined;
   },
 ): void {
   ctx.bus.publish({
@@ -306,6 +307,7 @@ export function publishReviewCheck(
     ...(opts.others !== undefined && { others: opts.others }),
     ...(opts.detail !== undefined && { detail: opts.detail }),
     ...(opts.duration !== undefined && { duration: opts.duration }),
+    ...(opts.reusedAt !== undefined && { reusedAt: opts.reusedAt }),
   });
 }
 

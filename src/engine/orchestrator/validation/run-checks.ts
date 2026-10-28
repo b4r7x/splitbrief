@@ -34,6 +34,7 @@ import { RENDER_ID_PATTERN } from '../../spec/plan-checks.js';
 import { changedDefinitionRefusal } from './changed-script.js';
 import { failureKeys, type FailureKeys } from './extract-failure-keys.js';
 import type { ValidationResult } from './result.js';
+import { type CheckResultStore, runCommandOnce } from './result-store.js';
 import { reviewerCommandRefusal } from './reviewer-command-policy.js';
 import { NO_TEST_FILE_FOUND } from './commands.js';
 import { buildStageContext, planTestCheck } from './run.js';
@@ -59,6 +60,8 @@ export type CheckRunResult = {
   base?: { output: string; exitCode?: number | undefined } | undefined;
   /** Not runnable because a program is missing (`notRunnableReason`): installing it is the fix. */
   missingProgram?: true | undefined;
+  /** The time the stored run of the same command on the same tree state ran: nothing ran now. */
+  reusedAt?: string | undefined;
 } & (
   | {
       status: 'fail';
@@ -91,6 +94,8 @@ export type RunChecksOptions = {
    * and the stack can select them; the next review runs the whole command.
    */
   testFiles?: ReadonlyMap<string, readonly string[]> | undefined;
+  /** The run's stored command results; without it every command runs. */
+  results?: CheckResultStore | undefined;
 };
 
 export function planApprovesNpmScripts(opts: {
@@ -161,6 +166,21 @@ async function runTestCheck(
   if (planned.kind === 'skip') {
     return { checkId: check.id, status: 'not-runnable', output: planned.reason };
   }
+  return runCommandOnce({
+    store: opts.results,
+    workspaceDir: opts.projectDir,
+    checkId: check.id,
+    command: planned.command,
+    run: () => spawnTestCheck(check, opts, run, planned),
+  });
+}
+
+async function spawnTestCheck(
+  check: Check,
+  opts: RunChecksOptions,
+  run: ValidationCommandRunner,
+  planned: Extract<TestCheckPlan, { kind: 'run' }>,
+): Promise<CheckRunResult> {
   const result = await runValidationStep({
     cmd: planned.resolved.cmd,
     args: planned.args,
@@ -211,6 +231,7 @@ async function runTestCheck(
     output: checkOutput(result),
     ...(result.command !== undefined && { command: result.command }),
     ...(result.exitCode !== undefined && { exitCode: result.exitCode }),
+    ...(result.timedOut === true && { timedOut: true }),
   };
 }
 
@@ -252,6 +273,22 @@ async function runCommandCheck(
   if (cmd === undefined) {
     return { checkId: check.id, status: 'refused', output: 'names no program' };
   }
+  return runCommandOnce({
+    store: opts.results,
+    workspaceDir: opts.projectDir,
+    checkId: check.id,
+    command: check.value,
+    run: () => spawnCommandCheck(check, opts, run, cmd, args),
+  });
+}
+
+async function spawnCommandCheck(
+  check: Check,
+  opts: RunChecksOptions,
+  run: ValidationCommandRunner,
+  cmd: string,
+  args: string[],
+): Promise<CheckRunResult> {
   try {
     const { stdout, stderr } = await run(cmd, args, {
       cwd: opts.projectDir,

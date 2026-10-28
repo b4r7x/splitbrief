@@ -171,6 +171,7 @@ async function recheckMergedCandidate(
     npmScriptsApproved: planApprovesNpmScripts({ config: wctx.config, state }),
     discoveredValidation: state.discoveredValidation,
     signal: wctx.signal,
+    results: { ref, state, tree: 'workspace' as const },
   };
   const ledger = readEvidenceLedger({ projectDir: wctx.projectDir, sessionId: wctx.sessionId });
   const registry = checkRegistry({ plan: state.plan, tasks: state.tasks });

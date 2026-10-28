@@ -4,6 +4,7 @@ import type {
   EvidenceTask,
   EvidenceApproval,
   EvidenceRejection,
+  EvidenceCommandRun,
 } from '../schemas/evidence.js';
 import { nowIso } from '../../utils/format-time.js';
 import { hashTaskBrief } from './brief-hash.js';
@@ -88,6 +89,14 @@ export function withAppendedRejection(
   entry: EvidenceRejection,
 ): EvidenceLedger {
   return { ...ledger, rejections: [...(ledger.rejections ?? []), entry], generatedAt: nowIso() };
+}
+
+/** Keeps the newest run of a command per tree: a run on a newer tree state replaces the older one. */
+export function withCommandRun(ledger: EvidenceLedger, run: EvidenceCommandRun): EvidenceLedger {
+  const others = (ledger.commandRuns ?? []).filter(
+    (entry) => entry.tree !== run.tree || entry.command !== run.command,
+  );
+  return { ...ledger, commandRuns: [...others, run], generatedAt: nowIso() };
 }
 
 /** The entry that records work on this brief, stamped with the hash of the brief as it is now. */

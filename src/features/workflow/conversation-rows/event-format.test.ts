@@ -16,6 +16,7 @@ import {
   validationSummarySegments,
 } from './event-format.js';
 import type { ConversationRowSegment } from './types.js';
+import { reusedNote } from '../../../core/validation/reused-note.js';
 
 function segmentText(segments: readonly ConversationRowSegment[]): string {
   return segments.map((segment) => segment.text).join('');
@@ -281,6 +282,28 @@ function reviewCheck(overrides: Partial<ReviewCheckEvent>): ReviewCheckEvent {
 }
 
 describe('fullSuiteRow for a reviewer check', () => {
+  it('shows when a reused check ran in place of its clock', () => {
+    const reusedAt = new Date().toISOString();
+    const note = reusedNote(reusedAt);
+    for (const moment of ['plan', 'pre-review', 'base'] as const) {
+      const row = fullSuiteRow(reviewCheck({ moment, status: 'done', passed: true, reusedAt }));
+      expect(row.endsWith(` · ${note.replaceAll(' ', '\u00a0')}`)).toBe(true);
+    }
+    const fixRow = fullSuiteRow(
+      reviewCheck({
+        moment: 'brief',
+        status: 'done',
+        passed: true,
+        own: 2,
+        ownLeft: 0,
+        others: 0,
+        reusedAt,
+      }),
+    );
+    expect(fixRow.endsWith(` · ${note.replaceAll(' ', '\u00a0')}`)).toBe(true);
+    expect(note).toMatch(/^reused, ran \d\d:\d\d$/u);
+  });
+
   it.each([
     [{ status: 'running' }, 'running', 'accent'],
     [{ status: 'done', passed: true }, 'passed', 'success'],

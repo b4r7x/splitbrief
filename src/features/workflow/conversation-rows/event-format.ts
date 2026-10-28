@@ -3,6 +3,7 @@ import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { reusedNote } from '../../../core/validation/reused-note.js';
 import { ValidationStageSchema, type ValidationStage } from '../../../core/schemas/enums.js';
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
 import type {
@@ -132,6 +133,13 @@ export function fullSuiteSegments(
   ];
   const detail: ConversationRowSegment[] =
     event.detail === undefined ? [] : [{ text: firstLine(event.detail), tone: 'textDim' }];
+  // A reused result shows when its command ran, in place of the clock of a run; a wrap keeps it whole.
+  const clock: ConversationRowSegment[] =
+    event.reusedAt !== undefined
+      ? [{ text: reusedNote(event.reusedAt).replaceAll(' ', '\u00a0'), tone: 'textDim' }]
+      : event.duration === undefined
+        ? []
+        : [{ text: rowDuration(event.duration), tone: 'textDim' }];
   if (event.status === 'running') return append([{ text: 'running', tone: fullSuiteTone(event) }]);
   if (event.status === 'stopped') return append([{ text: 'stopped', tone: fullSuiteTone(event) }]);
   if (event.status === 'not-run')
@@ -157,9 +165,7 @@ export function fullSuiteSegments(
           tone: index === 0 ? fullSuiteTone(event) : 'textDim',
         }),
       ),
-      ...(event.duration === undefined
-        ? []
-        : [{ text: rowDuration(event.duration), tone: 'textDim' as const }]),
+      ...clock,
     ]);
   }
   const split =
@@ -189,9 +195,7 @@ export function fullSuiteSegments(
   // verified at the run base, follows it.
   return append([
     { text: verdict, tone: fullSuiteTone(event) },
-    ...(event.duration === undefined
-      ? []
-      : [{ text: rowDuration(event.duration), tone: 'textDim' as const }]),
+    ...clock,
     ...(split === null || split.why === null
       ? []
       : [{ text: split.why, tone: 'textDim' as const }]),

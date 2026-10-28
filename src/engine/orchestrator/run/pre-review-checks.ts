@@ -153,6 +153,11 @@ export async function runPreReviewChecks(
     discoveredValidation: opts.state.discoveredValidation,
     signal: opts.signal,
     runCommand: opts.runCommand,
+    results: {
+      ref: { projectDir: opts.projectDir, sessionId: opts.sessionId },
+      state: opts.state,
+      tree: 'workspace',
+    },
   };
   const notices = { bus: opts.bus, phase: opts.phase };
   const prepare = createCheckRunner(checkOptions);
@@ -174,7 +179,9 @@ export async function runPreReviewChecks(
         ? {
             status: 'done',
             passed: run.status === 'pass',
-            duration: Date.now() - startedAt,
+            ...(run.reusedAt === undefined
+              ? { duration: Date.now() - startedAt }
+              : { reusedAt: run.reusedAt }),
             ...(unranRed && { detail: run.output }),
           }
         : unranCheckRow(run)),

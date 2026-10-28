@@ -16,6 +16,7 @@ import { checkRegistry, type CheckRunResult } from '../validation/run-checks.js'
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { runPreValidationGate } from './pre-validation-gate.js';
 import { runTaskChecks } from './task-checks.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { withAttemptRestoreScope } from './restore-scope.js';
 
 type BriefGateContext = Pick<
@@ -119,6 +120,9 @@ export async function runBriefGate(opts: {
       taskStartSnapshot: opts.taskStartSnapshot,
       attemptSnapshot: opts.attemptSnapshot,
       runCommand: opts.runCommand,
+      // Only a consult `verify` selects checks; it confirms reds, so every stored red this gate
+      // runs, named or not, runs again.
+      ...(opts.checkIds !== undefined && { rerunRedBefore: nowIso() }),
       setTrackedState: track,
     });
     state = checked.state;

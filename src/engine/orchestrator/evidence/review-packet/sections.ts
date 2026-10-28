@@ -114,6 +114,7 @@ export function buildChecks(opts: {
         workspaceSnapshotId: entry.workspaceSnapshotId,
       }),
       ts: entry.ts,
+      ...(entry.reusedAt !== undefined && { reusedAt: entry.reusedAt }),
     })),
   );
   const outsideReadPaths = [
