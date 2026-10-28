@@ -13,7 +13,7 @@ function collect(events: EngineEvent[]): string[] {
 }
 
 const ts = 1;
-const resetAt = '2026-10-27T12:00:00.000Z';
+const resetAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
 describe('seat wait plain output', () => {
   it('writes one line that starts with waiting: OpenAI Codex CLI · resets when a wait starts', () => {
@@ -71,6 +71,18 @@ describe('seat wait plain output', () => {
       tool: 'OpenAI Codex CLI',
     };
     expect(collect([startUnparseable])).toEqual([]);
+  });
+
+  it('writes no waiting line when the reset has passed', () => {
+    const startPassed: EngineEventOf<'seat_wait_started'> = {
+      type: 'seat_wait_started',
+      ts,
+      phase: 'idle',
+      seat: 'build',
+      resetAt: new Date(Date.now() - 60 * 1000).toISOString(),
+      tool: 'OpenAI Codex CLI',
+    };
+    expect(collect([startPassed])).toEqual([]);
   });
 
   it('writes no waiting line when tool is empty', () => {

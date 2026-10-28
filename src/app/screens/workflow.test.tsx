@@ -1109,6 +1109,36 @@ describe('WorkflowScreen showing a run at rest', () => {
     return { ui, record };
   }
 
+  it('drops a seat wait from the byline once its reset passes, and stops the clock', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(FIXED_TS);
+    const state = makeWorkflowState({
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T003', status: 'in_progress' })],
+      seatWait: { seat: 'build', resetAt: new Date(FIXED_TS + 2_500).toISOString() },
+    });
+    openRun({ hydration: { kind: 'loaded', state } });
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const waiting = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(waiting).toContain('Waiting for');
+    expect(waiting).toContain('resets');
+    const ticking = vi.getTimerCount();
+
+    vi.advanceTimersByTime(3_000);
+    await flushEffects();
+    const passed = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(passed).toContain('Stopped at T003');
+    expect(passed).toContain('⏎ to continue');
+    expect(passed).not.toContain('Waiting for');
+    // The shared clock was the one interval the wait added; with the wait gone it stops.
+    expect(vi.getTimerCount()).toBe(ticking - 1);
+
+    ui.unmount();
+    vi.useRealTimers();
+  });
+
   it('sends a failed final review back with the correction typed into the at-rest composer', async () => {
     const { ui, record } = renderFailedReviewRun();
     await flushEffects();

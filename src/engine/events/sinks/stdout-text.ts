@@ -2,8 +2,8 @@ import { baseSplit, baseSplitNames } from '../../../core/review/base-split.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { stuckAnswerWords } from '../../../core/review/stuck.js';
 import { setAsideLine } from '../../../core/review/verdict.js';
-import { formatResetAt } from '../../../core/recovery/reset-clock.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
+import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { checksSummary } from '../../../core/validation/checks-summary.js';
 import { reusedNote } from '../../../core/validation/reused-note.js';
@@ -205,9 +205,9 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
         checks.set(bounded.taskId, checksSummary(bounded.results));
         return;
       case 'seat_wait_started': {
-        const reset = formatResetAt(bounded.resetAt);
-        if (typeof bounded.tool === 'string' && bounded.tool.trim() !== '' && reset !== undefined) {
-          write(`waiting: ${bounded.tool}${SOFT_SEP}${reset}`);
+        if (typeof bounded.tool === 'string' && bounded.tool.trim() !== '') {
+          const parts = seatWaitParts(bounded.tool, bounded.resetAt);
+          if (parts !== null) write(`waiting: ${bounded.tool}${SOFT_SEP}${parts[1]}`);
         }
         return;
       }

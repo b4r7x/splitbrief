@@ -69,7 +69,7 @@ describe('CLI reference plain output example', () => {
         ts: 1,
         phase: 'implementing',
         seat: 'build',
-        resetAt: '2026-10-27T17:00:00.000Z',
+        resetAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
         tool: 'OpenAI Codex CLI',
       },
     ]).at(-1);

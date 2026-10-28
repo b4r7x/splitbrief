@@ -26,7 +26,7 @@ import { runnerActivityLedgerItem, runnerActivityModelRole } from './runner-acti
 import { buildProgressRowCount } from '../layout/chrome-rows.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { separatedSpans } from '../conversation-rows/row-format/text.js';
-import { seatWaitParts } from './seat-wait-line.js';
+import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
 
 /**
  * The floor under the silence warning: the block never paints it for a seat quieter than this,

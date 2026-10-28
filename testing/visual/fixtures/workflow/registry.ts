@@ -840,6 +840,10 @@ const checkpointPredicates = [
   [checkpointId('at-rest-halted'), includesAll()],
   [checkpointId('at-rest-seat-wait'), includesAll()],
   [
+    checkpointId('at-rest-seat-wait-elsewhere'),
+    (context) => includesAll()(context) && excludesAll('Running in another process')(context),
+  ],
+  [
     checkpointId('at-rest-seat-moved'),
     (context) => includesAll()(context) && excludesAll('Waiting for')(context),
   ],

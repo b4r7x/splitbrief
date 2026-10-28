@@ -5,7 +5,7 @@ import {
   type DeriveBuildProgressInput,
 } from './build-progress.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
-import { seatWaitSentence } from './seat-wait-line.js';
+import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type { OperationsState } from '../../../stores/workflow/operations/state.js';
 import type { TasksState, WorkflowTask } from '../../../stores/workflow/tasks.js';

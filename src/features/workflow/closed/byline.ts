@@ -5,7 +5,7 @@ import type { SummaryView } from './view-model.js';
 import { haltOf, recoveryHaltLabel } from '../../../core/recovery/halt.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { recoveryHeadlineParts, recoveryMenuActionLabel } from '../recovery-prompt.js';
-import { formatResetAt } from '../../../core/recovery/reset-clock.js';
+import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import {
@@ -195,19 +195,26 @@ export function openRunBylineParts(
     status: RunStatus;
     continuable: boolean;
     width: number;
+    now: number;
     apply?: ApplyByline | undefined;
   }>,
 ): readonly ConversationRowSegment[] {
-  const { status, width } = input;
+  const { status, width, now } = input;
   if (status.kind === 'running' && input.apply !== undefined)
     return applyByline(input.apply, width);
-  if (status.kind === 'running')
+  if (status.kind === 'running') {
+    const wait =
+      status.seatWait === undefined
+        ? null
+        : seatWaitParts(status.seatWait.tool, status.seatWait.resetAt, now);
+    if (wait !== null) return fitByline(waitByline(wait), width);
     return fitStatusByline(
       RUNNING_BYLINE.reason,
       RUNNING_BYLINE.action,
       RUNNING_BYLINE.tone,
       width,
     );
+  }
   if (status.kind === 'ready-to-apply') {
     return fitByline(
       {
@@ -226,10 +233,10 @@ export function openRunBylineParts(
     return fitByline({ reason: null, action: HOME_AGAIN }, width);
   }
   if (!input.continuable) return fitByline(UNREADABLE_BYLINE, width);
-  return fitByline(openByline(status.stop, status.resumeAt), width);
+  return fitByline(openByline(status.stop, status.resumeAt, now), width);
 }
 
-function openByline(stop: StopReason, resumeAt: StepRef): Byline {
+function openByline(stop: StopReason, resumeAt: StepRef, now: number): Byline {
   switch (stop.on.kind) {
     case 'paused':
       return {
@@ -268,19 +275,25 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
         ],
         action: '⏎ to retry the step',
       };
-    case 'seat-wait':
-      return {
-        reason: [{ text: `Waiting for ${stop.on.tool}`, tone: stateTone('attention') }],
-        action: formatResetAt(stop.on.resetAt) ?? '⏎ to continue',
-      };
+    // A wait whose reset has passed reads as the stop it now is.
+    case 'seat-wait': {
+      const wait = seatWaitParts(stop.on.tool, stop.on.resetAt, now);
+      return wait === null ? interruptedByline(resumeAt) : waitByline(wait);
+    }
     default:
-      return {
-        reason: [
-          { text: `Stopped ${stopPoint(resumeAt, undefined)}`, tone: stateTone('attention') },
-        ],
-        action: '⏎ to continue',
-      };
+      return interruptedByline(resumeAt);
   }
+}
+
+function interruptedByline(resumeAt: StepRef): Byline {
+  return {
+    reason: [{ text: `Stopped ${stopPoint(resumeAt, undefined)}`, tone: stateTone('attention') }],
+    action: '⏎ to continue',
+  };
+}
+
+function waitByline([waiting, resets]: readonly [string, string]): Byline {
+  return { reason: [{ text: waiting, tone: stateTone('attention') }], action: resets };
 }
 
 /**
