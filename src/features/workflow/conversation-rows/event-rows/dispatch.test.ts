@@ -3542,6 +3542,24 @@ describe('review_completed rows', () => {
       }),
     ).toEqual([]);
   });
+
+  it('names each input the reviewer set aside, with its reason, after the blocking findings', () => {
+    const setAside = [{ id: 'V6.1', reason: 'Transient 60 s timeout, passes in 50 s' }];
+    const row = (event: EngineEventOf<'review_completed'>) =>
+      eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 120, viewportRows: 20, streaming },
+      }).map(rowText);
+    expect(row({ ...completed(), setAside })).toEqual([
+      expect.stringMatching(/^Set aside V6\.1 +Transient 60 s timeout, passes in 50 s$/),
+    ]);
+    expect(row({ ...completed([{ id: 'P2', text: 'Typecheck failed' }]), setAside })).toEqual([
+      expect.stringMatching(/^Blocking P2 +Typecheck failed$/),
+      expect.stringMatching(/^Set aside V6\.1 +Transient 60 s timeout, passes in 50 s$/),
+    ]);
+  });
 });
 
 describe('review_checks rows', () => {

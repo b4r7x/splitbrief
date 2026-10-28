@@ -6,6 +6,7 @@ import { COLLAPSE_HINT } from '../implementer-diff-card-block.js';
 import type { DriftFinding } from '../../../../core/schemas/drift.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
+import { setAsideLabel } from '../../../../core/review/verdict.js';
 import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
@@ -310,9 +311,8 @@ export function eventRowBlock(options: {
           ]);
     }
     case 'review_completed':
-      return compositeBlock(
-        keyPrefix,
-        (event.blockingFindings ?? []).map((finding, index) =>
+      return compositeBlock(keyPrefix, [
+        ...(event.blockingFindings ?? []).map((finding, index) =>
           cardRowsBlock({
             keyPrefix: `${keyPrefix}-finding-${index}`,
             label: `Blocking ${finding.id}`,
@@ -323,7 +323,17 @@ export function eventRowBlock(options: {
             markerTone: stateTone('failed'),
           }),
         ),
-      );
+        ...(event.setAside ?? []).map((entry, index) =>
+          cardRowsBlock({
+            keyPrefix: `${keyPrefix}-set-aside-${index}`,
+            label: setAsideLabel(entry.id),
+            value: entry.reason,
+            width: ctx.width,
+            labelTone: 'text',
+            valueTone: 'textDim',
+          }),
+        ),
+      ]);
     case 'task_reset':
       return cardRowsBlock({
         keyPrefix,

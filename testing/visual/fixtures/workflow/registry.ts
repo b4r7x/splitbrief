@@ -731,6 +731,10 @@ const checkpointPredicates = [
     includesAll('Drift · failed · 2 errors · 3 warnings', '3/5 briefs passed'),
   ],
   [checkpointId('review-settled-passed'), includesTranscript('● Final review passed', '7.0s')],
+  [
+    checkpointId('review-settled-set-aside'),
+    includesTranscript('Set aside V2.1', 'Transient 60 s'),
+  ],
   [checkpointId('review-settled-failed'), includesTranscript('✗ Final review failed', '7.0s')],
   [
     checkpointId('review-corrected'),

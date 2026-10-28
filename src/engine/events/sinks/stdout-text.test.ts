@@ -30,6 +30,28 @@ describe('createStdoutTextSink', () => {
     expect(collect([event])).toEqual(['phase: implementing', 'task review: no verdict']);
   });
 
+  it('prints one line per input the reviewer set aside, after the verdict line', () => {
+    const event = EngineEventSchema.parse({
+      type: 'review_completed',
+      ts,
+      phase: 'final-review',
+      scope: 'final',
+      tool: 'codex',
+      verdict: 'pass',
+      setAside: [
+        { id: 'V6.1', reason: 'Transient 60 s timeout,\npasses in 50 s' },
+        { id: 'P2', reason: 'Fails on the run base too' },
+      ],
+      duration: 49_000,
+    });
+    expect(collect([event])).toEqual([
+      'phase: final-review',
+      'review: passed',
+      'review: Set aside V6.1: Transient 60 s timeout, passes in 50 s',
+      'review: Set aside P2: Fails on the run base too',
+    ]);
+  });
+
   it('prints a path with line breaks on the one attached-files line', () => {
     const lines = collect([
       {

@@ -119,10 +119,13 @@ export function triageContractErrors(
     }
   }
 
-  const pendingIds = new Set(inputs.map((input) => input.id));
+  const pending = new Map(inputs.map((input) => [input.id, input]));
   for (const entry of result.rejected) {
-    if (!pendingIds.has(entry.findingId))
-      errors.push(`Rejected ${entry.findingId} is not a pending input.`);
+    const input = pending.get(entry.findingId);
+    if (input === undefined) errors.push(`Rejected ${entry.findingId} is not a pending input.`);
+    else if (input.source === 'apply')
+      errors.push(`Rejected ${entry.findingId} is an Apply conflict; it needs a fix task.`);
+    if (entry.reason.trim() === '') errors.push(`Rejected ${entry.findingId} gives no reason.`);
   }
 
   const fixBatch = Math.max(1, ...tasks.map((task) => task.batch ?? 1)) + 1;

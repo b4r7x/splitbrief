@@ -18,6 +18,7 @@ import {
   makeBusRecorder,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import {
@@ -805,12 +806,17 @@ describe('runFinalReviewPhase', () => {
     expect(result.state.triage ?? []).toEqual([]);
   });
 
-  it('runs no claim check while a new red suite input is pending', async () => {
+  it('runs no claim check while a red suite input still blocks the review', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     const { reviewer } = makeReviewer((prompt) => ({
       ...passingReviewVerdict(prompt),
       criteria: [{ id: 'C1', status: 'unverified', evidence: 'The suite stopped.' }],
-      rejected: [{ findingId: 'P1', reason: 'No fix proposed' }],
+      fixTasks: [
+        {
+          ...makeTaskSpec({ id: 'T900', criteria: [], suggestedFiles: ['src/alpha.ts'] }),
+          findingIds: ['P1'],
+        },
+      ],
     }));
     const result = await runFinalReviewPhase({
       projectDir,
@@ -843,6 +849,123 @@ describe('runFinalReviewPhase', () => {
       readEvidenceLedger({ projectDir, sessionId })?.tasks.flatMap((task) => task.checks ?? []) ??
         [],
     ).toEqual([]);
+  });
+
+  it('runs the claim checks once the reviewer sets aside the only red suite input', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const { reviewer } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      criteria: [{ id: 'C1', status: 'unverified', evidence: 'The suite stopped.' }],
+      rejected: [{ findingId: 'P1', reason: 'No fix proposed' }],
+    }));
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        plan: {
+          summary: 'Verify the greeting.',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'A greeting works', checkIds: ['K1'] }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+          validation: null,
+        },
+        pendingTriage: {
+          inputs: [
+            { id: 'P1', kind: 'defect', source: 'check', file: null, text: 'Typecheck failed' },
+          ],
+        },
+      },
+      reviewer,
+    });
+    expect(result.verdict?.outcome.kind).toBe('pass');
+    expect(result.verdict?.outcome.unverifiedCriteria).toEqual([]);
+    expect(result.state.review?.verification).toEqual([
+      expect.objectContaining({ id: 'criterion:C1', status: 'pass' }),
+    ]);
+  });
+
+  it('passes a review whose reviewer sets aside the only red input, and names the reason', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const reason = 'Transient 60 s timeout, passes in 50 s';
+    const { reviewer } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      rejected: [{ findingId: 'P1', reason }],
+    }));
+    const { bus, events } = makeBusRecorder();
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        pendingTriage: {
+          inputs: [
+            { id: 'P1', kind: 'defect', source: 'check', file: null, text: 'e2e test timed out' },
+          ],
+        },
+      },
+      reviewer,
+    });
+    expect(result.verdict?.outcome.kind).toBe('pass');
+    expect(readReviewRecord(projectDir, sessionId).redInputs).toBeUndefined();
+    expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
+      `- Set aside P1: ${reason}`,
+    );
+    expect(events.filter((event) => event.type === 'review_completed')).toMatchObject([
+      { verdict: 'pass', setAside: [{ id: 'P1', reason }] },
+    ]);
+  });
+
+  it('starts fix work only for the red input the reviewer did not set aside', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const { reviewer } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      rejected: [{ findingId: 'P1', reason: 'Flaky under load' }],
+      fixTasks: [
+        {
+          ...makeTaskSpec({ id: 'T900', criteria: [], suggestedFiles: ['src/alpha.ts'] }),
+          findingIds: ['P2'],
+        },
+      ],
+    }));
+    const { bus, events } = makeBusRecorder();
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        pendingTriage: {
+          inputs: [
+            { id: 'P1', kind: 'defect', source: 'check', file: null, text: 'e2e test timed out' },
+            { id: 'P2', kind: 'defect', source: 'check', file: null, text: 'Typecheck failed' },
+          ],
+        },
+      },
+      reviewer,
+    });
+    expect(result.verdict?.outcome.kind).toBe('fail');
+    expect(readReviewRecord(projectDir, sessionId).redInputs?.map((input) => input.id)).toEqual([
+      'P2',
+    ]);
+    expect(events.filter((event) => event.type === 'review_completed')).toMatchObject([
+      {
+        verdict: 'fail',
+        blockingFindings: [expect.objectContaining({ id: 'P2' })],
+        setAside: [{ id: 'P1', reason: 'Flaky under load' }],
+      },
+    ]);
   });
 
   it('counts an unverified criterion as pass when its current task check passes', async () => {

@@ -637,7 +637,6 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
         output: run.output,
         ...(failureKeys.length > 0 && { failureKeys }),
         ...(run.status === 'fail' && { redKeys: run.failure.keys }),
-        ...(notVerified !== undefined && { notVerified }),
       });
     }
   }

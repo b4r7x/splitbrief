@@ -1548,17 +1548,20 @@ function finalReviewCompleted({
   duration,
   verdict,
   seat,
+  setAside,
 }: {
   ts: number;
   duration: number;
   verdict: 'pass' | 'fail';
   seat: Pick<EngineEventOf<'review_started'>, 'tool' | 'model'>;
+  setAside?: EngineEventOf<'review_completed'>['setAside'];
 }): EngineEventOf<'review_completed'> {
   return {
     ...finalReviewStarted(ts, seat),
     type: 'review_completed',
     verdict,
     findings: { blocking: verdict === 'fail' ? 1 : 0, minor: 0, outOfScope: 0 },
+    ...(setAside !== undefined && { setAside }),
     duration,
   };
 }
@@ -7112,6 +7115,45 @@ const projections = [
       ],
     }),
   ),
+  {
+    scenarioId: scenarioId('workflow-review-settled-set-aside'),
+    feature: WORKFLOW_FEATURE,
+    inputMode: 'normal',
+    sidebarVisible: true,
+    events: [
+      { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+      { type: 'plan_approved', ts: FIXED_TS + 50, phase: 'reviewing-plan' },
+      { ...FIXTURE_TASKS_PLANNED, ts: FIXED_TS + 60 },
+      ...FIXTURE_PLANNED_BRIEFS.flatMap((brief, index) => [
+        orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
+        fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
+      ]),
+      finalReviewStarted(FIXED_TS + 1_000, BASE_PLANNER),
+      reviewChecksPlanned(FIXED_TS + 1_000),
+      reviewCheck(FIXED_TS + 1_100, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
+      reviewCheck(FIXED_TS + 2_100, REVIEW_CHECK_TEST, { status: 'done', passed: false }),
+      reviewCheck(FIXED_TS + 3_100, REVIEW_CHECK_TEST, {
+        status: 'done',
+        moment: 'base',
+        passed: true,
+        duration: 9_000,
+      }),
+      finalReviewCompleted({
+        ts: FIXED_TS + 8_000,
+        duration: 7_000,
+        verdict: 'pass',
+        seat: BASE_PLANNER,
+        setAside: [
+          {
+            id: 'V2.1',
+            reason:
+              'Transient 60 s timeout under load. No task changed this test, and it passes in 50 s when it runs alone.',
+          },
+        ],
+      }),
+      { type: 'workflow_complete', ts: FIXED_TS + 8_000, phase: 'complete', review: 'passed' },
+    ],
+  },
   ...(['summary', 'compaction'] as const).map(
     (role): WorkflowFixtureProjection => ({
       ...finalReviewProjection,

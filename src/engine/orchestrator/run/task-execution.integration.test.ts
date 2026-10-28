@@ -1087,8 +1087,15 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       },
       review: (prompt) => passingReviewVerdict(prompt),
       triage: () => ({
-        fixTasks: [],
-        rejected: [{ findingId: 'P1', reason: 'A test harness fault.' }],
+        fixTasks: [
+          {
+            ...makeTaskSpec({ id: 'T002', suggestedFiles: ['src/alpha.ts'] }),
+            criteria: [],
+            checks: [],
+            findingIds: ['P1'],
+          },
+        ],
+        rejected: [],
         verify: [],
         ask: null,
       }),
@@ -1697,6 +1704,47 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
       }
     },
   );
+
+  it('passes the review when the reviewer sets aside the only red Apply re-check', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    writeFileSync(
+      join(projectDir, 'Cargo.toml'),
+      '[package]\nname = "rust-check"\nversion = "0.1.0"\n',
+    );
+    const check: Check = { id: 'K-rust', kind: 'test', value: 'src/lib.rs', required: false };
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/lib.rs'], status: 'done', checks: [check] }),
+    ];
+    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.exitCode({
+        command: 'cargo test',
+        code: 1,
+        stderr: '',
+        output: 'test tests::adds ... FAILED',
+      }),
+    );
+    const { options, reviewPrompts } = runOptions({
+      projectDir,
+      sessionId,
+      state: integrationReviewState(tasks, head, 0),
+      review: (prompt) => ({
+        ...passingReviewVerdict(prompt),
+        rejected: [{ findingId: 'A1', reason: 'The test is flaky under load.' }],
+      }),
+      onComplete: vi.fn(),
+    });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(reviewPrompts).toHaveLength(1);
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(result.state.reviewStatus).toBe('passed');
+      expect(result.completed).toBe(true);
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
 
   it('halts every unrunnable required Apply check before review, even with an optional failure', async () => {
     const { projectDir, sessionId, head } = setupProject();

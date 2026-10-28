@@ -82,8 +82,6 @@ export const TriageInputSchema = z.object({
   failureKeys: z.array(z.string()).optional(),
   /** Every failure key of the original red, before its run-base split. */
   redKeys: z.array(z.string()).optional(),
-  /** Why SPLITBRIEF could not verify this red reviewer check at the run base: the reviewer decides. */
-  notVerified: z.string().optional(),
 });
 export type TriageInput = z.infer<typeof TriageInputSchema>;
 

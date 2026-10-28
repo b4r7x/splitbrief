@@ -99,6 +99,56 @@ describe('typed review overrides', () => {
     ]);
     expect(result.state.acceptedAsIs?.note).toBe('Proof is in the PR.');
   });
+
+  it('leaves out a red Apply re-check the reviewer set aside', async () => {
+    const ref = setupSession('set-aside-override');
+    const issue = buildReviewFailedRecoveryIssue({
+      blocking: 1,
+      phase: 'complete',
+      createdAt,
+      acceptAsIs: true,
+    });
+    const state: WorkflowState = {
+      ...makeImplState([]),
+      phase: 'complete',
+      reviewStatus: 'failed',
+      pendingRecovery: issue,
+      applyReview: { merged: [], failures: ['T001 check K1 failed: e2e timed out after 60 s'] },
+      review: {
+        cycle: 0,
+        at: createdAt,
+        outcome: 'fail',
+        verification: [],
+        redInputs: [],
+        verdict: {
+          tasks: [],
+          criteria: [],
+          findings: [
+            {
+              id: 'F1',
+              kind: 'defect',
+              severity: 'blocking',
+              taskId: null,
+              file: null,
+              line: null,
+              text: 'The greeting drops an empty name',
+              acceptance: null,
+              checkIds: null,
+              criterionId: null,
+            },
+          ],
+        },
+      },
+    };
+    saveState(ref, state);
+    const result = await applyRecoveryAction({
+      ...ref,
+      state,
+      action: 'accept-as-is',
+      bus: makeBusRecorder().bus,
+    });
+    expect(result.state.acceptedAsIs?.findings).toEqual(['The greeting drops an empty name']);
+  });
 });
 
 let dirs: string[] = [];

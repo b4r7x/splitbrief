@@ -634,6 +634,68 @@ describe('hydrateRun', () => {
     expect(transcript()).toEqual(live);
   });
 
+  it('shows the input the reviewer set aside when the run reopens at rest', async () => {
+    const reason = 'Transient 60 s timeout, passes in 50 s';
+    const log: EngineEvent[] = [
+      ...RUN,
+      { type: 'review_started', ts: 4_000, phase: 'final-review', scope: 'final', tool: 'codex' },
+      {
+        type: 'review_completed',
+        ts: 60_000,
+        phase: 'final-review',
+        scope: 'final',
+        tool: 'codex',
+        verdict: 'pass',
+        findings: { blocking: 0, minor: 0 },
+        setAside: [{ id: 'V6.1', reason }],
+        duration: 56_000,
+      },
+      { type: 'workflow_complete', ts: 61_000, phase: 'complete', review: 'passed' },
+    ];
+    const transcript = () => {
+      const { rows } = buildConversationRows({
+        sections: groupEventsIntoSections([...eventsStore.get().events]),
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols: 120,
+        viewportHeight: 40,
+        streaming: { taskId: null, lines: [], active: false },
+      });
+      const ui = renderFeature(
+        createElement(
+          Fragment,
+          null,
+          ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+        ),
+        { cols: 120, rows: 40 },
+      );
+      const lines = stripAnsiStyles(ui.lastFrame())
+        .split('\n')
+        .map((line) => line.trim());
+      ui.unmount();
+      return lines;
+    };
+    writeLog(log);
+    for (const event of log) addEvent(event);
+    const live = transcript();
+    expect(live).toContainEqual(expect.stringMatching(new RegExp(`Set aside V6\\.1 +${reason}$`)));
+    resetWorkflow();
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: {
+          kind: 'loaded',
+          state: {
+            ...savedState(),
+            phase: 'complete',
+            tasks: savedState().tasks.map((task) => ({ ...task, status: 'done' as const })),
+          },
+        },
+      }),
+    );
+    expect(transcript()).toEqual(live);
+  });
+
   it('puts the stores where a live run of the same log would have left them', async () => {
     writeLog(RUN);
     for (const event of RUN) addEvent(event);

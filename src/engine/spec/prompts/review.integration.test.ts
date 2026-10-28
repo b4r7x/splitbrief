@@ -195,6 +195,9 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain(
       "A fix task's acceptance names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review.",
     );
+    expect(result).toContain(
+      'rejected: { findingId, reason } for a pending input that needs no work, for example a red check that fails for a reason outside this run. A rejected red check stops blocking the review, and the user sees the reason. Reject pending inputs only. An Apply conflict always needs a fix task.',
+    );
     expect(result).not.toContain("You are the run's planner");
     expect(
       result.match(/Return the verdict and the fix work in one review_answer\./g),

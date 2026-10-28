@@ -1164,6 +1164,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-settled-set-aside',
+      viewports: WIDE_VIEWPORTS,
+      title: 'Workflow · Review passed with a red check set aside',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-settled-set-aside',
+        title: 'Settled Review with a set-aside check',
+        kind: 'implementation',
+        marker: 'Set aside V2.1',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Settled Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-resumed',
       title: 'Workflow · review continued after interruption',
       surface: screenSurface('workflow'),

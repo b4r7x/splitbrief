@@ -419,7 +419,6 @@ function readCriticalFindings(
           (criterion) => `Criterion ${criterion.id}: ${criterion.status} — ${criterion.evidence}`,
         ),
       ...outcome.coverageErrors,
-      ...(state.applyReview?.failures ?? []),
     ];
   }
   return state.applyReview?.failures ?? [];

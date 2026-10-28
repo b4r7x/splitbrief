@@ -1,6 +1,7 @@
 import type { ReviewVerdict, TriageInput, TriageResult } from '../schemas/review.js';
 import { isTaskCompleted } from '../schemas/task.js';
 import { fixCyclesOf, type ReviewRecord, type WorkflowState } from '../schemas/workflow.js';
+import { oneLineDisplayText } from '../../utils/display-text.js';
 import { countNoun } from '../../utils/pluralize.js';
 
 export type Finding = ReviewVerdict['findings'][number];
@@ -84,21 +85,36 @@ export function blockingEntries(
   return [...outcome.blocking, ...outcome.redInputs].map(({ id, text }) => ({ id, text }));
 }
 
-/**
- * The red inputs that still block a review: each failed check or Apply re-check, except a reviewer
- * check SPLITBRIEF could not verify at the run base that the answer rejects. The reviewer decides
- * only that one; every other red stays blocking whatever the answer says.
- */
+/** A failed check or Apply input; a correction or an answer from the user is never red. */
+function isRedInput(input: TriageInput): boolean {
+  return input.source === 'check' || input.source === 'apply';
+}
+
+/** The red inputs that still block a review: each one the answer does not reject. */
 export function blockingRedInputs(
   inputs: readonly TriageInput[],
   fixWork: TriageResult,
 ): TriageInput[] {
   const rejected = new Set(fixWork.rejected.map((entry) => entry.findingId));
-  return inputs.filter(
-    (input) =>
-      (input.source === 'check' || input.source === 'apply') &&
-      !(input.notVerified !== undefined && rejected.has(input.id)),
-  );
+  return inputs.filter((input) => isRedInput(input) && !rejected.has(input.id));
+}
+
+export type SetAside = { id: string; reason: string };
+
+/** The red inputs the answer rejects, each with the reviewer's reason. */
+export function setAsideInputs(inputs: readonly TriageInput[], fixWork: TriageResult): SetAside[] {
+  const red = new Set(inputs.filter(isRedInput).map((input) => input.id));
+  return fixWork.rejected
+    .filter((entry) => red.has(entry.findingId))
+    .map((entry) => ({ id: entry.findingId, reason: entry.reason }));
+}
+
+export function setAsideLabel(id: string): string {
+  return `Set aside ${id}`;
+}
+
+export function setAsideLine(entry: SetAside): string {
+  return `${setAsideLabel(entry.id)}: ${oneLineDisplayText(entry.reason)}`;
 }
 
 export function verificationKey(kind: 'criterion' | 'finding', id: string): string {
