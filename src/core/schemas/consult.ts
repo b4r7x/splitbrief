@@ -51,10 +51,9 @@ export const ConsultAnswerSchema = z.object({
 });
 export type ConsultAnswer = z.infer<typeof ConsultAnswerSchema>;
 
-/** The answer schema of one consult: a stale consult takes guidance or a rewrite only. */
-export function consultAnswerSchemaFor(task: Task, reason: ConsultReason = 'failed') {
-  const schema = reason === 'stale' ? StaleConsultAnswerSchema : ConsultAnswerSchema;
-  return schema.superRefine((value, ctx) => {
+/** The answer schema of one consult on the task. */
+export function consultAnswerSchemaFor(task: Task) {
+  return ConsultAnswerSchema.superRefine((value, ctx) => {
     if (value.answer.action === 'rewrite-task' && value.answer.task.id !== task.id) {
       ctx.addIssue({
         code: 'custom',
@@ -71,10 +70,6 @@ export function consultAnswerSchemaFor(task: Task, reason: ConsultReason = 'fail
     }
   });
 }
-
-export const StaleConsultAnswerSchema = z.object({
-  answer: z.union([GuidanceActionSchema, RewriteTaskActionSchema]),
-});
 
 /** A decision the implementer reports; a decision written as text has no reason. */
 const ReportedDecisionSchema = z.preprocess(
@@ -136,7 +131,7 @@ export function readImplementerReport(
   };
 }
 
-export const CONSULT_REASONS = ['failed', 'blocked', 'stale'] as const;
+export const CONSULT_REASONS = ['failed', 'blocked'] as const;
 export type ConsultReason = (typeof CONSULT_REASONS)[number];
 
 /** The seat that answers a consult: the reviewer for a fix task's repair, the planner for the rest. */
@@ -146,7 +141,3 @@ export type ConsultSeat = (typeof CONSULT_SEATS)[number];
 const { $schema: _consultDraftRef, ...consultAnswerJsonSchema } =
   z.toJSONSchema(ConsultAnswerSchema);
 export const CONSULT_ANSWER_JSON_SCHEMA = consultAnswerJsonSchema;
-
-const { $schema: _staleDraftRef, ...staleConsultAnswerJsonSchema } =
-  z.toJSONSchema(StaleConsultAnswerSchema);
-export const STALE_CONSULT_ANSWER_JSON_SCHEMA = staleConsultAnswerJsonSchema;

@@ -3,10 +3,6 @@ import { chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import {
-  STALE_CONSULT_ANSWER_JSON_SCHEMA,
-  StaleConsultAnswerSchema,
-} from '../../../../src/core/schemas/consult.js';
 import { createCliPlanner } from '../../../../src/engine/planners/cli.js';
 import { createClaudeCodePlanner } from '../../../../src/engine/planners/claude-code.js';
 import { resolveCliExecutable } from '../../../../src/engine/runners/resolve-cli-executable.js';
@@ -43,15 +39,6 @@ const ANSWER_PROBE: Probe = {
   expected: { answer: 'ok', count: 3 },
 };
 
-const STALE_CONSULT_PROBE: Probe = {
-  prompt:
-    'Do not run any command or tool. Answer with diagnosis "x" and action "guidance", instructions "y", context null.',
-  schema: StaleConsultAnswerSchema,
-  jsonSchema: STALE_CONSULT_ANSWER_JSON_SCHEMA,
-  schemaName: 'stale_consult_answer',
-  expected: { answer: { diagnosis: 'x', action: 'guidance', instructions: 'y', context: null } },
-};
-
 const TOOLS = [
   {
     label: 'claude-code',
@@ -59,15 +46,6 @@ const TOOLS = [
     command: 'claude',
     model: undefined,
     transport: 'native',
-    probe: ANSWER_PROBE,
-  },
-  {
-    label: 'claude-code-stale-consult',
-    tool: 'claude-code',
-    command: 'claude',
-    model: undefined,
-    transport: 'native',
-    probe: STALE_CONSULT_PROBE,
   },
   {
     label: 'codex',
@@ -75,15 +53,6 @@ const TOOLS = [
     command: 'codex',
     model: undefined,
     transport: 'native',
-    probe: ANSWER_PROBE,
-  },
-  {
-    label: 'codex-stale-consult',
-    tool: 'codex',
-    command: 'codex',
-    model: undefined,
-    transport: 'native',
-    probe: STALE_CONSULT_PROBE,
   },
   {
     label: 'antigravity',
@@ -91,7 +60,6 @@ const TOOLS = [
     command: 'agy',
     model: undefined,
     transport: 'native',
-    probe: ANSWER_PROBE,
   },
   {
     label: 'opencode',
@@ -99,7 +67,6 @@ const TOOLS = [
     command: 'opencode',
     model: 'deepseek/deepseek-flash',
     transport: 'fallback',
-    probe: ANSWER_PROBE,
   },
 ] as const;
 
@@ -112,7 +79,7 @@ function firstSemver(output: string): string {
 }
 
 describe('live typed-output probe', () => {
-  for (const { label, tool, command, model, transport, probe } of TOOLS) {
+  for (const { label, tool, command, model, transport } of TOOLS) {
     itLive(
       `records one ${label} call that answers a schema through requestTyped`,
       async (ctx) => {
@@ -169,10 +136,10 @@ describe('live typed-output probe', () => {
               });
               const sentSchema: boolean[] = [];
               const result = await requestTyped({
-                prompt: probe.prompt,
-                schema: probe.schema,
-                jsonSchema: probe.jsonSchema,
-                schemaName: probe.schemaName,
+                prompt: ANSWER_PROBE.prompt,
+                schema: ANSWER_PROBE.schema,
+                jsonSchema: ANSWER_PROBE.jsonSchema,
+                schemaName: ANSWER_PROBE.schemaName,
                 call: {
                   ...call,
                   invoke: (input) => {
@@ -183,7 +150,7 @@ describe('live typed-output probe', () => {
               });
               expect(sentSchema[0]).toBe(transport === 'native');
               if (!('value' in result)) throw new Error(JSON.stringify(result.error));
-              expect(result.value).toEqual(probe.expected);
+              expect(result.value).toEqual(ANSWER_PROBE.expected);
 
               const recorded = readFileSync(recordingFile, 'utf8');
               expect(recorded.trim().length).toBeGreaterThan(0);

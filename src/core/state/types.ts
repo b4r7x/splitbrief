@@ -133,7 +133,6 @@ export type StateAction =
     }
   | { type: 'START_SCHEDULED_REVIEW'; afterTaskId: TaskId }
   | { type: 'CLEAR_SCHEDULED_REVIEW' }
-  | { type: 'SET_TASK_INPUT_HASHES'; taskId: TaskId; inputHashes: Record<string, string> }
   | { type: 'RECORD_CHECK_RESULTS'; taskId: TaskId; results: CheckResult[] }
   | { type: 'SET_SEAT_WAIT'; wait: SeatWait }
   | { type: 'CLEAR_SEAT_WAIT' }

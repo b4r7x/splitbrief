@@ -491,7 +491,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       attempts: 0,
       consultAllowance: 2,
       attemptAllowance: 8,
-      staleConsultedRevision: {},
       dispatchedRevision: {},
       consultRecords: [],
       replacedParents: [],

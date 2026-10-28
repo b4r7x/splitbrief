@@ -927,25 +927,7 @@
           "id": "K-final-review",
           "passed": true
         }
-      ],
-      "refreshedInputHashes": {
-        "src/engine/orchestrator/task/implementation-failure.ts": "0fdf1f7f7cf6246e3634b478877b5afae40cb0a6fca6d40943b74b267d41c3c3",
-        "src/engine/orchestrator/task/run-implementation.ts": "174a3a2227bf64d965ff366e652fadf0b162983c99fae9da4d31fe50fa6da00d",
-        "src/engine/orchestrator/escalation/handle.ts": "3c7a89168ee63db0815c50093261463b4e166b8b927367cf665a953002757c35",
-        "src/engine/orchestrator/escalation/local-retries.ts": "78ca78b5072d94cabd2279cbaf8753c25d2c402680d8fb1ce0f19ef18f17cebd",
-        "src/engine/orchestrator/planning/failure.ts": "5c17448643c30f73d253f21e63d33b49a4ec656543e94267a0b8816e12da9d9d",
-        "src/engine/orchestrator/task/retry.ts": "356f5ac1e12242852640b5286ab9ec83edf7505ed1fd95a47fb2c3cb7e14dae1",
-        "src/engine/orchestrator/final-review.ts": "8427ee0ef8ff7f6bdc08937134080e22cd01b438020c5605d7fb2236ba1ccfea",
-        "src/engine/orchestrator/triage.ts": "528f54f6dd754857a9dd31f2b3877c60a47a6b2abc55f30c9cee2e68e739e169",
-        "src/engine/orchestrator/recovery/builders/task.ts": "4781f3da36af2e817c2b195cd38ee84265b38a69deddb8a39d6619bf13395c0c",
-        "src/engine/orchestrator/recovery/seat-swap-context.ts": "33a593c38f4997960b6924084a2cfe9f84750b2ee49f2fe452991162f67868f9",
-        "src/engine/orchestrator/isolation/retention.ts": "984ae1038b14c9ecba00265e68d805e37536203a0063c2601eec7a3df7cedfda",
-        "src/engine/orchestrator/state-ops.ts": "48ff4df6a9a050b7fa6d310da70bd5bd8f2dd1e605b4e831dc2b2789c6c37305",
-        "src/engine/runners/seat-failure.ts": "c1e78281529f7efd8f2daf27c55afb3008e7c6fc7175159b3c464e8eae416399",
-        "src/engine/orchestrator/escalation/seat-wait.ts": "263c07f293b31124b596fbcd6bfea6114e30f93d827709d7a42f49033dd47c8d",
-        "src/core/state/machine.ts": "badef654d98746897650ec39c734b214c0cad5fd2d2f2da06835d9b392e4c2cf",
-        "src/core/pipeline-spec/bounds.ts": "33a71a9414d8b85c1a307f6f68d652aabf1b4873a03f3fa1e70dc398ffd58e33"
-      }
+      ]
     },
     {
       "id": "T007",
@@ -964,20 +946,7 @@
           "id": "K-byline",
           "passed": true
         }
-      ],
-      "refreshedInputHashes": {
-        "src/engine/orchestrator/recovery/actions.ts": "414de096aff20a85902a5160526e116e43e90abe924cd8f1212e6db747cedeb7",
-        "src/engine/orchestrator/run/init.ts": "c9de3809a128caeee9e16da9fd34bfa04575b47d2342a0d07a969cc9fe1030c0",
-        "src/core/sessions/run-status.ts": "c9150fb355acb2283b07e0bdfdb8dfcbfc53aae09e978b1d73b422b854bc3544",
-        "src/features/workflow/closed/byline.ts": "8d0db47a3a539edf5bd995d1e2e01066303734ed8c4d1568ed90b6befec03d2d",
-        "src/engine/orchestrator/final-review-seat-wait.test.ts": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "src/engine/orchestrator/escalation/seat-wait.ts": "263c07f293b31124b596fbcd6bfea6114e30f93d827709d7a42f49033dd47c8d",
-        "src/core/state/machine.ts": "badef654d98746897650ec39c734b214c0cad5fd2d2f2da06835d9b392e4c2cf",
-        "src/core/recovery/reset-clock.ts": "3dabd326186f57e1c5c797ca9aff6ef6b09bf8cbf0072b84f44b089ed9d8ab10",
-        "src/core/pipeline-spec/bounds.ts": "33a71a9414d8b85c1a307f6f68d652aabf1b4873a03f3fa1e70dc398ffd58e33",
-        "src/engine/orchestrator/final-review.ts": "8427ee0ef8ff7f6bdc08937134080e22cd01b438020c5605d7fb2236ba1ccfea",
-        "src/engine/orchestrator/final-review.test.ts": "ea0c67ee0e97fd000b7aa6b3729a17d8663399b2bf5bacfcfd425dad9512bc1a"
-      }
+      ]
     },
     {
       "id": "T008",

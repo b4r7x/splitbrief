@@ -156,7 +156,7 @@ it.each([
 it.each(['implementing', 'validating-task'] as const)(
   'names the review seat on a fix-task consult that runs while %s',
   (phase) => {
-    // A blocked report and a stale refresh consult the reviewer before the ladder escalates.
+    // A blocked report consults the reviewer before the ladder escalates.
     const progress = deriveBuildProgress(
       input({
         lifecycle: lifecycleState({ phase }),

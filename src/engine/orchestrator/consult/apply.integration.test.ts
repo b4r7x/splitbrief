@@ -11,7 +11,6 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
-import { sha256Hex } from '../../../utils/sha256.js';
 import type { EngineEvent } from '../../events/types.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -52,6 +51,8 @@ function setupRepo(dirsToClean: string[]): { projectDir: string; sessionId: stri
   return { projectDir, sessionId };
 }
 
+const EMPTY_SNAPSHOT: ChangedFilesSnapshot = { head: '', files: [], dirtyFileContents: {} };
+
 function contextFor(
   projectDir: string,
   sessionId: string,
@@ -75,7 +76,7 @@ function contextFor(
       projectDir,
       workspaceDir: projectDir,
       sessionId,
-      taskStartSnapshot: null,
+      taskStartSnapshot: EMPTY_SNAPSHOT,
       bus,
       config: makeConfig({}),
       validator: createValidator(),
@@ -128,7 +129,7 @@ describe('applyConsultAnswer', () => {
           default: null,
         },
       },
-      null,
+      EMPTY_SNAPSHOT,
     );
     expect(result).toMatchObject({
       action: 'guidance',
@@ -276,7 +277,7 @@ describe('applyConsultAnswer', () => {
             default: 'memory',
           },
         },
-        null,
+        EMPTY_SNAPSHOT,
       );
       expect(result).toEqual({
         action: 'guidance',
@@ -534,7 +535,7 @@ describe('applyConsultAnswer', () => {
     expect(states).toHaveLength(0);
   });
 
-  it('rewrite-task rolls the attempt back, replaces the task with fresh input hashes and publishes task_replaced', async () => {
+  it('rewrite-task rolls the attempt back, replaces the task and publishes task_replaced', async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
@@ -568,10 +569,6 @@ describe('applyConsultAnswer', () => {
     expect(result.task.revision).toBe(2);
     expect(result.task.status).toBe('pending');
     expect(result.task.criteria).toEqual(['C1']);
-    expect(result.task.inputHashes).toEqual({
-      'src/greet.ts': sha256Hex(BASE_GREET),
-      'src/context.ts': sha256Hex(CONTEXT),
-    });
     expect(states).toHaveLength(1);
     expect(states[0]?.tasks[0]?.revision).toBe(2);
     expect(events.filter((event) => event.type === 'task_replaced')).toMatchObject([
@@ -586,38 +583,6 @@ describe('applyConsultAnswer', () => {
     expect(events.findIndex((event) => event.type === 'tasks_planned')).toBeLessThan(
       events.findIndex((event) => event.type === 'task_replaced'),
     );
-  });
-
-  it('a rewritten task records workspace hashes', async () => {
-    const { projectDir, sessionId } = setupRepo(dirs);
-    const workspaceDir = createTempDir('consult-apply-workspace');
-    dirs.push(workspaceDir);
-    createTestGitRepo(workspaceDir, {
-      'src/greet.ts': ATTEMPT_GREET,
-      'src/context.ts': 'export const context = false;\n',
-    });
-    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
-    const { ctx } = contextFor(projectDir, sessionId, task);
-
-    const result = await applyConsultAnswer(
-      { ...ctx, workspaceDir },
-      task,
-      rewrite(
-        makeTaskSpec({
-          id: 'T003',
-          criteria: ['C1'],
-          suggestedFiles: ['src/greet.ts'],
-          contextFiles: ['src/context.ts'],
-        }),
-      ),
-      null,
-    );
-
-    if (result.action !== 'rewrite-task') throw new Error(`expected rewrite, got ${result.action}`);
-    expect(result.task.inputHashes).toEqual({
-      'src/greet.ts': sha256Hex(ATTEMPT_GREET),
-      'src/context.ts': sha256Hex('export const context = false;\n'),
-    });
   });
 
   it('split-task rolls the attempt back, inserts the subtasks and publishes tasks_inserted', async () => {

@@ -23,7 +23,6 @@ import type { Validator } from '../validation/types.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
-import { inputHashesNow } from './stale-inputs.js';
 import { runSingleTask } from './step.js';
 
 afterEach(() => {
@@ -39,7 +38,6 @@ const config = makeConfig({
 });
 const validator: Validator = { formatChangedFiles: vi.fn().mockResolvedValue(undefined) };
 const NEW_FILE = 'src/new.ts';
-const STALE_TEXT = 'inputs changed since the brief was compiled';
 
 function runTask(wctx: WorkflowContext, state: WorkflowState): Promise<WorkflowState> {
   const task = state.tasks[state.currentTaskIndex];
@@ -98,7 +96,6 @@ async function retryAfterHalt() {
     suggestedFiles: [NEW_FILE],
     criteria: [],
     checks: [{ id: 'T001-K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
-    inputHashes: inputHashesNow(ref.projectDir, [NEW_FILE]),
   });
   const failing = { value: true };
   scriptedCheck(failing);
@@ -138,12 +135,11 @@ async function retryAfterHalt() {
   if (!retried.ok) throw new Error(retried.message);
   failing.value = false;
 
-  const builds: { consults: number | undefined; action: string; call: string }[] = [];
+  const builds: { consults: number | undefined; action: string }[] = [];
   const build = async (opts: ImplementerOptions | RetryOptions) => {
     builds.push({
       consults: loadState(ref)?.lineages?.T001?.consults,
       action: opts.task.action,
-      call: JSON.stringify(opts),
     });
     writeNewFile(opts.projectDir, 'export const run = 1;\n');
     return { success: true, output: 'implemented' };
@@ -161,14 +157,10 @@ async function retryAfterHalt() {
 }
 
 describe('Try again on a brief whose first attempt wrote its own files', () => {
-  it('runs no stale consult after a failed-consult halt and keeps the brief creating its file', async () => {
+  it('keeps the consult count and the brief creating its file after a failed-consult halt', async () => {
     const { halted, recovered, builds } = await retryAfterHalt();
 
-    expect(recovered.lineages?.T001?.consultRecords ?? []).not.toContainEqual(
-      expect.objectContaining({ reason: 'stale' }),
-    );
     expect(builds[0]?.consults).toBe(halted.lineages?.T001?.consults);
-    expect(builds[0]?.call).not.toContain(STALE_TEXT);
     expect(builds[0]?.action).toBe('create');
     expect(recovered.tasks[0]?.action).toBe('create');
   });

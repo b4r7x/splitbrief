@@ -1057,6 +1057,35 @@ describe('hydrateRun of a run recorded before account refusals on stderr halted'
   });
 });
 
+describe('hydrateRun of a run recorded before moved input files dispatched without a planner call', () => {
+  it('replays the stale consult answer the run recorded', async () => {
+    const T002 = taskId('T002');
+    writeLog([
+      makeTaskStart({ taskId: T002, ts: 1_000 }),
+      {
+        type: 'consult_answered',
+        ts: 1_100,
+        phase: 'implementing',
+        taskId: T002,
+        reason: 'stale',
+        action: 'guidance',
+        diagnosis: 'The shared file moved under the brief.',
+        newTaskIds: null,
+      },
+    ]);
+
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: savedState() },
+      }),
+    );
+    const replayed = historyRows([...eventsStore.get().events]).join('\n');
+
+    expect(replayed).toContain(`T002: guidance · The shared file moved under the brief.`);
+  });
+});
+
 describe('readRunHistory', () => {
   it('reads without touching a store, and the run lands only when it is published', async () => {
     addEvent({ type: 'workflow_started', ts: 500, phase: 'planning', feature: 'the other run' });

@@ -160,8 +160,6 @@ export const TaskSchema = z.preprocess(
     /** Protected writes the approved plan confirms in advance. */
     protectedOperations: z.array(ProtectedOperationSchema).optional(),
     revision: z.number().int().min(1).optional(),
-    /** Content hashes of the input files of this revision, keyed by path. */
-    inputHashes: z.record(z.string(), z.string()).optional(),
     fix: z
       .object({
         cycle: z.number().int().min(1),

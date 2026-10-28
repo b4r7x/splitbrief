@@ -55,14 +55,8 @@ Record a malformed answer as a failure of the seat that answered. Apply no actio
 
 Keep lineage counters across splits and resume: 2 consults and 8 attempts.
 Keep the run counter: 10 planner decisions after planning. Reviewer consults and review answers spend no planner decision.
-Before dispatch, changed inputs get one successful stale consult per revision: guidance or rewrite-task.
-A stale consult spends no run planner decision. A blocked report consults at once.
-A thrown or malformed stale consult halts on the seat that answered. Never dispatch the unchanged brief.
+A blocked report consults at once.
 A guarded rewrite or split asks the operator on the consulted seat before dispatch.
-An unanswered stale guard question halts on that seat, keeps input hashes unchanged, and dispatches no implementer.
-A failed stale call, malformed answer or unanswered guard leaves the stale revision marker unchanged. Retry consults the same seat before dispatch.
-Successful stale guidance records fresh input hashes and marks the revision in one transition. A rewrite records hashes on its new revision.
-An answered stale guard question records fresh input hashes and sends the operator's answer as guidance on the first attempt.
 A done report records its decisions in the plan ledger with the task id before validation. No seat confirms them, and a retry records only a new decision.
 Reported decisions spend no run counter, never a lineage consult or a planner decision.
 A done report field that breaks the contract reads as empty with a warning. The other fields stay.
@@ -170,8 +164,6 @@ Attach proposed decisions from the report.
 <!-- /generated -->
 
 Use new free task ids for children. Record their lineage root. The current engine does not split an existing subtask.
-Compare suggested/context input hashes before dispatch.
-For changed inputs, apply a stale consult to that task and record fresh hashes after refreshing it.
 Use references/gates.md for selected verification checks. Green selected checks can complete the task; review still applies.
 Ask-user includes why only the user can answer, choices and a default. Feed the answer back as guidance.
 

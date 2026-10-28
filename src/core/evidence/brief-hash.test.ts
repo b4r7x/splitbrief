@@ -37,15 +37,11 @@ describe('hashTaskBrief', () => {
     expect(first).toBe(hashTaskBrief([task]));
   });
 
-  // S9 and S11: RECORD_CHECK_RESULTS and a stale refresh's SET_TASK_INPUT_HASHES wrote onto the
-  // briefs mid-run, so every brief recorded before them read as earlier work.
-  it('excludes the check results and input hashes the run writes onto a brief', () => {
-    const planned = makeTask({ inputHashes: { 'src/hello.ts': 'a'.repeat(64) } });
-    const ran = {
-      ...planned,
-      checkResults: [{ id: 'K1', status: 'pass' as const }],
-      inputHashes: { 'src/hello.ts': 'b'.repeat(64) },
-    };
+  // S9: RECORD_CHECK_RESULTS wrote onto the briefs mid-run, so every brief recorded before it read
+  // as earlier work.
+  it('excludes the check results the run writes onto a brief', () => {
+    const planned = makeTask();
+    const ran = { ...planned, checkResults: [{ id: 'K1', status: 'pass' as const }] };
     expect(hashTaskBrief([ran])).toBe(hashTaskBrief([planned]));
   });
 

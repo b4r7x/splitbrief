@@ -62,8 +62,6 @@ export type ConsultPromptInput = Readonly<{
 const REASON_TEXT: Record<ConsultReason, string> = {
   failed: 'The task failed: its last attempt or one of its checks did not pass.',
   blocked: 'The implementer stopped and needs a decision that is not its own to make.',
-  stale:
-    'The task went stale: files it captured moved under it since the brief was compiled. Only guidance or a rewritten task can answer this reason.',
 };
 
 const CONSULT_ROLE: Record<ConsultSeat, string> = {

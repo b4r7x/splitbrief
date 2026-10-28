@@ -16,7 +16,7 @@ import { seatAxisWords } from '../../../core/runners/effort-channel.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { buildRoutingEventFields } from './routing-fields.js';
-import { runsOnOwnFiles } from './stale-inputs.js';
+import { runsOnOwnFiles } from './refresh-code.js';
 import { skipBrief } from './skip-brief.js';
 
 export type PreTaskResult =

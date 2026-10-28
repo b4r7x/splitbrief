@@ -603,10 +603,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('consult_answered').extend({
     taskId: TaskIdSchema,
     /**
-     * `deviation` and `confirm` are written by runs before decisions went to the ledger; read
-     * only to replay them.
+     * `deviation` and `confirm` are written by runs before decisions went to the ledger, and
+     * `stale` by runs before a brief whose input files moved dispatched without a planner call;
+     * read only to replay them.
      */
-    reason: z.enum([...CONSULT_REASONS, 'deviation']),
+    reason: z.enum([...CONSULT_REASONS, 'deviation', 'stale']),
     action: z.enum([...CONSULT_ACTION_KINDS, 'confirm']),
     seat: ConsultRecordSchema.shape.seat,
     diagnosis: z.string(),

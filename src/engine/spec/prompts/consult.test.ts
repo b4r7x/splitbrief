@@ -332,13 +332,6 @@ describe('buildConsultPrompt', () => {
     },
   );
 
-  it('lets only guidance or a rewrite answer a stale consult', () => {
-    const prompt = buildConsultPrompt(consultInput({ reason: 'stale' }));
-
-    expect(prompt).toContain('stale — The task went stale');
-    expect(prompt).toContain('Only guidance or a rewritten task can answer this reason.');
-  });
-
   it('shows the decisions of a done report with and without a reason', () => {
     const prompt = buildConsultPrompt(
       consultInput({
@@ -364,7 +357,6 @@ describe('buildConsultPrompt', () => {
   it.each([
     ['failed', false],
     ['failed', true],
-    ['stale', false],
   ] as const)(
     "shows the brief's operator instructions to a %s consult, resumed=%s",
     (reason, resumed) => {

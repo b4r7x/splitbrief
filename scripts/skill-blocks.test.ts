@@ -257,7 +257,6 @@ describe('skill-blocks', () => {
     expect(consult).toContain('Replace with 2–4 subtasks');
     expect(consult).toContain('2 consults and 8 attempts');
     expect(consult).toContain('10 planner decisions after planning');
-    expect(consult).toContain('stale');
     expect(consult).not.toMatch(/takeover|ladder/iu);
     expect(renderBlock('ladder-table')).toBeNull();
     expect(renderBlock('takeover-prompt')).toBeNull();

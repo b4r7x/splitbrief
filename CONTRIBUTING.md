@@ -134,7 +134,7 @@ Each skill step follows the engine contract in this table.
 | One behaviour with its tests and callers | TaskSpec intent/criteria; `src/core/pipeline-spec/brief.ts` |
 | Ordinary files as guidance; protected confirmation | `src/core/pipeline-spec/scope.ts` |
 | One local retry and planner consult | `src/core/pipeline-spec/retries.ts`; `src/core/schemas/consult.ts`; `src/engine/orchestrator/consult/` |
-| Stale refresh and persistent lineage bounds | `src/engine/orchestrator/task/stale-inputs.ts`; `src/core/pipeline-spec/bounds.ts` |
+| Code refresh before dispatch and persistent lineage bounds | `src/engine/orchestrator/task/refresh-code.ts`; `src/core/pipeline-spec/bounds.ts` |
 | Proposed decisions and confirmed Plan context | ImplementerReport decisions and `plan.decisions` |
 | End/task cadence and completed-task coverage | `workflow.review` (`src/core/schemas/config.ts`) |
 | Typed review, derived pass and appended fixes | `src/core/schemas/review.ts`, `src/core/review/verdict.ts`; review answer with fix work |

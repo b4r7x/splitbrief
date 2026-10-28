@@ -31,7 +31,6 @@ import { applyRecoveryAction } from '../recovery/actions.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import { runTaskLoop } from './loop.js';
 import { createSnapshot } from '../../snapshots/create.js';
-import { ABSENT_INPUT_HASH } from './stale-inputs.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
@@ -75,7 +74,6 @@ function lineage(overrides: Partial<LineageRecord>): LineageRecord {
     attempts: 0,
     consultAllowance: 2,
     attemptAllowance: 8,
-    staleConsultedRevision: {},
     dispatchedRevision: {},
     consultRecords: [],
     replacedParents: [],
@@ -183,7 +181,7 @@ function scriptedPlanner(answers: { consult?: () => ConsultAnswer }) {
   return { planner, prompts };
 }
 
-/** A planner whose every call fails: the failed consult and the stale consult halt the brief. */
+/** A planner whose every call fails: the failed consult halts the brief. */
 function failingPlanner() {
   return makePlanner({
     typedCall: consultCallAnswering(() => {
@@ -548,57 +546,6 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
     });
 
-    it('restores nothing of the skipped brief when the next brief halts on its stale consult', async () => {
-      const { projectDir, sessionId } = setupProjectWithUserWork();
-      const first = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-      const next = makeTask({
-        id: 'T002',
-        suggestedFiles: ['src/d.ts'],
-        inputHashes: { 'src/c.ts': ABSENT_INPUT_HASH },
-      });
-      const implementer = writingImplementer(['src/a.ts']);
-      const planner = failingPlanner();
-      const validator = redValidator();
-      const { bus, events } = makeBusRecorder();
-
-      const halted = await runLoop({
-        projectDir,
-        sessionId,
-        state: stateWithPlan([first, next], spentConsults()),
-        implementer,
-        validator,
-        planner,
-        bus,
-      });
-      const skipped = await skip(projectDir, sessionId, halted.state, bus);
-      expect(restoreWarnings(events)).toHaveLength(1);
-      // The user writes the skipped brief's file and the next brief's input during the halt.
-      writeFileSync(join(projectDir, 'src/a.ts'), "the user's a\n");
-      writeFileSync(join(projectDir, 'src/c.ts'), "the user's c\n");
-
-      const stale = await runLoop({
-        projectDir,
-        sessionId,
-        state: skipped,
-        implementer,
-        validator,
-        planner,
-        bus,
-      });
-      expect(stale.state.pendingRecovery).toMatchObject({
-        reason: 'planner-call-failed',
-        taskId: 'T002',
-      });
-      expect(implementer.implement).toHaveBeenCalledTimes(1);
-
-      await skip(projectDir, sessionId, stale.state, bus);
-
-      expect(restoreWarnings(events)).toHaveLength(1);
-      expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe("the user's a\n");
-      expect(readFileSync(join(projectDir, 'src/c.ts'), 'utf-8')).toBe("the user's c\n");
-      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
-    });
-
     it("gives back the user's own bytes of a file the user changed before the run", async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       const task = makeTask({ id: 'T001', suggestedFiles: [USER_FILE] });
@@ -803,12 +750,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
   it('continues a brief past consult-bound-spent from the files its last attempt left', async () => {
     const { projectDir, sessionId } = setupProject();
-    // Compile records the hashes of the brief's inputs; both files are absent then.
-    const task = makeTask({
-      id: 'T001',
-      suggestedFiles: ['src/a.ts', 'src/b.ts'],
-      inputHashes: { 'src/a.ts': ABSENT_INPUT_HASH, 'src/b.ts': ABSENT_INPUT_HASH },
-    });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', 'src/b.ts'] });
     const usage = { inputTokens: 10, outputTokens: 5 };
     let continued = false;
     const seenByReplay: string[] = [];
@@ -884,7 +826,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(resumed.status).toBe('complete');
     // The replay is a retry on the last attempt's files, not a rebuild from the pre-task state.
     expect(seenByReplay).toEqual(['export const a = 2;\n']);
-    // The files the brief wrote itself are not inputs that moved under it: no stale consult.
+    // The replay asks the planner nothing.
     expect(prompts).toEqual([]);
     expect(eventTypes(events).filter((type) => type.startsWith('consult:'))).toEqual([]);
     // Its validation reads every file the brief changed since it first started.

@@ -448,42 +448,6 @@ describe('requestConsult', () => {
     expect(seen.at(-1)?.plannerSessionId).toBe('native-1');
   });
 
-  it('records a stale consult without marking it applied or spending a planner call', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const { bus } = makeBusRecorder();
-    const planner = consultPlanner([guidanceAnswer('Inputs moved.', null)], true);
-    const state = consultState();
-    saveState({ projectDir, sessionId }, state);
-    const seen: WorkflowState[] = [];
-
-    const result = await requestConsult(
-      {
-        projectDir,
-        workspaceDir: projectDir,
-        sessionId,
-        bus,
-        config,
-        planner: planner.planner,
-        reviewer: planner.planner,
-        state,
-        onStateChange: (next) => seen.push(next),
-      },
-      {
-        task: state.tasks[0]!,
-        reason: 'stale',
-        failingOutput: 'stale failure',
-      },
-    );
-
-    expect('answer' in result).toBe(true);
-    const after = seen.at(-1)!;
-    expect(after.lineages?.T003?.consults).toBe(1);
-    expect(after.lineages?.T003?.staleConsultedRevision).toEqual({});
-    expect(after.tasks[0]?.inputHashes).toEqual(state.tasks[0]?.inputHashes);
-    expect(after.plannerCalls?.used ?? 0).toBe(0);
-    expect(after.tokenUsage.plannerInput).toBe(10);
-  });
-
   it.each([
     { seat: 'plan', makeState: consultState },
     { seat: 'review', makeState: fixState },
@@ -765,87 +729,81 @@ describe('requestConsult', () => {
     );
   });
 
-  it.each(['failed', 'stale'] as const)(
-    'repairs a rewritten task id change once for %s and takes the fixed answer',
-    async (reason) => {
-      const { projectDir, sessionId } = setupProject(dirs);
-      const { bus } = makeBusRecorder();
-      const planner = consultPlanner(
-        [rewriteAnswer('T009', null), guidanceAnswer('Answer', null)],
-        true,
-      );
-      const state = consultState();
-      saveState({ projectDir, sessionId }, state);
-      const seen: WorkflowState[] = [];
+  it('repairs a rewritten task id change once and takes the fixed answer', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const { bus } = makeBusRecorder();
+    const planner = consultPlanner(
+      [rewriteAnswer('T009', null), guidanceAnswer('Answer', null)],
+      true,
+    );
+    const state = consultState();
+    saveState({ projectDir, sessionId }, state);
+    const seen: WorkflowState[] = [];
 
-      const result = await requestConsult(
-        {
-          projectDir,
-          workspaceDir: projectDir,
-          sessionId,
-          bus,
-          config,
-          planner: planner.planner,
-          reviewer: planner.planner,
-          state,
-          onStateChange: (next) => seen.push(next),
-        },
-        {
-          task: state.tasks[0]!,
-          reason,
-          failingOutput: 'the failure',
-        },
-      );
+    const result = await requestConsult(
+      {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        bus,
+        config,
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+        onStateChange: (next) => seen.push(next),
+      },
+      {
+        task: state.tasks[0]!,
+        reason: 'failed',
+        failingOutput: 'the failure',
+      },
+    );
 
-      expect('answer' in result && result.answer.answer.action).toBe('guidance');
-      expect(planner.prompts).toHaveLength(2);
-      expect(planner.prompts[1]).toContain('a rewrite-task must keep the task id T003');
-      expect(planner.prompts[1]).toContain('the answer changes it to T009');
-      expect(planner.prompts[1]).toContain('failed validation');
-      expect(seen.at(-1)?.lineages?.T003?.consults).toBe(1);
-    },
-  );
+    expect('answer' in result && result.answer.answer.action).toBe('guidance');
+    expect(planner.prompts).toHaveLength(2);
+    expect(planner.prompts[1]).toContain('a rewrite-task must keep the task id T003');
+    expect(planner.prompts[1]).toContain('the answer changes it to T009');
+    expect(planner.prompts[1]).toContain('failed validation');
+    expect(seen.at(-1)?.lineages?.T003?.consults).toBe(1);
+  });
 
-  it.each(['failed', 'stale'] as const)(
-    'fails the seat protocol when the rewritten task changes its id again for %s',
-    async (reason) => {
-      const { projectDir, sessionId } = setupProject(dirs);
-      const { bus } = makeBusRecorder();
-      const planner = consultPlanner(
-        [rewriteAnswer('T009', null), rewriteAnswer('T009', null)],
-        true,
-      );
-      const state = consultState();
-      saveState({ projectDir, sessionId }, state);
+  it('fails the seat protocol when the rewritten task changes its id again', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const { bus } = makeBusRecorder();
+    const planner = consultPlanner(
+      [rewriteAnswer('T009', null), rewriteAnswer('T009', null)],
+      true,
+    );
+    const state = consultState();
+    saveState({ projectDir, sessionId }, state);
 
-      const result = await requestConsult(
-        {
-          projectDir,
-          workspaceDir: projectDir,
-          sessionId,
-          bus,
-          config,
-          planner: planner.planner,
-          reviewer: planner.planner,
-          state,
-        },
-        {
-          task: state.tasks[0]!,
-          reason,
-          failingOutput: 'the failure',
-        },
-      );
+    const result = await requestConsult(
+      {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        bus,
+        config,
+        planner: planner.planner,
+        reviewer: planner.planner,
+        state,
+      },
+      {
+        task: state.tasks[0]!,
+        reason: 'failed',
+        failingOutput: 'the failure',
+      },
+    );
 
-      expect('error' in result).toBe(true);
-      if (!('error' in result)) throw new Error('expected a seat-protocol error');
-      expect(result.error.kind).toBe('seat-protocol-error');
-      expect(result.error.message).toContain('after 2 attempts.');
-      expect(result.error.data.errors).toEqual([
-        'answer.task.id: a rewrite-task must keep the task id T003; the answer changes it to T009',
-      ]);
-      expect(planner.prompts).toHaveLength(2);
-    },
-  );
+    expect('error' in result).toBe(true);
+    if (!('error' in result)) throw new Error('expected a seat-protocol error');
+    expect(result.error.kind).toBe('seat-protocol-error');
+    expect(result.error.message).toContain('after 2 attempts.');
+    expect(result.error.data.errors).toEqual([
+      'answer.task.id: a rewrite-task must keep the task id T003; the answer changes it to T009',
+    ]);
+    expect(planner.prompts).toHaveLength(2);
+  });
 
   it('repairs a rewrite whose test check names no test file and whose render check names no scenario id', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
@@ -1082,12 +1040,6 @@ describe('consultSeat', () => {
       name: 'a fix task that is blocked',
       task: makeTask({ id: 'T003', fix: FIX }),
       reason: 'blocked',
-      seat: 'review',
-    },
-    {
-      name: 'a fix task that went stale',
-      task: makeTask({ id: 'T003', fix: FIX }),
-      reason: 'stale',
       seat: 'review',
     },
     {
