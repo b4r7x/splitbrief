@@ -575,6 +575,7 @@ const checkpointPredicates = [
     },
   ],
   [checkpointId('implementation-narration'), implementerMarkdown('src/registry.ts')],
+  [checkpointId('implementation-command-code'), includesTranscript('src/app.ts', 'npm test')],
   [checkpointId('implementation-adjacent-narration'), implementerMarkdown('src/fixture.ts')],
   [checkpointId('implementation-fenced-handback'), implementerMarkdown('src/row.ts')],
   [

@@ -111,7 +111,7 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
     transport: 'stdin',
     versionLine: canonicalVersionLine('command-code', '1.39.2'),
     successLines: [
-      '{"type":"event","event":{"type":"tool_running","toolCallId":"call_1","toolName":"read_file"}}',
+      '{"type":"event","event":{"type":"tool_queued","toolCallId":"call_1","toolName":"read_file","input":{"file_path":"README.md"}}}',
       '{"type":"result","subtype":"success","sessionId":"contract-session","stopReason":"end_turn","finalText":"done","usage":{"inputTokens":10,"outputTokens":2}}',
     ],
     authArgv: ['status', '--json'],

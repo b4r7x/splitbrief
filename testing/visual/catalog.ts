@@ -913,6 +913,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-implementation-command-code',
+      title: 'Workflow · a Command Code build call reading, editing and running a command',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-command-code',
+        title: 'Command Code tool rows with their file and command',
+        kind: 'implementation',
+        marker: 'BUILD activity',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'activity', title: 'Implementation activity block' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-continuous-transcript',
       title: 'Workflow · completed briefs retain their body before the running brief',
       surface: screenSurface('workflow'),

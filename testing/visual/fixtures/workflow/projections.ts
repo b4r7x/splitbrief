@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';
 import {
@@ -62,6 +64,7 @@ import { createRunnerCallRecorder } from '../../../../src/engine/calls/recorder.
 import { createImplementerCallContext } from '../../../../src/engine/implementers/pipeline/call-result.js';
 import type { RunnerCallEvent } from '../../../../src/engine/calls/types.js';
 import { claudeCodePlannerAdapter } from '../../../../src/engine/runners/cli-tools/claude-code.js';
+import { commandCodeProtocolEvents } from '../../../../src/engine/runners/cli-tools/command-code.js';
 import { recordCliProtocolEvent } from '../../../../src/engine/runners/cli-tools/process-invoke.js';
 import { createCliTextForwarder } from '../../../../src/engine/runners/invoke-cli-adapter.js';
 import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt/prompt.js';
@@ -289,6 +292,7 @@ const WORKFLOW_IMPLEMENTATION_RETRY_ID = scenarioId('workflow-implementation-ret
 const WORKFLOW_VALIDATION_ID = scenarioId('workflow-validation');
 const WORKFLOW_IMPLEMENTATION_ESCALATED_ID = scenarioId('workflow-implementation-escalated');
 const WORKFLOW_IMPLEMENTATION_NARRATION_ID = scenarioId('workflow-implementation-narration');
+const WORKFLOW_IMPLEMENTATION_COMMAND_CODE_ID = scenarioId('workflow-implementation-command-code');
 const WORKFLOW_IMPLEMENTATION_ADJACENT_NARRATION_ID = scenarioId(
   'workflow-implementation-adjacent-narration',
 );
@@ -5049,6 +5053,85 @@ const implementationNarrationProjection: WorkflowFixtureProjection = {
   ],
 };
 
+const COMMAND_CODE_BUILD_SEAT = {
+  kind: 'cli',
+  tool: 'command-code',
+  model: 'deepseek/deepseek-v4-flash',
+} as const;
+
+// The first three turns of the 1.88.0 stream fixture, the calls inside the run, go through the
+// production parser and event projection, so the rows show what the engine makes of them.
+function commandCodeBuildFrameEvents(): EngineEvent[] {
+  const events: EngineEvent[] = [];
+  const rootDir = resolve(VISUAL_FIXTURE_PROJECT_DIR);
+  const recorder = createRunnerCallRecorder({
+    context: {
+      callId: 'visual-command-code-build',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: COMMAND_CODE_BUILD_SEAT.tool,
+      model: COMMAND_CODE_BUILD_SEAT.model,
+      axes: seatAxisWords(COMMAND_CODE_BUILD_SEAT),
+      attempt: 0,
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+    },
+    onEvent: (event) => {
+      events.push(
+        ...projectRunnerCallEvents(
+          { ...event, ts: FIXED_TS + 300 + events.length },
+          { rootDir, phase: 'implementing', sequence: events.length },
+        ),
+      );
+    },
+  });
+  const lines = readFileSync(
+    new URL('../../../fixtures/typed-output/command-code-1.88.0.jsonl', import.meta.url),
+    'utf8',
+  )
+    .replaceAll('<project>', rootDir)
+    .split('\n');
+  for (const line of lines.slice(
+    0,
+    lines.findIndex((line) => line.includes('"turnNumber":4')),
+  )) {
+    for (const event of commandCodeProtocolEvents(line)) recordCliProtocolEvent(recorder, event);
+  }
+  return events.filter((event) => event.type === 'runner_call_activity');
+}
+
+/** A Command Code build call: its rows name the file it read and edited and the command it ran. */
+const implementationCommandCodeProjection: WorkflowFixtureProjection = {
+  ...implementationNarrationProjection,
+  scenarioId: WORKFLOW_IMPLEMENTATION_COMMAND_CODE_ID,
+  config: { implementer: COMMAND_CODE_BUILD_SEAT },
+  events: [
+    ...implementationNarrationProjection.events.slice(0, 2),
+    {
+      type: 'task_started',
+      ts: FIXED_TS + 100,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      index: 0,
+      total: 3,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+      action: 'modify',
+      tool: COMMAND_CODE_BUILD_SEAT.tool,
+      model: COMMAND_CODE_BUILD_SEAT.model,
+      axes: seatAxisWords(COMMAND_CODE_BUILD_SEAT),
+    },
+    {
+      type: 'implementer_generate_running',
+      ts: FIXED_TS + 150,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+    },
+    ...commandCodeBuildFrameEvents(),
+  ],
+};
+
 const implementationAdjacentNarrationProjection: WorkflowFixtureProjection = {
   ...implementationNarrationProjection,
   scenarioId: WORKFLOW_IMPLEMENTATION_ADJACENT_NARRATION_ID,
@@ -7271,6 +7354,7 @@ const projections = [
   implementationEscalatedProjection,
   implementationExtractedCodeProjection,
   implementationNarrationProjection,
+  implementationCommandCodeProjection,
   implementationAdjacentNarrationProjection,
   implementationFencedHandBackProjection,
   continuousTranscriptProjection,

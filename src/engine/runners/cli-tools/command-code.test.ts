@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { projectRunnerCallActivity } from '../../calls/activity.js';
 import { toTokenDelta } from '../../calls/usage.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import {
@@ -8,6 +9,7 @@ import {
   COMMAND_CODE_CLI_ADMISSION_VERDICT,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { CLI_PROMPT_SENTINEL, UnregisteredCliCandidate } from './candidate-contract.js';
+import type { CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
 import {
   CLI_CONFORMANCE_CANDIDATES,
@@ -22,6 +24,11 @@ const NDJSON_FIXTURE = join(
   import.meta.dirname,
   '../../../../testing/fixtures/command-code/json-result.txt',
 );
+const STREAM_FIXTURE = join(
+  import.meta.dirname,
+  '../../../../testing/fixtures/typed-output/command-code-1.88.0.jsonl',
+);
+const STREAM_PROJECT = '/Users/alice/Projects/app';
 
 function plannerArgs(
   options: {
@@ -63,6 +70,31 @@ function fixtureNdjsonLines(): readonly string[] {
 
 function fixtureEvents() {
   return fixtureNdjsonLines().flatMap((line) => [...commandCodeProtocolEvents(line)]);
+}
+
+function streamToolUses() {
+  return readFileSync(STREAM_FIXTURE, 'utf8')
+    .replaceAll('<project>', STREAM_PROJECT)
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .flatMap((line) => commandCodeProtocolEvents(line))
+    .filter((event) => event.type === 'tool-use');
+}
+
+function activityLabel(toolUse: Extract<CliProtocolEvent, { type: 'tool-use' }>) {
+  return projectRunnerCallActivity(
+    {
+      type: 'call_tool_use_done',
+      ts: 1_000,
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      channel: 'tool',
+      toolUse: { id: toolUse.id, name: toolUse.name, input: { ...toolUse.input } },
+    },
+    0,
+    STREAM_PROJECT,
+  )?.label;
 }
 
 function terminalOf(events: ReturnType<typeof commandCodeProtocolEvents>) {
@@ -300,23 +332,34 @@ describe('Command Code role adapters', () => {
     expect(terminalOf(events).usage).toEqual(expectedUsage);
   });
 
-  // The recorded run needed no tools, so the tool-use mapping is pinned to the
-  // `tool_running` payload the shipped CLI emits (`toolCallId`, `toolName`)
-  // rather than to a fixture line.
-  it('maps a tool_running event to a tool-use event', () => {
-    expect(
-      commandCodeProtocolEvents(
-        JSON.stringify({
-          type: 'event',
-          event: {
-            type: 'tool_running',
-            toolCallId: 'call_1',
-            toolName: 'read_file',
-            description: 'Read src/example.ts',
-          },
-        }),
-      ),
-    ).toEqual([{ type: 'tool-use', id: 'call_1', name: 'read_file', input: {} }]);
+  it('labels a read_file call with the path it reads', () => {
+    const read = streamToolUses().find((toolUse) => toolUse.name === 'read_file');
+    expect(read?.input).toEqual({ file_path: `${STREAM_PROJECT}/src/app.ts` });
+    expect(read === undefined ? undefined : activityLabel(read)).toBe('reading src/app.ts');
+  });
+
+  it('labels a shell_command call with the command it runs', () => {
+    const shell = streamToolUses().find((toolUse) => toolUse.name === 'shell_command');
+    expect(shell === undefined ? undefined : activityLabel(shell)).toBe('running npm test');
+  });
+
+  it('gives one tool use per tool call of the stream, in order', () => {
+    expect(streamToolUses().map((toolUse) => ({ id: toolUse.id, name: toolUse.name }))).toEqual([
+      { id: 'call_01', name: 'read_file' },
+      { id: 'call_02', name: 'edit_file' },
+      { id: 'call_03', name: 'shell_command' },
+      { id: 'call_04', name: 'write_file' },
+      { id: null, name: 'grep' },
+    ]);
+  });
+
+  it('gives a tool use with no id when tool_queued carries no toolCallId', () => {
+    expect(streamToolUses().at(-1)).toEqual({
+      type: 'tool-use',
+      id: null,
+      name: 'grep',
+      input: { pattern: 'TODO', path: `${STREAM_PROJECT}/src` },
+    });
   });
 
   it('fails the protocol on malformed JSON and on a non-record line', () => {
@@ -350,7 +393,7 @@ describe('Command Code role adapters', () => {
   it('ignores an event frame whose tool name is unreadable', () => {
     expect(
       commandCodeProtocolEvents(
-        JSON.stringify({ type: 'event', event: { type: 'tool_running', toolCallId: 'call_1' } }),
+        JSON.stringify({ type: 'event', event: { type: 'tool_queued', toolCallId: 'call_1' } }),
       ),
     ).toEqual([]);
   });
