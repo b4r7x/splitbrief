@@ -1110,7 +1110,7 @@ export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   phase?: Phase | undefined;
   /** Blocking findings the review reported. Absent when it reached no verdict at all. */
   blocking?: number | undefined;
-  detail?: string | undefined;
+  details?: readonly string[] | undefined;
   /** Why the review reached no verdict, when it reached none. */
   failure?: NoVerdictReviewFailure | undefined;
   /** A final review can be accepted with its open findings instead of repaired. */
@@ -1155,7 +1155,7 @@ function buildNoVerdictReviewIssue(
         : failure.message,
     details: [
       ...(missing.length > 0 ? [`Missing: ${missing.join(', ')}`] : []),
-      ...(opts.detail === undefined ? [] : [opts.detail]),
+      ...(opts.details ?? []),
       ...(diagnostic === undefined
         ? []
         : [
@@ -1201,7 +1201,7 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
     files: [],
     affectedTaskIds: [],
     message,
-    details: [opts.detail].filter((detail): detail is string => detail !== undefined),
+    details: [...(opts.details ?? [])],
     facts: compactFacts({
       blocking,
       noProgress: opts.noProgress?.join(','),

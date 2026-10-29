@@ -88,7 +88,7 @@ async function haltFailedReview(args: {
   noProgress?: readonly string[] | undefined;
   fixCycle?: number | undefined;
   unverified?: number | undefined;
-  detail?: string | undefined;
+  details?: readonly string[] | undefined;
 }): Promise<WorkflowState> {
   const ref = { projectDir: args.wctx.projectDir, sessionId: args.wctx.sessionId };
   const scheduled = args.state.review?.scope === 'task' && args.state.phase === 'implementing';
@@ -112,9 +112,10 @@ async function haltFailedReview(args: {
       blocking: args.blocking,
       completedTasks: state.tasks.filter((task) => isTaskCompleted(task.status)).length,
     });
-  const detail = [args.detail, ...args.redInputs.map((input) => `${input.id}: ${input.text}`)]
-    .filter(Boolean)
-    .join('\n');
+  const details = [
+    ...(args.details ?? []),
+    ...args.redInputs.map((input) => `${input.id}: ${input.text}`),
+  ];
   const issue = buildReviewFailedRecoveryIssue({
     phase: state.phase,
     createdAt: nowIso(),
@@ -122,7 +123,7 @@ async function haltFailedReview(args: {
     ...(args.noProgress !== undefined && { noProgress: args.noProgress }),
     ...(args.fixCycle !== undefined && { fixCycle: args.fixCycle }),
     ...(args.unverified !== undefined && { unverified: args.unverified }),
-    ...(detail !== '' && { detail }),
+    details,
     acceptAsIs: !scheduled && !redPending,
     scope: scheduled ? 'task' : 'final',
     ...(scheduled && { afterTaskId: args.state.review?.afterTaskId }),
@@ -266,7 +267,7 @@ export async function followReviewAnswer(args: {
         candidate: args.candidate,
         blocking,
         redInputs,
-        detail: 'The review asked a question this run has no way to answer.',
+        details: ['The review asked a question this run has no way to answer.'],
       });
       return { state, stopped: true, reviewAgain: false };
     }
@@ -294,8 +295,6 @@ export async function followReviewAnswer(args: {
   }
   if (fixWork.fixTasks.length === 0 && fixWork.verify.length === 0) {
     const unverified = reviewOutcomeOf(judged).unverifiedCriteria;
-    const detail =
-      unverified.length > 0 ? `Unverified criteria: ${unverified.join(', ')}` : undefined;
     state = await haltFailedReview({
       wctx,
       state,
@@ -306,7 +305,7 @@ export async function followReviewAnswer(args: {
       ...(blocking > 0
         ? { noProgress: blockers }
         : unverified.length > 0 && { unverified: unverified.length }),
-      ...(detail !== undefined && { detail }),
+      ...(unverified.length > 0 && { details: [`Unverified criteria: ${unverified.join(', ')}`] }),
     });
     return { state, stopped: true, reviewAgain: false };
   }
@@ -341,13 +340,14 @@ export async function followReviewAnswer(args: {
       started.result.fixTasks.length === 0 ||
       fixWork.fixTasks.length === 0
     ) {
+      // The planner's diagnosis leads: the recovery panel shows only the first detail rows.
       const diagnoses =
         plannerRound === undefined
           ? undefined
           : [
-              ...entries.map((entry) => `Reviewer: ${entry.id}: ${entry.text}`),
               `Planner: ${plannerRound.diagnosis}`,
-            ].join('\n');
+              ...entries.map((entry) => `Reviewer: ${entry.id}: ${entry.text}`),
+            ];
       state = await haltFailedReview({
         wctx,
         state,
@@ -357,7 +357,7 @@ export async function followReviewAnswer(args: {
         redInputs,
         noProgress: blockers,
         fixCycle: started.cycle,
-        ...(diagnoses !== undefined && { detail: diagnoses }),
+        ...(diagnoses !== undefined && { details: diagnoses }),
       });
       return { state, stopped: true, reviewAgain: false };
     }

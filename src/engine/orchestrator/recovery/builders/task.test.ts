@@ -1455,10 +1455,14 @@ describe('buildReviewFailedRecoveryIssue', () => {
     const issue = buildReviewFailedRecoveryIssue({
       createdAt,
       blocking: 3,
-      detail: 'Critical: missing test for the new route',
+      details: ['Planner: the brief names no test', 'Reviewer: F1: missing test for the new route'],
     });
 
     expect(issue.reason).toBe('review-failed');
+    expect(issue.details).toEqual([
+      'Planner: the brief names no test',
+      'Reviewer: F1: missing test for the new route',
+    ]);
     expect(issue.phase).toBe('final-review');
     expect(issue.message).toBe('Final review failed with 3 blocking findings');
     expect(issue.availableActions).toEqual(['revise', 'end-run']);

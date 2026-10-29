@@ -921,9 +921,10 @@ describe('the review that judges a fix cycle', () => {
       expect(again.state.pendingRecovery?.message).toBe(
         'Final review made no progress on F1 after fix cycle 2',
       );
-      const details = again.state.pendingRecovery?.details?.join('\n') ?? '';
-      expect(details).toContain('Reviewer: F1: Preserve the error');
-      expect(details).toContain(`Planner: ${diagnosis}`);
+      expect(again.state.pendingRecovery?.details).toEqual([
+        `Planner: ${diagnosis}`,
+        'Reviewer: F1: Preserve the error',
+      ]);
     });
 
     it('asks the user the planner question on the review question path', async () => {

@@ -24,7 +24,7 @@ const alpha = makeTaskSpec({
   suggestedFiles: ['src/alpha.mjs', 'src/alpha.test.mjs'],
   checks: [{ id: 'T001-K1', kind: 'test', value: 'src/alpha.test.mjs', required: true }],
 });
-const fixes = ['T002', 'T003'].map((id) =>
+const fixes = ['T002', 'T003', 'T004'].map((id) =>
   makeTaskSpec({
     id,
     title: `Test the alpha value again ${id}`,
@@ -53,6 +53,7 @@ const finding = {
   acceptance: 'Add a string type assertion.',
   checkIds: null,
 };
+const DIAGNOSIS = 'The type test never reaches the alpha value.';
 const testSource = (actual: string, expected: string): string =>
   `import { strict as assert } from 'node:assert';\nimport { alpha } from './alpha.mjs';\nassert.equal(${actual}, ${expected});\n`;
 const writes = {
@@ -94,7 +95,8 @@ describe('e2e: a task review halt', () => {
     );
     vi.stubEnv('NODE_OPTIONS', `--import=${offlinePath}`);
     // Every task review fails on F1 with a new fix brief; the first starts a fix cycle, the second
-    // finds F1 still open and halts.
+    // finds F1 still open and asks the planner, whose guidance goes with the next fix brief; the
+    // third finds F1 open after the planner's round and halts.
     writeFileSync(
       plannerPath,
       `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
@@ -115,6 +117,15 @@ if (prompt.includes('# Task Implementation Review')) {
     criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })),
     findings: [${JSON.stringify(finding)}],
     fixTasks: [{ ...fix, findingIds: ['F1'] }],
+  };
+} else if (/^# Consult on a failing task$/m.test(prompt)) {
+  answer = {
+    answer: {
+      diagnosis: ${JSON.stringify(DIAGNOSIS)},
+      action: 'guidance',
+      instructions: 'Import alpha in the type test.',
+      context: null,
+    },
   };
 } else if (prompt.includes('# Plan the change')) {
   answer = ${JSON.stringify({ result: plan })};
@@ -156,7 +167,7 @@ console.log('Implemented ' + title);
     const run = await cli(target, ['start', 'smoke']);
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).not.toBe(0);
     expect(run.stderr).toContain(
-      'Needs you (review-failed): Review T002 made no progress on F1 after fix cycle 1',
+      'Needs you (review-failed): Review T003 made no progress on F1 after fix cycle 2',
     );
     expect(run.stderr).not.toContain('Final review');
 
@@ -170,24 +181,26 @@ console.log('Implemented ' + title);
     ).toEqual([
       ['task', 'T001', 'fail'],
       ['task', 'T002', 'fail'],
+      ['task', 'T003', 'fail'],
     ]);
     expect(events.filter((event) => event.type === 'error').map((event) => event.message)).toEqual([
-      'Review T002 made no progress on F1 after fix cycle 1; see review.md',
+      'Review T003 made no progress on F1 after fix cycle 2; see review.md',
     ]);
     expect(
       events.filter((event) => event.type === 'recovery_prompted').map((event) => event.headline),
-    ).toEqual(['Review T002 made no progress on F1 after fix cycle 1']);
+    ).toEqual(['Review T003 made no progress on F1 after fix cycle 2']);
 
     const state = readState(target, sessionId);
     expect(state.phase).toBe('implementing');
     expect(state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
-      message: 'Review T002 made no progress on F1 after fix cycle 1',
+      message: 'Review T003 made no progress on F1 after fix cycle 2',
       availableActions: ['revise', 'end-run'],
+      details: [`Planner: ${DIAGNOSIS}`, `Reviewer: F1: ${finding.text}`],
     });
     if (state.pendingRecovery === undefined) throw new Error('Missing halt');
     expect(formatRecoveryHeadline(state.pendingRecovery)).toBe(
-      'Review T002 made no progress on F1 after fix cycle 1',
+      'Review T003 made no progress on F1 after fix cycle 2',
     );
   });
 
