@@ -172,13 +172,10 @@ function commandCodeListModels(): readonly DetectedModel[] {
   return nativeCliCatalogToDetectedModels(catalog);
 }
 
-function cursorListModels(): readonly DetectedModel[] {
-  const stdout = readFileSync(
-    join(import.meta.dirname, '../../fixtures/cursor/list-models-2026.09.18.txt'),
-    'utf8',
-  );
+function cursorListModels(file: string): readonly DetectedModel[] {
+  const stdout = readFileSync(join(import.meta.dirname, '../../fixtures/cursor', file), 'utf8');
   const catalog = parseCursorNativeModelCatalog(stdout);
-  if (catalog === null) throw new Error('cursor/list-models-2026.09.18.txt did not parse');
+  if (catalog === null) throw new Error(`cursor/${file} did not parse`);
   return nativeCliCatalogToDetectedModels(catalog);
 }
 
@@ -800,15 +797,28 @@ function seedOpencodeCommandFailedStale(): void {
 const CURSOR_NO_ZDR_MODEL = 'claude-fable-5-high';
 const CURSOR_FAMILY_MODEL = 'gpt-5.6-sol-high';
 const CURSOR_FAMILY_DRAFT = 'gpt-5.6-sol-xhigh-fast';
+const CURSOR_HAIKU_MODEL = 'claude-haiku-5-5-low';
 
-function seedCursorConfirmed(persisted: string): void {
+const CURSOR_LISTING_2026_09_18 = {
+  file: 'list-models-2026.09.18.txt',
+  version: '2026.09.18-9a7762b',
+} as const;
+const CURSOR_LISTING_2026_10_22 = {
+  file: 'list-models-2026.10.22.txt',
+  version: '2026.10.22-27dcf5f',
+} as const;
+
+function seedCursorConfirmed(
+  persisted: string,
+  listing: { readonly file: string; readonly version: string } = CURSOR_LISTING_2026_09_18,
+): void {
   seedConfig({ planner: { kind: 'cli', tool: 'cursor', model: persisted } })();
   publishVisualDiscovery({
-    cliTools: [cliDetectionFor('ready', 'cursor', { installedVersion: '2026.09.18-9a7762b' })],
+    cliTools: [cliDetectionFor('ready', 'cursor', { installedVersion: listing.version })],
     cliModels: [
       catalogAttempt({
         tool: 'cursor',
-        outcome: { kind: 'success', value: cursorListModels() },
+        outcome: { kind: 'success', value: cursorListModels(listing.file) },
       }),
     ],
   });
@@ -1424,6 +1434,15 @@ const createCursorExpandedFixture: FixtureFactory = () =>
     seed: () => {
       seedCursorConfirmed(CURSOR_FAMILY_MODEL);
       pickerViewStore.expand(CURSOR_FAMILY_MODEL, CURSOR_FAMILY_DRAFT);
+    },
+    focus: 'tool:cursor',
+  });
+const createCursorHaikuExpandedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedCursorConfirmed(CURSOR_HAIKU_MODEL, CURSOR_LISTING_2026_10_22);
+      pickerViewStore.expand(CURSOR_HAIKU_MODEL, CURSOR_HAIKU_MODEL);
     },
     focus: 'tool:cursor',
   });
@@ -2793,6 +2812,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-custom-filter'), createCustomFilterFixture],
   [scenarioId('overlay-planner-picker-cursor'), createPlannerPickerCursorFixture],
   [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
+  [scenarioId('overlay-picker-cursor-haiku-expanded'), createCursorHaikuExpandedFixture],
   [scenarioId('overlay-picker-custom-launcher'), createCustomCommandLauncherFixture],
   [scenarioId('overlay-picker-local-server'), createLocalServerFixture],
   [scenarioId('overlay-picker-signed-out-tool'), createSignedOutToolFixture],

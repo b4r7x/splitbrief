@@ -5311,6 +5311,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-picker-cursor-haiku-expanded',
+        title: 'Overlay · planner picker · Cursor family with a thinking-off name',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-picker-opencode-expanded',
         title: 'Overlay · planner picker · OpenCode routes and axes expanded',
         marker: PICKER_TITLE_MARKER,

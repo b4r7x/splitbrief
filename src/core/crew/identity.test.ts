@@ -641,6 +641,15 @@ describe('formatSeatIdentity', () => {
     ).toBe('Cursor Agent CLI · Claude Fable 5 · high · thinking');
   });
 
+  it('peels a No Thinking pair out of the cursor family name', () => {
+    expect(
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'cursor', model: 'claude-haiku-5-5-low' },
+        displayName: 'Claude Haiku 5.5 Low No Thinking',
+      }),
+    ).toBe('Cursor Agent CLI · Claude Haiku 5.5 · low');
+  });
+
   it('falls back to the peeled id when the catalog name is nothing but axis words', () => {
     expect(
       formatSeatIdentity({

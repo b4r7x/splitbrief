@@ -101,6 +101,7 @@
 
 ### Fixed
 
+- Cursor model names no longer end in a stray word.
 - Command Code activity shows the file or the command, and a write outside the run stops the brief.
 - The model picker lists an OpenCode provider only when a run can sign in to it. Providers that sign in without an API key, such as Amazon Bedrock or Google Vertex, are no longer offered and then fail at the first call.
 - Claude Code and Codex sign-ins kept in a folder set by `CLAUDE_CONFIG_DIR` or `CODEX_HOME` now work in runs, and a Codex sign-in kept in the system keyring is named as such, with the fix.
