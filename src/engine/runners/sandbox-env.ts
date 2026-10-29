@@ -189,9 +189,10 @@ export function runnerSandboxIdentity(runner: RunnerLike): string {
 
 /**
  * The host account state a `host-account` channel's child keeps. macOS resolves
- * the login keychain through `HOME` and keys the session item on the account
- * name in `USER` for keychain-backed session channels (Claude Code, Cursor,
- * Antigravity and Copilot). Measured against `claude auth status` on
+ * the login keychain through `HOME` for keychain-backed session channels
+ * (Claude Code, Cursor, Antigravity and Copilot). Claude Code keys its session
+ * item on the account name in `USER`; Cursor's items use the fixed account
+ * `cursor-user`. Measured against `claude auth status` on
  * 2026-08-06, a child given the real `HOME` but not `USER` still reports
  * `"loggedIn": false`. The child also keeps a set `CLAUDE_CONFIG_DIR` or
  * `COPILOT_HOME` (`CLI_TOOL_HOME_ENV`), a path and not a credential: the tool

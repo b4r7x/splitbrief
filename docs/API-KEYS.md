@@ -135,7 +135,7 @@ SPLITBRIEF has no admitted Antigravity credential bridge on Linux or Windows. No
 
 The cost is the same as Claude Code's: `~` resolves to your real home, and `copilot` may write its own state under `~/.copilot` (or `COPILOT_HOME`). Everything else the sandbox redirects still points inside `<project>/.splitbrief/sandbox/`, except the private `TMPDIR` in the system temp directory.
 
-On Linux and Windows, SPLITBRIEF copies Copilot's `config.json` from `COPILOT_HOME`, or from `~/.copilot` when `COPILOT_HOME` is not set, read-only into the sandbox. Only that file counts as a Copilot sign-in. The `github-copilot` files of the Copilot editor plugins are copied too, but they do not count as a Copilot CLI sign-in.
+On Linux and Windows, SPLITBRIEF copies Copilot's `config.json` from `COPILOT_HOME`, or from `~/.copilot` when `COPILOT_HOME` is not set, read-only into the sandbox. Only that file counts as a Copilot sign-in.
 
 <a id="exception-one-keychain-backed-session-channels-on-macos"></a>
 

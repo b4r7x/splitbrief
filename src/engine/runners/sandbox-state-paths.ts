@@ -28,10 +28,6 @@ type CliStatePath = Readonly<{
   destinationPath: string;
 }>;
 
-export const CURSOR_CLI_CONFIG_DESTINATION = '.cursor/cli-config.json';
-
-export const COPILOT_CONFIG_DESTINATION = '.copilot/config.json';
-
 /**
  * The allowlisted host state a file-bridged session channel may reach — never
  * the host HOME itself. Keep this list explicit: adding a path here is an
@@ -39,8 +35,7 @@ export const COPILOT_CONFIG_DESTINATION = '.copilot/config.json';
  * A channel whose credential is an OS keychain item has no entry here at all —
  * see `hostAccountState`. How an entry reaches the child is decided per tool
  * by `CLI_CREDENTIAL_MODELS`: a static secret is copied as a sealed read-only
- * snapshot, a rotating credential is passed through live. Cursor splits by
- * path: the sign-in file is live, the policy file is sandbox-owned.
+ * snapshot, a rotating credential is passed through live.
  */
 export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]>> = {
   'claude-code': [
@@ -96,43 +91,7 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
       source: 'tool-home',
       relativePath: 'config.json',
       destination: 'home',
-      destinationPath: COPILOT_CONFIG_DESTINATION,
-    },
-    {
-      source: 'HOME',
-      relativePath: '.config/github-copilot/apps.json',
-      destination: 'config',
-      destinationPath: 'github-copilot/apps.json',
-    },
-    {
-      source: 'HOME',
-      relativePath: '.config/github-copilot/hosts.json',
-      destination: 'config',
-      destinationPath: 'github-copilot/hosts.json',
-    },
-    {
-      source: 'XDG_CONFIG_HOME',
-      relativePath: 'github-copilot/apps.json',
-      destination: 'config',
-      destinationPath: 'github-copilot/apps.json',
-    },
-    {
-      source: 'XDG_CONFIG_HOME',
-      relativePath: 'github-copilot/hosts.json',
-      destination: 'config',
-      destinationPath: 'github-copilot/hosts.json',
-    },
-    {
-      source: 'APPDATA',
-      relativePath: 'GitHub Copilot/apps.json',
-      destination: 'config',
-      destinationPath: 'GitHub Copilot/apps.json',
-    },
-    {
-      source: 'LOCALAPPDATA',
-      relativePath: 'GitHub Copilot/hosts.json',
-      destination: 'data',
-      destinationPath: 'GitHub Copilot/hosts.json',
+      destinationPath: '.copilot/config.json',
     },
   ],
   'kilo-code': [
@@ -142,23 +101,13 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
       destination: 'config',
       destinationPath: 'kilo/auth.json',
     },
-    {
-      source: 'HOME',
-      relativePath: '.config/kilocode/auth.json',
-      destination: 'config',
-      destinationPath: 'kilocode/auth.json',
-    },
+    // The entry links `~/.kilocode`, which holds the old CLI token, the rules
+    // and the workflows that Kilo reads.
     {
       source: 'HOME',
       relativePath: '.kilocode/auth.json',
       destination: 'home',
       destinationPath: '.kilocode/auth.json',
-    },
-    {
-      source: 'XDG_CONFIG_HOME',
-      relativePath: 'kilocode/auth.json',
-      destination: 'config',
-      destinationPath: 'kilocode/auth.json',
     },
     {
       source: 'APPDATA',
@@ -180,12 +129,6 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
     },
   ],
   cursor: [
-    {
-      source: 'HOME',
-      relativePath: CURSOR_CLI_CONFIG_DESTINATION,
-      destination: 'home',
-      destinationPath: CURSOR_CLI_CONFIG_DESTINATION,
-    },
     {
       source: 'xdg-config',
       relativePath: 'cursor/auth.json',
@@ -234,10 +177,7 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
  * tokens, observed on a live install); kilo-code stores kilo.ai session state
  * the same way. Cursor's sign-in file also rotates: on Linux Cursor keeps it in
  * `${XDG_CONFIG_HOME:-~/.config}/cursor/auth.json`, and only that file is
- * passed through live. `cli-config.json` is
- * policy (`approvalMode`, sandbox), not a credential: a live link would hand
- * the child the host's `unrestricted` / yolo setting and write-enable a planner
- * that was not given `--force`. Copilot's `oauth_token` is a long-lived GitHub
+ * passed through live. Copilot's `oauth_token` is a long-lived GitHub
  * token that does not rotate on use, and Claude Code's file store has shown no
  * rotation — both stay on the sealed snapshot where they use a file. On macOS
  * both keep the token in the login keychain instead, and their channels take
@@ -265,11 +205,12 @@ export const CLI_CREDENTIAL_MODELS: Readonly<Record<CliToolId, CliCredentialMode
  * Rotating-credential tools whose credential file alone is linked to the host,
  * inside a state directory the sandbox owns. Their host state directory holds
  * more than the credential. Cursor's config folder also holds its
- * `cli-config.json` policy, which a folder link would hand the child. `~/.codex`
- * holds the user's own Codex sessions, thread index, history and logs: with
- * the whole directory linked, a sandboxed codex wrote its rollouts there under
- * the sandbox path, and every later codex call, the user's own included,
- * reported each removed sandbox as `state db returned stale rollout path`.
+ * `cli-config.json` (`approvalMode`, sandbox), which a folder link would hand
+ * the child. `~/.codex` holds the user's own Codex sessions, thread index,
+ * history and logs: with the whole directory linked, a sandboxed codex wrote
+ * its rollouts there under the sandbox path, and every later codex call, the
+ * user's own included, reported each removed sandbox as `state db returned
+ * stale rollout path`.
  * A file link keeps a rotation only when the tool rewrites the file in place.
  * Codex does: `codex login --with-api-key` 0.162.1 against a linked `auth.json`
  * kept the link and rewrote its target (measured 2026-10-13). Cursor writes

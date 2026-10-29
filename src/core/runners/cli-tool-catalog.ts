@@ -44,8 +44,9 @@ export type CliAuthChannel = Readonly<{
    * than a file, so the file-copying state bridge has nothing to carry. macOS
    * keeps the Claude Code, Cursor Agent CLI, Antigravity and GitHub Copilot CLI
    * sessions in the login keychain, whose default search list resolves through
-   * `HOME` and whose item is keyed on the account name in `USER`; a staged child
-   * reaches it only when both keep their host values.
+   * `HOME`. Claude Code keys its item on the account name in `USER`; Cursor's
+   * items use the fixed account `cursor-user`. A staged child reaches the item
+   * only when `HOME` (and `USER` for Claude Code) keep their host values.
    */
   hostKeychainPlatforms: readonly NodeJS.Platform[];
   /** Platforms with an admitted credential bridge; omitted when no restriction is known. */

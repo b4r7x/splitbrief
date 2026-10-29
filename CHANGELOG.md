@@ -92,6 +92,7 @@
 - The runtime commands `/redo-task`, `/effort`, `/repomap`, `/attach`, `/detach`, `/mode`, `/revise-spec`, `/revise-plan`, `/approval`, `/compact-transcript`, `/export`, `/handoff` and `/yolo`, and the aliases `/config`, `/planner`, `/implementer`, `/reviewer`, `/accept-run` and `/reject-run`. Each name prints a pointer to its replacement for one release.
 - The rollback of an interrupted brief on shutdown: partial changes are kept, and the session says where the run stopped.
 - The `esc esc` interrupt ladder. `esc` opens the stop sheet, and `ctrl+c` stops a live run.
+- Runs no longer copy the sign-in files of the GitHub Copilot editor plugins, which the Copilot CLI does not read.
 - **Breaking.** The `agent-sdk` runner kind; use `kind: api` against your own endpoint.
 - **Breaking.** The `aider` CLI tool; choose another `cli` tool, or run Aider as a `shell` runner.
 - **Breaking — subsystems.** Each is removed with its command, flags and config keys: the Task Brief compiler, brief recovery, detached runs (`splitbrief attach`, `detach`, `ps` and `--detach`), the RPC server (`--rpc`), the MCP server (`splitbrief mcp`), `splitbrief worktree` and `--worktree`, `splitbrief explain`, `splitbrief handoff`, `splitbrief export`, `splitbrief stats` and `status --history`, `splitbrief snapshot` and automatic snapshots, the planner estimate review, automatic splitting of an overflowing task, the session tree, the OpenTelemetry sink and `--otel-exporter`, and module hooks. A retired CLI name prints what replaced it.
