@@ -1061,8 +1061,14 @@ describe('consultSeat', () => {
       reason: 'failed',
       seat: 'review',
     },
-  ] as const)('routes $name to the $seat seat', ({ task, seat }) => {
-    expect(consultSeat(task)).toBe(seat);
+    {
+      name: 'a fix task whose review is stuck',
+      task: makeTask({ id: 'T003', fix: FIX }),
+      reason: 'no-progress',
+      seat: 'plan',
+    },
+  ] as const)('routes $name to the $seat seat', ({ task, reason, seat }) => {
+    expect(consultSeat(task, reason)).toBe(seat);
   });
 });
 

@@ -8,7 +8,9 @@ import {
 } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
-import type { Task } from '../../../core/schemas/task.js';
+import type { TriageResult } from '../../../core/schemas/review.js';
+import type { Task, TaskId } from '../../../core/schemas/task.js';
+import { plannerFixWork } from '../../../core/review/stuck.js';
 import type {
   ChangedFilesSnapshot,
   LineageProgress,
@@ -30,6 +32,9 @@ import { readChangeEntry } from '../approval/file-snapshots/entry.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { entryStoreDir } from '../isolation/entry-snapshot.js';
+import { runBaseOf } from '../isolation/base-tree.js';
+import { resolveRunUniverse, runUserFiles } from '../evidence/review-packet/sections-io.js';
+import { fixTaskTargetErrors } from '../triage.js';
 import { publishConsultAnswered, publishRunnerCallEvent } from '../events.js';
 import { askPlannerSession, type PlannerSessionTurn } from '../planner-session.js';
 import { runReviewerCall } from '../review-call.js';
@@ -65,6 +70,8 @@ export type ConsultRequestInput = Readonly<{
   failingOutput: string;
   report?: ImplementerReport | null | undefined;
   progress: LineageProgress;
+  /** A stuck review's consult: the reviewer's next fix work, which the answer reshapes. */
+  reviewerFixWork?: TriageResult | undefined;
 }>;
 
 export type ConsultOutcome =
@@ -86,33 +93,36 @@ export function thrownConsultSeat(err: unknown): ConsultSeat | undefined {
 
 /**
  * The seat that answers a consult: the reviewer wrote a fix task at the review, so it
- * decides that task's repair; the planner answers every plan task.
+ * decides that task's repair; the planner answers every plan task and a stuck review.
  */
-export function consultSeat(task: Task): ConsultSeat {
-  return task.fix !== undefined ? 'review' : 'plan';
+export function consultSeat(task: Task, reason: ConsultReason): ConsultSeat {
+  return task.fix !== undefined && reason !== 'no-progress' ? 'review' : 'plan';
 }
 
 /**
  * The answer contract of one consult. A rewrite or a split never brings in a `cmd` check that the
  * plan command policy refuses or whose npm script no one adds, a `render` check that names no
  * scenario id or that the run cannot render, or a `test` check whose value is not one test file in
- * the workspace or in the files of the answer or of a pending task: the answer fails the schema and the
+ * the workspace or in the files of the answer or of a pending task. A fix task's rewrite or split
+ * never targets the user's own files the run left alone. Such an answer fails the schema and the
  * seat gets its one repair.
  */
 function answerContract(
   task: Task,
+  reason: ConsultReason,
   checks: {
     npmScriptsApproved: boolean;
     projectDir: string;
     renderCommand: string | undefined;
     testChecks: StageContext;
     pendingFiles: readonly string[];
+    userFiles: ReadonlySet<string>;
   },
 ) {
   return {
     jsonSchema: CONSULT_ANSWER_JSON_SCHEMA,
     schemaName: 'consult_answer',
-    schema: consultAnswerSchemaFor(task).superRefine((value, ctx) => {
+    schema: consultAnswerSchemaFor(task, reason).superRefine((value, ctx) => {
       const specs =
         value.answer.action === 'rewrite-task'
           ? [value.answer.task]
@@ -128,11 +138,29 @@ function answerContract(
         }).map((error) => error.message),
         ...unconfiguredRenderCheckErrors(specChecks, checks.renderCommand),
         ...unresolvedTestCheckErrors(specs, checks.testChecks, checks.pendingFiles),
+        ...fixTaskTargetErrors(specs, checks.userFiles),
       ]) {
         ctx.addIssue({ code: 'custom', message });
       }
     }),
   };
+}
+
+/**
+ * The user's own files the run left alone, which a fix task never targets. A plan task keeps no
+ * files out, and neither does an older run that recorded no files changed when it started: the
+ * final review refuses that run with its own error.
+ */
+async function consultUserFiles(ctx: ConsultContext, task: Task): Promise<ReadonlySet<string>> {
+  const baseline = ctx.state.changedFilesBaseline;
+  if (task.fix === undefined || baseline?.runStartChangedFiles === undefined) return new Set();
+  return runUserFiles(
+    await resolveRunUniverse({
+      workspaceDir: ctx.workspaceDir,
+      baseline,
+      runBase: runBaseOf(ctx, ctx.state),
+    }),
+  );
 }
 
 async function taskFileDiff(
@@ -210,6 +238,21 @@ function promptInput(
   };
 }
 
+/** The ids of the briefs the answer adds: a split's, or the next fix cycle of a stuck review. */
+function answerTaskIds(
+  state: WorkflowState,
+  input: ConsultRequestInput,
+  answer: ConsultAnswer,
+): TaskId[] | null {
+  const count =
+    input.reviewerFixWork !== undefined
+      ? plannerFixWork(input.reviewerFixWork, answer.answer).fixTasks.length
+      : answer.answer.action === 'split-task'
+        ? answer.answer.tasks.length
+        : 0;
+  return count === 0 ? null : nextTaskIds(state.tasks, count);
+}
+
 /** What the consult answer did, for the transcript: a replacement's new revision, the checks. */
 function publishAnswer(
   ctx: ConsultContext,
@@ -226,13 +269,11 @@ function publishAnswer(
       seat,
       action: answer.answer.action,
       diagnosis: answer.answer.diagnosis,
-      newTaskIds:
-        answer.answer.action === 'split-task'
-          ? nextTaskIds(state.tasks, answer.answer.tasks.length)
-          : null,
-      ...(answer.answer.action === 'rewrite-task' && {
-        revision: (input.task.revision ?? 1) + 1,
-      }),
+      newTaskIds: answerTaskIds(state, input, answer),
+      ...(answer.answer.action === 'rewrite-task' &&
+        input.reviewerFixWork === undefined && {
+          revision: (input.task.revision ?? 1) + 1,
+        }),
       ...(answer.answer.action === 'verify' && { checkIds: answer.answer.checkIds }),
     },
   );
@@ -256,10 +297,10 @@ export async function requestConsult(
     ctx.onStateChange?.(next);
   };
 
-  const seat = consultSeat(input.task);
+  const seat = consultSeat(input.task, input.reason);
   const diff = await taskDiff(ctx.workspaceDir, ctx.state, input.task, ref);
   const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir, seat);
-  const contract = answerContract(input.task, {
+  const contract = answerContract(input.task, input.reason, {
     npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),
     projectDir: ctx.workspaceDir,
     renderCommand: ctx.config.validation.render,
@@ -272,6 +313,7 @@ export async function requestConsult(
     pendingFiles: ctx.state.tasks
       .filter((task) => task.status === 'pending' && task.id !== input.task.id)
       .flatMap((task) => task.suggestedFiles),
+    userFiles: await consultUserFiles(ctx, input.task),
   });
   const onCallEvent = (event: RunnerCallEvent): void =>
     publishRunnerCallEvent(

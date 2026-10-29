@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { isRecord } from '../../utils/type-guards.js';
 import {
   CONSULT_ANSWER_JSON_SCHEMA,
   ConsultAnswerSchema,
+  consultAnswerSchemaFor,
   ImplementerReportSchema,
   readImplementerReport,
 } from './consult.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from './plan.js';
+import { taskId } from './task.js';
 
 const answer = (action: Record<string, unknown>) => ({
   answer: { diagnosis: 'The helper returns the wrong type', ...action },
@@ -74,6 +77,19 @@ describe('ConsultAnswerSchema', () => {
     expect(
       ConsultAnswerSchema.safeParse(answer({ action: 'confirm', decisionIds: ['d1'] })).success,
     ).toBe(false);
+  });
+
+  it('splits a subtask only when the split replaces the next fix briefs of a stuck review', () => {
+    const subtask = makeTask({ id: 'T003', parentId: taskId('T002') });
+    const split = answer({
+      action: 'split-task',
+      tasks: [makeTaskSpec({ id: 'T004' }), makeTaskSpec({ id: 'T005' })],
+    });
+    expect(consultAnswerSchemaFor(subtask, 'no-progress').safeParse(split).success).toBe(true);
+    const refused = consultAnswerSchemaFor(subtask, 'failed').safeParse(split);
+    expect(refused.error?.issues.map((issue) => issue.message)).toEqual([
+      'T003 is already a subtask of a split and cannot be split again',
+    ]);
   });
 
   it('strips the draft ref and keeps a root object', () => {

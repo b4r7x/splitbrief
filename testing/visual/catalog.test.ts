@@ -57,6 +57,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-implementation-shell-seat', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-seat-crew-changed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-fix-cycles', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-stuck-planner', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-corrected', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-settled-passed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-settled-set-aside', ['120x40', '80x24', '60x18', '160x45']],

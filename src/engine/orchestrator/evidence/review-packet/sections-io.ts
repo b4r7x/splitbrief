@@ -162,6 +162,13 @@ export async function resolveRunUniverse(input: {
   };
 }
 
+/** The user's own files the run left alone: changed when the run started, not changed by the run. */
+export function runUserFiles(
+  universe: Pick<RunUniverse, 'preRunFiles' | 'changedFiles'>,
+): ReadonlySet<string> {
+  return new Set(universe.preRunFiles.filter((file) => !universe.changedFiles.includes(file)));
+}
+
 export async function resolveChangedFiles(opts: {
   workspaceDir: string;
   drift: DriftReport | null;

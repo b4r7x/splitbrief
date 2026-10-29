@@ -310,6 +310,8 @@ export const PendingTriageSchema = z.object({
   inputs: z.array(TriageInputSchema),
   question: TriageResultSchema.shape.ask.optional(),
   reviewAfterTaskId: TaskIdSchema.optional(),
+  /** The review judged its fix cycle stuck and asks the planner; a continue asks it again. */
+  plannerConsult: z.literal(true).optional(),
 });
 
 /**

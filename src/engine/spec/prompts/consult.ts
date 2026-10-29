@@ -62,6 +62,8 @@ export type ConsultPromptInput = Readonly<{
 const REASON_TEXT: Record<ConsultReason, string> = {
   failed: 'The task failed: its last attempt or one of its checks did not pass.',
   blocked: 'The implementer stopped and needs a decision that is not its own to make.',
+  'no-progress':
+    "The review judged the fix cycle of this task and its blockers did not move. Your answer shapes the next fix cycle: guidance goes with the reviewer's next fix briefs, a rewrite or a split replaces them, ask-user asks the user. verify is not available.",
 };
 
 const CONSULT_ROLE: Record<ConsultSeat, string> = {

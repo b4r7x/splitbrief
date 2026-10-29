@@ -6,6 +6,7 @@ import { COLLAPSE_HINT } from '../implementer-diff-card-block.js';
 import type { DriftFinding } from '../../../../core/schemas/drift.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
+import { stuckAnswerWords } from '../../../../core/review/stuck.js';
 import { setAsideLabel } from '../../../../core/review/verdict.js';
 import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
@@ -644,6 +645,15 @@ function consultAnsweredSegments(
         { text: ` asks you about the decisions ${event.taskId} reported`, tone: 'textDim' },
       ];
     }
+  }
+  if (event.reason === 'no-progress') {
+    return [
+      label,
+      { text: `${arrowSep()}review stuck after ${event.taskId}: `, tone: 'textDim' },
+      { text: stuckAnswerWords(event.action, event.newTaskIds), tone: 'textDim' },
+      { text: SOFT_SEP, tone: 'textDim' },
+      { text: event.diagnosis, tone: 'textDim' },
+    ];
   }
   return [
     label,

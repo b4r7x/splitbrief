@@ -3373,6 +3373,30 @@ describe('consult answer rows', () => {
     expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: asks you`]);
   });
 
+  it.each([
+    ['rewrite-task', [taskId('T006')], 'new fix brief T006'],
+    ['split-task', [taskId('T006'), taskId('T007')], 'new fix briefs T006, T007'],
+    ['guidance', [taskId('T006'), taskId('T007')], 'guidance for T006, T007'],
+    ['ask-user', null, 'asks you'],
+  ] as const)('renders the planner answer to a stuck review as %s', (action, newTaskIds, words) => {
+    const rows = rowsFor({
+      type: 'consult_answered',
+      ts: 0,
+      phase: 'final-review',
+      taskId: taskId('T004'),
+      seat: 'plan',
+      reason: 'no-progress',
+      action,
+      diagnosis: 'The fix brief edits the wrong file.',
+      newTaskIds: newTaskIds === null ? null : [...newTaskIds],
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      `PLAN ${arrow} review stuck after T004: ${words} · The fix brief edits the wrong file.`,
+    ]);
+    expect(rows[0]?.segments[0]).toMatchObject({ text: 'PLAN', tone: 'planner' });
+  });
+
   it.each([undefined, 'review'] as const)(
     'renders a decision-confirm as one row counting the confirmed decisions with seat %s',
     (seat) => {

@@ -67,7 +67,7 @@ import { drainQueueForReview } from './queue/drain.js';
 import { formatDrainedMessages, imagesFromMessages } from './queue/prompt.js';
 import { withContinuationLoop } from './continuation.js';
 import { composeContinuation } from '../spec/prompts/continuation.js';
-import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
+import { resolveRunUniverse, runUserFiles } from './evidence/review-packet/sections-io.js';
 import { resolveRunReviewScope, type RunReviewScope } from './evidence/review-packet/run-scope.js';
 import { fitReviewPrompt, largestReviewFiles } from './evidence/review-packet/fit.js';
 import type { BuildReviewPacketOptions } from './evidence/review-packet/types.js';
@@ -459,10 +459,7 @@ export async function runFinalReviewPhase(opts: {
       baseline,
       runBase: runBaseOf({ projectDir, sessionId }, state),
     });
-    // The user's own files the run left alone: no fix task may target them.
-    const userFiles = new Set(
-      universe.preRunFiles.filter((file) => !universe.changedFiles.includes(file)),
-    );
+    const userFiles = runUserFiles(universe);
     reviewScope = await resolveRunReviewScope({
       ref: { projectDir, sessionId },
       workspaceDir,
@@ -588,7 +585,7 @@ export async function runFinalReviewPhase(opts: {
           enabledReviewChecks(config, state.reviewChecks),
           scope,
         ),
-        ...fixTaskTargetErrors(candidate, userFiles),
+        ...fixTaskTargetErrors(candidate.fixTasks, userFiles),
         ...refusedCheckErrors(
           candidate.fixTasks.flatMap((task) => task.checks),
           {

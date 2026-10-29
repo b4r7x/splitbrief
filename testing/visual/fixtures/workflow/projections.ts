@@ -1717,6 +1717,49 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
 };
 
 /**
+ * The review after fix cycle 1 is stuck on the same blocker, the planner answers it with guidance,
+ * and fix cycle 2 runs the reviewer's brief with that guidance.
+ */
+const reviewStuckPlannerProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-stuck-planner'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { reviewer: CODEX_REVIEW_SEAT },
+  get events(): EngineEvent[] {
+    return [
+      ...reviewFixCyclesProjection.events.slice(0, -2),
+      reviewCheck(FIXED_TS + 5_000, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
+      reviewCheck(FIXED_TS + 6_000, REVIEW_CHECK_TEST, { status: 'done', passed: false }),
+      finalReviewCompleted({
+        ts: FIXED_TS + 6_500,
+        duration: 1_600,
+        verdict: 'fail',
+        seat: CODEX_REVIEW_SEAT,
+      }),
+      {
+        type: 'consult_answered',
+        ts: FIXED_TS + 9_000,
+        phase: 'final-review',
+        taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+        reason: 'no-progress',
+        seat: 'plan',
+        action: 'guidance',
+        diagnosis: 'The fix keeps patching the caller; the cache key is built in the registry.',
+        newTaskIds: [taskId('T905')],
+      },
+      {
+        type: 'review_fix_started',
+        ts: FIXED_TS + 9_100,
+        phase: 'implementing',
+        cycle: 2,
+        taskIds: [taskId('T905')],
+      },
+    ];
+  },
+};
+
+/**
  * The review passed after one fix cycle, Apply found the checkout changed a file the run changed
  * and spent a second cycle on the merged result, and the run continued into that review.
  */
@@ -6945,6 +6988,7 @@ const projections = [
   implementationRetryProjection,
   reviewFixProjection,
   reviewFixCyclesProjection,
+  reviewStuckPlannerProjection,
   rejectedRerunProjection,
   applyRereviewProjection,
   completeAfterFixTasksProjection,

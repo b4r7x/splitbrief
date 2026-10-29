@@ -453,7 +453,7 @@ describe('fixTaskTargetErrors', () => {
         result({
           suggestedFiles: ['src/a.ts', 'package.json'],
           protectedOperations: [{ path: 'scripts/legacy.mjs', operation: 'write' }],
-        }),
+        }).fixTasks,
         userFiles,
       ),
     ).toEqual([
@@ -463,7 +463,7 @@ describe('fixTaskTargetErrors', () => {
   });
 
   it('admits a fix task on the files of the run', () => {
-    expect(fixTaskTargetErrors(result({}), userFiles)).toEqual([]);
+    expect(fixTaskTargetErrors(result({}).fixTasks, userFiles)).toEqual([]);
   });
 });
 

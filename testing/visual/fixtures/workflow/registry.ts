@@ -634,6 +634,7 @@ const checkpointPredicates = [
     checkpointId('review-resumed'),
     includesTranscript('Final review stopped', 'Run continued', 'Final review re-run passed'),
   ],
+  [checkpointId('review-stuck-planner'), includesTranscript('review stuck after T904')],
   [
     checkpointId('review-fix-cycles'),
     (context) => {

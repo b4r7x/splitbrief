@@ -995,6 +995,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-stuck-planner',
+      viewports: WIDE_VIEWPORTS,
+      title: 'Workflow · a stuck review answered by the planner',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-stuck-planner',
+        title: 'The planner row between the stuck review and fix cycle 2',
+        kind: 'implementation',
+        marker: 'review stuck after',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Stuck review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-rejected-rerun',
       title: 'Workflow · a brief rerun after a reject in part, in the same window',
       surface: screenSurface('workflow'),
