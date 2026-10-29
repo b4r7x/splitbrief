@@ -32,7 +32,7 @@ afterEach(async () => {
 function expectFinishedPlainRun(stdout: string): void {
   assertPlainStdout(stdout);
   const lines = stdout.split('\n').map((line) => line.trim());
-  expect(lines).toContain('task T001: done (no checks)');
+  expect(lines).toContain('task T001: done (2 of 2 checks passed)');
 }
 
 function git(target: StopContinueFixture, args: readonly string[]): string {
