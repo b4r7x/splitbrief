@@ -261,6 +261,7 @@ function toolUseDetails(
   const rawFilePath =
     stringInput(input, 'file_path') ??
     stringInput(input, 'path') ??
+    stringInput(input, 'Path') ??
     stringInput(input, 'AbsolutePath') ??
     stringInput(input, 'TargetFile');
   const filePath =

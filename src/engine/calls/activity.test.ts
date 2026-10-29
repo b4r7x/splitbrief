@@ -202,6 +202,28 @@ describe('projectRunnerCallActivity', () => {
     }
   });
 
+  it('labels the Path input of Antigravity read_file, edit_file and write_file with the path', () => {
+    expect(
+      projectRunnerCallActivity(
+        runnerToolUse({
+          name: 'read_file',
+          inputDelta: '{"Path":"/project/src/app.ts","StartLine":1,"EndLine":40}',
+        }),
+        1,
+        '/project',
+      ),
+    ).toMatchObject({ kind: 'read', label: 'reading src/app.ts', target: 'src/app.ts' });
+    for (const name of ['edit_file', 'write_file']) {
+      expect(
+        projectRunnerCallActivity(
+          runnerToolUse({ name, inputDelta: '{"Path":"/project/src/app.ts"}' }),
+          1,
+          '/project',
+        ),
+      ).toMatchObject({ kind: 'write', label: 'editing src/app.ts', target: 'src/app.ts' });
+    }
+  });
+
   it('ignores prompt-like tool fields and does not invent exploring labels', () => {
     const activity = projectRunnerCallActivity(
       runnerToolUse({
