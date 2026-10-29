@@ -44,6 +44,7 @@ import {
 import { readWorkspaceRecord } from '../engine/orchestrator/isolation/retention.js';
 import { createRunIsolation } from '../engine/orchestrator/isolation/create.js';
 import { createSnapshot } from '../engine/snapshots/create.js';
+import { buildRetryExhaustedRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
 import { sessionDir } from '../core/paths.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
@@ -1236,6 +1237,68 @@ describe('runHeadless — the seat-down policy and the record', () => {
       process.stdout,
     );
   });
+
+  it('shows the question nobody answered in the record and the halt line', () => {
+    const question = 'Which value should beta export?';
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task: makeTask({ id: 'T002' }),
+      validationSummary: 'expected 1 to be 2',
+      attempts: 3,
+      allowRetryOverride: true,
+      question,
+      createdAt: '2026-04-28T12:00:00.000Z',
+    });
+    const state = {
+      ...createInitialState('recover me'),
+      phase: 'implementing' as const,
+      pendingRecovery: issue,
+    };
+    const writeRecord = vi.fn();
+
+    expect(() =>
+      emitRecoveryAndFailIfPending({ state, sessionId: 'sess-question', writeRecord }),
+    ).toThrow(
+      `Needs you (retry-exhausted): T002 needs your answer\nQuestion: ${question}\nRecommended: retry-same-worker`,
+    );
+    expect(writeRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'recovery_required', question }),
+      process.stdout,
+    );
+  });
+
+  it.each([
+    ['plan', 'Planner said'],
+    ['review', 'Reviewer said'],
+  ] as const)(
+    'shows the reason a %s seat gave for a brief that cannot be done in the record and the halt line',
+    (seat, said) => {
+      const reason = 'The SDK has no payment API.';
+      const issue = buildRetryExhaustedRecoveryIssue({
+        task: makeTask({ id: 'T002' }),
+        validationSummary: 'expected 1 to be 2',
+        attempts: 3,
+        allowRetryOverride: true,
+        cannot: { seat, reason },
+        createdAt: '2026-04-28T12:00:00.000Z',
+      });
+      const state = {
+        ...createInitialState('recover me'),
+        phase: 'implementing' as const,
+        pendingRecovery: issue,
+      };
+      const writeRecord = vi.fn();
+
+      expect(() =>
+        emitRecoveryAndFailIfPending({ state, sessionId: 'sess-cannot', writeRecord }),
+      ).toThrow(
+        `Needs you (retry-exhausted): T002: the ${said.split(' ')[0]?.toLowerCase()} says it cannot be done\n${said}: ${reason}\nRecommended: retry-same-worker`,
+      );
+      expect(writeRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'recovery_required', cannot: reason }),
+        process.stdout,
+      );
+    },
+  );
 
   it.each(['switch', 'halt', 'refused', 'plain-halt'] as const)(
     'automatically switches a retained attempt without publishing a Continue notice',

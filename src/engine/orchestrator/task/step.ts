@@ -37,7 +37,6 @@ import { resolveDependsOnFiles } from './resolve-deps.js';
 import { restoreExhaustedTaskFiles } from './rollback.js';
 import { handleFailedImplementation } from './implementation-failure.js';
 import { runBriefGate } from './brief-gate.js';
-import { lineageIdOf } from '../../../core/state/task-insert.js';
 
 function recordApprovalDenial(opts: {
   wctx: WorkflowContext;
@@ -133,8 +132,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     setTrackedState(state);
   }
 
-  const carriedFailure = state.lineages?.[lineageIdOf(task)]?.carriedFailure;
-
   setCurrentTask(task);
 
   const preTaskResult = await runPreTaskHooksAndPublish({
@@ -169,7 +166,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       recordApprovalDenial: (decision, message) =>
         recordApprovalDenial({ wctx, state, task, denials: decision.denials, message }),
       streamingSink: wctx.streamingSink,
-      ...(carriedFailure !== undefined && { retryError: carriedFailure }),
     });
   } catch (err) {
     if (
@@ -181,10 +177,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     state = rebaseOnPersistedWorkflowState(wctx, state);
     setTrackedState(state);
     if (isAbortError(err) || wctx.signal?.aborted) return state;
-    if (carriedFailure !== undefined) {
-      state = transitionAndSave(wctx, state, { type: 'CLEAR_CARRIED_FAILURE', taskId: task.id });
-      setTrackedState(state);
-    }
     publishError({
       bus: wctx.bus,
       phase: state.phase,
@@ -209,14 +201,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   state = addUsageAndSave(wctx, implState.state, 'implementer', implState.implResult.usage);
   setTrackedState(state);
-  if (
-    carriedFailure !== undefined &&
-    !wctx.signal?.aborted &&
-    implState.implResult.outcome !== 'user-abort'
-  ) {
-    state = transitionAndSave(wctx, state, { type: 'CLEAR_CARRIED_FAILURE', taskId: task.id });
-    setTrackedState(state);
-  }
 
   // A stop keeps the attempt's output whole; a bundle left half-applied goes to its recovery.
   const applyStatus = implState.implResult.applyResult?.status;
@@ -397,7 +381,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     task,
     initialError: gated.error,
     ...(gated.correction && { initialAnswer: gated.error }),
-    initialChecks: gated.failure,
     state,
     taskStartSnapshot,
     tokensBefore,
@@ -409,8 +392,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     const rerun = await rerunReplacedTask(opts, retry.state);
     return rerun ?? retry.state;
   }
-  const halt = retry.state.pendingRecovery;
-  if (!retry.completed && halt !== undefined && halt.reason !== 'no-progress') {
+  if (!retry.completed && retry.state.pendingRecovery !== undefined) {
     const warning = await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
     if (warning !== undefined) {
       publishWarning({ bus: wctx.bus, phase: retry.state.phase, message: warning });

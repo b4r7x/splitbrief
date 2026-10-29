@@ -49,7 +49,7 @@ A typical run, step by step:
 5. User reviews the plan on one plan card: approve, request changes, edit `plan.json`, or end the run. Approving also confirms the protected writes the plan lists
 6. For each task, the implementer writes in the run workspace. SPLITBRIEF checks the changed files there and runs the task's own fast checks, such as its test file or the typecheck. Before the final review the reviewer chooses the reviewer checks that verify the change, and SPLITBRIEF runs them. With `workflow.review: task`, each task review runs the related tests the reviewer chooses.
 7. If validation fails: the implementer retries once, then a seat is consulted for one typed answer (the planner for a plan task, the reviewer for a fix task it wrote) — guidance, a rewritten or split brief, a re-run of the checks, or one question for the user
-8. If the ladder cannot go on (a spent bound, a failed consult call, a runner halt): enter recovery — for a spent bound the user can continue with a note, skip the task or end the run; other halts offer retry same worker, switch the seat, skip or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run)
+8. If the ladder cannot go on (a question nobody answers, a seat that says the brief cannot be done, a failed consult call, a runner halt): enter recovery — the user can try again with an answer, switch the seat, skip the task or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run)
 9. The review seat reviews the final result against the briefs and the request — the planner, unless a `reviewer` is configured
 10. The summary is written to disk. A passing workspace review makes the result [ready to apply](./WORKFLOW.md#apply).
 
@@ -146,7 +146,7 @@ If validation fails, the implementer retries once with the error message. Then S
 - **Verify** — no implementer call: the validation pipeline and the named checks run again, and a clean run completes the task
 - **Ask-user** — the one question the ladder asks you, with a default; the answer continues as guidance
 
-The planner never writes the implementation itself. It keeps deciding while its answers move the failure; two answers in a row that leave the same failure, or 10 answers on one task, stop the ladder. If the ladder cannot go on (no progress, a failed consult call, a runner halt), the recovery system takes over: on no progress the user can continue with a note so the planner is asked again, skip the task or end the run; other halts offer retry same worker, switch the seat, skip or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run).
+The planner never writes the implementation itself. It answers again after every failed attempt, and it sees its earlier answers and the attempts that followed them, so no count stops it. If the ladder cannot go on (a question nobody answers, a seat that says the brief cannot be done, a failed consult call, a runner halt), the recovery system takes over: the user can try again with an answer, switch the seat, skip the task or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run).
 
 ---
 

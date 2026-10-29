@@ -21,7 +21,6 @@ import {
   scriptedTypedCall,
 } from '#testing/helpers/typed-planner.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { transition } from '../../../core/state/machine.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowContext } from '../types.js';
@@ -198,43 +197,6 @@ describe('consult seat recovery', () => {
       expect(switched.state.tasks[0]?.status).toBe('pending');
     },
   );
-
-  it.each(['plan', 'review'] as const)(
-    "halts a %s consult on the progress the other seat's answers left on the lineage",
-    async (seat) => {
-      const ref = setupTaskProject();
-      const task = makeTask({ id: 'T013', criteria: [], ...(seat === 'review' && { fix }) });
-      const failure = [{ source: 'blocked', keys: [blocked.question] }];
-      let state = makeImplStateWithMetadata([task]);
-      for (const unmoved of [0, 1]) {
-        state = transition(state, {
-          type: 'RECORD_CONSULT',
-          taskId: task.id,
-          revision: 1,
-          reason: 'blocked',
-          seat: seat === 'review' ? 'plan' : 'review',
-          answer: guidanceConsult(),
-          progress: { failure, unmoved, answers: unmoved + 1 },
-        });
-      }
-      const plannerCall = consultCallAnswering(() => guidanceConsult());
-      const reviewerCall = consultCallAnswering(() => guidanceConsult());
-      const wctx = makeTaskWorkflowContext({
-        ...ref,
-        config,
-        planner: makePlanner({ typedCall: plannerCall }),
-        reviewer: makePlanner({ typedCall: reviewerCall }),
-      });
-      const halted = (await retryTask({ wctx, state, task })).state;
-      expect(halted.pendingRecovery).toMatchObject({
-        reason: 'no-progress',
-        taskId: task.id,
-      });
-      expect(halted.lineages?.T013?.consultRecords).toHaveLength(2);
-      expect(plannerCall).not.toHaveBeenCalled();
-      expect(reviewerCall).not.toHaveBeenCalled();
-    },
-  );
 });
 
 describe('a plan consult the planner tool refuses as too long', () => {
@@ -257,11 +219,18 @@ describe('a plan consult the planner tool refuses as too long', () => {
       canResume: true,
       invoke: async ({ prompt }) => {
         prompts.push(prompt);
-        return refuse
+        if (refuse)
+          return makeRunnerCallResult({
+            status: 'failed',
+            text: '',
+            error: { code: 'input-too-large', message: 'Prompt is too long' },
+          });
+        // One answer, then the call fails: no count stops the consults of a brief that keeps failing.
+        return prompts.length > 1
           ? makeRunnerCallResult({
               status: 'failed',
               text: '',
-              error: { code: 'input-too-large', message: 'Prompt is too long' },
+              error: { code: 'turn-failed', message: 'The planner process crashed.' },
             })
           : makeRunnerCallResult({ status: 'completed', text: JSON.stringify(guidanceConsult()) });
       },

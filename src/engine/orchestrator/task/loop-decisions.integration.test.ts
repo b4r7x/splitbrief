@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeImplState, spentAnswersLineage } from '#testing/helpers/factories/workflow-state.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeBusRecorder,
@@ -10,10 +10,9 @@ import {
   makeImplementer,
   makePlanner,
   makeWctx,
-  makeWorktreeIsolation,
   openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
-import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
 import { error } from '../../../utils/error.js';
@@ -21,7 +20,7 @@ import { loadState } from '../../../core/state/persistence.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import type { ConsultAnswer, ReportedDecision } from '../../../core/schemas/consult.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { LineageRecord, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../implementers/types.js';
 import type { Validator } from '../validation/types.js';
@@ -30,7 +29,6 @@ import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import { runTaskLoop } from './loop.js';
-import { createSnapshot } from '../../snapshots/create.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
@@ -66,17 +64,6 @@ function setupProject(): { projectDir: string; sessionId: string } {
   });
   dirs.push(projectDir);
   return { projectDir, sessionId };
-}
-
-function lineage(overrides: Partial<LineageRecord>): LineageRecord {
-  return {
-    attempts: 0,
-    dispatchedRevision: {},
-    consultRecords: [],
-    replacedParents: [],
-    notes: [],
-    ...overrides,
-  };
 }
 
 /** Each brief carries one required check, `K-<task id>`, so the brief gate runs it. */
@@ -227,7 +214,6 @@ function eventTypes(events: readonly EngineEvent[]): string[] {
   return events.flatMap((event) => {
     if (event.type === 'consult_answered') return [`consult:${event.reason}:${event.action}`];
     if (event.type === 'task_retry') return ['retry'];
-    if (event.type === 'error' && event.code === 'no_progress') return ['no-progress'];
     return [];
   });
 }
@@ -330,7 +316,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(result.state.plan?.decisions).toEqual([
       { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
     ]);
-    expect(result.state.lineages?.T001?.progress?.answers).toBe(1);
+    expect(result.state.lineages?.T001?.consultRecords).toHaveLength(1);
   });
 
   it('records a new decision a retry reports beside the decision of the attempt before it', async () => {
@@ -429,12 +415,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     return scriptedValidator({ T001: Array<string>(8).fill(TS_ERROR) });
   }
 
-  /** T001 has spent its planner answers, so its ladder halts with the files of its last attempt. */
-  function spentAnswers(): Partial<WorkflowState> {
-    return { lineages: { T001: spentAnswersLineage() } };
-  }
-
-  describe('Skip on a no-progress halt', () => {
+  describe('Skip on a halted brief', () => {
     async function skip(
       projectDir: string,
       sessionId: string,
@@ -453,7 +434,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       return applied.state;
     }
 
-    it("takes back the brief's file when its planner answers are spent", async () => {
+    it("takes back the brief's file at the halt when its planner call fails", async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
       const { bus, events } = makeBusRecorder();
@@ -461,15 +442,15 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const halted = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task], spentAnswers()),
+        state: stateWithPlan([task]),
         implementer: writingImplementer(['src/a.ts']),
         validator: redValidator(),
         planner: failingPlanner(),
         bus,
       });
-      expect(halted.state.pendingRecovery?.reason).toBe('no-progress');
-      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(true);
-      expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual(['src/a.ts']);
+      expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
+      expect(restoreWarnings(events)).toEqual([expect.stringContaining('src/a.ts')]);
       // The ledger keeps the decisions of the attempts that failed validation.
       expect(halted.state.plan?.decisions).toEqual([
         { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
@@ -481,64 +462,56 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       expect(skipped.tasks[0]?.status).toBe('skipped');
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
-      expect(restoreWarnings(events)).toEqual([expect.stringContaining('src/a.ts')]);
-      // The warning follows the Skip's outcome, so the transcript shows one Recovery row.
-      const resolvedAt = events.findIndex((event) => event.type === 'recovery_resolved');
-      expect(resolvedAt).toBeGreaterThan(-1);
-      expect(
-        events.findIndex((event) => event.type === 'warning' && event.message.startsWith(RESTORED)),
-      ).toBeGreaterThan(resolvedAt);
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
     });
 
-    it('takes back the files of every attempt after a Continue', async () => {
+    it('takes back the files of the attempts before and after a Retry', async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', 'src/b.ts'] });
-      const implementer = writingImplementer(['src/a.ts', 'src/b.ts']);
-      // After Continue the planner answers again, until the same failure halts the brief again.
-      const { planner } = scriptedPlanner({ consult: guidance });
+      // The attempts before the Retry write src/a.ts; the attempts after it write src/b.ts.
+      const implementer = writingImplementer(['src/a.ts', 'src/a.ts', 'src/b.ts']);
+      const planner = failingPlanner();
       const validator = redValidator();
       const { bus, events } = makeBusRecorder();
 
       const first = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task], spentAnswers()),
+        state: stateWithPlan([task]),
         implementer,
         validator,
         planner,
         bus,
       });
-      expect(first.state.pendingRecovery?.reason).toBe('no-progress');
-      const continued = await applyRecoveryAction({
+      expect(first.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      const retried = await applyRecoveryAction({
         projectDir,
         sessionId,
         state: first.state,
-        action: 'continue',
+        action: 'retry-same-worker',
         bus,
       });
-      expect(continued.ok).toBe(true);
+      expect(retried.ok).toBe(true);
       const second = await runLoop({
         projectDir,
         sessionId,
-        state: continued.state,
+        state: retried.state,
         implementer,
         validator,
         planner,
         bus,
       });
-      expect(second.state.pendingRecovery?.reason).toBe('no-progress');
-      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(true);
-      expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(true);
+      expect(second.state.pendingRecovery?.reason).toBe('planner-call-failed');
+      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
+      expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(false);
+      expect(restoreWarnings(events)).toEqual([
+        expect.stringContaining('src/a.ts'),
+        expect.stringContaining('src/b.ts'),
+      ]);
 
       await skip(projectDir, sessionId, second.state, bus);
 
-      expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
-      expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(false);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
-      expect(restoreWarnings(events)).toEqual([
-        expect.stringMatching(/src\/a\.ts.*src\/b\.ts|src\/b\.ts.*src\/a\.ts/),
-      ]);
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
     });
 
@@ -550,18 +523,18 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const halted = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task], spentAnswers()),
+        state: stateWithPlan([task]),
         implementer: writingImplementer([USER_FILE]),
         validator: redValidator(),
         planner: failingPlanner(),
         bus,
       });
-      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe('attempt 2\n');
+      expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
+      expect(restoreWarnings(events)).toEqual([expect.stringContaining(USER_FILE)]);
 
       await skip(projectDir, sessionId, halted.state, bus);
 
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
-      expect(restoreWarnings(events)).toEqual([expect.stringContaining(USER_FILE)]);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
     });
   });
@@ -597,13 +570,16 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       return hooks;
     }
 
-    it("takes back the brief's file when a pre_task hook denies its Continue", async () => {
+    it('skips the brief with its file taken back when a pre_task hook denies its Retry', async () => {
       const { projectDir, sessionId } = setupProjectWithUserWork();
-      // The check passes before the brief wrote its file and fails on the brief's edit.
+      // The hook passes the brief's first start and denies every later one.
+      const markerDir = createTempDir('loop-decisions-pre-task');
+      dirs.push(markerDir);
+      const marker = join(markerDir, 'started');
       const hooks = trustedHooks(projectDir, 'pre_task', [
-        "import { existsSync, readFileSync } from 'node:fs';",
-        "const file = JSON.parse(input).workspaceDir + '/src/a.ts';",
-        "if (existsSync(file) && readFileSync(file, 'utf8').startsWith('attempt')) process.exit(1);",
+        "import { existsSync, writeFileSync } from 'node:fs';",
+        `if (existsSync(${JSON.stringify(marker)})) process.exit(1);`,
+        `writeFileSync(${JSON.stringify(marker)}, '');`,
       ]);
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
       const implementer = writingImplementer(['src/a.ts']);
@@ -614,28 +590,28 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       const first = await runLoop({
         projectDir,
         sessionId,
-        state: stateWithPlan([task], spentAnswers()),
+        state: stateWithPlan([task]),
         implementer,
         validator,
         planner,
         bus,
         hooks,
       });
-      expect(first.state.pendingRecovery?.reason).toBe('no-progress');
+      expect(first.state.pendingRecovery?.reason).toBe('planner-call-failed');
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual(['src/a.ts']);
-      const continued = await applyRecoveryAction({
+      const retried = await applyRecoveryAction({
         projectDir,
         sessionId,
         state: first.state,
-        action: 'continue',
+        action: 'retry-same-worker',
         bus,
       });
-      expect(continued.ok).toBe(true);
+      expect(retried.ok).toBe(true);
 
       const second = await runLoop({
         projectDir,
         sessionId,
-        state: continued.state,
+        state: retried.state,
         implementer,
         validator,
         planner,
@@ -645,7 +621,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
       expect(second.state.tasks[0]?.status).toBe('skipped');
       expect(implementer.implement).toHaveBeenCalledTimes(1);
-      // Only the local retry of the first run: the hook denied the Continue before its attempt.
+      // Only the local retry of the first run: the hook denied the Retry before its attempt.
       expect(implementer.retry).toHaveBeenCalledTimes(1);
       expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
@@ -684,193 +660,5 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       expect(readFileSync(join(projectDir, USER_FILE), 'utf-8')).toBe(USER_WORK);
       expect(bookedFiles(projectDir, sessionId, 'T001')).toEqual([]);
     });
-  });
-
-  it('restarts a brief continued past no-progress with the last failing output', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const implementer = decidingImplementer([]);
-    const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
-    const { planner } = scriptedPlanner({});
-    const { bus, events } = makeBusRecorder();
-
-    const halted = await runLoop({
-      projectDir,
-      sessionId,
-      state: stateWithPlan([task], spentAnswers()),
-      implementer,
-      validator,
-      planner,
-      bus,
-    });
-    expect(halted.state.pendingRecovery?.reason).toBe('no-progress');
-    expect(eventTypes(events)).toEqual(['retry', 'no-progress']);
-
-    const applied = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state: halted.state,
-      action: 'continue',
-      bus,
-    });
-    expect(applied.ok).toBe(true);
-    if (!applied.ok) return;
-    expect(applied.state.lineages?.T001?.carriedFailure).toContain(LINT_ERROR);
-
-    const resumed = await runLoop({
-      projectDir,
-      sessionId,
-      state: applied.state,
-      implementer,
-      validator,
-      planner,
-      bus,
-    });
-
-    expect(resumed.state.pendingRecovery).toBeUndefined();
-    expect(resumed.status).toBe('complete');
-    // The restart is a retry carrying the last failing output, never a bare re-implement.
-    expect(implementer.implement).toHaveBeenCalledTimes(1);
-    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries).toHaveLength(2);
-    expect(retries[0]?.error).toContain(TS_ERROR);
-    expect(retries[1]?.error).toContain(LINT_ERROR);
-    expect(resumed.state.lineages?.T001?.carriedFailure).toBeUndefined();
-  });
-
-  it('continues a brief past no-progress from the files its last attempt left', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', 'src/b.ts'] });
-    const usage = { inputTokens: 10, outputTokens: 5 };
-    let continued = false;
-    const seenByReplay: string[] = [];
-    const implementer = makeImplementer({
-      implement: vi.fn(async (opts: ImplementerOptions) => {
-        mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
-        writeFileSync(join(opts.projectDir, 'src/a.ts'), 'export const a = 1;\n');
-        return { success: true, output: 'implemented', usage };
-      }),
-      retry: vi.fn(async (opts: RetryOptions) => {
-        if (continued) {
-          seenByReplay.push(readFileSync(join(opts.projectDir, 'src/a.ts'), 'utf-8'));
-          writeFileSync(join(opts.projectDir, 'src/b.ts'), 'export const b = 1;\n');
-        } else {
-          writeFileSync(join(opts.projectDir, 'src/a.ts'), 'export const a = 2;\n');
-        }
-        return { success: true, output: 'implemented', usage };
-      }),
-    });
-    const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
-    const { planner, prompts } = scriptedPlanner({});
-    const { bus, events } = makeBusRecorder();
-    const wctx = await openRunWorkspace(
-      makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({ workflow: { review: 'task' } }),
-        callbacks: makeCallbacks({ onPlannerReply: vi.fn() }).callbacks,
-        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
-        planner,
-        implementer,
-        validator,
-        bus,
-      }),
-    );
-    const loop = (initialState: WorkflowState) =>
-      runTaskLoop({ wctx, initialState, setTrackedState: vi.fn(), setCurrentTask: vi.fn() });
-    // The run base the task review compares the worktree with, recorded as a run records it.
-    await createSnapshot({ projectDir, sessionId, phase: 'manual', name: 'run-baseline' });
-    const base = await createSnapshot({
-      projectDir,
-      sessionId,
-      phase: 'manual',
-      name: 'workspace-base',
-    });
-    const workspace = {
-      kind: 'worktree' as const,
-      path: wctx.workspaceDir,
-      base: { snapshotId: base.manifest.id, head: null },
-    };
-
-    const halted = await loop(stateWithPlan([task], { ...spentAnswers(), workspace }));
-    expect(halted.state.pendingRecovery?.reason).toBe('no-progress');
-    expect(readFileSync(join(wctx.workspaceDir, 'src/a.ts'), 'utf-8')).toBe(
-      'export const a = 2;\n',
-    );
-
-    const applied = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state: halted.state,
-      action: 'continue',
-      bus,
-    });
-    expect(applied.ok).toBe(true);
-    if (!applied.ok) return;
-    continued = true;
-    const resumed = await loop(applied.state);
-
-    expect(resumed.state.pendingRecovery).toBeUndefined();
-    expect(resumed.status).toBe('complete');
-    // The replay is a retry on the last attempt's files, not a rebuild from the pre-task state.
-    expect(seenByReplay).toEqual(['export const a = 2;\n']);
-    // The replay asks the planner nothing.
-    expect(prompts).toEqual([]);
-    expect(eventTypes(events).filter((type) => type.startsWith('consult:'))).toEqual([]);
-    // Its validation reads every file the brief changed since it first started.
-    const replayValidation = vi.mocked(validator.formatChangedFiles).mock.calls.at(-1)?.[0];
-    expect(replayValidation?.changedFiles).toEqual(
-      expect.arrayContaining(['src/a.ts', 'src/b.ts']),
-    );
-  });
-
-  it('keeps the carried failure across a stop, and drops it once the carrying attempt returns', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
-    const validator = scriptedValidator({ T001: [LINT_ERROR] });
-    const { planner } = scriptedPlanner({ consult: guidance });
-    const { bus } = makeBusRecorder();
-    const controller = new AbortController();
-    const stopping = makeImplementer({
-      retry: vi.fn(async () => {
-        controller.abort();
-        return { success: false, output: '', outcome: 'user-abort' as const, error: 'Aborted' };
-      }),
-    });
-    const carried = stateWithPlan([task], {
-      lineages: { T001: lineage({ carriedFailure: LINT_ERROR }) },
-    });
-
-    const stopped = await runLoop({
-      projectDir,
-      sessionId,
-      state: carried,
-      implementer: stopping,
-      validator,
-      planner,
-      bus,
-      signal: controller.signal,
-    });
-    expect(vi.mocked(stopping.retry).mock.calls[0]?.[0].error).toContain(LINT_ERROR);
-    expect(stopped.state.lineages?.T001?.carriedFailure).toBe(LINT_ERROR);
-
-    // The resumed attempt still carries it; it fails validation once, and the
-    // ladder's own retry no longer replays the carried text.
-    const implementer = decidingImplementer([]);
-    const resumed = await runLoop({
-      projectDir,
-      sessionId,
-      state: stopped.state,
-      implementer,
-      validator: scriptedValidator({ T001: [TS_ERROR, null] }),
-      planner,
-      bus,
-    });
-    expect(resumed.status).toBe('complete');
-    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries[0]?.error).toContain(LINT_ERROR);
-    expect(retries[1]?.error).toContain(TS_ERROR);
-    expect(retries[1]?.error).not.toContain(LINT_ERROR);
-    expect(resumed.state.lineages?.T001?.carriedFailure).toBeUndefined();
   });
 });

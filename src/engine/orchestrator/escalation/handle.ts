@@ -1,11 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type {
-  ChangedFilesSnapshot,
-  FailureMark,
-  WorkflowState,
-} from '../../../core/schemas/workflow.js';
-import { failureMark, judgeProgress, type ProgressStop } from '../../../core/state/progress.js';
-import { lineageIdOf } from '../../../core/state/task-insert.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ConsultReason } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
@@ -20,7 +14,6 @@ import { applyConsultAnswer } from '../consult/apply.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { revertedDir } from '../../../core/paths.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
-import { buildNoProgressRecoveryIssue } from '../recovery/builders/consult.js';
 import { haltAttempts } from '../recovery/builders/details.js';
 import {
   buildRetryExhaustedRecoveryIssue,
@@ -52,8 +45,6 @@ type HandleRetryOptions = {
   dependsOnFiles?: string[];
   /** How the first attempt ended, when it ended on a machine outcome. */
   initialFailure?: RetryAttemptFailure | undefined;
-  /** The checks that failed the first attempt. */
-  initialChecks?: FailureMark | undefined;
   /** The first attempt's blocked report, when it stopped asking for a decision. */
   initialBlocked?: BlockedReport | undefined;
   /** The user's answer to a change of what the first attempt reported. */
@@ -212,60 +203,16 @@ async function attemptChangedFiles(
   }
 }
 
-type NoProgress = Readonly<{
-  task: Task;
-  stop: ProgressStop;
-  failure: FailureMark;
-  answers: number;
-  lastError: string;
-  attempts: number;
-  handBack: string | undefined;
-}>;
-
-/** The planner's answers did not move the failure, or the lineage used all its answers; the operator decides. */
-function noProgressHalt(
-  ctx: EscalationContext,
-  state: WorkflowState,
-  halt: NoProgress,
-): { state: WorkflowState; result: RetryResult } {
-  const { task } = halt;
-  const lastConsult = state.lineages?.[lineageIdOf(task)]?.consultRecords.at(-1);
-  const issue = buildNoProgressRecoveryIssue({
-    phase: state.phase,
-    task,
-    stop: halt.stop,
-    failure: halt.failure,
-    answers: halt.answers,
-    lastDiagnosis: lastConsult?.diagnosis ?? halt.lastError,
-    failingOutput: halt.lastError,
-    ...haltAttempts(state, task, { booked: true }),
-    createdAt: nowIso(),
-  });
-  publishError({
-    bus: ctx.bus,
-    phase: state.phase,
-    message: issue.message,
-    safety: { category: 'recovery', code: 'no_progress' },
-  });
-  return {
-    state: raisePendingRecovery(ctx, state, issue),
-    result: failedRetry(halt.attempts, {
-      lastError: halt.lastError,
-      ...(halt.handBack !== undefined && { handBack: halt.handBack }),
-    }),
-  };
-}
-
 /**
  * The ladder: one local rung with the exact errors, then the consult loop. A
  * guidance or ask-user answer spends one more implementer attempt with the
  * consult seat's instructions in its error block; a rewrite or a split replaces
  * the brief and hands back to the task loop; verify completes in place. A
  * correction the user sent while the checks ran is delivered by the next
- * attempt, with no retry rung and no consult. Before each consult the failure is
- * judged against the one the last answer saw: two answers in a row that did not
- * move it, or too many answers on the lineage, halt for the operator with the
- * failure and the last diagnosis.
+ * attempt, with no retry rung and no consult. No count stops the loop: each
+ * failed attempt goes back to the consult seat, whose prompt shows its earlier
+ * answers and the failures that followed them. A question of the seat that
+ * nobody answers halts the brief for the operator.
  */
 export async function handleRetryAndEscalation(
   opts: HandleRetryOptions,
@@ -297,8 +244,6 @@ export async function handleRetryAndEscalation(
   let handBack: string | undefined;
   let blocked: BlockedReport | undefined = opts.initialBlocked;
   let attemptSnapshot: ChangedFilesSnapshot = taskStartSnapshot;
-  let checks = opts.initialChecks;
-  let callOutcome = opts.initialFailure?.outcome;
   let answer: string | undefined;
 
   if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
@@ -311,15 +256,12 @@ export async function handleRetryAndEscalation(
       task,
       state,
       lastError,
-      checks,
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
       ...(opts.initialAnswer !== undefined && { answer: opts.initialAnswer }),
     });
     state = retries.state;
     task = retries.task;
     lastError = retries.lastError;
-    checks = retries.checks;
-    callOutcome = retries.lastFailure?.outcome;
     attempts = retries.attempts;
     handBack = handBackOf(retries) ?? handBack;
     attemptSnapshot = retries.attemptSnapshot ?? attemptSnapshot;
@@ -413,8 +355,6 @@ export async function handleRetryAndEscalation(
     attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
     blocked = outcome.blocked;
     answer = outcome.answer;
-    checks = outcome.checks;
-    callOutcome = outcome.lastFailure?.outcome;
     state = transitionAndSave(ctx, state, {
       type: 'COUNT_ATTEMPT',
       taskId: task.id,
@@ -434,26 +374,6 @@ export async function handleRetryAndEscalation(
       const halted = await attempt(answer, true);
       if (halted) return halted;
       continue;
-    }
-
-    const progress = state.lineages?.[lineageIdOf(task)]?.progress;
-    const failure = failureMark({
-      ...(checks !== undefined && { checks }),
-      ...(callOutcome !== undefined && { callOutcome }),
-      ...(blocked !== undefined && { blocked }),
-      error: lastError,
-    });
-    const judged = judgeProgress(progress, failure);
-    if (judged.stop !== null) {
-      return noProgressHalt(ctx, state, {
-        task,
-        stop: judged.stop,
-        failure,
-        answers: progress?.answers ?? 0,
-        lastError,
-        attempts,
-        handBack,
-      });
     }
 
     const snapshot = attemptSnapshot ?? taskStartSnapshot;
@@ -480,7 +400,6 @@ export async function handleRetryAndEscalation(
         reason,
         failingOutput: lastError,
         report: blocked ?? null,
-        progress: judged.next,
       },
     );
     if ('error' in consult) throw consult.error;
@@ -538,9 +457,26 @@ export async function handleRetryAndEscalation(
     if (applied.action === 'failed') {
       lastError = applied.reason;
       blocked = undefined;
-      checks = applied.checks;
-      callOutcome = undefined;
       continue;
+    }
+    // Only the operator can answer the seat's question or overrule its "cannot", so asking the
+    // seat again cannot help.
+    if (applied.action === 'unanswered' || applied.action === 'cannot') {
+      const issue = buildRetryExhaustedRecoveryIssue({
+        task,
+        phase: state.phase,
+        ...(applied.action === 'unanswered'
+          ? { question: applied.question }
+          : { cannot: { seat, reason: applied.reason } }),
+        validationSummary: lastError,
+        ...haltAttempts(state, task, { booked: true }),
+        allowRetryOverride: true,
+        ...(ctx.implementerProfile !== undefined && {
+          selectedImplementerProfile: ctx.implementerProfile,
+        }),
+        createdAt: nowIso(),
+      });
+      return { state: raisePendingRecovery(ctx, state, issue), result: failedRetry(attempts) };
     }
 
     const instructions = guidanceInstructions(applied.instructions, applied.context);

@@ -1689,7 +1689,6 @@ describe('runFinalReviewPhase', () => {
             },
           ],
           replacedParents: [],
-          notes: [],
         },
       },
       triage: [

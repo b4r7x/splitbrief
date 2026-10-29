@@ -241,8 +241,6 @@ function applyContinueRecoveryAction(
     });
   }
 
-  if (issue.reason === 'no-progress') return applyNoProgressContinue(opts, issue);
-
   let state = markRecoveryApplying(opts, issue);
   state = transitionAndSave(
     opts,
@@ -268,71 +266,6 @@ function applyContinueRecoveryAction(
     status: 'continued',
     correctionRecorded: false,
   };
-}
-
-/**
- * A no-progress halt continues by clearing the lineage's progress, with the operator's note
- * recorded on the lineage, and resetting the brief so the run replays it and the planner is asked
- * again.
- */
-function applyNoProgressContinue(
-  opts: ApplyRecoveryActionOptions,
-  issue: RecoveryIssue,
-): ApplyRecoveryActionResult {
-  const taskId = issue.taskId ?? opts.state.tasks[opts.state.currentTaskIndex]?.id;
-  if (taskId === undefined) {
-    return blockRecoveryAction({
-      ...opts,
-      issue,
-      code: 'missing-current-task',
-      message: 'Continuing a no-progress halt requires the task the halt names.',
-      publishSelected: true,
-    });
-  }
-
-  const target = currentRecoveryTask(opts.state, issue);
-  if (!target) {
-    return blockRecoveryAction({
-      ...opts,
-      issue,
-      code: 'missing-current-task',
-      message:
-        'Continuing a no-progress halt requires the pending recovery task to match the current task index.',
-      publishSelected: true,
-    });
-  }
-
-  const state = saveRecoveryAnswer(opts, issue, [
-    {
-      type: 'RESET_PROGRESS',
-      taskId,
-      note: opts.comment?.displayText.trim() || 'continued',
-      ...(typeof issue.facts?.failingOutput === 'string' && {
-        failingOutput: issue.facts.failingOutput,
-      }),
-    },
-    {
-      type: 'RESET_TASK',
-      taskId: target.id,
-      profile: issue.selectedImplementerProfile,
-    },
-    ...briefWords(target.id, opts.comment),
-  ]);
-  opts.bus.publish({
-    type: 'task_reset',
-    ts: Date.now(),
-    phase: state.phase,
-    taskId: target.id,
-  });
-  publishRecoveryResolved({
-    bus: opts.bus,
-    phase: state.phase,
-    issue,
-    action: opts.action,
-    outcome: 'retry-current-task',
-  });
-
-  return { ok: true, action: opts.action, issue, state, status: 'retry-current-task' };
 }
 
 /**
@@ -1166,11 +1099,7 @@ function recordRecoverySkipEvidence(opts: {
   writeEvidenceLedger(opts, updated);
 }
 
-/**
- * A no-progress halt continues by a reset the operator chose; it resolves the halt itself, so
- * there is no state the run must first come back to. A halt on a retired cause names nothing the
- * run still checks, so continuing is all that is left of it.
- */
+/** A halt on a retired cause names nothing the run still checks, so continuing is all that is left of it. */
 function isSafeContinue(issue: RecoveryIssue): boolean {
-  return issue.reason === 'no-progress' || isRetiredRecoveryReason(issue.reason);
+  return isRetiredRecoveryReason(issue.reason);
 }

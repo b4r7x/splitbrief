@@ -355,6 +355,7 @@ function consultTable(): string {
     'split-task': 'Keep all criteria. Re-point pending dependents to all children.',
     verify: 'Run the brief gate and named registered checks. Make no implementer call.',
     'ask-user': 'Ask only when the user alone can answer. Record why, choices and a default.',
+    cannot: 'Stop the brief and ask the user. Make no implementer call.',
   };
   return [
     `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a consult.`,
@@ -377,15 +378,14 @@ function consultTable(): string {
       }),
     ),
     '',
-    'Before each consult, compare the failure with the failure the last answer saw: the same check ids with the same failure keys, the same call outcome, the same blocked question, or the same first error line.',
-    `Keep the lineage progress across splits and resume: two answers in a row that leave the same failure, or ${BOUNDS.answersPerBrief} answers on one lineage, stop the consults.`,
+    'No count stops the consults: every failed attempt goes back to the seat.',
+    'Each consult shows the seat its earlier answers on the lineage, across splits and resume, each before the failed attempts that followed it.',
     'A blocked report consults at once.',
     'A guarded rewrite or split asks the operator on the consulted seat before dispatch.',
     'A done report records its decisions in the plan ledger with the task id before validation. No seat confirms them, and a retry records only a new decision.',
-    'Reported decisions are not consult answers, and the progress rule does not count them.',
+    'Reported decisions are not consult answers.',
     'A done report field that breaks the contract reads as empty with a warning. The other fields stay.',
-    'When the consults stop, halt as needs you and keep the work. Show the failure and the last diagnosis. Ask: continue with a note / skip / end.',
-    'Continuing clears the lineage progress and replays the brief as a retry with the last failing output.',
+    'The user is asked only when the seat answers `ask-user` or `cannot`. A seat that is down with no fallback halts as seat down.',
   ].join('\n');
 }
 

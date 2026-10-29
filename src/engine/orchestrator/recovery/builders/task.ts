@@ -1,5 +1,6 @@
 import type { Config } from '../../../../core/schemas/config.js';
 import type { Phase, RecoveryAction } from '../../../../core/schemas/enums.js';
+import type { ConsultSeat } from '../../../../core/schemas/consult.js';
 import { BOUNDS } from '../../../../core/pipeline-spec/bounds.js';
 import type { ReviewRecord, SeatSwitchRecord } from '../../../../core/schemas/workflow.js';
 import {
@@ -68,7 +69,9 @@ import {
   reviewFailedCause,
   reviewName,
   reviewUnverifiedCause,
+  cannotDetail,
 } from '../../../../core/recovery/headline.js';
+import { consultSeatRunner } from '../../escalation/consult-guidance.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import { HAND_BACK_PANEL_CHARS } from '../../../../core/pipeline-spec/ladder.js';
@@ -88,6 +91,10 @@ export interface RetryExhaustedRecoveryOptions extends ValidationRecoveryOptions
   /** The `pre_escalation` hook's reason when the hook stopped the ladder before its tiers. */
   escalationBlockedBy?: string | undefined;
   handBack?: string | undefined;
+  /** The consult seat's question nobody answered: only the operator can move the brief on. */
+  question?: string | undefined;
+  /** The consult seat's answer that the brief cannot be done, and why. */
+  cannot?: { seat: ConsultSeat; reason: string } | undefined;
 }
 
 export interface ContextOverflowRecoveryOptions extends RecoveryBuilderBase {
@@ -499,6 +506,7 @@ export function buildRetryExhaustedRecoveryIssue(
 ): RecoveryIssue {
   const phase = opts.phase ?? 'escalating';
   const validation = summarizeValidation(opts);
+  const cannotBy = opts.cannot && consultSeatRunner(opts.cannot.seat);
   const actions = haltActions('retry-exhausted', [
     opts.allowRetryOverride ? 'retry-same-worker' : undefined,
     'skip-current-task',
@@ -516,8 +524,14 @@ export function buildRetryExhaustedRecoveryIssue(
     message: retryExhaustedCause({
       task: opts.task.id,
       hookReason: opts.escalationBlockedBy,
+      question: opts.question,
+      cannotBy,
     }),
     details: [
+      ...(opts.question !== undefined ? [`Question: ${opts.question}`] : []),
+      ...(cannotBy !== undefined && opts.cannot !== undefined
+        ? [cannotDetail(cannotBy, opts.cannot.reason)]
+        : []),
       lastErrorDetail(validation),
       ...(opts.attempts === 0 ? [] : attemptDetails(opts.attempts)),
       ...(opts.handBack ? [`Implementer said: ${handBackQuote(opts.handBack)}`] : []),
@@ -528,6 +542,9 @@ export function buildRetryExhaustedRecoveryIssue(
       validationSummary: validation.summary,
       allowRetryOverride: opts.allowRetryOverride,
       escalationBlockedBy: opts.escalationBlockedBy,
+      question: opts.question,
+      cannot: opts.cannot?.reason,
+      cannotBy,
     }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions),

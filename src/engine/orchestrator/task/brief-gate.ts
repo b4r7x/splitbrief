@@ -2,7 +2,6 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { dueCriterionIds } from '../../../core/review/verdict.js';
 import { fixCheckKeys } from '../../../core/review/fix-task.js';
-import { checkFailureMark } from '../../../core/state/progress.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
@@ -106,7 +105,6 @@ export async function runBriefGate(opts: {
         correction: false,
         acceptance: { accepted: false } satisfies ValidationAcceptance,
         error: '',
-        failure: [],
       };
     const checked = await runTaskChecks({
       wctx,
@@ -150,6 +148,5 @@ export async function runBriefGate(opts: {
       : failedChecks
           .map((run) => checkFailureText(run, { carried: carried.get(run.checkId) }))
           .join('\n\n'),
-    failure: checkFailureMark(failedChecks),
   };
 }

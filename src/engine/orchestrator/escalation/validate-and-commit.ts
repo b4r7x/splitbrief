@@ -61,6 +61,5 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
   return {
     ...result,
     error: gated.error,
-    failure: gated.failure,
   };
 }

@@ -83,7 +83,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-recovery-route-signed-out', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-model-not-listed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-model-refused', ['120x40', '80x24', '60x18', '160x45']],
-  ['workflow-recovery-no-progress', ['120x40', '80x24', '60x18', '140x16', '140x14', '140x12']],
+  ['workflow-recovery-retry-exhausted', ['120x40', '80x24', '60x18', '140x16', '140x14', '140x12']],
   ['workflow-approval-confirm', ['120x40', '80x24', '60x18', '120x16', '120x14', '120x12']],
   ['workflow-approval-confirm-secret', ['120x40', '80x24', '60x18', '120x16', '120x14', '120x12']],
   ['workflow-recovery-plan-input-too-large', ['120x40', '80x24', '60x18', '160x45']],

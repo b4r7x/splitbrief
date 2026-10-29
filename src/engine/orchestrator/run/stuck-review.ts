@@ -2,7 +2,6 @@ import type { TriageInput, TriageResult } from '../../../core/schemas/review.js'
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { plannerFixWork, stuckConsult } from '../../../core/review/stuck.js';
-import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
@@ -62,7 +61,6 @@ export async function askPlannerOnStuckReview(args: {
   fixWork: TriageResult;
   inputs: readonly TriageInput[];
   blockers: readonly { id: string; text: string }[];
-  after: readonly string[];
 }): Promise<StuckReviewOutcome> {
   const { wctx, cycle, target, fixWork, setTrackedState } = args;
   const recorded = stuckConsult(args.state, cycle);
@@ -107,11 +105,6 @@ export async function askPlannerOnStuckReview(args: {
           inputs: args.inputs,
           blockers: args.blockers,
         }),
-        progress: state.lineages?.[lineageIdOf(target)]?.progress ?? {
-          failure: [{ source: 'review', keys: [...args.after] }],
-          unmoved: 0,
-          answers: 0,
-        },
         reviewerFixWork: fixWork,
       },
     );

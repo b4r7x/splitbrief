@@ -7,7 +7,6 @@ import { plainUserMessage, type UserMessageInput } from '../../../core/types/use
 import { recordUserMessage } from '../transcript/user-message.js';
 import type {
   ChangedFilesSnapshot,
-  FailureMark,
   PlannerConversation,
   WorkflowState,
 } from '../../../core/schemas/workflow.js';
@@ -64,7 +63,9 @@ export type ConsultApplyOutcome =
   | Readonly<{ action: 'split-task'; tasks: Task[] }>
   | Readonly<{ action: 'completed'; task: Task; durationMs: number; bookedFiles: string[] }>
   | Readonly<{ action: 'correction'; answer: string }>
-  | Readonly<{ action: 'failed'; reason: string; checks?: FailureMark }>
+  | Readonly<{ action: 'failed'; reason: string }>
+  | Readonly<{ action: 'unanswered'; question: string }>
+  | Readonly<{ action: 'cannot'; reason: string }>
   | Readonly<{ action: 'skipped' }>;
 
 const consultApplyError = {
@@ -277,7 +278,6 @@ async function applyVerify(
     return {
       action: 'failed',
       reason: gated.error || 'the brief gate stopped',
-      checks: gated.failure,
     };
 
   const commit = await validateCommitAndAdvance({
@@ -383,10 +383,7 @@ async function applyAskUser(
   };
   const reply = await waitForPlannerReply(ctx, asked);
   if (reply === undefined && question.default === undefined)
-    return {
-      action: 'failed',
-      reason: `The ${consultSeatRunner(ctx.seat)}'s question remains unanswered.`,
-    };
+    return { action: 'unanswered', question: action.question };
   const answered = consultReplyAnswer(question, reply);
   // The transcript and the brief's log keep the seat's question; the instructions were context.
   const qa = answered.qa.map((pair) => ({ question: action.question, answer: pair.answer }));
@@ -418,8 +415,9 @@ async function applyAskUser(
  * block carries; a rewrite or a split rolls the current attempt back and replaces the task;
  * verify completes the task when its selection covers the criteria and the validation and
  * checks pass, and a pre_validation deny of that gate skips the task; ask-user puts the seat's
- * one question to the operator and hands the answer back as guidance; an answer that would
- * drop a criterion or one of its checks asks the operator through that same path.
+ * one question to the operator and hands the answer back as guidance, or hands back the question
+ * when nobody answers it; cannot hands back the seat's reason; an answer that would drop a criterion or one of its checks asks the
+ * operator through that same path.
  *
  * `attempt` is the current attempt's start snapshot.
  */
@@ -445,6 +443,8 @@ export async function applyConsultAnswer(
       return applyVerify(ctx, task, action, attempt);
     case 'ask-user':
       return applyAskUser(ctx, task, action);
+    case 'cannot':
+      return { action: 'cannot', reason: action.reason };
     default:
       return assertNever(action);
   }

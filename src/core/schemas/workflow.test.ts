@@ -358,6 +358,25 @@ describe('WorkflowStateSchema v4', () => {
     expect(parsed.fixCycles).toEqual({ used: 1, notes: [] });
   });
 
+  it('loads an older lineage that counted planner answers and drops the count', () => {
+    const parsed = WorkflowStateSchema.parse({
+      ...state({ phase: 'implementing' }),
+      lineages: {
+        T001: {
+          attempts: 2,
+          progress: { failure: [{ source: 'error', keys: ['boom'] }], unmoved: 1, answers: 2 },
+          carriedFailure: 'boom',
+          notes: ['continued'],
+        },
+      },
+    });
+
+    expect(parsed.lineages?.T001).toMatchObject({ attempts: 2 });
+    expect(parsed.lineages?.T001).not.toHaveProperty('progress');
+    expect(parsed.lineages?.T001).not.toHaveProperty('carriedFailure');
+    expect(parsed.lineages?.T001).not.toHaveProperty('notes');
+  });
+
   it('drops the stage an older fix task and pending input carry', () => {
     const red = { checkIds: ['K1'], output: 'broken' };
     const finding = { id: 'P1', text: 'K1 failed', acceptance: null, ...red };

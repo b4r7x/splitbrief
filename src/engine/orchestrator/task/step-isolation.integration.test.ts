@@ -16,7 +16,7 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
-import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
+import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
 import { isolationWorktreeRoot, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { createRunIsolation } from '../isolation/create.js';
 import { readWorkspaceRecord } from '../isolation/retention.js';
@@ -107,7 +107,11 @@ describe('runSingleTask — worktree isolation', () => {
         bus: makeBusRecorder().bus,
         isolation,
         config: makeConfig({ workflow: { review: 'task' } }),
-        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+        planner: makePlanner({
+          typedCall: consultCallAnswering(() => {
+            throw new Error('The planner process stopped unexpectedly.');
+          }),
+        }),
       }),
     );
 
@@ -121,7 +125,7 @@ describe('runSingleTask — worktree isolation', () => {
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
-    expect(afterFailing.pendingRecovery?.reason).toBe('no-progress');
+    expect(afterFailing.pendingRecovery?.reason).toBe('planner-call-failed');
     expect(checkoutFiles(projectDir)).toEqual(before);
 
     const afterPassing = await runSingleTask({
@@ -139,8 +143,9 @@ describe('runSingleTask — worktree isolation', () => {
 
     expect(receivedDirs).toEqual([wctx.workspaceDir, wctx.workspaceDir]);
     expect(wctx.workspaceDir).not.toBe(projectDir);
+    // The failing brief's halt took its file back in the run workspace.
     expect(readFileSync(join(wctx.workspaceDir, 'src/main.ts'), 'utf-8')).toBe(
-      'export const main = 999;\n',
+      'export const main = 0;\n',
     );
     expect(readFileSync(join(wctx.workspaceDir, 'src/b.ts'), 'utf-8')).toBe(
       'export const b = 999;\n',

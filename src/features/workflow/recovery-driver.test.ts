@@ -47,12 +47,6 @@ import { readMessages } from '../../core/sessions/log-reader.js';
 
 let dirs: string[] = [];
 
-const NO_PROGRESS: Partial<RecoveryIssue> = {
-  reason: 'no-progress',
-  availableActions: ['continue', 'skip-current-task', 'end-run'],
-  recommendedAction: 'continue',
-};
-
 /** A REVIEW call that never landed: the halt names no brief, so Try again re-issues the step. */
 const SEAT_LEVEL_RETRY: Partial<RecoveryIssue> = {
   reason: 'planner-call-failed',
@@ -445,21 +439,6 @@ describe('createRecoveryDriver', () => {
 
       expect(feedbackAtPrompt).toHaveLength(0);
       expect(result.state?.acceptedAsIs?.note).toBe(words.text);
-    });
-
-    it('records them as the note of a replayed Continue on a no-progress halt', async () => {
-      const { prepared, state } = setupSession({
-        ...NO_PROGRESS,
-        status: 'applying',
-        selectedAction: 'continue',
-      });
-      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
-
-      const result = await runDriver(prepared, state, inputMode, words);
-
-      expect(feedbackAtPrompt).toHaveLength(0);
-      if (!result.shouldRun) throw new Error('expected the brief to run again');
-      expect(JSON.stringify(result.state.lineages)).toContain(words.text);
     });
 
     it('keeps them for the panel when the replayed action is refused', async () => {
@@ -1192,37 +1171,6 @@ describe('createRecoveryDriver', () => {
     }
   });
 
-  it('continues a no-progress halt with a typed sentence as its note and the brief steer', async () => {
-    const { prepared, state } = setupSession(NO_PROGRESS);
-    const { inputMode, feedbackAtPrompt } = makeInputMode(['run the formatter before the tests']);
-
-    const result = await runDriver(prepared, state, inputMode);
-
-    expect(feedbackAtPrompt).toHaveLength(1);
-    expect(feedbackStore.get().isError).toBe(false);
-    expect(result.shouldRun).toBe(true);
-    if (result.shouldRun) {
-      expect(result.steer).toEqual(plainUserMessage('run the formatter before the tests'));
-      expect(result.state.pendingRecovery).toBeUndefined();
-      expect(JSON.stringify(result.state.lineages)).toContain('run the formatter before the tests');
-    }
-  });
-
-  it('takes the composer draft as the note when Continue is chosen on the panel', async () => {
-    const { prepared, state } = setupSession(NO_PROGRESS);
-    composerLiveStore.setDraft(createDraftDocument('run the formatter before the tests'));
-    const { inputMode } = makeInputMode(['c']);
-
-    const result = await runDriver(prepared, state, inputMode);
-
-    expect(result.shouldRun).toBe(true);
-    if (result.shouldRun) {
-      expect(result.steer).toEqual(plainUserMessage('run the formatter before the tests'));
-      expect(JSON.stringify(result.state.lineages)).toContain('run the formatter before the tests');
-    }
-    expect(composerDraftStore.get().request?.value).toBe('');
-  });
-
   it('takes the composer draft as the steer when Try again is chosen on the panel', async () => {
     const { prepared, state } = setupSession();
     composerLiveStore.setDraft(createDraftDocument('the prop is optional'));
@@ -1236,7 +1184,7 @@ describe('createRecoveryDriver', () => {
   });
 
   it('leaves the composer draft alone when an action that takes no note is chosen', async () => {
-    const { prepared, state } = setupSession(NO_PROGRESS);
+    const { prepared, state } = setupSession();
     composerLiveStore.setDraft(createDraftDocument('run the formatter before the tests'));
     const { inputMode } = makeInputMode(['a']);
 

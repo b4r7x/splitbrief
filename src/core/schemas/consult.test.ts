@@ -92,6 +92,16 @@ describe('ConsultAnswerSchema', () => {
     ]);
   });
 
+  it('takes a cannot answer on a failed brief and refuses it on a stuck review', () => {
+    const task = makeTask({ id: 'T003' });
+    const cannot = answer({ action: 'cannot', reason: 'The SDK has no payment API.' });
+    expect(consultAnswerSchemaFor(task, 'failed').safeParse(cannot).success).toBe(true);
+    const refused = consultAnswerSchemaFor(task, 'no-progress').safeParse(cannot);
+    expect(refused.error?.issues.map((issue) => issue.message)).toEqual([
+      'a stuck review takes guidance, rewrite-task, split-task or ask-user',
+    ]);
+  });
+
   it('strips the draft ref and keeps a root object', () => {
     expect(CONSULT_ANSWER_JSON_SCHEMA).not.toHaveProperty('$schema');
     expect(CONSULT_ANSWER_JSON_SCHEMA.type).toBe('object');

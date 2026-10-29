@@ -46,6 +46,10 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
     requestId: z.string().optional(),
     resetAt: z.string().optional(),
     fallback: z.string().optional(),
+    /** The consulted seat's question that nobody answered. */
+    question: z.string().optional(),
+    /** The consulted seat's reason why the brief cannot be done. */
+    cannot: z.string().optional(),
   }),
   z.strictObject({
     type: z.literal('ready_to_apply'),

@@ -370,7 +370,6 @@ export async function followReviewAnswer(args: {
       fixWork,
       inputs,
       blockers: entries,
-      after,
     });
     state = asked.state;
     if (asked.kind !== 'fix-work') return { state, stopped: true, reviewAgain: false };

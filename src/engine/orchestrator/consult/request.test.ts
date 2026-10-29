@@ -10,11 +10,7 @@ import { setupProject } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import { taskId } from '../../../core/schemas/task.js';
-import type {
-  ChangedFilesSnapshot,
-  LineageProgress,
-  WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readMessages } from '../../../core/sessions/log-reader.js';
@@ -28,11 +24,6 @@ import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 
 const config = makeConfig();
 const dirs: string[] = [];
-const PROGRESS: LineageProgress = {
-  failure: [{ source: 'error', keys: ['boom'] }],
-  unmoved: 0,
-  answers: 1,
-};
 afterEach(() => {
   vi.useRealTimers();
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
@@ -239,7 +230,7 @@ describe('requestConsult', () => {
         reviewer: planner.planner,
         state,
       },
-      { task, reason: 'failed', failingOutput: 'boom', progress: PROGRESS },
+      { task, reason: 'failed', failingOutput: 'boom' },
     );
 
     expect(planner.prompts[0]).toContain('-before');
@@ -296,7 +287,6 @@ describe('requestConsult', () => {
         revision: 1,
         reason: 'failed',
         seat: 'plan',
-        progress: PROGRESS,
         answer: JSON.parse(guidanceAnswer('Before the stop', null).text),
       });
       saveState(ref, stopped);
@@ -329,7 +319,6 @@ describe('requestConsult', () => {
         {
           task,
           reason: 'failed',
-          progress: PROGRESS,
           failingOutput: 'missing greeting',
         },
       );
@@ -352,7 +341,6 @@ describe('requestConsult', () => {
       expect(logged.filter((text) => text === reply)).toHaveLength(1);
       expect(loadState(ref)?.plannerSessionId).toBe('native-2');
       expect(state.lineages?.T003?.consultRecords).toHaveLength(2);
-      expect(state.lineages?.T003?.progress).toEqual(PROGRESS);
       expect(events.filter((event) => event.type === 'consult_answered')).toHaveLength(1);
       expect(state.tokenUsage.plannerInput).toBe(50);
       expect(state.tokenUsage.plannerOutput).toBe(17);
@@ -386,7 +374,6 @@ describe('requestConsult', () => {
     const first = await requestConsult(ctx, {
       task,
       reason: 'failed',
-      progress: PROGRESS,
       failingOutput: 'first failure',
     });
     expect('answer' in first).toBe(true);
@@ -400,7 +387,6 @@ describe('requestConsult', () => {
       {
         task,
         reason: 'failed',
-        progress: PROGRESS,
         failingOutput: 'second failure',
       },
     );
@@ -444,7 +430,6 @@ describe('requestConsult', () => {
       task,
       reason: 'failed' as const,
       failingOutput: 'the failure',
-      progress: PROGRESS,
     };
 
     await requestConsult(ctx, request);
@@ -492,7 +477,6 @@ describe('requestConsult', () => {
         {
           task: state.tasks[0]!,
           reason: 'failed',
-          progress: PROGRESS,
           failingOutput: 'Tool implementer exited without changing any files',
         },
       );
@@ -537,7 +521,7 @@ describe('requestConsult', () => {
         reviewer: planner.planner,
         state,
       },
-      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom', progress: PROGRESS },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
     );
 
     const prompt = planner.prompts[0] ?? '';
@@ -578,7 +562,7 @@ describe('requestConsult', () => {
         reviewer: planner.planner,
         state,
       },
-      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom', progress: PROGRESS },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
     );
 
     const prompt = planner.prompts[0] ?? '';
@@ -615,7 +599,7 @@ describe('requestConsult', () => {
         reviewer: planner.planner,
         state,
       },
-      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom', progress: PROGRESS },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
     );
 
     const prompt = planner.prompts[0] ?? '';
@@ -649,7 +633,7 @@ describe('requestConsult', () => {
         reviewer: planner.planner,
         state,
       },
-      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom', progress: PROGRESS },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
     );
 
     const prompt = planner.prompts[0] ?? '';
@@ -676,7 +660,7 @@ describe('requestConsult', () => {
         reviewer: planner.planner,
         state,
       },
-      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom', progress: PROGRESS },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
     );
 
     expect('answer' in result).toBe(true);
@@ -725,7 +709,7 @@ describe('requestConsult', () => {
         reviewer: planner.planner,
         state,
       },
-      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom', progress: PROGRESS },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
     );
 
     const prompt = planner.prompts[0] ?? '';
@@ -764,7 +748,6 @@ describe('requestConsult', () => {
       {
         task: state.tasks[0]!,
         reason: 'failed',
-        progress: PROGRESS,
         failingOutput: 'the failure',
       },
     );
@@ -801,7 +784,6 @@ describe('requestConsult', () => {
       {
         task: state.tasks[0]!,
         reason: 'failed',
-        progress: PROGRESS,
         failingOutput: 'the failure',
       },
     );
@@ -854,7 +836,7 @@ describe('requestConsult', () => {
         reviewer: planner.planner,
         state,
       },
-      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'the failure', progress: PROGRESS },
+      { task: state.tasks[0]!, reason: 'failed', failingOutput: 'the failure' },
     );
 
     expect('answer' in result && result.answer.answer.action).toBe('guidance');
@@ -919,7 +901,7 @@ describe('requestConsult', () => {
         reviewer: planner.planner,
         state,
       },
-      { task: state.tasks[1]!, reason: 'failed', failingOutput: 'the failure', progress: PROGRESS },
+      { task: state.tasks[1]!, reason: 'failed', failingOutput: 'the failure' },
     );
 
     expect(planner.prompts[1]).toContain(
@@ -960,7 +942,6 @@ describe('requestConsult', () => {
       {
         task: subtask,
         reason: 'failed',
-        progress: PROGRESS,
         failingOutput: 'the failure',
       },
     );
@@ -1013,7 +994,6 @@ describe('requestConsult', () => {
       {
         task: state.tasks[0]!,
         reason: 'failed',
-        progress: PROGRESS,
         failingOutput: 'the failure',
       },
     );
@@ -1096,7 +1076,7 @@ describe('requestConsult seats', () => {
   }
 
   function request(task: Task, reason: 'failed') {
-    return { task, reason, failingOutput: 'the fix check is still red', progress: PROGRESS };
+    return { task, reason, failingOutput: 'the fix check is still red' };
   }
 
   it('asks the reviewer about a failed fix task with the full prompt and books its usage', async () => {
@@ -1179,30 +1159,6 @@ describe('requestConsult seats', () => {
     const after = seen.at(-1)!;
     expect(after.lineages?.T003?.consultRecords.at(-1)?.seat).toBe('plan');
     expect(after.lineages?.T004?.consultRecords.at(-1)?.seat).toBe('review');
-  });
-
-  it('records the judged progress on the lineage of the brief each seat answered', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const planner = consultPlanner([guidanceAnswer('Plan answer', null)], false);
-    const reviewer = consultPlanner([guidanceAnswer('Fix answer', null)], false);
-    const planTask = makeTask({ id: 'T003', status: 'failed', revision: 1, criteria: ['C1'] });
-    const fixTask = makeTask({
-      id: 'T004',
-      status: 'failed',
-      revision: 1,
-      criteria: ['C1'],
-      fix: FIX,
-    });
-    const state = { ...consultState(), tasks: [planTask, fixTask] };
-    saveState({ projectDir, sessionId }, state);
-    const seen: WorkflowState[] = [];
-    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, reviewer.planner, seen);
-
-    await requestConsult(ctx, request(planTask, 'failed'));
-    expect(seen.at(-1)?.lineages?.T003?.progress).toEqual(PROGRESS);
-    expect(seen.at(-1)?.lineages?.T004?.progress).toBeUndefined();
-    await requestConsult({ ...ctx, state: seen.at(-1)! }, request(fixTask, 'failed'));
-    expect(seen.at(-1)?.lineages?.T004?.progress).toEqual(PROGRESS);
   });
 
   it('rethrows a thrown reviewer consult unchanged and names the review seat', async () => {
