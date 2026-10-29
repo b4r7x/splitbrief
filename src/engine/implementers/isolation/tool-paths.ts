@@ -1,7 +1,7 @@
-import { resolve } from 'node:path';
 import { isRecord } from '../../../utils/type-guards.js';
 import {
   readShellCommand,
+  resolveFollowingLinks,
   type PathAccess,
   type PathReference,
   type PathScope,
@@ -93,7 +93,7 @@ export function readToolUse(toolUse: ToolUse, scope: PathScope): ShellReading {
   const searches = /glob|find/.test(toolUse.name.toLowerCase());
   const add = (path: string, how: PathAccess, base: string) =>
     references.push({
-      path: resolve(base, expandHome(path, scope.home)),
+      path: resolveFollowingLinks(base, expandHome(path, scope.home)),
       access: how,
       followsLink: true,
     });
@@ -103,7 +103,7 @@ export function readToolUse(toolUse: ToolUse, scope: PathScope): ShellReading {
   for (const [key, value] of Object.entries(toolUse.input)) {
     if (!CWD_KEYS.has(normalizedKey(key)) || typeof value !== 'string' || value === '') continue;
     add(value, 'read', scope.cwd);
-    cwd = resolve(scope.cwd, expandHome(value, scope.home));
+    cwd = resolveFollowingLinks(scope.cwd, expandHome(value, scope.home));
   }
 
   const visit = (record: Readonly<Record<string, unknown>>, nested: boolean) => {

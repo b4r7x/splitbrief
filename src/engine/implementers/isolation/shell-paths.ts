@@ -1,15 +1,16 @@
-import { basename, join, resolve, sep } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { HOME_MARK, lexShell, OPAQUE, PWD_MARK, TMPDIR_MARK } from './shell-lexer.js';
 
 export type PathAccess = 'read' | 'list' | 'search' | 'write';
 
 /**
- * One place a tool use reaches: absolute and lexically resolved, with how it is
- * reached. `followsLink` is false where the command acts on the name itself —
- * `rm node_modules` removes the link, it does not reach through it. `mentioned`
- * marks a word only guessed to be a path — an operand of a command this reading
- * does not know, like the test name in `vitest -t /api/users` — which reaches
- * something only if it exists.
+ * One place a tool use reaches: absolute, its `..` taken as the kernel takes it
+ * (`resolveFollowingLinks`), with how it is reached. `followsLink` is false where
+ * the command acts on the name itself — `rm node_modules` removes the link, it
+ * does not reach through it. `mentioned` marks a word only guessed to be a path
+ * — an operand of a command this reading does not know, like the test name in
+ * `vitest -t /api/users` — which reaches something only if it exists.
  */
 export type PathReference = Readonly<{
   path: string;
@@ -99,7 +100,11 @@ function hasFlag(parsed: ParsedArgs, ...flags: string[]): boolean {
 type ShellContext = {
   /** The directory the command runs in, shared with the commands after it. */
   state: { cwd: string };
-  chdir: (word: string) => void;
+  /**
+   * A command that moves the shell and reads where it lands: `cd` keeps the path it was
+   * given, as bash and zsh do unless `-P` says otherwise; `git -C` lands where the kernel does.
+   */
+  chdir: (word: string, how: 'by-name' | 'through-links') => void;
   add: (word: string, access: PathAccess, followsLink?: boolean) => void;
   /** A word that may or may not be a path: an unknown command's operand. */
   mention: (word: string) => void;
@@ -154,8 +159,7 @@ const ignoresArguments: Handler = () => undefined;
 const changeDirectory: Handler = (args, ctx) => {
   const target = args.find((arg) => !arg.startsWith('-') || arg === '-') ?? HOME_MARK;
   if (target === '-') return;
-  ctx.add(target, 'read');
-  ctx.chdir(target);
+  ctx.chdir(target, args.includes('-P') ? 'through-links' : 'by-name');
 };
 
 const listing: Handler = (args, ctx) => {
@@ -293,8 +297,7 @@ const git: Handler = (args, ctx) => {
   for (let arg = args[index]; arg?.startsWith('-') === true; arg = args[index]) {
     const value = args[index + 1];
     if (arg === '-C' && value !== undefined) {
-      ctx.add(value, 'read');
-      ctx.chdir(value);
+      ctx.chdir(value, 'through-links');
       index += 2;
     } else if ((arg === '--git-dir' || arg === '--work-tree') && value !== undefined) {
       ctx.add(value, 'read');
@@ -494,7 +497,23 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
   env: wrapper('uS'),
 };
 
-function resolveWord(word: string, scope: PathScope, cwd: string): string | null {
+/**
+ * `word` made absolute against `base`, each `..` taken the way the kernel takes it: from
+ * where the directory before it really is. Under a linked `node_modules`,
+ * `node_modules/../src` names the `src` beside what the link points at. A `..` after a
+ * directory that does not exist drops it by name, since nothing is reached through it.
+ */
+export function resolveFollowingLinks(base: string, word: string): string {
+  let path: string = sep;
+  for (const segment of (isAbsolute(word) ? word : `${base}${sep}${word}`).split(sep)) {
+    if (segment === '..') path = dirname(existsSync(path) ? realpathSync(path) : path);
+    else if (segment !== '' && segment !== '.') path = join(path, segment);
+  }
+  return path;
+}
+
+/** What a word says for certain, its marks expanded; null when it names no path. */
+function certainText(word: string, scope: PathScope, cwd: string): string | null {
   const text = word
     .replaceAll(HOME_MARK, scope.home)
     .replaceAll(PWD_MARK, cwd)
@@ -505,7 +524,12 @@ function resolveWord(word: string, scope: PathScope, cwd: string): string | null
   );
   const certain = text.slice(0, cut);
   if (certain === '' || certain.startsWith('-') || certain.includes('://')) return null;
-  return resolve(cwd, certain);
+  return certain;
+}
+
+function resolveWord(word: string, scope: PathScope, cwd: string): string | null {
+  const certain = certainText(word, scope, cwd);
+  return certain === null ? null : resolveFollowingLinks(cwd, certain);
 }
 
 function analyzeWords(
@@ -521,8 +545,12 @@ function analyzeWords(
   if (name === undefined) return;
   const ctx: ShellContext = {
     state,
-    chdir: (word) => {
-      state.cwd = resolveWord(word, scope, state.cwd) ?? state.cwd;
+    chdir: (word, how) => {
+      const certain = certainText(word, scope, state.cwd);
+      if (certain === null) return;
+      state.cwd =
+        how === 'by-name' ? resolve(state.cwd, certain) : resolveFollowingLinks(state.cwd, certain);
+      out.push({ path: state.cwd, access: 'read', followsLink: true });
     },
     add: (word, access, followsLink = true) => {
       const path = resolveWord(word, scope, state.cwd);
@@ -539,7 +567,7 @@ function analyzeWords(
       }
     },
     changesPackages: (dir) => {
-      const path = resolveWord(join(dir, 'node_modules'), scope, state.cwd);
+      const path = resolveWord(`${dir}${sep}node_modules`, scope, state.cwd);
       if (path !== null) {
         out.push({ path, access: 'write', followsLink: true, changesPackages: true });
       }
