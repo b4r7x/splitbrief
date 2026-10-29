@@ -471,8 +471,6 @@ function createAdapter(
       role,
       supportsSessionResume: true,
       supportsEffort: CLI_TOOL_CATALOG[CLAUDE_ID].supportsEffort,
-      // `--permission-mode plan` keeps Read, Glob and Grep.
-      readsFiles: true,
       baseArgs: plannerBaseArgs,
       buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
     } satisfies CliPlannerAdapter<'claude-code'>;

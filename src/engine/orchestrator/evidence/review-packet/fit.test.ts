@@ -14,21 +14,12 @@ const EVIDENCE = {
   sessionLog: '/tmp/session/session.jsonl',
   drift: '/tmp/session/drift-report.json',
 };
-const declared = (path: string): boolean => path.startsWith('src/declared');
 
 function modified(path: string, body: string) {
   return {
     path,
     taskIds: ['T001'],
     diff: `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+${body}\n`,
-  };
-}
-
-function created(path: string, body: string) {
-  return {
-    path,
-    taskIds: ['T001'],
-    diff: `diff --git a/${path} b/${path}\nnew file mode 100644\n--- /dev/null\n+++ b/${path}\n@@ -0,0 +1 @@\n+${body}\n`,
   };
 }
 
@@ -51,7 +42,6 @@ function fitPrompt(prompt: FinalReviewPromptInput, limit: PromptLimit | undefine
     prompt,
     limit,
     suffix,
-    declared,
     evidencePaths: EVIDENCE,
   });
 }
@@ -67,51 +57,7 @@ describe('fitReviewPrompt', () => {
     }
   });
 
-  it('drops whole-file bodies first and stops as soon as the prompt fits', () => {
-    const result = fitPrompt(
-      input({
-        files: [
-          created('src/declared-new.ts', 'x'.repeat(15_000)),
-          modified('src/other.ts', 'y'.repeat(3_000)),
-        ],
-      }),
-      chars(10_000),
-    );
-    if (result.kind !== 'fits') throw new Error(`expected a fit, got ${result.kind}`);
-    expect(result.prompt.length).toBeLessThanOrEqual(10_000);
-    expect(result.size).toBe(result.prompt.length);
-    expect(result.prompt).not.toContain('x'.repeat(100));
-    expect(result.prompt).toContain('y'.repeat(3_000));
-    expect(result.dropped).toEqual([{ trim: 'full-file-context', items: ['src/declared-new.ts'] }]);
-    expect(result.prompt).toContain('## Trimmed for Size');
-    expect(result.prompt.split('## Trimmed for Size')[1]).toContain('src/declared-new.ts');
-  });
-
-  it('then drops the diffs of files no brief declares, after the whole-file bodies', () => {
-    const result = fitPrompt(
-      input({
-        files: [
-          created('src/declared-new.ts', 'x'.repeat(15_000)),
-          modified('src/declared.ts', 'd'.repeat(2_000)),
-          modified('src/other.ts', 'y'.repeat(15_000)),
-        ],
-        workspaceContext: [{ ...modified('docs/notes.md', 'z'.repeat(3_000)), taskIds: [] }],
-      }),
-      chars(10_000),
-    );
-    if (result.kind !== 'fits') throw new Error(`expected a fit, got ${result.kind}`);
-    expect(result.prompt.length).toBeLessThanOrEqual(10_000);
-    expect(result.dropped.map((drop) => drop.trim)).toEqual([
-      'full-file-context',
-      'undeclared-file-diffs',
-    ]);
-    expect(result.dropped[1]?.items).toEqual(['src/other.ts', 'docs/notes.md']);
-    expect(result.prompt).toContain('d'.repeat(2_000));
-    expect(result.prompt).not.toContain('y'.repeat(100));
-    expect(result.prompt).not.toContain('z'.repeat(100));
-  });
-
-  it('then drops the per-task evidence and names where it is recorded', () => {
+  it('drops the per-task evidence and names where it is recorded', () => {
     const result = fitPrompt(
       input({
         files: [modified('src/declared.ts', 'd'.repeat(2_000))],
@@ -135,7 +81,7 @@ describe('fitReviewPrompt', () => {
     expect(result.prompt).toContain('d'.repeat(2_000));
   });
 
-  it('reports the size, the cap and the largest files when even the trimmed prompt is over', () => {
+  it('reports the size and the cap when even the trimmed prompt is over', () => {
     const result = fitPrompt(
       input({
         files: [
@@ -148,12 +94,8 @@ describe('fitReviewPrompt', () => {
     if (result.kind !== 'too-large') throw new Error(`expected too-large, got ${result.kind}`);
     expect(result.limit).toEqual(chars(10_000));
     expect(result.size).toBeGreaterThan(10_000);
-    expect(result.largestFiles.map((file) => file.path)).toEqual([
-      'src/declared-a.ts',
-      'src/declared-b.ts',
-    ]);
-    expect(result.largestFiles[0]?.chars).toBeGreaterThan(result.largestFiles[1]?.chars ?? 0);
   });
+
   it('counts the text the call appends after the packet, such as the fallback schema', () => {
     const prompt = input({ files: [modified('src/declared.ts', 'd'.repeat(5_000))] });
     const whole = PREFIX + buildFinalReviewPrompt(prompt);

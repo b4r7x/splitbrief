@@ -148,7 +148,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. The commands tha
 | `splitbrief spec "feature"` | No TUI. Runs the planning session (`runPlanSession`) on the terminal; a planner question waits for a line on a TTY and takes its defaults without one | Writes `plan.json`, `plan.md` and `tasks.md`, then exits |
 | `splitbrief init` | `setup` (interactive config builder) | No session created |
 | `splitbrief status` | No TUI. Prints a summary of the active run's state: feature, phase, brief position, start time, session, seats and brief counts | Read-only; doesn't claim the lock |
-| `splitbrief review` | No TUI. One reviewer call over the working-tree diff, or the diff against `--base <ref>` | No session. Writes `review.json` and `review.md` to `.splitbrief/reviews/<stamp>/` |
+| `splitbrief review` | No TUI. One reviewer call over the working-tree diff, or the diff against `--base <ref>` | No session. Writes `review.json` and `review.md` to `.splitbrief/reviews/<stamp>/`, and for a CLI reviewer the `change.diff` it reads |
 | `splitbrief doctor` | No TUI. Prints readiness checks; `--probe-seat <seat>` makes one paid call through that seat | No session. A probe appends one record to `.splitbrief/probes/<tool>-<date>.jsonl` |
 
 ---
@@ -993,7 +993,7 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
 .splitbrief/
 ├── active                          JSON receipt {version: 1, sessionId, generation} (the lock)
 ├── config.yaml                     Project config (version: 3 — the only accepted version)
-├── reviews/<stamp>/                `splitbrief review` output: review.json + review.md (no session)
+├── reviews/<stamp>/                `splitbrief review` output: review.json + review.md, change.diff for a CLI reviewer (no session)
 ├── probes/<tool>-<date>.jsonl      `splitbrief doctor --probe-seat` records
 └── sessions/
     └── <session-id>/
@@ -1208,7 +1208,7 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 | `splitbrief resume` | — | Continue the most recent run at `resumeStep`. A version 3 `state.json` migrates to version 4 (`mapV3StateToV4`). Refuses a missing `state.json`, any other version, and a closed run. |
 | `splitbrief doctor` | — | Run readiness checks for config, tools, models, hooks, and project state. `--probe-seat <seat>` makes one paid call through the plan, build or review seat and appends a record to `.splitbrief/probes/<tool>-<date>.jsonl`. |
 | `splitbrief continue [session-id]` | — | Continue a named run from its saved state. `--action <skip\|retry\|restore\|switch-seat:…\|end-run>` answers its pending recovery first; `end-run` closes the run and stops there. `--action <apply\|discard>` settles a run that is ready to apply. |
-| `splitbrief review` | — | One reviewer call over the working-tree diff, or over the diff against `--base <ref>`. It opens no session and runs no planning. Writes `review.json` and `review.md` to `.splitbrief/reviews/<stamp>/`. |
+| `splitbrief review` | — | One reviewer call over the working-tree diff, or over the diff against `--base <ref>`. It opens no session and runs no planning. Writes `review.json` and `review.md` to `.splitbrief/reviews/<stamp>/`. A CLI reviewer reads the diff from `change.diff` in that folder. |
 
 ---
 

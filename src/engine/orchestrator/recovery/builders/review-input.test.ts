@@ -7,7 +7,8 @@ const failure = {
   kind: 'input-too-large' as const,
   figures: { unit: 'characters' as const, size: 1_100_000, limit: 1_048_576 },
   promptSize: { characters: 1_100_000 },
-  largestFiles: [{ path: 'src/big.ts', chars: 500_000 }],
+  changeFile: '.splitbrief/reviews/run-1.diff',
+  workspaceDir: '/work',
 };
 
 describe('buildReviewInputTooLargeRecoveryIssue', () => {
@@ -57,6 +58,36 @@ describe('buildReviewInputTooLargeRecoveryIssue', () => {
     );
   });
 
+  it('names the change file the seat reads in the run workspace, not diffs, after the choices', () => {
+    const issue = buildReviewInputTooLargeRecoveryIssue({
+      phase: 'final-review',
+      failure,
+      tool: 'Codex',
+      acceptAsIs: true,
+      createdAt,
+    });
+
+    expect(issue.details[0]).toMatch(/^A retry sends the same input\./);
+    expect(issue.details[1]).toBe(
+      'The reviewer reads the change from .splitbrief/reviews/run-1.diff in the run workspace, not from the prompt; the prompt holds the plan, the briefs and the evidence.',
+    );
+    expect(issue.facts?.changeFile).toBe('/work/.splitbrief/reviews/run-1.diff');
+  });
+
+  it('says the change can fill the context of a tool that refused with no cap', () => {
+    const issue = buildReviewInputTooLargeRecoveryIssue({
+      phase: 'final-review',
+      failure: { ...failure, figures: { unit: 'characters', size: null, limit: null } },
+      tool: 'Claude Code',
+      acceptAsIs: true,
+      createdAt,
+    });
+
+    expect(issue.details[1]).toBe(
+      'The reviewer reads the change from .splitbrief/reviews/run-1.diff in the run workspace, not from the prompt; the prompt holds the plan, the briefs and the evidence. A very large change can also fill the context of Claude Code when it reads that file.',
+    );
+  });
+
   it('offers and recommends the tools that take the prompt, keeping skip and end', () => {
     const issue = buildReviewInputTooLargeRecoveryIssue({
       phase: 'final-review',
@@ -78,7 +109,7 @@ describe('buildReviewInputTooLargeRecoveryIssue', () => {
     expect(issue.availableActions).toEqual(['switch-seat', 'accept-as-is', 'end-run']);
     expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.switchSeat).toEqual({ seat: 'review', candidates: [{ tool: 'opencode' }] });
-    expect(issue.details[1]).toBe(
+    expect(issue.details[0]).toBe(
       'A retry sends the same input. Change the REVIEW tool to one that takes it, Skip the review with a note (recorded, not a verification) or End the run (a workspace run saves its changes in run.patch).',
     );
     expect(RecoveryIssueSchema.safeParse(issue).success).toBe(true);

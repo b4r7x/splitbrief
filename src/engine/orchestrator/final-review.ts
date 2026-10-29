@@ -19,12 +19,12 @@ import {
   sessionDir,
 } from '../../core/paths.js';
 import { reviewName } from '../../core/recovery/headline.js';
-import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared-set.js';
 import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
 import { phaseStage } from '../../core/rail-stages.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { resolveEndChecks } from '../../core/config/runtime/resolve.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
+import { seatReadsChangeFile } from '../../core/runners/capabilities.js';
 import {
   getRunnerCatalogDisplayName,
   getRunnerDisplayName,
@@ -75,7 +75,7 @@ import { withContinuationLoop } from './continuation.js';
 import { composeContinuation } from '../spec/prompts/continuation.js';
 import { resolveRunUniverse, runUserFiles } from './evidence/review-packet/sections-io.js';
 import { resolveRunReviewScope, type RunReviewScope } from './evidence/review-packet/run-scope.js';
-import { fitReviewPrompt, largestReviewFiles } from './evidence/review-packet/fit.js';
+import { fitReviewPrompt } from './evidence/review-packet/fit.js';
 import type { BuildReviewPacketOptions } from './evidence/review-packet/types.js';
 import {
   inputTooLargeFigures,
@@ -83,7 +83,7 @@ import {
   type PromptLength,
   type PromptSize,
 } from '../runners/input-limit.js';
-import { cliPromptLimit, cliReviewReadsFiles } from '../runners/cli-tools/registry.js';
+import { cliPromptLimit } from '../runners/cli-tools/registry.js';
 import {
   typedRunnerCallErrorCode,
   typedRunnerCallErrorMessage,
@@ -171,7 +171,12 @@ export type FinalReviewFailure =
       figures: PromptSize;
       /** The prompt the seat was sent, so a seat change offers only the tools that take it. */
       promptSize: PromptLength;
-      largestFiles: readonly Readonly<{ path: string; chars: number }>[];
+      /**
+       * The file the seat reads the change from, relative to `workspaceDir`. Only a CLI seat has a
+       * cap or refuses a prompt as too large, and every CLI seat reads the change from this file.
+       */
+      changeFile: string;
+      workspaceDir: string;
     }>
   | Readonly<{ kind: 'seat-protocol-error'; error: SeatProtocolError }>;
 
@@ -401,12 +406,10 @@ export async function runFinalReviewPhase(opts: {
   const reviewRunner = resolveReviewerRunner(config).runner;
   const limit =
     reviewRunner.kind === 'cli' ? cliPromptLimit('planner', reviewRunner.tool) : undefined;
-  // A seat that reads files takes the change from the run workspace; `.splitbrief/` there is
-  // never a run change.
-  const changeFile =
-    reviewRunner.kind === 'cli' && cliReviewReadsFiles(reviewRunner.tool)
-      ? join(workspaceDir, reviewChangeFile(sessionId))
-      : undefined;
+  // `.splitbrief/` in the run workspace is never a run change.
+  const changeFile = seatReadsChangeFile(reviewRunner)
+    ? join(workspaceDir, reviewChangeFile(sessionId))
+    : undefined;
   const reviewModel = getRunnerModelName(reviewRunner);
   const reviewAxes = seatAxisWords(reviewRunner);
   const scope = opts.scope ?? 'final';
@@ -462,9 +465,6 @@ export async function runFinalReviewPhase(opts: {
   // The text the call appends after the prompt, such as the answer schema; it counts toward the
   // tool's limit too.
   let promptSuffix = '';
-  // The change a seat that reads files takes from a file; a seat that takes it in its prompt
-  // would carry it there too.
-  let changeText = '';
   let reviewInput: BuildReviewPacketOptions['reviewInput'];
   try {
     const baseline = state.changedFilesBaseline;
@@ -689,8 +689,11 @@ export async function runFinalReviewPhase(opts: {
         queueText,
       ].join('\n\n');
       if (changeFile !== undefined) {
-        changeText = reviewChangeText(promptScope);
-        await writeConfinedSecureFileAsync(workspaceDir, reviewChangeFile(sessionId), changeText);
+        await writeConfinedSecureFileAsync(
+          workspaceDir,
+          reviewChangeFile(sessionId),
+          reviewChangeText(promptScope),
+        );
       }
 
       return (suffix) => {
@@ -753,7 +756,7 @@ export async function runFinalReviewPhase(opts: {
                     laterDiff: promptScope.laterDiff,
                     workspaceContext: promptScope.workspaceContext,
                   }
-                : { changeFile }),
+                : { changeFile: { path: changeFile, provenance: true } }),
               plan,
               touchedNotSuggested,
               checkResults,
@@ -773,7 +776,6 @@ export async function runFinalReviewPhase(opts: {
             },
             limit,
             suffix,
-            declared: (path) => isInDeclaredSet(path, state.tasks.flatMap(taskDeclaredPatterns)),
             evidencePaths,
           });
           if (limit !== undefined) {
@@ -791,8 +793,9 @@ export async function runFinalReviewPhase(opts: {
             failure = {
               kind: 'input-too-large',
               figures: { unit: result.limit.unit, size: result.size, limit: result.limit.max },
-              promptSize: promptLength(fullPrompt + promptSuffix + changeText),
-              largestFiles: result.largestFiles,
+              promptSize: promptLength(fullPrompt + promptSuffix),
+              changeFile: reviewChangeFile(sessionId),
+              workspaceDir,
             };
             throw error('review-input-too-large', 'Review input exceeds the tool cap.');
           }
@@ -1078,16 +1081,14 @@ export async function runFinalReviewPhase(opts: {
     let message: string;
     let resetAt: string | undefined;
     if (typedRunnerCallErrorCode(err) === 'input-too-large') {
-      const sent = promptLength(fullPrompt + promptSuffix + changeText);
+      const sent = promptLength(fullPrompt + promptSuffix);
       const figures = inputTooLargeFigures(typedRunnerCallErrorMessage(err) ?? '');
       failure = {
         kind: 'input-too-large',
         figures: { ...figures, size: figures.size ?? sent[figures.unit] },
         promptSize: sent,
-        largestFiles: largestReviewFiles({
-          files: reviewScope?.files,
-          workspaceContext: reviewScope?.workspaceContext,
-        }),
+        changeFile: reviewChangeFile(sessionId),
+        workspaceDir,
       };
     }
     if (failure?.kind === 'input-too-large') {

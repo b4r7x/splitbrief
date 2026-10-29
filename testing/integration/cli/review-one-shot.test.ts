@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -14,6 +15,7 @@ import {
   activateCompatibleCliShim,
   installCompatibleCliShim,
 } from '#testing/helpers/compatible-cli-shim.js';
+import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -22,6 +24,7 @@ import { toYaml } from '../../../src/core/config/load/transform.js';
 import {
   CONFIG_FILE,
   REVIEWS_DIR,
+  REVIEW_CHANGE_FILE,
   REVIEW_FILE,
   REVIEW_JSON_FILE,
   SPLITBRIEF_DIR,
@@ -184,6 +187,40 @@ function installFakeClaude(): void {
   restoreCliShim = activateCompatibleCliShim(shim);
 }
 
+/** A physical `codex` that answers the admission probes and records the review call. */
+function installFakeCodex(): void {
+  const shim = installCompatibleCliShim({
+    directory: binDir,
+    tool: 'codex',
+    authChannel: 'session',
+  });
+  const descriptor = CLI_TOOL_CATALOG.codex;
+  const script = [
+    '#!/usr/bin/env node',
+    "const { appendFileSync, readFileSync } = require('node:fs');",
+    `const runLogPath = ${JSON.stringify(runLogPath)};`,
+    `const reviewText = ${JSON.stringify(REVIEW_TEXT)};`,
+    `const version = ${JSON.stringify(`${descriptor.command} ${descriptor.compatibility.testedVersion}`)};`,
+    'const args = process.argv.slice(2);',
+    'if (args.length === 1 && args[0] === "--version") {',
+    '  console.log(version);',
+    '  process.exit(0);',
+    '}',
+    'if (args.length === 2 && args[0] === "login" && args[1] === "status") {',
+    '  console.log("authenticated");',
+    '  process.exit(0);',
+    '}',
+    'if (!args.includes("exec")) process.exit(0);',
+    'const prompt = readFileSync(0, "utf-8");',
+    'appendFileSync(runLogPath, JSON.stringify({ args, prompt }) + "\\n");',
+    'console.log(JSON.stringify({ type: "thread.started", thread_id: "fake-review-thread" }));',
+    'console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: reviewText } }));',
+    'console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 40, output_tokens: 20 } }));',
+  ].join('\n');
+  writeFileSync(shim.path, script + '\n', 'utf-8');
+  restoreCliShim = activateCompatibleCliShim(shim);
+}
+
 function readRunLog(): Array<{ args: string[]; prompt: string; cwd?: string }> {
   if (!existsSync(runLogPath)) return [];
   return readFileSync(runLogPath, 'utf-8')
@@ -241,6 +278,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   restoreCliShim?.();
   restoreCliShim = undefined;
   if (priorApiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
@@ -301,7 +339,6 @@ describe('CLI integration: splitbrief review', () => {
     const call = runs[0];
     expect(call?.args).toContain('--permission-mode');
     expect(call?.args[(call?.args.indexOf('--permission-mode') ?? -1) + 1]).toBe('plan');
-    expect(call?.prompt).toContain(CHANGED_LINE);
     expect(call?.prompt).toContain(
       'none — review for correctness, scope creep, and test coverage of the diff',
     );
@@ -316,6 +353,10 @@ describe('CLI integration: splitbrief review', () => {
     const stamps = readdirSync(reviewsRoot);
     expect(stamps).toHaveLength(1);
     const stampDir = join(reviewsRoot, stamps[0] ?? '');
+    const changeFile = join(realpathSync(stampDir), REVIEW_CHANGE_FILE);
+    expect(readFileSync(changeFile, 'utf-8')).toContain(CHANGED_LINE);
+    expect(call?.prompt).toContain(`The change under review is in \`${changeFile}\``);
+    expect(call?.prompt).not.toContain(CHANGED_LINE);
     expect(readFileSync(join(stampDir, REVIEW_FILE), 'utf-8')).toContain(
       '### Verdict\n\npass_with_notes',
     );
@@ -324,6 +365,70 @@ describe('CLI integration: splitbrief review', () => {
       outcome: 'pass-with-notes',
       cycle: 0,
     });
+  });
+
+  it('hands a Codex reviewer the diff as a file beside its review, not in the prompt', async () => {
+    writeConfig(tmp, { reviewer: { kind: 'cli', tool: 'codex', model: AUTOMATIC_MODEL } });
+    writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
+    installFakeCodex();
+
+    const { stdout, exitCode } = await runReview(['--project', tmp]);
+
+    expect(exitCode, stdout).toBe(0);
+    const runs = readRunLog();
+    expect(runs).toHaveLength(1);
+    const reviewsRoot = join(tmp, SPLITBRIEF_DIR, REVIEWS_DIR);
+    const stamps = readdirSync(reviewsRoot);
+    expect(stamps).toHaveLength(1);
+    const changeFile = join(realpathSync(join(reviewsRoot, stamps[0] ?? '')), REVIEW_CHANGE_FILE);
+    expect(readFileSync(changeFile, 'utf-8')).toContain(CHANGED_LINE);
+    const prompt = runs[0]?.prompt ?? '';
+    expect(prompt).toContain(`The change under review is in \`${changeFile}\``);
+    expect(prompt).not.toContain(CHANGED_LINE);
+    // A one-shot review has no tasks, so its prompt speaks of none.
+    expect(prompt).not.toContain('tasks that changed it');
+    expect(prompt).not.toContain('Changed Files provenance');
+    expect(stdout).toContain('pass_with_notes');
+  });
+
+  it('keeps the diff in the prompt of an API reviewer and writes no change file', async () => {
+    writeConfig(tmp, {
+      reviewer: {
+        kind: 'api',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
+        apiBase: 'https://api.example.test/v1',
+        apiKey: 'test-key',
+        model: 'custom/test-review-model',
+        contextLength: 200_000,
+      },
+    });
+    writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
+    const prompts: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        if (request.url.includes('/models')) {
+          return Response.json({ data: [{ id: 'custom/test-review-model' }] });
+        }
+        prompts.push(await request.text());
+        return makeOpenAiSseResponse([
+          { content: REVIEW_TEXT },
+          { usage: { prompt_tokens: 40, completion_tokens: 20 } },
+        ]);
+      }),
+    );
+
+    const { stdout, exitCode } = await runReview(['--project', tmp, '--allow-repo-runners']);
+
+    expect(exitCode, stdout).toBe(0);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain(CHANGED_LINE);
+    const reviewsRoot = join(tmp, SPLITBRIEF_DIR, REVIEWS_DIR);
+    const stamps = readdirSync(reviewsRoot);
+    expect(existsSync(join(reviewsRoot, stamps[0] ?? '', REVIEW_CHANGE_FILE))).toBe(false);
   });
 
   it('reviews through an inline shell reviewer without admitting any other runner', async () => {

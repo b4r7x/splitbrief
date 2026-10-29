@@ -71,7 +71,7 @@ export const reviewPacketMarkdownPath = (ref: SessionRef): string =>
 export const getSplitbriefPath = (projectDir: string, ...parts: string[]): string =>
   join(projectDir, SPLITBRIEF_DIR, ...parts);
 
-/** The change a reviewer that reads files takes from the run workspace, relative to it. */
+/** The change a CLI reviewer reads from the run workspace, relative to it. */
 export function reviewChangeFile(sessionId: string): string {
   validateSessionId(sessionId);
   return join(SPLITBRIEF_DIR, REVIEWS_DIR, `${sessionId}.diff`);
@@ -84,6 +84,8 @@ export const TASKS_FILE = 'tasks.md';
 export const RESEARCH_FILE = 'research.md';
 export const REVIEW_FILE = 'review.md';
 export const REVIEW_JSON_FILE = 'review.json';
+/** The change a CLI reviewer of `splitbrief review` reads, beside its review.json. */
+export const REVIEW_CHANGE_FILE = 'change.diff';
 export const STATE_FILE = 'state.json';
 /** Seat identities the session started on; sits beside state.json (`core/state/seats.ts`). */
 export const SEATS_FILE = 'seats.json';

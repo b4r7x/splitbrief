@@ -149,6 +149,9 @@ type ReviewChange = Pick<
   'diff' | 'files' | 'laterDiff' | 'workspaceContext'
 >;
 
+/** The change file a reviewer reads; `provenance` when its blocks name the tasks that changed each file. */
+type ReviewChangeFile = Readonly<{ path: string; provenance: boolean }>;
+
 function changeSections(change: ReviewChange): PromptSection[] {
   return [
     {
@@ -176,8 +179,11 @@ export function reviewChangeText(change: ReviewChange): string {
     .join('\n\n');
 }
 
-function changeFileBody(path: string): string {
-  return `The change under review is in \`${path}\`: one block per changed file with the tasks that changed it, then the changes after the last recorded task completion and the Workspace Context, when present. Read this file whole, then read the changed files themselves in the workspace. Do not report as verified anything you did not read.`;
+function changeFileBody(file: ReviewChangeFile): string {
+  const holds = file.provenance
+    ? 'one block per changed file with the tasks that changed it, then the changes after the last recorded task completion and the Workspace Context, when present'
+    : 'one diff of every changed file';
+  return `The change under review is in \`${file.path}\`: ${holds}. Read this file whole, then read the changed files themselves in the workspace. Do not report as verified anything you did not read.`;
 }
 
 function touchedBody(entries: readonly ReviewTouchedNotSuggested[]): string {
@@ -223,7 +229,7 @@ export type FinalReviewPromptInput = {
   laterDiff?: string | undefined;
   workspaceContext?: readonly ReviewFileDiff[] | undefined;
   /** The file that holds the change, for a reviewer that reads it; replaces the diff sections. */
-  changeFile?: string | undefined;
+  changeFile?: ReviewChangeFile | undefined;
   trimmed?: string | undefined;
   /** The plan as data: the criteria with their checks, and the briefs. */
   plan?: ReviewPlanData | undefined;
@@ -366,9 +372,9 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
     instructionsSection(
       [
         reviewInstructions,
-        ...(opts.files === undefined && opts.changeFile === undefined
-          ? []
-          : [PROVENANCE_INSTRUCTIONS]),
+        ...(opts.files !== undefined || opts.changeFile?.provenance === true
+          ? [PROVENANCE_INSTRUCTIONS]
+          : []),
       ].join('\n\n'),
     ),
     { heading: 'Review Checklist', body: reviewChecklist },

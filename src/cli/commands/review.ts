@@ -13,6 +13,7 @@ import {
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
 import {
   REVIEWS_DIR,
+  REVIEW_CHANGE_FILE,
   REVIEW_FILE,
   REVIEW_JSON_FILE,
   SPLITBRIEF_DIR,
@@ -33,8 +34,10 @@ import { prepareReviewExecution } from '../../engine/runners/prepare-execution/p
 import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';
 import { requestTyped } from '../../engine/runners/typed-output.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
-import { buildFinalReviewPrompt } from '../../engine/spec/prompts/review.js';
+import { buildFinalReviewPrompt, reviewChangeText } from '../../engine/spec/prompts/review.js';
+import { seatReadsChangeFile } from '../../core/runners/capabilities.js';
 import { confinedWriteFile } from '../../lib/confined-fs.js';
+import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { getCurrentDiff, getDiffSince } from '../../lib/git/diff.js';
 import { getGitStatus } from '../../lib/git/files.js';
 import { sanitizeTerminalDisplayText, stripTerminalControls } from '../../utils/display-text.js';
@@ -60,7 +63,7 @@ import { cliPreparationPolicy, preparedExecutionOrThrow } from './start/readines
 
 const NO_SPECIFICATION =
   'none — review for correctness, scope creep, and test coverage of the diff';
-const NO_TASK_BRIEFS = 'none — this review has no briefs; the diff below is the whole subject';
+const NO_TASK_BRIEFS = 'none — this review has no briefs; the change below is the whole subject';
 const NOTHING_TO_REVIEW = 'nothing to review';
 
 type ReviewOpts = {
@@ -225,12 +228,20 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
           ctx.addIssue({ code: 'custom', message });
         }
       });
+      const relativeDir = join(SPLITBRIEF_DIR, REVIEWS_DIR, stamp);
+      const changeFile = join(relativeDir, REVIEW_CHANGE_FILE);
+      const readsChangeFile = seatReadsChangeFile(seat.runner);
+      if (readsChangeFile) {
+        await writeConfinedSecureFileAsync(projectDir, changeFile, reviewChangeText({ diff }));
+      }
       const verdict = await withCliErrors(async () => {
         const typed = await requestTyped({
           prompt: buildFinalReviewPrompt({
             spec: NO_SPECIFICATION,
             taskBriefs: NO_TASK_BRIEFS,
-            diff,
+            ...(readsChangeFile
+              ? { changeFile: { path: join(projectDir, changeFile), provenance: false } }
+              : { diff }),
           }),
           schema: verdictSchema,
           jsonSchema: REVIEW_VERDICT_JSON_SCHEMA,
@@ -253,7 +264,6 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
         verification: [],
         at: nowIso(),
       };
-      const relativeDir = join(SPLITBRIEF_DIR, REVIEWS_DIR, stamp);
       confinedWriteFile(
         projectDir,
         join(relativeDir, REVIEW_JSON_FILE),
