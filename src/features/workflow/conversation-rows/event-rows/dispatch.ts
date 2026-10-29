@@ -650,7 +650,7 @@ function consultAnsweredSegments(
     return [
       label,
       { text: `${arrowSep()}review stuck after ${event.taskId}: `, tone: 'textDim' },
-      { text: stuckAnswerWords(event.action, event.newTaskIds), tone: 'textDim' },
+      { text: stuckAnswerWords(event), tone: 'textDim' },
       { text: SOFT_SEP, tone: 'textDim' },
       { text: event.diagnosis, tone: 'textDim' },
     ];
@@ -700,6 +700,8 @@ function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): Conver
       return [{ text: 'asks you', tone: 'textDim' }];
     case 'cannot':
       return detail('cannot be done');
+    case 'accept':
+      return detail('accepts the blockers');
     case 'confirm':
       return detail('confirmed the deviation');
     default:

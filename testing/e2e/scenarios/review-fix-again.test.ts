@@ -37,6 +37,7 @@ test('total adds two numbers', () => {
 const FAILED = 'total("1", "2") returns "12".';
 const NOTE = 'Make total read numeric strings as numbers.';
 const DIAGNOSIS = 'total concatenates its string operands.';
+const CANNOT = 'The fix needs a decision on numeric strings.';
 
 const brief = makeTaskSpec({
   id: 'T001',
@@ -103,8 +104,9 @@ function readCalls(path: string): Call[] {
 
 /**
  * The first three final reviews fail on F1. The second finds the fix cycle moved nothing and asks
- * the planner, whose guidance goes with the next fix brief; the third, stuck again, halts. A review
- * that holds the note answers it with a fix brief; every later review passes.
+ * the planner, whose guidance goes with the next fix brief; the third, stuck again, asks the
+ * planner again, which reads its earlier answer and says it cannot. A review that holds the note
+ * answers it with a fix brief; every later review passes.
  */
 function plannerScript(callsPath: string): string {
   return `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
@@ -148,14 +150,16 @@ if (prompt.includes('# Final Implementation Review')) {
   }
 } else if (/^# Consult on a failing task$/m.test(prompt)) {
   call = { kind: 'consult', prompt };
-  answer = {
-    answer: {
-      diagnosis: ${JSON.stringify(DIAGNOSIS)},
-      action: 'guidance',
-      instructions: 'Convert the operands before adding them.',
-      context: null,
-    },
-  };
+  answer = prompt.includes('Your earlier answers on reviews without progress')
+    ? { answer: { diagnosis: ${JSON.stringify(DIAGNOSIS)}, action: 'cannot', reason: ${JSON.stringify(CANNOT)} } }
+    : {
+        answer: {
+          diagnosis: ${JSON.stringify(DIAGNOSIS)},
+          action: 'guidance',
+          instructions: 'Convert the operands before adding them.',
+          context: null,
+        },
+      };
 } else if (prompt.includes('# Plan the change')) {
   call = { kind: 'plan' };
   answer = ${JSON.stringify({ result: plan })};
@@ -224,15 +228,19 @@ describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () 
       `Continue with: splitbrief continue ${sessionId}, then choose Fix again in the recovery panel`,
     );
     expect(halted.stderr).toContain('Final review made no progress on F1 after fix cycle 2');
-    expect(halted.stdout.split('\n')).toContain(
-      `review: stuck after T002 · planner: guidance for T003 · ${DIAGNOSIS}`,
+    expect(halted.stderr).toContain(`Planner said: ${CANNOT}`);
+    expect(halted.stdout.split('\n')).toEqual(
+      expect.arrayContaining([
+        `review: stuck after T002 · planner: guidance for T003 · ${DIAGNOSIS}`,
+        `review: stuck after T003 · planner: says it cannot be done · ${DIAGNOSIS}`,
+      ]),
     );
     const ref = { projectDir: target.projectDir, sessionId };
     const failed = readState(target, sessionId);
     expect(failed.pendingRecovery).toMatchObject({
       reason: 'review-failed',
       recommendedAction: 'revise',
-      details: [`Planner: ${DIAGNOSIS}`, `Reviewer: F1: ${FAILED}`],
+      details: [`Planner said: ${CANNOT}`],
     });
     expect(failed.pendingRecovery?.availableActions).toContain('revise');
 
@@ -266,6 +274,7 @@ describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () 
       'consult',
       repair.title,
       'final-review',
+      'consult',
       'final-review',
       noteFix.title,
       'final-review',
@@ -274,9 +283,12 @@ describe('e2e: Fix again after a failed final review', { timeout: 300_000 }, () 
     expect(calls[6]?.prompt).toContain(
       'Planner guidance: Convert the operands before adding them.',
     );
-    expect(calls.slice(0, 8).some((call) => call.prompt?.includes(NOTE))).toBe(false);
-    expect(calls[8]?.prompt).toContain(`- **${inputId}** ${PENDING_NOTE}`);
-    expect(calls[9]?.prompt).toContain(`**${inputId}**: ${NOTE}`);
+    expect(calls[8]?.prompt).toContain(
+      `T002: ${DIAGNOSIS}; Convert the operands before adding them.`,
+    );
+    expect(calls.slice(0, 9).some((call) => call.prompt?.includes(NOTE))).toBe(false);
+    expect(calls[9]?.prompt).toContain(`- **${inputId}** ${PENDING_NOTE}`);
+    expect(calls[10]?.prompt).toContain(`**${inputId}**: ${NOTE}`);
 
     const ready = readState(target, sessionId);
     expect(ready.reviewStatus).toBe('passed');

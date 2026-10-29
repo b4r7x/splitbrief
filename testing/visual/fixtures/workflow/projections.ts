@@ -3409,7 +3409,10 @@ const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
-/** A scheduled task review whose fix cycle left the same blockers: it names its brief and them. */
+/**
+ * A scheduled task review whose fix cycle left the same blockers, and the planner said it cannot
+ * fix them: it names its brief, them and the planner's reason.
+ */
 const taskReviewNoProgressRecoveryProjection: WorkflowFixtureProjection = {
   ...reviewFailedRecoveryProjection,
   scenarioId: scenarioId('workflow-recovery-task-review-no-progress'),
@@ -3437,6 +3440,7 @@ const taskReviewNoProgressRecoveryProjection: WorkflowFixtureProjection = {
         blocking: 1,
         noProgress: ['F1'],
         fixCycle: 2,
+        cannot: 'The cache key is built in the registry, and the plan keeps the registry closed.',
         phase: 'implementing',
         scope: 'task',
         afterTaskId: WORKFLOW_FIXTURE_FIX_TASK_ID,

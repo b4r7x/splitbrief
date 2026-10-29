@@ -181,7 +181,10 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   if (projection.scenarioId === 'workflow-ready-slash-command') {
     return () => ({ ...base(), afterMount: (write) => write.press('/settings') });
   }
-  if (projection.scenarioId === 'workflow-ready-override-confirm') {
+  if (
+    projection.scenarioId === 'workflow-ready-override-confirm' ||
+    projection.scenarioId === 'workflow-ready-planner-accept-confirm'
+  ) {
     return () => ({ ...base(), afterMount: (write) => write.press('\r') });
   }
   if (projection.scenarioId === 'workflow-ready-empty-diff') {
@@ -985,6 +988,10 @@ const checkpointPredicates = [
     checkpointId('ready-override-confirm'),
     includesAll('Apply with 2 open findings?', '- Edge case missing src/'),
   ],
+  [
+    checkpointId('ready-planner-accept-confirm'),
+    includesAll('Apply with 2 open findings?', "Planner's note:"),
+  ],
   [checkpointId('closed-applied'), includesAll()],
   [checkpointId('closed-pre-existing'), includesAll('V2 pre-existing')],
   // A finding wraps at words, so at 60x18 the earlier failed review scrolls above the viewport.
@@ -1000,6 +1007,7 @@ const checkpointPredicates = [
   [checkpointId('closed-discarded'), includesAll()],
   [checkpointId('closed-rejected'), includesAll()],
   [checkpointId('closed-needs-attention'), includesAll()],
+  [checkpointId('closed-planner-accept'), includesAll('Accepted as is', "Planner's note:")],
   [checkpointId('closed-ended'), includesAll()],
   [checkpointId('closed-ended-empty'), includesAll()],
   [checkpointId('closed-ended-workspace'), includesAll('run.patch')],

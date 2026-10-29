@@ -2786,6 +2786,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-ready-planner-accept-confirm',
+      title: 'Workflow · Apply as is after the planner accepted a review without progress',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-planner-accept-confirm',
+        title: "Apply as is confirmation with the planner's note",
+        kind: 'ready',
+        marker: "Planner's note:",
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-applied',
       title: 'Workflow · applied to the checkout',
       surface: screenSurface('workflow'),
@@ -2906,6 +2922,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Closed run needing attention',
         kind: 'success',
         marker: 'visual-closed-needs-attention',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-planner-accept',
+      title: 'Workflow · closed after the planner accepted the open findings',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-planner-accept',
+        title: "The closed ledger names the accept and the planner's note under the review",
+        kind: 'success',
+        marker: 'visual-closed-planner-accept',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3833,7 +3865,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-task-review-no-progress',
-      title: 'Workflow · a task review whose fix cycle left the same blockers',
+      title: 'Workflow · a task review stuck on the same blockers that the planner cannot fix',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'task-review-no-progress',

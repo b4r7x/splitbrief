@@ -21,6 +21,7 @@ import {
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import {
+  cannotConsult,
   failedReviewVerdict,
   passingReviewVerdict,
   passingVerdict,
@@ -31,6 +32,7 @@ import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type {
   ReviewChecksPlan,
@@ -182,6 +184,8 @@ function runOptions(opts: {
   /** The triage answer; the default rejects every blocking finding. */
   triage?: ((prompt: string, call: number) => TriageResult | string) | undefined;
   checks?: ((prompt: string) => ReviewChecksPlan) | undefined;
+  /** The planner's answer on a review without progress; the default says it cannot fix it. */
+  consult?: ((prompt: string) => ConsultAnswer) | undefined;
   onComplete: () => void;
   sinks?: WorkflowSinks | undefined;
   signal?: AbortSignal | undefined;
@@ -212,6 +216,7 @@ function runOptions(opts: {
       },
       undefined,
       opts.checks,
+      opts.consult ?? (() => cannotConsult()),
     ),
   });
   const implementer =
@@ -997,6 +1002,99 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       review: 'failed',
       blocking: 1,
     });
+  });
+
+  it.each([
+    ['worktree', { kind: 'ready-to-apply', override: true }],
+    ['checkout', { kind: 'closed', as: 'complete' }],
+  ] as const)(
+    "completes a %s run on the planner's accept of a stuck final review, with the failed verdict",
+    async (kind, status) => {
+      const { projectDir, sessionId, head } = setupProject();
+      const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+      const onComplete = vi.fn();
+      const note = 'The crash path is unreachable from the public API';
+      const { events, options } = runOptions({
+        projectDir,
+        sessionId,
+        state: {
+          ...stuckReviewState(tasks, head, ['finding:F1']),
+          ...(kind === 'checkout' && {
+            workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head } },
+          }),
+        },
+        review: (prompt) =>
+          failedReviewVerdict(prompt, 'src/alpha.ts still crashes', { taskId: 'T001' }),
+        consult: () => ({
+          answer: { diagnosis: 'The crash is unreachable', action: 'accept', note },
+        }),
+        onComplete,
+        ...(kind === 'checkout' && {
+          config: makeNoValidationConfig({ workflow: { isolation: 'none' } }),
+        }),
+      });
+
+      const result = await runTasksAndReview(options);
+
+      expect(result.completed).toBe(true);
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(result.state.reviewStatus).toBe('failed');
+      expect(result.state.acceptedAsIs).toMatchObject({ note, by: 'planner' });
+      expect(deriveRunStatus({ state: result.state, liveness: 'not-alive' })).toEqual(status);
+      expect(events.filter((e) => e.type === 'workflow_complete')).toMatchObject([
+        { review: 'failed', blocking: 1 },
+      ]);
+    },
+  );
+
+  it("gives the next review the result of the planner's verify of a stuck review", async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    let runs = 0;
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args) => {
+      const command = [cmd, ...args].join(' ');
+      if (cmd === 'test' && ++runs <= 2)
+        throw processError.exitCode({ command, code: 1, stderr: '', output: 'flaky red' });
+      return { stdout: 'ok', stderr: '', code: 0 };
+    });
+    const unverified = (prompt: string) => ({
+      ...failedReviewVerdict(prompt, 'K9 did not show the greeting works', {
+        kind: 'unverified',
+        checkIds: ['K9'],
+      }),
+      fixTasks: [],
+    });
+    const { reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: {
+        ...resumedReviewState(tasks, head, 0),
+        plan: {
+          summary: 'Greet.',
+          decisions: [],
+          criteria: [],
+          checks: [{ id: 'K9', kind: 'cmd', value: 'test -e greeting.txt', required: false }],
+          validation: null,
+        },
+      },
+      review: (prompt, call) => (call === 1 ? unverified(prompt) : passingReviewVerdict(prompt)),
+      consult: () => ({
+        answer: { diagnosis: 'K9 is flaky', action: 'verify', checkIds: ['K9'], reason: 'flaky' },
+      }),
+      onComplete: vi.fn(),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    // The pre-review run and the review's own run of K9 are red; the planner's verify runs it
+    // past that red, and the next review reads the green.
+    expect(runs).toBe(3);
+    expect(reviewPrompts).toHaveLength(2);
+    expect(reviewPrompts[0]).toContain('- plan check K9: fail');
+    expect(reviewPrompts[1]).toContain('- plan check K9: pass');
+    expect(reviewPrompts[1]).toContain('no-progress → verify: K9 is flaky');
+    expect(result.state.reviewStatus).toBe('passed');
   });
 
   // A checkout run has nothing to apply: accepting the failed review as is records the override,

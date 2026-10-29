@@ -265,7 +265,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
       case 'consult_answered':
         if (bounded.reason === 'no-progress')
           write(
-            `review: stuck after ${bounded.taskId}${SOFT_SEP}planner: ${stuckAnswerWords(bounded.action, bounded.newTaskIds)}${SOFT_SEP}${oneLineDisplayText(bounded.diagnosis)}`,
+            `review: stuck after ${bounded.taskId}${SOFT_SEP}planner: ${stuckAnswerWords(bounded)}${SOFT_SEP}${oneLineDisplayText(bounded.diagnosis)}`,
           );
         return;
       case 'workflow_complete': {

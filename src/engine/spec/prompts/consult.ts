@@ -63,7 +63,7 @@ const REASON_TEXT: Record<ConsultReason, string> = {
   failed: 'The task failed: its last attempt or one of its checks did not pass.',
   blocked: 'The implementer stopped and needs a decision that is not its own to make.',
   'no-progress':
-    "The review judged the fix cycle of this task and its blockers did not move. Your answer shapes the next fix cycle: guidance goes with the reviewer's next fix briefs, a rewrite or a split replaces them, ask-user asks the user. verify and cannot are not available.",
+    "The review made no progress: its blockers did not move after a fix cycle, its answer fixes none of them, or it failed with no blocker on criteria no check verified. The failing output lists your earlier answers on reviews without progress; choose again with them in view. guidance goes with the reviewer's next fix briefs, and needs at least one. A rewrite or a split replaces them. verify re-runs the named checks on the same tree, for a red that may be a flake, and the review runs again. accept leaves every remaining blocker open with your note and keeps the failed verdict; the user reads the note before Apply. A red check or an Apply conflict that blocks cannot be accepted: verify the red check or fix it. ask-user asks the user. cannot stops the run and asks the user.",
 };
 
 const CONSULT_ROLE: Record<ConsultSeat, string> = {
@@ -81,6 +81,7 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
 - \`verify\` — \`checkIds\` and \`reason\`: re-run exactly those checks before any retry, for when the failure may predate this task's own edits.
 - \`ask-user\` — \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
 - \`cannot\` — \`reason\`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that. SPLITBRIEF stops the brief and asks the user.
+- \`accept\` — \`note\`: a stuck review only. The remaining blockers need no more work; the note says why, and the user reads it before Apply.
 
 The operator rule: the Operator Instructions are the user's own decisions for this task. No action undoes one of them. A question that concerns one of them quotes it, and its default keeps it.
 
@@ -197,7 +198,7 @@ function revisionBody(revision: Task): string {
   ].join('\n');
 }
 
-function consultAnswerDetail(answer: ConsultRecord['answer']): string {
+export function consultAnswerDetail(answer: ConsultRecord['answer']): string {
   const action = answer.answer;
   switch (action.action) {
     case 'guidance':
@@ -212,6 +213,8 @@ function consultAnswerDetail(answer: ConsultRecord['answer']): string {
       return `asked the user: ${action.question}`;
     case 'cannot':
       return `cannot be done: ${action.reason}`;
+    case 'accept':
+      return `accepted the blockers: ${action.note}`;
     default:
       return assertNever(action);
   }

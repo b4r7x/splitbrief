@@ -8,6 +8,7 @@ import {
   stopMenuLayout,
 } from '../../features/workflow/stop/options.js';
 import { ResultMenu } from '../../features/workflow/result/menu.js';
+import { acceptedNote } from '../../core/review/verdict.js';
 import {
   RESULT_MENU_COMPOSER_HINT,
   resultMenuHeight,
@@ -293,17 +294,22 @@ export function WorkflowScreen({
     checksCardOpen && (checksFocus?.request !== checksRequest || checksFocus.menu);
   const override =
     ready !== undefined && ready.status.kind === 'ready-to-apply' ? ready.status.override : false;
-  const findings =
+  const accepted =
     ready !== undefined && ready.hydration.kind === 'loaded'
-      ? (ready.hydration.state.acceptedAsIs?.findings ?? [])
-      : [];
+      ? ready.hydration.state.acceptedAsIs
+      : undefined;
+  const findings = accepted?.findings ?? [];
+  const acceptNote = accepted === undefined ? undefined : acceptedNote(accepted);
   const changedFiles = ready === undefined ? null : changedFileCount(ready.summary);
   const railForm = selectRailForm({ phase: model.phase, cols });
   const reviewBudgetRows = getReviewPanelBudget({ rows, inputRows });
   const requestedPromptRows = stopMenuOpen
     ? stopMenuLayout(readStopMenuRows(), cols).height
     : resultMenuOpen
-      ? resultMenuHeight({ override, findings, confirming, files: changedFiles }, cols)
+      ? resultMenuHeight(
+          { override, findings, note: acceptNote, confirming, files: changedFiles },
+          cols,
+        )
       : checksCardOpen
         ? reviewChecksCardLayout(checksRequest, cols).height
         : getWorkflowPromptRows({
@@ -528,6 +534,7 @@ export function WorkflowScreen({
                   height={promptBoxRows}
                   override={override}
                   findings={findings}
+                  note={acceptNote}
                   files={changedFiles}
                   confirming={confirming}
                   onConfirmingChange={setConfirming}

@@ -16,6 +16,7 @@ import {
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import {
+  cannotConsult,
   failedReviewVerdict,
   passingReviewVerdict,
   planFromTasks,
@@ -141,6 +142,9 @@ function runOptions(opts: {
         triagePrompts.push(prompt);
         return typeof fixWork === 'string' ? fixWork : { ...verdict, ...fixWork };
       },
+      undefined,
+      undefined,
+      () => cannotConsult(),
     ),
   });
   const implementer = makeImplementer({

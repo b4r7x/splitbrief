@@ -584,6 +584,7 @@ export function transition(
           at: now.toISOString(),
           findings: action.findings,
           ...(action.note !== undefined && { note: action.note }),
+          ...(action.by !== undefined && { by: action.by }),
         },
         applyReview: undefined,
         pendingTriage: undefined,

@@ -1,12 +1,15 @@
 import { isTaskCompleted, type TaskId } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import {
   blockingEntries,
   blockingKeys,
   blockingRedInputs,
+  openFindings,
   reviewOutcomeOf,
   reviewsAgain,
+  setAsideInputs,
 } from '../../../core/review/verdict.js';
+import { renderReviewMarkdown } from '../../../core/review/render.js';
+import { writeSpecFile } from '../../../core/paths-io.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
@@ -30,7 +33,7 @@ import { haltSeatProtocolError } from '../recovery/seat-protocol-halt.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { applyTriage, startFixCycle } from '../triage.js';
 import { askPlannerOnStuckReview } from './stuck-review.js';
-import { stuckConsult, stuckTarget } from '../../../core/review/stuck.js';
+import { stuckTarget } from '../../../core/review/stuck.js';
 import { sameFailure } from '../../../core/state/progress.js';
 import { runPreReview } from './pre-review-checks.js';
 import {
@@ -41,6 +44,7 @@ import {
 import { waitForPlannerReply } from '../planning/call-loop.js';
 import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
 import type { ReviewOutcome } from '../../../core/review/verdict.js';
+import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks, WorkflowContext } from '../types.js';
 
 function noVerdictFailure(review: FinalReviewResult, name: string): FinalReviewFailure | undefined {
@@ -88,6 +92,7 @@ async function haltFailedReview(args: {
   noProgress?: readonly string[] | undefined;
   fixCycle?: number | undefined;
   unverified?: number | undefined;
+  cannot?: string | undefined;
   details?: readonly string[] | undefined;
 }): Promise<WorkflowState> {
   const ref = { projectDir: args.wctx.projectDir, sessionId: args.wctx.sessionId };
@@ -123,6 +128,7 @@ async function haltFailedReview(args: {
     ...(args.noProgress !== undefined && { noProgress: args.noProgress }),
     ...(args.fixCycle !== undefined && { fixCycle: args.fixCycle }),
     ...(args.unverified !== undefined && { unverified: args.unverified }),
+    ...(args.cannot !== undefined && { cannot: args.cannot }),
     details,
     acceptAsIs: !scheduled && !redPending,
     scope: scheduled ? 'task' : 'final',
@@ -221,6 +227,76 @@ export function reviewPassed(
   );
 }
 
+/**
+ * Where a followed review answer leaves the run: stopped, reviewing the same candidate again,
+ * running the fix cycle it started, or with the planner's Accept as is.
+ */
+export type FollowedReview = Readonly<{
+  state: WorkflowState;
+  next: 'stop' | 'review' | 'fix' | 'accepted';
+}>;
+
+/**
+ * The planner's Accept as is of a stuck review, as yours at a halt: the blockers stay open with
+ * the planner's note, a final review closes as failed and a scheduled review clears, so the next
+ * brief starts. `review.md` names the note.
+ */
+function acceptStuckReview(args: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  setTrackedState: (s: WorkflowState) => void;
+  candidate: Record<string, string> | undefined;
+  judged: ReviewRecord;
+  fixWork: TriageResult;
+  inputs: readonly TriageInput[];
+  note: string;
+}): WorkflowState {
+  const { wctx, judged } = args;
+  const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
+  const outcome = reviewOutcomeOf(judged);
+  writeSpecFile(
+    ref,
+    REVIEW_FILE,
+    renderReviewMarkdown(
+      judged.verdict,
+      outcome,
+      judged.preExistingChecks ?? [],
+      setAsideInputs(args.inputs, args.fixWork),
+      args.note,
+    ),
+    wctx.metadata,
+  );
+  const scheduled = judged.scope === 'task' && args.state.phase === 'implementing';
+  let state = transitionAndSave(
+    ref,
+    args.state,
+    scheduled
+      ? { type: 'CLEAR_SCHEDULED_REVIEW' }
+      : {
+          type: 'REVIEW_DONE',
+          reviewStatus: 'failed',
+          ...(args.candidate !== undefined && { candidate: args.candidate }),
+        },
+  );
+  state = transitionAndSave(ref, state, {
+    type: 'ACCEPT_AS_IS',
+    findings: openFindings(outcome),
+    note: args.note,
+    by: 'planner',
+  });
+  args.setTrackedState(state);
+  if (!scheduled)
+    wctx.bus.publish({
+      type: 'workflow_complete',
+      ts: Date.now(),
+      phase: state.phase,
+      review: 'failed',
+      blocking: blockingEntries(outcome).length,
+      completedTasks: state.tasks.filter((task) => isTaskCompleted(task.status)).length,
+    });
+  return state;
+}
+
 export async function followReviewAnswer(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
@@ -228,7 +304,7 @@ export async function followReviewAnswer(args: {
   callbacks: OrchestratorCallbacks;
   candidate: Record<string, string> | undefined;
   fixWork: TriageResult | null;
-}): Promise<{ state: WorkflowState; stopped: boolean; reviewAgain: boolean }> {
+}): Promise<FollowedReview> {
   const { wctx, setTrackedState, callbacks } = args;
   let state = args.state;
   const judged = state.review;
@@ -269,7 +345,7 @@ export async function followReviewAnswer(args: {
         redInputs,
         details: ['The review asked a question this run has no way to answer.'],
       });
-      return { state, stopped: true, reviewAgain: false };
+      return { state, next: 'stop' };
     }
     const answered = consultReplyAnswer({ id: 'review-ask', type: 'input', text: question }, reply);
     state = transitionAndSave(wctx, state, {
@@ -291,27 +367,15 @@ export async function followReviewAnswer(args: {
     });
     state = rebaseOnPersistedWorkflowState(wctx, state);
     setTrackedState(state);
-    return { state, stopped: false, reviewAgain: true };
+    return { state, next: 'review' };
   }
-  if (fixWork.fixTasks.length === 0 && fixWork.verify.length === 0) {
-    const unverified = reviewOutcomeOf(judged).unverifiedCriteria;
-    state = await haltFailedReview({
-      wctx,
-      state,
-      setTrackedState,
-      candidate: args.candidate,
-      blocking,
-      redInputs,
-      ...(blocking > 0
-        ? { noProgress: blockers }
-        : unverified.length > 0 && { unverified: unverified.length }),
-      ...(unverified.length > 0 && { details: [`Unverified criteria: ${unverified.join(', ')}`] }),
-    });
-    return { state, stopped: true, reviewAgain: false };
-  }
-  // A fix cycle that left the same blockers moved nothing; a note from the user always starts the next one.
-  // Only the review that judges the cycle compares. A cycle that ran no fix task only re-ran checks,
-  // so it moved nothing only when this answer again asks for no fix task.
+  // A round made no progress when the answer fixes and re-runs nothing, also when the review failed
+  // with no blocker (a criterion no check verified), or when the fix cycle it judges left the same
+  // blockers. Only the review that judges the cycle compares, and a round the user steered never
+  // does. A cycle that ran no fix task only re-ran checks, so it moved nothing only when this answer
+  // again asks for no fix task.
+  const idle = fixWork.fixTasks.length === 0 && fixWork.verify.length === 0;
+  const unverified = reviewOutcomeOf(judged).unverifiedCriteria;
   const started =
     judged.judges === undefined
       ? undefined
@@ -320,62 +384,75 @@ export async function followReviewAnswer(args: {
     started !== undefined && (started.result.fixTasks.length > 0 || fixWork.fixTasks.length === 0)
       ? started.blocking
       : undefined;
-  const after = blockingKeys(reviewOutcomeOf(judged), inputs);
+  const stuck =
+    idle ||
+    (blocking > 0 &&
+      before !== undefined &&
+      !inputs.some((input) => input.source === 'user') &&
+      sameFailure(
+        [{ source: 'review', keys: before }],
+        [{ source: 'review', keys: blockingKeys(reviewOutcomeOf(judged), inputs) }],
+      ));
   let next = fixWork;
-  if (
-    started !== undefined &&
-    before !== undefined &&
-    after.length > 0 &&
-    !inputs.some((input) => input.source === 'user') &&
-    sameFailure([{ source: 'review', keys: before }], [{ source: 'review', keys: after }])
-  ) {
-    // A stuck cycle of fix briefs goes to the planner once; the cycle after the planner's round,
-    // stuck again, halts with both diagnoses. A planner that asked the user starts the count over.
-    const target = stuckTarget(state, started.cycle);
-    const earlier = stuckConsult(state, started.cycle - 1);
-    const plannerRound = earlier?.action === 'ask-user' ? undefined : earlier;
-    if (
-      target === undefined ||
-      plannerRound !== undefined ||
-      started.result.fixTasks.length === 0 ||
-      fixWork.fixTasks.length === 0
-    ) {
-      // The planner's diagnosis leads: the recovery panel shows only the first detail rows.
-      const diagnoses =
-        plannerRound === undefined
-          ? undefined
-          : [
-              `Planner: ${plannerRound.diagnosis}`,
-              ...entries.map((entry) => `Reviewer: ${entry.id}: ${entry.text}`),
-            ];
-      state = await haltFailedReview({
-        wctx,
-        state,
-        setTrackedState,
-        candidate: args.candidate,
-        blocking,
-        redInputs,
-        noProgress: blockers,
-        fixCycle: started.cycle,
-        ...(diagnoses !== undefined && { details: diagnoses }),
-      });
-      return { state, stopped: true, reviewAgain: false };
+  if (stuck) {
+    // Every round without progress goes to the planner, which sees its earlier answers and
+    // decides again; its cannot, its ask-user in a run that cannot ask, or a seat that is down
+    // stops the run.
+    const target = stuckTarget(state, started?.cycle);
+    if (target === undefined) {
+      throw error('stuck-review-target', 'The run holds no brief to ask the planner on.');
     }
     const asked = await askPlannerOnStuckReview({
       wctx,
       state,
       setTrackedState,
-      cycle: started.cycle,
+      cycle: started?.cycle,
       target,
+      review: judged,
       fixWork,
       inputs,
       blockers: entries,
+      unverified,
     });
     state = asked.state;
-    if (asked.kind !== 'fix-work') return { state, stopped: true, reviewAgain: false };
-    if (asked.fixWork.ask !== null)
-      return followReviewAnswer({ ...args, state, fixWork: asked.fixWork });
-    next = asked.fixWork;
+    switch (asked.kind) {
+      case 'stopped':
+      case 'halted':
+        return { state, next: 'stop' };
+      case 'cannot':
+        state = await haltFailedReview({
+          wctx,
+          state,
+          setTrackedState,
+          candidate: args.candidate,
+          blocking,
+          redInputs,
+          cannot: asked.reason,
+          ...(blocking > 0
+            ? { noProgress: blockers, fixCycle: started?.cycle }
+            : unverified.length > 0 && {
+                unverified: unverified.length,
+                details: [`Unverified criteria: ${unverified.join(', ')}`],
+              }),
+        });
+        return { state, next: 'stop' };
+      case 'accept':
+        state = acceptStuckReview({
+          wctx,
+          state,
+          setTrackedState,
+          candidate: args.candidate,
+          judged,
+          fixWork,
+          inputs,
+          note: asked.note,
+        });
+        return { state, next: 'accepted' };
+      case 'fix-work':
+        if (asked.fixWork.ask !== null)
+          return followReviewAnswer({ ...args, state, fixWork: asked.fixWork });
+        next = asked.fixWork;
+    }
   }
   const applied = applyTriage(
     wctx,
@@ -392,7 +469,7 @@ export async function followReviewAnswer(args: {
     setTrackedState,
     taskIds: applied.tasks.map((task) => task.id),
   });
-  return { state, stopped: false, reviewAgain: false };
+  return { state, next: 'fix' };
 }
 
 export type ScheduledReviewResult = Readonly<{
@@ -415,9 +492,13 @@ export async function followPendingReview(
     });
   }
   if (pending?.plannerConsult !== true) return undefined;
+  // An answer that fixes, re-runs, rejects and asks nothing records no triage.
   const reviewAt = args.state.review?.at;
   const fixWork = args.state.triage?.findLast((record) => record.reviewAt === reviewAt)?.result;
-  return followReviewAnswer({ ...args, fixWork: fixWork ?? null });
+  return followReviewAnswer({
+    ...args,
+    fixWork: fixWork ?? { fixTasks: [], rejected: [], verify: [], ask: null },
+  });
 }
 
 export async function runScheduledReview(args: {
@@ -448,8 +529,8 @@ export async function runScheduledReview(args: {
     });
     if (answered !== undefined) {
       state = answered.state;
-      if (answered.stopped) return { state, status: 'stopped' };
-      if (!answered.reviewAgain) return { state, status: 'continue' };
+      if (answered.next === 'stop') return { state, status: 'stopped' };
+      if (answered.next !== 'review') return { state, status: 'continue' };
     }
     const reviewAgain = reviewsAgain(state, 'task', anchor);
     const review = await runFinalReviewPhase({
@@ -499,7 +580,7 @@ export async function runScheduledReview(args: {
       fixWork: review.fixWork,
     });
     state = followed.state;
-    if (followed.stopped) return { state, status: 'stopped' };
-    if (!followed.reviewAgain) return { state, status: 'continue' };
+    if (followed.next === 'stop') return { state, status: 'stopped' };
+    if (followed.next !== 'review') return { state, status: 'continue' };
   }
 }

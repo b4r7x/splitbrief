@@ -356,6 +356,8 @@ function consultTable(): string {
     verify: 'Run the brief gate and named registered checks. Make no implementer call.',
     'ask-user': 'Ask only when the user alone can answer. Record why, choices and a default.',
     cannot: 'Stop the brief and ask the user. Make no implementer call.',
+    accept:
+      'Only on a review without progress, and never while a red check or an Apply conflict blocks. Keep the open blockers and the failed verdict with a note. A workspace run is ready to apply as is, a checkout run closes, and a task-cadence review lets the next brief start.',
   };
   return [
     `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a consult.`,
@@ -613,7 +615,7 @@ function fixCycle(): string {
     'Keep criteria when repairing a check command. Ask the user before changing the accepted outcome.',
     'Run fix cycles until the review passes, at end and at task cadence.',
     'Prepare each fresh review with references/gates.md.',
-    'When a review answer fixes nothing, or a fix cycle leaves the same blockers, halt as needs you and name them. Preserve open findings and never claim verification passed.',
+    'When a review answer fixes nothing, a fix cycle leaves the same blockers, or a review fails with no blocker, consult the planner with the blockers and its earlier answers on such rounds. Follow its answer. Halt as needs you on its cannot and name the blockers. Preserve open findings and never claim verification passed.',
   ]);
 }
 

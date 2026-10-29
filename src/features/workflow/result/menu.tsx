@@ -23,6 +23,7 @@ import {
 export interface ResultMenuProps {
   override: boolean;
   findings: readonly string[];
+  note?: string | undefined;
   files: number | null;
   focused: boolean;
   confirming: boolean;
@@ -40,6 +41,7 @@ export function ResultMenu(props: ResultMenuProps) {
 function ResultMenuBody({
   override,
   findings,
+  note,
   files,
   focused,
   height,
@@ -51,7 +53,7 @@ function ResultMenuBody({
 }: ResultMenuProps) {
   const t = useTheme();
   const cols = terminalSizeStore.use((state) => state.cols);
-  const input = { override, findings, confirming, files };
+  const input = { override, findings, note, confirming, files };
   const rows = resultMenuRows(input);
   const layout = stopMenuLayout(rows, cols);
 
@@ -91,9 +93,14 @@ function ResultMenuBody({
     Math.max(1, layout.width - 4),
   );
   const boxHeight = height ?? resultMenuHeight(input, cols);
-  // Border, title and legend take four rows; the actions keep theirs, the findings get the rest.
+  // Border, title and legend take four rows; the actions and the note keep theirs, the findings
+  // get the rest.
+  const noteLines = confirming && note !== undefined ? [note] : [];
   const findingLines = confirming
-    ? resultMenuFindingLines(findings, boxHeight - 4 - layout.bodyRows)
+    ? [
+        ...noteLines,
+        ...resultMenuFindingLines(findings, boxHeight - 4 - layout.bodyRows - noteLines.length),
+      ]
     : [];
   const titleParts = resultMenuTitle(input);
   const title = fitKeyLegend(

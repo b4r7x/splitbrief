@@ -296,6 +296,8 @@ export function typedCallPlanAndReview(
     | undefined,
   /** The plan-call answer the reviewer gives before each verdict; no command by default. */
   checks?: ((prompt: string) => ReviewChecksPlan) | undefined,
+  /** The answer to a consult call, recognized by the consult prompt's title. */
+  consult?: ((prompt: string) => ConsultAnswer) | undefined,
 ): Mock<Planner['typedCall']> {
   let reviewCalls = 0;
   return vi.fn((ctx: TypedCallContext) => ({
@@ -313,7 +315,11 @@ export function typedCallPlanAndReview(
       if (!isReviewCall({ prompt, schema }))
         return makeRunnerCallResult({
           status: 'completed',
-          text: JSON.stringify({ result: plan() }),
+          text: JSON.stringify(
+            consult !== undefined && prompt.includes('# Consult')
+              ? consult(prompt)
+              : { result: plan() },
+          ),
           usage: usage?.plan ?? null,
         });
       const answered = review(prompt, ++reviewCalls, ctx.callbacks);
@@ -370,6 +376,15 @@ export function guidanceConsult(instructions = 'Try a different approach.'): {
       instructions,
       context: null,
     },
+  };
+}
+
+/** A cannot consult answer: the planner ends the brief or the stuck review the test halts. */
+export function cannotConsult(reason = 'The blockers need a design change the plan rules out'): {
+  answer: Extract<ConsultAnswer['answer'], { action: 'cannot' }>;
+} {
+  return {
+    answer: { diagnosis: 'The fix briefs keep missing the blockers', action: 'cannot', reason },
   };
 }
 

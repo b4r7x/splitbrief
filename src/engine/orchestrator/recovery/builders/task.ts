@@ -1136,6 +1136,8 @@ export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   noProgress?: readonly string[] | undefined;
   /** The fix cycle that left the same blockers; absent when the answer fixed none. */
   fixCycle?: number | undefined;
+  /** The planner's reason why a stuck review's blockers cannot be fixed. */
+  cannot?: string | undefined;
   /** Criteria no check could verify, when the review failed with nothing to fix. */
   unverified?: number | undefined;
   /** The review that judged: a scheduled task review, or the final review when absent. */
@@ -1218,11 +1220,16 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
     files: [],
     affectedTaskIds: [],
     message,
-    details: [...(opts.details ?? [])],
+    details: [
+      ...(opts.cannot === undefined ? [] : [cannotDetail(consultSeatRunner('plan'), opts.cannot)]),
+      ...(opts.details ?? []),
+    ],
     facts: compactFacts({
       blocking,
       noProgress: opts.noProgress?.join(','),
       fixCycle: opts.fixCycle,
+      cannot: opts.cannot,
+      cannotBy: opts.cannot === undefined ? undefined : consultSeatRunner('plan'),
       unverified: opts.unverified,
       reviewScope: opts.scope,
       afterTaskId: opts.afterTaskId,

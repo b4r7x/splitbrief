@@ -1372,6 +1372,15 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       warning: 'Run accepted as is with 1 open finding: Missing test. No review checked them;',
     },
     {
+      acceptedAsIs: {
+        findings: ['Keep the old error'],
+        note: 'The error type is public API',
+        by: 'planner' as const,
+      },
+      warning:
+        "Run accepted as is with 1 open finding: Keep the old error. Planner's note: The error type is public API. No review checked them;",
+    },
+    {
       acceptedAsIs: { findings: ['Is the cap right?'], note: 'Why review this?' },
       warning:
         'Run accepted as is with 1 open finding: Is the cap right? Your note: Why review this? No review checked them;',

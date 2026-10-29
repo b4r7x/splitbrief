@@ -42,6 +42,23 @@ describe('runRows', () => {
     expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'clean', tone: 'success' }]);
   });
 
+  it.each([
+    [
+      "Planner's note: The old error type is public API",
+      "  Accepted as is · Planner's note: The old error type is public API",
+    ],
+    [null, '  Accepted as is'],
+  ])('names an accept as is under the review, with its note %s', (note, text) => {
+    const rows = runRows(makeView({ accepted: { note } }));
+    const review = rows.findIndex((row) => row.label === 'Review');
+    expect(rows[review + 1]).toEqual({ label: '', segments: [{ text, tone: 'text' }], hang: 2 });
+    expect(
+      runRows(makeView()).some((row) =>
+        row.segments.some((s) => 'text' in s && s.text.includes('Accepted')),
+      ),
+    ).toBe(false);
+  });
+
   it('counts every minor and out-of-scope finding as a note', () => {
     const base = makeView();
     if (base.review.kind !== 'written') throw new Error('fixture review is not written');

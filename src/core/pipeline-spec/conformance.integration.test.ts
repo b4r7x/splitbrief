@@ -11,6 +11,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { runOwnedPlanningPhase } from '#testing/helpers/planning-phase.js';
 import {
+  cannotConsult,
   consultCallAnswering,
   guidanceConsult,
   planFromTasks,
@@ -86,6 +87,7 @@ describe('retry ladder', () => {
     dirs.push(projectDir);
     const { bus, events } = makeBusRecorder();
     const task = makeTask();
+    let consults = 0;
 
     await handleRetryAndEscalation({
       wctx: makeWctx({
@@ -95,7 +97,13 @@ describe('retry ladder', () => {
         implementer: makeImplementer({
           retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
         }),
-        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+        // Consults have no count limit, so the planner ends the ladder with its cannot.
+        planner: makePlanner({
+          typedCall: consultCallAnswering(() => {
+            consults += 1;
+            return consults === 1 ? guidanceConsult() : cannotConsult();
+          }),
+        }),
         bus,
       }),
       task,

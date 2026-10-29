@@ -137,6 +137,7 @@ export const CONSULT_ACTION_KINDS = [
   'verify',
   'ask-user',
   'cannot',
+  'accept',
 ] as const;
 
 export const ConsultRecordSchema = z.object({
@@ -471,7 +472,13 @@ const WorkflowStateFields = {
     })
     .optional(),
   acceptedAsIs: z
-    .object({ at: z.string(), findings: z.array(z.string()), note: z.string().optional() })
+    .object({
+      at: z.string(),
+      findings: z.array(z.string()),
+      note: z.string().optional(),
+      /** The planner accepted a stuck review's blockers; without it, you did. */
+      by: z.literal('planner').optional(),
+    })
     .optional(),
   /** The run diff of the workspace the last final review judged: path → entry key. */
   reviewedCandidate: z.record(z.string(), z.string()).optional(),

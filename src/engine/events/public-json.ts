@@ -63,6 +63,10 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
     type: z.literal('final_review_failed'),
     sessionId: z.string(),
     blocking: z.number().int().nonnegative(),
+    /** Who accepted the failed review as is, with their note; the verdict stays failed. */
+    accepted: z
+      .strictObject({ by: z.enum(['planner', 'user']), note: z.string().optional() })
+      .optional(),
   }),
   z.strictObject({
     type: z.literal('final_review_incomplete'),
