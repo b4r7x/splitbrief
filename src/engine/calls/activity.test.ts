@@ -120,6 +120,16 @@ describe('projectRunnerCallActivity', () => {
     ).toMatchObject({ kind: 'glob', label: 'matching src/**/*.tsx' });
     expect(
       projectRunnerCallActivity(
+        runnerToolUse({
+          name: 'glob',
+          inputDelta: '{"targetDirectory":"/project","globPattern":"biome.json*"}',
+        }),
+        1,
+        '/project',
+      ),
+    ).toMatchObject({ kind: 'glob', label: 'matching biome.json*', target: 'biome.json*' });
+    expect(
+      projectRunnerCallActivity(
         runnerToolUse({ name: 'Edit', inputDelta: '{"file_path":"src/app.tsx"}' }),
         1,
         '/project',
