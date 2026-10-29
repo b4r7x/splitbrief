@@ -18,6 +18,7 @@ Testing in this repo means exercising observable behaviour — rendered output, 
 | Accessible queries first in UI tests | Matches what a real consumer sees | `getByRole` > `getByTestId` |
 | Test the contract of a hook, not its wiring | A hook is its inputs → outputs/effects | Extract pure logic, test that; hook becomes a thin wrapper |
 | Zero failing tests, always | Project policy — enforced on every PR | `npm run release-check` green before merge |
+| Deterministic, never flaky | A test that passes on one run and fails on the next fails in CI, and a green result proves nothing | Wait on the event, file or output the test needs, never on a clock; inject the clock, the random source and the ordering |
 | Neutral test voice | Tests are observed behaviour, not narration | Zero `// Observable:` prefixes, zero AI-assistant names, no section-divider banners (`// ═══ X ═══`) inside test files — same rule as production (`STRUCTURE.md` §No decorative comments) |
 
 ## Hermetic test environment
@@ -244,7 +245,8 @@ Every scenario copies the record of each of its runs to `.test-artifacts/live/pa
 Diagnostic checklist:
 - Node version: `engines.node` is `^22.0.0 || ^24.0.0`. Check that `node --version` reports major 22 (CI) or 24 (the release workflow).
 - `CI`: GitHub sets `CI=true`, and Ink paints no frames when `CI` is on. The `unit` and `integration` test steps set `CI=false`. A shell that exports `CI=1` makes Ink tests fail locally; run them with `CI=false npm test`.
-- Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/splitbrief-*`.
+- Temp dir state: some tests write under `os.tmpdir()`. A test that fails because an earlier run left files there is a defect: give it its own temp dir and clean it up. `rm -rf $TMPDIR/splitbrief-*` only confirms the cause; it is not the fix.
+- A test that fails on some runs only: run the file alone several times to reproduce, then find the race, the clock read or the shared state, and fix it. A re-run that passes is never a fix.
 - Credentials: `testing/helpers/scrub-credentials.ts` removes API-key and token env vars from every test process, so no test reads the keys in your shell. A test that needs a key sets a fake one.
 - Workers: vitest runs at most 4 workers, and fewer on a host with fewer cores (`vitest.config.ts`). `--maxWorkers=<n>` overrides it.
 - Reproduce CI's split gate with `npm run release-check` (the same steps minus coverage). CI runs `static`, `unit` (two vitest shards), `integration` (four shards), `e2e-replay` (three shards) and `smoke` as parallel jobs. The `Website` workflow runs only when `website/`, `docs/`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md` or a file that the website tests load (`testing/helpers/scrub-credentials.ts`, `testing/helpers/hermetic-env.ts`, `src/utils/redact.ts`) changes. The coverage workflow (`nightly-coverage.yml`) runs only when you start it by hand.
@@ -501,6 +503,9 @@ L1 faux (`planner.ts`, `implementer.ts`) is the default for new orchestrator tes
 | Snapshot test as default assertion | Locks rendered text to the current string | Assert on specific roles / values / visible affordances |
 | Copy-paste of a production helper into the test file | Production can drift from the copy | Export the helper; import it |
 | Mocking 5+ sibling modules to "focus" a test | Signals wrong test level | Write a pure unit OR a real boundary/feature test; never the middle |
+| A fixed `sleep` or `setTimeout` as a sync point | The order then depends on machine load; it passes locally and fails on a busy CI runner | Wait on the observable condition: the event in `session.jsonl`, the file on disk, the PTY output line |
+| A longer timeout, a `retry`, `.skip` or a re-run to make a red test green | It hides a race; the next slower run fails again, and a user can hit the same race | Find the nondeterminism and remove it at the root, in the test or in the product |
+| A test that reads shared state: a fixed port, a fixed temp path, the real HOME, the order of parallel tests | Two runs or two workers collide | One temp dir per test, port 0, the hermetic env |
 
 ## Good / bad pairs
 
