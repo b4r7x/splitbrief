@@ -271,7 +271,10 @@ function toolUseDetails(
   const command =
     stringInput(input, 'command') ?? stringInput(input, 'cmd') ?? stringInput(input, 'CommandLine');
   const pattern =
-    stringInput(input, 'pattern') ?? stringInput(input, 'regex') ?? stringInput(input, 'query');
+    stringInput(input, 'pattern') ??
+    stringInput(input, 'globPattern') ??
+    stringInput(input, 'regex') ??
+    stringInput(input, 'query');
   const agentType = stringInput(input, 'subagent_type') ?? stringInput(input, 'agent_type');
   const url = stringInput(input, 'url') ?? stringInput(input, 'uri');
   const mcpTarget = mcpCallTarget(input);
