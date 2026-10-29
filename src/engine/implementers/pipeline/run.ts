@@ -163,16 +163,6 @@ function aggregateApplied(applied: readonly AppliedFile[]): {
   };
 }
 
-/**
- * The direct writer's closing report: the last JSON object of the reply, read by
- * `readImplementerReport`. A report that is missing or cannot be read changes
- * nothing, and there is no repair call.
- */
-function parseImplementerReport(text: string): ReturnType<typeof readImplementerReport> {
-  const extracted = extractLastJsonObject(text);
-  return extracted.kind === 'ok' ? readImplementerReport(extracted.value) : undefined;
-}
-
 export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implementer {
   const shouldThrow = baseConfig.shouldThrow ?? defaultShouldThrow;
   const prependSystemPreamble = baseConfig.prependSystemPreamble !== false;
@@ -705,8 +695,18 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     implBuffer?.flush();
 
-    const read = outputContract === 'direct' ? parseImplementerReport(outputText) : undefined;
-    if (phase && read !== undefined && read.dropped.length > 0) {
+    // The direct writer's closing report is the last JSON object of the reply; a reply without
+    // one changes nothing, and there is no repair call.
+    const extracted = outputContract === 'direct' ? extractLastJsonObject(outputText) : undefined;
+    const read = extracted?.kind === 'ok' ? readImplementerReport(extracted.value) : undefined;
+    if (phase && extracted?.kind === 'ok' && read === undefined) {
+      baseConfig.publisher?.publishWarning({
+        phase,
+        taskId: task.id,
+        message: `Task ${task.id}: the implementer report has no "done" or "blocked" status, so SPLITBRIEF did not read it.`,
+        safety: { category: 'implementer', code: 'implementer_report_unread' },
+      });
+    } else if (phase && read !== undefined && read.dropped.length > 0) {
       baseConfig.publisher?.publishWarning({
         phase,
         taskId: task.id,

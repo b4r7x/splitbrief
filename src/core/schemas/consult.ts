@@ -100,38 +100,48 @@ const DoneReportSchema = z.object({
   decisions: z.array(ReportedDecisionSchema).default([]),
 });
 
+const BlockedReportSchema = z.object({
+  status: z.literal('blocked'),
+  question: z.string(),
+  filesNeeded: z.array(z.string()),
+});
+
 export const ImplementerReportSchema = z.discriminatedUnion('status', [
   DoneReportSchema,
-  z.object({
-    status: z.literal('blocked'),
-    question: z.string(),
-    filesNeeded: z.array(z.string()),
-  }),
+  BlockedReportSchema,
 ]);
 export type ImplementerReport = z.infer<typeof ImplementerReportSchema>;
 
 /**
- * The implementer's report as SPLITBRIEF reads it. A done report keeps every field that matches
- * its contract; a field that does not, or is missing, reads as empty and is named in `dropped`.
- * A report without a known status, or a blocked report with a bad field, is not read.
+ * The implementer's report as SPLITBRIEF reads it. A done or blocked report keeps every field
+ * that matches its contract; a field that does not, or is missing, reads as empty and is named
+ * in `dropped`. A report without a known status is not read.
  */
 export function readImplementerReport(
   value: unknown,
 ): { report: ImplementerReport; dropped: string[] } | undefined {
   const parsed = ImplementerReportSchema.safeParse(value);
   if (parsed.success) return { report: parsed.data, dropped: [] };
-  if (!isRecord(value) || value.status !== 'done') return undefined;
+  if (!isRecord(value)) return undefined;
   const dropped: string[] = [];
-  const field = <T>(
-    name: keyof typeof DoneReportSchema.shape,
-    schema: z.ZodType<T>,
-    empty: T,
-  ): T => {
+  const field = <T>(name: string, schema: z.ZodType<T>, empty: T): T => {
     const read = schema.safeParse(value[name]);
     if (read.success) return read.data;
     dropped.push(name);
     return empty;
   };
+  if (value.status === 'blocked') {
+    const { shape } = BlockedReportSchema;
+    return {
+      report: {
+        status: 'blocked',
+        question: field('question', shape.question, ''),
+        filesNeeded: field('filesNeeded', shape.filesNeeded, []),
+      },
+      dropped,
+    };
+  }
+  if (value.status !== 'done') return undefined;
   const { shape } = DoneReportSchema;
   return {
     report: {

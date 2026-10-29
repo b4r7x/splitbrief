@@ -201,11 +201,22 @@ describe('readImplementerReport', () => {
     });
   });
 
-  it('reads no report without a status it knows, and no blocked report with a bad field', () => {
-    expect(readImplementerReport({ ...done, status: 'finished' })).toBeUndefined();
-    expect(readImplementerReport('done')).toBeUndefined();
+  it('keeps every valid field of a blocked report and names each field it drops', () => {
     expect(
-      readImplementerReport({ status: 'blocked', question: 7, filesNeeded: [] }),
-    ).toBeUndefined();
+      readImplementerReport({ status: 'blocked', question: 'Which store?', filesNeeded: 'store' }),
+    ).toEqual({
+      report: { status: 'blocked', question: 'Which store?', filesNeeded: [] },
+      dropped: ['filesNeeded'],
+    });
+    expect(readImplementerReport({ status: 'blocked', filesNeeded: ['src/store.ts'] })).toEqual({
+      report: { status: 'blocked', question: '', filesNeeded: ['src/store.ts'] },
+      dropped: ['question'],
+    });
+  });
+
+  it('reads no report without a status it knows', () => {
+    expect(readImplementerReport({ ...done, status: 'finished' })).toBeUndefined();
+    expect(readImplementerReport({ question: 'Which store?', filesNeeded: [] })).toBeUndefined();
+    expect(readImplementerReport('done')).toBeUndefined();
   });
 });
