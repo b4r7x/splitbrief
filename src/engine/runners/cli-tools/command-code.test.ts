@@ -430,7 +430,57 @@ describe('Command Code role adapters', () => {
     expect(events.at(-1)).toMatchObject({
       type: 'result',
       status: 'failed',
-      error: { code: 'command-code-result-failed', message: 'max_turns' },
+      error: {
+        code: 'command-code-result-failed',
+        message: 'The tool reached its turn limit.',
+      },
+    });
+  });
+
+  it('keeps a stop reason other than max_turns as the failure message', () => {
+    const events = commandCodeProtocolEvents(
+      JSON.stringify({ type: 'result', subtype: 'error', stopReason: 'refusal' }),
+    );
+    expect(events.at(-1)).toMatchObject({
+      type: 'result',
+      status: 'failed',
+      error: { code: 'command-code-result-failed', message: 'refusal' },
+    });
+  });
+
+  it('keeps explicit error text ahead of a max_turns stop reason', () => {
+    const events = commandCodeProtocolEvents(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'error',
+        error: 'Not authenticated',
+        stopReason: 'max_turns',
+      }),
+    );
+    expect(events.at(-1)).toMatchObject({
+      type: 'result',
+      status: 'failed',
+      error: { code: 'command-code-result-failed', message: 'Not authenticated' },
+    });
+  });
+
+  it('uses finalText when a failed result has no error and no stop reason', () => {
+    const events = commandCodeProtocolEvents(
+      JSON.stringify({ type: 'result', subtype: 'error', finalText: 'ran out of context' }),
+    );
+    expect(events.at(-1)).toMatchObject({
+      type: 'result',
+      status: 'failed',
+      error: { code: 'command-code-result-failed', message: 'ran out of context' },
+    });
+  });
+
+  it('uses the generic fallback when a failed result has no message', () => {
+    const events = commandCodeProtocolEvents(JSON.stringify({ type: 'result', subtype: 'error' }));
+    expect(events.at(-1)).toMatchObject({
+      type: 'result',
+      status: 'failed',
+      error: { code: 'command-code-result-failed', message: 'Command Code result failed' },
     });
   });
 

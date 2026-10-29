@@ -9,6 +9,8 @@ import type { ConfigError, ConfigValidation } from './types.js';
 const UNKNOWN_KEY_MESSAGE =
   'Unknown config key — remove it or use the current spelling from docs/CONFIGURATION.md.';
 
+const MISSING_VALUE_MESSAGE = 'Missing — add it as shown in docs/CONFIGURATION.md.';
+
 const RUNNER_BLOCKS = ['planner', 'reviewer', 'implementer'] as const;
 
 // Zod reports every unrecognized key of an object under the object's own path,
@@ -21,7 +23,12 @@ function issueErrors(issue: z.core.$ZodIssue): ConfigError[] {
       message: UNKNOWN_KEY_MESSAGE,
     }));
   }
-  return [{ path: issue.path.join('.'), message: issue.message }];
+  const path = issue.path.join('.');
+  const message =
+    issue.code === 'invalid_type' && issue.input === undefined
+      ? MISSING_VALUE_MESSAGE
+      : issue.message;
+  return [{ path, message }];
 }
 
 function removedKindError(path: string, block: unknown): ConfigError | undefined {
@@ -197,7 +204,7 @@ export function retiredValueNotices(config: Record<string, unknown>): string[] {
 }
 
 export function validateConfig(config: Record<string, unknown>): ConfigValidation {
-  const result = ConfigSchema.safeParse(config);
+  const result = ConfigSchema.safeParse(config, { reportInput: true });
 
   const removed = [...removedEntityErrors(config), ...removedTopLevelKeyErrors(config)];
   const named = new Set(removed.map(({ path }) => path));

@@ -89,7 +89,7 @@ export function canonicalConfigTarget(projectDir: string): string | null {
     if (isENOENT(err)) return null;
     throw err;
   }
-  if (realParent !== parent) throw pathConfinementError.symlinkParent(parent);
+  if (realParent !== parent) throw pathConfinementError.symlinkParent(SPLITBRIEF_DIR);
   return join(parent, CONFIG_FILE);
 }
 
@@ -103,7 +103,6 @@ function emptyConfigDocumentSnapshot(): ConfigDocumentSnapshot {
 }
 
 export function readConfigDocument(projectDir: string): ConfigDocumentSnapshot {
-  const displayPath = configPath(projectDir);
   const filePath = canonicalConfigTarget(projectDir);
   if (filePath === null) return emptyConfigDocumentSnapshot();
 
@@ -113,13 +112,13 @@ export function readConfigDocument(projectDir: string): ConfigDocumentSnapshot {
   } catch (err) {
     if (isENOENT(err)) return emptyConfigDocumentSnapshot();
     if (isNodeError(err) && err.code === 'ELOOP')
-      throw pathConfinementError.symlinkRead(displayPath);
-    throw configError.unreadable(displayPath);
+      throw pathConfinementError.symlinkRead(CONFIG_RELATIVE_PATH);
+    throw configError.unreadable(CONFIG_RELATIVE_PATH);
   }
 
   try {
     const openedStat = fstatSync(descriptor, { bigint: true });
-    if (!openedStat.isFile()) throw configError.unreadable(displayPath);
+    if (!openedStat.isFile()) throw configError.unreadable(CONFIG_RELATIVE_PATH);
     const rawBytes = readFileSync(descriptor);
     const stat = fstatSync(descriptor, { bigint: true });
     const rawYaml = rawBytes.toString('utf8');

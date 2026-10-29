@@ -633,4 +633,41 @@ describe('validateConfig', () => {
       message: '{prompt} is not supported; SPLITBRIEF sends the prompt on stdin',
     });
   });
+
+  it('reports an absent planner.tool as missing', () => {
+    const { errors } = validateConfig({
+      ...makeConfig(),
+      planner: { kind: 'cli' },
+    });
+
+    expect(errors.map(({ path, message }) => `${path}: ${message}`)).toContain(
+      'planner.tool: Missing — add it as shown in docs/CONFIGURATION.md.',
+    );
+  });
+
+  it('reports an explicitly undefined planner.tool as missing', () => {
+    const { errors } = validateConfig({
+      ...makeConfig(),
+      planner: { kind: 'cli', tool: undefined },
+    });
+
+    expect(errors.map(({ path, message }) => `${path}: ${message}`)).toContain(
+      'planner.tool: Missing — add it as shown in docs/CONFIGURATION.md.',
+    );
+  });
+
+  it.each([
+    [null, 'Invalid input: expected string, received null'],
+    [1, 'Invalid input: expected string, received number'],
+  ] as const)('keeps the planner.tool message when the value is %s', (tool, message) => {
+    const { errors } = validateConfig({
+      ...makeConfig(),
+      planner: { kind: 'cli', tool },
+    });
+
+    expect(errors).toContainEqual({
+      path: 'planner.tool',
+      message,
+    });
+  });
 });
