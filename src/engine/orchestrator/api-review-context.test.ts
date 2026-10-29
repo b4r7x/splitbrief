@@ -513,13 +513,14 @@ describe('a REVIEW seat that reads no files of its own', () => {
     expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), REVIEW_FILE))).toBe(false);
   });
 
-  it('hands a CLI reviewer the whole diff, however long', async () => {
+  it('hands a CLI reviewer that reads no files the whole diff in its prompt, however long', async () => {
     const ref = setupRun({ ledger: false });
     universe.fullDiff = diffOfLength('src/big.ts', 150_000);
     universe.changedFiles = ['src/big.ts'];
     const prompts: string[] = [];
+    const config = makeNoValidationConfig({ reviewer: { kind: 'cli', tool: 'codex' } });
 
-    const result = await review({ ...ref, config: makeNoValidationConfig(), prompts });
+    const result = await review({ ...ref, config, prompts });
 
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).not.toContain('[... diff truncated,');
