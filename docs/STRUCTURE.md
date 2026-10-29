@@ -583,7 +583,6 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | `usage` | Token and cost details of a run (`/usage`) | `app/overlays/usage.tsx` | `features/workflow/` (`usage-details.tsx`, `usage-details-model.ts`) |
 | `start-preparation` | No page of its own — the readiness panel shown while a run starts, used by the home and setup pages and `app/session-preparation.tsx` | — | `features/start-preparation/` |
 | `stop` | Inline stop menu above the workflow composer | `app/screens/workflow.tsx` | `features/workflow/stop/` |
-| `review-checks` | Inline reviewer checks card above the workflow composer (`validation.approve_checks: ask`): Run all or Skip all | `app/screens/workflow.tsx` | `features/workflow/review-checks/` |
 
 Each surface's entry page is what `src/app/router.tsx` imports (and `app/layout.tsx` wraps). Internal structure is documented by inspection — there is no catalog per-feature.
 

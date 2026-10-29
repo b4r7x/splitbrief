@@ -1185,18 +1185,6 @@ const CONTINUOUS_READY_EVENTS: readonly EngineEvent[] = [
     },
   ]),
   {
-    type: 'review_checks',
-    ts: CONTINUOUS_READY_TS + 1_000,
-    phase: 'final-review',
-    scope: 'final',
-    status: 'planned',
-    commands: [
-      { id: 'V1', command: 'npm test', reason: 'The form tests cover the changed input.' },
-    ],
-    declined: [],
-    reason: null,
-  },
-  {
     type: 'full_suite',
     ts: CONTINUOUS_READY_TS + 2_000,
     phase: 'final-review',
@@ -2241,14 +2229,6 @@ const CADENCE_EVENTS: readonly EngineEvent[] = [
     ...CADENCE_SEAT,
   },
   {
-    type: 'review_checks',
-    ts: CADENCE_TS + 234_000,
-    phase: 'implementing',
-    scope: 'task',
-    status: 'planned',
-    commands: [{ id: 'V1', command: 'npm test', reason: 'Verify the email validation cases.' }],
-  },
-  {
     type: 'full_suite',
     ts: CADENCE_TS + 265_000,
     phase: 'implementing',
@@ -2632,7 +2612,8 @@ const PLAN_UNSAVED = record({
   }),
 });
 
-const CRASHED_REVIEW_LOG: readonly EngineEvent[] = [
+/** The run up to the start of its final review, before the project gate and the verdict call. */
+const CRASHED_REVIEW_START_LOG: readonly EngineEvent[] = [
   {
     type: 'workflow_started',
     ts: CRASH_TS,
@@ -2661,6 +2642,10 @@ const CRASHED_REVIEW_LOG: readonly EngineEvent[] = [
     tool: 'claude-code',
     model: 'claude-sonnet-4',
   },
+];
+
+const CRASHED_REVIEW_LOG: readonly EngineEvent[] = [
+  ...CRASHED_REVIEW_START_LOG,
   {
     type: 'runner_call_started',
     ts: CRASH_TS + 102_100,
@@ -2703,41 +2688,12 @@ const CRASHED_REVIEW = record({
   }),
 });
 
-/** The same crash, after the reviewer chose its checks and while its first check ran. */
+/** A crash while the first command of the project gate ran, before the verdict call. */
 const CRASHED_REVIEW_CHECK_LOG: readonly EngineEvent[] = [
-  ...CRASHED_REVIEW_LOG,
-  {
-    type: 'runner_call_completed',
-    ts: CRASH_TS + 112_000,
-    phase: 'final-review',
-    ...CRASH_REVIEW_CALL,
-    attempt: 1,
-    sequence: 3,
-    durationMs: 9_900,
-    startedAt: CRASH_TS + 102_100,
-    endedAt: CRASH_TS + 112_000,
-    status: 'completed',
-    error: null,
-    partial: false,
-    usage: null,
-    nativeSessionId: null,
-  },
-  {
-    type: 'review_checks',
-    ts: CRASH_TS + 112_100,
-    phase: 'final-review',
-    scope: 'final',
-    status: 'planned',
-    commands: [
-      { id: 'V1', command: 'npm test', reason: 'The tests cover the validator the change adds.' },
-      { id: 'V2', command: 'npm run typecheck', reason: 'The form wiring changes its props.' },
-    ],
-    declined: [],
-    reason: null,
-  },
+  ...CRASHED_REVIEW_START_LOG,
   {
     type: 'full_suite',
-    ts: CRASH_TS + 112_200,
+    ts: CRASH_TS + 102_200,
     phase: 'final-review',
     status: 'running',
     id: 'V1',

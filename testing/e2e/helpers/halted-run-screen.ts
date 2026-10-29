@@ -1,5 +1,5 @@
 import { createElement } from 'react';
-import { expect, vi } from 'vitest';
+import { expect, type Mock, vi } from 'vitest';
 import { App, type AppProps } from '../../../src/app/root.js';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';
@@ -24,6 +24,21 @@ import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import type { StopContinueFixture } from './stop-continue-fixture.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
+
+/** Every engine entry an opened screen made, until `settleOpenedRuns` waits for it. */
+const openedEngines: Mock<RunWorkflowFn>[] = [];
+
+/**
+ * Waits until each engine entry of the screens opened so far has ended. A real engine still
+ * stops every registered tool process when it ends, after the run is saved, so a test that ends
+ * first lets that stop reach the next test's probes. Call it after the screen unmounts.
+ */
+export async function settleOpenedRuns(): Promise<void> {
+  const engines = openedEngines.splice(0);
+  await Promise.allSettled(
+    engines.flatMap((engine) => engine.mock.results.map((result) => result.value)),
+  );
+}
 
 /**
  * An engine entry that stays open until the screen aborts it. The screen aborts at unmount, so
@@ -82,6 +97,7 @@ export async function openHaltedRun(
   const runWorkflow = vi.fn<RunWorkflowFn>(
     options.runWorkflow ?? ((opts) => heldUntilAborted(opts.signal)),
   );
+  openedEngines.push(runWorkflow);
   const screen = renderFeature(
     createElement<AppProps>(App, { workflowDeps: { runWorkflow } }),
     VIEWPORT,

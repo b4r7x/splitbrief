@@ -19,7 +19,7 @@ import { seedValidationProject } from '#testing/helpers/validation-project.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
-import { NO_REVIEW_CHECKS, typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];
 let originalPath: string | undefined;
@@ -267,13 +267,9 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       model: 'opencode/test-cheap-model',
     });
     expect(events.find((event) => event.type === 'validate')).toBeUndefined();
-    // The fake reviewer chooses no command, so the review names its reason and runs no reviewer check.
+    // The plan names no project gate, so the final review says so and runs no reviewer check.
     expect(events.filter((event) => event.type === 'review_checks')).toEqual([
-      expect.objectContaining({
-        status: 'planned',
-        commands: [],
-        reason: NO_REVIEW_CHECKS.reason,
-      }),
+      expect.objectContaining({ status: 'none' }),
     ]);
     const checks = events.filter((event) => event.type === 'full_suite');
     expect(checks.filter((event) => event.moment !== 'plan')).toEqual([]);

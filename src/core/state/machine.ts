@@ -61,7 +61,6 @@ const anytimeActions = [
   'COUNT_ATTEMPT',
   'RECORD_DISPATCH',
   'RECORD_CHECK_RESULTS',
-  'SET_PENDING_REVIEW_COMMANDS',
   'SET_SEAT_WAIT',
   'CLEAR_SEAT_WAIT',
   'START_SCHEDULED_REVIEW',
@@ -103,7 +102,6 @@ const phaseActions = {
     'RECORD_REVIEW',
     'SAVE_REVIEW_ANSWER',
     'DROP_REVIEW_ANSWER',
-    'RECORD_REVIEW_CHECKS',
     'RECORD_TRIAGE',
     'START_FIX_CYCLE',
     'REVIEW_CORRECTION',
@@ -125,7 +123,6 @@ const phaseActions = {
     'RECORD_REVIEW',
     'SAVE_REVIEW_ANSWER',
     'DROP_REVIEW_ANSWER',
-    'RECORD_REVIEW_CHECKS',
     'RECORD_TRIAGE',
     'START_FIX_CYCLE',
     'QUEUE_TRIAGE',
@@ -467,15 +464,6 @@ export function transition(
 
     case 'DROP_REVIEW_ANSWER':
       return { ...state, reviewAnswer: undefined };
-
-    case 'RECORD_REVIEW_CHECKS':
-      return { ...state, reviewChecks: action.record };
-
-    case 'SET_PENDING_REVIEW_COMMANDS':
-      return {
-        ...state,
-        pendingReviewCommands: action.commands.length === 0 ? undefined : action.commands,
-      };
 
     case 'RECORD_TRIAGE':
       return { ...state, triage: [...(state.triage ?? []), action.record] };

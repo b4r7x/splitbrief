@@ -3,9 +3,10 @@ import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.
 import { formatPlanMarkdown } from './plan-markdown.js';
 
 describe('formatPlanMarkdown', () => {
-  it('renders the summary, decisions, criteria, run checks, batches and protected operations', () => {
+  it('renders the summary, decisions, criteria, run checks, project gate, batches and protected operations', () => {
     const plan = makePlanProposal({
       checks: [{ id: 'K9', kind: 'cmd', value: 'npm test', required: true }],
+      gate: ['npm run release-check', 'npm run lint'],
       criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1', 'K9'] }],
       tasks: [
         makeTaskSpec({ contextFiles: ['src/names.ts'] }),
@@ -40,6 +41,11 @@ describe('formatPlanMarkdown', () => {
         '## Run checks',
         '',
         '- K9 cmd: npm test',
+        '',
+        '## Project gate',
+        '',
+        '- V1: npm run release-check',
+        '- V2: npm run lint',
         '',
         '## Tasks',
         '',

@@ -374,14 +374,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     findings: { blocking: 0, minor: 1 },
     duration: 49_000,
   },
-  review_checks: {
-    phase: 'final-review',
-    scope: 'final',
-    status: 'planned',
-    commands: [{ id: 'V1', command: 'npm test', reason: 'runs the changed tests' }],
-    declined: [{ target: 'e2e/app.spec.ts', reason: 'needs a browser' }],
-    reason: null,
-  },
+  review_checks: { phase: 'final-review', status: 'none' },
   review_step: { phase: 'final-review', step: 'verdict' },
   full_suite: {
     phase: 'final-review',

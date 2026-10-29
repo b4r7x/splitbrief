@@ -52,6 +52,9 @@ function setupProject(marker: string): string {
   return projectDir;
 }
 
+/** The project gate the plan names: one command the reviewer command policy runs. */
+const GATE_COMMAND = 'node --version';
+
 /** The plan the fake planner answers its planning session with. */
 function planAnswer(): string {
   return JSON.stringify({
@@ -61,6 +64,7 @@ function planAnswer(): string {
       decisions: [],
       criteria: [{ id: 'C1', text: 'validate.mjs passes', checkIds: ['K1'] }],
       checks: [],
+      gate: [GATE_COMMAND],
       validation: null,
       tasks: [
         {
@@ -86,16 +90,6 @@ function planAnswer(): string {
   });
 }
 
-/** The reviewer checks the fake reviewer chooses in the plan call: one the command policy runs. */
-const REVIEW_CHECK_COMMAND = 'node --version';
-const REVIEW_CHECKS_ANSWER = JSON.stringify({
-  commands: [
-    { id: 'V1', command: REVIEW_CHECK_COMMAND, reason: 'The runtime the module needs is present.' },
-  ],
-  declined: [],
-  reason: null,
-});
-
 function installFakeCodexPlanner(binDir: string): string {
   const runLogPath = join(binDir, 'codex-runs.jsonl');
   const executablePath = join(binDir, 'codex');
@@ -111,12 +105,6 @@ function installFakeCodexPlanner(binDir: string): string {
     '}',
     'const prompt = process.argv[process.argv.length - 1] === "-" ? readFileSync(0, "utf-8") : "";',
     'const threadId = process.argv[process.argv.length - 2] ?? "fake-codex-thread";',
-    'if (prompt.includes("# Choose the checks for this review")) {',
-    '  appendFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: [], reviewChecks: true }) + "\\n");',
-    `  console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: ${JSON.stringify(REVIEW_CHECKS_ANSWER)} } }));`,
-    '  console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 13, output_tokens: 7 } }));',
-    '  process.exit(0);',
-    '}',
     'if (prompt.includes("Final Implementation Review")) {',
     '  const ids = (label) => {',
     "    const match = prompt.match(new RegExp('^' + label + ' (.+)$', 'm'));",
@@ -267,7 +255,6 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
     expect(codexRuns.some((run) => run.args.includes('exec') && run.args.includes('--json'))).toBe(
       true,
     );
-    expect(readFileSync(codexRunLogPath, 'utf-8').match(/"reviewChecks":true/g)).toHaveLength(1);
 
     const opencodeRun = JSON.parse(readFileSync(opencodeRunLogPath, 'utf-8')) as {
       cwd: string;
@@ -321,16 +308,8 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
       ]),
     );
     expect(events.find((event) => event.type === 'validate')).toBeUndefined();
-    // The reviewer chose one command; SPLITBRIEF ran it before the verdict, and it passed.
-    expect(events.filter((event) => event.type === 'review_checks')).toEqual([
-      expect.objectContaining({
-        status: 'planned',
-        scope: 'final',
-        commands: [expect.objectContaining({ id: 'V1', command: REVIEW_CHECK_COMMAND })],
-        declined: [],
-        reason: null,
-      }),
-    ]);
+    // The plan names one gate command; SPLITBRIEF ran it before the verdict, and it passed.
+    expect(events.filter((event) => event.type === 'review_checks')).toEqual([]);
     expect(
       events
         .filter((event) => event.type === 'full_suite')
@@ -360,19 +339,18 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
         id: 'V1',
         status: 'running',
         moment: 'pre-review',
-        command: REVIEW_CHECK_COMMAND,
+        command: GATE_COMMAND,
         passed: undefined,
       },
       {
         id: 'V1',
         status: 'done',
         moment: 'pre-review',
-        command: REVIEW_CHECK_COMMAND,
+        command: GATE_COMMAND,
         passed: true,
       },
     ]);
     const types = events.map((event) => event.type);
-    expect(types.indexOf('review_checks')).toBeLessThan(types.lastIndexOf('full_suite'));
     expect(types.lastIndexOf('full_suite')).toBeLessThan(types.indexOf('workflow_complete'));
     expect(
       readFileSync(
@@ -383,11 +361,11 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
   }, 90_000);
 
   it('runs plan checks and no reviewer checks when End-of-run checks are off, and says so once', async () => {
-    const { projectDir, sessionId, events, summary, codexRunLogPath } = await runCliWorkflow(false);
+    const { projectDir, sessionId, events, summary } = await runCliWorkflow(false);
 
     expect(summary).toMatchObject({ totalTasks: 1, completedByLocal: 1, failed: 0 });
     expect(events.filter((event) => event.type === 'review_checks')).toEqual([
-      expect.objectContaining({ type: 'review_checks', status: 'off', scope: 'final' }),
+      expect.objectContaining({ type: 'review_checks', status: 'off' }),
     ]);
     const checks = events.filter((event) => event.type === 'full_suite');
     expect(checks.filter((event) => event.moment !== 'plan')).toEqual([]);
@@ -397,8 +375,6 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
       ['plan', 'K1', 'running', 'node --version', undefined],
       ['plan', 'K1', 'done', 'node --version', true],
     ]);
-    // The reviewer was never asked to choose a command.
-    expect(readFileSync(codexRunLogPath, 'utf-8')).not.toContain('reviewChecks');
     expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
       '### Verdict\n\npass',
     );

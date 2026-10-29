@@ -1200,12 +1200,6 @@ const createSettingsSeatSavedFinalReviewFixture: FixtureFactory = () => ({
     );
   },
 });
-const createSettingsApproveChecksAskFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'settings',
-    seed: seedConfig({ validation: { approveChecks: 'ask' } }),
-    focus: 'validation.approveChecks',
-  });
 const createSettingsIsolationCheckoutFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
@@ -2760,7 +2754,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('overlay-settings-seat-saved-final-review'),
     createSettingsSeatSavedFinalReviewFixture,
   ],
-  [scenarioId('overlay-settings-approve-checks-ask'), createSettingsApproveChecksAskFixture],
   [scenarioId('overlay-settings-isolation-checkout'), createSettingsIsolationCheckoutFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],

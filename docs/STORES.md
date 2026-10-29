@@ -81,8 +81,6 @@ src/stores/
 │   └── prompt.ts             # questionPromptStore
 ├── approval-prompt/          # Confirmation prompt (protected writes, custom-runner admission)
 │   └── prompt.ts             # approvalPromptStore (via channels/prompt)
-├── review-checks-prompt/     # Reviewer checks card (validation.approve_checks: ask)
-│   └── prompt.ts             # reviewChecksPromptStore (via channels/prompt)
 ├── channels/                 # Cross-store messaging channels
 │   ├── prompt.ts             # createPromptChannel — request/response with supersede/cancel
 │   └── feedback.ts           # Feedback error publish/subscribe
@@ -104,7 +102,7 @@ src/stores/
 
 `stores/` is grouped by concern, one directory per domain.
 
-`stores/channels/` holds cross-store messaging channels — decoupled pub/sub and request/response wires that let one store signal another without a direct import cycle. `feedback.ts` carries feedback errors (`router` publishes, `ui/feedback` subscribes); `prompt.ts` exposes `createPromptChannel`, the request/response primitive backing `approvalPromptStore` and `reviewChecksPromptStore` (with supersede / cancel semantics).
+`stores/channels/` holds cross-store messaging channels — decoupled pub/sub and request/response wires that let one store signal another without a direct import cycle. `feedback.ts` carries feedback errors (`router` publishes, `ui/feedback` subscribes); `prompt.ts` exposes `createPromptChannel`, the request/response primitive backing `approvalPromptStore` (with supersede / cancel semantics).
 
 **Import pattern:**
 
@@ -244,7 +242,6 @@ routerStore.navigate({ to: 'home' });
 | `recoveryNoticeStore` | `workflow/recovery-notice.ts` | `{ seat, ranOn, resetAt, issue, at }` — the seat an open halt stopped on, the tool and model its call ran on (`haltedSeatIds`), the clock its quota returns on, the halt itself and the step the run resumes at (`resumeStep`), which the rail reads | `open({ seat, ranOn, resetAt, issue, at })`, `clear()` — written by the TUI recovery driver |
 | `questionPromptStore` | `question-prompt/prompt.ts` | `{ hint, questions, index, drafts, answers, focus, openedAt, complete, unanswered }` — the planner questions on screen, the answers so far, and the round Esc closed (`unanswered`), kept until its reply answers it | `setHint()`, `setQuestions()`, `close()` (moves the open round to `unanswered`), `select()`, `setFocus()`, `previous()`, `answer()`, `takeAnswerBatch()`, `clearHint()` |
 | `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
-| `reviewChecksPromptStore` | `review-checks-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` — the reviewer's chosen commands waiting for Run all or Skip all | `openReviewChecksPrompt()`, `closeReviewChecksPrompt(answer?)` (via `channels/prompt`); a superseded or cancelled card resolves `undefined`, which the engine never reads as Run all |
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate({ to, … })`, `init()` — with transition guards |
 | `preparationStore` | `navigation/preparation.ts` | `{ kind: 'idle' \| 'checking' \| 'blocked' \| 'failed', … }` — the readiness check before a run starts or continues | `submit()`, `cancel()`, `reset()` |
 | `sessionSelectStore` | `navigation/session-select.ts` | the session picker's selection and its error | `clearError()`, `reset()` — `handleSessionSelect()` and `continueRunInPlace()` drive it |

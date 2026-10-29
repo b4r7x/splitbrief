@@ -1,18 +1,13 @@
 import { beforeEach, expect, it } from 'vitest';
 import { createElement, Fragment } from 'react';
 import { renderFeature } from '#testing/helpers/ink.js';
-import {
-  makeRunnerCallActivity,
-  makeRunnerCallStarted,
-} from '#testing/helpers/events/runner-call.js';
+import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { ConversationRowView } from '../components/conversation-flow/row-view.js';
 import { projectRunnerCallEvents } from '../../../engine/calls/event-projection.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
-import { operationsStore } from '../../../stores/workflow/operations/state.js';
-import { deriveLiveStatus } from '../display/live-activity.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 
 beforeEach(resetWorkflow);
@@ -191,46 +186,4 @@ it('keeps the brief name on an interrupted task review', () => {
   ]);
   expect(frame).toContain('Review T001 stopped');
   expect(frame).not.toContain('Final review');
-});
-
-it('names check selection before the verdict and keeps the same step through call gaps', () => {
-  addEvent({
-    type: 'review_started',
-    ts: 1_000,
-    phase: 'final-review',
-    scope: 'final',
-    tool: 'claude-code',
-  });
-  addEvent({ type: 'review_step', ts: 1_000, phase: 'final-review', step: 'choosing-checks' });
-  addEvent(makeRunnerCallStarted({ ts: 1_100, phase: 'final-review', role: 'review' }));
-  const text = () =>
-    deriveLiveStatus({
-      phase: 'final-review',
-      status: 'running',
-      cancelled: false,
-      startedAt: 1_000,
-      phaseFirstSeenTs: {},
-      waitedMs: {},
-      resumedAt: null,
-      reviewerLabel: null,
-      plannerCall: null,
-      plannerCallStartedTs: null,
-      suiteStage: null,
-      activeOperation: operationsStore.get().active,
-    })
-      ?.parts.map((part) => part.text)
-      .join('');
-  expect(text()).toContain('choosing checks');
-  expect(text()).not.toContain('waiting for the verdict');
-  addEvent({
-    type: 'review_checks',
-    ts: 2_000,
-    phase: 'final-review',
-    scope: 'final',
-    status: 'planned',
-    commands: [],
-    declined: [],
-    reason: 'No commands needed.',
-  });
-  expect(text()).toContain('reviewing changes');
 });

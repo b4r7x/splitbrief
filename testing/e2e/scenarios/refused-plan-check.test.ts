@@ -7,7 +7,6 @@ import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import type { PlanProposal } from '../../../src/core/schemas/plan.js';
-import type { ReviewChecksPlan } from '../../../src/core/schemas/review.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import {
@@ -58,7 +57,6 @@ async function runRefusedCheck(opts: {
   approve: 'plan' | 'none';
   plan: PlanProposal;
   repair?: PlanProposal;
-  reviewChecks?: ReviewChecksPlan;
 }) {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
@@ -90,10 +88,7 @@ for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
 let kind;
 let answer;
-if (prompt.includes('# Choose the checks for this review')) {
-  kind = 'review-checks';
-  answer = ${JSON.stringify(opts.reviewChecks)};
-} else if (prompt.includes('# Task Implementation Review')) {
+if (prompt.includes('# Task Implementation Review')) {
   kind = 'task-review';
   answer = ${JSON.stringify(passing)};
 } else if (prompt.includes('# Final Implementation Review')) {
@@ -137,8 +132,7 @@ console.log('Implemented T001');
     validation: {
       ...config.validation,
       testCommand: 'node --test',
-      endChecks: opts.reviewChecks !== undefined,
-      approveChecks: 'auto',
+      endChecks: true,
     },
   });
   const run = await cli(target, ['start', 'smoke']);
@@ -156,114 +150,49 @@ console.log('Implemented T001');
 }
 
 describe('e2e: a refused plan check', () => {
-  it('names the task runner options in the transcript and review without executing them', async () => {
-    const refusedChecks = [
+  it('sends a plan whose project gate names a refused option back to the planner, and never runs it', async () => {
+    const refused = [
       {
-        id: 'V1',
         command: 'gradle --init-script setup.gradle test',
         detail: 'uses the code-loading option gradle --init-script',
       },
+      { command: 'just --shell node test', detail: 'uses the code-loading option just --shell' },
       {
-        id: 'V2',
-        command: 'just --shell node test',
-        detail: 'uses the code-loading option just --shell',
+        command: 'node --require=./setup.js --test',
+        detail: 'uses the code-loading option node --require',
       },
     ];
+    const plan = alphaPlan({ value: 'node --version', required: true });
     const { run, state, events, calls, executedPath } = await runRefusedCheck({
       approve: 'none',
-      plan: alphaPlan({ value: 'node --version', required: true }),
-      reviewChecks: {
-        commands: [
-          ...refusedChecks.map(({ id, command }) => ({
-            id,
-            command,
-            reason: 'Run the project checks.',
-          })),
-          { id: 'V3', command: 'node --version', reason: 'Check the Node runtime.' },
-        ],
-        declined: [],
-        reason: null,
-      },
+      plan: { ...plan, gate: refused.map(({ command }) => command) },
+      repair: { ...plan, gate: ['node --version'] },
     });
 
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
     expect(state.phase).toBe('complete');
     expect(state.reviewStatus).toBe('passed');
     expect(existsSync(executedPath)).toBe(false);
-    for (const { id, command, detail } of refusedChecks) {
-      expect(
-        events.filter(
-          (event) => event.type === 'full_suite' && event.id === id && event.status === 'refused',
-        ),
-      ).toMatchObject([
-        { command, detail, status: 'refused', moment: 'pre-review' },
-        { command, detail, status: 'refused', moment: 'pre-review' },
-      ]);
-      expect(
-        events.some(
-          (event) => event.type === 'full_suite' && event.id === id && event.status === 'done',
-        ),
-      ).toBe(false);
-      expect(run.stdout).toContain(detail);
-      for (const review of calls.filter(
-        (call) => call.kind === 'task-review' || call.kind === 'final-review',
-      )) {
-        expect(review.prompt).toContain(`- ${id} \`${command}\`: refused, ${detail}`);
-        expect(review.prompt).not.toContain('runs inline code');
-      }
+    expect(calls.map((call) => call.kind)).toEqual([
+      'plan',
+      'plan-repair',
+      'task-review',
+      'final-review',
+    ]);
+    for (const [index, { command, detail }] of refused.entries()) {
+      expect(calls[1]?.prompt).toContain(
+        `- refused-check-command: Gate command V${index + 1} is refused: \`${command}\` ${detail}.`,
+      );
     }
     expect(
-      events.filter(
-        (event) => event.type === 'full_suite' && event.id === 'V3' && event.status === 'done',
-      ),
-    ).toMatchObject([{ passed: true }, { passed: true }]);
-  });
-
-  it('records the reviewer option that was refused and continues with the admitted check', async () => {
-    const command = 'node --require=./setup.js --test';
-    const reason = 'uses the code-loading option node --require';
-    const { run, state, events, calls } = await runRefusedCheck({
-      approve: 'none',
-      plan: alphaPlan({ value: 'node --version', required: true }),
-      reviewChecks: {
-        commands: [
-          { id: 'V1', command, reason: 'Run the tests with the project setup.' },
-          { id: 'V2', command: 'node --version', reason: 'Check the Node runtime.' },
-        ],
-        declined: [],
-        reason: null,
-      },
-    });
-
-    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
-    expect(state.phase).toBe('complete');
-    expect(state.reviewStatus).toBe('passed');
-    const refused = events.filter(
-      (event) => event.type === 'full_suite' && event.id === 'V1' && event.status === 'refused',
-    );
-    expect(refused).toHaveLength(2);
-    expect(refused).toMatchObject([
-      { command, moment: 'pre-review', detail: reason },
-      { command, moment: 'pre-review', detail: reason },
-    ]);
+      events.find((event) => event.type === 'full_suite' && event.status === 'refused'),
+    ).toBeUndefined();
     expect(
       events.filter(
-        (event) => event.type === 'full_suite' && event.id === 'V2' && event.status === 'done',
-      ),
-    ).toMatchObject([{ passed: true }, { passed: true }]);
-    expect(
-      events.some(
         (event) => event.type === 'full_suite' && event.id === 'V1' && event.status === 'done',
       ),
-    ).toBe(false);
-    const reviews = calls.filter(
-      (call) => call.kind === 'task-review' || call.kind === 'final-review',
-    );
-    expect(reviews).toHaveLength(2);
-    for (const review of reviews) {
-      expect(review.prompt).toContain(`- V1 \`${command}\`: refused, ${reason}`);
-      expect(review.prompt).not.toContain('runs inline code');
-    }
+    ).toMatchObject([{ command: 'node --version', passed: true, moment: 'pre-review' }]);
+    expect(calls[3]?.prompt).toContain('- V1 `node --version`: passed');
   });
 
   it.each([

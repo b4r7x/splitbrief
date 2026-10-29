@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import type { Check } from '../../../src/core/schemas/task.js';
-import type { ReviewChecksPlan } from '../../../src/core/schemas/review.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -35,11 +34,12 @@ function git(cwd: string, args: readonly string[]): void {
 
 /**
  * One task writes `src/alpha.mjs` and its test, checked by the given checks. The planner answers
- * the plan, both reviews and the reviewer's check choice; a plan repair is recorded, never answered.
+ * the plan, which names the given project gate, and both reviews; a plan repair is recorded, never
+ * answered.
  */
 async function runAlpha(opts: {
   checks: readonly Check[];
-  reviewChecks?: ReviewChecksPlan;
+  gate?: string[];
   testCommand?: string;
   projectFiles?: Readonly<Record<string, string>>;
 }) {
@@ -80,6 +80,7 @@ async function runAlpha(opts: {
         checks: [...opts.checks],
       }),
     ],
+    gate: opts.gate ?? [],
   });
   const passing = passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] });
   writeFileSync(
@@ -90,10 +91,7 @@ for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
 let kind;
 let answer;
-if (prompt.includes('# Choose the checks for this review')) {
-  kind = 'review-checks';
-  answer = ${JSON.stringify(opts.reviewChecks ?? null)};
-} else if (prompt.includes('# Task Implementation Review')) {
+if (prompt.includes('# Task Implementation Review')) {
   kind = 'task-review';
   answer = ${JSON.stringify(passing)};
 } else if (prompt.includes('# Final Implementation Review')) {
@@ -137,8 +135,7 @@ console.log('Implemented T001');
     validation: {
       ...config.validation,
       testCommand: opts.testCommand,
-      endChecks: opts.reviewChecks !== undefined,
-      approveChecks: 'auto',
+      endChecks: opts.gate !== undefined,
     },
   });
   const run = await cli(target, ['start', 'smoke']);
@@ -156,7 +153,7 @@ console.log('Implemented T001');
 }
 
 describe('e2e: a plan with a per-file test check', () => {
-  it('runs node --test on one test file as a plan check and node --check as reviewer checks', async () => {
+  it('runs node --test on one test file as a plan check and node --check as the project gate', async () => {
     const parseOnly = ['node --check src/alpha.mjs', 'node -c src/alpha.mjs'];
     const { run, state, events, calls } = await runAlpha({
       testCommand: 'node --test',
@@ -164,15 +161,7 @@ describe('e2e: a plan with a per-file test check', () => {
         { id: 'K1', kind: 'test', value: 'src/alpha.test.mjs', required: true },
         { id: 'K2', kind: 'cmd', value: 'node --test src/alpha.test.mjs', required: true },
       ],
-      reviewChecks: {
-        commands: parseOnly.map((command, index) => ({
-          id: `V${index + 1}`,
-          command,
-          reason: 'Check the syntax of the new module.',
-        })),
-        declined: [],
-        reason: null,
-      },
+      gate: parseOnly,
     });
 
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);

@@ -718,7 +718,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 3. If a plan check is misconfigured (wrong command, missing dependency), request changes on the plan card or fix `validation.test_command` in `.splitbrief/config.yaml`. A reviewer check comes from the reviewer: correct it with a note on the review.
 4. As a last resort, set `validation.end_checks: false` to run no reviewer check while you debug — you are then responsible for running the checks manually.
 
-**Prevention:** Keep `validation.test_command` minimal but reliable. Keep the project's own scripts and CI configuration current: the reviewer reads them to choose its commands.
+**Prevention:** Keep `validation.test_command` minimal but reliable. Keep the project's own scripts and CI configuration current: the planner reads them to name the project gate.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/DEBUGGING.md](./DEBUGGING.md).
 

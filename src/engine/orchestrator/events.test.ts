@@ -6,7 +6,7 @@ import {
   createBusTextHandler,
   publishPlannerStatus,
   publishReviewCheck,
-  publishReviewChecksPlan,
+  publishReviewChecks,
   publishError,
   publishWarning,
   createImplementerPublisher,
@@ -215,42 +215,16 @@ describe('createImplementerPublisher', () => {
   });
 });
 
-describe('publishReviewChecksPlan', () => {
-  it('publishes an off record with no plan fields', () => {
+describe('publishReviewChecks', () => {
+  it.each(['off', 'none'] as const)('publishes a %s record with no other field', (status) => {
     const { bus, events } = makeBusRecorder();
-    publishReviewChecksPlan({ bus, phase: 'final-review' }, { scope: 'final', status: 'off' });
+    publishReviewChecks({ bus, phase: 'final-review' }, status);
 
     expect(parseEngineEvent(events[0])).toEqual({
       type: 'review_checks',
       ts: expect.any(Number),
       phase: 'final-review',
-      scope: 'final',
-      status: 'off',
-    });
-  });
-
-  it('publishes the chosen commands, the declined tests and the reason', () => {
-    const { bus, events } = makeBusRecorder();
-    publishReviewChecksPlan(
-      { bus, phase: 'implementing' },
-      {
-        scope: 'task',
-        status: 'planned',
-        plan: {
-          commands: [{ id: 'V1', command: 'npm test', reason: 'runs the changed tests' }],
-          declined: [{ target: 'e2e/app.spec.ts', reason: 'needs a browser' }],
-          reason: null,
-        },
-      },
-    );
-
-    expect(parseEngineEvent(events[0])).toMatchObject({
-      type: 'review_checks',
-      scope: 'task',
-      status: 'planned',
-      commands: [{ id: 'V1', command: 'npm test', reason: 'runs the changed tests' }],
-      declined: [{ target: 'e2e/app.spec.ts', reason: 'needs a browser' }],
-      reason: null,
+      status,
     });
   });
 });

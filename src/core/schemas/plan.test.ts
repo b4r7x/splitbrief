@@ -69,6 +69,7 @@ describe('PlanSchema', () => {
       'checks',
       'criteria',
       'decisions',
+      'gate',
       'summary',
       'validation',
     ]);

@@ -123,6 +123,21 @@ describe('checkPlan', () => {
     expect(codes(plan)).toEqual(['duplicate-task-id', 'duplicate-check-id', 'task-without-check']);
   });
 
+  it('refuses a gate command the reviewer command policy refuses, and keeps one it runs', () => {
+    const plan = makePlanProposal({ gate: ['npm run release-check', 'npm test && npm run lint'] });
+    expect(
+      checkPlan(plan, projectDir, fits, undefined, false).filter(
+        (error) => error.code === 'refused-check-command',
+      ),
+    ).toEqual([
+      {
+        code: 'refused-check-command',
+        message:
+          "Gate command V2 is refused: `npm test && npm run lint` contains a shell operator. Name a command the project's scripts or CI run, as one program and its arguments.",
+      },
+    ]);
+  });
+
   it('refuses a plan check id in the V range the reviewer checks use, once per id', () => {
     const v1 = { id: 'V1', kind: 'cmd' as const, value: 'npm test', required: true };
     const plan = makePlanProposal({
@@ -136,11 +151,11 @@ describe('checkPlan', () => {
     ).toEqual([
       {
         code: 'reserved-check-id',
-        message: "Check id V1 is reserved for the reviewer's checks (V1, V2, …).",
+        message: 'Check id V1 is reserved for the project gate (V1, V2, …).',
       },
       {
         code: 'reserved-check-id',
-        message: "Check id V2 is reserved for the reviewer's checks (V1, V2, …).",
+        message: 'Check id V2 is reserved for the project gate (V1, V2, …).',
       },
     ]);
   });

@@ -128,7 +128,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 **What was built.**
 
-- Before each review the reviewer reads the project and chooses the reviewer checks that verify the change. SPLITBRIEF runs them under the reviewer command policy, which runs any installed program of any language and refuses only what breaks a danger rule (shell syntax, a program run by path, inline code, a download-and-run launcher, a setup command, a script this run changed). Every refused command gets a named row. Plan `cmd` checks keep the allowlist of the five registry stacks. A planner `test` check resolves its command through `config → manifest → discovered → stack default → none`; with none it is `not-runnable`.
+- The planner names the project gate in the plan: the commands that the project's own scripts or CI run to verify a change. Before the final review SPLITBRIEF runs them as the reviewer checks under the reviewer command policy, which runs any installed program of any language and refuses only what breaks a danger rule (shell syntax, a program run by path, inline code, a download-and-run launcher, a setup command, a script this run changed). Every refused command gets a named row. Plan `cmd` checks keep the allowlist of the five registry stacks. A planner `test` check resolves its command through `config → manifest → discovered → stack default → none`; with none it is `not-runnable`.
 - Heuristic detection reads project marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer language and validation tools.
 - The planning session asks the planner to identify the project's test toolchain (`language`, `test`, `testPattern`), which is persisted to `WorkflowState.discoveredValidation`.
 - Planner and implementer prompts are language-aware: TypeScript keeps ESM-with-`.js` guidance, while Python, Go, Rust, JavaScript, and generic contexts avoid TypeScript-specific wording.
@@ -152,7 +152,7 @@ Today a check runs the project's own code with your user's permissions in the ru
 - `workflow.approve: each` or `yolo`: an approval for each brief, or none at all.
 - Per-action approval inside a seat: the Agent Client Protocol (ACP), a bridge to Claude Code's permission prompts, or the Codex app-server.
 
-**Why deferred.** The minimal leak fixes shipped first: a sanitized environment for every command SPLITBRIEF runs itself, `sandbox.failIfUnavailable: true` for the `claude-code` implementer, and `validation.approve_checks: ask`. A sandbox for checks must keep every language's toolchain, cache and registry working; that needs its own design and measurements on macOS and Linux.
+**Why deferred.** The minimal leak fixes shipped first: a sanitized environment for every command SPLITBRIEF runs itself, `sandbox.failIfUnavailable: true` for the `claude-code` implementer, and a plan card that shows each gate command before the build. A sandbox for checks must keep every language's toolchain, cache and registry working; that needs its own design and measurements on macOS and Linux.
 
 Checks inherit defined environment variables and drop credential names, selectors and helpers. No pass-through option is needed.
 

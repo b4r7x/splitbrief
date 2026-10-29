@@ -85,48 +85,8 @@ export const TriageInputSchema = z.object({
 });
 export type TriageInput = z.infer<typeof TriageInputSchema>;
 
-/** The ids the reviewer gives the commands it chooses before a review. */
+/** The ids of the project gate's commands, V1, V2, … in the order the plan names them. */
 export const REVIEW_CHECK_ID = /^V\d+$/;
-
-/** The most reviewer checks one plan call may choose. */
-export const MAX_REVIEW_CHECKS = 6;
-
-/**
- * The commands the reviewer chooses to verify the change, the tests or checks it chose not to run,
- * and why it chose none when it chose none. SPLITBRIEF runs the commands; the reviewer never does.
- */
-export const ReviewChecksPlanObjectSchema = z.object({
-  commands: z
-    .array(
-      z.object({
-        id: z.string(),
-        command: z.string().min(1),
-        reason: z.string().min(1),
-      }),
-    )
-    .max(MAX_REVIEW_CHECKS),
-  declined: z.array(z.object({ target: z.string().min(1), reason: z.string().min(1) })),
-  reason: z.string().nullable(),
-});
-
-export const ReviewChecksPlanSchema = ReviewChecksPlanObjectSchema.superRefine((plan, ctx) => {
-  if (plan.commands.length === 0 && (plan.reason ?? '').trim() === '') {
-    ctx.addIssue({ code: 'custom', message: 'reason: say why no command verifies this change' });
-  }
-  const ids = plan.commands.map((command) => command.id);
-  if (ids.some((id) => !REVIEW_CHECK_ID.test(id))) {
-    ctx.addIssue({ code: 'custom', message: 'commands: every id is V1, V2, …' });
-  }
-  if (new Set(ids).size !== ids.length) {
-    ctx.addIssue({ code: 'custom', message: 'commands: every id must be unique' });
-  }
-});
-export type ReviewChecksPlan = z.infer<typeof ReviewChecksPlanSchema>;
-
-const { $schema: _checksDraftRef, ...reviewChecksPlanJsonSchema } = z.toJSONSchema(
-  ReviewChecksPlanObjectSchema,
-);
-export const REVIEW_CHECKS_PLAN_JSON_SCHEMA = reviewChecksPlanJsonSchema;
 
 const { $schema: _reviewDraftRef, ...reviewVerdictJsonSchema } =
   z.toJSONSchema(ReviewVerdictSchema);

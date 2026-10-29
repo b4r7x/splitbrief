@@ -18,8 +18,7 @@ import {
   ImplementerReportSchema,
 } from '../src/core/schemas/consult.js';
 import type { EffortLevel } from '../src/core/schemas/enums.js';
-import type { Plan } from '../src/core/schemas/plan.js';
-import { MAX_REVIEW_CHECKS } from '../src/core/schemas/review.js';
+import { MAX_GATE_COMMANDS, type Plan } from '../src/core/schemas/plan.js';
 import { RUNNER_IDLE_WARN_MS } from '../src/core/schemas/runner-fields.js';
 import { TaskSchema } from '../src/core/schemas/task.js';
 import { STACKS } from '../src/core/validation/stacks/registry.js';
@@ -508,9 +507,7 @@ function gates(): string {
 function gateRules(): string {
   return bullets([
     'At workflow.review: task, run the brief checks and the checks of its due criteria after each brief. At workflow.review: end, run the brief checks after each brief, except a render check. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers.',
-    `End-of-run checks are on by default (\`validation.end_checks\`). With End-of-run checks on, the reviewer makes the plan call before each review. It reads the manifests, scripts, Makefile or justfile, CI configuration and README. It chooses at most ${MAX_REVIEW_CHECKS} reviewer checks (\`V1\`, \`V2\`, …), each with a reason. Each reviewer check must verify the change.`,
-    'It names the related tests it declines and gives the reason. If it chooses no reviewer check, record its reason. At end cadence, the reviewer checks verify the whole change. A task-cadence review chooses the tests related to the changed files.',
-    'A failed plan call halts the review the same way a failed verdict call does. It is never a pass.',
+    `The plan names the project gate: at most ${MAX_GATE_COMMANDS} commands that the project's scripts or CI run to verify a change, in order. They are the reviewer checks \`V1\`, \`V2\`, …. End-of-run checks are on by default (\`validation.end_checks\`). With End-of-run checks on, run the project gate before the final review. When the plan names no project gate, no reviewer check runs and one row says so.`,
     'Run reviewer checks in order, in the run workspace, under the reviewer command policy. It admits any installed program of any language, such as `mvn test`, `bundle exec rspec` or `make check`.',
     'Refuse shell syntax, an environment prefix, a program run by path (`bin/test`), a shell or wrapper, and inline code. Refuse `npx` without `--no-install`, a download-and-run launcher or a setup command (`npm ci`, `pip install`, `go generate`). Refuse a program that does not verify a change. Refuse a reviewer check whose package script, task file, build wrapper or interpreter script the run changed. Name each refused reviewer check with its reason; a plan or task check is never refused for that. A plan may add a script and check it.',
     'Stop at the first reviewer check with new failures. Record each later reviewer check as `not run: <id> failed`. Re-run a red reviewer check at the run base with the same command text. A failure also red there is pre-existing. Report it and assign no fix task to it.',
@@ -523,7 +520,7 @@ function gateRules(): string {
     'Every unmatched re-run key counts as another failure. A check id with no own failures does not gate the brief when its findings carry failures for another check id. A check with no carried keys, or a re-run with no named failure, must pass its command. Older saved fix tasks without own keys still load and must pass their commands.',
     'The rule covers reviewer, plan and task checks. Each judged re-run gets a fix check verdict row. A settled re-run reads `your 2 failures gone · 3 others left for their fix tasks or the next review`. A shared failure reads `1 left to T025`. Plan and task checks get only a done row, with no duration. An own failure that remains fails the gate and retries through its ladder before the next review.',
     'With End-of-run checks off, no reviewer check runs and one row says so. Plan and task checks still run.',
-    'The next review chooses and runs its reviewer checks again. Log check ids, commands, output, exits and artifact paths in validation.md. Re-run checks when the candidate changes. Earlier green output cannot verify changed code.',
+    'Each final review runs the project gate again. Log check ids, commands, output, exits and artifact paths in validation.md. Re-run checks when the candidate changes. Earlier green output cannot verify changed code.',
     'Format the brief changed files with the project formatter after every hand-back. A formatter failure records a warning.',
     `Display at most ${CAPTURE_LIMITS.outputChars} characters per command, and keep the LAST ${CAPTURE_LIMITS.testTailLines} lines of a test command — runners print the pass/fail summary last.`,
     `Narrowing kinds: ${NARROWING_RULE.kinds.map((kind) => `\`${kind}\``).join(', ')}.`,

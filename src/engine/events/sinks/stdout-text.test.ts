@@ -545,47 +545,16 @@ describe('createStdoutTextSink', () => {
     expect(lines).toEqual(['phase: implementing', 'task T001: done (no checks)']);
   });
 
-  it('names End-of-run checks off, and a plan with no command with its reason', () => {
+  it('names End-of-run checks off, and a plan that names no project gate', () => {
     const lines = collect([
-      { type: 'review_checks', ts, phase: 'final-review', scope: 'final', status: 'off' },
-      {
-        type: 'review_checks',
-        ts,
-        phase: 'final-review',
-        scope: 'final',
-        status: 'planned',
-        commands: [],
-        declined: [],
-        reason: 'the change edits only the README',
-      },
+      { type: 'review_checks', ts, phase: 'final-review', status: 'off' },
+      { type: 'review_checks', ts, phase: 'final-review', status: 'none' },
     ]);
 
     expect(lines).toEqual([
       'phase: final-review',
       'reviewer checks: off',
-      'reviewer checks: none (the change edits only the README)',
-    ]);
-  });
-
-  it('names every reviewer check a skipped plan did not run, and why, on one line', () => {
-    const lines = collect([
-      {
-        type: 'review_checks',
-        ts,
-        phase: 'final-review',
-        scope: 'final',
-        status: 'skipped',
-        commands: [
-          { id: 'V1', command: 'npm run typecheck', reason: 'types changed' },
-          { id: 'V2', command: 'npm test', reason: 'tests cover it' },
-        ],
-        reason: 'validation.approve_checks is ask and this run has no screen to ask on',
-      },
-    ]);
-
-    expect(lines).toEqual([
-      'phase: final-review',
-      'reviewer checks: not run V1, V2 (validation.approve_checks is ask and this run has no screen to ask on)',
+      'reviewer checks: none (the plan names no project gate)',
     ]);
   });
 
@@ -620,7 +589,7 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
-  it('writes one line per declined test and per finished, refused or not-run reviewer check', () => {
+  it('writes one line per finished, refused or not-run reviewer check', () => {
     const check = (fields: Partial<EngineEventOf<'full_suite'>>): EngineEventOf<'full_suite'> => ({
       type: 'full_suite',
       ts,
@@ -632,20 +601,6 @@ describe('createStdoutTextSink', () => {
       ...fields,
     });
     const lines = collect([
-      {
-        type: 'review_checks',
-        ts,
-        phase: 'final-review',
-        scope: 'task',
-        status: 'planned',
-        commands: [
-          { id: 'V1', command: 'npm test', reason: 'runs the changed tests' },
-          { id: 'V2', command: 'make test', reason: 'the project gate' },
-          { id: 'V3', command: 'cargo test', reason: 'the crate tests' },
-        ],
-        declined: [{ target: 'e2e/app.spec.ts', reason: 'needs a browser' }],
-        reason: null,
-      },
       check({ status: 'running' }),
       check({ passed: false, duration: 3 }),
       check({ status: 'running', moment: 'base' }),
@@ -678,7 +633,6 @@ describe('createStdoutTextSink', () => {
 
     expect(lines).toEqual([
       'phase: final-review',
-      'reviewer check declined: e2e/app.spec.ts (needs a browser)',
       'reviewer check V1: failed (npm test)',
       'base re-run V1: fails',
       'reviewer check V2: refused (runs make on Makefile, which this run changed)',

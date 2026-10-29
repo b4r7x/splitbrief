@@ -326,7 +326,7 @@ export async function requestConsult(
       checkRegistry({
         plan: ctx.state.plan,
         tasks: ctx.state.tasks,
-        reviewChecks: enabledReviewChecks(ctx.config, ctx.state.reviewChecks),
+        reviewChecks: enabledReviewChecks(ctx.config, ctx.state.plan),
       }).keys(),
     ),
     npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),

@@ -27,7 +27,6 @@ import { streamingOutputStore } from '../../src/stores/workflow/streaming-output
 import { transcriptTailStore } from '../../src/stores/workflow/transcript-tail.js';
 import { resultMenuStore } from '../../src/stores/workflow/result-menu.js';
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
-import { reviewChecksPromptStore } from '../../src/stores/review-checks-prompt/prompt.js';
 import { commandPaletteMruStore } from '../../src/stores/ui/command-palette-mru.js';
 import { reviewKeysStore } from '../../src/stores/ui/review-keys.js';
 import { composerDraftStore } from '../../src/stores/ui/composer-draft.js';
@@ -72,7 +71,6 @@ export function resetAllStores(): void {
   transcriptTailStore.__testReset();
   resultMenuStore.reset();
   approvalPromptStore.reset();
-  reviewChecksPromptStore.reset();
   commandPaletteMruStore.reset();
   reviewKeysStore.reset();
   composerDraftStore.reset();

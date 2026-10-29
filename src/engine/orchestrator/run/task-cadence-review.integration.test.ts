@@ -143,7 +143,6 @@ function runOptions(opts: {
         return typeof fixWork === 'string' ? fixWork : { ...verdict, ...fixWork };
       },
       undefined,
-      undefined,
       () => cannotConsult(),
     ),
   });

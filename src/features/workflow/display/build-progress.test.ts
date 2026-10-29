@@ -20,10 +20,6 @@ import { makeRetry, makeTaskStart } from '#testing/helpers/events/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
-import {
-  makeRunnerCallStarted,
-  makeRunnerCallCompleted,
-} from '#testing/helpers/events/runner-call.js';
 
 const NOW = 1_000_000;
 
@@ -70,48 +66,14 @@ it.each([
       model: 'gpt-5',
       axes: ['high'],
     });
-    addEvent({ type: 'review_step', ts: NOW - 1_000, phase, step: 'choosing-checks' });
+    addEvent({ type: 'review_step', ts: NOW - 1_000, phase, step: 'verdict' });
     const progressNow = () =>
       deriveBuildProgress(
         input({ lifecycle: lifecycleStore.get(), operations: operationsStore.get() }),
       );
     const reviewer = 'Review · OpenAI Codex CLI · GPT-5 · high';
-    expect(progressNow().activity).toBe(`${reviewer} · choosing checks`);
+    expect(progressNow().activity).toBe(`${reviewer} · reviewing changes`);
     expect(progressNow().freshness).toBe('last event 1s ago');
-    addEvent(
-      makeRunnerCallStarted({
-        ts: NOW - 900,
-        phase,
-        role: 'review',
-        callId: 'review-plan',
-        runnerName: 'codex',
-        model: 'gpt-5',
-        axes: ['high'],
-      }),
-    );
-    expect(progressNow().activity).toBe(`${reviewer} · choosing checks`);
-    addEvent(
-      makeRunnerCallCompleted({
-        ts: NOW - 800,
-        phase,
-        role: 'review',
-        callId: 'review-plan',
-        startedAt: NOW - 900,
-        endedAt: NOW - 800,
-        durationMs: 100,
-      }),
-    );
-    expect(progressNow().activity).toBe(`${reviewer} · choosing checks`);
-    addEvent({
-      type: 'review_checks',
-      ts: NOW - 750,
-      phase,
-      scope,
-      status: 'planned',
-      commands: [],
-      declined: [],
-      reason: 'No checks needed.',
-    });
     addEvent({
       type: 'full_suite',
       ts: NOW - 700,

@@ -14,12 +14,6 @@ import {
   resultMenuHeight,
 } from '../../features/workflow/result/options.js';
 import { resultMenuStore } from '../../stores/workflow/result-menu.js';
-import { ReviewChecksCard } from '../../features/workflow/review-checks/card.js';
-import {
-  REVIEW_CHECKS_COMPOSER_HINT,
-  reviewChecksCardLayout,
-} from '../../features/workflow/review-checks/options.js';
-import { reviewChecksPromptStore } from '../../stores/review-checks-prompt/prompt.js';
 import { showRunDiff } from '../../features/workflow/result/show-diff.js';
 import { changedFileCount } from '../../features/workflow/closed/projections.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -281,17 +275,6 @@ export function WorkflowScreen({
   }, [resultFocusKey, resultMenuOpen]);
   const resultMenuFocused =
     resultMenuOpen && (resultFocus?.key !== resultFocusKey || resultFocus.menu);
-  // One card per review: the reviewer's chosen commands wait here for Run all or Skip all.
-  const checksRequest = reviewChecksPromptStore.use((state) =>
-    state.status === 'pending' ? state.request : null,
-  );
-  const checksCardOpen = checksRequest !== null && !stopMenuOpen && !resultMenuOpen;
-  const [checksFocus, setChecksFocus] = useState<{
-    request: typeof checksRequest;
-    menu: boolean;
-  } | null>(null);
-  const checksCardFocused =
-    checksCardOpen && (checksFocus?.request !== checksRequest || checksFocus.menu);
   const override =
     ready !== undefined && ready.status.kind === 'ready-to-apply' ? ready.status.override : false;
   const accepted =
@@ -310,22 +293,20 @@ export function WorkflowScreen({
           { override, findings, note: acceptNote, confirming, files: changedFiles },
           cols,
         )
-      : checksCardOpen
-        ? reviewChecksCardLayout(checksRequest, cols).height
-        : getWorkflowPromptRows({
-            approvalState: model.approvalPromptState,
-            questionHint,
-            review: {
-              artifact: reviewArtifact,
-              confirms: reviewConfirms,
-              budgetRows: reviewBudgetRows,
-            },
-            recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
-            questions: plannerQuestions,
-            questionIndex: questionState.index,
-            questionWriting: questionState.focus === 'answer',
-            cols,
-          });
+      : getWorkflowPromptRows({
+          approvalState: model.approvalPromptState,
+          questionHint,
+          review: {
+            artifact: reviewArtifact,
+            confirms: reviewConfirms,
+            budgetRows: reviewBudgetRows,
+          },
+          recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
+          questions: plannerQuestions,
+          questionIndex: questionState.index,
+          questionWriting: questionState.focus === 'answer',
+          cols,
+        });
   useLayoutEffect(() => {
     resultMenuStore.setHeight(resultMenuOpen ? requestedPromptRows : null);
     return () => resultMenuStore.reset();
@@ -474,14 +455,9 @@ export function WorkflowScreen({
           focused: resultMenuFocused,
           release: () => setResultFocus({ key: resultFocusKey, menu: false }),
         }
-      : checksRequest !== null
-        ? {
-            focused: checksCardFocused,
-            release: () => setChecksFocus({ request: checksRequest, menu: false }),
-          }
-        : structuredQuestion && questionState.focus === 'menu'
-          ? { focused: true, release: () => questionPromptStore.setFocus('composer') }
-          : undefined;
+      : structuredQuestion && questionState.focus === 'menu'
+        ? { focused: true, release: () => questionPromptStore.setFocus('composer') }
+        : undefined;
   const takeKeys =
     covered || model.promptPending
       ? undefined
@@ -525,7 +501,7 @@ export function WorkflowScreen({
         <Box flexDirection="column" width="100%" flexShrink={0}>
           <Divider width={cols} tone="textDim" label={scrollBelowLabel} />
           <WorkflowFooter
-            compactInput={stopMenuOpen || resultMenuOpen || checksCardOpen}
+            compactInput={stopMenuOpen || resultMenuOpen}
             beforeComposer={
               stopMenuOpen ? (
                 <StopMenu height={promptBoxRows} />
@@ -545,13 +521,6 @@ export function WorkflowScreen({
                     if (ready !== undefined) void showRunDiff(ready);
                   }}
                 />
-              ) : checksCardOpen ? (
-                <ReviewChecksCard
-                  request={checksRequest}
-                  height={promptBoxRows}
-                  focused={checksCardFocused && !keysHeldAbove}
-                  onFocusChange={(menu) => setChecksFocus({ request: checksRequest, menu })}
-                />
               ) : undefined
             }
             handleInput={handleFooterInput}
@@ -560,9 +529,7 @@ export function WorkflowScreen({
             onEmptySubmit={
               resultMenuOpen
                 ? () => setResultFocus({ key: resultFocusKey, menu: true })
-                : checksCardOpen
-                  ? () => setChecksFocus({ request: checksRequest, menu: true })
-                  : model.onEmptySubmit
+                : model.onEmptySubmit
             }
             onRuntimeCommand={model.handleRuntimeCommand}
             commands={commands}
@@ -574,24 +541,20 @@ export function WorkflowScreen({
                   ? recoveryComposerHint(recoveryIssue, recoveryMenuFocused)
                   : resultMenuFocused
                     ? RESULT_MENU_COMPOSER_HINT
-                    : checksCardFocused
-                      ? REVIEW_CHECKS_COMPOSER_HINT
-                      : questionPanelFocused
-                        ? 'Answer the question above…'
-                        : structuredQuestion
-                          ? 'New instruction — replaces these questions…'
-                          : plannerQuestions !== undefined
-                            ? model.inputMode.hint
-                            : model.inputHint
+                    : questionPanelFocused
+                      ? 'Answer the question above…'
+                      : structuredQuestion
+                        ? 'New instruction — replaces these questions…'
+                        : plannerQuestions !== undefined
+                          ? model.inputMode.hint
+                          : model.inputHint
             }
             questionPanelFocused={questionPanelFocused}
             onReturnToQuestion={structuredQuestion ? returnToQuestion : undefined}
             questionEpoch={model.questionEpoch}
             feedbackHint={legend}
             commandsOnly={model.commandsOnly}
-            waitingForUser={
-              model.inputMode.mode !== 'normal' || model.promptPending || checksCardOpen
-            }
+            waitingForUser={model.inputMode.mode !== 'normal' || model.promptPending}
             buildBlockShown={progressRows > 0}
             keepPlaceholderWhileFocused={
               recoveryPromptOpen || model.atRestRecord !== undefined || model.applying
@@ -610,14 +573,7 @@ export function WorkflowScreen({
                       setResultFocus({ key: resultFocusKey, menu: !resultMenuFocused });
                     },
                   }
-                : checksCardOpen
-                  ? {
-                      menuFocused: checksCardFocused,
-                      onToggleMenu: () => {
-                        setChecksFocus({ request: checksRequest, menu: !checksCardFocused });
-                      },
-                    }
-                  : {})}
+                : {})}
             panelHoldsKeys={takeKeys !== undefined}
             onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
             {...(byline !== undefined && { byline })}
@@ -647,7 +603,7 @@ export function WorkflowScreen({
         {...(crewChrome !== null && { recordedCrew: crewChrome.seats })}
       />
       <Box
-        height={stopMenuOpen || resultMenuOpen || checksCardOpen ? 0 : promptBoxRows}
+        height={stopMenuOpen || resultMenuOpen ? 0 : promptBoxRows}
         overflow="hidden"
         flexDirection="column"
         flexShrink={0}

@@ -14,8 +14,6 @@ import type { EventBus } from '../events/types.js';
 import type { SteeringPort } from '../calls/steering.js';
 import type {
   ApprovalReviewResult,
-  ReviewChecksApprovalAnswer,
-  ReviewChecksApprovalRequest,
   TieredApprovalRequest,
   TieredApprovalResponse,
 } from '../../core/approval/types.js';
@@ -50,14 +48,6 @@ export interface OrchestratorCallbacks {
     | undefined;
   onTieredApproval?:
     | ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>)
-    | undefined;
-  /**
-   * Shows the reviewer checks before they run when `validation.approve_checks` is `ask`. Only a
-   * screen wires it: a run without it (headless) runs none of the commands. Undefined is a prompt
-   * closed without an answer.
-   */
-  onReviewChecksApproval?:
-    | ((request: ReviewChecksApprovalRequest) => Promise<ReviewChecksApprovalAnswer | undefined>)
     | undefined;
   onComplete: (summary: Summary) => void;
 }

@@ -61,14 +61,6 @@ describe('stageSummaryRow', () => {
     } as const;
     const before: EngineEvent[] = [
       { type: 'review_started', ts: 1_000, phase: 'final-review', scope: 'final', tool: 'codex' },
-      {
-        type: 'review_checks',
-        ts: 4_000,
-        phase: 'final-review',
-        scope: 'final',
-        status: 'planned',
-        commands: [{ id: 'V1', command: 'npm test', reason: 'Verify the change.' }],
-      },
       { type: 'runner_call_started', ts: 4_000, ...call },
     ];
     // A stop you make ends the call at its moment; the stop event itself may land in another section.

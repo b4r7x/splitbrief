@@ -511,12 +511,12 @@ describe('operationsStore', () => {
       runnerStarted({ ts: 1_100, phase: 'final-review', role: 'review', taskId: undefined }),
     );
     expect(operationsStore.get().active?.reviewStep).toBe('verdict');
-    addEvent({ type: 'review_step', ts: 1_200, phase: 'final-review', step: 'choosing-checks' });
-    expect(operationsStore.get().active?.reviewStep).toBe('choosing-checks');
+    addEvent({ type: 'review_step', ts: 1_200, phase: 'final-review', step: 'verify' });
+    expect(operationsStore.get().active?.reviewStep).toBe('verify');
     addEvent(
       runnerCompleted({ ts: 1_300, phase: 'final-review', role: 'review', taskId: undefined }),
     );
-    expect(operationsStore.get().active?.reviewStep).toBe('choosing-checks');
+    expect(operationsStore.get().active?.reviewStep).toBe('verify');
   });
 
   it('starts the review clock with the step its label names', () => {
@@ -527,29 +527,22 @@ describe('operationsStore', () => {
       scope: 'final',
       tool: 'codex',
     });
-    addEvent({ type: 'review_step', ts: 1_010, phase: 'final-review', step: 'choosing-checks' });
+    addEvent({ type: 'review_step', ts: 1_010, phase: 'final-review', step: 'verdict' });
     addEvent(
       runnerStarted({ ts: 1_100, phase: 'final-review', role: 'review', taskId: undefined }),
     );
     addEvent(
       runnerCompleted({ ts: 12_000, phase: 'final-review', role: 'review', taskId: undefined }),
     );
-    addEvent({
-      type: 'review_checks',
-      ts: 12_050,
-      phase: 'final-review',
-      scope: 'final',
-      status: 'planned',
-      commands: [],
-    });
-    expect(operationsStore.get().active).toMatchObject({
-      reviewStep: 'verdict',
+    addEvent({ type: 'review_step', ts: 12_050, phase: 'final-review', step: 'verify' });
+    expect(operationsStore.get().reviewStage).toMatchObject({
+      reviewStep: 'verify',
       startedAt: 12_050,
     });
 
-    addEvent({ type: 'review_step', ts: 12_060, phase: 'final-review', step: 'verdict' });
-    expect(operationsStore.get().active).toMatchObject({
-      reviewStep: 'verdict',
+    addEvent({ type: 'review_step', ts: 12_060, phase: 'final-review', step: 'verify' });
+    expect(operationsStore.get().reviewStage).toMatchObject({
+      reviewStep: 'verify',
       startedAt: 12_050,
     });
   });

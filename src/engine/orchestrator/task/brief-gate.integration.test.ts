@@ -598,7 +598,7 @@ describe('brief gate', () => {
       'src/legacy.ts(3,7): error TS2322: Type number is not assignable to type string.';
 
     type GateOptions = {
-      /** The command the newest review recorded as V1; a later review may have chosen another. */
+      /** The command the plan gate names as V1; a fix task saved by an older run may carry another. */
       recorded?: string;
       config?: ReturnType<typeof makeConfig>;
       /** The failure keys the finding carries for V1; null is an older fix task saved without them. */
@@ -632,19 +632,15 @@ describe('brief gate', () => {
           ],
         },
       });
-      const reviewChecks = {
-        scope: 'task' as const,
-        cycle: 1,
-        plan: {
-          commands: [
-            { id: 'V1', command: options.recorded ?? 'npm test', reason: 'verifies the change' },
-          ],
-          declined: [],
-          reason: null,
-        },
-        at: '2026-10-08T00:00:00.000Z',
+      const plan = {
+        summary: 'Verify the change.',
+        decisions: [],
+        criteria: [],
+        checks: [],
+        gate: [options.recorded ?? 'npm test'],
+        validation: null,
       };
-      const state = makeImplState([task], { workspace: run.workspace, reviewChecks });
+      const state = makeImplState([task], { workspace: run.workspace, plan });
       const ref = { projectDir: run.dir, sessionId: run.sessionId };
       saveState(ref, state);
       const places: Array<'workspace' | 'base'> = [];
@@ -716,7 +712,7 @@ describe('brief gate', () => {
       });
     });
 
-    it('runs the command the finding carries, not the V1 a later review recorded', async () => {
+    it('runs the command the finding carries, not the V1 the plan gate names', async () => {
       await withApplyRun(FILES, { sessionId: 'sess-fix-carried' }, async (run) => {
         const { result, places, commands } = await gate(
           run,

@@ -1,9 +1,9 @@
 import type { Config } from '../schemas/config.js';
-import { APPROVE_CHECKS, APPROVE_LEVELS, ISOLATION_STRATEGIES } from '../schemas/enums.js';
+import { APPROVE_LEVELS, ISOLATION_STRATEGIES } from '../schemas/enums.js';
 import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { getIsolationStrategy } from '../config/accessors/values.js';
-import { resolveApproveChecks, resolveEndChecks } from '../config/runtime/resolve.js';
+import { resolveEndChecks } from '../config/runtime/resolve.js';
 import { TIMEOUTS } from '../pipeline-spec/timeouts.js';
 
 const isApiImplementer = (config: Config): boolean =>
@@ -112,19 +112,9 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'validation.endChecks',
     label: 'End-of-run checks',
     section: 'Validation',
-    description:
-      'The reviewer chooses reviewer checks that verify the change; SPLITBRIEF runs them',
+    description: 'SPLITBRIEF runs the project gate the plan names before the final review',
     kind: 'boolean',
     readValue: resolveEndChecks,
-  },
-  {
-    id: 'validation.approveChecks',
-    label: 'Approve checks',
-    section: 'Validation',
-    description: 'Whether the reviewer checks wait for your Run all or Skip all before they run',
-    kind: 'enum',
-    options: [...APPROVE_CHECKS],
-    readValue: resolveApproveChecks,
   },
   {
     id: 'validation.testCommand',

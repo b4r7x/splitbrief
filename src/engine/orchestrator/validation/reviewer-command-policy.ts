@@ -502,34 +502,6 @@ const MAKE_CONTROL_VARIABLES = new Set([
   'GNUMAKEFLAGS',
 ]);
 
-const code = (words: Iterable<string>): string =>
-  [...words].map((word) => `\`${word}\``).join(', ');
-
-const taskRunnerOptions = (kind: 'code' | 'definition'): string =>
-  code(
-    Object.entries(TASK_RUNNERS).flatMap(([program, options]) =>
-      options[kind].map((option) => `${program} ${option}`),
-    ),
-  );
-
-/** The reviewer command policy in words: the plan prompt states it, the policy below enforces it. */
-export const REVIEWER_COMMAND_RULES: readonly string[] = [
-  'Write each command as one program and its arguments: no shell operator, substitution or redirect (`| & ; < > $ ( ) { }` or backticks), no control character (a line break or a tab), no environment variable before the program, no `cd`, no URL and no path outside the run workspace, also not after `KEY=` or attached to an option (`DESTDIR=/`, `-o/tmp/x`).',
-  "Run an installed program by its name, never by path: `bin/test` and `sub/gradlew` are refused. The project's own `./gradlew` and `./mvnw` are the exception: they run as `gradle` and `mvn` under the same rules, and only when this run changed none of their wrapper files (`gradlew` and `gradle/wrapper/`, `mvnw` and `.mvn/wrapper/`).",
-  `A shell (${code(SHELLS)}) and a program that runs another command line (${code(WRAPPERS)}, \`npm explore\`) are refused. ${code(Object.entries(FORWARDERS).flatMap(([program, subs]) => subs.map((sub) => `${program} ${sub}`)))} and \`python -m\` are checked by the program they run. Forwarders may take options. The program is the first word after the subcommand that does not follow an option; a word after an option can be its value, so it is checked as a possible program start too. Write a path value as \`--option=value\`. \`uv run --with\` is refused because it can download a package. This rule matches \`--with\`, \`--with-editable\`, \`--with-requirements\` and \`-w\` anywhere after \`uv run\`, including attached values and program arguments. \`mise exec\` runs only as \`mise exec -- <program>\`, because it installs the tools named before \`--\`. A first word that is not a command of \`pnpm\` or \`yarn\` is a script or program they run, and it is checked the same way (\`pnpm tsx\`, \`yarn node\`).`,
-  `An interpreter, under any version of its name (\`python3.12\`, \`pypy3\`), runs a project script (\`python manage.py test\`, \`php artisan test\`) or a module (\`python -m pytest\`). It never runs inline code: \`node -e\`, \`python -c\`, \`deno eval\`, \`elixir -e\`, \`elixir --erl\`, \`iex -e\`, \`groovy -e\`, \`scala -e\`, \`kotlin -e\`, \`erl -eval\`, \`erl -s\`, \`erl -run\`, and \`php -r\`, \`php -B\`, \`php -R\`, \`php -F\`, \`php -E\` are refused. Interpreter option values are not code: \`perl -Mstrict t/x.t\`, \`php -c php.ini artisan test\` and \`php -dmemory_limit=1G artisan test\` can run. A build or task runner runs no inline code either: ${taskRunnerOptions('code')} are refused. So are ${code(Object.entries(TASK_CODE_GOALS).flatMap(([program, goals]) => goals.map((goal) => `${program} ${goal}${goal.endsWith(':') ? '*' : ''}`)))}, and \`mix do\` checks each task it chains as its own \`mix\` command. A \`make\` operand cannot set ${code(MAKE_CONTROL_VARIABLES)} or assign with \`!=\`.`,
-  `\`npx\` runs only as \`npx --no-install <tool>\`, and \`npm exec\` only with \`--no-install\`; neither takes \`--yes\` or \`-y\`. A launcher that downloads and runs a package is refused: ${code(LAUNCHERS.map((pattern) => pattern.join(' ')))}, \`go run <package>@<version>\`.`,
-  `A setup command is refused: a program whose subcommand or goal is ${code([...SETUP_VERBS].filter((verb) => SCOPED_SETUP_VERBS[verb] === undefined))} (\`npm ci\`, \`pip install\`, \`go generate\`, \`go mod tidy\`, \`mvn install\`), and a bare ${code(BARE_INSTALLERS)}. These setup verbs apply only to their named tools: ${code(Object.entries(SCOPED_SETUP_VERBS).flatMap(([verb, programs]) => programs.map((program) => `${program} ${verb}`)))}. \`npm run <script>\` and \`npm run-script <script>\` name package scripts, not setup verbs. A verification target such as \`make lock\` can run. An operand after an option can be the option's value, so it is checked too: write the subcommand or target before the options (\`cargo test --locked sync\`, \`pytest tests/ -k install -v\`).`,
-  `Package state commands are refused: ${code(Object.entries(PACKAGE_MUTATIONS).flatMap(([program, subs]) => subs.map((sub) => `${program} ${sub}`)))}. All forms of \`config\` and \`pkg\` are refused. An \`npm\`, \`pnpm\` or \`yarn\` \`audit\` with \`fix\` or \`--fix\` is refused; an audit without a fix can run.`,
-  `\`find\` with ${code(FIND_ACTIONS)} is refused because it changes files or runs commands. Other \`find\` checks can run.`,
-  `A program that does not verify a change is refused: ${code(NOT_VERIFICATION)}. ${code(
-    Object.entries(TASK_RUNNERS)
-      .filter(([, options]) => options.definition.length > 0)
-      .map(([program]) => program),
-  )} run only on the project's own task file, in its directory: ${taskRunnerOptions('definition')} are refused.`,
-  `A package script in any \`package.json\` or \`composer.json\` of the workspace, a \`Makefile\`, \`justfile\`, \`Rakefile\` or \`rakelib\` task, a build wrapper, or an interpreter script that this run changed or created is refused. A test file is not a check definition: a test this run wrote or changed runs (\`node --test test/new.test.js\`). \`node --check <file>\` and \`node -c <file>\` with no other option parse the file without running it, so they can check any file, also one this run changed. \`deno task\` tasks and \`mix.exs\` aliases are not compared. A \`package.json\` script named ${code(APPLICATION_SCRIPTS)} is refused in every form (\`npm start\`, \`pnpm --filter x start\`, \`yarn workspace x run start\`): it starts or stops the application and does not verify a change.`,
-];
-
 function isFlag(token: string): boolean {
   return token.startsWith('-');
 }
@@ -997,7 +969,7 @@ function tokensRefusal(tokens: readonly string[]): string | null {
 }
 
 /**
- * Why SPLITBRIEF does not run a command the reviewer chose, or null when it runs. The policy
+ * Why SPLITBRIEF does not run a gate command or a fix check's reviewer command, or null when it runs. The policy
  * admits any installed program of any stack and refuses only what is not a verification: shell
  * syntax, programs run by path, inline code, downloads, setup commands and other command lines.
  */

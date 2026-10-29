@@ -22,7 +22,6 @@ import { reviewName } from '../../core/recovery/headline.js';
 import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
 import { phaseStage } from '../../core/rail-stages.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
-import { resolveEndChecks } from '../../core/config/runtime/resolve.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import { seatReadsChangeFile } from '../../core/runners/capabilities.js';
 import {
@@ -350,8 +349,8 @@ export async function runFinalReviewPhase(opts: {
    */
   preReview?: ((state: WorkflowState) => Promise<PreReviewResult>) | undefined;
   /**
-   * The reviewer chooses the commands that verify this candidate and SPLITBRIEF runs them before
-   * the verdict call. A review that only re-answers a pending question on the same candidate skips it.
+   * SPLITBRIEF runs the project gate the plan names before the verdict call of the final review. A
+   * review that only re-answers a pending question on the same candidate skips it.
    */
   reviewChecks?: boolean | undefined;
 }): Promise<FinalReviewResult> {
@@ -442,13 +441,7 @@ export async function runFinalReviewPhase(opts: {
     };
   };
   publishReviewEvent({ bus, phase: state.phase }, { type: 'review_started', ...reviewEvent });
-  const choosingChecks = opts.reviewChecks === true && resolveEndChecks(config);
-  bus.publish({
-    type: 'review_step',
-    ts: Date.now(),
-    phase: state.phase,
-    step: choosingChecks ? 'choosing-checks' : 'verdict',
-  });
+  bus.publish({ type: 'review_step', ts: Date.now(), phase: state.phase, step: 'verdict' });
   if (opts.signal?.aborted) return interrupted();
   if (opts.scope !== 'task') {
     bus.publish({ type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
@@ -491,20 +484,9 @@ export async function runFinalReviewPhase(opts: {
     // A review whose verify a stop or a crash cut runs again on the inputs of the cut call.
     const cut = savedReviewAnswer(state, opts.scope ?? 'final', opts.afterTaskId);
     let reviewChecksSection = cut?.checksSection;
-    let dischargedReviewCommands = cut?.discharged ?? [];
     // A review that only re-answers its question on the same candidate keeps the checks it ran.
     let preExistingChecks = cut?.preExistingChecks ?? state.review?.preExistingChecks ?? [];
     if (opts.reviewChecks === true) {
-      const changedFiles =
-        opts.scope === 'task'
-          ? [
-              ...new Set(
-                (readEvidenceLedger({ projectDir, sessionId })?.tasks ?? [])
-                  .filter((entry) => scope.taskIds.includes(entry.id))
-                  .flatMap((entry) => entry.changedFiles),
-              ),
-            ]
-          : universe.changedFiles;
       const checks = await runReviewChecks({
         projectDir,
         workspaceDir,
@@ -512,26 +494,12 @@ export async function runFinalReviewPhase(opts: {
         config,
         bus,
         state,
-        reviewer,
-        scope: opts.scope ?? 'final',
-        taskIds: scope.taskIds,
-        changedFiles,
-        preRunFiles: universe.preRunFiles,
         signal: opts.signal,
-        onApproval: callbacks.onReviewChecksApproval,
       });
       state = checks.state;
       opts.setTrackedState?.(state);
-      if (checks.kind === 'protocol-error') {
-        failure = { kind: 'seat-protocol-error', error: checks.error };
-        throw checks.error;
-      }
       reviewChecksSection = checks.section;
-      dischargedReviewCommands = checks.discharged;
       preExistingChecks = checks.preExistingChecks;
-      if (choosingChecks) {
-        bus.publish({ type: 'review_step', ts: Date.now(), phase: state.phase, step: 'verdict' });
-      }
     }
     // A run planned on one session agreed on its plan; only an older run wrote a spec.
     const spec = readSpecFileOrEmpty(
@@ -597,7 +565,7 @@ export async function runFinalReviewPhase(opts: {
           candidate.findings,
           state.pendingTriage?.inputs ?? [],
           state.tasks,
-          enabledReviewChecks(config, state.reviewChecks),
+          enabledReviewChecks(config, state.plan),
           scope,
         ),
         ...fixTaskTargetErrors(candidate.fixTasks, userFiles),
@@ -642,7 +610,7 @@ export async function runFinalReviewPhase(opts: {
       registry: checkRegistry({
         plan: state.plan,
         tasks: state.tasks,
-        reviewChecks: enabledReviewChecks(config, state.reviewChecks),
+        reviewChecks: enabledReviewChecks(config, state.plan),
       }),
       projectDir,
       seatSupportsImages: seatSupportsImages({ runner: reviewRunner }),
@@ -934,7 +902,6 @@ export async function runFinalReviewPhase(opts: {
           cycle: fixCyclesOf(state).used,
           answer,
           preExistingChecks,
-          discharged: dischargedReviewCommands,
           ...(reviewChecksSection !== undefined && { checksSection: reviewChecksSection }),
           at: answeredAt,
         },
@@ -1019,15 +986,6 @@ export async function runFinalReviewPhase(opts: {
         at: record.at,
       },
     });
-    const pendingCommands = (state.pendingReviewCommands ?? []).filter(
-      (command) => !dischargedReviewCommands.includes(command),
-    );
-    if (pendingCommands.length !== (state.pendingReviewCommands ?? []).length) {
-      state = transitionAndSave({ projectDir, sessionId }, state, {
-        type: 'SET_PENDING_REVIEW_COMMANDS',
-        commands: pendingCommands,
-      });
-    }
     if (
       fixWork.fixTasks.length > 0 ||
       fixWork.verify.length > 0 ||

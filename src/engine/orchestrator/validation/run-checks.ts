@@ -9,11 +9,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, CheckStatus, Task } from '../../../core/schemas/task.js';
-import type {
-  DiscoveredValidation,
-  ReviewChecksRecord,
-  WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import type { DiscoveredValidation, WorkflowState } from '../../../core/schemas/workflow.js';
 import {
   captureText,
   processError,
@@ -75,7 +71,7 @@ export type RunChecksOptions = {
   task?: Task | undefined;
   tasks?: readonly Task[] | undefined;
   plan?: Plan | undefined;
-  /** The reviewer checks as required `cmd` checks; a script the run changed refuses its check. */
+  /** The project gate as required `cmd` checks; a script the run changed refuses its check. */
   reviewChecks?: readonly Check[] | undefined;
   /** The run base: a reviewer check whose script this run changed is refused against it. */
   base?: RunBase | undefined;
@@ -105,22 +101,19 @@ export function planApprovesNpmScripts(opts: {
   return resolveApproveLevel(opts.config) === 'plan' && opts.state.approve === 'plan';
 }
 
-/** The reviewer's chosen commands as required `cmd` checks. */
-export function reviewCheckList(record: ReviewChecksRecord | undefined): Check[] {
-  return (record?.plan.commands ?? []).map((command) => ({
-    id: command.id,
+/** The project gate the plan names as required `cmd` checks `V1`, `V2`, … in its order. */
+export function reviewCheckList(plan: Plan | undefined): Check[] {
+  return (plan?.gate ?? []).map((command, index) => ({
+    id: `V${index + 1}`,
     kind: 'cmd',
-    value: command.command,
+    value: command,
     required: true,
   }));
 }
 
-/** The reviewer checks a run may name: none while End-of-run checks are off or the plan was skipped. */
-export function enabledReviewChecks(
-  config: Config,
-  record: ReviewChecksRecord | undefined,
-): Check[] {
-  return resolveEndChecks(config) && record?.skipped === undefined ? reviewCheckList(record) : [];
+/** The reviewer checks a run may name: none while End-of-run checks are off. */
+export function enabledReviewChecks(config: Config, plan: Plan | undefined): Check[] {
+  return resolveEndChecks(config) ? reviewCheckList(plan) : [];
 }
 
 export function checkRegistry(

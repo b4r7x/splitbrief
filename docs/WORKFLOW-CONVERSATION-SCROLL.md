@@ -64,7 +64,7 @@ The scroller shows settled sections before the live stage and running brief. Pen
 
 Done brief rows in both the transcript and closed ledger use `TaskSummary` and its shared `fitDetailRun`. The closed ledger uses the same target label as the brief heading. The method and duration stay whole while space permits. If metadata leaves no room for the task id and a title fragment, the row drops metadata first. The count keeps its room while the path shortens. A path shortened to a bare `…` drops with its count. A stopped brief in the closed ledger fits the same way, and its `stopped` word keeps its room. Retries go before the path shortens by whole middle directory segments (`testing/…/projections.ts`), then to `…/projections.ts` and the bare filename. Only a filename that cannot fit loses characters. Path elision lives with the picker label rule in `src/utils/display-text.ts`.
 
-Check-row statuses `not run` and `chose none` join their words with a non-breaking space (`\u00a0`), so wrapping at 60 columns keeps each phrase whole. Running checks use `formatElapsedClock` in the build block and byline (`running 10:02`, `running 0:35` in the block). Finished-row durations keep `2m 0s` or `14.0s`.
+The check-row status `not run` joins its words with a non-breaking space (`\u00a0`), so wrapping at 60 columns keeps each phrase whole. Running checks use `formatElapsedClock` in the build block and byline (`running 10:02`, `running 0:35` in the block). Finished-row durations keep `2m 0s` or `14.0s`.
 
 ## Scroll Window
 

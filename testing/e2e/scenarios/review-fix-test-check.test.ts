@@ -87,10 +87,7 @@ for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
 let kind;
 let answer;
-if (prompt.includes('# Choose the checks for this review')) {
-  kind = 'review-checks';
-  answer = null;
-} else if (prompt.includes('# Final Implementation Review')) {
+if (prompt.includes('# Final Implementation Review')) {
   const repair = prompt.includes('It failed validation:');
   kind = repair ? 'final-review-repair' : 'final-review';
   const ids = (label) => prompt.match(new RegExp('^' + label + ' (.+)$', 'm'))[1].split(',').map((id) => id.trim());
@@ -168,10 +165,7 @@ for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
 let kind;
 let answer;
-if (prompt.includes('# Choose the checks for this review')) {
-  kind = 'review-checks';
-  answer = null;
-} else if (prompt.includes('# Final Implementation Review')) {
+if (prompt.includes('# Final Implementation Review')) {
   kind = 'final-review';
   const ids = (label) => prompt.match(new RegExp('^' + label + ' (.+)$', 'm'))[1].split(',').map((id) => id.trim());
   const taskIds = ids('Task ids:');

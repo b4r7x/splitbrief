@@ -6,7 +6,6 @@ import type { SpecMetadata } from '../../core/paths-io.js';
 import type { Check, Task, TaskId } from '../../core/schemas/task.js';
 import {
   fixCyclesOf,
-  type ReviewChecksRecord,
   type ReviewRecord,
   type TriageRecord,
   type WorkflowState,
@@ -29,6 +28,7 @@ import {
   checkRegistry,
   enabledReviewChecks,
   createCheckRunner,
+  reviewCheckList,
   planApprovesNpmScripts,
   type CheckRunResult,
   type RunChecksOptions,
@@ -220,7 +220,7 @@ export async function verifyClaimChecks(
   const checkOptions: RunChecksOptions = {
     plan: state.plan,
     tasks: state.tasks,
-    reviewChecks: enabledReviewChecks(ctx.config, state.reviewChecks),
+    reviewChecks: enabledReviewChecks(ctx.config, state.plan),
     base: runBaseOf({ projectDir: ctx.projectDir, sessionId: ctx.sessionId }, state),
     projectDir: ctx.workspaceDir,
     sessionId: ctx.sessionId,
@@ -292,7 +292,7 @@ function findingFor(
   id: string,
   review: ReviewRecord | undefined,
   inputs: readonly TriageInput[],
-  reviewChecks: ReviewChecksRecord | undefined,
+  plan: Plan | undefined,
 ): FixFinding | undefined {
   const finding = review?.verdict.findings.find((candidate) => candidate.id === id);
   if (finding !== undefined) {
@@ -301,7 +301,7 @@ function findingFor(
     const redKeys: Record<string, string[]> = {};
     for (const id of finding.checkIds ?? []) {
       const command = REVIEW_CHECK_ID.test(id)
-        ? reviewChecks?.plan.commands.find((check) => check.id === id)?.command
+        ? reviewCheckList(plan).find((check) => check.id === id)?.value
         : inputs.find((input) => input.checkIds?.includes(id) && input.command !== undefined)
             ?.command;
       if (command !== undefined) commands[id] = command;
@@ -387,7 +387,7 @@ export function applyTriage(
   const converted = insertTasks(result.fixTasks, state.tasks, (spec) => {
     const task = taskFromSpec(spec, ctx.workspaceDir);
     const findings = spec.findingIds.flatMap((id) => {
-      const finding = findingFor(id, review, inputs, state.reviewChecks);
+      const finding = findingFor(id, review, inputs, state.plan);
       return finding === undefined ? [] : [finding];
     });
     return {

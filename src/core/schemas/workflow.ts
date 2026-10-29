@@ -12,7 +12,6 @@ import { TaskSchema, TaskIdSchema, type Task } from './task.js';
 import { PlanSchema } from './plan.js';
 import {
   ReviewAnswerSchema,
-  ReviewChecksPlanObjectSchema,
   ReviewVerdictSchema,
   TriageInputSchema,
   TriageResultSchema,
@@ -249,23 +248,10 @@ export const SavedReviewAnswerSchema = z.object({
   cycle: z.number().int(),
   answer: ReviewAnswerSchema,
   preExistingChecks: ReviewRecordSchema.shape.preExistingChecks.unwrap(),
-  /** The reviewer commands this review's checks ran. */
-  discharged: z.array(z.string()),
   /** The reviewer checks' results the cut call read. */
   checksSection: z.string().optional(),
   at: z.string(),
 });
-
-/** The commands the reviewer chose for one review: they are checks `V1…` until the next review chooses again. */
-export const ReviewChecksRecordSchema = z.object({
-  scope: z.enum(['task', 'final']),
-  cycle: z.number().int(),
-  plan: ReviewChecksPlanObjectSchema,
-  at: z.string(),
-  /** None of the chosen commands ran: the user skipped them, or the run had no screen to ask on. */
-  skipped: z.object({ reason: z.string() }).optional(),
-});
-export type ReviewChecksRecord = z.infer<typeof ReviewChecksRecordSchema>;
 
 export const TriageRecordSchema = z.object({
   reviewAt: z.string().optional(),
@@ -433,9 +419,6 @@ const WorkflowStateFields = {
   fixCycles: FixCyclesSchema.optional(),
   review: ReviewRecordSchema.optional(),
   reviewAnswer: SavedReviewAnswerSchema.optional(),
-  reviewChecks: ReviewChecksRecordSchema.optional(),
-  /** Reviewer commands a fix check ran that no review has run since; the next reviewer-checks plan must choose them first. */
-  pendingReviewCommands: z.array(z.string()).optional(),
   triage: z.array(TriageRecordSchema).optional(),
   pendingTriage: PendingTriageSchema.optional(),
   pendingScheduledReview: z.object({ afterTaskId: TaskIdSchema }).optional(),
@@ -522,6 +505,8 @@ const LEGACY_STATE_KEYS = [
   'budgetPauseAcknowledgedAtCost',
   'decisionConfirms',
   'plannerCalls',
+  'reviewChecks',
+  'pendingReviewCommands',
 ] as const;
 
 function stripLegacyStateKeys(value: unknown): unknown {

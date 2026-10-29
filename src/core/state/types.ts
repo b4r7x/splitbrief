@@ -56,8 +56,6 @@ export type StateAction =
   | { type: 'RECORD_REVIEW'; review: NonNullable<WorkflowState['review']> }
   | { type: 'SAVE_REVIEW_ANSWER'; answer: NonNullable<WorkflowState['reviewAnswer']> }
   | { type: 'DROP_REVIEW_ANSWER' }
-  | { type: 'RECORD_REVIEW_CHECKS'; record: NonNullable<WorkflowState['reviewChecks']> }
-  | { type: 'SET_PENDING_REVIEW_COMMANDS'; commands: string[] }
   | { type: 'RECORD_TRIAGE'; record: NonNullable<WorkflowState['triage']>[number] }
   | { type: 'START_FIX_CYCLE'; lastFixTaskId?: TaskId }
   | { type: 'REVIEW_CORRECTION'; text: string }

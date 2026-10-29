@@ -75,15 +75,11 @@ function plan(variant: Variant) {
     summary: 'Add a total helper with its test.',
     decisions: ['No package.json change.'],
     criteria: [{ id: 'C1', text: 'total returns the sum.', checkIds: ['T001-K1'] }],
+    gate: ['node --test'],
     tasks: [brief],
   });
 }
 
-const reviewChecksPlan = {
-  commands: [{ id: 'V1', command: 'node --test', reason: 'Runs the test suite.' }],
-  declined: [],
-  reason: null,
-};
 const passing = passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] });
 /** What the live reviewer answered when it took the user's edits for the run's own. */
 const revertUserFiles: ReviewAnswer = {
@@ -189,10 +185,7 @@ for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
 let call;
 let answer;
-if (prompt.includes('# Choose the checks for this review')) {
-  call = { kind: 'review-checks', prompt };
-  answer = ${JSON.stringify(reviewChecksPlan)};
-} else if (prompt.includes('# Final Implementation Review') && prompt.includes('It failed validation:')) {
+if (prompt.includes('# Final Implementation Review') && prompt.includes('It failed validation:')) {
   call = { kind: 'final-review-repair', prompt };
   answer = ${JSON.stringify(passing)};
 } else if (prompt.includes('# Final Implementation Review')) {
@@ -264,7 +257,6 @@ async function startRun(variant: Variant) {
     validation: {
       ...config.validation,
       endChecks: true,
-      approveChecks: 'auto',
       testCommand: 'node --test',
     },
   });
@@ -287,10 +279,6 @@ function section(prompt: string | undefined, heading: string): string {
   return prompt.slice(from + heading.length + 4).split(/^## /m)[0] ?? '';
 }
 
-function listed(body: string): string[] {
-  return [...body.matchAll(/^- (\S+)$/gm)].map((match) => match[1] ?? '');
-}
-
 describe('e2e: a run started on a dirty checkout', { timeout: 300_000 }, () => {
   it('reviews only the run changes, refuses a fix of the user files and keeps them at Apply', async () => {
     const { target, run, sessionId, events, calls } = await startRun({
@@ -302,20 +290,11 @@ describe('e2e: a run started on a dirty checkout', { timeout: 300_000 }, () => {
     expect(calls.map((call) => call.kind)).toEqual([
       'plan',
       'implement',
-      'review-checks',
       'final-review',
       'final-review-repair',
     ]);
 
-    const choice = calls[2]?.prompt;
-    expect(listed(section(choice, 'Changed files'))).toEqual([TOTAL_FILE, TOTAL_TEST_FILE]);
-    expect(listed(section(choice, 'Changed before this run'))).toEqual([
-      NOTES_FILE,
-      PACKAGE_FILE,
-      LEGACY_FILE,
-    ]);
-
-    const review = calls[3]?.prompt ?? '';
+    const review = calls[2]?.prompt ?? '';
     const coverage = section(review, 'Changed Files');
     expect(coverage).toContain(
       `Files already changed when this run started: ${NOTES_FILE}, ${PACKAGE_FILE}, ${LEGACY_FILE}.`,
@@ -323,10 +302,10 @@ describe('e2e: a run started on a dirty checkout', { timeout: 300_000 }, () => {
     expect(coverage).toContain('Files with uncertain attribution or later edits: none observed.');
     expect(section(review, 'Workspace Context')).toBe('');
 
-    expect(calls[4]?.prompt).toContain(
+    expect(calls[3]?.prompt).toContain(
       `Fix task T002 targets ${PACKAGE_FILE}: it was already changed when this run started, and this run did not change it.`,
     );
-    expect(calls[4]?.prompt).toContain(
+    expect(calls[3]?.prompt).toContain(
       `Fix task T002 targets ${LEGACY_FILE}: it was already changed when this run started, and this run did not change it.`,
     );
 
@@ -364,26 +343,9 @@ describe('e2e: a run started on a dirty checkout', { timeout: 300_000 }, () => {
       firstReview: passing,
     });
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
-    expect(calls.map((call) => call.kind)).toEqual([
-      'plan',
-      'implement',
-      'review-checks',
-      'final-review',
-    ]);
+    expect(calls.map((call) => call.kind)).toEqual(['plan', 'implement', 'final-review']);
 
-    const choice = calls[2]?.prompt;
-    expect(listed(section(choice, 'Changed files'))).toEqual([
-      NOTES_FILE,
-      TOTAL_FILE,
-      TOTAL_TEST_FILE,
-    ]);
-    expect(listed(section(choice, 'Changed before this run'))).toEqual([
-      NOTES_FILE,
-      PACKAGE_FILE,
-      LEGACY_FILE,
-    ]);
-
-    const diff = section(calls[3]?.prompt, 'Implementation Diff');
+    const diff = section(calls[2]?.prompt, 'Implementation Diff');
     expect(diff).toContain('+run line');
     expect(diff).not.toContain('+user line');
 
@@ -405,24 +367,15 @@ describe('e2e: a run started on a dirty checkout', { timeout: 300_000 }, () => {
     expect(calls.map((call) => call.kind)).toEqual([
       'plan',
       'implement',
-      'review-checks',
       'final-review',
       'implement',
-      'review-checks',
       'final-review',
     ]);
 
-    const choice = calls[2]?.prompt ?? '';
-    expect(listed(section(choice, 'Changed files'))).toEqual([TOTAL_FILE, TOTAL_TEST_FILE]);
-    expect(choice).not.toContain('## Changed before this run');
-    expect(section(calls[3]?.prompt, 'Changed Files')).toContain(
+    expect(section(calls[2]?.prompt, 'Changed Files')).toContain(
       'Files already changed when this run started: none.',
     );
-    expect(listed(section(calls[5]?.prompt, 'Changed files'))).toEqual([
-      GITIGNORE_FILE,
-      TOTAL_FILE,
-      TOTAL_TEST_FILE,
-    ]);
+    expect(section(calls[4]?.prompt, 'Implementation Diff')).toContain(GITIGNORE_FILE);
 
     expect(readState(target, sessionId).tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
     const applied = await applyRun(target, sessionId);

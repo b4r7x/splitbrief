@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version change: 4.4.0 → 4.5.0. MINOR: Principle V changes who names the reviewer checks. The planner names the project gate in the plan, at most 6 commands, and the plan card shows it. Before each final review SPLITBRIEF runs that gate under the reviewer command policy; a task review runs no gate. No reviewer call chooses checks, and no card asks to run them. `validation.approve_checks` is retired and loads with one notice.
+- Modified principles: V.
+- Updated sections: Technical Constraints (Project languages), Governance.
+- Templates checked: plan-template.md, spec-template.md and tasks-template.md remain compatible. They name no reviewer check.
+- Docs and skills: configuration, workflow, features, concepts, engine, architecture, task contract, how-it-works, CLI reference, the changelog and the generated skill gates references updated.
+- Follow-up TODOs: none.
+-->
+
+<!--
+Sync Impact Report
 - Version change: 4.3.0 → 4.4.0. MINOR: Principle V changes the fix check rule. A red settles when no own failure remains. An own failure that an unfinished fix task of the same cycle also carries is left to that task. Failures the brief does not own do not gate it; their fix tasks or the next review answer them. The proof that an original other failure still shows is no longer a gate condition. Fix tasks may share the failures of one pending input. A carried check whose own failures are all test failures runs the stack's test runner on the own test files only.
 - Modified principles: V.
 - Updated sections: Governance.
@@ -333,14 +343,14 @@ Task completion MUST follow `workflow.review`. With `end`, an ordinary brief
 runs no check; it runs only the checks a caller names, such as a consult
 `verify`. With `task`, each task MUST pass its own checks and its required
 due checks before its scheduled review. Before the final review every
-registered check runs, including renders. With `validation.end_checks` on,
-the reviewer MUST choose the reviewer checks from the project itself,
-and SPLITBRIEF MUST run them under the reviewer command policy: any installed
-program of any language, refused only for a named danger rule, with a named row
-for each refusal. With `validation.approve_checks: ask` the user MUST choose
-Run all or Skip all first, and a skipped reviewer check MUST NOT count as a
-pass. A task review chooses
-only the reviewer checks that run the related tests. With
+registered check runs, including renders. The planner MUST name the project
+gate in the plan: at most 6 commands that the project's own scripts or CI run
+to verify a change, shown on the plan card. With `validation.end_checks` on,
+SPLITBRIEF MUST run that gate as the reviewer checks before each final review,
+under the reviewer command policy: any installed program of any language,
+refused only for a named danger rule, with a named row for each refusal. A plan
+whose gate names a command that the policy refuses goes back to the planner.
+A task review runs no gate. With
 `validation.end_checks` off, no reviewer check runs; plan and task checks
 still run. Only a red reviewer check at review MUST be re-run at the run base, with
 the same command text. Plan checks, task checks and the Apply re-check
@@ -348,9 +358,7 @@ MUST NOT run at the run base. SPLITBRIEF MUST refuse a reviewer check whose
 package script, task file or interpreter script this run changed. A red that
 the run base re-run cannot compare (a timeout, or no failure keys) MUST NOT be
 exempt as pre-existing; it reaches the reviewer as not verified at the run base. The run MUST stop at the first
-reviewer check with new failures. A failed plan call (a transport error or a
-protocol error) halts the review the same way a failed verdict call does; it
-is never a pass. Every new red MUST reach the reviewer as a pending input. The same
+reviewer check with new failures. Every new red MUST reach the reviewer as a pending input. The same
 review answer returns the verdict and the fix tasks. Fix work MUST spend
 one fix cycle. A fix task MUST carry the red check it answers: its id, its
 command, its output, its file, its own failure keys and all original red keys
@@ -481,8 +489,8 @@ Explicit anti-goals that MUST NOT be implemented:
 - **Language**: TypeScript 6.x, ESM only (`"type": "module"`)
 - **TUI**: Ink 6.x (React 19 for CLI), conversation flow layout with structured event cards
 - **Target**: macOS (primary), Linux (secondary)
-- **Project languages**: TypeScript and JavaScript are the primary stack. The reviewer
-  chooses the reviewer checks from the project itself, and the reviewer command policy
+- **Project languages**: TypeScript and JavaScript are the primary stack. The planner
+  names the project gate from the project itself, and the reviewer command policy
   runs any installed program of any language. Plan `cmd` checks keep the allowlist:
   the package managers, `make` and `just` on a bare `typecheck`, `lint` or `test`
   target, and the tools of the five registry stacks.
@@ -540,6 +548,9 @@ failure keys and runs once, with no base re-run.
 The 4.4.0 amendment changes Principle V. A fix check settles when no own failure
 remains, a shared failure gates only the last unfinished fix task that carries
 it, and a test-only fix check runs only the own test files.
+The 4.5.0 amendment changes Principle V. The planner names the project gate in
+the plan, and SPLITBRIEF runs it before each final review; no reviewer call
+chooses checks, and the user sees the gate on the plan card.
 
 **Amendment procedure**:
 1. Propose changes via `/speckit.constitution` with rationale
@@ -556,4 +567,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 4.4.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-25
+**Version**: 4.5.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-29

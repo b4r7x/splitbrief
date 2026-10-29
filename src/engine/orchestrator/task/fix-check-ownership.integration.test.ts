@@ -489,7 +489,6 @@ describe('the texts of a fix check that leaves failures to others', { timeout: 6
         deferredTo: ['T025'],
         others: 1,
       });
-      expect(result.state.pendingReviewCommands).toEqual(['npm run typecheck']);
     });
   });
 });
@@ -672,7 +671,6 @@ describe('a fix check runs only the own test files of a test red (C)', { timeout
       expect(commands).toEqual(['npm test -- src/a.test.ts']);
       expect(rows.at(-1)).toMatchObject({ id: 'V1', command: 'npm test -- src/a.test.ts' });
       expect(result.acceptance.accepted).toBe(true);
-      expect(result.state.pendingReviewCommands).toEqual(['npm test']);
     });
   });
 
@@ -801,16 +799,13 @@ describe('a failure a sibling carries under another check id', { timeout: 60_000
       phase: 'final-review',
       currentTaskIndex: 1,
       fixCycles: { used: 0, notes: [] },
-      plan: { summary: 's', decisions: [], criteria: [], checks: [UNIT], validation: null },
-      reviewChecks: {
-        scope: 'final',
-        cycle: 0,
-        plan: {
-          commands: [{ id: 'V1', command: v1Command, reason: 'r' }],
-          declined: [],
-          reason: null,
-        },
-        at: '2026-10-25T00:00:00.000Z',
+      plan: {
+        summary: 's',
+        decisions: [],
+        criteria: [],
+        checks: [UNIT],
+        gate: [v1Command],
+        validation: null,
       },
     });
     saveState(ref, state);

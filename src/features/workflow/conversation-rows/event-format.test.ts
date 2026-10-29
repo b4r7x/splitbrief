@@ -9,9 +9,7 @@ import {
   fullSuiteNameRows,
   fullSuiteSegments,
   fullSuiteTone,
-  reviewChecksDeclinedRows,
   reviewChecksSegments,
-  reviewChecksTone,
   validationStageNotes,
   validationSummarySegments,
 } from './event-format.js';
@@ -697,119 +695,24 @@ describe('fullSuiteRow for a reviewer check', () => {
   });
 });
 
-type ReviewChecksEvent = Extract<EngineEvent, { type: 'review_checks' }>;
-
-function reviewChecksEvent(overrides: Partial<ReviewChecksEvent>): ReviewChecksEvent {
-  return {
-    type: 'review_checks',
-    ts: 0,
-    phase: 'final-review',
-    scope: 'final',
-    status: 'planned',
-    commands: [],
-    declined: [],
-    reason: null,
-    ...overrides,
-  };
-}
-
-const CHOSEN = [
-  { id: 'V1', command: 'npm run typecheck', reason: 'The change edits exported types.' },
-  { id: 'V2', command: 'npm test', reason: 'The unit tests cover the formatter.' },
-];
-
 describe('reviewChecksRow', () => {
-  it.each(['planned', 'skipped', 'off'] as const)(
-    'isolates the reviewer and %s state tones',
-    (status) => {
-      const spans = reviewChecksSegments(reviewChecksEvent({ status, commands: CHOSEN }));
-      if (status !== 'off') expect(spans).toContainEqual({ text: 'Reviewer', tone: 'reviewer' });
-      const state = status === 'off' ? 'off' : 'not\u00a0run';
-      if (status !== 'planned')
-        expect(spans).toContainEqual({
-          text: state,
-          tone: 'warning',
-        });
-      expect(
-        spans
-          .filter((span) => span.text !== state && span.text !== 'Reviewer')
-          .every((span) => span.tone === 'textDim'),
-      ).toBe(true);
-      expect(spans.map((span) => span.text).join('')).toBe(
-        reviewChecksRow(reviewChecksEvent({ status, commands: CHOSEN })),
-      );
-    },
-  );
-  it('counts the commands the reviewer chose and the tests it declined', () => {
-    const event = reviewChecksEvent({
-      commands: CHOSEN,
-      declined: [{ target: 'npm run test:e2e', reason: 'It needs a browser.\nMore detail.' }],
-    });
-    expect(reviewChecksRow(event)).toBe('Reviewer checks · chose 2 · declined 1');
-    expect(reviewChecksDeclinedRows(event)).toEqual([
-      'declined · npm run test:e2e · It needs a browser.',
-    ]);
-    expect(reviewChecksTone(event)).toBe('textDim');
-  });
-
-  it('names no declined count when the reviewer declined nothing', () => {
-    const event = reviewChecksEvent({ commands: CHOSEN });
-    expect(reviewChecksRow(event)).toBe('Reviewer checks · chose 2');
-    expect(reviewChecksDeclinedRows(event)).toEqual([]);
-  });
-
-  it('gives the reason when the reviewer chose no command', () => {
-    const event = reviewChecksEvent({
-      reason: 'The project has no test command.\nNor a CI config.',
-    });
-    expect(reviewChecksRow(event)).toBe(
-      'Reviewer checks · chose\u00a0none · The project has no test command.',
-    );
-    expect(reviewChecksTone(event)).toBe('textDim');
-  });
-
-  it('names the missing reason of an event the schema let through without one', () => {
-    expect(reviewChecksRow(reviewChecksEvent({ reason: undefined }))).toBe(
-      'Reviewer checks · chose\u00a0none · no reason given',
-    );
-  });
-
   it('says once, as a warning, that no reviewer check ran when End-of-run checks are off', () => {
-    const event: ReviewChecksEvent = {
-      type: 'review_checks',
-      ts: 0,
-      phase: 'final-review',
-      scope: 'final',
-      status: 'off',
-    };
+    const event = { type: 'review_checks', ts: 0, phase: 'final-review', status: 'off' } as const;
     expect(reviewChecksRow(event)).toBe('End-of-run checks · off · no reviewer check ran');
-    expect(reviewChecksDeclinedRows(event)).toEqual([]);
-    expect(reviewChecksTone(event)).toBe('warning');
+    expect(reviewChecksSegments(event)).toContainEqual({ text: 'off', tone: 'warning' });
   });
 
-  it('names every chosen command that did not run and why in the warning tone', () => {
-    const event = reviewChecksEvent({
-      status: 'skipped',
-      commands: CHOSEN,
-      declined: undefined,
-      reason: 'validation.approve_checks is ask and this run has no screen to ask on',
-    });
+  it('says, as a warning, that the plan names no project gate', () => {
+    const event = { type: 'review_checks', ts: 0, phase: 'final-review', status: 'none' } as const;
     expect(reviewChecksRow(event)).toBe(
-      'Reviewer checks · not\u00a0run V1, V2 · validation.approve_checks is ask and this run has no screen to ask on',
+      'End-of-run checks · none · the plan names no project gate',
     );
-    expect(reviewChecksDeclinedRows(event)).toEqual([]);
-    expect(reviewChecksTone(event)).toBe('warning');
     expect(reviewChecksSegments(event)).toEqual([
-      { text: 'Reviewer', tone: 'reviewer' },
-      { text: ' checks', tone: 'textDim' },
+      { text: 'End-of-run checks', tone: 'textDim' },
       { text: ' · ', tone: 'textDim' },
-      { text: 'not\u00a0run', tone: 'warning' },
-      { text: ' V1, V2', tone: 'textDim' },
+      { text: 'none', tone: 'warning' },
       { text: ' · ', tone: 'textDim' },
-      {
-        text: 'validation.approve_checks is ask and this run has no screen to ask on',
-        tone: 'textDim',
-      },
+      { text: 'the plan names no project gate', tone: 'textDim' },
     ]);
   });
 });

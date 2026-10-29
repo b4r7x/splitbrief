@@ -29,7 +29,6 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
 import {
   guidanceConsult,
-  NO_REVIEW_CHECKS,
   planFromTasks,
   typedCallFromTasks,
   typedCallPlanAndConsult,
@@ -197,19 +196,10 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
 
     // The brief's own check is the gate; a new run records no stage validation.
     expect(events.find((event) => event.type === 'validate')).toBeUndefined();
-    // The review asked the reviewer for its checks; the fake reviewer chose none and said why.
-    const reviewChecks = events.filter(
-      (event): event is Extract<EngineEvent, { type: 'review_checks' }> =>
-        event.type === 'review_checks',
-    );
-    expect(reviewChecks.length).toBeGreaterThan(0);
-    for (const event of reviewChecks) {
-      expect(event).toMatchObject({
-        status: 'planned',
-        commands: [],
-        reason: NO_REVIEW_CHECKS.reason,
-      });
-    }
+    // The plan names no project gate, so the final review says so and runs no reviewer check.
+    expect(events.filter((event) => event.type === 'review_checks')).toEqual([
+      expect.objectContaining({ status: 'none' }),
+    ]);
     // The task review and then the final review each run the brief's required check.
     const checks = events.filter((event) => event.type === 'full_suite');
     expect(checks.filter((event) => event.moment !== 'plan')).toEqual([]);

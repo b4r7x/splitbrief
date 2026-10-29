@@ -113,8 +113,6 @@ if (prompt.includes('# Final Implementation Review')) {
     verify: [],
     ask: null,
   };
-} else if (prompt.includes('# Choose the checks for this review')) {
-  answer = { commands: [], declined: [], reason: null };
 } else if (heading === '# Consult on a failing task') {
   process.stderr.write('The planner process crashed.\\n');
   process.exit(1);

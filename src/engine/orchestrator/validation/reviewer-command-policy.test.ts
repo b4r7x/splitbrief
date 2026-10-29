@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  checkDefinition,
-  REVIEWER_COMMAND_RULES,
-  reviewerCommandRefusal,
-} from './reviewer-command-policy.js';
+import { checkDefinition, reviewerCommandRefusal } from './reviewer-command-policy.js';
 
 describe('reviewerCommandRefusal', () => {
   it.each([
@@ -1049,112 +1045,6 @@ describe('checkDefinition', () => {
     'constructor x',
   ])('names no definition for %s', (command) => {
     expect(checkDefinition(command)).toBeNull();
-  });
-});
-
-describe('REVIEWER_COMMAND_RULES', () => {
-  it('states the rules the policy enforces', () => {
-    const text = REVIEWER_COMMAND_RULES.join('\n');
-    expect(REVIEWER_COMMAND_RULES[1]).toContain('`bin/test` and `sub/gradlew` are refused');
-    expect(REVIEWER_COMMAND_RULES[1]).toContain('`./gradlew` and `./mvnw` are the exception');
-    expect(REVIEWER_COMMAND_RULES[3]).toContain('`php -c php.ini artisan test`');
-    expect(text).not.toContain('vendor/bin/phpunit');
-    expect(REVIEWER_COMMAND_RULES[8]).toContain('`rake -f`');
-    expect(REVIEWER_COMMAND_RULES[9]).toContain('`composer.json`');
-    expect(REVIEWER_COMMAND_RULES[9]).toContain('`rakelib`');
-    expect(text).toContain('`npx --no-install <tool>`');
-    expect(text).toContain('`install`');
-    expect(text).toContain('`git`');
-    expect(text).toContain('`bundle exec`');
-    expect(REVIEWER_COMMAND_RULES[2]).toContain('`composer exec`');
-    expect(text).toContain('this run changed or created is refused');
-    expect(text).toContain('`make --eval`');
-    expect(text).toContain('`rake -e`');
-    expect(text).toContain('`just -c`');
-    expect(text).toContain('`SHELL`');
-    expect(text).toContain('`make -f`');
-    expect(text).not.toContain('`mvn -f`');
-    expect(text).not.toContain('`gradle -b`');
-    expect(REVIEWER_COMMAND_RULES[3]).toContain('`rake --require`');
-    expect(REVIEWER_COMMAND_RULES[3]).toContain('`gradle --init-script`');
-    expect(text).toContain('The program is the first word after the subcommand');
-    expect(text).toContain('`--option=value`');
-    expect(text).toContain('`cargo test --locked sync`');
-    expect(text).toContain('`start`, `stop`, `restart`');
-    expect(text).toContain(
-      'This rule matches `--with`, `--with-editable`, `--with-requirements` and `-w` anywhere after `uv run`, including attached values and program arguments.',
-    );
-    expect(text).toContain('`gradle --init-script`');
-    expect(text).toContain('`npm explore`');
-    expect(text).toContain('`hatch run`');
-    expect(text).toContain('`--yes`');
-    expect(text).toContain('`install-test`');
-    expect(text).toContain('control character');
-    for (const form of [
-      'busybox',
-      'toybox',
-      'nix-shell',
-      'nix',
-      'osascript',
-      'sed',
-      'tar',
-      'elixir -e',
-      'elixir --erl',
-      'iex -e',
-      'erl -eval',
-      'erl -s',
-      'erl -run',
-      'groovy -e',
-      'scala -e',
-      'kotlin -e',
-      'php -B',
-      'php -R',
-      'php -F',
-      'php -E',
-      'mvn exec:*',
-      'mvn antrun:*',
-      'mvn org.codehaus.mojo:exec-maven-plugin:*',
-      'mix do',
-      'rails runner',
-      'rails r',
-      'mix -e',
-      'mix --eval',
-      'mix eval',
-      'corepack',
-      'pnpm env',
-      'yarn set',
-      'pnpm up',
-      'yarn up',
-      'poetry lock',
-      'uv lock',
-      'bundle lock',
-      'cargo generate-lockfile',
-      'gradle wrapper',
-      'npm dedupe',
-      'npm prune',
-      'npm shrinkwrap',
-      'npm config',
-      'pnpm config',
-      'yarn config',
-      'npm pkg',
-      'pnpm pkg',
-      'yarn pkg',
-      'npm version',
-      'pnpm version',
-      'yarn version',
-      '-delete',
-      '-exec',
-      '-execdir',
-      '-ok',
-      '-okdir',
-      'nc',
-      'ncat',
-      'socat',
-      'telnet',
-      'ftp',
-      'sftp',
-    ])
-      expect(text).toContain(`\`${form}\``);
   });
 });
 

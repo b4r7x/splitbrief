@@ -251,61 +251,20 @@ export function fullSuiteTone(
 export function reviewChecksSegments(
   event: Extract<EngineEvent, { type: 'review_checks' }>,
 ): ConversationRowSegment[] {
-  const label: ConversationRowSegment[] = [
-    { text: 'Reviewer', tone: CREW_SEAT_ROLES.review },
-    { text: ' checks', tone: 'textDim' },
+  return [
+    { text: 'End-of-run checks', tone: 'textDim' },
+    ...separatedSegments(
+      event.status === 'off'
+        ? [
+            { text: 'off', tone: stateTone('attention') },
+            { text: 'no reviewer check ran', tone: 'textDim' },
+          ]
+        : [
+            { text: 'none', tone: stateTone('attention') },
+            { text: 'the plan names no project gate', tone: 'textDim' },
+          ],
+    ),
   ];
-  if (event.status === 'off') {
-    return [
-      { text: 'End-of-run checks', tone: 'textDim' },
-      ...separatedSegments([
-        { text: 'off', tone: reviewChecksTone(event) },
-        { text: 'no reviewer check ran', tone: 'textDim' },
-      ]),
-    ];
-  }
-  if (event.status === 'skipped') {
-    return [
-      ...label,
-      { text: SOFT_SEP, tone: 'textDim' },
-      { text: NOT_RUN, tone: reviewChecksTone(event) },
-      {
-        text: ` ${(event.commands ?? []).map((command) => command.id).join(', ')}`,
-        tone: 'textDim',
-      },
-      ...separatedSegments([
-        { text: firstLine(event.reason ?? 'no reason given'), tone: 'textDim' },
-      ]),
-    ];
-  }
-  const chosen = event.commands?.length ?? 0;
-  const declined = event.declined?.length ?? 0;
-  if (chosen === 0) {
-    return [
-      ...label,
-      ...separatedSegments([
-        { text: 'chose\u00a0none', tone: 'textDim' },
-        { text: firstLine(event.reason ?? 'no reason given'), tone: 'textDim' },
-      ]),
-    ];
-  }
-  const counts = [`chose ${chosen}`, ...(declined > 0 ? [`declined ${declined}`] : [])];
-  return [...label, ...separatedSegments(counts.map((text) => ({ text, tone: 'textDim' })))];
-}
-
-/** One row per test the reviewer declined to run, with the reason it gave. */
-export function reviewChecksDeclinedRows(
-  event: Extract<EngineEvent, { type: 'review_checks' }>,
-): string[] {
-  return (event.declined ?? []).map((entry) =>
-    ['declined', entry.target, firstLine(entry.reason)].join(SOFT_SEP),
-  );
-}
-
-export function reviewChecksTone(
-  event: Extract<EngineEvent, { type: 'review_checks' }>,
-): ConversationRowTone {
-  return stateTone(event.status === 'planned' ? 'pending' : 'attention');
 }
 
 function firstLine(text: string): string {

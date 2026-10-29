@@ -1116,8 +1116,9 @@ describe('readRunHistory', () => {
 });
 
 describe('hydrateRun of a run whose process went away during a step', () => {
-  // The live run rU: one brief, a pause after it, then the final review with its plan checks, the
-  // check choice, two reviewer checks and the verdict.
+  // The live run rU, an older run: one brief, a pause after it, then the final review with its plan
+  // checks, the reviewer's own check choice, two reviewer checks and the verdict. A replay drops the
+  // retired check-choice rows.
   const LOG = readFileSync(
     join(import.meta.dirname, '../../../testing/fixtures/session-log/review-after-pause.jsonl'),
     'utf8',
@@ -1215,16 +1216,10 @@ describe('hydrateRun of a run whose process went away during a step', () => {
       '× Final review stopped',
     ],
     [
-      'the reviewer chooses its checks',
+      'the older reviewer chooses its checks',
       through('"type":"runner_call_started","phase":"final-review"'),
       null,
       '× Final review stopped  at least 0.2s',
-    ],
-    [
-      'the checks are planned and none started, or the Run all / Skip all card is open',
-      through('"type":"review_checks"'),
-      null,
-      '× Final review stopped  22.6s',
     ],
     [
       'a reviewer check runs',

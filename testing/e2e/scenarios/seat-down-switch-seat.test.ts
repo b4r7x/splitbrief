@@ -37,7 +37,7 @@ import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
-import { heldUntilAborted, openHaltedRun } from '../helpers/halted-run-screen.js';
+import { heldUntilAborted, openHaltedRun, settleOpenedRuns } from '../helpers/halted-run-screen.js';
 import {
   cli,
   continueWithCorrection,
@@ -55,7 +55,8 @@ let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
 let trustHome: ReturnType<typeof createTrustHome> | undefined;
 
-afterEach(() => {
+afterEach(async () => {
+  await settleOpenedRuns();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   restorePath?.();

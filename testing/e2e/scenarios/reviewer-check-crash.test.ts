@@ -17,9 +17,11 @@ import {
   GREET_SOURCE,
   MARKER_FILE,
   MARKER_SOURCE,
+  PLAN_ANSWER,
 } from '../helpers/stop-continue-fixture.js';
 
-it('settles the first review separately when the CLI crashes during a reviewer check', async () => {
+it('settles the first review separately when the CLI crashes during a project gate check', async () => {
+  const gatePlan = JSON.stringify({ result: { ...PLAN_ANSWER.result, gate: ['make check'] } });
   const target = createStopContinueFixture(
     () => `import { mkdirSync, writeFileSync } from 'node:fs';
 for await (const chunk of process.stdin) void chunk;
@@ -27,7 +29,11 @@ mkdirSync('src', { recursive: true });
 writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
 writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
 `,
-    { isolation: 'none' },
+    {
+      isolation: 'none',
+      consult: () =>
+        `(prompt) => (prompt.includes('# Plan the change') ? ${JSON.stringify(gatePlan)} : undefined)`,
+    },
   );
   const started = join(target.tmpDir, 'check-started');
   const shims = join(target.tmpDir, 'bin');
@@ -45,18 +51,11 @@ if (!existsSync(${JSON.stringify(started)})) {
   );
   const restorePath = prependPath(shims);
   const reviewer = join(target.tmpDir, 'reviewer.mjs');
-  const checks = {
-    commands: [{ id: 'V1', command: 'make check', reason: 'Verify the greeting.' }],
-    declined: [],
-    reason: null,
-  };
   const verdict = passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] });
   writeFileSync(
     reviewer,
-    `const chunks = [];
-for await (const chunk of process.stdin) chunks.push(chunk);
-const prompt = Buffer.concat(chunks).toString('utf8');
-console.log(prompt.includes('# Choose the checks for this review') ? ${JSON.stringify(JSON.stringify(checks))} : ${JSON.stringify(JSON.stringify(verdict))});
+    `for await (const chunk of process.stdin) void chunk;
+console.log(${JSON.stringify(JSON.stringify(verdict))});
 `,
   );
   const config = loadConfig(target.projectDir).config;

@@ -740,20 +740,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     duration: z.number(),
   }),
   phaseEvent('review_step').extend({
-    step: z.enum(['choosing-checks', 'verdict', 'verify']),
+    step: z.enum(['verdict', 'verify']),
   }),
-  /**
-   * The commands the reviewer chose before a review, the tests it declined, or the checks being off.
-   * `skipped`: none of the chosen commands ran, and `reason` says why.
-   */
+  /** Why no reviewer check runs before the final review: the checks are off, or the plan names no project gate. */
   phaseEvent('review_checks').extend({
-    scope: z.enum(['final', 'task']),
-    status: z.enum(['planned', 'off', 'skipped']),
-    commands: z
-      .array(z.object({ id: z.string(), command: z.string(), reason: z.string() }))
-      .optional(),
-    declined: z.array(z.object({ target: z.string(), reason: z.string() })).optional(),
-    reason: z.string().nullable().optional(),
+    status: z.enum(['off', 'none']),
   }),
   /**
    * One command run before a review: a reviewer check (`id`) or, in a session from before the

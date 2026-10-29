@@ -59,7 +59,8 @@ export function buildValidationChecks(
     checks.push({
       id: 'validation.end-checks-off',
       severity: 'warning',
-      summary: 'End-of-run checks are off: no command verifies the change before a review.',
+      summary:
+        'End-of-run checks are off: SPLITBRIEF runs no project gate before the final review.',
       fix: 'Set validation.end_checks: true in .splitbrief/config.yaml, or turn End-of-run checks on in Settings.',
     });
   }

@@ -119,7 +119,7 @@ describe('deriveLiveStatus', () => {
         axes: ['high'],
         ...(scope === 'task' && { afterTaskId: 'T001' }),
       });
-      addEvent({ type: 'review_step', ts: 1_000, phase, step: 'choosing-checks' });
+      addEvent({ type: 'review_step', ts: 1_000, phase, step: 'verdict' });
       const liveNow = () =>
         deriveLiveStatus({
           ...base,
@@ -135,56 +135,9 @@ describe('deriveLiveStatus', () => {
           { text: ' · ', tone: 'textDim' },
           { text: 'OpenAI Codex CLI · GPT-5 · high', tone: 'reviewer' },
           { text: ' · ', tone: 'textDim' },
-          { text: 'choosing checks', tone: 'textDim' },
+          { text: 'reviewing changes', tone: 'textDim' },
         ],
         stageStart: 1_000,
-      });
-      addEvent(
-        makeRunnerCallStarted({
-          ts: 1_100,
-          phase,
-          role: 'review',
-          callId: 'review-plan',
-          runnerName: 'codex',
-          model: 'gpt-5',
-          axes: ['high'],
-        }),
-      );
-      expect(liveNow()).toMatchObject({
-        parts: [
-          { text: 'Review', tone: 'reviewer' },
-          { text: ' · ', tone: 'textDim' },
-          { text: 'OpenAI Codex CLI · GPT-5 · high', tone: 'reviewer' },
-          { text: ' · ', tone: 'textDim' },
-          { text: 'choosing checks', tone: 'textDim' },
-        ],
-        stageStart: 1_100,
-      });
-      addEvent(
-        makeRunnerCallCompleted({
-          ts: 1_200,
-          phase,
-          role: 'review',
-          callId: 'review-plan',
-          startedAt: 1_100,
-          endedAt: 1_200,
-          durationMs: 100,
-        }),
-      );
-      expect(
-        liveNow()
-          ?.parts.map((part) => part.text)
-          .join(''),
-      ).toBe(`${reviewer} · choosing checks`);
-      addEvent({
-        type: 'review_checks',
-        ts: 1_250,
-        phase,
-        scope,
-        status: 'planned',
-        commands: [],
-        declined: [],
-        reason: 'No checks needed.',
       });
       addEvent({
         type: 'full_suite',

@@ -36,7 +36,7 @@ reviewer:       { kind: cli|api|shell|agent, ... }   # optional; planner reviews
 implementerProfiles:
   default: local-qwen
   profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
-validation:     { end_checks, approve_checks, test_command, render, ... }
+validation:     { end_checks, test_command, render, ... }
 workflow:       { approve, git, isolation, ... }
 sessions:       { scope: project }
 # escalation:   retired; loads with one notice and is ignored (§16)
@@ -543,14 +543,13 @@ Task-start rows name the selected worker (`worker default`) and, when the brief 
 
 ## 4. `validation`
 
-What SPLITBRIEF runs to verify the change. One switch, `end_checks` (Settings label **End-of-run checks**), turns the reviewer checks on or off. It defaults to `true`. With it on, before each review the reviewer reads the project and chooses the reviewer checks that verify the change. The reviewer reads the manifests and scripts, a `Makefile` or `justfile`, the CI configuration and the README. SPLITBRIEF runs the reviewer checks in the run workspace under the reviewer command policy (see [Reviewer checks](#reviewer-checks)). A second switch, `approve_checks` (Settings label **Approve checks**), decides whether the reviewer checks run at once (`auto`, the default) or wait for you on one card (`ask`). Every check runs the project's own code with your permissions; [What a check can reach](#what-a-check-can-reach) says what SPLITBRIEF isolates and what it does not. The other fields are optional and feed the planner's `test` and `render` checks; `timeout_ms` bounds every command. After each hand-back, SPLITBRIEF formats the brief's own changed files with the project's own formatter. It uses `npx biome format --write` when a Biome config file is present, `npx prettier --write` when a Prettier config is present, and nothing when neither is present. A formatter that exits non-zero gives one warning (`validation_format_failed`), and the checks run regardless. The brief's changed files are every file it changed since its task-start snapshot, across its attempts; a pass that rewrote files records one `validation_formatted` warning that names them.
+What SPLITBRIEF runs to verify the change. One switch, `end_checks` (Settings label **End-of-run checks**), turns the reviewer checks on or off. It defaults to `true`. The planner names the project gate in the plan: the commands that the project's own scripts or CI run to verify a change. With `end_checks` on, SPLITBRIEF runs these commands as the reviewer checks before the final review, in the run workspace under the reviewer command policy (see [Reviewer checks](#reviewer-checks)). Every check runs the project's own code with your permissions; [What a check can reach](#what-a-check-can-reach) says what SPLITBRIEF isolates and what it does not. The other fields are optional and feed the planner's `test` and `render` checks; `timeout_ms` bounds every command. After each hand-back, SPLITBRIEF formats the brief's own changed files with the project's own formatter. It uses `npx biome format --write` when a Biome config file is present, `npx prettier --write` when a Prettier config is present, and nothing when neither is present. A formatter that exits non-zero gives one warning (`validation_format_failed`), and the checks run regardless. The brief's changed files are every file it changed since its task-start snapshot, across its attempts; a pass that rewrote files records one `validation_formatted` warning that names them.
 
 ### Schema
 
 ```ts
 validation: {
   endChecks?:        boolean; // optional, default true
-  approveChecks?:    'ask' | 'auto'; // optional, default 'auto'
   testCommand?:      string; // optional, non-empty
   testPattern?:      string; // optional, non-empty
   timeoutMs?:        number; // optional, int >= 1000, milliseconds
@@ -563,6 +562,7 @@ validation: {
   test?:             unknown;
   typecheckCommand?: unknown;
   lintCommand?:      unknown;
+  approveChecks?:    unknown;
 }
 ```
 
@@ -570,14 +570,14 @@ validation: {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `endChecks` (`end_checks`) | boolean | `true` | **End-of-run checks.** `true`: before the final review, the reviewer chooses the reviewer checks that verify the change, and SPLITBRIEF runs them. With `workflow.review: task`, the same happens before each task review. `false`: no reviewer check runs, and one row reads `End-of-run checks · off · no reviewer check ran`. Plan and task checks still run in both cases. `resolveEndChecks()` (`src/core/config/runtime/resolve.ts`) reads it. |
-| `approveChecks` (`approve_checks`) | enum | `auto` | **Approve checks.** `auto`: the reviewer checks run as soon as the reviewer chooses them. `ask`: after the plan call, one card per review shows the chosen commands and their reasons, and none runs until you choose **Run all** or **Skip all**. A headless run (`--json`, `--plain`) has no card, so with `ask` it runs none of the reviewer checks and one row says why. A skipped check is never a pass (see [Reviewer checks](#reviewer-checks)). It has no effect while `end_checks` is `false`. `resolveApproveChecks()` (`src/core/config/runtime/resolve.ts`) reads it. |
+| `endChecks` (`end_checks`) | boolean | `true` | **End-of-run checks.** `true`: before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate. When the plan names no gate, one row reads `End-of-run checks · none · the plan names no project gate`. `false`: no reviewer check runs, and one row reads `End-of-run checks · off · no reviewer check ran`. Plan and task checks still run in both cases. `resolveEndChecks()` (`src/core/config/runtime/resolve.ts`) reads it. |
 | `testCommand` (`test_command`) | string | — | The command a planner `test` check runs: an argv-style command that runs **as-is** — shell operators and environment expansion are not interpreted, and no test-file argument is appended. When omitted, the check resolves its command through the ladder below and narrows it to the tests its file affects. |
 | `testPattern` (`test_pattern`) | string | — | Optional file name pattern with one `*`, such as `*_test.go` or `test_*.py`. No directory part (`/` or `\`) and no `..`. SPLITBRIEF searches beside the changed file and in the stack's test folders. Overrides the stack's patterns when a `test` check narrows to its affected tests. SPLITBRIEF emits `discovered_validation_refused` when it refuses a discovered pattern. It uses the configured pattern, if present. Otherwise, it uses the stack's patterns. |
 | `timeoutMs` (`timeout_ms`) | number | `3600000` | Milliseconds allowed per command (minimum `1000`): every plan check, every reviewer check and every base re-run. The default is one hour. A timeout is never pre-existing: when the base re-run is red too, the timeout is *not verified at the run base*, and the reviewer decides. |
 | `stack` | enum | detected | Pin the stack a `test` check resolves and narrows through instead of detecting it: `typescript`, `javascript`, `python`, `go`, or `rust`. Use it when a repo carries more than one marker file and the detection order picks the wrong one, or when the markers are missing entirely. |
 | `render` | string | — | The command a `render` check runs. `{id}` (the check value, one argv element) is substituted into the parsed argv, and `{out}` becomes a fresh directory under `<workspace>/.test-artifacts/ui/`; the command runs with cwd = the workspace and is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. A `render` check whose value is not a `[a-z0-9-]` slug is refused; with no `render` command the check is `not-runnable`. |
-| `typecheck`, `lint`, `test`, `typecheckCommand` (`typecheck_command`), `lintCommand` (`lint_command`) | retired | absent | Each loads with one notice and changes nothing: `validation.<key> was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.<key>.` |
+| `typecheck`, `lint`, `test`, `typecheckCommand` (`typecheck_command`), `lintCommand` (`lint_command`) | retired | absent | Each loads with one notice and changes nothing: `validation.<key> was retired and is ignored: the plan names the project gate, and validation.end_checks turns it on or off. Delete validation.<key>.` |
+| `approveChecks` (`approve_checks`) | retired | absent | Loads with one notice and changes nothing: `validation.approve_checks was retired and is ignored: the plan names the project gate, and the plan card shows it. Delete validation.approve_checks.` |
 
 YAML — the defaults (reviewer checks on):
 
@@ -608,20 +608,11 @@ validation:
   end_checks: false
 ```
 
-YAML — show the reviewer checks on one card before any of them runs:
-
-```yaml
-validation:
-  approve_checks: ask
-```
-
 ### Reviewer checks
 
-Check selection receives the request you started the run with, the task briefs, acceptance criteria, plan decisions and your later task instructions. Task reviews receive their own briefs and applicable decisions; final review receives every brief and decision.
+The planner names the project gate in the plan's `gate` field: at most 6 commands that the project's own scripts or CI run to verify a whole change, in the order they run, for example `npm run release-check`, `make check` or `cargo test`. The ids are `V1`, `V2`, … in that order. The plan card and `plan.md` show them under **Project gate**, so you see each command before the build. An empty list means the project has no gate. With `end_checks: true`, SPLITBRIEF runs each command as a `cmd` check in the run workspace before the final review. A task review runs no gate. A fix task runs again the command of the finding it answers.
 
-With `end_checks: true`, the review starts with one read-only call to the review seat: the plan call. Every reviewer kind except `api` reads the run workspace itself. An `api` reviewer gets trimmed copies of the root manifests, task files, CI files and README. Each copy holds at most 8,000 characters, and all copies together hold at most 40,000. The CI files are the YAML files in `.github/workflows` and `.gitlab-ci.yml`. The reviewer answers `commands` (at most 6, ids `V1`, `V2`, … in run order, each with its reason), `declined` (each related test or check it does not run, with the reason) and `reason` (required when it chose no command). SPLITBRIEF records the answer in `state.json` (`reviewChecks`) and on the transcript, then runs each command as a `cmd` check in the run workspace:
-
-- **Policy.** A reviewer check runs under the reviewer command policy (`reviewerCommandRefusal`, `src/engine/orchestrator/validation/reviewer-command-policy.ts`). This policy has no program allowlist: any installed program of any language can run, for example `mvn test`, `gradle test`, `composer test`, `bundle exec rspec`, `make check`, `dotnet test` or `mix test`. The policy refuses only a command that breaks one of its danger rules. The plan call states the same rules to the reviewer (`REVIEWER_COMMAND_RULES`):
+- **Policy.** A reviewer check runs under the reviewer command policy (`reviewerCommandRefusal`, `src/engine/orchestrator/validation/reviewer-command-policy.ts`). This policy has no program allowlist: any installed program of any language can run, for example `mvn test`, `gradle test`, `composer test`, `bundle exec rspec`, `make check`, `dotnet test` or `mix test`. The policy refuses only a command that breaks one of its danger rules. The plan prompt names the main rules to the planner in one line, and the plan checks send back a plan whose gate names a command that the policy refuses from its text, with the reason:
   1. A command is one program and its arguments: no shell operator, substitution or redirect (`| & ; < > $ ( ) { }` or backticks), no control character (a line break or a tab), no environment variable before the program, no `cd`, no URL and no path outside the run workspace, also not after `KEY=` or attached to an option (`DESTDIR=/`, `-o/tmp/x`).
   2. Run an installed program by its name, never by path: `bin/test` and `sub/gradlew` are refused. The project's own `./gradlew` and `./mvnw` are the exception: they run as `gradle` and `mvn` under the same rules, and only when this run changed none of their wrapper files (`gradlew` and `gradle/wrapper/`, `mvnw` and `.mvn/wrapper/`). A nested wrapper stays refused. Select the subproject through the root wrapper instead: `./gradlew -p sub test`, `./gradlew :sub:test`, `./mvnw -f sub/pom.xml verify` or `./mvnw -pl sub verify`. An older run without a workspace record has no run base, so SPLITBRIEF refuses a wrapper there (`runs ./gradlew, and this run has no run base to compare its wrapper files with`). `./gradlew wrapper` is refused as `gradle wrapper`, a setup command.
   3. Shells and command wrappers are refused. These include `bash`, `env`, `sudo`, `busybox`, `toybox`, `nix-shell`, `nix` and `npm explore`. The same rule applies through `npx --no-install` and `pnpm exec`. `pnpm exec`, `yarn exec`, `bundle exec`, `uv run`, `poetry run`, `pipenv run`, `pdm run`, `hatch run`, `conda run`, `pixi run`, `rye run`, `mise exec`, `composer exec` and `python -m` are checked by the program they run.
@@ -656,11 +647,8 @@ With `end_checks: true`, the review starts with one read-only call to the review
 
   SPLITBRIEF does not compare build manifests (`pom.xml`, `build.gradle`, `Gemfile`, `mix.exs`, `build.rs`) with the run base. It also does not compare `composer.json` as a dependency manifest: only its `scripts` and `scripts-aliases` are compared. A dependency change edits these files, and a refusal would block the check that verifies it. The refusal guards against a swapped check definition. It does not establish trusted execution.
 - **Base re-run.** A red reviewer check runs again at the run base with the same command text. A failure key red there too is pre-existing. Failure keys include both failing test names and diagnostic lines, with repeats removed. A diagnostic line drops the trailing rule of heavy dashes that Biome prints. An output that lists only whole paths is keyed by those paths. Keys come from the full process capture. An incomplete capture gives one placeholder key. A fix command must pass when its capture is incomplete. A timeout has no failure key, and a red with no test name and no diagnostic line has none either. Two such reds do not prove the same failure, even with the same exit code. When the run base re-run is red and either run has no failure key, no failure is pre-existing: the Checks Log line reads `failed (<keys>), not verified at the run base (<reason>); the reviewer decides`. The reason is, for example, `both runs timed out`, `both runs exited with code 1 without diagnostics` or `the workspace run timed out`. When the output prints an error line, the reason quotes the first one: `both runs exited with code 1: Error: Cannot find module 'src'`. An output of one line is quoted. The lines that npm, pnpm, yarn or bun print around a script are not part of that output: the banner, the `$ <command>` line, the failure summary and the `<package> <script>: ` head of a recursive or filtered run. This also applies to a chained, nested, filtered, recursive or workspace run and to a `pre` script. Through pnpm 11, yarn 1 or bun, or when a signal ends the run, a line that the script prints itself and that starts with `$ ` reads as such a command line. In a run over several packages, the lines of all packages count: when two failed packages print one line each, the reason reads `without diagnostics`. When a signal ends the run, the reason can quote the line in which the package manager names the signal. Such a red keeps its keys new: it stops the list, and it becomes a pending input that says SPLITBRIEF could not verify the same failure. The reviewer decides from the output. The reviewer can set aside this input, or a reviewer check with new failures, when it rejects the input with a reason. A set-aside input no longer blocks the review; every other red input still does. The `Base re-run` row counts the failures in three parts: `1 new, 2 pre-existing`, or `1 not verified at the run base · both runs timed out`. An older run without a workspace record has no run base, so every failure is new.
-- **Approval.** With `approve_checks: ask`, the plan call and its `Reviewer checks · chose …` row come first. Then one card shows the chosen commands, each with its reason: `Reviewer checks · chose 2 · none has run yet`, with **Run all** and **Skip all**. Only `⏎` answers the card; `Tab` moves focus to the composer. **Run all** runs the reviewer checks as with `auto`. **Skip all** runs none of them. A card closed without an answer also runs none; a stop during the card stops the review instead. A headless run with `ask` opens no card and runs none of them. In each case one warning row names the commands and the reason: `Reviewer checks · not run V1, V2 · Skip all was chosen on the card`, `… · the reviewer checks card closed without an answer` or `… · validation.approve_checks is ask and this run has no screen to ask on`. `state.reviewChecks.skipped` records the reason. The verdict call is told that none of the commands ran and that none is a pass: it marks a criterion that only these commands verify as unverified. A skipped command never becomes a registered check, so a fix task's gate does not run it. With `workflow.review: task`, each task review shows its own card.
 - **Stop rule.** The first reviewer check with new failures stops the list. Each later one gets a `not run · <id> failed` row.
-- **Verdict.** Every result goes to the reviewer's verdict call in a `## Reviewer checks` section, and each new or not verified failure becomes a pending input (`V1.1`, …). A failed plan call (a transport error or a protocol error) halts the review the same way a failed verdict call does; it is never a pass.
-
-With `workflow.review: task`, the same plan call is scoped to the task's changed files: the reviewer chooses the reviewer checks that run the related tests, not the whole suite, and names each related test it does not run in `declined`.
+- **Verdict.** Every result goes to the reviewer's verdict call in a `## Reviewer checks` section, and each new or not verified failure becomes a pending input (`V1.1`, …).
 
 ### How a `test` check resolves its command
 
@@ -704,7 +692,7 @@ SPLITBRIEF does not isolate these things:
 - **Network.** A check can open any connection.
 - **Other processes.** A check can see and signal the other processes of your user.
 
-The seats are a different case. The `claude-code` implementer runs its shell commands in Claude Code's own sandbox, and the seat stops when that sandbox cannot start. [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth) gives the isolation of each seat. With `approve_checks: ask` you see each reviewer check before it runs. The card shows the command, not the code it runs: an unchanged `npm test` still runs the test files this run wrote.
+The seats are a different case. The `claude-code` implementer runs its shell commands in Claude Code's own sandbox, and the seat stops when that sandbox cannot start. [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth) gives the isolation of each seat. The plan card shows each gate command before the build. It shows the command, not the code it runs: an unchanged `npm test` still runs the test files this run wrote.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md) (where validation sits in the loop), `src/engine/orchestrator/review-checks.ts`, `src/engine/orchestrator/validation/run-checks.ts`.
 
@@ -757,7 +745,7 @@ workflow: {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `approve` | enum | `plan` | `plan`: the plan card waits for your approval before the build starts. `none`: the plan goes straight to the build. The retired values `all`, `spec` and `default` load as `plan` with one notice (§16). Approving the plan never overrides a failed plan check, and a write to a protected path still asks during the build under either value. |
-| `review` | `end` \| `task` | `end` | `end`: each brief runs its own checks, except a `render` check. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers. The final review runs the reviewer checks (`validation.end_checks`). The first reviewer check with new failures stops the list, and the reviewer turns its failures into fix work. `task`: each task runs its own checks and its due checks, then its review. That review runs the reviewer checks scoped to the related tests of the task's changed files. The final review then runs the reviewer checks for the whole run. |
+| `review` | `end` \| `task` | `end` | `end`: each brief runs its own checks, except a `render` check. A consult `verify` runs only the checks it names, and on a fix brief the failed checks that brief answers. The final review runs the project gate that the plan names (`validation.end_checks`). The first reviewer check with new failures stops the list, and the reviewer turns its failures into fix work. `task`: each task runs its own checks and its due checks, then its review. A task review runs no project gate. The final review then runs the project gate that the plan names. |
 | `maxRetries` (`max_retries`) | retired | absent | Loads with one notice and changes nothing: `workflow.max_retries was retired and is ignored: the planner decides every retry. Delete workflow.max_retries.` The ladder is one local retry then the planner's consult, after every failed attempt; no count stops the consults. |
 | `git.commitStrategy` | retired | absent | Legacy `none` loads with no notice and is removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
@@ -806,7 +794,7 @@ workflow:
   approve: plan
 ```
 
-Run due checks after each task, then review that task. The task review runs the reviewer checks for the related tests of its changed files. The final review runs the reviewer checks for the whole run:
+Run due checks after each task, then review that task. A task review runs no project gate. Only the final review runs the project gate that the plan names:
 
 ```yaml
 workflow:
@@ -1237,7 +1225,7 @@ Fields that older shapes used are gone rather than aliased — `workflow.autoApp
 
 ### Retired keys that still load
 
-The one-planning-session release retired the workflow modes, the extra gates and the tier overrides. The reviewer-checks release retired the validation stage keys. Their keys do not fail the load: each one loads with exactly one notice and is ignored, so an existing config keeps working until you delete the key (`RETIRED_CONFIG_VALUES`, `src/core/config/load/validation/config.ts`). A config that carries several prints one notice per key. The readiness report that `splitbrief start` and `splitbrief doctor` print lists every load-time notice.
+The one-planning-session release retired the workflow modes, the extra gates and the tier overrides. The reviewer-checks release retired the validation stage keys, and the project gate retired `validation.approve_checks`. Their keys do not fail the load: each one loads with exactly one notice and is ignored, so an existing config keeps working until you delete the key (`RETIRED_CONFIG_VALUES`, `src/core/config/load/validation/config.ts`). A config that carries several prints one notice per key. The readiness report that `splitbrief start` and `splitbrief doctor` print lists every load-time notice.
 
 | You had | Notice | What to do |
 |---|---|---|
@@ -1251,8 +1239,9 @@ The one-planning-session release retired the workflow modes, the extra gates and
 | `workflow.drift_chain_threshold` (`driftChainThreshold`) | `workflow.drift_chain_threshold was retired and is ignored: SPLITBRIEF no longer scores drift chains; the reviewer reads the files a brief touched but did not suggest. Delete workflow.drift_chain_threshold.` | Delete the key. |
 | `workflow.max_retries` (`maxRetries`) | `workflow.max_retries was retired and is ignored: the planner decides every retry. Delete workflow.max_retries.` | Delete the key. The ladder is one local retry then the planner's consult, after every failed attempt. |
 | `escalation` (the whole block, any key) | `escalation was retired and is ignored: the planner's consult replaces the intermediate tier. Delete escalation.` | Delete the block. |
-| `validation.typecheck`, `validation.lint`, `validation.test` (any value) | `validation.<key> was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.<key>.` | Delete the keys. Set `validation.end_checks: false` to run no reviewer check. Plan and task checks still run. |
-| `validation.typecheck_command`, `validation.lint_command` (`typecheckCommand`, `lintCommand`) | `validation.<key> was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.<key>.` | Delete the keys. The reviewer chooses the type check and the linter from the project's own scripts and CI. |
+| `validation.typecheck`, `validation.lint`, `validation.test` (any value) | `validation.<key> was retired and is ignored: the plan names the project gate, and validation.end_checks turns it on or off. Delete validation.<key>.` | Delete the keys. Set `validation.end_checks: false` to run no reviewer check. Plan and task checks still run. |
+| `validation.typecheck_command`, `validation.lint_command` (`typecheckCommand`, `lintCommand`) | `validation.<key> was retired and is ignored: the plan names the project gate, and validation.end_checks turns it on or off. Delete validation.<key>.` | Delete the keys. The planner names the type check and the linter in the project gate, from the project's own scripts and CI. |
+| `validation.approve_checks` (`approveChecks`, any value) | `validation.approve_checks was retired and is ignored: the plan names the project gate, and the plan card shows it. Delete validation.approve_checks.` | Delete the key. The plan card shows the gate commands before the build. |
 
 The readiness report shows the plan approval level in its **Workflow** section, as the check `workflow.plan-approval` (`Plan approval: plan.`). Readiness checks one context floor for every run: 32,000 tokens.
 

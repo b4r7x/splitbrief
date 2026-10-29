@@ -1095,9 +1095,6 @@ describe('workflow visual fixtures', () => {
           (event) => event.type === 'planner_text' && event.phase === 'final-review',
         ),
       ).toHaveLength(0);
-      expect(projection.events).toContainEqual(
-        expect.objectContaining({ type: 'review_checks', scope: 'final', status: 'planned' }),
-      );
       expect(
         projection.events.filter((event) => event.type === 'full_suite' && event.status === 'done'),
       ).toHaveLength(4);
@@ -1126,9 +1123,9 @@ describe('workflow visual fixtures', () => {
     try {
       expect(stripAnsiStyles(await ui.waitForCheckpoint())).toContain('3/3 briefs passed');
       const frame = stripAnsiStyles(
-        await scrollTranscript(ui, ['● T001', '● T002', '● T003', 'Reviewer checks']),
+        await scrollTranscript(ui, ['● T001', '● T002', '● T003', 'Reviewer check V1']),
       );
-      const review = frame.indexOf('Reviewer checks');
+      const review = frame.indexOf('Reviewer check V1');
       for (const id of ['T001', 'T002', 'T003']) {
         const brief = frame.indexOf(`● ${id}`);
         expect(brief).toBeGreaterThanOrEqual(0);

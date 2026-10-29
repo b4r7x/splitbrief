@@ -29,7 +29,7 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { passingVerdict } from '#testing/helpers/typed-planner.js';
+import { cannotConsult, passingVerdict } from '#testing/helpers/typed-planner.js';
 import { assertPlainStdout } from '../helpers/run-dir-assertions.js';
 import {
   applyRun,
@@ -134,12 +134,8 @@ const plan = makePlanProposal({
   criteria: [{ id: 'C1', text: 'total returns the sum.', checkIds: ['T001-K1'] }],
   tasks: [brief],
 });
-const reviewChecksPlan = (command: string) => ({
-  commands: [{ id: 'V1', command, reason: 'The project verifies its report total with this.' }],
-  declined: [],
-  reason: null,
-});
 const verdict = passingVerdict({ kind: 'final', taskIds: [brief.id], criterionIds: ['C1'] });
+const CANNOT = 'The ledger change breaks the ledger suite by design.';
 
 type Call = { kind: string; prompt?: string };
 
@@ -189,9 +185,10 @@ function readCalls(path: string): Call[] {
 const PENDING_INPUT = /^- \*\*(\S+)\*\* \(check · defect\)/gm;
 
 /**
- * Starts a run whose base holds `committed`, whose reviewer chooses `command` as V1 and passes the
- * review but keeps each pending red input to verify and reports `finding`, and whose implementer
- * writes the total helper and, with `broken`, rewrites the ledger.
+ * Starts a run whose base holds `committed`, whose plan names `command` as the gate V1, whose
+ * reviewer passes the review but keeps each pending red input to verify and reports `finding`,
+ * whose planner answers `cannot` on a review without progress, and whose implementer writes the
+ * total helper and, with `broken`, rewrites the ledger.
  */
 async function startRun(opts: {
   committed: Record<string, string>;
@@ -221,10 +218,7 @@ for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
 let kind;
 let answer;
-if (prompt.includes('# Choose the checks for this review')) {
-  kind = 'review-checks';
-  answer = ${JSON.stringify(reviewChecksPlan(opts.command))};
-} else if (prompt.includes('# Final Implementation Review')) {
+if (prompt.includes('# Final Implementation Review')) {
   kind = 'final-review';
   const heading = '## Pending Inputs';
   const from = prompt.indexOf(heading);
@@ -233,9 +227,12 @@ if (prompt.includes('# Choose the checks for this review')) {
   answer = { ...${JSON.stringify(verdict)} };
   if (inputs.length > 0) answer.verify = inputs.map((findingId) => ({ findingId, checkIds: ['V1'] }));
   ${opts.finding === undefined ? '' : `answer.findings = [${JSON.stringify(opts.finding)}];`}
+} else if (prompt.includes('# Consult')) {
+  kind = 'consult';
+  answer = ${JSON.stringify(cannotConsult(CANNOT))};
 } else if (prompt.includes('# Plan the change')) {
   kind = 'plan';
-  answer = ${JSON.stringify({ result: plan })};
+  answer = ${JSON.stringify({ result: { ...plan, gate: [opts.command] } })};
 } else {
   throw new Error('Unexpected prompt: ' + prompt);
 }
@@ -267,7 +264,6 @@ console.log('Implemented ${brief.id}');
     validation: {
       ...config.validation,
       endChecks: true,
-      approveChecks: 'auto',
       testCommand: 'node --test',
     },
   });
@@ -302,20 +298,8 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
       );
       expect(lines).toContain(`base re-run V1 pre-existing: ${red.key}`);
 
-      expect(calls.map((call) => call.kind)).toEqual([
-        'plan',
-        'implement',
-        'review-checks',
-        'final-review',
-      ]);
-
-      const planned = events.filter((event) => event.type === 'review_checks');
-      expect(planned).toHaveLength(1);
-      expect(planned[0]).toMatchObject({
-        scope: 'final',
-        status: 'planned',
-        commands: [{ id: 'V1', command: red.command }],
-      });
+      expect(calls.map((call) => call.kind)).toEqual(['plan', 'implement', 'final-review']);
+      expect(events.filter((event) => event.type === 'review_checks')).toEqual([]);
 
       const rows = events.flatMap((event) =>
         event.type === 'full_suite' && event.id === 'V1' ? [event] : [],
@@ -374,11 +358,7 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
         { id: brief.id, status: 'done' },
       ]);
       expect(state.reviewStatus).toBe('passed');
-      expect(state.reviewChecks).toMatchObject({
-        scope: 'final',
-        plan: { commands: [{ id: 'V1', command: red.command }] },
-      });
-      expect(state.reviewChecks?.skipped).toBeUndefined();
+      expect(state.plan?.gate).toEqual([red.command]);
       expect(state.review?.preExistingChecks).toEqual([
         { id: 'V1', command: red.command, keys: [red.key] },
       ]);
@@ -514,7 +494,10 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
     const state = readState(target, sessionId);
     expect(state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
-    expect(state.pendingRecovery).toMatchObject({ reason: 'review-failed' });
+    expect(state.pendingRecovery).toMatchObject({
+      reason: 'review-failed',
+      facts: { cannot: CANNOT },
+    });
     expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('open');
   });
 
@@ -601,7 +584,10 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
       expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
 
       const state = readState(target, sessionId);
-      expect(state.pendingRecovery).toMatchObject({ reason: 'review-failed' });
+      expect(state.pendingRecovery).toMatchObject({
+        reason: 'review-failed',
+        facts: { cannot: CANNOT },
+      });
       const review = readFileSync(
         join(sessionDir(target.projectDir, sessionId), REVIEW_FILE),
         'utf8',
