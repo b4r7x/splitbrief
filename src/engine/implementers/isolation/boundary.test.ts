@@ -235,8 +235,9 @@ describe("isolation boundary around a tool's own config folder", () => {
 });
 
 describe("isolation boundary around the run's attached skills", () => {
-  // A skill under another tool's home: codex's own state is `~/.codex`, so `~/.claude` is closed.
-  // The home lives outside the temp directories, which the boundary leaves open to every tool.
+  // A skill a skills folder links to, under a home folder no tool scans for skills: the run names
+  // the skill's resolved path. The home lives outside the temp directories, which the boundary
+  // leaves open to every tool.
   async function withAttachedSkill(
     run: (input: {
       home: string;
@@ -249,11 +250,11 @@ describe("isolation boundary around the run's attached skills", () => {
     const dir = mkdtempSync(join(ARTIFACTS, 'isolation-skills-'));
     try {
       const home = join(dir, 'home');
-      const skill = join(home, '.claude', 'skills', 'auth');
+      const skill = join(home, 'library', 'auth');
       mkdirSync(join(skill, 'references'), { recursive: true });
       writeFileSync(join(skill, 'references', 'api.md'), '# api\n');
-      mkdirSync(join(home, '.claude', 'skills', 'other'), { recursive: true });
-      writeFileSync(join(home, '.claude', 'skills', 'other', 'SKILL.md'), '# other\n');
+      mkdirSync(join(home, 'library', 'other'), { recursive: true });
+      writeFileSync(join(home, 'library', 'other', 'SKILL.md'), '# other\n');
       mkdirSync(join(dir, 'checkout'));
       mkdirSync(join(dir, 'worktree'));
       run({
@@ -278,7 +279,7 @@ describe("isolation boundary around the run's attached skills", () => {
     await withAttachedSkill(({ home, skill, boundaryFor }) => {
       const reference = join(skill, 'references', 'api.md');
       expect(breachOf(boundaryFor(), 'view_file', { AbsolutePath: reference })).toBe(
-        'read ~/.claude/skills/auth/references/api.md (outside the workspace) with view_file',
+        'read ~/library/auth/references/api.md (outside the workspace) with view_file',
       );
 
       const boundary = boundaryFor([skill]);
@@ -287,13 +288,13 @@ describe("isolation boundary around the run's attached skills", () => {
         breachOf(boundary, 'list_dir', { DirectoryPath: join(skill, 'references') }),
       ).toBeNull();
       expect(breachOf(boundary, 'write_to_file', { TargetFile: reference })).toBe(
-        'wrote to ~/.claude/skills/auth/references/api.md (outside the workspace) with write_to_file',
+        'wrote to ~/library/auth/references/api.md (outside the workspace) with write_to_file',
       );
       expect(
         breachOf(boundary, 'view_file', {
-          AbsolutePath: join(home, '.claude', 'skills', 'other', 'SKILL.md'),
+          AbsolutePath: join(home, 'library', 'other', 'SKILL.md'),
         }),
-      ).toBe('read ~/.claude/skills/other/SKILL.md (outside the workspace) with view_file');
+      ).toBe('read ~/library/other/SKILL.md (outside the workspace) with view_file');
     });
   });
 
@@ -312,6 +313,87 @@ describe("isolation boundary around the run's attached skills", () => {
       expect(breachOf(boundary, 'view_file', { AbsolutePath: join(checkout, 'app.ts') })).toMatch(
         /^read \S+\/checkout\/app\.ts \(your checkout\) with view_file$/,
       );
+    });
+  });
+});
+
+describe('isolation boundary around the agent skills folders', () => {
+  // Cursor's own state is `~/.cursor`, so `~/.claude`, `~/.agents` and `~/.codex` are closed to it
+  // but for the skills folders every agent scans. The home lives outside the temp directories.
+  async function withSkillFolders(
+    run: (input: { checkout: string; boundary: IsolationBoundary }) => void,
+  ) {
+    mkdirSync(ARTIFACTS, { recursive: true });
+    const dir = mkdtempSync(join(ARTIFACTS, 'isolation-skill-folders-'));
+    try {
+      const home = join(dir, 'home');
+      const skills = join(home, '.claude', 'skills');
+      for (const skill of [
+        join(skills, 'change-discipline'),
+        join(home, 'library', 'linked'),
+        join(home, '.codex', 'skills', 'review'),
+        join(dir, 'checkout', '.claude', 'skills', 'local'),
+      ]) {
+        mkdirSync(skill, { recursive: true });
+        writeFileSync(join(skill, 'SKILL.md'), '# skill\n');
+      }
+      symlinkSync(join('..', '..', 'library', 'linked'), join(skills, 'linked'), 'dir');
+      writeFileSync(join(home, '.claude', 'settings.json'), '{}\n');
+      mkdirSync(join(dir, 'worktree'));
+      run({
+        checkout: join(dir, 'checkout'),
+        boundary: createIsolationBoundary({
+          isolationDir: join(dir, 'worktree'),
+          checkoutDir: join(dir, 'checkout'),
+          env: { HOME: home, PATH: ENV_PATH },
+          tool: 'cursor',
+        }),
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('reads a skill in any agent skills folder without a warning, through its links too', async () => {
+    await withSkillFolders(({ checkout, boundary }) => {
+      const { guard, reads } = loggingGuard(boundary);
+      for (const path of [
+        '~/.claude/skills/change-discipline/SKILL.md',
+        '~/.claude/skills/linked/SKILL.md',
+        '~/.codex/skills/review/SKILL.md',
+        join(checkout, '.claude', 'skills', 'local', 'SKILL.md'),
+      ]) {
+        expect(guard({ name: 'read', input: { path } })).toBeNull();
+      }
+      expect(guard({ name: 'glob', input: { targetDirectory: '~/.claude/skills' } })).toBeNull();
+      expect(reads).toEqual([]);
+
+      expect(guard({ name: 'read', input: { path: '~/.claude/settings.json' } })).toBeNull();
+      expect(reads).toEqual(['read ~/.claude/settings.json (outside the workspace) with read']);
+    });
+  });
+
+  it('still halts a write in an agent skills folder', async () => {
+    await withSkillFolders(({ checkout, boundary }) => {
+      const { guard } = loggingGuard(boundary);
+      expect(
+        guard({ name: 'edit', input: { path: '~/.claude/skills/change-discipline/SKILL.md' } }),
+      ).toEqual({
+        code: 'implementer-left-isolation',
+        message:
+          'wrote to ~/.claude/skills/change-discipline/SKILL.md (outside the workspace) with edit',
+      });
+      expect(
+        guard({
+          name: 'edit',
+          input: { path: join(checkout, '.claude', 'skills', 'local', 'SKILL.md') },
+        }),
+      ).toMatchObject({
+        code: 'implementer-left-isolation',
+        message: expect.stringMatching(
+          /^wrote to \S+\/checkout\/\.claude\/skills\/local\/SKILL\.md \(your checkout\) with edit$/,
+        ),
+      });
     });
   });
 });

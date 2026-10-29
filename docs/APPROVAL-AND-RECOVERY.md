@@ -276,7 +276,7 @@ An abort, a refused admission or a conflict keeps the halt pending. A conflict r
 
 ### Isolation checks
 
-The tripwire inspects tool calls reported by a `cli` implementer (`src/engine/implementers/isolation/boundary.ts`). A write outside the allowed workspace boundary stops the call and raises `implementer-left-isolation`. A read, list or search outside that boundary logs an `isolation_outside_read` warning for the reviewer. It does not halt. A tool that reports no input paths has only audit coverage.
+The tripwire inspects tool calls reported by a `cli` implementer (`src/engine/implementers/isolation/boundary.ts`). A write outside the allowed workspace boundary stops the call and raises `implementer-left-isolation`. A read, list or search outside that boundary logs an `isolation_outside_read` warning for the reviewer. It does not halt. A read in a folder SPLITBRIEF scans for skills, in your home (`~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`, `~/.cursor/skills` and the other roots in [Skills](./CONCEPTS.md#skills)) or in the project (`.claude/skills` and the like), logs nothing, also when a skill there links elsewhere; a write there still halts. A tool that reports no input paths has only audit coverage.
 
 In checkout mode (`workflow.isolation: none`) the boundary is the checkout itself. A write inside the checkout is allowed. A write outside it halts `implementer-left-isolation`, and a package-manager install halts. A read outside it is only logged.
 
