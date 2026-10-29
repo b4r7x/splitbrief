@@ -161,11 +161,14 @@ function malformedRecord(): CommandCodeTerminalEvent {
 
 function parseEventRecord(record: Record<string, unknown>): readonly CliProtocolEvent[] {
   if (!isRecord(record.event)) return [];
-  if (record.event.type !== 'tool_running') return [];
+  // `tool_queued` carries the input and comes before the permission check and the
+  // run, so the isolation guard sees the call first; `tool_running` has no input.
+  if (record.event.type !== 'tool_queued') return [];
   const name = optionalString(record.event.toolName, { trim: true, nonEmpty: true });
   if (name === undefined) return [];
   const id = optionalString(record.event.toolCallId, { trim: true, nonEmpty: true });
-  return [{ type: 'tool-use', id: id ?? null, name, input: {} }];
+  const input = isRecord(record.event.input) ? record.event.input : {};
+  return [{ type: 'tool-use', id: id ?? null, name, input }];
 }
 
 function parseResultRecord(record: Record<string, unknown>): readonly CliProtocolEvent[] {

@@ -13,6 +13,14 @@ and a `# version:` note — followed by verbatim stdout.
 | `json-result.txt` | the implementer adapter's own argv, prompt `Reply with exactly: ok` | The one paid call this capture was authorized to make, on the cheap default model `deepseek/deepseek-v4-flash`. |
 | `conformance-record.json` | `cli-conformance` raw → production, role `implementer` | Raw PASS, production OMIT — see below. |
 
+`../typed-output/command-code-1.88.0.jsonl` is not a recording. It is built by hand from
+the event shapes in the shipped `cmd` 1.88.0 bundle (`runTools` for `tool_queued`,
+`tool_running` and `tool_completed`, `serializeAgentEventLine` for the
+`{"type":"event","event":…}` wrapper), with `<project>` in place of the project root.
+It holds a `read_file` and an `edit_file` inside the project, a `shell_command`, a
+`write_file` outside the project and a `tool_queued` with no `toolCallId`, then a
+`result` success frame.
+
 ## Divergences from the hand-authored guesses
 
 - **`--list-models` format was wrong in every particular.** The guess was
@@ -33,9 +41,10 @@ and a `# version:` note — followed by verbatim stdout.
   `stopReason`/`usage`/`finalText`/`durationMs`, with the guessed `usage` key names
   (`inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`) all correct.
 - **Event stream names differ.** The run opens with `run_start`, not `session_started`.
-  The parser only consumes `tool_running`, whose real payload (`toolCallId`, `toolName`,
-  `description`) matches what it reads — confirmed against the shipped `dist`, since the
-  recorded run needed no tools.
+  The parser reads tool uses only from `tool_queued` (`toolCallId`, `toolName`, `input`),
+  which carries the tool input and comes before the permission check and the run.
+  `tool_running` carries no input (`description: null`), and `message_update` /
+  `message_end` repeat the same `tool_use` block, so neither gives a tool use.
 - **`cmd status --json` returns different fields**: `{authenticated, version, user, model,
   context_window}`, not the guessed `{authenticated, account, credits, model}`.
 - **`--effort <level>` exists.** The catalog declared `supportsEffort: false` /

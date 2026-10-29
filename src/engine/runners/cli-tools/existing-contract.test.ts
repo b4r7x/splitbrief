@@ -152,7 +152,12 @@ function writeConformanceShim(
   const commandCodeNdjson = [
     JSON.stringify({
       type: 'event',
-      event: { type: 'tool_running', toolCallId: 'call_1', toolName: 'read_file' },
+      event: {
+        type: 'tool_queued',
+        toolCallId: 'call_1',
+        toolName: 'read_file',
+        input: { file_path: 'README.md' },
+      },
     }),
     JSON.stringify({
       type: 'result',

@@ -5,6 +5,7 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { parseAntigravityLine } from '../../streaming/parse-antigravity.js';
 import type { CliProtocolEvent } from '../../runners/cli-tools/contract.js';
+import { commandCodeProtocolEvents } from '../../runners/cli-tools/command-code.js';
 import { cursorProtocolEvents } from '../../runners/cli-tools/cursor.js';
 import { kiloImplementerProtocolEvents } from '../../runners/cli-tools/kilo-code.js';
 import { opencodeProtocolEvents } from '../../runners/cli-tools/opencode.js';
@@ -809,5 +810,42 @@ describe('isolation breach excerpts and path lengths', () => {
     expect(formatIsolationBreach(breach!)).toBe(
       `wrote to ~/outside/target.ts (outside the workspace) with ${tool}`,
     );
+  });
+});
+
+describe('isolation boundary on the Command Code 1.88.0 stream', () => {
+  const project = '/Users/alice/Projects/app';
+  const toolUses = readFileSync(join(FIXTURES, 'typed-output/command-code-1.88.0.jsonl'), 'utf8')
+    .replaceAll('<project>', project)
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .flatMap((line) => commandCodeProtocolEvents(line))
+    .filter((event) => event.type === 'tool-use');
+  const guardFor = () =>
+    loggingGuard(
+      createIsolationBoundary({
+        isolationDir: project,
+        checkoutDir: '/Users/alice/Projects/app-checkout',
+        env: { HOME: '/Users/alice', PATH: ENV_PATH },
+        tool: 'command-code',
+      }),
+    ).guard;
+  const toolUse = (name: string) => {
+    const use = toolUses.find((candidate) => candidate.name === name);
+    if (use === undefined) throw new Error(`No ${name} tool use in the stream`);
+    return use;
+  };
+
+  it('lets an edit_file inside the workspace through', () => {
+    const edit = toolUse('edit_file');
+    expect(edit.input).toMatchObject({ file_path: `${project}/src/app.ts` });
+    expect(guardFor()(edit)).toBeNull();
+  });
+
+  it('stops a write_file outside the workspace', () => {
+    expect(guardFor()(toolUse('write_file'))).toEqual({
+      code: 'implementer-left-isolation',
+      message: 'wrote to ~/notes.txt (outside the workspace) with write_file',
+    });
   });
 });

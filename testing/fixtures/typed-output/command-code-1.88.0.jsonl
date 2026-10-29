@@ -1,0 +1,38 @@
+{"type":"event","event":{"type":"run_start","sessionId":"5f0c2a1e-7b3d-4c8e-9a61-2d4e8f1b3c70"}}
+{"type":"event","event":{"type":"turn_start","turnNumber":1}}
+{"type":"event","event":{"type":"message_start"}}
+{"type":"event","event":{"type":"message_update","content":[{"type":"tool_use","id":"call_01","name":"read_file","input":{"file_path":"<project>/src/app.ts"}}]}}
+{"type":"event","event":{"type":"message_end","content":[{"type":"tool_use","id":"call_01","name":"read_file","input":{"file_path":"<project>/src/app.ts"}}]}}
+{"type":"event","event":{"type":"tool_queued","toolCallId":"call_01","toolName":"read_file","input":{"file_path":"<project>/src/app.ts"}}}
+{"type":"event","event":{"type":"tool_running","toolCallId":"call_01","toolName":"read_file","description":null}}
+{"type":"event","event":{"type":"tool_completed","toolCallId":"call_01","toolName":"read_file","result":[{"type":"text","text":"export const greeting = 'hello';\n"}]}}
+{"type":"event","event":{"type":"turn_end","turnNumber":1,"hadToolCalls":true,"usage":{"inputTokens":18210,"outputTokens":41,"cacheReadTokens":5888,"cacheWriteTokens":0}}}
+{"type":"event","event":{"type":"turn_start","turnNumber":2}}
+{"type":"event","event":{"type":"message_start"}}
+{"type":"event","event":{"type":"message_update","content":[{"type":"tool_use","id":"call_02","name":"edit_file","input":{"file_path":"<project>/src/app.ts","old_string":"'hello'","new_string":"'hello, world'"}}]}}
+{"type":"event","event":{"type":"message_end","content":[{"type":"tool_use","id":"call_02","name":"edit_file","input":{"file_path":"<project>/src/app.ts","old_string":"'hello'","new_string":"'hello, world'"}}]}}
+{"type":"event","event":{"type":"tool_queued","toolCallId":"call_02","toolName":"edit_file","input":{"file_path":"<project>/src/app.ts","old_string":"'hello'","new_string":"'hello, world'"}}}
+{"type":"event","event":{"type":"tool_running","toolCallId":"call_02","toolName":"edit_file","description":null}}
+{"type":"event","event":{"type":"tool_completed","toolCallId":"call_02","toolName":"edit_file","result":[{"type":"text","text":"Edited <project>/src/app.ts"}]}}
+{"type":"event","event":{"type":"turn_end","turnNumber":2,"hadToolCalls":true,"usage":{"inputTokens":18402,"outputTokens":63,"cacheReadTokens":18176,"cacheWriteTokens":0}}}
+{"type":"event","event":{"type":"turn_start","turnNumber":3}}
+{"type":"event","event":{"type":"message_start"}}
+{"type":"event","event":{"type":"message_update","content":[{"type":"tool_use","id":"call_03","name":"shell_command","input":{"command":"npm test"}}]}}
+{"type":"event","event":{"type":"message_end","content":[{"type":"tool_use","id":"call_03","name":"shell_command","input":{"command":"npm test"}}]}}
+{"type":"event","event":{"type":"tool_queued","toolCallId":"call_03","toolName":"shell_command","input":{"command":"npm test"}}}
+{"type":"event","event":{"type":"tool_running","toolCallId":"call_03","toolName":"shell_command","description":null}}
+{"type":"event","event":{"type":"tool_completed","toolCallId":"call_03","toolName":"shell_command","result":[{"type":"text","text":"Tests: 4 passed, 4 total"}]}}
+{"type":"event","event":{"type":"turn_end","turnNumber":3,"hadToolCalls":true,"usage":{"inputTokens":18611,"outputTokens":22,"cacheReadTokens":18304,"cacheWriteTokens":0}}}
+{"type":"event","event":{"type":"turn_start","turnNumber":4}}
+{"type":"event","event":{"type":"message_start"}}
+{"type":"event","event":{"type":"message_update","content":[{"type":"tool_use","id":"call_04","name":"write_file","input":{"file_path":"/Users/alice/notes.txt","content":"greeting changed\n"}}]}}
+{"type":"event","event":{"type":"message_end","content":[{"type":"tool_use","id":"call_04","name":"write_file","input":{"file_path":"/Users/alice/notes.txt","content":"greeting changed\n"}}]}}
+{"type":"event","event":{"type":"tool_queued","toolCallId":"call_04","toolName":"write_file","input":{"file_path":"/Users/alice/notes.txt","content":"greeting changed\n"}}}
+{"type":"event","event":{"type":"tool_running","toolCallId":"call_04","toolName":"write_file","description":null}}
+{"type":"event","event":{"type":"tool_completed","toolCallId":"call_04","toolName":"write_file","result":[{"type":"text","text":"Wrote /Users/alice/notes.txt"}]}}
+{"type":"event","event":{"type":"turn_end","turnNumber":4,"hadToolCalls":true,"usage":{"inputTokens":18750,"outputTokens":35,"cacheReadTokens":18560,"cacheWriteTokens":0}}}
+{"type":"event","event":{"type":"turn_start","turnNumber":5}}
+{"type":"event","event":{"type":"message_start"}}
+{"type":"event","event":{"type":"tool_queued","toolName":"grep","input":{"pattern":"TODO","path":"<project>/src"}}}
+{"type":"event","event":{"type":"turn_end","turnNumber":5,"hadToolCalls":true,"usage":{"inputTokens":18820,"outputTokens":18,"cacheReadTokens":18688,"cacheWriteTokens":0}}}
+{"type":"result","subtype":"success","sessionId":"5f0c2a1e-7b3d-4c8e-9a61-2d4e8f1b3c70","stopReason":"end_turn","usage":{"inputTokens":92793,"outputTokens":179,"cacheReadTokens":79616,"cacheWriteTokens":0},"durationMs":14820,"finalText":"Changed the greeting and noted it."}
