@@ -1,7 +1,7 @@
 import { plainUserMessage } from '../../core/types/user-input.js';
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -28,6 +28,7 @@ import {
   REVIEW_FILE,
   REVIEW_JSON_FILE,
   REVIEW_PACKET_JSON_FILE,
+  reviewChangeFile,
   SPEC_FILE,
   sessionDir,
 } from '../../core/paths.js';
@@ -43,6 +44,7 @@ import {
   getChangedFilesSnapshot,
 } from './approval/file-snapshots/capture.js';
 import { captureTaskReviewChanges } from './evidence/review-capture.js';
+import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
 import { getOrCreateLedger } from './evidence/persistence.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { runFinalReviewPhase, type FinalReviewResult } from './final-review.js';
@@ -168,6 +170,54 @@ async function halt(
 }
 
 describe('final review input cap', () => {
+  it('hands a Claude Code reviewer a 200,000-character change as a file, not in the prompt', {
+    timeout: 60_000,
+  }, async () => {
+    const ref = project();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], action: 'modify' });
+    await completeTask(ref, task, { 'src/big.ts': lines('v', 5_000) });
+    const { reviewer, prompts } = countingReviewer();
+
+    const result = await review(
+      ref,
+      doneState(task),
+      reviewer,
+      makeBusRecorder().bus,
+      CLAUDE_REVIEWER,
+    );
+
+    const changeFile = join(ref.projectDir, reviewChangeFile(ref.sessionId));
+    const change = readFileSync(changeFile, 'utf8');
+    expect({ status: result.reviewStatus, failure: result.failure }).toEqual({
+      status: 'written',
+      failure: undefined,
+    });
+    expect(change.length).toBeGreaterThan(200_000);
+    expect(change).toContain('### src/big.ts — T001');
+    expect(change).toContain('+export const v4999 = ');
+    expect(prompts[0]).toContain(`The change under review is in \`${changeFile}\``);
+    expect(prompts[0]).not.toContain('export const v4999 = ');
+    const universe = await resolveRunUniverse({
+      workspaceDir: ref.projectDir,
+      baseline: { head: null },
+      runBase: undefined,
+    });
+    expect(universe.changedFiles).toEqual(['src/big.ts']);
+  });
+
+  it('keeps the change in the prompt of a Codex reviewer and writes no change file', async () => {
+    const ref = project();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], action: 'modify' });
+    await completeTask(ref, task, { 'src/big.ts': lines('v', 100) });
+    const { reviewer, prompts } = countingReviewer();
+
+    const result = await review(ref, doneState(task), reviewer);
+
+    expect(result.reviewStatus).toBe('written');
+    expect(prompts[0]).toContain('+export const v99 = ');
+    expect(existsSync(join(ref.projectDir, reviewChangeFile(ref.sessionId)))).toBe(false);
+  });
+
   it('halts with review-input-too-large before calling a codex reviewer when the diff alone is over its cap', {
     timeout: 60_000,
   }, async () => {
@@ -459,7 +509,7 @@ describe('final review input cap', () => {
     expect(issue?.recommendedAction).toBe('switch-seat');
   });
 
-  it("leaves Codex out of the offer when a reviewer's refusal names no limit and the prompt is over Codex's", {
+  it("leaves Codex out of the offer when a reviewer's refusal names no limit and its change is over Codex's", {
     timeout: 60_000,
   }, async () => {
     const ref = project();
@@ -497,11 +547,9 @@ describe('final review input cap', () => {
     );
 
     expect(invoke).toHaveBeenCalledTimes(1);
-    expect(sent[0]?.length).toBeGreaterThan(CODEX_CAP);
-    expect(result.failure).toMatchObject({
-      kind: 'input-too-large',
-      promptSize: { characters: sent[0]?.length },
-    });
+    expect(sent[0]?.length).toBeLessThan(CODEX_CAP);
+    if (result.failure?.kind !== 'input-too-large') throw new Error('no input-too-large failure');
+    expect(result.failure.promptSize.characters).toBeGreaterThan(CODEX_CAP);
     const issue = (await halt(ref, result, CLAUDE_REVIEWER)).pendingRecovery;
     expect(issue?.message).toContain('Claude Code CLI refused it as too large');
     expect(issue?.switchSeat).toEqual({
@@ -557,14 +605,14 @@ function cliReviewer(tool: CliToolId, extra: Record<string, unknown> = {}): CliP
 
 describe('a review seat that takes the prompt on stdin', () => {
   it.each([
-    ['cursor', { model: 'claude-haiku-5-5-thinking-high' }],
-    ['antigravity', {}],
+    ['cursor', { model: 'claude-haiku-5-5-thinking-high' }, 'prompt'],
+    ['antigravity', {}, 'change file'],
   ] as const)(
     '%s reviews a run whose review input is over 300 KB',
     {
       timeout: 60_000,
     },
-    async (tool, extra) => {
+    async (tool, extra, carrier) => {
       const ref = project();
       const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], action: 'modify' });
       await completeTask(ref, task, { 'src/big.ts': lines('v', 9_000) });
@@ -592,7 +640,13 @@ describe('a review seat that takes the prompt on stdin', () => {
           status: 'written',
           failure: undefined,
         });
-        expect(Number(readFileSync(received, 'utf8'))).toBeGreaterThan(300_000);
+        const changeFile = join(ref.projectDir, reviewChangeFile(ref.sessionId));
+        expect(existsSync(changeFile)).toBe(carrier === 'change file');
+        const carried =
+          carrier === 'prompt'
+            ? Number(readFileSync(received, 'utf8'))
+            : readFileSync(changeFile, 'utf8').length;
+        expect(carried).toBeGreaterThan(300_000);
       } finally {
         restorePath();
       }

@@ -628,6 +628,13 @@ export function cliPromptLimit(
     : undefined;
 }
 
+/** True when a CLI tool's review call reads workspace files of its own. */
+export function cliReviewReadsFiles(toolId: string): boolean {
+  return includes(PLANNER_CLI_TOOL_IDS, toolId)
+    ? CLI_PLANNER_ADAPTERS[toolId].readsFiles === true
+    : false;
+}
+
 /** Returns the admitted role-bound probe without exposing any probe output. */
 export function lookupCliReadinessProbe(
   input: Readonly<{

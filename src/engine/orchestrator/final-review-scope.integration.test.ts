@@ -25,6 +25,7 @@ import {
   DRIFT_REPORT_FILE,
   REVIEW_PACKET_JSON_FILE,
   REVIEW_PACKET_MARKDOWN_FILE,
+  reviewChangeFile,
   SPEC_FILE,
   sessionDir,
 } from '../../core/paths.js';
@@ -96,6 +97,7 @@ async function completeTask(
   writeEvidenceLedger(p.ref, getOrCreateLedger({ ref: p.ref, state: makeImplState([task]) }));
 }
 
+/** The change is in the prompt of an API reviewer and in the change file of a Claude Code one. */
 async function review(p: Awaited<ReturnType<typeof project>>, api = false, tasks = [p.task]) {
   const prompts: string[] = [];
   writeSpecFile(p.ref, SPEC_FILE, 'Enable feature; preserve operator fixes.', null);
@@ -150,7 +152,11 @@ async function review(p: Awaited<ReturnType<typeof project>>, api = false, tasks
       readFileSync(join(sessionDir(p.projectDir, p.sessionId), REVIEW_PACKET_JSON_FILE), 'utf8'),
     ),
   );
-  return { prompt: prompts[0] ?? '', packet };
+  const prompt = prompts[0] ?? '';
+  const change = api
+    ? prompt
+    : readFileSync(join(p.projectDir, reviewChangeFile(p.sessionId)), 'utf8');
+  return { prompt, change, packet };
 }
 
 describe('final review task completion provenance', () => {
@@ -211,18 +217,18 @@ describe('final review task completion provenance', () => {
     async (api) => {
       const p = await project();
       await completeTask(p);
-      const { prompt, packet } = await review(p, api);
+      const { prompt, change, packet } = await review(p, api);
       const implementation =
-        prompt.split('## Implementation Diff')[1]?.split('## Workspace Context')[0] ?? '';
+        change.split('## Implementation Diff')[1]?.split('## Workspace Context')[0] ?? '';
       expect(implementation).toContain(`### ${file} — T001`);
       expect(implementation).toContain('+export const feature = true;');
       expect(implementation).not.toContain('operatorFix');
       expect(implementation).not.toContain('independentFix');
       // The context carries only files with no recorded run effect, so no hunk is shown twice.
-      const context = prompt.split('## Workspace Context')[1] ?? '';
+      const context = change.split('## Workspace Context')[1] ?? '';
       expect(context).toContain('independentFix');
       expect(context).not.toContain(`b/${file}`);
-      expect(prompt.split('+export const feature = true;')).toHaveLength(2);
+      expect(change.split('+export const feature = true;')).toHaveLength(2);
       expect(prompt).toContain('including when they share a declared file');
       expect(packet.changes.provenance).toMatchObject({
         status: 'available',
@@ -319,11 +325,11 @@ describe('final review task completion provenance', () => {
     const p = await project();
     await completeTask(p);
     writeFileSync(join(p.projectDir, file), 'operator changed the same feature line\n');
-    const { prompt, packet } = await review(p);
-    expect(prompt).toContain('+export const feature = true;');
-    expect(prompt).toContain('operator changed the same feature line');
-    expect(prompt).toContain('Changes after the last recorded task completion; authorship unknown');
-    expect(prompt.split('operator changed the same feature line')).toHaveLength(2);
+    const { change, packet } = await review(p);
+    expect(change).toContain('+export const feature = true;');
+    expect(change).toContain('operator changed the same feature line');
+    expect(change).toContain('Changes after the last recorded task completion; authorship unknown');
+    expect(change.split('operator changed the same feature line')).toHaveLength(2);
     expect(packet.changes.provenance?.uncertainFiles).toContain(file);
   });
 
@@ -333,11 +339,12 @@ describe('final review task completion provenance', () => {
       const p = await project();
       if (state === 'invalid')
         writeFileSync(join(sessionDir(p.projectDir, p.sessionId), REVIEW_CHANGES_FILE), '{}');
-      const { prompt, packet } = await review(p);
+      const { prompt, change, packet } = await review(p);
       expect(packet.changes.provenance?.status).toBe(state);
       expect(prompt).toContain('not evidence of an empty run');
-      expect(prompt).toContain('independentFix');
+      expect(change).toContain('independentFix');
       // The operator's edit was there when the run started, so it is context, not a run change.
+      expect(change).not.toContain('operatorFix');
       expect(prompt).not.toContain('operatorFix');
       expect(prompt).toContain(`Files already changed when this run started: ${file}.`);
       expect(packet.changes.provenance?.uncertainFiles).toEqual(['src/tool-fix.ts']);
@@ -418,10 +425,10 @@ describe('final review task completion provenance', () => {
     expect(diff.split('+export const feature = true;')).toHaveLength(2);
     expect(diff.split('+export const extra = 2;')).toHaveLength(2);
 
-    const { prompt } = await review(p, false, [p.task, second]);
-    expect(prompt.split(`### ${file} — T001, T002`)).toHaveLength(2);
-    expect(prompt.split('+export const feature = true;')).toHaveLength(2);
-    expect(prompt.split('+export const extra = 2;')).toHaveLength(2);
+    const { change } = await review(p, false, [p.task, second]);
+    expect(change.split(`### ${file} — T001, T002`)).toHaveLength(2);
+    expect(change.split('+export const feature = true;')).toHaveLength(2);
+    expect(change.split('+export const extra = 2;')).toHaveLength(2);
   });
 
   it('shows a later edit of a file whose run effect cancelled out once', async () => {
@@ -436,9 +443,68 @@ describe('final review task completion provenance', () => {
     await completeTask(p, operator, undefined, second);
     writeFileSync(join(p.projectDir, file), `${operator}export const later = 'edit';\n`);
 
-    const { prompt } = await review(p, false, [p.task, second]);
+    const { change } = await review(p, false, [p.task, second]);
 
-    expect(prompt.split("export const later = 'edit';")).toHaveLength(2);
+    expect(change.split("export const later = 'edit';")).toHaveLength(2);
+  });
+
+  it('writes the change file of a task review with the reviewed task', async () => {
+    const p = await project();
+    await completeTask(p);
+
+    const prompts: string[] = [];
+
+    const result = await runFinalReviewPhase({
+      ...p,
+      workspaceDir: p.projectDir,
+      scope: 'task',
+      afterTaskId: p.task.id,
+      state: makeImplState([{ ...p.task, status: 'done' }], {
+        changedFilesBaseline: { head: null, runStartChangedFiles: [file], fingerprints: {} },
+        workspace: p.workspace,
+      }),
+      config: makeNoValidationConfig(),
+      bus: makeBusRecorder().bus,
+      callbacks: makeCallbacks().callbacks,
+      reviewer: makePlanner({
+        typedCall: typedCallPlanAndReview(
+          () => planFromTasks([]),
+          (prompt) => {
+            prompts.push(prompt);
+            return passingReviewVerdict(prompt);
+          },
+        ),
+      }),
+      metadata: TEST_METADATA,
+    });
+
+    const changeFile = join(p.projectDir, reviewChangeFile(p.sessionId));
+    const change = readFileSync(changeFile, 'utf8');
+    expect(result.reviewStatus).toBe('written');
+    expect(prompts[0]).toContain(changeFile);
+    expect(change).toContain(`### ${file} — T001`);
+    expect(change).toContain('+export const feature = true;');
+  });
+
+  it('lists the fix task beside the task it fixes in the change file of a re-review', async () => {
+    const p = await project();
+    const fix = makeTask({
+      id: 'T002',
+      suggestedFiles: [file],
+      action: 'modify',
+      status: 'in_progress',
+      fix: {
+        cycle: 1,
+        findings: [{ id: 'F1', text: 'Export the extra value.', acceptance: null }],
+      },
+    });
+    await completeTask(p);
+    await completeTask(p, `${worker}export const extra = 2;\n`, undefined, fix);
+
+    const { change } = await review(p, false, [p.task, fix]);
+
+    expect(change).toContain(`### ${file} — T001, T002`);
+    expect(change).toContain('+export const extra = 2;');
   });
 
   it('keeps a file whose run effect cancelled out uncertain when it was edited afterwards', async () => {

@@ -12,6 +12,7 @@ import {
   EVIDENCE_FILE,
   REVIEW_FILE,
   REVIEW_JSON_FILE,
+  reviewChangeFile,
   SESSION_LOG_FILE,
   SPEC_FILE,
   TASKS_FILE,
@@ -32,9 +33,14 @@ import {
 import { error } from '../../utils/error.js';
 import { nowIso } from '../../utils/format-time.js';
 import { labelError } from '../../utils/format-errors.js';
+import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { warnError } from '../../lib/warn.js';
 import { isAbortError, throwIfAborted } from '../../utils/abort.js';
-import { triageLines, type ReviewTouchedNotSuggested } from '../spec/prompts/review.js';
+import {
+  reviewChangeText,
+  triageLines,
+  type ReviewTouchedNotSuggested,
+} from '../spec/prompts/review.js';
 import { workspaceReadInstructions } from '../spec/prompts/builder.js';
 import { persistReviewEvidence } from './evidence/persistence.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
@@ -77,7 +83,7 @@ import {
   type PromptLength,
   type PromptSize,
 } from '../runners/input-limit.js';
-import { cliPromptLimit } from '../runners/cli-tools/registry.js';
+import { cliPromptLimit, cliReviewReadsFiles } from '../runners/cli-tools/registry.js';
 import {
   typedRunnerCallErrorCode,
   typedRunnerCallErrorMessage,
@@ -395,6 +401,12 @@ export async function runFinalReviewPhase(opts: {
   const reviewRunner = resolveReviewerRunner(config).runner;
   const limit =
     reviewRunner.kind === 'cli' ? cliPromptLimit('planner', reviewRunner.tool) : undefined;
+  // A seat that reads files takes the change from the run workspace; `.splitbrief/` there is
+  // never a run change.
+  const changeFile =
+    reviewRunner.kind === 'cli' && cliReviewReadsFiles(reviewRunner.tool)
+      ? join(workspaceDir, reviewChangeFile(sessionId))
+      : undefined;
   const reviewModel = getRunnerModelName(reviewRunner);
   const reviewAxes = seatAxisWords(reviewRunner);
   const scope = opts.scope ?? 'final';
@@ -450,6 +462,9 @@ export async function runFinalReviewPhase(opts: {
   // The text the call appends after the prompt, such as the answer schema; it counts toward the
   // tool's limit too.
   let promptSuffix = '';
+  // The change a seat that reads files takes from a file; a seat that takes it in its prompt
+  // would carry it there too.
+  let changeText = '';
   let reviewInput: BuildReviewPacketOptions['reviewInput'];
   try {
     const baseline = state.changedFilesBaseline;
@@ -673,6 +688,10 @@ export async function runFinalReviewPhase(opts: {
         ...(reviewChecksSection !== undefined ? [reviewChecksSection] : []),
         queueText,
       ].join('\n\n');
+      if (changeFile !== undefined) {
+        changeText = reviewChangeText(promptScope);
+        await writeConfinedSecureFileAsync(workspaceDir, reviewChangeFile(sessionId), changeText);
+      }
 
       return (suffix) => {
         promptSuffix = suffix;
@@ -728,9 +747,13 @@ export async function runFinalReviewPhase(opts: {
               spec,
               taskBriefs,
               reviewKind: opts.scope ?? 'final',
-              files: promptScope.files,
-              laterDiff: promptScope.laterDiff,
-              workspaceContext: promptScope.workspaceContext,
+              ...(changeFile === undefined
+                ? {
+                    files: promptScope.files,
+                    laterDiff: promptScope.laterDiff,
+                    workspaceContext: promptScope.workspaceContext,
+                  }
+                : { changeFile }),
               plan,
               touchedNotSuggested,
               checkResults,
@@ -768,7 +791,7 @@ export async function runFinalReviewPhase(opts: {
             failure = {
               kind: 'input-too-large',
               figures: { unit: result.limit.unit, size: result.size, limit: result.limit.max },
-              promptSize: promptLength(fullPrompt + promptSuffix),
+              promptSize: promptLength(fullPrompt + promptSuffix + changeText),
               largestFiles: result.largestFiles,
             };
             throw error('review-input-too-large', 'Review input exceeds the tool cap.');
@@ -827,7 +850,7 @@ export async function runFinalReviewPhase(opts: {
           state = s;
         },
         // The review is one shot by constitution: a continuation re-issues the
-        // whole deterministic prompt — spec, briefs, diff, drift, evidence — with
+        // whole deterministic prompt — spec, briefs, diff or change file, drift, evidence — with
         // the operator's note on the end. It never resumes a session.
         body: async ({ signal: callSignal, partial, steer, steerInput }) => {
           seed = steerInput === undefined ? undefined : { steer: steerInput };
@@ -1055,7 +1078,7 @@ export async function runFinalReviewPhase(opts: {
     let message: string;
     let resetAt: string | undefined;
     if (typedRunnerCallErrorCode(err) === 'input-too-large') {
-      const sent = promptLength(fullPrompt + promptSuffix);
+      const sent = promptLength(fullPrompt + promptSuffix + changeText);
       const figures = inputTooLargeFigures(typedRunnerCallErrorMessage(err) ?? '');
       failure = {
         kind: 'input-too-large',

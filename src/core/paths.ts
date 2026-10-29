@@ -71,6 +71,12 @@ export const reviewPacketMarkdownPath = (ref: SessionRef): string =>
 export const getSplitbriefPath = (projectDir: string, ...parts: string[]): string =>
   join(projectDir, SPLITBRIEF_DIR, ...parts);
 
+/** The change a reviewer that reads files takes from the run workspace, relative to it. */
+export function reviewChangeFile(sessionId: string): string {
+  validateSessionId(sessionId);
+  return join(SPLITBRIEF_DIR, REVIEWS_DIR, `${sessionId}.diff`);
+}
+
 export const SPEC_FILE = 'spec.md';
 export const PLAN_FILE = 'plan.md';
 export const PLAN_JSON_FILE = 'plan.json';

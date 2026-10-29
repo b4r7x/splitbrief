@@ -142,6 +142,8 @@ function createPlannerAdapter(): CliPlannerAdapter<'antigravity'> {
     role: 'planner',
     supportsSessionResume: false,
     supportsEffort: CLI_TOOL_CATALOG[ANTIGRAVITY_ID].supportsEffort,
+    // `--sandbox` fences shell writes only; the file tools read the workspace.
+    readsFiles: true,
     promptTransport: ANTIGRAVITY_PROMPT_TRANSPORT,
     encodePrompt,
     baseArgs: plannerBaseArgs,
