@@ -94,7 +94,6 @@ describe('runPreTaskHooksAndPublish', () => {
           dispatchedRevision: {},
           consultRecords: [],
           replacedParents: [],
-          notes: [],
         },
       },
     };

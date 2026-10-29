@@ -164,10 +164,10 @@ Filesystem snapshots, diffs, and validation remain available; the Git index and 
 
    The final review runs the reviewer checks. The first reviewer check with new failures stops the list. The reviewer returns the fix work for it.
 
-7. If the checks pass with pending messages, SPLITBRIEF runs a counted BUILD answer attempt on the same brief before accepting it. The attempt keeps the files and spends no retry rung. `runLocalRetries` dispatches `COUNT_ATTEMPT`, which increases the displayed lineage attempt count. The attempt remains subject to the attempt bound, which can halt delivery. SPLITBRIEF runs the checks again after the attempt.
+7. If the checks pass with pending messages, SPLITBRIEF runs a counted BUILD answer attempt on the same brief before accepting it. The attempt keeps the files and spends no retry rung. `runLocalRetries` dispatches `COUNT_ATTEMPT`, which increases the displayed lineage attempt count. SPLITBRIEF runs the checks again after the attempt.
 
    With no pending correction and a passing gate, SPLITBRIEF dispatches `VALIDATION_PASS` and records evidence.
-8. If the checks fail, the ordinary retry path delivers pending messages and spends a retry rung. BUILD retries once with the error message. SPLITBRIEF then consults the planner for a plan task or REVIEW for a fix task. The seat returns guidance, a rewritten or split brief, a check re-run, or a question. A spent bound halts for recovery.
+8. If the checks fail, the ordinary retry path delivers pending messages and spends a retry rung. BUILD retries once with the error message. SPLITBRIEF then consults the planner for a plan task or REVIEW for a fix task. The seat returns guidance, a rewritten or split brief, a check re-run, a question, or `cannot`. It answers again after every failed attempt and sees its earlier answers. A question that nobody answers, and a `cannot` answer, halt for recovery.
 
 See [Message queue](./ENGINE.md#message-queue) for BUILD corrections before calls, after calls, and during checks.
 

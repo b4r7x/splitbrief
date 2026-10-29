@@ -1,5 +1,4 @@
 export const BOUNDS = {
-  answersPerBrief: 10,
   consultFailingOutputChars: 4000,
   consultDiffChars: 40_000,
   consultAttemptLineChars: 200,

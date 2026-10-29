@@ -112,8 +112,8 @@ function hasCode(task: Task): boolean {
 }
 
 /**
- * Whether the brief runs on its own files: it resumes its cut attempt, it replays carrying a
- * failure, or its current revision already dispatched an attempt and runs again on Try again. The
+ * Whether the brief runs on its own files: it resumes its cut attempt, or its current revision
+ * already dispatched an attempt and runs again on Try again. The
  * changes in its files are then the brief's own output, not a change under it.
  */
 export function runsOnOwnFiles(
@@ -126,18 +126,16 @@ export function runsOnOwnFiles(
     continuation?.resumesAttempt(
       { kind: 'brief', taskId: task.id, attempt: state.attempt },
       hashTaskBrief([task]),
-    ) === true ||
-    lineage?.carriedFailure !== undefined ||
-    lineage?.dispatchedRevision[task.id] === (task.revision ?? 1)
+    ) === true || lineage?.dispatchedRevision[task.id] === (task.revision ?? 1)
   );
 }
 
 /**
  * A brief that resumes its cut attempt keeps the code it was dispatched with: the workspace now
  * also holds that attempt's own output, which is not the brief's input. A retry, and a brief that
- * runs on its own files (`runsOnOwnFiles`: a Continue past a consult bound, a Try again of a
- * dispatched revision), keep the action the brief was dispatched with: an anchor its own earlier
- * attempt wrote is still the file it creates. Any other dispatch takes `lineageAnchorAction`.
+ * runs on its own files (`runsOnOwnFiles`: a Try again of a dispatched revision), keep the
+ * action the brief was dispatched with: an anchor its own earlier attempt wrote is still the file
+ * it creates. Any other dispatch takes `lineageAnchorAction`.
  */
 export async function refreshAndPersistCode(
   task: Task,

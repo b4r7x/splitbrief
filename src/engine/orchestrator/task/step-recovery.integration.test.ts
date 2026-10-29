@@ -47,69 +47,7 @@ function failBriefChecks(): void {
 }
 
 describe('runSingleTask — recovery', () => {
-  it("keeps the brief's files in place when the ladder halts on no progress", {
-    timeout: 90_000,
-  }, async () => {
-    const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
-    const task = makeTask({
-      id: 'T001',
-      action: 'modify',
-      suggestedFiles: ['src/main.ts'],
-      scope: { inBounds: ['src/main.ts'] },
-      checks: BRIEF_CHECKS,
-    });
-    const state = implementingState([task]);
-
-    const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
-        writeFileSync(join(runDir, 'src/main.ts'), 'export const main = 999; // broken\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
-      }),
-      retry: vi.fn().mockResolvedValue({
-        success: false,
-        error: 'still broken',
-        usage: { inputTokens: 5, outputTokens: 2 },
-      }),
-    });
-    failBriefChecks();
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-
-    const wctx = await openRunWorkspace(
-      makeWorkflowContext({
-        projectDir,
-        sessionId,
-        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
-        callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          workflow: { review: 'task' },
-
-          validation: { endChecks: false, testCommand: 'noop' },
-        }),
-        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-      }),
-    );
-    const result = await runSingleTask({
-      wctx,
-      task,
-      index: 0,
-      totalTasks: 1,
-      state,
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(result.pendingRecovery?.reason).toBe('no-progress');
-    // Continue replays the brief as a retry carrying the failure, so the files it fails on stay.
-    expect(readFileSync(join(wctx.workspaceDir, 'src/main.ts'), 'utf-8')).toBe(
-      'export const main = 999; // broken\n',
-    );
-  });
-
-  it("restores the brief's files to the task start when the ladder halts on another cause", {
+  it("restores the brief's files to the task start when the ladder halts", {
     timeout: 90_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
@@ -253,7 +191,11 @@ describe('runSingleTask — recovery', () => {
 
           validation: { endChecks: false, testCommand: 'noop' },
         }),
-        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+        planner: makePlanner({
+          typedCall: consultCallAnswering(() => {
+            throw new Error('The planner process stopped unexpectedly.');
+          }),
+        }),
       }),
     );
 
@@ -273,11 +215,7 @@ describe('runSingleTask — recovery', () => {
       },
     });
 
-    // Task 1 makes no progress; its broken change stays for a Continue to start from.
-    expect(afterTaskOne.pendingRecovery?.reason).toBe('no-progress');
-    expect(readFileSync(join(wctx.workspaceDir, 'src/one.ts'), 'utf-8')).toBe(
-      'export const one = 999; // broken\n',
-    );
+    expect(afterTaskOne.pendingRecovery?.reason).toBe('planner-call-failed');
 
     // Skip the exhausted task via the real recovery action: the skip restores its files.
     const skipResult = await applyRecoveryAction({
@@ -329,94 +267,6 @@ describe('runSingleTask — recovery', () => {
 // Captured verbatim from `codex exec --json` (codex-cli 0.146.0, 2026-08-06).
 const CODEX_BURNED_REFRESH =
   'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
-
-// A Biome run whose output opens with a config notice before the brief's own diagnostic,
-// the shape a real run's halt panel truncated.
-const BIOME_NOTICE_THEN_FORMAT = [
-  'biome.json:38:13 deserialize  DEPRECATED  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-  '',
-  '  i The use of the recommended field has been deprecated, and will removed in the next major version of Biome. Use preset instead.',
-  '',
-  'src/main.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-  '',
-  '  × Formatter would have printed the following content:',
-  '',
-  'check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-  '',
-  '  × Some errors were emitted while running checks.',
-].join('\n');
-
-describe('runSingleTask — the no-progress halt names the last failure', () => {
-  it('names the failing check and the last planner diagnosis', {
-    timeout: 90_000,
-  }, async () => {
-    const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
-    const task = makeTask({
-      id: 'T001',
-      action: 'modify',
-      suggestedFiles: ['src/main.ts'],
-      scope: { inBounds: ['src/main.ts'] },
-      checks: BRIEF_CHECKS,
-    });
-    let writes = 0;
-    const write = (runDir: string) => {
-      writes += 1;
-      writeFileSync(join(runDir, 'src/main.ts'), `export const main = [ ${writes} ];\n`);
-    };
-    const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
-        write(runDir);
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
-      }),
-      retry: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
-        write(runDir);
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
-      }),
-    });
-    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
-      processError.exitCode({
-        command: 'biome',
-        code: 1,
-        stderr: BIOME_NOTICE_THEN_FORMAT,
-        output: '',
-      }),
-    );
-    const { bus } = makeBusRecorder();
-    const wctx = await openRunWorkspace(
-      makeWorkflowContext({
-        projectDir,
-        sessionId,
-        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
-        callbacks: makeCallbacks().callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          workflow: { review: 'task' },
-        }),
-        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-      }),
-    );
-
-    const result = await runSingleTask({
-      wctx,
-      task,
-      index: 0,
-      totalTasks: 1,
-      state: implementingState([task]),
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(result.pendingRecovery?.reason).toBe('no-progress');
-    expect(result.pendingRecovery?.details[0]).toMatch(/^Failure: check K1/);
-    expect(result.pendingRecovery?.details[1]).toBe('Last diagnosis: The attempt failed');
-    // The config notice that opens the output does not crowd out the brief's own diagnostic.
-    expect(String(result.pendingRecovery?.facts?.['failingOutput'])).toContain(
-      'src/main.ts format',
-    );
-  });
-});
 
 describe('runSingleTask — the retry-exhausted halt keeps the check output', () => {
   it('quotes the failing check when the ladder names no last error', {
@@ -1004,13 +854,5 @@ describe('runSingleTask — a fix brief answers only its own failures', () => {
     const { state } = await build({ status: 'in_progress', output: other });
 
     expect(state.tasks[0]?.status).toBe('done');
-  });
-
-  it('names the failing check and its failures when its own failure remains', {
-    timeout: 90_000,
-  }, async () => {
-    const { state } = await build({ status: 'pending', output: [own, other].join('\n') });
-
-    expect(state.pendingRecovery?.details[0]).toBe(`Failure: check K1: ${own}, ${other}`);
   });
 });

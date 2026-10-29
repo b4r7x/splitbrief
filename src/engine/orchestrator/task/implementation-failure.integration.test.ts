@@ -454,11 +454,18 @@ describe('handleFailedImplementation — a stop with a hand-back is consulted', 
       }),
     });
     const { bus, events } = makeBusRecorder();
+    let consults = 0;
     const wctx = makeWorkflowContext({
       projectDir,
       sessionId,
       implementer,
-      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+      planner: makePlanner({
+        typedCall: consultCallAnswering(() => {
+          consults += 1;
+          if (consults > 2) throw new Error('The planner process stopped unexpectedly.');
+          return guidanceConsult();
+        }),
+      }),
       bus,
     });
 
@@ -478,12 +485,12 @@ describe('handleFailedImplementation — a stop with a hand-back is consulted', 
       setTrackedState: vi.fn(),
     });
 
-    // One local retry stopped on the no-change outcome; the two consult answers
-    // each spent one attempt that left the same failure, so the third consult halts.
+    // One local retry stopped on the no-change outcome; each consult answer spent
+    // one more attempt, and the third consult failed, so the brief halts on it.
     expect(implementer.retry).toHaveBeenCalledTimes(3);
     expect(events.filter((e) => e.type === 'task_retry')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(2);
-    expect(next.pendingRecovery).toMatchObject({ reason: 'no-progress', taskId: 'T001' });
+    expect(next.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', taskId: 'T001' });
   });
 });
 
@@ -538,10 +545,18 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
       usage: { inputTokens: 1, outputTokens: 1 },
     });
     const { bus } = makeBusRecorder();
+    let consults = 0;
     const wctx = makeWorkflowContext({
       implementer: makeImplementer({ retry }),
       bus,
-      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+      // One answer, then the planner fails: no count stops the consults of a brief that keeps failing.
+      planner: makePlanner({
+        typedCall: consultCallAnswering(() => {
+          consults += 1;
+          if (consults > 1) throw new Error('Planner call failed');
+          return guidanceConsult();
+        }),
+      }),
     });
     const error = extractedCodeApprovalRaceError(task.suggestedFiles[0]);
 

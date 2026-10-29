@@ -11,11 +11,7 @@ import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-r
 import type { TriageResult } from '../../../core/schemas/review.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { plannerFixWork } from '../../../core/review/stuck.js';
-import type {
-  ChangedFilesSnapshot,
-  LineageProgress,
-  WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
@@ -69,7 +65,6 @@ export type ConsultRequestInput = Readonly<{
   reason: ConsultReason;
   failingOutput: string;
   report?: ImplementerReport | null | undefined;
-  progress: LineageProgress;
   /** A stuck review's consult: the reviewer's next fix work, which the answer reshapes. */
   reviewerFixWork?: TriageResult | undefined;
 }>;
@@ -282,8 +277,7 @@ function publishAnswer(
 /**
  * Asks the consult seat about one task and records its answer: the reviewer for a fix
  * task's repair, the planner for the rest (`consultSeat`). The planner continues its
- * session; the reviewer holds none and reads the full prompt. The answer records the
- * lineage's progress the caller judged.
+ * session; the reviewer holds none and reads the full prompt.
  */
 export async function requestConsult(
   ctx: ConsultContext,
@@ -415,7 +409,6 @@ export async function requestConsult(
       reason: input.reason,
       answer: consulted,
       seat,
-      progress: input.progress,
     }),
   );
   publishAnswer(ctx, state, input, consulted, seat);

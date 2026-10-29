@@ -2,7 +2,6 @@ import type { Task } from '../../../core/schemas/task.js';
 import {
   lineageAttemptsOf,
   type ChangedFilesSnapshot,
-  type FailureMark,
   type WorkflowState,
 } from '../../../core/schemas/workflow.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
@@ -70,8 +69,6 @@ export async function runLocalRetries(
     task: Task;
     state: WorkflowState;
     lastError: string;
-    /** The checks that failed the attempt behind `lastError`. */
-    checks?: FailureMark | undefined;
     initialFailure?: RetryAttemptFailure | undefined;
     answer?: string | undefined;
   }>,
@@ -80,7 +77,6 @@ export async function runLocalRetries(
   let state = opts.state;
   let task = opts.task;
   let lastError = opts.lastError;
-  let checks = opts.checks;
   let attempts = 0;
   let consecutiveTimeouts = isUnfinishedCall(opts.initialFailure) ? 1 : 0;
   let lastFailure: RetryAttemptFailure | undefined;
@@ -168,7 +164,6 @@ export async function runLocalRetries(
     state = outcome.state;
     task = outcome.task;
     lastError = outcome.lastError;
-    checks = outcome.checks;
     lastFailure = outcome.lastFailure;
     answer = outcome.answer;
     attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
@@ -235,7 +230,6 @@ export async function runLocalRetries(
     state,
     task,
     lastError,
-    checks,
     attempts,
     ...(lastFailure !== undefined && { lastFailure }),
     ...(attemptSnapshot !== undefined && { attemptSnapshot }),

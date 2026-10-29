@@ -337,9 +337,9 @@ it('says what ⏎ in the composer does while it holds focus, and lists no live k
   const ui = renderFeature(
     <RecoveryMenu
       issue={makeRecoveryIssue({
-        reason: 'no-progress',
-        availableActions: ['continue', 'skip-current-task', 'end-run'],
-        recommendedAction: 'continue',
+        reason: 'retry-exhausted',
+        availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+        recommendedAction: 'retry-same-worker',
       })}
       width={80}
       clampedBoxRows={14}
@@ -350,10 +350,8 @@ it('says what ⏎ in the composer does while it holds focus, and lists no live k
   );
   await flushEffects();
   const frame = stripAnsiStyles(ui.lastFrame());
-  expect(frame).toContain('⏎ Continue with the typed correction · tab back to the actions');
+  expect(frame).toContain('⏎ Try again with the typed correction · tab back to the actions');
   expect(frame).not.toContain('↑↓ select');
-  expect(frame).toContain('Continue');
-  expect(frame).not.toContain('c   Continue');
   ui.unmount();
 });
 
@@ -411,14 +409,14 @@ it('says ⏎ runs the command when the composer holds a slash command', async ()
   ui.unmount();
 });
 
-it('offers a typed note on a no-progress halt, whose Continue takes it', async () => {
+it('offers a typed correction on a halt whose Try again takes it', async () => {
   const ui = mount(
     vi.fn(),
     80,
     makeRecoveryIssue({
-      reason: 'no-progress',
-      availableActions: ['continue', 'skip-current-task', 'end-run'],
-      recommendedAction: 'continue',
+      reason: 'retry-exhausted',
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+      recommendedAction: 'retry-same-worker',
     }),
   );
   await flushEffects();
@@ -627,31 +625,31 @@ function expectHiddenActionsMarked(rows: readonly string[], issue: RecoveryIssue
   }
 }
 
-function noProgressIssue() {
+function retryExhaustedIssue() {
   return makeRecoveryIssue({
-    reason: 'no-progress',
+    reason: 'retry-exhausted',
     taskId: taskId('T901'),
-    message: 'T901 is stuck on the same failure',
+    message: 'T901 failed',
     details: [
-      'Failure: blocked: Which locale table does greet.ts read?',
-      'Last diagnosis: Implementer is blocked on a locale table',
-      "Continuing asks the planner again, starting from the last attempt's files.",
+      'Last error: blocked: Which locale table does greet.ts read?',
+      'Attempts: 5',
+      'Implementer said: I could not find the locale table greet.ts reads.',
     ],
-    availableActions: ['continue', 'skip-current-task', 'end-run'],
-    recommendedAction: 'continue',
+    availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+    recommendedAction: 'retry-same-worker',
   });
 }
 
 it.each([12, 13, 14, 15, 16])(
   'keeps the headline, the cut mark, the recommended action, the hidden-action marks and the legend at 140x%s',
   async (terminalRows) => {
-    const issue = noProgressIssue();
+    const issue = retryExhaustedIssue();
     const ui = await mountPanel(issue, terminalRows);
     const rows = frameRows(ui);
     expect(rows).toHaveLength(panelBoxRows(terminalRows));
-    expect(rows.some((row) => row.includes('T901 is stuck on the same failure'))).toBe(true);
+    expect(rows.some((row) => row.includes('T901 failed'))).toBe(true);
     expect(rows.some((row) => /… \d+ more lines/.test(row))).toBe(true);
-    expect(rows.some((row) => row.includes('Continue recommended'))).toBe(true);
+    expect(rows.some((row) => row.includes('Try again recommended'))).toBe(true);
     expectHiddenActionsMarked(rows, issue);
     expect(rows.some((row) => row.includes('↑↓ select · ⏎ confirm'))).toBe(true);
     ui.unmount();
@@ -661,7 +659,7 @@ it.each([12, 13, 14, 15, 16])(
 it.each([12, 13, 14, 15, 16])(
   'keeps the selected action and marks every hidden action after one ↓ press at 140x%s',
   async (terminalRows) => {
-    const issue = noProgressIssue();
+    const issue = retryExhaustedIssue();
     const ui = await mountPanel(issue, terminalRows);
     ui.stdin.write('\u001b[B');
     await flushEffects();

@@ -7,8 +7,8 @@ import {
 import { includes } from '../../utils/type-guards.js';
 
 /**
- * The two halts a person sees. *Needs you*: a decision only the operator can make — a spent bound,
- * a failed review that made no progress, a protected write, a conflict at Apply. *Seat down*: the seat
+ * The two halts a person sees. *Needs you*: a decision only the operator can make — a question
+ * nobody answered, a failed review that made no progress, a protected write, a conflict at Apply. *Seat down*: the seat
  * cannot run — signed out, out of quota, refused its command or its input, or answered off its
  * contract twice.
  */
@@ -46,7 +46,6 @@ const HALT_ACTIONS: Record<RecoveryHalt, readonly RecoveryAction[]> = {
 export const REASON_HALT = {
   'implementation-error': 'needs-you',
   'retry-exhausted': 'needs-you',
-  'no-progress': 'needs-you',
   'dependency-blocked': 'needs-you',
   'checkout-changed': 'needs-you',
   'review-failed': 'needs-you',
@@ -76,6 +75,7 @@ export const REASON_HALT = {
   'brief-quality-unrepaired': 'needs-you',
   'consult-bound-spent': 'needs-you',
   'planner-calls-spent': 'needs-you',
+  'no-progress': 'needs-you',
 } as const satisfies Record<RecoveryReason, RecoveryHalt>;
 
 export type HaltOf<R extends RecoveryReason> = (typeof REASON_HALT)[R];

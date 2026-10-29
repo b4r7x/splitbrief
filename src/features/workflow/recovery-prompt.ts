@@ -136,12 +136,7 @@ export function getRecoveryPromptActions(issue: RecoveryIssue): RecoveryAction[]
  * does an Apply halt: Re-run Apply reads none.
  */
 export function correctionActionFor(issue: RecoveryIssue): RecoveryAction | undefined {
-  const offered: readonly RecoveryAction[] = [
-    'retry-same-worker',
-    'revise',
-    // A no-progress halt continues with the words as its note, and the note steers the replay.
-    ...(issue.reason === 'no-progress' ? (['continue'] as const) : []),
-  ];
+  const offered: readonly RecoveryAction[] = ['retry-same-worker', 'revise'];
   return offered.find(
     (action) => issue.availableActions.includes(action) && !leavesWordsUnread(issue.reason, action),
   );
@@ -563,8 +558,7 @@ function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
     issue.reason === 'required-checks-unrunnable' ||
     issue.reason === 'plan-questions-exhausted' ||
     issue.reason === 'plan-checks-failed' ||
-    issue.reason === 'runner-timeout-repeated' ||
-    issue.reason === 'no-progress'
+    issue.reason === 'runner-timeout-repeated'
   ) {
     return recoveryHeadlineParts(issue);
   }
@@ -574,9 +568,14 @@ function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
   // facts, where the issue's own `Attempts: n` detail already carries it.
   // A retry-exhausted halt reads the transcript's own sentence, so a halt saved
   // under older words names its cause the way the transcript and the byline do.
+  // A seat's question or "cannot" answer is the cause itself, not what the
+  // attempts came to, so it takes no count either.
   const cause = issue.reason === 'retry-exhausted' ? formatRecoveryHeadline(issue) : issue.message;
+  const seatAnswered =
+    recoveryFactString(issue.facts, 'question') !== undefined ||
+    recoveryFactString(issue.facts, 'cannotBy') !== undefined;
   const attemptSuffix =
-    issue.attempts !== undefined && issue.attempts > 0 && !cause.endsWith('.')
+    issue.attempts !== undefined && issue.attempts > 0 && !cause.endsWith('.') && !seatAnswered
       ? ` after ${countNoun(issue.attempts, 'attempt')}`
       : '';
   return separatedSpans(`${cause}${attemptSuffix}`, 'text');

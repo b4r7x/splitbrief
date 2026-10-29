@@ -18,7 +18,6 @@ import { plainUserMessage, type UserMessageInput } from '../../../core/types/use
 import { formatMessageInput } from '../queue/prompt.js';
 import { recordBriefCorrection } from '../state-ops.js';
 import { applyRecoveryAction } from './actions.js';
-import { buildNoProgressRecoveryIssue } from './builders/consult.js';
 import { buildReviewInputTooLargeRecoveryIssue } from './builders/review-input.js';
 import { buildReviewFailedRecoveryIssue } from './builders/task.js';
 
@@ -267,34 +266,6 @@ const NOTE_CASES: readonly NoteCase[] = [
     once: true,
   },
   {
-    name: 'Continue on a no-progress halt',
-    oldWrites: 4,
-    action: 'continue',
-    comment: note,
-    takesNote: true,
-    setup: (ref) =>
-      persist(ref, {
-        ...makeImplState([makeTask({ id: 'T001', status: 'in_progress' })]),
-        attempt: 2,
-        pendingRecovery: buildNoProgressRecoveryIssue({
-          phase: 'implementing',
-          task: makeTask({ id: 'T001' }),
-          stop: 'no-progress',
-          failure: [{ source: 'check V1', keys: ['src/main.ts: TS2322'] }],
-          answers: 3,
-          lastDiagnosis: 'The brief keeps failing its test',
-          createdAt,
-        }),
-      }),
-    effect: (state) => ({
-      notes: state.lineages?.T001?.notes ?? [],
-      corrections: state.lineages?.T001?.corrections ?? [],
-      attempt: state.attempt,
-    }),
-    none: { notes: [], corrections: [], attempt: 2 },
-    once: { notes: [note.text], corrections: [note.text], attempt: 0 },
-  },
-  {
     name: 'Try again on a seat-level halt with a note',
     oldWrites: 3,
     action: 'retry-same-worker',
@@ -414,7 +385,7 @@ describe('the user row of a note action follows its saved state', () => {
 
   // The one window left: the state is saved and the log append fails. The append reports the
   // failure on stderr and does not throw, so the note is delivered with no transcript row.
-  it.each([NOTE_CASES[0], NOTE_CASES[1], NOTE_CASES[6]])(
+  it.each([NOTE_CASES[0], NOTE_CASES[1], NOTE_CASES[5]])(
     'keeps $name delivered once when its row cannot be written',
     async (testCase) => {
       if (testCase === undefined) throw new Error('expected a note case');
@@ -435,40 +406,6 @@ describe('the user row of a note action follows its saved state', () => {
   );
 });
 
-describe('Continue on a no-progress halt refused for a brief that is not current', () => {
-  it('refuses before any write, so no reset is saved', async () => {
-    const ref = setupSession('reset-refused');
-    const issue = buildNoProgressRecoveryIssue({
-      phase: 'implementing',
-      task: makeTask({ id: 'T001' }),
-      stop: 'no-progress',
-      failure: [{ source: 'check V1', keys: ['src/main.ts: TS2322'] }],
-      answers: 3,
-      lastDiagnosis: 'The brief keeps failing its test',
-      createdAt,
-    });
-    const state = persist(ref, {
-      ...makeImplState([makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })], {
-        currentTaskIndex: 1,
-      }),
-      pendingRecovery: issue,
-    });
-
-    const result = await applyRecoveryAction({
-      ...ref,
-      state,
-      action: 'continue',
-      bus: makeBusRecorder().bus,
-      comment: note,
-    });
-
-    expect(result).toMatchObject({ ok: false, code: 'missing-current-task' });
-    expect(saved(ref).pendingRecovery).toEqual(issue);
-    expect(saved(ref).lineages).toBeUndefined();
-    expect(saved(ref).stateRevision).toBe(state.stateRevision);
-  });
-});
-
 describe('Try again on a brief with words', () => {
   const image = {
     id: 'img-1',
@@ -481,7 +418,7 @@ describe('Try again on a brief with words', () => {
 
   it('keeps the words and images on the brief, and the retried brief does not add them again', async () => {
     const ref = setupSession('brief-retry-words');
-    const state = NOTE_CASES[7]?.setup(ref);
+    const state = NOTE_CASES[6]?.setup(ref);
     if (state === undefined) throw new Error('expected the brief retry case');
 
     const result = await applyRecoveryAction({
@@ -525,7 +462,7 @@ describe('a state conflict on the one write', () => {
 
   it('retries a seat-level Try again while the same halt is open', async () => {
     const ref = setupSession('conflict-seat-retry');
-    const testCase = NOTE_CASES[6];
+    const testCase = NOTE_CASES[5];
     if (testCase === undefined) throw new Error('expected the seat-level case');
     const state = testCase.setup(ref);
     stateWrites.seen = 0;
@@ -541,7 +478,7 @@ describe('a state conflict on the one write', () => {
 
   it('fails a seat-level Try again when another writer answered the halt first', async () => {
     const ref = setupSession('conflict-seat-retry-answered');
-    const testCase = NOTE_CASES[6];
+    const testCase = NOTE_CASES[5];
     if (testCase === undefined) throw new Error('expected the seat-level case');
     const state = testCase.setup(ref);
     const answered = { ...state, pendingRecovery: undefined };
@@ -558,7 +495,7 @@ describe('a state conflict on the one write', () => {
 
   it('fails a seat-level Try again on an older state when another process answered the halt first', async () => {
     const ref = setupSession('stale-seat-retry-answered');
-    const testCase = NOTE_CASES[6];
+    const testCase = NOTE_CASES[5];
     if (testCase === undefined) throw new Error('expected the seat-level case');
     const state = testCase.setup(ref);
     const first = await runCase(ref, testCase, state);
@@ -572,7 +509,7 @@ describe('a state conflict on the one write', () => {
 
   it('applies a seat-level Try again on an older state while the same halt is still open', async () => {
     const ref = setupSession('stale-seat-retry-open');
-    const testCase = NOTE_CASES[6];
+    const testCase = NOTE_CASES[5];
     if (testCase === undefined) throw new Error('expected the seat-level case');
     const state = testCase.setup(ref);
     persist(ref, { ...state, stateRevision: (state.stateRevision ?? 0) + 1 });

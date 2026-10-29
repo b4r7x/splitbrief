@@ -1,4 +1,5 @@
 import type { RecoveryIssue, SeatSwapCandidate } from '../schemas/recovery/schemas.js';
+import { recoveryFactString } from '../schemas/recovery/facts.js';
 import { recoveryActionLabel } from './action-label.js';
 
 /** The command that carries a stopped run on. */
@@ -27,6 +28,8 @@ export function continuesHeadless(issue: RecoveryIssue): boolean {
 }
 
 function continueAction(issue: RecoveryIssue): string | undefined {
+  // Only the recovery panel takes the answer to a seat's question; a bare retry asks it again.
+  if (recoveryFactString(issue.facts, 'question') !== undefined) return undefined;
   switch (issue.recommendedAction) {
     case 'skip-current-task':
       return 'skip';

@@ -698,6 +698,8 @@ function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): Conver
       ];
     case 'ask-user':
       return [{ text: 'asks you', tone: 'textDim' }];
+    case 'cannot':
+      return detail('cannot be done');
     case 'confirm':
       return detail('confirmed the deviation');
     default:

@@ -99,4 +99,17 @@ describe('continuesHeadless', () => {
       ),
     ).toBe(false);
   });
+
+  it('sends a halt on an unanswered question to the recovery panel, which takes the answer', () => {
+    const question = makeRecoveryIssue({
+      reason: 'retry-exhausted',
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+      facts: { question: 'Which locale table does greet.ts read?' },
+    });
+    expect(continuesHeadless(question)).toBe(false);
+    expect(formatResumeCommand('s1', question)).toBe(
+      'splitbrief continue s1, then choose Try again in the recovery panel',
+    );
+  });
 });

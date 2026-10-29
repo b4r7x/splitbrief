@@ -1,10 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { CONSULT_REASONS } from '../src/core/schemas/consult.js';
 import { RECOVERY_REASONS, RETIRED_RECOVERY_REASONS } from '../src/core/schemas/enums.js';
 
 const SOURCE_PATTERN = /\.tsx?$/;
 const TEST_PATTERN = /\.test\.tsx?$/;
+/** A consult reason the engine names as a consult, never as a recovery cause (`no-progress`). */
+const CONSULT_REASON_NAMES = new Set<string>(CONSULT_REASONS);
 
 function engineSources(dir: string): string[] {
   if (!existsSync(dir)) return [];
@@ -23,7 +26,7 @@ export function findRecoveryProducerViolations(
   root: string = process.cwd(),
   reasons: Readonly<{ live: readonly string[]; retired: readonly string[] }> = {
     live: RECOVERY_REASONS,
-    retired: RETIRED_RECOVERY_REASONS,
+    retired: RETIRED_RECOVERY_REASONS.filter((reason) => !CONSULT_REASON_NAMES.has(reason)),
   },
 ): string[] {
   const text = engineSources(resolve(root, 'src/engine'))

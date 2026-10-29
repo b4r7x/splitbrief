@@ -113,7 +113,7 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain('Error: expected "hello" but received "hi"');
     expect(prompt).toContain('## Implementer Report');
     expect(prompt).toContain('Files changed: src/greet.ts');
-    expect(prompt).toContain('## Earlier Consults on This Lineage');
+    expect(prompt).toContain('## Brief History');
     expect(prompt).toContain('Fix the import to the named export.');
     expect(prompt).toContain('## Other Tasks');
     expect(prompt).toContain('- **T001** (done) — Scaffold the module');
@@ -196,16 +196,54 @@ describe('buildConsultPrompt', () => {
       expect(prompt).toContain('+module.exports = run;');
       expect(prompt).toContain("+require('../lib/cli/cli');");
       expect(prompt).not.toContain('## Attempt Diff');
-      expect(prompt).toContain('## Failed Attempts');
+      expect(prompt).toContain('## Brief History');
       expect(prompt).toContain('- Attempt 1 (T003 revision 1): check K1 did not pass (fail):');
       expect(prompt).toContain(
         '- Attempt 2 (T003 revision 1): Tool implementer exited without changing any files',
       );
-      expect(prompt.indexOf('## Failed Attempts')).toBeLessThan(
-        prompt.indexOf('## Failing Output'),
-      );
+      expect(prompt.indexOf('## Brief History')).toBeLessThan(prompt.indexOf('## Failing Output'));
     },
   );
+
+  it.each([
+    { form: 'resumed', overrides: { resumed: true } },
+    { form: 'full', overrides: {} },
+  ] satisfies { form: string; overrides: Partial<ConsultPromptInput> }[])(
+    'shows each earlier answer before the attempts that followed it, $form prompt',
+    ({ overrides }) => {
+      const prompt = buildConsultPrompt(
+        consultInput({
+          ...overrides,
+          failedAttempts: [
+            { attempt: 1, taskId: taskId('T003'), revision: 1, line: 'first failure' },
+            { attempt: 2, taskId: taskId('T003'), revision: 1, line: 'second failure' },
+          ],
+          earlierConsults: [{ ...EARLIER_CONSULT, afterAttempt: 1 }],
+        }),
+      );
+
+      const answer =
+        '- Planner answer (failed · guidance · revision 1): The named export is missing. — Fix the import to the named export.';
+      expect(prompt).toContain(answer);
+      expect(prompt).toContain('Nothing counts your answers');
+      expect(prompt.indexOf('first failure')).toBeLessThan(prompt.indexOf(answer));
+      expect(prompt.indexOf(answer)).toBeLessThan(prompt.indexOf('second failure'));
+    },
+  );
+
+  it('shows an older answer that recorded no attempt after the failed attempts', () => {
+    const prompt = buildConsultPrompt(
+      consultInput({
+        failedAttempts: [
+          { attempt: 1, taskId: taskId('T003'), revision: 1, line: 'first failure' },
+        ],
+      }),
+    );
+
+    expect(prompt.indexOf('first failure')).toBeLessThan(
+      prompt.indexOf('The named export is missing.'),
+    );
+  });
 
   it("names the parent's attempts and the subtask's own on a split subtask", () => {
     const subtask = makeTask({ id: 'T005', parentId: taskId('T003'), status: 'failed' });
@@ -315,11 +353,12 @@ describe('buildConsultPrompt', () => {
     ['review', false],
     ['plan', true],
   ] as const)(
-    'tells the %s seat (resumed=%s) that an answer only instructs the next attempt',
+    'tells the %s seat (resumed=%s) that an answer only instructs the next attempt, and to answer cannot',
     (seat, resumed) => {
       const prompt = buildConsultPrompt(consultInput({ seat, resumed }));
 
       expect(prompt).toContain('Offer only choices that the next attempt can carry out.');
+      expect(prompt).toContain('answer `cannot`');
       if (!resumed) {
         expect(prompt).toContain(
           "SPLITBRIEF gives the user's answer to an `ask-user` question to the same implementer, as an instruction for its next attempt.",
@@ -327,7 +366,9 @@ describe('buildConsultPrompt', () => {
         expect(prompt).toContain(
           "An answer cannot change a seat's tool or model, buy credits, or wait for a limit to reset.",
         );
-        expect(prompt).toContain('the user changes a seat with `/crew`');
+        expect(prompt).toContain(
+          'When the implementer cannot do the task at all, answer `cannot` and name the reason, for example a seat the user must change with `/crew`.',
+        );
       }
     },
   );
@@ -430,7 +471,6 @@ describe('buildConsultPrompt', () => {
 
     expect(resumed).toContain('# Consult continued');
     expect(resumed).not.toContain('## Plan');
-    expect(resumed).not.toContain('## Earlier Consults on This Lineage');
     expect(resumed).not.toContain('## Other Tasks');
     expect(resumed).toContain('## Failing Output');
     expect(resumed).toContain('Error: expected "hello" but received "hi"');

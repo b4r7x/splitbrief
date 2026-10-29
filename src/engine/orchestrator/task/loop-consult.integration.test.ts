@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { makeImplState, spentAnswersLineage } from '#testing/helpers/factories/workflow-state.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeCopyingIsolation,
@@ -71,24 +71,27 @@ async function haltCheckoutBrief() {
     bus,
     config: makeNoValidationConfig({ workflow: { isolation: 'none', review: 'task' } }),
     planner: makePlanner({
-      typedCall: consultCallAnswering(() => ({
-        answer: {
-          diagnosis: 'The check failed.',
-          action: 'guidance',
-          instructions: 'Repair the brief.',
-          context: null,
-        },
-      })),
+      typedCall: consultCallAnswering(() => {
+        throw new Error('Planner call failed');
+      }),
     }),
-    implementer: makeImplementer({ implement: vi.fn(writeAttempt), retry: vi.fn(writeAttempt) }),
+    // The first attempt fails as an implementation, so the halt keeps the brief's files.
+    implementer: makeImplementer({
+      implement: vi.fn(async (opts: ImplementerOptions) => ({
+        ...(await writeAttempt(opts)),
+        success: false,
+        error: 'The implementer crashed.',
+      })),
+      retry: vi.fn(writeAttempt),
+    }),
   });
   const halted = await runTaskLoop({
     wctx,
-    initialState: makeImplState([task], { lineages: { [task.id]: spentAnswersLineage() } }),
+    initialState: makeImplState([task]),
     setTrackedState: vi.fn(),
     setCurrentTask: vi.fn(),
   });
-  expect(halted.state.pendingRecovery?.reason).toBe('no-progress');
+  expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
   return {
     ref,
     wctx,
@@ -130,7 +133,7 @@ function splitIntoTwo(): ConsultAnswer {
 }
 
 describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
-  it.each(['skip', 'continue'] as const)(
+  it.each(['skip', 'retry'] as const)(
     'preserves every older path with contaminated evidence after %s',
     async (action) => {
       const { ref, wctx, bus } = await haltCheckoutBrief();
@@ -158,12 +161,11 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         };
       });
 
-      if (action === 'continue') {
+      if (action === 'retry') {
         const continued = await applyRecoveryAction({
           ...ref,
           state: loadState(ref) ?? persisted,
-          action: 'continue',
-          comment: plainUserMessage('Try the brief again.'),
+          action: 'retry-same-worker',
           bus,
           config: wctx.config,
         });
@@ -186,7 +188,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
           setTrackedState: vi.fn(),
           setCurrentTask: vi.fn(),
         });
-        expect(resumed.state.pendingRecovery?.reason).toBe('no-progress');
+        expect(resumed.state.pendingRecovery?.reason).toBe('planner-call-failed');
       }
 
       const skipped = await applyRecoveryAction({
@@ -214,7 +216,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     const { ref, bus, generatedFiles } = await haltCheckoutBrief();
     const persisted = loadState(ref);
     if (persisted === null) throw new Error('Missing halted state');
-    expect(generatedFiles().length).toBeGreaterThan(1);
+    expect(generatedFiles().length).toBeGreaterThan(0);
     for (const file of generatedFiles()) expect(existsSync(join(ref.projectDir, file))).toBe(true);
     writeFileSync(join(ref.projectDir, 'scratch.txt'), 'notes while halted\n');
 
@@ -230,8 +232,8 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     expect(readFileSync(join(ref.projectDir, 'scratch.txt'), 'utf8')).toBe('notes while halted\n');
   });
 
-  it.each(['skip', 'planner failure'] as const)(
-    'restores output from consult verification after %s',
+  it.each(['skip', 'halt'] as const)(
+    'restores output from consult verification after the %s',
     async (action) => {
       const ref = setupProject();
       const task = makeTask({
@@ -260,8 +262,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         }),
         planner: makePlanner({
           typedCall: consultCallAnswering(() => {
-            if (action === 'planner failure' && ++consults > 1)
-              throw new Error('Planner call failed');
+            if (++consults > 1) throw new Error('Planner call failed');
             return {
               answer: {
                 diagnosis: 'The check needs verification.',
@@ -281,9 +282,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         setCurrentTask: vi.fn(),
       });
 
-      expect(halted.state.pendingRecovery?.reason).toBe(
-        action === 'skip' ? 'no-progress' : 'planner-call-failed',
-      );
+      expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
       expect(checks).toBeGreaterThan(2);
       const persisted = loadState(ref);
       if (persisted === null) throw new Error('Missing halted verification state');
@@ -315,8 +314,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       const continued = await applyRecoveryAction({
         ...ref,
         state: halted.state,
-        action: 'continue',
-        comment: plainUserMessage('Try the brief again.'),
+        action: 'retry-same-worker',
         bus,
         config: wctx.config,
       });
@@ -372,7 +370,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         trustHome.restore();
       }
       expect(resumed.state.pendingRecovery?.reason).toBe(
-        outcome === 'failure' ? 'retry-exhausted' : undefined,
+        outcome === 'failure' ? 'planner-call-failed' : undefined,
       );
       if (outcome === 'pre-validation denial') {
         expect(resumed.state.tasks[0]?.status).toBe('skipped');
@@ -402,7 +400,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       suggestedFiles: ['src/attempt.ts'],
       checks: [{ id: 'check', kind: 'cmd', value: 'tsc --noEmit', required: true }],
     });
-    const state = makeImplState([task], { lineages: { [task.id]: spentAnswersLineage() } });
+    const state = makeImplState([task]);
     const writeAttempt = async (opts: ImplementerOptions) => {
       mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
       writeFileSync(join(opts.projectDir, 'src/attempt.ts'), 'failed attempt\n');
@@ -416,6 +414,11 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       ...ref,
       bus,
       config: makeNoValidationConfig({ workflow: { isolation: 'none', review: 'task' } }),
+      planner: makePlanner({
+        typedCall: consultCallAnswering(() => {
+          throw new Error('Planner call failed');
+        }),
+      }),
       implementer: makeImplementer({ implement: vi.fn(writeAttempt), retry: vi.fn(writeAttempt) }),
       callbacks: makeCallbacks({
         onContinuationNeeded: async () => {
@@ -436,7 +439,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
-    expect(halted.state.pendingRecovery?.reason).toBe('no-progress');
+    expect(halted.state.pendingRecovery?.reason).toBe('planner-call-failed');
     const persisted = loadState(ref);
     if (persisted === null) throw new Error('Missing halted state');
 

@@ -172,24 +172,20 @@ describe('skill-blocks', () => {
     expect(contract).toContain('"split-task"');
   });
 
-  it('renders the progress rule from BOUNDS, not by hand', () => {
+  it('renders the consult loop with no count and with the history of earlier answers', () => {
     const contract = renderBlock('consult-table') ?? '';
-    expect(contract).toContain('two answers in a row that leave the same failure');
-    expect(contract).toContain(`${BOUNDS.answersPerBrief} answers on one lineage`);
-    expect(contract).toContain('Show the failure and the last diagnosis');
-    expect(contract).not.toMatch(/consults and \d+ attempts|planner decisions|more attempts/u);
+    expect(contract).toContain('No count stops the consults');
+    expect(contract).toContain('each before the failed attempts that followed it');
+    expect(contract).not.toMatch(/answers on one lineage|answers in a row|planner decisions/u);
   });
 
-  it('keeps reported decisions out of the progress rule and replays a continued brief with its errors', () => {
+  it('keeps reported decisions out of the consult answers', () => {
     const contract = renderBlock('consult-table') ?? '';
     expect(contract).toContain(
       'A done report records its decisions in the plan ledger with the task id before validation.',
     );
-    expect(contract).toContain(
-      'Reported decisions are not consult answers, and the progress rule does not count them.',
-    );
+    expect(contract).toContain('Reported decisions are not consult answers.');
     expect(contract).not.toContain('decision-confirm');
-    expect(contract).toContain('replays the brief as a retry with the last failing output');
   });
 
   it('every recipe writes its exit code and none invokes coreutils timeout', () => {
@@ -248,14 +244,14 @@ describe('skill-blocks', () => {
     for (const id of GENERATED_BLOCK_IDS) expect(authored).toContain(`generated: ${id}`);
   });
 
-  it('renders consult actions and the progress rule without a takeover', () => {
+  it('renders consult actions and the brief history without a takeover', () => {
     const consult = renderBlock('consult-table') ?? '';
     for (const action of ['guidance', 'rewrite-task', 'split-task', 'verify', 'ask-user']) {
       expect(consult).toContain(`| \`${action}\` |`);
     }
     expect(consult).toContain('same id and the same criteria');
     expect(consult).toContain('Replace with 2–4 subtasks');
-    expect(consult).toContain('Keep the lineage progress across splits and resume');
+    expect(consult).toContain('earlier answers on the lineage, across splits and resume');
     expect(consult).not.toMatch(/takeover|ladder/iu);
     expect(renderBlock('ladder-table')).toBeNull();
     expect(renderBlock('takeover-prompt')).toBeNull();

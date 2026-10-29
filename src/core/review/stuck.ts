@@ -55,7 +55,8 @@ export function plannerFixWork(
         ask: { question: answer.question, whyOnlyUserCanAnswer: answer.whyOnlyUserCanAnswer },
       };
     case 'verify':
-      throw error('stuck-review-verify', 'A stuck review takes no verify answer.');
+    case 'cannot':
+      throw error('stuck-review-answer', `A stuck review takes no ${answer.action} answer.`);
   }
 }
 

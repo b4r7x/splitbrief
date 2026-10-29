@@ -2020,6 +2020,7 @@ describe('initializeWorkflow — a file halt saved before the run workspace', ()
     { name: 'scope violation', halt: { reason: 'scope-violation' } },
     { name: 'consult allowance', halt: { reason: 'consult-bound-spent' } },
     { name: 'planner-call allowance', halt: { reason: 'planner-calls-spent' } },
+    { name: 'no-progress', halt: { reason: 'no-progress' } },
     {
       name: 'partial approval promotion conflict',
       halt: { reason: 'approval-promotion-conflict', facts: { partialPromotion: true } },

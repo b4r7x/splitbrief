@@ -63,7 +63,7 @@ const REASON_TEXT: Record<ConsultReason, string> = {
   failed: 'The task failed: its last attempt or one of its checks did not pass.',
   blocked: 'The implementer stopped and needs a decision that is not its own to make.',
   'no-progress':
-    "The review judged the fix cycle of this task and its blockers did not move. Your answer shapes the next fix cycle: guidance goes with the reviewer's next fix briefs, a rewrite or a split replaces them, ask-user asks the user. verify is not available.",
+    "The review judged the fix cycle of this task and its blockers did not move. Your answer shapes the next fix cycle: guidance goes with the reviewer's next fix briefs, a rewrite or a split replaces them, ask-user asks the user. verify and cannot are not available.",
 };
 
 const CONSULT_ROLE: Record<ConsultSeat, string> = {
@@ -80,10 +80,11 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
 - \`split-task\` — \`tasks\`: 2 to 4 complete TaskSpecs that together replace the task.
 - \`verify\` — \`checkIds\` and \`reason\`: re-run exactly those checks before any retry, for when the failure may predate this task's own edits.
 - \`ask-user\` — \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
+- \`cannot\` — \`reason\`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that. SPLITBRIEF stops the brief and asks the user.
 
 The operator rule: the Operator Instructions are the user's own decisions for this task. No action undoes one of them. A question that concerns one of them quotes it, and its default keeps it.
 
-The answer rule: SPLITBRIEF gives the user's answer to an \`ask-user\` question to the same implementer, as an instruction for its next attempt. An answer cannot change a seat's tool or model, buy credits, or wait for a limit to reset. Offer only choices that the next attempt can carry out. When the seat cannot serve the call at all, say so in \`answer.diagnosis\`: the user changes a seat with \`/crew\`.
+The answer rule: SPLITBRIEF gives the user's answer to an \`ask-user\` question to the same implementer, as an instruction for its next attempt. An answer cannot change a seat's tool or model, buy credits, or wait for a limit to reset. Offer only choices that the next attempt can carry out. When the implementer cannot do the task at all, answer \`cannot\` and name the reason, for example a seat the user must change with \`/crew\`.
 
 The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs \`ask-user\`. ${TASK_CMD_CHECK_RULE}`;
 
@@ -91,7 +92,7 @@ function consultContract(seat: ConsultSeat): string {
   return `${CONSULT_ROLE[seat]} ${CONSULT_CONTRACT_BODY}`;
 }
 
-const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
+const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. When the task cannot be done as asked, answer \`cannot\`. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
 
 function checkLine(check: Check): string {
   return `\`${check.id}\` (${check.kind} \`${check.value}\`${check.required ? '' : ', optional'})`;
@@ -209,17 +210,34 @@ function consultAnswerDetail(answer: ConsultRecord['answer']): string {
       return `verify ${action.checkIds.join(', ')}: ${action.reason}`;
     case 'ask-user':
       return `asked the user: ${action.question}`;
+    case 'cannot':
+      return `cannot be done: ${action.reason}`;
     default:
       return assertNever(action);
   }
 }
 
-function earlierConsultLines(records: readonly ConsultRecord[]): string[] {
-  return records.map(
-    (record) =>
-      `- ${record.reason} · ${record.answer.answer.action} · revision ${record.revision}: ` +
-      `${record.answer.answer.diagnosis} — ${consultAnswerDetail(record.answer)}`,
-  );
+const ANSWER_SEAT: Record<ConsultSeat, string> = { plan: 'Planner', review: 'Reviewer' };
+
+/**
+ * The failed attempts and the earlier answers of the lineage, oldest first: each answer stands
+ * before the attempts that followed it. An older answer that recorded no attempt count stands
+ * after every attempt.
+ */
+function historyLines(input: ConsultPromptInput): string[] {
+  const entries = [
+    ...input.failedAttempts.map((failure) => ({
+      at: failure.attempt,
+      line: `- Attempt ${failure.attempt} (${failure.taskId} revision ${failure.revision}): ${failure.line}`,
+    })),
+    ...input.earlierConsults.map((record) => ({
+      at: record.afterAttempt === undefined ? Number.POSITIVE_INFINITY : record.afterAttempt + 0.5,
+      line:
+        `- ${ANSWER_SEAT[record.seat ?? 'plan']} answer (${record.reason} · ${record.answer.answer.action} · revision ${record.revision}): ` +
+        `${record.answer.answer.diagnosis} — ${consultAnswerDetail(record.answer)}`,
+    })),
+  ];
+  return entries.toSorted((a, b) => a.at - b.at).map((entry) => entry.line);
 }
 
 function otherTaskLines(tasks: readonly Task[]): string[] {
@@ -297,15 +315,12 @@ function attemptLines(input: ConsultPromptInput): string[] {
     '## Task Diff',
     'What is on disk now against the start of this task, for the files of this brief: the changes of all its attempts, revisions and split subtasks, not only the latest attempt.',
     ...diffLines(input.taskDiff),
-    ...(input.failedAttempts.length === 0
+    ...(input.failedAttempts.length === 0 && input.earlierConsults.length === 0
       ? []
       : [
-          '## Failed Attempts',
-          'Each failed attempt of this task, oldest first, with its first error line.',
-          ...input.failedAttempts.map(
-            (failure) =>
-              `- Attempt ${failure.attempt} (${failure.taskId} revision ${failure.revision}): ${failure.line}`,
-          ),
+          '## Brief History',
+          'Each failed attempt of this task, with its first error line, and each earlier answer about it, oldest first. The attempts after an answer show what that answer did. Nothing counts your answers: SPLITBRIEF asks again after every failed attempt. When an earlier answer left the same failure, do not give it again: change the approach or the brief.',
+          ...historyLines(input),
         ]),
     '## Failing Output',
     fenced(truncateByChars(input.failingOutput, BOUNDS.consultFailingOutputChars)),
@@ -334,9 +349,9 @@ function operatorInstructionsPart(input: ConsultPromptInput): PromptPart[] {
 
 /**
  * The consult prompt. A fresh session reads the whole prompt: the plan, the task and its
- * revisions, the attempt's evidence, the lineage's earlier answers and the reason. A session
- * that still holds the planning thread is sent the short resumed turn instead: the task, the
- * reason and the new attempt's evidence.
+ * revisions, the attempt's evidence with the brief's history and the reason. A session that
+ * still holds the planning thread is sent the short resumed turn instead: the task, the reason
+ * and the new attempt's evidence with the brief's history.
  */
 export function buildConsultPrompt(input: ConsultPromptInput): string {
   if (input.resumed === true) {
@@ -371,12 +386,6 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
   sections.push(reasonSection(input));
   sections.push(...operatorInstructionsPart(input));
   sections.push(...attemptLines(input));
-  if (input.earlierConsults.length > 0) {
-    sections.push({
-      heading: 'Earlier Consults on This Lineage',
-      body: earlierConsultLines(input.earlierConsults).join('\n'),
-    });
-  }
   if (input.otherTasks.length > 0) {
     sections.push({ heading: 'Other Tasks', body: otherTaskLines(input.otherTasks).join('\n') });
   }

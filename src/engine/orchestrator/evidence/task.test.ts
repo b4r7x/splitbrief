@@ -665,7 +665,6 @@ describe('recordedApiCreatedPaths', () => {
           dispatchedRevision: { T003: 1 },
           consultRecords: [],
           replacedParents: [parent],
-          notes: [],
         },
       },
     });

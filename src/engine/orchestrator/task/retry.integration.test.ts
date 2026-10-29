@@ -178,7 +178,7 @@ describe('retryAndRecord — retry budget', () => {
     );
   });
 
-  it('spends the local retries then halts when the consults leave the failure unmoved', async () => {
+  it('spends the local retries and the consults, then halts when a consult fails', async () => {
     const task = makeTask({ id: 'T001' });
     let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
@@ -192,7 +192,14 @@ describe('retryAndRecord — retry budget', () => {
       error: 'tsc failed again',
       usage: { inputTokens: 20, outputTokens: 10 },
     });
-    const planner = makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) });
+    let consults = 0;
+    const planner = makePlanner({
+      typedCall: consultCallAnswering(() => {
+        consults += 1;
+        if (consults > 2) throw new Error('The planner process stopped unexpectedly.');
+        return guidanceConsult();
+      }),
+    });
     const implementer = makeImplementer({ retry });
 
     const wctx = makeWorkflowContext({
@@ -221,14 +228,13 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.tasks[0]?.status).toBe('in_progress');
     expect(res.state.currentTaskIndex).toBe(0);
     expect(res.state.pendingRecovery).toMatchObject({
-      reason: 'no-progress',
+      reason: 'planner-call-failed',
       taskId: 'T001',
-      // The first attempt, one local retry and the attempt after each of the two consults.
-      attempts: 4,
-      availableActions: ['continue', 'skip-current-task', 'end-run'],
     });
+    // The first attempt, one local retry and the attempt after each of the two consults.
+    expect(retry).toHaveBeenCalledTimes(3);
     expect(loadState(wctx)?.pendingRecovery).toMatchObject({
-      reason: 'no-progress',
+      reason: 'planner-call-failed',
       taskId: 'T001',
     });
 
@@ -248,7 +254,11 @@ describe('retryAndRecord — retry budget', () => {
     const implementer = makeImplementer({
       retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
     });
-    const planner = makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) });
+    const planner = makePlanner({
+      typedCall: consultCallAnswering(() => {
+        throw new Error('The planner process stopped unexpectedly.');
+      }),
+    });
 
     const wctx = makeWorkflowContext({
       implementer,
@@ -272,9 +282,7 @@ describe('retryAndRecord — retry budget', () => {
     });
 
     expect(res.completed).toBe(false);
-    const errorIndex = busEvents.findIndex(
-      (e) => e.type === 'error' && e.code === 'no_progress' && e.category === 'recovery',
-    );
+    const errorIndex = busEvents.findIndex((e) => e.type === 'error');
     const promptedIndex = busEvents.findIndex((e) => e.type === 'recovery_prompted');
     expect(errorIndex).toBeGreaterThanOrEqual(0);
     expect(promptedIndex).toBeGreaterThan(errorIndex);

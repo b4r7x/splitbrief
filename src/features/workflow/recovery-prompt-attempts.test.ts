@@ -39,3 +39,12 @@ it('keeps the attempt count suffix for a retry-exhausted halt', () => {
   const header = formatRecoveryPrompt(issue).split('\n')[0];
   expect(header).toBe('Needs you · T001 failed after 2 attempts');
 });
+
+it.each([
+  [{ question: 'Which locale table does greet.ts read?' }, 'Needs you · T001 needs your answer'],
+  [{ cannotBy: 'planner' }, 'Needs you · T001: the planner says it cannot be done'],
+  [{ cannotBy: 'reviewer' }, 'Needs you · T001: the reviewer says it cannot be done'],
+])('names no attempt count when the seat answered the halt (%o)', (facts, expected) => {
+  const issue = makeRecoveryIssue({ attempts: 3, taskId: taskId('T001'), facts });
+  expect(formatRecoveryPrompt(issue).split('\n')[0]).toBe(expected);
+});

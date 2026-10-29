@@ -234,7 +234,7 @@ describe('validateAndCommit', () => {
 
     expect(result).toMatchObject({
       completed: false,
-      failure: [{ source: 'check K1', keys: ['src/blocks.ts(1,1): error TS1005'] }],
+      error: expect.stringContaining('src/blocks.ts(1,1): error TS1005'),
     });
   });
 
@@ -305,10 +305,10 @@ describe('validateAndCommit', () => {
       expect(await retry([own, other].join('\n'), [sibling])).toMatchObject({ completed: true });
     });
 
-    it('marks its own failure and the others when its own failure remains', async () => {
+    it('fails when its own failure remains', async () => {
       expect(await retry([own, other].join('\n'))).toMatchObject({
         completed: false,
-        failure: [{ source: 'check K1', keys: [own, other] }],
+        error: expect.stringContaining(own),
       });
     });
   });

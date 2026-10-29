@@ -59,8 +59,6 @@ const anytimeActions = [
   'RECORD_DECISIONS',
   'RECORD_CORRECTION',
   'COUNT_ATTEMPT',
-  'CLEAR_CARRIED_FAILURE',
-  'RESET_PROGRESS',
   'RECORD_DISPATCH',
   'RECORD_CHECK_RESULTS',
   'SET_PENDING_REVIEW_COMMANDS',
@@ -203,7 +201,6 @@ const EMPTY_LINEAGE: LineageRecord = {
   dispatchedRevision: {},
   consultRecords: [],
   replacedParents: [],
-  notes: [],
 };
 
 export function lineageKeyFor(state: WorkflowState, taskId: TaskId): TaskId {
@@ -943,8 +940,7 @@ export function transition(
       };
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
         ...lineage,
-        progress: action.progress,
-        consultRecords: [...lineage.consultRecords, record],
+        consultRecords: [...lineage.consultRecords, { ...record, afterAttempt: lineage.attempts }],
       }));
     }
 
@@ -989,22 +985,6 @@ export function transition(
           ],
         }),
       }));
-
-    case 'CLEAR_CARRIED_FAILURE':
-      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => {
-        const { carriedFailure: _carriedFailure, ...cleared } = lineage;
-        return cleared;
-      });
-
-    case 'RESET_PROGRESS':
-      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => {
-        const { progress: _progress, ...reset } = lineage;
-        return {
-          ...reset,
-          notes: [...lineage.notes, action.note],
-          ...(action.failingOutput !== undefined && { carriedFailure: action.failingOutput }),
-        };
-      });
 
     case 'START_SCHEDULED_REVIEW':
       return { ...state, pendingScheduledReview: { afterTaskId: action.afterTaskId } };

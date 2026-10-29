@@ -41,7 +41,6 @@ import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
 import { renderCheckNotes, planRepairWarning } from '../../../../src/engine/spec/plan-checks.js';
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
-import { buildNoProgressRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/consult.js';
 import {
   buildRequiredChecksUnrunnableRecoveryIssue,
   type UnrunnableCheck,
@@ -193,7 +192,6 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   recovery: 'Change BUILD tool',
   recoveryPlan: 'Change PLAN tool',
   retryExhausted: 'failed',
-  noProgress: 'is stuck on the same failure',
   reviewFailed: 'Fix again',
   reviewFixTask: 'Fix the finding the review raised',
   leftIsolation: 'Seat down · T901 left the isolation directory',
@@ -313,7 +311,6 @@ const WORKFLOW_STOPPING_ID = scenarioId('workflow-stopping');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
 const WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID = scenarioId('workflow-recovery-retry-exhausted');
-const WORKFLOW_RECOVERY_NO_PROGRESS_ID = scenarioId('workflow-recovery-no-progress');
 const WORKFLOW_RECOVERY_REVIEW_FAILED_ID = scenarioId('workflow-recovery-review-failed');
 const WORKFLOW_RECOVERY_LEFT_ISOLATION_ID = scenarioId('workflow-recovery-left-isolation');
 const WORKFLOW_RECOVERY_CHECKOUT_CHANGED_ID = scenarioId('workflow-recovery-checkout-changed');
@@ -3228,20 +3225,56 @@ const retryExhaustedRecoveryIssue = buildRetryExhaustedRecoveryIssue({
   createdAt: new Date(FIXED_TS).toISOString(),
 });
 
-/** Two planner answers in a row left one typecheck error; the halt carries it and the last diagnosis. */
-const noProgressRecoveryIssue = buildNoProgressRecoveryIssue({
-  id: 'rec_visual_no_progress',
-  task: HALTED_TASK,
-  phase: 'escalating',
-  stop: 'no-progress',
-  failure: [{ source: 'check K1', keys: [FIXTURE_TYPECHECK_ERROR] }],
-  answers: 2,
-  lastDiagnosis:
-    'Projection is declared in src/core/projection.ts, which this brief does not list. Add stop there in its own brief.',
-  failingOutput: FIXTURE_TYPECHECK_ERROR,
-  attempts: 5,
-  createdAt: new Date(FIXED_TS).toISOString(),
-});
+/** The planner asked the user which field to read, gave no default, and nobody answered. */
+const unansweredQuestionRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-unanswered-question'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_CREW,
+  resumeState: haltedResumeState(
+    buildRetryExhaustedRecoveryIssue({
+      id: 'rec_visual_unanswered_question',
+      task: HALTED_TASK,
+      phase: 'escalating',
+      question:
+        'Projection has no stop field. Should activity.ts read the stop from the run record instead, or should Projection gain a stop field?',
+      validationSummary: FIXTURE_TYPECHECK_ERROR,
+      attempts: 3,
+      allowRetryOverride: true,
+      selectedImplementerProfile: 'default',
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  ),
+};
+
+/** The planner answered that the brief cannot be done, and why. */
+const cannotRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-cannot'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: AGY_CREW,
+  resumeState: haltedResumeState(
+    buildRetryExhaustedRecoveryIssue({
+      id: 'rec_visual_cannot',
+      task: HALTED_TASK,
+      phase: 'escalating',
+      cannot: {
+        seat: 'plan',
+        reason:
+          'Projection is generated from the run record schema, and the brief may not change that schema, so no edit of activity.ts can add the stop field.',
+      },
+      validationSummary: FIXTURE_TYPECHECK_ERROR,
+      attempts: 3,
+      allowRetryOverride: true,
+      selectedImplementerProfile: 'default',
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  ),
+};
 
 const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID,
@@ -3251,16 +3284,6 @@ const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   events: [],
   config: AGY_CREW,
   resumeState: haltedResumeState(retryExhaustedRecoveryIssue),
-};
-
-const noProgressRecoveryProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_RECOVERY_NO_PROGRESS_ID,
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'question',
-  sidebarVisible: false,
-  events: [],
-  config: AGY_CREW,
-  resumeState: haltedResumeState(noProgressRecoveryIssue),
 };
 
 /** The retry-exhausted halt on a brief whose files are many and long. */
@@ -7456,18 +7479,15 @@ const projections = [
   fallbackUsedRecoveryProjection,
   fallbackNotInstalledRecoveryProjection,
   retryExhaustedRecoveryProjection,
-  noProgressRecoveryProjection,
+  unansweredQuestionRecoveryProjection,
+  cannotRecoveryProjection,
   manyFilesRecoveryProjection,
   {
-    ...noProgressRecoveryProjection,
-    scenarioId: scenarioId('workflow-recovery-no-progress-note'),
-  },
-  {
-    ...noProgressRecoveryProjection,
+    ...retryExhaustedRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-slash-draft'),
   },
   {
-    ...noProgressRecoveryProjection,
+    ...retryExhaustedRecoveryProjection,
     scenarioId: scenarioId('workflow-recovery-slash-list'),
   },
   reviewFailedRecoveryProjection,

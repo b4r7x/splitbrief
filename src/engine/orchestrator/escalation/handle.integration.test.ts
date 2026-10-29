@@ -34,7 +34,6 @@ import { handleRetryAndEscalation } from './handle.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
 import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
@@ -125,15 +124,18 @@ function consultPlanner(script: readonly ConsultAnswer[]): {
   return { planner: makePlanner({ typedCall }), prompts };
 }
 
-function failingImplementer(): ReturnType<typeof makeImplementer> {
-  return makeImplementer({
-    retry: vi.fn().mockResolvedValue({
-      success: false,
-      output: '',
-      error: 'still broken',
-      usage: { inputTokens: 10, outputTokens: 5 },
-    }),
-  });
+/** Each attempt fails with `still broken`; past `failures` attempts, when given, it passes. */
+function failingImplementer(failures?: number): ReturnType<typeof makeImplementer> {
+  const failed = {
+    success: false,
+    output: '',
+    error: 'still broken',
+    usage: { inputTokens: 10, outputTokens: 5 },
+  };
+  const retry = vi.fn();
+  if (failures === undefined) return makeImplementer({ retry: retry.mockResolvedValue(failed) });
+  for (let index = 0; index < failures; index += 1) retry.mockResolvedValueOnce(failed);
+  return makeImplementer({ retry: retry.mockResolvedValue({ success: true, output: 'fixed' }) });
 }
 
 // Validation disabled so runValidationWithEvents returns [] → treated as all-pass.
@@ -286,7 +288,7 @@ describe('handleRetryAndEscalation', () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const implementer = failingImplementer();
+    const implementer = failingImplementer(2);
     const { planner, prompts } = consultPlanner([
       guidanceAnswer('First diagnosis', 'Use the named export.'),
       guidanceAnswer('Second diagnosis', 'Check the import path.'),
@@ -321,22 +323,10 @@ describe('handleRetryAndEscalation', () => {
     expect(events.filter((e) => e.type === 'escalate')).toEqual([]);
     expect(prompts[0]).toContain('# Consult on a failing task');
     expect(prompts[0]).toContain('still broken');
-    expect(prompts[1]).toContain('Earlier Consults on This Lineage');
-    expect(result).toMatchObject({ completed: false, method: 'failed', attempts: 3 });
-    expect(state.pendingRecovery).toMatchObject({
-      reason: 'no-progress',
-      taskId: 'T001',
-      availableActions: ['continue', 'skip-current-task', 'end-run'],
-    });
-    // Two answers in a row left the same failure: the panel names it and the last diagnosis.
-    expect(state.pendingRecovery?.facts?.lastDiagnosis).toBe('Second diagnosis');
-    expect(state.pendingRecovery?.details?.slice(0, 2)).toEqual([
-      'Failure: error: still broken',
-      'Last diagnosis: Second diagnosis',
-    ]);
-    expect(formatRecoveryHeadline(state.pendingRecovery!)).toBe(
-      'T001 is stuck on the same failure',
-    );
+    expect(prompts[1]).toContain('## Brief History');
+    expect(prompts[1]).toContain('First diagnosis');
+    expect(result).toMatchObject({ completed: true, method: 'consulted', attempts: 3 });
+    expect(state.pendingRecovery).toBeUndefined();
   });
 
   it.each(['consult', 'answer'] as const)(
@@ -444,76 +434,6 @@ describe('handleRetryAndEscalation', () => {
     expect(consultError.error).toContain('src/greet.ts');
   });
 
-  it('continue with a note clears the progress, and the planner answers again until no progress', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-    const implementer = failingImplementer();
-    const first = consultPlanner([
-      guidanceAnswer('First diagnosis', 'Try again.'),
-      guidanceAnswer('Second diagnosis', 'Try once more.'),
-    ]);
-
-    const { state: halted } = await handleRetryAndEscalation({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        planner: first.planner,
-        callbacks,
-        implementer,
-        bus,
-      }),
-      task: makeTask(),
-      initialError: 'type error',
-      currentState: makeValidatingState(),
-    });
-    expect(halted.pendingRecovery?.reason).toBe('no-progress');
-
-    const applied = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state: halted,
-      action: 'continue',
-      comment: plainUserMessage('grant it'),
-      bus,
-    });
-    expect(applied.ok).toBe(true);
-    expect(applied.status).toBe('retry-current-task');
-    if (!applied.ok) return;
-    expect(applied.state.lineages?.T001).toMatchObject({ notes: ['grant it'] });
-    expect(applied.state.lineages?.T001).not.toHaveProperty('progress');
-    expect(applied.state.pendingRecovery).toBeUndefined();
-    expect(applied.state.phase).toBe('implementing');
-
-    const second = consultPlanner([
-      guidanceAnswer('Third diagnosis', 'Try again.'),
-      guidanceAnswer('Fourth diagnosis', 'Try once more.'),
-    ]);
-    const { result, state: after } = await handleRetryAndEscalation({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        planner: second.planner,
-        callbacks,
-        implementer,
-        bus,
-      }),
-      task: makeTask(),
-      initialError: 'type error',
-      currentState: applied.state,
-    });
-
-    expect(second.prompts).toHaveLength(2);
-    expect(second.prompts[0]).toContain('Earlier Consults on This Lineage');
-    expect(second.prompts[0]).toContain('Second diagnosis');
-    expect(result).toMatchObject({ completed: false, method: 'failed' });
-    expect(after.pendingRecovery).toMatchObject({ reason: 'no-progress' });
-    expect(after.pendingRecovery?.facts?.lastDiagnosis).toBe('Fourth diagnosis');
-    expect(after.lineages?.T001?.consultRecords).toHaveLength(4);
-  });
-
   it('the lineage record persists across a split and a state.json reload', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
@@ -548,13 +468,10 @@ describe('handleRetryAndEscalation', () => {
     expect(state.lineages?.T001?.consultRecords).toHaveLength(1);
 
     const reloaded = loadState({ projectDir, sessionId });
-    expect(reloaded?.lineages?.T001).toMatchObject({
-      attempts: 1,
-      progress: { answers: 1, unmoved: 0 },
-    });
+    expect(reloaded?.lineages?.T001).toMatchObject({ attempts: 1 });
     expect(reloaded?.lineages?.T001?.consultRecords).toHaveLength(1);
 
-    // A consult on the subtask is judged on the parent's lineage, not a fresh one.
+    // A consult on the subtask shows the parent's lineage, not a fresh one.
     if (reloaded === null) throw new Error('expected the reloaded state');
     const child = reloaded.tasks[reloaded.currentTaskIndex];
     if (child === undefined) throw new Error('expected a subtask');
@@ -567,7 +484,7 @@ describe('handleRetryAndEscalation', () => {
         config: makeNoValidationConfig(),
         planner: second.planner,
         callbacks,
-        implementer,
+        implementer: failingImplementer(0),
         bus,
       }),
       task: child,
@@ -575,49 +492,9 @@ describe('handleRetryAndEscalation', () => {
       currentState: resumed,
     });
 
-    expect(second.prompts[0]).toContain('Earlier Consults on This Lineage');
+    expect(second.prompts[0]).toContain('The brief does two things');
     expect(after.lineages?.T001?.consultRecords).toHaveLength(2);
-    expect(after.lineages?.T001?.progress?.answers).toBe(2);
-    expect(after.pendingRecovery).toMatchObject({ reason: 'no-progress', taskId: child.id });
-  });
-
-  it('an exhausted ladder fails without advancing the task', async () => {
-    const { projectDir, sessionId } = setupProject();
-    // Create a dirty file so the exhausted ladder has real worktree state to leave untouched.
-    writeFileSync(join(projectDir, 'task-file.ts'), 'pending content');
-    const task = makeTask({ suggestedFiles: ['task-file.ts'], action: 'create' });
-    const state = makeValidatingState();
-    // Update task list with the file-matching task so shutdown cleanup finds a real path.
-    const stateWithTask: WorkflowState = {
-      ...state,
-      tasks: [task],
-    };
-
-    const { callbacks } = makeCallbacks();
-    const implementer = failingImplementer();
-    const { planner } = consultPlanner([
-      guidanceAnswer('Try again', 'Try again.'),
-      guidanceAnswer('Try again', 'Try again.'),
-    ]);
-
-    const { result, state: finalState } = await handleRetryAndEscalation({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        planner,
-        callbacks,
-        implementer,
-        bus: makeBusRecorder().bus,
-      }),
-      task,
-      initialError: 'error',
-      currentState: stateWithTask,
-    });
-
-    expect(result).toMatchObject({ completed: false, method: 'failed', attempts: 3 });
-    expect(finalState.currentTaskIndex).toBe(0);
-    expect(finalState.tasks[0]?.status).toBe('pending');
+    expect(after.pendingRecovery).toBeUndefined();
   });
 
   it('a refused command line halts the ladder with a recipe-invalid recovery, without a consult', async () => {
@@ -835,6 +712,109 @@ describe('handleRetryAndEscalation', () => {
     // The first call and the local retry: the transcript read `attempt 2` for the retry.
     expect(finalState.pendingRecovery).toMatchObject({ attempts: 2 });
     expect(finalState.pendingRecovery?.details).toContain('Attempts: 2');
+  });
+
+  it('halts Needs you with the question when nobody answers the planner, without asking it again', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = transition(
+      { ...makeValidatingState(), tasks: [task] },
+      { type: 'COUNT_ATTEMPT', taskId: task.id },
+    );
+    const { callbacks } = makeCallbacks({ onPlannerReply: vi.fn().mockResolvedValue(undefined) });
+    const { bus } = makeBusRecorder();
+    const question = 'Which locale table does greet.ts read?';
+    const { planner, prompts } = consultPlanner([
+      {
+        answer: {
+          diagnosis: 'The brief names no locale table.',
+          action: 'ask-user',
+          question,
+          whyOnlyUserCanAnswer: 'Only you know which table the product ships.',
+          choices: null,
+          default: null,
+        },
+      },
+    ]);
+
+    const { result, state: finalState } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        planner,
+        callbacks,
+        implementer: failingImplementer(),
+        bus,
+      }),
+      task,
+      initialError: 'type error',
+      currentState: state,
+    });
+
+    expect(result.completed).toBe(false);
+    expect(prompts).toHaveLength(1);
+    expect(finalState.pendingRecovery).toMatchObject({
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+      message: 'T001 needs your answer',
+      recommendedAction: 'retry-same-worker',
+    });
+    expect(finalState.pendingRecovery?.details).toContain(`Question: ${question}`);
+    expect(formatRecoveryHeadline(finalState.pendingRecovery!)).toBe('T001 needs your answer');
+  });
+
+  it('halts Needs you when the planner says the brief cannot be done, with no further implementer call', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = transition(
+      { ...makeValidatingState(), tasks: [task] },
+      { type: 'COUNT_ATTEMPT', taskId: task.id },
+    );
+    const reason = 'The payment API the brief names was removed from the SDK.';
+    const { planner, prompts } = consultPlanner([
+      {
+        answer: {
+          diagnosis: 'The SDK has no payment API.',
+          action: 'cannot',
+          reason,
+        },
+      },
+    ]);
+    const plannerCallsAtRetry: number[] = [];
+    const implementer = makeImplementer({
+      retry: vi.fn().mockImplementation(async () => {
+        plannerCallsAtRetry.push(prompts.length);
+        return { success: false, output: '', error: 'still broken' };
+      }),
+    });
+
+    const { result, state: finalState } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        planner,
+        implementer,
+      }),
+      task,
+      initialError: 'type error',
+      currentState: state,
+    });
+
+    expect(result.completed).toBe(false);
+    expect(prompts).toHaveLength(1);
+    expect(plannerCallsAtRetry.every((calls) => calls === 0)).toBe(true);
+    expect(finalState.pendingRecovery).toMatchObject({
+      reason: 'retry-exhausted',
+      taskId: 'T001',
+      message: 'T001: the planner says it cannot be done',
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+    });
+    expect(finalState.pendingRecovery?.details).toContain(`Planner said: ${reason}`);
+    expect(formatRecoveryHeadline(finalState.pendingRecovery!)).toBe(
+      'T001: the planner says it cannot be done',
+    );
   });
 
   it('a pre_validation deny of a consult verify ends the ladder on the skipped task', async () => {

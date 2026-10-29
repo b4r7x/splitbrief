@@ -136,6 +136,7 @@ export const CONSULT_ACTION_KINDS = [
   'split-task',
   'verify',
   'ask-user',
+  'cannot',
 ] as const;
 
 export const ConsultRecordSchema = z.object({
@@ -148,6 +149,8 @@ export const ConsultRecordSchema = z.object({
   answer: ConsultAnswerSchema,
   /** The seat that answered; an older record without one was a planner consult. */
   seat: z.enum(CONSULT_SEATS).optional(),
+  /** The lineage's attempts before this answer; an older record does not carry it. */
+  afterAttempt: nonnegativeInteger.optional(),
 });
 export type ConsultRecord = z.infer<typeof ConsultRecordSchema>;
 
@@ -177,32 +180,12 @@ export const AttemptFailureSchema = z.object({
 });
 export type AttemptFailure = z.infer<typeof AttemptFailureSchema>;
 
-/** A failure as the progress judgement compares it: each failing source with its failure keys. */
-export const FailureMarkSchema = z.array(
-  z.object({ source: z.string(), keys: z.array(z.string()) }),
-);
-export type FailureMark = z.infer<typeof FailureMarkSchema>;
-
-/**
- * The failure the planner saw at its last answer on a lineage, how many answers in a row before
- * that one did not move it, and how many answers the lineage got.
- */
-export const LineageProgressSchema = z.object({
-  failure: FailureMarkSchema,
-  unmoved: nonnegativeInteger,
-  answers: nonnegativeInteger,
-});
-export type LineageProgress = z.infer<typeof LineageProgressSchema>;
-
 export const LineageRecordSchema = z.object({
   attempts: nonnegativeInteger,
-  progress: LineageProgressSchema.optional(),
   /** The revision that already dispatched an attempt; a Try again of it runs on its own files. */
   dispatchedRevision: z.record(z.string(), z.number().int()).default({}),
   consultRecords: z.preprocess(dropRetiredConsults, z.array(ConsultRecordSchema)).default([]),
   replacedParents: z.array(TaskSchema).default([]),
-  notes: z.array(z.string()).default([]),
-  carriedFailure: z.string().optional(),
   corrections: z.array(z.string()).optional(),
   correctionImages: z.array(AttachmentSchema).optional(),
   /** The task start of the lineage's first dispatch; kept only while one of its briefs is open. */

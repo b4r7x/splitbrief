@@ -64,8 +64,6 @@ export async function runImplementation(opts: {
   setTrackedState: (s: WorkflowState) => void;
   recordApprovalDenial: (decision: GateChangedFilesDenial, message: string) => void;
   streamingSink?: StreamingSink | undefined;
-  /** The error text the first attempt carries when it starts as a retry. */
-  retryError?: string | undefined;
 }): Promise<RunImplementationResult> {
   const { wctx, task, setTrackedState } = opts;
   const { projectDir, sessionId, config, callbacks, context } = wctx;
@@ -224,8 +222,7 @@ export async function runImplementation(opts: {
             : undefined;
           // A fix task may already have its code on disk when none of its findings needs a change,
           // and a cut attempt may find its kept work complete: either call may change nothing.
-          const allowNoChange =
-            (task.fix !== undefined && opts.retryError === undefined) || kept !== undefined;
+          const allowNoChange = task.fix !== undefined || kept !== undefined;
           const firstCall: ImplementerOptions = {
             ...call,
             ...correction,
@@ -236,15 +233,7 @@ export async function runImplementation(opts: {
           };
           return runWithCorrectionPasses({
             ref: { projectDir, sessionId },
-            first: () =>
-              opts.retryError === undefined
-                ? wctx.implementer.implement(firstCall)
-                : wctx.implementer.retry({
-                    ...firstCall,
-                    error: opts.retryError,
-                    attempt: 1,
-                    kind: 'local',
-                  }),
+            first: () => wctx.implementer.implement(firstCall),
             pass: async () => {
               const correction = buildCorrectionInput(state, task, wctx);
               return wctx.implementer.implement({

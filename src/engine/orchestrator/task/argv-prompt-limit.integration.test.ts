@@ -76,13 +76,21 @@ describe('a BUILD tool that takes the prompt on stdin', { timeout: 90_000 }, () 
     const { projectDir, sessionId } = setupProject();
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', [tool, 'claude-code']));
     const { bus } = makeBusRecorder();
+    let consults = 0;
     const wctx = makeWorkflowContext({
       projectDir,
       sessionId,
       implementer: createCliImplementer(seat, {
         trustedCli: trustedShimGate({ dir: shimDir, tool }),
       }),
-      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+      // One answer, then the planner fails: no count stops the consults of a brief that keeps failing.
+      planner: makePlanner({
+        typedCall: consultCallAnswering(() => {
+          consults += 1;
+          if (consults > 1) throw new Error('Planner call failed');
+          return guidanceConsult();
+        }),
+      }),
       bus,
       config: makeConfig({
         implementer: seat,

@@ -172,7 +172,6 @@ it.each(['queue', 'seed', 'parked'] as const)(
         ...options,
         wctx: { ...wctx, implementer: createApiImplementer(config), continuation: undefined },
         state: persisted,
-        retryError: 'Verify the screenshot again',
       });
       expect(second.implResult.success).toBe(true);
       expect(requests.at(-1)).toMatchObject(imageRequest);
@@ -189,7 +188,7 @@ it.each(['queue', 'seed', 'parked'] as const)(
   },
 );
 
-it('applies real API bundles to one workspace on the first attempt, retry and cold continuation', async () => {
+it('applies real API bundles to one workspace on the first attempt, the next one and a cold continuation', async () => {
   const projectDir = createTempDir('workspace-api-extraction');
   dirs.push(projectDir);
   const sessionId = 'workspace-api-extraction';
@@ -199,7 +198,6 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
   const config = makeConfig();
   const api = createApiImplementer(config);
   const implement = vi.spyOn(api, 'implement');
-  const retry = vi.spyOn(api, 'retry');
   let calls = 0;
   vi.stubGlobal(
     'fetch',
@@ -250,7 +248,6 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
   const second = await runImplementation({
     ...options,
     state: { ...first.state, attempt: 1 },
-    retryError: 'retry this brief',
   });
   expect(second.implResult.applyResult).toMatchObject({
     status: 'applied',
@@ -283,8 +280,8 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
   expect(implement.mock.calls.map(([call]) => call.projectDir)).toEqual([
     opened.projectDir,
     opened.projectDir,
+    opened.projectDir,
   ]);
-  expect(retry.mock.calls.map(([call]) => call.projectDir)).toEqual([opened.projectDir]);
   expect(readFileSync(join(opened.projectDir, file), 'utf8')).toBe('export const value = 3;\n');
   expect(readFileSync(join(projectDir, file), 'utf8')).toBe(original);
   expect(calls).toBe(3);

@@ -1,15 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { makeImplState, spentAnswersLineage } from '#testing/helpers/factories/workflow-state.js';
-import { makeConfig, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeCallbacks,
   makeImplementer,
   makeBusRecorder,
-  makePlanner,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -19,10 +16,6 @@ import { loadState } from '../../../core/state/persistence.js';
 import { runTaskLoop } from './loop.js';
 import { buildContextOverflowRecoveryIssue } from '../recovery/builders/task.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ImplementerOptions } from '../../implementers/types.js';
-import { processError } from '../../../lib/process/errors.js';
-import * as commandRunner from '../../../lib/process/spawn/run-command.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
 
 let dirs: string[] = [];
 
@@ -432,77 +425,4 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       expect(result.state.pendingRecovery?.status).toBe(status);
     },
   );
-
-  it('restores a file the brief created when its ladder runs out after a Continue', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({
-      id: 'T001',
-      action: 'create',
-      suggestedFiles: ['src/new.ts'],
-      criteria: [],
-      checks: [{ id: 'T001-K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
-    });
-    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
-      processError.exitCode({ command: 'tsc', code: 2, stderr: 'test failed', output: '' }),
-    );
-    let attempts = 0;
-    const write = async ({ projectDir: runDir }: ImplementerOptions) => {
-      attempts += 1;
-      mkdirSync(join(runDir, 'src'), { recursive: true });
-      writeFileSync(join(runDir, 'src/new.ts'), `export const attempt = ${attempts};\n`);
-      return {
-        success: true,
-        output: 'implemented',
-        report: {
-          status: 'done' as const,
-          filesChanged: ['src/new.ts'],
-          touchedNotSuggested: [],
-          notes: null,
-          decisions: [],
-        },
-      };
-    };
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'claude-code' },
-      reviewer: { kind: 'cli', tool: 'codex' },
-      validation: { endChecks: false, testCommand: 'noop' },
-      workflow: { review: 'task' },
-    });
-    const { bus } = makeBusRecorder();
-    const wctx = makeWctx({
-      projectDir,
-      sessionId,
-      config,
-      bus,
-      validator: { formatChangedFiles: vi.fn().mockResolvedValue(undefined) },
-      planner: makePlanner({
-        typedCall: vi.fn(() => {
-          throw new Error('The planner process stopped unexpectedly.');
-        }),
-      }),
-      implementer: makeImplementer({ implement: vi.fn(write), retry: vi.fn(write) }),
-    });
-    const loop = (initialState: ReturnType<typeof makeImplState>) =>
-      runTaskLoop({ wctx, initialState, setTrackedState: vi.fn(), setCurrentTask: vi.fn() });
-
-    // The lineage has spent its planner answers, so the first ladder halts with the file kept.
-    const halted = await loop(makeImplState([task], { lineages: { T001: spentAnswersLineage() } }));
-    expect(halted.state.pendingRecovery).toMatchObject({ reason: 'no-progress' });
-    expect(existsSync(join(projectDir, 'src/new.ts'))).toBe(true);
-    const continued = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      bus,
-      config,
-      state: halted.state,
-      action: 'continue',
-    });
-    if (!continued.ok) throw new Error(continued.message);
-
-    const exhausted = await loop(continued.state);
-
-    expect(exhausted.state.pendingRecovery).toMatchObject({ reason: 'planner-call-failed' });
-    expect(attempts).toBeGreaterThan(1);
-    expect(existsSync(join(projectDir, 'src/new.ts'))).toBe(false);
-  });
 });

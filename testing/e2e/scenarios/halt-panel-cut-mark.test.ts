@@ -20,25 +20,27 @@ process.stdout.write(${JSON.stringify(JSON.stringify({ status: 'blocked', questi
 `;
 }
 
-const GUIDANCE = JSON.stringify({
+const ASK_USER = JSON.stringify({
   answer: {
-    diagnosis: 'The implementer wrote nothing.',
-    action: 'guidance',
-    instructions: 'Write the greeting helper as the brief says.',
-    context: null,
+    diagnosis: 'The implementer is blocked on the locale source.',
+    action: 'ask-user',
+    question: QUESTION,
+    whyOnlyUserCanAnswer: 'Only you know which file holds the locales.',
+    choices: null,
+    default: null,
   },
 });
 
 /**
- * The planner answers every consult with guidance, so the brief spends its consults and halts.
- * The plan prompt quotes this script from the repository, so the match is the prompt's own
- * first heading, not a phrase anywhere in it.
+ * The planner passes the implementer's question to the user with no default, so the headless run
+ * halts on it. The plan prompt quotes this script from the repository, so the match is the
+ * prompt's own first heading, not a phrase anywhere in it.
  */
-function guidingConsult(): string {
+function askingConsult(): string {
   return `(prompt) => {
   const heading = prompt.split('\\n').find((line) => line.startsWith('# '));
   return heading === '# Consult on a failing task' || heading === '# Consult continued'
-    ? ${JSON.stringify(GUIDANCE)}
+    ? ${JSON.stringify(ASK_USER)}
     : undefined;
 }`;
 }
@@ -56,10 +58,10 @@ afterEach(() => {
   fixture = undefined;
 });
 
-/** Runs the fixture until its brief spends its consults and opens the halt on the run screen. */
+/** Runs the fixture until nobody answers the planner's question and opens the halt on the run screen. */
 async function openConsultHalt() {
   fixture = createStopContinueFixture(blockedImplementerScript, {
-    consult: guidingConsult,
+    consult: askingConsult,
   });
   const halted = await cli(fixture, ['start', 'smoke']);
   expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
@@ -70,21 +72,15 @@ async function openConsultHalt() {
 }
 
 describe('e2e: a halt panel too short for its text', () => {
-  it('marks a detail over the cap with …, the cut lines at 80x24, and keeps the actions and the legend', async () => {
+  it('shows the whole question, marks the cut lines at 80x24, and keeps the actions and the legend', async () => {
     const opened = await openConsultHalt();
     expect(opened.state.pendingRecovery).toMatchObject({
-      reason: 'no-progress',
-      details: expect.arrayContaining([
-        expect.stringContaining('Failure: blocked: greet.ts needs'),
-      ]),
+      reason: 'retry-exhausted',
+      details: expect.arrayContaining([`Question: ${QUESTION}`]),
     });
 
-    const failure = opened.state.pendingRecovery?.details.find((line) =>
-      line.startsWith('Failure: '),
-    );
-    expect(failure?.endsWith('…')).toBe(true);
     const wide = stripAnsiStyles(opened.screen.lastFrame());
-    expect(wide).toContain(failure?.slice(failure.lastIndexOf(' ') + 1));
+    expect(wide).toContain('Which file holds the locales?');
     expect(wide).not.toContain('...');
 
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
@@ -107,7 +103,7 @@ describe('e2e: a halt panel too short for its text', () => {
 
       expect(frame, `140x${rows}`).toContain('Needs you');
       expect(frame, `140x${rows}`).toMatch(/… \d+ more lines/);
-      expect(frame, `140x${rows}`).toContain('Continue recommended');
+      expect(frame, `140x${rows}`).toContain('Try again recommended');
       expectHiddenActionsMarked(frame, `140x${rows}`);
       expect(frame, `140x${rows}`).toContain('↑↓ select · ⏎ confirm');
     }
@@ -130,8 +126,8 @@ describe('e2e: a halt panel too short for its text', () => {
   });
 });
 
-/** Continue, Skip task and End run: each one off screen sits behind a mark on its side. */
+/** Try again, Skip task and End run: each one off screen sits behind a mark on its side. */
 function expectHiddenActionsMarked(frame: string, label: string): void {
-  if (!/c\s+Continue/.test(frame)) expect(frame, label).toContain('↑ more');
+  if (!/r\s+Try again/.test(frame)) expect(frame, label).toContain('↑ more');
   if (!/a\s+End run/.test(frame)) expect(frame, label).toContain('↓ more');
 }

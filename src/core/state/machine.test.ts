@@ -1252,7 +1252,6 @@ describe('consult and split state operations', () => {
       dispatchedRevision: {},
       consultRecords: [],
       replacedParents: [],
-      notes: [],
       ...overrides,
     };
   }
@@ -1337,15 +1336,7 @@ describe('consult and split state operations', () => {
     const state = implementationState([makeTask({ id: 'T001', status: 'failed' })], {
       currentTaskIndex: 0,
       lineages: {
-        T001: lineage({
-          attempts: 5,
-          progress: {
-            failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
-            unmoved: 1,
-            answers: 2,
-          },
-          notes: ['the user continued'],
-        }),
+        T001: lineage({ attempts: 5, corrections: ['the user corrected'] }),
       },
     });
 
@@ -1357,12 +1348,7 @@ describe('consult and split state operations', () => {
 
     expect(split.lineages?.T001).toMatchObject({
       attempts: 5,
-      progress: {
-        failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
-        unmoved: 1,
-        answers: 2,
-      },
-      notes: ['the user continued'],
+      corrections: ['the user corrected'],
     });
     expect(split.lineages?.T001?.replacedParents.map((task) => task.id)).toEqual(['T001']);
 
@@ -1374,60 +1360,19 @@ describe('consult and split state operations', () => {
     const state = implementationState([makeTask({ id: 'T002', status: 'failed' })], {
       currentTaskIndex: 0,
       lineages: {
-        T002: lineage({
-          attempts: 5,
-          progress: {
-            failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
-            unmoved: 1,
-            answers: 2,
-          },
-        }),
+        T002: lineage({ attempts: 5 }),
       },
     });
 
     const next = transition(state, { type: 'RESET_TASK', taskId: taskId('T002') });
 
     expect(next.tasks[0]?.status).toBe('pending');
-    expect(next.lineages?.T002?.progress).toEqual({
-      failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
-      unmoved: 1,
-      answers: 2,
-    });
     expect(next.lineages?.T002?.attempts).toBe(5);
   });
 
-  it('RESET_PROGRESS clears the progress, keeps the attempts and records the note', () => {
-    const state = implementationState([makeTask({ id: 'T002' })], {
-      lineages: {
-        T002: lineage({
-          attempts: 2,
-          progress: {
-            failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
-            unmoved: 1,
-            answers: 2,
-          },
-        }),
-      },
-    });
-
-    const next = transition(state, {
-      type: 'RESET_PROGRESS',
-      taskId: taskId('T002'),
-      note: 'The user continued the brief.',
-      failingOutput: 'FAIL src/a.test.ts',
-    });
-
-    expect(next.lineages?.T002).not.toHaveProperty('progress');
-    expect(next.lineages?.T002).toMatchObject({
-      attempts: 2,
-      notes: ['The user continued the brief.'],
-      carriedFailure: 'FAIL src/a.test.ts',
-    });
-  });
-
-  it('RECORD_CONSULT records the answer and the progress and leaves the task alone', () => {
+  it('RECORD_CONSULT records the answer after the attempts so far and leaves the task alone', () => {
     const task = makeTask({ id: 'T002' });
-    const state = implementationState([task]);
+    const state = implementationState([task], { lineages: { T002: lineage({ attempts: 3 }) } });
 
     const next = transition(
       state,
@@ -1437,11 +1382,6 @@ describe('consult and split state operations', () => {
         revision: 2,
         reason: 'failed',
         seat: 'plan',
-        progress: {
-          failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
-          unmoved: 1,
-          answers: 2,
-        },
         answer: {
           answer: {
             action: 'guidance',
@@ -1454,11 +1394,6 @@ describe('consult and split state operations', () => {
       { now: new Date('2026-05-01T10:00:00Z') },
     );
 
-    expect(next.lineages?.T002?.progress).toEqual({
-      failure: [{ source: 'check K1', keys: ['src/a.ts: TS2322'] }],
-      unmoved: 1,
-      answers: 2,
-    });
     expect(next.tasks[0]).toBe(task);
     expect(next.lineages?.T002?.consultRecords[0]).toEqual({
       reason: 'failed',
@@ -1476,6 +1411,7 @@ describe('consult and split state operations', () => {
         },
       },
       seat: 'plan',
+      afterAttempt: 3,
     });
   });
 

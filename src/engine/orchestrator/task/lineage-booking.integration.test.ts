@@ -13,11 +13,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import {
-  consultCallAnswering,
-  failedReviewVerdict,
-  guidanceConsult,
-} from '#testing/helpers/typed-planner.js';
+import { consultCallAnswering, failedReviewVerdict } from '#testing/helpers/typed-planner.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { ReviewAnswer } from '../../../core/schemas/review.js';
@@ -93,7 +89,8 @@ function driftFindings(ref: { projectDir: string; sessionId: string }, taskId: s
 /**
  * T001's first attempt writes `src/a.ts`, a generated `gen/x.txt` and each of `preSplitFiles`; its local retry writes
  * `src/retry.ts`, which the consult's rollback takes back. The planner then answers each
- * consult in turn, and each task review with `review` (a passing verdict when it gives none).
+ * consult in turn, fails its call past the last answer, and answers each task review with
+ * `review` (a passing verdict when it gives none).
  * The loop pauses at the boundary after the brief `pauseAfter` names.
  */
 async function runLineage(opts: {
@@ -124,8 +121,9 @@ async function runLineage(opts: {
     return { success: true, output: 'implemented' };
   };
   const consultCall = consultCallAnswering(() => {
-    const answer = opts.answers[consults] ?? (() => guidanceConsult());
+    const answer = opts.answers[consults];
     consults += 1;
+    if (answer === undefined) throw new Error('The planner process stopped unexpectedly.');
     return answer(failing);
   });
   const typedCall = vi.fn((ctx: TypedCallContext) => {
@@ -413,7 +411,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
         }
       },
     });
-    expect(result.state.pendingRecovery?.reason).toBe('no-progress');
+    expect(result.state.pendingRecovery?.reason).toBe('planner-call-failed');
     const halted = loadState(ref);
     if (halted === null) throw new Error('Missing halted state');
     const checkoutRun = {
@@ -429,10 +427,11 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
     const ended = await applyRecoveryAction({ ...ref, state: checkoutRun, action: 'end-run', bus });
 
     expect(ended.ok).toBe(true);
+    // The halt took back src/b.ts, the second child's own file, before the user ended the run.
     expect(booked(ref).byTask).toEqual({
       T001: [],
       T002: ['src/a.ts', 'src/c.ts'],
-      T003: ['gen/x.txt', 'src/b.ts'],
+      T003: ['gen/x.txt'],
     });
     const closed = loadState(ref);
     if (closed === null) throw new Error('Missing closed state');
@@ -445,7 +444,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
       implementerTool: 'codex',
     });
     expect(summary.stoppedAt?.taskId).toBe('T003');
-    expect([...(summary.stoppedAt?.partialFiles ?? [])].sort()).toEqual(['gen/x.txt', 'src/b.ts']);
+    expect([...(summary.stoppedAt?.partialFiles ?? [])].sort()).toEqual(['gen/x.txt']);
   });
 
   it('leaves the first child the owner of its pre-split file when the user skips the second child', async () => {
@@ -465,7 +464,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
         }
       },
     });
-    expect(result.state.pendingRecovery?.reason).toBe('no-progress');
+    expect(result.state.pendingRecovery?.reason).toBe('planner-call-failed');
     const halted = loadState(ref);
     if (halted === null) throw new Error('Missing halted state');
 
@@ -486,7 +485,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
       answers: [(failing) => rewrite(failing, false)],
       afterConsult: (_call, opts) => write(opts.projectDir, 'src/b.ts', 'export const b = 1;\n'),
     });
-    expect(result.state.pendingRecovery?.reason).toBe('no-progress');
+    expect(result.state.pendingRecovery?.reason).toBe('planner-call-failed');
     const halted = loadState(ref);
     if (halted === null) throw new Error('Missing halted state');
 
@@ -509,7 +508,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
       answers: [(failing) => rewrite(failing, false)],
       afterConsult: (_call, opts) => write(opts.projectDir, 'src/b.ts', 'export const b = 1;\n'),
     });
-    expect(result.state.pendingRecovery?.reason).toBe('no-progress');
+    expect(result.state.pendingRecovery?.reason).toBe('planner-call-failed');
     const halted = loadState(ref);
     if (halted === null) throw new Error('Missing halted state');
     const checkoutRun = {
@@ -525,6 +524,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
     const ended = await applyRecoveryAction({ ...ref, state: checkoutRun, action: 'end-run', bus });
 
     expect(ended.ok).toBe(true);
-    expect(booked(ref).byTask).toEqual({ T001: ['gen/x.txt', 'src/a.ts', 'src/b.ts'] });
+    // The halt took back src/b.ts, the rewritten brief's own file, before the user ended the run.
+    expect(booked(ref).byTask).toEqual({ T001: ['gen/x.txt', 'src/a.ts'] });
   });
 });

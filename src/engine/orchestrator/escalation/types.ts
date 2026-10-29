@@ -1,9 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type {
-  ChangedFilesSnapshot,
-  FailureMark,
-  WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -74,8 +70,6 @@ export type RetryStepOutcome = {
   state: WorkflowState;
   task: Task;
   lastError: string;
-  /** The checks that failed the attempt's brief gate; absent when no check failed it. */
-  checks?: FailureMark | undefined;
   attempts: number;
   result?: RetryResult;
   lastFailure?: RetryAttemptFailure | undefined;

@@ -4,6 +4,7 @@ import { SOFT_SEP } from '../separators.js';
 import { formatResetAt } from './reset-clock.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { countNoun } from '../../utils/pluralize.js';
+import { capitalize } from '../../utils/capitalize.js';
 import { formatAccountCause } from './account-cause.js';
 import { formatNoCredential } from '../runners/route-auth.js';
 import type { SeatLineSpan } from '../crew/identity.js';
@@ -76,20 +77,24 @@ export function retryExhaustedCause(
     task: string;
     plannerVerdict?: string | undefined;
     hookReason?: string | undefined;
+    question?: string | undefined;
+    /** The runner that answered the brief cannot be done: `planner` or `reviewer`. */
+    cannotBy?: string | undefined;
   }>,
 ): string {
   if (cause.plannerVerdict === 'brief') return `${cause.task}: the planner found the brief wrong`;
   if (cause.hookReason !== undefined) {
     return `${cause.task} escalation blocked by pre_escalation hook: ${cause.hookReason}`;
   }
+  if (cause.question !== undefined) return `${cause.task} needs your answer`;
+  if (cause.cannotBy !== undefined)
+    return `${cause.task}: the ${cause.cannotBy} says it cannot be done`;
   return `${cause.task} failed`;
 }
 
-/** A brief the planner's answers did not settle: two answers in a row left its failure, or it used all its answers. */
-export function noProgressCause(task: string, stop: string | undefined, answers: number): string {
-  return stop === 'unconverged'
-    ? `${task} did not settle after ${answers} planner answers`
-    : `${task} is stuck on the same failure`;
+/** The reason a runner gave for a brief that cannot be done, in the words the panel and the headless line share. */
+export function cannotDetail(by: string, reason: string): string {
+  return `${capitalize(by)} said: ${reason}`;
 }
 
 /** A repository change under a brief, with the changes the audit saw, in the words every surface shares. */
@@ -160,23 +165,17 @@ export function formatRecoveryHeadlineSpans(
             task: taskName(issue),
             plannerVerdict: recoveryFactString(issue.facts, 'plannerVerdict'),
             hookReason: recoveryFactString(issue.facts, 'escalationBlockedBy'),
+            question: recoveryFactString(issue.facts, 'question'),
+            cannotBy: recoveryFactString(issue.facts, 'cannotBy'),
           }),
-        },
-      ];
-    case 'no-progress':
-      return [
-        {
-          text: noProgressCause(
-            taskName(issue),
-            recoveryFactString(issue.facts, 'stop'),
-            recoveryFactNumber(issue.facts, 'answers') ?? 0,
-          ),
         },
       ];
     case 'consult-bound-spent':
       return [{ text: `${taskName(issue)} used its consult allowance` }];
     case 'planner-calls-spent':
       return [{ text: 'The run used its planner-call allowance' }];
+    case 'no-progress':
+      return [{ text: `${taskName(issue)} is stuck on the same failure` }];
     case 'scope-violation':
       return [{ text: `${taskName(issue)} wrote outside its declared files` }];
     case 'implementer-recipe-invalid':

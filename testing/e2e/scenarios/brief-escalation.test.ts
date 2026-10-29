@@ -57,6 +57,17 @@ const consult: ConsultAnswer = {
     context: null,
   },
 };
+const QUESTION = 'Which value should beta export: the string beta or the attempt number?';
+const askUser: ConsultAnswer = {
+  answer: {
+    diagnosis: 'The guidance did not move the failure; the brief leaves the value open.',
+    action: 'ask-user',
+    question: QUESTION,
+    whyOnlyUserCanAnswer: 'Only you know which value the product needs.',
+    choices: null,
+    default: null,
+  },
+};
 const ALPHA_FILES = {
   'src/alpha.mjs': "export const alpha = 'alpha';\n",
   'src/alpha.test.mjs':
@@ -64,8 +75,8 @@ const ALPHA_FILES = {
 };
 const BETA_TEST =
   "import { strict as assert } from 'node:assert';\nimport { beta } from './beta.mjs';\nassert.equal(beta, 'beta');\n";
-const HALT_ACTIONS = ['continue', 'skip-current-task', 'end-run'];
-const HALT_MESSAGE = 'T002 is stuck on the same failure';
+const HALT_ACTIONS = ['retry-same-worker', 'skip-current-task', 'end-run'];
+const HALT_MESSAGE = 'T002 needs your answer';
 const HALT_CALLS = [
   'plan',
   'implement T001',
@@ -75,7 +86,6 @@ const HALT_CALLS = [
   'consult',
   'implement T002',
   'consult',
-  'implement T002',
 ];
 
 let fixture: StopContinueFixture | undefined;
@@ -90,8 +100,8 @@ afterEach(() => {
 });
 
 /**
- * The planner answers the plan, every consult with guidance, and each task and final review with
- * every id its prompt lists. The implementer lands T001, and writes T002's files on every attempt
+ * The planner answers the plan, its first consult with guidance and every later consult with a
+ * question that has no default, and each task and final review with every id its prompt lists. The implementer lands T001, and writes T002's files on every attempt
  * with a value its test never accepts. The `task` review cadence runs each brief's checks at its
  * gate, so T002's required check fails every attempt and the ladder escalates.
  */
@@ -105,7 +115,7 @@ function writeRunners(target: StopContinueFixture, callsPath: string) {
   });
   writeFileSync(
     plannerPath,
-    `import { appendFileSync } from 'node:fs';
+    `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
@@ -126,7 +136,11 @@ if (prompt.includes('# Final Implementation Review') || prompt.includes('# Task 
   };
 } else if (prompt.includes('# Consult on a failing task') || prompt.includes('# Consult continued')) {
   kind = 'consult';
-  answer = ${JSON.stringify(consult)};
+  const callsPath = ${JSON.stringify(callsPath)};
+  const consults = existsSync(callsPath)
+    ? readFileSync(callsPath, 'utf8').split('\\n').filter((line) => line.includes('"kind":"consult"')).length
+    : 0;
+  answer = consults === 0 ? ${JSON.stringify(consult)} : ${JSON.stringify(askUser)};
 } else if (prompt.includes('# Plan the change')) {
   kind = 'plan';
   answer = ${JSON.stringify({ result: plan })};
@@ -188,7 +202,7 @@ function readCalls(callsPath: string): string[] {
     });
 }
 
-/** Starts the run headless and returns once the planner's answers did not move T002's failure and the run halted. */
+/** Starts the run headless and returns once the planner asked a question about T002 that nobody answered and the run halted. */
 async function startEscalatingRun(isolation: IsolationStrategy = 'worktree') {
   const target = createStopContinueFixture(() => '', { isolation });
   fixture = target;
@@ -219,8 +233,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     async (halts) => {
       const { target, halted, sessionId, ref } = await startEscalatingRun('none');
       expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
-      expect(readState(target, sessionId).pendingRecovery?.reason).toBe('no-progress');
-      expect(existsSync(join(target.projectDir, 'src/beta.mjs'))).toBe(true);
+      expect(readState(target, sessionId).pendingRecovery?.message).toBe(HALT_MESSAGE);
       writeFileSync(join(target.projectDir, 'init.txt'), 'edited while halted\n');
       writeFileSync(join(target.projectDir, 'scratch.txt'), 'notes while halted\n');
 
@@ -228,8 +241,8 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
         const resumed = await applyRecoveryAction({
           ...ref,
           state: readState(target, sessionId),
-          action: 'continue',
-          comment: plainUserMessage('Try the brief again.'),
+          action: 'retry-same-worker',
+          comment: plainUserMessage('Export the string beta.'),
           bus: createRecoveryBus(ref),
           config: loadConfig(target.projectDir).config,
         });
@@ -238,7 +251,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
           timeoutMs: RUN_TIMEOUT_MS,
         });
         expect(haltedAgain.exitCode, haltedAgain.stderr).toBe(1);
-        expect(readState(target, sessionId).pendingRecovery?.reason).toBe('no-progress');
+        expect(readState(target, sessionId).pendingRecovery?.message).toBe(HALT_MESSAGE);
       }
 
       const continued = await cli(target, ['continue', sessionId, '--action', 'skip'], {
@@ -261,49 +274,44 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     },
   );
 
-  it("halts Needs you when the planner's answers do not move a brief's failure, waiting for you with its files kept", async () => {
+  it("halts Needs you when nobody answers the planner's question about a brief, with its files taken back", async () => {
     const { target, callsPath, halted, sessionId, ref } = await startEscalatingRun();
 
     expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
     expect(halted.stdout).toContain('task T001: done');
-    expect(halted.stderr).toContain(`Needs you (no-progress): ${HALT_MESSAGE}`);
-    expect(halted.stderr).toContain('Recommended: continue');
+    expect(halted.stderr).toContain(`Needs you (retry-exhausted): ${HALT_MESSAGE}`);
+    expect(halted.stderr).toContain(`Question: ${QUESTION}`);
+    expect(halted.stderr).toContain('Recommended: retry-same-worker');
     expect(halted.stderr).toContain(
-      `Continue with: splitbrief continue ${sessionId}, then choose Continue in the recovery panel`,
+      `Continue with: splitbrief continue ${sessionId}, then choose Try again in the recovery panel`,
     );
     expect(halted.stderr).not.toContain('[--plain|--json]');
     expect(readCalls(callsPath)).toEqual(HALT_CALLS);
 
     const state = readState(target, sessionId);
     expect(state.pendingRecovery).toMatchObject({
-      reason: 'no-progress',
+      reason: 'retry-exhausted',
       status: 'awaiting-user',
       seat: 'build',
       taskId: 'T002',
       message: HALT_MESSAGE,
       availableActions: HALT_ACTIONS,
-      recommendedAction: 'continue',
-      attempts: 4,
-      facts: {
-        answers: 2,
-        stop: 'no-progress',
-        lastDiagnosis: consult.answer.diagnosis,
-      },
+      recommendedAction: 'retry-same-worker',
+      attempts: 3,
+      facts: { question: QUESTION },
     });
     expect(state.tasks.map((task) => ({ id: task.id, status: task.status }))).toEqual([
       { id: 'T001', status: 'done' },
       { id: 'T002', status: 'in_progress' },
     ]);
     if (state.workspace === undefined) throw new Error('The halted run recorded no workspace');
-    expect(readFileSync(join(state.workspace.path, 'src/beta.mjs'), 'utf8')).toBe(
-      "export const beta = 'attempt 4';\n",
-    );
+    expect(existsSync(join(state.workspace.path, 'src/beta.mjs'))).toBe(false);
 
     expect(readRunRecord(ref).status).toMatchObject({
       kind: 'open',
       stop: {
         kind: 'waiting-for-you',
-        on: { kind: 'halt', issue: { reason: 'no-progress', taskId: 'T002' } },
+        on: { kind: 'halt', issue: { reason: 'retry-exhausted', taskId: 'T002' } },
       },
       resumeAt: { kind: 'brief', taskId: 'T002' },
     });
@@ -324,33 +332,29 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
           : [],
       ),
     ).toEqual(
-      Array.from({ length: 2 }, () => ({
+      ['guidance', 'ask-user'].map((action) => ({
         taskId: 'T002',
         seat: 'plan',
         reason: 'failed',
-        action: 'guidance',
+        action,
       })),
     );
-    expect(events.filter((event) => event.type === 'consult_bound_spent')).toEqual([]);
-    expect(
-      events.filter((event) => event.type === 'error' && event.code === 'no_progress'),
-    ).toHaveLength(1);
     const prompted = events.filter((event) => event.type === 'recovery_prompted');
     expect(prompted).toHaveLength(1);
     expect(prompted[0]).toMatchObject({
       issueId: state.pendingRecovery?.id,
-      reason: 'no-progress',
+      reason: 'retry-exhausted',
       taskId: 'T002',
       availableActions: HALT_ACTIONS,
-      recommendedAction: 'continue',
-      resumeCommand: `splitbrief continue ${sessionId}, then choose Continue in the recovery panel`,
+      recommendedAction: 'retry-same-worker',
+      resumeCommand: `splitbrief continue ${sessionId}, then choose Try again in the recovery panel`,
     });
   });
 
   it('continues headless past the halt by skipping the brief and reaches ready to apply', async () => {
     const { target, callsPath, halted, sessionId, ref } = await startEscalatingRun();
     expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
-    expect(readState(target, sessionId).pendingRecovery?.reason).toBe('no-progress');
+    expect(readState(target, sessionId).pendingRecovery?.message).toBe(HALT_MESSAGE);
 
     const continued = await cli(target, ['continue', sessionId, '--action', 'skip'], {
       timeoutMs: RUN_TIMEOUT_MS,
@@ -377,7 +381,7 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     const { events } = await readRunEvents(ref);
     expect(events.filter((event) => event.type === 'recovery_resolved')).toMatchObject([
       {
-        reason: 'no-progress',
+        reason: 'retry-exhausted',
         action: 'skip-current-task',
         outcome: 'skipped-current-task',
       },

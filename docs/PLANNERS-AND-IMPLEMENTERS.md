@@ -757,7 +757,7 @@ type Config = {
   workflow: {
     mode?: unknown               // retired: loads with one notice, ignored
     approve?: ApproveLevel       // plan | none (all, spec, default load as plan with one notice)
-    maxRetries?: unknown         // retired: loads with one notice, ignored; the lineage attempt bound replaces it
+    maxRetries?: unknown         // retired: loads with one notice, ignored; the planner decides every retry
     compactionThreshold?: number
     git?: { createBranch?: boolean } // retired commitStrategy input is stripped
     // taskReview, briefReview, speckit and driftChainThreshold are retired keys (one notice each)

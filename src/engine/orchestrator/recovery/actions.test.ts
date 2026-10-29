@@ -8,7 +8,7 @@ import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.j
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { makeImplState, spentAnswersLineage } from '#testing/helpers/factories/workflow-state.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
@@ -21,7 +21,6 @@ import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import type { CrewSeatId, SeatIds } from '../../../core/crew/identity.js';
 import { applyRecoveryAction, commitSeatSwitch, planSwitchSeatRecoveryAction } from './actions.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
-import { buildNoProgressRecoveryIssue } from './builders/consult.js';
 import {
   buildReviewFailedRecoveryIssue,
   buildRunnerInputTooLargeRecoveryIssue,
@@ -471,43 +470,31 @@ describe('applyRecoveryAction: the run-level answers', () => {
     expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
   });
 
-  it('continue on a no-progress halt clears the progress, keeps the note and resets the brief', async () => {
+  it('continue on a no-progress halt an older run saved resolves it', async () => {
     const { projectDir, sessionId } = setupSession('recovery-no-progress');
-    const base = makeImplState([makeTask({ id: 'T001', status: 'in_progress' })], {
-      lineages: { T001: spentAnswersLineage() },
-    });
-    const issue = buildNoProgressRecoveryIssue({
+    const base = makeImplState([makeTask({ id: 'T001', status: 'in_progress' })]);
+    const issue = makeRecoveryIssue({
       phase: 'implementing',
-      task: makeTask({ id: 'T001' }),
-      stop: 'unconverged',
-      failure: [{ source: 'check V1', keys: ['src/main.ts: TS2322'] }],
-      answers: 10,
-      lastDiagnosis: 'The brief keeps failing its test',
-      failingOutput: 'src/main.ts: TS2322',
+      reason: 'no-progress',
+      availableActions: ['continue', 'skip-current-task', 'end-run'],
+      recommendedAction: 'continue',
       createdAt,
     });
     saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
     const state = loadState({ projectDir, sessionId });
     if (state === null) throw new Error('expected the halt to persist');
-    const { bus, events } = makeBusRecorder();
 
     const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
       action: 'continue',
-      bus,
-      comment: plainUserMessage('try the other file'),
+      bus: makeBusRecorder().bus,
     });
 
-    expect(result).toMatchObject({ ok: true, status: 'retry-current-task' });
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
     if (!result.ok) return;
-    const lineage = result.state.lineages?.T001;
-    expect(lineage?.progress).toBeUndefined();
-    expect(lineage?.notes).toEqual(['try the other file']);
-    expect(lineage?.carriedFailure).toBe('src/main.ts: TS2322');
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(events.map((event) => event.type)).toContain('task_reset');
   });
 });
 

@@ -76,7 +76,6 @@ function applyStop(stop: FixtureStopState): void {
 // The stop ladder lives in a store, not in the event stream, and the workflow screen resets the
 // session-scoped stores from a mount effect (`use-runner.ts`) and replays the projection after it.
 // Stamping on every run start is what survives that replay.
-const NO_PROGRESS_NOTE = 'run the formatter first';
 const PLAN_CARD_COMMENT_DRAFT = 'Split the CLI change into a separate task.';
 const TYPED_WORDS = 'keep the old lockfile';
 
@@ -372,15 +371,6 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         } finally {
           Date.now = fixedNow;
         }
-      },
-    });
-  }
-  if (projection.scenarioId === 'workflow-recovery-no-progress-note') {
-    return () => ({
-      ...base(),
-      afterMount: async (write) => {
-        await write.press('\t');
-        await write.press(NO_PROGRESS_NOTE);
       },
     });
   }
@@ -1115,12 +1105,9 @@ const checkpointPredicates = [
   [checkpointId('spent-b2-replay-t002-completion'), includesAll()],
   [checkpointId('plan-activity'), includesAll('src/core/crew/identity.ts')],
   [checkpointId('retry-exhausted'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
-  [checkpointId('no-progress'), includesAll(WORKFLOW_FIXTURE_TEXT.noProgress)],
+  [checkpointId('unanswered-question'), includesAll('T901 needs your answer')],
+  [checkpointId('cannot'), includesAll('T901: the planner says it cannot be done')],
   [checkpointId('many-files'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
-  [
-    checkpointId('no-progress-note'),
-    includesAll('Continue with the typed correction', NO_PROGRESS_NOTE),
-  ],
   [
     checkpointId('recovery-slash-draft'),
     includesAll('⏎ runs the command · tab back to the actions', '/scroll top'),

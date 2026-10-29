@@ -556,8 +556,8 @@ A commit, a branch switch or a pull in your checkout does not halt the brief: a 
 **Fix:**
 1. Watch the attempt counter in the build block — it reads `attempt <a>` and the consult runs after the first retry.
 2. Inspect `evidence.json` and the task log to see whether failures are typecheck, test, or runtime.
-3. Read the consult row (`PLAN → T00N: … · <diagnosis>`). Guidance retries the brief; a `rewrite-task` or `split-task` answer changes the brief itself; `ask-user` is the one question that asks you.
-4. If the run halts with `Needs you · T00N is stuck on the same failure`, read its `Failure:` and `Last diagnosis:` lines. **Continue** with a note asks the planner again from the last attempt's files, or take `skip-current-task` or `end-run`.
+3. Read the consult row (`PLAN → T00N: … · <diagnosis>`). Guidance retries the brief; a `rewrite-task` or `split-task` answer changes the brief itself; `ask-user` is the one question that asks you; `cannot` halts the brief with the seat's reason.
+4. If the run halts with `Needs you · T00N needs your answer`, read its `Question:` line. Type your answer in the composer and take **Try again**, or take `skip-current-task` or `end-run`.
 5. As a last resort, take `skip-current-task` and plan the remaining work in a new run.
 
 **Prevention:** Give the implementer a model that matches the brief's difficulty. There is no retry count or intermediate model to configure: `workflow.max_retries` and the `escalation` block are retired.

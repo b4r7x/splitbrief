@@ -304,46 +304,6 @@ describe('refreshAndPersistCode', () => {
     }
   });
 
-  it('keeps create on a Continue past a consult bound that replays the brief on its own files', async () => {
-    const projectDir = createTempDir('refresh-code-continue-create');
-    const sessionId = 'sess-refresh-continue-create';
-    ensureSessionDir(projectDir, sessionId);
-    try {
-      const task = makeTask({ action: 'create', suggestedFiles: ['src/x.ts'] });
-      mkdirSync(join(projectDir, 'src'), { recursive: true });
-      writeFileSync(join(projectDir, 'src', 'x.ts'), 'export const x = 1;\n');
-      const state = {
-        ...createInitialState('feature'),
-        phase: 'implementing' as const,
-        tasks: [task],
-        lineages: {
-          [task.id]: {
-            attempts: 3,
-            dispatchedRevision: {},
-            consultRecords: [],
-            replacedParents: [],
-            notes: [],
-            carriedFailure: 'expected 3 to be 4',
-          },
-        },
-      };
-
-      const result = await refreshAndPersistCode(
-        task,
-        { projectDir, sessionId },
-        state,
-        projectDir,
-        'dispatch',
-      );
-
-      expect(result.task.action).toBe('create');
-      expect(result.task.currentCode).toBe('export const x = 1;\n');
-      expect(loadState({ projectDir, sessionId })?.tasks[0]?.action).toBe('create');
-    } finally {
-      cleanupTempDir(projectDir);
-    }
-  });
-
   it('dispatches a brief whose anchor is gone as create', async () => {
     const projectDir = createTempDir('refresh-code-gone-anchor');
     const sessionId = 'sess-refresh-gone-anchor';

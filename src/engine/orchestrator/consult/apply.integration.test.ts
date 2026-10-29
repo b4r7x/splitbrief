@@ -363,8 +363,8 @@ describe('applyConsultAnswer', () => {
       }),
     );
     expect(result).toEqual({
-      action: 'failed',
-      reason: "The planner's question remains unanswered.",
+      action: 'unanswered',
+      question: expect.stringContaining('SPLITBRIEF asked the planner to fix T003'),
     });
     // The guard runs before the rollback: the attempt's write is still on disk.
     expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(ATTEMPT_GREET);
@@ -402,8 +402,8 @@ describe('applyConsultAnswer', () => {
       }),
     );
     expect(result).toEqual({
-      action: 'failed',
-      reason: "The reviewer's question remains unanswered.",
+      action: 'unanswered',
+      question: expect.stringContaining('SPLITBRIEF asked the reviewer to fix T003'),
     });
     expect(states).toHaveLength(0);
   });
@@ -439,8 +439,8 @@ describe('applyConsultAnswer', () => {
       }),
     );
     expect(result).toEqual({
-      action: 'failed',
-      reason: "The planner's question remains unanswered.",
+      action: 'unanswered',
+      question: expect.stringContaining('SPLITBRIEF asked the planner to fix T003'),
     });
     expect(states).toHaveLength(0);
   });
@@ -527,8 +527,8 @@ describe('applyConsultAnswer', () => {
       }),
     );
     expect(result).toEqual({
-      action: 'failed',
-      reason: "The planner's question remains unanswered.",
+      action: 'unanswered',
+      question: expect.stringContaining('SPLITBRIEF asked the planner to fix T003'),
     });
     // The guard runs before the rollback: the attempt's write is still on disk.
     expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(ATTEMPT_GREET);

@@ -3569,6 +3569,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-recovery-retry-exhausted',
       title: 'Workflow · a brief that could not be landed',
       surface: screenSurface('workflow'),
+      viewports: [
+        ...REQUIRED_VIEWPORTS,
+        viewport({ cols: 140, rows: 16 }),
+        viewport({ cols: 140, rows: 14 }),
+        viewport({ cols: 140, rows: 12 }),
+      ],
       checkpoint: {
         id: 'retry-exhausted',
         title: 'Retry-exhausted recovery menu',
@@ -3583,21 +3589,30 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-recovery-no-progress',
-      title: "Workflow · a brief the planner's answers did not move",
+      id: 'workflow-recovery-unanswered-question',
+      title: "Workflow · a planner's question nobody answered",
       surface: screenSurface('workflow'),
-      viewports: [
-        ...REQUIRED_VIEWPORTS,
-        viewport({ cols: 140, rows: 16 }),
-        viewport({ cols: 140, rows: 14 }),
-        viewport({ cols: 140, rows: 12 }),
-      ],
       checkpoint: {
-        id: 'no-progress',
-        title: 'No-progress recovery menu',
+        id: 'unanswered-question',
+        title: 'Recovery menu that shows the unanswered question',
         kind: 'question',
-        // At 60x18 the panel keeps the headline, the Task row and a mark that counts the cut lines.
-        marker: 'Needs you · T901 is stuck on the same failure',
+        marker: 'Needs you · T901 needs your answer',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-cannot',
+      title: 'Workflow · the planner says a brief cannot be done',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'cannot',
+        title: "Recovery menu that shows the planner's reason",
+        kind: 'question',
+        marker: 'Needs you · T901: the planner says it cannot be done',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3622,22 +3637,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-recovery-no-progress-note',
-      title: 'Workflow · a note typed beside the no-progress menu',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'no-progress-note',
-        title: 'No-progress menu with the composer focused',
-        kind: 'question',
-        marker: 'Needs you · T901 is stuck on the same failure',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'question-panel', title: 'Recovery menu panel' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-recovery-slash-draft',
       title: 'Workflow · a slash command typed beside the recovery menu',
       surface: screenSurface('workflow'),
@@ -3645,7 +3644,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'recovery-slash-draft',
         title: 'Recovery menu legend over a command draft',
         kind: 'question',
-        marker: 'Needs you · T901 is stuck on the same failure',
+        marker: 'Needs you · T901 failed',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
