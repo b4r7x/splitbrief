@@ -1,10 +1,14 @@
 import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ConsultAnswer } from '../../../core/schemas/consult.js';
+import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
 import { plannerFixWork, stuckConsult } from '../../../core/review/stuck.js';
+import { blockingRedInputs } from '../../../core/review/verdict.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
+import { nowIso } from '../../../utils/format-time.js';
+import { consultAnswerDetail } from '../../spec/prompts/consult.js';
 import { requestConsult } from '../consult/request.js';
 import { publishError } from '../events.js';
 import {
@@ -14,28 +18,57 @@ import {
 } from '../recovery/planner-call-failure.js';
 import { haltSeatProtocolError } from '../recovery/seat-protocol-halt.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { verifyClaimChecks } from '../triage.js';
 import type { WorkflowContext } from '../types.js';
 
 export type StuckReviewOutcome =
   | Readonly<{ kind: 'fix-work'; state: WorkflowState; fixWork: TriageResult }>
+  | Readonly<{ kind: 'accept'; state: WorkflowState; note: string }>
+  | Readonly<{ kind: 'cannot'; state: WorkflowState; reason: string }>
   | Readonly<{ kind: 'stopped'; state: WorkflowState }>
   | Readonly<{ kind: 'halted'; state: WorkflowState }>;
 
-/** What the planner reads about the stuck cycle: the blockers, the briefs that ran, the next ones. */
+/**
+ * What the planner reads about the stuck round: the blockers, or the criteria no check verified
+ * when none blocks, its own earlier answers on stuck reviews of this run, the briefs that ran, the
+ * red outputs and the reviewer's next fix briefs.
+ */
 function stuckFailingOutput(args: {
   state: WorkflowState;
-  cycle: number;
+  cycle: number | undefined;
   fixWork: TriageResult;
   inputs: readonly TriageInput[];
   blockers: readonly { id: string; text: string }[];
+  unverified: readonly string[];
 }): string {
   const blockerIds = new Set(args.blockers.map((blocker) => blocker.id));
+  const red = new Map(args.inputs.map((input) => [input.id, input]));
+  const earlier = Object.values(args.state.lineages ?? {})
+    .flatMap((lineage) => lineage.consultRecords)
+    .filter((record) => record.reason === 'no-progress')
+    .sort((a, b) => a.at.localeCompare(b.at));
   return [
-    'Blockers that did not move:',
-    ...args.blockers.map((blocker) => `${blocker.id}: ${blocker.text}`),
+    ...(args.blockers.length > 0
+      ? ['Blockers that did not move:']
+      : args.unverified.length > 0
+        ? [`Criteria no check verified: ${args.unverified.join(', ')}`]
+        : ['The review failed with no blocking finding.']),
+    ...args.blockers.map((blocker) => {
+      const checkIds = red.get(blocker.id)?.checkIds ?? [];
+      return `${blocker.id}: ${blocker.text}${checkIds.length === 0 ? '' : ` (checks ${checkIds.join(', ')})`}`;
+    }),
+    ...(earlier.length === 0
+      ? []
+      : [
+          'Your earlier answers on reviews without progress, oldest first:',
+          ...earlier.map(
+            (record) =>
+              `${record.taskId}: ${record.answer.answer.diagnosis}; ${consultAnswerDetail(record.answer)}`,
+          ),
+        ]),
     'Fix briefs that ran:',
     ...args.state.tasks
-      .filter((task) => task.fix?.cycle === args.cycle)
+      .filter((task) => args.cycle !== undefined && task.fix?.cycle === args.cycle)
       .map((task) => `${task.id}: ${task.title}`),
     ...args.inputs
       .filter((input) => blockerIds.has(input.id) && input.output !== undefined)
@@ -47,41 +80,62 @@ function stuckFailingOutput(args: {
 }
 
 /**
- * Asks the planner about a fix cycle whose review left the same blockers, on the cycle's last
- * fix brief (`stuckTarget`). The pending triage
- * keeps a marker while the call runs, so a stopped run asks again on continue; an answer the
- * run already recorded for this cycle is reused.
+ * Asks the planner about a review round that made no progress, on `target` (`stuckTarget`). The
+ * pending triage keeps a marker while the call runs, so a stopped run asks again on continue; an
+ * answer the run already recorded for this review is reused. A verify answer re-runs its checks
+ * here, past their stored results, so the next review reads the new ones.
  */
 export async function askPlannerOnStuckReview(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
   setTrackedState: (state: WorkflowState) => void;
-  cycle: number;
+  cycle: number | undefined;
   target: Task;
+  review: ReviewRecord;
   fixWork: TriageResult;
   inputs: readonly TriageInput[];
   blockers: readonly { id: string; text: string }[];
+  unverified: readonly string[];
 }): Promise<StuckReviewOutcome> {
-  const { wctx, cycle, target, fixWork, setTrackedState } = args;
-  const recorded = stuckConsult(args.state, cycle);
-  if (recorded !== undefined) {
-    return {
-      kind: 'fix-work',
-      state: args.state,
-      fixWork: plannerFixWork(fixWork, recorded.answer.answer),
-    };
-  }
-  let state = transitionAndSave(wctx, args.state, {
-    type: 'QUEUE_TRIAGE',
-    inputs: [...args.inputs],
-    plannerConsult: true,
-  });
-  setTrackedState(state);
+  const { wctx, cycle, target, review, fixWork, setTrackedState } = args;
+  const blockerIds = args.blockers.map((blocker) => blocker.id);
+  let state = args.state;
   const track = (next: WorkflowState): void => {
     state = next;
     setTrackedState(next);
   };
+  // A verify re-runs only the reds stored before its answer, so a continue reuses the reds the
+  // verify stored before a stop.
+  const follow = async (
+    answer: ConsultAnswer['answer'],
+    answeredAt: string,
+  ): Promise<StuckReviewOutcome> => {
+    switch (answer.action) {
+      case 'accept':
+        return { kind: 'accept', state, note: answer.note };
+      case 'cannot':
+        return { kind: 'cannot', state, reason: answer.reason };
+      case 'verify':
+        await verifyClaimChecks(
+          wctx,
+          state,
+          answer.checkIds,
+          review.preExistingChecks ?? [],
+          answeredAt,
+        );
+    }
+    return { kind: 'fix-work', state, fixWork: plannerFixWork(fixWork, answer, blockerIds) };
+  };
   try {
+    const recorded = stuckConsult(state, target, review.at);
+    if (recorded !== undefined) return await follow(recorded.answer.answer, recorded.at);
+    track(
+      transitionAndSave(wctx, state, {
+        type: 'QUEUE_TRIAGE',
+        inputs: [...args.inputs],
+        plannerConsult: true,
+      }),
+    );
     const consult = await requestConsult(
       {
         projectDir: wctx.projectDir,
@@ -104,8 +158,13 @@ export async function askPlannerOnStuckReview(args: {
           fixWork,
           inputs: args.inputs,
           blockers: args.blockers,
+          unverified: args.unverified,
         }),
-        reviewerFixWork: fixWork,
+        stuck: {
+          fixWork,
+          blockerIds,
+          redInputs: blockingRedInputs(args.inputs, fixWork).map((input) => input.id),
+        },
       },
     );
     if ('error' in consult) {
@@ -114,7 +173,7 @@ export async function askPlannerOnStuckReview(args: {
         state: await haltSeatProtocolError({ wctx, state, setTrackedState, error: consult.error }),
       };
     }
-    return { kind: 'fix-work', state, fixWork: plannerFixWork(fixWork, consult.answer.answer) };
+    return await follow(consult.answer.answer, nowIso());
   } catch (err) {
     if (isAbortError(err) || wctx.signal?.aborted) {
       const stopped = loadState(wctx) ?? state;

@@ -3378,6 +3378,9 @@ describe('consult answer rows', () => {
     ['split-task', [taskId('T006'), taskId('T007')], 'new fix briefs T006, T007'],
     ['guidance', [taskId('T006'), taskId('T007')], 'guidance for T006, T007'],
     ['ask-user', null, 'asks you'],
+    ['verify', null, 're-runs K1'],
+    ['accept', null, 'accepts the blockers: It is public API'],
+    ['cannot', null, 'says it cannot be done'],
   ] as const)('renders the planner answer to a stuck review as %s', (action, newTaskIds, words) => {
     const rows = rowsFor({
       type: 'consult_answered',
@@ -3389,6 +3392,8 @@ describe('consult answer rows', () => {
       action,
       diagnosis: 'The fix brief edits the wrong file.',
       newTaskIds: newTaskIds === null ? null : [...newTaskIds],
+      ...(action === 'verify' && { checkIds: ['K1'] }),
+      ...(action === 'accept' && { note: 'It is public API' }),
     });
 
     expect(rows.map(rowText)).toEqual([

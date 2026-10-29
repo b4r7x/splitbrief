@@ -6,6 +6,7 @@ import type { RunCheckpoint, RunRecord } from '../../../core/sessions/run-record
 import { awaitsApply, canUndoApply, type RunStatus } from '../../../core/sessions/run-status.js';
 import { oneLineDisplayText, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
+import { acceptedNote } from '../../../core/review/verdict.js';
 import { atRestRailStages } from '../at-rest.js';
 import {
   briefRows,
@@ -109,6 +110,8 @@ export interface SummaryView {
   review: ReviewView;
   /** The reviews that failed before the review of record, so a fix cycle leaves its trace. */
   failedReviews: readonly FailedReviewView[];
+  /** The failed review the user or the planner accepted as is, with the owner's note. */
+  accepted: Readonly<{ note: string | null }> | null;
   scope: ScopeView;
   quality: BriefQualitySummary | null;
   files: Readonly<{
@@ -167,6 +170,8 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     },
     review: reviewView(summary, state?.review?.preExistingChecks ?? []),
     failedReviews: failedReviewViews(ledger),
+    accepted:
+      state?.acceptedAsIs === undefined ? null : { note: acceptedNote(state.acceptedAsIs) ?? null },
     scope: scopeView(summary),
     quality: summary.briefQuality ?? null,
     files: { ...files, patch: savedPatch(state, files.changed) },

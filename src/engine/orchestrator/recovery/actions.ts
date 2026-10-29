@@ -1,5 +1,5 @@
 import { readReviewRecord } from '../../../core/review/store.js';
-import { reviewOutcomeOf } from '../../../core/review/verdict.js';
+import { openFindings, reviewOutcomeOf } from '../../../core/review/verdict.js';
 import { randomUUID } from 'node:crypto';
 import { phaseRole } from '../../../core/phases.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
@@ -312,18 +312,7 @@ function readCriticalFindings(
   state: WorkflowState,
 ): string[] {
   const review = state.review ?? readReviewRecord(ref);
-  if (review !== null && review !== undefined) {
-    const outcome = reviewOutcomeOf(review);
-    return [
-      ...outcome.blocking.map((finding) => finding.text),
-      ...outcome.criteria
-        .filter((criterion) => criterion.status !== 'pass')
-        .map(
-          (criterion) => `Criterion ${criterion.id}: ${criterion.status} — ${criterion.evidence}`,
-        ),
-      ...outcome.coverageErrors,
-    ];
-  }
+  if (review !== null && review !== undefined) return openFindings(reviewOutcomeOf(review));
   return state.applyReview?.failures ?? [];
 }
 

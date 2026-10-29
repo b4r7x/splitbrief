@@ -19,6 +19,8 @@ export interface ResultMenuInput {
   readonly confirming: boolean;
   /** The files the run changed, or null when it recorded no changed set. */
   readonly files: number | null;
+  /** The note of the Accept as is, named by who accepted it (`acceptedNote`). */
+  readonly note?: string | undefined;
 }
 
 export const RESULT_MENU_LEGEND = '↑↓ select · ⏎ confirm · tab type a command';
@@ -82,10 +84,11 @@ export function resultMenuFindingLines(findings: readonly string[], budget: numb
   return [...lines.slice(0, shown), `+${hidden} more ${pluralize(hidden, 'open finding')}`];
 }
 
-/** The rows the menu paints: the sheet, plus one row per open finding while it asks. */
+/** The rows the menu paints: the sheet, plus the note and one row per open finding while it asks. */
 export function resultMenuHeight(input: ResultMenuInput, cols: number): number {
   const sheet = stopMenuLayout(resultMenuRows(input), cols).height;
-  return input.confirming ? sheet + input.findings.length : sheet;
+  if (!input.confirming) return sheet;
+  return sheet + (input.note === undefined ? 0 : 1) + input.findings.length;
 }
 
 export function resultMenuTitle(input: ResultMenuInput): readonly ConversationRowSegment[] {

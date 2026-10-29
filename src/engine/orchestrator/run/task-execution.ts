@@ -448,6 +448,12 @@ export async function runTasksAndReview(
     };
   };
 
+  const completeRun = () => {
+    const summary = summaryNow();
+    callbacks.onComplete(summary);
+    return { summary, completed: true, state };
+  };
+
   // Each pass reviews the candidate and follows the answer. Fix tasks run before
   // the next gates; corrections and answers to that cycle's final review re-review
   // the same candidate.
@@ -463,8 +469,9 @@ export async function runTasksAndReview(
     });
     if (answered !== undefined) {
       state = answered.state;
-      if (answered.stopped) return stopHere();
-      if (!answered.reviewAgain) {
+      if (answered.next === 'stop') return stopHere();
+      if (answered.next === 'accepted') return completeRun();
+      if (answered.next === 'fix') {
         const stopped = await runFixTasks();
         if (stopped !== undefined) return stopped;
         continue;
@@ -555,9 +562,7 @@ export async function runTasksAndReview(
         review: 'passed',
         completedTasks: state.tasks.filter((task) => isTaskCompleted(task.status)).length,
       });
-      const summary = summaryNow();
-      callbacks.onComplete(summary);
-      return { summary, completed: true, state };
+      return completeRun();
     }
     const followed = await followReviewAnswer({
       wctx,
@@ -568,8 +573,9 @@ export async function runTasksAndReview(
       fixWork: review.fixWork,
     });
     state = followed.state;
-    if (followed.stopped) return stopHere();
-    if (followed.reviewAgain) continue;
+    if (followed.next === 'stop') return stopHere();
+    if (followed.next === 'accepted') return completeRun();
+    if (followed.next === 'review') continue;
 
     const stopped = await runFixTasks();
     if (stopped !== undefined) return stopped;

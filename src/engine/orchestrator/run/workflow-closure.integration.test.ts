@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -13,6 +14,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
+  cannotConsult,
   failedReviewVerdict,
   passingReviewVerdict,
   planFromTasks,
@@ -187,6 +189,8 @@ describe('workflow closure', () => {
         ...createInitialState('Review closure'),
         phase: 'final-review',
         ...(review === 'failed' && {
+          tasks: [makeTask({ id: 'T001', status: 'done' })],
+          currentTaskIndex: 1,
           fixCycles: { used: 2, notes: [], open: { cycle: 2 } },
           triage: [
             {
@@ -231,6 +235,9 @@ describe('workflow closure', () => {
               review === 'passed'
                 ? passingReviewVerdict(prompt)
                 : failedReviewVerdict(prompt, 'the closure fixture fails the review'),
+            undefined,
+            undefined,
+            () => cannotConsult(),
           ),
         }),
         _implementer: makeImplementer(),

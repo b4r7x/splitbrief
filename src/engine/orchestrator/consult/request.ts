@@ -10,7 +10,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { TriageResult } from '../../../core/schemas/review.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import { plannerFixWork } from '../../../core/review/stuck.js';
+import { plannerFixWork, stuckAnswerErrors } from '../../../core/review/stuck.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
@@ -36,7 +36,11 @@ import { askPlannerSession, type PlannerSessionTurn } from '../planner-session.j
 import { runReviewerCall } from '../review-call.js';
 import { runSeatCall, seatFailureFromError } from '../escalation/seat-wait.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
-import { planApprovesNpmScripts } from '../validation/run-checks.js';
+import {
+  checkRegistry,
+  enabledReviewChecks,
+  planApprovesNpmScripts,
+} from '../validation/run-checks.js';
 import {
   buildStageContext,
   type StageContext,
@@ -65,8 +69,17 @@ export type ConsultRequestInput = Readonly<{
   reason: ConsultReason;
   failingOutput: string;
   report?: ImplementerReport | null | undefined;
-  /** A stuck review's consult: the reviewer's next fix work, which the answer reshapes. */
-  reviewerFixWork?: TriageResult | undefined;
+  /**
+   * A stuck review's consult: the reviewer's next fix work, which the answer reshapes, the ids of
+   * the blockers that did not move, and the red checks and Apply conflicts that block.
+   */
+  stuck?:
+    | Readonly<{
+        fixWork: TriageResult;
+        blockerIds: readonly string[];
+        redInputs: readonly string[];
+      }>
+    | undefined;
 }>;
 
 export type ConsultOutcome =
@@ -99,13 +112,15 @@ export function consultSeat(task: Task, reason: ConsultReason): ConsultSeat {
  * plan command policy refuses or whose npm script no one adds, a `render` check that names no
  * scenario id or that the run cannot render, or a `test` check whose value is not one test file in
  * the workspace or in the files of the answer or of a pending task. A fix task's rewrite or split
- * never targets the user's own files the run left alone. Such an answer fails the schema and the
- * seat gets its one repair.
+ * never targets the user's own files the run left alone, and a stuck review's answer meets
+ * `stuckAnswerErrors`. Such an answer fails the schema and the seat gets its one repair.
  */
 function answerContract(
   task: Task,
   reason: ConsultReason,
+  stuck: ConsultRequestInput['stuck'],
   checks: {
+    known: ReadonlySet<string>;
     npmScriptsApproved: boolean;
     projectDir: string;
     renderCommand: string | undefined;
@@ -134,6 +149,9 @@ function answerContract(
         ...unconfiguredRenderCheckErrors(specChecks, checks.renderCommand),
         ...unresolvedTestCheckErrors(specs, checks.testChecks, checks.pendingFiles),
         ...fixTaskTargetErrors(specs, checks.userFiles),
+        ...(stuck === undefined
+          ? []
+          : stuckAnswerErrors(value.answer, { ...stuck, knownChecks: checks.known })),
       ]) {
         ctx.addIssue({ code: 'custom', message });
       }
@@ -142,13 +160,18 @@ function answerContract(
 }
 
 /**
- * The user's own files the run left alone, which a fix task never targets. A plan task keeps no
- * files out, and neither does an older run that recorded no files changed when it started: the
- * final review refuses that run with its own error.
+ * The user's own files the run left alone, which a fix task never targets. The answer's specs are
+ * fix tasks when the task is one or when a stuck review asks, whatever its target. A plan task's
+ * consult keeps no files out, and neither does an older run that recorded no files changed when it
+ * started: the final review refuses that run with its own error.
  */
-async function consultUserFiles(ctx: ConsultContext, task: Task): Promise<ReadonlySet<string>> {
+async function consultUserFiles(
+  ctx: ConsultContext,
+  input: ConsultRequestInput,
+): Promise<ReadonlySet<string>> {
   const baseline = ctx.state.changedFilesBaseline;
-  if (task.fix === undefined || baseline?.runStartChangedFiles === undefined) return new Set();
+  if (input.task.fix === undefined && input.stuck === undefined) return new Set();
+  if (baseline?.runStartChangedFiles === undefined) return new Set();
   return runUserFiles(
     await resolveRunUniverse({
       workspaceDir: ctx.workspaceDir,
@@ -239,11 +262,14 @@ function answerTaskIds(
   input: ConsultRequestInput,
   answer: ConsultAnswer,
 ): TaskId[] | null {
+  const action = answer.answer;
   const count =
-    input.reviewerFixWork !== undefined
-      ? plannerFixWork(input.reviewerFixWork, answer.answer).fixTasks.length
-      : answer.answer.action === 'split-task'
-        ? answer.answer.tasks.length
+    input.stuck !== undefined
+      ? action.action === 'accept' || action.action === 'cannot'
+        ? 0
+        : plannerFixWork(input.stuck.fixWork, action, input.stuck.blockerIds).fixTasks.length
+      : action.action === 'split-task'
+        ? action.tasks.length
         : 0;
   return count === 0 ? null : nextTaskIds(state.tasks, count);
 }
@@ -266,10 +292,11 @@ function publishAnswer(
       diagnosis: answer.answer.diagnosis,
       newTaskIds: answerTaskIds(state, input, answer),
       ...(answer.answer.action === 'rewrite-task' &&
-        input.reviewerFixWork === undefined && {
+        input.stuck === undefined && {
           revision: (input.task.revision ?? 1) + 1,
         }),
       ...(answer.answer.action === 'verify' && { checkIds: answer.answer.checkIds }),
+      ...(answer.answer.action === 'accept' && { note: answer.answer.note }),
     },
   );
 }
@@ -294,7 +321,14 @@ export async function requestConsult(
   const seat = consultSeat(input.task, input.reason);
   const diff = await taskDiff(ctx.workspaceDir, ctx.state, input.task, ref);
   const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir, seat);
-  const contract = answerContract(input.task, input.reason, {
+  const contract = answerContract(input.task, input.reason, input.stuck, {
+    known: new Set(
+      checkRegistry({
+        plan: ctx.state.plan,
+        tasks: ctx.state.tasks,
+        reviewChecks: enabledReviewChecks(ctx.config, ctx.state.reviewChecks),
+      }).keys(),
+    ),
     npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),
     projectDir: ctx.workspaceDir,
     renderCommand: ctx.config.validation.render,
@@ -307,7 +341,7 @@ export async function requestConsult(
     pendingFiles: ctx.state.tasks
       .filter((task) => task.status === 'pending' && task.id !== input.task.id)
       .flatMap((task) => task.suggestedFiles),
-    userFiles: await consultUserFiles(ctx, input.task),
+    userFiles: await consultUserFiles(ctx, input),
   });
   const onCallEvent = (event: RunnerCallEvent): void =>
     publishRunnerCallEvent(

@@ -88,6 +88,7 @@ const verdict = {
 };
 /** One line of the review prompt's Pending Inputs section per red reviewer check input. */
 const PENDING_INPUT = /^- \*\*(\S+)\*\* \(check · defect\)/gm;
+const CANNOT = 'V1 names no spec file, and no fix brief can add one.';
 
 type Answer = 'reject' | 'verify';
 type Call = { kind: string; inputs?: string[]; prompt?: string };
@@ -150,6 +151,9 @@ if (prompt.includes('# Choose the checks for this review')) {
   } else {
     answer.verify = inputs.map((findingId) => ({ findingId, checkIds: ['V1'] }));
   }
+} else if (/^# Consult on a failing task$/m.test(prompt)) {
+  call = { kind: 'consult' };
+  answer = { answer: { diagnosis: 'The red check predates the run', action: 'cannot', reason: ${JSON.stringify(CANNOT)} } };
 } else if (prompt.includes('# Plan the change')) {
   call = { kind: 'plan' };
   answer = ${JSON.stringify({ result: plan })};
@@ -285,6 +289,7 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
       'final-review',
       'review-checks',
       'final-review',
+      'consult',
     ]);
 
     const reviews = events.filter(
@@ -316,6 +321,7 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
       reason: 'review-failed',
       availableActions: ['revise', 'end-run'],
     });
+    expect(state.pendingRecovery?.details?.[0]).toBe(`Planner said: ${CANNOT}`);
     expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('open');
   });
 });

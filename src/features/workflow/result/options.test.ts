@@ -169,6 +169,21 @@ describe('resultMenuHeight', () => {
     );
     expect(resultMenuHeight(input, 120)).toBe(stopMenuLayout(resultMenuRows(input), 120).height);
   });
+
+  it('adds one row for the note while it asks', () => {
+    const asking = {
+      override: true,
+      findings: ['missing null check'],
+      note: "Planner's note: the error type is public API",
+      confirming: true,
+      files: 4,
+    };
+    expect(resultMenuHeight(asking, 120)).toBe(
+      stopMenuLayout(resultMenuRows(asking), 120).height + 2,
+    );
+    const menu = { ...asking, confirming: false };
+    expect(resultMenuHeight(menu, 120)).toBe(stopMenuLayout(resultMenuRows(menu), 120).height);
+  });
 });
 
 describe('resultMenuTitle', () => {

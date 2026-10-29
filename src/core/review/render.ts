@@ -8,13 +8,15 @@ const PRE_EXISTING_LEAD =
 
 /**
  * `preExistingChecks` are the reviewer checks that were red at the run base too; `setAside` are the
- * red inputs the reviewer rejected with a reason.
+ * red inputs the reviewer rejected with a reason; `plannerNote` is the note the planner accepted a
+ * stuck review's blockers with.
  */
 export function renderReviewMarkdown(
   verdict: ReviewVerdict,
   outcome: ReviewOutcome,
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
   setAside: readonly SetAside[],
+  plannerNote?: string,
 ): string {
   const word = reviewOutcomeWord(outcome);
   const lines = ['### Verdict', '', word, '', '### Tasks', ''];
@@ -50,6 +52,9 @@ export function renderReviewMarkdown(
   if (setAside.length > 0) {
     lines.push('', '**Set aside**', '');
     for (const entry of setAside) lines.push(`- ${setAsideLine(entry)}`);
+  }
+  if (plannerNote !== undefined) {
+    lines.push('', '**Accepted by the planner**', '', plannerNote.trim());
   }
   lines.push('', '**Note**', '');
   if (outcome.minor.length === 0 && outcome.outOfScope.length === 0) {

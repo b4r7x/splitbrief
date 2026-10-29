@@ -16,7 +16,7 @@ import {
 } from '../../../core/crew/identity.js';
 import { formatScoreSummaryParts } from '../../../core/formatting.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { arrowSep } from '../../../core/separators.js';
+import { arrowSep, SOFT_SEP } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format-time.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { formatFindingCounts } from '../../../core/review/verdict.js';
@@ -77,6 +77,7 @@ export interface BriefRowParts {
 export function runRows(view: SummaryView): RunRow[] {
   const rows: RunRow[] = [
     { label: 'Review', seat: 'review', segments: reviewSegments(view.review) },
+    ...acceptedRows(view.accepted),
     ...preExistingRows(view.review),
     ...failedReviewRows(view.failedReviews),
   ];
@@ -156,6 +157,14 @@ function reviewSegments(review: ReviewView): CopySegment[] {
     });
   }
   return segments;
+}
+
+/** The accept as is under the failed review, with the owner's note wrapped under its text. */
+function acceptedRows(accepted: SummaryView['accepted']): RunRow[] {
+  if (accepted === null) return [];
+  const text =
+    accepted.note === null ? 'Accepted as is' : `Accepted as is${SOFT_SEP}${accepted.note}`;
+  return [{ label: '', segments: [{ text: `  ${text}`, tone: 'text' }], hang: 2 }];
 }
 
 /**

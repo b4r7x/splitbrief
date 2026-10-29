@@ -46,6 +46,12 @@ const CannotActionSchema = z.object({
   reason: z.string(),
 });
 
+const AcceptActionSchema = z.object({
+  ...diagnosis,
+  action: z.literal('accept'),
+  note: z.string(),
+});
+
 export const ConsultAnswerSchema = z.object({
   answer: z.union([
     GuidanceActionSchema,
@@ -54,24 +60,22 @@ export const ConsultAnswerSchema = z.object({
     VerifyActionSchema,
     AskUserActionSchema,
     CannotActionSchema,
+    AcceptActionSchema,
   ]),
 });
 export type ConsultAnswer = z.infer<typeof ConsultAnswerSchema>;
 
 /**
- * The answer schema of one consult on the task. A stuck review takes no `verify` and no `cannot`,
- * and its split replaces the reviewer's next fix briefs, so a subtask may take one there.
+ * The answer schema of one consult on the task. Only a stuck review takes `accept`, and its split
+ * replaces the reviewer's next fix briefs, so a subtask may take one there.
  */
 export function consultAnswerSchemaFor(task: Task, reason: ConsultReason) {
   return ConsultAnswerSchema.superRefine((value, ctx) => {
-    if (
-      (value.answer.action === 'verify' || value.answer.action === 'cannot') &&
-      reason === 'no-progress'
-    ) {
+    if (value.answer.action === 'accept' && reason !== 'no-progress') {
       ctx.addIssue({
         code: 'custom',
         path: ['answer', 'action'],
-        message: 'a stuck review takes guidance, rewrite-task, split-task or ask-user',
+        message: 'only a stuck review takes accept',
       });
     }
     if (value.answer.action === 'rewrite-task' && value.answer.task.id !== task.id) {

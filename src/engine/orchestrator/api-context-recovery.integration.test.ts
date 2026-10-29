@@ -15,6 +15,7 @@ import {
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import {
+  cannotConsult,
   failedReviewVerdict,
   passingReviewVerdict,
   planFromTasks,
@@ -278,6 +279,9 @@ async function review(opts: {
         const reply = replies[Math.min(reviewCalls - 1, replies.length - 1)] ?? PASS_REVIEW;
         return reply(prompt);
       },
+      undefined,
+      undefined,
+      () => cannotConsult(),
     ),
   });
   const implementer = makeImplementer();

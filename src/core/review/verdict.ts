@@ -168,6 +168,27 @@ export function reviewOutcomeOf(record: ReviewRecord): ReviewOutcome {
   );
 }
 
+/** The problems an Accept as is leaves open: each blocker, each criterion short of a pass, each coverage error. */
+export function openFindings(outcome: ReviewOutcome): string[] {
+  return [
+    ...outcome.blocking.map((finding) => finding.text),
+    ...outcome.redInputs.map((input) => `${input.id}: ${input.text}`),
+    ...outcome.criteria
+      .filter((criterion) => criterion.status !== 'pass')
+      .map((criterion) => `Criterion ${criterion.id}: ${criterion.status} — ${criterion.evidence}`),
+    ...outcome.coverageErrors,
+  ];
+}
+
+/** The note an Accept as is carries, on one line and named by who accepted: the planner, else you. */
+export function acceptedNote(
+  accepted: Readonly<{ note?: string | undefined; by?: 'planner' | undefined }>,
+): string | undefined {
+  if (accepted.note === undefined) return undefined;
+  const owner = accepted.by === 'planner' ? "Planner's note" : 'Your note';
+  return `${owner}: ${oneLineDisplayText(accepted.note)}`;
+}
+
 export function reviewOutcomeWord(outcome: ReviewOutcome): 'pass' | 'pass_with_notes' | 'fail' {
   return outcome.kind === 'pass-with-notes' ? 'pass_with_notes' : outcome.kind;
 }

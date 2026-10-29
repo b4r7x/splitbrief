@@ -663,10 +663,15 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
     ]);
   });
 
-  it('a run accepted as is in a workspace ends ready to apply as an override', async () => {
+  it('a run the planner accepted as is in a workspace ends ready to apply as an override and exits 1', async () => {
     const { projectDir, sessionId } = seedFinishedSession('ready-override', {
       reviewStatus: 'failed',
-      acceptedAsIs: { at: '2026-09-01T00:00:00.000Z', findings: ['F1'] },
+      acceptedAsIs: {
+        at: '2026-09-01T00:00:00.000Z',
+        findings: ['F1'],
+        note: 'The old error type is public API',
+        by: 'planner',
+      },
       workspace: {
         kind: 'worktree',
         path: '/nonexistent/splitbrief-ready-workspace',
@@ -674,10 +679,12 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
       },
     });
 
-    await runHeadless({
-      prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'finish me' }),
-    });
+    const error = await runAndCatch(projectDir, sessionId);
 
+    expect(error).toMatchObject({
+      exitCode: 1,
+      message: 'Final review failed with 0 blocking findings; see review.md',
+    });
     expect(records()).toEqual([
       {
         type: 'ready_to_apply',
@@ -686,11 +693,17 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
         applyCommand: `splitbrief continue ${sessionId} --action apply`,
         discardCommand: `splitbrief continue ${sessionId} --action discard`,
       },
+      {
+        type: 'final_review_failed',
+        sessionId,
+        blocking: 0,
+        accepted: { by: 'planner', note: 'The old error type is public API' },
+      },
     ]);
   });
 
   it.each(['checkout', 'no-workspace'] as const)(
-    'a %s run accepted as is exits 0 and keeps its failed review',
+    'a %s run accepted as is exits 1 and keeps its failed review',
     async (kind) => {
       const { projectDir, sessionId } = seedFinishedSession(`accepted-${kind}`, {
         reviewStatus: 'failed',
@@ -703,11 +716,12 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
           },
         }),
       });
-      await runHeadless({
-        prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'finish me' }),
-      });
+      const error = await runAndCatch(projectDir, sessionId);
+      expect(error).toMatchObject({ exitCode: 1 });
       expect(loadState({ projectDir, sessionId })?.reviewStatus).toBe('failed');
-      expect(records()).toEqual([]);
+      expect(records()).toEqual([
+        { type: 'final_review_failed', sessionId, blocking: 0, accepted: { by: 'user' } },
+      ]);
     },
   );
 

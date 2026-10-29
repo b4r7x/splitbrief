@@ -92,13 +92,23 @@ describe('ConsultAnswerSchema', () => {
     ]);
   });
 
-  it('takes a cannot answer on a failed brief and refuses it on a stuck review', () => {
+  it('takes cannot and verify on a failed brief and on a stuck review', () => {
     const task = makeTask({ id: 'T003' });
     const cannot = answer({ action: 'cannot', reason: 'The SDK has no payment API.' });
-    expect(consultAnswerSchemaFor(task, 'failed').safeParse(cannot).success).toBe(true);
-    const refused = consultAnswerSchemaFor(task, 'no-progress').safeParse(cannot);
+    const verify = answer({ action: 'verify', checkIds: ['K1'], reason: 'K1 may be a flake' });
+    for (const reason of ['failed', 'no-progress'] as const) {
+      expect(consultAnswerSchemaFor(task, reason).safeParse(cannot).success).toBe(true);
+      expect(consultAnswerSchemaFor(task, reason).safeParse(verify).success).toBe(true);
+    }
+  });
+
+  it('takes accept only on a stuck review', () => {
+    const task = makeTask({ id: 'T003' });
+    const accept = answer({ action: 'accept', note: 'The old error type is public API' });
+    expect(consultAnswerSchemaFor(task, 'no-progress').safeParse(accept).success).toBe(true);
+    const refused = consultAnswerSchemaFor(task, 'failed').safeParse(accept);
     expect(refused.error?.issues.map((issue) => issue.message)).toEqual([
-      'a stuck review takes guidance, rewrite-task, split-task or ask-user',
+      'only a stuck review takes accept',
     ]);
   });
 

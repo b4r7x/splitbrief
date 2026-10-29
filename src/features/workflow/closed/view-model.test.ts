@@ -246,6 +246,28 @@ describe('a run with a workspace', () => {
     ).toMatchObject({ preExisting: [] });
   });
 
+  it("carries the accept as is and its owner's note from the run's state", () => {
+    const state = makeWorkflowState({
+      phase: 'complete',
+      workspace: WORKSPACE,
+      reviewStatus: 'failed',
+      acceptedAsIs: {
+        at: CLOSED_AT,
+        findings: ['F1'],
+        note: 'The old error type is public API',
+        by: 'planner',
+      },
+    });
+    const view = derive(readySummary({ changedFiles: CHANGED }), {
+      status: { kind: 'closed', as: 'applied' },
+      hydration: { kind: 'loaded', state },
+    });
+    expect(view.accepted).toEqual({ note: "Planner's note: The old error type is public API" });
+    expect(
+      derive(readySummary(), { hydration: workspaceHydration('complete') }).accepted,
+    ).toBeNull();
+  });
+
   function undoneRecord(conflicts: string[]): Partial<Omit<RunRecord, 'summary'>> {
     const state = makeWorkflowState({
       phase: 'complete',

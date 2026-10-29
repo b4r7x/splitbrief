@@ -8,6 +8,7 @@ import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import { error, matches } from '../../../utils/error.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { oneLineDisplayText } from '../../../utils/display-text.js';
+import { acceptedNote } from '../../../core/review/verdict.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import {
@@ -143,13 +144,13 @@ function askOverrideConfirmation(input: ApplyInput): ApplyResult | undefined {
     return undefined;
   }
   const findings = accepted.findings.map(oneLineDisplayText);
-  const note = accepted.note === undefined ? undefined : oneLineDisplayText(accepted.note);
+  const note = acceptedNote(accepted);
   const clause = (text: string): string => text.replace(/\.$/, '');
   const sentence = (text: string): string => (/[.!?]$/.test(text) ? text : `${text}.`);
   publishWarning({
     bus: wctx.bus,
     phase: state.phase,
-    message: `Run accepted as is with ${countNoun(findings.length, 'open finding')}: ${sentence(findings.map(clause).join('; '))}${note === undefined ? '' : ` Your note: ${sentence(note)}`} No review checked them; Apply needs one confirmation (/run accept confirm).`,
+    message: `Run accepted as is with ${countNoun(findings.length, 'open finding')}: ${sentence(findings.map(clause).join('; '))}${note === undefined ? '' : ` ${sentence(note)}`} No review checked them; Apply needs one confirmation (/run accept confirm).`,
     safety: { category: 'recovery', code: 'apply_override_unconfirmed' },
   });
   return { outcome: 'needs-confirmation', state };

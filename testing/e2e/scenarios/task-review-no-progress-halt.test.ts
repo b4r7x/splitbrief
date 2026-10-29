@@ -54,6 +54,7 @@ const finding = {
   checkIds: null,
 };
 const DIAGNOSIS = 'The type test never reaches the alpha value.';
+const CANNOT = 'The type test needs a decision on what alpha exports.';
 const testSource = (actual: string, expected: string): string =>
   `import { strict as assert } from 'node:assert';\nimport { alpha } from './alpha.mjs';\nassert.equal(${actual}, ${expected});\n`;
 const writes = {
@@ -96,7 +97,7 @@ describe('e2e: a task review halt', () => {
     vi.stubEnv('NODE_OPTIONS', `--import=${offlinePath}`);
     // Every task review fails on F1 with a new fix brief; the first starts a fix cycle, the second
     // finds F1 still open and asks the planner, whose guidance goes with the next fix brief; the
-    // third finds F1 open after the planner's round and halts.
+    // third finds F1 open after the planner's round and asks it again, and it answers cannot.
     writeFileSync(
       plannerPath,
       `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
@@ -119,14 +120,16 @@ if (prompt.includes('# Task Implementation Review')) {
     fixTasks: [{ ...fix, findingIds: ['F1'] }],
   };
 } else if (/^# Consult on a failing task$/m.test(prompt)) {
-  answer = {
-    answer: {
-      diagnosis: ${JSON.stringify(DIAGNOSIS)},
-      action: 'guidance',
-      instructions: 'Import alpha in the type test.',
-      context: null,
-    },
-  };
+  answer = prompt.includes('Your earlier answers on reviews without progress')
+    ? { answer: { diagnosis: ${JSON.stringify(DIAGNOSIS)}, action: 'cannot', reason: ${JSON.stringify(CANNOT)} } }
+    : {
+        answer: {
+          diagnosis: ${JSON.stringify(DIAGNOSIS)},
+          action: 'guidance',
+          instructions: 'Import alpha in the type test.',
+          context: null,
+        },
+      };
 } else if (prompt.includes('# Plan the change')) {
   answer = ${JSON.stringify({ result: plan })};
 } else {
@@ -196,7 +199,7 @@ console.log('Implemented ' + title);
       reason: 'review-failed',
       message: 'Review T003 made no progress on F1 after fix cycle 2',
       availableActions: ['revise', 'end-run'],
-      details: [`Planner: ${DIAGNOSIS}`, `Reviewer: F1: ${finding.text}`],
+      details: [`Planner said: ${CANNOT}`],
     });
     if (state.pendingRecovery === undefined) throw new Error('Missing halt');
     expect(formatRecoveryHeadline(state.pendingRecovery)).toBe(

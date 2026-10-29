@@ -177,7 +177,18 @@ function failIfFinalReviewFailed(
 ): void {
   if (state?.reviewStatus !== 'failed') return;
   const blocking = readSession({ projectDir, sessionId })?.summary?.review?.critical ?? 0;
-  writeRecord({ type: 'final_review_failed', sessionId, blocking });
+  const accepted = state.acceptedAsIs;
+  writeRecord({
+    type: 'final_review_failed',
+    sessionId,
+    blocking,
+    ...(accepted !== undefined && {
+      accepted: {
+        by: accepted.by ?? 'user',
+        ...(accepted.note !== undefined && { note: accepted.note }),
+      },
+    }),
+  });
   throw cliError(
     `${reviewFailedCause(reviewName({ scope: 'final' }), blocking)}; see review.md`,
     1,
@@ -477,11 +488,14 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   const finalState = loadOwnedState({ projectDir, sessionId });
   await publishHandoffNotice(finalState);
   emitRecoveryAndFailIfPending({ state: finalState, sessionId, writeRecord });
-  if (emitReadyToApply(finalState, sessionId, writeRecord)) return;
+  // A review accepted as is keeps its failed verdict: the run is ready to apply or closed, and the
+  // exit still says the review failed.
+  const ready = emitReadyToApply(finalState, sessionId, writeRecord);
+  failIfFinalReviewFailed(finalState, projectDir, sessionId, writeRecord);
+  if (ready) return;
   const status =
     finalState === null ? null : deriveRunStatus({ state: finalState, liveness: 'not-alive' });
   if (status?.kind === 'closed' && status.as === 'complete') return;
-  failIfFinalReviewFailed(finalState, projectDir, sessionId, writeRecord);
   failIfSessionFailed(finalState, sessionId, writeRecord, lastError);
   failIfFinalReviewIncomplete(finalState, sessionId, writeRecord);
   failIfSessionInterrupted(projectDir, sessionId, writeRecord);

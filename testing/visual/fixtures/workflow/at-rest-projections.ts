@@ -1267,6 +1267,32 @@ const READY_OVERRIDE_MULTILINE = record({
   ledger: READY_LEDGER,
 });
 
+const PLANNER_ACCEPT_NOTE =
+  'Re-validating on each keystroke is the documented form behaviour; the retired code is kept for old clients.';
+
+/** The planner accepted the blockers of a review without progress: the confirmation names its note. */
+const READY_PLANNER_ACCEPT = record({
+  sessionId: 'visual-ready-planner-accept',
+  status: READY_OVERRIDE.status,
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'failed',
+    acceptedAsIs: {
+      at: GENERATED_AT,
+      findings: [
+        'src/form.ts re-validates on every keystroke',
+        'docs/validation-errors.md names a retired code',
+      ],
+      note: PLANNER_ACCEPT_NOTE,
+      by: 'planner',
+    },
+    workspace: RUN_WORKSPACE,
+  }),
+  summary: workspaceSummary('visual-ready-planner-accept'),
+  ledger: READY_LEDGER,
+});
+
 /** The transcript names each brief's action the way the saved task the closed block reads names it. */
 function savedAction(state: WorkflowState, id: string): Task['action'] {
   const task = state.tasks.find((item) => item.id === id);
@@ -1344,6 +1370,28 @@ const READY_OVERRIDE_LOG: readonly EngineEvent[] = READY_LOG.map((event) =>
     : event.type === 'workflow_complete'
       ? { ...event, review: 'failed', blocking: 2 }
       : event,
+);
+
+/** The planner's accept stands in the transcript between the failed review and the run's end. */
+const READY_PLANNER_ACCEPT_LOG: readonly EngineEvent[] = READY_OVERRIDE_LOG.flatMap(
+  (event): EngineEvent[] =>
+    event.type === 'workflow_complete'
+      ? [
+          {
+            type: 'consult_answered',
+            ts: event.ts,
+            phase: 'final-review',
+            taskId: BRIEFS.routeTests.id,
+            reason: 'no-progress',
+            seat: 'plan',
+            action: 'accept',
+            diagnosis: 'Both findings restate behaviour the plan keeps on purpose.',
+            newTaskIds: null,
+            note: PLANNER_ACCEPT_NOTE,
+          },
+          event,
+        ]
+      : [event],
 );
 
 /** The review passed and both sides changed two entries differently: the run waits at Apply. */
@@ -1715,6 +1763,48 @@ const CLOSED_NEEDS_ATTENTION = record({
   }),
   summary: NEEDS_ATTENTION_SUMMARY,
   ledger: NEEDS_ATTENTION_LEDGER,
+});
+
+const PLANNER_ACCEPT_PACKET = reviewPacket({
+  sessionId: 'visual-closed-planner-accept',
+  verdict: 'fail',
+  counts: { critical: 2, warning: 1, note: 0 },
+  driftPassed: false,
+  tasks: 3,
+});
+
+/** A checkout run the planner accepted at a review without progress: it closed with the note. */
+const CLOSED_PLANNER_ACCEPT = record({
+  sessionId: 'visual-closed-planner-accept',
+  status: { kind: 'closed', as: 'complete' },
+  state: savedState({
+    phase: 'complete',
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'escalated' },
+      { id: BRIEFS.routeTests.id, status: 'done' },
+    ],
+    reviewStatus: 'failed',
+    acceptedAsIs: {
+      at: GENERATED_AT,
+      findings: [
+        'src/form.ts re-validates on every keystroke',
+        'docs/validation-errors.md names a retired code',
+      ],
+      note: PLANNER_ACCEPT_NOTE,
+      by: 'planner',
+    },
+  }),
+  summary: {
+    ...NEEDS_ATTENTION_SUMMARY,
+    reviewPacket: PLANNER_ACCEPT_PACKET,
+    review: legacyReview(PLANNER_ACCEPT_PACKET),
+  },
+  ledger: {
+    ...NEEDS_ATTENTION_LEDGER,
+    sessionId: 'visual-closed-planner-accept',
+    finalReview: { path: packetMarkdownPath('visual-closed-planner-accept'), status: 'written' },
+  },
 });
 
 const CLOSED_ENDED = record({
@@ -2919,6 +3009,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-ready-override-confirm',
     route: { record: READY_OVERRIDE_MULTILINE, log: READY_OVERRIDE_LOG },
   }),
+  atRestProjection({
+    id: 'workflow-ready-planner-accept-confirm',
+    route: { record: READY_PLANNER_ACCEPT, log: READY_PLANNER_ACCEPT_LOG },
+  }),
   atRestProjection({ id: 'workflow-closed-applied', route: { record: CLOSED_APPLIED } }),
   atRestProjection({
     id: 'workflow-closed-pre-existing',
@@ -2937,6 +3031,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-closed-complete-needs-attention',
     route: { record: CLOSED_NEEDS_ATTENTION },
+  }),
+  atRestProjection({
+    id: 'workflow-closed-planner-accept',
+    route: { record: CLOSED_PLANNER_ACCEPT },
   }),
   atRestProjection({
     id: 'workflow-closed-rejected',

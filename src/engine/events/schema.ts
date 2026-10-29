@@ -614,6 +614,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     newTaskIds: taskIdArray.nullable(),
     revision: z.number().int().optional(),
     checkIds: z.array(z.string()).optional(),
+    /** The planner's note when it accepts a stuck review's blockers. */
+    note: z.string().optional(),
     /** Written by runs before decisions went to the ledger; read only to replay them. */
     decisionCount: z.number().int().nonnegative().optional(),
     /** Written by runs before decisions went to the ledger; read only to replay them. */

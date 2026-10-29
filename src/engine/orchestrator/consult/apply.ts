@@ -445,6 +445,8 @@ export async function applyConsultAnswer(
       return applyAskUser(ctx, task, action);
     case 'cannot':
       return { action: 'cannot', reason: action.reason };
+    case 'accept':
+      throw error('consult-accept', 'Only a stuck review takes an accept answer.');
     default:
       return assertNever(action);
   }
