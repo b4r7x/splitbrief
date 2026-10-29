@@ -491,6 +491,91 @@ describe('createImplementerBase — typed implementer report', () => {
     }
   });
 
+  it('warns when the reply ends with a report that has no status it knows, and only then', async () => {
+    const warningsFor = async (text: string) => {
+      const { bus, events } = makeBusRecorder();
+      const invoke = vi
+        .fn()
+        .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text, usage: null }));
+      const implementer = createImplementerBase(
+        makeBaseConfig({ extractsCode: false, invoke, publisher: createImplementerPublisher(bus) }),
+      );
+      await implementer.implement({
+        task: makeTask({ id: 'T006' }),
+        projectDir,
+        config: makeConfig(),
+        context: defaultContext,
+        onOutput: vi.fn(),
+        phase: 'implementing',
+      });
+      return events.filter((event) => event.type === 'warning');
+    };
+
+    expect(await warningsFor('done, no report')).toEqual([]);
+    for (const report of [
+      { filesChanged: ['src/hello.ts'], notes: null },
+      { status: 'finished', filesChanged: ['src/hello.ts'] },
+    ]) {
+      expect(await warningsFor(`I wrote the module.\n${JSON.stringify(report)}`)).toEqual([
+        expect.objectContaining({
+          taskId: 'T006',
+          message:
+            'Task T006: the implementer report has no "done" or "blocked" status, so SPLITBRIEF did not read it.',
+          category: 'implementer',
+          code: 'implementer_report_unread',
+        }),
+      ]);
+    }
+  });
+
+  it('routes a blocked report with a bad field to the blocked path, and names the field', async () => {
+    const { bus, events } = makeBusRecorder();
+    const detectChanges = vi.fn().mockResolvedValue({ changed: true, output: '' });
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: `I need the store.\n${JSON.stringify({
+          status: 'blocked',
+          question: 'Which store should the cache use?',
+          filesNeeded: 'src/store.ts',
+        })}`,
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        detectChanges,
+        invoke,
+        publisher: createImplementerPublisher(bus),
+      }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask({ id: 'T007' }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.blocked).toEqual({
+      question: 'Which store should the cache use?',
+      filesNeeded: [],
+    });
+    expect(detectChanges).not.toHaveBeenCalled();
+    expect(events.filter((event) => event.type === 'warning')).toEqual([
+      expect.objectContaining({
+        taskId: 'T007',
+        message:
+          'Task T007: the implementer report did not match its contract in filesNeeded; SPLITBRIEF kept the other fields.',
+        code: 'implementer_report_field_dropped',
+      }),
+    ]);
+  });
+
   it('keeps the valid fields of a report a weak model shaped wrong, and names the dropped field once', async () => {
     const { bus, events } = makeBusRecorder();
     const report = {
