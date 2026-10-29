@@ -18,6 +18,7 @@ import { makeImplState } from '../../../helpers/factories/workflow-state.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { VISUAL_WORKFLOW_SESSION_ID } from '../screen-fixtures.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
+import { reviewChangeFile } from '../../../../src/core/paths.js';
 
 function publishedEvents(ts: number, publish: (bus: EventBus) => void): EngineEvent[] {
   const bus = createEventBus();
@@ -93,10 +94,8 @@ export const reviewPromptTooLargeRecoveryIssue: RecoveryIssue =
       kind: 'input-too-large',
       figures: { unit: 'characters', size: 1_106_026, limit: 1_048_576 },
       promptSize: { characters: 1_106_026 },
-      largestFiles: [
-        { path: 'src/generated/schema.ts', chars: 812_400 },
-        { path: 'src/math.ts', chars: 4_210 },
-      ],
+      changeFile: reviewChangeFile(VISUAL_WORKFLOW_SESSION_ID),
+      workspaceDir: `/state/splitbrief/trees/3f9a1c07b2de/${VISUAL_WORKFLOW_SESSION_ID}`,
     },
     tool: 'OpenAI Codex CLI',
     acceptAsIs: true,

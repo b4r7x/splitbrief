@@ -37,12 +37,12 @@ import {
 
 export const REVIEW_PACKET_VERSION = 1;
 
+/** Today SPLITBRIEF trims only `task-evidence`; older packets name the other two and still parse. */
 export const REVIEW_INPUT_TRIMS = [
   'full-file-context',
   'undeclared-file-diffs',
   'task-evidence',
 ] as const;
-export type ReviewInputTrim = (typeof REVIEW_INPUT_TRIMS)[number];
 
 const ReviewPacketArtifactSourceSchema = z.object({
   path: z.string(),

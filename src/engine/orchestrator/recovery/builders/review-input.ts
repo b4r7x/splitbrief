@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { FinalReviewFailure } from '../../final-review.js';
@@ -22,7 +23,7 @@ export function buildReviewInputTooLargeRecoveryIssue(
     seatSwap?: SeatSwapContext | undefined;
   },
 ): RecoveryIssue {
-  const { figures, promptSize, largestFiles } = opts.failure;
+  const { figures, promptSize, changeFile, workspaceDir } = opts.failure;
   const switchSeat = switchSeatOffer(opts.seatSwap, promptSize);
   return createRecoveryIssue({
     id: opts.id,
@@ -33,7 +34,6 @@ export function buildReviewInputTooLargeRecoveryIssue(
     affectedTaskIds: [],
     message: reviewInputTooLargeMessage(opts.failure, opts.tool),
     details: [
-      `Largest diffs: ${largestFiles.map((file) => `${file.path} (${file.chars.toLocaleString('en-US')} chars)`).join(', ')}`,
       `A retry sends the same input. ${new Intl.ListFormat('en-GB', { type: 'disjunction' }).format(
         [
           switchSeat === undefined ? '' : 'Change the REVIEW tool to one that takes it',
@@ -41,8 +41,17 @@ export function buildReviewInputTooLargeRecoveryIssue(
           'End the run (a workspace run saves its changes in run.patch)',
         ].filter((choice) => choice !== ''),
       )}.`,
+      `The reviewer reads the change from ${changeFile} in the run workspace, not from the prompt; the prompt holds the plan, the briefs and the evidence.${
+        figures.limit === null
+          ? ` A very large change can also fill the context of ${opts.tool} when it reads that file.`
+          : ''
+      }`,
     ],
-    facts: compactFacts({ tool: opts.tool, ...inputTooLargeFacts(figures) }),
+    facts: compactFacts({
+      tool: opts.tool,
+      ...inputTooLargeFacts(figures),
+      changeFile: join(workspaceDir, changeFile),
+    }),
     availableActions: haltActions('review-input-too-large', [
       switchSeat === undefined ? undefined : 'switch-seat',
       opts.acceptAsIs ? 'accept-as-is' : undefined,

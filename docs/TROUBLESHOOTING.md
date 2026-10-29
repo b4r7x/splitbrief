@@ -446,16 +446,16 @@ A REVIEW account refusal or long-reset limit raises a Seat down halt. Its config
 
 ### Symptom: the run halted with "Review input too large for OpenAI Codex CLI" or "Review input too large for Claude Code"
 
-**Likely cause:** The final review prompt is larger than the reviewer tool accepts. Codex takes at most 1,048,576 characters. SPLITBRIEF already trimmed whole new files, the diffs of files no brief declares and the recorded evidence, and the rest of the run diff is still over the cap. The same halt follows when the tool itself refuses the input: Codex answers `input_too_large`, and Claude Code answers `Prompt is too long`. Claude Code has no character cap, so SPLITBRIEF trims nothing for it and the halt names no cap.
+**Likely cause:** The final review prompt is larger than the reviewer tool accepts. Codex takes at most 1,048,576 characters. The reviewer reads the run diff from a file, so the prompt holds the plan, the briefs and the evidence; SPLITBRIEF already trimmed the recorded evidence, and the prompt is still over the cap. The same halt follows when the tool itself refuses the input: Codex answers `input_too_large`, and Claude Code answers `Prompt is too long`. Claude Code has no character cap, so SPLITBRIEF trims nothing for it and the halt names no cap.
 
 **Fix:**
-1. Read the halt details. They name the prompt size, the cap when the tool has one, and the largest file diffs.
+1. Read the halt details. They name the prompt size, the cap when the tool has one, and the file in the run workspace that the reviewer reads the change from. The prompt holds the plan, the briefs and the evidence, not the change. When the tool names no cap, as Claude Code does, a very large change can also fill the tool's context when it reads that file.
 2. Choose **Skip review** to make a workspace run ready to apply with no review. Your note is recorded, and Apply shows it in its warning and asks for one confirmation. Nothing is reported as verified.
 3. Or choose **End run**. The changes are saved in `.splitbrief/sessions/<id>/run.patch`, and the workspace is removed.
 4. Or choose **Change REVIEW tool** when the menu offers it. It lists only the detected tools that take the prompt, moves the review seat to the one you pick and runs the review again.
-5. A retry is not offered, because it would send the same input. For the next run, keep the run smaller.
+5. A retry is not offered, because it would send the same input. For the next run, plan less work in one run.
 
-**Prevention:** Smaller runs. Keep generated or vendored files out of the briefs' declared files.
+**Prevention:** Keep the plan and the briefs short, so the prompt stays under the cap. For a tool with no cap, keep generated or vendored files out of the change, so that reading the change file does not fill the tool's context.
 
 **See also:** [Review input too large](./APPROVAL-AND-RECOVERY.md#review-input-too-large).
 

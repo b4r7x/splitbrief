@@ -273,7 +273,7 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 splitbrief review [options]
 ```
 
-One reviewer call over the current diff. The command needs no session: it creates none, runs no planning phase and enters no state machine. It collects the diff, hands it to the review seat with the same review prompt a full run uses, and writes the review to `.splitbrief/reviews/<timestamp>/review.json` and `review.md`. Then it prints the rendered review, the verdict and the findings.
+One reviewer call over the current diff. The command needs no session: it creates none, runs no planning phase and enters no state machine. It collects the diff, hands it to the review seat with the same review prompt a full run uses, and writes the review to `.splitbrief/reviews/<timestamp>/review.json` and `review.md`. A CLI review seat reads the diff from `change.diff` in that folder, which its prompt names; an API, shell or agent seat takes the diff in its prompt. Then it prints the rendered review, the verdict and the findings.
 
 Without a config, review saves a detected ready crew to `.splitbrief/config.yaml`. If no crew is ready, it asks you to run `splitbrief init` and leaves the config absent.
 
@@ -318,7 +318,7 @@ splitbrief review --project ../service-a
 ### Files affected
 
 - **Reads:** `.splitbrief/config.yaml`, the git diff, repo files the reviewer opens itself.
-- **Writes:** `.splitbrief/reviews/<YYYY-MM-DD-HHMMSS>/review.json` (the verdict record) and `review.md` (the rendered review) next to it. Nothing under `.splitbrief/sessions/`, and the `.splitbrief/active` pointer is never touched.
+- **Writes:** `.splitbrief/reviews/<YYYY-MM-DD-HHMMSS>/review.json` (the verdict record) and `review.md` (the rendered review) next to it. For a CLI review seat, also `change.diff`, the diff the seat reads. Nothing under `.splitbrief/sessions/`, and the `.splitbrief/active` pointer is never touched.
 
 ### See also
 

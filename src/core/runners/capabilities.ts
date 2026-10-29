@@ -47,6 +47,15 @@ export function seatSupportsImages(
   }
 }
 
+/**
+ * Whether a review seat reads the change from a file in its workspace. A CLI tool reads files
+ * there; an API seat reads none, and a shell or agent command may hand the prompt to a model
+ * that cannot, so each of those takes the change in its prompt.
+ */
+export function seatReadsChangeFile(runner: RunnerConfig): boolean {
+  return runner.kind === 'cli';
+}
+
 export function plannerSupportsImages(
   config: Config | null,
   providers: readonly ProviderDetection[],

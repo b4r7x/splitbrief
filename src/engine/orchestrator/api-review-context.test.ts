@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
@@ -14,6 +14,7 @@ import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import {
   DRIFT_REPORT_FILE,
   REVIEW_FILE,
+  reviewChangeFile,
   SPEC_FILE,
   TASKS_FILE,
   sessionDir,
@@ -405,7 +406,7 @@ async function review(opts: {
   });
 }
 
-describe('a REVIEW seat that reads no files of its own', () => {
+describe('what each REVIEW seat is handed in a final review', () => {
   it('reviews the complete packet, recomputing a drift report it never had', async () => {
     const ref = setupRun({ ledger: true });
     universe.fullDiff = diffFor('src/login.ts');
@@ -513,7 +514,7 @@ describe('a REVIEW seat that reads no files of its own', () => {
     expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), REVIEW_FILE))).toBe(false);
   });
 
-  it('hands a CLI reviewer that reads no files the whole diff in its prompt, however long', async () => {
+  it('hands a CLI reviewer the whole diff in its change file, however long', async () => {
     const ref = setupRun({ ledger: false });
     universe.fullDiff = diffOfLength('src/big.ts', 150_000);
     universe.changedFiles = ['src/big.ts'];
@@ -523,8 +524,10 @@ describe('a REVIEW seat that reads no files of its own', () => {
     const result = await review({ ...ref, config, prompts });
 
     expect(prompts).toHaveLength(1);
-    expect(prompts[0]).not.toContain('[... diff truncated,');
-    expect(prompts[0]).toContain(universe.fullDiff);
+    expect(prompts[0]).not.toContain(universe.fullDiff);
+    const change = readFileSync(join(ref.projectDir, reviewChangeFile(ref.sessionId)), 'utf8');
+    expect(change).not.toContain('[... diff truncated,');
+    expect(change).toContain(universe.fullDiff);
     expect(result.reviewStatus).toBe('written');
     expect(result.failure).toBeUndefined();
   });

@@ -1720,7 +1720,8 @@ describe('runScheduledReview saved recovery', () => {
           kind: 'input-too-large',
           figures: { unit: 'characters', size: 1_106_026, limit: 1_048_576 },
           promptSize: { characters: 1_106_026 },
-          largestFiles: [],
+          changeFile: '.splitbrief/reviews/run-1.diff',
+          workspaceDir: '/work',
         },
       };
 

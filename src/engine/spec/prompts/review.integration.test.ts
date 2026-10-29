@@ -284,7 +284,7 @@ describe('buildFinalReviewPrompt', () => {
       fixCycle: 1,
       spec: SPEC,
       taskBriefs: TASK_BRIEFS,
-      changeFile,
+      changeFile: { path: changeFile, provenance: true },
       changeCoverage: 'Run changes: src/hello.ts',
     });
 
@@ -295,10 +295,25 @@ describe('buildFinalReviewPrompt', () => {
       'Read this file whole, then read the changed files themselves in the workspace. Do not report as verified anything you did not read.',
     );
     expect(result).toContain('## Changed Files\nRun changes: src/hello.ts');
+    expect(result).toContain('one block per changed file with the tasks that changed it');
     expect(result).toContain('Use the Changed Files provenance');
     expect(result).not.toContain('```diff');
     expect(result).not.toContain('## Workspace Context');
     expect(result).not.toContain('## Trimmed for Size');
+  });
+
+  it('names a change file with no tasks and no provenance for a review without a run', () => {
+    const result = buildFinalReviewPrompt({
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      changeFile: { path: '/work/.splitbrief/reviews/stamp/change.diff', provenance: false },
+    });
+
+    expect(result).toContain(
+      'The change under review is in `/work/.splitbrief/reviews/stamp/change.diff`: one diff of every changed file.',
+    );
+    expect(result).not.toContain('tasks that changed it');
+    expect(result).not.toContain('Use the Changed Files provenance');
   });
 
   it('writes the change text with one block per file, the later changes and the workspace context', () => {

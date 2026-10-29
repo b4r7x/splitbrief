@@ -1007,7 +1007,7 @@ Verdict: pass_with_notes
 .splitbrief/reviews/2026-09-11-174210/review.md
 ```
 
-The diff is `git diff <base|HEAD>` plus untracked files, handed to the same review prompt a full run uses — with the specification line replaced by `none — review for correctness, scope creep, and test coverage of the diff`, because there is no spec to check against.
+The diff is `git diff <base|HEAD>` plus untracked files, handed to the same review prompt a full run uses (a CLI reviewer reads it from `change.diff` beside `review.md`) — with the specification line replaced by `none — review for correctness, scope creep, and test coverage of the diff`, because there is no spec to check against.
 
 Nothing is written under `.splitbrief/sessions/`, and `.splitbrief/active` is untouched: a run in progress elsewhere is unaffected. A clean tree prints `nothing to review` and exits `0` without spawning anything.
 
