@@ -11,7 +11,7 @@ import { escapeRegExp } from '../../../utils/regexp.js';
 import type { ToolUseGuard } from '../../runners/cli-tools/process-invoke.js';
 import { cliToolHome, hasCliToolHome } from '../../runners/host-model-selection.js';
 import { DEPENDENCY_MARKERS } from './checkout-audit.js';
-import type { PathAccess, PathReference } from './shell-paths.js';
+import { resolveFollowingLinks, type PathAccess, type PathReference } from './shell-paths.js';
 import { readToolUse, toolUseInputText, type ToolUse } from './tool-paths.js';
 
 const ANY = new Set<PathAccess>(['read', 'list', 'search', 'write']);
@@ -122,8 +122,12 @@ export type IsolationBoundary = Readonly<{
    * tool names them, before their links resolve.
    */
   readDirs: readonly string[];
-  /** Claude Code's shell keeps the directory a `cd` left it in for the next tool call. */
-  keepsShellCwd: boolean;
+  /**
+   * Where a shell keeps the directory a `cd` left it in for the next tool call: Claude Code's
+   * working directories, the isolation directory and the run's global skills. Empty for every
+   * other tool.
+   */
+  shellCwdRoots: readonly string[];
   tmpdir: string | undefined;
   zones: readonly Zone[];
 }>;
@@ -144,7 +148,7 @@ function canonicalPath(
   path: string,
   { followsLink = true }: { followsLink?: boolean } = {},
 ): string {
-  const absolute = resolve(path);
+  const absolute = resolveFollowingLinks(process.cwd(), path);
   if (!followsLink) {
     const parent = dirname(absolute);
     return parent === absolute ? absolute : join(canonicalPath(parent), basename(absolute));
@@ -219,6 +223,7 @@ export function createIsolationBoundary(input: {
     (dir): dir is string => dir !== undefined && isAbsolute(dir),
   );
   const nodePrefix = dirname(dirname(process.execPath));
+  const skillRoots = (input.skillRoots ?? []).map((root) => canonicalPath(root));
 
   const zones: Zone[] = [
     { root: isolationDir, allows: ANY },
@@ -231,7 +236,7 @@ export function createIsolationBoundary(input: {
     ...toolHomes.map((root) => ({ root: canonicalPath(root), allows: ANY })),
     ...SYSTEM_ROOTS.map((root) => ({ root: canonicalPath(root), allows: READS })),
     ...underHomes(TOOLCHAIN_DIRS).map((root) => ({ root, allows: READS })),
-    ...(input.skillRoots ?? []).map((root) => ({ root: canonicalPath(root), allows: READS })),
+    ...skillRoots.map((root) => ({ root, allows: READS })),
     ...pathEntryRoots(input.env.PATH, homes).map((root) => ({ root, allows: READS })),
     ...(isAncestorOfAny(nodePrefix, homes)
       ? []
@@ -255,7 +260,7 @@ export function createIsolationBoundary(input: {
     home,
     displayHomes,
     readDirs,
-    keepsShellCwd: input.tool === 'claude-code',
+    shellCwdRoots: input.tool === 'claude-code' ? [isolationDir, ...skillRoots] : [],
     tmpdir: input.env.TMPDIR,
     zones,
   };
@@ -426,8 +431,9 @@ export function formatIsolationBreach(breach: IsolationBreach): string {
  * The guard that stops a CLI implementer call at its first write outside the
  * boundary; a read, list or search outside goes to `onOutsideRead` and the call
  * goes on. When the tool's shell keeps its working directory between tool
- * calls, the next command reads from where the last `cd` left it; every other
- * tool's command reads from the isolation directory.
+ * calls, the next command reads from where the last `cd` left it, while that
+ * stays in one of `shellCwdRoots`; every other command reads from the isolation
+ * directory.
  */
 export function isolationToolUseGuard(
   boundary: IsolationBoundary,
@@ -441,7 +447,12 @@ export function isolationToolUseGuard(
       return { code: 'implementer-left-isolation', message: formatIsolationBreach(write) };
     }
     for (const breach of inspection.breaches) onOutsideRead(breach);
-    if (boundary.keepsShellCwd) cwd = inspection.cwd;
+    // Claude Code keeps `pwd -P` and resets its shell to the directory it started in
+    // when that lies outside its working directories.
+    const next = canonicalPath(inspection.cwd);
+    cwd = boundary.shellCwdRoots.some((root) => isWithin(root, next))
+      ? next
+      : boundary.isolationDir;
     return null;
   };
 }

@@ -298,6 +298,25 @@ describe("isolation boundary around the run's attached skills", () => {
     });
   });
 
+  it("keeps Claude Code's shell in an attached skill after a cd there, as Claude Code does", async () => {
+    await withAttachedSkill(({ home, skill, checkout }) => {
+      const boundary = createIsolationBoundary({
+        isolationDir: join(checkout, '..', 'worktree'),
+        checkoutDir: checkout,
+        env: { HOME: home, PATH: ENV_PATH },
+        tool: 'claude-code',
+        skillRoots: [skill],
+      });
+      const { guard } = loggingGuard(boundary);
+      expect(guard({ name: 'Bash', input: { command: `cd ${skill}/references` } })).toBeNull();
+      expect(guard({ name: 'Bash', input: { command: 'echo hi > notes.md' } })).toEqual({
+        code: 'implementer-left-isolation',
+        message:
+          'wrote to ~/library/auth/references/notes.md (outside the workspace) with Bash: echo hi > notes.md',
+      });
+    });
+  });
+
   it('opens an ignored skill in the checkout to reads, while the rest of the checkout stays closed', async () => {
     await withAttachedSkill(({ checkout, boundaryFor }) => {
       const skill = join(checkout, '.splitbrief', 'skills', 'ignored');
@@ -505,27 +524,43 @@ describe('isolation boundary around a linked node_modules', () => {
     });
   });
 
-  it('keeps the directory a cd out of the isolation directory left the shell in', async () => {
-    await withLinkedWorktree((boundary, dir) => {
-      const { guard } = loggingGuard(boundary);
-      expect(guard({ name: 'Bash', input: { command: `cd ${dir}` } })).toBeNull();
-      expect(guard({ name: 'Bash', input: { command: 'touch checkout/src/a.ts' } })).toEqual({
-        code: 'implementer-left-isolation',
-        message: 'wrote to ../checkout/src/a.ts (your checkout) with Bash: touch checkout/src/a.ts',
-      });
-    });
-  });
-
-  it('keeps the directory a logged read left the shell in, so a write after it still halts', async () => {
+  it('starts the next tool call in the isolation directory after a cd out of it, as Claude Code does', async () => {
     await withLinkedWorktree((boundary, dir) => {
       const { guard, reads } = loggingGuard(boundary);
       expect(
         guard({ name: 'Bash', input: { command: `cd ${dir} && cat checkout/src/a.ts` } }),
       ).toBeNull();
       expect(reads).toHaveLength(1);
-      expect(guard({ name: 'Bash', input: { command: 'touch checkout/src/b.ts' } })).toMatchObject({
+      expect(guard({ name: 'Bash', input: { command: 'touch checkout/src/a.ts' } })).toBeNull();
+      expect(guard({ name: 'Bash', input: { command: 'touch ../checkout/src/b.ts' } })).toEqual({
         code: 'implementer-left-isolation',
+        message:
+          'wrote to ../checkout/src/b.ts (your checkout) with Bash: touch ../checkout/src/b.ts',
       });
+    });
+  });
+
+  it('starts the next tool call in the isolation directory after a cd through the link', async () => {
+    await withLinkedWorktree((boundary, dir) => {
+      mkdirSync(join(dir, 'worktree', 'src', 'lib'), { recursive: true });
+      const { guard, reads } = loggingGuard(boundary);
+      expect(guard({ name: 'Bash', input: { command: 'cd node_modules/pkg' } })).toBeNull();
+      expect(guard({ name: 'Bash', input: { command: 'echo hi > src/x.ts' } })).toBeNull();
+      expect(guard({ name: 'Bash', input: { command: 'cd node_modules/pkg' } })).toBeNull();
+      // Two levels above the isolation directory is the temp directory the fixture lives in.
+      expect(
+        guard({ name: 'Bash', input: { command: 'cd ../.. && echo hi > src/x.ts' } }),
+      ).toBeNull();
+      expect(guard({ name: 'Bash', input: { command: 'cd src/lib' } })).toBeNull();
+      expect(guard({ name: 'Bash', input: { command: 'echo hi > ../../b.ts' } })).toBeNull();
+      expect(
+        guard({ name: 'Bash', input: { command: 'touch ../../../checkout/src/a.ts' } }),
+      ).toEqual({
+        code: 'implementer-left-isolation',
+        message:
+          'wrote to ../checkout/src/a.ts (your checkout) with Bash: touch ../../../checkout/src/a.ts',
+      });
+      expect(reads).toEqual([]);
     });
   });
 
@@ -547,6 +582,64 @@ describe('isolation boundary around a linked node_modules', () => {
       expect(
         breachOf(boundary, 'Write', { file_path: join(dependencies, 'pkg', 'x.js') }),
       ).toContain('wrote to');
+    });
+  });
+
+  it('stops a write whose `..` steps out of the link into the checkout', async () => {
+    await withLinkedWorktree((boundary, dir) => {
+      const worktree = join(dir, 'worktree');
+      const halted = 'wrote to ../checkout/src/x.ts (your checkout) with';
+      expect(
+        breachOf(boundary, 'Edit', { file_path: `${worktree}/node_modules/../src/x.ts` }),
+      ).toContain(`${halted} Edit`);
+      expect(
+        breachOf(boundary, 'Edit', {
+          file_path: `${worktree}/node_modules/pkg/../../src/x.ts`,
+        }),
+      ).toContain(`${halted} Edit`);
+      expect(breachOf(boundary, 'Write', { file_path: 'node_modules/../src/x.ts' })).toContain(
+        `${halted} Write`,
+      );
+      for (const command of [
+        'echo hi > node_modules/../src/x.ts',
+        "sed -i '' s/a/b/ node_modules/../src/x.ts",
+        'cd node_modules/pkg && echo hi > ../../src/x.ts',
+      ]) {
+        expect(breachOf(boundary, 'Bash', { command }), command).toBe(`${halted} Bash: ${command}`);
+      }
+      const { guard } = loggingGuard(boundary);
+      for (const command of [
+        'cd -P node_modules/.. && echo hi > src/x.ts',
+        'git -C node_modules/.. worktree add src/x.ts',
+      ]) {
+        expect(guard({ name: 'Bash', input: { command } }), command).toEqual({
+          code: 'implementer-left-isolation',
+          message: `${halted} Bash: ${command}`,
+        });
+      }
+      expect(
+        guard({
+          name: 'shell',
+          input: { command: 'echo hi > src/x.ts', workdir: 'node_modules/..' },
+        }),
+      ).toEqual({
+        code: 'implementer-left-isolation',
+        message: `${halted} shell: echo hi > src/x.ts`,
+      });
+    });
+  });
+
+  it('follows a cd back out of the link the way the shell does, by name', async () => {
+    await withLinkedWorktree((boundary) => {
+      const { guard, reads } = loggingGuard(boundary);
+      expect(
+        guard({
+          name: 'Bash',
+          input: { command: 'cd node_modules/pkg && cd ../.. && echo hi > src/x.ts' },
+        }),
+      ).toBeNull();
+      expect(guard({ name: 'Bash', input: { command: 'echo hi > src/y.ts' } })).toBeNull();
+      expect(reads).toEqual([]);
     });
   });
 

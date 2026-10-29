@@ -101,6 +101,7 @@
 
 ### Fixed
 
+- In a worktree run, a write that reaches your checkout through the linked `node_modules` folder, such as `node_modules/../src/x.ts`, now stops the brief like any other write to your checkout. Before, the write landed in your checkout and the run went on.
 - Reading a skill in a skills folder, such as `~/.claude/skills` or the project's `.claude/skills`, no longer shows a warning, and the review no longer lists it. A write there still stops the brief.
 - Antigravity activity rows now show the file a read or edit names, instead of `Read file`.
 - When the implementer says it is blocked and its report has a broken field, the planner now gets its question instead of the brief going on as done, and a warning names the field. A report without a `done` or `blocked` status now shows a warning too.

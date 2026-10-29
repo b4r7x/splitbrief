@@ -66,6 +66,14 @@ describe('readShellCommand', () => {
     expect(reaches('find /')).toEqual(['search /']);
   });
 
+  it('drops a `..` by name where no link stands before it', () => {
+    expect(reaches('cat src/../a.ts')).toEqual(['read /wt/a.ts']);
+    expect(reaches('cd src/lib && echo x > ../../b.ts')).toEqual([
+      'read /wt/src/lib',
+      'write /wt/b.ts',
+    ]);
+  });
+
   it('cuts a word at its first glob', () => {
     expect(reaches('ls /Users/me/Projects/*/package.json')).toEqual(['list /Users/me/Projects']);
   });
