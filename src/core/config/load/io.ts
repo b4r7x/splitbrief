@@ -85,7 +85,7 @@ function parseLoadedConfig(
   try {
     parsed = YAML.parse(snapshot.rawYaml);
   } catch (err) {
-    throw configError.invalidYaml(filePath, err);
+    throw configError.invalidYaml(CONFIG_RELATIVE_PATH, err);
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -209,7 +209,7 @@ async function transactConfigDocumentWithWriter(
     confinedEnsureDir(projectDir, SPLITBRIEF_DIR);
 
     const targetPath = canonicalConfigTarget(projectDir);
-    if (targetPath === null) throw configError.unreadable(configPath(projectDir));
+    if (targetPath === null) throw configError.unreadable(CONFIG_RELATIVE_PATH);
     // The save that creates the file owns the ignore rule. It lands first, so a failed rule write
     // leaves no config behind and the retry is a creation again.
     const ignoreRuleAdded =
@@ -228,7 +228,7 @@ async function transactConfigDocumentWithWriter(
     }
 
     const actual = readConfigDocument(projectDir);
-    if (actual.revision === null) throw configError.unreadable(configPath(projectDir));
+    if (actual.revision === null) throw configError.unreadable(CONFIG_RELATIVE_PATH);
     parseLoadedConfig(projectDir, actual);
     return {
       kind: 'durability-uncertain',

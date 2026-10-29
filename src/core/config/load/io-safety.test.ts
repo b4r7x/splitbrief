@@ -12,7 +12,7 @@ import {
   writeConfig,
   writeConfigDocument,
 } from './io.js';
-import { configPath, readConfigDocument } from './document.js';
+import { CONFIG_RELATIVE_PATH, configPath, readConfigDocument } from './document.js';
 import { createDefaultConfig } from './defaults.js';
 import { toYaml } from './transform.js';
 import { SPLITBRIEF_DIR, TREES_DIR } from '../../paths.js';
@@ -188,6 +188,20 @@ describe('config load safety', () => {
       }
     });
 
+    itUnix('names .splitbrief when it is a symlink to a folder inside the project', () => {
+      const dir = createTempDir('config-symlink-parent-inside');
+      try {
+        mkdirSync(join(dir, 'kept'));
+        symlinkSync(join(dir, 'kept'), join(dir, SPLITBRIEF_DIR));
+
+        expect(() => loadConfig(dir)).toThrow(
+          `refusing symlinked parent directory: ${SPLITBRIEF_DIR}`,
+        );
+      } finally {
+        cleanupTempDir(dir);
+      }
+    });
+
     itUnix('rejects reading config through final symlinks', () => {
       const dir = createTempDir('config-symlink-read');
       const outside = createTempDir('config-symlink-outside');
@@ -203,6 +217,29 @@ describe('config load safety', () => {
       }
     });
 
+    itUnix('rejects a config file symlink whose target stays inside the project', () => {
+      const dir = createTempDir('config-symlink-read-inside');
+      try {
+        const configDir = join(dir, SPLITBRIEF_DIR);
+        mkdirSync(configDir, { recursive: true });
+        const target = join(configDir, 'kept.yaml');
+        writeFileSync(target, 'version: 3\n');
+        symlinkSync(target, join(configDir, 'config.yaml'));
+
+        let thrownMessage = '';
+        try {
+          loadConfig(dir);
+        } catch (err) {
+          thrownMessage = (err as Error).message;
+        }
+        expect(thrownMessage).toContain('refusing to read through symlink');
+        expect(thrownMessage).toContain(CONFIG_RELATIVE_PATH);
+        expect(thrownMessage).not.toContain(dir);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    });
+
     it('throws instead of silently using defaults when an existing config cannot be read', () => {
       const dir = createTempDir('config-unreadable');
       try {
@@ -210,7 +247,15 @@ describe('config load safety', () => {
         mkdirSync(configDir, { recursive: true });
         mkdirSync(join(configDir, 'config.yaml'), { recursive: true });
 
-        expect(() => loadConfig(dir)).toThrow(/could not be read/);
+        let thrownMessage = '';
+        try {
+          loadConfig(dir);
+        } catch (err) {
+          thrownMessage = (err as Error).message;
+        }
+        expect(thrownMessage).toContain('could not be read');
+        expect(thrownMessage).toContain(CONFIG_RELATIVE_PATH);
+        expect(thrownMessage).not.toContain(dir);
       } finally {
         cleanupTempDir(dir);
       }
@@ -352,6 +397,8 @@ describe('config load safety', () => {
         thrownMessage = (err as Error).message;
       }
       expect(thrownMessage).toContain('Malformed YAML');
+      expect(thrownMessage).toContain(CONFIG_RELATIVE_PATH);
+      expect(thrownMessage).not.toContain(dir);
       expect(thrownMessage).not.toMatch(/path.*\..*\./);
     });
   });

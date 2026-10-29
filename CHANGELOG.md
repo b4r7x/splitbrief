@@ -101,6 +101,9 @@
 
 ### Fixed
 
+- A config that lacks a required value, such as a seat with no tool, now names the missing value instead of showing raw validation text.
+- The notice for a `.splitbrief/config.yaml` that cannot be read, cannot be parsed or is a symlink now names the file as `.splitbrief/config.yaml` instead of its full path.
+- When Command Code stops at its turn limit, the run now says so in plain words instead of showing `max_turns`.
 - A change to a binary file, such as a `.bin`, `.wav` or SQLite file, now counts as a changed file. A check runs again after it, and a planner write to it is caught.
 - Cursor model names no longer end in a stray word.
 - Command Code activity shows the file or the command, and a write outside the run stops the brief.

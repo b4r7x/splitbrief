@@ -188,9 +188,12 @@ function parseResultRecord(record: Record<string, unknown>): readonly CliProtoco
     // A failed frame carries its reason in `error` as a plain string and omits
     // `stopReason` entirely, so `error` has to be read first or the real cause
     // ("Not authenticated…") is replaced by the generic fallback.
+    const stopReason = optionalString(record.stopReason, { trim: true, nonEmpty: true });
+    const stopMessage =
+      stopReason === 'max_turns' ? 'The tool reached its turn limit.' : stopReason;
     const message =
       optionalString(record.error, { trim: true, nonEmpty: true }) ??
-      optionalString(record.stopReason, { trim: true, nonEmpty: true }) ??
+      stopMessage ??
       optionalString(record.finalText, { trim: true, nonEmpty: true }) ??
       'Command Code result failed';
     events.push(protocolFailure('command-code-result-failed', message));
