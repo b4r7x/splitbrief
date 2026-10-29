@@ -304,6 +304,28 @@ describe('evaluateCandidate retries a transient session denial', () => {
       'SPLITBRIEF looks for the OpenAI Codex CLI session in its session files. Sign in to OpenAI Codex CLI, then run `splitbrief doctor` again.',
     );
   });
+
+  it('blocks a Codex sign-in kept in the system keyring, and names how to move it', async () => {
+    stubHome();
+    const { config, candidate } = plannerSeat('gpt-6-mini');
+    const probe: PrepareExecutionDependencies['detectRunnerEvidence'] = async ({ context }) =>
+      evidence(context, 'keyring');
+
+    vi.useFakeTimers();
+    const result = await settleUnderFakeTimers(
+      evaluateCandidate(candidate, preparationContext(config, vi.fn(probe))),
+    );
+
+    expect(result.kind).toBe('blocked');
+    expect(result.check).toMatchObject({
+      severity: 'blocker',
+      details: expect.arrayContaining([
+        'OpenAI Codex CLI keeps its sign-in in the system keyring, which a run cannot reach.',
+      ]),
+      fix: 'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, or use OPENAI_API_KEY, then run `splitbrief doctor` again.',
+      runnerCause: { tool: 'codex', cause: 'unauthenticated' },
+    });
+  });
 });
 
 describe('evaluateCandidate on a model route with no credential', () => {

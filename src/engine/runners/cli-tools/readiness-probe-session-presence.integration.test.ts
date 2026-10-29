@@ -383,6 +383,85 @@ describe('session-state presence readiness', () => {
     });
   });
 
+  it.each(['keyring', 'auto'])(
+    'names a Codex sign-in kept in the system keyring (%s store)',
+    async (store) => {
+      await withTempDir('readiness-codex-keyring', async (hostHome) => {
+        const executable = await nodeExecutable();
+        await mkdir(join(hostHome, '.codex'), { recursive: true });
+        await writeFile(
+          join(hostHome, '.codex', 'config.toml'),
+          `model = "gpt-6-astra"\ncli_auth_credentials_store = "${store}"\n`,
+        );
+        vi.stubEnv('HOME', hostHome);
+        vi.stubEnv('CODEX_HOME', '');
+
+        const result = await probeCliReadiness({
+          tool: 'codex',
+          executable,
+          authChannel: 'session',
+          probe: sessionProbe(),
+          classifyVersion: () => 'compatible',
+        });
+
+        expect(result).toMatchObject({ auth: 'keyring', status: 'unauthenticated' });
+        expect(result.remediation).toBe(
+          'Set cli_auth_credentials_store = "file" in config.toml and run codex login again, or use OPENAI_API_KEY, then run `splitbrief doctor` again.',
+        );
+      });
+    },
+  );
+
+  it('asks for the API key on the Codex api-key channel when the session store is the keyring', async () => {
+    await withTempDir('readiness-codex-keyring-api-key', async (hostHome) => {
+      const executable = await nodeExecutable();
+      await mkdir(join(hostHome, '.codex'), { recursive: true });
+      await writeFile(
+        join(hostHome, '.codex', 'config.toml'),
+        'cli_auth_credentials_store = "keyring"\n',
+      );
+      vi.stubEnv('HOME', hostHome);
+      vi.stubEnv('CODEX_HOME', '');
+      vi.stubEnv('OPENAI_API_KEY', '');
+
+      const result = await probeCliReadiness({
+        tool: 'codex',
+        executable,
+        authChannel: 'api-key',
+        probe: sessionProbe(),
+        classifyVersion: () => 'compatible',
+      });
+
+      expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
+      expect(result.remediation).toBe(
+        'Export OPENAI_API_KEY for OpenAI Codex CLI, then run `splitbrief doctor` again.',
+      );
+    });
+  });
+
+  it('keeps a Codex file store with no auth.json signed out', async () => {
+    await withTempDir('readiness-codex-file-store', async (hostHome) => {
+      const executable = await nodeExecutable();
+      await mkdir(join(hostHome, '.codex'), { recursive: true });
+      await writeFile(
+        join(hostHome, '.codex', 'config.toml'),
+        '[profiles.work]\ncli_auth_credentials_store = "keyring"\n',
+      );
+      vi.stubEnv('HOME', hostHome);
+      vi.stubEnv('CODEX_HOME', '');
+
+      const result = await probeCliReadiness({
+        tool: 'codex',
+        executable,
+        authChannel: 'session',
+        probe: sessionProbe(),
+        classifyVersion: () => 'compatible',
+      });
+
+      expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
+    });
+  });
+
   it('keeps probe-less bridge-free channels out of presence promotion', async () => {
     const executable = await nodeExecutable();
     vi.stubEnv('OPENAI_API_KEY', 'ambient-key');

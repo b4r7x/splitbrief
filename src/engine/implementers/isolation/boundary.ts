@@ -5,6 +5,7 @@ import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { escapeRegExp } from '../../../utils/regexp.js';
 import type { ToolUseGuard } from '../../runners/cli-tools/process-invoke.js';
+import { cliToolHome, hasCliToolHome } from '../../runners/host-model-selection.js';
 import { DEPENDENCY_MARKERS } from './checkout-audit.js';
 import type { PathAccess, PathReference } from './shell-paths.js';
 import { readToolUse, toolUseInputText, type ToolUse } from './tool-paths.js';
@@ -199,6 +200,12 @@ export function createIsolationBoundary(input: {
     input.env.HOME !== undefined && isAbsolute(input.env.HOME) ? input.env.HOME : homedir();
   const homes = [...new Set([canonicalPath(homedir()), canonicalPath(home)])];
   const toolStates = input.tool === undefined ? [] : TOOL_STATE_DIRS[input.tool];
+  // A config folder the call env moves out of the home is the tool's state too.
+  const toolHome =
+    input.tool !== undefined && hasCliToolHome(input.tool)
+      ? cliToolHome(input.tool, input.env, home)
+      : undefined;
+  const toolHomes = toolHome !== undefined && isAbsolute(toolHome) ? [toolHome] : [];
   const underHomes = (dirs: readonly string[]) =>
     homes.flatMap((root) => dirs.map((dir) => canonicalPath(join(root, dir))));
   const temp = [tmpdir(), input.env.TMPDIR, ...TEMP_ROOTS].filter(
@@ -214,6 +221,7 @@ export function createIsolationBoundary(input: {
     ...temp.map((dir) => ({ root: canonicalPath(dir), allows: ANY })),
     ...DEVICES.map((device) => ({ root: device, allows: ANY })),
     ...underHomes(toolStates).map((root) => ({ root, allows: ANY })),
+    ...toolHomes.map((root) => ({ root: canonicalPath(root), allows: ANY })),
     ...SYSTEM_ROOTS.map((root) => ({ root: canonicalPath(root), allows: READS })),
     ...underHomes(TOOLCHAIN_DIRS).map((root) => ({ root, allows: READS })),
     ...(input.skillRoots ?? []).map((root) => ({ root: canonicalPath(root), allows: READS })),
@@ -225,7 +233,10 @@ export function createIsolationBoundary(input: {
   // The most specific root decides; between equal roots the stricter one does.
   zones.sort((a, b) => b.root.length - a.root.length || a.allows.size - b.allows.size);
   const displayHomes = [...new Set([home, homedir()])].sort((a, b) => b.length - a.length);
-  const toolStateDirs = displayHomes.flatMap((root) => toolStates.map((dir) => join(root, dir)));
+  const toolStateDirs = [
+    ...displayHomes.flatMap((root) => toolStates.map((dir) => join(root, dir))),
+    ...toolHomes,
+  ];
   const parent = dirname(isolationDir);
   return {
     isolationDir,

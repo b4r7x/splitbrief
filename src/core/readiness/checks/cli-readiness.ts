@@ -13,6 +13,7 @@ import {
   type RouteAuthState,
 } from '../../runners/route-auth.js';
 import {
+  CODEX_KEYRING_SIGN_IN,
   cliReadinessCheckId,
   type CliReadinessResult,
   type ReadinessDiagnosticStateId,
@@ -246,7 +247,7 @@ function cliReadinessSummary(
     case 'incompatible':
       return `${name} version is not compatible.`;
     case 'unauthenticated':
-      return `${name} is not signed in.`;
+      return result.auth === 'keyring' ? CODEX_KEYRING_SIGN_IN : `${name} is not signed in.`;
     case 'unverified':
       return result.installedVersion === null || result.compatibility !== 'compatible'
         ? `${name} version could not be confirmed as compatible.`

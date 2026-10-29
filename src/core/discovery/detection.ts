@@ -290,6 +290,7 @@ export type CliCompatibilityState = z.infer<typeof CliCompatibilityStateSchema>;
 export const CliAuthStateSchema = z.enum([
   'authenticated',
   'unauthenticated',
+  'keyring',
   'unknown',
   'not-required',
   'not-checked',

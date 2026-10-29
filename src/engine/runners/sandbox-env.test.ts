@@ -2135,3 +2135,101 @@ describe('Copilot session staging', () => {
     expect(await bridgedCliStatePresent(env, 'copilot')).toBe(false);
   });
 });
+
+describe('tool config folder staging', () => {
+  const claudeRunner = { kind: 'cli', tool: 'claude-code', authChannel: 'session' } as const;
+  const codexRunner = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+
+  itUnix('passes a set CLAUDE_CONFIG_DIR to a macOS Claude Code child', async () => {
+    setPlatform('darwin');
+    const hostHome = createTempDir('sandbox-claude-darwin-config-dir-host');
+    const configDir = createTempDir('sandbox-claude-darwin-config-dir');
+    const projectDir = createTempDir('sandbox-claude-darwin-config-dir-project');
+    dirs.push(hostHome, configDir, projectDir);
+    setEnv('HOME', hostHome);
+    setEnv('CLAUDE_CONFIG_DIR', configDir);
+
+    const env = await createRunnerSandboxEnv(projectDir, claudeRunner, 'implementer');
+
+    // The keychain item name carries a hash of this folder, so the child needs it as set.
+    expect(env.HOME).toBe(hostHome);
+    expect(env.CLAUDE_CONFIG_DIR).toBe(configDir);
+  });
+
+  itUnix('passes no CLAUDE_CONFIG_DIR to a macOS Claude Code child when unset', async () => {
+    setPlatform('darwin');
+    const hostHome = createTempDir('sandbox-claude-darwin-no-config-dir-host');
+    const projectDir = createTempDir('sandbox-claude-darwin-no-config-dir-project');
+    dirs.push(hostHome, projectDir);
+    setEnv('HOME', hostHome);
+    unsetEnv('CLAUDE_CONFIG_DIR');
+
+    const env = await createRunnerSandboxEnv(projectDir, claudeRunner, 'implementer');
+
+    expect(env.HOME).toBe(hostHome);
+    expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
+  });
+
+  itUnix('bridges the Claude Code credentials from a set CLAUDE_CONFIG_DIR on Linux', async () => {
+    setPlatform('linux');
+    const hostHome = createTempDir('sandbox-claude-linux-config-dir-host');
+    const configDir = createTempDir('sandbox-claude-linux-config-dir');
+    const projectDir = createTempDir('sandbox-claude-linux-config-dir-project');
+    dirs.push(hostHome, configDir, projectDir);
+    // A stale default folder beside the one Claude Code actually reads.
+    mkdirSync(join(hostHome, '.claude'), { recursive: true });
+    writeFileSync(join(hostHome, '.claude', '.credentials.json'), '{"stale":true}');
+    writeFileSync(join(configDir, '.credentials.json'), '{"token":"claude-config-dir-canary"}');
+    setEnv('HOME', hostHome);
+    setEnv('CLAUDE_CONFIG_DIR', configDir);
+
+    const env = await createRunnerSandboxEnv(projectDir, claudeRunner, 'implementer');
+
+    // The child keeps the private HOME and no CLAUDE_CONFIG_DIR, so it reads
+    // the copy at `<sandbox HOME>/.claude`.
+    expect(env.HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'claude-code', 'home'));
+    expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
+    expect(readFileSync(join(env.HOME as string, '.claude', '.credentials.json'), 'utf8')).toBe(
+      '{"token":"claude-config-dir-canary"}',
+    );
+    expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(true);
+  });
+
+  itUnix('links the Codex credential from a set CODEX_HOME', async () => {
+    const hostHome = createTempDir('sandbox-codex-home-host');
+    const codexHome = createTempDir('sandbox-codex-home');
+    const projectDir = createTempDir('sandbox-codex-home-project');
+    dirs.push(hostHome, codexHome, projectDir);
+    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    writeFileSync(join(hostHome, '.codex', 'auth.json'), '{"stale":true}');
+    const hostAuth = join(codexHome, 'auth.json');
+    writeFileSync(hostAuth, '{"tokens":{"refresh_token":"codex-home-canary"}}');
+    setEnv('HOME', hostHome);
+    setEnv('CODEX_HOME', codexHome);
+
+    const env = await createRunnerSandboxEnv(projectDir, codexRunner, 'implementer');
+
+    expect(env.CODEX_HOME).toBeUndefined();
+    expect(readlinkSync(join(env.HOME as string, '.codex', 'auth.json'))).toBe(
+      realpathSync(hostAuth),
+    );
+    expect(sandboxCredentialValues(env)).toContain('codex-home-canary');
+  });
+
+  itUnix('links the Codex credential from HOME when CODEX_HOME is empty', async () => {
+    const hostHome = createTempDir('sandbox-codex-empty-home-host');
+    const projectDir = createTempDir('sandbox-codex-empty-home-project');
+    dirs.push(hostHome, projectDir);
+    const hostAuth = join(hostHome, '.codex', 'auth.json');
+    mkdirSync(dirname(hostAuth), { recursive: true });
+    writeFileSync(hostAuth, '{"tokens":{"refresh_token":"codex-default-home-canary"}}');
+    setEnv('HOME', hostHome);
+    setEnv('CODEX_HOME', '');
+
+    const env = await createRunnerSandboxEnv(projectDir, codexRunner, 'implementer');
+
+    expect(readlinkSync(join(env.HOME as string, '.codex', 'auth.json'))).toBe(
+      realpathSync(hostAuth),
+    );
+  });
+});

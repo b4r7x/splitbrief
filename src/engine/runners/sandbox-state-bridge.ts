@@ -12,7 +12,7 @@ import {
 import { dirname, isAbsolute, join } from 'node:path';
 import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import { error } from '../../utils/error.js';
-import { xdgBaseDir } from './host-model-selection.js';
+import { cliToolHome, hasCliToolHome, xdgBaseDir } from './host-model-selection.js';
 import { addStateRedactionValue, collectStateStrings } from './sandbox-credential-values.js';
 import {
   CLI_CREDENTIAL_MODELS,
@@ -283,17 +283,18 @@ async function passthroughStateEntry(
   return passthroughCredentialValues(source, tool);
 }
 
-function hostStateRoot(source: CliStateSource, hostEnv: NodeJS.ProcessEnv): string | undefined {
+function hostStateRoot(
+  source: CliStateSource,
+  tool: CliToolId,
+  hostEnv: NodeJS.ProcessEnv,
+): string | undefined {
   switch (source) {
     case 'xdg-config':
       return xdgBaseDir(hostEnv, 'XDG_CONFIG_HOME', hostEnv.HOME);
     case 'xdg-data':
       return xdgBaseDir(hostEnv, 'XDG_DATA_HOME', hostEnv.HOME);
-    case 'copilot-home':
-      return (
-        hostEnv.COPILOT_HOME ??
-        (hostEnv.HOME === undefined ? undefined : join(hostEnv.HOME, '.copilot'))
-      );
+    case 'tool-home':
+      return hasCliToolHome(tool) ? cliToolHome(tool, hostEnv, hostEnv.HOME) : undefined;
     default:
       return hostEnv[source];
   }
@@ -309,7 +310,7 @@ export async function bridgeCliState(
   const credentialValues = new Set<string>();
   const verifiedRoots = new Set<string>();
   for (const statePath of paths) {
-    const sourceRoot = hostStateRoot(statePath.source, hostEnv);
+    const sourceRoot = hostStateRoot(statePath.source, tool, hostEnv);
     if (sourceRoot === undefined || !isAbsolute(sourceRoot)) continue;
     const root = sandboxState[statePath.destination];
     const source = join(sourceRoot, statePath.relativePath);

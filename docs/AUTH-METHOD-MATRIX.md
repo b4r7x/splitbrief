@@ -35,9 +35,9 @@ Every tool can hold the planner and the implementer seat; the reviewer seat reus
 
 | Tool · channel | Invocation control SPLITBRIEF emits | Credential sources the child keeps | Sources excluded |
 |---|---|---|---|
-| `claude-code` · `session` | none | macOS: real `HOME`/`USER`, so the login keychain resolves. Linux: sealed read-only copy of `.claude/.credentials.json` | `ANTHROPIC_API_KEY` (not in the channel's `env`) |
+| `claude-code` · `session` | none | macOS: real `HOME`/`USER`, so the login keychain resolves. Linux: sealed read-only copy of `.claude/.credentials.json`; both read the folder a set `CLAUDE_CONFIG_DIR` names, and macOS passes it to the child | `ANTHROPIC_API_KEY` (not in the channel's `env`) |
 | `claude-code` · `api-key` | none | `ANTHROPIC_API_KEY` only | private `HOME`; nothing bridged |
-| `codex` · `session` | none | live passthrough of `~/.codex/auth.json` (`rotating-oauth`) | `OPENAI_API_KEY` |
+| `codex` · `session` | none | live passthrough of `~/.codex/auth.json`, or of `auth.json` in a set `CODEX_HOME` (`rotating-oauth`); a keyring sign-in (`cli_auth_credentials_store` `keyring` or `auto`) reads as not reachable | `OPENAI_API_KEY` |
 | `codex` · `api-key` | none | `OPENAI_API_KEY` only | private `HOME`; nothing bridged |
 | `cursor` · `session` | none | macOS: real `HOME`/`USER` (keychain). Linux: live link to `${XDG_CONFIG_HOME:-~/.config}/cursor/auth.json` | `CURSOR_API_KEY` |
 | `cursor` · `api-key` | none | `CURSOR_API_KEY` only | private `HOME`; nothing bridged |

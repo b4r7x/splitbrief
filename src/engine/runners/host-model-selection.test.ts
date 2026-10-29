@@ -132,6 +132,30 @@ describe('readHostModelSelection', () => {
     expect(selection).toEqual({ model: 'claude-fable-5-1[1m]', source: path });
   });
 
+  it('reads the claude-code settings model under a set CLAUDE_CONFIG_DIR', async () => {
+    write('.claude/settings.json', '{"model":"claude-stale"}');
+    const path = write('second-account/settings.json', '{"model":"claude-fable-5-1"}');
+
+    const selection = await readHostModelSelection('claude-code', {
+      HOME: home,
+      CLAUDE_CONFIG_DIR: join(home, 'second-account'),
+    });
+
+    expect(selection).toEqual({ model: 'claude-fable-5-1', source: path });
+  });
+
+  it('reads the codex model under a set CODEX_HOME', async () => {
+    write('.codex/config.toml', 'model = "gpt-stale"');
+    const path = write('codex-home/config.toml', 'model = "gpt-6-astra"');
+
+    const selection = await readHostModelSelection('codex', {
+      HOME: home,
+      CODEX_HOME: join(home, 'codex-home'),
+    });
+
+    expect(selection).toEqual({ model: 'gpt-6-astra', source: path });
+  });
+
   it('resolves the antigravity display name through the detected catalog', async () => {
     const settings = '{"model":"Gemini 3.8 Flash (High)"}';
     const path = write('.gemini/antigravity-cli/settings.json', settings);

@@ -17,6 +17,7 @@ import { apiKeyEnvReference } from '../providers/client/api-key.js';
 import { SECURE_DIR_MODE } from '../../lib/fs.js';
 import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';
 import { error } from '../../utils/error.js';
+import { CLI_TOOL_HOME_ENV, hasCliToolHome } from './host-model-selection.js';
 import { sanitizedRuntimePath } from './resolve-cli-executable.js';
 import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-credential-values.js';
 import { bridgeCliState, clearBridgedStateUnder } from './sandbox-state-bridge.js';
@@ -192,20 +193,23 @@ export function runnerSandboxIdentity(runner: RunnerLike): string {
  * name in `USER` for keychain-backed session channels (Claude Code, Cursor,
  * Antigravity and Copilot). Measured against `claude auth status` on
  * 2026-08-06, a child given the real `HOME` but not `USER` still reports
- * `"loggedIn": false`. Copilot also keeps a set `COPILOT_HOME`, a path and not
- * a credential: Copilot reads its config folder from it before `~/.copilot`.
+ * `"loggedIn": false`. The child also keeps a set `CLAUDE_CONFIG_DIR` or
+ * `COPILOT_HOME` (`CLI_TOOL_HOME_ENV`), a path and not a credential: the tool
+ * reads its config folder from it before the default under HOME, and Claude
+ * Code names its keychain item after that folder.
  * Nothing else the sandbox redirects is handed back, so temp, cache and XDG
  * state stay isolated — but this child does read and write the real home
  * directory. See docs/PLANNERS-AND-IMPLEMENTERS.md, "Credential channels".
  */
 function hostAccountState(tool: CliToolId | undefined): Readonly<Record<string, string>> {
   const home = homedir();
-  const copilotHome = tool === 'copilot' ? process.env.COPILOT_HOME : undefined;
+  const homeKey = tool !== undefined && hasCliToolHome(tool) ? CLI_TOOL_HOME_ENV[tool] : undefined;
+  const toolHome = homeKey === undefined ? undefined : process.env[homeKey];
   return {
     HOME: home,
     USERPROFILE: home,
     USER: userInfo().username,
-    ...(copilotHome === undefined ? {} : { COPILOT_HOME: copilotHome }),
+    ...(homeKey === undefined || toolHome === undefined ? {} : { [homeKey]: toolHome }),
   };
 }
 
