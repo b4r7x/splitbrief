@@ -144,7 +144,9 @@ export interface AtRestComposer {
  * bare Enter, or only the bare Enter at a halt or an Apply that reads no typed words; anything
  * else takes commands only, so Enter never promises work that cannot happen.
  * Behind this window's Apply, Enter queues home, which a queued quit already overrides; `apply` is
- * absent when no Apply of this window writes the run, so Enter goes home at once.
+ * absent when no Apply of this window writes the run, so Enter goes home at once. Apply saves the
+ * run closed before it removes the run workspace and releases the run; from then on the record
+ * speaks, as the byline does, except that a queued quit still promises no home.
  */
 export function atRestComposer(
   record: RunRecord,
@@ -157,7 +159,7 @@ export function atRestComposer(
     placeholder:
       record.status.kind === 'ready-to-apply'
         ? AT_REST_PLACEHOLDER.ready
-        : apply !== undefined
+        : apply !== undefined && (record.status.kind === 'running' || apply.queued === 'quit')
           ? applyComposer(apply.queued).placeholder
           : !continuable
             ? AT_REST_PLACEHOLDER.closed

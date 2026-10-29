@@ -2964,6 +2964,14 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: APPLYING, log: READY_LOG },
   }),
   atRestProjection({
+    id: 'workflow-at-rest-applying-closed',
+    route: { record: CLOSED_APPLIED },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-applying-closed-quit-queued',
+    route: { record: CLOSED_APPLIED },
+  }),
+  atRestProjection({
     id: 'workflow-at-rest-other-process-applying',
     route: { record: APPLYING, log: READY_LOG },
   }),

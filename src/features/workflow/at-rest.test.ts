@@ -364,6 +364,14 @@ describe('atRestComposer', () => {
     });
   });
 
+  it('follows the record once the Apply of this window closed the run, before the Apply settles', () => {
+    const applied = makeRunRecord({ status: { kind: 'closed', as: 'applied' } });
+    expect(atRestComposer(applied, { queued: null }).placeholder).toBe(
+      '/ for a command · ⏎ for home…',
+    );
+    expect(atRestComposer(applied, { queued: 'quit' }).placeholder).toBe('/ for a command…');
+  });
+
   it('says Enter goes home at once while another process applies the run', () => {
     expect(atRestComposer(applyingRecord())).toEqual({
       continuable: false,
