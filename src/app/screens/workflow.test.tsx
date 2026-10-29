@@ -1746,6 +1746,38 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
+  // Apply saves the closed run before it removes the run workspace and releases the run lock.
+  it('drops the Apply wait from the composer in the render that closes the run', async () => {
+    const ready = readyRun();
+    routerStore.init({
+      screen: 'workflow',
+      run: { ...ready, status: { kind: 'running' } },
+      execution: { kind: 'at-rest' },
+    });
+    holdApply();
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      '/ for a command · ⏎ for home when Apply finishes…',
+    );
+
+    routerStore.updateRun({
+      run: {
+        ...ready,
+        status: { kind: 'closed', as: 'applied' },
+        summary: makeSummary({ feature: 'applied at rest', totalTasks: 0 }),
+      },
+    });
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Closed');
+    expect(frame).toContain('/ for a command · ⏎ for home…');
+    expect(frame).not.toContain('when Apply finishes');
+    ui.unmount();
+  });
+
   it('goes home at once from a run another process applies, and says that process runs it', async () => {
     const ready = readyRun();
     routerStore.init({

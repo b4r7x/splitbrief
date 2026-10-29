@@ -286,7 +286,8 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       projection.scenarioId === 'workflow-at-rest-applying-home-queued' ||
       projection.scenarioId === 'workflow-live-applying-home-queued'
         ? (write: FixtureWrite) => write.press('\u001b')
-        : projection.scenarioId === 'workflow-at-rest-applying-quit-queued'
+        : projection.scenarioId === 'workflow-at-rest-applying-quit-queued' ||
+            projection.scenarioId === 'workflow-at-rest-applying-closed-quit-queued'
           ? () => departureStore.__testReset({ kind: 'quit', run: () => {} })
           : undefined;
     return () => {
@@ -958,6 +959,23 @@ const checkpointPredicates = [
   [
     checkpointId('at-rest-applying-quit-queued'),
     (context) => includesAll('Quits when')(context) && departureStore.get()?.kind === 'quit',
+  ],
+  // Apply saved the run closed and still removes its workspace: the composer follows the record.
+  [
+    checkpointId('at-rest-applying-closed'),
+    (context) =>
+      includesAll('⏎ for home…')(context) &&
+      excludesAll('when Apply finishes', 'Applying to your checkout')(context) &&
+      activeApply() !== undefined,
+  ],
+  // A queued quit leaves no way home, so the composer promises none.
+  [
+    checkpointId('at-rest-applying-closed-quit-queued'),
+    (context) =>
+      includesAll('/ for a command…')(context) &&
+      excludesAll('for home', 'esc home')(context) &&
+      activeApply() !== undefined &&
+      departureStore.get()?.kind === 'quit',
   ],
   // A live Apply reads the same as one at rest, and Esc opens no session options over it.
   [

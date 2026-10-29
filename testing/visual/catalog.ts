@@ -2653,6 +2653,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-applying-closed',
+      title: 'Workflow · applied, while Apply still releases the run',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-applying-closed',
+        title: 'Run closed, Apply still releasing it',
+        kind: 'success',
+        marker: 'visual-closed-applied',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-applying-closed-quit-queued',
+      title: 'Workflow · applied, with a quit waiting for Apply to release the run',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-applying-closed-quit-queued',
+        title: 'Run closed, quit queued behind Apply',
+        kind: 'success',
+        marker: 'visual-closed-applied',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-other-process-applying',
       title: 'Workflow · a ready run another process applies',
       surface: screenSurface('workflow'),
