@@ -141,7 +141,13 @@ if (prompt.includes('# Choose the checks for this review')) {
     const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
     expect(events.filter((event) => event.type === 'review_checks')).toHaveLength(1);
     const steps = events.filter((event) => event.type === 'review_step');
-    expect(steps.map((event) => event.step)).toEqual(['choosing-checks', 'verdict', 'verdict']);
+    expect(steps.map((event) => event.step)).toEqual([
+      'choosing-checks',
+      'verdict',
+      'verify',
+      'verdict',
+      'verify',
+    ]);
     const status = await cli(target, ['status']);
     expect(status.exitCode, status.stderr).toBe(0);
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);

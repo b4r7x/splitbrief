@@ -89,6 +89,7 @@ if (!existsSync(${JSON.stringify(started)})) {
     expect(events.flatMap((event) => (event.type === 'review_step' ? [event.step] : []))).toEqual([
       'verdict',
       'verdict',
+      'verify',
     ]);
     const attempts = groupEventsIntoSections(events).filter(
       (section) => section.type === 'settled-stage' && section.summary.stage === 'review',
