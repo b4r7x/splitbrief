@@ -2,6 +2,10 @@ import { existsSync, realpathSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import {
+  GLOBAL_SKILL_SCAN_PATHS,
+  PROJECT_SKILL_SCAN_PATHS,
+} from '../../../core/skills/scan-paths.js';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { escapeRegExp } from '../../../utils/regexp.js';
 import type { ToolUseGuard } from '../../runners/cli-tools/process-invoke.js';
@@ -98,8 +102,8 @@ type Zone = Readonly<{ root: string; allows: ReadonlySet<PathAccess> }>;
  * the directory itself, the temp and device paths every toolchain writes, the
  * tool's own state, read-only system and toolchain roots, and the run's global
  * skills, read-only. The checkout the run promotes into is closed except for
- * reads of its `node_modules`, which the isolation directory links to. Every
- * other path is outside.
+ * reads of its `node_modules`, which the isolation directory links to, and of
+ * its agent skills folders. Every other path is outside.
  */
 export type IsolationBoundary = Readonly<{
   isolationDir: string;
@@ -113,8 +117,11 @@ export type IsolationBoundary = Readonly<{
   home: string;
   /** The homes evidence spells as `~`, longest first: the tool's and the operator's. */
   displayHomes: readonly string[];
-  /** The tool's own state directories as the tool names them, before their links resolve. */
-  toolStateDirs: readonly string[];
+  /**
+   * The tool's own state directories and every agent skills folder, home and project, as the
+   * tool names them, before their links resolve.
+   */
+  readDirs: readonly string[];
   /** Claude Code's shell keeps the directory a `cd` left it in for the next tool call. */
   keepsShellCwd: boolean;
   tmpdir: string | undefined;
@@ -233,9 +240,12 @@ export function createIsolationBoundary(input: {
   // The most specific root decides; between equal roots the stricter one does.
   zones.sort((a, b) => b.root.length - a.root.length || a.allows.size - b.allows.size);
   const displayHomes = [...new Set([home, homedir()])].sort((a, b) => b.length - a.length);
-  const toolStateDirs = [
-    ...displayHomes.flatMap((root) => toolStates.map((dir) => join(root, dir))),
+  const readDirs = [
+    ...displayHomes.flatMap((root) =>
+      [...toolStates, ...GLOBAL_SKILL_SCAN_PATHS].map((dir) => join(root, dir)),
+    ),
     ...toolHomes,
+    ...PROJECT_SKILL_SCAN_PATHS.map((dir) => join(checkoutDir, dir)),
   ];
   const parent = dirname(isolationDir);
   return {
@@ -244,7 +254,7 @@ export function createIsolationBoundary(input: {
     checkoutDir,
     home,
     displayHomes,
-    toolStateDirs,
+    readDirs,
     keepsShellCwd: input.tool === 'claude-code',
     tmpdir: input.env.TMPDIR,
     zones,
@@ -256,14 +266,15 @@ function zoneOf(boundary: IsolationBoundary, path: string): Zone | undefined {
 }
 
 /**
- * A read in the tool's own state as the tool named it, before its links
- * resolve: agy links `~/.gemini/skills` into `~/.agents/skills`, and loading
- * its skills is the tool's own business wherever they lead.
+ * A read in the tool's own state or in an agent skills folder as the tool
+ * named it, before its links resolve: agy links `~/.gemini/skills` into
+ * `~/.agents/skills`, a skills folder links its skills from anywhere, and
+ * loading skills is the tool's own business wherever they lead.
  */
-function readsToolState(boundary: IsolationBoundary, reference: PathReference): boolean {
+function readsToolStateOrSkills(boundary: IsolationBoundary, reference: PathReference): boolean {
   if (reference.access === 'write') return false;
   const path = resolve(reference.path);
-  return boundary.toolStateDirs.some((dir) => isWithin(dir, path));
+  return boundary.readDirs.some((dir) => isWithin(dir, path));
 }
 
 /** The dot entries of `node_modules` that hold what is installed, not a tool cache. */
@@ -299,7 +310,9 @@ function crosses(boundary: IsolationBoundary, reference: PathReference): string 
   // A word only guessed to be a path reaches something only if it exists: a test name like
   // `/api/users` or a container path like `/app` is not a place on this disk.
   if (reference.mentioned === true && !existsSync(reference.path)) return null;
-  if (readsToolState(boundary, reference) || touchesDependency(boundary, reference)) return null;
+  if (readsToolStateOrSkills(boundary, reference) || touchesDependency(boundary, reference)) {
+    return null;
+  }
   const path = canonicalPath(reference.path, { followsLink: reference.followsLink });
   if (zoneOf(boundary, path)?.allows.has(reference.access) !== true) return path;
   if (reference.access !== 'search') return null;

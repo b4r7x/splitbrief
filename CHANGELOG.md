@@ -101,6 +101,7 @@
 
 ### Fixed
 
+- Reading a skill in a skills folder, such as `~/.claude/skills` or the project's `.claude/skills`, no longer shows a warning, and the review no longer lists it. A write there still stops the brief.
 - Antigravity activity rows now show the file a read or edit names, instead of `Read file`.
 - When the implementer says it is blocked and its report has a broken field, the planner now gets its question instead of the brief going on as done, and a warning names the field. A report without a `done` or `blocked` status now shows a warning too.
 - A config that lacks a required value, such as a seat with no tool, now names the missing value instead of showing raw validation text.
