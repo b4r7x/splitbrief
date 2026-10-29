@@ -396,7 +396,7 @@ const LISTING_SOURCES: Readonly<Record<CliToolId, ListingSource>> = {
     unverifiedForPlan: false,
   },
   opencode: {
-    source: 'from opencode api GET /api/model',
+    source: 'from opencode api GET /api/model --standalone',
     rowNoun: 'model',
     rowNounPlural: 'models',
     unverifiedForPlan: false,

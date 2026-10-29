@@ -195,9 +195,8 @@ export type CliAuthProbe =
 /**
  * The listing releases below `belowVersion` take instead of the declared one.
  * Unlike the auth legacy it carries its own `parse`, because the two releases
- * print different formats, and it inherits no `hostState` and no
- * `directoryHeader`: a legacy listing the sandbox could already serve must not
- * widen its posture.
+ * print different formats, and it inherits no `directoryHeader`: a legacy
+ * listing the sandbox could already serve must not widen its posture.
  */
 export type CliCatalogProbeLegacy = Readonly<{
   belowVersion: string;
@@ -213,12 +212,6 @@ export type CliCatalogProbe =
         kind: 'catalog';
         /** A separately declared fixed manual command; never caller-mutated argv. */
         manualCommand?: readonly [string, ...string[]] | undefined;
-        /**
-         * Enumeration the credential sandbox cannot answer, so this listing runs
-         * with the host account instead of the channel's staging. Declared per
-         * tool and read only here: dispatch keeps the channel's own posture.
-         */
-        hostState?: 'host-account' | undefined;
         /**
          * The request header that names the project directory to the tool's own
          * service, so the listing carries the providers the project's config sets up.

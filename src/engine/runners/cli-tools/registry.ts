@@ -431,7 +431,6 @@ function structuralCatalogProbe(
     command: readonly [string, ...string[]];
     parser: NativeCatalogParser;
     manualCommand?: readonly [string, ...string[]] | undefined;
-    hostState?: 'host-account' | undefined;
     directoryHeader?: 'x-opencode-directory' | undefined;
     timeoutMs?: number | undefined;
     legacy?: Readonly<{
@@ -452,7 +451,6 @@ function structuralCatalogProbe(
     timeoutMs: input.timeoutMs ?? CODEX_NATIVE_MODEL_CATALOG_PROBE.timeoutMs,
     maxOutputBytes: CODEX_NATIVE_MODEL_CATALOG_PROBE.maxOutputBytes,
     ...(manualCommand === undefined ? {} : { manualCommand }),
-    ...(input.hostState === undefined ? {} : { hostState: input.hostState }),
     ...(input.directoryHeader === undefined ? {} : { directoryHeader: input.directoryHeader }),
     ...(input.legacy === undefined
       ? {}
@@ -479,11 +477,9 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
       });
     case 'opencode':
       return structuralCatalogProbe({
-        command: ['opencode', 'api', 'GET', '/api/model'],
-        // opencode 2 serves `model.list` from its own server, which materializes
-        // a directory's providers on first sight and cannot see an `env`-type
-        // provider connection the sandbox strips. See docs/AUTH-METHOD-MATRIX.md.
-        hostState: 'host-account',
+        // The listing starts a standalone server in the channel's own staging, so it
+        // lists only the providers a run can reach.
+        command: ['opencode', 'api', 'GET', '/api/model', '--standalone'],
         // Without the header the server lists the global providers only, none that
         // the project's own opencode.json sets up.
         directoryHeader: 'x-opencode-directory',

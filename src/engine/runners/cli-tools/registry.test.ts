@@ -364,7 +364,7 @@ describe('admitted readiness probe contracts', () => {
     });
     expect(opencode.declared.catalog).toMatchObject({
       kind: 'catalog',
-      command: ['opencode', 'api', 'GET', '/api/model'],
+      command: ['opencode', 'api', 'GET', '/api/model', '--standalone'],
     });
     expect(kilo.declared.catalog).toMatchObject({
       kind: 'catalog',
