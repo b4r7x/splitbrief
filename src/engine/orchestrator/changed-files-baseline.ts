@@ -107,7 +107,7 @@ async function fingerprintChangedFile(projectDir: string, file: string): Promise
       return target === null ? UNREADABLE_FINGERPRINT : `symlink:${target}`;
     }
     assertExistingPathConfined(file, projectDir);
-    return sha256Hex(await readFile(filePath, 'utf-8'));
+    return sha256Hex(await readFile(filePath));
   } catch (cause) {
     if (isENOENT(cause)) return 'missing';
     return UNREADABLE_FINGERPRINT;
