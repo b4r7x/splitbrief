@@ -1199,6 +1199,7 @@ describe('InputFooter', () => {
       },
       continuable: true,
       width: 120,
+      now: Date.now(),
     });
     const ui = renderFeature(<InputFooter width={120} byline={byline} />);
     expect(ui.lastFrame()).toContain(

@@ -719,7 +719,12 @@ else {
     expect(transcriptText().replace(/\s+/g, ' ')).toContain(whole);
     if (reopened.status.kind !== 'open') throw new Error('the partial reject closed the run');
     expect(
-      openRunBylineParts({ status: reopened.status, continuable: true, width: 120 })
+      openRunBylineParts({
+        status: reopened.status,
+        continuable: true,
+        width: 120,
+        now: Date.now(),
+      })
         .map((part) => part.text)
         .join(''),
     ).not.toContain('kept');

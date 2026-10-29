@@ -597,6 +597,12 @@ describe('deriveRunStatus: a seat wait', () => {
     },
   );
 
+  it('carries the wait of a run another process holds', () => {
+    expect(
+      statusOf({ seatWait: { seat: 'build', resetAt, tool: 'codex', kind: 'cli' } }, 'alive'),
+    ).toEqual({ kind: 'running', seatWait: { tool: 'OpenAI Codex CLI', resetAt } });
+  });
+
   it('names the seat when neither the wait nor the run recorded a tool', () => {
     expect(waitTool({ seatWait: { seat: 'build', resetAt } })).toBe('BUILD');
   });

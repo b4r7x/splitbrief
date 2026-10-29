@@ -19,7 +19,7 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { formatResetAt } from '../../../core/recovery/reset-clock.js';
-import { seatWaitSentence } from '../display/seat-wait-line.js';
+import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import { InputFooter } from './input-footer.js';
 
 const originalColorLevel = chalk.level;

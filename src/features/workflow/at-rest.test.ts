@@ -412,7 +412,7 @@ describe('atRestComposer', () => {
     (_, stop, action) => {
       const status = openWith(stop);
       const composer = atRestComposer(recordAt({ status, phase: 'implementing' }));
-      const byline = openRunBylineParts({ status, continuable: true, width: 120 })
+      const byline = openRunBylineParts({ status, continuable: true, width: 120, now: Date.now() })
         .map((part) => part.text)
         .join('');
       expect(composer.placeholder).toBe('Type a correction…');

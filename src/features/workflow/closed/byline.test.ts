@@ -11,6 +11,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { atRestRunStatus } from '../../../core/sessions/run-status.js';
 import { formatResetAt } from '../../../core/recovery/reset-clock.js';
+import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import { bylineParts, legendText, openRunBylineParts } from './byline.js';
 import { stopPoint } from '../stop/copy.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
@@ -22,6 +23,9 @@ function joinedByline(parts: readonly ConversationRowSegment[]): string {
 function bylineText(view: Parameters<typeof bylineParts>[0], width: number): string {
   return joinedByline(bylineParts(view, width));
 }
+
+// A local noon, so a reset at 17:00 the same day reads as a bare clock.
+const NOW = new Date(2026, 9, 10, 12, 0, 0, 0).getTime();
 
 function openRunByline(input: Parameters<typeof openRunBylineParts>[0]): string {
   return joinedByline(openRunBylineParts(input));
@@ -162,12 +166,13 @@ describe('bylineText', () => {
 });
 
 describe('openRunByline', () => {
-  const OPEN = { continuable: true, width: WIDE } as const;
+  const OPEN = { continuable: true, width: WIDE, now: NOW } as const;
 
   it('points a run ready to apply at its result menu', () => {
     expect(
       openRunByline({
         continuable: false,
+        now: NOW,
         width: WIDE,
         status: { kind: 'ready-to-apply', override: false },
       }),
@@ -178,6 +183,7 @@ describe('openRunByline', () => {
     expect(
       openRunByline({
         continuable: false,
+        now: NOW,
         width: WIDE,
         status: { kind: 'ready-to-apply', override: true },
       }),
@@ -411,7 +417,7 @@ describe('openRunByline', () => {
   });
 
   it('names the tool a run waits on and the clock its reset lands', () => {
-    const resetAt = new Date(new Date().setHours(17, 0, 0, 0)).toISOString();
+    const resetAt = new Date(new Date(NOW).setHours(17, 0, 0, 0)).toISOString();
     expect(
       openRunByline({
         ...OPEN,
@@ -425,6 +431,49 @@ describe('openRunByline', () => {
         },
       }),
     ).toBe('Waiting for OpenAI Codex CLI · resets 17:00');
+  });
+
+  it('reads a wait whose reset has passed as an interrupted stop', () => {
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'open',
+          stop: {
+            kind: 'stopped',
+            on: {
+              kind: 'seat-wait',
+              seat: 'build',
+              tool: 'OpenAI Codex CLI',
+              resetAt: new Date(NOW - 60_000).toISOString(),
+            },
+          },
+          resumeAt: { kind: 'planner', call: 'plan' },
+        },
+      }),
+    ).toBe('Stopped at the plan · ⏎ to continue');
+  });
+
+  it('names the wait of a run another process holds as the live byline does', () => {
+    const resetAt = new Date(new Date(NOW).setHours(17, 0, 0, 0)).toISOString();
+    const text = openRunByline({
+      ...OPEN,
+      status: { kind: 'running', seatWait: { tool: 'OpenAI Codex CLI', resetAt } },
+    });
+    expect(text).toBe('Waiting for OpenAI Codex CLI · resets 17:00');
+    expect(text).toBe(seatWaitSentence('OpenAI Codex CLI', resetAt, NOW));
+  });
+
+  it('says a run another process holds is running once its wait has passed', () => {
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'running',
+          seatWait: { tool: 'OpenAI Codex CLI', resetAt: new Date(NOW - 60_000).toISOString() },
+        },
+      }),
+    ).toBe('Running in another process');
   });
 
   it('names the step an interrupted run picks up at', () => {
@@ -444,6 +493,7 @@ describe('openRunByline', () => {
     expect(
       openRunByline({
         continuable: false,
+        now: NOW,
         width: WIDE,
         status: {
           kind: 'open',
@@ -492,6 +542,7 @@ describe('openRunByline', () => {
       expect(
         openRunByline({
           continuable: false,
+          now: NOW,
           width,
           status: { kind: 'running' },
           apply: { elapsedMs: 7_000, queued },
@@ -524,7 +575,9 @@ describe('openRunByline', () => {
       },
       resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
     };
-    expect(openRunByline({ continuable: true, status, width: 40 })).toBe('Seat down · ⏎ to decide');
+    expect(openRunByline({ continuable: true, status, width: 40, now: NOW })).toBe(
+      'Seat down · ⏎ to decide',
+    );
   });
 
   it('sheds the reason before the action when the line will not fit', () => {
@@ -533,7 +586,7 @@ describe('openRunByline', () => {
       stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
       resumeAt: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
     } as const;
-    expect(openRunByline({ continuable: true, status, width: 30 })).toBe(
+    expect(openRunByline({ continuable: true, status, width: 30, now: NOW })).toBe(
       'Type a correction or ⏎ to con…',
     );
   });
@@ -544,6 +597,7 @@ describe('openRunByline on a halt whose action was chosen', () => {
   function haltByline(issue: RecoveryIssue): string {
     return openRunByline({
       continuable: true,
+      now: NOW,
       width: WIDE,
       status: {
         kind: 'open',
@@ -624,6 +678,7 @@ describe('openRunByline on a halt whose action was chosen', () => {
     const issue = makeRecoveryIssue({ status: 'applying', selectedAction: 'retry-same-worker' });
     const parts = openRunBylineParts({
       continuable: true,
+      now: NOW,
       width: 30,
       status: {
         kind: 'open',
@@ -677,7 +732,7 @@ describe('fitted byline parts', () => {
           kind: 'seat-wait',
           seat: 'build',
           tool: 'OpenAI Codex CLI',
-          resetAt: '2026-10-10T17:00:00Z',
+          resetAt: '2026-10-11T17:00:00Z',
         },
       },
       'Waiting for OpenAI Codex CLI',
@@ -691,6 +746,7 @@ describe('fitted byline parts', () => {
         resumeAt: { kind: 'planner', call: 'plan' },
       },
       continuable: true,
+      now: NOW,
       width: WIDE,
     } as const;
     const parts = openRunBylineParts(input);
@@ -721,12 +777,12 @@ describe('fitted byline parts', () => {
       },
       resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
     };
-    expect(openRunBylineParts({ status, continuable: true, width: 40 })).toEqual([
+    expect(openRunBylineParts({ status, continuable: true, width: 40, now: NOW })).toEqual([
       { text: 'Seat down', tone: 'warning' },
       { text: ' · ', tone: 'textDim' },
       { text: '⏎ to decide', tone: 'textDim' },
     ]);
-    expect(openRunBylineParts({ status, continuable: true, width: 12 })).toEqual([
+    expect(openRunBylineParts({ status, continuable: true, width: 12, now: NOW })).toEqual([
       { text: '⏎ to decide', tone: 'textDim' },
     ]);
   });
@@ -736,7 +792,7 @@ describe('fitted byline parts', () => {
     [{ kind: 'ready-to-apply', override: true }, 'warning'],
     [{ kind: 'running' }, 'accent'],
   ] as const)('colors %s from its state', (status, reasonTone) => {
-    expect(openRunBylineParts({ status, continuable: true, width: WIDE })[0]).toEqual({
+    expect(openRunBylineParts({ status, continuable: true, width: WIDE, now: NOW })[0]).toEqual({
       text:
         status.kind === 'running'
           ? 'Running in another process'
@@ -844,6 +900,7 @@ it('keeps the separator inside a failed reason dim', () => {
       resumeAt: { kind: 'planner', call: 'plan' },
     },
     continuable: true,
+    now: NOW,
     width: WIDE,
   });
   expect(parts).toEqual([
@@ -864,6 +921,7 @@ it('keeps the review seat in an at-rest halt title', () => {
       resumeAt: { kind: 'review', cycle: 0 },
     },
     continuable: true,
+    now: NOW,
     width: WIDE,
   });
   expect(joinedByline(parts)).toBe('Seat down · Reviewer call failed · ⏎ to decide');
@@ -878,7 +936,7 @@ it('keeps the review seat in an at-rest halt title', () => {
 });
 
 describe('the at-rest byline of a run stopped in a seat wait', () => {
-  const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const resetAt = new Date(NOW + 10 * 60 * 1000).toISOString();
   const record = makeRunRecord({
     status: {
       kind: 'open',
@@ -908,6 +966,7 @@ describe('the at-rest byline of a run stopped in a seat wait', () => {
       openRunBylineParts({
         status: atRestRunStatus(record, config),
         continuable: true,
+        now: NOW,
         width: WIDE,
       }),
     );
@@ -922,6 +981,6 @@ describe('the at-rest byline of a run stopped in a seat wait', () => {
   it('keeps the wait when only the model of the seat changed', () => {
     expect(
       atRestByline(makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.1' } })),
-    ).toBe(`Waiting for OpenAI Codex CLI · ${formatResetAt(resetAt)}`);
+    ).toBe(`Waiting for OpenAI Codex CLI · ${formatResetAt(resetAt, NOW)}`);
   });
 });

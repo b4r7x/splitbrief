@@ -50,6 +50,7 @@ import {
   openRunBylineParts,
 } from '../../features/workflow/closed/byline.js';
 import { useSharedClock } from '../../hooks/use-shared-clock.js';
+import { seatWaitParts } from '../../core/sessions/seat-wait-line.js';
 import { departureStore } from '../../stores/workflow/departure.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
@@ -408,7 +409,18 @@ export function WorkflowScreen({
   // The record carries no Apply start, so the clock counts from when this screen first saw it.
   const [applySince, setApplySince] = useState<number | null>(null);
   useLayoutEffect(() => setApplySince(model.applying ? Date.now() : null), [model.applying]);
-  const now = useSharedClock({ active: model.applying });
+  const config = configStore.useConfig();
+  const atRestStatus =
+    model.atRestRecord === undefined ? undefined : atRestRunStatus(model.atRestRecord, config);
+  // A wait's text goes when its reset passes, so the byline needs the clock while one shows.
+  const wait =
+    atRestStatus?.kind === 'running'
+      ? atRestStatus.seatWait
+      : atRestStatus?.kind === 'open' && atRestStatus.stop.on.kind === 'seat-wait'
+        ? atRestStatus.stop.on
+        : undefined;
+  const showsWait = wait !== undefined && seatWaitParts(wait.tool, wait.resetAt) !== null;
+  const now = useSharedClock({ active: model.applying || showsWait });
   const queuedDeparture = departureStore.use((state) => state?.kind ?? null);
   const apply = model.applying
     ? {
@@ -416,18 +428,18 @@ export function WorkflowScreen({
         queued: queuedDeparture,
       }
     : undefined;
-  const config = configStore.useConfig();
   const byline =
-    model.atRestRecord === undefined
+    atRestStatus === undefined
       ? apply === undefined
         ? undefined
         : applyByline(apply, bylineWidth)
       : model.closedView !== null
         ? bylineParts(model.closedView, bylineWidth)
         : openRunBylineParts({
-            status: atRestRunStatus(model.atRestRecord, config),
+            status: atRestStatus,
             continuable: model.continuable,
             width: bylineWidth,
+            now,
             apply,
           });
   // A check running for this run owns Escape and says so on the byline, so the legend above the

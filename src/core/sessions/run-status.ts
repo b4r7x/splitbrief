@@ -36,7 +36,7 @@ export type StopReason =
   | { kind: 'stopped'; on: StoppedOn };
 
 export type RunStatus =
-  | { kind: 'running' }
+  | { kind: 'running'; seatWait?: { tool: string; resetAt: string } }
   | { kind: 'open'; stop: StopReason; resumeAt: StepRef }
   | { kind: 'ready-to-apply'; override: boolean }
   | { kind: 'closed'; as: 'complete' | 'ended' | 'applied' | 'undone' | 'discarded' };
@@ -202,7 +202,17 @@ export function deriveRunStatus(
   ) {
     return { kind: 'closed', as: 'complete' };
   }
-  if (input.liveness === 'alive') return { kind: 'running' };
+  if (input.liveness === 'alive') {
+    return {
+      kind: 'running',
+      ...(state.seatWait !== undefined && {
+        seatWait: {
+          tool: seatWaitToolWord(state, state.seatWait),
+          resetAt: state.seatWait.resetAt,
+        },
+      }),
+    };
+  }
   if (
     awaitsApply(state) &&
     state.pendingRecovery === undefined &&

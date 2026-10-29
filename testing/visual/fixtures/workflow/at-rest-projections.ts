@@ -802,6 +802,13 @@ const AT_REST_SEAT_WAIT = record({
   state: SEAT_WAIT_STATE,
 });
 
+/** The same wait while another process holds the run: the byline names the wait it shows live. */
+const AT_REST_SEAT_WAIT_ELSEWHERE = record({
+  sessionId: 'visual-at-rest-seat-wait-elsewhere',
+  status: deriveRunStatus({ state: SEAT_WAIT_STATE, liveness: 'alive' }),
+  state: SEAT_WAIT_STATE,
+});
+
 /**
  * The same wait after `/crew` moved BUILD off the Codex tool the wait holds: the run stopped, and
  * the byline names no wait on a tool the seat no longer runs.
@@ -2769,6 +2776,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
   atRestProjection({ id: 'workflow-at-rest-seat-wait', route: { record: AT_REST_SEAT_WAIT } }),
   atRestProjection({ id: 'workflow-at-rest-seat-moved', route: { record: AT_REST_SEAT_MOVED } }),
+  atRestProjection({
+    id: 'workflow-at-rest-seat-wait-elsewhere',
+    route: { record: AT_REST_SEAT_WAIT_ELSEWHERE },
+  }),
   atRestProjection({
     id: 'workflow-at-rest-halted-chosen',
     route: { record: AT_REST_HALTED_CHOSEN },

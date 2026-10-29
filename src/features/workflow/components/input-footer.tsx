@@ -8,7 +8,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { getActiveRailStage, phaseStage, railStageSeat } from '../../../core/rail-stages.js';
 import { deriveLiveStatus } from '../display/live-activity.js';
-import { seatWaitSentence } from '../display/seat-wait-line.js';
+import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { TextSpans } from '../../../components/text-spans.js';

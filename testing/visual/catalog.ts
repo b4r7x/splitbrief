@@ -2279,6 +2279,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-seat-wait-elsewhere',
+      title: 'Workflow · a run another process holds in a seat wait, at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-seat-wait-elsewhere',
+        title: 'Run another process holds, waiting for a seat reset',
+        kind: 'ready',
+        marker: 'Waiting for OpenAI Codex CLI',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer and seat-wait byline' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-live-seat-wait',
       title: 'Workflow · a running workflow waiting for a seat reset',
       surface: screenSurface('workflow'),

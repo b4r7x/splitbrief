@@ -100,6 +100,7 @@
 
 ### Fixed
 
+- A reopened run that another process drives now shows when a seat waits for its usage limit to reset, and a wait whose reset has passed no longer shows on the run screen or in `--plain` output.
 - When one field of the implementer's closing report has the wrong shape, SPLITBRIEF keeps the other fields, such as the files it changed and its decisions, and shows one warning that names the field. Before, the whole report was lost and its narration showed as raw JSON.
 - The screen now says when a seat's answer did not match its format, why, and that the seat is asked again.
 - Stopping while the review checks its findings no longer repeats the review: a continue verifies the reviewer's saved answer.

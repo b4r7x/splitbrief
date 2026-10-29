@@ -1,5 +1,5 @@
-import { formatResetNote } from '../../../core/recovery/reset-clock.js';
-import { SOFT_SEP } from '../../../core/separators.js';
+import { formatResetNote } from '../recovery/reset-clock.js';
+import { SOFT_SEP } from '../separators.js';
 
 /**
  * The live wait line as its two parts, the wait and its reset; none once the reset has passed, so
