@@ -100,8 +100,6 @@ const phaseActions = {
     'ALL_DONE',
     'REVIEW_DONE',
     'RECORD_REVIEW',
-    'SAVE_REVIEW_ANSWER',
-    'DROP_REVIEW_ANSWER',
     'RECORD_TRIAGE',
     'START_FIX_CYCLE',
     'REVIEW_CORRECTION',
@@ -121,8 +119,6 @@ const phaseActions = {
     'RECORD_APPLY_RECHECK',
     'BIND_APPLY_INTEGRATED',
     'RECORD_REVIEW',
-    'SAVE_REVIEW_ANSWER',
-    'DROP_REVIEW_ANSWER',
     'RECORD_TRIAGE',
     'START_FIX_CYCLE',
     'QUEUE_TRIAGE',
@@ -449,21 +445,10 @@ export function transition(
           : action.review;
       const { open, ...fixCycles } = fixCyclesOf(state);
       if (open === undefined || !judgesCycle(state.triage, open, record)) {
-        return { ...state, review: record, reviewAnswer: undefined };
+        return { ...state, review: record };
       }
-      return {
-        ...state,
-        review: { ...record, judges: open.cycle },
-        reviewAnswer: undefined,
-        fixCycles,
-      };
+      return { ...state, review: { ...record, judges: open.cycle }, fixCycles };
     }
-
-    case 'SAVE_REVIEW_ANSWER':
-      return { ...state, reviewAnswer: action.answer };
-
-    case 'DROP_REVIEW_ANSWER':
-      return { ...state, reviewAnswer: undefined };
 
     case 'RECORD_TRIAGE':
       return { ...state, triage: [...(state.triage ?? []), action.record] };
@@ -739,7 +724,6 @@ export function transition(
           pendingRecovery: undefined,
           pendingTriage: undefined,
           pendingScheduledReview: undefined,
-          reviewAnswer: undefined,
           interruptedStep: {
             step: { kind: 'brief', taskId: firstId, attempt: 0 },
             source: step?.source ?? 'user',

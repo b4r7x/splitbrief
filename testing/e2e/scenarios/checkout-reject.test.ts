@@ -317,7 +317,6 @@ function passBothBriefs(target: StopContinueFixture): void {
     findings: [],
     fixTasks: [],
     rejected: [],
-    verify: [],
     ask: null,
   });
   writeFileSync(plannerPath, script.replace(line[0], `const REVIEW = ${JSON.stringify(review)};`));

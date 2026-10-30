@@ -69,7 +69,6 @@ export function passingVerdict(scope: ReviewScope): ReviewAnswer {
     findings: [],
     fixTasks: [],
     rejected: [],
-    verify: [],
     ask: null,
   };
 }
@@ -297,7 +296,7 @@ export function typedCallPlanAndReview(
         text:
           typeof answered === 'string'
             ? answered
-            : JSON.stringify({ fixTasks: [], rejected: [], verify: [], ask: null, ...answered }),
+            : JSON.stringify({ fixTasks: [], rejected: [], ask: null, ...answered }),
         usage: usage?.review ?? null,
       });
     },

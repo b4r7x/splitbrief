@@ -49,7 +49,7 @@ Write review-packet.md with this shape:
     Render checks are unavailable in these skills. A required render criterion stays unverified.
 
     ## Typed answer
-    Return one JSON object with tasks, criteria, findings, fixTasks, rejected, verify and ask.
+    Return one JSON object with tasks, criteria, findings, fixTasks, rejected and ask.
     Tasks use plan: met, partial or missed. Criteria use status: pass, fail or unverified, with evidence.
     Findings use kind: defect, plan-gap, unverified or question; severity: blocking or minor.
 
@@ -57,11 +57,11 @@ Write review-packet.md with this shape:
     Include exactly one result for each completed task and each criterion due now.
     Address every pending input in this same answer. Write fix tasks as complete TaskSpecs with new ids and findingIds.
 
-    Use rejected entries with findingId and reason. Use verify entries with findingId and registered checkIds.
+    Use rejected entries with findingId and reason.
     Set ask to null or a user-only question with question and whyOnlyUserCanAnswer.
     Use this example shape, with real ids and evidence:
 
-    {"tasks":[{"id":"T001","plan":"met","note":"<evidence>"}],"criteria":[{"id":"C1","status":"pass","evidence":"<recorded proof>"}],"findings":[{"id":"F1","kind":"question","severity":"blocking","taskId":"T001","file":null,"line":null,"text":"<question>","acceptance":null,"checkIds":null,"criterionId":null}],"fixTasks":[],"rejected":[],"verify":[],"ask":{"question":"<question>","whyOnlyUserCanAnswer":"<missing product decision>"}}
+    {"tasks":[{"id":"T001","plan":"met","note":"<evidence>"}],"criteria":[{"id":"C1","status":"pass","evidence":"<recorded proof>"}],"findings":[{"id":"F1","kind":"question","severity":"blocking","taskId":"T001","file":null,"line":null,"text":"<question>","acceptance":null,"checkIds":null,"criterionId":null}],"fixTasks":[],"rejected":[],"ask":{"question":"<question>","whyOnlyUserCanAnswer":"<missing product decision>"}}
 
     Use empty arrays when there are no entries. Save the whole answer in review.json. The session derives the verdict.
 <!-- /generated -->
@@ -75,7 +75,7 @@ For a malformed answer, attach the invalid answer and parser errors to the permi
 
 ## Typed reply and derived pass
 
-The reviewer returns tasks, criteria, findings, fixTasks, rejected, verify and ask in one answer matching ReviewAnswerSchema.
+The reviewer returns tasks, criteria, findings, fixTasks, rejected and ask in one answer matching ReviewAnswerSchema.
 Save the whole answer in review.json. Render review.md from that answer.
 
 | Field | Typed entries |

@@ -45,7 +45,7 @@ A run directory resumes its saved stage, including review or fixes, while preser
 It reconciles active processes before spawning. `--status` inspects the saved run without dispatch.
 `error: <review.md>` reads the saved review fix part and appends fix tasks with new ids.
 On continuation, use the fix part from `review.json` first.
-If absent, read `fixTasks`, `rejected`, `verify` and `ask` from an older run's saved `triage.json`.
+If absent, read `fixTasks`, `rejected` and `ask` from an older run's saved `triage.json`.
 Use those fields as that review's fix part; carry rejected ids and reasons into the next review packet.
 The session writes no new `triage.json`. Reading the saved fix part spends no planner call.
 The reviewer runs the review again only when neither file holds a fix part.
@@ -116,7 +116,7 @@ Fix cycles run until the review passes, at end and at task cadence. A review ans
 The skills run the same review as the CLI: the end/task cadence, the decisions ledger, one typed review answer with verdict and fix work, and reviewer questions about product changes.
 Render checks run only in the CLI.
 
-The reviewer returns tasks, criteria, findings, fixTasks, rejected, verify and ask in one answer matching `ReviewAnswerSchema`.
+The reviewer returns tasks, criteria, findings, fixTasks, rejected and ask in one answer matching `ReviewAnswerSchema`.
 The session saves the whole answer in `review.json`. There is no separate planner call for fix work.
 The next review packet carries rejected finding ids and reasons.
 Every consult goes to the planner, the consult of a still-red fix task included.

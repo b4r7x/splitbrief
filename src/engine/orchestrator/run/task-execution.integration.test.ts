@@ -24,7 +24,6 @@ import {
   cannotConsult,
   failedReviewVerdict,
   passingReviewVerdict,
-  passingVerdict,
   planFromTasks,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
@@ -64,7 +63,6 @@ import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { formatRetryPrompt } from '../../spec/prompt-formatter.js';
-import { enqueueUserMessage } from '../queue/submit.js';
 
 /** How many times the session transcript holds this user turn. */
 async function userTurns(ref: { projectDir: string; sessionId: string }, text: string) {
@@ -160,7 +158,6 @@ function stuckReviewState(tasks: Task[], head: string, blocking: string[]): Work
         result: {
           fixTasks: [{ ...makeTaskSpec({ id: 'T900' }), findingIds: ['F1'] }],
           rejected: [],
-          verify: [],
           ask: null,
         },
         blocking,
@@ -613,7 +610,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           },
         ],
         rejected: [],
-        verify: [],
         ask: null,
       }),
       onComplete,
@@ -704,7 +700,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           },
         ],
         rejected: [],
-        verify: [],
         ask: null,
       }),
       onComplete: vi.fn(),
@@ -782,13 +777,11 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
                 },
               ],
               rejected: [],
-              verify: [],
               ask: null,
             }
           : {
               fixTasks: [],
               rejected: [{ findingId: 'V1.1', reason: 'The test records this new failure.' }],
-              verify: [],
               ask: null,
             };
       },
@@ -921,7 +914,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
         triage: () => ({
           fixTasks: [],
           rejected: [{ findingId: 'P1', reason: 'The test records this failure.' }],
-          verify: [],
           ask: null,
         }),
         onComplete: vi.fn(),
@@ -1027,7 +1019,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     let runs = 0;
     vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args) => {
       const command = [cmd, ...args].join(' ');
-      if (cmd === 'test' && ++runs <= 2)
+      if (cmd === 'test' && ++runs === 1)
         throw processError.exitCode({ command, code: 1, stderr: '', output: 'flaky red' });
       return { stdout: 'ok', stderr: '', code: 0 };
     });
@@ -1060,9 +1052,9 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
     const result = await runTasksAndReview(options);
 
-    // The pre-review run and the review's own run of K9 are red; the planner's verify runs it
-    // past that red, and the next review reads the green.
-    expect(runs).toBe(3);
+    // The pre-review run of K9 is red, and the review reads that stored red without a run; the
+    // planner's verify runs it past that red, and the next review reads the green.
+    expect(runs).toBe(2);
     expect(reviewPrompts).toHaveLength(2);
     expect(reviewPrompts[0]).toContain('- plan check K9: fail');
     expect(reviewPrompts[1]).toContain('- plan check K9: pass');
@@ -1191,7 +1183,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           },
         ],
         rejected: [],
-        verify: [],
         ask: null,
       }),
       onComplete: vi.fn(),
@@ -1312,7 +1303,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           },
         ],
         rejected: [],
-        verify: [],
         ask: null,
       }),
       onComplete: vi.fn(),
@@ -1370,7 +1360,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       triage: () => ({
         fixTasks: [],
         rejected: [{ findingId: 'U1', reason: 'The correction is satisfied' }],
-        verify: [],
         ask: null,
       }),
       onComplete: vi.fn(),
@@ -1625,7 +1614,6 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
           },
         ],
         rejected: [],
-        verify: [],
         ask: null,
       }),
       onComplete,
@@ -1932,7 +1920,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     }
   });
 
-  it('a review that answers again after Apply reads the re-run checks the merge already had', async () => {
+  it('a review the user steers after Apply reads the re-run checks the merge already had', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const ref = { projectDir, sessionId };
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
@@ -1944,26 +1932,45 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         failures: ['T001 check K1 did not pass'],
         notRun: ['T001 check K2 refused: runs a package script or binary'],
       },
-      reviewAnswer: {
+      review: {
         scope: 'final',
         cycle: 0,
-        answer: passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: [] }),
-        preExistingChecks: [],
         at: '2026-10-28T10:00:00.000Z',
+        outcome: 'fail',
+        verification: [],
+        verdict: {
+          tasks: [{ id: taskId('T001'), plan: 'partial', note: '' }],
+          criteria: [],
+          findings: [
+            {
+              id: 'F1',
+              kind: 'defect',
+              severity: 'blocking',
+              taskId: 'T001',
+              file: 'src/alpha.ts',
+              line: null,
+              text: 'src/alpha.ts lost the merged line',
+              acceptance: null,
+              checkIds: null,
+              criterionId: null,
+            },
+          ],
+        },
+      },
+      pendingTriage: {
+        inputs: [
+          { id: 'I1', kind: 'defect', source: 'user', text: 'Look at the merge again', file: null },
+        ],
       },
     };
     saveState(ref, state);
-    enqueueUserMessage({
-      ...ref,
-      state,
-      bus: makeBusRecorder().bus,
-      phase: 'final-review',
-      message: plainUserMessage('Look at the merge again'),
-    });
     const { options, reviewPrompts } = runOptions({
       ...ref,
-      state: loadState(ref) ?? state,
-      review: (prompt) => passingReviewVerdict(prompt),
+      state,
+      review: (prompt) => ({
+        ...passingReviewVerdict(prompt),
+        rejected: [{ findingId: 'I1', reason: 'The merge kept the line' }],
+      }),
       onComplete: vi.fn(),
     });
 
@@ -2046,7 +2053,6 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
           },
         ],
         rejected: [],
-        verify: [],
         ask: null,
       }),
       onComplete: vi.fn(),
@@ -2123,7 +2129,6 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
           },
         ],
         rejected: [],
-        verify: [],
         ask: null,
       }),
       onComplete: vi.fn(),

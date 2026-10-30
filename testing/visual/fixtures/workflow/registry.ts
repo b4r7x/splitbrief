@@ -697,7 +697,7 @@ const checkpointPredicates = [
   [checkpointId('review-answering-again'), includesAll('did not match its contract')],
   [
     checkpointId('review-verify'),
-    includesAll('Verify K1', 'Review · Verify V1 · npm test', 'running 0:12'),
+    includesAll('Verify K1', 'Review · Verify K2 · npm test', 'running 0:12'),
   ],
   [
     checkpointId('review-render-running'),
@@ -913,12 +913,6 @@ const checkpointPredicates = [
     checkpointId('at-rest-crashed-review-check'),
     (context) =>
       includesAll('Final review stopped', 'Stopped at the review')(context) &&
-      excludesAll('· running')(context),
-  ],
-  [
-    checkpointId('at-rest-stopped-verify'),
-    (context) =>
-      includesAll('Final review stopped during verify', 'Stopped at the review')(context) &&
       excludesAll('· running')(context),
   ],
   [checkpointId('retained-workspace'), includesAll('Workspace kept')],

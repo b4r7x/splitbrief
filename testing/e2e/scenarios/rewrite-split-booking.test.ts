@@ -74,7 +74,7 @@ if (prompt.includes('# Task Implementation Review') && firstReview !== null && !
   answer = {
     tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })),
     criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })),
-    findings: [], fixTasks: [], rejected: [], verify: [], ask: null,
+    findings: [], fixTasks: [], rejected: [], ask: null,
   };
 } else if (prompt.includes('# Consult on a failing task') || prompt.includes('# Consult continued')) {
   const n = Number(readFileSync(${JSON.stringify(counter)}, 'utf8'));
@@ -354,7 +354,6 @@ describe('e2e: the booking of a brief the planner rewrote or split', { timeout: 
         ],
         fixTasks: [],
         rejected: [],
-        verify: [],
         ask: {
           question: 'Which name does the alpha value take?',
           whyOnlyUserCanAnswer: 'The name is a product choice.',

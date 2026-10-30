@@ -177,17 +177,17 @@ Persist lineage roots, revisions, consults, attempts, lineage progress, run deci
 
 ## Review fix work
 
-The reviewer returns tasks, criteria, findings, fixTasks, rejected, verify and ask in one review answer.
+The reviewer returns tasks, criteria, findings, fixTasks, rejected and ask in one review answer.
 The session saves the whole answer in `review.json`. It makes no separate planner call for fix work.
 The session writes no new `triage.json`.
 
 On continuation, use the fix part from `review.json` when present.
-If absent, read `fixTasks`, `rejected`, `verify` and `ask` from an older run's saved `triage.json`.
+If absent, read `fixTasks`, `rejected` and `ask` from an older run's saved `triage.json`.
 Use those fields as that review's fix part without a planner call.
 Run the review again only when neither file holds a fix part.
 
 fixTasks are complete TaskSpecs with new ids and findingIds. rejected entries use findingId and reason.
-verify entries use findingId and registered checkIds. ask is null or a user-only question with question and whyOnlyUserCanAnswer.
+ask is null or a user-only question with question and whyOnlyUserCanAnswer.
 At task cadence, pending criteria stay pending.
 SPLITBRIEF records a finding outside the task review scope as a note and refuses fix work for it.
 The reviewer addresses blocking findings inside the scope by kind:
@@ -206,7 +206,7 @@ Use references/run-protocol.md to execute authorized fixes and prepare a fresh r
 Before starting a fix cycle, persist its number and the blockers it fixes. Never start the same saved cycle twice on continuation.
 
 <!-- generated: fix-cycle -->
-- Read fixTasks, rejected, verify and ask from the saved review fix part. Append fix tasks with new ids; done tasks stay done.
+- Read fixTasks, rejected and ask from the saved review fix part. Append fix tasks with new ids; done tasks stay done.
 - Run registered checks for unverified findings. The reviewer answers question findings from the plan and code before asking the user.
 - Keep criteria when repairing a check command. Ask the user before changing the accepted outcome.
 - Run fix cycles until the review passes, at end and at task cadence.

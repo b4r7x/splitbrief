@@ -1156,13 +1156,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-review-verify',
-      title: 'Workflow · the review verifying its findings',
+      title: 'Workflow · the review verifying its claims',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-verify',
         title: 'One verify check passed and a second one running',
         kind: 'review',
-        marker: 'Verify V1',
+        marker: 'Verify K2',
       },
       elements: [
         { id: 'header', title: 'Workflow header and build progress' },
@@ -2434,22 +2434,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'The reviewer check and the final review read as stopped',
         kind: 'ready',
         marker: 'Final review stopped',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Replayed transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-at-rest-stopped-verify',
-      title: 'Workflow · a run stopped while the review verified its findings',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'at-rest-stopped-verify',
-        title: 'The final review reads as stopped during verify',
-        kind: 'ready',
-        marker: 'stopped during verify',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

@@ -15,8 +15,8 @@ malformed write. All callers
 (TUI and headless) consume the same v4 projection and command policy. Read-only
 integrations may observe state but never promote a local migration, retry a
 provider, or bypass the revision check. Queue reads keep unsaved workflow fields while the caller and disk share a committed revision. Once the disk revision advances, its workflow state wins, including rewinds and recovery; queue delivery state is merged separately. The keys `stateFence`,
-`authorityRevision`, `generation`, `permit`, `briefRecovery` and
-`budgetPauseAcknowledgedAtCost` are legacy (`LEGACY_STATE_KEYS`,
+`authorityRevision`, `generation`, `permit`, `briefRecovery`,
+`budgetPauseAcknowledgedAtCost` and `reviewAnswer` are legacy (`LEGACY_STATE_KEYS`,
 `src/core/schemas/workflow.ts`): a loaded state that still carries them has them
 stripped, so a state written before those subsystems were removed still loads.
 The version number itself has one home, `WORKFLOW_STATE_VERSION`; no reader and
@@ -266,7 +266,7 @@ type ReviewVerdict = {
 };
 ```
 
-Coverage is a contract rule: the answer carries exactly one result for every task and criterion in scope, and an `unverified` finding names non-empty `checkIds` or a `criterionId` whose criterion has registered checks. A missing, duplicated or invented id, or a `partial`/`missed` task or `fail` criterion with no blocking finding naming it, fails the schema and the seat gets its one repair. The checks behind an unverified claim run through `runChecks`, a `render` check running the configured `validation.render` command; a render criterion stays unverified when no image of its check reached the reviewer. The reviewer gets at most 4 PNGs per render check: every `frame.png` first, then the other PNGs, each group in path order; the prompt names the PNGs not attached. `deriveReviewOutcome` turns the answer plus those results into `pass`, `pass-with-notes` or `fail`; a red check or Apply input that still blocks (`blockingRedInputs`) fails it and stays in the record as `redInputs`. A reviewer check of the review that was red at the run base too stays in the record as `preExistingChecks` (`{ id, command, keys }`, the failures that also fail before the run's changes); it raises no finding. When the checks behind an unverified claim fail only on those failures, they verify the claim. A minor finding is a note, also when it is unverified; a blocking unverified finding blocks until its checks verify it. The record lives in `state.review` and `review.json`; `review.md` is its rendering from `renderReviewMarkdown` (`src/core/review/render.ts`), with a `### Pre-existing failures` section that names each such check, its command and its first three failures. A session saved before the typed review still reads through `parseFinalReview()` (`src/engine/parsers/final-review.ts`).
+Coverage is a contract rule: the answer carries exactly one result for every task and criterion in scope, and an `unverified` finding names non-empty `checkIds` or a `criterionId` whose criterion has registered checks. A missing, duplicated or invented id, or a `partial`/`missed` task or `fail` criterion with no blocking finding naming it, fails the schema and the seat gets its one repair. SPLITBRIEF reads the checks behind an unverified claim (`verifyClaimChecks`): a result stored for the same files serves it, a stored red included, and only a check with no stored result runs; a `render` check runs the configured `validation.render` command; a render criterion stays unverified when no image of its check reached the reviewer. The reviewer gets at most 4 PNGs per render check: every `frame.png` first, then the other PNGs, each group in path order; the prompt names the PNGs not attached. `deriveReviewOutcome` turns the answer plus those results into `pass`, `pass-with-notes` or `fail`; a red check or Apply input that still blocks (`blockingRedInputs`) fails it and stays in the record as `redInputs`. A reviewer check of the review that was red at the run base too stays in the record as `preExistingChecks` (`{ id, command, keys }`, the failures that also fail before the run's changes); it raises no finding. When the checks behind an unverified claim fail only on those failures, they verify the claim. A minor finding is a note, also when it is unverified; a blocking unverified finding blocks until its checks verify it. The record lives in `state.review` and `review.json`; `review.md` is its rendering from `renderReviewMarkdown` (`src/core/review/render.ts`), with a `### Pre-existing failures` section that names each such check, its command and its first three failures. A session saved before the typed review still reads through `parseFinalReview()` (`src/engine/parsers/final-review.ts`).
 
 The same review call also returns the fix part, with the persisted `TriageResult` shape:
 
@@ -274,13 +274,12 @@ The same review call also returns the fix part, with the persisted `TriageResult
 type TriageResult = {
   fixTasks: Array<TaskSpec & { findingIds: string[] }>;
   rejected: Array<{ findingId: string; reason: string }>;
-  verify: Array<{ findingId: string; checkIds: string[] }>;
   ask: { question: string; whyOnlyUserCanAnswer: string } | null;
 };
 ```
 
 Unless `ask` is set, the answer covers every blocking finding inside the review scope except an unverified finding.
-It also covers every pending input. Each id appears exactly once in `rejected[].findingId` or `verify[].findingId`, or in the `findingIds` of one or more fix tasks. Fix tasks that share an input share its failures; a shared failure gates only the last unfinished fix task that carries it.
+It also covers every pending input. Each id appears exactly once in `rejected[].findingId`, or in the `findingIds` of one or more fix tasks. Fix tasks that share an input share its failures; a shared failure gates only the last unfinished fix task that carries it.
 Rejections name pending inputs only. Findings outside the scope need no answer.
 
 `triageContractErrors` (`src/engine/orchestrator/triage.ts`) refuses a fix task for a finding outside the task review scope.
@@ -288,7 +287,7 @@ It also refuses a fix task criterion outside the scope.
 These rules also apply when `ask` is set or the fix task has no criteria.
 Pending user, Apply, and check inputs keep their existing rules.
 
-Unverified and minor findings never create fix tasks. A verification names registered plan or task checks. A fix task names only known criteria. A verdict finding assigned to a fix task names only registered checks. An unknown check id sends the answer back for its one schema repair.
+Unverified and minor findings never create fix tasks. A fix task names only known criteria. A verdict finding assigned to a fix task names only registered checks. An unknown check id sends the answer back for its one schema repair.
 
 SPLITBRIEF appends fix tasks to `state.tasks` with new `T###` ids. Their `batch` is the highest plan batch plus the fix cycle. Each task carries its cycle and findings in `task.fix`.
 
@@ -304,7 +303,7 @@ A settled check records `status: 'pass'` in `checkResults`. Its command evidence
 
 An older fix task that carries a `stage` loads without it. Completed tasks stay done. The reviewer supplies every fix task. A fix task may verify existing code and change nothing. Its recorded checks still decide completion.
 
-A missing `touchedNotSuggested` reason never overturns a passing check. These reasons inform the reviewer. Rejected inputs reach the next review packet. SPLITBRIEF runs `verify` checks before it starts fix work.
+A missing `touchedNotSuggested` reason never overturns a passing check. These reasons inform the reviewer. Rejected inputs reach the next review packet.
 
 ## Advanced read-only consumer examples
 
@@ -385,7 +384,6 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 | `FixCycles.open` | no fix cycle waits for the review that judges it |
 | `ReviewRecord.judges` | the review judged no fix cycle, so it compares its blockers with no triage record |
 | `WorkflowState.pendingTriage` | no check, operator or Apply input waits for the reviewer |
-| `WorkflowState.reviewAnswer` | no reviewer answer waits for its verify; the review record replaced it, or no review answered |
 | `WorkflowState.reviewStatus` | the final review has not resolved |
 | `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef`. `source` is `user`, `watchdog` or `seat`, the last for a seat halt that cut a brief. `kept` lists the declared files a cut brief had changed when a stop parked it; a record without it claims no kept changes |
 | `WorkflowState.closed` | the run was never explicitly ended, so it is still continuable |

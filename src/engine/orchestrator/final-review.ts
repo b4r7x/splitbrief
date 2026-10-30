@@ -116,7 +116,6 @@ import {
   setAsideInputs,
   verificationKey,
   reviewScopeFor,
-  savedReviewAnswer,
   verdictCoverageErrors,
   type ReviewOutcome,
   type ReviewScope,
@@ -136,12 +135,7 @@ import { currentCandidateId } from './evidence/record-checks.js';
 import { deserializeChangedFilesBaseline } from './changed-files-baseline.js';
 import type { RequestTypedResult, SeatProtocolError } from '../runners/typed-output.js';
 import { fixCyclesOf } from '../../core/schemas/workflow.js';
-import {
-  fixTaskTargetErrors,
-  runTriageVerification,
-  triageContractErrors,
-  verifyClaimChecks,
-} from './triage.js';
+import { fixTaskTargetErrors, triageContractErrors, verifyClaimChecks } from './triage.js';
 import type { PreReviewResult } from './run/pre-review-checks.js';
 import { runReviewChecks } from './review-checks.js';
 import { runBaseOf } from './isolation/base-tree.js';
@@ -261,10 +255,10 @@ type ReviewVerification = {
 };
 
 /**
- * The checks of every unverified criterion and finding, run through the same
- * runner briefs use. A pass needs every named check to pass or to fail only on
- * what `preExistingChecks` saw red at the run base; any other failure is a
- * failure; anything not runnable stays unverified and cannot verify a claim.
+ * The checks of every unverified criterion and finding, read from the stored results of this tree
+ * and run through the same runner briefs use only when none is stored. A pass needs every named
+ * check to pass or to fail only on what `preExistingChecks` saw red at the run base; any other
+ * failure is a failure; anything not runnable stays unverified and cannot verify a claim.
  */
 async function verifyReviewClaims(args: {
   verdict: ReviewVerdict;
@@ -272,7 +266,6 @@ async function verifyReviewClaims(args: {
   state: WorkflowState;
   redInputs: readonly TriageInput[];
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>;
-  answeredAt: string;
   projectDir: string;
   workspaceDir: string;
   sessionId: string;
@@ -298,7 +291,7 @@ async function verifyReviewClaims(args: {
       args.state,
       checkIds,
       args.preExistingChecks,
-      args.answeredAt,
+      undefined,
     );
     const key = verificationKey(kind, id);
     map.set(key, status);
@@ -481,11 +474,9 @@ export async function runFinalReviewPhase(opts: {
       }),
     });
     const scope = reviewScopeFor(state, opts.scope ?? 'final');
-    // A review whose verify a stop or a crash cut runs again on the inputs of the cut call.
-    const cut = savedReviewAnswer(state, opts.scope ?? 'final', opts.afterTaskId);
-    let reviewChecksSection = cut?.checksSection;
+    let reviewChecksSection: string | undefined;
     // A review that only re-answers its question on the same candidate keeps the checks it ran.
-    let preExistingChecks = cut?.preExistingChecks ?? state.review?.preExistingChecks ?? [];
+    let preExistingChecks = state.review?.preExistingChecks ?? [];
     if (opts.reviewChecks === true) {
       const checks = await runReviewChecks({
         projectDir,
@@ -859,71 +850,25 @@ export async function runFinalReviewPhase(opts: {
     const messagePendingReviewer = () =>
       phaseStage(state.phase) === 'review' &&
       state.messageQueue.some(isQueuedMessagePendingReviewer);
-    // An answer whose verify a stop or a crash cut is verified again, unless the operator said
-    // something to the reviewer since, in either review scope.
-    const saved =
-      seed === undefined && !state.messageQueue.some(isQueuedMessagePendingReviewer)
-        ? cut
-        : undefined;
-    let answer: ReviewAnswer;
-    let answeredAt: string;
-    if (saved !== undefined) {
-      answer = saved.answer;
-      answeredAt = saved.at;
-    } else {
-      // The operator's words supersede the cut answer: a failed call must not leave it to a retry.
-      if (cut !== undefined) {
-        state = transitionAndSave({ projectDir, sessionId }, state, { type: 'DROP_REVIEW_ANSWER' });
-        opts.setTrackedState?.(state);
-      }
-      let typed = await callReviewer();
-      while (true) {
-        await settleMidCallDeliveries({ projectDir, sessionId });
-        state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, {
-          keepUnsaved: true,
-        });
-        opts.setTrackedState?.(state);
-        if (opts.signal?.aborted) return interrupted();
-        if ('error' in typed) {
-          failure = { kind: 'seat-protocol-error', error: typed.error };
-          throw typed.error;
-        }
-        if (!messagePendingReviewer()) break;
-        typed = await callReviewer();
-      }
-      answer = typed.value;
-      answeredAt = nowIso();
-      state = transitionAndSave({ projectDir, sessionId }, state, {
-        type: 'SAVE_REVIEW_ANSWER',
-        answer: {
-          scope: opts.scope ?? 'final',
-          ...(opts.scope === 'task' &&
-            opts.afterTaskId !== undefined && { afterTaskId: opts.afterTaskId }),
-          cycle: fixCyclesOf(state).used,
-          answer,
-          preExistingChecks,
-          ...(reviewChecksSection !== undefined && { checksSection: reviewChecksSection }),
-          at: answeredAt,
-        },
+    let typed = await callReviewer();
+    while (true) {
+      await settleMidCallDeliveries({ projectDir, sessionId });
+      state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, {
+        keepUnsaved: true,
       });
       opts.setTrackedState?.(state);
+      if (opts.signal?.aborted) return interrupted();
+      if ('error' in typed) {
+        failure = { kind: 'seat-protocol-error', error: typed.error };
+        throw typed.error;
+      }
+      if (!messagePendingReviewer()) break;
+      typed = await callReviewer();
     }
-    bus.publish({ type: 'review_step', ts: Date.now(), phase: state.phase, step: 'verify' });
+    const answer = typed.value;
     const { tasks, criteria, findings } = answer;
     let reviewerVerdict: ReviewVerdict = { tasks, criteria, findings };
-    fixWork = {
-      fixTasks: answer.fixTasks,
-      rejected: answer.rejected,
-      verify: answer.verify,
-      ask: answer.ask,
-    };
-    const fixVerification = await runTriageVerification(
-      opts,
-      state,
-      fixWork,
-      preExistingChecks,
-      answeredAt,
-    );
+    fixWork = { fixTasks: answer.fixTasks, rejected: answer.rejected, ask: answer.ask };
     const redInputs = blockingRedInputs(state.pendingTriage?.inputs ?? [], fixWork);
     const verification = await verifyReviewClaims({
       verdict: reviewerVerdict,
@@ -931,7 +876,6 @@ export async function runFinalReviewPhase(opts: {
       state,
       redInputs,
       preExistingChecks,
-      answeredAt,
       projectDir,
       workspaceDir,
       sessionId,
@@ -986,12 +930,7 @@ export async function runFinalReviewPhase(opts: {
         at: record.at,
       },
     });
-    if (
-      fixWork.fixTasks.length > 0 ||
-      fixWork.verify.length > 0 ||
-      fixWork.rejected.length > 0 ||
-      fixWork.ask !== null
-    )
+    if (fixWork.fixTasks.length > 0 || fixWork.rejected.length > 0 || fixWork.ask !== null)
       state = transitionAndSave({ projectDir, sessionId }, state, {
         type: 'RECORD_TRIAGE',
         record: {
@@ -1012,7 +951,6 @@ export async function runFinalReviewPhase(opts: {
           result: fixWork,
           blocking: blockingKeys(outcome, state.pendingTriage?.inputs ?? []),
           scope: scope.kind,
-          ...(fixVerification.length > 0 && { verification: fixVerification }),
         },
       });
     verdict = { verdict: reviewerVerdict, outcome };

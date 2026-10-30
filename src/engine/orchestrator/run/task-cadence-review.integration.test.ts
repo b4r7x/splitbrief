@@ -99,7 +99,6 @@ function stuckRecord(blocking: string[], scope: 'task' | 'final'): TriageRecord 
     result: {
       fixTasks: [{ ...makeTaskSpec({ id: 'T900' }), findingIds: ['F1'] }],
       rejected: [],
-      verify: [],
       ask: null,
     },
     blocking,
@@ -232,7 +231,6 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
           findingIds: [`F${index + 1}`],
         })),
         rejected: [],
-        verify: [],
         ask: null,
       }),
       onComplete: vi.fn(),
@@ -489,7 +487,6 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
         triage: (prompt) => ({
           fixTasks: failedReviewVerdict(prompt, 'Beta breaks alpha', { taskId: 'T002' }).fixTasks,
           rejected: rejectPending(prompt),
-          verify: [],
           ask: null,
         }),
         onComplete,
@@ -517,7 +514,6 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
         triage: (prompt) => ({
           fixTasks: [],
           rejected: rejectPending(prompt),
-          verify: [],
           ask: null,
         }),
         onComplete,
@@ -557,7 +553,6 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
           },
         ],
         rejected: [],
-        verify: [],
         ask: null,
       }),
       onComplete,
@@ -675,7 +670,6 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
           },
         ],
         rejected: [],
-        verify: [],
         ask: null,
       }),
       onComplete,
@@ -830,7 +824,6 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
       triage: () => ({
         fixTasks: [],
         rejected: [{ findingId: 'U3', reason: 'The correction guides continuation' }],
-        verify: [],
         ask: null,
       }),
       onComplete,

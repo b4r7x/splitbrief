@@ -47,36 +47,36 @@ describe('ReviewVerdictSchema', () => {
 });
 
 describe('TriageResultSchema', () => {
-  it('parses fix tasks with their findings, rejected findings, verify entries and no ask', () => {
+  it('parses fix tasks with their findings, rejected findings and no ask', () => {
     const result = {
       fixTasks: [{ ...makeTaskSpec(), findingIds: ['F1'] }],
       rejected: [{ findingId: 'F2', reason: 'The finding names no file of the run diff' }],
-      verify: [{ findingId: 'F3', checkIds: ['K1'] }],
       ask: null,
     };
     expect(TriageResultSchema.parse(result)).toEqual(result);
   });
 
-  it('parses an ask and refuses a fix task with no finding and a verify with no check', () => {
+  it('loads an old answer with a verify without it, and offers the reviewer no verify', () => {
+    const result = { fixTasks: [], rejected: [], ask: null };
+    expect(
+      TriageResultSchema.parse({ ...result, verify: [{ findingId: 'F3', checkIds: ['K1'] }] }),
+    ).toEqual(result);
+    expect(REVIEW_ANSWER_JSON_SCHEMA.properties).toHaveProperty('rejected');
+    expect(REVIEW_ANSWER_JSON_SCHEMA.properties).not.toHaveProperty('verify');
+  });
+
+  it('parses an ask and refuses a fix task with no finding', () => {
     const ask = {
       fixTasks: [],
       rejected: [],
-      verify: [],
       ask: {
         question: 'Should the greeting keep the comma?',
         whyOnlyUserCanAnswer: 'The answer changes the product wording',
       },
     };
     expect(TriageResultSchema.parse(ask)).toEqual(ask);
-    const noFinding = { fixTasks: [makeTaskSpec()], rejected: [], verify: [], ask: null };
+    const noFinding = { fixTasks: [makeTaskSpec()], rejected: [], ask: null };
     expect(TriageResultSchema.safeParse(noFinding).success).toBe(false);
-    const noCheck = {
-      fixTasks: [],
-      rejected: [],
-      verify: [{ findingId: 'F1', checkIds: [] }],
-      ask: null,
-    };
-    expect(TriageResultSchema.safeParse(noCheck).success).toBe(false);
   });
 });
 
@@ -125,7 +125,7 @@ describe('review JSON schemas', () => {
 
 describe('ReviewAnswerSchema', () => {
   it('requires the verdict and fix work in one answer and preserves both persisted shapes', () => {
-    const fix = { fixTasks: [], rejected: [], verify: [], ask: null };
+    const fix = { fixTasks: [], rejected: [], ask: null };
     const answer = { ...verdict, ...fix };
     expect(ReviewAnswerSchema.parse(answer)).toEqual(answer);
     expect(ReviewAnswerSchema.safeParse(verdict).success).toBe(false);

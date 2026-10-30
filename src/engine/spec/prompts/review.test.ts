@@ -61,7 +61,6 @@ describe('triageLines', () => {
               },
             ],
             rejected: [],
-            verify: [],
             ask: null,
           },
         },

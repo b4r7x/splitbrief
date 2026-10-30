@@ -140,7 +140,7 @@ if (!prompt.includes(${JSON.stringify(answer)})) {
       { status: 'none' },
     ]);
     const steps = events.filter((event) => event.type === 'review_step');
-    expect(steps.map((event) => event.step)).toEqual(['verdict', 'verify', 'verdict', 'verify']);
+    expect(steps.map((event) => event.step)).toEqual(['verdict', 'verdict']);
     const status = await cli(target, ['status']);
     expect(status.exitCode, status.stderr).toBe(0);
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);

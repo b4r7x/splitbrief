@@ -18,8 +18,8 @@ import type { ReviewRecord, WorkflowState } from '../../core/schemas/workflow.js
 import {
   applyTriage,
   fixTaskTargetErrors,
-  runTriageVerification,
   triageContractErrors,
+  verifyClaimChecks,
 } from './triage.js';
 import { enabledReviewChecks } from './validation/run-checks.js';
 import { processError } from '../../lib/process/errors.js';
@@ -94,13 +94,6 @@ function triageState(): WorkflowState {
   };
 }
 
-const VERIFY_V1: TriageResult = {
-  fixTasks: [],
-  rejected: [],
-  verify: [{ findingId: 'F1', checkIds: ['V1'] }],
-  ask: null,
-};
-
 function fixTaskSpec(): TriageResult['fixTasks'][number] {
   return {
     ...makeTaskSpec({ id: 'T002', suggestedFiles: ['src/shared/widget.ts'] }),
@@ -109,7 +102,7 @@ function fixTaskSpec(): TriageResult['fixTasks'][number] {
 }
 
 function fixResult(): TriageResult {
-  return { fixTasks: [fixTaskSpec()], rejected: [], verify: [], ask: null };
+  return { fixTasks: [fixTaskSpec()], rejected: [], ask: null };
 }
 
 describe('triageContractErrors', () => {
@@ -148,7 +141,7 @@ describe('triageContractErrors', () => {
     ).toEqual([]);
     expect(
       triageContractErrors(
-        { fixTasks: [], rejected: [], verify: [], ask: null },
+        { fixTasks: [], rejected: [], ask: null },
         scopedPlan,
         [outside],
         [],
@@ -181,7 +174,7 @@ describe('triageContractErrors', () => {
   });
 
   it('keeps pending inputs and empty-criteria fixes admissible', () => {
-    const empty: TriageResult = { fixTasks: [], rejected: [], verify: [], ask: null };
+    const empty: TriageResult = { fixTasks: [], rejected: [], ask: null };
     for (const source of ['user', 'apply', 'check'] as const) {
       const input = {
         id: 'P1',
@@ -191,18 +184,14 @@ describe('triageContractErrors', () => {
         file: null,
       };
       expect(triageContractErrors(empty, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual([
-        'Pending input P1 is not fixed, rejected or verified.',
+        'Pending input P1 is not fixed or rejected.',
       ]);
       const fixed = {
         ...empty,
         fixTasks: [{ ...fixTaskSpec(), criteria: [], findingIds: ['P1'] }],
       };
       const rejected = { ...empty, rejected: [{ findingId: 'P1', reason: 'Already correct' }] };
-      const verified = { ...empty, verify: [{ findingId: 'P1', checkIds: ['K1'] }] };
       expect(triageContractErrors(fixed, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual([]);
-      expect(triageContractErrors(verified, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual(
-        source === 'apply' ? ['Verified P1 is an Apply conflict; it needs a fix task.'] : [],
-      );
       expect(triageContractErrors(rejected, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual(
         source === 'apply' ? ['Rejected P1 is an Apply conflict; it needs a fix task.'] : [],
       );
@@ -229,7 +218,7 @@ describe('triageContractErrors', () => {
     const unnamed = [{ ...FAILING_FINDING, taskId: null, criterionId: null }];
     expect(triageContractErrors(result, plan, unnamed, [], [], undefined, FINAL_SCOPE)).toEqual([]);
     expect(triageContractErrors(empty, plan, unnamed, [], [], undefined, FINAL_SCOPE)).toEqual([
-      'Blocking finding F1 is not fixed, rejected or verified.',
+      'Blocking finding F1 is not fixed or rejected.',
     ]);
   });
 
@@ -241,7 +230,7 @@ describe('triageContractErrors', () => {
       text: 'Required check K1 did not pass',
       file: null,
     };
-    const empty: TriageResult = { fixTasks: [], rejected: [], verify: [], ask: null };
+    const empty: TriageResult = { fixTasks: [], rejected: [], ask: null };
     const shared = {
       ...empty,
       fixTasks: [
@@ -257,9 +246,9 @@ describe('triageContractErrors', () => {
       triageContractErrors(answer, plan, [], [input], [], undefined, TASK_SCOPE);
 
     expect(errors(shared)).toEqual([]);
-    expect(errors({ ...shared, verify: [{ findingId: 'P1', checkIds: ['K1'] }] })).toEqual([
-      'Pending input P1 is answered more than once.',
-    ]);
+    expect(
+      errors({ ...shared, rejected: [{ findingId: 'P1', reason: 'Fails outside this run' }] }),
+    ).toEqual(['Pending input P1 is answered more than once.']);
     expect(errors(twice)).toEqual(['Pending input P1 is answered more than once.']);
     const restated = [{ ...FAILING_FINDING, id: 'P1', text: 'K1 is red in src/shared/widget.ts' }];
     expect(
@@ -322,25 +311,11 @@ describe('triageContractErrors', () => {
     const result: TriageResult = {
       fixTasks: [{ ...fixTaskSpec(), criteria: ['C9'] }],
       rejected: [],
-      verify: [],
       ask: null,
     };
 
     expect(triageContractErrors(result, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
       'Fix task T002 names unknown criterion C9.',
-    ]);
-  });
-
-  it('refuses a verify naming a check the plan does not carry', () => {
-    const result: TriageResult = {
-      fixTasks: [],
-      rejected: [],
-      verify: [{ findingId: 'F1', checkIds: ['K404'] }],
-      ask: null,
-    };
-
-    expect(triageContractErrors(result, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
-      'Verify for F1 names unknown check K404.',
     ]);
   });
 
@@ -359,24 +334,10 @@ describe('triageContractErrors', () => {
     ).toEqual(['Finding F1 names unknown check V3.']);
   });
 
-  it('accepts a verify naming a reviewer check only while End-of-run checks are on', () => {
-    const tasks = triageState().tasks;
-    const on = enabledReviewChecks(makeConfig({}), GATE_PLAN);
-    const off = enabledReviewChecks(makeConfig({ endChecks: false }), GATE_PLAN);
-
-    expect(triageContractErrors(VERIFY_V1, plan, findings, [], tasks, on, FINAL_SCOPE)).toEqual([]);
-    for (const reviewChecks of [undefined, off]) {
-      expect(
-        triageContractErrors(VERIFY_V1, plan, findings, [], tasks, reviewChecks, FINAL_SCOPE),
-      ).toEqual(['Verify for F1 names unknown check V1.']);
-    }
-  });
-
   it('refuses an answer that covers a finding twice and an id that names nothing', () => {
     const result: TriageResult = {
       fixTasks: [fixTaskSpec()],
       rejected: [{ findingId: 'F1', reason: 'no work' }],
-      verify: [],
       ask: null,
     };
 
@@ -397,7 +358,6 @@ describe('triageContractErrors', () => {
     const result: TriageResult = {
       fixTasks: [],
       rejected: [{ findingId: 'V1.1', reason: '  ' }],
-      verify: [],
       ask: null,
     };
 
@@ -410,7 +370,6 @@ describe('triageContractErrors', () => {
     const ask: TriageResult = {
       fixTasks: [{ ...fixTaskSpec(), criteria: ['C9'] }],
       rejected: [],
-      verify: [],
       ask: { question: 'Which wording?', whyOnlyUserCanAnswer: 'It changes the product' },
     };
 
@@ -430,7 +389,6 @@ describe('fixTaskTargetErrors', () => {
       },
     ],
     rejected: [],
-    verify: [],
     ask: null,
   });
   const userFiles = new Set(['package.json', 'scripts/legacy.mjs']);
@@ -467,7 +425,7 @@ describe('review fix work', () => {
         output: ` FAIL  src/a.test.ts > adds\nAssertionError: expected 1 to be 2\n${noise}`,
       }),
     );
-    const verification = await runTriageVerification(
+    const verification = await verifyClaimChecks(
       {
         ...ref,
         workspaceDir: ref.projectDir,
@@ -476,17 +434,17 @@ describe('review fix work', () => {
         runCommand,
       },
       { ...triageState(), plan: GATE_PLAN },
-      { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['V2'] }], ask: null },
+      ['V2'],
       [],
-      new Date().toISOString(),
+      undefined,
     );
 
-    expect(verification[0]?.status).toBe('fail');
-    expect(verification[0]?.output).toMatch(/^check V2 did not pass \(fail\): 1 failure\n/);
-    expect(verification[0]?.output).toContain(
+    expect(verification.status).toBe('fail');
+    expect(verification.output).toMatch(/^check V2 did not pass \(fail\): 1 failure\n/);
+    expect(verification.output).toContain(
       'Failures:\n- src/a.test.ts::adds\n  AssertionError: expected 1 to be 2\nOutput tail:\n',
     );
-    expect(verification[0]?.output.split('Output tail:')[1]).not.toContain('AssertionError');
+    expect(verification.output.split('Output tail:')[1]).not.toContain('AssertionError');
   });
 
   describe('a red reviewer check against the failures this review saw red at the run base', () => {
@@ -498,7 +456,7 @@ describe('review fix work', () => {
       preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
     ) => {
       const ref = setupProject(dirs);
-      const [entry] = await runTriageVerification(
+      return verifyClaimChecks(
         {
           ...ref,
           workspaceDir: ref.projectDir,
@@ -507,37 +465,36 @@ describe('review fix work', () => {
           runCommand: makeCommandRunner(result),
         },
         { ...triageState(), plan: GATE_PLAN },
-        { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['V2'] }], ask: null },
+        ['V2'],
         preExistingChecks,
-        new Date().toISOString(),
+        undefined,
       );
-      return entry;
     };
     const red = (output: string) =>
       processError.exitCode({ command: 'npm test', code: 1, stderr: '', output });
 
     it('passes the claim when every failure was red at the run base too', async () => {
       const entry = await verifyV2(red(ADDS), RED_AT_BASE);
-      expect(entry?.status).toBe('pass');
-      expect(entry?.output).toContain(
+      expect(entry.status).toBe('pass');
+      expect(entry.output).toContain(
         'Pre-existing failures (also red at the run base):\n- src/a.test.ts::adds',
       );
     });
 
     it('fails the claim on a failure the run base did not show', async () => {
       const entry = await verifyV2(red(`${ADDS}${SUBTRACTS}`), RED_AT_BASE);
-      expect(entry?.status).toBe('fail');
-      expect(entry?.output).toContain('New failures:\n- src/b.test.ts::subtracts');
+      expect(entry.status).toBe('fail');
+      expect(entry.output).toContain('New failures:\n- src/b.test.ts::subtracts');
     });
 
     it('fails the claim on a red that names no failure', async () => {
       const entry = await verifyV2(red('npm ERR! something broke\n'), RED_AT_BASE);
-      expect(entry?.status).toBe('fail');
+      expect(entry.status).toBe('fail');
     });
 
     it('fails the claim when this review has no run base split for the check', async () => {
       const entry = await verifyV2(red(ADDS), []);
-      expect(entry?.status).toBe('fail');
+      expect(entry.status).toBe('fail');
     });
   });
 
@@ -545,7 +502,7 @@ describe('review fix work', () => {
     const ref = setupProject(dirs);
     const state = triageState();
     const runCommand = makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 });
-    const verification = await runTriageVerification(
+    const verification = await verifyClaimChecks(
       {
         ...ref,
         workspaceDir: ref.projectDir,
@@ -554,18 +511,18 @@ describe('review fix work', () => {
         runCommand,
       },
       state,
-      { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['K1'] }], ask: null },
+      ['K1'],
       [],
-      new Date().toISOString(),
+      undefined,
     );
     expect(runCommand.calls.map((call) => call.cmd)).toEqual(['tsc']);
-    expect(verification).toEqual([{ id: 'finding:F1', status: 'pass', output: 'K1: pass — ok' }]);
+    expect(verification).toEqual({ status: 'pass', output: 'K1: pass — ok' });
   });
 
   it('shows each verify check on its own row while it runs and files it under the review', async () => {
     const ref = setupProject(dirs);
     const recorder = makeBusRecorder();
-    await runTriageVerification(
+    await verifyClaimChecks(
       {
         ...ref,
         workspaceDir: ref.projectDir,
@@ -574,14 +531,9 @@ describe('review fix work', () => {
         runCommand: makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 }),
       },
       { ...triageState(), plan: GATE_PLAN },
-      {
-        fixTasks: [],
-        rejected: [],
-        verify: [{ findingId: 'F1', checkIds: ['K1', 'V1'] }],
-        ask: null,
-      },
+      ['K1', 'V1'],
       [],
-      new Date().toISOString(),
+      undefined,
     );
 
     const rows = recorder.events.flatMap((event) =>
@@ -600,12 +552,12 @@ describe('review fix work', () => {
     expect(ledger?.tasks.flatMap((task) => task.checks ?? [])).toEqual([]);
   });
 
-  it('runs a reviewer check a verify names only while End-of-run checks are on', async () => {
+  it('runs a reviewer check a claim names only while End-of-run checks are on', async () => {
     const ref = setupProject(dirs);
     const state = { ...triageState(), plan: GATE_PLAN };
     const verify = async (endChecks: boolean) => {
       const runCommand = makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 });
-      const verification = await runTriageVerification(
+      const verification = await verifyClaimChecks(
         {
           ...ref,
           workspaceDir: ref.projectDir,
@@ -614,21 +566,21 @@ describe('review fix work', () => {
           runCommand,
         },
         state,
-        VERIFY_V1,
+        ['V1'],
         [],
-        new Date().toISOString(),
+        undefined,
       );
       return { verification, commands: runCommand.calls.map((call) => call.cmd) };
     };
 
     expect(await verify(true)).toEqual({
-      verification: [{ id: 'finding:F1', status: 'pass', output: 'V1: pass — ok' }],
+      verification: { status: 'pass', output: 'V1: pass — ok' },
       commands: ['node'],
     });
     const off = await verify(false);
     expect(off.commands).toEqual([]);
-    expect(off.verification[0]?.status).not.toBe('pass');
-    expect(off.verification[0]?.output).toContain('no check V1');
+    expect(off.verification.status).not.toBe('pass');
+    expect(off.verification.output).toContain('no check V1');
   });
 
   it('appends fix tasks with verbatim findings, keeps completed tasks done and rewrites tasks.md', () => {

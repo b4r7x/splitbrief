@@ -84,9 +84,8 @@ const verdict = {
 };
 /** One line of the review prompt's Pending Inputs section per red reviewer check input. */
 const PENDING_INPUT = /^- \*\*(\S+)\*\* \(check · defect\)/gm;
-const CANNOT = 'V1 names no spec file, and no fix brief can add one.';
 
-type Answer = 'reject' | 'verify';
+type Answer = 'reject' | 'ask';
 type Call = { kind: string; inputs?: string[]; prompt?: string };
 
 let fixture: StopContinueFixture | undefined;
@@ -117,7 +116,7 @@ function readCalls(path: string): Call[] {
     .map((line) => JSON.parse(line));
 }
 
-/** The reviewer answers every pending red input the way `answer` says: reject it, or verify it. */
+/** The reviewer answers every pending red input the way `answer` says: reject it, or ask a question. */
 function plannerScript(callsPath: string, answer: Answer): string {
   return `import { appendFileSync } from 'node:fs';
 const chunks = [];
@@ -142,11 +141,8 @@ if (prompt.includes('# Final Implementation Review')) {
       reason: 'V1 is a wrong command, not a defect in the code: it names no spec file. The brief check T001-K1 passed.',
     }));
   } else {
-    answer.verify = inputs.map((findingId) => ({ findingId, checkIds: ['V1'] }));
+    answer.ask = { question: 'Is V1 the right gate command?', whyOnlyUserCanAnswer: 'Only you know the gate.' };
   }
-} else if (/^# Consult on a failing task$/m.test(prompt)) {
-  call = { kind: 'consult' };
-  answer = { answer: { diagnosis: 'The red check predates the run', action: 'cannot', reason: ${JSON.stringify(CANNOT)} } };
 } else if (prompt.includes('# Plan the change')) {
   call = { kind: 'plan' };
   answer = ${JSON.stringify({ result: plan })};
@@ -265,28 +261,18 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     expect(readFileSync(join(target.projectDir, TOTAL_FILE), 'utf8')).toBe(TOTAL_SOURCE);
   });
 
-  it('keeps a red input the reviewer does not reject blocking, with Fix again and no Accept as is', async () => {
-    const { target, run, sessionId, events, calls } = await startRun('verify');
+  it('keeps a red input the reviewer does not reject blocking when it asks a question, with Fix again and no Accept as is', async () => {
+    const { target, run, sessionId, events, calls } = await startRun('ask');
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).not.toBe(0);
 
-    expect(calls.map((call) => call.kind)).toEqual([
-      'plan',
-      'implement',
-      'final-review',
-      'final-review',
-      'consult',
-    ]);
+    expect(calls.map((call) => call.kind)).toEqual(['plan', 'implement', 'final-review']);
 
-    const reviews = events.filter(
-      (event) => event.type === 'review_completed' && event.scope === 'final',
-    );
-    expect(reviews).toHaveLength(2);
-    for (const review of reviews) {
-      expect(review).toMatchObject({ verdict: 'fail', findings: { blocking: 1, minor: 1 } });
-    }
-    expect(events.filter((event) => event.type === 'error').map((event) => event.message)).toEqual([
-      'Final review made no progress on V1.1 after fix cycle 1; see review.md',
-    ]);
+    expect(
+      events.filter((event) => event.type === 'review_completed' && event.scope === 'final'),
+    ).toMatchObject([{ verdict: 'fail', findings: { blocking: 1, minor: 1 } }]);
+    const errors = events.flatMap((event) => (event.type === 'error' ? [event.message] : []));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/; see review\.md$/);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
 
     const state = readState(target, sessionId);
@@ -306,7 +292,9 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
       reason: 'review-failed',
       availableActions: ['revise', 'end-run'],
     });
-    expect(state.pendingRecovery?.details?.[0]).toBe(`Planner said: ${CANNOT}`);
+    expect(state.pendingRecovery?.details?.[0]).toBe(
+      'The review asked a question this run has no way to answer.',
+    );
     expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('open');
   });
 });

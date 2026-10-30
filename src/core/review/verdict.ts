@@ -27,25 +27,9 @@ export function reviewScopeFor(state: WorkflowState, kind: 'final' | 'task'): Re
   };
 }
 
-/** The reviewer's answer to this review whose verify a stop or a crash cut. */
-export function savedReviewAnswer(
-  state: WorkflowState,
-  kind: ReviewScope['kind'],
-  afterTaskId?: string,
-): WorkflowState['reviewAnswer'] {
-  const saved = state.reviewAnswer;
-  return saved !== undefined &&
-    saved.scope === kind &&
-    saved.afterTaskId === afterTaskId &&
-    saved.cycle === fixCyclesOf(state).used
-    ? saved
-    : undefined;
-}
-
 /**
- * A correction or an answer is pending on the review this cycle already judged, or this review's
- * answer waits for its verify: that review runs again on the same candidate, without running its
- * checks first.
+ * A correction or an answer is pending on the review this cycle already judged: that review runs
+ * again on the same candidate, without running its checks first.
  */
 export function reviewsAgain(
   state: WorkflowState,
@@ -54,12 +38,11 @@ export function reviewsAgain(
 ): boolean {
   const review = state.review;
   return (
-    savedReviewAnswer(state, kind, afterTaskId) !== undefined ||
-    (state.pendingTriage !== undefined &&
-      review !== undefined &&
-      (review.scope ?? 'final') === kind &&
-      review.afterTaskId === afterTaskId &&
-      review.cycle === fixCyclesOf(state).used)
+    state.pendingTriage !== undefined &&
+    review !== undefined &&
+    (review.scope ?? 'final') === kind &&
+    review.afterTaskId === afterTaskId &&
+    review.cycle === fixCyclesOf(state).used
   );
 }
 

@@ -18,7 +18,7 @@ export function shellPlannerArgs(): string[] {
     "  return value === 'none' || value === '' ? [] : value.split(',').map((id) => id.trim()).filter(Boolean);",
     '};',
     "if (prompt.includes('# Final Implementation Review')) {",
-    "  const verdict = { tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })), criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })), findings: [], fixTasks: [], rejected: [], verify: [], ask: null };",
+    "  const verdict = { tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })), criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })), findings: [], fixTasks: [], rejected: [], ask: null };",
     '  process.stdout.write(JSON.stringify(verdict));',
     '}',
   ].join('\n');

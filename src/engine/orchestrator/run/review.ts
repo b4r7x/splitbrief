@@ -221,7 +221,6 @@ export function reviewPassed(
     outcome.kind !== 'fail' &&
     fixWork !== null &&
     fixWork.fixTasks.length === 0 &&
-    fixWork.verify.length === 0 &&
     fixWork.ask === null &&
     blockingRedInputs(pendingInputs, fixWork).length === 0
   );
@@ -369,21 +368,19 @@ export async function followReviewAnswer(args: {
     setTrackedState(state);
     return { state, next: 'review' };
   }
-  // A round made no progress when the answer fixes and re-runs nothing, also when the review failed
+  // A round made no progress when the answer fixes nothing, also when the review failed
   // with no blocker (a criterion no check verified), or when the fix cycle it judges left the same
   // blockers. Only the review that judges the cycle compares, and a round the user steered never
-  // does. A cycle that ran no fix task only re-ran checks, so it moved nothing only when this answer
-  // again asks for no fix task.
-  const idle = fixWork.fixTasks.length === 0 && fixWork.verify.length === 0;
+  // does. A cycle whose answer wrote no fix task only re-ran the checks a planner verify named, so
+  // no review compares its blockers.
+  const idle = fixWork.fixTasks.length === 0;
   const unverified = reviewOutcomeOf(judged).unverifiedCriteria;
   const started =
     judged.judges === undefined
       ? undefined
       : state.triage?.findLast((record) => record.cycle === judged.judges);
   const before =
-    started !== undefined && (started.result.fixTasks.length > 0 || fixWork.fixTasks.length === 0)
-      ? started.blocking
-      : undefined;
+    started !== undefined && started.result.fixTasks.length > 0 ? started.blocking : undefined;
   const stuck =
     idle ||
     (blocking > 0 &&
@@ -488,16 +485,16 @@ export async function followPendingReview(
   if (pending?.question !== undefined) {
     return followReviewAnswer({
       ...args,
-      fixWork: { fixTasks: [], rejected: [], verify: [], ask: pending.question },
+      fixWork: { fixTasks: [], rejected: [], ask: pending.question },
     });
   }
   if (pending?.plannerConsult !== true) return undefined;
-  // An answer that fixes, re-runs, rejects and asks nothing records no triage.
+  // An answer that fixes, rejects and asks nothing records no triage.
   const reviewAt = args.state.review?.at;
   const fixWork = args.state.triage?.findLast((record) => record.reviewAt === reviewAt)?.result;
   return followReviewAnswer({
     ...args,
-    fixWork: fixWork ?? { fixTasks: [], rejected: [], verify: [], ask: null },
+    fixWork: fixWork ?? { fixTasks: [], rejected: [], ask: null },
   });
 }
 

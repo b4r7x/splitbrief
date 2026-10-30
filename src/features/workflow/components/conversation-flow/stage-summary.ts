@@ -26,9 +26,7 @@ export function stageSummaryRow(summary: StageSummary): {
         : summary.outcome === 'no-verdict'
           ? 'no verdict'
           : summary.outcome === 'stopped'
-            ? summary.stoppedDuring === 'verify'
-              ? 'stopped during verify'
-              : 'stopped'
+            ? 'stopped'
             : '';
   const headingParts: Extract<TaskSummaryState, { kind: 'stage' }>['headingParts'] = {
     id: stageHeadingParts(summary),

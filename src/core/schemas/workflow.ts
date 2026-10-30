@@ -10,12 +10,7 @@ import {
 } from './enums.js';
 import { TaskSchema, TaskIdSchema, type Task } from './task.js';
 import { PlanSchema } from './plan.js';
-import {
-  ReviewAnswerSchema,
-  ReviewVerdictSchema,
-  TriageInputSchema,
-  TriageResultSchema,
-} from './review.js';
+import { ReviewVerdictSchema, TriageInputSchema, TriageResultSchema } from './review.js';
 import { CONSULT_REASONS, CONSULT_SEATS, ConsultAnswerSchema } from './consult.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema, SeatSwapCandidateSchema } from './recovery/schemas.js';
@@ -237,21 +232,6 @@ export const ReviewRecordSchema = z.object({
 });
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 
-/**
- * The reviewer's answer before its verify ends: a continue verifies it instead of asking the
- * reviewer again. The review record replaces it.
- */
-export const SavedReviewAnswerSchema = z.object({
-  scope: z.enum(['task', 'final']),
-  afterTaskId: TaskIdSchema.optional(),
-  cycle: z.number().int(),
-  answer: ReviewAnswerSchema,
-  preExistingChecks: ReviewRecordSchema.shape.preExistingChecks.unwrap(),
-  /** The reviewer checks' results the cut call read. */
-  checksSection: z.string().optional(),
-  at: z.string(),
-});
-
 export const TriageRecordSchema = z.object({
   reviewAt: z.string().optional(),
   cycle: z.number().int(),
@@ -262,16 +242,6 @@ export const TriageRecordSchema = z.object({
   blocking: z.array(z.string()).optional(),
   /** The kind of that review: it picks the review that judges this cycle (`ReviewRecord.judges`). */
   scope: z.enum(['task', 'final']).optional(),
-  /** The plan checks the triage's verify entries named, run before any fix. */
-  verification: z
-    .array(
-      z.object({
-        id: z.string(),
-        status: z.enum(['pass', 'fail', 'unverified']),
-        output: z.string(),
-      }),
-    )
-    .optional(),
 });
 export type TriageRecord = z.infer<typeof TriageRecordSchema>;
 
@@ -417,7 +387,6 @@ const WorkflowStateFields = {
     .optional(),
   fixCycles: FixCyclesSchema.optional(),
   review: ReviewRecordSchema.optional(),
-  reviewAnswer: SavedReviewAnswerSchema.optional(),
   triage: z.array(TriageRecordSchema).optional(),
   pendingTriage: PendingTriageSchema.optional(),
   pendingScheduledReview: z.object({ afterTaskId: TaskIdSchema }).optional(),
@@ -506,6 +475,7 @@ const LEGACY_STATE_KEYS = [
   'plannerCalls',
   'reviewChecks',
   'pendingReviewCommands',
+  'reviewAnswer',
 ] as const;
 
 function stripLegacyStateKeys(value: unknown): unknown {

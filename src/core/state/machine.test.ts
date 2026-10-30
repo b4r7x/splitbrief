@@ -1689,45 +1689,6 @@ describe('fix cycles, review and triage records', () => {
     expect(WorkflowStateSchema.safeParse(recorded).success).toBe(true);
   });
 
-  it('SAVE_REVIEW_ANSWER keeps the answer until RECORD_REVIEW replaces it', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'final-review',
-      tasks: [makeTask({ id: 'T001', status: 'done' })],
-      currentTaskIndex: 1,
-    };
-    const verdict = {
-      tasks: [{ id: taskId('T001'), plan: 'met' as const, note: '' }],
-      criteria: [{ id: 'C1', status: 'pass' as const, evidence: '' }],
-      findings: [],
-    };
-    const answer: NonNullable<WorkflowState['reviewAnswer']> = {
-      scope: 'final',
-      cycle: 0,
-      answer: { ...verdict, fixTasks: [], rejected: [], verify: [], ask: null },
-      preExistingChecks: [],
-      at: '2026-10-04T10:00:00.000Z',
-    };
-
-    const saved = transition(state, { type: 'SAVE_REVIEW_ANSWER', answer });
-    expect(saved.reviewAnswer).toEqual(answer);
-    expect(WorkflowStateSchema.safeParse(saved).success).toBe(true);
-
-    const recorded = transition(saved, {
-      type: 'RECORD_REVIEW',
-      review: { cycle: 0, verdict, outcome: 'pass', verification: [], at: answer.at },
-    });
-    expect(recorded.reviewAnswer).toBeUndefined();
-    expect(transition(saved, { type: 'DROP_REVIEW_ANSWER' }).reviewAnswer).toBeUndefined();
-    const rejected = transition(saved, {
-      type: 'RECORD_REJECT',
-      removed: ['a.ts'],
-      booked: [taskId('T001')],
-    });
-    expect(rejected).toMatchObject({ phase: 'implementing', currentTaskIndex: 0 });
-    expect(rejected.reviewAnswer).toBeUndefined();
-  });
-
   it('RECORD_TRIAGE appends a triage recorded while implementing', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -1739,7 +1700,7 @@ describe('fix cycles, review and triage records', () => {
       cycle: 1,
       at: '2026-10-04T10:01:00.000Z',
       inputIds: ['F1'],
-      result: { fixTasks: [], rejected: [], verify: [], ask: null },
+      result: { fixTasks: [], rejected: [], ask: null },
     };
 
     const next = transition(state, { type: 'RECORD_TRIAGE', record });
@@ -1858,7 +1819,7 @@ describe('fix cycles, review and triage records', () => {
       cycle: 1,
       at: '2026-10-03T10:01:00.000Z',
       inputIds: ['U1'],
-      result: { fixTasks: [], rejected: [], verify: [], ask: null },
+      result: { fixTasks: [], rejected: [], ask: null },
     };
 
     const recorded = transition(state, { type: 'RECORD_REVIEW', review });
@@ -1902,7 +1863,6 @@ describe('fix cycles, review and triage records', () => {
             result: {
               fixTasks: [{ ...makeTaskSpec({ id: 'T002' }), findingIds: ['F1'] }],
               rejected: [],
-              verify: [],
               ask: null,
             },
             blocking: ['finding:F1'],

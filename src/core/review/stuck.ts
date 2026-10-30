@@ -33,7 +33,7 @@ export type StuckFixAnswer = Exclude<ConsultAnswer['answer'], { action: 'accept'
  * reviewer's fix briefs; a rewrite or a split replaces them and carries every finding they held,
  * or the blockers when the reviewer wrote none. A verify runs no fix brief: SPLITBRIEF re-runs its
  * checks before the next review. An ask-user answer asks the user on the review question path.
- * The reviewer's rejections and re-runs stay.
+ * The reviewer's rejections stay.
  */
 export function plannerFixWork(
   reviewer: TriageResult,

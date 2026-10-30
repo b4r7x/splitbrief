@@ -551,7 +551,7 @@ function verdictScript(tool: 'cursor' | 'antigravity', received: string): string
     `let prompt = input === '' ? process.argv.slice(2).join('\\n') : input;`,
     `try { const line = JSON.parse(input.trim().split('\\n')[0]); if (typeof line?.message?.content === 'string') prompt = line.message.content; } catch {}`,
     `const ids = (label) => { const m = new RegExp('^' + label + ' (.+)$', 'm').exec(prompt); const v = m?.[1]?.trim() ?? 'none'; return v === '' || v === 'none' ? [] : v.split(',').map((id) => id.trim()).filter((id) => id !== ''); };`,
-    `const text = JSON.stringify({ tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })), criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })), findings: [], fixTasks: [], rejected: [], verify: [], ask: null });`,
+    `const text = JSON.stringify({ tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })), criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })), findings: [], fixTasks: [], rejected: [], ask: null });`,
     `const out = (record) => process.stdout.write(JSON.stringify(record) + '\\n');`,
     ...answer,
   ].join('\n');

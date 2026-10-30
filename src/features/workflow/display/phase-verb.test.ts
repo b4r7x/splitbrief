@@ -40,7 +40,7 @@ it.each(['live', 'transcript'] as const)(
   },
 );
 
-it.each([['verify', 'verifying findings']] as const)(
+it.each([['verdict', 'reviewing changes']] as const)(
   'keeps the review identity separate from the %s suffix',
   (step, words) => {
     resetWorkflow();

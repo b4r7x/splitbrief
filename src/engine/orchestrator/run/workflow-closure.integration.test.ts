@@ -200,7 +200,6 @@ describe('workflow closure', () => {
               result: {
                 fixTasks: [{ ...makeTaskSpec({ id: 'T900' }), findingIds: ['F1'] }],
                 rejected: [],
-                verify: [],
                 ask: null,
               },
               blocking: ['finding:F1'],

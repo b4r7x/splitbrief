@@ -556,7 +556,6 @@ describe('the triage, split and rewrite shapes (rows 15-18)', { timeout: 60_000 
             },
           ],
           rejected: [],
-          verify: [],
           ask: null,
         },
       );
@@ -854,7 +853,6 @@ describe('a failure a sibling carries under another check id', { timeout: 60_000
           },
         ],
         rejected: [],
-        verify: [],
         ask: null,
       },
     );

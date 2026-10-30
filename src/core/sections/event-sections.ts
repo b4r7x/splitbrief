@@ -54,7 +54,6 @@ type ReviewCompletedEvent = {
 type ReviewStartedEvent = Pick<ReviewCompletedEvent, 'scope' | 'afterTaskId'> & {
   type: 'review_started';
 };
-type ReviewStepEvent = { type: 'review_step'; step: 'verdict' | 'verify' };
 type WorkflowCompleteEvent = {
   type: 'workflow_complete';
   review?: 'passed' | 'failed' | undefined;
@@ -134,12 +133,6 @@ function isReviewCompletedEvent<TEvent extends SectionableEvent>(
   return event.type === 'review_completed';
 }
 
-function isReviewStepEvent<TEvent extends SectionableEvent>(
-  event: TEvent,
-): event is TEvent & ReviewStepEvent {
-  return event.type === 'review_step';
-}
-
 function isReviewStartedEvent<TEvent extends SectionableEvent>(
   event: TEvent,
 ): event is TEvent & ReviewStartedEvent {
@@ -177,8 +170,6 @@ export type StageSummary =
       duration: number;
       /** A process exit cut its call: `duration` runs only to the last thing the call reported. */
       endUnknown?: true;
-      /** The stop came after the reviewer answered, while its findings were verified. */
-      stoppedDuring?: 'verify';
     });
 
 export type Section<TEvent extends SectionableEvent = SectionableEvent> =
@@ -640,8 +631,6 @@ function settledStageSummary<TEvent extends SectionableEvent>(
           'endUnknown' in event &&
           event.endUnknown === true,
       ) && { endUnknown: true }),
-    ...(outcome === 'stopped' &&
-      items.findLast(isReviewStepEvent)?.step === 'verify' && { stoppedDuring: 'verify' as const }),
   };
 }
 

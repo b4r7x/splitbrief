@@ -53,12 +53,6 @@ export const TriageResultSchema = z.object({
       reason: z.string(),
     }),
   ),
-  verify: z.array(
-    z.object({
-      findingId: z.string(),
-      checkIds: z.array(z.string()).min(1),
-    }),
-  ),
   ask: z
     .object({
       question: z.string(),
