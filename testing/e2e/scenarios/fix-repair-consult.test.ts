@@ -19,10 +19,10 @@ import {
 } from '../helpers/stop-continue-fixture.js';
 
 const RUN_TIMEOUT_MS = 150_000;
-const HINT = 'consult-hint-review-seat';
+const HINT = 'consult-hint-plan-seat';
 const INSTRUCTIONS = `Export fixed as ${HINT}`;
 const DIAGNOSIS = 'The fix exports a placeholder instead of the value the finding asks for.';
-const GUIDANCE_MARKER = '## Guidance from the reviewer:\n';
+const GUIDANCE_MARKER = '## Guidance from the planner:\n';
 const GREET_SOURCE = "export const greet = (name) => 'hello ' + name;\n";
 const GREET_TEST_SOURCE =
   "import { greet } from './greet.mjs';\nif (greet('a') !== 'hello a') process.exit(1);\n";
@@ -94,8 +94,12 @@ const kind = /^# Plan the change$/m.test(prompt)
     ? 'consult'
     : 'other';
 appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ seat: 'planner', kind, prompt }) + '\\n');
-if (kind !== 'plan') process.exit(1);
-process.stdout.write(${JSON.stringify(JSON.stringify({ result: plan }))});
+if (kind === 'other') process.exit(1);
+process.stdout.write(
+  kind === 'plan'
+    ? ${JSON.stringify(JSON.stringify({ result: plan }))}
+    : ${JSON.stringify(JSON.stringify(consultAnswer))},
+);
 `;
 }
 
@@ -120,10 +124,7 @@ const passing = () => ({
 });
 let kind;
 let answer;
-if (/^# Consult on a failing task$/m.test(prompt)) {
-  kind = 'consult';
-  answer = ${JSON.stringify(consultAnswer)};
-} else if (/^# Task Implementation Review$/m.test(prompt)) {
+if (/^# Task Implementation Review$/m.test(prompt)) {
   kind = 'task-review';
   answer = passing();
   if (ids('Task ids:').join(',') === 'T001') {
@@ -144,7 +145,7 @@ process.stdout.write(JSON.stringify(answer));
 
 /**
  * T001 writes a passing greeting. T002 writes a placeholder its own test rejects, a different
- * one per attempt, until its prompt carries the reviewer's guidance: then it exports the value
+ * one per attempt, until its prompt carries the planner's guidance: then it exports the value
  * the guidance names, read from the first line under the guidance heading.
  */
 function implementerScript(callsPath: string): string {
@@ -181,7 +182,7 @@ console.log('Implemented ' + taskId);
 }
 
 describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
-  it('consults the review seat for a twice-failing fix task and delivers its guidance to the next attempt', async () => {
+  it('consults the planner for a twice-failing fix task and delivers its guidance to the next attempt', async () => {
     fixture = createStopContinueFixture(() => '', { isolation: 'none' });
     const target = fixture;
     restorePath = activateSafeCliShimPath(target.tmpDir);
@@ -230,18 +231,19 @@ describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
       'reviewer:task-review',
       'implementer:implementT002',
       'implementer:implementT002',
-      'reviewer:consult',
+      'planner:consult',
       'implementer:implementT002',
       'reviewer:task-review',
       'reviewer:final-review',
     ]);
     expect(calls.filter((call) => call.seat === 'planner').map((call) => call.kind)).toEqual([
       'plan',
+      'consult',
     ]);
 
     const consult = calls.find((call) => call.kind === 'consult');
     expect(consult?.prompt).toContain(
-      "You are the run's reviewer: you wrote this fix task at the review, and you decide its repair.",
+      "You are the run's planner. The review wrote this fix task for its findings, and you decide its repair.",
     );
     expect(consult?.prompt).toContain('## Task T002 (revision 1)');
     expect(consult?.prompt).toContain('failed — The task failed');
@@ -278,8 +280,8 @@ describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
       reason: 'failed',
       action: 'guidance',
       diagnosis: DIAGNOSIS,
-      seat: 'review',
     });
+    expect(records[0]).not.toHaveProperty('seat');
 
     const replay = await readRunEvents({ projectDir: target.projectDir, sessionId });
     expect(replay.diagnostics.skipped).toBe(0);
@@ -292,7 +294,6 @@ describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
     expect(answered[0]).toMatchObject({
       taskId: 'T002',
       reason: 'failed',
-      seat: 'review',
       action: 'guidance',
       diagnosis: DIAGNOSIS,
       newTaskIds: null,
@@ -325,13 +326,13 @@ describe('e2e: fix task repair consult', { timeout: 240_000 }, () => {
       ctx: { width: 120, viewportRows: 20, streaming },
     });
     expect(rows.flatMap((row) => row.segments)).toContainEqual({
-      text: 'REVIEW',
-      tone: 'reviewer',
+      text: 'PLAN',
+      tone: 'planner',
     });
     const transcript = rows.map(rowText).join('\n');
     expect(transcript).toContain('T002');
     expect(transcript).toContain('guidance');
     expect(transcript).toContain(DIAGNOSIS);
-    expect(transcript).not.toContain('PLAN');
+    expect(transcript).not.toContain('REVIEW');
   });
 });

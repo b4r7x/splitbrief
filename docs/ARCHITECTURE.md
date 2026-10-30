@@ -282,7 +282,7 @@ One more per-seat property sits outside this struct: typed output. The tool fact
 |---|---|---|---|---|---|---|
 | Typed output | native (`--json-schema`, from 2.1.287) | strict-native (`--output-schema`, from 0.157.1) | native (`--json-schema`, from 1.2.14) | native (`response_format`) | fallback | fallback |
 
-Claude Code resumes via `claude --resume <id>`. Codex resumes via `codex exec resume … --json <id> -`, with the prompt on stdin and the id captured from the `thread.started` JSONL event. The planning session and the consult of a plan task resume the saved thread. The consult of a fix task uses one stateless call on REVIEW. Each verdict call uses a full, stateless prompt on every seat. A resumed run falls back to a transcript rebuild (`src/engine/orchestrator/transcript/rebuild.ts`) when its planner cannot resume a session, when the PLAN seat moved to another tool, or when the state holds no `plannerSessionId` because the tool reported none or its thread expired. A planning call whose thread expires mid-run, or whose resumed thread the tool refuses as too long, a step or a revision, is issued again once, on a fresh session with the same rebuilt transcript (`withFreshSessionReissue`, `src/engine/orchestrator/resume-context.ts`).
+Claude Code resumes via `claude --resume <id>`. Codex resumes via `codex exec resume … --json <id> -`, with the prompt on stdin and the id captured from the `thread.started` JSONL event. The planning session and every consult resume the saved thread. The consult of a fix task sends the full consult prompt on that thread. Each verdict call uses a full, stateless prompt on every seat. A resumed run falls back to a transcript rebuild (`src/engine/orchestrator/transcript/rebuild.ts`) when its planner cannot resume a session, when the PLAN seat moved to another tool, or when the state holds no `plannerSessionId` because the tool reported none or its thread expired. A planning call whose thread expires mid-run, or whose resumed thread the tool refuses as too long, a step or a revision, is issued again once, on a fresh session with the same rebuilt transcript (`withFreshSessionReissue`, `src/engine/orchestrator/resume-context.ts`).
 
 `shell` and `agent` defaults are all-false but can be narrowed or partially declared per project. The schema rejects `supportsSessionResume`, `supportsEffort`, and `supportsImages` when set to `true` because command-based adapters have no session-handle, effort, or image-attachment channel.
 
@@ -442,7 +442,7 @@ SPLITBRIEF is an orchestrator of two coding tools: one plans and reviews, the ot
 1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of `Task` objects, one per slice, each naming the files it writes plus scope, validation, and evidence.
 2. **Implementer** — the weaker model of the pair, carried either by a tool CLI configured with a cheap model or by a model behind an OpenAI-compatible API. Both transports are first-class. It executes one task at a time against its self-contained brief; the checks that judge the result are SPLITBRIEF's: the plan's checks, and the reviewer checks: the project gate that the plan names, which SPLITBRIEF runs under the reviewer command policy.
 
-The review seat (`Reviewer`, `src/engine/reviewers/types.ts`) is the optional `reviewer:` runner; with none configured the planner holds it (`resolveReviewerRunner`). It reviews the run diff in stateless calls. It also answers the consult of a fix task (`src/engine/orchestrator/consult/request.ts`).
+The review seat (`Reviewer`, `src/engine/reviewers/types.ts`) is the optional `reviewer:` runner; with none configured the planner holds it (`resolveReviewerRunner`). It reviews the run diff in stateless calls. It answers no consult: the planner answers every consult, the consult of a fix task included (`src/engine/orchestrator/consult/request.ts`).
 
 The repository layers many supporting subsystems on top of that core loop:
 
@@ -607,8 +607,8 @@ src/
 │   │   │                          (`tiered-approval`, `types`,
 │   │   │                          `confirm`, `events`)
 │   │   ├── consult/               request (typed consult on the planner
-│   │   │                          session, or the review seat for a fix
-│   │   │                          task) + apply (the five answers)
+│   │   │                          session, fix tasks included)
+│   │   │                          + apply (the five answers)
 │   │   ├── continuation.ts        withContinuationLoop (pause/resume gate)
 │   │   ├── drift/                 the run's drift report (analyze, format, io)
 │   │   ├── escalation/            local retries, retry step, seat wait,

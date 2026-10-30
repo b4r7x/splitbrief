@@ -335,12 +335,12 @@ describe('FeedbackRow', () => {
     ]);
     questionPromptStore.close();
 
-    const ui = renderFeature(<FeedbackRow inputHint="Reply to the reviewer…" />);
+    const ui = renderFeature(<FeedbackRow inputHint="Reply to the planner…" />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('esc stop options');
     expect(frame.startsWith(KEY_LEGEND_LEADING)).toBe(true);
-    expect(frame).not.toContain('Reply to the reviewer');
+    expect(frame).not.toContain('Reply to the planner');
 
     ui.unmount();
   });

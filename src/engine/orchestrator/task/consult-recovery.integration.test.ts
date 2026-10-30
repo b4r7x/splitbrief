@@ -84,7 +84,7 @@ describe('consult seat recovery', () => {
     { reason: 'blocked', failure: 'quota' },
     { reason: 'failed', failure: 'malformed' },
   ] as const)(
-    'retries and switches the reviewer after a $reason consult with $failure output',
+    'retries and switches the planner after a fix task $reason consult with $failure output',
     async ({ reason, failure }) => {
       const ref = setupTaskProject();
       await rememberDetectedTools(
@@ -100,18 +100,18 @@ describe('consult seat recovery', () => {
               new Error(
                 failure === 'quota'
                   ? 'Insufficient Balance'
-                  : 'The reviewer process stopped unexpectedly.',
+                  : 'The planner process stopped unexpectedly.',
               ),
             ],
       );
-      const planner = makePlanner();
+      const reviewer = makePlanner();
       const { bus, events } = makeBusRecorder();
       const wctx = makeTaskWorkflowContext({
         ...ref,
         config,
         bus,
-        planner,
-        reviewer: makePlanner({ typedCall: broken.typedCall }),
+        planner: makePlanner({ typedCall: broken.typedCall }),
+        reviewer,
         implementer: makeImplementer({ retry: vi.fn().mockResolvedValue(failed) }),
       });
       const halted = (await retryTask({ wctx, state, task, reason })).state;
@@ -123,9 +123,9 @@ describe('consult seat recovery', () => {
             : failure === 'quota'
               ? 'runner-usage-limit'
               : 'planner-call-failed',
-        seat: 'review',
+        seat: 'plan',
         taskId: task.id,
-        switchSeat: { seat: 'review', candidates: [{ tool: 'claude-code' }] },
+        switchSeat: { seat: 'plan', candidates: [{ tool: 'codex' }] },
         availableActions:
           failure === 'malformed'
             ? ['retry-same-worker', 'switch-seat', 'end-run']
@@ -161,7 +161,7 @@ describe('consult seat recovery', () => {
       const recovered = await runTask(
         {
           ...wctx,
-          reviewer: makePlanner({ typedCall: answered }),
+          planner: makePlanner({ typedCall: answered }),
           implementer: makeImplementer({
             implement: vi
               .fn()
@@ -171,13 +171,13 @@ describe('consult seat recovery', () => {
         },
         retried.state,
       );
-      expect(answered.mock.calls.map(([ctx]) => ctx.seat)).toEqual(['reviewer']);
+      expect(answered.mock.calls.map(([ctx]) => ctx.seat)).toEqual(['planner']);
       expect(recovered.lineages?.T013?.consultRecords).toContainEqual(
-        expect.objectContaining({ seat: 'review', action: 'rewrite-task' }),
+        expect.objectContaining({ action: 'rewrite-task' }),
       );
       expect(recovered.pendingRecovery).toBeUndefined();
       expect(recovered.tasks[0]).toMatchObject({ id: task.id, revision: 2, fix });
-      expect(planner.typedCall).not.toHaveBeenCalled();
+      expect(reviewer.typedCall).not.toHaveBeenCalled();
 
       saveState(ref, halted);
       const switched = await applyRecoveryAction({
@@ -186,13 +186,13 @@ describe('consult seat recovery', () => {
         config,
         state: halted,
         action: 'switch-seat',
-        candidate: { tool: 'claude-code' },
+        candidate: { tool: 'codex' },
       });
       expect(switched.ok).toBe(true);
       if (!switched.ok) throw new Error(switched.message);
-      expect(switched.switchedSeat).toEqual({ seat: 'review', candidate: { tool: 'claude-code' } });
-      expect(switched.switchedConfig?.reviewer).toMatchObject({ kind: 'cli', tool: 'claude-code' });
-      expect(switched.switchedConfig?.planner).toEqual(config.planner);
+      expect(switched.switchedSeat).toEqual({ seat: 'plan', candidate: { tool: 'codex' } });
+      expect(switched.switchedConfig?.planner).toMatchObject({ kind: 'cli', tool: 'codex' });
+      expect(switched.switchedConfig?.reviewer).toEqual(config.reviewer);
       expect(switched.state.pendingRecovery).toBeUndefined();
       expect(switched.state.tasks[0]?.status).toBe('pending');
     },

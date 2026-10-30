@@ -90,10 +90,7 @@ function activityLine(
     operation === null
       ? null
       : formatRecordedSeatIdentity({ ...operation, role: runnerActivityModelRole(operation.role) });
-  const reviewing =
-    input.lifecycle.phase === 'final-review' ||
-    (operation?.role === 'review' && operation.taskId === undefined);
-  if (reviewing) {
+  if (input.lifecycle.phase === 'final-review' || operation?.role === 'review') {
     const parts = reviewActivityParts(operation, identity);
     return activityResult(
       reviewActivitySpans(parts),
@@ -121,10 +118,6 @@ function activityLine(
       break;
     case 'implementer':
       doing = `working${task}`;
-      break;
-    case 'review':
-      seat = 'review';
-      doing = `answering the consult${operation.answeringAgain === true ? ' again' : ''}${task}`;
       break;
     case 'planner':
     case 'escalation':

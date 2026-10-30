@@ -925,7 +925,6 @@ export function transition(
         taskId: action.taskId,
         revision: action.revision,
         answer: action.answer,
-        seat: action.seat,
       };
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
         ...lineage,

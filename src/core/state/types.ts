@@ -7,12 +7,7 @@ import type {
   SeatWait,
 } from '../schemas/workflow.js';
 import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
-import type {
-  ConsultAnswer,
-  ConsultReason,
-  ConsultSeat,
-  ReportedDecision,
-} from '../schemas/consult.js';
+import type { ConsultAnswer, ConsultReason, ReportedDecision } from '../schemas/consult.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { Plan } from '../schemas/plan.js';
 import type { TriageInput } from '../schemas/review.js';
@@ -115,8 +110,6 @@ export type StateAction =
       revision: number;
       reason: ConsultReason;
       answer: ConsultAnswer;
-      /** The seat that answered. */
-      seat: ConsultSeat;
     }
   | { type: 'RECORD_DECISIONS'; taskId: TaskId; decisions: readonly ReportedDecision[] }
   | { type: 'RECORD_CORRECTION'; taskId: TaskId; text: string }

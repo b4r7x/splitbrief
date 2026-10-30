@@ -139,7 +139,6 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
 
       expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          seat: 'plan',
           text: expect.stringContaining('SPLITBRIEF asked the planner to fix T001'),
           questions: [expect.objectContaining({ text: expect.stringContaining('C1') })],
         }),

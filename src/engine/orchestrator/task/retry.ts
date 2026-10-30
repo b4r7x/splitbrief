@@ -2,8 +2,6 @@ import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
-import type { ReviewerConfig } from '../../../core/schemas/reviewer-config.js';
-import type { ConsultSeat } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import type { RetryAttemptFailure } from '../escalation/types.js';
 
@@ -26,18 +24,13 @@ import {
   plannerCallHaltIssue,
   plannerHaltRow,
 } from '../recovery/planner-call-failure.js';
-import {
-  consultHaltDetails,
-  haltAttempts,
-  reviewSeatDetails,
-} from '../recovery/builders/details.js';
+import { consultHaltDetails, haltAttempts } from '../recovery/builders/details.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
-import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
-import { thrownConsultSeat } from '../consult/request.js';
+import { isConsultError } from '../consult/request.js';
 import { typedOutputError } from '../../runners/typed-output.js';
 import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 import { readBriefWorkedMs } from './worked-time.js';
@@ -60,39 +53,14 @@ export type RetryAndRecordOptions = {
   setTrackedState: (s: WorkflowState) => void;
 };
 
-/** A failed consult names the seat whose call failed: `Planner consult for T001 failed`. */
-export function consultFailureLabel(seat: ConsultSeat, taskId: TaskId): string {
-  return `${seat === 'review' ? 'Reviewer' : 'Planner'} consult for ${taskId} failed`;
+/** A failed consult names the planner's call: `Planner consult for T001 failed`. */
+export function consultFailureLabel(taskId: TaskId): string {
+  return `Planner consult for ${taskId} failed`;
 }
 
-/** A failure out of the retry ladder names its call: the seat's consult, else the retry itself. */
+/** A failure out of the retry ladder names its call: the planner's consult, else the retry itself. */
 export function retryFailureLabel(err: unknown, taskId: TaskId): string {
-  const seat = thrownConsultSeat(err);
-  return seat === undefined ? `Retrying ${taskId} failed` : consultFailureLabel(seat, taskId);
-}
-
-/** A consult halt moves the seat whose call failed, including an inherited reviewer. */
-function consultHaltSeat(
-  wctx: WorkflowContext,
-  seat: ConsultSeat,
-): Readonly<{
-  seat: ConsultSeat;
-  runner: ReviewerConfig;
-  swap: Readonly<{ seat: ConsultSeat; runner: ReviewerConfig }>;
-  details: string[];
-}> {
-  if (seat !== 'review') {
-    const runner = wctx.config.planner;
-    return { seat: 'plan', runner, swap: { seat: 'plan', runner }, details: [] };
-  }
-  const { runner, source } = resolveReviewerRunner(wctx.config);
-  const followsPlan = source === 'planner';
-  return {
-    seat: 'review',
-    runner,
-    swap: { seat: 'review', runner },
-    details: reviewSeatDetails(followsPlan),
-  };
+  return isConsultError(err) ? consultFailureLabel(taskId) : `Retrying ${taskId} failed`;
 }
 
 /**
@@ -144,7 +112,6 @@ export async function handleTaskPlannerCallFailure(
     Pick<RetryAndRecordOptions, 'state' | 'setTrackedState'> & {
       err: unknown;
       label: string;
-      seat?: ConsultSeat;
     },
 ): Promise<WorkflowState> {
   const { wctx, task, err, setTrackedState } = opts;
@@ -159,14 +126,8 @@ export async function handleTaskPlannerCallFailure(
     setTrackedState(stoppedState);
     return stoppedState;
   }
-  const consultSeat = opts.seat ?? thrownConsultSeat(err);
-  const halt = consultHaltSeat(wctx, consultSeat ?? 'plan');
-  const diagnosis = diagnosePlannerCallFailure({
-    err,
-    label: opts.label,
-    runner: halt.runner,
-    seat: halt.seat,
-  });
+  const runner = wctx.config.planner;
+  const diagnosis = diagnosePlannerCallFailure({ err, label: opts.label, runner, seat: 'plan' });
   const publishRow = (message: string) =>
     publishError({
       bus: wctx.bus,
@@ -180,7 +141,7 @@ export async function handleTaskPlannerCallFailure(
     setTrackedState(recoveryBaseState);
     return recoveryBaseState;
   }
-  // A consult seat out of quota or signed out halts on that seat, not as a brief
+  // A planner out of quota or signed out on the consult halts on PLAN, not as a brief
   // that exhausted its retries. The halt names the brief, so retrying it or
   // moving the seat replays that brief from its start.
   let issue: RecoveryIssue;
@@ -194,7 +155,7 @@ export async function handleTaskPlannerCallFailure(
       phase: recoveryBaseState.phase,
       task,
     });
-  } else if (diagnosis.failure === 'call-failed' && consultSeat === undefined) {
+  } else if (diagnosis.failure === 'call-failed' && !isConsultError(err)) {
     issue = buildRetryExhaustedRecoveryIssue({
       task,
       phase: recoveryBaseState.phase,
@@ -212,10 +173,10 @@ export async function handleTaskPlannerCallFailure(
       diagnosis,
       task,
       phase: recoveryBaseState.phase,
-      seat: halt.seat,
+      seat: 'plan',
       seatSwitches: recoveryBaseState.seatSwitches,
-      swap: halt.swap,
-      details: [...consultHaltDetails(task.id, halt.seat), ...halt.details],
+      swap: { seat: 'plan', runner },
+      details: consultHaltDetails(task.id),
     });
     row = plannerHaltRow(issue, diagnosis);
   }

@@ -724,11 +724,8 @@ describe('Esc in a planner question', () => {
       await expectClosed(frame);
     });
 
-    it.each([
-      ['the final review', {}],
-      ['a consult seat', { seat: 'review' as const }],
-    ])('keeps the panel of %s on an Esc inside the grace', async (_asker, conversation) => {
-      const { frame, key } = await askRounds([[bare]], { inGrace: true, conversation });
+    it('keeps the panel of the final review on an Esc inside the grace', async () => {
+      const { frame, key } = await askRounds([[bare]], { inGrace: true });
       await key('\u001b');
       await expectStopSheetOverPanel(frame);
     });
@@ -803,7 +800,6 @@ describe('Esc in a planner question', () => {
     const askers = [
       ['the planner', {}],
       ['the final review', { call: 'plan' as const }],
-      ['a consult seat', { seat: 'review' as const }],
     ] as const;
 
     it.each(askers)(

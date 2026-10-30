@@ -29,7 +29,6 @@ import {
   startReadinessWarnings,
 } from '../../../../src/core/readiness/format.js';
 import type { SeatSwitchRecord, WorkflowState } from '../../../../src/core/schemas/workflow.js';
-import type { ConsultSeat } from '../../../../src/core/schemas/consult.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeRunRecord } from '../../../helpers/factories/run-record.js';
 import { makeSummary } from '../../../helpers/factories/summary.js';
@@ -196,7 +195,6 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
 });
 
 interface FixtureQuestion {
-  readonly seat?: ConsultSeat;
   readonly prompt: string;
   readonly answer: string;
   readonly questions?: readonly ClarificationQuestion[];
@@ -1344,13 +1342,11 @@ const reviewFixProjection: WorkflowFixtureProjection = {
 };
 
 /**
- * The review's fix task reported `blocked`: the reviewer that wrote it answered with guidance,
- * the next attempt stopped on the same decision, and the reviewer answers again while the run is
- * still implementing. The fixture crew has no reviewer block, so the review seat runs on the
- * PLAN tool.
+ * The review's fix task reported `blocked`: the planner answered with guidance, the next attempt
+ * stopped on the same decision, and the planner answers again while the run is still implementing.
  */
-const buildReviewConsultProjection: WorkflowFixtureProjection = {
-  scenarioId: scenarioId('workflow-build-review-consult'),
+const buildFixConsultProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-build-fix-consult'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
@@ -1363,7 +1359,6 @@ const buildReviewConsultProjection: WorkflowFixtureProjection = {
         phase: 'implementing',
         taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
         reason: 'blocked',
-        seat: 'review',
         action: 'guidance',
         diagnosis: 'The finding asks for the cache key, not the whole entry.',
         newTaskIds: null,
@@ -1383,8 +1378,8 @@ const buildReviewConsultProjection: WorkflowFixtureProjection = {
         ts: FIXED_TS + 600,
         phase: 'implementing',
         taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
-        callId: 'visual-build-review-consult',
-        role: 'review',
+        callId: 'visual-build-fix-consult',
+        role: 'planner',
         backendKind: 'cli',
         runnerName: 'claude',
         model: BASE_PLANNER.model,
@@ -3214,11 +3209,8 @@ const cannotRecoveryProjection: WorkflowFixtureProjection = {
       id: 'rec_visual_cannot',
       task: HALTED_TASK,
       phase: 'escalating',
-      cannot: {
-        seat: 'plan',
-        reason:
-          'Projection is generated from the run record schema, and the brief may not change that schema, so no edit of activity.ts can add the stop field.',
-      },
+      cannot:
+        'Projection is generated from the run record schema, and the brief may not change that schema, so no edit of activity.ts can add the stop field.',
       validationSummary: FIXTURE_TYPECHECK_ERROR,
       attempts: 3,
       allowRetryOverride: true,
@@ -4085,20 +4077,20 @@ function reviewSeatRecoveryIssue(): RecoveryIssue {
  * The planner out of quota on a brief's consult: the halt is the plan seat's, and it names the
  * brief, so taking the swap replays that brief from its first attempt.
  */
-function consultSeatRecoveryIssue(): RecoveryIssue {
+function planConsultHaltIssue(): RecoveryIssue {
   const err = plannerCallFailed('escalation', CODEX_LIMIT_WORDS);
   return buildPlannerCallFailedRecoveryIssue({
     id: 'rec_visual_hint_usage_limit',
     diagnosis: diagnosePlannerCallFailure({
       seat: 'plan',
       err,
-      label: consultFailureLabel('plan', WORKFLOW_FIXTURE_TASK_ID),
+      label: consultFailureLabel(WORKFLOW_FIXTURE_TASK_ID),
       runner: CODEX_PLAN_SEAT,
     }),
     task: HALTED_TASK,
     phase: 'escalating',
     runner: CODEX_PLAN_SEAT,
-    details: consultHaltDetails(WORKFLOW_FIXTURE_TASK_ID, 'plan'),
+    details: consultHaltDetails(WORKFLOW_FIXTURE_TASK_ID),
     seatSwap: plannerSeatSwap('plan', 'codex', ['codex', 'claude-code', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });
@@ -4292,11 +4284,11 @@ const hintSeatRecoveryProjection: WorkflowFixtureProjection = {
   inputMode: 'question',
   sidebarVisible: false,
   get events() {
-    return haltErrorEvents(consultSeatRecoveryIssue());
+    return haltErrorEvents(planConsultHaltIssue());
   },
   config: CODEX_PLAN_CREW,
   get resumeState() {
-    return haltedResumeState(consultSeatRecoveryIssue());
+    return haltedResumeState(planConsultHaltIssue());
   },
 };
 
@@ -4311,7 +4303,7 @@ function planInputTooLargeDiagnosis() {
       status: 'failed',
       error: { code: 'input-too-large', message: 'Prompt is too long' },
     }),
-    label: consultFailureLabel('plan', WORKFLOW_FIXTURE_TASK_ID),
+    label: consultFailureLabel(WORKFLOW_FIXTURE_TASK_ID),
     runner: visualConfig().planner,
   });
 }
@@ -4323,7 +4315,7 @@ function planInputTooLargeRecoveryIssue(): RecoveryIssue {
     task: HALTED_TASK,
     phase: 'escalating',
     runner: visualConfig().planner,
-    details: consultHaltDetails(WORKFLOW_FIXTURE_TASK_ID, 'plan'),
+    details: consultHaltDetails(WORKFLOW_FIXTURE_TASK_ID),
     seatSwap: plannerSeatSwap('plan', 'claude-code', ['claude-code', 'codex', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });
@@ -6954,7 +6946,7 @@ const projections = [
   stopSheetRecoveryProjection,
   buildConsultProjection,
   buildBriefCheckProjection,
-  buildReviewConsultProjection,
+  buildFixConsultProjection,
   implementationRetryProjection,
   reviewFixProjection,
   reviewFixCyclesProjection,
@@ -7252,28 +7244,6 @@ const projections = [
   unansweredQuestionsProjection,
   consultQuestionProjection,
   {
-    ...buildReviewConsultProjection,
-    scenarioId: scenarioId('workflow-reviewer-question'),
-    inputMode: 'question',
-    question: {
-      seat: 'review',
-      prompt: 'Which cache key must the repair preserve?',
-      answer: '',
-      questions: [],
-    },
-  },
-  {
-    ...buildReviewConsultProjection,
-    scenarioId: scenarioId('workflow-reviewer-question-unanswered'),
-    inputMode: 'question',
-    questionPreview: 'closed',
-    question: {
-      seat: 'review',
-      prompt: 'Which cache key must the repair preserve?',
-      answer: '',
-    },
-  },
-  {
     ...consultQuestionProjection,
     scenarioId: scenarioId('workflow-consult-answer-typed'),
     question: {
@@ -7469,7 +7439,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     planSeatRecoveryIssue(),
     planTimeoutRecoveryIssue(),
     reviewSeatRecoveryIssue(),
-    consultSeatRecoveryIssue(),
+    planConsultHaltIssue(),
     planSwappedRecoveryIssue(),
     modelRefusalRecoveryIssue(ROUTE_SIGNED_OUT_AUTH),
     modelRefusalRecoveryIssue(MODEL_NOT_LISTED_AUTH),

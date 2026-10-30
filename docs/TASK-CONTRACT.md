@@ -3,7 +3,7 @@
 > **Status:** stable (state v4, config v3).
 > **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
 
-A brief that fails after its one retry or reports `blocked` goes to a consult, not to a fixed tier chain. A plan task consults the planner; a fix task (`task.fix`) consults the review seat. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
+A brief that fails after its one retry or reports `blocked` goes to a consult, not to a fixed tier chain. The planner answers every consult, the consult of a fix task (`task.fix`) included. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
 
 ## v4 contract boundary
 

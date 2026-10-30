@@ -30,7 +30,6 @@ import { AttachmentSchema, AttachedInputSchema } from './attachment.js';
 
 export const PlannerConversationSchema = z.object({
   call: z.enum(['research', 'spec', 'plan', 'tasks']),
-  seat: z.enum(CONSULT_SEATS).optional(),
   text: z.string(),
   questions: z.array(ClarificationQuestionSchema),
   answers: z.array(z.object({ reply: z.string(), answer: z.string() })),
@@ -147,7 +146,7 @@ export const ConsultRecordSchema = z.object({
   taskId: TaskIdSchema,
   revision: z.number().int(),
   answer: ConsultAnswerSchema,
-  /** The seat that answered; an older record without one was a planner consult. */
+  /** `review` on an older run's fix-task consult the reviewer answered; the planner answers the rest. */
   seat: z.enum(CONSULT_SEATS).optional(),
   /** The lineage's attempts before this answer; an older record does not carry it. */
   afterAttempt: nonnegativeInteger.optional(),

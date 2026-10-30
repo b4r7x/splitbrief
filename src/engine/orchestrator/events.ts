@@ -13,7 +13,7 @@ import type {
   Phase,
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
-import type { ConsultReason, ConsultSeat } from '../../core/schemas/consult.js';
+import type { ConsultReason } from '../../core/schemas/consult.js';
 import type { AnsweredQuestion, ClarificationQuestion } from '../../core/schemas/question.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
@@ -336,7 +336,6 @@ export function publishConsultAnswered(
   opts: {
     taskId: TaskId;
     reason: ConsultReason;
-    seat: ConsultSeat;
     action: ConsultRecord['action'];
     diagnosis: string;
     newTaskIds: readonly TaskId[] | null;
@@ -351,7 +350,6 @@ export function publishConsultAnswered(
     phase: ctx.phase,
     taskId: opts.taskId,
     reason: opts.reason,
-    seat: opts.seat,
     action: opts.action,
     diagnosis: opts.diagnosis,
     newTaskIds: opts.newTaskIds === null ? null : [...opts.newTaskIds],

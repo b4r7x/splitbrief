@@ -49,6 +49,47 @@ function state(
 }
 
 describe('WorkflowStateSchema v4', () => {
+  it('loads an older run whose fix-task consult the reviewer answered', () => {
+    const parsed = WorkflowStateSchema.parse({
+      ...state(),
+      lineages: {
+        T004: {
+          attempts: 2,
+          consultRecords: [
+            {
+              reason: 'failed',
+              action: 'guidance',
+              diagnosis: 'The fix keys the cache on the whole entry.',
+              at: '2026-10-20T00:00:00.000Z',
+              taskId: 'T004',
+              revision: 1,
+              answer: {
+                answer: {
+                  diagnosis: 'The fix keys the cache on the whole entry.',
+                  action: 'guidance',
+                  instructions: 'Key the cache on the entry id.',
+                  context: null,
+                },
+              },
+              seat: 'review',
+              afterAttempt: 2,
+            },
+          ],
+        },
+      },
+      pendingPlannerConversation: {
+        call: 'plan',
+        text: 'SPLITBRIEF asked the reviewer to fix T004.',
+        questions: [],
+        answers: [],
+        seat: 'review',
+      },
+    });
+
+    expect(parsed.lineages?.T004?.consultRecords[0]?.seat).toBe('review');
+    expect(parsed.pendingPlannerConversation).not.toHaveProperty('seat');
+  });
+
   it('persists expanded resume messages while accepting states without them', () => {
     const resumeUserMessages = [
       {

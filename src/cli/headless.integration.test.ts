@@ -1281,20 +1281,29 @@ describe('runHeadless — the seat-down policy and the record', () => {
   });
 
   it.each([
-    ['plan', 'Planner said'],
-    ['review', 'Reviewer said'],
+    ['the planner', 'planner', 'Planner said'],
+    ["an older run's reviewer", 'reviewer', 'Reviewer said'],
   ] as const)(
-    'shows the reason a %s seat gave for a brief that cannot be done in the record and the halt line',
-    (seat, said) => {
+    'shows the reason %s gave for a brief that cannot be done in the record and the halt line',
+    (_name, by, said) => {
       const reason = 'The SDK has no payment API.';
-      const issue = buildRetryExhaustedRecoveryIssue({
+      const built = buildRetryExhaustedRecoveryIssue({
         task: makeTask({ id: 'T002' }),
         validationSummary: 'expected 1 to be 2',
         attempts: 3,
         allowRetryOverride: true,
-        cannot: { seat, reason },
+        cannot: reason,
         createdAt: '2026-04-28T12:00:00.000Z',
       });
+      // An older run saved the issue its reviewer raised on a fix task.
+      const issue =
+        by === 'planner'
+          ? built
+          : {
+              ...built,
+              message: 'T002: the reviewer says it cannot be done',
+              facts: { ...built.facts, cannotBy: by },
+            };
       const state = {
         ...createInitialState('recover me'),
         phase: 'implementing' as const,
@@ -1305,7 +1314,7 @@ describe('runHeadless — the seat-down policy and the record', () => {
       expect(() =>
         emitRecoveryAndFailIfPending({ state, sessionId: 'sess-cannot', writeRecord }),
       ).toThrow(
-        `Needs you (retry-exhausted): T002: the ${said.split(' ')[0]?.toLowerCase()} says it cannot be done\n${said}: ${reason}\nRecommended: retry-same-worker`,
+        `Needs you (retry-exhausted): T002: the ${by} says it cannot be done\n${said}: ${reason}\nRecommended: retry-same-worker`,
       );
       expect(writeRecord).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'recovery_required', cannot: reason }),

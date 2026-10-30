@@ -83,7 +83,6 @@ function contextFor(
       callbacks: makeCallbacks(callbacks).callbacks,
       sinks: TEST_SINKS,
       state,
-      seat: 'plan',
       onStateChange: (next) => states.push(next),
     },
     states,
@@ -356,7 +355,6 @@ describe('applyConsultAnswer', () => {
 
     expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        seat: 'plan',
         text: expect.stringContaining('SPLITBRIEF asked the planner to fix T003'),
         questions: [expect.objectContaining({ text: expect.stringContaining('C1') })],
         answered: false,
@@ -371,7 +369,7 @@ describe('applyConsultAnswer', () => {
     expect(states).toHaveLength(0);
   });
 
-  it('asks the operator on the review seat when a fix-task rewrite changes criteria', async () => {
+  it("asks the operator in the planner's words when a fix-task rewrite changes criteria", async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
@@ -387,7 +385,7 @@ describe('applyConsultAnswer', () => {
     const attempt = await getChangedFilesSnapshot(projectDir);
 
     const result = await applyConsultAnswer(
-      { ...ctx, seat: 'review' },
+      ctx,
       task,
       rewrite(makeTaskSpec({ id: 'T003', criteria: ['C2'], suggestedFiles: ['src/greet.ts'] })),
       attempt,
@@ -395,15 +393,14 @@ describe('applyConsultAnswer', () => {
 
     expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        seat: 'review',
-        text: expect.stringContaining('SPLITBRIEF asked the reviewer to fix T003'),
+        text: expect.stringContaining('SPLITBRIEF asked the planner to fix T003'),
         questions: [expect.objectContaining({ text: expect.stringContaining('C1') })],
         answered: false,
       }),
     );
     expect(result).toEqual({
       action: 'unanswered',
-      question: expect.stringContaining('SPLITBRIEF asked the reviewer to fix T003'),
+      question: expect.stringContaining('SPLITBRIEF asked the planner to fix T003'),
     });
     expect(states).toHaveLength(0);
   });
@@ -434,7 +431,6 @@ describe('applyConsultAnswer', () => {
 
     expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        seat: 'plan',
         questions: [expect.objectContaining({ text: expect.stringContaining('C2') })],
       }),
     );
@@ -522,7 +518,6 @@ describe('applyConsultAnswer', () => {
 
     expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        seat: 'plan',
         questions: [expect.objectContaining({ text: expect.stringContaining('K1') })],
       }),
     );

@@ -19,7 +19,7 @@ import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { TypedSeatCall } from '../../runners/typed-output.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { retryFailureLabel } from '../task/retry.js';
-import { consultSeat, requestConsult, thrownConsultSeat, type ConsultContext } from './request.js';
+import { isConsultError, requestConsult, type ConsultContext } from './request.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 
 const config = makeConfig();
@@ -227,7 +227,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       { task, reason: 'failed', failingOutput: 'boom' },
@@ -286,7 +285,6 @@ describe('requestConsult', () => {
         taskId: task.id,
         revision: 1,
         reason: 'failed',
-        seat: 'plan',
         answer: JSON.parse(guidanceAnswer('Before the stop', null).text),
       });
       saveState(ref, stopped);
@@ -310,7 +308,6 @@ describe('requestConsult', () => {
           bus,
           config,
           planner: planner.planner,
-          reviewer: planner.planner,
           state,
           onStateChange: (next) => {
             state = next;
@@ -365,7 +362,6 @@ describe('requestConsult', () => {
       bus,
       config,
       planner: planner.planner,
-      reviewer: planner.planner,
       state,
       onStateChange: (next) => seen.push(next),
     };
@@ -421,7 +417,6 @@ describe('requestConsult', () => {
       bus,
       config,
       planner: planner.planner,
-      reviewer: planner.planner,
       state,
       onStateChange: (next) => seen.push(next),
     };
@@ -442,10 +437,10 @@ describe('requestConsult', () => {
   });
 
   it.each([
-    { seat: 'plan', makeState: consultState },
-    { seat: 'review', makeState: fixState },
+    { task: 'a plan task', makeState: consultState },
+    { task: 'a fix task', makeState: fixState },
   ])(
-    'shows the $seat seat every change since the task started and one line per failed attempt',
+    'shows the planner every change since $task started and one line per failed attempt',
     async ({ makeState }) => {
       const { projectDir, sessionId } = setupProject(dirs);
       const ref = { projectDir, sessionId };
@@ -471,7 +466,6 @@ describe('requestConsult', () => {
           bus,
           config,
           planner: planner.planner,
-          reviewer: planner.planner,
           state,
         },
         {
@@ -518,7 +512,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
@@ -559,7 +552,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
@@ -596,7 +588,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
@@ -630,7 +621,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
@@ -657,7 +647,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
@@ -706,7 +695,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       { task: state.tasks[0]!, reason: 'failed', failingOutput: 'boom' },
@@ -741,7 +729,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
         onStateChange: (next) => seen.push(next),
       },
@@ -778,7 +765,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       {
@@ -833,7 +819,6 @@ describe('requestConsult', () => {
         bus,
         config: makeConfig({ validation: { testCommand: undefined } }),
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       { task: state.tasks[0]!, reason: 'failed', failingOutput: 'the failure' },
@@ -898,7 +883,6 @@ describe('requestConsult', () => {
           workflow: { approve: 'plan' },
         }),
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       { task: state.tasks[1]!, reason: 'failed', failingOutput: 'the failure' },
@@ -936,7 +920,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner: planner.planner,
-        reviewer: planner.planner,
         state,
       },
       {
@@ -988,7 +971,6 @@ describe('requestConsult', () => {
         bus,
         config,
         planner,
-        reviewer: planner,
         state,
       },
       {
@@ -1015,50 +997,12 @@ describe('requestConsult', () => {
   });
 });
 
-describe('consultSeat', () => {
-  it.each([
-    {
-      name: 'a plan task that failed',
-      task: makeTask({ id: 'T003' }),
-      reason: 'failed',
-      seat: 'plan',
-    },
-    {
-      name: 'a fix task that failed',
-      task: makeTask({ id: 'T003', fix: FIX }),
-      reason: 'failed',
-      seat: 'review',
-    },
-    {
-      name: 'a fix task that is blocked',
-      task: makeTask({ id: 'T003', fix: FIX }),
-      reason: 'blocked',
-      seat: 'review',
-    },
-    {
-      name: 'a rewrite of a fix task',
-      task: makeTask({ id: 'T003', fix: FIX, revision: 2 }),
-      reason: 'failed',
-      seat: 'review',
-    },
-    {
-      name: 'a fix task whose review is stuck',
-      task: makeTask({ id: 'T003', fix: FIX }),
-      reason: 'no-progress',
-      seat: 'plan',
-    },
-  ] as const)('routes $name to the $seat seat', ({ task, reason, seat }) => {
-    expect(consultSeat(task, reason)).toBe(seat);
-  });
-});
-
 describe('requestConsult seats', () => {
   function seatCtx(
     projectDir: string,
     sessionId: string,
     state: WorkflowState,
     planner: Pick<Planner, 'capabilities' | 'typedCall'>,
-    reviewer: Pick<Planner, 'typedCall'>,
     seen: WorkflowState[],
   ): ConsultContext {
     const { bus } = makeBusRecorder();
@@ -1069,7 +1013,6 @@ describe('requestConsult seats', () => {
       bus,
       config,
       planner,
-      reviewer,
       state,
       onStateChange: (next) => seen.push(next),
     };
@@ -1079,93 +1022,40 @@ describe('requestConsult seats', () => {
     return { task, reason, failingOutput: 'the fix check is still red' };
   }
 
-  it('asks the reviewer about a failed fix task with the full prompt and books its usage', async () => {
+  it('asks the planner about a failed fix task on its session and books its usage', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
-    const planner = consultPlanner([], true);
-    const reviewer = consultPlanner([guidanceAnswer('The fix missed a key', 'native-r')], false);
+    const planner = consultPlanner([guidanceAnswer('The fix missed a key', 'native-p')], true);
     const state = { ...fixState(), plannerSessionId: 'native-p' };
     saveState({ projectDir, sessionId }, state);
     const seen: WorkflowState[] = [];
-    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, reviewer.planner, seen);
+    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, seen);
     const events = makeBusRecorder();
     const task = state.tasks[0]!;
 
     const result = await requestConsult({ ...ctx, bus: events.bus }, request(task, 'failed'));
 
     expect('answer' in result).toBe(true);
-    expect(planner.prompts).toHaveLength(0);
-    expect(reviewer.contexts.map((context) => context.seat)).toEqual(['reviewer']);
-    const prompt = reviewer.prompts[0]!;
-    expect(prompt).toContain('# Consult on a failing task');
-    expect(prompt).toContain('## Plan');
-    expect(prompt).toContain('## Task T003 (revision 1)');
-    expect(prompt).toContain("You are the run's reviewer");
+    expect(planner.contexts.map((context) => context.seat)).toEqual(['planner']);
+    const prompt = planner.prompts[0]!;
+    expect(prompt).toContain("You are the run's planner.");
     expect(prompt).toContain(
       "- **F1** this brief's failures: V1: greet > hello; the whole red: V1: greet > name",
     );
     const after = seen.at(-1)!;
-    expect(after.lineages?.T003?.consultRecords.at(-1)?.seat).toBe('review');
-    expect(after.tokenUsage.reviewerInput).toBe(10);
-    expect(after.tokenUsage.reviewerOutput).toBe(5);
-    expect(after.tokenUsage.plannerInput).toBe(0);
-    expect(after.plannerSessionId).toBe('native-p');
-    const answered = events.events.find((event) => event.type === 'consult_answered');
-    expect(answered).toMatchObject({ seat: 'review', taskId: 'T003' });
-  });
-
-  it('asks the planner about a failed plan task', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
-    const reviewer = consultPlanner([], false);
-    const state = consultState();
-    saveState({ projectDir, sessionId }, state);
-    const seen: WorkflowState[] = [];
-    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, reviewer.planner, seen);
-
-    await requestConsult(ctx, request(state.tasks[0]!, 'failed'));
-
-    expect(reviewer.prompts).toHaveLength(0);
-    expect(planner.contexts.map((context) => context.seat)).toEqual(['planner']);
-    expect(planner.prompts[0]).toContain("You are the run's planner.");
-    const after = seen.at(-1)!;
-    expect(after.lineages?.T003?.consultRecords.at(-1)?.seat).toBe('plan');
+    expect(after.lineages?.T003?.consultRecords.at(-1)?.seat).toBeUndefined();
     expect(after.tokenUsage.plannerInput).toBe(10);
+    expect(after.tokenUsage.plannerOutput).toBe(5);
     expect(after.tokenUsage.reviewerInput).toBe(0);
+    const answered = events.events.find((event) => event.type === 'consult_answered');
+    expect(answered).toMatchObject({ taskId: 'T003' });
+    expect(answered).not.toHaveProperty('seat');
   });
 
-  it('lets one planner object answer both seats when no reviewer is configured', async () => {
+  it('rethrows a thrown consult unchanged and marks it a consult failure', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
-    const planner = consultPlanner(
-      [guidanceAnswer('Plan answer', null), guidanceAnswer('Fix answer', null)],
-      false,
-    );
-    const planTask = makeTask({ id: 'T003', status: 'failed', revision: 1, criteria: ['C1'] });
-    const fixTask = makeTask({
-      id: 'T004',
-      status: 'failed',
-      revision: 1,
-      criteria: ['C1'],
-      fix: FIX,
-    });
-    const state = { ...consultState(), tasks: [planTask, fixTask] };
-    saveState({ projectDir, sessionId }, state);
-    const seen: WorkflowState[] = [];
-    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, planner.planner, seen);
-
-    await requestConsult(ctx, request(planTask, 'failed'));
-    await requestConsult({ ...ctx, state: seen.at(-1)! }, request(fixTask, 'failed'));
-
-    expect(planner.contexts.map((context) => context.seat)).toEqual(['planner', 'reviewer']);
-    const after = seen.at(-1)!;
-    expect(after.lineages?.T003?.consultRecords.at(-1)?.seat).toBe('plan');
-    expect(after.lineages?.T004?.consultRecords.at(-1)?.seat).toBe('review');
-  });
-
-  it('rethrows a thrown reviewer consult unchanged and names the review seat', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const planner = consultPlanner([], true);
-    const failure = new Error('the reviewer process stopped unexpectedly');
-    const reviewer: Pick<Planner, 'typedCall'> = {
+    const failure = new Error('the planner process stopped unexpectedly');
+    const planner: Pick<Planner, 'capabilities' | 'typedCall'> = {
+      ...consultPlanner([], false).planner,
       typedCall: (ctx: TypedCallContext): TypedSeatCall => ({
         seat: ctx.seat,
         typedOutput: 'fallback',
@@ -1177,14 +1067,13 @@ describe('requestConsult seats', () => {
     };
     const state = fixState();
     saveState({ projectDir, sessionId }, state);
-    const ctx = seatCtx(projectDir, sessionId, state, planner.planner, reviewer, []);
+    const ctx = seatCtx(projectDir, sessionId, state, planner, []);
 
     await expect(requestConsult(ctx, request(state.tasks[0]!, 'failed'))).rejects.toBe(failure);
-    expect(thrownConsultSeat(failure)).toBe('review');
-    expect(thrownConsultSeat(new Error('never thrown'))).toBeUndefined();
+    expect(isConsultError(failure)).toBe(true);
+    expect(isConsultError(new Error('never thrown'))).toBe(false);
     const taskId = state.tasks[0]!.id;
-    expect(retryFailureLabel(failure, taskId)).toBe(`Reviewer consult for ${taskId} failed`);
+    expect(retryFailureLabel(failure, taskId)).toBe(`Planner consult for ${taskId} failed`);
     expect(retryFailureLabel(new Error('never thrown'), taskId)).toBe(`Retrying ${taskId} failed`);
-    expect(planner.prompts).toHaveLength(0);
   });
 });

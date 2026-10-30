@@ -132,7 +132,6 @@ async function harness(opts: {
       callbacks,
       sinks: TEST_SINKS,
       state,
-      seat: 'plan',
       changedFiles: opts.changedFiles ?? [],
       taskStartSnapshot: opts.taskStartSnapshot ?? (await getChangedFilesSnapshot(opts.projectDir)),
       ...(opts.runCommand !== undefined && { runCommand: opts.runCommand }),
@@ -752,43 +751,39 @@ describe('applyConsultAnswer verify under a pre_validation hook', () => {
 });
 
 describe('applyConsultAnswer ask-user', () => {
-  it.each(['plan', 'review'] as const)(
-    'keeps the %s seat on its question and returns the answer as guidance',
-    async (seat) => {
-      const { projectDir, sessionId } = setupRepo();
-      const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
-      const plan = planWith([]);
-      const replies: PlannerConversation[] = [];
-      const { ctx, states } = await harness({
-        projectDir,
-        sessionId,
-        task,
-        plan,
-        onPlannerReply: async (reply) => {
-          replies.push(reply);
-          return plainUserMessage('redis');
-        },
-      });
-      const attempt = await getChangedFilesSnapshot(projectDir);
+  it('puts the question to the operator and returns the answer as guidance', async () => {
+    const { projectDir, sessionId } = setupRepo();
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
+    const plan = planWith([]);
+    const replies: PlannerConversation[] = [];
+    const { ctx, states } = await harness({
+      projectDir,
+      sessionId,
+      task,
+      plan,
+      onPlannerReply: async (reply) => {
+        replies.push(reply);
+        return plainUserMessage('redis');
+      },
+    });
+    const attempt = await getChangedFilesSnapshot(projectDir);
 
-      const result = await applyConsultAnswer({ ...ctx, seat }, task, askUser('memory'), attempt);
+    const result = await applyConsultAnswer(ctx, task, askUser('memory'), attempt);
 
-      expect(result).toEqual({ action: 'guidance', instructions: 'redis', context: null });
-      expect(replies).toHaveLength(1);
-      expect(replies[0]?.seat).toBe(seat);
-      expect(replies[0]?.questions).toMatchObject([
-        {
-          type: 'choice',
-          text: 'Which store?',
-          options: ['redis', 'memory'],
-          default: 'memory',
-        },
-      ]);
-      expect(states.at(-1)?.phase).toBe('escalating');
-      expect(states.at(-1)?.pendingPlannerConversation).toBeUndefined();
-      expect(states.at(-1)?.userAnswers).toEqual([{ reply: 'Which store?', answer: 'redis' }]);
-    },
-  );
+    expect(result).toEqual({ action: 'guidance', instructions: 'redis', context: null });
+    expect(replies).toHaveLength(1);
+    expect(replies[0]?.questions).toMatchObject([
+      {
+        type: 'choice',
+        text: 'Which store?',
+        options: ['redis', 'memory'],
+        default: 'memory',
+      },
+    ]);
+    expect(states.at(-1)?.phase).toBe('escalating');
+    expect(states.at(-1)?.pendingPlannerConversation).toBeUndefined();
+    expect(states.at(-1)?.userAnswers).toEqual([{ reply: 'Which store?', answer: 'redis' }]);
+  });
 
   it('takes the default when the operator answers with a bare Enter', async () => {
     const { projectDir, sessionId } = setupRepo();
