@@ -24,6 +24,7 @@ export function QuestionPrompt({
         disabled: boolean;
         onAnswer: (answer: string) => void;
         onCompose: () => void;
+        onDecide: () => void;
         onPrevious: () => void;
       }
     | undefined;

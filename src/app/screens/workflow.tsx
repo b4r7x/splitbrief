@@ -191,6 +191,10 @@ export function WorkflowScreen({
     );
     if (answered !== undefined) void model.handleInput(answered.message);
   };
+  const decideQuestions = (): void => {
+    const decided = questionPromptStore.decideForMe();
+    if (decided !== undefined) void model.handleInput(decided.message);
+  };
   const composeAnswer = (): void => {
     const state = questionPromptStore.get();
     const question = state.questions?.[state.index];
@@ -644,6 +648,7 @@ export function WorkflowScreen({
                     disabled: keysHeldAbove,
                     onAnswer: answerQuestion,
                     onCompose: composeAnswer,
+                    onDecide: decideQuestions,
                     onPrevious: () => questionPromptStore.previous(),
                   }
                 : undefined

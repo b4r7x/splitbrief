@@ -121,7 +121,7 @@ if (prompt.includes('# Task Implementation Review')) {
   };
 } else if (/^# Consult on a failing task$/m.test(prompt)) {
   answer = prompt.includes('Your earlier answers on reviews without progress')
-    ? { answer: { diagnosis: ${JSON.stringify(DIAGNOSIS)}, action: 'cannot', reason: ${JSON.stringify(CANNOT)} } }
+    ? { answer: { diagnosis: ${JSON.stringify(DIAGNOSIS)}, action: 'cannot', reason: ${JSON.stringify(CANNOT)}, next: null } }
     : {
         answer: {
           diagnosis: ${JSON.stringify(DIAGNOSIS)},
@@ -198,7 +198,7 @@ console.log('Implemented ' + title);
     expect(state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
       message: 'Review T003 made no progress on F1 after fix cycle 2',
-      availableActions: ['revise', 'end-run'],
+      availableActions: ['revise', 'decide-for-me', 'end-run'],
       details: [`Planner said: ${CANNOT}`],
     });
     if (state.pendingRecovery === undefined) throw new Error('Missing halt');

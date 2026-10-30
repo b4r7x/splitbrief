@@ -117,6 +117,7 @@ const cannotFix: ConsultAnswer = {
     diagnosis: 'The finding asks for a change the plan rules out',
     action: 'cannot',
     reason: 'The plan keeps the old error type',
+    next: null,
   },
 };
 
@@ -253,6 +254,39 @@ describe('review answer follower', () => {
     expect(planner.typedCall).not.toHaveBeenCalled();
   });
 
+  it('after Decide for me, queues a reviewer question for the next review to decide without asking', async () => {
+    const ref = setupProject();
+    const state = {
+      ...pendingReview(),
+      phase: 'final-review' as const,
+      pendingTriage: { inputs: [input] },
+      decideForMe: true as const,
+    };
+    saveState(ref, state);
+    const onPlannerReply = vi.fn(async () => plainUserMessage('Keep the planned API'));
+    const callbacks = makeCallbacks({ onPlannerReply }).callbacks;
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      fixWork: {
+        ...fixWork,
+        ask: {
+          question: 'Change the API?',
+          whyOnlyUserCanAnswer: 'The plan defines the public API.',
+        },
+      },
+    });
+    expect(onPlannerReply).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ next: 'review' });
+    expect(result.state.pendingTriage?.inputs).toEqual([
+      input,
+      { id: 'A2', kind: 'answer', source: 'user', text: 'Decide this yourself.', file: null },
+    ]);
+  });
+
   it('halts when no callback can answer the reviewer question', async () => {
     const ref = setupProject();
     const state = { ...pendingReview(), phase: 'final-review' as const };
@@ -277,6 +311,62 @@ describe('review answer follower', () => {
       'The review asked a question this run has no way to answer.',
     );
     expect(result.state.pendingTriage?.question?.question).toBe('Change the API?');
+  });
+
+  it('on Decide for me at an unanswered reviewer question, sends the question to the next review to decide', async () => {
+    const ref = setupProject();
+    const state = {
+      ...pendingReview(),
+      phase: 'final-review' as const,
+      pendingTriage: { inputs: [input] },
+    };
+    saveState(ref, state);
+    const { bus } = makeBusRecorder();
+    const callbacks = makeCallbacks().callbacks;
+    const halted = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      fixWork: {
+        ...fixWork,
+        ask: {
+          question: 'Change the API?',
+          whyOnlyUserCanAnswer: 'The plan defines the public API.',
+        },
+      },
+    });
+    expect(halted.state.pendingRecovery).toMatchObject({
+      reason: 'review-failed',
+      availableActions: ['revise', 'decide-for-me', 'end-run'],
+      facts: { question: 'Change the API?' },
+    });
+
+    const decided = await applyRecoveryAction({
+      ...ref,
+      state: halted.state,
+      action: 'decide-for-me',
+      bus,
+    });
+    if (!decided.ok) throw new Error(decided.message);
+    expect(decided.state.decideForMe).toBe(true);
+    expect(decided.state.pendingRecovery).toBeUndefined();
+    expect(decided.state.phase).toBe('final-review');
+
+    const followed = await followPendingReview({
+      wctx: makeWctx({ ...ref, bus, callbacks }),
+      state: decided.state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+    });
+    expect(followed).toMatchObject({ next: 'review' });
+    expect(followed?.state.pendingTriage?.question).toBeUndefined();
+    expect(followed?.state.pendingTriage?.inputs).toEqual([
+      input,
+      { id: 'A2', kind: 'answer', source: 'user', text: 'Decide this yourself.', file: null },
+    ]);
   });
 
   it('asks the planner on an answer that fixes nothing, and halts with its reason when it cannot', async () => {

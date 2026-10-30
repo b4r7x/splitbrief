@@ -205,7 +205,7 @@ Implementation: `runPlanApproval` (`src/engine/orchestrator/planning/session.ts`
 
 ## Clarifying questions
 
-A planning-session turn answers either `{ kind: 'questions' }` or `{ kind: 'plan' }` (`PlanResultSchema`, `src/core/schemas/plan.ts`). A round carries at most 3 questions, each with a default, and a session takes at most 2 rounds (`MAX_QUESTION_ROUNDS`, `src/engine/orchestrator/planning/plan-session.ts`); a third round halts the run with `plan-questions-exhausted`. An empty `⏎` takes the defaults.
+A planning-session turn answers either `{ kind: 'questions' }` or `{ kind: 'plan' }` (`PlanResultSchema`, `src/core/schemas/plan.ts`). A round carries at most 3 questions, each with a default, and a session takes at most 2 rounds (`MAX_QUESTION_ROUNDS`, `src/engine/orchestrator/planning/plan-session.ts`); a third round halts the run with `plan-questions-exhausted`. An empty `⏎` takes the defaults. After **Decide for me** (`decideForMe`) the run asks no more questions: every later question takes its default.
 
 The questions are persisted in `state.pendingPlannerConversation` before waiting, and the answers before the next planner call. The answers go back on the same native planner session when the tool has one. Stopping leaves the round pending; recorded answers are not asked again. Headless runs emit `input_required` and exit non-zero instead of answering. See [WORKFLOW.md](./WORKFLOW.md#clarification-questions).
 

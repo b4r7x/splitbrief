@@ -101,6 +101,7 @@ const ACTION_KEYS: Record<RecoveryAction, string> = {
   revise: 'v',
   'accept-as-is': 'k',
   continue: 'c',
+  'decide-for-me': 'd',
   'skip-current-task': 's',
   'end-run': 'a',
 };
@@ -118,6 +119,7 @@ export const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
   revise: ['v', 'revise', 'comment'],
   'accept-as-is': ['k', 'accept', 'accept as is', 'accept-as-is'],
   continue: ['c', 'continue', 'cont'],
+  'decide-for-me': ['d', 'decide', 'decide for me', 'decide-for-me'],
   'skip-current-task': ['s', 'skip', 'skip task', 'skip-current-task'],
   'end-run': ['a', 'end', 'end run', 'end-run', 'abort', 'quit', 'q'],
 };
@@ -186,6 +188,8 @@ function formatRecoveryActionText(
         : 'accept as is · ready to apply with the open findings; Apply lists them and asks once';
     case 'continue':
       return 'continue';
+    case 'decide-for-me':
+      return 'decide for me · the run asks nothing more';
     case 'skip-current-task':
       return 'skip task';
     case 'end-run':

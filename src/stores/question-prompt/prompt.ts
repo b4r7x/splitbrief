@@ -1,6 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../core/schemas/question.js';
-import type { UserMessageInput } from '../../core/types/user-input.js';
+import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
+import { DECIDE_YOURSELF_ANSWER } from '../../core/recovery/decide.js';
 import { error } from '../../utils/error.js';
 
 const questionPromptError = {
@@ -26,10 +27,18 @@ export interface QuestionPromptState {
   unanswered: readonly ClarificationQuestion[];
 }
 
+/** The default as the card shows it: a confirm's boolean reads Yes or No. */
+export function questionDefault(question: ClarificationQuestion): string | undefined {
+  return typeof question.default === 'boolean'
+    ? question.default
+      ? 'Yes'
+      : 'No'
+    : question.default;
+}
+
 /** A question with no options of its own offers its default as the one option, like a choice. */
 export function questionOptions(question: ClarificationQuestion): readonly string[] {
-  const value =
-    typeof question.default === 'boolean' ? (question.default ? 'Yes' : 'No') : question.default;
+  const value = questionDefault(question);
   const listed =
     question.type === 'confirm'
       ? ['Yes', 'No']
@@ -131,29 +140,7 @@ function answer(message: UserMessageInput): PlannerReplyAnswer | undefined {
   const complete = state.index === state.questions.length - 1;
   const index = complete ? state.index : state.index + 1;
   const next = state.questions[index];
-  const answerAt = (index: number): UserMessageInput => {
-    const answer = answers[index];
-    if (answer === undefined) throw questionPromptError.missingAnswer(index);
-    return answer;
-  };
-  const qa: PlannerReplyAnswer | undefined = complete
-    ? {
-        message: {
-          text: state.questions
-            .map((question, i) => `${i + 1}. ${question.text}\n${answerAt(i).text}`)
-            .join('\n\n'),
-          displayText: state.questions
-            .map((question, i) => `${i + 1}. ${question.text}\n${answerAt(i).displayText}`)
-            .join('\n\n'),
-          images: answers.flatMap((answer) => answer.images),
-          attachedInputs: answers.flatMap((answer) => answer.attachedInputs),
-        },
-        qa: state.questions.map((question, i) => ({
-          question: question.text,
-          answer: answerAt(i).displayText,
-        })),
-      }
-    : undefined;
+  const qa = complete ? answerBatch(state.questions, answers) : undefined;
   store.set({
     ...state,
     answers,
@@ -163,6 +150,54 @@ function answer(message: UserMessageInput): PlannerReplyAnswer | undefined {
   });
   answeredBatch = qa;
   return qa;
+}
+
+/**
+ * Decide for me: the answers given stay, every open question takes its default, and the seat that
+ * reads the answer decides one that has none: the brief's implementer or the next review. The batch asks the run to stop asking.
+ */
+function decideForMe(): PlannerReplyAnswer | undefined {
+  const state = store.get();
+  if (state.complete || !state.questions?.length) return undefined;
+  const answers = state.questions.map(
+    (question, i) =>
+      (i < state.index ? state.answers[i] : undefined) ??
+      plainUserMessage(questionDefault(question) ?? DECIDE_YOURSELF_ANSWER),
+  );
+  const batch: PlannerReplyAnswer = {
+    ...answerBatch(state.questions, answers),
+    decideForMe: true,
+  };
+  store.set({ ...state, answers, complete: true });
+  answeredBatch = batch;
+  return batch;
+}
+
+function answerBatch(
+  questions: readonly ClarificationQuestion[],
+  answers: readonly UserMessageInput[],
+): PlannerReplyAnswer {
+  const answerAt = (index: number): UserMessageInput => {
+    const answer = answers[index];
+    if (answer === undefined) throw questionPromptError.missingAnswer(index);
+    return answer;
+  };
+  return {
+    message: {
+      text: questions
+        .map((question, i) => `${i + 1}. ${question.text}\n${answerAt(i).text}`)
+        .join('\n\n'),
+      displayText: questions
+        .map((question, i) => `${i + 1}. ${question.text}\n${answerAt(i).displayText}`)
+        .join('\n\n'),
+      images: answers.flatMap((answer) => answer.images),
+      attachedInputs: answers.flatMap((answer) => answer.attachedInputs),
+    },
+    qa: questions.map((question, i) => ({
+      question: question.text,
+      answer: answerAt(i).displayText,
+    })),
+  };
 }
 
 /** The pairs of the batch that just completed, once; every later prompt opens with a clear slate. */
@@ -181,6 +216,7 @@ export const questionPromptStore = {
   setFocus,
   previous,
   answer,
+  decideForMe,
   takeAnswerBatch,
   clearHint: (): void => store.set(initial),
 };

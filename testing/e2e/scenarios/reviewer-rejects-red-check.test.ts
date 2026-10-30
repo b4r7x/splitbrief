@@ -290,7 +290,7 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     );
     expect(state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
-      availableActions: ['revise', 'end-run'],
+      availableActions: ['revise', 'decide-for-me', 'end-run'],
     });
     expect(state.pendingRecovery?.details?.[0]).toBe(
       'The review asked a question this run has no way to answer.',

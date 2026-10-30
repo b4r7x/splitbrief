@@ -148,6 +148,12 @@ describe('buildPlanSessionPrompt', () => {
     expect(prompt).toContain('`default`');
   });
 
+  it("takes an answer that asks the planner to decide as the user's consent", () => {
+    expect(buildPlanSessionPrompt(input)).toContain(
+      "An answer of the user that asks you to decide is the user's consent to decide that matter yourself",
+    );
+  });
+
   it('carries the request, the repository map and the documents of an earlier planning chain', () => {
     const prompt = buildPlanSessionPrompt({
       ...input,

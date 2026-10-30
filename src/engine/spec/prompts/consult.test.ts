@@ -436,6 +436,15 @@ describe('buildConsultPrompt', () => {
     expect(prompt).not.toContain('### Fix findings');
   });
 
+  it("tells the planner to name the next step of a cannot and that a request to decide is the user's consent", () => {
+    const prompt = buildConsultPrompt(consultInput());
+
+    expect(prompt).toContain('`skip-brief` when the run can go on without this task');
+    expect(prompt).toContain(
+      "An answer or an instruction of the user that asks you to decide is the user's consent to decide that matter yourself.",
+    );
+  });
+
   it('tells the planner the review wrote the fix task and lists its findings keys', () => {
     const fixTask: Task = {
       ...TASK,

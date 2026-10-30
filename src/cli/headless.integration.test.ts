@@ -1323,6 +1323,89 @@ describe('runHeadless — the seat-down policy and the record', () => {
     },
   );
 
+  function seedDecidedSession(name: string, pendingRecovery: WorkflowState['pendingRecovery']) {
+    const projectDir = createHeadlessGitProject(name);
+    dirs.push(projectDir);
+    const ref = { projectDir, sessionId: `sess-${name}` };
+    ensureSessionDir(projectDir, ref.sessionId);
+    writeMinimalHeadlessConfigYaml(projectDir);
+    const state = makeImplState([makeTask({ id: 'T001' }), makeTask({ id: 'T002' })], {
+      pendingRecovery,
+      decideForMe: true,
+    });
+    saveState(ref, state);
+    return { ref, state };
+  }
+
+  it.each([false, true])(
+    'a continue after Decide for me skips the brief the planner cannot do (plain: %s)',
+    async (plain) => {
+      const { ref, state } = seedDecidedSession(
+        `headless-decided-cannot-${plain}`,
+        buildRetryExhaustedRecoveryIssue({
+          task: makeTask({ id: 'T001' }),
+          validationSummary: 'expected 1 to be 2',
+          attempts: 3,
+          allowRetryOverride: true,
+          cannot: 'The SDK has no payment API.',
+          createdAt: '2026-04-28T12:00:00.000Z',
+        }),
+      );
+      const outcome = await runHeadless({
+        prepared: preparedHeadlessExecution({ ...ref, feature: state.feature, resumeState: state }),
+        plain,
+      }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+      expect(String(outcome)).not.toContain('Needs you');
+      expect(records().some((record) => record.type === 'recovery_required')).toBe(false);
+      const saved = loadState(ref);
+      expect(saved?.pendingRecovery).toBeUndefined();
+      expect(saved?.tasks.map((task) => task.status)).toEqual(['skipped', 'pending']);
+    },
+  );
+
+  it.each([
+    ['unset', undefined, 'waits for the reset'],
+    ['halt', 'halt', 'stops on the halt'],
+  ] as const)(
+    'a continue after Decide for me on a seat down with --on-seat-down %s %s',
+    async (_label, onSeatDown, _outcome) => {
+      const { ref, state } = seedDecidedSession(
+        `headless-decided-seat-${onSeatDown ?? 'unset'}`,
+        makeRecoveryIssue({
+          reason: 'runner-usage-limit',
+          seat: 'build',
+          resetAt: '2026-04-28T18:00:00.000Z',
+          availableActions: ['retry-later', 'retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-later',
+        }),
+      );
+      const outcome = await runHeadless({
+        prepared: preparedHeadlessExecution({ ...ref, feature: state.feature, resumeState: state }),
+        ...(onSeatDown !== undefined && { onSeatDown }),
+      }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+      const saved = loadState(ref);
+      if (onSeatDown === 'halt') {
+        expect(String(outcome)).toContain('Seat down');
+        expect(records()).toContainEqual(
+          expect.objectContaining({ type: 'recovery_required', halt: 'seat-down' }),
+        );
+        expect(saved?.seatWait).toBeUndefined();
+        return;
+      }
+      expect(records().some((record) => record.type === 'recovery_required')).toBe(false);
+      expect(saved?.pendingRecovery).toBeUndefined();
+      expect(saved?.seatWait).toMatchObject({ seat: 'build', resetAt: '2026-04-28T18:00:00.000Z' });
+    },
+  );
+
   it.each(['switch', 'halt', 'refused', 'plain-halt'] as const)(
     'automatically switches a retained attempt without publishing a Continue notice',
     async (decision) => {

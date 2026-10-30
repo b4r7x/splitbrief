@@ -75,7 +75,7 @@ const ALPHA_FILES = {
 };
 const BETA_TEST =
   "import { strict as assert } from 'node:assert';\nimport { beta } from './beta.mjs';\nassert.equal(beta, 'beta');\n";
-const HALT_ACTIONS = ['retry-same-worker', 'skip-current-task', 'end-run'];
+const HALT_ACTIONS = ['retry-same-worker', 'decide-for-me', 'skip-current-task', 'end-run'];
 const HALT_MESSAGE = 'T002 needs your answer';
 const HALT_CALLS = [
   'plan',

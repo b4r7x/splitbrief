@@ -150,6 +150,7 @@ export const RECOVERY_ACTIONS = [
   'revise',
   'accept-as-is',
   'restore-backup',
+  'decide-for-me',
   'skip-current-task',
   'end-run',
 ] as const;

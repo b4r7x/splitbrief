@@ -40,10 +40,15 @@ const AskUserActionSchema = z.object({
   default: z.string().nullable(),
 });
 
+/** The step a `cannot` takes when the user chose Decide for me and is not asked. */
+export const CANNOT_NEXT_STEPS = ['skip-brief', 'end-run'] as const;
+export type CannotNextStep = (typeof CANNOT_NEXT_STEPS)[number];
+
 const CannotActionSchema = z.object({
   ...diagnosis,
   action: z.literal('cannot'),
   reason: z.string(),
+  next: z.enum(CANNOT_NEXT_STEPS).nullable(),
 });
 
 const AcceptActionSchema = z.object({

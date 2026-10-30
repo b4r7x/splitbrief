@@ -1556,6 +1556,15 @@ describe('consult and split state operations', () => {
 
     expect(transition(waiting, { type: 'CLEAR_SEAT_WAIT' }).seatWait).toBeUndefined();
   });
+
+  it('DECIDE_FOR_ME records the choice in any phase, and it stays', () => {
+    const state = implementationState([makeTask({ id: 'T002' })]);
+
+    const decided = transition(state, { type: 'DECIDE_FOR_ME' });
+    expect(decided.decideForMe).toBe(true);
+    expect(decided.phase).toBe(state.phase);
+    expect(transition(decided, { type: 'CLEAR_SEAT_WAIT' }).decideForMe).toBe(true);
+  });
 });
 
 describe('fix cycles, review and triage records', () => {

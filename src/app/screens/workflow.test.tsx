@@ -2927,7 +2927,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     expect(panelFocused).toContain('Answer the question above…');
     expect(panelFocused).not.toContain('New instruction');
 
-    for (const key of ['\x1b[B', '\x1b[B', '\x1b[B']) {
+    for (const key of ['\x1b[B', '\x1b[B', '\x1b[B', '\x1b[B']) {
       ui.stdin.write(key);
       await flushEffects();
     }

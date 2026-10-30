@@ -16,7 +16,8 @@ export function reviewPlanData(state: WorkflowState): ReviewPlanData {
     tasks: state.tasks.map((task) => ({
       id: task.id,
       lineageId: lineageIdOf(task),
-      status: isTaskCompleted(task.status) ? 'done' : 'pending',
+      status:
+        task.status === 'skipped' ? 'skipped' : isTaskCompleted(task.status) ? 'done' : 'pending',
       title: task.title,
       intent: task.description,
       steps: task.implementationSteps,

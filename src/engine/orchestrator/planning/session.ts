@@ -57,6 +57,7 @@ import {
   MAX_QUESTION_ROUNDS,
   buildPlanSessionPrompt,
   planAnswersTurn,
+  questionRoundLimit,
   planFullTurn,
   planHistory,
   planRepairTurn,
@@ -92,7 +93,7 @@ import {
 } from '../state-ops.js';
 import { recordUserMessage } from '../transcript/user-message.js';
 import type { PlannerCallbacksContext } from '../types.js';
-import { plannerRejectionContext, waitForPlannerReply } from './call-loop.js';
+import { askOperator, plannerRejectionContext } from './call-loop.js';
 import { apiPlanningPacket } from './api-packet.js';
 import { handlePlanningFailure } from './failure.js';
 import { startPlannerHeartbeat } from './heartbeat.js';
@@ -355,7 +356,11 @@ export async function runPlanningSession(
       const sessionBody = !onSession
         ? undefined
         : turn.kind === 'answers'
-          ? planAnswersTurn(turn.reply.message.text, rounds())
+          ? planAnswersTurn(
+              turn.reply.message.text,
+              rounds(),
+              questionRoundLimit(state.decideForMe),
+            )
           : turn.kind === 'repair'
             ? planRepairTurn(turn.errors)
             : lead !== undefined
@@ -376,6 +381,7 @@ export async function runPlanningSession(
               sessionConversation(state)?.answers ?? [],
               turn.kind === 'repair' ? turn : undefined,
               fullStanding,
+              questionRoundLimit(state.decideForMe),
             ),
           ),
         prior,
@@ -495,7 +501,9 @@ export async function runPlanningSession(
         resumedAnswer = undefined;
         return { message: reply, qa: [] };
       }
-      return waitForPlannerReply(wctx, asked);
+      const asking = await askOperator(wctx, state, asked);
+      state = asking.state;
+      return asking.reply;
     };
 
     const outcome = await runPlanSession({

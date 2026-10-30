@@ -1,6 +1,6 @@
 import { countPromptBodyRows } from '../prompt-body-rows.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import { questionOptions } from '../../../stores/question-prompt/prompt.js';
+import { questionDefault, questionOptions } from '../../../stores/question-prompt/prompt.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
@@ -21,8 +21,15 @@ export function questionMenu(question: ClarificationQuestion, index: number): re
   return [
     ...questionOptions(question),
     ...(questionOptions(question).length > 0 ? ['Write your own answer…'] : []),
+    'Decide for me',
     ...(index > 0 ? ['Previous question'] : []),
   ];
+}
+
+/** Where the Decide for me row sits in the question's menu. */
+export function decideRowIndex(question: ClarificationQuestion): number {
+  const options = questionOptions(question).length;
+  return options > 0 ? options + 1 : 0;
 }
 
 /** Both measurement and rendering consume these already-wrapped terminal rows. */
@@ -36,8 +43,7 @@ export function questionRows(
     .split('\n')
     .map((text) => ({ text }));
   rows.push({ text: '' });
-  const defaultValue =
-    typeof question.default === 'boolean' ? (question.default ? 'Yes' : 'No') : question.default;
+  const defaultValue = questionDefault(question);
   const options = questionOptions(question);
   const optionWidth = Math.max(1, width - 2);
   const markerWidth = getTerminalCellWidth(DEFAULT_MARKER);

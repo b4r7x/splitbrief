@@ -72,12 +72,12 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
 - \`split-task\` — \`tasks\`: 2 to 4 complete TaskSpecs that together replace the task.
 - \`verify\` — \`checkIds\` and \`reason\`: re-run exactly those checks before any retry, for when the failure may predate this task's own edits.
 - \`ask-user\` — \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
-- \`cannot\` — \`reason\`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that. SPLITBRIEF stops the brief and asks the user.
+- \`cannot\` — \`reason\` and \`next\`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that. \`next\` is the step for a user who chose Decide for me: \`skip-brief\` when the run can go on without this task, \`end-run\` when the rest of the run depends on it; null on a stuck review. SPLITBRIEF stops the brief and asks the user, or takes \`next\` after Decide for me.
 - \`accept\` — \`note\`: a stuck review only. The remaining blockers need no more work; the note says why, and the user reads it before Apply.
 
 The operator rule: the Operator Instructions are the user's own decisions for this task. No action undoes one of them. A question that concerns one of them quotes it, and its default keeps it.
 
-The answer rule: SPLITBRIEF gives the user's answer to an \`ask-user\` question to the same implementer, as an instruction for its next attempt. An answer cannot change a seat's tool or model, buy credits, or wait for a limit to reset. Offer only choices that the next attempt can carry out. When the implementer cannot do the task at all, answer \`cannot\` and name the reason, for example a seat the user must change with \`/crew\`.
+The answer rule: SPLITBRIEF gives the user's answer to an \`ask-user\` question to the same implementer, as an instruction for its next attempt. An answer or an instruction of the user that asks you to decide is the user's consent to decide that matter yourself. An answer cannot change a seat's tool or model, buy credits, or wait for a limit to reset. Offer only choices that the next attempt can carry out. When the implementer cannot do the task at all, answer \`cannot\` and name the reason, for example a seat the user must change with \`/crew\`.
 
 The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs \`ask-user\`. ${TASK_CMD_CHECK_RULE}`;
 
