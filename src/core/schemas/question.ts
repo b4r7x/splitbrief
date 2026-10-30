@@ -34,4 +34,6 @@ export type AnsweredQuestion = z.infer<typeof AnsweredQuestionSchema>;
 export interface PlannerReplyAnswer {
   message: UserMessageInput;
   qa: AnsweredQuestion[];
+  /** The user chose Decide for me: the defaults answer, and the run asks nothing more. */
+  decideForMe?: true;
 }

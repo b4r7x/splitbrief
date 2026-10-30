@@ -90,6 +90,41 @@ describe('WorkflowStateSchema v4', () => {
     expect(parsed.pendingPlannerConversation).not.toHaveProperty('seat');
   });
 
+  it("loads an older run's cannot that names no next step as naming none", () => {
+    const parsed = WorkflowStateSchema.parse({
+      ...state(),
+      decideForMe: true,
+      lineages: {
+        T004: {
+          attempts: 2,
+          consultRecords: [
+            {
+              reason: 'failed',
+              action: 'cannot',
+              diagnosis: 'The SDK has no payment API.',
+              at: '2026-10-20T00:00:00.000Z',
+              taskId: 'T004',
+              revision: 1,
+              answer: {
+                answer: {
+                  diagnosis: 'The SDK has no payment API.',
+                  action: 'cannot',
+                  reason: 'The payment API was removed.',
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(parsed.lineages?.T004?.consultRecords[0]?.answer.answer).toMatchObject({
+      action: 'cannot',
+      next: null,
+    });
+    expect(parsed.decideForMe).toBe(true);
+  });
+
   it('persists expanded resume messages while accepting states without them', () => {
     const resumeUserMessages = [
       {

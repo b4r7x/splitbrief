@@ -352,7 +352,12 @@ export function cannotConsult(reason = 'The blockers need a design change the pl
   answer: Extract<ConsultAnswer['answer'], { action: 'cannot' }>;
 } {
   return {
-    answer: { diagnosis: 'The fix briefs keep missing the blockers', action: 'cannot', reason },
+    answer: {
+      diagnosis: 'The fix briefs keep missing the blockers',
+      action: 'cannot',
+      reason,
+      next: 'skip-brief',
+    },
   };
 }
 

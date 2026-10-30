@@ -711,6 +711,111 @@ describe('createRecoveryDriver', () => {
     expect(recoveryNoticeStore.get().issue).toBeNull();
   });
 
+  describe('Decide for me', () => {
+    const CANNOT: Partial<RecoveryIssue> = {
+      facts: {
+        cannot: 'The SDK has no payment API.',
+        cannotBy: 'planner',
+        cannotNext: 'skip-brief',
+      },
+      availableActions: ['decide-for-me', 'skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
+    };
+
+    /** The driver reads the config of record before it applies the row, as a loaded screen holds it. */
+    function withConfig(overrides: Partial<RecoveryIssue>) {
+      const session = setupSession(overrides);
+      configStore.__testReset({
+        projectDir: session.prepared.session.ref.projectDir,
+        config: session.prepared.sourceConfig,
+      });
+      return session;
+    }
+
+    function decided(overrides: Partial<RecoveryIssue>) {
+      const { prepared, state } = withConfig(overrides);
+      const chosen: WorkflowState = { ...state, decideForMe: true };
+      saveState(prepared.session.ref, chosen);
+      return { prepared, state: chosen };
+    }
+
+    it('applies the row chosen on the panel and records the choice', async () => {
+      const { prepared, state } = withConfig(CANNOT);
+      const { inputMode, feedbackAtPrompt } = makeInputMode(['d']);
+
+      const result = await runDriver(prepared, state, inputMode);
+
+      expect(feedbackAtPrompt).toHaveLength(1);
+      expect(result.shouldRun).toBe(true);
+      const saved = loadState(prepared.session.ref);
+      expect(saved?.decideForMe).toBe(true);
+      expect(saved?.tasks[0]?.status).toBe('skipped');
+    });
+
+    it('skips a brief the planner cannot do with no panel once the user chose it', async () => {
+      const { prepared, state } = decided(CANNOT);
+      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+      const notices = recordNoticeOpens();
+
+      const result = await runDriver(prepared, state, inputMode);
+      notices.stop();
+
+      expect(feedbackAtPrompt).toHaveLength(0);
+      expect(notices.opens).toHaveLength(0);
+      expect(result.shouldRun).toBe(true);
+      expect(loadState(prepared.session.ref)?.tasks[0]?.status).toBe('skipped');
+    });
+
+    it('lets words typed to continue answer the halt instead of the decided step', async () => {
+      const { prepared, state } = decided({
+        ...CANNOT,
+        availableActions: ['retry-same-worker', 'decide-for-me', 'skip-current-task', 'end-run'],
+      });
+      const { inputMode, feedbackAtPrompt } = makeInputMode(['r']);
+      const words = plainUserMessage('use the REST endpoint instead');
+
+      const result = await runDriver(prepared, state, inputMode, words);
+
+      expect(feedbackAtPrompt).toHaveLength(1);
+      expect(result.shouldRun).toBe(true);
+      if (result.shouldRun) expect(result.steer).toEqual(words);
+      const saved = loadState(prepared.session.ref);
+      expect(saved?.tasks[0]?.status).not.toBe('skipped');
+      expect(saved?.pendingRecovery).toBeUndefined();
+    });
+
+    it('waits for the reset of a seat down with no fallback, with no panel', async () => {
+      const resetAt = '2099-05-01T10:00:00.000Z';
+      const { prepared, state } = decided({
+        reason: 'runner-usage-limit',
+        seat: 'build',
+        resetAt,
+        availableActions: ['retry-later', 'switch-seat', 'end-run'],
+        recommendedAction: 'retry-later',
+        switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+      });
+      const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+      const notices = recordNoticeOpens();
+
+      const result = await runDriver(prepared, state, inputMode);
+      notices.stop();
+
+      expect(feedbackAtPrompt).toHaveLength(0);
+      expect(notices.opens).toHaveLength(0);
+      expect(result.shouldRun).toBe(true);
+      expect(loadState(prepared.session.ref)?.seatWait?.resetAt).toBe(resetAt);
+    });
+
+    it('still asks on a halt the run cannot decide itself', async () => {
+      const { prepared, state } = decided({});
+      const { inputMode, feedbackAtPrompt } = makeInputMode(['skip']);
+
+      await runDriver(prepared, state, inputMode);
+
+      expect(feedbackAtPrompt).toHaveLength(1);
+    });
+  });
+
   it("drafts the chosen candidate's model and effort into the picker", async () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',

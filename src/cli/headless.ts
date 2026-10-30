@@ -15,6 +15,7 @@ import { questionLine } from '../core/state/planning-conversation.js';
 import { runWorkflow } from '../engine/orchestrator/run/workflow.js';
 import { applyOfferedSeatSwap } from '../engine/orchestrator/run/seat-swap.js';
 import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
+import { applyDecidedRecovery } from '../engine/orchestrator/recovery/actions.js';
 import { publishRetainedWorkspaceNotice } from '../engine/orchestrator/isolation/retention.js';
 import { discoverSkills } from '../engine/skill-discovery.js';
 import type { SkillMeta } from '../core/skills/types.js';
@@ -388,6 +389,31 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
     const swapPolicy = headlessResumePolicy(options.prepared, options.allowUnverifiedAuth === true);
     let prepared = options.prepared;
     let savedState = prepared.runtime.resumeState;
+    const recoveryBus = () =>
+      createRecoveryBus({
+        projectDir,
+        sessionId,
+        sink: (event) => writeRecord({ type: 'event', data: event }),
+      });
+    // After Decide for me, a halt with a decided step takes it here as the TUI takes it; under
+    // `--on-seat-down halt` a seat down still stops the run.
+    const takeDecidedStep = async (state: WorkflowState | null) =>
+      state === null ||
+      (options.onSeatDown === 'halt' &&
+        state.pendingRecovery !== undefined &&
+        haltOf(state.pendingRecovery.reason) === 'seat-down')
+        ? undefined
+        : applyDecidedRecovery(
+            {
+              projectDir,
+              sessionId,
+              state,
+              bus: recoveryBus(),
+              config: prepared.config,
+            },
+            () => prepared.config,
+            undefined,
+          );
 
     for (;;) {
       // The automatic intent a halt left is taken before the run that would hit the
@@ -400,11 +426,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
           choice: { candidate: auto.candidate, policy: swapPolicy },
           projectDir,
           sessionId,
-          bus: createRecoveryBus({
-            projectDir,
-            sessionId,
-            sink: (event) => writeRecord({ type: 'event', data: event }),
-          }),
+          bus: recoveryBus(),
           config: prepared.config,
           prepared,
           savedState: before,
@@ -430,7 +452,11 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
       // retry by entering the ordinary workflow loop (which would invoke a
       // planner/provider).
       if (prepared.purpose === 'resume') {
-        const preflight = loadOwnedState({ projectDir, sessionId });
+        const halted = loadOwnedState({ projectDir, sessionId });
+        const decided = await takeDecidedStep(halted);
+        if (decided?.ok === true && decided.status === 'closed') break;
+        if (decided?.ok === true) savedState = decided.state;
+        const preflight = decided?.state ?? halted;
         if (preflight !== null) {
           if (
             preflight.pendingRecovery !== undefined &&
@@ -469,11 +495,14 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
 
       if (signal.aborted) return;
 
-      // Another seat went down with its own intent: take it and re-enter. The loop
-      // ends when no automatic intent is pending.
-      if (options.onSeatDown === 'halt') break;
+      // Another seat went down with its own intent, or a halt has a decided step: take it and
+      // re-enter. The loop ends when neither is pending.
       const next = loadOwnedState({ projectDir, sessionId });
-      if (next?.pendingRecovery?.switchSeat?.auto === undefined) break;
+      if (options.onSeatDown !== 'halt' && next?.pendingRecovery?.switchSeat?.auto !== undefined)
+        continue;
+      const decided = await takeDecidedStep(next);
+      if (decided?.ok !== true || decided.status === 'closed') break;
+      savedState = decided.state;
     }
   });
 

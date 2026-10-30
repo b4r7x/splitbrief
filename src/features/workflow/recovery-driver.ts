@@ -26,7 +26,11 @@ import type { EventSink } from '../../engine/events/types.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { publishRetainedWorkspaceNotice } from '../../engine/orchestrator/isolation/retention.js';
 import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
-import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
+import {
+  applyDecidedRecovery,
+  applyRecoveryAction,
+  type ApplyRecoveryActionResult,
+} from '../../engine/orchestrator/recovery/actions.js';
 import type { SeatSwapChoice } from '../../engine/orchestrator/run/seat-swap.js';
 import { filesStillOnDiskSuffix } from '../../engine/orchestrator/run/close.js';
 import {
@@ -257,6 +261,58 @@ export function createRecoveryDriver(
         : (await inputMode.setQuestionMode(question)).message;
     };
 
+    const settle = (
+      result: ApplyRecoveryActionResult,
+      comment?: UserMessageInput,
+      steer?: UserMessageInput,
+    ): PendingRecoveryResult | null => {
+      setInlineResume(result.state);
+
+      if (!result.ok) {
+        feedbackStore.setError(result.message);
+        // The engine must stay parked on this halt. Returning shouldRun here re-enters the
+        // workflow with the same pending issue before the operator can choose another action.
+        return null;
+      }
+
+      feedbackStore.reset();
+
+      const status = deriveRunStatus({ state: result.state, liveness: 'not-alive' });
+      if (status.kind === 'closed') {
+        // The close is on the state; the run loop finalizes the session from it —
+        // one summary, one receipt release, through the same path every other
+        // ending takes.
+        feedbackStore.setMessage(
+          `Run ${status.as === 'complete' ? 'closed' : 'ended'}.${filesStillOnDiskSuffix({ projectDir, sessionId }, result.state)}`,
+        );
+        return { shouldRun: false, state: result.state };
+      }
+
+      const continuationSteer =
+        result.status === 'retry-current-task'
+          ? steer
+          : result.status === 'continued' && !result.correctionRecorded
+            ? comment
+            : undefined;
+      const steered =
+        continuationSteer !== undefined && continuationSteer.text.trim() !== ''
+          ? { steer: continuationSteer }
+          : {};
+      const updatedPreparation =
+        result.currentConfig === undefined
+          ? {}
+          : { prepared: { ...prepared, config: parsePreparedConfig(result.currentConfig) } };
+      return {
+        shouldRun: true,
+        state: result.state,
+        ...updatedPreparation,
+        ...steered,
+        ...(result.status === 'continued' && result.correctionRecorded
+          ? { correctionTaken: true }
+          : {}),
+      };
+    };
+
     const applyAction = async (
       action: RecoveryAction,
       answer = '',
@@ -319,52 +375,7 @@ export function createRecoveryDriver(
         }),
         ...(comment === undefined || comment.text.trim() === '' ? {} : { comment }),
       });
-
-      setInlineResume(result.state);
-
-      if (!result.ok) {
-        feedbackStore.setError(result.message);
-        // The engine must stay parked on this halt. Returning shouldRun here re-enters the
-        // workflow with the same pending issue before the operator can choose another action.
-        return null;
-      }
-
-      feedbackStore.reset();
-
-      const status = deriveRunStatus({ state: result.state, liveness: 'not-alive' });
-      if (status.kind === 'closed') {
-        // The close is on the state; the run loop finalizes the session from it —
-        // one summary, one receipt release, through the same path every other
-        // ending takes.
-        feedbackStore.setMessage(
-          `Run ${status.as === 'complete' ? 'closed' : 'ended'}.${filesStillOnDiskSuffix({ projectDir, sessionId }, result.state)}`,
-        );
-        return { shouldRun: false, state: result.state };
-      }
-
-      const continuationSteer =
-        result.status === 'retry-current-task'
-          ? steer
-          : result.status === 'continued' && !result.correctionRecorded
-            ? comment
-            : undefined;
-      const steered =
-        continuationSteer !== undefined && continuationSteer.text.trim() !== ''
-          ? { steer: continuationSteer }
-          : {};
-      const updatedPreparation =
-        result.currentConfig === undefined
-          ? {}
-          : { prepared: { ...prepared, config: parsePreparedConfig(result.currentConfig) } };
-      return {
-        shouldRun: true,
-        state: result.state,
-        ...updatedPreparation,
-        ...steered,
-        ...(result.status === 'continued' && result.correctionRecorded
-          ? { correctionTaken: true }
-          : {}),
-      };
+      return settle(result, comment, steer);
     };
 
     const correctionAction = correctionActionFor(issue);
@@ -384,6 +395,18 @@ export function createRecoveryDriver(
       } else {
         feedbackStore.setError('Recovery is applying but no action is selected.');
       }
+    }
+
+    // After Decide for me, a halt with a decided step takes it with no panel, unless the user
+    // typed words to continue: those answer the halt as they do without the choice.
+    const decided = applyDecidedRecovery(
+      { projectDir, sessionId, state, bus, config },
+      () => nextEntryConfig({ configOfRun, prepared: config, state }).config,
+      reentryCorrection,
+    );
+    if (decided !== undefined) {
+      const settled = settle(await decided);
+      if (settled !== null) return settled;
     }
 
     // Words typed to continue the run answer the halt when only its revise can carry them; a

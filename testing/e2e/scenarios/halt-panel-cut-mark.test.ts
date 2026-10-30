@@ -119,14 +119,14 @@ describe('e2e: a halt panel too short for its text', () => {
       await flushEffects();
       const frame = stripAnsiStyles(opened.screen.lastFrame());
 
-      expect(frame, `140x${rows}`).toMatch(/s\s+Skip task/);
+      expect(frame, `140x${rows}`).toMatch(/d\s+Decide for me/);
       expectHiddenActionsMarked(frame, `140x${rows}`);
       expect(frame, `140x${rows}`).toContain('↑↓ select · ⏎ confirm');
     }
   });
 });
 
-/** Try again, Skip task and End run: each one off screen sits behind a mark on its side. */
+/** Try again, Decide for me, Skip task and End run: each one off screen sits behind a mark on its side. */
 function expectHiddenActionsMarked(frame: string, label: string): void {
   if (!/r\s+Try again/.test(frame)) expect(frame, label).toContain('↑ more');
   if (!/a\s+End run/.test(frame)) expect(frame, label).toContain('↓ more');

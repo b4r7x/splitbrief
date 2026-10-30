@@ -354,13 +354,15 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     expect(questionPromptStore.get().focus).toBe('answer');
     await key('src/auth.ts');
     await key('\t');
-    await key('\u001b[B'); // Previous question.
+    await key('\u001b[B');
+    await key('\u001b[B'); // Past Decide for me to Previous question.
     await key('\r');
     expect(questionPromptStore.get().index).toBe(0);
     await key('\u001b[A'); // Replace custom answer with Builder.
     await key('\r');
     expect(questionPromptStore.get().index).toBe(1);
-    await key('\u001b[A'); // Back from Previous question to the write row, which kept its draft.
+    await key('\u001b[A');
+    await key('\u001b[A'); // Back from Previous question past Decide for me to the write row, which kept its draft.
     await key('\r');
     expect(stripAnsiStyles(screen.lastFrame())).toContain('› src/auth.ts');
     await key('\r');
@@ -628,9 +630,7 @@ describe('Esc in a planner question', () => {
 
   it('closes the paused panel on Esc after ↓ moved the keys to the composer', async () => {
     const { replies, frame, key } = await askRounds([[choice]]);
-    await key('\u001b[B');
-    await key('\u001b[B');
-    await key('\u001b[B');
+    for (let row = 0; row < 4; row++) await key('\u001b[B');
     expect(questionPromptStore.get().focus).toBe('composer');
     await key('\u001b');
     await expectClosed(frame);
@@ -733,9 +733,7 @@ describe('Esc in a planner question', () => {
     it('closes the paused panel on an Esc after the grace', async () => {
       const { frame, key } = await askRounds([[choice]], { inGrace: true });
       leaveGrace();
-      await key('\u001b[B');
-      await key('\u001b[B');
-      await key('\u001b[B');
+      for (let row = 0; row < 4; row++) await key('\u001b[B');
       expect(questionPromptStore.get().focus).toBe('composer');
       await key('\u001b');
       await expectClosed(frame);

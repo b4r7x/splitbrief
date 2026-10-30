@@ -1470,6 +1470,25 @@ describe('buildReviewFailedRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
   });
 
+  it('offers Decide for me on a review question nobody answered, and keeps the question', () => {
+    const issue = buildReviewFailedRecoveryIssue({
+      createdAt,
+      blocking: 1,
+      question: 'Is V1 the right gate command?',
+      details: ['V1.1: Reviewer check V1 failed'],
+    });
+
+    expect(issue.availableActions).toEqual(['revise', 'decide-for-me', 'end-run']);
+    expect(issue.recommendedAction).toBe('revise');
+    expect(issue.facts).toMatchObject({ question: 'Is V1 the right gate command?' });
+    expect(issue.details).toEqual([
+      'The review asked a question this run has no way to answer.',
+      'Question: Is V1 the right gate command?',
+      'V1.1: Reviewer check V1 failed',
+    ]);
+    expectValidRecoveryIssue(issue);
+  });
+
   it('names the blockers a final review round moved nothing on', () => {
     const noFix = buildReviewFailedRecoveryIssue({
       createdAt,

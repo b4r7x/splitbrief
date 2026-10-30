@@ -43,8 +43,12 @@ import {
   rebaseOnPersistedWorkflowState,
   transitionAndSave,
   transitionsAndSave,
+  recordBriefCorrection,
   type StateStep,
 } from '../state-ops.js';
+import { recordDecideForMe } from '../planning/call-loop.js';
+import { decidedRecovery } from '../../../core/recovery/decide.js';
+import { cannotDetail } from '../../../core/recovery/headline.js';
 import { formatMessageInput } from '../queue/prompt.js';
 import { endRun } from '../run/close.js';
 import { haltCutApply } from '../apply/run.js';
@@ -159,6 +163,8 @@ export async function applyRecoveryAction(
     const closure = await endRun(opts, opts.state);
     return { ok: true, action: opts.action, issue, state: closure.state, status: 'closed' };
   }
+
+  if (opts.action === 'decide-for-me') return applyDecideForMeRecoveryAction(opts, issue);
 
   if (!issue.availableActions.includes(opts.action)) {
     return blockRecoveryAction({
@@ -389,6 +395,61 @@ function applyReviewCorrectionAction(
   return { ok: true, action: opts.action, issue, state, status: 'continued', correctionRecorded };
 }
 
+/**
+ * Decide for me: the run records the choice, then takes the step it takes by itself from now
+ * on. A halt that offers the row takes it; after the choice, every halt with a decided step does.
+ */
+async function applyDecideForMeRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): Promise<ApplyRecoveryActionResult> {
+  const decided = decidedRecovery(issue);
+  if (
+    decided === undefined ||
+    (!issue.availableActions.includes('decide-for-me') && opts.state.decideForMe !== true)
+  ) {
+    return blockRecoveryAction({
+      ...opts,
+      issue,
+      code: 'action-not-available',
+      message: `Recovery action "decide-for-me" is not available for ${issue.reason}.`,
+    });
+  }
+  let state = recordDecideForMe(opts, opts.state);
+  const question = recoveryFactString(issue.facts, 'question');
+  if (decided.answer !== undefined && question !== undefined && issue.taskId !== undefined) {
+    state = recordBriefCorrection(
+      opts,
+      state,
+      issue.taskId,
+      `Question: ${question}\nAnswer: ${decided.answer}`,
+    );
+  }
+  return applyRecoveryAction({ ...opts, state, action: decided.action });
+}
+
+/**
+ * After Decide for me, a halt with a decided step takes it with no one asked: the TUI and a
+ * headless continue both take it here. Words the user typed to continue answer the halt instead,
+ * as they do without the choice. Undefined, in the same tick, when the halt waits on the user. The
+ * config of the next entry is read only for a wait on a seat's reset.
+ */
+export function applyDecidedRecovery(
+  opts: Omit<ApplyRecoveryActionOptions, 'action' | 'candidate' | 'comment' | 'entryConfig'>,
+  entryConfig: () => Config,
+  typed: UserMessageInput | undefined,
+): Promise<ApplyRecoveryActionResult> | undefined {
+  const issue = opts.state.pendingRecovery;
+  if (opts.state.decideForMe !== true || issue === undefined) return undefined;
+  const decided = decidedRecovery(issue);
+  if (decided === undefined || (typed?.text.trim() ?? '') !== '') return undefined;
+  return applyRecoveryAction({
+    ...opts,
+    action: 'decide-for-me',
+    ...(decided.action === 'retry-later' && { entryConfig: entryConfig() }),
+  });
+}
+
 async function applySkipCurrentTaskRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
@@ -405,7 +466,14 @@ async function applySkipCurrentTaskRecoveryAction(
     });
   }
 
-  const reason = `recovery ${issue.reason}: ${issue.message}`;
+  // A brief the planner cannot do is skipped for the planner's reason, so the transcript and the
+  // review read why.
+  const cannot = recoveryFactString(issue.facts, 'cannot');
+  const cannotBy = recoveryFactString(issue.facts, 'cannotBy');
+  const reason =
+    cannot === undefined || cannotBy === undefined
+      ? `recovery ${issue.reason}: ${issue.message}`
+      : cannotDetail(cannotBy, cannot);
   try {
     recordRecoverySkipEvidence({
       projectDir: opts.projectDir,

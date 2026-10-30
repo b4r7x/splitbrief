@@ -762,6 +762,45 @@ describe('the planning session on the live path', () => {
     expect(card).not.toContain('## Before you approve');
   });
 
+  it('asks nothing more after Decide for me: the planner hears no round remains and a later round takes its defaults', async () => {
+    const onPlannerReply = vi.fn().mockResolvedValue({
+      message: plainUserMessage('1. Round 1: which module?\nsrc/a.ts'),
+      qa: [{ question: 'Round 1: which module?', answer: 'src/a.ts' }],
+      decideForMe: true,
+    });
+    const run = await plan({
+      script: [questions(1), questions(2), makePlanProposal()],
+      callbacks: { onPlannerReply },
+    });
+
+    expect(onPlannerReply).toHaveBeenCalledTimes(1);
+    expect(run.prompts[1]).toContain('No question round remains');
+    expect(run.prompts[2]).toContain('Round 2: which module?\nsrc/a.ts');
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.result.state.decideForMe).toBe(true);
+    expect(loadState(run)?.decideForMe).toBe(true);
+    expect(
+      run.events.filter(
+        (event) =>
+          event.type === 'info' &&
+          event.message === 'Decide for me · the run decides the rest itself',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('asks nothing on a run where the user already chose Decide for me', async () => {
+    const onPlannerReply = vi.fn();
+    const run = await plan({
+      script: [questions(1), makePlanProposal()],
+      callbacks: { onPlannerReply },
+      state: (state) => transition(state, { type: 'DECIDE_FOR_ME' }),
+    });
+
+    expect(onPlannerReply).not.toHaveBeenCalled();
+    expect(run.prompts[1]).toContain('Round 1: which style?\nterse');
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
   it('halts on a third round of questions and keeps the answered rounds', async () => {
     const run = await plan({
       script: [questions(1), questions(2), questions(3)],

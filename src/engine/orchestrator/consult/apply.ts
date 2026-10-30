@@ -1,4 +1,4 @@
-import type { ConsultAnswer } from '../../../core/schemas/consult.js';
+import type { CannotNextStep, ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
@@ -18,7 +18,8 @@ import { assertNever } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
 import { publishTaskReplaced, publishTasksInserted, publishTasksPlanned } from '../events.js';
-import { waitForPlannerReply } from '../planning/call-loop.js';
+import { askOperator } from '../planning/call-loop.js';
+import { DECIDE_YOURSELF_ANSWER } from '../../../core/recovery/decide.js';
 import { recordBriefCorrection, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
 import { restoreAttemptFiles } from '../task/rollback.js';
@@ -62,7 +63,7 @@ export type ConsultApplyOutcome =
   | Readonly<{ action: 'correction'; answer: string }>
   | Readonly<{ action: 'failed'; reason: string }>
   | Readonly<{ action: 'unanswered'; question: string }>
-  | Readonly<{ action: 'cannot'; reason: string }>
+  | Readonly<{ action: 'cannot'; reason: string; next: CannotNextStep | null }>
   | Readonly<{ action: 'skipped' }>;
 
 const consultApplyError = {
@@ -340,7 +341,7 @@ function askUserQuestion(
 
 function defaultAnswer(question: ClarificationQuestion): string {
   if (typeof question.default === 'boolean') return question.default ? 'Yes' : 'No';
-  return question.default ?? '';
+  return question.default ?? DECIDE_YOURSELF_ANSWER;
 }
 
 export function consultReplyAnswer(
@@ -376,13 +377,14 @@ async function applyAskUser(
     answers: [],
     answered: false,
   };
-  const reply = await waitForPlannerReply(ctx, asked);
+  const asking = await askOperator(ctx, ctx.state, asked);
+  const reply = asking.reply;
   if (reply === undefined && question.default === undefined)
     return { action: 'unanswered', question: action.question };
   const answered = consultReplyAnswer(question, reply);
   // The transcript and the brief's log keep the planner's question; the instructions were context.
   const qa = answered.qa.map((pair) => ({ question: action.question, answer: pair.answer }));
-  const recorded = transitionAndSave(ctx, ctx.state, {
+  const recorded = transitionAndSave(ctx, asking.state, {
     type: 'SET_PLANNER_CONVERSATION',
     conversation: {
       ...asked,
@@ -439,7 +441,7 @@ export async function applyConsultAnswer(
     case 'ask-user':
       return applyAskUser(ctx, task, action);
     case 'cannot':
-      return { action: 'cannot', reason: action.reason };
+      return { action: 'cannot', reason: action.reason, next: action.next };
     case 'accept':
       throw error('consult-accept', 'Only a stuck review takes an accept answer.');
     default:

@@ -63,6 +63,7 @@ const anytimeActions = [
   'RECORD_CHECK_RESULTS',
   'SET_SEAT_WAIT',
   'CLEAR_SEAT_WAIT',
+  'DECIDE_FOR_ME',
   'START_SCHEDULED_REVIEW',
   'CLEAR_SCHEDULED_REVIEW',
 ] as const satisfies readonly MachineAction['type'][];
@@ -993,6 +994,9 @@ export function transition(
 
     case 'CLEAR_SEAT_WAIT':
       return { ...state, seatWait: undefined };
+
+    case 'DECIDE_FOR_ME':
+      return { ...state, decideForMe: true };
 
     case 'ENQUEUE_USER_MSG':
       return { ...state, messageQueue: [...state.messageQueue, action.message] };

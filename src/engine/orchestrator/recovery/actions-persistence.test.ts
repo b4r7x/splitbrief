@@ -7,10 +7,12 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { evidenceLedgerPath } from '../../../core/evidence/ledger-storage.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { eventPhase } from '../../../core/event-phase.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { briefCorrections } from '../../../core/state/machine.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
@@ -221,4 +223,95 @@ describe('applyRecoveryAction: the phase of what it publishes', () => {
       ]);
     },
   );
+});
+
+describe('applyRecoveryAction: decide-for-me', () => {
+  async function decide(name: string, issueFor: (task: Task) => RecoveryIssue) {
+    const { projectDir, sessionId } = setupSession(`decide-${name}`);
+    const task = makeTask({ id: 'T041', status: 'in_progress' });
+    const state: WorkflowState = {
+      ...implementingState([task]),
+      phase: 'escalating',
+      pendingRecovery: issueFor(task),
+    };
+    saveState({ projectDir, sessionId }, state);
+    const { bus, events } = makeBus(projectDir, sessionId);
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'decide-for-me',
+      bus,
+    });
+    return { result, events, saved: loadState({ projectDir, sessionId }) };
+  }
+
+  it("records the choice and skips a brief the planner cannot do, with the planner's reason", async () => {
+    const { result, events, saved } = await decide('skip', (task) =>
+      buildRetryExhaustedRecoveryIssue({
+        task,
+        createdAt,
+        cannot: 'The SDK has no payment API.',
+        cannotNext: 'skip-brief',
+      }),
+    );
+
+    expect(result).toMatchObject({ ok: true, status: 'skipped-current-task' });
+    expect(result.state.decideForMe).toBe(true);
+    expect(saved?.decideForMe).toBe(true);
+    expect(saved?.tasks[0]?.status).toBe('skipped');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'info',
+        message: 'Decide for me · the run decides the rest itself',
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'task_skipped',
+        reason: expect.stringContaining('Planner said: The SDK has no payment API.'),
+      }),
+    );
+  });
+
+  it('ends the run when the planner named the end of the run as the next step', async () => {
+    const { result, saved } = await decide('end', (task) =>
+      buildRetryExhaustedRecoveryIssue({
+        task,
+        createdAt,
+        cannot: 'Every later brief needs the payment API.',
+        cannotNext: 'end-run',
+      }),
+    );
+
+    expect(result).toMatchObject({ ok: true, status: 'closed' });
+    expect(saved?.closed?.as).toBe('ended');
+    expect(saved?.decideForMe).toBe(true);
+  });
+
+  it('leaves an unanswered question to the planner and retries the brief', async () => {
+    const { result, saved } = await decide('question', (task) =>
+      buildRetryExhaustedRecoveryIssue({
+        task,
+        createdAt,
+        question: 'Which API version?',
+        allowRetryOverride: true,
+      }),
+    );
+
+    expect(result).toMatchObject({ ok: true, status: 'retry-current-task' });
+    expect(saved?.decideForMe).toBe(true);
+    expect(saved === null ? [] : briefCorrections(saved, makeTask({ id: 'T041' }).id)).toContain(
+      'Question: Which API version?\nAnswer: Decide this yourself.',
+    );
+  });
+
+  it('is refused on a halt that does not offer it before the user chose it', async () => {
+    const { result, saved } = await decide('refused', (task) =>
+      buildRetryExhaustedRecoveryIssue({ task, createdAt, validationSummary: 'lint failed' }),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'action-not-available' });
+    expect(saved?.decideForMe).toBeUndefined();
+  });
 });

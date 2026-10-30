@@ -10,6 +10,11 @@ import { GATES_ARE_SPLITBRIEFS, SKILLS_WITH_EVERY_BRIEF } from './tasks.js';
 /** The question rounds a planning session may ask before it must return a plan. */
 export const MAX_QUESTION_ROUNDS = 2;
 
+/** The question rounds a session takes: after Decide for me, the round answered is the last. */
+export function questionRoundLimit(decideForMe: boolean | undefined): number {
+  return decideForMe === true ? 1 : MAX_QUESTION_ROUNDS;
+}
+
 /** The implementer the tasks are sized for: its model, and the context it was measured at. */
 export type BuildSeat = Readonly<{ model: string | undefined; contextTokens: number }>;
 
@@ -53,7 +58,7 @@ export const TASK_CMD_CHECK_RULE = `A \`cmd\` check follows the plan check polic
 function planRules(approvesPlan: boolean): string {
   return `- Research the repository read-only. Do not edit, create or delete any file.
 - Do not invoke a native user-question tool (AskUserQuestion or the like). SPLITBRIEF asks the user.
-- Ask questions only when a decision that only the user can make blocks the plan: at most 3 questions per round, at most ${MAX_QUESTION_ROUNDS} rounds. Give every question a non-empty \`default\`, the answer the plan uses when the user just presses Enter. Give \`choices\` when the answer is one of a fixed set, else null; the \`default\` of a question with \`choices\` is one of them.
+- Ask questions only when a decision that only the user can make blocks the plan: at most 3 questions per round, at most ${MAX_QUESTION_ROUNDS} rounds. Give every question a non-empty \`default\`, the answer the plan uses when the user just presses Enter. An answer of the user that asks you to decide is the user's consent to decide that matter yourself: take the default or your best choice, and state it in the plan. Give \`choices\` when the answer is one of a fixed set, else null; the \`default\` of a question with \`choices\` is one of them.
 - Criteria are the contract. Give each one an id (\`C1\`, \`C2\`, …) and the \`checkIds\` that verify it. Every check id must exist in the run checks or in a task's checks, and every check id is unique. The ids \`V1\`, \`V2\`, … are the project gate's: never give a check one of them.
 - A check is \`test\` (a test file or pattern), \`cmd\` (a command) or \`render\` (a gallery scenario id). ${packageScriptRule(approvesPlan)} \`npx\` runs only as \`npx --no-install <stack tool>\`.
 - A \`test\` check narrows \`${PACKAGE_TEST_COMMAND}\` to its file (\`${PACKAGE_TEST_COMMAND} -- <file>\`) only when the \`package.json\` test script is one command. A chained script (\`a && b\`) runs whole. To run one test file there, use a \`cmd\` check that runs the project's test runner on the file directly: \`node --test <test file>\`, \`npx --no-install vitest run <test file>\` or \`npx --no-install jest <test file>\`. \`node --check <file>\` checks the syntax of one file. ${fileTestRule()}
@@ -116,15 +121,19 @@ export function planHistory(rounds: readonly PlanRound[]): string {
 }
 
 /** What the planner returns next, once `answered` question rounds are behind the session. */
-function continuePlanning(answered: number): string {
-  return answered < MAX_QUESTION_ROUNDS
+function continuePlanning(answered: number, limit: number): string {
+  return answered < limit
     ? 'Continue the planning session and return the result: the plan, or questions only if a decision is still blocked.'
     : 'Continue the planning session. No question round remains: return the plan, and take the default of every question that is still open.';
 }
 
 /** The answers to round `round`, for a planner that holds its own session. */
-export function planAnswersTurn(answers: string, round: number): string {
-  return `The user answered:\n\n${answers}\n\n${continuePlanning(round)}`;
+export function planAnswersTurn(
+  answers: string,
+  round: number,
+  limit = MAX_QUESTION_ROUNDS,
+): string {
+  return `The user answered:\n\n${answers}\n\n${continuePlanning(round, limit)}`;
 }
 
 export function planRepairTurn(errors: readonly PlanCheckError[], plan?: PlanProposal): string {
@@ -144,6 +153,7 @@ export function planFullTurn(
   rounds: readonly PlanRound[],
   repair?: Readonly<{ errors: readonly PlanCheckError[]; plan: PlanProposal }> | undefined,
   standing = '',
+  limit = MAX_QUESTION_ROUNDS,
 ): string {
   const history = planHistory(rounds);
   const next =
@@ -151,7 +161,7 @@ export function planFullTurn(
       ? planRepairTurn(repair.errors, repair.plan)
       : history === ''
         ? ''
-        : continuePlanning(rounds.length);
+        : continuePlanning(rounds.length, limit);
   return [prompt, standing, history, next].filter((part) => part !== '').join('\n\n');
 }
 

@@ -195,6 +195,39 @@ describe('applyConsultAnswer', () => {
     });
   });
 
+  it('after Decide for me, an ask-user consult with no default asks no one and the next attempt decides', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
+    const onPlannerReply = vi.fn(async () => plainUserMessage('redis'));
+    const base = contextFor(projectDir, sessionId, task, undefined, { onPlannerReply }).ctx;
+    const ctx = { ...base, state: { ...base.state, decideForMe: true as const } };
+    saveState({ projectDir, sessionId }, ctx.state);
+    const attempt = await getChangedFilesSnapshot(projectDir);
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      {
+        answer: {
+          diagnosis: 'Only the user knows',
+          action: 'ask-user',
+          question: 'Which store?',
+          whyOnlyUserCanAnswer: 'It changes the deployment',
+          choices: null,
+          default: null,
+        },
+      },
+      attempt,
+    );
+
+    expect(onPlannerReply).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      action: 'guidance',
+      instructions: 'Decide this yourself.',
+      context: null,
+    });
+  });
+
   it("an ask-user consult with an empty reply publishes one user_message whose qa answer is the question's default", async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });

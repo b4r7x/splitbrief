@@ -2,6 +2,7 @@ import type { Config } from '../../../../core/schemas/config.js';
 import type { Phase, RecoveryAction } from '../../../../core/schemas/enums.js';
 import { BOUNDS } from '../../../../core/pipeline-spec/bounds.js';
 import type { ReviewRecord, SeatSwitchRecord } from '../../../../core/schemas/workflow.js';
+import type { CannotNextStep } from '../../../../core/schemas/consult.js';
 import {
   routeNoCredential,
   routeRefusal,
@@ -93,6 +94,8 @@ export interface RetryExhaustedRecoveryOptions extends ValidationRecoveryOptions
   question?: string | undefined;
   /** The planner's reason why the brief cannot be done. */
   cannot?: string | undefined;
+  /** The step the planner named for a `cannot` when the user is not asked. */
+  cannotNext?: CannotNextStep | null | undefined;
 }
 
 export interface ContextOverflowRecoveryOptions extends RecoveryBuilderBase {
@@ -507,6 +510,7 @@ export function buildRetryExhaustedRecoveryIssue(
   const cannotBy = opts.cannot === undefined ? undefined : 'planner';
   const actions = haltActions('retry-exhausted', [
     opts.allowRetryOverride ? 'retry-same-worker' : undefined,
+    opts.cannot !== undefined || opts.question !== undefined ? 'decide-for-me' : undefined,
     'skip-current-task',
     'end-run',
   ]);
@@ -541,6 +545,7 @@ export function buildRetryExhaustedRecoveryIssue(
       question: opts.question,
       cannot: opts.cannot,
       cannotBy,
+      cannotNext: opts.cannotNext ?? undefined,
     }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions),
@@ -1134,6 +1139,8 @@ export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   fixCycle?: number | undefined;
   /** The planner's reason why a stuck review's blockers cannot be fixed. */
   cannot?: string | undefined;
+  /** The review's question that nobody answered. */
+  question?: string | undefined;
   /** Criteria no check could verify, when the review failed with nothing to fix. */
   unverified?: number | undefined;
   /** The review that judged: a scheduled task review, or the final review when absent. */
@@ -1199,6 +1206,7 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
   const actions = haltActions('review-failed', [
     'revise',
     opts.acceptAsIs === true ? 'accept-as-is' : undefined,
+    opts.cannot !== undefined || opts.question !== undefined ? 'decide-for-me' : undefined,
     'end-run',
   ]);
   const review = reviewName(opts);
@@ -1218,6 +1226,12 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
     message,
     details: [
       ...(opts.cannot === undefined ? [] : [cannotDetail('planner', opts.cannot)]),
+      ...(opts.question === undefined
+        ? []
+        : [
+            'The review asked a question this run has no way to answer.',
+            `Question: ${opts.question}`,
+          ]),
       ...(opts.details ?? []),
     ],
     facts: compactFacts({
@@ -1226,6 +1240,7 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
       fixCycle: opts.fixCycle,
       cannot: opts.cannot,
       cannotBy: opts.cannot === undefined ? undefined : 'planner',
+      question: opts.question,
       unverified: opts.unverified,
       reviewScope: opts.scope,
       afterTaskId: opts.afterTaskId,

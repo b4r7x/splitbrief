@@ -2,7 +2,12 @@ import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { useLayoutEffect, useState } from 'react';
 import { Box, useInput } from 'ink';
 import { questionOptions, questionPromptStore } from '../../../stores/question-prompt/prompt.js';
-import { questionMenu, questionRows, QUESTION_ANSWER_ROWS } from '../prompt-rows/question.js';
+import {
+  decideRowIndex,
+  questionMenu,
+  questionRows,
+  QUESTION_ANSWER_ROWS,
+} from '../prompt-rows/question.js';
 import { MultilineInput } from '../../../components/input/multiline-input.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { listRowLead } from '../../../components/list-row.js';
@@ -17,6 +22,7 @@ export function PlannerQuestion({
   disabled,
   onAnswer,
   onCompose,
+  onDecide,
   onPrevious,
 }: {
   width: number;
@@ -24,6 +30,7 @@ export function PlannerQuestion({
   disabled: boolean;
   onAnswer: (answer: string) => void;
   onCompose: () => void;
+  onDecide: () => void;
   onPrevious: () => void;
 }) {
   const state = questionPromptStore.use((value) => value);
@@ -87,7 +94,8 @@ export function PlannerQuestion({
       else if (key.end) setOffset(maxOffset);
       else if (key.return) {
         const count = questionOptions(active).length;
-        if (count > 0 && selection === count) onCompose();
+        if (selection === decideRowIndex(active)) onDecide();
+        else if (count > 0 && selection === count) onCompose();
         else if (selection >= count) onPrevious();
         else {
           const answer = menu[selection];
@@ -101,7 +109,6 @@ export function PlannerQuestion({
   if (!question) return null;
   const finalQuestion = state.index === (state.questions?.length ?? 0) - 1;
   const next = finalQuestion ? 'send answers' : 'next';
-  const composerOnly = !(choices.length > 0 || state.index > 0);
   const reply = { key: 'esc', verb: 'type a reply' };
   const legend = focused
     ? fitKeyLegend(
@@ -117,9 +124,9 @@ export function PlannerQuestion({
       ? fitKeyLegend(
           formatKeyHints([
             { key: '⏎', verb: next },
-            ...(composerOnly
-              ? [reply, { key: '↓/tab', verb: 'instruction' }]
-              : [{ key: '↑/tab', verb: 'options' }, reply, { key: '↓', verb: 'instruction' }]),
+            { key: '↑/tab', verb: 'menu' },
+            reply,
+            { key: '↓', verb: 'instruction' },
           ]),
           innerWidth,
         )
@@ -184,9 +191,7 @@ export function PlannerQuestion({
                 if (Date.now() - questionPromptStore.get().openedAt < PROMPT_TYPEAHEAD_GRACE_MS)
                   return false;
                 if (!key.tab) return true;
-                questionPromptStore.setFocus(
-                  choices.length > 0 || state.index > 0 ? 'menu' : 'composer',
-                );
+                questionPromptStore.setFocus('menu');
                 return false;
               }}
               onBoundaryNavigate={(direction) => {
@@ -194,11 +199,8 @@ export function PlannerQuestion({
                   questionPromptStore.setFocus('composer');
                   return true;
                 }
-                if (!composerOnly) {
-                  questionPromptStore.setFocus('menu');
-                  return true;
-                }
-                return false;
+                questionPromptStore.setFocus('menu');
+                return true;
               }}
             />
           </Box>

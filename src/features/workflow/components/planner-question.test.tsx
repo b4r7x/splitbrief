@@ -70,6 +70,7 @@ function renderQuestion(width = 80, height = 12) {
       disabled={false}
       onAnswer={() => {}}
       onCompose={() => {}}
+      onDecide={() => {}}
       onPrevious={() => {}}
     />,
   );
@@ -89,6 +90,7 @@ it('guards typeahead and reads rapid navigation synchronously before confirming'
       disabled={false}
       onAnswer={onAnswer}
       onCompose={() => {}}
+      onDecide={() => {}}
       onPrevious={() => {}}
     />,
   );
@@ -104,6 +106,49 @@ it('guards typeahead and reads rapid navigation synchronously before confirming'
   ui.unmount();
 });
 
+it.each([
+  [
+    'after the options and the own answer',
+    { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+    3,
+  ],
+  [
+    'above the answer field of a question with no options',
+    { id: 'name', type: 'input', text: 'Which name?' },
+    0,
+  ],
+] as const satisfies readonly (readonly [string, ClarificationQuestion, number])[])(
+  'offers Decide for me %s',
+  async (_where, question, presses) => {
+    let now = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    store.setQuestions([question]);
+    if (presses === 0) store.setFocus('menu');
+    const onDecide = vi.fn();
+    const onAnswer = vi.fn();
+    const ui = renderFeature(
+      <PlannerQuestion
+        width={60}
+        height={12}
+        disabled={false}
+        onAnswer={onAnswer}
+        onCompose={() => {}}
+        onDecide={onDecide}
+        onPrevious={() => {}}
+      />,
+    );
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Decide for me');
+    now += 200;
+    for (let press = 0; press < presses; press++) ui.stdin.write(down);
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onDecide).toHaveBeenCalledOnce();
+    expect(onAnswer).not.toHaveBeenCalled();
+    ui.unmount();
+  },
+);
+
 it('leaves the answer selection and focus on shift+down, the transcript scroll key', async () => {
   let now = 1000;
   vi.spyOn(Date, 'now').mockImplementation(() => now);
@@ -118,6 +163,7 @@ it('leaves the answer selection and focus on shift+down, the transcript scroll k
       disabled={false}
       onAnswer={onAnswer}
       onCompose={() => {}}
+      onDecide={() => {}}
       onPrevious={() => {}}
     />,
   );
@@ -150,6 +196,7 @@ it('pages through an option taller than the panel without changing its selection
       disabled={false}
       onAnswer={() => {}}
       onCompose={() => {}}
+      onDecide={() => {}}
       onPrevious={() => {}}
     />,
   );
@@ -180,7 +227,13 @@ it('yields keyboard ownership when disabled and preserves selection on resize', 
     },
   ]);
   const onAnswer = vi.fn();
-  const props = { height: 12, onAnswer, onCompose: () => {}, onPrevious: () => {} };
+  const props = {
+    height: 12,
+    onAnswer,
+    onCompose: () => {},
+    onDecide: () => {},
+    onPrevious: () => {},
+  };
   const ui = renderFeature(<PlannerQuestion {...props} width={80} disabled />);
   await flushEffects();
   now += 200;
@@ -213,6 +266,7 @@ it('sanitizes controls and secrets in structured content', () => {
       disabled
       onAnswer={() => {}}
       onCompose={() => {}}
+      onDecide={() => {}}
       onPrevious={() => {}}
     />,
   );
@@ -296,7 +350,7 @@ it('teaches select, next and write while the menu owns the keyboard', async () =
   ui.unmount();
 });
 
-it('teaches the composer-only writing keys when the first question has no options', async () => {
+it('teaches the way up to Decide for me when the first question has no options', async () => {
   store.setQuestions([
     { id: 'note', type: 'input', text: 'Anything to add?' },
     { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
@@ -304,7 +358,9 @@ it('teaches the composer-only writing keys when the first question has no option
   const ui = renderQuestion();
   await flushEffects();
 
-  expect(legendOf(ui.lastFrame() ?? '')).toBe('⏎ next · esc type a reply · ↓/tab instruction');
+  expect(legendOf(ui.lastFrame() ?? '')).toBe(
+    '⏎ next · ↑/tab menu · esc type a reply · ↓ instruction',
+  );
   ui.unmount();
 });
 
@@ -318,7 +374,7 @@ it('splits the writing keys between the instruction and the options once choices
   await flushEffects();
 
   expect(legendOf(ui.lastFrame() ?? '')).toBe(
-    '⏎ next · ↑/tab options · esc type a reply · ↓ instruction',
+    '⏎ next · ↑/tab menu · esc type a reply · ↓ instruction',
   );
   ui.unmount();
 });
@@ -343,7 +399,7 @@ it.each<[string, ClarificationQuestion]>([
     store.setFocus('answer');
     await flushEffects();
     expect(legendOf(ui.lastFrame() ?? '')).toBe(
-      '⏎ send answers · ↑/tab options · esc type a reply · ↓ instruction',
+      '⏎ send answers · ↑/tab menu · esc type a reply · ↓ instruction',
     );
     ui.unmount();
   },
@@ -566,7 +622,7 @@ it.each<[ClarificationQuestion, string]>([
   [{ id: 'consult-store', type: 'input', text: 'Which store?' }, ''],
   [{ id: 'consult-store', type: 'input', text: 'Which store?' }, 'src/cache.ts'],
 ])(
-  'keeps focus and draft in the answer field on ↑ for a question with no rows',
+  'moves up to Decide for me on ↑ and keeps the draft of a question with no options',
   async (question, draft) => {
     let now = 1000;
     vi.spyOn(Date, 'now').mockImplementation(() => now);
@@ -580,7 +636,7 @@ it.each<[ClarificationQuestion, string]>([
     }
     ui.stdin.write('\u001b[A');
     await flushEffects();
-    expect(store.get().focus).toBe('answer');
+    expect(store.get().focus).toBe('menu');
     expect(store.get().drafts[0]?.text).toBe(draft);
     ui.unmount();
   },

@@ -352,7 +352,8 @@ function consultTable(): string {
     'split-task': 'Keep all criteria. Re-point pending dependents to all children.',
     verify: 'Run the brief gate and named registered checks. Make no implementer call.',
     'ask-user': 'Ask only when the user alone can answer. Record why, choices and a default.',
-    cannot: 'Stop the brief and ask the user. Make no implementer call.',
+    cannot:
+      'Stop the brief and ask the user. Name the next step for a user who lets the run decide: `skip-brief` or `end-run`. Make no implementer call.',
     accept:
       'Only on a review without progress, and never while a red check or an Apply conflict blocks. Keep the open blockers and the failed verdict with a note. A workspace run is ready to apply as is, a checkout run closes, and a task-cadence review lets the next brief start.',
   };

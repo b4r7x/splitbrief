@@ -3211,6 +3211,7 @@ const cannotRecoveryProjection: WorkflowFixtureProjection = {
       phase: 'escalating',
       cannot:
         'Projection is generated from the run record schema, and the brief may not change that schema, so no edit of activity.ts can add the stop field.',
+      cannotNext: 'skip-brief',
       validationSummary: FIXTURE_TYPECHECK_ERROR,
       attempts: 3,
       allowRetryOverride: true,
@@ -3347,6 +3348,37 @@ const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
       id: 'rec_visual_review_unverified',
       unverified: 6,
       phase: 'complete',
+      acceptAsIs: true,
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
+};
+
+const REVIEW_QUESTION = {
+  question: 'Should the cache key include the locale, or stay the same for every locale?',
+  whyOnlyUserCanAnswer: 'The plan does not say whether cached pages differ by locale.',
+};
+
+/** The final review asked a question in a run that could not reach you: it waits for an answer. */
+const reviewQuestionRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-review-question'),
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'complete',
+    reviewStatus: 'failed',
+    workspace: {
+      kind: 'checkout',
+      path: VISUAL_FIXTURE_PROJECT_DIR,
+      base: { snapshotId: 'visual-base', head: null },
+    },
+    pendingTriage: { inputs: [], question: REVIEW_QUESTION },
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      id: 'rec_visual_review_question',
+      blocking: 1,
+      phase: 'complete',
+      question: REVIEW_QUESTION.question,
       acceptAsIs: true,
       createdAt: new Date(FIXED_TS).toISOString(),
     }),
@@ -7293,6 +7325,7 @@ const projections = [
   reviewFailedRecoveryProjection,
   reviewFixAgainProjection,
   reviewUnverifiedRecoveryProjection,
+  reviewQuestionRecoveryProjection,
   taskReviewNoProgressRecoveryProjection,
   checksMissingProgramRecoveryProjection,
   checksUnrunnableRecoveryProjection,

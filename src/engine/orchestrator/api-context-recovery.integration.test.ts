@@ -464,7 +464,7 @@ describe('a REVIEW that reached a verdict', () => {
     expect(issue?.reason).toBe('review-failed');
     expect(issue?.seat).toBe('build');
     expect(issue?.facts?.blocking).toBe(1);
-    expect(issue?.availableActions).toEqual(['revise', 'accept-as-is', 'end-run']);
+    expect(issue?.availableActions).toEqual(['revise', 'accept-as-is', 'decide-for-me', 'end-run']);
     expect(issue?.recommendedAction).toBe('revise');
     expect(result.state.phase).toBe('complete');
     expect(result.state.reviewStatus).toBe('failed');

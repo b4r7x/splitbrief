@@ -41,7 +41,7 @@ import {
   rebaseOnPersistedWorkflowState,
   transitionAndSave,
 } from '../state-ops.js';
-import { waitForPlannerReply } from '../planning/call-loop.js';
+import { askOperator } from '../planning/call-loop.js';
 import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
 import type { ReviewOutcome } from '../../../core/review/verdict.js';
 import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
@@ -93,6 +93,7 @@ async function haltFailedReview(args: {
   fixCycle?: number | undefined;
   unverified?: number | undefined;
   cannot?: string | undefined;
+  question?: string | undefined;
   details?: readonly string[] | undefined;
 }): Promise<WorkflowState> {
   const ref = { projectDir: args.wctx.projectDir, sessionId: args.wctx.sessionId };
@@ -129,6 +130,7 @@ async function haltFailedReview(args: {
     ...(args.fixCycle !== undefined && { fixCycle: args.fixCycle }),
     ...(args.unverified !== undefined && { unverified: args.unverified }),
     ...(args.cannot !== undefined && { cannot: args.cannot }),
+    ...(args.question !== undefined && { question: args.question }),
     details,
     acceptAsIs: !scheduled && !redPending,
     scope: scheduled ? 'task' : 'final',
@@ -324,16 +326,15 @@ export async function followReviewAnswer(args: {
     });
     setTrackedState(state);
     const question = fixWork.ask.question;
-    const reply = await waitForPlannerReply(
-      { callbacks, sinks: wctx.sinks, signal: wctx.signal },
-      {
-        call: 'plan',
-        text: question,
-        questions: [{ id: 'review-ask', type: 'input', text: question }],
-        answers: [],
-        answered: false,
-      },
-    );
+    const asking = await askOperator({ ...wctx, callbacks }, state, {
+      call: 'plan',
+      text: question,
+      questions: [{ id: 'review-ask', type: 'input', text: question }],
+      answers: [],
+      answered: false,
+    });
+    state = asking.state;
+    const reply = asking.reply;
     if (reply === undefined) {
       state = await haltFailedReview({
         wctx,
@@ -342,7 +343,7 @@ export async function followReviewAnswer(args: {
         candidate: args.candidate,
         blocking,
         redInputs,
-        details: ['The review asked a question this run has no way to answer.'],
+        question,
       });
       return { state, next: 'stop' };
     }

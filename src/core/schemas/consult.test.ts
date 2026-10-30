@@ -94,12 +94,23 @@ describe('ConsultAnswerSchema', () => {
 
   it('takes cannot and verify on a failed brief and on a stuck review', () => {
     const task = makeTask({ id: 'T003' });
-    const cannot = answer({ action: 'cannot', reason: 'The SDK has no payment API.' });
+    const cannot = answer({
+      action: 'cannot',
+      reason: 'The SDK has no payment API.',
+      next: 'skip-brief',
+    });
     const verify = answer({ action: 'verify', checkIds: ['K1'], reason: 'K1 may be a flake' });
     for (const reason of ['failed', 'no-progress'] as const) {
       expect(consultAnswerSchemaFor(task, reason).safeParse(cannot).success).toBe(true);
       expect(consultAnswerSchemaFor(task, reason).safeParse(verify).success).toBe(true);
     }
+  });
+
+  it('refuses a cannot that does not name the next step', () => {
+    const cannot = answer({ action: 'cannot', reason: 'The SDK has no payment API.' });
+    expect(
+      consultAnswerSchemaFor(makeTask({ id: 'T003' }), 'failed').safeParse(cannot).success,
+    ).toBe(false);
   });
 
   it('takes accept only on a stuck review', () => {

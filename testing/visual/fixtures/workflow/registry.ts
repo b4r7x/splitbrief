@@ -1014,6 +1014,14 @@ const checkpointPredicates = [
   [checkpointId('closed-rejected'), includesAll()],
   [checkpointId('closed-needs-attention'), includesAll()],
   [checkpointId('closed-planner-accept'), includesAll('Accepted as is', "Planner's note:")],
+  // The skipped brief's row scrolls above the viewport below 120 columns.
+  [
+    checkpointId('closed-decided-skip'),
+    (context) =>
+      includesAll()(context) &&
+      (context.viewport.cols < 120 ||
+        includesAll('skipped · Planner said:', '2/3 briefs validated', '2 files changed')(context)),
+  ],
   [checkpointId('closed-ended'), includesAll()],
   [checkpointId('closed-ended-empty'), includesAll()],
   [checkpointId('closed-ended-workspace'), includesAll('run.patch')],
@@ -1132,6 +1140,10 @@ const checkpointPredicates = [
   [
     checkpointId('review-unverified'),
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is', 'unverified criteria'),
+  ],
+  [
+    checkpointId('review-question'),
+    includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Decide for me'),
   ],
   [
     checkpointId('task-review-no-progress'),

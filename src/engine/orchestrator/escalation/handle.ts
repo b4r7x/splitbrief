@@ -464,7 +464,7 @@ export async function handleRetryAndEscalation(
         phase: state.phase,
         ...(applied.action === 'unanswered'
           ? { question: applied.question }
-          : { cannot: applied.reason }),
+          : { cannot: applied.reason, cannotNext: applied.next }),
         validationSummary: lastError,
         ...haltAttempts(state, task, { booked: true }),
         allowRetryOverride: true,

@@ -957,6 +957,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(result.state.pendingRecovery?.availableActions).toEqual([
       'revise',
       'accept-as-is',
+      'decide-for-me',
       'end-run',
     ]);
     expect(result.state.pendingRecovery?.recommendedAction).toBe('revise');
@@ -1086,6 +1087,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(result.state.pendingRecovery?.availableActions).toEqual([
       'revise',
       'accept-as-is',
+      'decide-for-me',
       'end-run',
     ]);
     const accepted = await applyRecoveryAction({

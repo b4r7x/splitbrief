@@ -1795,6 +1795,84 @@ const CLOSED_PLANNER_ACCEPT = record({
   },
 });
 
+/**
+ * The user chose Decide for me at a planning question; later the planner said T002 cannot be done
+ * and named skipping it, so the run skipped it with no panel and the review judged the rest.
+ */
+const DECIDED_SKIP_SESSION = 'visual-closed-decided-skip';
+const DECIDED_SKIP_REASON =
+  'The signup form is generated from the schema; the plan rules out a hand edit of it.';
+const DECIDED_SKIP_PACKET = {
+  ...reviewPacket({
+    sessionId: DECIDED_SKIP_SESSION,
+    verdict: 'pass_with_notes',
+    counts: { critical: 0, warning: 1, note: 2 },
+    driftPassed: true,
+    tasks: 3,
+  }),
+  evidenceValidatedTasks: 2,
+};
+const DECIDED_SKIP_LOG: readonly EngineEvent[] = READY_LOG.flatMap((event): EngineEvent[] =>
+  event.type === 'task_completed' && event.taskId === BRIEFS.wire.id
+    ? [
+        {
+          type: 'consult_answered',
+          ts: event.ts,
+          phase: 'escalating',
+          taskId: BRIEFS.wire.id,
+          reason: 'failed',
+          action: 'cannot',
+          diagnosis: 'The form file is generated; every attempt is overwritten by the build.',
+          newTaskIds: null,
+        },
+        {
+          type: 'task_skipped',
+          ts: event.ts,
+          phase: 'implementing',
+          taskId: BRIEFS.wire.id,
+          title: BRIEFS.wire.title,
+          reason: `Planner said: ${DECIDED_SKIP_REASON}`,
+        },
+      ]
+    : event.type === 'workflow_complete'
+      ? [{ ...event, completedTasks: 2 }]
+      : [event],
+);
+const CLOSED_DECIDED_SKIP = record({
+  sessionId: DECIDED_SKIP_SESSION,
+  status: { kind: 'closed', as: 'complete' },
+  state: savedState({
+    phase: 'complete',
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'skipped' },
+      { id: BRIEFS.routeTests.id, status: 'done' },
+    ],
+    decideForMe: true,
+  }),
+  summary: Object.freeze({
+    ...READY_SUMMARY,
+    completedByLocal: 2,
+    skipped: 1,
+    changedFiles: [FILES.signupTest, FILES.validate],
+    reviewPacket: DECIDED_SKIP_PACKET,
+    review: legacyReview(DECIDED_SKIP_PACKET),
+    taskBreakdown: READY_TASKS.map((task) =>
+      task.taskId === BRIEFS.wire.id ? { ...task, method: 'skipped' as const } : task,
+    ),
+  }),
+  ledger: ledger({
+    sessionId: DECIDED_SKIP_SESSION,
+    tasks: settledLocalTasks([84_200, 141_000, 96_300]).map((task) =>
+      task.id === BRIEFS.wire.id
+        ? { ...task, status: 'skipped', method: 'skipped', changedFiles: [], observedEvidence: [] }
+        : task,
+    ),
+    validationSummary: { passed: 6, failed: 0, skipped: 1, escalated: 0 },
+    finalReview: { path: packetMarkdownPath(DECIDED_SKIP_SESSION), status: 'written' },
+  }),
+});
+
 const CLOSED_ENDED = record({
   sessionId: INTERRUPTED_BUILD_SESSION,
   status: { kind: 'closed', as: 'ended' },
@@ -2929,6 +3007,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-closed-planner-accept',
     route: { record: CLOSED_PLANNER_ACCEPT },
+  }),
+  atRestProjection({
+    id: 'workflow-closed-decided-skip',
+    route: { record: CLOSED_DECIDED_SKIP, log: DECIDED_SKIP_LOG },
   }),
   atRestProjection({
     id: 'workflow-closed-rejected',

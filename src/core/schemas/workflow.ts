@@ -133,6 +133,16 @@ export const CONSULT_ACTION_KINDS = [
   'accept',
 ] as const;
 
+/** A \`cannot\` saved before it named its next step reads as naming none. */
+function withCannotNext(value: unknown): unknown {
+  return isRecord(value) &&
+    isRecord(value.answer) &&
+    value.answer.action === 'cannot' &&
+    !('next' in value.answer)
+    ? { ...value, answer: { ...value.answer, next: null } }
+    : value;
+}
+
 export const ConsultRecordSchema = z.object({
   reason: z.enum(CONSULT_REASONS),
   action: z.enum(CONSULT_ACTION_KINDS),
@@ -140,7 +150,7 @@ export const ConsultRecordSchema = z.object({
   at: z.string(),
   taskId: TaskIdSchema,
   revision: z.number().int(),
-  answer: ConsultAnswerSchema,
+  answer: z.preprocess(withCannotNext, ConsultAnswerSchema),
   /** `review` on an older run's fix-task consult the reviewer answered; the planner answers the rest. */
   seat: z.enum(CONSULT_SEATS).optional(),
   /** The lineage's attempts before this answer; an older record does not carry it. */
@@ -365,6 +375,8 @@ const WorkflowStateFields = {
   lineages: z.record(z.string(), LineageRecordSchema).optional(),
   userAnswers: PlannerConversationSchema.shape.answers.optional(),
   seatWait: SeatWaitSchema.optional(),
+  /** The user chose Decide for me: the run asks nothing more and takes each decided step itself. */
+  decideForMe: z.literal(true).optional(),
   seatSwitches: z.array(SeatSwitchRecordSchema).optional(),
   /** The BUILD profile a recovery action keeps the brief on until that brief settles. */
   retryProfile: z.object({ taskId: TaskIdSchema, profile: z.string() }).optional(),

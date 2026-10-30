@@ -150,7 +150,7 @@ if (prompt.includes('# Final Implementation Review')) {
 } else if (/^# Consult on a failing task$/m.test(prompt)) {
   call = { kind: 'consult', prompt };
   answer = prompt.includes('Your earlier answers on reviews without progress')
-    ? { answer: { diagnosis: ${JSON.stringify(DIAGNOSIS)}, action: 'cannot', reason: ${JSON.stringify(CANNOT)} } }
+    ? { answer: { diagnosis: ${JSON.stringify(DIAGNOSIS)}, action: 'cannot', reason: ${JSON.stringify(CANNOT)}, next: null } }
     : {
         answer: {
           diagnosis: ${JSON.stringify(DIAGNOSIS)},

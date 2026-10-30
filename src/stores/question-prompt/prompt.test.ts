@@ -95,6 +95,23 @@ describe('planner question batch', () => {
     expect(store.takeAnswerBatch()).toBeUndefined();
   });
 
+  it('Decide for me keeps the answers given, takes the open defaults and asks the run to stop asking', () => {
+    store.setQuestions([...questions, { id: 'name', type: 'input', text: 'Which name?' }]);
+    store.answer(plainUserMessage('Planner'));
+    const batch = store.decideForMe();
+
+    expect(batch).toMatchObject({ decideForMe: true });
+    expect(batch?.qa).toEqual([
+      { question: 'Which seat?', answer: 'Planner' },
+      { question: 'Which files?', answer: 'src/' },
+      { question: 'Proceed?', answer: 'No' },
+      { question: 'Which name?', answer: 'Decide this yourself.' },
+    ]);
+    expect(store.get().complete).toBe(true);
+    expect(store.takeAnswerBatch()).toEqual(batch);
+    expect(store.decideForMe()).toBeUndefined();
+  });
+
   it('discards drafts and answers on cancellation or replacement with reused IDs', () => {
     store.setQuestions(questions);
     store.setFocus('composer', 'unsent');

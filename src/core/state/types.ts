@@ -117,6 +117,7 @@ export type StateAction =
   | { type: 'RECORD_CHECK_RESULTS'; taskId: TaskId; results: CheckResult[] }
   | { type: 'SET_SEAT_WAIT'; wait: SeatWait }
   | { type: 'CLEAR_SEAT_WAIT' }
+  | { type: 'DECIDE_FOR_ME' }
   | { type: 'CORRECT_PLAN'; comment: string }
   | { type: 'ENQUEUE_USER_MSG'; message: QueuedMessage }
   | { type: 'MARK_INJECTING_NATIVE'; id: string; attempt?: number }

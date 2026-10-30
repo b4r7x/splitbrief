@@ -778,6 +778,7 @@ describe('handleRetryAndEscalation', () => {
           diagnosis: 'The SDK has no payment API.',
           action: 'cannot',
           reason,
+          next: 'skip-brief',
         },
       },
     ]);
@@ -809,7 +810,7 @@ describe('handleRetryAndEscalation', () => {
       reason: 'retry-exhausted',
       taskId: 'T001',
       message: 'T001: the planner says it cannot be done',
-      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+      availableActions: ['retry-same-worker', 'decide-for-me', 'skip-current-task', 'end-run'],
     });
     expect(finalState.pendingRecovery?.details).toContain(`Planner said: ${reason}`);
     expect(formatRecoveryHeadline(finalState.pendingRecovery!)).toBe(

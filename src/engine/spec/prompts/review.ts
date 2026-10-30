@@ -50,7 +50,7 @@ export type ReviewPlanData = {
   tasks: readonly {
     id: string;
     lineageId: string;
-    status: 'done' | 'pending';
+    status: 'done' | 'pending' | 'skipped';
     title: string;
     intent: string;
     steps: readonly string[];

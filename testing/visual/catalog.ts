@@ -2916,6 +2916,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-closed-decided-skip',
+      title: 'Workflow · closed after the run skipped a brief the planner could not do',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-decided-skip',
+        title: "The closed ledger names the skipped brief, the transcript the planner's reason",
+        kind: 'success',
+        marker: 'visual-closed-decided-skip',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-ended',
       title: 'Workflow · ended by the user',
       surface: screenSurface('workflow'),
@@ -3826,6 +3842,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Review-unverified recovery menu',
         kind: 'question',
         marker: 'Fix again',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-review-question',
+      title: 'Workflow · a final review question nobody answered',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-question',
+        title: 'Review-question recovery menu',
+        kind: 'question',
+        marker: 'Decide for me',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
