@@ -72,7 +72,6 @@ const { composerLiveStore } = await import('../../stores/ui/composer-live.js');
 const { stopStore } = await import('../../stores/workflow/stop.js');
 const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
 const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
-const { openReviewChecksPrompt } = await import('../../stores/review-checks-prompt/prompt.js');
 
 const FIXED_TS = 1_783_958_400_000;
 const SHIFT_ENTER = '\x1b[13;2u';
@@ -2478,23 +2477,6 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     });
   }
 
-  function openChecksCard(answers: unknown[]): void {
-    navigatePreparedWorkflow(projectDir, 'panel slash');
-    runWorkflow.mockImplementation(async (opts) => {
-      publishEvent(opts, {
-        type: 'workflow_started',
-        ts: FIXED_TS,
-        phase: 'final-review',
-        feature: 'panel slash',
-      });
-      void openReviewChecksPrompt({
-        scope: 'final',
-        commands: [{ id: 'V1', command: 'npm test', reason: 'The tests cover the change.' }],
-      }).then((answer) => answers.push(answer));
-      return pendingWorkflow();
-    });
-  }
-
   function askPlannerQuestion(
     replies: unknown[],
     questions: readonly ClarificationQuestion[] = [
@@ -2587,54 +2569,6 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
 
     expect(stopStore.get().intent).toBe('none');
     expect(overlayStore.get().active).not.toBe('stop-sheet');
-    ui.unmount();
-  });
-
-  it('runs a slash command typed over the reviewer checks card and names the card in the placeholder', async () => {
-    const answers: unknown[] = [];
-    openChecksCard(answers);
-    const onRuntimeCommand = vi.fn();
-    const ui = renderFeature(
-      <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
-    );
-    await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
-    });
-    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-    const cardFocused = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(cardFocused).toContain('Choose an action above, or tab to type a message…');
-    expect(cardFocused).not.toContain('Message REVIEW');
-
-    await typeSlashSettings(ui);
-    await vi.waitFor(() => {
-      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
-    });
-    await flushEffects();
-    expect(answers).toEqual([]);
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
-    ui.unmount();
-  });
-
-  it('does not run the reviewer checks on an Enter read in the same stdin dispatch as the slash', async () => {
-    const answers: unknown[] = [];
-    openChecksCard(answers);
-    const ui = renderFeature(
-      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
-    );
-    await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
-    });
-    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-
-    ui.stdin.write('/');
-    ui.stdin.write('\r');
-    await flushEffects();
-    await tick(30);
-    ui.stdin.write('\b');
-    await flushEffects();
-
-    expect(answers).toEqual([]);
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
     ui.unmount();
   });
 
@@ -2953,33 +2887,6 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     );
   });
 
-  it('hands the keys to the composer for a command picked in the palette over the reviewer checks card', async () => {
-    const answers: unknown[] = [];
-    openChecksCard(answers);
-    const onRuntimeCommand = vi.fn();
-    const ui = renderFeature(
-      <WithPalette>
-        <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />
-      </WithPalette>,
-    );
-    await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
-    });
-    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-
-    await pickInPalette(ui, 'scroll', 'top');
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/scroll top');
-    ui.stdin.write('\r');
-    await vi.waitFor(() => {
-      expect(onRuntimeCommand).toHaveBeenCalledWith('/scroll top');
-    });
-    await flushEffects();
-    expect(onRuntimeCommand.mock.calls).toEqual([['/scroll top']]);
-    expect(answers).toEqual([]);
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
-    ui.unmount();
-  });
-
   it('hands the keys to the composer for a command picked in the palette over the planner question', async () => {
     const replies: unknown[] = [];
     askPlannerQuestion(replies);
@@ -3027,31 +2934,6 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     const composerFocused = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(composerFocused).toContain('New instruction — replaces these questions…');
     expect(composerFocused).not.toContain('Answer the question above…');
-    ui.unmount();
-  });
-
-  it('runs only the slash command typed over the stop sheet above the reviewer checks card', async () => {
-    const answers: unknown[] = [];
-    openChecksCard(answers);
-    const onRuntimeCommand = vi.fn();
-    const ui = renderFeature(
-      <WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} deps={workflowDeps} />,
-    );
-    await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
-    });
-    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-    overlayStore.open('stop-sheet');
-    await flushEffects();
-
-    await typeSlashSettings(ui);
-    await vi.waitFor(() => {
-      expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
-    });
-    await flushEffects();
-    expect(onRuntimeCommand.mock.calls).toEqual([['/settings']]);
-    expect(answers).toEqual([]);
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip all');
     ui.unmount();
   });
 

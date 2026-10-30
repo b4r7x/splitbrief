@@ -6,13 +6,6 @@ import { sessionsRoot } from '../../../src/core/paths.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
-import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
-import { addEvent } from '../../../src/stores/workflow/actions/event.js';
-import { operationsStore } from '../../../src/stores/workflow/operations/state.js';
-import {
-  reviewActivityParts,
-  reviewActivitySpans,
-} from '../../../src/features/workflow/display/phase-verb.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -75,17 +68,6 @@ if (!existsSync(${JSON.stringify(started)})) {
     const resumed = await cli(target, ['continue', sessionId]);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
-    resetWorkflow();
-    for (const event of events) {
-      addEvent(event);
-      if (event.type === 'review_checks' && event.status === 'off') {
-        expect(
-          reviewActivitySpans(reviewActivityParts(operationsStore.get().active, null))
-            .map((part) => part.text)
-            .join(''),
-        ).not.toContain('choosing checks');
-      }
-    }
     expect(events.flatMap((event) => (event.type === 'review_step' ? [event.step] : []))).toEqual([
       'verdict',
       'verdict',
@@ -112,7 +94,6 @@ if (!existsSync(${JSON.stringify(started)})) {
     if (pid !== undefined) process.kill(pid, 'SIGKILL');
     if (running !== undefined) await running;
     await reapOrphanRunners(target.projectDir);
-    resetWorkflow();
     cleanupTempDir(target.tmpDir);
   }
 });

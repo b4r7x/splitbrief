@@ -46,6 +46,7 @@ import {
 import { hashTaskBrief } from '../../core/evidence/brief-hash.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
+import type { Plan } from '../../core/schemas/plan.js';
 import { ReviewRecordSchema } from '../../core/schemas/workflow.js';
 import { taskId, type Task } from '../../core/schemas/task.js';
 import type { ReviewVerdict } from '../../core/schemas/review.js';
@@ -99,6 +100,16 @@ function allTasksDoneState(tasks: Task[], runStartHead: string | null): Workflow
     changedFilesBaseline: { head: runStartHead, fingerprints: {}, runStartChangedFiles: [] },
   };
 }
+
+/** A plan whose project gate is V1 `node --version`. */
+const GATE_PLAN: Plan = {
+  summary: 'Greet people',
+  decisions: [],
+  criteria: [],
+  checks: [],
+  gate: ['node --version'],
+  validation: null,
+};
 
 const SUMMARY_BASE = {
   feature: 'test feature',
@@ -691,21 +702,10 @@ describe('runFinalReviewPhase', () => {
     else expect(prompts).toHaveLength(1);
   });
 
-  it('fails the review, never passes it, when the plan call fails', async () => {
+  it('runs the project gate the plan names before the verdict, with no reviewer call of its own', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
-    const verdicts: string[] = [];
-    const checks = vi.fn(() => ({ commands: [], declined: [], reason: null }));
-    const reviewer = makePlanner({
-      typedCall: typedCallPlanAndReview(
-        () => planFromTasks([]),
-        (prompt) => {
-          verdicts.push(prompt);
-          return passingReviewVerdict(prompt);
-        },
-        undefined,
-        checks,
-      ),
-    });
+    const { reviewer, prompts } = makeReviewer();
+    const done = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
 
     const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
@@ -715,32 +715,28 @@ describe('runFinalReviewPhase', () => {
       config: makeNoValidationConfig({ validation: { endChecks: true } }),
       callbacks: makeCallbacks().callbacks,
       bus,
-      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      state: { ...done, plan: GATE_PLAN },
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
       reviewChecks: true,
     });
 
-    // The plan names no command and no reason, so the plan call fails its contract.
-    expect(verdicts).toEqual([]);
-    expect(result.reviewStatus).toBe('failed');
-    expect(result.verdict).toBeNull();
-    expect(result.failure).toMatchObject({ kind: 'seat-protocol-error' });
-    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    expect(reviewer.typedCall).toHaveBeenCalledTimes(1);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('- V1 `node --version`: passed');
+    expect(
+      events
+        .filter((event) => event.type === 'review_step')
+        .map((event) => (event.type === 'review_step' ? event.step : null)),
+    ).toEqual(['verdict', 'verify']);
+    expect(result.reviewStatus).toBe('written');
   });
 
-  it('makes no plan call when the review takes no reviewer checks', async () => {
+  it('runs no gate and publishes no reviewer checks row when the review takes no reviewer checks', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
-    const checks = vi.fn(() => ({ commands: [], declined: [], reason: 'not asked' }));
-    const reviewer = makePlanner({
-      typedCall: typedCallPlanAndReview(
-        () => planFromTasks([]),
-        (prompt) => passingReviewVerdict(prompt),
-        undefined,
-        checks,
-      ),
-    });
+    const { reviewer } = makeReviewer();
+    const done = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
 
     const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
@@ -750,15 +746,15 @@ describe('runFinalReviewPhase', () => {
       config: makeNoValidationConfig({ validation: { endChecks: true } }),
       callbacks: makeCallbacks().callbacks,
       bus,
-      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      state: { ...done, plan: GATE_PLAN },
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
       reviewChecks: false,
     });
 
-    expect(checks).not.toHaveBeenCalled();
     expect(events.filter((event) => event.type === 'review_checks')).toEqual([]);
+    expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
     expect(result.reviewStatus).toBe('written');
   });
 
@@ -792,16 +788,7 @@ describe('runFinalReviewPhase', () => {
         bus: makeBusRecorder().bus,
         state: {
           ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-          reviewChecks: {
-            scope: 'final',
-            cycle: 0,
-            plan: {
-              commands: [{ id: 'V1', command: 'node --version', reason: 'the runtime answers' }],
-              declined: [],
-              reason: null,
-            },
-            at: '2026-10-08T00:00:00.000Z',
-          },
+          plan: GATE_PLAN,
         },
         reviewer,
         metadata: TEST_METADATA,
@@ -1255,16 +1242,7 @@ describe('runFinalReviewPhase', () => {
       bus: makeBusRecorder().bus,
       state: {
         ...state,
-        reviewChecks: {
-          scope: 'final',
-          cycle: 0,
-          plan: {
-            commands: [{ id: 'V1', command, reason: 'the project checks its report total' }],
-            declined: [],
-            reason: null,
-          },
-          at: '2026-10-08T00:00:00.000Z',
-        },
+        plan: { ...GATE_PLAN, gate: [command] },
         review: {
           cycle: 0,
           verdict: { tasks: [], criteria: [], findings: [] },
@@ -2090,19 +2068,7 @@ describe('runFinalReviewPhase', () => {
     }));
     const state: WorkflowState = {
       ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], project.runStartHead),
-      reviewChecks: {
-        scope: 'final',
-        cycle: 0,
-        plan: {
-          commands: [
-            { id: 'V1', command: 'node v1.mjs', reason: 'the first check' },
-            { id: 'V2', command: 'node v2.mjs', reason: 'the second check' },
-          ],
-          declined: [],
-          reason: null,
-        },
-        at: '2026-10-08T00:00:00.000Z',
-      },
+      plan: { ...GATE_PLAN, gate: ['node v1.mjs', 'node v2.mjs'] },
     };
     const review = (signal?: AbortSignal) => {
       const { bus, events } = makeBusRecorder();
@@ -2251,13 +2217,11 @@ describe('runFinalReviewPhase', () => {
     const preExistingChecks = [{ id: 'V1', command: 'node v1.mjs', keys: ['v1.mjs'] }];
     const state: WorkflowState = {
       ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-      pendingReviewCommands: ['node v1.mjs', 'node other.mjs'],
       reviewAnswer: {
         scope: 'final',
         cycle: 0,
         answer: passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: [] }),
         preExistingChecks,
-        discharged: ['node v1.mjs'],
         checksSection: 'Reviewer check V1 failed at the run base too.',
         at: '2026-10-28T10:00:00.000Z',
       },
@@ -2291,7 +2255,6 @@ describe('runFinalReviewPhase', () => {
     expect(prompts[0]).toContain('Reviewer check V1 failed at the run base too.');
     expect(prompts[0]).toContain('Look at the greeting again');
     expect(result.state.review?.preExistingChecks).toEqual(preExistingChecks);
-    expect(result.state.pendingReviewCommands).toEqual(['node other.mjs']);
     expect(result.state.reviewAnswer).toBeUndefined();
   });
 
@@ -2306,7 +2269,6 @@ describe('runFinalReviewPhase', () => {
         cycle: 0,
         answer: passingVerdict({ kind: 'task', taskIds: ['T001'], criterionIds: [] }),
         preExistingChecks: [],
-        discharged: [],
         at: '2026-10-28T10:00:00.000Z',
       },
     };
@@ -2352,7 +2314,6 @@ describe('runFinalReviewPhase', () => {
         cycle: 0,
         answer: passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: [] }),
         preExistingChecks: [],
-        discharged: [],
         at: '2026-10-28T10:00:00.000Z',
       },
     };
@@ -2986,7 +2947,6 @@ describe('review record', () => {
           cycle: 0,
           answer: passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] }),
           preExistingChecks: [],
-          discharged: [],
           at: '2026-10-28T10:00:00.000Z',
         },
       }),

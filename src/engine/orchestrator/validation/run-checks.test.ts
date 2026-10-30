@@ -5,38 +5,33 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
-import type { ReviewChecksRecord } from '../../../core/schemas/workflow.js';
+import type { Plan } from '../../../core/schemas/plan.js';
 import { createEventBus } from '../../events/bus.js';
 import { checkRegistry, enabledReviewChecks, runChecks } from './run-checks.js';
 
-const RECORD: ReviewChecksRecord = {
-  scope: 'final',
-  cycle: 0,
-  plan: {
-    commands: [{ id: 'V1', command: 'npm test', reason: 'verifies the change' }],
-    declined: [],
-    reason: null,
-  },
-  at: '2026-10-09T00:00:00.000Z',
+const PLAN: Plan = {
+  summary: 'Plan summary',
+  decisions: [],
+  criteria: [],
+  checks: [],
+  gate: ['npm test'],
+  validation: null,
 };
 
 describe('enabledReviewChecks', () => {
-  it('names the V ids of a plan whose commands ran', () => {
-    expect(enabledReviewChecks(makeConfig(), RECORD)).toEqual([
+  it('names the V ids of the project gate the plan names', () => {
+    expect(enabledReviewChecks(makeConfig(), PLAN)).toEqual([
       { id: 'V1', kind: 'cmd', value: 'npm test', required: true },
     ]);
   });
 
   it('names no V id while End-of-run checks are off', () => {
-    expect(enabledReviewChecks(makeConfig({ validation: { endChecks: false } }), RECORD)).toEqual(
-      [],
-    );
+    expect(enabledReviewChecks(makeConfig({ validation: { endChecks: false } }), PLAN)).toEqual([]);
   });
 
-  // A skipped plan never runs later: a fix-cycle gate or a triage verify cannot name V1.
-  it('names no V id of a plan none of whose commands ran', () => {
-    const skipped = { ...RECORD, skipped: { reason: 'Skip all was chosen on the card' } };
-    const reviewChecks = enabledReviewChecks(makeConfig(), skipped);
+  it('names no V id of a plan saved before the plan named a project gate', () => {
+    const { gate: _gate, ...older } = PLAN;
+    const reviewChecks = enabledReviewChecks(makeConfig(), older);
 
     expect(reviewChecks).toEqual([]);
     expect(checkRegistry({ reviewChecks }).has('V1')).toBe(false);

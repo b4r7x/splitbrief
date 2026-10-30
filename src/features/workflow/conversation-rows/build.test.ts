@@ -2267,13 +2267,6 @@ describe('the Final review heading', () => {
     },
     { type: 'review_started', ts: 3_300, ...review },
     {
-      type: 'review_checks',
-      ts: 9_000,
-      ...review,
-      status: 'planned',
-      commands: [{ id: 'V1', command: 'node --test', reason: 'Run the whole suite.' }],
-    },
-    {
       type: 'full_suite',
       ts: 9_100,
       phase: 'final-review',
@@ -2381,20 +2374,6 @@ describe('buildConversationRowsProjection check lists', () => {
     command: `node --test test/${name}.test.js`,
     reason: `Checks ${name}.`,
   }));
-  const header: EngineEventOf<'review_checks'> = {
-    type: 'review_checks',
-    ts: 1,
-    phase: 'final-review',
-    scope: 'final',
-    status: 'planned',
-    commands,
-    declined: [
-      {
-        target: 'npm run test:e2e',
-        reason: 'It needs a browser, and the change touches no screen.',
-      },
-    ],
-  };
   const checks: EngineEventOf<'full_suite'>[] = commands.map((command, index) => ({
     type: 'full_suite',
     ts: index + 2,
@@ -2425,7 +2404,12 @@ describe('buildConversationRowsProjection check lists', () => {
     passed: true,
   };
   const secondCheck: EngineEventOf<'full_suite'> = { ...firstCheck, ts: 3, id: 'V2' };
-  const shortHeader: EngineEventOf<'review_checks'> = { ...header, declined: [] };
+  const header: EngineEventOf<'review_checks'> = {
+    type: 'review_checks',
+    ts: 1,
+    phase: 'final-review',
+    status: 'none',
+  };
 
   function projectionFor(items: EngineEvent[], cols = 120) {
     return buildConversationRowsProjection({
@@ -2449,7 +2433,6 @@ describe('buildConversationRowsProjection check lists', () => {
   it('stacks reviewer checks and drift between surrounding messages', () => {
     const projection = projectionFor([
       { type: 'user_message', ts: 0, phase: 'idle', text: 'Check the changes.' },
-      header,
       ...checks,
       drift,
       { type: 'planner_text', ts: 7, phase: 'final-review', text: 'Review is ready.' },
@@ -2459,8 +2442,6 @@ describe('buildConversationRowsProjection check lists', () => {
     expect(rows.map(rowText)).toEqual([
       'Check the changes.',
       '',
-      'Reviewer checks · chose 4 · declined 1',
-      '  declined · npm run test:e2e · It needs a browser, and the change touches no screen.',
       'Reviewer check V1 · node --test test/loan.test.js · passed · 0.1s',
       'Reviewer check V2 · node --test test/renewals.test.js · passed · 0.2s',
       'Reviewer check V3 · node --test test/member.test.js · passed · 0.1s',
@@ -2472,7 +2453,7 @@ describe('buildConversationRowsProjection check lists', () => {
     expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(2);
     expect(rows.at(0)?.kind).not.toBe('spacer');
     expect(rows.at(-1)?.kind).not.toBe('spacer');
-    expect(projection.renderableCount).toBe(8);
+    expect(projection.renderableCount).toBe(7);
     expect(projection.totalRows).toBe(rows.length);
   });
 
@@ -2524,7 +2505,7 @@ describe('buildConversationRowsProjection check lists', () => {
         };
         for (const withHeader of [true, false]) {
           const projection = projectionFor([
-            ...(withHeader ? [shortHeader] : []),
+            ...(withHeader ? [header] : []),
             check,
             { ...check, id: 'V2' },
             drift,
@@ -2568,7 +2549,7 @@ describe('buildConversationRowsProjection check lists', () => {
 
   it('keeps rowless events inside a check list', () => {
     const projection = projectionFor([
-      shortHeader,
+      header,
       makePlannerHeartbeat(),
       firstCheck,
       makePlannerStatus(),
@@ -2580,7 +2561,7 @@ describe('buildConversationRowsProjection check lists', () => {
     ]);
 
     expect(materialize(projection).map(rowText)).toEqual([
-      'Reviewer checks · chose 4',
+      'End-of-run checks · none · the plan names no project gate',
       'Reviewer check V1 · node --test a.js · passed',
       'Reviewer check V2 · node --test a.js · passed',
       'Drift · clean',
@@ -2588,59 +2569,40 @@ describe('buildConversationRowsProjection check lists', () => {
     expect(projection.renderableCount).toBe(4);
   });
 
-  it.each(['off', 'skipped', 'planned'] as const)(
-    'joins drift after a header without commands: %s',
-    (status) => {
-      const projection = projectionFor([
-        { ...shortHeader, status, commands: [], reason: 'No checks needed.' },
-        drift,
-      ]);
-      const rows = materialize(projection);
+  it.each(['off', 'none'] as const)('joins drift after a header without commands: %s', (status) => {
+    const projection = projectionFor([{ ...header, status }, drift]);
+    const rows = materialize(projection);
 
-      expect(rows).toHaveLength(2);
-      expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
-      if (status === 'planned') {
-        expect(
-          rows[0]?.segments
-            .filter((segment) => segment.text !== 'Reviewer')
-            .every((segment) => segment.tone === 'textDim'),
-        ).toBe(true);
-      } else {
-        const state = status === 'off' ? 'off' : 'not\u00a0run';
-        expect(rows[0]?.segments).toContainEqual({ text: state, tone: 'warning' });
-        expect(
-          rows[0]?.segments
-            .filter((segment) => segment.text !== 'Reviewer' && segment.text !== state)
-            .every((segment) => segment.tone === 'textDim'),
-        ).toBe(true);
-      }
-      expect(rows.at(-1)).toMatchObject({
-        segments: [
-          { text: 'Drift', tone: 'text' },
-          { text: ' · ', tone: 'textDim' },
-          { text: 'clean', tone: 'success' },
-        ],
-      });
-      expect(projection.renderableCount).toBe(2);
-    },
-  );
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
+    expect(rows[0]?.segments).toContainEqual({ text: status, tone: 'warning' });
+    expect(
+      rows[0]?.segments
+        .filter((segment) => segment.text !== 'Reviewer' && segment.text !== status)
+        .every((segment) => segment.tone === 'textDim'),
+    ).toBe(true);
+    expect(rows.at(-1)).toMatchObject({
+      segments: [
+        { text: 'Drift', tone: 'text' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'clean', tone: 'success' },
+      ],
+    });
+    expect(projection.renderableCount).toBe(2);
+  });
 
   it.each([60, 80, 120])(
     'materializes compact lists across wrapped row windows at %s columns',
     (cols) => {
       const projection = projectionFor(
         [
+          header,
           {
-            ...header,
-            declined: [
-              {
-                target: 'npm run test:e2e',
-                reason:
-                  'This command needs a browser and a running server. The change only touches the loan calculations, so the reviewer chose the unit tests that check those calculations.',
-              },
-            ],
+            ...firstCheck,
+            status: 'refused',
+            detail:
+              'This command needs a browser and a running server. The change only touches the loan calculations, so the plan names the unit tests that check those calculations.',
           },
-          firstCheck,
           {
             ...secondCheck,
             status: 'not-run',
@@ -2705,10 +2667,10 @@ describe('buildConversationRowsProjection check lists', () => {
     { name: 'task header', event: makeTaskStart() },
   ])('keeps spacers around a $name between checks', ({ event }) => {
     const boundaryRows = materialize(projectionFor([event]));
-    const rows = materialize(projectionFor([shortHeader, firstCheck, event, secondCheck, drift]));
+    const rows = materialize(projectionFor([header, firstCheck, event, secondCheck, drift]));
 
     expect(rows.map(rowText)).toEqual([
-      'Reviewer checks · chose 4',
+      'End-of-run checks · none · the plan names no project gate',
       'Reviewer check V1 · node --test a.js · passed',
       '',
       ...boundaryRows.map(rowText),
@@ -2720,15 +2682,13 @@ describe('buildConversationRowsProjection check lists', () => {
   });
 
   it('keeps a spacer before a second review_checks header', () => {
-    const rows = materialize(
-      projectionFor([shortHeader, firstCheck, shortHeader, secondCheck, drift]),
-    );
+    const rows = materialize(projectionFor([header, firstCheck, header, secondCheck, drift]));
 
     expect(rows.map(rowText)).toEqual([
-      'Reviewer checks · chose 4',
+      'End-of-run checks · none · the plan names no project gate',
       'Reviewer check V1 · node --test a.js · passed',
       '',
-      'Reviewer checks · chose 4',
+      'End-of-run checks · none · the plan names no project gate',
       'Reviewer check V2 · node --test a.js · passed',
       'Drift · clean',
     ]);
@@ -2751,7 +2711,7 @@ describe('buildConversationRowsProjection check lists', () => {
   it('keeps one spacer at each settled section boundary and none inside check lists', () => {
     const projection = buildConversationRowsProjection({
       sections: [
-        { type: 'events', startIndex: 0, items: [shortHeader, firstCheck] },
+        { type: 'events', startIndex: 0, items: [header, firstCheck] },
         {
           type: 'settled-stage',
           startIndex: 2,

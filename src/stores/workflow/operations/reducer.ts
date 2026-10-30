@@ -223,11 +223,10 @@ function updateRunningOperations(state: OperationsState, event: EngineEvent): Op
     case 'review_started':
     case 'review_completed':
       return updateStatusFallback(state, event);
-    case 'review_step':
-    case 'review_checks': {
+    case 'review_step': {
       const review = state.reviewStage;
       if (review === undefined || review === null) return state;
-      const reviewStep = event.type === 'review_step' ? event.step : 'verdict';
+      const reviewStep = event.step;
       // The stage's clock is its step's: a new step starts the clock its label reads beside.
       const reviewStage =
         review.reviewStep === reviewStep ? review : { ...review, reviewStep, startedAt: event.ts };

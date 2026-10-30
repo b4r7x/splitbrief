@@ -52,7 +52,7 @@ describe('settingsHelpLines', () => {
 
   it('reads a boolean row straight off its definition', () => {
     expect(linesFor('validation.endChecks')).toEqual([
-      { text: 'The reviewer chooses reviewer checks that verify the change; SPLITBRIEF runs them' },
+      { text: 'SPLITBRIEF runs the project gate the plan names before the final review' },
     ]);
   });
 

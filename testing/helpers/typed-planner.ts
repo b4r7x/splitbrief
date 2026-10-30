@@ -3,11 +3,7 @@ import { vi, type Mock } from 'vitest';
 import type { PlanProposal, PlanResult } from '../../src/core/schemas/plan.js';
 import type { ClarificationQuestion } from '../../src/core/schemas/question.js';
 import type { ConsultAnswer } from '../../src/core/schemas/consult.js';
-import type {
-  ReviewAnswer,
-  ReviewChecksPlan,
-  ReviewVerdict,
-} from '../../src/core/schemas/review.js';
+import type { ReviewAnswer, ReviewVerdict } from '../../src/core/schemas/review.js';
 import type { ReviewScope } from '../../src/core/review/verdict.js';
 import { taskId, type Task } from '../../src/core/schemas/task.js';
 import type {
@@ -35,33 +31,14 @@ function isReviewCall(input: TypedInvokeInput): boolean {
   return input.schema?.name === 'review_answer' || isReviewPrompt(input.prompt);
 }
 
-/** The plan call the reviewer seat answers before a review's verdict. */
-function isReviewChecksCall(input: TypedInvokeInput): boolean {
-  return input.schema?.name === 'review_checks';
-}
-
-/** The plan-call answer a fake reviewer gives when a test scripts none: no command, and why. */
-export const NO_REVIEW_CHECKS: ReviewChecksPlan = {
-  commands: [],
-  declined: [],
-  reason: 'The fake reviewer chooses no command for this test.',
-};
-
 /**
- * What a fake reviewer answers to a review-seat call the test does not script: the plan call
- * gets `NO_REVIEW_CHECKS`, the verdict a passing one. Any other call is the caller's.
+ * What a fake reviewer answers to a review call the test does not script: a passing verdict.
+ * Any other call is the caller's.
  */
 function unscriptedReviewAnswer(
   input: TypedInvokeInput,
   usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
 ): RunnerCallResult | null {
-  if (isReviewChecksCall(input)) {
-    return makeRunnerCallResult({
-      status: 'completed',
-      text: JSON.stringify(NO_REVIEW_CHECKS),
-      usage: usage ?? null,
-    });
-  }
   if (!isReviewCall(input)) return null;
   return makeRunnerCallResult({
     status: 'completed',
@@ -232,6 +209,7 @@ export function planFromTasks(tasks: readonly Task[]): PlanProposal {
       { id: 'C1', text: 'The briefs are built', checkIds: firstCheck ? [firstCheck] : [] },
     ],
     checks: [],
+    gate: [],
     validation: null,
     tasks: specs,
   };
@@ -294,8 +272,6 @@ export function typedCallPlanAndReview(
         review?: Readonly<{ inputTokens: number; outputTokens: number }>;
       }>
     | undefined,
-  /** The plan-call answer the reviewer gives before each verdict; no command by default. */
-  checks?: ((prompt: string) => ReviewChecksPlan) | undefined,
   /** The answer to a consult call, recognized by the consult prompt's title. */
   consult?: ((prompt: string) => ConsultAnswer) | undefined,
 ): Mock<Planner['typedCall']> {
@@ -305,13 +281,6 @@ export function typedCallPlanAndReview(
     typedOutput: mockTypedOutput(ctx.seat),
     canResume: false,
     invoke: async ({ prompt, schema }: TypedInvokeInput) => {
-      if (isReviewChecksCall({ prompt, schema })) {
-        return makeRunnerCallResult({
-          status: 'completed',
-          text: JSON.stringify(checks?.(prompt) ?? NO_REVIEW_CHECKS),
-          usage: usage?.review ?? null,
-        });
-      }
       if (!isReviewCall({ prompt, schema }))
         return makeRunnerCallResult({
           status: 'completed',

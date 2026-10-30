@@ -1638,7 +1638,6 @@ describe('runScheduledReview saved recovery', () => {
         return plainUserMessage('Keep the API');
       }),
     }).callbacks;
-    const checks = vi.fn(() => ({ commands: [], declined: [], reason: 'No command is needed.' }));
     const planner = makePlanner({
       typedCall: typedCallPlanAndReview(
         () => planFromTasks(state.tasks),
@@ -1650,8 +1649,6 @@ describe('runScheduledReview saved recovery', () => {
             rejected: [{ findingId: 'A1', reason: 'The answer keeps the approved API' }],
           };
         },
-        undefined,
-        checks,
       ),
     });
     const result = await runScheduledReview({
@@ -1667,7 +1664,6 @@ describe('runScheduledReview saved recovery', () => {
     });
     expect(result.status).toBe('continue');
     expect(callbacks.onPlannerReply).toHaveBeenCalledOnce();
-    expect(checks).not.toHaveBeenCalled();
     expect(result.state.pendingTriage).toBeUndefined();
   });
 
@@ -1721,14 +1717,13 @@ describe('runScheduledReview saved recovery', () => {
     ]);
   });
 
-  it('re-reviews an answer without another reviewer-checks plan call', async () => {
+  it('re-reviews with the user answer to the review question', async () => {
     const ref = setupProject();
     const state = scheduledReviewState();
     saveState(ref, state);
     const callbacks = makeCallbacks({
       onPlannerReply: vi.fn(async () => plainUserMessage('Keep the API')),
     }).callbacks;
-    const checks = vi.fn(() => ({ commands: [], declined: [], reason: 'No command is needed.' }));
     const reviewPrompts: string[] = [];
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
@@ -1746,8 +1741,6 @@ describe('runScheduledReview saved recovery', () => {
                 rejected: [{ findingId: 'A1', reason: 'The answer keeps the approved API' }],
               };
         },
-        undefined,
-        checks,
       ),
     });
     const result = await runScheduledReview({
@@ -1765,7 +1758,6 @@ describe('runScheduledReview saved recovery', () => {
     expect(result.status).toBe('continue');
     expect(reviewPrompts).toHaveLength(2);
     expect(reviewPrompts[1]).toContain('Keep the API');
-    expect(checks).toHaveBeenCalledOnce();
     expect(callbacks.onPlannerReply).toHaveBeenCalledOnce();
     expect(result.state.pendingTriage).toBeUndefined();
     expect(result.state.pendingScheduledReview).toBeUndefined();
@@ -1773,7 +1765,6 @@ describe('runScheduledReview saved recovery', () => {
       events.filter((event) => event.type === 'review_completed' && event.setAside !== undefined),
     ).toEqual([]);
     expect(events.filter((event) => event.type === 'review_step')).toEqual([
-      expect.objectContaining({ step: 'choosing-checks' }),
       expect.objectContaining({ step: 'verdict' }),
       expect.objectContaining({ step: 'verify' }),
       expect.objectContaining({ step: 'verdict' }),
@@ -1885,7 +1876,6 @@ describe('runScheduledReview saved recovery', () => {
           };
         },
         undefined,
-        undefined,
         () => cannotFix,
       ),
     });
@@ -1963,7 +1953,6 @@ describe('runScheduledReview saved recovery', () => {
       typedCall: typedCallPlanAndReview(
         () => planFromTasks(state.tasks),
         (prompt) => failedReviewVerdict(prompt, 'Preserve the error', { taskId: 'T001' }),
-        undefined,
         undefined,
         () => ({ answer: { diagnosis: 'The next brief replaces it', action: 'accept', note } }),
       ),
@@ -2292,10 +2281,8 @@ describe('scheduled review steering', () => {
       expect(callbacks.onPlannerReply).toHaveBeenCalledOnce();
       const verdicts = calls.filter((call) => call.schemaName === 'review_answer');
       expect(verdicts).toHaveLength(2);
+      expect(calls).toHaveLength(2);
       for (const call of verdicts) expect(call.context.callbacks.steering).toBe(steering);
-      const helpers = calls.filter((call) => call.schemaName === 'review_checks');
-      expect(helpers).toHaveLength(1);
-      expect(helpers[0]?.context.callbacks).not.toHaveProperty('steering');
     },
   );
 });

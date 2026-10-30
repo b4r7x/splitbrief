@@ -65,13 +65,14 @@ const IMPLEMENTER_HOLD_MS = 180_000;
 const HOLD_EXIT_TIMEOUT_MS = 5_000;
 
 /** The planning session's one typed answer: a plan with the single greeting brief. */
-const PLAN_ANSWER = {
+export const PLAN_ANSWER = {
   result: {
     kind: 'plan',
     summary: 'Add a standalone greeting helper plus the run marker constant beside it.',
     decisions: [],
     criteria: [{ id: 'C1', text: 'greet returns a greeting', checkIds: ['T001-K1', 'T001-K2'] }],
     checks: [],
+    gate: [],
     validation: null,
     tasks: [
       {

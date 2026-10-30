@@ -101,6 +101,7 @@ const plan = makePlanProposal({
     { id: 'C1', text: 'Alpha is alpha and loud is ALPHA.', checkIds: ['T001-K1'] },
     { id: 'C2', text: 'Beta is the string beta.', checkIds: ['T002-K1'] },
   ],
+  gate: [CHECK_COMMAND],
   tasks: [alpha, beta],
 });
 const finding: ReviewAnswer['findings'][number] = {
@@ -115,11 +116,6 @@ const finding: ReviewAnswer['findings'][number] = {
   acceptance: 'The alpha spec passes.',
   checkIds: ['V1'],
 };
-const reviewChecks = {
-  commands: [{ id: 'V1', command: CHECK_COMMAND, reason: 'The project runs its specs with it.' }],
-  declined: [],
-  reason: null,
-};
 /** One line of the review prompt's Pending Inputs section per red reviewer check input. */
 const PENDING_INPUT = /^- \*\*(\S+)\*\* \(check · defect\)/gm;
 
@@ -128,7 +124,6 @@ type Call = {
   taskId?: string;
   taskIds?: string[];
   inputs?: string[];
-  required?: boolean;
   prompt?: string;
 };
 
@@ -167,10 +162,7 @@ const pendingInputs = () => {
 };
 let call;
 let answer;
-if (prompt.includes('# Choose the checks for this review')) {
-  call = { kind: 'checks', required: prompt.includes('## Commands a fix check ran') };
-  answer = ${JSON.stringify(reviewChecks)};
-} else if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final Implementation Review')) {
+if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final Implementation Review')) {
   const kind = prompt.includes('# Task Implementation Review') ? 'task-review' : 'final-review';
   const taskIds = ids('Task ids:');
   const criterionIds = ids('Criterion ids:');
@@ -243,7 +235,7 @@ console.log('Implemented ' + entry.task.id);
 `;
 }
 
-describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () => {
+describe('e2e: a failed final review creates fix tasks', { timeout: 300_000 }, () => {
   it('inserts a fix task carrying its failure keys, passes its gate on its own keys and applies the run', async () => {
     fixture = createStopContinueFixture(() => '', { isolation: 'worktree' });
     const target = fixture;
@@ -277,7 +269,6 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
       validation: {
         ...config.validation,
         endChecks: true,
-        approveChecks: 'auto',
         testCommand: 'node --test',
       },
     });
@@ -299,36 +290,26 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
     expect(calls.map((call) => call.kind)).toEqual([
       'plan',
       'implement',
-      'checks',
       'task-review',
       'implement',
-      'checks',
       'task-review',
+      'final-review',
       'implement',
-      'checks',
       'task-review',
-      'checks',
       'final-review',
     ]);
     expect(calls.filter((call) => call.kind === 'implement').map((call) => call.taskId)).toEqual([
       'T001',
-      'T003',
       'T002',
-    ]);
-    expect(calls.filter((call) => call.kind === 'checks').map((call) => call.required)).toEqual([
-      false,
-      true,
-      false,
-      false,
+      'T003',
     ]);
     const reviews = calls.filter((call) => call.kind.endsWith('review'));
-    expect(reviews[0]).toMatchObject({ taskIds: ['T001'], inputs: ['V1.1'] });
-    expect(reviews.slice(1).map((call) => call.inputs)).toEqual([[], [], []]);
+    expect(reviews.map((call) => call.inputs)).toEqual([[], [], ['V1.1'], [], []]);
     const fixBrief = calls.find((call) => call.kind === 'implement' && call.taskId === 'T003');
     expect(fixBrief?.prompt).toContain(`Command V1: ${CHECK_COMMAND}`);
     expect(fixBrief?.prompt).toContain('**V1.1**');
 
-    expect(ready.tasks.map((task) => task.id)).toEqual(['T001', 'T003', 'T002']);
+    expect(ready.tasks.map((task) => task.id)).toEqual(['T001', 'T002', 'T003']);
     expect(ready.tasks.every((task) => task.status === 'done')).toBe(true);
     expect(ready.tasks.filter((task) => task.fix !== undefined).map((task) => task.id)).toEqual([
       'T003',
@@ -362,14 +343,13 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
         result: { fixTasks: [{ id: 'T003', findingIds: ['F1', 'V1.1'] }], rejected: [] },
       },
     ]);
-    expect(ready.pendingReviewCommands).toBeUndefined();
 
     const replay = await readRunEvents({ projectDir: target.projectDir, sessionId });
     expect(replay.diagnostics.skipped).toBe(0);
     const events = replay.events;
     expect(
       events.filter((event) => event.type === 'task_started').map((event) => event.taskId),
-    ).toEqual(['T001', 'T003', 'T002']);
+    ).toEqual(['T001', 'T002', 'T003']);
     expect(events.filter((event) => event.type === 'review_fix_started')).toMatchObject([
       { cycle: 1, taskIds: ['T003'] },
     ]);
@@ -380,13 +360,14 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
           : [],
       ),
     ).toEqual([
-      { scope: 'task', afterTaskId: 'T001', verdict: 'fail' },
-      { scope: 'task', afterTaskId: 'T003', verdict: 'pass' },
+      { scope: 'task', afterTaskId: 'T001', verdict: 'pass' },
       { scope: 'task', afterTaskId: 'T002', verdict: 'pass' },
+      { scope: 'final', afterTaskId: undefined, verdict: 'fail' },
+      { scope: 'task', afterTaskId: 'T003', verdict: 'pass' },
       { scope: 'final', afterTaskId: undefined, verdict: 'pass' },
     ]);
     expect(
-      events.find((event) => event.type === 'review_completed' && event.afterTaskId === 'T001'),
+      events.find((event) => event.type === 'review_completed' && event.scope === 'final'),
     ).toMatchObject({ findings: { blocking: 2, minor: 0 } });
 
     const reviewCheckRows = events.flatMap((event) =>
@@ -405,17 +386,12 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
           ]
         : [],
     );
-    const laterReview = [
-      { moment: 'pre-review', passed: false },
-      { moment: 'base', passed: false, newFailures: 0, preExisting: 1 },
-    ];
     expect(reviewCheckRows).toMatchObject([
       { moment: 'pre-review', passed: false },
       { moment: 'base', passed: false, newFailures: 1, preExisting: 1 },
       { moment: 'brief', passed: true, own: 1, ownLeft: 0, deferred: 0, others: 1 },
-      ...laterReview,
-      ...laterReview,
-      ...laterReview,
+      { moment: 'pre-review', passed: false },
+      { moment: 'base', passed: false, newFailures: 0, preExisting: 1 },
     ]);
 
     const fixGate = events.find((event) => event.type === 'checks_run' && event.taskId === 'T003');

@@ -13,11 +13,8 @@ import { taskId } from '../../core/schemas/task.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
-import type {
-  ReviewChecksRecord,
-  ReviewRecord,
-  WorkflowState,
-} from '../../core/schemas/workflow.js';
+import type { Plan } from '../../core/schemas/plan.js';
+import type { ReviewRecord, WorkflowState } from '../../core/schemas/workflow.js';
 import {
   applyTriage,
   fixTaskTargetErrors,
@@ -74,6 +71,17 @@ function reviewRecord(): ReviewRecord {
   };
 }
 
+const TRIAGE_PLAN: Plan = {
+  summary: 'Greet people by name',
+  decisions: [{ text: 'Keep the greeting in one shared module', taskId: null }],
+  criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] }],
+  checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+  validation: null,
+};
+
+/** The triage plan with a project gate: V1 `node --version`, V2 `npm test`. */
+const GATE_PLAN: Plan = { ...TRIAGE_PLAN, gate: ['node --version', 'npm test'] };
+
 function triageState(): WorkflowState {
   return {
     ...transition(createInitialState('Greet people'), { type: 'START' }),
@@ -81,30 +89,10 @@ function triageState(): WorkflowState {
     tasks: [makeTask({ id: 'T001', status: 'done', batch: 1 })],
     currentTaskIndex: 1,
     fixCycles: { used: 0, notes: [] },
-    plan: {
-      summary: 'Greet people by name',
-      decisions: [{ text: 'Keep the greeting in one shared module', taskId: null }],
-      criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] }],
-      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
-      validation: null,
-    },
+    plan: TRIAGE_PLAN,
     review: reviewRecord(),
   };
 }
-
-const REVIEW_CHECKS: ReviewChecksRecord = {
-  scope: 'final',
-  cycle: 0,
-  plan: {
-    commands: [
-      { id: 'V1', command: 'node --version', reason: 'the runtime answers' },
-      { id: 'V2', command: 'npm test', reason: 'the tests pass' },
-    ],
-    declined: [],
-    reason: null,
-  },
-  at: '2026-10-04T09:00:00.000Z',
-};
 
 const VERIFY_V1: TriageResult = {
   fixTasks: [],
@@ -357,7 +345,7 @@ describe('triageContractErrors', () => {
   });
 
   it('refuses a fix for a verdict finding that names an unknown reviewer check', () => {
-    const reviewChecks = enabledReviewChecks(makeConfig({}), REVIEW_CHECKS);
+    const reviewChecks = enabledReviewChecks(makeConfig({}), GATE_PLAN);
     expect(
       triageContractErrors(
         fixResult(),
@@ -373,8 +361,8 @@ describe('triageContractErrors', () => {
 
   it('accepts a verify naming a reviewer check only while End-of-run checks are on', () => {
     const tasks = triageState().tasks;
-    const on = enabledReviewChecks(makeConfig({}), REVIEW_CHECKS);
-    const off = enabledReviewChecks(makeConfig({ endChecks: false }), REVIEW_CHECKS);
+    const on = enabledReviewChecks(makeConfig({}), GATE_PLAN);
+    const off = enabledReviewChecks(makeConfig({ endChecks: false }), GATE_PLAN);
 
     expect(triageContractErrors(VERIFY_V1, plan, findings, [], tasks, on, FINAL_SCOPE)).toEqual([]);
     for (const reviewChecks of [undefined, off]) {
@@ -487,7 +475,7 @@ describe('review fix work', () => {
         bus: makeBusRecorder().bus,
         runCommand,
       },
-      { ...triageState(), reviewChecks: REVIEW_CHECKS },
+      { ...triageState(), plan: GATE_PLAN },
       { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['V2'] }], ask: null },
       [],
       new Date().toISOString(),
@@ -518,7 +506,7 @@ describe('review fix work', () => {
           bus: makeBusRecorder().bus,
           runCommand: makeCommandRunner(result),
         },
-        { ...triageState(), reviewChecks: REVIEW_CHECKS },
+        { ...triageState(), plan: GATE_PLAN },
         { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['V2'] }], ask: null },
         preExistingChecks,
         new Date().toISOString(),
@@ -585,7 +573,7 @@ describe('review fix work', () => {
         bus: recorder.bus,
         runCommand: makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 }),
       },
-      { ...triageState(), reviewChecks: REVIEW_CHECKS },
+      { ...triageState(), plan: GATE_PLAN },
       {
         fixTasks: [],
         rejected: [],
@@ -614,7 +602,7 @@ describe('review fix work', () => {
 
   it('runs a reviewer check a verify names only while End-of-run checks are on', async () => {
     const ref = setupProject(dirs);
-    const state = { ...triageState(), reviewChecks: REVIEW_CHECKS };
+    const state = { ...triageState(), plan: GATE_PLAN };
     const verify = async (endChecks: boolean) => {
       const runCommand = makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 });
       const verification = await runTriageVerification(
@@ -691,7 +679,7 @@ describe('review fix work', () => {
       const review = reviewRecord();
       const state: WorkflowState = {
         ...base,
-        reviewChecks: REVIEW_CHECKS,
+        plan: GATE_PLAN,
         review: {
           ...review,
           verdict: { ...review.verdict, findings: [{ ...FAILING_FINDING, checkIds }] },
@@ -798,7 +786,7 @@ describe('review fix work', () => {
     const review = reviewRecord();
     const state: WorkflowState = {
       ...base,
-      reviewChecks: REVIEW_CHECKS,
+      plan: GATE_PLAN,
       review: {
         ...review,
         verdict: { ...review.verdict, findings: [{ ...FAILING_FINDING, checkIds: ['V1', 'K1'] }] },

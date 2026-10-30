@@ -34,11 +34,8 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type {
-  ReviewChecksPlan,
-  ReviewVerdict,
-  TriageResult,
-} from '../../../core/schemas/review.js';
+import type { Plan } from '../../../core/schemas/plan.js';
+import type { ReviewVerdict, TriageResult } from '../../../core/schemas/review.js';
 import { taskId, type Check, type Task } from '../../../core/schemas/task.js';
 import type { BoundaryPark, OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import type { Validator } from '../validation/types.js';
@@ -137,6 +134,10 @@ function reviewedState(tasks: Task[], head: string, currentTaskIndex: number): W
   };
 }
 
+function gatePlan(gate: string[]): Plan {
+  return { summary: 'Plan', decisions: [], criteria: [], checks: [], gate, validation: null };
+}
+
 /** A run re-entered at an unfinished final review, carrying the cycles already spent. */
 function resumedReviewState(tasks: Task[], head: string, cycle: number): WorkflowState {
   return {
@@ -183,7 +184,6 @@ function runOptions(opts: {
   review: ReviewVerdict | ((prompt: string, call: number) => ReviewVerdict);
   /** The triage answer; the default rejects every blocking finding. */
   triage?: ((prompt: string, call: number) => TriageResult | string) | undefined;
-  checks?: ((prompt: string) => ReviewChecksPlan) | undefined;
   /** The planner's answer on a review without progress; the default says it cannot fix it. */
   consult?: ((prompt: string) => ConsultAnswer) | undefined;
   onComplete: () => void;
@@ -215,7 +215,6 @@ function runOptions(opts: {
         return typeof fixWork === 'string' ? fixWork : { ...verdict, ...fixWork };
       },
       undefined,
-      opts.checks,
       opts.consult ?? (() => cannotConsult()),
     ),
   });
@@ -759,23 +758,13 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
         return { success: true, output: 'code' };
       }),
     });
-    const planPrompts: string[] = [];
+    const state = reviewedState(tasks, head, 0);
     const { options, reviewPrompts, events } = runOptions({
       projectDir,
       sessionId,
-      state: reviewedState(tasks, head, 0),
+      state: { ...state, plan: gatePlan(['make test']) },
       config: makeNoValidationConfig({ validation: { endChecks: true } }),
       implementer,
-      checks: (prompt) => {
-        planPrompts.push(prompt);
-        if (planPrompts.length === 2)
-          return { commands: [], declined: [], reason: 'nothing to check' };
-        return {
-          commands: [{ id: 'V1', command: 'make test', reason: 'Verifies the widget.' }],
-          declined: [],
-          reason: null,
-        };
-      },
       review: (prompt) => passingReviewVerdict(prompt),
       triage: (_prompt, call) => {
         if (stopBeforeVerdict && (call === 2 || call === 3)) return '{}';
@@ -818,8 +807,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           seat: 'review',
         });
         expect(result.state.review?.cycle).toBe(0);
-        expect(result.state.pendingReviewCommands).toEqual(['make test']);
-        expect(loadState({ projectDir, sessionId })?.pendingReviewCommands).toEqual(['make test']);
         expect(result.state.pendingTriage?.inputs).toContainEqual(
           expect.objectContaining({
             command: 'make test',
@@ -836,13 +823,8 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
         expect(corrected.ok).toBe(true);
         if (!corrected.ok) throw new Error(corrected.message);
         result = await runTasksAndReview({ ...options, state: corrected.state });
-        expect(planPrompts[3]).toContain('## Commands a fix check ran\n\n- `make test`');
       }
 
-      expect(planPrompts).toHaveLength(stopBeforeVerdict ? 4 : 3);
-      expect(planPrompts[0]).not.toContain('## Commands a fix check ran');
-      expect(planPrompts[1]).toContain('## Commands a fix check ran\n\n- `make test`');
-      expect(planPrompts[2]).toContain('choose `make test` among the first 1 commands');
       expect(reviewPrompts).toHaveLength(stopBeforeVerdict ? 4 : 2);
       const pending = reviewPrompts.at(-1)?.split('## Pending Inputs\n')[1]?.split('\n## ')[0];
       expect(pending).toContain('**V1.1** (check · defect)');
@@ -851,8 +833,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       expect(pending).not.toContain('src/b.ts(1,1): error B');
       expect(pending).not.toContain('Output tail:');
       expect(result.state.review?.cycle).toBe(1);
-      expect(result.state.pendingReviewCommands ?? []).toEqual([]);
-      expect(loadState({ projectDir, sessionId })?.pendingReviewCommands ?? []).toEqual([]);
       expect(result.state.tasks[1]).toMatchObject({
         id: 'T002',
         status: 'done',
@@ -902,6 +882,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       });
       const state: WorkflowState = {
         ...resumedReviewState([task], head, 1),
+        plan: gatePlan(['node --version']),
         review: {
           scope,
           cycle,
@@ -931,20 +912,11 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
         if (cmd === 'tsc') throw processError.exitCode({ command, code: 2, stderr: '', output });
         return { stdout: 'ok', stderr: '', code: 0 };
       });
-      const checkPrompts: string[] = [];
-      const { options, reviewPrompts } = runOptions({
+      const { options, reviewPrompts, events } = runOptions({
         projectDir,
         sessionId,
         state,
         config: makeNoValidationConfig({ validation: { endChecks: true } }),
-        checks: (prompt) => {
-          checkPrompts.push(prompt);
-          return {
-            commands: [{ id: 'V1', command: 'node --version', reason: 'Checks the runtime.' }],
-            declined: [],
-            reason: null,
-          };
-        },
         review: (prompt) => passingReviewVerdict(prompt),
         triage: () => ({
           fixTasks: [],
@@ -957,13 +929,14 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
       const result = await runTasksAndReview(options);
 
-      expect(checkPrompts).toHaveLength(1);
       expect(commands).toEqual(['tsc --noEmit', 'node --version']);
       expect(reviewPrompts).toHaveLength(1);
       expect(reviewPrompts[0]).toContain(output);
       expect(reviewPrompts[0]).toContain('**P1** (check · defect)');
       expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'K1', status: 'fail' });
-      expect(result.state.reviewChecks).toMatchObject({ scope: 'final', cycle: 1 });
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: 'full_suite', id: 'V1', command: 'node --version' }),
+      );
     },
   );
 
@@ -1976,7 +1949,6 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         cycle: 0,
         answer: passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: [] }),
         preExistingChecks: [],
-        discharged: [],
         at: '2026-10-28T10:00:00.000Z',
       },
     };

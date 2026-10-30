@@ -605,8 +605,7 @@ describe('runner call stall', () => {
       type: 'review_checks',
       ts: 5_000,
       phase: 'final-review',
-      scope: 'final',
-      status: 'planned',
+      status: 'none',
     });
     expect(lifecycleStore.get().lastRunnerEventTs).toBe(5_000);
 
@@ -674,8 +673,7 @@ describe('runner call stall', () => {
       type: 'review_checks',
       ts: 5_000,
       phase: 'final-review',
-      scope: 'final',
-      status: 'planned',
+      status: 'none',
     });
     expect(lifecycleStore.get().lastRunnerEventTs).toBe(5_000);
   });

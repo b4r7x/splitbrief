@@ -70,12 +70,24 @@ const PlanValidationSchema = z.object({
     ),
 });
 
+/** The most commands a project gate holds. */
+export const MAX_GATE_COMMANDS = 6;
+
+/** The commands the project itself verifies a change with; SPLITBRIEF runs them before the final review. */
+const PlanGateSchema = z
+  .array(z.string().min(1))
+  .max(MAX_GATE_COMMANDS)
+  .describe(
+    "The project's own gate: the commands its scripts or CI run to verify a change, in the order they run. Empty when the project has none.",
+  );
+
 export const PlanProposalSchema = z.object({
   kind: z.literal('plan'),
   summary: z.string(),
   decisions: z.array(z.string()),
   criteria: z.array(CriterionSchema),
   checks: z.array(CheckSchema),
+  gate: PlanGateSchema,
   validation: PlanValidationSchema.nullable(),
   tasks: z.array(TaskSpecSchema),
 });
@@ -109,6 +121,8 @@ export const PlanSchema = z.object({
   decisions: z.array(PlanDecisionEntrySchema),
   criteria: PlanProposalSchema.shape.criteria,
   checks: PlanProposalSchema.shape.checks,
+  /** A plan saved before the plan named the project gate has none. */
+  gate: PlanGateSchema.optional(),
   validation: PlanProposalSchema.shape.validation,
 });
 export type Plan = z.infer<typeof PlanSchema>;

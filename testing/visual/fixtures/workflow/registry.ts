@@ -604,7 +604,6 @@ const checkpointPredicates = [
   ],
   [checkpointId('recovery-resolved-apply-retry'), includesAll('Run continued')],
   [checkpointId('review-fix'), includesAll()],
-  [checkpointId('review-choosing-checks'), includesAll()],
   [
     checkpointId('review-after-pause'),
     (context) => {
@@ -1210,8 +1209,6 @@ const checkpointPredicates = [
     ),
   ],
   [checkpointId('review-check-long-command'), includesAll('Reviewer check V2 · npx vitest')],
-  [checkpointId('review-checks-approve'), includesAll('Run all', 'Skip all', 'V1')],
-  [checkpointId('review-checks-skipped'), includesAll('not\u00a0run V1, V2')],
   [checkpointId('review-legacy-suite'), includesAll('Pre-review suite · npm test')],
   // The red check row scrolls out of a 60x18 transcript; the last check that did not run stays.
   [

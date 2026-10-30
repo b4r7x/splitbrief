@@ -18,7 +18,6 @@ import {
   guidanceConsult,
   passingReviewVerdict,
   planFromTasks,
-  NO_REVIEW_CHECKS,
 } from '#testing/helpers/typed-planner.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import {
@@ -181,17 +180,7 @@ async function runSteeredWorkflow(opts: { outcome: SteerOutcome; retryToConsult?
       seat: ctx.seat,
       typedOutput: 'strict-native' as const,
       canResume: false,
-      invoke: async ({
-        prompt,
-        schema,
-      }: Parameters<ReturnType<typeof planner.typedCall>['invoke']>[0]) => {
-        if (schema?.name === 'review_checks') {
-          helperContexts.push(ctx);
-          return makeRunnerCallResult({
-            status: 'completed',
-            text: JSON.stringify(NO_REVIEW_CHECKS),
-          });
-        }
+      invoke: async ({ prompt }: Parameters<ReturnType<typeof planner.typedCall>['invoke']>[0]) => {
         await foreground({
           steering: ctx.callbacks.steering,
           role: 'review',

@@ -184,8 +184,13 @@ const RETIRED_CONFIG_VALUES: readonly {
     ] as const
   ).map(([key, name]) => ({
     path: ['validation', key] as const,
-    notice: `validation.${name} was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.${name}.`,
+    notice: `validation.${name} was retired and is ignored: the plan names the project gate, and validation.end_checks turns it on or off. Delete validation.${name}.`,
   })),
+  {
+    path: ['validation', 'approveChecks'],
+    notice:
+      'validation.approve_checks was retired and is ignored: the plan names the project gate, and the plan card shows it. Delete validation.approve_checks.',
+  },
   {
     path: ['escalation'],
     notice:

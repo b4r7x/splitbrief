@@ -201,6 +201,24 @@ describe('loadState', () => {
     expect(readFileSync(statePath, 'utf-8')).toBe(snapshot);
   });
 
+  it('loads an old snapshot with the reviewer-chosen checks and pending commands, and drops them', () => {
+    const dir = makeTmp();
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(stateDir, { recursive: true });
+    const current = createInitialState('old-review-checks');
+    const legacy = {
+      ...current,
+      reviewChecks: {
+        scope: 'final',
+        plan: { commands: [{ id: 'V1', command: 'npm test', reason: 'runs the tests' }] },
+      },
+      pendingReviewCommands: ['npm test'],
+    };
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(legacy));
+
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toEqual(current);
+  });
+
   it('loads an old snapshot with planner-call and consult allowances, and drops them', () => {
     const dir = makeTmp();
     const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);

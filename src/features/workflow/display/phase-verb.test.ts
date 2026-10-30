@@ -40,33 +40,33 @@ it.each(['live', 'transcript'] as const)(
   },
 );
 
-it.each([
-  ['choosing-checks', 'choosing checks'],
-  ['verify', 'verifying findings'],
-] as const)('keeps the review identity separate from the %s suffix', (step, words) => {
-  resetWorkflow();
-  addEvent({
-    type: 'review_started',
-    ts: 1_000,
-    phase: 'final-review',
-    scope: 'final',
-    tool: 'codex',
-  });
-  addEvent({ type: 'review_step', ts: 1_000, phase: 'final-review', step });
-  const operation = operationsStore.get().active;
-  expect(reviewActivityParts(operation, 'codex · gpt-5')).toEqual({
-    prefix: [
-      { text: 'Review', tone: 'reviewer' },
-      { text: ' · ', tone: 'textDim' },
-    ],
-    identity: { text: 'codex · gpt-5', tone: 'reviewer' },
-    suffix: [
-      { text: ' · ', tone: 'textDim' },
-      { text: words, tone: 'textDim' },
-    ],
-  });
-  resetWorkflow();
-});
+it.each([['verify', 'verifying findings']] as const)(
+  'keeps the review identity separate from the %s suffix',
+  (step, words) => {
+    resetWorkflow();
+    addEvent({
+      type: 'review_started',
+      ts: 1_000,
+      phase: 'final-review',
+      scope: 'final',
+      tool: 'codex',
+    });
+    addEvent({ type: 'review_step', ts: 1_000, phase: 'final-review', step });
+    const operation = operationsStore.get().active;
+    expect(reviewActivityParts(operation, 'codex · gpt-5')).toEqual({
+      prefix: [
+        { text: 'Review', tone: 'reviewer' },
+        { text: ' · ', tone: 'textDim' },
+      ],
+      identity: { text: 'codex · gpt-5', tone: 'reviewer' },
+      suffix: [
+        { text: ' · ', tone: 'textDim' },
+        { text: words, tone: 'textDim' },
+      ],
+    });
+    resetWorkflow();
+  },
+);
 
 it('says the reviewer answers again on the call after a refused answer', () => {
   resetWorkflow();

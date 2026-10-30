@@ -280,7 +280,6 @@ async function review(opts: {
         return reply(prompt);
       },
       undefined,
-      undefined,
       () => cannotConsult(),
     ),
   });

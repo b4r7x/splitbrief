@@ -267,9 +267,11 @@ describe('skill-blocks', () => {
     expect(preamble).toContain('render checks are unavailable');
   });
 
-  it('states the reviewer-check rules: plan call, stop rule, base re-run and refusal scope', () => {
+  it('states the reviewer-check rules: project gate, stop rule, base re-run and refusal scope', () => {
     const rules = renderBlock('gate-rules') ?? '';
-    expect(rules).toContain('A failed plan call halts the review');
+    expect(rules).toContain('The plan names the project gate: at most 6 commands');
+    expect(rules).toContain('run the project gate before the final review');
+    expect(rules).not.toContain('plan call');
     expect(rules).toContain('a plan or task check is never refused for that');
     expect(rules).toContain(
       'Plan checks, task checks and the Apply re-check never re-run at the run base',
@@ -282,8 +284,7 @@ describe('skill-blocks', () => {
     const rules = renderBlock('gate-rules') ?? '';
     expect(rules).toContain('With an incomplete capture, the fix command must pass');
     expect(rules).toContain('`not run: <id> failed`');
-    expect(rules).toContain('Makefile or justfile, CI configuration and README');
-    expect(rules).toContain('If it chooses no reviewer check, record its reason');
+    expect(rules).toContain('When the plan names no project gate, no reviewer check runs');
     expect(rules).toContain('`mvn test`, `bundle exec rspec` or `make check`');
     expect(rules).toContain('an environment prefix');
     expect(rules).toContain('`npm ci`, `pip install`, `go generate`');

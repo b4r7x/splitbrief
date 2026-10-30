@@ -116,7 +116,7 @@ The full union has many variants, but the pattern is consistent: every event is 
 
 Task reviews carry `afterTaskId`, the completed brief that scheduled the review. Final reviews omit it. A completion carries the derived verdict and `duration` in milliseconds. `findings` counts blocking and minor findings only when a verdict exists. A failed call records `no-verdict`; a stop records `stopped`. Neither outcome carries findings.
 
-`review_step` names the engine's current step: `choosing-checks`, `verdict` or `verify` (the reviewer answered; its findings are verified). A review after an answered question starts at `verdict`. The stores carry the recorded step into each review call and the gaps between calls.
+`review_step` names the engine's current step: `verdict` or `verify` (the reviewer answered; its findings are verified). A review after an answered question starts at `verdict`. The stores carry the recorded step into each review call and the gaps between calls.
 
 ### Runner call pipeline
 
@@ -193,10 +193,9 @@ Two separate communication mechanisms serve different purposes.
 - `onPlannerReply(reply)` — the planner asked a round of typed questions; the session waits for the answers
 - `onContinuationNeeded(partialResponse, at)` — a stop parked the run; `at` (`StepCut`) says whether it cut a call mid-step or landed on a boundary. The promise resolves with the operator's steer
 - `onTieredApproval(request)` — a declared implementer write to a protected path needs confirmation
-- `onReviewChecksApproval(request)` — with `validation.approve_checks: ask`, the reviewer checks wait for Run all (`'run'`) or Skip all (`'skip'`); `undefined` is a card closed without an answer
 - `onComplete(summary)` — workflow finished
 
-In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, the plan card is approved unattended (it confirms none of the plan's protected writes), planner questions stop the run with `input_required`, recovery exits non-zero, a protected write is denied with `APPROVAL_REQUIRED`, and with `validation.approve_checks: ask` no reviewer check runs (`review_checks` with `status: 'skipped'`).
+In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, the plan card is approved unattended (it confirms none of the plan's protected writes), planner questions stop the run with `input_required`, recovery exits non-zero, and a protected write is denied with `APPROVAL_REQUIRED`.
 
 The split exists because events and callbacks solve different problems. Events push state outward (anyone can listen). Callbacks pull decisions inward (the workflow needs an answer before it can proceed). Merging them would mean either every event blocks until consumed, or every callback becomes lossy.
 
@@ -463,16 +462,12 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // The pre_validation hook payload takes this shape without `stages`.
 // `stopped` is never published: the events store settles a running row that a stop cut.
 
-{ type: 'review_checks'; scope: 'final' | 'task'; status: 'planned' | 'off' | 'skipped';
-  commands?: { id: string; command: string; reason: string }[];
-  declined?: { target: string; reason: string }[];
-  reason?: string | null }
-// One per review that runs reviewer checks. `planned` carries the reviewer's choice:
-// the reviewer checks (ids V1, V2, …), each related test it declined, and the reason
-// when it chose none. `off` means validation.end_checks is false: no reviewer check
-// ran, and plan and task checks still ran. `skipped` follows `planned` when
-// validation.approve_checks is ask and none of the chosen commands ran: it carries
-// the commands and the reason (Skip all, a card closed without an answer, or no screen).
+{ type: 'review_checks'; status: 'off' | 'none' }
+// Why no reviewer check runs before a final review. `off` means validation.end_checks
+// is false; `none` means the plan names no project gate. Plan and task checks still ran.
+// A final review that runs the gate publishes none: each gate command (ids V1, V2, …)
+// gets its own `full_suite` rows. Rows of a session saved before the plan named the
+// gate (`planned`, `skipped`) drop on replay.
 
 { type: 'full_suite'; status: 'running' | 'done' | 'not-run' | 'refused' | 'stopped';
   id?: string; stage?: 'typecheck' | 'lint' | 'test'; command: string;

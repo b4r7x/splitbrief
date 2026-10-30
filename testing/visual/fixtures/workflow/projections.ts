@@ -67,11 +67,7 @@ import { commandCodeProtocolEvents } from '../../../../src/engine/runners/cli-to
 import { recordCliProtocolEvent } from '../../../../src/engine/runners/cli-tools/process-invoke.js';
 import { createCliTextForwarder } from '../../../../src/engine/runners/invoke-cli-adapter.js';
 import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt/prompt.js';
-import type {
-  ReviewChecksApprovalRequest,
-  TieredApprovalRequest,
-} from '../../../../src/core/approval/types.js';
-import { reviewChecksCardLayout } from '../../../../src/features/workflow/review-checks/options.js';
+import type { TieredApprovalRequest } from '../../../../src/core/approval/types.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
 import { type ScenarioId, scenarioId } from '../../contracts/identifiers.js';
 import { tasksCardProjection } from './artifact-card-projections.js';
@@ -255,8 +251,6 @@ export interface WorkflowFixtureProjection {
   readonly question?: FixtureQuestion;
   readonly questionPreview?: 'overflow-back' | 'write' | 'closed';
   readonly approval?: FixtureApproval;
-  /** The reviewer checks card, open on the commands the reviewer chose. */
-  readonly reviewChecksPrompt?: ReviewChecksApprovalRequest;
   readonly review?: FixtureReview;
   /** The artifact the document review panel names, when the projection opens that gate. */
   readonly reviewArtifact?: ReviewArtifact;
@@ -1401,41 +1395,25 @@ const buildReviewConsultProjection: WorkflowFixtureProjection = {
   },
 };
 
-const REVIEW_CHECK_TYPECHECK = {
-  id: 'V1',
-  command: 'npm run typecheck',
-  reason: 'The change edits exported types in src/shared.',
-} as const;
-const REVIEW_CHECK_TEST = {
-  id: 'V2',
-  command: 'npm test',
-  reason: 'The unit tests cover the formatter the change edits.',
-} as const;
-const REVIEW_CHECK_DECLINED = {
-  target: 'npm run test:e2e',
-  reason: 'It needs a browser, and the change touches no screen.',
-} as const;
+const REVIEW_CHECK_TYPECHECK = { id: 'V1', command: 'npm run typecheck' } as const;
+const REVIEW_CHECK_TEST = { id: 'V2', command: 'npm test' } as const;
 
 const DRIFT_REVIEW_CHECKS = [
   {
     id: 'V1',
     command: 'node --test test/loan.test.js',
-    reason: 'The loan tests cover the changed service.',
   },
   {
     id: 'V2',
     command: 'node --test test/renewals.test.js',
-    reason: 'The renewal tests cover the changed service.',
   },
   {
     id: 'V3',
     command: 'node --test test/member.test.js',
-    reason: 'The member tests cover the changed model.',
   },
   {
     id: 'V4',
     command: 'node --test test/services.test.js',
-    reason: 'The service tests cover the integration.',
   },
 ];
 
@@ -1564,20 +1542,6 @@ function finalReviewCompleted({
   };
 }
 
-/** The reviewer chose two commands and declined one test before the final review. */
-function reviewChecksPlanned(ts: number): EngineEvent {
-  return {
-    type: 'review_checks',
-    ts,
-    phase: 'final-review',
-    scope: 'final',
-    status: 'planned',
-    commands: [{ ...REVIEW_CHECK_TYPECHECK }, { ...REVIEW_CHECK_TEST }],
-    declined: [{ ...REVIEW_CHECK_DECLINED }],
-    reason: null,
-  };
-}
-
 /**
  * One reviewer check before the final review, its re-run at the run base, or a fix brief running it
  * again; `newFailures`, `preExisting` and `notVerified` split a red base re-run.
@@ -1645,7 +1609,6 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
       fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
     ]),
     finalReviewStarted(FIXED_TS + 900, CODEX_REVIEW_SEAT),
-    reviewChecksPlanned(FIXED_TS + 900),
     reviewCheck(FIXED_TS + 1_000, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
     reviewCheck(FIXED_TS + 2_000, REVIEW_CHECK_TEST, { status: 'done', passed: false }),
     reviewCheck(FIXED_TS + 3_000, REVIEW_CHECK_TEST, {
@@ -1711,7 +1674,6 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
       model: FIXED_RUNNER_MODEL,
     },
     finalReviewStarted(FIXED_TS + 4_900, CODEX_REVIEW_SEAT),
-    reviewChecksPlanned(FIXED_TS + 4_900),
     reviewCheck(FIXED_TS + 5_000, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
     reviewCheck(FIXED_TS + 7_000, REVIEW_CHECK_TEST, { status: 'running' }),
   ],
@@ -1802,7 +1764,6 @@ const applyRereviewProjection: WorkflowFixtureProjection = {
     },
     { type: 'workflow_resumed', ts: FIXED_TS + 8_000, phase: 'final-review', inProcess: true },
     finalReviewStarted(FIXED_TS + 8_100, CODEX_REVIEW_SEAT),
-    reviewChecksPlanned(FIXED_TS + 8_100),
     reviewCheck(FIXED_TS + 8_200, REVIEW_CHECK_TYPECHECK, { status: 'running' }),
   ],
 };
@@ -2004,16 +1965,7 @@ const finalReviewProjection: WorkflowFixtureProjection = {
     return [
       ...everyBriefPassed(),
       finalReviewStarted(FIXED_TS + 450, CODEX_REVIEW_SEAT),
-      {
-        type: 'review_checks',
-        ts: FIXED_TS + 450,
-        phase: 'final-review',
-        scope: 'final',
-        status: 'planned',
-        commands: [],
-        declined: [],
-        reason: 'The project has no test, build or lint command, and no CI config names one.',
-      },
+      { type: 'review_checks', ts: FIXED_TS + 450, phase: 'final-review', status: 'none' },
       {
         type: 'runner_call_started',
         ts: FIXED_TS + 520,
@@ -2128,7 +2080,6 @@ const reviewChecksOffProjection: WorkflowFixtureProjection = {
               type: 'review_checks',
               ts: event.ts,
               phase: event.phase,
-              scope: 'final',
               status: 'off',
             }
           : event,
@@ -2300,6 +2251,7 @@ const PLAN_CARD_PLAN = makePlanProposal({
     { id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] },
     { id: 'C2', text: 'The CLI prints the greeting', checkIds: ['K2'] },
   ],
+  gate: ['npm run typecheck', 'npm test'],
   tasks: [
     makeTaskSpec(),
     makeTaskSpec({
@@ -6154,7 +6106,6 @@ const reviewCheckRunningProjection: WorkflowFixtureProjection = {
     },
     fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[2], LAST_BRIEF_PASSED_TS),
     finalReviewStarted(PRE_REVIEW_TEST_STARTED_TS - 30_000, BASE_PLANNER),
-    reviewChecksPlanned(PRE_REVIEW_TEST_STARTED_TS - 30_000),
     reviewCheck(PRE_REVIEW_TEST_STARTED_TS - 20_000, REVIEW_CHECK_TYPECHECK, {
       status: 'done',
       passed: true,
@@ -6168,9 +6119,7 @@ const reviewRenderRunningProjection: WorkflowFixtureProjection = {
   ...reviewCheckRunningProjection,
   scenarioId: scenarioId('workflow-review-render-running'),
   events: [
-    ...reviewCheckRunningProjection.events.filter(
-      (event) => event.type !== 'review_checks' && event.type !== 'full_suite',
-    ),
+    ...reviewCheckRunningProjection.events.filter((event) => event.type !== 'full_suite'),
     {
       type: 'full_suite',
       ts: FIXED_TS + 14_300,
@@ -6206,18 +6155,6 @@ const reviewRenderRunningProjection: WorkflowFixtureProjection = {
       status: 'running',
     },
   ],
-};
-
-// `validation.approve_checks: ask`: the reviewer chose two commands and the card waits for Run all
-// or Skip all before either runs.
-const reviewChecksApproveProjection: WorkflowFixtureProjection = {
-  ...reviewCheckRunningProjection,
-  scenarioId: scenarioId('workflow-review-checks-approve'),
-  events: reviewCheckRunningProjection.events.filter((event) => event.type !== 'full_suite'),
-  reviewChecksPrompt: {
-    scope: 'final',
-    commands: [{ ...REVIEW_CHECK_TYPECHECK }, { ...REVIEW_CHECK_TEST }],
-  },
 };
 
 const reviewPauseRequestedProjection: WorkflowFixtureProjection = {
@@ -6396,9 +6333,10 @@ const reviewCheckReusedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-review-check-reused'),
   events: reviewCheckRunningProjection.events.flatMap((event): EngineEvent[] => {
     if (event.type === 'full_suite') return [];
-    if (event.type !== 'review_checks') return [event];
+    if (event.type !== 'review_started') return [event];
     const reusedAt = new Date(PLAN_TEST_RAN_TS).toISOString();
     return [
+      event,
       {
         type: 'full_suite',
         ts: PLAN_TEST_RAN_TS,
@@ -6421,7 +6359,6 @@ const reviewCheckReusedProjection: WorkflowFixtureProjection = {
         passed: true,
         reusedAt,
       },
-      event,
       reviewCheck(PRE_REVIEW_TEST_STARTED_TS - 20_000, REVIEW_CHECK_TYPECHECK, {
         status: 'done',
         passed: true,
@@ -6441,28 +6378,9 @@ const reviewCheckReusedProjection: WorkflowFixtureProjection = {
   }),
 };
 
-// The user chose Skip all: one row names every command that did not run and why.
-const reviewChecksSkippedProjection: WorkflowFixtureProjection = {
-  ...reviewCheckRunningProjection,
-  scenarioId: scenarioId('workflow-review-checks-skipped'),
-  events: [
-    ...reviewCheckRunningProjection.events.filter((event) => event.type !== 'full_suite'),
-    {
-      type: 'review_checks',
-      ts: PRE_REVIEW_TEST_STARTED_TS - 25_000,
-      phase: 'final-review',
-      scope: 'final',
-      status: 'skipped',
-      commands: [{ ...REVIEW_CHECK_TYPECHECK }, { ...REVIEW_CHECK_TEST }],
-      reason: 'Skip all was chosen on the card',
-    },
-  ],
-};
-
 const LONG_REVIEW_CHECK_TEST = {
   id: 'V2',
   command: 'npx vitest run src/features/workflow/display/build-progress.test.ts',
-  reason: 'This test file covers the build block the change edits.',
 } as const;
 
 // The same check ten minutes in, with a command longer than the byline at 80 columns: the label and
@@ -6474,14 +6392,7 @@ const reviewCheckLongCommandProjection: WorkflowFixtureProjection = {
     (event): EngineEvent =>
       event.type === 'full_suite' && event.id === LONG_REVIEW_CHECK_TEST.id
         ? { ...event, command: LONG_REVIEW_CHECK_TEST.command }
-        : event.type === 'review_checks' && event.status === 'planned'
-          ? {
-              ...event,
-              commands: (event.commands ?? []).map((command) =>
-                command.id === LONG_REVIEW_CHECK_TEST.id ? { ...LONG_REVIEW_CHECK_TEST } : command,
-              ),
-            }
-          : event,
+        : event,
   ),
 };
 
@@ -6548,16 +6459,6 @@ const reviewRedGateProjection: WorkflowFixtureProjection = {
       { ...FIXTURE_TASKS_PLANNED, total: 1, tasks: FIXTURE_TASKS_PLANNED.tasks.slice(0, 1) },
       fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 300),
       finalReviewStarted(FIXED_TS + 390, CODEX_REVIEW_SEAT),
-      {
-        type: 'review_checks',
-        ts: FIXED_TS + 390,
-        phase: 'final-review',
-        scope: 'final',
-        status: 'planned',
-        commands: [RED_GATE_LINT, RED_GATE_TYPECHECK, RED_GATE_TEST],
-        declined: [],
-        reason: null,
-      },
       reviewCheck(FIXED_TS + 395, RED_GATE_LINT, {
         status: 'refused',
         detail: 'runs the package script lint, and this run changed package.json',
@@ -6619,16 +6520,6 @@ const reviewBaseRerunProjection: WorkflowFixtureProjection = {
   events: [
     ...everyBriefPassed(),
     finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
-    {
-      type: 'review_checks',
-      ts: FIXED_TS + 900,
-      phase: 'final-review',
-      scope: 'final',
-      status: 'planned',
-      commands: [BASE_RERUN_TYPECHECK, BASE_RERUN_TEST],
-      declined: [],
-      reason: null,
-    },
     reviewCheck(FIXED_TS + 1_000, BASE_RERUN_TYPECHECK, {
       status: 'done',
       passed: false,
@@ -6670,16 +6561,6 @@ const reviewBaseMixedProjection: WorkflowFixtureProjection = {
       })),
     ),
     finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
-    {
-      type: 'review_checks',
-      ts: FIXED_TS + 900,
-      phase: 'final-review',
-      scope: 'final',
-      status: 'planned',
-      commands: [BASE_RERUN_TYPECHECK, BASE_RERUN_TEST],
-      declined: [],
-      reason: null,
-    },
     reviewCheck(FIXED_TS + 1_000, BASE_RERUN_TYPECHECK, {
       status: 'done',
       passed: false,
@@ -6743,7 +6624,6 @@ const fixCheckRunningProjection: WorkflowFixtureProjection = {
     return [
       ...everyBriefPassed(),
       finalReviewStarted(FIXED_TS + 350, BASE_PLANNER),
-      reviewChecksPlanned(FIXED_TS + 350),
       reviewCheck(FIXED_TS + 360, REVIEW_CHECK_TYPECHECK, {
         status: 'done',
         passed: true,
@@ -6912,16 +6792,6 @@ const reviewBaseNotVerifiedProjection: WorkflowFixtureProjection = {
   events: [
     ...everyBriefPassed(),
     finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
-    {
-      type: 'review_checks',
-      ts: FIXED_TS + 900,
-      phase: 'final-review',
-      scope: 'final',
-      status: 'planned',
-      commands: [BASE_NOT_VERIFIED_E2E, BASE_NOT_VERIFIED_TEST],
-      declined: [],
-      reason: null,
-    },
     reviewCheck(FIXED_TS + 1_000, BASE_NOT_VERIFIED_E2E, {
       status: 'done',
       passed: false,
@@ -6953,16 +6823,6 @@ const reviewBaseRejectedProjection: WorkflowFixtureProjection = {
   events: [
     ...everyBriefPassed(),
     finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
-    {
-      type: 'review_checks',
-      ts: FIXED_TS + 900,
-      phase: 'final-review',
-      scope: 'final',
-      status: 'planned',
-      commands: [BASE_NOT_VERIFIED_E2E, BASE_NOT_VERIFIED_TEST],
-      declined: [],
-      reason: null,
-    },
     reviewCheck(FIXED_TS + 1_000, BASE_NOT_VERIFIED_E2E, {
       status: 'done',
       passed: false,
@@ -7167,15 +7027,6 @@ const projections = [
           ? [
               event,
               {
-                type: 'review_checks',
-                ts: event.ts + 10,
-                phase: event.phase,
-                scope: 'final',
-                status: 'planned',
-                commands: [],
-                reason: 'The recorded plan checks verify the change.',
-              },
-              {
                 type: 'review_completed',
                 ts: event.ts + 20,
                 phase: event.phase,
@@ -7193,20 +7044,6 @@ const projections = [
               },
               { ...event, ts: event.ts + 40 },
               { type: 'review_step', ts: event.ts + 40, phase: event.phase, step: 'verdict' },
-            ]
-          : [event],
-      ),
-  },
-  {
-    ...finalReviewProjection,
-    scenarioId: scenarioId('workflow-review-choosing-checks'),
-    events: finalReviewProjection.events
-      .filter((event) => event.type !== 'review_checks')
-      .flatMap((event): EngineEvent[] =>
-        event.type === 'review_started'
-          ? [
-              event,
-              { type: 'review_step', ts: event.ts, phase: event.phase, step: 'choosing-checks' },
             ]
           : [event],
       ),
@@ -7233,7 +7070,7 @@ const projections = [
               inProcess: true,
             },
             event,
-            { type: 'review_step', ts: event.ts, phase: event.phase, step: 'choosing-checks' },
+            { type: 'review_step', ts: event.ts, phase: event.phase, step: 'verdict' },
           ]
         : [event],
     ),
@@ -7273,16 +7110,6 @@ const projections = [
                   : fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
               ]),
             ] satisfies EngineEvent[])),
-        {
-          type: 'review_checks',
-          ts: FIXED_TS + 1_000,
-          phase: 'final-review',
-          scope: 'final',
-          status: 'planned',
-          commands: DRIFT_REVIEW_CHECKS,
-          declined: [{ ...REVIEW_CHECK_DECLINED }],
-          reason: null,
-        },
         ...DRIFT_REVIEW_CHECKS.map((check, index) =>
           reviewCheck(FIXED_TS + 1_100 + 100 * index, check, {
             status: 'done',
@@ -7341,7 +7168,6 @@ const projections = [
         fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
       ]),
       finalReviewStarted(FIXED_TS + 1_000, BASE_PLANNER),
-      reviewChecksPlanned(FIXED_TS + 1_000),
       reviewCheck(FIXED_TS + 1_100, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
       reviewCheck(FIXED_TS + 2_100, REVIEW_CHECK_TEST, { status: 'done', passed: false }),
       reviewCheck(FIXED_TS + 3_100, REVIEW_CHECK_TEST, {
@@ -7553,8 +7379,6 @@ const projections = [
   usageLimitSeatSavedProjection,
   finalReviewSeatChangeProjection,
   reviewCheckLongCommandProjection,
-  reviewChecksApproveProjection,
-  reviewChecksSkippedProjection,
   reviewLegacySuiteProjection,
   reviewBaseRerunProjection,
   reviewBaseMixedProjection,
@@ -7598,9 +7422,6 @@ export function getWorkflowFixturePromptRows(
   projection: WorkflowFixtureProjection,
   cols: number,
 ): number {
-  if (projection.reviewChecksPrompt !== undefined) {
-    return reviewChecksCardLayout(projection.reviewChecksPrompt, cols).height;
-  }
   const approvalState: ApprovalPromptState =
     projection.approval === undefined
       ? { status: 'idle' }

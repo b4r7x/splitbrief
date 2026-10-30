@@ -86,7 +86,7 @@ For each selected pending task whose dependencies are done:
 6. Route blocked reports, proposed decisions, and failures through references/recovery.md.
 7. Record touched files and reasons. At task cadence, run the task's checks and the due checks with references/gates.md. At end cadence, run the task's own checks, except a render check.
 8. Mark the task done only after those checks pass. Update and print progress.
-9. At task cadence, enter review for completed work before dispatching another task. That review runs the related tests the reviewer chooses.
+9. At task cadence, enter review for completed work before dispatching another task.
 
 Take an attempt-start snapshot of candidate bytes for recovery; preserve accepted earlier task changes.
 Record command, exit, terminal result, report, changed paths, check results, and outcome in the evidence trail.

@@ -54,7 +54,7 @@ type ReviewCompletedEvent = {
 type ReviewStartedEvent = Pick<ReviewCompletedEvent, 'scope' | 'afterTaskId'> & {
   type: 'review_started';
 };
-type ReviewStepEvent = { type: 'review_step'; step: 'choosing-checks' | 'verdict' | 'verify' };
+type ReviewStepEvent = { type: 'review_step'; step: 'verdict' | 'verify' };
 type WorkflowCompleteEvent = {
   type: 'workflow_complete';
   review?: 'passed' | 'failed' | undefined;

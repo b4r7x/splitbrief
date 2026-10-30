@@ -236,7 +236,6 @@ describe('workflow closure', () => {
                 ? passingReviewVerdict(prompt)
                 : failedReviewVerdict(prompt, 'the closure fixture fails the review'),
             undefined,
-            undefined,
             () => cannotConsult(),
           ),
         }),

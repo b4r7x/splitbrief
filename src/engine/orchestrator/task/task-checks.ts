@@ -133,8 +133,7 @@ export async function runTaskChecks(opts: {
 async function runTaskCheckCommands(
   opts: Parameters<typeof runTaskChecks>[0],
 ): Promise<TaskChecksResult> {
-  const { wctx, task } = opts;
-  let state = opts.state;
+  const { task, state } = opts;
   const settled = new Set<string>();
   const carried = fixCheckKeys(task, state.tasks);
   const checkOptions = taskCheckOptions({ ...opts, carried });
@@ -193,18 +192,6 @@ async function runTaskCheckCommands(
     });
     if (run.status === 'fail' && fresh.length === 0) settled.add(id);
     runs.push(run);
-  }
-  const ranReviewCommands = runs.flatMap((run) => {
-    const command = reviewCommands.get(run.checkId);
-    return command !== undefined && (run.status === 'pass' || run.status === 'fail')
-      ? [command]
-      : [];
-  });
-  if (ranReviewCommands.length > 0) {
-    state = transitionAndSave({ projectDir: wctx.projectDir, sessionId: wctx.sessionId }, state, {
-      type: 'SET_PENDING_REVIEW_COMMANDS',
-      commands: [...new Set([...(state.pendingReviewCommands ?? []), ...ranReviewCommands])],
-    });
   }
   return { state, runs, settled };
 }

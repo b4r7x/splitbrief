@@ -48,9 +48,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
-if (prompt.includes('# Choose the checks for this review')) {
-  console.log(JSON.stringify({ commands: [], declined: [], reason: 'The recorded plan checks verify the greeting.' }));
-} else if (!prompt.includes(${JSON.stringify(answer)})) {
+if (!prompt.includes(${JSON.stringify(answer)})) {
   console.log(${JSON.stringify(JSON.stringify({ ...verdict, ask: { question, whyOnlyUserCanAnswer: 'The user chooses the casing.' } }))});
 } else {
   writeFileSync(${JSON.stringify(started)}, '');
@@ -120,7 +118,6 @@ if (prompt.includes('# Choose the checks for this review')) {
           child.write('\r');
           await expect.poll(() => existsSync(started), { timeout: 45_000 }).toBe(true);
           await expect.poll(screen).toContain('reviewing changes');
-          expect(screen()).not.toContain('choosing checks');
           writeFileSync(release, '');
           await expect.poll(screen, { timeout: 45_000 }).toContain('Final review re-run passed');
           child.write('\x11');
@@ -139,15 +136,11 @@ if (prompt.includes('# Choose the checks for this review')) {
     const sessionId = readdirSync(sessionsRoot(target.projectDir))[0];
     if (sessionId === undefined) throw new Error('CLI started without a run');
     const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
-    expect(events.filter((event) => event.type === 'review_checks')).toHaveLength(1);
-    const steps = events.filter((event) => event.type === 'review_step');
-    expect(steps.map((event) => event.step)).toEqual([
-      'choosing-checks',
-      'verdict',
-      'verify',
-      'verdict',
-      'verify',
+    expect(events.filter((event) => event.type === 'review_checks')).toMatchObject([
+      { status: 'none' },
     ]);
+    const steps = events.filter((event) => event.type === 'review_step');
+    expect(steps.map((event) => event.step)).toEqual(['verdict', 'verify', 'verdict', 'verify']);
     const status = await cli(target, ['status']);
     expect(status.exitCode, status.stderr).toBe(0);
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);

@@ -32,6 +32,7 @@ export function makePlanProposal(overrides?: Partial<PlanProposal>): PlanProposa
     decisions: ['Keep the greeting in one module'],
     criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] }],
     checks: [],
+    gate: [],
     validation: null,
     tasks: [makeTaskSpec()],
     ...overrides,

@@ -79,7 +79,7 @@ describe('config loading', () => {
         'workflow.max_retries was retired and is ignored: the planner decides every retry. Delete workflow.max_retries.',
         ...['typecheck', 'lint', 'test'].map(
           (name) =>
-            `validation.${name} was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.${name}.`,
+            `validation.${name} was retired and is ignored: the plan names the project gate, and validation.end_checks turns it on or off. Delete validation.${name}.`,
         ),
       ]);
       expect(config.validation.endChecks).toBe(true);
@@ -214,15 +214,19 @@ describe('config loading', () => {
       expect(() => loadConfig(dir)).toThrow('codebase.cacheDir: Unknown config key');
     });
 
-    it('loads validation.approve_checks and leaves it unset when the file names none', () => {
-      const asks = join(TMP, 'approve-checks-ask');
-      writeConfigYaml(asks, { validation: { approve_checks: 'ask' } });
-      const unset = join(TMP, 'approve-checks-unset');
-      writeConfigYaml(unset, { validation: { end_checks: true } });
+    it.each(['ask', 'always'])(
+      'loads the retired validation.approve_checks %s with exactly one notice',
+      (value) => {
+        const dir = join(TMP, `approve-checks-${value}`);
+        writeConfigYaml(dir, { validation: { approve_checks: value } });
 
-      expect(loadConfig(asks).config.validation.approveChecks).toBe('ask');
-      expect(loadConfig(unset).config.validation.approveChecks).toBeUndefined();
-    });
+        const { warnings } = loadConfig(dir);
+
+        expect(warnings.filter((w) => w.includes('was retired'))).toEqual([
+          'validation.approve_checks was retired and is ignored: the plan names the project gate, and the plan card shows it. Delete validation.approve_checks.',
+        ]);
+      },
+    );
 
     it.each([
       ['planner', { planner: { kind: 'shell', command: './plan', args: ['{prompt}'] } }],
@@ -264,13 +268,6 @@ describe('config loading', () => {
           `${path.replaceAll('.', '\\.')}\\.(args|argv)\\S*: \\{prompt\\} is not supported; SPLITBRIEF sends the prompt on stdin`,
         ),
       );
-    });
-
-    it('rejects a validation.approve_checks value other than ask or auto', () => {
-      const dir = join(TMP, 'approve-checks-invalid');
-      writeConfigYaml(dir, { validation: { approve_checks: 'always' } });
-
-      expect(() => loadConfig(dir)).toThrow(/validation\.approveChecks/);
     });
 
     it('rejects the removed sessions.scope global value', () => {

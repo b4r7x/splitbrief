@@ -10,6 +10,7 @@ import { matches } from '../../utils/error.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { countNoun, pluralize } from '../../utils/pluralize.js';
 import { protectedWriteClass } from '../orchestrator/approval/action-classifier.js';
+import { reviewerCommandRefusal } from '../orchestrator/validation/reviewer-command-policy.js';
 import {
   commandTextRefusal,
   missingNpmScript,
@@ -310,7 +311,15 @@ export function checkPlan(
   for (const id of duplicates(checkIds))
     fail('duplicate-check-id', `Check id ${id} is used twice.`);
   for (const id of new Set(checkIds.filter((checkId) => REVIEW_CHECK_ID.test(checkId)))) {
-    fail('reserved-check-id', `Check id ${id} is reserved for the reviewer's checks (V1, V2, …).`);
+    fail('reserved-check-id', `Check id ${id} is reserved for the project gate (V1, V2, …).`);
+  }
+  for (const [index, command] of plan.gate.entries()) {
+    const refusal = reviewerCommandRefusal(command);
+    if (refusal === null) continue;
+    fail(
+      'refused-check-command',
+      `Gate command V${index + 1} is refused: \`${command}\` ${refusal}. Name a command the project's scripts or CI run, as one program and its arguments.`,
+    );
   }
   for (const id of duplicates(plan.criteria.map((criterion) => criterion.id)))
     fail('duplicate-criterion-id', `Criterion id ${id} is used twice.`);

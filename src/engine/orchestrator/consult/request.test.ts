@@ -667,7 +667,7 @@ describe('requestConsult', () => {
     expect(planner.prompts[0]).toContain(
       'No diff of this task is available. Read the files in the run workspace.',
     );
-    expect(planner.prompts[0]).not.toContain('## Failed Attempts');
+    expect(planner.prompts[0]).not.toContain('## Brief History');
   });
 
   it('diffs a rewritten task from its lineage start, not from the rewrite snapshot', async () => {

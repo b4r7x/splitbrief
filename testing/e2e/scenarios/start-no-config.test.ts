@@ -85,10 +85,10 @@ if (args.includes('--help')) { console.log('Claude Code fixture'); process.exit(
 if (args[0] === 'auth') { console.log(JSON.stringify({ loggedIn: true })); process.exit(0); }
 const emit = value => console.log(JSON.stringify(value));
 const answer = text => {
-  const seat = text.includes('Choose the checks for this review') ? 'checks' : text.includes('Final Implementation Review') ? 'review' : text.startsWith('# Plan the change') ? 'plan' : 'build';
+  const seat = text.includes('Final Implementation Review') ? 'review' : text.startsWith('# Plan the change') ? 'plan' : 'build';
   fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ seat, args }) + '\\n');
   if (seat === 'build') { fs.mkdirSync('src', { recursive: true }); fs.writeFileSync('src/greet.mjs', "export const greet = () => 'hello';\\n"); }
-  const value = seat === 'plan' ? ${JSON.stringify(plan)} : seat === 'review' ? ${JSON.stringify(review)} : seat === 'checks' ? { commands: [], declined: [], reason: 'The plan check covers this change.' } : 'Done.';
+  const value = seat === 'plan' ? ${JSON.stringify(plan)} : seat === 'review' ? ${JSON.stringify(review)} : 'Done.';
   emit({ type: 'system', subtype: 'init', session_id: 'first-run-ready' });
   emit({ type: 'result', session_id: 'first-run-ready', result: typeof value === 'string' ? value : JSON.stringify(value), ...(typeof value === 'string' ? {} : { structured_output: value }), usage: { input_tokens: 10, output_tokens: 5 } });
 };
@@ -156,7 +156,7 @@ describe('e2e: headless start without config', () => {
       writeFileSync(
         planner,
         `let prompt = ''; for await (const chunk of process.stdin) prompt += chunk;
-const value = prompt.startsWith('# Plan the change') ? ${JSON.stringify(plan)} : prompt.startsWith('# Choose the checks for this review') ? { commands: [], declined: [], reason: 'The plan check covers this change.' } : ${JSON.stringify(review)};
+const value = prompt.startsWith('# Plan the change') ? ${JSON.stringify(plan)} : ${JSON.stringify(review)};
 console.log(JSON.stringify(value));\n`,
       );
       writeFileSync(

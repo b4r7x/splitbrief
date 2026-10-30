@@ -213,7 +213,7 @@ describe('validateConfig', () => {
     expect(errors).toEqual([]);
     expect(data?.validation.endChecks).toBeUndefined();
     expect(retiredValueNotices(config)).toEqual([
-      `validation.${name} was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.${name}.`,
+      `validation.${name} was retired and is ignored: the plan names the project gate, and validation.end_checks turns it on or off. Delete validation.${name}.`,
     ]);
   });
 

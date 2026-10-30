@@ -153,10 +153,10 @@ describe('e2e: the consult after two failed attempts', { timeout: 360_000 }, () 
     expect(prompts).toHaveLength(1);
     const prompt = prompts[0] ?? '';
     expect(prompt).toContain('## Task Diff');
-    expect(prompt).toContain('## Failed Attempts');
+    expect(prompt).toContain('## Brief History');
     const taskDiff = prompt.slice(
       prompt.indexOf('## Task Diff'),
-      prompt.indexOf('## Failed Attempts'),
+      prompt.indexOf('## Brief History'),
     );
     expect(taskDiff).toContain('src/alpha.mjs');
     expect(taskDiff).toContain('+export const alpha = "not alpha";');
@@ -165,7 +165,7 @@ describe('e2e: the consult after two failed attempts', { timeout: 360_000 }, () 
     expect(prompt).toMatch(
       /^- Attempt 2 \(T001 revision 1\): .*exited without changing any files/m,
     );
-    expect(prompt.indexOf('## Failed Attempts')).toBeLessThan(prompt.indexOf('## Failing Output'));
+    expect(prompt.indexOf('## Brief History')).toBeLessThan(prompt.indexOf('## Failing Output'));
 
     const sessionId = readdirSync(sessionsRoot(target.projectDir))[0];
     if (sessionId === undefined) throw new Error('Missing session');
@@ -195,7 +195,7 @@ describe('e2e: the consult after two failed attempts', { timeout: 360_000 }, () 
     const prompt = prompts[0] ?? '';
     const taskDiff = prompt.slice(
       prompt.indexOf('## Task Diff'),
-      prompt.indexOf('## Failed Attempts'),
+      prompt.indexOf('## Brief History'),
     );
     expect(taskDiff).toContain('+export const alpha = "not alpha";');
     expect(taskDiff).not.toContain('GENERATED-ROW');
@@ -227,7 +227,7 @@ describe('e2e: the consult after two failed attempts', { timeout: 360_000 }, () 
     const prompt = prompts[0] ?? '';
     const taskDiff = prompt.slice(
       prompt.indexOf('## Task Diff'),
-      prompt.indexOf('## Failed Attempts'),
+      prompt.indexOf('## Brief History'),
     );
     expect(taskDiff).toContain(NOTES);
     expect(taskDiff).toContain('+NOTES-BODY');

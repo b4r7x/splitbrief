@@ -71,16 +71,6 @@ export const reviewResumeProjection: WorkflowFixtureProjection = {
       redacted: false,
     },
     {
-      type: 'review_checks',
-      ts: epoch + 30_000,
-      phase: 'final-review',
-      scope: 'final',
-      status: 'planned',
-      commands: [{ id: 'V1', command: 'npm test', reason: 'Verify multiplication.' }],
-      declined: [],
-      reason: null,
-    },
-    {
       type: 'full_suite',
       ts: epoch + 30_250,
       phase: 'final-review',
@@ -119,14 +109,6 @@ export const reviewCheckCrashProjection: WorkflowFixtureProjection = {
   events: reviewResumeProjection.events.flatMap((event): EngineEvent[] =>
     event.type === 'runner_call_activity' && event.stage === 'aborted'
       ? [
-          {
-            type: 'review_checks',
-            ts: epoch + 3_000,
-            phase: 'final-review',
-            scope: 'final',
-            status: 'planned',
-            commands: [{ id: 'V1', command: 'npm test', reason: 'Verify multiplication.' }],
-          },
           {
             type: 'full_suite',
             ts: epoch + 4_250,

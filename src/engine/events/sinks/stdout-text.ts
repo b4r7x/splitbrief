@@ -16,20 +16,10 @@ export interface StdoutTextSinkOptions {
   output?: NodeJS.WritableStream | undefined;
 }
 
-function reviewChecksLines(event: Extract<EngineEvent, { type: 'review_checks' }>): string[] {
-  if (event.status === 'off') return ['reviewer checks: off'];
-  if (event.status === 'skipped') {
-    const ids = (event.commands ?? []).map((command) => command.id).join(', ');
-    return [`reviewer checks: not run ${ids} (${event.reason ?? 'no reason given'})`];
-  }
-  const lines =
-    (event.commands ?? []).length === 0
-      ? [`reviewer checks: none (${event.reason ?? 'no reason given'})`]
-      : [];
-  for (const entry of event.declined ?? []) {
-    lines.push(`reviewer check declined: ${entry.target} (${entry.reason})`);
-  }
-  return lines;
+function reviewChecksLine(event: Extract<EngineEvent, { type: 'review_checks' }>): string {
+  return event.status === 'off'
+    ? 'reviewer checks: off'
+    : 'reviewer checks: none (the plan names no project gate)';
 }
 
 /**
@@ -127,14 +117,14 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
 /**
  * The `--plain` projection: a few line shapes and nothing else, so a script can
  * read a run with `grep` and a human can read it without a JSON parser. The
- * `checks` of a task line are its brief checks; a reviewer check that is off,
- * declined, refused or not run gets its own `reviewer check` line, so no check
+ * `checks` of a task line are its brief checks; reviewer checks that are off or
+ * that the plan does not name get a `reviewer checks` line, and a reviewer check
+ * that is refused or not run gets its own `reviewer check` line, so no check
  * is silent.
  *
  *   phase: implementing
  *   task T001: done (2 of 2 checks passed)
- *   reviewer checks: off | reviewer checks: none (<reason>)
- *   reviewer check declined: <target> (<reason>)
+ *   reviewer checks: off | reviewer checks: none (the plan names no project gate)
  *   reviewer check V1: passed (<command>) | failed (<command>)
  *   reviewer check V1: refused (<detail>) | not run (<detail>)
  *   base re-run V1: passes | fails
@@ -212,7 +202,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
         return;
       }
       case 'review_checks':
-        for (const line of reviewChecksLines(bounded)) write(line);
+        write(reviewChecksLine(bounded));
         return;
       case 'full_suite': {
         const line = reviewCheckLine(bounded);

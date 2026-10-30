@@ -27,7 +27,7 @@ import {
 } from '../helpers/stop-continue-fixture.js';
 
 /**
- * A wrong command the reviewer chooses: red in the run and at the run base, with an error line but
+ * A wrong project gate command: red in the run and at the run base, with an error line but
  * no failing test and no file position, so SPLITBRIEF cannot show it is the same failure.
  */
 const RED_FILE = 'tools/run-specs.mjs';
@@ -63,13 +63,9 @@ const plan = makePlanProposal({
   summary: 'Add a total helper with its test.',
   decisions: [],
   criteria: [{ id: 'C1', text: 'total returns the sum.', checkIds: ['T001-K1'] }],
+  gate: [RED_COMMAND],
   tasks: [brief],
 });
-const reviewChecksPlan = {
-  commands: [{ id: 'V1', command: RED_COMMAND, reason: 'Runs the specs directly.' }],
-  declined: [],
-  reason: null,
-};
 const note: ReviewAnswer['findings'][number] = {
   id: 'F1',
   kind: 'question',
@@ -136,10 +132,7 @@ const pendingInputs = () => {
 };
 let call;
 let answer;
-if (prompt.includes('# Choose the checks for this review')) {
-  call = { kind: 'review-checks' };
-  answer = ${JSON.stringify(reviewChecksPlan)};
-} else if (prompt.includes('# Final Implementation Review')) {
+if (prompt.includes('# Final Implementation Review')) {
   const inputs = pendingInputs();
   call = { kind: 'final-review', inputs, prompt };
   answer = { ...${JSON.stringify(verdict)} };
@@ -204,7 +197,6 @@ console.log('Implemented ${brief.id}');
     validation: {
       ...config.validation,
       endChecks: true,
-      approveChecks: 'auto',
       testCommand: 'node --test',
     },
   });
@@ -225,13 +217,8 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     const { target, run, sessionId, events, calls } = await startRun('reject');
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
 
-    expect(calls.map((call) => call.kind)).toEqual([
-      'plan',
-      'implement',
-      'review-checks',
-      'final-review',
-    ]);
-    expect(calls[3]?.inputs).toEqual(['V1.1']);
+    expect(calls.map((call) => call.kind)).toEqual(['plan', 'implement', 'final-review']);
+    expect(calls[2]?.inputs).toEqual(['V1.1']);
 
     const base = events.find(
       (event) => event.type === 'full_suite' && event.moment === 'base' && event.status === 'done',
@@ -285,9 +272,7 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     expect(calls.map((call) => call.kind)).toEqual([
       'plan',
       'implement',
-      'review-checks',
       'final-review',
-      'review-checks',
       'final-review',
       'consult',
     ]);

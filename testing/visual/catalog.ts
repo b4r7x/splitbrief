@@ -1263,22 +1263,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-review-choosing-checks',
-      title: 'Workflow · reviewer choosing checks',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'review-choosing-checks',
-        title: 'Reviewer check selection',
-        kind: 'implementation',
-        marker: 'choosing checks',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Review transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-review-after-pause',
       title: 'Workflow · final review running after a pause before it',
       surface: screenSurface('workflow'),
@@ -4577,37 +4561,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-review-checks-approve',
-      title: 'Workflow · the reviewer checks wait for Run all or Skip all',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'review-checks-approve',
-        title: 'One card names each chosen command and its reason above the composer',
-        kind: 'review',
-        marker: 'Skip all',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-review-checks-skipped',
-      title: 'Workflow · the user skipped the reviewer checks',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'review-checks-skipped',
-        title: 'One row names every command that did not run and why',
-        kind: 'review',
-        marker: 'not\u00a0run V1, V2',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Review transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-review-legacy-suite',
       title: 'Workflow · a session from before reviewer checks replays its full-suite stages',
       surface: screenSurface('workflow'),
@@ -5189,11 +5142,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-settings-seat-saved-final-review',
         title: 'Overlay · settings · a seat saved in the final review',
         marker: 'seat changes after a fix brief',
-      },
-      {
-        id: 'overlay-settings-approve-checks-ask',
-        title: 'Overlay · settings · the reviewer checks wait for your Run all or Skip all',
-        marker: 'Approve checks',
       },
       {
         id: 'overlay-settings-isolation-checkout',

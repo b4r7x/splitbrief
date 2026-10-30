@@ -3596,107 +3596,34 @@ describe('review_completed rows', () => {
 });
 
 describe('review_checks rows', () => {
-  function reviewChecks(): EngineEventOf<'review_checks'> {
-    return {
-      type: 'review_checks',
-      ts: 0,
-      phase: 'final-review',
-      scope: 'final',
-      status: 'planned',
-      commands: [{ id: 'V1', command: 'npm test', reason: 'The unit tests cover the change.' }],
-      declined: [
-        {
-          target: 'npm run test:e2e',
-          reason: 'It needs a browser, and the change touches no screen at all.',
-        },
-      ],
-      reason: null,
-    };
-  }
-
-  it('heads the declined tests, each indented under the headline and wrapped inside the width', () => {
+  it.each([
+    ['off', 'End-of-run checks · off · no reviewer check ran'],
+    ['none', 'End-of-run checks · none · the plan names no project gate'],
+  ] as const)('paints one %s row', (status, text) => {
     const rows = eventRows({
-      event: reviewChecks(),
-      globalIndex: 0,
-      expanded: false,
-      ctx: { width: 60, viewportRows: 20, streaming },
-    });
-    expect(rows.map(rowText)).toEqual([
-      'Reviewer checks · chose 1 · declined 1',
-      '  declined · npm run test:e2e · It needs a browser, and ',
-      '    the change touches no screen at all.',
-    ]);
-    for (const row of rows) {
-      expect(getTerminalCellWidth(rowText(row)) + rowLeadingCells(row.kind)).toBeLessThanOrEqual(
-        60,
-      );
-    }
-  });
-
-  it('hangs a wrapped header and declined reason under their own first rows', () => {
-    const event: EngineEventOf<'review_checks'> = {
-      ...reviewChecks(),
-      declined: [{ target: 'npm run test:e2e', reason: 'Needs a browser.' }],
-    };
-    const width = 35;
-    const rows = eventRows({
-      event,
-      globalIndex: 0,
-      expanded: false,
-      ctx: { width, viewportRows: 20, streaming },
-    });
-    const texts = rows.map(rowText);
-
-    expect(texts).toEqual([
-      'Reviewer checks · chose 1 ',
-      '  declined 1',
-      '  declined · npm run test:e2e ',
-      '    Needs a browser.',
-    ]);
-    for (const text of texts) {
-      expect(text.trimStart().startsWith('·')).toBe(false);
-      expect(text.trimEnd().endsWith(' ·')).toBe(false);
-      expect(getTerminalCellWidth(text)).toBeLessThanOrEqual(width - rowLeadingCells('message'));
-    }
-  });
-
-  it('paints one off row when End-of-run checks are off', () => {
-    const rows = eventRows({
-      event: { type: 'review_checks', ts: 0, phase: 'final-review', scope: 'final', status: 'off' },
+      event: { type: 'review_checks', ts: 0, phase: 'final-review', status },
       globalIndex: 0,
       expanded: false,
       ctx: { width: 80, viewportRows: 20, streaming },
     });
-    const texts = rows.map(rowText).filter((text) => text.trim() !== '');
 
-    expect(texts.map((text) => text.trim())).toEqual([
-      'End-of-run checks · off · no reviewer check ran',
-    ]);
+    expect(rows.map(rowText)).toEqual([text]);
   });
 
-  it('paints skipped checks as warning with a reviewer seat and dim metadata', () => {
+  it('wraps a narrow none row inside the width', () => {
+    const width = 35;
     const rows = eventRows({
-      event: {
-        ...reviewChecks(),
-        status: 'skipped',
-        declined: [],
-        reason: 'Skip all was chosen on the card',
-      },
+      event: { type: 'review_checks', ts: 0, phase: 'final-review', status: 'none' },
       globalIndex: 0,
       expanded: false,
-      ctx: { width: 120, viewportRows: 20, streaming },
+      ctx: { width, viewportRows: 20, streaming },
     });
-    expect(rows.map(rowText)).toEqual([
-      'Reviewer checks · not\u00a0run V1 · Skip all was chosen on the card',
-    ]);
-    expect(rows[0]?.segments).toEqual([
-      { text: 'Reviewer', tone: 'reviewer' },
-      { text: ' checks', tone: 'textDim' },
-      { text: ' · ', tone: 'textDim' },
-      { text: 'not\u00a0run', tone: 'warning' },
-      { text: ' V1', tone: 'textDim' },
-      { text: ' · ', tone: 'textDim' },
-      { text: 'Skip all was chosen on the card', tone: 'textDim' },
-    ]);
+
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(getTerminalCellWidth(rowText(row)) + rowLeadingCells(row.kind)).toBeLessThanOrEqual(
+        width,
+      );
+    }
   });
 });

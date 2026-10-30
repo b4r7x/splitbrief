@@ -46,7 +46,6 @@ function plainStdout(): string {
     'Render overlay: refused (names no program)',
     'Render setup: not run',
     'Render help: refused',
-    'reviewer check declined: test/server.test.mjs (covered by V1)',
     'reviewer check V1: refused (runs the package script lint, which this run changed)',
     'reviewer check V2: failed (npm test)',
     'base re-run V2: not run (this run recorded no run base)',
@@ -80,7 +79,6 @@ function sessionLog(extra: readonly string[] = []): string {
     logLine('runner_call_started', 'implementing', { role: 'planner' }),
     logLine('runner_call_started', 'implementing', { role: 'implementer' }),
     logLine('runner_call_started', 'implementing', { role: 'implementer' }),
-    logLine('runner_call_started', 'final-review', { role: 'review' }),
     logLine('runner_call_started', 'final-review', { role: 'review' }),
     logLine('task_completed', 'implementing', { duration: 4200 }, 'T001'),
     logLine('task_completed', 'implementing', { duration: 1300 }, 'T002'),
@@ -269,7 +267,7 @@ describe('assertSessionDir', () => {
       completed: 2,
     });
 
-    expect(facts.calls).toEqual({ planner: 1, implementer: 2, review: 2 });
+    expect(facts.calls).toEqual({ planner: 1, implementer: 2, review: 1 });
     expect(facts.perBrief).toEqual([
       { id: 'T001', durationMs: 4200 },
       { id: 'T002', durationMs: 1300 },

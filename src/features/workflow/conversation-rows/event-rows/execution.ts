@@ -13,7 +13,6 @@ import { sanitizeRowDisplayText } from '../row-format/text.js';
 import {
   fullSuiteNameRows,
   fullSuiteSegments,
-  reviewChecksDeclinedRows,
   reviewChecksSegments,
   validationStageNotes,
   validationSummarySegments,
@@ -187,24 +186,12 @@ export function reviewChecksRowBlock(
   event: Extract<EngineEvent, { type: 'review_checks' }>,
   width: number,
 ): ConversationRowBlock | null {
-  return compositeBlock(keyPrefix, [
-    wrappedSegmentsBlock({
-      keyPrefix,
-      segments: reviewChecksSegments(event),
-      width,
-      continuationIndent: 2,
-    }),
-    ...reviewChecksDeclinedRows(event).map((text, index) =>
-      wrappedTextBlock({
-        keyPrefix: `${keyPrefix}-declined-${index}`,
-        text,
-        width,
-        tone: 'textDim',
-        indent: 2,
-        continuationIndent: 2,
-      }),
-    ),
-  ]);
+  return wrappedSegmentsBlock({
+    keyPrefix,
+    segments: reviewChecksSegments(event),
+    width,
+    continuationIndent: 2,
+  });
 }
 
 export function escalateRowBlock(

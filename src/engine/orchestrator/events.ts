@@ -20,7 +20,6 @@ import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import type { SeatIdentity } from '../../core/providers/seat-identity.js';
 import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
-import type { ReviewChecksPlan } from '../../core/schemas/review.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { Implementer, ImplementerPublisher } from '../implementers/types.js';
 import { formatRecoveryHeadlineSpans } from '../../core/recovery/headline.js';
@@ -231,29 +230,8 @@ export function publishTaskComplete(
   ctx.bus.publish({ type: 'task_completed', ts: Date.now(), phase: ctx.phase, ...opts });
 }
 
-export function publishReviewChecksPlan(
-  ctx: BusContext,
-  opts:
-    | { scope: 'final' | 'task'; status: 'off' }
-    | { scope: 'final' | 'task'; status: 'planned'; plan: ReviewChecksPlan }
-    | { scope: 'final' | 'task'; status: 'skipped'; plan: ReviewChecksPlan; reason: string },
-): void {
-  ctx.bus.publish({
-    type: 'review_checks',
-    ts: Date.now(),
-    phase: ctx.phase,
-    scope: opts.scope,
-    status: opts.status,
-    ...(opts.status === 'planned' && {
-      commands: opts.plan.commands.map((command) => ({ ...command })),
-      declined: opts.plan.declined.map((entry) => ({ ...entry })),
-      reason: opts.plan.reason,
-    }),
-    ...(opts.status === 'skipped' && {
-      commands: opts.plan.commands.map((command) => ({ ...command })),
-      reason: opts.reason,
-    }),
-  });
+export function publishReviewChecks(ctx: BusContext, status: 'off' | 'none'): void {
+  ctx.bus.publish({ type: 'review_checks', ts: Date.now(), phase: ctx.phase, status });
 }
 
 export function publishReviewCheck(

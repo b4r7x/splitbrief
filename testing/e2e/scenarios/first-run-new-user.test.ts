@@ -26,7 +26,6 @@ const OLLAMA_ORIGIN_PORT = '11434';
 const OLLAMA_CONTEXT = 131_072;
 const OLLAMA_MAXIMUM_CONTEXT = 262_144;
 const FEATURE = 'Add a greeting helper';
-const CHECKS_PROMPT = '# Choose the checks for this review';
 const REVIEW_PROMPT = 'Final Implementation Review';
 const CLI_TIMEOUT_MS = 60_000;
 const START_TIMEOUT_MS = 150_000;
@@ -44,13 +43,8 @@ const PLAN_ANSWER = {
         steps: [`Create \`${GREET_FILE}\` exporting \`greet\`.`],
       }),
     ],
+    gate: ['node --version'],
   }),
-};
-
-const CHECKS_ANSWER = {
-  commands: [{ id: 'V1', command: 'node --version', reason: 'The runtime the helper needs.' }],
-  declined: [],
-  reason: null,
 };
 
 const REVIEW_ANSWER = passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] });
@@ -61,7 +55,7 @@ const BUILD_REPLY = JSON.stringify({
 });
 
 const ClaudeCallSchema = z.object({
-  seat: z.enum(['plan', 'checks', 'review', 'other']),
+  seat: z.enum(['plan', 'review', 'other']),
   args: z.array(z.string()),
 });
 
@@ -250,17 +244,15 @@ const args = process.argv.slice(2);
 if (args[0] === '--version') { console.log('claude 2.1.296'); process.exit(0); }
 if (args.includes('--help')) { console.log('Claude Code fixture'); process.exit(0); }
 if (args[0] === 'auth') { console.log(JSON.stringify({ loggedIn: true })); process.exit(0); }
-const answers = ${JSON.stringify({ plan: PLAN_ANSWER, checks: CHECKS_ANSWER, review: REVIEW_ANSWER })};
+const answers = ${JSON.stringify({ plan: PLAN_ANSWER, review: REVIEW_ANSWER })};
 const emit = (entry) => console.log(JSON.stringify(entry));
 const promptText = (content) => typeof content === 'string'
   ? content
   : content.filter((part) => part.type === 'text').map((part) => part.text).join('\\n');
 const answer = (text) => {
-  const seat = text.includes(${JSON.stringify(CHECKS_PROMPT)})
-    ? 'checks'
-    : text.includes(${JSON.stringify(REVIEW_PROMPT)})
-      ? 'review'
-      : args.includes('--json-schema') ? 'plan' : 'other';
+  const seat = text.includes(${JSON.stringify(REVIEW_PROMPT)})
+    ? 'review'
+    : args.includes('--json-schema') ? 'plan' : 'other';
   fs.appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ seat, args }) + '\\n');
   emit({ type: 'system', subtype: 'init', session_id: 'first-run-session' });
   if (args.includes('--input-format')) emit({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: text } });
@@ -401,7 +393,7 @@ describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
     });
     expect(existsSync(join(target.projectDir, GREET_FILE))).toBe(false);
 
-    expect(claudeSeats(target.callsPath)).toEqual(['plan', 'checks', 'review']);
+    expect(claudeSeats(target.callsPath)).toEqual(['plan', 'review']);
     const builds = target.ollama.requests
       .filter((request) => request.method === 'POST' && request.path === '/v1/chat/completions')
       .map((request) => ChatRequestSchema.parse(request.body));

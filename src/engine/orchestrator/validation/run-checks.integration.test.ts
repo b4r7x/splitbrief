@@ -15,7 +15,6 @@ import { createEventBus } from '../../events/bus.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
-import type { ReviewChecksRecord } from '../../../core/schemas/workflow.js';
 import { withApplyRun } from '#testing/helpers/apply-run.js';
 import { runBaseOf } from '../isolation/base-tree.js';
 import {
@@ -685,33 +684,22 @@ describe('runChecks', () => {
   });
 });
 
-function reviewChecks(commands: Array<{ id: string; command: string }>): ReviewChecksRecord {
-  return {
-    scope: 'final',
-    cycle: 0,
-    plan: {
-      commands: commands.map((entry) => ({ ...entry, reason: 'verifies the change' })),
-      declined: [],
-      reason: null,
-    },
-    at: '2026-10-08T00:00:00.000Z',
-  };
+/** A plan that names `gate` as its project gate. */
+function gatePlan(gate: string[]): Plan {
+  return { ...makePlan([]), gate };
 }
 
 describe('reviewer checks in the run registry', () => {
-  it('resolves the V ids the last review chose as required cmd checks', () => {
-    const record = reviewChecks([
-      { id: 'V1', command: 'npm test' },
-      { id: 'V2', command: 'make test' },
-    ]);
+  it('resolves the project gate the plan names as required cmd checks V1, V2, …', () => {
+    const plan = gatePlan(['npm test', 'make test']);
 
-    expect(reviewCheckList(record)).toEqual([
+    expect(reviewCheckList(plan)).toEqual([
       { id: 'V1', kind: 'cmd', value: 'npm test', required: true },
       { id: 'V2', kind: 'cmd', value: 'make test', required: true },
     ]);
     const registry = checkRegistry({
       plan: makePlan([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: false }]),
-      reviewChecks: reviewCheckList(record),
+      reviewChecks: reviewCheckList(plan),
     });
     expect([...registry.keys()]).toEqual(['K1', 'V1', 'V2']);
     expect(registry.get('V2')).toMatchObject({ kind: 'cmd', value: 'make test', required: true });
@@ -731,7 +719,7 @@ describe('reviewer checks in the run registry', () => {
         );
         const runner = makeCommandRunner();
         const results = await runChecks(['V1'], {
-          reviewChecks: reviewCheckList(reviewChecks([{ id: 'V1', command: 'npm test' }])),
+          reviewChecks: reviewCheckList(gatePlan(['npm test'])),
           base: runBaseOf({ projectDir: run.dir, sessionId: run.sessionId }, run),
           projectDir: run.ws,
           checkoutDir: run.dir,
@@ -796,7 +784,7 @@ describe('reviewer checks in the run registry', () => {
           writeFileSync(join(run.ws, file), changed);
           const runner = makeCommandRunner();
           const results = await runChecks(['V1'], {
-            reviewChecks: reviewCheckList(reviewChecks([{ id: 'V1', command }])),
+            reviewChecks: reviewCheckList(gatePlan([command])),
             base: runBaseOf({ projectDir: run.dir, sessionId: run.sessionId }, run),
             projectDir: run.ws,
             checkoutDir: run.dir,

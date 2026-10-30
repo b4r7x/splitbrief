@@ -140,17 +140,12 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
     expect(before.status).not.toBe(0);
 
     const events: EngineEvent[] = [];
-    // The reviewer chooses the project's own test command, which is red before the run.
+    // The plan names the project's own test command as its gate, and it is red before the run.
     const planner = makePlanner({
       typedCall: typedCallPlanAndReview(
-        () => planFromTasks([task]),
+        () => ({ ...planFromTasks([task]), gate: ['npm test'] }),
         (prompt) => passingReviewVerdict(prompt),
         { plan: { inputTokens: 140, outputTokens: 90 } },
-        () => ({
-          commands: [{ id: 'V1', command: 'npm test', reason: 'The project tests every module.' }],
-          declined: [],
-          reason: null,
-        }),
       ),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nThe red validation stage was red before the run.',

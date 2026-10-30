@@ -1,85 +1,35 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
-import { resolveApproveChecks, resolveEndChecks } from '../../core/config/runtime/resolve.js';
+import { resolveEndChecks } from '../../core/config/runtime/resolve.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { fixCheckCounts, judgeFixCheck, type FixCheckKeys } from '../../core/review/fix-task.js';
 import type { Config } from '../../core/schemas/config.js';
-import {
-  MAX_REVIEW_CHECKS,
-  REVIEW_CHECKS_PLAN_JSON_SCHEMA,
-  ReviewChecksPlanSchema,
-  type ReviewChecksPlan,
-  type TriageInput,
-} from '../../core/schemas/review.js';
-import {
-  fixCyclesOf,
-  type ReviewChecksRecord,
-  type ReviewRecord,
-  type WorkflowState,
-} from '../../core/schemas/workflow.js';
-import { namesListedIn } from '../../lib/fs.js';
-import { throwIfAborted } from '../../utils/abort.js';
-import { nowIso } from '../../utils/format-time.js';
+import type { TriageInput } from '../../core/schemas/review.js';
+import type { ReviewRecord, WorkflowState } from '../../core/schemas/workflow.js';
 import type { EventBus } from '../events/types.js';
-import type { Reviewer } from '../reviewers/types.js';
-import type { OrchestratorCallbacks } from './types.js';
-import type { SeatProtocolError } from '../runners/typed-output.js';
-import { workspaceReadInstructions } from '../spec/prompts/builder.js';
-import { buildReviewChecksPrompt, type ProjectFileText } from '../spec/prompts/review-checks.js';
 import { recordCheckRuns } from './evidence/record-checks.js';
-import { publishReviewCheck, publishReviewChecksPlan } from './events.js';
+import { publishReviewCheck, publishReviewChecks } from './events.js';
 import { runBaseOf, withRunBaseTree, type RunBase } from './isolation/base-tree.js';
 import { runBaseTreeError } from './isolation/errors.js';
-import { runReviewerCall } from './review-call.js';
-import { reviewOperatorInstructions, reviewPlanData } from './review-plan.js';
-import { plannerFeature } from './run/planner-callbacks-context.js';
 import { transitionAndSave } from './state-ops.js';
 import { failingFilesFromKeys, fileOwnerSentence } from './task/file-owner.js';
 import type { FailureKeys } from './validation/extract-failure-keys.js';
 import { checkFailureText, failureKeysForFile, newFailureKeys } from './validation/failure-text.js';
 import {
+  enabledReviewChecks,
   planApprovesNpmScripts,
-  reviewCheckList,
   runChecks,
   type CheckRunResult,
   type RunChecksOptions,
 } from './validation/run-checks.js';
 
-/** Files a seat that reads none of its own gets verbatim, so it can see how the project verifies. */
-const PROJECT_FILES = [
-  'package.json',
-  'Makefile',
-  'makefile',
-  'GNUmakefile',
-  'justfile',
-  'Justfile',
-  '.justfile',
-  'pyproject.toml',
-  'setup.cfg',
-  'tox.ini',
-  'noxfile.py',
-  'Cargo.toml',
-  'go.mod',
-  'composer.json',
-  'Gemfile',
-  'Rakefile',
-  'build.gradle',
-  'build.gradle.kts',
-  'pom.xml',
-  'mix.exs',
-  'deno.json',
-  '.gitlab-ci.yml',
-  'README.md',
-];
-const CI_DIR = '.github/workflows';
 const REVIEW_CHECK_INPUT_ID = /^V\d+\.\d+$/;
-const MAX_FILE_CHARS = 8_000;
-const MAX_PROJECT_CHARS = 40_000;
 
 const OFF_SECTION = `## Reviewer checks
 
 End-of-run checks are off in this run's config (validation.end_checks), so SPLITBRIEF ran no reviewer check before this review. Only the plan and task checks ran, and their output is in the Checks Log. Judge only from the recorded evidence; mark a criterion unverified when no recorded evidence proves it.`;
+
+const NO_GATE_SECTION = `## Reviewer checks
+
+The plan names no project gate, so SPLITBRIEF ran no reviewer check before this review. Only the plan and task checks ran, and their output is in the Checks Log. Judge only from the recorded evidence; mark a criterion unverified when no recorded evidence proves it.`;
 
 export type ReviewChecksOptions = {
   projectDir: string;
@@ -88,60 +38,15 @@ export type ReviewChecksOptions = {
   config: Config;
   bus: EventBus;
   state: WorkflowState;
-  reviewer: Reviewer;
-  scope: 'final' | 'task';
-  /** The tasks a task-cadence review covers. */
-  taskIds: readonly string[];
-  /** The files the review covers. */
-  changedFiles: readonly string[];
-  /** The files already changed when the run started. */
-  preRunFiles: readonly string[];
   signal?: AbortSignal | undefined;
-  /** Asks the user to run or skip the chosen commands; a run without a screen has none. */
-  onApproval?: OrchestratorCallbacks['onReviewChecksApproval'];
 };
 
-export type ReviewChecksOutcome =
-  | {
-      kind: 'ran';
-      state: WorkflowState;
-      section: string;
-      discharged: string[];
-      /** The chosen commands that were red at the run base too, with those failures. */
-      preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>;
-    }
-  | { kind: 'protocol-error'; state: WorkflowState; error: SeatProtocolError };
-
-async function readText(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf8');
-  } catch {
-    return null;
-  }
-}
-
-async function readProjectFiles(workspaceDir: string): Promise<ProjectFileText[]> {
-  let ci: string[] = [];
-  try {
-    ci = (await readdir(join(workspaceDir, CI_DIR)))
-      .filter((name) => /\.ya?ml$/.test(name))
-      .sort()
-      .map((name) => `${CI_DIR}/${name}`);
-  } catch {
-    ci = [];
-  }
-  const files: ProjectFileText[] = [];
-  let total = 0;
-  for (const path of [...(await namesListedIn(workspaceDir, PROJECT_FILES)), ...ci]) {
-    const text = await readText(join(workspaceDir, path));
-    if (text === null) continue;
-    const room = Math.min(MAX_FILE_CHARS, MAX_PROJECT_CHARS - total);
-    if (room <= 0) break;
-    files.push({ path, text: text.slice(0, room), trimmed: text.length > room });
-    total += Math.min(text.length, room);
-  }
-  return files;
-}
+export type ReviewChecksOutcome = {
+  state: WorkflowState;
+  section: string;
+  /** The gate commands that were red at the run base too, with those failures. */
+  preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>;
+};
 
 /** Why two reds whose keys include a placeholder do not show the same failure. */
 function notVerifiedReason(workspace: FailureKeys, base: FailureKeys): string {
@@ -392,45 +297,6 @@ export async function runReviewCheck(
   return { run: split, fresh: newFailureKeys(split), unavailable, notVerified };
 }
 
-/** Why none of the chosen commands ran, as the row, the record and the verdict call name it. */
-export const REVIEW_CHECKS_SKIP_REASON = {
-  user: 'Skip all was chosen on the card',
-  noAnswer: 'the reviewer checks card closed without an answer',
-  noScreen: 'validation.approve_checks is ask and this run has no screen to ask on',
-} as const;
-
-/**
- * With `validation.approve_checks: ask` the user sees the chosen commands before any of them runs.
- * The reason none runs, or undefined when they run.
- */
-async function skipReason(
-  opts: ReviewChecksOptions,
-  plan: ReviewChecksPlan,
-): Promise<string | undefined> {
-  if (resolveApproveChecks(opts.config) !== 'ask' || plan.commands.length === 0) return undefined;
-  if (opts.onApproval === undefined) return REVIEW_CHECKS_SKIP_REASON.noScreen;
-  const answer = await opts.onApproval({ scope: opts.scope, commands: plan.commands });
-  throwIfAborted(opts.signal);
-  if (answer === 'run') return undefined;
-  return answer === 'skip' ? REVIEW_CHECKS_SKIP_REASON.user : REVIEW_CHECKS_SKIP_REASON.noAnswer;
-}
-
-function skippedSection(
-  plan: ReviewChecksPlan,
-  reason: string,
-  waitingLines: readonly string[],
-): string {
-  return [
-    '## Reviewer checks',
-    '',
-    `SPLITBRIEF ran none of the commands you chose before this review because ${reason}. No command below is a pass. Mark a criterion that only these commands would verify unverified, and judge the rest only from the recorded evidence in the Checks Log.`,
-    '',
-    ...plan.commands.map((chosen) => `- ${chosen.id} \`${chosen.command}\`: not run, ${reason}`),
-    ...waitingLines,
-    ...planLines(plan),
-  ].join('\n');
-}
-
 /** A repeated review re-runs its commands: their earlier inputs give way to this run's. */
 function replaceReviewCheckInputs(
   ref: { projectDir: string; sessionId: string },
@@ -447,119 +313,31 @@ function replaceReviewCheckInputs(
   });
 }
 
-function planLines(plan: ReviewChecksPlan): string[] {
-  const lines: string[] = [];
-  if (plan.commands.length === 0) {
-    lines.push(`You chose no command: ${plan.reason ?? ''}`);
-  }
-  if (plan.declined.length > 0) {
-    lines.push('', 'You declined:');
-    for (const entry of plan.declined) lines.push(`- ${entry.target}: ${entry.reason}`);
-  }
-  return lines;
-}
-
 /**
- * The reviewer chooses the commands that verify the change; SPLITBRIEF runs them in the run
- * workspace under the command policy, re-runs a red one at the run base with the same text, and
- * stops at the first command with new failures. New failures become pending inputs; the returned
- * section tells the verdict call what ran, what did not, and why.
+ * SPLITBRIEF runs the project gate the plan names in the run workspace under the reviewer command
+ * policy, re-runs a red command at the run base with the same text, and stops at the first command
+ * with new failures. New failures become pending inputs; the returned section tells the verdict
+ * call what ran, what did not, and why.
  */
 export async function runReviewChecks(opts: ReviewChecksOptions): Promise<ReviewChecksOutcome> {
   let state = opts.state;
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
   const notices = { bus: opts.bus, phase: state.phase };
   if (!resolveEndChecks(opts.config)) {
-    publishReviewChecksPlan(notices, { scope: opts.scope, status: 'off' });
-    return { kind: 'ran', state, section: OFF_SECTION, discharged: [], preExistingChecks: [] };
+    publishReviewChecks(notices, 'off');
+    return { state, section: OFF_SECTION, preExistingChecks: [] };
   }
-
-  const npmScriptsApproved = planApprovesNpmScripts({ config: opts.config, state });
-  const readsOwnFiles = resolveReviewerRunner(opts.config).runner.kind !== 'api';
-  const requiredCommands = (state.pendingReviewCommands ?? []).slice(0, MAX_REVIEW_CHECKS);
-  const waitingLines = (state.pendingReviewCommands ?? [])
-    .slice(MAX_REVIEW_CHECKS)
-    .map(
-      (command) =>
-        `- \`${command}\`: not run, a fix check ran it and the plan holds at most ${MAX_REVIEW_CHECKS} commands; it stays pending`,
-    );
-  const prompt = buildReviewChecksPrompt({
-    scope: opts.scope,
-    taskIds: opts.taskIds,
-    request: plannerFeature(state.feature, state.plannerContext),
-    plan: reviewPlanData(state),
-    operatorInstructions: reviewOperatorInstructions(
-      state,
-      opts.scope === 'task' ? opts.taskIds : undefined,
-    ),
-    changedFiles: opts.changedFiles,
-    preRunFiles: opts.preRunFiles,
-    requiredCommands,
-    ...(readsOwnFiles
-      ? { workspaceInstructions: workspaceReadInstructions(opts.workspaceDir) }
-      : { projectFiles: await readProjectFiles(opts.workspaceDir) }),
-  });
-  const planSchema = ReviewChecksPlanSchema.superRefine((candidate, ctx) => {
-    const firstCommands = candidate.commands.slice(0, requiredCommands.length);
-    for (const command of requiredCommands) {
-      if (firstCommands.some((chosen) => chosen.command === command)) continue;
-      ctx.addIssue({
-        code: 'custom',
-        message: `commands: choose \`${command}\` among the first ${requiredCommands.length} commands, with this exact text; a fix check ran it and no review has run it since`,
-      });
-    }
-  });
-  const call = await runReviewerCall({
-    reviewer: opts.reviewer,
-    prompt,
-    schema: planSchema,
-    jsonSchema: REVIEW_CHECKS_PLAN_JSON_SCHEMA,
-    schemaName: 'review_checks',
-    projectDir: opts.projectDir,
-    workspaceDir: opts.workspaceDir,
-    sessionId: opts.sessionId,
-    bus: opts.bus,
-    state,
-    signal: opts.signal,
-  });
-  state = call.state;
-  if ('error' in call.result) return { kind: 'protocol-error', state, error: call.result.error };
-  const plan = call.result.value;
-  const record: ReviewChecksRecord = {
-    scope: opts.scope,
-    cycle: fixCyclesOf(state).used,
-    plan,
-    at: nowIso(),
-  };
-  state = transitionAndSave(ref, state, { type: 'RECORD_REVIEW_CHECKS', record });
-  publishReviewChecksPlan(notices, { scope: opts.scope, status: 'planned', plan });
-  const skipped = await skipReason(opts, plan);
-  if (skipped !== undefined) {
-    state = transitionAndSave(ref, state, {
-      type: 'RECORD_REVIEW_CHECKS',
-      record: { ...record, skipped: { reason: skipped } },
-    });
-    publishReviewChecksPlan(notices, {
-      scope: opts.scope,
-      status: 'skipped',
-      plan,
-      reason: skipped,
-    });
-    state = replaceReviewCheckInputs(ref, state, []);
-    return {
-      kind: 'ran',
-      state,
-      section: skippedSection(plan, skipped, waitingLines),
-      discharged: [],
-      preExistingChecks: [],
-    };
+  const gate = enabledReviewChecks(opts.config, state.plan);
+  if (gate.length === 0) {
+    publishReviewChecks(notices, 'none');
+    return { state, section: NO_GATE_SECTION, preExistingChecks: [] };
   }
 
   const base = runBaseOf(ref, state);
   const checkOptions: RunChecksOptions = {
     plan: state.plan,
     tasks: state.tasks,
-    reviewChecks: reviewCheckList(record),
+    reviewChecks: gate,
     base,
     projectDir: opts.workspaceDir,
     sessionId: opts.sessionId,
@@ -567,7 +345,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     config: opts.config,
     bus: opts.bus,
     phase: state.phase,
-    npmScriptsApproved,
+    npmScriptsApproved: planApprovesNpmScripts({ config: opts.config, state }),
     discoveredValidation: state.discoveredValidation,
     signal: opts.signal,
     results: { ref, state, tree: 'workspace' },
@@ -576,10 +354,10 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   const runs: CheckRunResult[] = [];
   const inputs: TriageInput[] = [];
   const lines: string[] = [];
-  const ranRequiredCommands = new Set<string>();
   const preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']> = [];
   let stoppedBy: string | undefined;
-  for (const chosen of plan.commands) {
+  for (const check of gate) {
+    const chosen = { id: check.id, command: check.value };
     const label = `${chosen.id} \`${chosen.command}\``;
     if (stoppedBy !== undefined) {
       publishReviewCheck(notices, {
@@ -602,7 +380,6 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
       lines.push(`- ${label}: ${run.status === 'refused' ? 'refused' : 'not run'}, ${run.output}`);
       continue;
     }
-    if (requiredCommands.includes(chosen.command)) ranRequiredCommands.add(chosen.command);
     if (run.status !== 'fail') {
       lines.push(`- ${label}: passed`);
       continue;
@@ -648,17 +425,13 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     }
   }
 
-  const lastTask =
-    opts.scope === 'task'
-      ? state.tasks.filter((task) => opts.taskIds.includes(task.id)).at(-1)
-      : state.tasks.at(-1);
   if (runs.length > 0) {
     await recordCheckRuns({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
       workspaceDir: opts.workspaceDir,
       state,
-      task: lastTask,
+      task: state.tasks.at(-1),
       runs,
     });
   }
@@ -666,17 +439,9 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   const section = [
     '## Reviewer checks',
     '',
-    'Before this review SPLITBRIEF ran the commands you chose, in the run workspace; their output is in the Checks Log. A failure marked pre-existing also fails at the run base: raise no finding for it. A failure marked not verified at the run base is red at the run base too, but SPLITBRIEF could not show it is the same failure, or SPLITBRIEF could not re-run it there: decide from the output. Each new or not verified failure is a pending input.',
+    'Before this review SPLITBRIEF ran the project gate the plan names, in the run workspace; their output is in the Checks Log. A failure marked pre-existing also fails at the run base: raise no finding for it. A failure marked not verified at the run base is red at the run base too, but SPLITBRIEF could not show it is the same failure, or SPLITBRIEF could not re-run it there: decide from the output. Each new or not verified failure is a pending input.',
     '',
     ...lines,
-    ...waitingLines,
-    ...planLines(plan),
   ].join('\n');
-  return {
-    kind: 'ran',
-    state,
-    section,
-    discharged: [...ranRequiredCommands],
-    preExistingChecks,
-  };
+  return { state, section, preExistingChecks };
 }

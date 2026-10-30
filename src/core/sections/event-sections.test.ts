@@ -30,7 +30,7 @@ function requireSection<T extends Section['type']>(
 
 describe('groupEventsIntoSections', () => {
   it.each(['final', 'task'] as const)(
-    'settles an unfinished %s review at resume after check selection completed',
+    'settles an unfinished %s review at resume while a reviewer check runs',
     (scope) => {
       const phase = scope === 'final' ? 'final-review' : 'implementing';
       const events: EngineEvent[] = [
@@ -43,14 +43,6 @@ describe('groupEventsIntoSections', () => {
           endedAt: 3_000,
           durationMs: 2_000,
         }),
-        {
-          type: 'review_checks',
-          ts: 3_000,
-          phase,
-          scope,
-          status: 'planned',
-          commands: [{ id: 'V1', command: 'npm test', reason: 'Verify the change.' }],
-        },
         {
           type: 'full_suite',
           ts: 4_000,
@@ -79,10 +71,10 @@ describe('groupEventsIntoSections', () => {
         'settled-stage',
       ]);
       expect(sections[0]).toMatchObject({
-        items: events.slice(0, 4),
+        items: events.slice(0, 3),
         summary: { stage: 'review', scope, outcome: 'stopped', duration: 3_000, rerunsBefore: 0 },
       });
-      expect(sections[1]?.items).toEqual([events[4]]);
+      expect(sections[1]?.items).toEqual([events[3]]);
       expect(sections[2]).toMatchObject({
         summary: { outcome: 'passed', duration: 4_000, rerunsBefore: scope === 'final' ? 1 : 0 },
       });
@@ -283,14 +275,6 @@ describe('groupEventsIntoSections', () => {
         durationMs: 100,
       }),
       {
-        type: 'review_checks',
-        ts: 3_300,
-        phase: 'implementing',
-        scope: 'task',
-        status: 'planned',
-        commands: [{ id: 'V1', command: 'npm test', reason: 'Verify validation.' }],
-      },
-      {
         type: 'full_suite',
         ts: 3_400,
         phase: 'implementing',
@@ -387,7 +371,7 @@ describe('groupEventsIntoSections', () => {
         duration: 49_000,
       },
     });
-    expect(settled[3]?.items).toContainEqual(events[13]);
+    expect(settled[3]?.items).toContainEqual(events[12]);
     expect(settled[5]).toMatchObject({
       summary: {
         stage: 'review',
@@ -646,14 +630,6 @@ describe('groupEventsIntoSections', () => {
         scope: 'task',
         afterTaskId: 'T001',
         tool: 'codex',
-      },
-      {
-        type: 'review_checks',
-        ts: 3_100,
-        phase: 'implementing',
-        scope: 'task',
-        status: 'planned',
-        commands: [{ id: 'V1', command: 'npm test', reason: 'Verify validation.' }],
       },
     ];
     const sections = groupEventsIntoSections([
@@ -1660,7 +1636,6 @@ describe('groupEventsIntoSections', () => {
       const sections = groupEventsIntoSections([
         start('T001', 0),
         complete('T001'),
-        at('review_checks', 'final-review', 19_000, { scope: 'final', status: 'planned' }),
         check(19_500, 'V1', { status: 'refused', command: 'npm run lint', detail: 'changed' }),
         check(20_000, 'V2', { status: 'done', command: 'npm run typecheck', passed: true }),
         check(20_500, 'V3', { status: 'done', command: 'npm test', passed: false }),
@@ -1699,7 +1674,6 @@ describe('groupEventsIntoSections', () => {
       const sections = groupEventsIntoSections([
         start('T001', 0),
         complete('T001'),
-        at('review_checks', 'final-review', 19_000, { scope: 'final', status: 'planned' }),
         check(20_000, 'V1', { status: 'done', command: 'npm test', passed: false }),
         check(20_500, 'V1', {
           status: 'done',
@@ -1821,11 +1795,6 @@ describe('groupEventsIntoSections', () => {
     };
     const runningReviews = {
       'a plan check runs': [reviewerCheck(4_000, { id: 'K1', moment: 'plan' })],
-      'the reviewer chooses its checks': [
-        reviewStarted(4_000),
-        at(4_001, 'final-review', 'review_step', { step: 'choosing-checks' }),
-        reviewCall(4_002, 'choose'),
-      ],
       'a reviewer check runs': [reviewStarted(4_000), reviewerCheck(5_000)],
       'a render runs': [reviewStarted(4_000), reviewerCheck(5_000, { scenario: 'workflow-x' })],
       'the review halts': [
@@ -1955,7 +1924,7 @@ describe('groupEventsIntoSections', () => {
       const events = [
         ...brief,
         ...pauses['Pause after this brief or a seat save'],
-        ...runningReviews['the reviewer chooses its checks'],
+        ...runningReviews['a reviewer check runs'],
         at(9_000, 'final-review', 'review_completed', {
           scope: 'final',
           tool: 'codex',

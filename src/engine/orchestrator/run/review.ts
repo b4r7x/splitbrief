@@ -556,7 +556,6 @@ export async function runScheduledReview(args: {
         preReview: (s: WorkflowState) =>
           runPreReview({ wctx, state: s, setTrackedState, scope: 'task' }),
       }),
-      reviewChecks: !reviewAgain,
       setTrackedState,
     });
     state = review.state;
