@@ -422,9 +422,9 @@ describe('visual catalog', () => {
     }
   });
 
-  it.each([80, 120])('names the review seat on a fix-task consult at %s columns', async (cols) => {
-    const scenario = findVisualScenario('workflow-build-review-consult');
-    if (scenario === undefined) throw new Error('Missing review consult scenario');
+  it.each([80, 120])('names the plan seat on a fix-task consult at %s columns', async (cols) => {
+    const scenario = findVisualScenario('workflow-build-fix-consult');
+    if (scenario === undefined) throw new Error('Missing fix consult scenario');
     const checkpoint = scenario.checkpoints[0];
     const viewport = scenario.viewports.find((size) => size.cols === cols);
     if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
@@ -432,9 +432,9 @@ describe('visual catalog', () => {
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame).toContain(
-        'REVIEW · Claude Code CLI · Claude Sonnet 4 · answering the consult on T904',
+        'PLAN · Claude Code CLI · Claude Sonnet 4 · answering the consult on T904',
       );
-      expect(frame).toContain('REVIEW → T904: guidance');
+      expect(frame).toContain('PLAN → T904: guidance');
     } finally {
       await handle.unmount();
     }

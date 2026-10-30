@@ -144,9 +144,7 @@ export function suiteStatusParts(
 ): ConversationRowSegment[] {
   const reviewing =
     phaseStage(phase) === 'review' ||
-    (operation?.status === 'running' &&
-      operation.role === 'review' &&
-      operation.taskId === undefined);
+    (operation?.status === 'running' && operation.role === 'review');
   return [...(reviewing ? REVIEW_PREFIX_PARTS : []), ...suiteStageParts(suite, 'live')];
 }
 

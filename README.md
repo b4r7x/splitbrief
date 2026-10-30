@@ -12,7 +12,7 @@ Everything between the two belongs to SPLITBRIEF: the [Task Brief contract](./do
 
 ## Why two tools instead of one
 
-A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is not the tool that signs it off. When the consulted seat asks a question that nobody answers, says the brief cannot be done, or a seat is down with no fallback, explicit recovery asks the user how to proceed. The planner never automatically takes over code-writing implementation; bounded repairs after review use the selected implementer.
+A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is not the tool that signs it off. When the planner asks a question that nobody answers, says the brief cannot be done, or a seat is down with no fallback, explicit recovery asks the user how to proceed. The planner never automatically takes over code-writing implementation; bounded repairs after review use the selected implementer.
 
 Same-lab still works — two instances of one tool are a valid configuration. You give up the blind-spot argument, not the pipeline.
 
@@ -52,8 +52,8 @@ You: "add user authentication with JWT"
                 │
                 still failing
                 │
-            a seat is consulted, read-only
-            (planner; reviewer for a fix task):
+            the planner is consulted, read-only
+            (fix tasks included):
               guidance · rewrite-task · split-task
               verify · ask-user · cannot
               a question nobody answers or a

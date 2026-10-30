@@ -903,7 +903,6 @@ describe('the review that judges a fix cycle', () => {
         {
           taskId: 'T002',
           reason: 'no-progress',
-          seat: 'plan',
           action: 'rewrite-task',
           newTaskIds: ['T003'],
         },
@@ -1155,7 +1154,6 @@ describe('the review that judges a fix cycle', () => {
         revision: target.revision ?? 1,
         reason: 'no-progress',
         answer: verifyK9,
-        seat: 'plan',
       });
       saveState(ref, recorded);
       const ctx = { ...ref, workspaceDir: ref.projectDir, config: makeNoValidationConfig() };
@@ -1194,7 +1192,6 @@ describe('the review that judges a fix cycle', () => {
         revision: target.revision ?? 1,
         reason: 'no-progress',
         answer: accept,
-        seat: 'plan',
       });
       const { planner, prompts } = consultPlanner([]);
       const result = await follow(recorded, fixTask('T901', 'F1'), { planner });
@@ -1232,7 +1229,7 @@ describe('the review that judges a fix cycle', () => {
       );
       expect(prompts).toHaveLength(1);
       expect(result.events.filter((event) => event.type === 'consult_answered')).toMatchObject([
-        { reason: 'no-progress', seat: 'plan' },
+        { reason: 'no-progress' },
       ]);
       expect(result.state.tasks.filter((task) => task.fix?.cycle === 2)).toHaveLength(1);
     });

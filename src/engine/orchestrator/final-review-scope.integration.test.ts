@@ -291,7 +291,6 @@ describe('final review task completion provenance', () => {
         callbacks: makeCallbacks().callbacks,
         sinks: TEST_SINKS,
         state,
-        seat: 'plan',
         changedFiles: [],
         taskStartSnapshot,
         runCommand: makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 }),

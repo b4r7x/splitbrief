@@ -3326,6 +3326,24 @@ describe('consult answer rows', () => {
     expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: guidance · The export is missing.`]);
   });
 
+  it("replays an older run's reviewer answer to a fix task's consult on REVIEW", () => {
+    const rows = rowsFor({
+      type: 'consult_answered',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T904'),
+      reason: 'failed',
+      action: 'guidance',
+      diagnosis: 'The finding asks for the cache key.',
+      newTaskIds: null,
+      seat: 'review',
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      `REVIEW ${arrow} T904: guidance · The finding asks for the cache key.`,
+    ]);
+  });
+
   it('renders a rewritten brief with its new revision', () => {
     const rows = rowsFor({
       type: 'consult_answered',

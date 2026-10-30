@@ -21,8 +21,6 @@ import { TASK_CMD_CHECK_RULE } from './plan-session.js';
 
 export type ConsultPromptInput = Readonly<{
   workspaceDir: string;
-  /** The seat that answers: the planner, or the reviewer for the fix task it wrote. */
-  seat: ConsultSeat;
   reason: ConsultReason;
   /** The run's plan: the criteria and checks every task serves. */
   plan: Plan | undefined;
@@ -52,9 +50,9 @@ export type ConsultPromptInput = Readonly<{
    */
   operatorInstructions: readonly string[];
   /**
-   * Planner consults only: the planner's session already holds this run's plan and brief,
-   * so the new attempt's evidence goes as a short turn instead of the whole prompt. A
-   * reviewer consult holds no session and never sets it.
+   * The planner's session already holds this run's plan and brief, so the new attempt's evidence
+   * goes as a short turn instead of the whole prompt. A fix task's repair consult never sets it:
+   * the review wrote that brief, and the planner reads it whole.
    */
   resumed?: boolean | undefined;
 }>;
@@ -64,12 +62,6 @@ const REASON_TEXT: Record<ConsultReason, string> = {
   blocked: 'The implementer stopped and needs a decision that is not its own to make.',
   'no-progress':
     "The review made no progress: its blockers did not move after a fix cycle, its answer fixes none of them, or it failed with no blocker on criteria no check verified. The failing output lists your earlier answers on reviews without progress; choose again with them in view. guidance goes with the reviewer's next fix briefs, and needs at least one. A rewrite or a split replaces them. verify re-runs the named checks on the same tree, for a red that may be a flake, and the review runs again. accept leaves every remaining blocker open with your note and keeps the failed verdict; the user reads the note before Apply. A red check or an Apply conflict that blocks cannot be accepted: verify the red check or fix it. ask-user asks the user. cannot stops the run and asks the user.",
-};
-
-const CONSULT_ROLE: Record<ConsultSeat, string> = {
-  plan: "You are the run's planner.",
-  review:
-    "You are the run's reviewer: you wrote this fix task at the review, and you decide its repair.",
 };
 
 const CONSULT_CONTRACT_BODY = `SPLITBRIEF asks you, not the user, for the decision that unblocks this task. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
@@ -89,8 +81,12 @@ The answer rule: SPLITBRIEF gives the user's answer to an \`ask-user\` question 
 
 The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs \`ask-user\`. ${TASK_CMD_CHECK_RULE}`;
 
-function consultContract(seat: ConsultSeat): string {
-  return `${CONSULT_ROLE[seat]} ${CONSULT_CONTRACT_BODY}`;
+function consultContract(task: Task): string {
+  const role =
+    task.fix === undefined
+      ? "You are the run's planner."
+      : "You are the run's planner. The review wrote this fix task for its findings, and you decide its repair.";
+  return `${role} ${CONSULT_CONTRACT_BODY}`;
 }
 
 const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. When the task cannot be done as asked, answer \`cannot\`. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
@@ -220,6 +216,7 @@ export function consultAnswerDetail(answer: ConsultRecord['answer']): string {
   }
 }
 
+/** An older run's reviewer answered its fix tasks' consults, and its records name it. */
 const ANSWER_SEAT: Record<ConsultSeat, string> = { plan: 'Planner', review: 'Reviewer' };
 
 /**
@@ -394,7 +391,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
   }
   sections.push(
     instructionsSection(
-      `${consultContract(input.seat)}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
+      `${consultContract(input.task)}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
     ),
   );
 

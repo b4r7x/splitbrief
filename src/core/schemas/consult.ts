@@ -172,7 +172,7 @@ export function readImplementerReport(
 export const CONSULT_REASONS = ['failed', 'blocked', 'no-progress'] as const;
 export type ConsultReason = (typeof CONSULT_REASONS)[number];
 
-/** The seat that answers a consult: the reviewer for a fix task's repair, the planner for the rest. */
+/** The seat a consult record names: the planner, or the reviewer that answered an older run's fix task. */
 export const CONSULT_SEATS = ['plan', 'review'] as const;
 export type ConsultSeat = (typeof CONSULT_SEATS)[number];
 

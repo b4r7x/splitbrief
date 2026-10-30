@@ -328,13 +328,12 @@ describe('e2e: brief escalation', { timeout: 240_000 }, () => {
     expect(
       events.flatMap((event) =>
         event.type === 'consult_answered'
-          ? [{ taskId: event.taskId, seat: event.seat, reason: event.reason, action: event.action }]
+          ? [{ taskId: event.taskId, reason: event.reason, action: event.action }]
           : [],
       ),
     ).toEqual(
       ['guidance', 'ask-user'].map((action) => ({
         taskId: 'T002',
-        seat: 'plan',
         reason: 'failed',
         action,
       })),

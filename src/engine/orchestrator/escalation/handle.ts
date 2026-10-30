@@ -9,7 +9,7 @@ import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { publishError, publishWarning, publishWarningFromError } from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
-import { consultSeat, requestConsult } from '../consult/request.js';
+import { requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { revertedDir } from '../../../core/paths.js';
@@ -379,7 +379,6 @@ export async function handleRetryAndEscalation(
     const snapshot = attemptSnapshot ?? taskStartSnapshot;
     const changedFiles = await attemptChangedFiles(ctx.workspaceDir, snapshot);
     const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
-    const seat = consultSeat(task, reason);
     const consult = await requestConsult(
       {
         projectDir: ctx.projectDir,
@@ -388,7 +387,6 @@ export async function handleRetryAndEscalation(
         bus: ctx.bus,
         config: ctx.config,
         planner: ctx.planner,
-        reviewer: ctx.reviewer,
         state,
         ...(ctx.signal !== undefined && { signal: ctx.signal }),
         onStateChange: (next) => {
@@ -415,7 +413,6 @@ export async function handleRetryAndEscalation(
         callbacks: ctx.callbacks,
         sinks: ctx.sinks,
         state,
-        seat,
         ...(ctx.signal !== undefined && { signal: ctx.signal }),
         changedFiles,
         taskStartSnapshot: ctx.taskStartSnapshot,
@@ -467,7 +464,7 @@ export async function handleRetryAndEscalation(
         phase: state.phase,
         ...(applied.action === 'unanswered'
           ? { question: applied.question }
-          : { cannot: { seat, reason: applied.reason } }),
+          : { cannot: applied.reason }),
         validationSummary: lastError,
         ...haltAttempts(state, task, { booked: true }),
         allowRetryOverride: true,
@@ -480,7 +477,7 @@ export async function handleRetryAndEscalation(
     }
 
     const instructions = guidanceInstructions(applied.instructions, applied.context);
-    const halted = await attempt(consultAttemptError({ lastError, instructions, seat }), false);
+    const halted = await attempt(consultAttemptError({ lastError, instructions }), false);
     if (halted) return halted;
   }
 }

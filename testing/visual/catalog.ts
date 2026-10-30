@@ -867,18 +867,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-build-review-consult',
-      title: 'Workflow · reviewer consult on a fix task',
+      id: 'workflow-build-fix-consult',
+      title: 'Workflow · planner consult on a fix task',
       surface: screenSurface('workflow'),
       checkpoint: {
-        id: 'build-review-consult',
-        title: 'The reviewer answers the consult of its fix task',
+        id: 'build-fix-consult',
+        title: 'The planner answers the consult of a fix task the review wrote',
         kind: 'implementation',
         marker: 'answering the consult on T904',
       },
       elements: [
         { id: 'header', title: 'Build progress' },
-        { id: 'transcript', title: 'Fix brief with the reviewer consult row' },
+        { id: 'transcript', title: 'Fix brief with the planner consult row' },
       ],
     }),
     defineScenario({
@@ -1869,21 +1869,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-reviewer-question',
-      title: 'Workflow · reviewer consult question',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'reviewer-question',
-        title: 'The reviewer asks about its repair task',
-        kind: 'question',
-        marker: 'Reply to the reviewer',
-      },
-      elements: [
-        { id: 'transcript', title: 'Reviewer consult' },
-        { id: 'composer', title: 'Reply to the reviewer' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-question-default',
       title: 'Workflow · a free-text question with its default',
       surface: screenSurface('workflow'),
@@ -1994,21 +1979,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Unanswered round' },
         { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-reviewer-question-unanswered',
-      title: 'Workflow · a reviewer question left open with Esc',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'reviewer-question-unanswered',
-        title: 'The reviewer question above the composer that takes the reply',
-        kind: 'question',
-        marker: 'Unanswered · 1 question',
-      },
-      elements: [
-        { id: 'transcript', title: 'Unanswered reviewer question' },
-        { id: 'composer', title: 'Reply to the reviewer' },
       ],
     }),
     defineScenario({

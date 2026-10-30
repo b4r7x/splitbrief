@@ -113,12 +113,9 @@ describe('taskFiles', () => {
 });
 
 describe('consultHaltDetails', () => {
-  it('names the seat that could not answer the consult', () => {
-    expect(consultHaltDetails(taskId('T013'), 'plan')).toEqual([
+  it('names the brief whose consult the planner could not answer', () => {
+    expect(consultHaltDetails(taskId('T013'))).toEqual([
       'The planner could not answer the consult for T013.',
-    ]);
-    expect(consultHaltDetails(taskId('T013'), 'review')).toEqual([
-      'The reviewer could not answer the consult for T013.',
     ]);
   });
 });

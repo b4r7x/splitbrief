@@ -119,8 +119,8 @@ Render checks run only in the CLI.
 The reviewer returns tasks, criteria, findings, fixTasks, rejected, verify and ask in one answer matching `ReviewAnswerSchema`.
 The session saves the whole answer in `review.json`. There is no separate planner call for fix work.
 The next review packet carries rejected finding ids and reasons.
-Still-red fix tasks consult the reviewer. Plan tasks consult the planner.
-Reviewer consults and review answers spend no planner decision.
+Every consult goes to the planner, the consult of a still-red fix task included.
+Review answers spend no planner decision.
 
 Seat calls have no default deadline. Only an explicit `timeout` or `idleKillMs` limits a subprocess call.
 The session warns after output silence reaches `idleWarnMs`, default `300000` ms. The warning never kills the call.

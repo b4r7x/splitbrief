@@ -93,8 +93,17 @@ it('keeps the passed stages on the rail through an Apply halt and Re-run Apply',
       const waitForText = (text: string) =>
         vi.waitFor(() => expect(screen()).toContain(text), { timeout: 30_000 });
       try {
-        await waitForText('Needs you · Apply stopped part way');
-        const panel = screen();
+        // The PTY can deliver the frame in parts: read the panel only once its legend row is painted.
+        const panel = await vi.waitFor(
+          () => {
+            const shown = screen();
+            expect(shown).toContain('Needs you · Apply stopped part way');
+            expect(shown).toContain('Re-run Apply');
+            expect(shown).toContain('⏎ confirm');
+            return shown;
+          },
+          { timeout: 30_000 },
+        );
         await delay(PROMPT_TYPEAHEAD_GRACE_MS);
         child.write('\r');
         await waitForText('Applied');

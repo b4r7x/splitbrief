@@ -35,15 +35,14 @@ A recipe error is seat trouble. Halt with its diagnosis; do not improvise permis
 ## Task consult
 
 Record reported decisions with references/planning.md; they start no consult.
-Keep the consult read-only. The seat that owns the task chooses the next action and never edits implementation code.
-Plan tasks use the planner's session. Fix tasks use the reviewer with the full fix context and no session.
-Record each answer with its seat and diagnosis.
+Keep the consult read-only. The planner chooses the next action for every task and never edits implementation code.
+Record each answer with its diagnosis.
 
 <!-- generated: consult-table -->
 Attempt → 1 local retry with the exact errors → a consult.
-A plan task consults the planner. A fix task the reviewer wrote consults the reviewer, also after a rewrite or a split.
-The planner continues its planning session. The reviewer reads the full fix context without a session.
-Record a malformed answer as a failure of the seat that answered. Apply no action.
+Every consult goes to the planner: a plan task, and a fix task the reviewer wrote, also after a rewrite or a split.
+The planner continues its planning session. A fix task's consult sends the full fix context on that session.
+Record a malformed answer as a failure of the planner. Apply no action.
 
 | Action | Next step |
 |---|---|
@@ -55,14 +54,14 @@ Record a malformed answer as a failure of the seat that answered. Apply no actio
 | `cannot` | Stop the brief and ask the user. Make no implementer call. |
 | `accept` | Only on a review without progress, and never while a red check or an Apply conflict blocks. Keep the open blockers and the failed verdict with a note. A workspace run is ready to apply as is, a checkout run closes, and a task-cadence review lets the next brief start. |
 
-No count stops the consults: every failed attempt goes back to the seat.
-Each consult shows the seat its earlier answers on the lineage, across splits and resume, each before the failed attempts that followed it.
+No count stops the consults: every failed attempt goes back to the planner.
+Each consult shows the planner its earlier answers on the lineage, across splits and resume, each before the failed attempts that followed it.
 A blocked report consults at once.
-A guarded rewrite or split asks the operator on the consulted seat before dispatch.
+A guarded rewrite or split asks the operator before dispatch.
 A done report records its decisions in the plan ledger with the task id before validation. No seat confirms them, and a retry records only a new decision.
 Reported decisions are not consult answers.
 A done report field that breaks the contract reads as empty with a warning. The other fields stay.
-The user is asked only when the seat answers `ask-user` or `cannot`. A seat that is down with no fallback halts as seat down.
+The user is asked only when the planner answers `ask-user` or `cannot`. A seat that is down with no fallback halts as seat down.
 <!-- /generated -->
 
 The consult input includes the plan, task revisions, the task diff since the task started (every attempt, not only the latest: the diff of the brief's own files, and the names of the other files the task changed: the first 20, then a count of the rest), one line per failed attempt, the latest exact errors, report, earlier consults and other task statuses.

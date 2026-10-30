@@ -791,7 +791,7 @@ The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, 
 
 ### Symptom: Every task fails validation because the tree was already red
 
-**Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task` or a consult `verify`. Its failure retries the brief once with the exact errors, then consults a seat: the planner for a plan task, the reviewer for a fix task. Only a red reviewer check at review re-runs at the run base, with the same command text.
+**Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task` or a consult `verify`. Its failure retries the brief once with the exact errors, then consults the planner, for a plan task and for a fix task. Only a red reviewer check at review re-runs at the run base, with the same command text.
 
 A fix check runs once per brief gate. Each new BUILD attempt runs the checks again. A fix check never re-runs at the run base.
 

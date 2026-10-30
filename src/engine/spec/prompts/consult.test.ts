@@ -60,7 +60,6 @@ const EARLIER_CONSULT: ConsultRecord = {
 function consultInput(overrides: Partial<ConsultPromptInput> = {}): ConsultPromptInput {
   return {
     workspaceDir: '/tmp/run-workspace',
-    seat: 'plan',
     reason: 'failed',
     plan,
     task: TASK,
@@ -231,6 +230,16 @@ describe('buildConsultPrompt', () => {
     },
   );
 
+  it("names the reviewer on an older run's fix-task answer", () => {
+    const prompt = buildConsultPrompt(
+      consultInput({ earlierConsults: [{ ...EARLIER_CONSULT, seat: 'review' }] }),
+    );
+
+    expect(prompt).toContain(
+      '- Reviewer answer (failed · guidance · revision 1): The named export is missing.',
+    );
+  });
+
   it('shows an older answer that recorded no attempt after the failed attempts', () => {
     const prompt = buildConsultPrompt(
       consultInput({
@@ -348,14 +357,10 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain(TASK_CMD_CHECK_RULE);
   });
 
-  it.each([
-    ['plan', false],
-    ['review', false],
-    ['plan', true],
-  ] as const)(
-    'tells the %s seat (resumed=%s) that an answer only instructs the next attempt, and to answer cannot',
-    (seat, resumed) => {
-      const prompt = buildConsultPrompt(consultInput({ seat, resumed }));
+  it.each([false, true])(
+    'tells the planner (resumed=%s) that an answer only instructs the next attempt, and to answer cannot',
+    (resumed) => {
+      const prompt = buildConsultPrompt(consultInput({ resumed }));
 
       expect(prompt).toContain('Offer only choices that the next attempt can carry out.');
       expect(prompt).toContain('answer `cannot`');
@@ -431,7 +436,7 @@ describe('buildConsultPrompt', () => {
     expect(prompt).not.toContain('### Fix findings');
   });
 
-  it('names the reviewer and lists the fix findings keys on a fix task', () => {
+  it('tells the planner the review wrote the fix task and lists its findings keys', () => {
     const fixTask: Task = {
       ...TASK,
       fix: {
@@ -448,12 +453,11 @@ describe('buildConsultPrompt', () => {
         ],
       },
     };
-    const prompt = buildConsultPrompt(consultInput({ seat: 'review', task: fixTask }));
+    const prompt = buildConsultPrompt(consultInput({ task: fixTask }));
 
     expect(prompt).toContain(
-      "You are the run's reviewer: you wrote this fix task at the review, and you decide its repair. SPLITBRIEF asks you",
+      "You are the run's planner. The review wrote this fix task for its findings, and you decide its repair. SPLITBRIEF asks you",
     );
-    expect(prompt).not.toContain("You are the run's planner.");
     expect(prompt).toContain('### Fix findings');
     expect(prompt).toContain(
       [

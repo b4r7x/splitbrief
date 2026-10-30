@@ -114,24 +114,6 @@ it.each([
   },
 );
 
-it.each(['implementing', 'validating-task'] as const)(
-  'names the review seat on a fix-task consult that runs while %s',
-  (phase) => {
-    // A blocked report consults the reviewer before the ladder escalates.
-    const progress = deriveBuildProgress(
-      input({
-        lifecycle: lifecycleState({ phase }),
-        operations: operationsState({
-          active: runningOperation({ role: 'review', phase, taskId: taskId('T013') }),
-        }),
-      }),
-    );
-    expect(progress.activity).toBe(
-      'REVIEW · OpenAI Codex CLI · auto · answering the consult on T013',
-    );
-  },
-);
-
 it('names the plan render in Review and uses its clock for freshness', () => {
   const progress = deriveBuildProgress(
     input({
@@ -579,37 +561,6 @@ describe('deriveBuildProgress', () => {
         'PLAN · Claude Code CLI · auto · answering the consult on T003',
       );
     }
-  });
-
-  it('names the review seat when it answers the consult on a fix task', () => {
-    const progress = deriveBuildProgress(
-      input({
-        lifecycle: lifecycleState({ phase: 'escalating' }),
-        operations: operationsState({
-          active: runningOperation({ role: 'review', taskId: 'T013', runnerName: 'codex' }),
-        }),
-      }),
-    );
-    expect(progress.activity).toBe(
-      'REVIEW · OpenAI Codex CLI · auto · answering the consult on T013',
-    );
-  });
-
-  it('says the review seat answers the consult again after a refused answer', () => {
-    const progress = deriveBuildProgress(
-      input({
-        lifecycle: lifecycleState({ phase: 'escalating' }),
-        operations: operationsState({
-          active: {
-            ...runningOperation({ role: 'review', taskId: 'T013', runnerName: 'codex' }),
-            answeringAgain: true,
-          },
-        }),
-      }),
-    );
-    expect(progress.activity).toBe(
-      'REVIEW · OpenAI Codex CLI · auto · answering the consult again on T013',
-    );
   });
 
   it('names the tool by its display name, whichever name its runner gave the call', () => {
@@ -1060,7 +1011,6 @@ describe('buildProgressRows', () => {
     ['implementer', 'implementer', undefined],
     ['planner', 'planner', 'PLAN'],
     ['escalation', 'planner', 'PLAN'],
-    ['review', 'reviewer', 'REVIEW'],
   ] as const)(
     'carries the %s identity and consult seat tone through fitting',
     (role, tone, seat) => {
@@ -1305,7 +1255,6 @@ describe('buildProgressRows', () => {
   it.each([
     { role: 'implementer', prefix: '', doing: 'working on T013' },
     { role: 'planner', prefix: 'PLAN · ', doing: 'answering the consult on T013' },
-    { role: 'review', prefix: 'REVIEW · ', doing: 'answering the consult on T013' },
   ] as const)(
     'keeps the $role seat, work and silence clock after shedding a long model',
     ({ role, prefix, doing }) => {

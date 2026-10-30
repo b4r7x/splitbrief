@@ -144,7 +144,6 @@ export async function askPlannerOnStuckReview(args: {
         bus: wctx.bus,
         config: wctx.config,
         planner: wctx.planner,
-        reviewer: wctx.reviewer,
         state,
         ...(wctx.signal !== undefined && { signal: wctx.signal }),
         onStateChange: track,

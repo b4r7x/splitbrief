@@ -1,7 +1,6 @@
 import type { z } from 'zod';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { RunnerCallEvent } from '../calls/types.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { EventBus } from '../events/types.js';
 import {
@@ -42,8 +41,6 @@ export type RunReviewerCallOptions<T> = {
   state: WorkflowState;
   signal?: AbortSignal | undefined;
   steering?: SteeringPort | undefined;
-  /** Receives the call's runner events: a consult publishes them under its task. */
-  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
 } & (ReviewerCallInput | { prepareCall: () => Promise<PreparedReviewerCallInput> });
 
 export type RunReviewerCallResult<T> = {
@@ -68,7 +65,6 @@ export async function runReviewerCall<T>(
         seat: 'reviewer',
         callbacks: {
           onOutput: () => {},
-          ...(opts.onCallEvent !== undefined && { onCallEvent: opts.onCallEvent }),
           signal: opts.signal,
           ...(opts.steering !== undefined && { steering: opts.steering }),
         },

@@ -35,6 +35,7 @@ import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js
 import { error } from '../../../utils/error.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
+import { requestConsult } from '../consult/request.js';
 import { handleTaskPlannerCallFailure, retryAndRecord } from './retry.js';
 
 vi.mock('../escalation/handle.js', async (importOriginal) => {
@@ -611,32 +612,6 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     validation: { endChecks: false, testCommand: 'noop' },
   });
 
-  it('offers the REVIEW seat when an inherited reviewer consult is signed out', async () => {
-    const ref = setupProject();
-    await rememberDetectedTools(
-      ref.projectDir,
-      cliDetectionsFor('ready', ['codex', 'claude-code']),
-    );
-    const task = makeTask({ status: 'in_progress' });
-    const state = implementingState([task]);
-    const { bus } = makeBusRecorder();
-    const result = await handleTaskPlannerCallFailure({
-      wctx: makeWorkflowContext({ ...ref, config, bus }),
-      task,
-      state,
-      err: new Error('Please sign in again'),
-      label: 'Reviewer consult failed',
-      seat: 'review',
-      setTrackedState: vi.fn(),
-    });
-    expect(result.pendingRecovery).toMatchObject({
-      reason: 'runner-unauthenticated',
-      seat: 'review',
-      taskId: task.id,
-      switchSeat: { seat: 'review', candidates: [{ tool: 'claude-code' }] },
-    });
-  });
-
   it('states no attempt count when the consult before a dispatch fails on a brief with attempts', async () => {
     const ref = setupProject();
     await rememberDetectedTools(
@@ -648,13 +623,30 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     for (let i = 0; i < 3; i++)
       state = transition(state, { type: 'COUNT_ATTEMPT', taskId: task.id });
     const { bus } = makeBusRecorder();
+    const failure = new Error('the planner process stopped unexpectedly');
+    const planner = makePlanner({
+      typedCall: (ctx) => ({
+        seat: ctx.seat,
+        typedOutput: 'fallback',
+        canResume: false,
+        invoke: async () => {
+          throw failure;
+        },
+      }),
+    });
+    await expect(
+      requestConsult(
+        { ...ref, workspaceDir: ref.projectDir, bus, config, planner, state },
+        { task, reason: 'failed', failingOutput: 'still broken' },
+      ),
+    ).rejects.toBe(failure);
+
     const result = await handleTaskPlannerCallFailure({
       wctx: makeWorkflowContext({ ...ref, config, bus }),
       task,
       state: { ...state, attempt: 0 },
-      err: new Error('socket hang up'),
+      err: failure,
       label: 'Planner consult for T002 failed',
-      seat: 'plan',
       setTrackedState: vi.fn(),
     });
     expect(result.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', seat: 'plan' });
@@ -665,10 +657,10 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     words = CODEX_LIMIT,
     code = 'codex-turn-failed',
     runConfig: typeof config = config,
+    task = makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] }),
   ) {
     const { projectDir, sessionId } = setupProject();
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['codex', 'claude-code']));
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] });
     let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
     state = transition(state, { type: 'TASK_SENT' });
@@ -747,6 +739,36 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     expect(
       readEvidenceLedger({ projectDir, sessionId })?.tasks.find((t) => t.id === 'T001'),
     ).toMatchObject({ status: 'failed', method: 'failed' });
+  });
+
+  it("halts a fix task's consult on the plan seat with a reviewer configured, naming the brief", async () => {
+    const { result } = await consultHalted(
+      CODEX_LIMIT,
+      'codex-turn-failed',
+      {
+        ...config,
+        reviewer: {
+          kind: 'cli',
+          tool: 'claude-code',
+          authChannel: defaultCliAuthChannel('claude-code').id,
+        },
+      },
+      makeTask({
+        id: 'T001',
+        suggestedFiles: ['src/alpha.ts'],
+        fix: { cycle: 1, findings: [{ id: 'F1', text: 'Fix the greeting', acceptance: null }] },
+      }),
+    );
+
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'runner-usage-limit',
+      seat: 'plan',
+      taskId: 'T001',
+      switchSeat: { seat: 'plan' },
+    });
+    expect(result.state.pendingRecovery?.details).toContain(
+      'The planner could not answer the consult for T001.',
+    );
   });
 
   // The consult is a PLAN-seat call, so a model the planner's tool refuses halts that seat, not

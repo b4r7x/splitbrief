@@ -279,13 +279,12 @@ function briefTemplate(): string {
 }
 
 /**
- * The consult contract: the prompt the consulted seat answers, rendered with placeholders, and
+ * The consult contract: the prompt the planner answers, rendered with placeholders, and
  * the error block the one post-consult attempt retries with.
  */
 function consultContract(): string {
   const prompt = buildConsultPrompt({
     workspaceDir: '<the run workspace>',
-    seat: 'plan',
     reason: 'failed',
     plan: PLACEHOLDER_PLAN,
     task: PLACEHOLDER_TASK,
@@ -323,7 +322,6 @@ function consultContract(): string {
       consultAttemptError({
         lastError: ERROR_PLACEHOLDER,
         instructions: '<the instructions and context>',
-        seat: 'plan',
       }),
     ),
     '',
@@ -360,9 +358,9 @@ function consultTable(): string {
   };
   return [
     `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a consult.`,
-    'A plan task consults the planner. A fix task the reviewer wrote consults the reviewer, also after a rewrite or a split.',
-    'The planner continues its planning session. The reviewer reads the full fix context without a session.',
-    'Record a malformed answer as a failure of the seat that answered. Apply no action.',
+    'Every consult goes to the planner: a plan task, and a fix task the reviewer wrote, also after a rewrite or a split.',
+    "The planner continues its planning session. A fix task's consult sends the full fix context on that session.",
+    'Record a malformed answer as a failure of the planner. Apply no action.',
     '',
     table(
       ['Action', 'Next step'],
@@ -379,14 +377,14 @@ function consultTable(): string {
       }),
     ),
     '',
-    'No count stops the consults: every failed attempt goes back to the seat.',
-    'Each consult shows the seat its earlier answers on the lineage, across splits and resume, each before the failed attempts that followed it.',
+    'No count stops the consults: every failed attempt goes back to the planner.',
+    'Each consult shows the planner its earlier answers on the lineage, across splits and resume, each before the failed attempts that followed it.',
     'A blocked report consults at once.',
-    'A guarded rewrite or split asks the operator on the consulted seat before dispatch.',
+    'A guarded rewrite or split asks the operator before dispatch.',
     'A done report records its decisions in the plan ledger with the task id before validation. No seat confirms them, and a retry records only a new decision.',
     'Reported decisions are not consult answers.',
     'A done report field that breaks the contract reads as empty with a warning. The other fields stay.',
-    'The user is asked only when the seat answers `ask-user` or `cannot`. A seat that is down with no fallback halts as seat down.',
+    'The user is asked only when the planner answers `ask-user` or `cannot`. A seat that is down with no fallback halts as seat down.',
   ].join('\n');
 }
 

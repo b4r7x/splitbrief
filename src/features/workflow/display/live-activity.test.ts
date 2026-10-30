@@ -218,38 +218,6 @@ describe('deriveLiveStatus', () => {
       resetWorkflow();
     },
   );
-  it.each(['implementing', 'escalating'] as const)(
-    'names the active reviewer consult during %s on the call clock',
-    (phase) => {
-      resetWorkflow();
-      addEvent(
-        makeRunnerCallStarted({ phase, role: 'review', taskId: taskId('T013'), ts: 60_000 }),
-      );
-      const activeOperation = operationsStore.get().active;
-      expect(
-        deriveLiveStatus({
-          ...base,
-          phase,
-          reviewerLabel: 'GPT-6 Astra',
-          activeOperation,
-        }),
-      ).toEqual({
-        parts: [
-          { text: 'Review', tone: 'reviewer' },
-          { text: ' · ', tone: 'textDim' },
-          { text: 'GPT-6 Astra', tone: 'reviewer' },
-        ],
-        stageStart: 60_000,
-        waitedMs: 0,
-      });
-      expect(
-        deriveLiveStatus({ ...base, phase, activeOperation: null })
-          ?.parts.map((part) => part.text)
-          .join(''),
-      ).toBe(phase === 'implementing' ? 'Implementing…' : 'Escalating…');
-      resetWorkflow();
-    },
-  );
   it('is null when idle, complete, cancelled, or at a review gate', () => {
     expect(deriveLiveStatus({ ...base, phase: 'idle' })).toBeNull();
     expect(deriveLiveStatus({ ...base, phase: 'complete' })).toBeNull();

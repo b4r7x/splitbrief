@@ -3,11 +3,9 @@ import {
   consultAnswerSchemaFor,
   type ConsultAnswer,
   type ConsultReason,
-  type ConsultSeat,
   type ImplementerReport,
 } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { TriageResult } from '../../../core/schemas/review.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { plannerFixWork, stuckAnswerErrors } from '../../../core/review/stuck.js';
@@ -18,7 +16,6 @@ import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import type { EventBus } from '../../events/types.js';
 import type { Planner } from '../../planners/types.js';
-import type { Reviewer } from '../../reviewers/types.js';
 import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
 import { orderChangedFiles } from '../../change-detection.js';
 import { refusedCheckErrors, unconfiguredRenderCheckErrors } from '../../spec/plan-checks.js';
@@ -33,7 +30,6 @@ import { resolveRunUniverse, runUserFiles } from '../evidence/review-packet/sect
 import { fixTaskTargetErrors } from '../triage.js';
 import { publishConsultAnswered, publishRunnerCallEvent } from '../events.js';
 import { askPlannerSession, type PlannerSessionTurn } from '../planner-session.js';
-import { runReviewerCall } from '../review-call.js';
 import { runSeatCall, seatFailureFromError } from '../escalation/seat-wait.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import {
@@ -55,8 +51,6 @@ export type ConsultContext = Readonly<{
   /** With the state's approval, whether a `cmd` check of a rewrite or split may run an npm script. */
   config: Config;
   planner: Pick<Planner, 'capabilities' | 'typedCall'>;
-  /** Answers a fix task's repair consult; with no reviewer block it is the planner itself. */
-  reviewer: Pick<Reviewer, 'typedCall'>;
   /** The state the consult runs on; every transition it saves is persisted. */
   state: WorkflowState;
   signal?: AbortSignal | undefined;
@@ -91,20 +85,12 @@ type ConsultRun =
   | Readonly<{ kind: 'answer'; result: RequestTypedResult<ConsultAnswer> }>
   | Readonly<{ kind: 'threw'; error: unknown }>;
 
-/** The seat whose consult failed, including returned protocol errors the caller throws. */
-const thrownSeats = new WeakMap<object, ConsultSeat>();
+/** The failures a consult produced, including returned protocol errors the caller throws. */
+const consultErrors = new WeakSet<object>();
 
-/** The seat whose consult produced `err`, for a caller that halts on that failure. */
-export function thrownConsultSeat(err: unknown): ConsultSeat | undefined {
-  return typeof err === 'object' && err !== null ? thrownSeats.get(err) : undefined;
-}
-
-/**
- * The seat that answers a consult: the reviewer wrote a fix task at the review, so it
- * decides that task's repair; the planner answers every plan task and a stuck review.
- */
-export function consultSeat(task: Task, reason: ConsultReason): ConsultSeat {
-  return task.fix !== undefined && reason !== 'no-progress' ? 'review' : 'plan';
+/** Whether `err` came out of a consult, for a caller that halts on that failure. */
+export function isConsultError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && consultErrors.has(err);
 }
 
 /**
@@ -236,12 +222,10 @@ function promptInput(
   input: ConsultRequestInput,
   taskDiff: ConsultPromptInput['taskDiff'],
   workspaceDir: string,
-  seat: ConsultSeat,
 ): ConsultPromptInput {
   const lineage = state.lineages?.[lineageIdOf(input.task)];
   return {
     workspaceDir,
-    seat,
     reason: input.reason,
     plan: state.plan,
     task: input.task,
@@ -280,14 +264,12 @@ function publishAnswer(
   state: WorkflowState,
   input: ConsultRequestInput,
   answer: ConsultAnswer,
-  seat: ConsultSeat,
 ): void {
   publishConsultAnswered(
     { bus: ctx.bus, phase: state.phase },
     {
       taskId: input.task.id,
       reason: input.reason,
-      seat,
       action: answer.answer.action,
       diagnosis: answer.answer.diagnosis,
       newTaskIds: answerTaskIds(state, input, answer),
@@ -302,9 +284,8 @@ function publishAnswer(
 }
 
 /**
- * Asks the consult seat about one task and records its answer: the reviewer for a fix
- * task's repair, the planner for the rest (`consultSeat`). The planner continues its
- * session; the reviewer holds none and reads the full prompt.
+ * Asks the planner about one task, a plan task or a fix task the review wrote, and records its
+ * answer. The planner continues its session.
  */
 export async function requestConsult(
   ctx: ConsultContext,
@@ -318,9 +299,8 @@ export async function requestConsult(
     ctx.onStateChange?.(next);
   };
 
-  const seat = consultSeat(input.task, input.reason);
   const diff = await taskDiff(ctx.workspaceDir, ctx.state, input.task, ref);
-  const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir, seat);
+  const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir);
   const contract = answerContract(input.task, input.reason, input.stuck, {
     known: new Set(
       checkRegistry({
@@ -357,31 +337,16 @@ export async function requestConsult(
     onStateChange: apply,
   };
 
-  // The review seat holds no session and never saw the fix brief's plan thread: it
-  // reads the full prompt every time, and its call books its usage on the reviewer.
+  // A fix task's brief comes from the review, not from the planning thread, so every consult on a
+  // fix lineage sends the whole prompt, also on a live session.
+  const repair = input.task.fix !== undefined && input.stuck === undefined;
   const ask = async (signal: AbortSignal): Promise<RequestTypedResult<ConsultAnswer>> => {
-    if (seat === 'review') {
-      const reviewed = await runReviewerCall({
-        ...contract,
-        reviewer: ctx.reviewer,
-        prompt: buildConsultPrompt({ ...prompt, resumed: false }),
-        projectDir: ctx.projectDir,
-        workspaceDir: ctx.workspaceDir,
-        sessionId: ctx.sessionId,
-        bus: ctx.bus,
-        state,
-        signal,
-        onCallEvent,
-      });
-      apply(reviewed.state);
-      return reviewed.result;
-    }
     const answer = await askPlannerSession(
       { ...session, state, signal },
       {
         ...contract,
         compose: (turn: PlannerSessionTurn) =>
-          buildConsultPrompt({ ...prompt, resumed: turn.onSession }),
+          buildConsultPrompt({ ...prompt, resumed: turn.onSession && !repair }),
         onCallEvent,
       },
     );
@@ -395,8 +360,8 @@ export async function requestConsult(
     {
       ref: usageCtx,
       state,
-      seat,
-      runner: seat === 'review' ? resolveReviewerRunner(ctx.config).runner : ctx.config.planner,
+      seat: 'plan',
+      runner: ctx.config.planner,
       ...(ctx.signal !== undefined && { signal: ctx.signal }),
       onStateChange: apply,
     },
@@ -422,15 +387,14 @@ export async function requestConsult(
 
   if (asked.value.kind === 'threw') {
     const thrown = asked.value.error;
-    if (typeof thrown === 'object' && thrown !== null) thrownSeats.set(thrown, seat);
+    if (typeof thrown === 'object' && thrown !== null) consultErrors.add(thrown);
     throw thrown;
   }
   const answer = asked.value;
 
-  // The reviewer call booked its usage already; the planner's books here.
   if ('error' in answer.result) {
-    if (seat === 'plan') apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
-    thrownSeats.set(answer.result.error, seat);
+    apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
+    consultErrors.add(answer.result.error);
     return { error: answer.result.error };
   }
 
@@ -442,10 +406,9 @@ export async function requestConsult(
       revision: input.task.revision ?? 1,
       reason: input.reason,
       answer: consulted,
-      seat,
     }),
   );
-  publishAnswer(ctx, state, input, consulted, seat);
-  if (seat === 'plan') apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
+  publishAnswer(ctx, state, input, consulted);
+  apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
   return { answer: consulted };
 }
