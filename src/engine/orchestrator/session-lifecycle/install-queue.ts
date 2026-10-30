@@ -7,8 +7,10 @@ import { createWriteSequencer } from '../serial-executor.js';
 import type { Planner } from '../../planners/types.js';
 import type { WorkflowContext, WorkflowSinks } from '../types.js';
 import type { SteeringPort } from '../../calls/steering.js';
+import { runInProcessScope, type ProcessScope } from '../../../lib/process/registry.js';
 
 export type InstallQueueHandlerOpts = Pick<WorkflowContext, 'modelCache'> & {
+  processScope: ProcessScope;
   projectDir: string;
   sessionId: string;
   sinks: WorkflowSinks;
@@ -23,20 +25,23 @@ export type InstallQueueHandlerOpts = Pick<WorkflowContext, 'modelCache'> & {
 
 export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
   const serialize = createWriteSequencer();
-  opts.sinks.setQueueHandler(
-    createQueueHandler({
-      projectDir: opts.projectDir,
-      sessionId: opts.sessionId,
-      getState: opts.getTrackedState,
-      setState: opts.setTrackedState,
-      bus: opts.bus,
-      config: opts.config,
-      modelCache: opts.modelCache,
-      planner: opts.planner,
-      serialize,
-      steering: opts.steering,
-      ...(opts.signal !== undefined && { signal: opts.signal }),
-    }),
+  const submit = createQueueHandler({
+    projectDir: opts.projectDir,
+    sessionId: opts.sessionId,
+    getState: opts.getTrackedState,
+    setState: opts.setTrackedState,
+    bus: opts.bus,
+    config: opts.config,
+    modelCache: opts.modelCache,
+    planner: opts.planner,
+    serialize,
+    steering: opts.steering,
+    ...(opts.signal !== undefined && { signal: opts.signal }),
+  });
+  // The composer calls this outside the run, so a planner turn the message starts is put in the
+  // run's scope here; a stop then ends it with the run.
+  opts.sinks.setQueueHandler((message, phase) =>
+    runInProcessScope(opts.processScope, () => submit(message, phase)),
   );
   opts.sinks.setClearQueueHandler?.(
     createClearQueueHandler({

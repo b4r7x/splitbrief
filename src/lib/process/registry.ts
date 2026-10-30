@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { warnError } from '../warn.js';
 import { isNodeError, processError, type ProcessTerminationTarget } from './errors.js';
@@ -12,6 +13,13 @@ type ProcessLedger = {
   release(pid: number): void;
 };
 
+/**
+ * One run's processes. Every process registered while work started in the scope runs belongs to
+ * it, so stopping or ending the run ends its own processes and leaves the rest, such as a model
+ * list loading in Settings, running.
+ */
+export type ProcessScope = symbol;
+
 type RegisteredProcess = {
   proc: ChildProcess;
   pid: number | undefined;
@@ -19,8 +27,10 @@ type RegisteredProcess = {
   ledger: ProcessLedger | null;
   ledgered: boolean;
   releaseMonitor: NodeJS.Timeout | undefined;
+  scope: ProcessScope | undefined;
 };
 
+const runningScope = new AsyncLocalStorage<ProcessScope | undefined>();
 const activeProcesses = new Map<ChildProcess, RegisteredProcess>();
 const processTerminations = new WeakMap<ChildProcess, Promise<void>>();
 let processLedger: ProcessLedger | null = null;
@@ -57,6 +67,31 @@ export function processTreeReapingLimitation(
     target: 'process-group',
     signal,
   });
+}
+
+export function createProcessScope(): ProcessScope {
+  return Symbol('process scope');
+}
+
+/** Runs `fn` in `scope`: a process it registers, directly or after an await, belongs to the scope. */
+export function runInProcessScope<T>(scope: ProcessScope, fn: () => T): T {
+  return runningScope.run(scope, fn);
+}
+
+/** Runs `fn` in no scope: a process it registers belongs to no run, whichever run's work called it. */
+export function runOutsideProcessScope<T>(fn: () => T): T {
+  return runningScope.run(undefined, fn);
+}
+
+/** The scope the calling work runs in, or undefined when it belongs to no run. */
+export function currentProcessScope(): ProcessScope | undefined {
+  return runningScope.getStore();
+}
+
+export function processScopeCount(scope: ProcessScope): number {
+  let count = 0;
+  for (const entry of activeProcesses.values()) if (entry.scope === scope) count++;
+  return count;
 }
 
 export function setProcessLedger(ledger: ProcessLedger | null): void {
@@ -182,6 +217,7 @@ export function registerProcess(
     ledger,
     ledgered,
     releaseMonitor: undefined,
+    scope: runningScope.getStore(),
   };
   activeProcesses.set(proc, entry);
   notifyRegistryChange();
@@ -369,16 +405,25 @@ export function abortProcess(
   });
 }
 
-async function cleanupRegisteredProcesses(): Promise<void> {
-  while (activeProcesses.size > 0) {
-    const entries = [...activeProcesses.values()];
+async function killRegisteredProcesses(
+  owned: (entry: RegisteredProcess) => boolean,
+): Promise<void> {
+  for (;;) {
+    const entries = [...activeProcesses.values()].filter(owned);
+    if (entries.length === 0) return;
     await Promise.all(entries.map((entry) => killProcess(entry.proc, { group: entry.group })));
   }
 }
 
+/** Ends the processes of one run and waits until they are gone. */
+export function killProcessScope(scope: ProcessScope): Promise<void> {
+  return killRegisteredProcesses((entry) => entry.scope === scope);
+}
+
+/** Ends every registered process. Only the shutdown of SPLITBRIEF itself calls it. */
 export function killAllProcesses(): Promise<void> {
   if (allProcessesCleanup !== null) return allProcessesCleanup;
-  const cleanup = cleanupRegisteredProcesses();
+  const cleanup = killRegisteredProcesses(() => true);
   allProcessesCleanup = cleanup;
   cleanup.then(
     () => {

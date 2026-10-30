@@ -1,5 +1,5 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, rmdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Text } from 'ink';
@@ -37,7 +37,11 @@ import { continueRun } from '../../../engine/orchestrator/run/continue.js';
 import { hydrateResume } from '../resume-hydration.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
-import { killAllProcesses, registeredProcessCount } from '../../../lib/process/registry.js';
+import {
+  killAllProcesses,
+  registeredProcessCount,
+  registerProcess,
+} from '../../../lib/process/registry.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
@@ -407,6 +411,52 @@ describe('run-loop stop completion', () => {
     );
     requestStopNow();
     await expectParked(prepared);
+  });
+
+  it.each(['stop', 'end run'] as const)(
+    'ends only the run processes on %s and leaves a process that belongs to no run running',
+    async (how) => {
+      const outside = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      registerProcess(outside, { group: true, ledger: false });
+      const prepared = prepare();
+      mount(prepared);
+      await vi.waitFor(
+        () => {
+          expect(existsSync(join(projectDir, 'planner-started'))).toBe(true);
+          expect(registeredProcessCount()).toBeGreaterThan(1);
+        },
+        { timeout: 5000 },
+      );
+      expect(how === 'stop' ? requestStopNow() : requestEndRun()).toBe(true);
+      await vi.waitFor(
+        () => expect(stopStore.get().phase).toBe(how === 'stop' ? 'parked' : 'ended'),
+        { timeout: 5000 },
+      );
+      expect(registeredProcessCount()).toBe(1);
+      expect(outside.exitCode).toBeNull();
+      expect(outside.signalCode).toBeNull();
+    },
+  );
+
+  it('settles a stop once the run has no process left, while a process that belongs to no run runs', async () => {
+    const outside = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    registerProcess(outside, { group: true, ledger: false });
+    const cleanup = Promise.withResolvers<void>();
+    const prepared = prepare();
+    const engine = waitingEngine(awaitAbort, cleanup.promise);
+    mount(prepared, engine);
+    await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(1));
+    requestStopNow();
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('settling'));
+    cleanup.resolve();
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'));
+    expect(outside.exitCode).toBeNull();
   });
 
   it('ends a real run during planning without a stop row or a cut step', async () => {

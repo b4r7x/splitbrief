@@ -102,6 +102,7 @@
 ### Fixed
 
 - A project gate command that runs the project's build wrapper, such as `./gradlew test` or `./mvnw verify`, now runs at the run base too. Before, it was refused there, so a failure your checkout already had counted as new.
+- Stopping or ending a run now stops only the tools the run started. Before, it also stopped the model lists that Settings, the seat picker or tool detection were loading at that moment, so those lists stayed empty or showed an error.
 - A Cursor file search shows the pattern it searches for, such as `biome.json*`, instead of `tool glob`.
 - After Apply finishes, the run screen no longer says `⏎ for home when Apply finishes` below the closed run for a moment.
 - In a worktree run, a write that reaches your checkout through the linked `node_modules` folder, such as `node_modules/../src/x.ts`, now stops the brief like any other write to your checkout. Before, the write landed in your checkout and the run went on.

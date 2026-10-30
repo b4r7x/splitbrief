@@ -4,14 +4,54 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   abortProcess,
   clearProcessLedger,
+  createProcessScope,
   killAllProcesses,
   killProcess,
+  killProcessScope,
   onProcessRegistryChange,
+  processScopeCount,
+  registeredProcessCount,
   registerProcess,
+  runInProcessScope,
   setProcessLedger,
   SIGKILL_DELAY_MS,
   unregisterProcess,
 } from './registry.js';
+
+describe('killProcessScope', () => {
+  afterEach(() => killAllProcesses());
+
+  const isAlive = (pid: number | undefined) => {
+    if (pid === undefined) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it("ends a run's processes and leaves a process that belongs to no run running", async () => {
+    const outside = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
+    registerProcess(outside, { group: true, ledger: false });
+    const withOutside = registeredProcessCount();
+    const scope = createProcessScope();
+    const inside = await runInProcessScope(scope, async () => {
+      await Promise.resolve();
+      const proc = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
+      registerProcess(proc, { group: true, ledger: false });
+      return proc;
+    });
+    expect(processScopeCount(scope)).toBe(1);
+
+    await killProcessScope(scope);
+
+    expect(processScopeCount(scope)).toBe(0);
+    expect(isAlive(inside.pid)).toBe(false);
+    expect(registeredProcessCount()).toBe(withOutside);
+    expect(isAlive(outside.pid)).toBe(true);
+  });
+});
 
 describe('killAllProcesses', () => {
   const procs: ReturnType<typeof spawn>[] = [];
