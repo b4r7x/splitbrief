@@ -1012,6 +1012,7 @@ const checkpointPredicates = [
       (context.viewport.cols < 80 ||
         includesAll('Review T002 failed · 1 blocking', '2 blocking')(context)),
   ],
+  [checkpointId('closed-set-aside'), includesAll('Set aside V1: npm run lint fails')],
   [checkpointId('closed-undone'), includesAll('Apply undone')],
   [checkpointId('closed-undo-conflicts'), includesAll('1 conflict kept')],
   [checkpointId('closed-discarded'), includesAll()],

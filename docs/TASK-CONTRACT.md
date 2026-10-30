@@ -586,6 +586,7 @@ type EvidenceLedger = {
     cycle: number;
     outcome: 'pass' | 'pass-with-notes' | 'fail';
     blocking: Array<{ id: string; text: string }>;
+    setAside?: Array<{ id: string; reason: string }>;  // each red input the review set aside, with the reviewer's reason
     at: string;
   }>;
   briefHash?: string | null;  // the plan-level hash, hashTaskBrief(state.tasks); absent and `null` read the same

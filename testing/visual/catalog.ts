@@ -2836,6 +2836,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-closed-set-aside',
+      title: 'Workflow · closed after a review that set a red check aside',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-set-aside',
+        title: 'The closed ledger names the red check the review set aside, with its reason',
+        kind: 'success',
+        marker: 'visual-closed-set-aside',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-undone',
       title: 'Workflow · Apply undone',
       surface: screenSurface('workflow'),

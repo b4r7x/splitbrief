@@ -33,6 +33,7 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
       evidence: { validated: 3, total: 3 },
       missingArtifacts: 0,
       preExisting: [],
+      setAside: [],
     },
     failedReviews: [],
     accepted: null,

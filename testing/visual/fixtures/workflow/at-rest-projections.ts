@@ -975,6 +975,14 @@ const AT_REST_QUICK = record({
   state: savedState({ phase: 'researching', briefs: [] }),
 });
 
+// The consult seat completed the brief that needed a retry.
+const CLOSED_COMPLETE_SUMMARY: Summary = {
+  ...OLDER_READY_SUMMARY,
+  taskBreakdown: READY_TASKS.map((task) =>
+    task.taskId === BRIEFS.wire.id ? { ...task, method: 'consulted' } : task,
+  ),
+};
+
 const CLOSED_COMPLETE = record({
   sessionId: COMPLETE_SESSION,
   status: { kind: 'closed', as: 'complete' },
@@ -986,13 +994,7 @@ const CLOSED_COMPLETE = record({
       { id: BRIEFS.routeTests.id, status: 'done' },
     ],
   }),
-  // The consult seat completed the brief that needed a retry.
-  summary: {
-    ...OLDER_READY_SUMMARY,
-    taskBreakdown: READY_TASKS.map((task) =>
-      task.taskId === BRIEFS.wire.id ? { ...task, method: 'consulted' } : task,
-    ),
-  },
+  summary: CLOSED_COMPLETE_SUMMARY,
   ledger: {
     ...READY_LEDGER,
     tasks: READY_LEDGER.tasks.map((task) =>
@@ -1557,6 +1559,14 @@ const CLOSED_PRE_EXISTING = record({
 const CLOSED_FIX_CYCLE: RunRecord = {
   ...CLOSED_COMPLETE,
   ref: { ...CLOSED_COMPLETE.ref, sessionId: 'visual-closed-fix-cycle' },
+  summary: {
+    ...CLOSED_COMPLETE_SUMMARY,
+    reviewPacket: {
+      ...READY_PACKET,
+      jsonPath: '.splitbrief/sessions/visual-closed-fix-cycle/review-packet.json',
+      markdownPath: packetMarkdownPath('visual-closed-fix-cycle'),
+    },
+  },
   ledger: {
     ...READY_LEDGER,
     sessionId: 'visual-closed-fix-cycle',
@@ -1597,6 +1607,48 @@ const CLOSED_FIX_CYCLE: RunRecord = {
     ],
   },
 };
+
+/**
+ * An applied run whose final review set aside a red reviewer check with a reason: the closed block
+ * names it under the Review row, in the words of the transcript.
+ */
+const CLOSED_SET_ASIDE = record({
+  sessionId: 'visual-closed-set-aside',
+  status: { kind: 'closed', as: 'applied' },
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'passed',
+    workspace: RUN_WORKSPACE,
+    applied: {
+      at: GENERATED_AT,
+      backupId: 'visual-backup',
+      files: [FILES.formTest, FILES.form, FILES.signupTest, FILES.validate],
+    },
+    closed: { at: GENERATED_AT, as: 'applied' },
+  }),
+  summary: workspaceSummary('visual-closed-set-aside'),
+  ledger: {
+    ...READY_LEDGER,
+    sessionId: 'visual-closed-set-aside',
+    reviews: [
+      {
+        scope: 'final',
+        cycle: 0,
+        outcome: 'pass',
+        blocking: [],
+        setAside: [
+          {
+            id: 'V1',
+            reason:
+              'npm run lint fails on src/legacy/report.ts, which no brief touches; the same error is red at the run base.',
+          },
+        ],
+        at: GENERATED_AT,
+      },
+    ],
+  },
+});
 
 function undoneApplyRecord(conflicts: string[]): RunRecord {
   const sessionId =
@@ -2991,6 +3043,7 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: CLOSED_PRE_EXISTING },
   }),
   atRestProjection({ id: 'workflow-closed-fix-cycle', route: { record: CLOSED_FIX_CYCLE } }),
+  atRestProjection({ id: 'workflow-closed-set-aside', route: { record: CLOSED_SET_ASIDE } }),
   atRestProjection({ id: 'workflow-closed-undone', route: { record: undoneApplyRecord([]) } }),
   atRestProjection({
     id: 'workflow-closed-undo-conflicts',

@@ -912,6 +912,9 @@ describe('runFinalReviewPhase', () => {
     expect(events.filter((event) => event.type === 'review_completed')).toMatchObject([
       { verdict: 'pass', setAside: [{ id: 'P1', reason }] },
     ]);
+    expect(readEvidenceLedger({ projectDir, sessionId })?.reviews?.at(-1)?.setAside).toEqual([
+      { id: 'P1', reason },
+    ]);
   });
 
   it('starts fix work only for the red input the reviewer did not set aside', async () => {
@@ -955,6 +958,9 @@ describe('runFinalReviewPhase', () => {
         blockingFindings: [expect.objectContaining({ id: 'P2' })],
         setAside: [{ id: 'P1', reason: 'Flaky under load' }],
       },
+    ]);
+    expect(readEvidenceLedger({ projectDir, sessionId })?.reviews?.at(-1)?.setAside).toEqual([
+      { id: 'P1', reason: 'Flaky under load' },
     ]);
   });
 

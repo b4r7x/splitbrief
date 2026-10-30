@@ -104,6 +104,7 @@ import {
   ReviewAnswerSchema,
   type ReviewAnswer,
   type ReviewVerdict,
+  type SetAside,
   type TriageInput,
   type TriageResult,
 } from '../../core/schemas/review.js';
@@ -119,7 +120,6 @@ import {
   verdictCoverageErrors,
   type ReviewOutcome,
   type ReviewScope,
-  type SetAside,
 } from '../../core/review/verdict.js';
 import { renderReviewMarkdown } from '../../core/review/render.js';
 import {
@@ -930,6 +930,7 @@ export async function runFinalReviewPhase(opts: {
         cycle: record.cycle,
         outcome: record.outcome,
         blocking: blockingEntries(outcome),
+        ...(setAside.length > 0 && { setAside }),
         at: record.at,
       },
     });

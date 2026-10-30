@@ -1,4 +1,4 @@
-import type { ReviewVerdict, TriageInput, TriageResult } from '../schemas/review.js';
+import type { ReviewVerdict, SetAside, TriageInput, TriageResult } from '../schemas/review.js';
 import { isTaskCompleted } from '../schemas/task.js';
 import { fixCyclesOf, type ReviewRecord, type WorkflowState } from '../schemas/workflow.js';
 import { oneLineDisplayText } from '../../utils/display-text.js';
@@ -115,8 +115,6 @@ export function blockingRedInputs(
   const rejected = new Set(fixWork.rejected.map((entry) => entry.findingId));
   return inputs.filter((input) => isRedInput(input) && !rejected.has(input.id));
 }
-
-export type SetAside = { id: string; reason: string };
 
 /** The red inputs the answer rejects, each with the reviewer's reason. */
 export function setAsideInputs(inputs: readonly TriageInput[], fixWork: TriageResult): SetAside[] {

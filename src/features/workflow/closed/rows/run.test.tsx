@@ -238,7 +238,9 @@ describe('runSectionRows', () => {
     const finding =
       'slugify does not fold accented Latin letters to their base letters: src/slug.js line 3 removes them, but nothing maps é to e.';
     const view = makeView({
-      failedReviews: [{ label: 'Review T001', blocking: [{ id: 'F1', text: finding }] }],
+      failedReviews: [
+        { label: 'Review T001', blocking: [{ id: 'F1', text: finding }], setAside: [] },
+      ],
     });
     const rows = runSectionRows({ view, width: 80, theme: defaultTheme, crewNamed: true });
     const ui = renderFeature(

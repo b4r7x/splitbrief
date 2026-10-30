@@ -1,7 +1,7 @@
-import type { ReviewVerdict } from '../schemas/review.js';
+import type { ReviewVerdict, SetAside } from '../schemas/review.js';
 import type { ReviewRecord } from '../schemas/workflow.js';
 import { namedFailures } from './base-split.js';
-import { reviewOutcomeWord, setAsideLine, type ReviewOutcome, type SetAside } from './verdict.js';
+import { reviewOutcomeWord, setAsideLine, type ReviewOutcome } from './verdict.js';
 
 const PRE_EXISTING_LEAD =
   "These reviewer checks failed at the run base too. Their failures below also fail before this run's changes, so they raise no finding.";

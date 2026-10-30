@@ -443,7 +443,7 @@ describe('e2e: task review cadence', () => {
       record: readRunRecord({ projectDir: target.projectDir, sessionId }),
     });
     expect(closed?.failedReviews).toEqual([
-      { label: 'Review T001', blocking: [{ id: 'F2', text: findings[1]?.text }] },
+      { label: 'Review T001', blocking: [{ id: 'F2', text: findings[1]?.text }], setAside: [] },
     ]);
     expect(closed === null ? [] : runRows(closed).map((row) => row.segments)).toContainEqual([
       { text: `  F2 ${findings[1]?.text}`, tone: 'textDim' },

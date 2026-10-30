@@ -103,6 +103,7 @@ describe('bylineText', () => {
         evidence: { validated: 3, total: 3 },
         missingArtifacts: 0,
         preExisting: [],
+        setAside: [],
       },
       scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
     });
