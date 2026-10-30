@@ -186,11 +186,11 @@ describe('buildFinalReviewPrompt', () => {
     expect(pending).toContain('src/totals.test.ts');
     expect(result).toContain('fixTasks');
     expect(result).toContain('rejected');
-    expect(result).toContain('verify');
+    expect(result).not.toContain('- verify:');
     expect(result).toContain('ask');
     expect(result).toContain('fix cycle 2');
     expect(result).toContain(
-      'Every pending input id appears exactly once in rejected[].findingId or verify[].findingId, or in the findingIds of one or more fix tasks.',
+      'Every pending input id appears exactly once in rejected[].findingId, or in the findingIds of one or more fix tasks.',
     );
     expect(result).toContain(
       "A fix task's acceptance names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review.",

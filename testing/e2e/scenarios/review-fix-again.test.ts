@@ -134,7 +134,6 @@ if (prompt.includes('# Final Implementation Review')) {
     findings: [],
     fixTasks: [],
     rejected: [],
-    verify: [],
     ask: null,
   };
   const note = prompt.match(/^- \\*\\*(U\\d+)\\*\\* (.+)$/m);

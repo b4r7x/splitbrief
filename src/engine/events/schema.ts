@@ -740,7 +740,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     duration: z.number(),
   }),
   phaseEvent('review_step').extend({
-    step: z.enum(['verdict', 'verify']),
+    step: z.enum(['verdict']),
   }),
   /** Why no reviewer check runs before the final review: the checks are off, or the plan names no project gate. */
   phaseEvent('review_checks').extend({
@@ -750,7 +750,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
    * One command run before a review: a reviewer check (`id`) or, in a session from before the
    * reviewer chose them, a full-suite stage (`stage`). `base` is its re-run at the run base;
    * `brief` is a fix brief's reviewer check, with no base re-run. `plan` is a plan check before review.
-   * `verify` is a check the review runs to verify a claim, with no base re-run.
+   * `verify` is a check the review reads or runs to verify a claim, or a check the planner re-runs
+   * on a review without progress, with no base re-run.
    */
   phaseEvent('full_suite').extend({
     /** The transcript settles a command a stop cut; the engine publishes no settle for it. */

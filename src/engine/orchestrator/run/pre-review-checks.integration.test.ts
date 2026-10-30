@@ -745,7 +745,7 @@ describe('pre-review checks run each command once per workspace state', () => {
     expect(again.calls).toHaveLength(1);
   });
 
-  it('lets a reviewer verify run a stored red again and keeps its result for the next run', async () => {
+  it('lets a planner verify run a stored red again and keeps its result for the next run', async () => {
     const run = await checkoutRun('once-verify');
     const red = processError.exitCode({ command: 'tsc', code: 2, stderr: RED });
     await preReview(run, makeCommandRunner(red)).result;
@@ -774,7 +774,7 @@ describe('pre-review checks run each command once per workspace state', () => {
     expect(after.failed).toEqual([]);
   });
 
-  it('lets a reviewer verify take a stored pass', async () => {
+  it('lets a claim verify take a stored pass', async () => {
     const run = await checkoutRun('once-verify-pass');
     await preReview(run, makeCommandRunner()).result;
 
@@ -791,13 +791,37 @@ describe('pre-review checks run each command once per workspace state', () => {
       run.state,
       ['K1', 'K2'],
       [],
-      new Date().toISOString(),
+      undefined,
     );
     expect(verifyRun.calls).toHaveLength(0);
     expect(verified.status).toBe('pass');
   });
 
-  it('lets a reviewer verify run a stored red once for two ids with one command', async () => {
+  it('lets a claim verify read a stored red as it is, without running it again', async () => {
+    const run = await checkoutRun('once-claim-red');
+    const red = processError.exitCode({ command: 'tsc', code: 2, stderr: RED });
+    await preReview(run, makeCommandRunner(red)).result;
+
+    const verifyRun = makeCommandRunner();
+    const verified = await verifyClaimChecks(
+      {
+        projectDir: run.projectDir,
+        workspaceDir: run.projectDir,
+        sessionId: run.sessionId,
+        bus: createEventBus(),
+        config: makeConfig({}),
+        runCommand: verifyRun,
+      },
+      run.state,
+      ['K1'],
+      [],
+      undefined,
+    );
+    expect(verifyRun.calls).toHaveLength(0);
+    expect(verified.status).toBe('fail');
+  });
+
+  it('lets a planner verify run a stored red once for two ids with one command', async () => {
     const run = await checkoutRun('once-verify-two-reds');
     const red = processError.exitCode({ command: 'tsc', code: 2, stderr: RED });
     await preReview(run, makeCommandRunner(red)).result;

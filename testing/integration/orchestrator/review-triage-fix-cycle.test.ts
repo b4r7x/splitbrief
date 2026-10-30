@@ -120,7 +120,7 @@ describe('review fix cycle', { timeout: 90_000 }, () => {
     });
     const planner = makePlanner({ typedCall: plannerSeat.typedCall });
     const reviewerSeat = scriptedSeat((prompt, call): ReviewAnswer => {
-      const noFixWork = { fixTasks: [], rejected: [], verify: [], ask: null };
+      const noFixWork = { fixTasks: [], rejected: [], ask: null };
       if (call > 1) return { ...passingReviewVerdict(prompt), ...noFixWork };
       return {
         ...failedReviewVerdict(prompt, 'src/shared/widget.ts drops the error', {

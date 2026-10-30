@@ -221,7 +221,6 @@ describe('final review render delivery', () => {
       findings: [],
       fixTasks: [],
       rejected: [],
-      verify: [],
       ask: null,
     });
     const line = (value: unknown): string =>

@@ -193,8 +193,6 @@ describe('run with no reviewer configured', () => {
       'review_checks',
       'drift_report',
       'cost_update',
-      // The verify step follows the verdict.
-      'review_step',
       'review_completed',
       'workflow_complete',
     ]);
@@ -213,7 +211,6 @@ describe('run with no reviewer configured', () => {
     expect(reviews[1]).toMatchObject({ verdict: 'pass', findings: { blocking: 0, minor: 0 } });
     expect(events.filter((event) => event.type === 'review_step')).toEqual([
       expect.objectContaining({ step: 'verdict' }),
-      expect.objectContaining({ step: 'verify' }),
     ]);
     expect(events.filter((event) => event.type === 'planner_status')).toHaveLength(2);
     const checks = events.filter((event) => event.type === 'full_suite');

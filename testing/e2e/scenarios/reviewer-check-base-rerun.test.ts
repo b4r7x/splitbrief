@@ -29,7 +29,7 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { cannotConsult, passingVerdict } from '#testing/helpers/typed-planner.js';
+import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import { assertPlainStdout } from '../helpers/run-dir-assertions.js';
 import {
   applyRun,
@@ -135,7 +135,6 @@ const plan = makePlanProposal({
   tasks: [brief],
 });
 const verdict = passingVerdict({ kind: 'final', taskIds: [brief.id], criterionIds: ['C1'] });
-const CANNOT = 'The ledger change breaks the ledger suite by design.';
 
 type Call = { kind: string; prompt?: string };
 
@@ -186,9 +185,8 @@ const PENDING_INPUT = /^- \*\*(\S+)\*\* \(check · defect\)/gm;
 
 /**
  * Starts a run whose base holds `committed`, whose plan names `command` as the gate V1, whose
- * reviewer passes the review but keeps each pending red input to verify and reports `finding`,
- * whose planner answers `cannot` on a review without progress, and whose implementer writes the
- * total helper and, with `broken`, rewrites the ledger.
+ * reviewer passes the review but asks a question on each pending red input and reports `finding`,
+ * and whose implementer writes the total helper and, with `broken`, rewrites the ledger.
  */
 async function startRun(opts: {
   committed: Record<string, string>;
@@ -225,11 +223,8 @@ if (prompt.includes('# Final Implementation Review')) {
   const section = from < 0 ? '' : prompt.slice(from + heading.length).split(/^## /m)[0];
   const inputs = [...section.matchAll(new RegExp(${JSON.stringify(PENDING_INPUT.source)}, 'gm'))].map((match) => match[1]);
   answer = { ...${JSON.stringify(verdict)} };
-  if (inputs.length > 0) answer.verify = inputs.map((findingId) => ({ findingId, checkIds: ['V1'] }));
+  if (inputs.length > 0) answer.ask = { question: 'Is the ledger change on purpose?', whyOnlyUserCanAnswer: 'Only you know the ledger contract.' };
   ${opts.finding === undefined ? '' : `answer.findings = [${JSON.stringify(opts.finding)}];`}
-} else if (prompt.includes('# Consult')) {
-  kind = 'consult';
-  answer = ${JSON.stringify(cannotConsult(CANNOT))};
 } else if (prompt.includes('# Plan the change')) {
   kind = 'plan';
   answer = ${JSON.stringify({ result: { ...plan, gate: [opts.command] } })};
@@ -487,17 +482,11 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
 
     expect(
       events.filter((event) => event.type === 'review_completed' && event.scope === 'final'),
-    ).toMatchObject([
-      { verdict: 'fail', findings: { blocking: 1 } },
-      { verdict: 'fail', findings: { blocking: 1 } },
-    ]);
+    ).toMatchObject([{ verdict: 'fail', findings: { blocking: 1 } }]);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
     const state = readState(target, sessionId);
     expect(state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
-    expect(state.pendingRecovery).toMatchObject({
-      reason: 'review-failed',
-      facts: { cannot: CANNOT },
-    });
+    expect(state.pendingRecovery).toMatchObject({ reason: 'review-failed' });
     expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('open');
   });
 
@@ -584,10 +573,7 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
       expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
 
       const state = readState(target, sessionId);
-      expect(state.pendingRecovery).toMatchObject({
-        reason: 'review-failed',
-        facts: { cannot: CANNOT },
-      });
+      expect(state.pendingRecovery).toMatchObject({ reason: 'review-failed' });
       const review = readFileSync(
         join(sessionDir(target.projectDir, sessionId), REVIEW_FILE),
         'utf8',

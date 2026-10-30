@@ -243,7 +243,7 @@ if (prompt.includes('# Final Implementation Review') || prompt.includes('# Task 
   answer = {
     tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })),
     criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })),
-    findings: [], fixTasks: [], rejected: [], verify: [], ask: null,
+    findings: [], fixTasks: [], rejected: [], ask: null,
   };
 } else if (prompt.includes('# Consult on a failing task') || prompt.includes('# Consult continued')) {
   appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ kind: 'consult' }) + '\\n');

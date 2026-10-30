@@ -2011,7 +2011,7 @@ const finalReviewPlanCheckProjection: WorkflowFixtureProjection = {
   },
 };
 
-// The review's verdict is in; it runs the checks that verify its findings, each on its own row.
+// The review's verdict is in; it runs the checks behind its unverified claims, each on its own row.
 const reviewVerifyProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
   scenarioId: scenarioId('workflow-review-verify'),
@@ -2055,7 +2055,7 @@ const reviewVerifyProjection: WorkflowFixtureProjection = {
         ts: FIXED_TS + 30_000,
         phase: 'final-review',
         status: 'running',
-        id: 'V1',
+        id: 'K2',
         command: 'npm test',
         moment: 'verify',
       },

@@ -24,7 +24,6 @@ import { persistReadyExecutionState } from '#testing/helpers/persisted-execution
 import {
   planFromTasks,
   passingReviewVerdict,
-  passingVerdict,
   failedReviewVerdict,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
@@ -55,7 +54,6 @@ import { createContinuationHolder } from './continuation.js';
 import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Summary } from '../../core/schemas/summary.js';
-import type { EngineEvent } from '../events/types.js';
 import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
@@ -729,7 +727,7 @@ describe('runFinalReviewPhase', () => {
       events
         .filter((event) => event.type === 'review_step')
         .map((event) => (event.type === 'review_step' ? event.step : null)),
-    ).toEqual(['verdict', 'verify']);
+    ).toEqual(['verdict']);
     expect(result.reviewStatus).toBe('written');
   });
 
@@ -756,55 +754,6 @@ describe('runFinalReviewPhase', () => {
     expect(events.filter((event) => event.type === 'review_checks')).toEqual([]);
     expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
     expect(result.reviewStatus).toBe('written');
-  });
-
-  it('lets a verify name a reviewer check only while End-of-run checks are on', async () => {
-    const verifyV1 = async (endChecks: boolean) => {
-      const { projectDir, sessionId, runStartHead } = setupProject();
-      const { reviewer, prompts } = makeReviewer((prompt) => ({
-        ...passingReviewVerdict(prompt),
-        findings: [
-          {
-            id: 'F1',
-            kind: 'defect',
-            severity: 'blocking',
-            taskId: 'T001',
-            file: null,
-            line: null,
-            text: 'the greeting drops the name',
-            acceptance: 'The greeting names the person',
-            checkIds: null,
-            criterionId: null,
-          },
-        ],
-        verify: [{ findingId: 'F1', checkIds: ['V1'] }],
-      }));
-      const result = await runFinalReviewPhase({
-        projectDir,
-        workspaceDir: projectDir,
-        sessionId,
-        config: makeNoValidationConfig({ validation: { endChecks } }),
-        callbacks: makeCallbacks().callbacks,
-        bus: makeBusRecorder().bus,
-        state: {
-          ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-          plan: GATE_PLAN,
-        },
-        reviewer,
-        metadata: TEST_METADATA,
-        summaryBase: SUMMARY_BASE,
-        reviewChecks: false,
-      });
-      return { result, prompts: prompts.join('\n') };
-    };
-
-    const on = await verifyV1(true);
-    expect(on.prompts).not.toContain('names unknown check V1');
-    expect(on.result.failure).toBeUndefined();
-
-    const off = await verifyV1(false);
-    expect(off.prompts).toContain('Verify for F1 names unknown check V1.');
-    expect(off.result.failure).toMatchObject({ kind: 'seat-protocol-error' });
   });
 
   it('uses the repaired verdict when the one repair completes the coverage', async () => {
@@ -1677,17 +1626,9 @@ describe('runFinalReviewPhase', () => {
           inputIds: ['F9'],
           result: {
             fixTasks: [],
-            rejected: [],
-            verify: [{ findingId: 'F9', checkIds: ['K9'] }],
+            rejected: [{ findingId: 'F9', reason: 'EXACT triage reason' }],
             ask: null,
           },
-          verification: [
-            {
-              id: 'finding:F9',
-              status: 'fail',
-              output: 'check K9 did not pass (fail): EXACT triage output',
-            },
-          ],
         },
       ],
     };
@@ -1724,7 +1665,7 @@ describe('runFinalReviewPhase', () => {
     expect(prompt).toContain('the greeting handled empty names');
     expect(prompt).toContain('## Planning Answers');
     expect(prompt).toContain('1. Which greeting? (default: hi) → hello');
-    expect(prompt).toContain('EXACT triage output');
+    expect(prompt).toContain('F9 rejected: EXACT triage reason');
     expect(prompt).toContain('candidate reviewed at 2026-01-01T00:00:00Z');
     expect(prompt).toContain('Task ids: T001, T002');
     expect(prompt).toContain('Criterion ids: C1, C2');
@@ -2051,318 +1992,6 @@ describe('runFinalReviewPhase', () => {
     expect(reviewCompletions[0]).not.toHaveProperty('findings');
     expect(reviewCompletions[0]?.duration).toBeGreaterThanOrEqual(0);
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(false);
-  });
-
-  // Each verify check writes its id to a log outside the workspace when it ends: V1 fails, V2 passes.
-  function verifyStopFixture(finding: ReviewVerdict['findings'][number], verify: boolean) {
-    const logDir = createTempDir('verify-runs');
-    dirs.push(logDir);
-    const runsLog = join(logDir, 'runs.log');
-    const script = (id: string, exitCode: number) =>
-      `import { appendFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(runsLog)}, '${id}\\n');\nprocess.exitCode = ${exitCode};\n`;
-    const project = setupProject({ 'v1.mjs': script('V1', 1), 'v2.mjs': script('V2', 0) });
-    const { reviewer, prompts } = makeReviewer((prompt) => ({
-      ...passingReviewVerdict(prompt),
-      findings: [finding],
-      ...(verify && { verify: [{ findingId: finding.id, checkIds: ['V1', 'V2'] }] }),
-    }));
-    const state: WorkflowState = {
-      ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], project.runStartHead),
-      plan: { ...GATE_PLAN, gate: ['node v1.mjs', 'node v2.mjs'] },
-    };
-    const review = (signal?: AbortSignal) => {
-      const { bus, events } = makeBusRecorder();
-      return {
-        events,
-        bus,
-        run: () =>
-          runFinalReviewPhase({
-            projectDir: project.projectDir,
-            workspaceDir: project.projectDir,
-            sessionId: project.sessionId,
-            config: makeNoValidationConfig({ validation: { endChecks: true } }),
-            callbacks: makeCallbacks().callbacks,
-            bus,
-            state:
-              loadState({ projectDir: project.projectDir, sessionId: project.sessionId }) ?? state,
-            reviewer,
-            metadata: TEST_METADATA,
-            summaryBase: SUMMARY_BASE,
-            reviewChecks: false,
-            ...(signal !== undefined && { signal }),
-          }),
-      };
-    };
-    const runs = () => (existsSync(runsLog) ? readFileSync(runsLog, 'utf8') : '');
-    return { ...project, prompts, review, runs };
-  }
-
-  const blockingDefect = {
-    id: 'F1',
-    kind: 'defect' as const,
-    severity: 'blocking' as const,
-    taskId: 'T001',
-    file: null,
-    line: null,
-    text: 'the greeting drops the name',
-    acceptance: 'The greeting names the person',
-    checkIds: null,
-    criterionId: null,
-  };
-
-  const stopAt = (
-    bus: ReturnType<typeof makeBusRecorder>['bus'],
-    controller: AbortController,
-    matches: (event: EngineEvent) => boolean,
-  ) =>
-    bus.subscribe((event) => {
-      if (matches(event)) controller.abort(new DOMException('Stopped.', 'AbortError'));
-    });
-
-  const isVerify = (event: EngineEvent, id: string, status: 'running' | 'done') =>
-    event.type === 'full_suite' &&
-    event.moment === 'verify' &&
-    event.id === id &&
-    event.status === status;
-
-  it('keeps the reviewer answer when a stop cuts its first verify check', async () => {
-    const fixture = verifyStopFixture(blockingDefect, true);
-    const controller = new AbortController();
-    const first = fixture.review(controller.signal);
-    stopAt(first.bus, controller, (event) => isVerify(event, 'V1', 'running'));
-
-    const stopped = await first.run();
-
-    expect(stopped.verdict).toBeNull();
-    expect(existsSync(join(sessionDir(fixture.projectDir, fixture.sessionId), REVIEW_FILE))).toBe(
-      false,
-    );
-    const continued = await fixture.review().run();
-
-    expect(fixture.prompts).toHaveLength(1);
-    expect(fixture.runs()).toBe('V1\nV2\n');
-    expect(continued.reviewStatus).toBe('written');
-    const triage = loadState({ projectDir: fixture.projectDir, sessionId: fixture.sessionId })
-      ?.triage?.[0];
-    expect(triage?.verification).toEqual([
-      {
-        id: 'finding:F1',
-        status: 'fail',
-        output: expect.stringContaining('check V1 did not pass'),
-      },
-    ]);
-    expect(
-      loadState({ projectDir: fixture.projectDir, sessionId: fixture.sessionId }),
-    ).not.toHaveProperty('reviewAnswer');
-  });
-
-  it('runs only the verify checks a stop left when the run continues', async () => {
-    const fixture = verifyStopFixture(blockingDefect, true);
-    const controller = new AbortController();
-    const first = fixture.review(controller.signal);
-    stopAt(first.bus, controller, (event) => isVerify(event, 'V1', 'done'));
-
-    await first.run();
-    expect(fixture.runs()).toBe('V1\n');
-    const second = fixture.review();
-    await second.run();
-
-    expect(fixture.prompts).toHaveLength(1);
-    expect(fixture.runs()).toBe('V1\nV2\n');
-    expect(second.events.find((event) => isVerify(event, 'V1', 'done'))).toMatchObject({
-      reusedAt: expect.any(String),
-    });
-  });
-
-  it('keeps the reviewer answer when a stop cuts the claim verification', async () => {
-    const fixture = verifyStopFixture(
-      { ...blockingDefect, kind: 'unverified', checkIds: ['V1', 'V2'] },
-      false,
-    );
-    const controller = new AbortController();
-    const first = fixture.review(controller.signal);
-    stopAt(first.bus, controller, (event) => isVerify(event, 'V2', 'running'));
-
-    await first.run();
-    const second = fixture.review();
-    await second.run();
-
-    expect(fixture.prompts).toHaveLength(1);
-    expect(fixture.runs()).toBe('V1\nV2\n');
-    expect(readReviewRecord(fixture.projectDir, fixture.sessionId).verification).toEqual([
-      {
-        id: 'finding:F1',
-        status: 'fail',
-        output: expect.stringContaining('check V1 did not pass'),
-      },
-    ]);
-  });
-
-  it('saves the reviewer answer on disk before the verify, so a crash keeps it', async () => {
-    const fixture = verifyStopFixture(blockingDefect, true);
-    const controller = new AbortController();
-    const first = fixture.review(controller.signal);
-    stopAt(first.bus, controller, (event) => isVerify(event, 'V1', 'running'));
-
-    await first.run();
-
-    expect(
-      loadState({ projectDir: fixture.projectDir, sessionId: fixture.sessionId })?.reviewAnswer,
-    ).toMatchObject({ scope: 'final', cycle: 0, answer: { verify: [{ findingId: 'F1' }] } });
-  });
-
-  it('answers again on the cut review checks when a message to the reviewer waits', async () => {
-    const { projectDir, sessionId, runStartHead } = setupProject();
-    const { bus } = makeBusRecorder();
-    const preExistingChecks = [{ id: 'V1', command: 'node v1.mjs', keys: ['v1.mjs'] }];
-    const state: WorkflowState = {
-      ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-      reviewAnswer: {
-        scope: 'final',
-        cycle: 0,
-        answer: passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: [] }),
-        preExistingChecks,
-        checksSection: 'Reviewer check V1 failed at the run base too.',
-        at: '2026-10-28T10:00:00.000Z',
-      },
-    };
-    saveState({ projectDir, sessionId }, state);
-    enqueueUserMessage({
-      projectDir,
-      sessionId,
-      state,
-      bus,
-      phase: 'final-review',
-      message: plainUserMessage('Look at the greeting again'),
-    });
-    const { reviewer, prompts } = makeReviewer();
-
-    const result = await runFinalReviewPhase({
-      projectDir,
-      workspaceDir: projectDir,
-      sessionId,
-      config: makeNoValidationConfig(),
-      callbacks: makeCallbacks().callbacks,
-      bus,
-      state: loadState({ projectDir, sessionId }) ?? state,
-      reviewer,
-      metadata: TEST_METADATA,
-      summaryBase: SUMMARY_BASE,
-      reviewChecks: false,
-    });
-
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain('Reviewer check V1 failed at the run base too.');
-    expect(prompts[0]).toContain('Look at the greeting again');
-    expect(result.state.review?.preExistingChecks).toEqual(preExistingChecks);
-    expect(result.state.reviewAnswer).toBeUndefined();
-  });
-
-  it('answers again in a task review when a message to the reviewer waits', async () => {
-    const { projectDir, sessionId, runStartHead } = setupProject();
-    const { bus } = makeBusRecorder();
-    const state: WorkflowState = {
-      ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-      reviewAnswer: {
-        scope: 'task',
-        afterTaskId: taskId('T001'),
-        cycle: 0,
-        answer: passingVerdict({ kind: 'task', taskIds: ['T001'], criterionIds: [] }),
-        preExistingChecks: [],
-        at: '2026-10-28T10:00:00.000Z',
-      },
-    };
-    saveState({ projectDir, sessionId }, state);
-    enqueueUserMessage({
-      projectDir,
-      sessionId,
-      state,
-      bus,
-      phase: 'implementing',
-      message: plainUserMessage('Look at the greeting again'),
-    });
-    const { reviewer, prompts } = makeReviewer();
-
-    const result = await runFinalReviewPhase({
-      projectDir,
-      workspaceDir: projectDir,
-      sessionId,
-      scope: 'task',
-      afterTaskId: taskId('T001'),
-      config: makeNoValidationConfig(),
-      callbacks: makeCallbacks().callbacks,
-      bus,
-      state: loadState({ projectDir, sessionId }) ?? state,
-      reviewer,
-      metadata: TEST_METADATA,
-      reviewChecks: false,
-    });
-
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain('Look at the greeting again');
-    expect(result.state.messageQueue.filter(isQueuedMessagePendingReviewer)).toEqual([]);
-    expect(result.state.reviewAnswer).toBeUndefined();
-  });
-
-  it('drops the cut answer before it asks again, so a failed call leaves none for a retry', async () => {
-    const { projectDir, sessionId, runStartHead } = setupProject();
-    const { bus } = makeBusRecorder();
-    const state: WorkflowState = {
-      ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-      reviewAnswer: {
-        scope: 'final',
-        cycle: 0,
-        answer: passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: [] }),
-        preExistingChecks: [],
-        at: '2026-10-28T10:00:00.000Z',
-      },
-    };
-    saveState({ projectDir, sessionId }, state);
-    enqueueUserMessage({
-      projectDir,
-      sessionId,
-      state,
-      bus,
-      phase: 'final-review',
-      message: plainUserMessage('Look at the greeting again'),
-    });
-    const { reviewer } = makeReviewer(() => {
-      throw new Error('The reviewer seat is down.');
-    });
-
-    const failed = await runFinalReviewPhase({
-      projectDir,
-      workspaceDir: projectDir,
-      sessionId,
-      config: makeNoValidationConfig(),
-      callbacks: makeCallbacks().callbacks,
-      bus,
-      state: loadState({ projectDir, sessionId }) ?? state,
-      reviewer,
-      metadata: TEST_METADATA,
-      summaryBase: SUMMARY_BASE,
-      reviewChecks: false,
-    });
-
-    expect(failed.reviewStatus).toBe('failed');
-    expect(loadState({ projectDir, sessionId })?.reviewAnswer).toBeUndefined();
-  });
-
-  it('marks the review step as verify before the verify checks run', async () => {
-    const fixture = verifyStopFixture(blockingDefect, true);
-    const review = fixture.review();
-    await review.run();
-
-    const steps = review.events.flatMap((event) =>
-      event.type === 'review_step' ? [event.step] : [],
-    );
-    expect(steps.at(-1)).toBe('verify');
-    const verifyAt = review.events.findIndex(
-      (event) => event.type === 'review_step' && event.step === 'verify',
-    );
-    expect(review.events.findIndex((event) => isVerify(event, 'V1', 'running'))).toBeGreaterThan(
-      verifyAt,
-    );
   });
 
   it('works without the metadata argument', async () => {
@@ -2921,69 +2550,5 @@ describe('review record', () => {
     const starts = events.flatMap((event) => (event.type === 'task_started' ? [event.taskId] : []));
     expect(starts).toEqual(['T001']);
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'skipped']);
-  }, 90_000);
-
-  it('continues a review whose verify a crash cut without its plan checks or a reviewer call', async () => {
-    const logDir = createTempDir('plan-check-runs');
-    dirs.push(logDir);
-    const runsLog = join(logDir, 'runs.log');
-    const { projectDir, sessionId, runStartHead } = setupProject({
-      'k1.mjs': `import { appendFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(runsLog)}, 'K1\\n');\n`,
-    });
-    const ref = { projectDir, sessionId };
-    const done = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
-    const savedState = transition(
-      persistReadyExecutionState(ref, {
-        ...done,
-        plan: {
-          summary: 'Greet the person.',
-          decisions: [],
-          criteria: [{ id: 'C1', text: 'A greeting works', checkIds: ['K1'] }],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'node k1.mjs', required: true }],
-          validation: null,
-        },
-        reviewAnswer: {
-          scope: 'final',
-          cycle: 0,
-          answer: passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] }),
-          preExistingChecks: [],
-          at: '2026-10-28T10:00:00.000Z',
-        },
-      }),
-      { type: 'ALL_DONE' },
-    );
-    saveState(ref, savedState);
-    const { reviewer, prompts } = makeReviewer();
-    const implementer = makeImplementer();
-
-    const result = await runTasksAndReview({
-      wctx: {
-        projectDir,
-        workspaceDir: projectDir,
-        sessionId,
-        isolation: makeCopyingIsolation(ref),
-        config: makeNoValidationConfig({ workflow: {} }),
-        callbacks: makeCallbacks().callbacks,
-        bus: makeBusRecorder().bus,
-        planner: reviewer,
-        reviewer,
-        context: defaultContext,
-        implementer,
-        createImplementer: vi.fn().mockReturnValue(implementer),
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-      },
-      state: savedState,
-      planning: { disposition: 'ready-for-tasks', state: savedState, tasks: savedState.tasks },
-      summaryBase: SUMMARY_BASE,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(prompts).toHaveLength(0);
-    expect(existsSync(runsLog)).toBe(false);
-    expect(result.state.review?.outcome).toBe('pass');
-    expect(result.state.reviewAnswer).toBeUndefined();
   }, 90_000);
 });

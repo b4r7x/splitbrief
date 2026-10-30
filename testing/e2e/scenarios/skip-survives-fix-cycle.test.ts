@@ -110,7 +110,6 @@ if (prompt.includes('# Final Implementation Review')) {
     findings: reviews === 0 ? [${JSON.stringify(finding)}] : [],
     fixTasks: reviews === 0 ? [{ ...${JSON.stringify(fix)}, findingIds: ['F1'] }] : [],
     rejected: [],
-    verify: [],
     ask: null,
   };
 } else if (heading === '# Consult on a failing task') {

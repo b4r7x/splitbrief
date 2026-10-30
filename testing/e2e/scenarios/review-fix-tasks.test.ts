@@ -174,7 +174,6 @@ if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final 
     findings: [],
     fixTasks: [],
     rejected: [],
-    verify: [],
     ask: null,
   };
   if (inputs.length > 0) {

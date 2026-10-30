@@ -4,18 +4,8 @@ import type { Plan, TaskSpec } from '../../core/schemas/plan.js';
 import { REVIEW_CHECK_ID, type TriageInput, type TriageResult } from '../../core/schemas/review.js';
 import type { SpecMetadata } from '../../core/paths-io.js';
 import type { Check, Task, TaskId } from '../../core/schemas/task.js';
-import {
-  fixCyclesOf,
-  type ReviewRecord,
-  type TriageRecord,
-  type WorkflowState,
-} from '../../core/schemas/workflow.js';
-import {
-  findingInReviewScope,
-  verificationKey,
-  type Finding,
-  type ReviewScope,
-} from '../../core/review/verdict.js';
+import { fixCyclesOf, type ReviewRecord, type WorkflowState } from '../../core/schemas/workflow.js';
+import { findingInReviewScope, type Finding, type ReviewScope } from '../../core/review/verdict.js';
 import { insertTasks } from '../../core/state/task-insert.js';
 import type { EventBus } from '../events/types.js';
 import { checkTaskIdentities } from '../spec/plan-checks.js';
@@ -89,7 +79,6 @@ export function triageContractErrors(
     };
     for (const task of result.fixTasks) for (const id of task.findingIds) count(id);
     for (const rejected of result.rejected) count(rejected.findingId);
-    for (const verified of result.verify) count(verified.findingId);
     // A blocking finding under a pending input's id is that input: the input's rule answers it.
     const inputIds = new Set(inputs.map((input) => input.id));
     for (const finding of blocking.filter(
@@ -97,7 +86,7 @@ export function triageContractErrors(
     )) {
       const times = answered.get(finding.id) ?? 0;
       if (times === 0) {
-        errors.push(`Blocking finding ${finding.id} is not fixed, rejected or verified.`);
+        errors.push(`Blocking finding ${finding.id} is not fixed or rejected.`);
       } else if (times > 1) {
         errors.push(`Blocking finding ${finding.id} is answered more than once.`);
       }
@@ -108,11 +97,9 @@ export function triageContractErrors(
       const sharedByFixTasks =
         result.fixTasks.every(
           (task) => task.findingIds.filter((id) => id === input.id).length <= 1,
-        ) &&
-        !result.rejected.some((entry) => entry.findingId === input.id) &&
-        !result.verify.some((entry) => entry.findingId === input.id);
+        ) && !result.rejected.some((entry) => entry.findingId === input.id);
       if (times === 0) {
-        errors.push(`Pending input ${input.id} is not fixed, rejected or verified.`);
+        errors.push(`Pending input ${input.id} is not fixed or rejected.`);
       } else if (times > 1 && !sharedByFixTasks) {
         errors.push(`Pending input ${input.id} is answered more than once.`);
       }
@@ -132,10 +119,6 @@ export function triageContractErrors(
     else if (input.source === 'apply')
       errors.push(`Rejected ${entry.findingId} is an Apply conflict; it needs a fix task.`);
     if (entry.reason.trim() === '') errors.push(`Rejected ${entry.findingId} gives no reason.`);
-  }
-  for (const entry of result.verify) {
-    if (pending.get(entry.findingId)?.source === 'apply')
-      errors.push(`Verified ${entry.findingId} is an Apply conflict; it needs a fix task.`);
   }
 
   const fixBatch = Math.max(1, ...tasks.map((task) => task.batch ?? 1)) + 1;
@@ -178,13 +161,6 @@ export function triageContractErrors(
       }
     }
   }
-  for (const entry of result.verify) {
-    for (const checkId of entry.checkIds) {
-      if (!checks.has(checkId)) {
-        errors.push(`Verify for ${entry.findingId} names unknown check ${checkId}.`);
-      }
-    }
-  }
   return errors;
 }
 
@@ -207,15 +183,17 @@ export function fixTaskTargetErrors(
 }
 
 /**
- * Runs the checks behind one claim of a review and records them. A red keeps as pre-existing the
- * failures `preExistingChecks`, this review's run base split, names for the same check.
+ * Runs the checks behind one claim of a review and records them, taking each stored result of the
+ * same command on this tree. `rerunRedBefore` runs a red stored before that time again: the planner
+ * re-runs a red it thinks is flaky. A red keeps as pre-existing the failures `preExistingChecks`,
+ * this review's run base split, names for the same check.
  */
 export async function verifyClaimChecks(
   ctx: TriageContext,
   state: WorkflowState,
   checkIds: readonly string[],
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
-  answeredAt: string,
+  rerunRedBefore: string | undefined,
 ): Promise<{ status: 'pass' | 'fail' | 'unverified'; output: string }> {
   const checkOptions: RunChecksOptions = {
     plan: state.plan,
@@ -232,13 +210,11 @@ export async function verifyClaimChecks(
     ...(state.discoveredValidation !== undefined && {
       discoveredValidation: state.discoveredValidation,
     }),
-    // A verify runs a red stored before the reviewer answered again, so a flaky red does not stand
-    // on a stored run. A red this verify stored stands when a continue verifies the same answer.
     results: {
       ref: { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
       state,
       tree: 'workspace',
-      rerunRedBefore: answeredAt,
+      rerunRedBefore,
     },
     ...(ctx.signal !== undefined && { signal: ctx.signal }),
     ...(ctx.runCommand !== undefined && { runCommand: ctx.runCommand }),
@@ -269,23 +245,6 @@ export async function verifyClaimChecks(
     runs,
   });
   return { status: checkVerificationStatus(runs), output: checkVerificationOutput(runs) };
-}
-
-export async function runTriageVerification(
-  ctx: TriageContext,
-  state: WorkflowState,
-  result: TriageResult,
-  preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
-  answeredAt: string,
-): Promise<NonNullable<TriageRecord['verification']>> {
-  const entries: NonNullable<TriageRecord['verification']> = [];
-  for (const entry of result.verify) {
-    entries.push({
-      id: verificationKey('finding', entry.findingId),
-      ...(await verifyClaimChecks(ctx, state, entry.checkIds, preExistingChecks, answeredAt)),
-    });
-  }
-  return entries;
 }
 
 function findingFor(

@@ -119,7 +119,6 @@ const passing = () => ({
   findings: [],
   fixTasks: [],
   rejected: [],
-  verify: [],
   ask: null,
 });
 let kind;

@@ -40,7 +40,6 @@ const VERDICT: ReviewAnswer = {
   findings: [],
   fixTasks: [],
   rejected: [],
-  verify: [],
   ask: null,
 };
 

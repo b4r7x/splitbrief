@@ -511,12 +511,6 @@ describe('operationsStore', () => {
       runnerStarted({ ts: 1_100, phase: 'final-review', role: 'review', taskId: undefined }),
     );
     expect(operationsStore.get().active?.reviewStep).toBe('verdict');
-    addEvent({ type: 'review_step', ts: 1_200, phase: 'final-review', step: 'verify' });
-    expect(operationsStore.get().active?.reviewStep).toBe('verify');
-    addEvent(
-      runnerCompleted({ ts: 1_300, phase: 'final-review', role: 'review', taskId: undefined }),
-    );
-    expect(operationsStore.get().active?.reviewStep).toBe('verify');
   });
 
   it('starts the review clock with the step its label names', () => {
@@ -531,19 +525,15 @@ describe('operationsStore', () => {
     addEvent(
       runnerStarted({ ts: 1_100, phase: 'final-review', role: 'review', taskId: undefined }),
     );
-    addEvent(
-      runnerCompleted({ ts: 12_000, phase: 'final-review', role: 'review', taskId: undefined }),
-    );
-    addEvent({ type: 'review_step', ts: 12_050, phase: 'final-review', step: 'verify' });
     expect(operationsStore.get().reviewStage).toMatchObject({
-      reviewStep: 'verify',
-      startedAt: 12_050,
+      reviewStep: 'verdict',
+      startedAt: 1_010,
     });
 
-    addEvent({ type: 'review_step', ts: 12_060, phase: 'final-review', step: 'verify' });
+    addEvent({ type: 'review_step', ts: 12_060, phase: 'final-review', step: 'verdict' });
     expect(operationsStore.get().reviewStage).toMatchObject({
-      reviewStep: 'verify',
-      startedAt: 12_050,
+      reviewStep: 'verdict',
+      startedAt: 1_010,
     });
   });
 

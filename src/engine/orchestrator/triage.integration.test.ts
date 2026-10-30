@@ -66,7 +66,6 @@ describe('review fix task order through the engine and stores', () => {
               findingIds: [],
             })),
             rejected: [],
-            verify: [],
             ask: null,
           },
           undefined,

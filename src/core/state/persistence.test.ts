@@ -219,6 +219,38 @@ describe('loadState', () => {
     expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toEqual(current);
   });
 
+  it('loads an old snapshot with a saved review answer and a reviewer verify, and drops them', () => {
+    const dir = makeTmp();
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(stateDir, { recursive: true });
+    const result = { fixTasks: [], rejected: [], ask: null };
+    const current = {
+      ...createInitialState('old-review-verify'),
+      triage: [{ cycle: 1, at: '2026-10-20T10:00:00.000Z', inputIds: ['F1'], result }],
+    };
+    const verify = [{ findingId: 'F1', checkIds: ['V1'] }];
+    const legacy = {
+      ...current,
+      reviewAnswer: {
+        scope: 'final',
+        cycle: 0,
+        answer: { tasks: [], criteria: [], findings: [], ...result, verify },
+        preExistingChecks: [],
+        at: '2026-10-20T09:59:00.000Z',
+      },
+      triage: [
+        {
+          ...current.triage[0],
+          result: { ...result, verify },
+          verification: [{ id: 'finding:F1', status: 'pass', output: 'V1: pass' }],
+        },
+      ],
+    };
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(legacy));
+
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toEqual(current);
+  });
+
   it('loads an old snapshot with planner-call and consult allowances, and drops them', () => {
     const dir = makeTmp();
     const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);

@@ -154,7 +154,7 @@ describe('review answer follower', () => {
     await expectResumedMessage(ref, message);
   });
 
-  const fixWork = { fixTasks: [], rejected: [], verify: [], ask: null };
+  const fixWork = { fixTasks: [], rejected: [], ask: null };
   const input = {
     id: 'P1',
     kind: 'defect' as const,
@@ -572,7 +572,6 @@ describe('the review that judges a fix cycle', () => {
   const fixTask = (id: string, findingId: string): TriageResult => ({
     fixTasks: [{ ...makeTaskSpec({ id, criteria: [] }), findingIds: [findingId] }],
     rejected: [],
-    verify: [],
     ask: null,
   });
 
@@ -803,42 +802,6 @@ describe('the review that judges a fix cycle', () => {
     );
   });
 
-  it('runs the first fix task after a cycle that only re-ran checks', async () => {
-    const verifyOnly: TriageResult = {
-      fixTasks: [],
-      rejected: [],
-      verify: [{ findingId: 'F1', checkIds: ['V1'] }],
-      ask: null,
-    };
-    let state = runState('final-review');
-    let result = await follow(triaged(reviewed(state, 'fail'), verifyOnly), verifyOnly);
-    expect(fixCyclesOf(result.state).used).toBe(1);
-    state = finishCycle(result.state);
-
-    result = await follow(reviewed(state, 'fail'), fixTask('T900', 'F1'));
-    expect(result).toMatchObject({ next: 'fix' });
-    expect(result.state.tasks.filter((task) => task.fix?.cycle === 2)).toHaveLength(1);
-  });
-
-  it('asks the planner on a cycle that only re-ran checks when the next answer again asks for no fix task', async () => {
-    const verifyOnly: TriageResult = {
-      fixTasks: [],
-      rejected: [],
-      verify: [{ findingId: 'F1', checkIds: ['V1'] }],
-      ask: null,
-    };
-    let state = runState('final-review');
-    const result = await follow(triaged(reviewed(state, 'fail'), verifyOnly), verifyOnly);
-    state = finishCycle(result.state);
-
-    const { planner, prompts } = consultPlanner([cannotFix]);
-    const again = await follow(reviewed(state, 'fail'), verifyOnly, { planner });
-    expect(prompts).toHaveLength(1);
-    expect(again).toMatchObject({ next: 'stop' });
-    expect(again.state.pendingRecovery?.message).toBe(
-      'Final review made no progress on F1 after fix cycle 1',
-    );
-  });
   describe('a stuck review asks the planner', () => {
     const rewrite: ConsultAnswer = {
       answer: {
@@ -872,7 +835,7 @@ describe('the review that judges a fix cycle', () => {
     const verifyK9: ConsultAnswer = {
       answer: { diagnosis: 'K9 is flaky', action: 'verify', checkIds: ['K9'], reason: 'flaky' },
     };
-    const fixWorkNone: TriageResult = { fixTasks: [], rejected: [], verify: [], ask: null };
+    const fixWorkNone: TriageResult = { fixTasks: [], rejected: [], ask: null };
     const refusingReviewer = (): Planner =>
       makePlanner({
         typedCall: () => {
@@ -1080,7 +1043,7 @@ describe('the review that judges a fix cycle', () => {
       expect(result.state.acceptedAsIs).toBeUndefined();
     });
 
-    it('re-runs the check the planner names past its stored red, then starts a cycle with no brief', async () => {
+    it('re-runs the check the planner names past its stored red, then starts a cycle with no brief that the next review judges against the reviewer blockers', async () => {
       const ref = setupProject();
       writeFileSync(join(ref.projectDir, 'kept.txt'), 'kept\n');
       const ran = await firstCycleRan();
@@ -1125,6 +1088,19 @@ describe('the review that judges a fix cycle', () => {
       expect(result.events.filter((event) => event.type === 'consult_answered')).toMatchObject([
         { action: 'verify', checkIds: ['K9'] },
       ]);
+
+      const again = consultPlanner([cannotFix]);
+      const next = await follow(
+        reviewed(finishCycle(result.state), 'fail'),
+        fixTask('T902', 'F1'),
+        { planner: again.planner },
+        ref,
+      );
+      expect(again.prompts).toHaveLength(1);
+      expect(next).toMatchObject({ next: 'stop' });
+      expect(next.state.pendingRecovery?.message).toBe(
+        'Final review made no progress on F1 after fix cycle 2',
+      );
     });
 
     it('reuses a red the recorded verify stored before a stop, on continue', async () => {
@@ -1763,9 +1739,7 @@ describe('runScheduledReview saved recovery', () => {
     ).toEqual([]);
     expect(events.filter((event) => event.type === 'review_step')).toEqual([
       expect.objectContaining({ step: 'verdict' }),
-      expect.objectContaining({ step: 'verify' }),
       expect.objectContaining({ step: 'verdict' }),
-      expect.objectContaining({ step: 'verify' }),
     ]);
   });
 
@@ -1807,7 +1781,6 @@ describe('runScheduledReview saved recovery', () => {
           result: {
             fixTasks: [{ ...makeTaskSpec({ id: 'T003' }), findingIds: ['F1'] }],
             rejected: [],
-            verify: [],
             ask: null,
           },
           blocking: ['finding:F1'],
@@ -1848,7 +1821,6 @@ describe('runScheduledReview saved recovery', () => {
           result: {
             fixTasks: [{ ...makeTaskSpec({ id: 'T900' }), findingIds: ['F1'] }],
             rejected: [],
-            verify: [],
             ask: null,
           },
           blocking: ['finding:F1'],
@@ -1934,7 +1906,6 @@ describe('runScheduledReview saved recovery', () => {
           result: {
             fixTasks: [{ ...makeTaskSpec({ id: 'T900' }), findingIds: ['F1'] }],
             rejected: [],
-            verify: [],
             ask: null,
           },
           blocking: ['finding:F1'],

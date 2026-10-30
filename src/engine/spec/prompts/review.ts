@@ -33,10 +33,9 @@ const FIX_WORK_CONTRACT = `This review call is read-only. Do not write, edit or 
 
 - fixTasks: complete TaskSpecs with findingIds. Each may edit any ordinary project file a finding needs, including a file no earlier task suggested. ${TASK_CMD_CHECK_RULE}
 - rejected: { findingId, reason } for a pending input that needs no work, for example a red check that fails for a reason outside this run. A rejected red check stops blocking the review, and the user sees the reason. Reject pending inputs only. An Apply conflict always needs a fix task. A finding you would reject is not a blocking finding.
-- verify: { findingId, checkIds } for a finding or input whose work may already be on disk. Name registered run or task checks.
 - ask: { question, whyOnlyUserCanAnswer } or null. Use it only for a change to what is built that the plan and decisions cannot answer.
 
-Unless ask is set, every blocking finding that is not unverified appears exactly once in fixTasks[].findingIds, rejected[].findingId or verify[].findingId. Every pending input id appears exactly once in rejected[].findingId or verify[].findingId, or in the findingIds of one or more fix tasks. A blocking finding under a pending input's id follows this rule. With ask set, these two rules do not apply. A fix task's acceptance names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review. Unverified and minor findings never become fix tasks.`;
+Unless ask is set, every blocking finding that is not unverified appears exactly once in fixTasks[].findingIds or rejected[].findingId. Every pending input id appears exactly once in rejected[].findingId, or in the findingIds of one or more fix tasks. A blocking finding under a pending input's id follows this rule. With ask set, these two rules do not apply. A fix task's acceptance names only the failures that task fixes; the other failures of the same command belong to their own fix tasks or to the next review. Unverified and minor findings never become fix tasks.`;
 
 const VALIDATION_EVIDENCE_PREAMBLE = `The orchestrator ran these validation commands and recorded their output. This section is the authoritative record of validation results for this run.`;
 
@@ -239,7 +238,7 @@ export type FinalReviewPromptInput = {
   checkResults?: string | undefined;
   /** The run's consult records, in order. */
   consultLog?: string | undefined;
-  /** The fix work, verification, rejections and questions of each review cycle. */
+  /** The fix work, rejections and questions of each review cycle. */
   triageLog?: string | undefined;
   /** What the operator answered during planning. */
   planningAnswers?: string | undefined;
@@ -420,14 +419,9 @@ export function triageLines(records: readonly TriageRecord[]): string | undefine
       const fixes = record.result.fixTasks
         .map((task) => `${task.title} (${task.findingIds.join(', ')})`)
         .join(', ');
-      const verified = record.result.verify.map((entry) => entry.findingId).join(', ');
       const parts = [
         fixes === '' ? undefined : `fix tasks: ${fixes}`,
-        verified === '' ? undefined : `verified: ${verified}`,
         rejected === '' ? undefined : rejected,
-        ...(record.verification ?? []).map(
-          (entry) => `${entry.id}: ${entry.status} — ${entry.output}`,
-        ),
       ].filter((part): part is string => part !== undefined);
       return `- cycle ${record.cycle}${record.reviewAt === undefined ? '' : ` (candidate reviewed at ${record.reviewAt})`}: ${parts.join(' | ') || 'no outcome recorded'}${
         record.result.ask === null ? '' : ` | asked: ${record.result.ask.question}`
