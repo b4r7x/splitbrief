@@ -13,7 +13,7 @@ import {
   resolveSeatChangeIdentities,
 } from '../../../providers/model/display-names.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
-import { formatFindingCounts } from '../../../../core/review/verdict.js';
+import { formatFindingCounts, setAsideLine } from '../../../../core/review/verdict.js';
 import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
 import type { ActiveRunnerRole } from '../../../../core/runners/seat-roles.js';
 
@@ -242,6 +242,7 @@ export function renderReviewPacketMarkdown(
       : packet.evidence.reviews.flatMap((review) => [
           `- ${review.scope === 'final' ? 'Final review' : `Task review${review.afterTaskId === undefined ? '' : ` after ${review.afterTaskId}`}`}, fix cycle ${review.cycle}: ${review.outcome}`,
           ...review.blocking.map((entry) => `  - ${entry.id}: ${entry.text}`),
+          ...(review.setAside ?? []).map((entry) => `  - ${setAsideLine(entry)}`),
         ]);
   const taskValidationLines = packet.validation.tasks.map(
     (task) => `- ${task.taskId} ${task.status}: ${checksSummary(task.checks)}`,

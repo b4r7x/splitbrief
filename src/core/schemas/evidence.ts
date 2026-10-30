@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SetAsideSchema } from './review.js';
 import { CheckStatusSchema, TaskIdSchema } from './task.js';
 import {
   ActionClassSchema,
@@ -163,6 +164,7 @@ export const EvidenceReviewSchema = z.object({
   cycle: z.number().int().nonnegative(),
   outcome: z.enum(['pass', 'pass-with-notes', 'fail']),
   blocking: z.array(z.object({ id: z.string(), text: z.string() })),
+  setAside: z.array(SetAsideSchema).optional(),
   at: z.string(),
 });
 export type EvidenceReview = z.infer<typeof EvidenceReviewSchema>;

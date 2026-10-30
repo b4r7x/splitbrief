@@ -1198,6 +1198,49 @@ describe('review', () => {
       {
         label: 'Final review',
         blocking: [{ id: 'P1', text: 'No task changed it. Required check K1 did not pass (fail)' }],
+        setAside: [],
+      },
+    ]);
+    expect(view.review).toMatchObject({ kind: 'written', setAside: [] });
+  });
+
+  it('names each red input a review set aside, with the reason, under the review that did', () => {
+    const view = derive(readySummary(), {
+      ledger: {
+        ...makeLedger([]),
+        reviews: [
+          {
+            scope: 'final',
+            cycle: 0,
+            outcome: 'fail',
+            blocking: [{ id: 'F1', text: 'Edge case missing' }],
+            setAside: [
+              { id: 'V2', reason: 'The e2e suite needs a browser\nthe run cannot start.' },
+            ],
+            at: '2026-09-14T00:00:00.000Z',
+          },
+          {
+            scope: 'final',
+            cycle: 1,
+            outcome: 'pass',
+            blocking: [],
+            setAside: [
+              { id: 'V1', reason: 'The lint error is in a file the plan does not touch.' },
+            ],
+            at: '2026-09-14T00:01:00.000Z',
+          },
+        ],
+      },
+    });
+    expect(view.review).toMatchObject({
+      kind: 'written',
+      setAside: [{ id: 'V1', reason: 'The lint error is in a file the plan does not touch.' }],
+    });
+    expect(view.failedReviews).toEqual([
+      {
+        label: 'Final review',
+        blocking: [{ id: 'F1', text: 'Edge case missing' }],
+        setAside: [{ id: 'V2', reason: 'The e2e suite needs a browser the run cannot start.' }],
       },
     ]);
   });

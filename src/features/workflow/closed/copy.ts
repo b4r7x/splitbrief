@@ -19,7 +19,8 @@ import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { arrowSep, SOFT_SEP } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format-time.js';
 import { countNoun } from '../../../utils/pluralize.js';
-import { formatFindingCounts } from '../../../core/review/verdict.js';
+import type { SetAside } from '../../../core/schemas/review.js';
+import { formatFindingCounts, setAsideLabel, setAsideLine } from '../../../core/review/verdict.js';
 import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
 
 /**
@@ -77,6 +78,7 @@ export interface BriefRowParts {
 export function runRows(view: SummaryView): RunRow[] {
   const rows: RunRow[] = [
     { label: 'Review', seat: 'review', segments: reviewSegments(view.review) },
+    ...(view.review.kind === 'written' ? setAsideRows(view.review.setAside) : []),
     ...acceptedRows(view.accepted),
     ...preExistingRows(view.review),
     ...failedReviewRows(view.failedReviews),
@@ -222,7 +224,19 @@ function failedReviewRows(reviews: SummaryView['failedReviews']): RunRow[] {
         hang: lead.length,
       };
     }),
+    ...setAsideRows(review.setAside),
   ]);
+}
+
+/** Each red input a review set aside, in the words of the transcript, its reason wrapped as prose. */
+function setAsideRows(setAside: readonly SetAside[]): RunRow[] {
+  return setAside.map((entry): RunRow => {
+    return {
+      label: '',
+      segments: [{ text: `  ${setAsideLine(entry)}`, tone: 'textDim' }],
+      hang: `  ${setAsideLabel(entry.id)}: `.length,
+    };
+  });
 }
 
 function verdictSegment(verdict: 'pass' | 'pass_with_notes' | 'fail' | null): CopySegment | null {

@@ -15,7 +15,7 @@ import {
 } from '../../core/schemas/enums.js';
 import { AttachedInputSchema } from '../../core/schemas/attachment.js';
 import { DriftFindingsSchema } from '../../core/schemas/drift.js';
-import { ReviewFindingCountsSchema } from '../../core/schemas/review.js';
+import { ReviewFindingCountsSchema, SetAsideSchema } from '../../core/schemas/review.js';
 import { CheckResultSchema, TaskIdSchema } from '../../core/schemas/task.js';
 import {
   AnsweredQuestionSchema,
@@ -736,7 +736,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     /** What failed the review: each blocking finding and each red input that still blocks. */
     blockingFindings: z.array(z.object({ id: z.string(), text: z.string() })).optional(),
     /** Each red input the reviewer rejected, with its reason; it no longer blocks the review. */
-    setAside: z.array(z.object({ id: z.string(), reason: z.string() })).optional(),
+    setAside: z.array(SetAsideSchema).optional(),
     duration: z.number(),
   }),
   phaseEvent('review_step').extend({

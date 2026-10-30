@@ -139,12 +139,44 @@ describe('runRows', () => {
     expect(runRows(makeView()).filter((row) => row.label === '')).toEqual([]);
   });
 
+  it('names each red input a review set aside under that review, with the reason as prose', () => {
+    const view = makeView({
+      review: {
+        ...makeView().review,
+        setAside: [{ id: 'V1', reason: 'The lint error is in a file the plan does not touch.' }],
+      } as SummaryView['review'],
+      failedReviews: [
+        {
+          label: 'Final review',
+          blocking: [{ id: 'F1', text: 'Edge case missing' }],
+          setAside: [{ id: 'V2', reason: 'The e2e suite needs a browser.' }],
+        },
+      ],
+    });
+    const rows = runRows(view);
+    expect(rows.slice(0, 6).map((row) => row.label)).toEqual(['Review', '', '', '', '', 'Packet']);
+    expect(rows[1]).toEqual({
+      label: '',
+      segments: [
+        {
+          text: '  Set aside V1: The lint error is in a file the plan does not touch.',
+          tone: 'textDim',
+        },
+      ],
+      hang: '  Set aside V1: '.length,
+    });
+    expect(rows[4]?.segments).toEqual([
+      { text: '  Set aside V2: The e2e suite needs a browser.', tone: 'textDim' },
+    ]);
+  });
+
   it('names each review that failed before the review of record, one row per finding', () => {
     const view = makeView({
       failedReviews: [
         {
           label: 'Review T001',
           blocking: [{ id: 'F1', text: 'The test file lacks the four examples.' }],
+          setAside: [],
         },
       ],
     });

@@ -162,6 +162,38 @@ describe('renderReviewPacketMarkdown review seat', () => {
     );
   });
 
+  it('names each red input a review set aside, with its reason on one line', () => {
+    const packet = makeReviewPacket();
+    const rendered = renderReviewPacketMarkdown(
+      {
+        ...packet,
+        evidence: {
+          ...packet.evidence,
+          reviews: [
+            {
+              scope: 'final',
+              cycle: 0,
+              outcome: 'pass',
+              blocking: [],
+              setAside: [{ id: 'V1', reason: 'npm run lint fails on a file\nno brief touches.' }],
+              at: '2026-10-16T09:25:00Z',
+            },
+          ],
+        },
+      },
+      NULL_CACHE,
+    );
+
+    expect(rendered).toContain(
+      [
+        '## Reviews',
+        '- Final review, fix cycle 0: pass',
+        '  - Set aside V1: npm run lint fails on a file no brief touches.',
+        '',
+      ].join('\n'),
+    );
+  });
+
   it('reads packets written before the reviewer was recorded and shows its absence', () => {
     const packet = makeReviewPacket();
     const saved = ReviewPacketSchema.parse({

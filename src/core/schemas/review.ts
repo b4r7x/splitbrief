@@ -62,6 +62,10 @@ export const TriageResultSchema = z.object({
 });
 export type TriageResult = z.infer<typeof TriageResultSchema>;
 
+/** A red input the reviewer rejected, with its reason: it no longer blocks the review. */
+export const SetAsideSchema = z.object({ id: z.string(), reason: z.string() });
+export type SetAside = z.infer<typeof SetAsideSchema>;
+
 export const TriageInputSchema = z.object({
   id: z.string(),
   kind: z.enum(['defect', 'question', 'answer']),

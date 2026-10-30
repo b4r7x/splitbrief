@@ -4,6 +4,7 @@ import type {
   EvidenceReview,
   EvidenceTask,
 } from '../../../core/schemas/evidence.js';
+import type { SetAside } from '../../../core/schemas/review.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
@@ -402,7 +403,9 @@ function briefRowState(input: {
 export function reviewView(
   summary: Summary,
   preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
+  ledger: EvidenceLedger | null,
 ): ReviewView {
+  const setAside = setAsideView(ledgerReviews(ledger).record);
   const preExisting = preExistingChecks.map((check) => ({
     id: sanitizeTerminalDisplayText(check.id),
     command: sanitizeTerminalDisplayText(check.command),
@@ -425,6 +428,7 @@ export function reviewView(
       },
       missingArtifacts: 0,
       preExisting,
+      setAside,
     };
   }
   if (packet.finalReviewStatus !== 'written') return { kind: packet.finalReviewStatus };
@@ -436,20 +440,39 @@ export function reviewView(
     evidence: { validated: packet.evidenceValidatedTasks, total: packet.evidenceTotalTasks },
     missingArtifacts: packet.missingArtifactCount,
     preExisting,
+    setAside,
   };
 }
 
+/** The ledger's reviews split at the review of record: the last review, when it is a final review. */
+function ledgerReviews(ledger: EvidenceLedger | null): {
+  record: EvidenceReview | null;
+  earlier: EvidenceReview[];
+} {
+  const reviews = ledger?.reviews ?? [];
+  const last = reviews.at(-1);
+  return last?.scope === 'final'
+    ? { record: last, earlier: reviews.slice(0, -1) }
+    : { record: null, earlier: reviews };
+}
+
+function setAsideView(review: EvidenceReview | null): SetAside[] {
+  return (review?.setAside ?? []).map((entry) => ({
+    id: oneLineDisplayText(entry.id),
+    reason: oneLineDisplayText(entry.reason),
+  }));
+}
+
 /**
- * The reviews the ledger recorded as failed, except the last final review: that one is the review
- * of record, which the Review row already states. A final review is named as the transcript names
- * it, by the fix cycles before it and a re-run within one cycle.
+ * The reviews the ledger recorded as failed, except the review of record, which the Review row
+ * already states. A final review is named as the transcript names it, by the fix cycles before it
+ * and a re-run within one cycle.
  */
 export function failedReviewViews(ledger: EvidenceLedger | null): FailedReviewView[] {
-  const reviews = ledger?.reviews ?? [];
-  const earlier = reviews.at(-1)?.scope === 'final' ? reviews.slice(0, -1) : reviews;
+  const { earlier } = ledgerReviews(ledger);
   const label = (review: EvidenceReview, index: number): string => {
     if (review.scope !== 'final') return reviewName(review);
-    const reruns = reviews
+    const reruns = earlier
       .slice(0, index)
       .filter((before) => before.scope === 'final' && before.cycle === review.cycle).length;
     const anchor = finalReviewAnchor(review.cycle, reruns);
@@ -464,6 +487,7 @@ export function failedReviewViews(ledger: EvidenceLedger | null): FailedReviewVi
               id: oneLineDisplayText(entry.id),
               text: oneLineDisplayText(entry.text),
             })),
+            setAside: setAsideView(review),
           },
         ]
       : [],

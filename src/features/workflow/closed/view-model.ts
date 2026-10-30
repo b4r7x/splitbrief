@@ -1,4 +1,5 @@
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
+import type { SetAside } from '../../../core/schemas/review.js';
 import type { BriefQualitySummary, ReviewVerdict, Summary } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -71,6 +72,8 @@ export type ReviewView =
       missingArtifacts: number;
       /** The reviewer checks the review saw red at the run base too, with their first failures. */
       preExisting: readonly PreExistingCheckView[];
+      /** The red inputs the review set aside, each with the reviewer's reason. */
+      setAside: readonly SetAside[];
     }>;
 
 export type PreExistingCheckView = Readonly<{ id: string; command: string; tests: string[] }>;
@@ -79,6 +82,7 @@ export type PreExistingCheckView = Readonly<{ id: string; command: string; tests
 export type FailedReviewView = Readonly<{
   label: string;
   blocking: readonly Readonly<{ id: string; text: string }>[];
+  setAside: readonly SetAside[];
 }>;
 
 export type ScopeView =
@@ -168,7 +172,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
       rows: rows.current,
       earlierRows: rows.earlier,
     },
-    review: reviewView(summary, state?.review?.preExistingChecks ?? []),
+    review: reviewView(summary, state?.review?.preExistingChecks ?? [], ledger),
     failedReviews: failedReviewViews(ledger),
     accepted:
       state?.acceptedAsIs === undefined ? null : { note: acceptedNote(state.acceptedAsIs) ?? null },
