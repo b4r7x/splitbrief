@@ -93,7 +93,7 @@ describe('home navigation flow (through real App)', () => {
     // owner who already granted them — into a throwaway home, never the
     // developer's own trust store.
     vi.stubEnv('HOME', trustHome);
-    await trustDeclaredRunners({ projectDir, config });
+    await trustDeclaredRunners({ projectDir, config, pathEnv: process.env.PATH ?? '' });
     configStore.__testReset({
       config,
       projectDir,

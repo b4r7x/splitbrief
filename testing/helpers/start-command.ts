@@ -44,6 +44,7 @@ export const prepareExecutionMock = vi.fn<typeof prepareExecution>(async (input)
     await trustDeclaredRunners({
       projectDir: input.existingSession.projectDir,
       config: input.effectiveConfig,
+      pathEnv: process.env.PATH ?? '',
       stateDir: trustStateDir,
     });
     return prepareExecution({
@@ -55,6 +56,7 @@ export const prepareExecutionMock = vi.fn<typeof prepareExecution>(async (input)
   await trustDeclaredRunners({
     projectDir: input.projectDir,
     config: input.effectiveConfig,
+    pathEnv: process.env.PATH ?? '',
     stateDir: trustStateDir,
   });
   return prepareExecution({ ...input, policy: { ...input.policy, stateDir: trustStateDir }, deps });

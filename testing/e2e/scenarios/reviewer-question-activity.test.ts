@@ -64,9 +64,14 @@ if (!prompt.includes(${JSON.stringify(answer)})) {
     reviewer: { kind: 'shell', command: process.execPath, args: [reviewer], outputFormat: 'text' },
   });
   try {
+    const env: Readonly<Record<string, string>> = {
+      ...safeChildEnvironment(trustHome.home),
+      XDG_STATE_HOME: target.stateHome,
+    };
     await trustDeclaredRunners({
       projectDir: target.projectDir,
       config: loadConfig(target.projectDir).config,
+      pathEnv: env.PATH ?? '',
     });
     await runWithPtyChild(
       {
@@ -86,7 +91,7 @@ if (!prompt.includes(${JSON.stringify(answer)})) {
           cols: 120,
           rows: 40,
           cwd: resolve(import.meta.dirname, '../../..'),
-          env: { ...safeChildEnvironment(trustHome.home), XDG_STATE_HOME: target.stateHome },
+          env,
         },
       },
       async (child) => {

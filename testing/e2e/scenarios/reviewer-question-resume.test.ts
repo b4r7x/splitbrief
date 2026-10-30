@@ -111,7 +111,7 @@ type CliSession = Readonly<{
 
 type Scenario = Readonly<{
   target: StopContinueFixture;
-  home: string;
+  env: Readonly<Record<string, string>>;
   offlinePath: string;
   callsPath: string;
 }>;
@@ -140,7 +140,7 @@ async function withCli(
         cols: COLS,
         rows: ROWS,
         cwd: REPO_ROOT,
-        env: { ...safeChildEnvironment(scenario.home), XDG_STATE_HOME: target.stateHome },
+        env: scenario.env,
       },
     },
     async (child) => {
@@ -235,11 +235,16 @@ describe('e2e: a reviewer question survives a stop and a crash', { timeout: 240_
             model: 'fixture',
           },
         });
+        const env: Readonly<Record<string, string>> = {
+          ...safeChildEnvironment(trustHome.home),
+          XDG_STATE_HOME: target.stateHome,
+        };
         await trustDeclaredRunners({
           projectDir: target.projectDir,
           config: loadConfig(target.projectDir).config,
+          pathEnv: env.PATH ?? '',
         });
-        const scenario: Scenario = { target, home: trustHome.home, offlinePath, callsPath };
+        const scenario: Scenario = { target, env, offlinePath, callsPath };
         let sessionId = '';
 
         await withCli(scenario, ['start', 'smoke'], async ({ child, screen, outcome }) => {

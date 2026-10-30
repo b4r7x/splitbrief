@@ -1,8 +1,7 @@
 import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { CLI_TOOL_CATALOG } from '../../src/core/runners/cli-tool-catalog.js';
 import { safeChildEnvironment } from '../integration/cli/pty/run.js';
 import { isTestCredentialEnvironmentName } from './hermetic-env.js';
 import { cleanupTempDir } from './temp-dir.js';
@@ -15,7 +14,7 @@ export function describeHermeticEnvironment(): void {
       expect(Object.keys(process.env).filter(isTestCredentialEnvironmentName)).toEqual([]);
     });
 
-    it('keeps PTY shims first, blocks host CLIs, and preserves the trusted Node path', () => {
+    it('keeps PTY shims first and puts only node, npm and npx before the system directories', () => {
       const root = mkdtempSync(join(tmpdir(), 'hermetic-pty-path-'));
       const shim = join(root, 'bin');
       const host = join(root, 'host-bin');
@@ -27,20 +26,16 @@ export function describeHermeticEnvironment(): void {
       );
       try {
         const env = safeChildEnvironment(root, [shim]);
-        const [first, blockers, ...runtimePaths] = env.PATH?.split(delimiter) ?? [];
+        const [first, runtime, ...systemPaths] = env.PATH?.split(delimiter) ?? [];
         expect(first).toBe(shim);
-        expect(runtimePaths).toEqual([...new Set([dirname(process.execPath), '/usr/bin', '/bin'])]);
-        if (blockers === undefined) throw new Error('PTY CLI blocker directory is missing');
-        expect(readdirSync(blockers).sort()).toEqual(
-          [
-            ...new Set(Object.values(CLI_TOOL_CATALOG).flatMap((tool) => tool.executableAliases)),
-          ].sort(),
-        );
+        expect(systemPaths).toEqual(['/usr/bin', '/bin']);
+        if (runtime === undefined) throw new Error('PTY node runtime directory is missing');
+        expect(readdirSync(runtime).sort()).toEqual(['node', 'npm', 'npx']);
         expect(env.HOME).toBe(root);
         expect(env.TMPDIR).toBeDefined();
         expect(safeChildEnvironment(root).PATH?.split(delimiter)).toEqual([
-          blockers,
-          ...runtimePaths,
+          runtime,
+          ...systemPaths,
         ]);
       } finally {
         vi.unstubAllEnvs();

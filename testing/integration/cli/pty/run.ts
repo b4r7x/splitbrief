@@ -1,8 +1,7 @@
-import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CLI_TOOL_CATALOG } from '../../../../src/core/runners/cli-tool-catalog.js';
+import { hermeticPath } from '../../../helpers/compatible-cli-shim.js';
 import { cleanupTempDir, createTempDir } from '../../../helpers/temp-dir.js';
 import {
   isPostSpawnApiIncompatibleError,
@@ -151,41 +150,12 @@ async function reapPostSpawnBoundary(
   }
 }
 
-let cliFallbackDirectory: string | undefined;
-
-function blockedCliFallbackDirectory(): string {
-  if (cliFallbackDirectory === undefined) {
-    const directory = createTempDir('splitbrief-pty-cli-blockers');
-    const commands = new Set(
-      Object.values(CLI_TOOL_CATALOG).flatMap((tool) => tool.executableAliases),
-    );
-    for (const command of commands) {
-      writeFileSync(
-        join(directory, command),
-        "#!/bin/sh\nprintf '%s\\n' 'PTY fixture CLI is missing; refusing host CLI fallback' >&2\nexit 127\n",
-        { mode: 0o755 },
-      );
-    }
-    process.once('exit', () => cleanupTempDir(directory));
-    cliFallbackDirectory = directory;
-  }
-  return cliFallbackDirectory;
-}
-
 export function safeChildEnvironment(
   environmentRoot: string,
   shimPaths: readonly string[] = [],
 ): Readonly<Record<string, string>> {
   const env: Record<string, string> = {
-    PATH: [
-      ...new Set([
-        ...shimPaths,
-        blockedCliFallbackDirectory(),
-        dirname(process.execPath),
-        '/usr/bin',
-        '/bin',
-      ]),
-    ].join(delimiter),
+    PATH: hermeticPath(shimPaths),
     HOME: environmentRoot,
     USERPROFILE: environmentRoot,
     XDG_CONFIG_HOME: join(environmentRoot, 'xdg'),

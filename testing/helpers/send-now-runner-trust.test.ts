@@ -30,7 +30,7 @@ it.each([
       outputFormat: 'text' as const,
     };
     const config = makeConfig(source === 'configured' ? { reviewer: runner } : { planner: runner });
-    await trustDeclaredRunners({ projectDir, config, stateDir });
+    await trustDeclaredRunners({ projectDir, config, pathEnv: process.env.PATH ?? '', stateDir });
     const reviewer = resolveReviewerRunner(config);
     expect(reviewer.source).toBe(source);
     if (!isCustomCommandRunner(reviewer.runner)) throw new Error('Expected a custom reviewer');

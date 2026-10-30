@@ -42,9 +42,14 @@ it('paints the halt of an Apply cut off with 1499 files left and answers ↓ at 
   fixture = target;
   const { ref } = await seedApplyingRun(target, 'interrupted', RUN_FILES);
   home = useTrustHome('apply-halt-many-files-home');
+  const env: Readonly<Record<string, string>> = {
+    ...safeChildEnvironment(home.home),
+    XDG_STATE_HOME: target.stateHome,
+  };
   await trustDeclaredRunners({
     projectDir: target.projectDir,
     config: loadConfig(target.projectDir).config,
+    pathEnv: env.PATH ?? '',
   });
   const offline = join(target.tmpDir, 'offline.mjs');
   writeFileSync(
@@ -69,7 +74,7 @@ it('paints the halt of an Apply cut off with 1499 files left and answers ↓ at 
         name: 'xterm-256color',
         ...viewport,
         cwd: resolve(import.meta.dirname, '../../..'),
-        env: { ...safeChildEnvironment(home.home), XDG_STATE_HOME: target.stateHome },
+        env,
       },
     },
     async (child) => {

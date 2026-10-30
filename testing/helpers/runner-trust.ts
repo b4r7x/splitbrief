@@ -18,11 +18,15 @@ import { resolveCustomExecutable } from '../../src/engine/runners/resolve-cli-ex
  * routing, navigation, streaming — would otherwise stop at the runner trust
  * prompt. Pass a `stateDir`, or stub `HOME`, so no receipt reaches the
  * developer's own trust store.
+ * `pathEnv` is the PATH of the process that admits the runners: a PTY child's
+ * `env.PATH`, or `process.env.PATH` for a run in this process or in a child that
+ * inherits it. A receipt binds the path that lookup reaches.
  */
 export async function trustDeclaredRunners(
   input: Readonly<{
     projectDir: string;
     config: Config;
+    pathEnv: string;
     stateDir?: string | undefined;
   }>,
 ): Promise<void> {
@@ -42,7 +46,7 @@ export async function trustDeclaredRunners(
     const resolved = await resolveCustomExecutable({
       command: command.executable,
       projectDir: input.projectDir,
-      pathEnv: process.env.PATH ?? '',
+      pathEnv: input.pathEnv,
       pathExt: process.env.PATHEXT ?? '',
     });
     if (resolved.kind !== 'resolved') continue;

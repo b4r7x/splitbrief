@@ -37,7 +37,6 @@ describe('init --yes detected crew', () => {
           authChannel: 'session',
         }),
       );
-      vi.stubEnv('PATH', `${shimDir}:/usr/bin:/bin`);
       vi.stubGlobal(
         'fetch',
         vi.fn(async () => {
@@ -74,7 +73,6 @@ describe('init --yes detected crew', () => {
         expect(notice).toHaveBeenLastCalledWith('Saved a ready crew to .splitbrief/config.yaml.');
         expect(readFileSync(join(projectDir, '.gitignore'), 'utf8')).toBe('.splitbrief/\n');
       } finally {
-        vi.unstubAllEnvs();
         restore();
         cleanupTempDir(shimDir);
       }
@@ -119,7 +117,6 @@ describe('init --yes diagnostics', () => {
       const restore = activateCompatibleCliShim(
         installCompatibleCliShim({ directory: shimDir, tool: 'codex', authChannel: 'session' }),
       );
-      vi.stubEnv('PATH', `${shimDir}:/usr/bin:/bin`);
       vi.stubGlobal(
         'fetch',
         vi.fn(async () => {

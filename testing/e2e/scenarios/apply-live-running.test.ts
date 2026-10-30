@@ -78,9 +78,14 @@ async function rerunApplyWhileHeld<T>(
   homeDir: string,
   drive: (cli: HeldCli, release: () => void) => Promise<T>,
 ): Promise<T> {
+  const env: Readonly<Record<string, string>> = {
+    ...safeChildEnvironment(homeDir),
+    XDG_STATE_HOME: target.stateHome,
+  };
   await trustDeclaredRunners({
     projectDir: target.projectDir,
     config: loadConfig(target.projectDir).config,
+    pathEnv: env.PATH ?? '',
   });
   const holdPath = join(target.tmpDir, 'hold-apply');
   const blockedPath = join(target.tmpDir, 'apply-blocked');
@@ -104,7 +109,7 @@ async function rerunApplyWhileHeld<T>(
         name: 'xterm-256color',
         ...viewport,
         cwd: resolve(import.meta.dirname, '../../..'),
-        env: { ...safeChildEnvironment(homeDir), XDG_STATE_HOME: target.stateHome },
+        env,
       },
     },
     async (child) => {
