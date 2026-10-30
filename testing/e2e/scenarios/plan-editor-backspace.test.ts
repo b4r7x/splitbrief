@@ -47,6 +47,7 @@ beforeEach(async () => {
   await trustDeclaredRunners({
     projectDir: fixture.projectDir,
     config,
+    pathEnv: environment.PATH ?? '',
     stateDir: join(home, SPLITBRIEF_DIR, 'trust'),
   });
   offlinePath = join(fixture.tmpDir, 'offline.mjs');

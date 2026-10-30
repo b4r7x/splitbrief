@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import {
   CLI_TOOL_CATALOG,
@@ -6,6 +6,7 @@ import {
   type CliAuthChannelId,
 } from '../../src/core/runners/cli-tool-catalog.js';
 import { shellQuoteArg } from '../../src/utils/shell-quote.js';
+import { cleanupTempDir, createTempDir } from './temp-dir.js';
 
 type CompatibleCliTool = 'claude-code' | 'codex';
 
@@ -145,12 +146,41 @@ export function installCompatibleCliShim(
   };
 }
 
-function safeRuntimePath(directory: string): string {
-  const entries =
-    process.platform === 'win32'
-      ? [directory, dirname(process.execPath)]
-      : [directory, dirname(process.execPath), '/usr/bin', '/bin'];
-  return [...new Set(entries)].join(delimiter);
+let nodeRuntimeDirectory: string | undefined;
+
+function nodeRuntime(): string {
+  if (nodeRuntimeDirectory === undefined) {
+    // Only node, npm and npx: the node install directory also holds the developer's
+    // global CLIs, which detection would otherwise find and run.
+    const directory = createTempDir('compatible-cli-node-runtime');
+    const installBin = dirname(process.execPath);
+    symlinkSync(process.execPath, join(directory, 'node'));
+    for (const name of ['npm', 'npx']) {
+      symlinkSync(realpathSync(join(installBin, name)), join(directory, name));
+    }
+    process.once('exit', disposeNodeRuntime);
+    nodeRuntimeDirectory = directory;
+  }
+  return nodeRuntimeDirectory;
+}
+
+/**
+ * Removes this process's node runtime directory. Vitest ends a worker with SIGTERM,
+ * which emits no `exit`, so the setup file calls it after each test file (`state-home.ts`).
+ */
+export function disposeNodeRuntime(): void {
+  if (nodeRuntimeDirectory === undefined) return;
+  cleanupTempDir(nodeRuntimeDirectory);
+  nodeRuntimeDirectory = undefined;
+}
+
+/**
+ * The hermetic test PATH: the shim directories, this process's node runtime directory,
+ * then the system directories. `safeChildEnvironment` gives it to PTY children; the test
+ * process gets it only through `activateSafeCliShimPath`.
+ */
+export function hermeticPath(shimDirectories: readonly string[]): string {
+  return [...new Set([...shimDirectories, nodeRuntime(), '/usr/bin', '/bin'])].join(delimiter);
 }
 
 /** Places a test shim first on a deliberately small, absolute parent PATH. */
@@ -159,7 +189,7 @@ export function activateSafeCliShimPath(directory: string): () => void {
     throw new Error('Compatible CLI shim PATH entries must be absolute.');
   }
   const originalPath = process.env.PATH;
-  process.env.PATH = safeRuntimePath(directory);
+  process.env.PATH = hermeticPath([directory]);
   return () => {
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;

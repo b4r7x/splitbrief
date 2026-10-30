@@ -18,6 +18,7 @@ const SKIP_TOP_LEVEL = new Set([
   'node_modules',
   'dist',
   '.git',
+  '.claude',
   '.trees',
   '.splitbrief',
   'coverage',

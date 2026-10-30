@@ -40,7 +40,7 @@ beforeEach(async () => {
   });
   writeConfig(projectDir, config);
   vi.stubEnv('HOME', trustHome);
-  await trustDeclaredRunners({ projectDir, config });
+  await trustDeclaredRunners({ projectDir, config, pathEnv: process.env.PATH ?? '' });
   configStore.__testReset({ config, projectDir });
 });
 

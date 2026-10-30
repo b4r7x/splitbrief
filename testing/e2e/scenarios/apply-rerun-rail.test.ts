@@ -36,9 +36,14 @@ it('keeps the passed stages on the rail through an Apply halt and Re-run Apply',
   fixture = target;
   const { ref } = await seedApplyingRun(target, 'interrupted');
   home = useTrustHome('apply-rerun-home');
+  const env: Readonly<Record<string, string>> = {
+    ...safeChildEnvironment(home.home),
+    XDG_STATE_HOME: target.stateHome,
+  };
   await trustDeclaredRunners({
     projectDir: target.projectDir,
     config: loadConfig(target.projectDir).config,
+    pathEnv: env.PATH ?? '',
   });
   const offline = join(target.tmpDir, 'offline.mjs');
   writeFileSync(
@@ -63,7 +68,7 @@ it('keeps the passed stages on the rail through an Apply halt and Re-run Apply',
         name: 'xterm-256color',
         ...viewport,
         cwd: resolve(import.meta.dirname, '../../..'),
-        env: { ...safeChildEnvironment(home.home), XDG_STATE_HOME: target.stateHome },
+        env,
       },
     },
     async (child) => {

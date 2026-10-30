@@ -15,6 +15,8 @@ afterAll(async () => {
   cleanupTempDir(stateHome);
   // Imported only now: a static import here would load the module graph before
   // a test file's `vi.mock` of `node:fs` applies.
+  const { disposeNodeRuntime } = await import('./compatible-cli-shim.js');
+  disposeNodeRuntime();
   const { removeSandboxTempDirs } = await import('../../src/engine/runners/sandbox-state-paths.js');
   for (const dir of createdTempDirs) removeSandboxTempDirs(dir);
 });

@@ -55,6 +55,7 @@ writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
     await trustDeclaredRunners({
       projectDir: target.projectDir,
       config: loadConfig(target.projectDir).config,
+      pathEnv: process.env.PATH ?? '',
     });
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,

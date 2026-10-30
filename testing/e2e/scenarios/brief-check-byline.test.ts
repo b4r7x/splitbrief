@@ -73,17 +73,22 @@ it('names the brief check it runs and offers no running BUILD call while it runs
       validation: { ...config.validation, testCommand: `node ${script}` },
       workflow: { ...config.workflow, review: 'task', git: { createBranch: false } },
     });
+    const bin = join(target.tmpDir, 'bin');
+    mkdirSync(bin);
+    const env: Readonly<Record<string, string>> = {
+      ...safeChildEnvironment(home.home, [bin]),
+      XDG_STATE_HOME: target.stateHome,
+    };
     await trustDeclaredRunners({
       projectDir: target.projectDir,
       config: loadConfig(target.projectDir).config,
+      pathEnv: env.PATH ?? '',
     });
     const offline = join(target.tmpDir, 'offline.mjs');
     writeFileSync(
       offline,
       "globalThis.fetch = async () => { throw new Error('Network disabled in brief check E2E'); };\n",
     );
-    const bin = join(target.tmpDir, 'bin');
-    mkdirSync(bin);
     await runWithPtyChild(
       {
         requirement: 'required',
@@ -102,7 +107,7 @@ it('names the brief check it runs and offers no running BUILD call while it runs
           cols: COLS,
           rows: ROWS,
           cwd: REPO_ROOT,
-          env: { ...safeChildEnvironment(home.home, [bin]), XDG_STATE_HOME: target.stateHome },
+          env,
         },
       },
       async (child) => {

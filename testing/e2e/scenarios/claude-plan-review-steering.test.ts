@@ -61,9 +61,14 @@ writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
       reviewer: claude,
       workflow: { ...config.workflow, git: { createBranch: false } },
     });
+    const env: Readonly<Record<string, string>> = {
+      ...safeChildEnvironment(home.home, [bin]),
+      XDG_STATE_HOME: target.stateHome,
+    };
     await trustDeclaredRunners({
       projectDir: target.projectDir,
       config: loadConfig(target.projectDir).config,
+      pathEnv: env.PATH ?? '',
     });
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
@@ -96,7 +101,7 @@ writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
           cols: 100,
           rows: 30,
           cwd: REPO_ROOT,
-          env: { ...safeChildEnvironment(home.home, [bin]), XDG_STATE_HOME: target.stateHome },
+          env,
         },
       },
       async (child) => {

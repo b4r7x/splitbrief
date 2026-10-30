@@ -241,7 +241,7 @@ async function preparePtyExecution(
   // owner who already granted it, into a throwaway trust directory.
   const stateDir = join(projectDir, 'pty-runner-trust');
   mkdirSync(stateDir, { recursive: true });
-  await trustDeclaredRunners({ projectDir, config, stateDir });
+  await trustDeclaredRunners({ projectDir, config, pathEnv: process.env.PATH ?? '', stateDir });
   const policy: Extract<PreparationPolicy, { purpose: 'resume' }> = {
     purpose: 'resume',
     interaction: 'interactive',

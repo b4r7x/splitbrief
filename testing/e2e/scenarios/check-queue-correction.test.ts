@@ -154,9 +154,14 @@ process.stdout.write(${JSON.stringify(JSON.stringify(passingVerdict({ kind: 'tas
         validation: { ...config.validation, testCommand: 'node ./tools/check.mjs' },
         workflow: { ...config.workflow, review: 'task', git: { createBranch: false } },
       });
+      const env: Readonly<Record<string, string>> = {
+        ...safeChildEnvironment(home.home, [bin]),
+        XDG_STATE_HOME: target.stateHome,
+      };
       await trustDeclaredRunners({
         projectDir: target.projectDir,
         config: loadConfig(target.projectDir).config,
+        pathEnv: env.PATH ?? '',
       });
       const tools = await detectAvailableCliTools({
         projectDir: target.projectDir,
@@ -189,7 +194,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify(passingVerdict({ kind: 'tas
             cols: 100,
             rows: 30,
             cwd: REPO_ROOT,
-            env: { ...safeChildEnvironment(home.home, [bin]), XDG_STATE_HOME: target.stateHome },
+            env,
           },
         },
         async (child) => {

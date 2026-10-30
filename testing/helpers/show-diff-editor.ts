@@ -215,7 +215,8 @@ async function createFixture(dir: string, options: ShowDiffEditorOptions) {
     `const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (JSON.stringify(args.slice(0, -1)) !== ${JSON.stringify(JSON.stringify(editorArgs))}) process.exit(1);
-fs.writeFileSync(${JSON.stringify(startedPath)}, JSON.stringify(args));
+fs.writeFileSync(${JSON.stringify(`${startedPath}.tmp`)}, JSON.stringify(args));
+fs.renameSync(${JSON.stringify(`${startedPath}.tmp`)}, ${JSON.stringify(startedPath)});
 ${options.editor === 'more' ? `process.stdout.write(fs.readFileSync(args.at(-1), 'utf8'));\n` : ''}${
   options.editor === 'less' || options.editor === 'more'
     ? `process.stdin.setRawMode(true);
@@ -249,14 +250,15 @@ setTimeout(() => process.exit(4), 30000).unref();
   const offlinePath = join(dir, 'offline.mjs');
   writeFileSync(
     offlinePath,
-    `import { existsSync, writeFileSync } from 'node:fs';
+    `import { existsSync, renameSync, writeFileSync } from 'node:fs';
 globalThis.fetch = async () => { throw new Error('Offline Show diff test'); };
 const redraw = setInterval(() => {
   if (!existsSync(${JSON.stringify(startedPath)})) return;
   clearInterval(redraw);
   const listeners = process.stdout.listenerCount('resize');
   process.stdout.emit('resize');
-  writeFileSync(${JSON.stringify(redrawPath)}, String(listeners));
+  writeFileSync(${JSON.stringify(`${redrawPath}.tmp`)}, String(listeners));
+  renameSync(${JSON.stringify(`${redrawPath}.tmp`)}, ${JSON.stringify(redrawPath)});
 }, 20);
 redraw.unref();
 `,

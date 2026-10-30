@@ -117,9 +117,14 @@ if (!corrected) throw new Error('Checks ran before the BUILD correction pass');
       validation: { ...config.validation, testCommand: 'node ./tools/check.mjs' },
       workflow: { ...config.workflow, git: { createBranch: false } },
     });
+    const env: Readonly<Record<string, string>> = {
+      ...safeChildEnvironment(home.home, [bin]),
+      XDG_STATE_HOME: target.stateHome,
+    };
     await trustDeclaredRunners({
       projectDir: target.projectDir,
       config: loadConfig(target.projectDir).config,
+      pathEnv: env.PATH ?? '',
     });
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
@@ -152,7 +157,7 @@ if (!corrected) throw new Error('Checks ran before the BUILD correction pass');
           cols: 100,
           rows: 30,
           cwd: REPO_ROOT,
-          env: { ...safeChildEnvironment(home.home, [bin]), XDG_STATE_HOME: target.stateHome },
+          env,
         },
       },
       async (child) => {

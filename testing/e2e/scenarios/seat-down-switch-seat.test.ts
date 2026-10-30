@@ -396,6 +396,7 @@ describe('e2e: seat down switched from the recovery menu', { timeout: 150_000 },
     await trustDeclaredRunners({
       projectDir: target.projectDir,
       config: loadConfig(target.projectDir).config,
+      pathEnv: process.env.PATH ?? '',
     });
     let engineCalls = 0;
     const { screen, runWorkflow: engine } = await openHaltedRun(target, {
@@ -470,6 +471,7 @@ describe('e2e: seat down switched from the recovery menu', { timeout: 150_000 },
       await trustDeclaredRunners({
         projectDir: target.projectDir,
         config: loadConfig(target.projectDir).config,
+        pathEnv: process.env.PATH ?? '',
       });
       let engineCalls = 0;
       const { screen, runWorkflow: engine } = await openHaltedRun(target, {
@@ -557,6 +559,7 @@ describe('e2e: a seat saved while the Seat down halt waits', { timeout: 150_000 
     await trustDeclaredRunners({
       projectDir: target.projectDir,
       config: loadConfig(target.projectDir).config,
+      pathEnv: process.env.PATH ?? '',
     });
     const { screen, runWorkflow: engine } = await openHaltedRun(target, {
       heading: 'Seat down',
@@ -826,6 +829,7 @@ describe('e2e: a setting saved while the brief runs', { timeout: 150_000 }, () =
     await trustDeclaredRunners({
       projectDir: target.projectDir,
       config: loadConfig(target.projectDir).config,
+      pathEnv: process.env.PATH ?? '',
     });
     const { screen, runWorkflow: engine } = await openHaltedRun(target, {
       heading: 'Seat down',
@@ -895,7 +899,11 @@ describe('e2e: a BUILD seat saved while the start check runs', { timeout: 150_00
       ...config,
       planner: { kind: 'cli', tool: 'claude-code', model: SWITCHED_MODEL, contextLength: 200_000 },
     });
-    await trustDeclaredRunners({ projectDir, config: loadConfig(projectDir).config });
+    await trustDeclaredRunners({
+      projectDir,
+      config: loadConfig(projectDir).config,
+      pathEnv: process.env.PATH ?? '',
+    });
     configStore.load(projectDir);
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     routerStore.init({ screen: 'home' });
@@ -1066,6 +1074,7 @@ it('keeps the custom models of the BUILD seat saved under the halt when Change B
   await trustDeclaredRunners({
     projectDir: target.projectDir,
     config: loadConfig(target.projectDir).config,
+    pathEnv: process.env.PATH ?? '',
   });
   const { screen } = await openHaltedRun(target, {
     heading: 'Seat down',
@@ -1161,6 +1170,7 @@ it('moves only the halted BUILD profile to the custom model typed in the halt pi
   await trustDeclaredRunners({
     projectDir: target.projectDir,
     config: loadConfig(target.projectDir).config,
+    pathEnv: process.env.PATH ?? '',
   });
   const { screen } = await openHaltedRun(target, {
     heading: 'Seat down',
