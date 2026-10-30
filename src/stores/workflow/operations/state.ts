@@ -1,5 +1,6 @@
+import { isProcessWentAwayMark } from '../../../core/event-phase.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { EngineEventOf } from '../../../engine/events/types.js';
+import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { createStore, storeBase } from '../../create-store.js';
 
 type RunnerCallFailureStatus = EngineEventOf<'runner_call_error'>['status'];
@@ -92,6 +93,8 @@ export interface RunningSuiteStage {
   command: string;
   moment: EngineEventOf<'full_suite'>['moment'];
   scenario?: string | undefined;
+  /** A red reviewer check waits on the run of the same id at the run base. */
+  waitsOnBase?: true | undefined;
   stageStartedTs: number;
 }
 
@@ -111,6 +114,13 @@ export interface OperationsState {
   /** Optional so the retention helpers can keep their narrow shape; the reducer always sets it. */
   validationStage?: RunningValidationStage | null;
   suiteStage?: RunningSuiteStage | null;
+  /**
+   * The project gate command running at the run base. It runs beside the build and the checks, so
+   * it has its own slot: a steer, a cut seat call and a continue in the same process do not clear
+   * it. Its own events clear it, and so do a stop or an end, a replay whose process went away and
+   * the run loop of a new process.
+   */
+  baseStage?: RunningSuiteStage | null;
   reviewStage?: RunningOperation | null;
   /** The reviewer's answer was refused: its next call asks it again. */
   reviewerAnswerRefused?: boolean;
@@ -120,6 +130,31 @@ export interface OperationsState {
    * a question inside it keeps it.
    */
   scheduledReview?: boolean;
+}
+
+/**
+ * The command the run is inside: the running check, or, while a reviewer check waits on the same
+ * command's run at the run base, that base command.
+ */
+export function selectRunningSuite(
+  state: Pick<OperationsState, 'suiteStage' | 'baseStage'>,
+): RunningSuiteStage | null {
+  const suite = state.suiteStage ?? null;
+  const base = state.baseStage ?? null;
+  return base !== null && suite?.waitsOnBase === true && suite.id === base.id ? base : suite;
+}
+
+/**
+ * A base command runs beside the build, so a steer, a cut seat call and a continue in the same
+ * process leave it running; a stop or an end, the run loop of a new process and a process that
+ * went away end it.
+ */
+export function endsBaseCommand(event: EngineEvent): boolean {
+  return (
+    isProcessWentAwayMark(event) ||
+    event.type === 'workflow_cancelled' ||
+    (event.type === 'workflow_resumed' && event.inProcess !== true)
+  );
 }
 
 /** REVIEW reads what is typed: a task review is due inside the build phase. */
@@ -133,6 +168,7 @@ const initial = (): OperationsState => ({
   byCallId: new Map(),
   validationStage: null,
   suiteStage: null,
+  baseStage: null,
   reviewStage: null,
   scheduledReview: false,
 });

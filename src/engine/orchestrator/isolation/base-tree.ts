@@ -21,7 +21,7 @@ export type RunBase = {
   head: string | null;
 };
 
-export type RunBaseTree = { dir: string; incomplete?: string | undefined };
+export type RunBaseTree = { dir: string };
 
 /** A base tree is named after the process that owns it: `base-<pid>-<filler><random>`. */
 const BASE_TREE_NAME = /^base-(\d+)-/;
@@ -60,6 +60,13 @@ export function runBaseOf(
     snapshotId: state.workspace.base.snapshotId,
     head: state.workspace.base.head,
   };
+}
+
+/** Why a run base copy cannot prove a failure is the same one: it has no base commit to start from. */
+export function runBaseIncomplete(base: Pick<RunBase, 'head'>): string | undefined {
+  return base.head === null
+    ? 'the run recorded no base commit, so its run base copy has no Git history, file modes or symlinks'
+    : undefined;
 }
 
 /**
@@ -144,13 +151,7 @@ export async function withRunBaseTree<T>(
   }
   let result: T;
   try {
-    result = await use({
-      dir,
-      ...(base.head === null && {
-        incomplete:
-          'the run recorded no base commit, so its run base copy has no Git history, file modes or symlinks',
-      }),
-    });
+    result = await use({ dir });
   } catch (err) {
     try {
       await removeRunBaseTree(dir);

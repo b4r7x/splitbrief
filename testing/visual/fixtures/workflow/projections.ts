@@ -1228,10 +1228,15 @@ function fixtureBriefPassed(
   };
 }
 
-function everyBriefPassed(briefs = FIXTURE_TASKS_PLANNED.tasks): EngineEvent[] {
+/** Every brief passes; the base re-run rows start with the build, before the first brief. */
+function everyBriefPassed(
+  briefs = FIXTURE_TASKS_PLANNED.tasks,
+  baseRows: EngineEvent[] = [],
+): EngineEvent[] {
   return [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
     { ...FIXTURE_TASKS_PLANNED, tasks: briefs },
+    ...baseRows,
     ...briefs.flatMap((brief, index) => [
       orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
       fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
@@ -1538,14 +1543,20 @@ function finalReviewCompleted({
 }
 
 /**
- * One reviewer check before the final review, its re-run at the run base, or a fix brief running it
- * again; `newFailures`, `preExisting` and `notVerified` split a red base re-run.
+ * One reviewer check before the final review, the project gate's run at the run base beside the
+ * build, or a fix brief running it again; `newFailures`, `preExisting` and `notVerified` split a red
+ * reviewer check by the run base.
  */
 function reviewCheck(
   ts: number,
   check: { readonly id: string; readonly command: string },
   result:
-    | { status: 'running' | 'not-run' | 'refused'; moment?: 'base' | 'brief'; detail?: string }
+    | {
+        status: 'running' | 'not-run' | 'refused';
+        moment?: 'base' | 'brief';
+        detail?: string;
+        waitsOnBase?: true;
+      }
     | {
         status: 'done';
         moment?: 'base' | 'brief';
@@ -1578,6 +1589,23 @@ function reviewCheck(
   };
 }
 
+// The project gate runs at the run base beside the build: the brief's BUILD call keeps the
+// activity line, and the counts line names the base command and its clock.
+const buildBaseRerunProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-build-base-rerun'),
+  events: [
+    ...implementationProjection.events.slice(0, 2),
+    reviewCheck(
+      FIXED_TS,
+      REVIEW_CHECK_TYPECHECK,
+      { status: 'running', moment: 'base' },
+      'implementing',
+    ),
+    ...implementationProjection.events.slice(2),
+  ],
+};
+
 const reviewFixCyclesProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-review-fix-cycles'),
   feature: WORKFLOW_FEATURE,
@@ -1599,18 +1627,29 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
     },
     { type: 'plan_approved', ts: FIXED_TS + 30, phase: 'reviewing-plan' },
     FIXTURE_TASKS_PLANNED,
+    reviewCheck(
+      FIXED_TS + 70,
+      REVIEW_CHECK_TYPECHECK,
+      { status: 'done', moment: 'base', passed: true, duration: 8_000 },
+      'implementing',
+    ),
+    reviewCheck(
+      FIXED_TS + 80,
+      REVIEW_CHECK_TEST,
+      { status: 'done', moment: 'base', passed: true, duration: 9_000 },
+      'implementing',
+    ),
     ...FIXTURE_PLANNED_BRIEFS.flatMap((brief, index) => [
       orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
       fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
     ]),
     finalReviewStarted(FIXED_TS + 900, CODEX_REVIEW_SEAT),
     reviewCheck(FIXED_TS + 1_000, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
-    reviewCheck(FIXED_TS + 2_000, REVIEW_CHECK_TEST, { status: 'done', passed: false }),
-    reviewCheck(FIXED_TS + 3_000, REVIEW_CHECK_TEST, {
+    reviewCheck(FIXED_TS + 2_000, REVIEW_CHECK_TEST, {
       status: 'done',
-      moment: 'base',
-      passed: true,
-      duration: 9_000,
+      passed: false,
+      newFailures: 1,
+      preExisting: 0,
     }),
     {
       type: 'runner_call_activity',
@@ -6481,6 +6520,14 @@ const reviewRedGateProjection: WorkflowFixtureProjection = {
     return [
       { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
       { ...FIXTURE_TASKS_PLANNED, total: 1, tasks: FIXTURE_TASKS_PLANNED.tasks.slice(0, 1) },
+      ...[RED_GATE_LINT, RED_GATE_TYPECHECK, RED_GATE_TEST].map((check, index) =>
+        reviewCheck(
+          FIXED_TS + 200 + index,
+          check,
+          { status: 'done', moment: 'base', passed: true, duration: 15_000 },
+          'implementing',
+        ),
+      ),
       fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 300),
       finalReviewStarted(FIXED_TS + 390, CODEX_REVIEW_SEAT),
       reviewCheck(FIXED_TS + 395, RED_GATE_LINT, {
@@ -6491,12 +6538,8 @@ const reviewRedGateProjection: WorkflowFixtureProjection = {
         status: 'done',
         passed: false,
         duration: 16_000,
-      }),
-      reviewCheck(FIXED_TS + 401, RED_GATE_TYPECHECK, {
-        status: 'done',
-        moment: 'base',
-        passed: true,
-        duration: 15_000,
+        newFailures: 1,
+        preExisting: 0,
       }),
       reviewCheck(FIXED_TS + 402, RED_GATE_TEST, { status: 'not-run', detail: 'V2 failed' }),
       ...finalReviewProjection.events.filter((event) => event.type === 'runner_call_started'),
@@ -6542,18 +6585,25 @@ const reviewBaseRerunProjection: WorkflowFixtureProjection = {
   inputMode: 'normal',
   sidebarVisible: true,
   events: [
-    ...everyBriefPassed(),
+    ...everyBriefPassed(undefined, [
+      reviewCheck(
+        FIXED_TS + 60,
+        BASE_RERUN_TYPECHECK,
+        { status: 'done', moment: 'base', passed: false, duration: 13_000 },
+        'implementing',
+      ),
+      reviewCheck(
+        FIXED_TS + 70,
+        BASE_RERUN_TEST,
+        { status: 'running', moment: 'base' },
+        'implementing',
+      ),
+    ]),
     finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
     reviewCheck(FIXED_TS + 1_000, BASE_RERUN_TYPECHECK, {
       status: 'done',
       passed: false,
       duration: 14_000,
-    }),
-    reviewCheck(FIXED_TS + 1_200, BASE_RERUN_TYPECHECK, {
-      status: 'done',
-      moment: 'base',
-      passed: false,
-      duration: 13_000,
       newFailures: 0,
       preExisting: 3,
       preExistingKeys: [
@@ -6562,16 +6612,14 @@ const reviewBaseRerunProjection: WorkflowFixtureProjection = {
         'src/report.ts(14,5): error TS2339: Property total does not exist on type Ledger.',
       ],
     }),
-    reviewCheck(FIXED_TS + 1_500, BASE_RERUN_TEST, {
-      status: 'done',
-      passed: false,
-      duration: 12_000,
-    }),
-    reviewCheck(FIXED_TS + 2_000, BASE_RERUN_TEST, { status: 'running', moment: 'base' }),
+    // The workspace run of V2 is red; its row stays running while the review waits for V2 at the
+    // run base.
+    reviewCheck(FIXED_TS + 1_500, BASE_RERUN_TEST, { status: 'running' }),
+    reviewCheck(FIXED_TS + 1_520, BASE_RERUN_TEST, { status: 'running', waitsOnBase: true }),
   ],
 };
 
-// Q2 review B3: a red with new and pre-existing failures stops the list; its base row says why.
+// Q2 review B3: a red with new and pre-existing failures stops the list; its row says why.
 const reviewBaseMixedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-review-base-mixed'),
   feature: WORKFLOW_FEATURE,
@@ -6583,18 +6631,26 @@ const reviewBaseMixedProjection: WorkflowFixtureProjection = {
         ...brief,
         id: taskId(`T00${index + 1}`),
       })),
+      [
+        reviewCheck(
+          FIXED_TS + 60,
+          BASE_RERUN_TYPECHECK,
+          { status: 'done', moment: 'base', passed: false, duration: 13_000 },
+          'implementing',
+        ),
+        reviewCheck(
+          FIXED_TS + 70,
+          BASE_RERUN_TEST,
+          { status: 'done', moment: 'base', passed: true, duration: 12_000 },
+          'implementing',
+        ),
+      ],
     ),
     finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
     reviewCheck(FIXED_TS + 1_000, BASE_RERUN_TYPECHECK, {
       status: 'done',
       passed: false,
       duration: 14_000,
-    }),
-    reviewCheck(FIXED_TS + 1_200, BASE_RERUN_TYPECHECK, {
-      status: 'done',
-      moment: 'base',
-      passed: false,
-      duration: 13_000,
       newFailures: 2,
       preExisting: 1,
       newKeys: [
@@ -6646,7 +6702,20 @@ const fixCheckRunningProjection: WorkflowFixtureProjection = {
       .slice(everyBriefPassed().length)
       .filter((event) => event.type !== 'review_started' && event.type !== 'review_completed');
     return [
-      ...everyBriefPassed(),
+      ...everyBriefPassed(undefined, [
+        reviewCheck(
+          FIXED_TS + 60,
+          REVIEW_CHECK_TYPECHECK,
+          { status: 'done', moment: 'base', passed: true, duration: 17_000 },
+          'implementing',
+        ),
+        reviewCheck(
+          FIXED_TS + 70,
+          REVIEW_CHECK_TEST,
+          { status: 'done', moment: 'base', passed: true, duration: 20_000 },
+          'implementing',
+        ),
+      ]),
       finalReviewStarted(FIXED_TS + 350, BASE_PLANNER),
       reviewCheck(FIXED_TS + 360, REVIEW_CHECK_TYPECHECK, {
         status: 'done',
@@ -6657,12 +6726,6 @@ const fixCheckRunningProjection: WorkflowFixtureProjection = {
         status: 'done',
         passed: false,
         duration: 21_000,
-      }),
-      reviewCheck(FIXED_TS + 380, REVIEW_CHECK_TEST, {
-        status: 'done',
-        moment: 'base',
-        passed: true,
-        duration: 20_000,
         newFailures: 1,
         preExisting: 0,
       }),
@@ -6814,16 +6877,23 @@ const reviewBaseNotVerifiedProjection: WorkflowFixtureProjection = {
   inputMode: 'normal',
   sidebarVisible: true,
   events: [
-    ...everyBriefPassed(),
+    ...everyBriefPassed(undefined, [
+      reviewCheck(
+        FIXED_TS + 60,
+        BASE_NOT_VERIFIED_E2E,
+        { status: 'done', moment: 'base', passed: false, duration: 600_000 },
+        'implementing',
+      ),
+      reviewCheck(
+        FIXED_TS + 70,
+        BASE_NOT_VERIFIED_TEST,
+        { status: 'done', moment: 'base', passed: true, duration: 12_000 },
+        'implementing',
+      ),
+    ]),
     finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
     reviewCheck(FIXED_TS + 1_000, BASE_NOT_VERIFIED_E2E, {
       status: 'done',
-      passed: false,
-      duration: 600_000,
-    }),
-    reviewCheck(FIXED_TS + 1_200, BASE_NOT_VERIFIED_E2E, {
-      status: 'done',
-      moment: 'base',
       passed: false,
       duration: 600_000,
       newFailures: 0,
@@ -6845,18 +6915,25 @@ const reviewBaseRejectedProjection: WorkflowFixtureProjection = {
   inputMode: 'normal',
   sidebarVisible: true,
   events: [
-    ...everyBriefPassed(),
+    ...everyBriefPassed(undefined, [
+      reviewCheck(
+        FIXED_TS + 60,
+        BASE_NOT_VERIFIED_E2E,
+        { status: 'done', moment: 'base', passed: false, duration: 1_100 },
+        'implementing',
+      ),
+      reviewCheck(
+        FIXED_TS + 70,
+        BASE_NOT_VERIFIED_TEST,
+        { status: 'done', moment: 'base', passed: true, duration: 12_000 },
+        'implementing',
+      ),
+    ]),
     finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
     reviewCheck(FIXED_TS + 1_000, BASE_NOT_VERIFIED_E2E, {
       status: 'done',
       passed: false,
       duration: 1_300,
-    }),
-    reviewCheck(FIXED_TS + 1_200, BASE_NOT_VERIFIED_E2E, {
-      status: 'done',
-      moment: 'base',
-      passed: false,
-      duration: 1_100,
       newFailures: 0,
       preExisting: 0,
       notVerified: 1,
@@ -6978,6 +7055,7 @@ const projections = [
   stopSheetRecoveryProjection,
   buildConsultProjection,
   buildBriefCheckProjection,
+  buildBaseRerunProjection,
   buildFixConsultProjection,
   implementationRetryProjection,
   reviewFixProjection,
@@ -7187,18 +7265,29 @@ const projections = [
       { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
       { type: 'plan_approved', ts: FIXED_TS + 50, phase: 'reviewing-plan' },
       { ...FIXTURE_TASKS_PLANNED, ts: FIXED_TS + 60 },
+      reviewCheck(
+        FIXED_TS + 70,
+        REVIEW_CHECK_TYPECHECK,
+        { status: 'done', moment: 'base', passed: true, duration: 8_000 },
+        'implementing',
+      ),
+      reviewCheck(
+        FIXED_TS + 80,
+        REVIEW_CHECK_TEST,
+        { status: 'done', moment: 'base', passed: true, duration: 9_000 },
+        'implementing',
+      ),
       ...FIXTURE_PLANNED_BRIEFS.flatMap((brief, index) => [
         orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
         fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
       ]),
       finalReviewStarted(FIXED_TS + 1_000, BASE_PLANNER),
       reviewCheck(FIXED_TS + 1_100, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
-      reviewCheck(FIXED_TS + 2_100, REVIEW_CHECK_TEST, { status: 'done', passed: false }),
-      reviewCheck(FIXED_TS + 3_100, REVIEW_CHECK_TEST, {
+      reviewCheck(FIXED_TS + 2_100, REVIEW_CHECK_TEST, {
         status: 'done',
-        moment: 'base',
-        passed: true,
-        duration: 9_000,
+        passed: false,
+        newFailures: 1,
+        preExisting: 0,
       }),
       finalReviewCompleted({
         ts: FIXED_TS + 8_000,

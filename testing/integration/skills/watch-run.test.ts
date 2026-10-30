@@ -39,13 +39,15 @@ function append(type: string, data: object = {}) {
 }
 
 describe('standalone babysit watcher', () => {
-  it('wakes only for failed or refused reviewer checks', async () => {
+  it('wakes only for failed or refused reviewer checks, never for a base re-run row', async () => {
+    append('full_suite', { status: 'running', moment: 'base' });
+    append('full_suite', { status: 'done', passed: false, moment: 'base' });
+    append('full_suite', { status: 'refused', detail: 'names no program', moment: 'base' });
     append('full_suite', { status: 'running' });
     append('full_suite', { status: 'done', passed: true });
     append('full_suite', { status: 'not-run', detail: 'V1 failed' });
     append('full_suite', { status: 'done' });
     append('full_suite', { status: 'done', passed: false });
-    append('full_suite', { status: 'running', moment: 'base' });
     append('full_suite', { status: 'refused', detail: 'the script changed' });
 
     expect((await watch()).event.detail).toContain('"passed":false');

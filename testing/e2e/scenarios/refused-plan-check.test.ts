@@ -189,7 +189,11 @@ describe('e2e: a refused plan check', () => {
     ).toBeUndefined();
     expect(
       events.filter(
-        (event) => event.type === 'full_suite' && event.id === 'V1' && event.status === 'done',
+        (event) =>
+          event.type === 'full_suite' &&
+          event.id === 'V1' &&
+          event.moment === 'pre-review' &&
+          event.status === 'done',
       ),
     ).toMatchObject([{ command: 'node --version', passed: true, moment: 'pre-review' }]);
     expect(calls[3]?.prompt).toContain('- V1 `node --version`: passed');

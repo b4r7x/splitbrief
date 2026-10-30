@@ -791,6 +791,60 @@ describe('eventsStore — append via addEvent', () => {
       ]);
     });
 
+    it.each([{ type: 'turn_interrupted' }, { type: 'workflow_resumed', inProcess: true }] as const)(
+      '$type settles a running check but leaves a running base re-run to its engine',
+      (boundary) => {
+        const check = (overrides: Partial<EngineEventOf<'full_suite'>>) =>
+          makeFullSuite({ stage: undefined, phase: 'implementing', ...overrides });
+        addEvent(check({ id: 'V1', status: 'running', moment: 'base' }));
+        addEvent(check({ id: 'K1', status: 'running', moment: 'plan' }));
+        addEvent({ ...boundary, ts: 2_000, phase: 'implementing' });
+
+        expect(
+          eventsStore
+            .get()
+            .events.flatMap((event) =>
+              event.type === 'full_suite' ? [[event.id, event.status]] : [],
+            ),
+        ).toEqual([
+          ['V1', 'running'],
+          ['K1', 'stopped'],
+        ]);
+      },
+    );
+
+    it.each([
+      {
+        name: 'a stop or an end',
+        end: { type: 'workflow_cancelled', ts: 3_000, phase: 'implementing' },
+      },
+      {
+        name: 'a continue in a new process',
+        end: { type: 'workflow_resumed', ts: 3_000, phase: 'implementing' },
+      },
+      {
+        name: 'the reopen of a run whose process went away',
+        end: {
+          type: 'replay_complete',
+          ts: 3_000,
+          phase: 'idle',
+          totalEvents: 2,
+          durationMs: 0,
+          processWentAway: true,
+        },
+      },
+    ] as const)('settles a base re-run still running at $name', ({ end }) => {
+      const log = mergeEventLog([
+        makeFullSuite({ stage: undefined, phase: 'implementing', id: 'V1', moment: 'base' }),
+        { type: 'turn_interrupted', ts: 2_000, phase: 'implementing' },
+        end,
+      ]);
+
+      expect(log.flatMap((event) => (event.type === 'full_suite' ? [event.status] : []))).toEqual([
+        'stopped',
+      ]);
+    });
+
     it('keeps the base re-run of a settled check as a row of its own', () => {
       const check = (overrides: Partial<EngineEventOf<'full_suite'>>) =>
         makeFullSuite({ stage: undefined, phase: 'final-review', id: 'V1', ...overrides });

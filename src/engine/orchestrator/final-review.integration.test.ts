@@ -717,7 +717,7 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      reviewChecks: true,
+      reviewChecks: { baseGate: undefined },
     });
 
     expect(reviewer.typedCall).toHaveBeenCalledTimes(1);
@@ -748,7 +748,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      reviewChecks: false,
     });
 
     expect(events.filter((event) => event.type === 'review_checks')).toEqual([]);
@@ -1204,7 +1203,6 @@ describe('runFinalReviewPhase', () => {
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
-      reviewChecks: false,
     });
 
     const record = readReviewRecord(projectDir, sessionId);

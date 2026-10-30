@@ -24,8 +24,10 @@ import {
   captureChangedFilesBaseline,
   serializeChangedFilesBaseline,
 } from './changed-files-baseline.js';
+import { startBaseGate } from './base-gate.js';
 import { runPreReviewChecks } from './run/pre-review-checks.js';
 import { runReviewCheck, runReviewChecks, type ReviewChecksOutcome } from './review-checks.js';
+import { enabledReviewChecks } from './validation/run-checks.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs/promises')>()),
@@ -96,16 +98,35 @@ async function reviewChecks(
     });
   });
   const { bus, events } = makeBusRecorder();
-  const outcome: ReviewChecksOutcome = await runReviewChecks({
-    projectDir: run.dir,
+  const config = opts.config ?? makeConfig();
+  const baseGate = startBaseGate({
+    ref,
     workspaceDir: run.ws,
-    sessionId: run.sessionId,
-    config: opts.config ?? makeConfig(),
+    config,
     bus,
     state,
+    phase: () => state.phase,
     signal: opts.signal,
   });
-  return { outcome, events, commands, ref };
+  // The base run settles before the review starts, so the commands run in one fixed order.
+  await Promise.all(
+    enabledReviewChecks(config, state.plan).map((check) => baseGate?.outcome(check.id)),
+  );
+  try {
+    const outcome: ReviewChecksOutcome = await runReviewChecks({
+      projectDir: run.dir,
+      workspaceDir: run.ws,
+      sessionId: run.sessionId,
+      config,
+      bus,
+      state,
+      signal: opts.signal,
+      baseGate,
+    });
+    return { outcome, events, commands, ref };
+  } finally {
+    await baseGate?.stop();
+  }
 }
 
 function rows(events: EngineEvent[]): EngineEventOf<'full_suite'>[] {
@@ -294,11 +315,15 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         gate: ['npm test', 'npx --no-install vitest run'],
       });
 
-      expect(commands.map((entry) => entry.command)).toEqual([
-        'npm test',
-        'npx --no-install vitest run',
+      expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+        'npm test @ base',
+        'npx --no-install vitest run @ base',
+        'npm test @ workspace',
+        'npx --no-install vitest run @ workspace',
       ]);
-      expect(rows(events).filter((row) => row.status === 'done')).toEqual([
+      expect(
+        rows(events).filter((row) => row.moment === 'pre-review' && row.status === 'done'),
+      ).toEqual([
         expect.objectContaining({ id: 'V1', command: 'npm test', passed: true }),
         expect.objectContaining({ id: 'V2', command: 'npx --no-install vitest run', passed: true }),
       ]);
@@ -317,21 +342,32 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       });
 
       expect(commands).toEqual([
-        { command: 'npm test', at: 'workspace' },
         { command: 'npm test', at: 'base' },
+        { command: 'npx --no-install vitest run', at: 'base' },
+        { command: 'npm test', at: 'workspace' },
       ]);
       expect(
         rows(events).map((row) => [row.id, row.moment, row.status, row.passed, row.detail]),
       ).toEqual([
-        ['V1', 'pre-review', 'running', undefined, undefined],
-        ['V1', 'pre-review', 'done', false, undefined],
         ['V1', 'base', 'running', undefined, undefined],
         ['V1', 'base', 'done', true, undefined],
+        ['V2', 'base', 'running', undefined, undefined],
+        ['V2', 'base', 'done', true, undefined],
+        ['V1', 'pre-review', 'running', undefined, undefined],
+        ['V1', 'pre-review', 'running', undefined, undefined],
+        ['V1', 'pre-review', 'done', false, undefined],
         ['V2', 'pre-review', 'not-run', undefined, 'V1 failed'],
       ]);
-      const baseDone = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
-      expect(baseDone).toMatchObject({ newKeys: [NEW_RED] });
-      expect(baseDone).not.toHaveProperty('preExistingKeys');
+      expect(
+        rows(events)
+          .filter((row) => row.moment === 'pre-review' && row.status === 'running')
+          .map((row) => row.waitsOnBase),
+      ).toEqual([undefined, true]);
+      const reviewDone = rows(events).find(
+        (row) => row.moment === 'pre-review' && row.status === 'done',
+      );
+      expect(reviewDone).toMatchObject({ newFailures: 1, preExisting: 0, newKeys: [NEW_RED] });
+      expect(reviewDone).not.toHaveProperty('preExistingKeys');
       const state = outcome.state;
       expect(state.pendingTriage?.inputs).toEqual([
         expect.objectContaining({
@@ -363,15 +399,17 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       });
 
       expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
-        'npm test @ workspace',
         'npm test @ base',
+        'npx --no-install vitest run @ base',
+        'npm test @ workspace',
         'npx --no-install vitest run @ workspace',
       ]);
       expect(rows(events).filter((row) => row.status === 'done')).toEqual([
-        expect.objectContaining({ id: 'V1', moment: 'pre-review', passed: false }),
+        expect.objectContaining({ id: 'V1', moment: 'base', passed: false }),
+        expect.objectContaining({ id: 'V2', moment: 'base', passed: true }),
         expect.objectContaining({
           id: 'V1',
-          moment: 'base',
+          moment: 'pre-review',
           passed: false,
           newFailures: 0,
           preExisting: 1,
@@ -379,9 +417,11 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         }),
         expect.objectContaining({ id: 'V2', moment: 'pre-review', passed: true }),
       ]);
-      const baseDone = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
-      expect(baseDone).not.toHaveProperty('detail');
-      expect(baseDone).not.toHaveProperty('newKeys');
+      const reviewDone = rows(events).find(
+        (row) => row.moment === 'pre-review' && row.status === 'done',
+      );
+      expect(reviewDone).not.toHaveProperty('detail');
+      expect(reviewDone).not.toHaveProperty('newKeys');
       expect(outcome).toMatchObject({
         preExistingChecks: [{ id: 'V1', command: 'npm test', keys: [OLD_RED] }],
       });
@@ -407,7 +447,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         });
 
         expect(
-          rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+          rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
         ).toMatchObject({ passed: false, newFailures: 0, preExisting: 1 });
         expect(outcome).toMatchObject({
           preExistingChecks: [{ id: 'V1', command: 'npm test', keys: [OLD_RED] }],
@@ -437,14 +477,17 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           row.preExisting,
         ]),
       ).toEqual([
-        ['V1', 'pre-review', 'running', undefined, undefined],
-        ['V1', 'pre-review', 'done', undefined, undefined],
         ['V1', 'base', 'running', undefined, undefined],
-        ['V1', 'base', 'done', 1, 1],
+        ['V1', 'base', 'done', undefined, undefined],
+        ['V2', 'base', 'running', undefined, undefined],
+        ['V2', 'base', 'done', undefined, undefined],
+        ['V1', 'pre-review', 'running', undefined, undefined],
+        ['V1', 'pre-review', 'running', undefined, undefined],
+        ['V1', 'pre-review', 'done', 1, 1],
         ['V2', 'pre-review', 'not-run', undefined, undefined],
       ]);
       expect(
-        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
       ).toMatchObject({ newKeys: [NEW_RED], preExistingKeys: [OLD_RED] });
       const listing = outcome.section.split('Output tail:')[0] ?? '';
       expect(listing).toContain(
@@ -484,8 +527,8 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       });
 
       expect(rows(events).filter((row) => row.status === 'done')).toEqual([
-        expect.objectContaining({ id: 'V1', moment: 'pre-review', passed: false }),
         expect.objectContaining({ id: 'V1', moment: 'base', passed: true }),
+        expect.objectContaining({ id: 'V1', moment: 'pre-review', passed: false, newFailures: 1 }),
       ]);
       expect(outcome.state.pendingTriage?.inputs).toEqual([
         expect.objectContaining({ id: 'V1.1', file: null }),
@@ -511,12 +554,14 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       });
 
       expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
-        'npm test @ workspace',
         'npm test @ base',
+        'npx --no-install vitest run @ base',
+        'npm test @ workspace',
       ]);
-      expect(
-        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
-      ).toMatchObject({
+      const reviewDone = rows(events).find(
+        (row) => row.moment === 'pre-review' && row.status === 'done',
+      );
+      expect(reviewDone).toMatchObject({
         id: 'V1',
         passed: false,
         newFailures: 0,
@@ -524,9 +569,8 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         notVerified: 1,
         detail: 'both runs timed out',
       });
-      const baseDone = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
-      expect(baseDone).not.toHaveProperty('newKeys');
-      expect(baseDone).not.toHaveProperty('preExistingKeys');
+      expect(reviewDone).not.toHaveProperty('newKeys');
+      expect(reviewDone).not.toHaveProperty('preExistingKeys');
       expect(outcome.state.pendingTriage?.inputs).toEqual([
         expect.objectContaining({
           id: 'V1.1',
@@ -576,7 +620,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         }),
       });
       expect(
-        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
       ).toMatchObject({ preExisting: 0, notVerified: 1 });
       expect(outcome.state.pendingTriage?.inputs[0]?.redKeys).toEqual([
         'output over the capture limit',
@@ -607,11 +651,11 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       });
 
       expect(commands).toEqual([
-        { command: red.command, at: 'workspace' },
         { command: red.command, at: 'base' },
+        { command: red.command, at: 'workspace' },
       ]);
       expect(
-        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
       ).toMatchObject({
         id: 'V1',
         passed: false,
@@ -654,7 +698,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       );
       expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
       expect(
-        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
       ).toMatchObject({ newFailures: 0, preExisting: 0, notVerified: 1 });
     });
   });
@@ -673,15 +717,13 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       });
 
       expect(commands).toEqual([{ command: 'npm test', at: 'workspace' }]);
-      expect(
-        rows(events)
-          .filter((row) => row.moment === 'base')
-          .map((row) => [row.status, row.passed, row.newFailures, row.notVerified]),
-      ).toEqual([
-        ['running', undefined, undefined, undefined],
-        ['done', false, 0, 1],
-      ]);
-      const settled = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
+      const base = rows(events).filter((row) => row.moment === 'base');
+      expect(base.map((row) => row.status)).toEqual(['not-run']);
+      expect(base[0]?.detail).toContain('the run base could not be prepared');
+      const settled = rows(events).find(
+        (row) => row.moment === 'pre-review' && row.status === 'done',
+      );
+      expect(settled).toMatchObject({ passed: false, newFailures: 0, notVerified: 1 });
       expect(settled?.detail).toContain('the run base could not be prepared');
       expect(settled?.detail).toContain(unreachable);
       expect(outcome.section).toContain(
@@ -732,14 +774,12 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           expect(
             rows(events)
               .filter((row) => row.moment === 'base')
-              .map((row) => [row.status, row.passed, row.newFailures, row.notVerified]),
-          ).toEqual([
-            ['running', undefined, undefined, undefined],
-            ['done', false, 0, 1],
-          ]);
+              .map((row) => row.status),
+          ).toEqual(['not-run']);
           const settled = rows(events).find(
-            (row) => row.moment === 'base' && row.status === 'done',
+            (row) => row.moment === 'pre-review' && row.status === 'done',
           );
+          expect(settled).toMatchObject({ passed: false, newFailures: 0, notVerified: 1 });
           expect(settled?.detail).toContain('the run base could not be prepared');
           expect(settled?.detail).toContain(failure.message);
           expect(outcome.section).toContain(`not verified at the run base`);
@@ -773,7 +813,9 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           answer: () => ({ red: NEW_RED }),
         });
         expect(commands).toEqual([{ command: 'npm test', at: 'workspace' }]);
-        const settled = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
+        const settled = rows(events).find(
+          (row) => row.moment === 'pre-review' && row.status === 'done',
+        );
         expect(settled?.notVerified).toBe(1);
         expect(settled?.detail).toContain('f'.repeat(40));
         expect(settled?.detail).toContain('base cleanup denied');
@@ -789,7 +831,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
   });
 
   it.each(['pass', 'fail'] as const)(
-    'settles a completed %s base command with its cleanup error and continues the review',
+    'warns about the cleanup error of a completed %s base command and keeps its result for the split',
     async (baseStatus) => {
       await withApplyRun(FILES, { sessionId: 'sess-checks-completed-cleanup' }, async (run) => {
         mkdirSync(runBaseTreesRoot(), { recursive: true });
@@ -799,8 +841,8 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           const { outcome, events, commands, ref } = await reviewChecks(run, {
             gate: ['npm test', 'npx --no-install vitest run'],
             answer: (command, at) => {
+              if (at === 'workspace') return command === 'npm test' ? { red: OLD_RED } : 'pass';
               if (command !== 'npm test') return 'pass';
-              if (at === 'workspace') return { red: OLD_RED };
               const name = readdirSync(runBaseTreesRoot()).find((entry) => !before.includes(entry));
               if (name === undefined) throw new Error('the base command has no tree');
               tree = join(runBaseTreesRoot(), name);
@@ -811,38 +853,44 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           expect(
             rows(events)
               .filter((row) => row.moment === 'base')
-              .map((row) => row.status),
-          ).toEqual(['running', 'done']);
-          const settled = rows(events).find(
-            (row) => row.moment === 'base' && row.status === 'done',
+              .map((row) => [row.id, row.status, row.passed]),
+          ).toEqual([
+            ['V1', 'running', undefined],
+            ['V1', 'done', baseStatus === 'pass'],
+            ['V2', 'running', undefined],
+            ['V2', 'done', true],
+          ]);
+          const warning = events.find(
+            (event): event is EngineEventOf<'warning'> =>
+              event.type === 'warning' && event.message.includes('cleanup of run base tree'),
           );
-          expect(settled).toMatchObject({
-            passed: false,
-            newFailures: 0,
-            preExisting: 0,
-            notVerified: 1,
-          });
-          expect(settled?.detail).toContain('cleanup of run base tree');
-          expect(settled?.detail).toContain(tree);
-          expect(settled?.detail).toContain('locked');
-          expect(commands).toEqual([
-            { command: 'npm test', at: 'workspace' },
-            { command: 'npm test', at: 'base' },
+          expect(warning?.message).toContain(tree);
+          expect(warning?.message).toContain('locked');
+          const settled = rows(events).find(
+            (row) => row.moment === 'pre-review' && row.status === 'done' && row.id === 'V1',
+          );
+          expect(settled).toMatchObject(
+            baseStatus === 'pass'
+              ? { passed: false, newFailures: 1, preExisting: 0 }
+              : { passed: false, newFailures: 0, preExisting: 1 },
+          );
+          expect(settled).not.toHaveProperty('notVerified');
+          expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+            'npm test @ base',
+            'npx --no-install vitest run @ base',
+            'npm test @ workspace',
+            ...(baseStatus === 'fail' ? ['npx --no-install vitest run @ workspace'] : []),
           ]);
           const logged = (readEvidenceLedger(ref)?.tasks[0]?.checks ?? []).find(
             (entry) => entry.id === 'V1',
           );
-          expect(logged).toBeDefined();
-          expect(logged).not.toHaveProperty('base');
-          expect(logged?.preExisting).toBeUndefined();
-          expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
-          expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('locked');
-          expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain(
-            'failed at the run base too',
+          expect(logged).toMatchObject({
+            base: { output: baseStatus === 'pass' ? 'ok' : OLD_RED },
+          });
+          expect(outcome.section).not.toContain('failed, not verified at the run base');
+          expect(outcome.state.pendingTriage?.inputs.length ?? 0).toBe(
+            baseStatus === 'pass' ? 1 : 0,
           );
-          expect(outcome.section).toContain('not verified at the run base');
-          expect(outcome.section).toContain('locked');
-          expect(rows(events).find((row) => row.id === 'V2')).toMatchObject({ status: 'not-run' });
           expect(existsSync(tree)).toBe(true);
           expect(existsSync(join(run.dir, '.git/worktrees', basename(tree)))).toBe(true);
         } finally {
@@ -876,17 +924,18 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
             gate: ['npm test', 'npx --no-install vitest run'],
             answer: (command) => (command === 'npm test' ? { red: OLD_RED } : 'pass'),
           });
-          // The run base does not change, so the second base re-run takes the stored result.
-          expect(commands).toEqual([
-            { command: 'npm test', at: 'workspace' },
-            ...(attempt === 0 ? [{ command: 'npm test', at: 'base' }] : []),
-            { command: 'npx --no-install vitest run', at: 'workspace' },
+          // The run base does not change, so the second base run takes the stored results, makes
+          // no base tree and shows no base row.
+          expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+            ...(attempt === 0 ? ['npm test @ base', 'npx --no-install vitest run @ base'] : []),
+            'npm test @ workspace',
+            'npx --no-install vitest run @ workspace',
           ]);
+          expect(rows(events).some((row) => row.moment === 'base')).toBe(attempt === 0);
           const settled = rows(events).find(
-            (row) => row.moment === 'base' && row.status === 'done',
+            (row) => row.moment === 'pre-review' && row.status === 'done' && row.id === 'V1',
           );
           expect(settled).toMatchObject({ passed: false, newFailures: 0, preExisting: 1 });
-          expect(settled?.reusedAt !== undefined).toBe(attempt === 1);
           expect(settled).not.toHaveProperty('detail');
           expect(outcome.section).toContain(
             'failed, 0 new failure(s); 1 pre-existing (also red at the run base)\n',
@@ -897,7 +946,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           expect(existsSync(stale)).toBe(true);
           expect(existsSync(join(run.dir, '.git/worktrees', basename(stale)))).toBe(true);
         }
-        expect(warnings).toHaveLength(2);
+        expect(warnings).toHaveLength(1);
         expect(warnings.every((warning) => warning.includes(stale))).toBe(true);
         expect(warnings.every((warning) => warning.includes('locked'))).toBe(true);
       } finally {
@@ -944,7 +993,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       });
 
       expect(
-        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
       ).toMatchObject({ newFailures: 1, preExisting: 1 });
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('src/new.test.ts::adds');
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
@@ -971,7 +1020,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         );
         expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
         expect(
-          rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+          rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
         ).toMatchObject({ newFailures: 0, preExisting: 0, notVerified: 1, detail: reason });
         const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
         expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();
@@ -986,10 +1035,13 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         state: { approve: 'none' },
       });
 
-      expect(commands).toEqual([
-        { command: 'mvn test', at: 'workspace' },
-        { command: 'npm run lint', at: 'workspace' },
-        { command: './gradlew test', at: 'workspace' },
+      expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+        'mvn test @ base',
+        'npm run lint @ base',
+        './gradlew test @ base',
+        'mvn test @ workspace',
+        'npm run lint @ workspace',
+        './gradlew test @ workspace',
       ]);
       expect(outcome.section).toContain('- V4 `bin/test`: refused, runs a program by path');
     });
@@ -1203,7 +1255,10 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         gate: ['curl https://example.test', 'npm test'],
       });
 
-      expect(commands).toEqual([{ command: 'npm test', at: 'workspace' }]);
+      expect(commands).toEqual([
+        { command: 'npm test', at: 'base' },
+        { command: 'npm test', at: 'workspace' },
+      ]);
       expect(outcome.section).toMatch(/- V1 `curl https:\/\/example\.test`: refused, /);
       expect(outcome.section).toContain('- V2 `npm test`: passed');
     });
@@ -1253,7 +1308,8 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         gate: ['npm test'],
       });
 
-      expect(commands).toEqual([]);
+      // The run base holds the test script the run began with, so only the workspace refuses it.
+      expect(commands).toEqual([{ command: 'npm test', at: 'base' }]);
       expect(rows(events).at(-1)).toMatchObject({
         id: 'V1',
         moment: 'pre-review',
@@ -1315,8 +1371,10 @@ describe('reviewer checks run each command once per tree state', () => {
       });
 
       expect(preReviewCommands).toEqual(['npm test']);
-      expect(commands).toEqual([]);
-      expect(rows(events).find((row) => row.status === 'done')).toMatchObject({
+      expect(commands).toEqual([{ command: 'npm test', at: 'base' }]);
+      expect(
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
+      ).toMatchObject({
         id: 'V1',
         passed: true,
         reusedAt: expect.any(String),
@@ -1334,8 +1392,8 @@ describe('reviewer checks run each command once per tree state', () => {
         state: changed,
       });
       expect(first.commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
-        'npm test @ workspace',
         'npm test @ base',
+        'npm test @ workspace',
       ]);
 
       const second = await reviewChecks(run, {
@@ -1348,11 +1406,8 @@ describe('reviewer checks run each command once per tree state', () => {
       expect(
         rows(second.events)
           .filter((row) => row.status === 'done')
-          .map((row) => [row.moment, row.reusedAt !== undefined]),
-      ).toEqual([
-        ['pre-review', true],
-        ['base', true],
-      ]);
+          .map((row) => [row.moment, row.reusedAt !== undefined, row.preExisting]),
+      ).toEqual([['pre-review', true, 1]]);
       expect(second.outcome).toMatchObject({
         preExistingChecks: [{ id: 'V1', command: 'npm test', keys: [OLD_RED] }],
       });

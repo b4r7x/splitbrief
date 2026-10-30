@@ -8,7 +8,7 @@ import { hydrateFromState } from '../actions/hydrate.js';
 import { markCancellationRequested } from '../actions/interrupt.js';
 import { resetWorkflow } from '../actions/reset.js';
 import { MAX_COMPLETED_OPERATIONS } from './retention.js';
-import { operationsStore, selectScheduledReview } from './state.js';
+import { operationsStore, selectRunningSuite, selectScheduledReview } from './state.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeTaskStart, makeValidate } from '#testing/helpers/events/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
@@ -985,26 +985,94 @@ describe('operationsStore', () => {
     expect(operationsStore.get().suiteStage).toBeNull();
   });
 
-  it('keys a reviewer check by its moment too: its base re-run restarts the clock', () => {
-    const check = (ts: number, moment: 'pre-review' | 'base') =>
+  it('keeps a base re-run in its own slot, and leads with it only while the reviewer check of its id waits', () => {
+    const check = (
+      ts: number,
+      id: string,
+      moment: 'pre-review' | 'base' | 'plan',
+      waitsOnBase?: true,
+    ) =>
       addEvent({
         type: 'full_suite',
         ts,
-        phase: 'final-review',
+        phase: moment === 'base' ? 'implementing' : 'final-review',
         status: 'running',
-        id: 'V1',
+        id,
         command: 'npm test',
         moment,
+        ...(waitsOnBase !== undefined && { waitsOnBase }),
       });
 
-    check(5_000, 'pre-review');
-    check(9_000, 'base');
-    expect(operationsStore.get().suiteStage).toEqual({
+    check(1_000, 'V1', 'base');
+    check(5_000, 'K1', 'plan');
+    expect(operationsStore.get().baseStage).toEqual({
       id: 'V1',
       command: 'npm test',
       moment: 'base',
+      stageStartedTs: 1_000,
+    });
+    expect(selectRunningSuite(operationsStore.get())).toMatchObject({ id: 'K1', moment: 'plan' });
+
+    // The reviewer check runs in the workspace beside the base run of its id: it leads.
+    check(9_000, 'V1', 'pre-review');
+    expect(selectRunningSuite(operationsStore.get())).toEqual({
+      id: 'V1',
+      command: 'npm test',
+      moment: 'pre-review',
       stageStartedTs: 9_000,
     });
+
+    // Its workspace run is red and the review waits on the base run: the base command leads, and
+    // the reviewer check keeps the clock it started on.
+    check(12_000, 'V1', 'pre-review', true);
+    expect(operationsStore.get().suiteStage).toEqual({
+      id: 'V1',
+      command: 'npm test',
+      moment: 'pre-review',
+      waitsOnBase: true,
+      stageStartedTs: 9_000,
+    });
+    expect(selectRunningSuite(operationsStore.get())).toEqual({
+      id: 'V1',
+      command: 'npm test',
+      moment: 'base',
+      stageStartedTs: 1_000,
+    });
+  });
+
+  it('keeps a running base re-run through a steer and an in-process continue, and clears it on an end or with no process', () => {
+    const baseRunning = () =>
+      addEvent({
+        type: 'full_suite',
+        ts: 1_000,
+        phase: 'implementing',
+        status: 'running',
+        id: 'V1',
+        command: 'npm test',
+        moment: 'base',
+      });
+    baseRunning();
+    addEvent({ type: 'turn_interrupted', ts: 2_000, phase: 'implementing' });
+    addEvent({ type: 'workflow_resumed', ts: 2_200, phase: 'implementing', inProcess: true });
+    expect(operationsStore.get().baseStage).toMatchObject({ id: 'V1', moment: 'base' });
+
+    addEvent({ type: 'workflow_resumed', ts: 3_000, phase: 'implementing' });
+    expect(operationsStore.get().baseStage).toBeNull();
+
+    baseRunning();
+    addEvent({
+      type: 'replay_complete',
+      ts: 4_000,
+      phase: 'idle',
+      totalEvents: 2,
+      durationMs: 0,
+      processWentAway: true,
+    });
+    expect(operationsStore.get().baseStage).toBeNull();
+
+    baseRunning();
+    addEvent({ type: 'workflow_cancelled', ts: 5_000, phase: 'implementing' });
+    expect(operationsStore.get().baseStage).toBeNull();
   });
 
   it.each(['workflow_cancelled', 'turn_interrupted'] as const)(

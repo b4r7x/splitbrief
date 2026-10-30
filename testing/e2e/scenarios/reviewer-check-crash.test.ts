@@ -43,7 +43,7 @@ writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
     'make',
     `
 const { existsSync, writeFileSync } = require('node:fs');
-if (!existsSync(${JSON.stringify(started)})) {
+if (existsSync(${JSON.stringify(GREET_FILE)}) && !existsSync(${JSON.stringify(started)})) {
   writeFileSync(${JSON.stringify(started)}, '');
   setInterval(() => {}, 1000);
 }
@@ -87,7 +87,11 @@ console.log(${JSON.stringify(JSON.stringify(verdict))});
     if (firstStart === undefined || last === undefined) throw new Error('Missing review attempt');
     expect(
       before.some(
-        (event) => event.type === 'full_suite' && event.id === 'V1' && event.status === 'running',
+        (event) =>
+          event.type === 'full_suite' &&
+          event.id === 'V1' &&
+          event.moment === 'pre-review' &&
+          event.status === 'running',
       ),
     ).toBe(true);
     expect(before.some((event) => event.type === 'review_completed')).toBe(false);
@@ -117,10 +121,21 @@ console.log(${JSON.stringify(JSON.stringify(verdict))});
       summary: { outcome: 'stopped', duration: last.ts - firstStart.ts },
     });
     expect(replayed[0]?.items).toContainEqual(
-      expect.objectContaining({ type: 'full_suite', id: 'V1', status: 'stopped' }),
+      expect.objectContaining({
+        type: 'full_suite',
+        id: 'V1',
+        moment: 'pre-review',
+        status: 'stopped',
+      }),
     );
     expect(replayed[1]?.items).toContainEqual(
-      expect.objectContaining({ type: 'full_suite', id: 'V1', status: 'done', passed: true }),
+      expect.objectContaining({
+        type: 'full_suite',
+        id: 'V1',
+        moment: 'pre-review',
+        status: 'done',
+        passed: true,
+      }),
     );
   } finally {
     if (pid !== undefined) process.kill(-pid, 'SIGKILL');

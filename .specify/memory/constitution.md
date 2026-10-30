@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version change: 4.5.0 → 4.6.0. MINOR: Principle V moves the run base comparison off the review's critical path. The project gate MUST run once at the run base, during the build, one base process at a time; its results are stored. A red reviewer check is compared with that result, and the review waits for a base command that has not finished; it never runs it a second time.
+- Modified principles: V.
+- Updated sections: Governance.
+- Templates checked: plan-template.md, spec-template.md and tasks-template.md remain compatible. They name no run base.
+- Docs and skills: workflow, configuration, features, concepts, troubleshooting, CLI reference, approval and recovery, task contract, how-it-works, mental model, engine, architecture, the changelog and the generated skill gates references updated.
+- Follow-up TODOs: none.
+-->
+
+<!--
+Sync Impact Report
 - Version change: 4.4.0 → 4.5.0. MINOR: Principle V changes who names the reviewer checks. The planner names the project gate in the plan, at most 6 commands, and the plan card shows it. Before each final review SPLITBRIEF runs that gate under the reviewer command policy; a task review runs no gate. No reviewer call chooses checks, and no card asks to run them. `validation.approve_checks` is retired and loads with one notice.
 - Modified principles: V.
 - Updated sections: Technical Constraints (Project languages), Governance.
@@ -352,11 +362,13 @@ refused only for a named danger rule, with a named row for each refusal. A plan
 whose gate names a command that the policy refuses goes back to the planner.
 A task review runs no gate. With
 `validation.end_checks` off, no reviewer check runs; plan and task checks
-still run. Only a red reviewer check at review MUST be re-run at the run base, with
-the same command text. Plan checks, task checks and the Apply re-check
-MUST NOT run at the run base. SPLITBRIEF MUST refuse a reviewer check whose
+still run. The project gate MUST run once at the run base, during the build,
+with the same command text and one base process at a time; a red reviewer check
+is compared with that result. The review MUST wait for a base command that has
+not finished and MUST NOT run it a second time. Plan checks, task checks and
+the Apply re-check MUST NOT run at the run base. SPLITBRIEF MUST refuse a reviewer check whose
 package script, task file or interpreter script this run changed. A red that
-the run base re-run cannot compare (a timeout, or no failure keys) MUST NOT be
+the run base cannot compare (a timeout, or no failure keys) MUST NOT be
 exempt as pre-existing; it reaches the reviewer as not verified at the run base. The run MUST stop at the first
 reviewer check with new failures. Every new red MUST reach the reviewer as a pending input. The same
 review answer returns the verdict and the fix tasks. Fix work MUST spend
@@ -391,8 +403,8 @@ after fixes.
 Worktree and staged-copy runs validate in the run workspace. The pipeline
 writes the reviewed result to the user's project only at Apply. Checkout runs
 and older runs without a workspace validate in the user's project.
-A red reviewer check at review MUST be compared with the same command at the run base,
-by its parsed failing test names or its diagnostic lines. Retry prompts MUST carry
+A red reviewer check at review MUST be compared with the result of the same command
+at the run base, by its parsed failing test names or its diagnostic lines. Retry prompts MUST carry
 the exact check errors.
 The project formatter MUST run on each brief's changed files.
 A formatter failure MUST record a warning and MUST NOT reject the brief.
@@ -551,6 +563,9 @@ it, and a test-only fix check runs only the own test files.
 The 4.5.0 amendment changes Principle V. The planner names the project gate in
 the plan, and SPLITBRIEF runs it before each final review; no reviewer call
 chooses checks, and the user sees the gate on the plan card.
+The 4.6.0 amendment changes Principle V. The project gate runs once at the run
+base during the build, and a red reviewer check is compared with that result, so
+the base run leaves the review's critical path.
 
 **Amendment procedure**:
 1. Propose changes via `/speckit.constitution` with rationale
@@ -567,4 +582,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 4.5.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-29
+**Version**: 4.6.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-29

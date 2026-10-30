@@ -117,7 +117,7 @@ function preparedExecution(input: {
 }
 
 describe('a red that was there before the run', { timeout: 90_000 }, () => {
-  it('runs no command before the first brief, checks the reviewer check red at the run base and routes it to no brief', async () => {
+  it('runs only the run base before the first brief, finds the reviewer check red there too and routes it to no brief', async () => {
     const projectDir = setupProject();
     const sessionId = 'sess-pre-existing-red';
     const targetFile = 'src/other.ts';
@@ -209,19 +209,31 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
 
     const firstBrief = events.findIndex((event) => event.type === 'task_started');
     expect(firstBrief).toBeGreaterThan(-1);
-    expect(events.slice(0, firstBrief).filter((event) => event.type === 'full_suite')).toEqual([]);
+    // The run base runs beside the build; no other check runs before the first brief.
+    expect(
+      events
+        .slice(0, firstBrief)
+        .filter((event) => event.type === 'full_suite' && event.moment !== 'base'),
+    ).toEqual([]);
 
-    // The same command text ran in the run workspace and at the run base, red both times.
+    // The same command text ran at the run base during the build and in the run workspace, red both
+    // times.
     const checksDone = events.filter(
       (event): event is Extract<EngineEvent, { type: 'full_suite' }> =>
         event.type === 'full_suite' && event.status === 'done',
     );
-    expect(
-      checksDone.map((event) => [event.moment, event.id, event.command, event.passed]),
-    ).toEqual([
+    const row = (event: Extract<EngineEvent, { type: 'full_suite' }>) => [
+      event.moment,
+      event.id,
+      event.command,
+      event.passed,
+    ];
+    expect(checksDone.filter((event) => event.moment === 'base').map(row)).toEqual([
+      ['base', 'V1', 'npm test', false],
+    ]);
+    expect(checksDone.filter((event) => event.moment !== 'base').map(row)).toEqual([
       ['plan', 'T001-K1', 'node validate.mjs', false],
       ['pre-review', 'V1', 'npm test', false],
-      ['base', 'V1', 'npm test', false],
     ]);
 
     const ledger = readEvidenceLedger({ projectDir, sessionId });

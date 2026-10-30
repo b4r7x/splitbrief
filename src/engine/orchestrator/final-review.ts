@@ -137,6 +137,7 @@ import type { RequestTypedResult, SeatProtocolError } from '../runners/typed-out
 import { fixCyclesOf } from '../../core/schemas/workflow.js';
 import { fixTaskTargetErrors, triageContractErrors, verifyClaimChecks } from './triage.js';
 import type { PreReviewResult } from './run/pre-review-checks.js';
+import type { BaseGate } from './base-gate.js';
 import { runReviewChecks } from './review-checks.js';
 import { runBaseOf } from './isolation/base-tree.js';
 import type { SteeringPort } from '../calls/steering.js';
@@ -342,10 +343,11 @@ export async function runFinalReviewPhase(opts: {
    */
   preReview?: ((state: WorkflowState) => Promise<PreReviewResult>) | undefined;
   /**
-   * SPLITBRIEF runs the project gate the plan names before the verdict call of the final review. A
-   * review that only re-answers a pending question on the same candidate skips it.
+   * SPLITBRIEF runs the project gate the plan names before the verdict call of the final review,
+   * and compares a red command with its run at the run base (`baseGate`). A review that only
+   * re-answers a pending question on the same candidate skips it.
    */
-  reviewChecks?: boolean | undefined;
+  reviewChecks?: { baseGate: BaseGate | undefined } | undefined;
 }): Promise<FinalReviewResult> {
   let { state } = opts;
   const {
@@ -477,7 +479,7 @@ export async function runFinalReviewPhase(opts: {
     let reviewChecksSection: string | undefined;
     // A review that only re-answers its question on the same candidate keeps the checks it ran.
     let preExistingChecks = state.review?.preExistingChecks ?? [];
-    if (opts.reviewChecks === true) {
+    if (opts.reviewChecks !== undefined) {
       const checks = await runReviewChecks({
         projectDir,
         workspaceDir,
@@ -485,6 +487,7 @@ export async function runFinalReviewPhase(opts: {
         config,
         bus,
         state,
+        baseGate: opts.reviewChecks.baseGate,
         signal: opts.signal,
       });
       state = checks.state;

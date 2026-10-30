@@ -1642,6 +1642,56 @@ describe('groupEventsIntoSections', () => {
       });
     });
 
+    it('counts a red reviewer check whose split finds every failure pre-existing as no failed command, and ignores base rows beside the build', () => {
+      const check = (ts: number, id: string, fields: Record<string, unknown>) =>
+        at('full_suite', 'final-review', ts, { id, moment: 'pre-review', ...fields });
+      const sections = groupEventsIntoSections([
+        start('T001', 0),
+        at('full_suite', 'implementing', 500, {
+          id: 'V1',
+          moment: 'base',
+          status: 'running',
+          command: 'npm test',
+        }),
+        complete('T001'),
+        at('full_suite', 'final-review', 19_000, {
+          id: 'V1',
+          moment: 'base',
+          status: 'done',
+          command: 'npm test',
+          passed: false,
+          duration: 18_500,
+        }),
+        check(20_000, 'V1', {
+          status: 'done',
+          command: 'npm test',
+          passed: false,
+          duration: 1_000,
+          newFailures: 0,
+          preExisting: 2,
+        }),
+        check(21_000, 'V2', {
+          status: 'done',
+          command: 'make test',
+          passed: false,
+          duration: 1_000,
+          newFailures: 0,
+          preExisting: 0,
+          notVerified: 1,
+          detail: 'both runs timed out',
+        }),
+        at('review_fix_started', 'implementing', 23_000, { taskIds: ['T002'] }),
+        start('T002', 1),
+      ]);
+
+      expect(requireSection(sections, 1, 'settled-stage').summary).toMatchObject({
+        stage: 'review',
+        scope: 'final',
+        failedCommands: ['make test'],
+        duration: 4_000,
+      });
+    });
+
     // Q2 review B3: a red whose every failure also fails at the run base counted as a failed command.
     it('counts a red whose every failure is pre-existing as no failed command, and a red not verified at the run base as one', () => {
       const check = (ts: number, id: string, fields: Record<string, unknown>) =>

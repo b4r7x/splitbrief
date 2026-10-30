@@ -193,7 +193,7 @@ describe('assertPlainStdout', () => {
     expect(() => assertPlainStdout(plainStdout())).not.toThrow();
   });
 
-  it('accepts fix checks with carried failures and reviewer base re-runs with each split', () => {
+  it('accepts fix checks with carried failures, reviewer checks with each split and base re-runs', () => {
     const stdout = [
       plainStdout(),
       'fix check V1: failed (npm test)',
@@ -206,12 +206,16 @@ describe('assertPlainStdout', () => {
       'fix check V1: 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0remains (npm test)',
       'fix check V1: 2\u00a0of\u00a0your\u00a03\u00a0failures\u00a0remain (npm test)',
       'fix check V1: your\u00a01\u00a0failure\u00a0remains (npm test)',
+      'reviewer check V1: 1\u00a0new, 2\u00a0pre-existing (npm test)',
+      "reviewer check V1: pre-existing · all 2 failures also fail before this run's changes (npm test)",
+      "reviewer check V1: pre-existing · the failure also fails before this run's changes (npm test)",
+      'reviewer check V1: 1\u00a0not verified at the run base · both runs timed out (npm test)',
+      'reviewer check V1 new: src/ledger.test.ts::adds',
+      'reviewer check V1 pre-existing: legacy/report.test.ts::totals',
       'base re-run V1: passes',
       'base re-run V1: fails',
-      'base re-run V1: 1 new, 2 pre-existing',
-      "base re-run V1: pre-existing · all 2 failures also fail before this run's changes",
-      "base re-run V1: pre-existing · the failure also fails before this run's changes",
       'base re-run V1: refused (names no program)',
+      'base re-run V1: not run (this run recorded no run base)',
     ].join('\n');
 
     expect(() => assertPlainStdout(stdout)).not.toThrow();
@@ -227,6 +231,8 @@ describe('assertPlainStdout', () => {
       'Render workflow: rendered · 0.1s (npm run render)',
       'fix check V1: your 2 failures not shown · not proven fixed (npm test)',
       'fix check V1: your\u00a02\u00a0failures\u00a0gone · 3 others left (npm test)',
+      'base re-run V1: 1 new, 2 pre-existing',
+      'reviewer check V1: 1\u00a0new, 2\u00a0pre-existing',
       'review: final pass (0 blocking)',
     ]) {
       expect(() => assertPlainStdout(`${plainStdout()}${line}\n`)).toThrow();

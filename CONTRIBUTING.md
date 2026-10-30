@@ -138,7 +138,7 @@ Each skill step follows the engine contract in this table.
 | Proposed decisions and confirmed Plan context | ImplementerReport decisions and `plan.decisions` |
 | End/task cadence and completed-task coverage | `workflow.review` (`src/core/schemas/config.ts`) |
 | Typed review, derived pass and appended fixes | `src/core/schemas/review.ts`, `src/core/review/verdict.ts`; review answer with fix work |
-| Reviewer checks, base re-run and stop rule | `src/engine/orchestrator/review-checks.ts`; `src/engine/orchestrator/validation/changed-script.ts`; `src/core/schemas/review.ts` |
+| Reviewer checks, base re-run and stop rule | `src/engine/orchestrator/review-checks.ts`; `src/engine/orchestrator/base-gate.ts`; `src/engine/orchestrator/validation/changed-script.ts`; `src/core/schemas/review.ts` |
 | Test check command, narrowing and capture | `src/core/pipeline-spec/gates.ts`; `src/core/validation/stage-command.ts` and `stacks/` |
 | Registered checks at each cadence | Plan and TaskSpec checks; `src/engine/orchestrator/task/brief-gate.ts`, `src/engine/orchestrator/run/pre-review-checks.ts` |
 | Spawn recipes, halts and deadlines | `src/engine/runners/cli-tools/`; `src/core/pipeline-spec/halts.ts`, `timeouts.ts` |

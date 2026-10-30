@@ -113,7 +113,7 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 
 Before final review, `runPreReviewChecks` runs every plan and task check separately. The collection prepares its validation context once and each test command once. Running and settled rows use that prepared command. Each publishes `full_suite` at `moment: plan` in the review phase, first `running`, then `done`, `not-run` or `refused`. A render alone carries `scenario`, and its row reads `Render <scenario>` with `rendered` or `failed` and its duration. The rail shows Review during collection. The byline and build block use each check's own clock. Plan rows preserve existing required-check triage and add no reviewer-check reds.
 
-**Review fix cycles.** The review seat answers with a typed `ReviewAnswer` (one stateless, read-only call through `requestTyped`). SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` from its verdict (`deriveReviewOutcome`, `src/core/review/verdict.ts`). A criterion or finding the verdict leaves `unverified` reads the results of its registered checks (`verifyClaimChecks`, `src/engine/orchestrator/triage.ts`): a result stored for the same tree state serves it, a stored red included, and only a check with no stored result runs; a `render` check stays unverified, and an unverified criterion blocks pass. A red check whose failures all failed at the run base in this review too fails nothing: it verifies the claim, and the Checks Log names its failures pre-existing. A minor finding is a note, also when it is unverified. A blocking unverified finding blocks until its checks verify it. The verdict lives in `state.review` and `review.json`; `review.md` is its rendering, and `parseFinalReview` stays only as the reader for old sessions that have no `review.json`.
+**Review fix cycles.** The review seat answers with a typed `ReviewAnswer` (one stateless, read-only call through `requestTyped`). SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` from its verdict (`deriveReviewOutcome`, `src/core/review/verdict.ts`). A criterion or finding the verdict leaves `unverified` reads the results of its registered checks (`verifyClaimChecks`, `src/engine/orchestrator/triage.ts`): a result stored for the same tree state serves it, a stored red included, and only a check with no stored result runs; a `render` check stays unverified, and an unverified criterion blocks pass. A red check whose failures all fail at the run base too fails nothing: it verifies the claim, and the Checks Log names its failures pre-existing. A minor finding is a note, also when it is unverified. A blocking unverified finding blocks until its checks verify it. The verdict lives in `state.review` and `review.json`; `review.md` is its rendering, and `parseFinalReview` stays only as the reader for old sessions that have no `review.json`.
 
 The reviewer returns one typed `ReviewAnswer`. It contains the verdict and the fix work. The call reads the diff, the briefs, every check result, every reviewer check result, and every pending input. Its `fixTasks` are complete TaskSpecs with `findingIds`. They may edit any ordinary project file a finding needs, except a file that was already changed when the run started and that the run did not change. SPLITBRIEF appends them through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle. Each task carries its findings under `task.fix`. Its `rejected` entries answer pending inputs only, each with a reason. A rejected red check input no longer blocks the review, and the user sees the reason; an Apply conflict cannot be rejected. Its `ask` asks the user about a change to what is built.
 
@@ -143,7 +143,7 @@ The same rule covers carried reviewer, plan and task checks, even when a check i
 
 A fix check runs once per brief gate. Each new BUILD attempt that changes a file runs the checks again. A fix check never re-runs at the run base. The run base still supplies changed-script refusal for reviewer checks.
 
-**One run per command and tree state.** A `cmd` or `test` check runs its command once for each state of the tree it runs in (`runCommandOnce`, `src/engine/orchestrator/validation/result-store.ts`). The key is the tree (the run workspace or the run base), the state id of that tree and the exact command text. The workspace state id is the fingerprint of the files changed since the run started (`currentCandidateId`); the run base state id is its snapshot id. A pass or a red goes to `commandRuns` in `evidence.json`, one entry for each tree and command, so it outlives a stop and a continue. A later check with the same key takes the stored result under its own id: three check ids with one command run it once, a reviewer check takes the run before the review, and the base re-run of the next review round takes the run base result. Its row shows `reused, ran 11:53` in place of the clock. A timed-out run, a stopped run and a render are not stored. A consult `verify` and a planner `verify` on a review without progress run again every red stored before they started, among the checks they run, and store the new result, so a flaky red does not stand on a stored run; a stored pass, and a red the verify itself stored, serve them as they serve every check. The review's own claim checks take a stored red as it is. A verify that a stop cut continues with the reds it already stored. A planner consult `verify` runs the checks it names, the brief's fix checks and, with `workflow.review: task`, the brief's own checks.
+**One run per command and tree state.** A `cmd` or `test` check runs its command once for each state of the tree it runs in (`runCommandOnce`, `src/engine/orchestrator/validation/result-store.ts`). The key is the tree (the run workspace or the run base), the state id of that tree and the exact command text. The workspace state id is the fingerprint of the files changed since the run started (`currentCandidateId`); the run base state id is its snapshot id. A pass or a red goes to `commandRuns` in `evidence.json`, one entry for each tree and command, so it outlives a stop and a continue. A later check with the same key takes the stored result under its own id: three check ids with one command run it once, a reviewer check takes the run before the review, and the base re-run of a continued run takes the run base result it stored. Its row shows `reused, ran 11:53` in place of the clock. A timed-out run, a stopped run and a render are not stored. A consult `verify` and a planner `verify` on a review without progress run again every red stored before they started, among the checks they run, and store the new result, so a flaky red does not stand on a stored run; a stored pass, and a red the verify itself stored, serve them as they serve every check. The review's own claim checks take a stored red as it is. A verify that a stop cut continues with the reds it already stored. A planner consult `verify` runs the checks it names, the brief's fix checks and, with `workflow.review: task`, the brief's own checks.
 
 When every own failure of a carried check is a test failure, the brief gate runs the stack's test runner on the own test files only (`planTestCheck`, `src/engine/orchestrator/validation/run.ts`). The full command runs at the next review. A diagnostic check, such as a type check or a lint, keeps the full command. A check whose command is not the stack's own test command keeps the full command, and so does a stack whose test runner the registry does not know or a configured `validation.test_command`.
 
@@ -604,9 +604,21 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     review: task also runs due checks after each task, then a task review whose
     reviewer checks run the tests related to the task's changed files.
     validation.end_checks: false runs no reviewer check; one row says so.
-    A red reviewer check is re-run at the run base with the same command text;
-    only new or not verified failures reach the reviewer as pending inputs.
-    Each reviewer check and its base re-run publish full_suite events (id V1, …).
+    The project gate runs once at the run base, beside the build: when the run
+    loop starts, SPLITBRIEF runs each gate command (V1, V2, …) there with the
+    same text, one command at a time, and stores each result (startBaseGate,
+    src/engine/orchestrator/base-gate.ts). A command with a stored run base
+    result does not run again; with every command stored, no base tree is made.
+    No base run starts when validation.end_checks is false, when the plan names
+    no gate, or when the run recorded no workspace. The base run goes on
+    through a steer and a pause after a brief. It ends with the run loop: a
+    stop, a halt, End run or the end of the review cuts the running command,
+    its row reads stopped, and nothing is stored, so a continue runs it again.
+    After a crash the process registry ends the command, and the next base tree
+    removes the tree of the dead process.
+    A red reviewer check is compared with that base result; only new or not
+    verified failures reach the reviewer as pending inputs.
+    Each reviewer check and each base command publish full_suite events (id V1, …).
 
 11. Per task:
       implementing → START_TASK (task in_progress, attempt 0)
@@ -667,10 +679,12 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
          download-and-run launcher, setup command, or package script, task
          file, build wrapper or interpreter script this run changed or the
          run base does not hold.
-         Each refused command is a named row. A red reviewer check re-runs at
-         the run base with the same text, in a detached Git worktree at the
+         Each refused command is a named row. A red reviewer check is
+         compared with the result of the same command at the run base (step
+         10): it ran with the same text, in a detached Git worktree at the
          base commit with the base snapshot on top (withRunBaseTree); failures
-         red there too are pre-existing. With links resolved, the base tree
+         red there too are pre-existing. When that command has not finished,
+         the review waits for it; it never runs it a second time. With links resolved, the base tree
          path has as many characters as the run workspace path. A run
          workspace path shorter than the shortest base tree path, such as the
          checkout in workflow.isolation: none, gives the base no padding.
@@ -679,16 +693,15 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
          the run base". Any base-tree preparation failure, including
          listing stale trees, snapshot reconciliation or dependency linking, gives
          "not verified at the run base" with the error and any cleanup error;
-         no base command runs. Every re-run sweeps dead-PID trees, even with no
+         no base command runs, and each base row is not run with the error. Every base run sweeps dead-PID trees, even with no
          base commit. Registered trees are removed in their owning repository
          with worktree remove --force; unrelated registrations stay. Older
          names without a PID need manual removal. A tree whose .git file names
          a missing gitdir is deleted from disk; its registration is gone.
          A stale tree that cannot be removed is a warning; the sweep and the
-         current base re-run continue. A cleanup error of the re-run's own tree
-         settles the row as "not verified at the run base" with the error
-         visible, even after the command completed. The review continues; its keys stay unverified
-         and the check has no base field.
+         current base run continue. A cleanup error of the base run's own tree
+         is a warning: the results of its commands are already stored and
+         stay.
          Callback errors propagate unchanged, with cleanup failures warned.
          Only a base re-run that returns its result gets a base field in
          evidence.json. A timeout or a red without failure keys is never

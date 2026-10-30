@@ -472,7 +472,7 @@ describe('visual catalog', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-      expect(frame).toContain('Reviewer check V2 · npm test · failed');
+      expect(frame).toContain('Reviewer check V2 · npm test · 1\u00a0new, 0\u00a0pre-existing');
       expect(frame).toContain('fixes T904 T905');
       expect(frame.match(/Fix check V2 · npm test · /g)).toHaveLength(2);
       expect(frame).not.toContain('test-ci');

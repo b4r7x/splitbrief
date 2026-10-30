@@ -273,8 +273,10 @@ describe('skill-blocks', () => {
     expect(rules).toContain('run the project gate before the final review');
     expect(rules).not.toContain('plan call');
     expect(rules).toContain('a plan or task check is never refused for that');
+    expect(rules).toContain('Run the project gate once at the run base during the build');
+    expect(rules).toContain('never run it a second time');
     expect(rules).toContain(
-      'Plan checks, task checks and the Apply re-check never re-run at the run base',
+      'Plan checks, task checks and the Apply re-check never run at the run base',
     );
     expect(rules).toContain('With End-of-run checks off, no reviewer check runs');
     expect(rules).not.toMatch(/typecheck → lint|full suite|verification plan/iu);

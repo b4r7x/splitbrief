@@ -254,7 +254,7 @@ describe('fullSuiteRow', () => {
     } as const;
 
     expect(fullSuiteRow({ ...rerun, passed: false })).toBe(
-      'Base re-run · npm test -- src/legacy.test.ts · red at the run base too · 2.0s',
+      'Base re-run · npm test -- src/legacy.test.ts · red at the run base · 2.0s',
     );
     expect(fullSuiteRow({ ...rerun, passed: true })).toBe(
       'Base re-run · npm test -- src/legacy.test.ts · passes at the run base · 2.0s',
@@ -309,7 +309,7 @@ describe('fullSuiteRow for a reviewer check', () => {
     [{ status: 'refused', detail: 'policy refused' }, 'refused', 'warning'],
     [{ status: 'not-run', detail: 'previous check failed' }, 'not\u00a0run', 'warning'],
     [{ status: 'stopped' }, 'stopped', 'warning'],
-    [{ status: 'done', passed: false, moment: 'base' }, 'red at the run base too', 'warning'],
+    [{ status: 'done', passed: false, moment: 'base' }, 'red at the run base', 'warning'],
     [
       { status: 'done', passed: false, moment: 'base', newFailures: 0, preExisting: 2 },
       'pre-existing',
@@ -321,6 +321,29 @@ describe('fullSuiteRow for a reviewer check', () => {
       'error',
     ],
     [{ status: 'done', passed: true, moment: 'base' }, 'passes at the run base', 'success'],
+    [
+      { status: 'done', passed: false, moment: 'pre-review', newFailures: 0, preExisting: 2 },
+      'pre-existing',
+      'warning',
+    ],
+    [
+      { status: 'done', passed: false, moment: 'pre-review', newFailures: 2, preExisting: 1 },
+      '2\u00a0new, 1\u00a0pre-existing',
+      'error',
+    ],
+    [
+      {
+        status: 'done',
+        passed: false,
+        moment: 'pre-review',
+        newFailures: 0,
+        preExisting: 1,
+        notVerified: 1,
+        detail: 'both runs timed out',
+      },
+      '0\u00a0new, 1\u00a0pre-existing, 1\u00a0not verified at the run base',
+      'error',
+    ],
   ] satisfies [Partial<ReviewCheckEvent>, string, string][])(
     'colors only verdict %s as %s',
     (overrides, verdict, tone) => {
@@ -474,7 +497,7 @@ describe('fullSuiteRow for a reviewer check', () => {
       'Base re-run V1 · npm test · passes at the run base · 2.0s',
     );
     expect(fullSuiteRow({ ...base, passed: false })).toBe(
-      'Base re-run V1 · npm test · red at the run base too · 2.0s',
+      'Base re-run V1 · npm test · red at the run base · 2.0s',
     );
     const unverified = {
       ...base,

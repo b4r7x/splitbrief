@@ -717,6 +717,48 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
+  it('writes the split on a red reviewer check line, and only passes or fails on its base line', () => {
+    const check = (fields: Partial<EngineEventOf<'full_suite'>>): EngineEventOf<'full_suite'> => ({
+      type: 'full_suite',
+      ts,
+      phase: 'final-review',
+      status: 'done',
+      id: 'V1',
+      command: 'npm test',
+      moment: 'pre-review',
+      passed: false,
+      ...fields,
+    });
+    const lines = collect([
+      check({ phase: 'implementing', moment: 'base' }),
+      check({
+        newFailures: 1,
+        preExisting: 1,
+        newKeys: ['src/ledger.test.ts'],
+        preExistingKeys: ['src/a.test.ts::adds'],
+      }),
+      check({ id: 'V2', newFailures: 0, preExisting: 2, command: 'npm run lint' }),
+      check({
+        id: 'V3',
+        newFailures: 0,
+        preExisting: 0,
+        notVerified: 1,
+        detail: 'both runs timed out',
+      }),
+    ]);
+
+    expect(lines).toEqual([
+      'phase: implementing',
+      'base re-run V1: fails',
+      'phase: final-review',
+      'reviewer check V1: 1\u00a0new, 1\u00a0pre-existing (npm test)',
+      'reviewer check V1 new: src/ledger.test.ts',
+      'reviewer check V1 pre-existing: src/a.test.ts::adds',
+      "reviewer check V2: pre-existing · all 2 failures also fail before this run's changes (npm run lint)",
+      'reviewer check V3: 1\u00a0not verified at the run base · both runs timed out (npm test)',
+    ]);
+  });
+
   it('writes nothing for a full-suite stage of a session from before the reviewer chose its checks', () => {
     const lines = collect([
       {

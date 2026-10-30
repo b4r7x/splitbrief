@@ -35,11 +35,12 @@ function stalledLine(event: Extract<EngineEvent, { type: 'runner_call_stalled' }
   return `stalled: ${event.role}${tool}${SOFT_SEP}no output for ${formatElapsedClock(event.silentMs)}`;
 }
 
-/** The failing tests a base re-run names, one line per side, under its verdict line. */
-function baseNameLines(event: Extract<EngineEvent, { type: 'full_suite' }>): string[] {
+/** The failing tests a split names, one line per side, under its verdict line. */
+function splitNameLines(event: Extract<EngineEvent, { type: 'full_suite' }>): string[] {
   if (event.id === undefined) return [];
+  const label = event.moment === 'base' ? 'base re-run' : 'reviewer check';
   return baseSplitNames(event).map(
-    ({ side, names }) => `base re-run ${event.id} ${side}: ${names.join(SOFT_SEP)}`,
+    ({ side, names }) => `${label} ${event.id} ${side}: ${names.join(SOFT_SEP)}`,
   );
 }
 
@@ -94,23 +95,25 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
     }).join(SOFT_SEP);
     return `${label} ${event.id}: ${verdict}${reused} (${event.command})`;
   }
-  if (event.moment === 'base') {
-    if (
-      event.passed === false &&
-      event.newFailures !== undefined &&
-      event.preExisting !== undefined
-    ) {
-      const split = baseSplit({
-        newFailures: event.newFailures,
-        preExisting: event.preExisting,
-        notVerified: event.notVerified,
-        reason: event.detail,
-      });
-      const why = split.why === null ? '' : `${SOFT_SEP}${split.why}`;
-      return `${label} ${event.id}: ${split.verdict}${reused}${why}`;
-    }
-    return `${label} ${event.id}: ${event.passed === true ? 'passes' : 'fails'}${reused}`;
+  // The split of a red reviewer check; an older run carried it on its base re-run.
+  if (
+    (event.moment === 'pre-review' || event.moment === 'base') &&
+    event.passed === false &&
+    event.newFailures !== undefined &&
+    event.preExisting !== undefined
+  ) {
+    const split = baseSplit({
+      newFailures: event.newFailures,
+      preExisting: event.preExisting,
+      notVerified: event.notVerified,
+      reason: event.detail,
+    });
+    const why = split.why === null ? '' : `${SOFT_SEP}${split.why}`;
+    const command = event.moment === 'base' ? '' : ` (${event.command})`;
+    return `${label} ${event.id}: ${split.verdict}${reused}${why}${command}`;
   }
+  if (event.moment === 'base')
+    return `${label} ${event.id}: ${event.passed === true ? 'passes' : 'fails'}${reused}`;
   return `${label} ${event.id}: ${event.passed === true ? 'passed' : 'failed'}${reused} (${event.command})`;
 }
 
@@ -126,14 +129,14 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   task T001: done (2 of 2 checks passed)
  *   reviewer checks: off | reviewer checks: none (the plan names no project gate)
  *   reviewer check V1: passed (<command>) | failed (<command>)
+ *   reviewer check V1: <M> new, <N> pre-existing (<command>)
+ *   reviewer check V1: [<M> new, <N> pre-existing, ]<K> not verified at the run base · <reason> (<command>)
+ *   reviewer check V1: pre-existing · all <N> failures also fail before this run's changes (<command>)
+ *   reviewer check V1: pre-existing · the failure also fails before this run's changes (<command>)
+ *   reviewer check V1 new: <test>[ · <test> …][ · +<N> more]
+ *   reviewer check V1 pre-existing: <test>[ · <test> …][ · +<N> more]
  *   reviewer check V1: refused (<detail>) | not run (<detail>)
  *   base re-run V1: passes | fails
- *   base re-run V1: <M> new, <N> pre-existing
- *   base re-run V1: [<M> new, <N> pre-existing, ]<K> not verified at the run base · <reason>
- *   base re-run V1: pre-existing · all <N> failures also fail before this run's changes
- *   base re-run V1: pre-existing · the failure also fails before this run's changes
- *   base re-run V1 new: <test>[ · <test> …][ · +<N> more]
- *   base re-run V1 pre-existing: <test>[ · <test> …][ · +<N> more]
  *   base re-run V1: refused (<detail>) | not run (<detail>)
  *   fix check V1: passed (<command>) | failed (<command>)
  *   fix check V1: your <N> failures gone · <M> others left for their fix tasks or the next review (<command>)
@@ -207,7 +210,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
       case 'full_suite': {
         const line = reviewCheckLine(bounded);
         if (line !== null) write(line);
-        for (const names of baseNameLines(bounded)) write(names);
+        for (const names of splitNameLines(bounded)) write(names);
         return;
       }
       case 'runner_call_stalled':

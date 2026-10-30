@@ -1,4 +1,4 @@
-import { error, matches } from '../../../utils/error.js';
+import { error } from '../../../utils/error.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { redactSecrets } from '../../../utils/redact.js';
 
@@ -71,7 +71,6 @@ export const runBaseTreeError = {
       { cleanupError: input.cleanupError },
       input.cause,
     ),
-  isPreparationFailed: matches('run-base-preparation-failed'),
 } as const;
 
 export const attemptCleanupError = {

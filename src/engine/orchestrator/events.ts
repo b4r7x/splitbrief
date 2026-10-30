@@ -237,11 +237,12 @@ export function publishReviewChecks(ctx: BusContext, status: 'off' | 'none'): vo
 export function publishReviewCheck(
   ctx: BusContext,
   opts: {
-    status: 'running' | 'done' | 'not-run' | 'refused';
+    status: 'running' | 'done' | 'not-run' | 'refused' | 'stopped';
     id: string;
     command: string;
     moment: 'pre-review' | 'base' | 'brief' | 'plan' | 'verify';
     scenario?: string | undefined;
+    waitsOnBase?: true | undefined;
     passed?: boolean | undefined;
     newFailures?: number | undefined;
     preExisting?: number | undefined;
@@ -267,6 +268,7 @@ export function publishReviewCheck(
     command: opts.command,
     moment: opts.moment,
     ...(opts.scenario !== undefined && { scenario: opts.scenario }),
+    ...(opts.waitsOnBase !== undefined && { waitsOnBase: opts.waitsOnBase }),
     ...(opts.passed !== undefined && { passed: opts.passed }),
     ...(opts.newFailures !== undefined && { newFailures: opts.newFailures }),
     ...(opts.preExisting !== undefined && { preExisting: opts.preExisting }),

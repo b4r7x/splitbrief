@@ -547,6 +547,10 @@ const checkpointPredicates = [
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
   [checkpointId('build-brief-check'), includesAll('Plan check K2', 'read after its checks')],
+  [
+    checkpointId('build-base-rerun'),
+    includesAll(WORKFLOW_FIXTURE_TEXT.implementation, '0/3 briefs passed'),
+  ],
   [checkpointId('build-brief-check-seat-change'), includesAll('Plan check K2')],
   [checkpointId('implementation-shell-seat'), includesAll('Custom Shell')],
   [
@@ -1258,13 +1262,18 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('review-base-not-verified'),
-    // The reason wraps at narrow widths; the last row settles the transcript.
-    includesAll('Base re-run V1', 'npm test · not\u00a0run'),
+    // The reason wraps at narrow widths and the base rows of the build scroll out of a 60x18
+    // transcript; the last row settles it.
+    (context) =>
+      includesAll('npm test · not\u00a0run', 'both runs timed out')(context) &&
+      includesTranscript('Base re-run V1 · npm run e2e')(context),
   ],
   [
     checkpointId('review-base-rejected'),
     // The final review row settles the transcript; earlier rows scroll out of a 60x18 transcript.
-    includesAll('Final review passed'),
+    (context) =>
+      context.output.includes('Final review passed') &&
+      includesTranscript('Base re-run V1 · npm run e2e')(context),
   ],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
   [
