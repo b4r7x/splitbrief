@@ -15,11 +15,7 @@ import { readConversationScrollSnapshot } from '../../src/features/workflow/layo
 import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
-import {
-  selectRunningBrief,
-  selectTaskListView,
-  tasksStore,
-} from '../../src/stores/workflow/tasks.js';
+import { selectRunningBrief, selectTaskListView } from '../../src/core/run-view/briefs.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
 import { EngineEventSchema } from '../../src/engine/events/schema.js';
 import { deriveRunStatus } from '../../src/core/sessions/run-status.js';
@@ -62,8 +58,12 @@ it.each([
   const lifecycle = await setupProjection(projection);
   try {
     expect(operationsStore.get().active).toBeNull();
-    expect(selectRunningBrief(tasksStore.get(), runViewStore.get().phase).current).toBeNull();
-    expect(tasksStore.get().tasks.filter((task) => task.status === 'done')).toHaveLength(1);
+    expect(
+      selectRunningBrief(runViewStore.get().briefs, runViewStore.get().phase).current,
+    ).toBeNull();
+    expect(runViewStore.get().briefs.tasks.filter((task) => task.status === 'done')).toHaveLength(
+      1,
+    );
   } finally {
     await lifecycle.teardown();
   }
@@ -419,7 +419,10 @@ describe('workflow visual fixtures', () => {
           expect(line?.split(`test/${name}.test.js`)).toHaveLength(2);
         }
         expect(operationsStore.get().active).toBeNull();
-        expect(selectTaskListView(tasksStore.get())).toMatchObject({ passed: 2, total: 2 });
+        expect(selectTaskListView(runViewStore.get().briefs)).toMatchObject({
+          passed: 2,
+          total: 2,
+        });
       } finally {
         await ui.unmount();
       }
@@ -638,7 +641,7 @@ describe('workflow visual fixtures', () => {
         expect(
           eventsStore.get().events.filter((event) => event.type === 'workflow_started'),
         ).toHaveLength(1);
-        expect(tasksStore.get().tasks.map((task) => task.id)).toEqual([
+        expect(runViewStore.get().briefs.tasks.map((task) => task.id)).toEqual([
           'T001',
           'T002',
           'T003',
@@ -647,11 +650,11 @@ describe('workflow visual fixtures', () => {
           'T007',
           'T005',
         ]);
-        expect(selectRunningBrief(tasksStore.get(), 'implementing')).toMatchObject({
+        expect(selectRunningBrief(runViewStore.get().briefs, 'implementing')).toMatchObject({
           current: { id: 'T006' },
           next: { id: 'T007' },
         });
-        expect(selectTaskListView(tasksStore.get())).toMatchObject({
+        expect(selectTaskListView(runViewStore.get().briefs)).toMatchObject({
           passed: 4,
           total: 7,
           unannounced: 0,
@@ -703,7 +706,7 @@ describe('workflow visual fixtures', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: selectedViewport });
     try {
       await handle.waitForCheckpoint();
-      expect(selectTaskListView(tasksStore.get())).toMatchObject({ passed: 1, total: 3 });
+      expect(selectTaskListView(runViewStore.get().briefs)).toMatchObject({ passed: 1, total: 3 });
       const events = eventsStore.get().events;
       const completedIndex = events.findIndex(
         (event) => event.type === 'task_completed' && event.taskId === 'T001',

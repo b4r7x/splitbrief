@@ -1,5 +1,5 @@
 import { TaskSummary } from '../../../components/task-summary.js';
-import { taskTargetParts } from '../../../stores/workflow/tasks.js';
+import { taskTargetParts } from '../../../core/run-view/brief-labels.js';
 import { stageSummaryRow } from '../components/conversation-flow/stage-summary.js';
 import { settledTaskStartedEvent, type SettledTranscriptSection } from './transcript-walk.js';
 import type { ConversationRow, ConversationRowBlock } from './types.js';

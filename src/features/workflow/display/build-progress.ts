@@ -20,7 +20,7 @@ import {
   type OpenTool,
   type OperationsState,
 } from '../../../stores/workflow/operations/state.js';
-import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
+import { selectTaskListView } from '../../../core/run-view/briefs.js';
 import {
   suiteStageParts,
   suiteStatusParts,
@@ -80,7 +80,6 @@ export interface BuildProgress {
 }
 
 export interface DeriveBuildProgressInput {
-  tasks: TasksState;
   lifecycle: LifecycleState;
   operations: OperationsState;
   runView: RunView;
@@ -299,8 +298,9 @@ function baseRun(input: DeriveBuildProgressInput): readonly BuildProgressSpan[] 
 }
 
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
-  const view = selectTaskListView(input.tasks);
-  const retrying = isImplementerPhase(input.runView.phase) && input.tasks.currentAttempt >= 2;
+  const { briefs } = input.runView;
+  const view = selectTaskListView(briefs);
+  const retrying = isImplementerPhase(input.runView.phase) && briefs.currentAttempt >= 2;
   const wait = input.runView.seatWait;
   const waitParts = wait?.live ? seatWaitParts(wait.tool, wait.wait.resetAt, input.now) : null;
   return {
@@ -308,7 +308,7 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
     total: view.total,
     escalated: view.escalated,
     failed: view.failed,
-    attempt: retrying ? input.tasks.currentAttempt : null,
+    attempt: retrying ? briefs.currentAttempt : null,
     base: baseRun(input),
     ...(waitParts === null
       ? { ...activityLine(input), ...freshnessOf(input) }

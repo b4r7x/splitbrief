@@ -3,7 +3,6 @@ import { addEvent } from './event.js';
 import { hydrateFromState } from './hydrate.js';
 import { loadEvents } from './load.js';
 import { resetWorkflow } from './reset.js';
-import { tasksStore } from '../tasks.js';
 import { tokensStore } from '../tokens.js';
 import { lifecycleStore } from '../lifecycle.js';
 import { runViewStore } from '../run-view.js';
@@ -91,8 +90,8 @@ describe('hydrateFromState', () => {
       makeRetry({ attempt: 1, lineageAttempt: 7 }),
     ]);
     hydrateFromState(makeWorkflowState({ phase: 'implementing', tasks: [makeTask()] }));
-    expect(tasksStore.get()).toMatchObject({ currentAttempt: 7 });
-    expect(tasksStore.get()).not.toHaveProperty('attemptAllowance');
+    expect(runViewStore.get().briefs).toMatchObject({ currentAttempt: 7 });
+    expect(runViewStore.get().briefs).not.toHaveProperty('attemptAllowance');
   });
 
   it('restores observable workflow state from a persisted snapshot', () => {
@@ -133,19 +132,18 @@ describe('hydrateFromState', () => {
     });
     expect(runViewStore.get().phase).toBe('implementing');
     expect(lifecycleStore.get().queueDepth).toBe(1);
-    expect(tasksStore.get().currentTask).toBe(3);
-    expect(tasksStore.get().totalTasks).toBe(3);
-    expect(tasksStore.get().tasks.map((task) => [task.id, task.status])).toEqual([
+    expect(runViewStore.get().briefs.currentTask).toBe(3);
+    expect(runViewStore.get().briefs.totalTasks).toBe(3);
+    expect(runViewStore.get().briefs.tasks.map((task) => [task.id, task.status])).toEqual([
       ['T001', 'done'],
       ['T002', 'done'],
       ['T003', 'pending'],
     ]);
-    expect(tasksStore.get().taskMap.get('T002')?.status).toBe('done');
-    expect(tasksStore.get().taskMap.get('T002')?.file).toBe('src/resumed.ts');
-    expect(tasksStore.get().taskMap.get('T002')?.action).toBe('modify');
-    expect(tasksStore.get().taskMap.get('T002')?.route).toBeUndefined();
+    expect(runViewStore.get().briefs.taskMap.get('T002')?.status).toBe('done');
+    expect(runViewStore.get().briefs.taskMap.get('T002')?.file).toBe('src/resumed.ts');
+    expect(runViewStore.get().briefs.taskMap.get('T002')?.action).toBe('modify');
+    expect(runViewStore.get().briefs.taskMap.get('T002')?.route).toBeUndefined();
     expect(tokensStore.get().tokenUsage).toEqual(makeUsage());
-    expect(tokensStore.get().completedTaskCount).toBe(2);
     expect(tokensStore.get().passSeats).toEqual({
       plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',

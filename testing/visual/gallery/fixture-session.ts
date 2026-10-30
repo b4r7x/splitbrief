@@ -34,7 +34,7 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { detachImage, listAttachments } from '../../../src/stores/workflow/attachments.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../src/stores/workflow/run-view.js';
-import { selectRunningBrief, tasksStore } from '../../../src/stores/workflow/tasks.js';
+import { selectRunningBrief } from '../../../src/core/run-view/briefs.js';
 import { activeApply } from '../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import {
@@ -262,7 +262,7 @@ function createPreviewCommandContext(): RuntimeCommandContext {
       const { phase } = runViewStore.get();
       return queueCopy({
         seat: phaseStage(phase),
-        taskId: selectRunningBrief(tasksStore.get(), phase).current?.id,
+        taskId: selectRunningBrief(runViewStore.get().briefs, phase).current?.id,
         count: count ?? lifecycleStore.get().queueDepth,
       });
     },
@@ -284,7 +284,7 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     scrollConversation: () => unavailable,
     toggleLatestActivityBatch: () => unavailable,
     toggleLatestDiff: () => unavailable,
-    listBriefs: () => tasksStore.get().tasks.map(({ id, status }) => ({ id, status })),
+    listBriefs: () => runViewStore.get().briefs.tasks.map(({ id, status }) => ({ id, status })),
     toggleSidebar: togglePreviewSidebar,
     copyTarget: unavailableInPreview,
   });

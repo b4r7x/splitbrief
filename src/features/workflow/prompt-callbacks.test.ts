@@ -11,7 +11,7 @@ import { createDraftDocument } from '../../core/composer/document.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { stopStore } from '../../stores/workflow/stop.js';
-import { tasksStore } from '../../stores/workflow/tasks.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 
 function makeInputMode(answers: string | string[]): UseInputModeResult {
@@ -134,7 +134,7 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
     stopStore.__testReset();
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [{ id: 'T002', title: 'slice', status: 'in_progress' }],
       currentTask: 1,
       totalTasks: 1,
@@ -143,7 +143,7 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
 
   afterEach(() => {
     stopStore.__testReset();
-    tasksStore.__testReset();
+    seedBriefs();
   });
 
   it('returns an empty answer without asking when the workflow is already unwinding', async () => {
@@ -193,7 +193,7 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
   });
 
   it('parks a boundary pause on the brief it stopped after', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         { id: 'T001', title: 'first', status: 'done' },
         { id: 'T002', title: 'second', status: 'pending' },

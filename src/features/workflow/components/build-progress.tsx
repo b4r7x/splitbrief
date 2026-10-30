@@ -5,24 +5,18 @@ import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { buildProgressRows, deriveBuildProgress } from '../display/build-progress.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 export function BuildProgressBlock({ cols }: { cols: number }) {
-  const [tasks, lifecycle, operations, runView] = useStores(
-    tasksStore,
-    lifecycleStore,
-    operationsStore,
-    runViewStore,
-  );
+  const [lifecycle, operations, runView] = useStores(lifecycleStore, operationsStore, runViewStore);
   const running = lifecycle.status === 'running';
   // Freshness counts the seconds since the seat last spoke, so it has to move while the seat says
   // nothing: the shared clock repaints the block when nothing else does.
   const now = useSharedClock({ active: running });
   const width = getChromeContentWidth(cols);
-  const progress = deriveBuildProgress({ tasks, lifecycle, operations, runView, now });
+  const progress = deriveBuildProgress({ lifecycle, operations, runView, now });
   const lines = buildProgressRows(progress, width);
   return (
     <Box flexDirection="column" flexShrink={0}>

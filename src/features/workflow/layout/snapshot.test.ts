@@ -19,7 +19,7 @@ import { conversationScrollStore } from '../../../stores/workflow/conversation-s
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
@@ -265,7 +265,7 @@ describe('readConversationScrollSnapshot', () => {
     }
     runViewStore.__testReset({ phase: closed ? 'complete' : 'implementing' });
     lifecycleStore.__testReset();
-    tasksStore.__testReset({
+    seedBriefs({
       currentTask: 1,
       totalTasks: 1,
       tasks: [{ id: 'T001', title: 'Reset brief', status: 'pending' }],
@@ -717,7 +717,7 @@ describe('readRailSnapshot', () => {
       runViewStore.__testReset({ phase: 'implementing' });
       lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
       for (const event of makeReviewFixInsertedEvents()) addEvent(event);
-      tasksStore.__testReset({ ...tasksStore.get(), currentTask: 100 });
+      seedBriefs({ ...runViewStore.get().briefs, currentTask: 100 });
       if (!buildBlockShown) overlayStore.open('stop-sheet');
 
       expect(readRailSnapshot().zones).toEqual(
@@ -749,7 +749,7 @@ describe('readRailSnapshot', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     // 18 content cells cannot fit the three-stage marker+connector line, so the rail drops to Form C.
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    seedBriefs({ currentTask: 3, totalTasks: 7 });
 
     const snap = readRailSnapshot();
 
@@ -781,10 +781,9 @@ describe('readRailSnapshot', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
     const live = readRailSnapshot();
 
-    runViewStore.__testReset({ phase: 'implementing' });
+    runViewStore.__testReset({ phase: 'implementing', briefs: { currentTask: 3, totalTasks: 7 } });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0, cancelled: true });
     const cancelled = readRailSnapshot();
 

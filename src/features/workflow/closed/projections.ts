@@ -36,7 +36,7 @@ import { uniqueSorted } from '../../../utils/collections.js';
 import { oneLineDisplayText, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';
 import { briefInFlight } from '../../../core/state/selectors.js';
-import { taskTargetParts } from '../../../stores/workflow/tasks.js';
+import { taskTargetParts } from '../../../core/run-view/brief-labels.js';
 
 /** A seat the run recorded, spelled by the same formatters the live crew surfaces use. */
 function seatView(input: {

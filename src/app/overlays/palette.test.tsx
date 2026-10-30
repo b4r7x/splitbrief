@@ -15,7 +15,6 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { skillsStore } from '../../stores/project/skills.js';
-import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { commandPaletteMruStore } from '../../stores/ui/command-palette-mru.js';
@@ -251,7 +250,7 @@ beforeEach(() => {
   routerStore.reset();
   sessionsStore.reset();
   skillsStore.reset();
-  tasksStore.reset();
+  runViewStore.reset();
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
   composerDraftStore.clear();
@@ -267,7 +266,7 @@ afterEach(() => {
   routerStore.reset();
   sessionsStore.reset();
   skillsStore.reset();
-  tasksStore.reset();
+  runViewStore.reset();
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
   composerDraftStore.clear();
@@ -625,10 +624,12 @@ describe('CommandPaletteOverlay', () => {
     { phase: 'validating-task', showsTask: true },
     { phase: 'escalating', showsTask: true },
   ] as const)('task item visibility follows the $phase phase', async ({ phase, showsTask }) => {
-    tasksStore.__testReset({
-      tasks: [{ id: 'T001', title: 'uniquetasktitle123', status: 'in_progress' }],
+    runViewStore.__testReset({
+      phase,
+      briefs: {
+        tasks: [{ id: 'T001', title: 'uniquetasktitle123', status: 'in_progress' }],
+      },
     });
-    runViewStore.__testReset({ phase });
     lifecycleStore.__testReset();
 
     const instance = renderCommandPalette();

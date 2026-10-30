@@ -9,8 +9,7 @@ import {
   selectRunningBrief,
   selectSeatChangePoint,
   selectTaskListView,
-  tasksStore,
-} from '../../../stores/workflow/tasks.js';
+} from '../../../core/run-view/briefs.js';
 import { stopByline, type StopByline } from './copy.js';
 
 /**
@@ -19,7 +18,7 @@ import { stopByline, type StopByline } from './copy.js';
  */
 export function useStopByline(): StopByline | null {
   const stop = stopStore.use((s) => s);
-  const tasks = tasksStore.use((s) => s);
+  const tasks = runViewStore.use((s) => s.briefs);
   const view = selectTaskListView(tasks);
   const phase = runViewStore.use((s) => s.phase);
   const brief = selectRunningBrief(tasks, phase);

@@ -40,7 +40,7 @@ import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
-import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
+import { selectRunningBrief } from '../../core/run-view/briefs.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
 import { operationsStore } from '../../stores/workflow/operations/state.js';
 import { hydrateRun, readRunHistory } from './run-history.js';
@@ -334,11 +334,11 @@ describe('hydrateRun', () => {
         hydration: { kind: 'loaded', state },
       }),
     );
-    expect(tasksStore.get().tasks.map((task) => task.id)).toEqual(
+    expect(runViewStore.get().briefs.tasks.map((task) => task.id)).toEqual(
       state.tasks.map((task) => task.id),
     );
-    expect(tasksStore.get().taskMap.get('T007')?.status).toBe('pending');
-    expect(selectRunningBrief(tasksStore.get(), 'implementing')).toMatchObject({
+    expect(runViewStore.get().briefs.taskMap.get('T007')?.status).toBe('pending');
+    expect(selectRunningBrief(runViewStore.get().briefs, 'implementing')).toMatchObject({
       current: { id: 'T006' },
       next: { id: 'T007' },
     });
@@ -732,7 +732,7 @@ describe('hydrateRun', () => {
     for (const event of RUN) addEvent(event);
     const live = {
       events: eventsStore.get().events.map((event) => event.type),
-      tasks: tasksStore.get().taskMap.get('T001')?.status,
+      tasks: runViewStore.get().briefs.taskMap.get('T001')?.status,
       phase: runViewStore.get().phase,
     };
     resetWorkflow();
@@ -749,7 +749,7 @@ describe('hydrateRun', () => {
       ...live.events,
       'replay_complete',
     ]);
-    expect(tasksStore.get().taskMap.get('T001')?.status).toBe(live.tasks);
+    expect(runViewStore.get().briefs.taskMap.get('T001')?.status).toBe(live.tasks);
     expect(runViewStore.get().phase).toBe(live.phase);
   });
 
@@ -763,8 +763,8 @@ describe('hydrateRun', () => {
       }),
     );
 
-    expect(tasksStore.get().totalTasks).toBe(2);
-    expect(tasksStore.get().taskMap.get('T002')?.status).toBe('pending');
+    expect(runViewStore.get().briefs.totalTasks).toBe(2);
+    expect(runViewStore.get().briefs.taskMap.get('T002')?.status).toBe('pending');
     expect(tokensStore.get().tokenUsage?.plannerInput).toBe(400);
     expect(lifecycleStore.get().status).toBe('paused');
   });
@@ -870,9 +870,9 @@ describe('hydrateRun', () => {
     // Everything the events carry still replays; only what lives on the state that could not be
     // read — the brief the run never started, and its token usage — is absent.
     expect(eventsStore.get().events.length).toBe(RUN.length + 2);
-    expect(tasksStore.get().totalTasks).toBe(2);
-    expect(tasksStore.get().taskMap.get('T001')?.status).toBe('done');
-    expect(tasksStore.get().taskMap.get('T002')).toBeUndefined();
+    expect(runViewStore.get().briefs.totalTasks).toBe(2);
+    expect(runViewStore.get().briefs.taskMap.get('T001')?.status).toBe('done');
+    expect(runViewStore.get().briefs.taskMap.get('T002')).toBeUndefined();
     expect(tokensStore.get().tokenUsage).toBeNull();
   });
 });
@@ -1091,7 +1091,7 @@ describe('readRunHistory', () => {
   it('reads without touching a store, and the run lands only when it is published', async () => {
     addEvent({ type: 'workflow_started', ts: 500, phase: 'planning', feature: 'the other run' });
     writeLog(RUN);
-    const stores = [eventsStore, tasksStore, lifecycleStore, tokensStore];
+    const stores = [eventsStore, runViewStore, lifecycleStore, tokensStore];
     const before = stores.map((store) => store.get());
 
     const publish = await readRunHistory(
@@ -1110,7 +1110,7 @@ describe('readRunHistory', () => {
     const texts = JSON.stringify(eventsStore.get().events);
     expect(texts).not.toContain('the other run');
     expect(texts).toContain('replay me');
-    expect(tasksStore.get().totalTasks).toBe(2);
+    expect(runViewStore.get().briefs.totalTasks).toBe(2);
     expect(tokensStore.get().tokenUsage?.plannerInput).toBe(400);
     expect(lifecycleStore.get().status).toBe('paused');
   });

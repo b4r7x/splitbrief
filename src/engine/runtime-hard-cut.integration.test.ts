@@ -17,7 +17,6 @@ import { eventsStore } from '../stores/workflow/events.js';
 import { runViewStore } from '../stores/workflow/run-view.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../stores/workflow/actions/reset.js';
-import { tasksStore } from '../stores/workflow/tasks.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { DetectionCacheSnapshot } from './detection/cache.js';
@@ -185,7 +184,7 @@ describe('runtime hard cut', () => {
       'workflow_started',
       'task_started',
     ]);
-    expect(tasksStore.get().tasks).toEqual([
+    expect(runViewStore.get().briefs.tasks).toEqual([
       {
         id: 'T001',
         title: 'Canonical runtime',

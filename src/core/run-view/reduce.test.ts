@@ -26,6 +26,18 @@ const ended = (fields: Record<string, unknown> = {}) => ({
   ...fields,
 });
 
+const taskStarted = (ts: number) => ({
+  type: 'task_started',
+  ts,
+  phase: 'implementing',
+  taskId: 'T001',
+  title: 'first',
+  index: 0,
+  total: 1,
+  file: 'a.ts',
+  action: 'create',
+});
+
 function at(type: string, ts: number, phase?: string): { type: string; ts: number } {
   const event = { type, ts, phase };
   return event;
@@ -87,7 +99,7 @@ describe('reduceRunView seat wait', () => {
   it('returns the same view for an end with no wait and for an unrelated event', () => {
     expect(reduceRunView(EMPTY_RUN_VIEW, ended({ kept: true }))).toBe(EMPTY_RUN_VIEW);
     const view = fold([started({ wait: SAVED })]);
-    expect(reduceRunView(view, { type: 'task_started', ts: 3_000 })).toBe(view);
+    expect(reduceRunView(view, { type: 'heartbeat', ts: 3_000 })).toBe(view);
   });
 
   it('is live again when a kept wait starts once more', () => {
@@ -104,9 +116,9 @@ describe('reduceRunView phase', () => {
   it('moves to the phase an event names and dates each phase once, at its first event', () => {
     const view = fold([
       at('workflow_started', 1_000, 'planning'),
-      at('task_started', 2_000, 'implementing'),
+      taskStarted(2_000),
       at('task_validating', 3_000, 'validating-task'),
-      at('task_started', 4_000, 'implementing'),
+      taskStarted(4_000),
     ]);
 
     expect(view.phase).toBe('implementing');
@@ -120,19 +132,16 @@ describe('reduceRunView phase', () => {
   it('dates the phases again from a new run start', () => {
     const view = fold([
       at('workflow_started', 1_000, 'planning'),
-      at('task_started', 2_000, 'implementing'),
+      taskStarted(2_000),
       at('workflow_started', 5_000, 'planning'),
     ]);
 
-    expect(view).toEqual({
-      ...EMPTY_RUN_VIEW,
-      phase: 'planning',
-      phaseFirstSeen: { planning: 5_000 },
-    });
+    expect(view.phase).toBe('planning');
+    expect(view.phaseFirstSeen).toEqual({ planning: 5_000 });
   });
 
   it('does not move for the replay markers, idle, or an event without a phase', () => {
-    const view = fold([at('task_started', 1_000, 'implementing')]);
+    const view = fold([taskStarted(1_000)]);
 
     expect(reduceRunView(view, at('replay_started', 2_000, 'planning'))).toBe(view);
     expect(reduceRunView(view, at('replay_complete', 3_000, 'planning'))).toBe(view);
@@ -141,8 +150,8 @@ describe('reduceRunView phase', () => {
   });
 
   it('returns the same view for a phase it already stands in', () => {
-    const view = fold([at('task_started', 1_000, 'implementing')]);
+    const view = fold([at('task_validating', 1_000, 'validating-task')]);
 
-    expect(reduceRunView(view, at('task_started', 2_000, 'implementing'))).toBe(view);
+    expect(reduceRunView(view, at('task_validating', 2_000, 'validating-task'))).toBe(view);
   });
 });

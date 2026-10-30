@@ -1,7 +1,7 @@
 import { segmentsForRowText } from '../../../utils/display-text.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { formatTaskHeading, taskTargetLabel } from '../../../stores/workflow/tasks.js';
+import { formatTaskHeading, taskTargetLabel } from '../../../core/run-view/brief-labels.js';
 import { formatTaskStartedParts } from './event-format.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } from './types.js';
 import { segmentedRow } from './row-format/rows.js';

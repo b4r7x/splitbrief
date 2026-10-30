@@ -13,7 +13,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { makeReviewFixInsertedEvents } from '#testing/helpers/events/task.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
@@ -85,7 +85,7 @@ beforeEach(() => {
   lifecycleStore.__testReset();
   terminalSizeStore.reset();
   eventsStore.__testReset();
-  tasksStore.__testReset();
+  seedBriefs();
   tokensStore.__testReset();
   skillsStore.reset();
   overlayStore.reset();
@@ -101,7 +101,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    seedBriefs({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('B');
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -159,7 +159,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
       terminalSizeStore.__testReset({ cols, rows: 40, isSmall: false });
       runViewStore.__testReset({ phase });
       lifecycleStore.__testReset({ status, startedAt: 0 });
-      tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+      seedBriefs({ currentTask: 3, totalTasks: 7 });
       const ui = renderRail('B');
       await tick();
       const frame = ui.lastFrame() ?? '';
@@ -180,7 +180,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    seedBriefs({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('B');
     await tick();
     const raw = ui.lastFrame() ?? '';
@@ -194,7 +194,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    seedBriefs({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('B');
     await tick();
     const railLine = lineContaining(ui.lastFrame() ?? '', 'Plan');
@@ -216,7 +216,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
       durationMs: 5_000,
       reason: 'user_cancelled',
     });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    seedBriefs({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('B');
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -318,8 +318,10 @@ describe('Rail colors', () => {
     (variant) => {
       chalk.level = 3;
       const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
-      tasksStore.__testReset({ currentTask: 2, totalTasks: 5 });
-      runViewStore.__testReset({ phase: 'implementing' });
+      runViewStore.__testReset({
+        phase: 'implementing',
+        briefs: { currentTask: 2, totalTasks: 5 },
+      });
       lifecycleStore.__testReset({ status: 'running' });
       const active = renderFeature(
         <ThemeProvider theme={theme}>
@@ -360,7 +362,7 @@ describe('Rail — a passed review', () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     runViewStore.__testReset({ phase: 'complete' });
     lifecycleStore.__testReset({ status: 'complete', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 12, totalTasks: 10, tasks: briefs(12) });
+    seedBriefs({ currentTask: 12, totalTasks: 10, tasks: briefs(12) });
     eventsStore.__testReset({
       events: [{ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' }],
     });
@@ -383,7 +385,7 @@ describe('Rail — a passed review', () => {
         cancelled: false,
         form,
         cols: 100,
-        tasks: tasksStore.get(),
+        tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
         recoveryAt: null,
         buildBlockShown: false,
@@ -420,7 +422,7 @@ describe('Rail — completion after a failed review', () => {
 
   it('never says done while the review failed, and marks the review stage failed', async () => {
     chalk.level = 3;
-    tasksStore.__testReset({ currentTask: 10, totalTasks: 10, tasks: briefs(10) });
+    seedBriefs({ currentTask: 10, totalTasks: 10, tasks: briefs(10) });
     eventsStore.__testReset({
       events: [
         { type: 'workflow_complete', ts: 1, phase: 'complete', review: 'failed', blocking: 2 },
@@ -501,7 +503,7 @@ describe('Rail — completion with a halt open', () => {
         cancelled: false,
         form: 'B',
         cols: 100,
-        tasks: tasksStore.get(),
+        tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
         recoveryAt: { kind: 'apply' },
         buildBlockShown: false,
@@ -545,7 +547,7 @@ describe('Rail — a live run resumed into its Apply step', () => {
         cancelled: false,
         form: 'B',
         cols: 100,
-        tasks: tasksStore.get(),
+        tasks: runViewStore.get().briefs,
         events: eventsStore.get().events,
         recoveryAt: null,
         buildBlockShown: false,
@@ -598,7 +600,7 @@ describe('Rail — Form C (narrow floor)', () => {
           cancelled: false,
           form: 'C',
           cols: 22,
-          tasks: tasksStore.get(),
+          tasks: runViewStore.get().briefs,
           events: eventsStore.get().events,
           recoveryAt: null,
           buildBlockShown,
@@ -636,7 +638,7 @@ describe('Rail — Form C (narrow floor)', () => {
     terminalSizeStore.__testReset({ cols: 24, rows: 30, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    seedBriefs({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('C');
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -654,7 +656,7 @@ describe('Rail — Form C (narrow floor)', () => {
     terminalSizeStore.__testReset({ cols, rows: 30, isSmall: false });
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    seedBriefs({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('C');
     await tick();
     const frame = ui.lastFrame() ?? '';
@@ -684,7 +686,7 @@ describe('Rail — Form C (narrow floor)', () => {
       durationMs: 5_000,
       reason: 'user_cancelled',
     });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
+    seedBriefs({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('C');
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');

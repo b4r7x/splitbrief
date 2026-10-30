@@ -18,7 +18,7 @@ import { recordedSeatIdentityInput } from './recorded-seat-identity.js';
 import type { ActiveOperation } from '../../../stores/workflow/operations/state.js';
 import { isStatusFallback } from '../../../stores/workflow/operations/planner-status.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
-import { selectRunningBrief, type TasksState } from '../../../stores/workflow/tasks.js';
+import { selectRunningBrief, type RunBriefs } from '../../../core/run-view/briefs.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 export type RunningSeats = Partial<Record<CrewSeatId, Parameters<typeof formatSeatIdentity>[0]>>;
@@ -93,7 +93,7 @@ function seatOverride(
 export function deriveRunningSeats(input: {
   active: ActiveOperation | null | undefined;
   config: Config;
-  tasks: TasksState;
+  tasks: RunBriefs;
   lifecycle: Pick<LifecycleState, 'status'>;
   phase: Phase;
   halted: boolean;

@@ -1,16 +1,8 @@
 import { eventPhase, isInfrastructurePhaseEvent, type EventTypeCarrier } from '../event-phase.js';
-import type { CrewSeatId } from '../crew/identity.js';
 import type { Phase } from '../schemas/enums.js';
 import type { SeatWait } from '../schemas/workflow.js';
-
-type SeatWaitStartedEvent = {
-  type: 'seat_wait_started';
-  seat: CrewSeatId;
-  resetAt: string;
-  tool?: string | undefined;
-  wait?: SeatWait | undefined;
-};
-type SeatWaitEndedEvent = { type: 'seat_wait_ended'; seat: CrewSeatId; kept?: true | undefined };
+import { EMPTY_BRIEFS, reduceBriefs, type RunBriefs } from './briefs.js';
+import type { SeatWaitEndedEvent, SeatWaitStartedEvent } from './events.js';
 
 /** A seat waiting for a usage reset, as the run's log last stated it. */
 export interface ViewSeatWait {
@@ -30,9 +22,15 @@ export interface RunView {
   readonly phase: Phase;
   readonly phaseFirstSeen: PhaseFirstSeen;
   readonly seatWait: ViewSeatWait | null;
+  readonly briefs: RunBriefs;
 }
 
-export const EMPTY_RUN_VIEW: RunView = { phase: 'idle', phaseFirstSeen: {}, seatWait: null };
+export const EMPTY_RUN_VIEW: RunView = {
+  phase: 'idle',
+  phaseFirstSeen: {},
+  seatWait: null,
+  briefs: EMPTY_BRIEFS,
+};
 
 type RunViewEvent = EventTypeCarrier & { readonly ts: number };
 
@@ -51,7 +49,9 @@ function isSeatWaitEnded<T extends EventTypeCarrier>(event: T): event is T & Sea
  * that holds it does not notify.
  */
 export function reduceRunView(view: RunView, event: RunViewEvent): RunView {
-  return reduceSeatWait(reducePhase(view, event), event);
+  const next = reduceSeatWait(reducePhase(view, event), event);
+  const briefs = reduceBriefs(next.briefs, event);
+  return briefs === next.briefs ? next : { ...next, briefs };
 }
 
 /**

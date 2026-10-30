@@ -10,26 +10,19 @@ import { EMPTY_RUN_VIEW, type RunView } from '../../../core/run-view/reduce.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type { OperationsState } from '../../../stores/workflow/operations/state.js';
-import type { TasksState, WorkflowTask } from '../../../stores/workflow/tasks.js';
+import { EMPTY_BRIEFS, type RunBriefs } from '../../../core/run-view/briefs.js';
 
 const NOW = 1_000_000;
 
-function tasksState(
-  tasks: WorkflowTask[] = [
+const BRIEFS: RunBriefs = {
+  ...EMPTY_BRIEFS,
+  tasks: [
     { id: 'T001', title: 'One', status: 'done' },
     { id: 'T002', title: 'Two', status: 'in_progress' },
   ],
-  overrides: Partial<TasksState> = {},
-): TasksState {
-  return {
-    tasks,
-    totalTasks: tasks.length,
-    currentTask: tasks.length,
-    currentAttempt: 1,
-    taskMap: new Map(tasks.map((task) => [task.id, task])),
-    ...overrides,
-  };
-}
+  totalTasks: 2,
+  currentTask: 2,
+};
 
 function lifecycleState(overrides: { lastRunnerEventTs?: number | null } = {}): LifecycleState {
   return {
@@ -58,15 +51,15 @@ function waitView(resetAt: string, live = true, phase: Phase = 'implementing'): 
     phase,
     phaseFirstSeen: {},
     seatWait: { tool: 'codex', wait: { seat: 'build', resetAt }, live },
+    briefs: BRIEFS,
   };
 }
 
 function testInput(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBuildProgressInput {
   return {
-    tasks: tasksState(),
     lifecycle: lifecycleState(),
     operations: operationsState(),
-    runView: { ...EMPTY_RUN_VIEW, phase: 'implementing' },
+    runView: { ...EMPTY_RUN_VIEW, phase: 'implementing', briefs: BRIEFS },
     now: NOW,
     ...overrides,
   };

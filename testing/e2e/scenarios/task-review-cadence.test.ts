@@ -19,8 +19,9 @@ import { runRows } from '../../../src/features/workflow/closed/copy.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { readStopMenuRows } from '../../../src/features/workflow/stop/options.js';
-import { addEvent, reduceTasks } from '../../../src/stores/workflow/actions/event.js';
-import { selectRunningBrief, tasksStore } from '../../../src/stores/workflow/tasks.js';
+import { addEvent } from '../../../src/stores/workflow/actions/event.js';
+import { reduceBriefs, selectRunningBrief } from '../../../src/core/run-view/briefs.js';
+import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -448,8 +449,8 @@ describe('e2e: task review cadence', () => {
     expect(closed === null ? [] : runRows(closed).map((row) => row.segments)).toContainEqual([
       { text: `  F2 ${findings[1]?.text}`, tone: 'textDim' },
     ]);
-    const initial = tasksStore.get();
-    const running = events.slice(0, fixStartIndex + 1).reduce(reduceTasks, initial);
+    const initial = runViewStore.get().briefs;
+    const running = events.slice(0, fixStartIndex + 1).reduce(reduceBriefs, initial);
     expect(running.tasks.map((task) => task.id)).toEqual(order);
     expect(running.currentTask).toBe(2);
     expect(selectRunningBrief(running, 'implementing')).toMatchObject({
@@ -460,7 +461,7 @@ describe('e2e: task review cadence', () => {
     expect(readStopMenuRows().find((row) => row.id === 'pause-after-brief')?.consequence).toBe(
       'finish T003 including checks and review; do not start T002',
     );
-    const completed = events.reduce(reduceTasks, initial);
+    const completed = events.reduce(reduceBriefs, initial);
     expect(
       completed.tasks.map((task) => ({ id: task.id, title: task.title, status: task.status })),
     ).toEqual(state.tasks.map((task) => ({ id: task.id, title: task.title, status: task.status })));

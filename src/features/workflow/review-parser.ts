@@ -18,7 +18,7 @@ import {
 import { isImplementerPhase, isLivePhase } from '../../core/phases.js';
 import { messageSeat } from '../../core/queue-state.js';
 import { operationsStore, selectScheduledReview } from '../../stores/workflow/operations/state.js';
-import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
+import { selectRunningBrief } from '../../core/run-view/briefs.js';
 import { queueCopy } from './queue-copy.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import {
@@ -287,13 +287,13 @@ export function createReviewInputHandler(
         }
         return;
       }
-      const { phase } = runViewStore.get();
+      const { phase, briefs } = runViewStore.get();
       if (isLivePhase(phase) || isImplementerPhase(phase)) {
         const trimmed = text.trim();
         if (trimmed) {
           const document = composerLiveStore.get().document;
           const seat = messageSeat(phase, selectScheduledReview(operationsStore.get()));
-          const taskId = selectRunningBrief(tasksStore.get(), phase).current?.id;
+          const taskId = selectRunningBrief(briefs, phase).current?.id;
           const steerable = lifecycle.steerableCall?.seat === seat;
           const result = await effects.enqueue(message, phase);
           if (!result) {

@@ -22,7 +22,6 @@ import { transcriptTailStore } from '../../../stores/workflow/transcript-tail.js
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
@@ -112,11 +111,11 @@ function readProgressRows(promptRows: number): number {
 }
 
 function readRailFraction(): string {
-  const tasks = tasksStore.get();
+  const view = runViewStore.get();
   const lifecycle = lifecycleStore.get();
   return resolveRailFraction({
-    phase: runViewStore.get().phase,
-    tasks,
+    phase: view.phase,
+    tasks: view.briefs,
     cancelled: lifecycle.cancelled,
     buildBlockShown: readProgressRows(readWorkflowPromptRows()) > 0,
   });
@@ -167,7 +166,7 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
   });
   const sidebarShowsTasks = getWorkflowSidebarWidth({ cols, sidebarVisible }) > 0;
   const pendingTasks = queuedBriefs({
-    tasks: tasksStore.get(),
+    tasks: runViewStore.get().briefs,
     phase: runViewStore.get().phase,
     sidebarShowsTasks,
     closed: routeClosedAtRest(routerStore.get()),

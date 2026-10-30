@@ -16,7 +16,8 @@ import { addEvent } from '../../stores/workflow/actions/event.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
 import { operationsStore, selectScheduledReview } from '../../stores/workflow/operations/state.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
-import { selectRunningBrief, selectTaskListView, tasksStore } from '../../stores/workflow/tasks.js';
+import { selectRunningBrief, selectTaskListView } from '../../core/run-view/briefs.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
 import { readRunEvents } from '../events/replay.js';
 import { createJsonlSink } from '../events/sinks/jsonl.js';
 import { publishTasksPlanned } from './events.js';
@@ -81,7 +82,7 @@ describe('review fix task order through the engine and stores', () => {
           scope === 'task'
             ? ['T001', 'T002', 'T003', 'T004', 'T006', 'T007', 'T005']
             : ['T001', 'T002', 'T003', 'T004', 'T005', 'T006', 'T007'];
-        expect(tasksStore.get().tasks.map((task) => task.id)).toEqual(order);
+        expect(runViewStore.get().briefs.tasks.map((task) => task.id)).toEqual(order);
         expect(loadState(ref)?.tasks.map((task) => task.id)).toEqual(order);
         const cycleIndex = events.findIndex((event) => event.type === 'review_fix_started');
         expect(events[cycleIndex - 1]).toMatchObject({
@@ -96,16 +97,16 @@ describe('review fix task order through the engine and stores', () => {
             total: 7,
           }),
         );
-        expect(selectRunningBrief(tasksStore.get(), started.phase)).toMatchObject({
+        expect(selectRunningBrief(runViewStore.get().briefs, started.phase)).toMatchObject({
           current: { id: 'T006' },
           next: { id: 'T007' },
         });
-        expect(selectTaskListView(tasksStore.get())).toMatchObject({ passed, total: 7 });
-        const live = tasksStore.get();
+        expect(selectTaskListView(runViewStore.get().briefs)).toMatchObject({ passed, total: 7 });
+        const live = runViewStore.get().briefs;
         const replay = await readRunEvents(ref);
         expect(replay.diagnostics.skipped).toBe(0);
         loadEvents(replay.events);
-        expect(tasksStore.get()).toEqual(live);
+        expect(runViewStore.get().briefs).toEqual(live);
       } finally {
         for (const unsubscribe of unsubscribers) unsubscribe();
       }

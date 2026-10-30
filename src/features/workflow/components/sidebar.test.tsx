@@ -4,7 +4,7 @@ import { renderFeature, tick, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
@@ -13,7 +13,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { tasksStore, type WorkflowTask } from '../../../stores/workflow/tasks.js';
+import type { WorkflowTask } from '../../../core/run-view/briefs.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { Sidebar } from './sidebar.js';
@@ -48,7 +48,7 @@ afterEach(() => {
 
 describe('Sidebar — passed count', () => {
   it('counts only briefs that passed their checks in the header numerator', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         task('1', 'done'),
         task('2', 'escalated'),
@@ -70,7 +70,7 @@ describe('Sidebar — passed count', () => {
 
   it('marks the brief a run at rest left in progress as stopped, not as working', async () => {
     forceUnicodeGlyphs();
-    tasksStore.__testReset({ tasks: [task('T001', 'done'), task('T002', 'in_progress')] });
+    seedBriefs({ tasks: [task('T001', 'done'), task('T002', 'in_progress')] });
     routerStore.init({
       screen: 'workflow',
       run: makeRunRecord({
@@ -95,7 +95,7 @@ describe('Sidebar — passed count', () => {
   });
 
   it('excludes pending and in-progress tasks from the passed numerator', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         task('1', 'done'),
         task('2', 'escalated'),
@@ -114,7 +114,7 @@ describe('Sidebar — passed count', () => {
   });
 
   it('uses passed, escalated and failed counts from the task list in the footer', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [task('1', 'done'), task('2', 'done'), task('3', 'escalated'), task('4', 'failed')],
     });
 
@@ -132,7 +132,7 @@ describe('Sidebar — passed count', () => {
   });
 
   it('shows failed counts without an escalated brief and budgets wrapped footer rows', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [task('1', 'done'), task('2', 'failed'), task('3', 'in_progress')],
     });
     const ui = renderFeature(<Sidebar width={34} height={14} />);
@@ -145,7 +145,7 @@ describe('Sidebar — passed count', () => {
   });
 
   it('sanitizes secret-like text and terminal controls in task titles', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         task(
           '1',
@@ -168,7 +168,7 @@ describe('Sidebar — passed count', () => {
   });
 
   it('shows a task target when metadata is available and keeps missing metadata clean', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         { ...task('1', 'pending', 'Create helper'), file: 'src/helper.ts', action: 'create' },
         task('2', 'pending', 'No target'),
@@ -187,7 +187,7 @@ describe('Sidebar — passed count', () => {
   });
 
   it('drops a target whole when only the id and title fit', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         { ...task('T001', 'pending', 'Create helper'), file: 'src/helper.ts', action: 'create' },
       ],
@@ -201,7 +201,7 @@ describe('Sidebar — passed count', () => {
   });
 
   it('gives every seat its own row at the narrow floor, cut by cells', async () => {
-    tasksStore.__testReset({ tasks: [task('1', 'done')] });
+    seedBriefs({ tasks: [task('1', 'done')] });
 
     const ui = renderFeature(<Sidebar width={34} />);
     await tick();
@@ -229,7 +229,7 @@ describe('Sidebar — passed count', () => {
         planner: { kind: 'shell', command: 'plan', model: 'a-model-name-that-runs-past-the-panel' },
       }),
     });
-    tasksStore.__testReset({ tasks: [task('1', 'done')] });
+    seedBriefs({ tasks: [task('1', 'done')] });
 
     const ui = renderFeature(<Sidebar width={34} />);
     await tick();
@@ -250,7 +250,7 @@ describe('Sidebar — passed count', () => {
         implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },
       }),
     });
-    tasksStore.__testReset({ tasks: [task('1', 'done')] });
+    seedBriefs({ tasks: [task('1', 'done')] });
 
     const ui = renderFeature(<Sidebar width={35} />);
     await tick();
@@ -268,8 +268,7 @@ describe('Sidebar — passed count', () => {
   });
 
   it('shows the waiting placeholder while a stage runs with no tasks', async () => {
-    tasksStore.__testReset({ tasks: [] });
-    runViewStore.__testReset({ phase: 'researching' });
+    runViewStore.__testReset({ phase: 'researching', briefs: { tasks: [] } });
     lifecycleStore.__testReset({ startedAt: Date.now() - 65_000, status: 'running' });
 
     const ui = renderFeature(<Sidebar width={30} />);
@@ -290,8 +289,7 @@ describe('Sidebar — passed count', () => {
 
     let ui: ReturnType<typeof renderFeature> | null = null;
     try {
-      tasksStore.__testReset({ tasks: [] });
-      runViewStore.__testReset({ phase: 'researching' });
+      runViewStore.__testReset({ phase: 'researching', briefs: { tasks: [] } });
       lifecycleStore.__testReset({ startedAt: 0, status: 'running' });
 
       ui = renderFeature(<Sidebar width={30} />);
@@ -318,7 +316,7 @@ describe('Sidebar — passed count', () => {
   });
 
   it('shows only the empty note when nothing is running', async () => {
-    tasksStore.__testReset({ tasks: [] });
+    seedBriefs({ tasks: [] });
 
     const ui = renderFeature(<Sidebar width={30} />);
     await tick();
@@ -331,8 +329,7 @@ describe('Sidebar — passed count', () => {
   });
 
   it('sidebar shows a static interrupted line without spinner frames', async () => {
-    tasksStore.__testReset({ tasks: [] });
-    runViewStore.__testReset({ phase: 'researching' });
+    runViewStore.__testReset({ phase: 'researching', briefs: { tasks: [] } });
     lifecycleStore.__testReset({ status: 'interrupted', startedAt: Date.now() - 5_000 });
 
     const ui = renderFeature(<Sidebar width={30} />);
@@ -349,7 +346,7 @@ describe('Sidebar — passed count', () => {
     const tasks = Array.from({ length: 40 }, (_value, index) =>
       task(String(index + 1), index % 2 === 0 ? 'done' : 'pending'),
     );
-    tasksStore.__testReset({ tasks });
+    seedBriefs({ tasks });
 
     const ui = renderFeature(<Sidebar width={32} height={10} />);
     await tick();
@@ -373,7 +370,7 @@ describe('Sidebar — titled border', () => {
   ])('puts the count into the $tier top border without changing the height', async (border) => {
     chalk.level = 3;
     if (border.tier === 'ascii') vi.stubEnv('TERM', 'dumb');
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [task('1', 'pending'), task('2', 'pending'), task('3', 'pending')],
       totalTasks: 3,
     });
@@ -402,7 +399,7 @@ describe('Sidebar — titled border', () => {
     { tier: 'ascii', corner: '+', end: '+' },
   ])('truncates a count inside both $tier corners without wrapping', async (border) => {
     if (border.tier === 'ascii') vi.stubEnv('TERM', 'dumb');
-    tasksStore.__testReset({ totalTasks: Number.MAX_SAFE_INTEGER });
+    seedBriefs({ totalTasks: Number.MAX_SAFE_INTEGER });
 
     const ui = renderFeature(<Sidebar width={24} height={14} />);
     await tick();
@@ -420,7 +417,7 @@ describe('Sidebar — titled border', () => {
 
 describe('Sidebar — minimum-height contract', () => {
   it.each([0, 1, 2])('never paints outside its explicit %i-row height', async (height) => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [task('1', 'in_progress', 'a task that should stay clipped')],
       totalTasks: 1,
     });
@@ -435,7 +432,7 @@ describe('Sidebar — minimum-height contract', () => {
   });
 
   it('can grow from an unusable height without changing its hook order', async () => {
-    tasksStore.__testReset({ tasks: [task('1', 'pending')] });
+    seedBriefs({ tasks: [task('1', 'pending')] });
 
     const ui = renderFeature(<Sidebar width={34} height={1} />);
     await tick();
@@ -453,7 +450,7 @@ describe('Sidebar — minimum-height contract', () => {
         implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },
       }),
     });
-    tasksStore.__testReset({ tasks: [task('1', 'done'), task('2', 'in_progress')] });
+    seedBriefs({ tasks: [task('1', 'done'), task('2', 'in_progress')] });
   }
 
   it('gives each seat one row when the wrapped crew does not fit above the bottom border', async () => {
@@ -500,7 +497,7 @@ const LONG_TITLE = 'A task title that is exactly forty chars';
 
 describe('Sidebar — title budget', () => {
   it('fits a long task title on one line inside its box at widths 30, 34, 48 and 60', async () => {
-    tasksStore.__testReset({ tasks: [task('1', 'in_progress', LONG_TITLE)] });
+    seedBriefs({ tasks: [task('1', 'in_progress', LONG_TITLE)] });
 
     for (const width of [30, 34, 48, 60]) {
       const ui = renderFeature(<Sidebar width={width} />);
@@ -524,7 +521,7 @@ describe('Sidebar — title budget', () => {
   });
 
   it('never paints the footer rule wider than the box', async () => {
-    tasksStore.__testReset({ tasks: [task('1', 'done', LONG_TITLE)] });
+    seedBriefs({ tasks: [task('1', 'done', LONG_TITLE)] });
 
     for (const width of [30, 60]) {
       const ui = renderFeature(<Sidebar width={width} />);
@@ -546,7 +543,7 @@ describe('Sidebar — title budget', () => {
 
   it('keeps the status word for the rare states even at the narrow floor', async () => {
     chalk.level = 3;
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         task('T001', 'escalated', LONG_TITLE),
         task('T002', 'failed', LONG_TITLE),
@@ -580,7 +577,7 @@ describe('Sidebar — title budget', () => {
   });
 
   it('gives every row one truncation column once any row carries a status word', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         task('1', 'in_progress', LONG_TITLE),
         task('2', 'escalated', LONG_TITLE),
@@ -604,7 +601,7 @@ describe('Sidebar — title budget', () => {
   });
 
   it('reserves no status column when nothing is escalated, failed, or skipped', async () => {
-    tasksStore.__testReset({ tasks: [task('1', 'in_progress', LONG_TITLE)] });
+    seedBriefs({ tasks: [task('1', 'in_progress', LONG_TITLE)] });
     const withoutTail = renderFeature(<Sidebar width={34} />);
     await tick();
     const plain =
@@ -613,7 +610,7 @@ describe('Sidebar — title budget', () => {
         .find((line) => line.includes('A task title')) ?? '';
     withoutTail.unmount();
 
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [task('1', 'in_progress', LONG_TITLE), task('2', 'skipped', LONG_TITLE)],
     });
     const withTail = renderFeature(<Sidebar width={34} />);
@@ -637,7 +634,7 @@ function sidebarTitleCells(row: string): number {
 describe('Sidebar — persistent task list', () => {
   it('keeps completed tasks listed with a done marker once later tasks start', async () => {
     forceUnicodeGlyphs();
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [task('1', 'done', 'First task'), task('2', 'in_progress', 'Second task')],
       totalTasks: 2,
     });
@@ -656,7 +653,7 @@ describe('Sidebar — persistent task list', () => {
   });
 
   it('counts against the announced plan size rather than the tasks started so far', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [task('1', 'done'), task('2', 'in_progress')],
       totalTasks: 5,
     });
@@ -688,7 +685,7 @@ describe('Sidebar — persistent task list', () => {
         ),
       );
 
-    tasksStore.__testReset({ tasks: makeTasks(4), totalTasks: 12 });
+    seedBriefs({ tasks: makeTasks(4), totalTasks: 12 });
     const first = renderFeature(<Sidebar width={40} height={17} />);
     await tick();
     const firstRow =
@@ -697,7 +694,7 @@ describe('Sidebar — persistent task list', () => {
         .find((line) => line.includes(sharedTitle.slice(0, 12))) ?? '';
     first.unmount();
 
-    tasksStore.__testReset({ tasks: makeTasks(10), totalTasks: 12 });
+    seedBriefs({ tasks: makeTasks(10), totalTasks: 12 });
     const second = renderFeature(<Sidebar width={40} height={17} />);
     await tick();
     const secondRow =
@@ -711,8 +708,7 @@ describe('Sidebar — persistent task list', () => {
   });
 
   it('lines the empty state up with the column the task titles use', async () => {
-    tasksStore.__testReset({ tasks: [] });
-    runViewStore.__testReset({ phase: 'researching' });
+    runViewStore.__testReset({ phase: 'researching', briefs: { tasks: [] } });
     lifecycleStore.__testReset({ startedAt: Date.now() - 65_000, status: 'running' });
 
     const ui = renderFeature(<Sidebar width={34} />);
@@ -726,7 +722,7 @@ describe('Sidebar — persistent task list', () => {
     expect(titleColumn('Plan')).toBe(titleColumn('No tasks yet'));
     ui.unmount();
 
-    tasksStore.__testReset({ tasks: [task('1', 'in_progress', 'A real title')] });
+    seedBriefs({ tasks: [task('1', 'in_progress', 'A real title')] });
     const populated = renderFeature(<Sidebar width={34} />);
     await tick();
     const populatedTitle = (
@@ -748,7 +744,7 @@ describe('Sidebar — persistent task list', () => {
         `task number ${index + 1}`,
       ),
     );
-    tasksStore.__testReset({ tasks, totalTasks: 24 });
+    seedBriefs({ tasks, totalTasks: 24 });
 
     const ui = renderFeature(<Sidebar width={34} height={20} />);
     await tick();
@@ -775,7 +771,7 @@ describe('Sidebar — persistent task list', () => {
         `task number ${index + 1}`,
       ),
     );
-    tasksStore.__testReset({ tasks, totalTasks: 24 });
+    seedBriefs({ tasks, totalTasks: 24 });
 
     const ui = renderFeature(<Sidebar width={34} height={20} />);
     await tick();
@@ -795,7 +791,7 @@ describe('Sidebar — persistent task list', () => {
         `task number ${index + 1}`,
       ),
     );
-    tasksStore.__testReset({ tasks, totalTasks: 14 });
+    seedBriefs({ tasks, totalTasks: 14 });
 
     const ui = renderFeature(<Sidebar width={40} height={16} />);
     await tick();
@@ -814,7 +810,7 @@ describe('Sidebar — persistent task list', () => {
     const tasks = Array.from({ length: 60 }, (_value, index) =>
       task(String(index + 1), index < 30 ? 'done' : index === 30 ? 'in_progress' : 'pending'),
     );
-    tasksStore.__testReset({ tasks, totalTasks: 60 });
+    seedBriefs({ tasks, totalTasks: 60 });
 
     const ui = renderFeature(<Sidebar width={40} height={14} />);
     await tick();
@@ -838,7 +834,7 @@ describe('Sidebar — persistent task list', () => {
         implementer: { kind: 'shell', command: 'build', model: 'build-model' },
       }),
     });
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: Array.from({ length: 7 }, (_, index) => task(String(index + 1), 'pending')),
       totalTasks: 7,
     });
@@ -863,7 +859,7 @@ describe('Sidebar — unbudgeted height', () => {
   beforeEach(forceUnicodeGlyphs);
 
   it('lists every task when the caller passes no height', async () => {
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: [
         task('1', 'done', 'first title'),
         task('2', 'done', 'second title'),
@@ -929,7 +925,7 @@ describe('Sidebar — a crew wider than the seat column', () => {
 
   it('wraps each identity onto a second row instead of shedding the model or the effort', async () => {
     configStore.__testReset({ projectDir: '/tmp/project', config: smokeCrew() });
-    tasksStore.__testReset({ tasks: [task('1', 'pending')] });
+    seedBriefs({ tasks: [task('1', 'pending')] });
 
     const ui = renderFeature(<Sidebar width={48} />);
     await tick();
@@ -949,7 +945,7 @@ describe('Sidebar — a crew wider than the seat column', () => {
 
   it('keeps one row per seat when the identity fits', async () => {
     configStore.__testReset({ projectDir: '/tmp/project', config: smokeCrew() });
-    tasksStore.__testReset({ tasks: [task('1', 'pending')] });
+    seedBriefs({ tasks: [task('1', 'pending')] });
 
     const ui = renderFeature(<Sidebar width={80} />);
     await tick();
@@ -967,7 +963,7 @@ describe('Sidebar — a crew wider than the seat column', () => {
 
   it('budgets the wrapped seat rows so the panel keeps its height and every seat row', async () => {
     configStore.__testReset({ projectDir: '/tmp/project', config: smokeCrew() });
-    tasksStore.__testReset({
+    seedBriefs({
       tasks: Array.from({ length: 30 }, (_, index) => task(String(index + 1), 'pending')),
     });
 
@@ -1019,7 +1015,7 @@ describe('Sidebar — usage lives in /usage', () => {
   }
 
   it('paints no local row or money for a run whose usage is priced', async () => {
-    tasksStore.__testReset({ tasks: [task('1', 'done'), task('2', 'done')] });
+    seedBriefs({ tasks: [task('1', 'done'), task('2', 'done')] });
     seedPricedRun();
 
     const ui = renderFeature(<Sidebar width={40} />);
@@ -1033,7 +1029,7 @@ describe('Sidebar — usage lives in /usage', () => {
   });
 
   it('paints no token total for a run whose usage is priced', async () => {
-    tasksStore.__testReset({ tasks: [task('1', 'done'), task('2', 'done')] });
+    seedBriefs({ tasks: [task('1', 'done'), task('2', 'done')] });
     seedPricedRun();
 
     const ui = renderFeature(<Sidebar width={40} />);
@@ -1070,7 +1066,7 @@ describe('Sidebar concept colors', () => {
   it('keeps the skipped summary word, mark and sidebar tail in the same dim color', () => {
     forceUnicodeGlyphs();
     chalk.level = 3;
-    tasksStore.__testReset({ tasks: [task('T002', 'skipped', 'Stock brief')] });
+    seedBriefs({ tasks: [task('T002', 'skipped', 'Stock brief')] });
     const ui = renderFeature(
       <Box flexDirection="column">
         <TaskSummary
@@ -1101,7 +1097,7 @@ describe('Sidebar concept colors', () => {
     ['skipped', 'textDim', 'statusSkipped'],
   ] as const)('paints the %s mark with %s', (status, tone, mark) => {
     chalk.level = 3;
-    tasksStore.__testReset({ tasks: [task('T001', status, 'Task title')] });
+    seedBriefs({ tasks: [task('T001', status, 'Task title')] });
     const ui = renderFeature(<Sidebar width={60} />);
     expect(ui.lastFrame()).toContain(
       paint(defaultTheme[tone], `${status === 'skipped' ? ' ' : ''}${glyph(mark)} `).replace(
@@ -1143,7 +1139,7 @@ describe('Sidebar concept colors', () => {
   });
   it('colors the summary state words while keeping counts dim', () => {
     chalk.level = 3;
-    tasksStore.__testReset({ tasks: [task('T001', 'done'), task('T002', 'escalated')] });
+    seedBriefs({ tasks: [task('T001', 'done'), task('T002', 'escalated')] });
     const ui = renderFeature(<Sidebar width={60} />);
     expect(ui.lastFrame()).toContain(
       paint(defaultTheme.success, 'passed').replace('\u001b[39m', ''),

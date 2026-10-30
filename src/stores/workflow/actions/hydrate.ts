@@ -1,8 +1,6 @@
 import { definedTaskUsageFields, TASK_USAGE_ATTEMPT_KEYS } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { briefPosition } from '../../../core/state/selectors.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue-state.js';
-import { _tasksInternal, type TasksState, type WorkflowTask } from '../tasks.js';
 import {
   _tokensInternal,
   taskAttemptTotalTokens,
@@ -23,7 +21,6 @@ import { settleRunView } from '../../../core/run-view/settle.js';
 export function hydrateFromState(state: WorkflowState): void {
   _runViewInternal.set((view) => settleRunView(view, state));
   _lifecycleInternal.set((current) => lifecycleFromState(current, state));
-  _tasksInternal.set((current) => ({ ...current, ...tasksStateFromState(state) }));
   _tokensInternal.set((current) => ({ ...current, ...tokensStateFromState(state) }));
 }
 
@@ -56,37 +53,10 @@ function lifecycleFromState(current: LifecycleState, state: WorkflowState): Life
   return { ...base, status: 'paused', endedAt: null, durationMs: null };
 }
 
-function tasksStateFromState(
-  state: WorkflowState,
-): Pick<TasksState, 'currentTask' | 'totalTasks' | 'taskMap' | 'tasks'> {
-  const totalTasks = state.tasks.length;
-  const currentTask = briefPosition(state)?.position ?? 0;
-  const tasks = state.tasks.map<WorkflowTask>((task) => ({
-    id: task.id,
-    title: task.title,
-    status: task.status,
-    file: task.suggestedFiles[0],
-    action: task.action,
-  }));
-  const taskMap = new Map<string, WorkflowTask>();
-  for (const task of tasks) {
-    taskMap.set(task.id, task);
-  }
-  return {
-    currentTask,
-    totalTasks,
-    taskMap,
-    tasks,
-  };
-}
-
 function tokensStateFromState(
   state: WorkflowState,
-): Pick<TokensState, 'completedTaskCount' | 'tokenUsage' | 'passSeats' | 'perTask'> {
+): Pick<TokensState, 'tokenUsage' | 'passSeats' | 'perTask'> {
   return {
-    completedTaskCount: state.tasks.filter(
-      (task) => task.status !== 'pending' && task.status !== 'in_progress',
-    ).length,
     tokenUsage: state.tokenUsage,
     passSeats: passSeats(state),
     perTask: perTaskTokens(state),

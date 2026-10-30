@@ -15,7 +15,7 @@ import {
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import type { WorkflowTask } from '../../stores/workflow/tasks.js';
+import type { WorkflowTask } from '../../core/run-view/briefs.js';
 import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { oneLineDisplayText } from '../../utils/display-text.js';
 import type {
@@ -32,7 +32,7 @@ interface BuildPaletteSourcesOptions {
   screen: Screen;
   config: Config;
   phase: Phase;
-  tasks: WorkflowTask[];
+  tasks: readonly WorkflowTask[];
   sessions: Session[];
   projectDir: string;
   onRuntimeCommand: (raw: string) => unknown;
@@ -146,7 +146,7 @@ function buildSkillItems(skills: SkillMeta[], selected: ReadonlySet<string>): Pa
   }));
 }
 
-function buildTaskItems(tasks: WorkflowTask[], phase: Phase): PaletteSources['taskItems'] {
+function buildTaskItems(tasks: readonly WorkflowTask[], phase: Phase): PaletteSources['taskItems'] {
   if (phase !== 'implementing' && phase !== 'validating-task' && phase !== 'escalating') {
     return [];
   }

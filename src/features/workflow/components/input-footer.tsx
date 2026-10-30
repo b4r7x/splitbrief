@@ -16,11 +16,7 @@ import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-prog
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
-import {
-  selectRunningBrief,
-  selectTaskListView,
-  tasksStore,
-} from '../../../stores/workflow/tasks.js';
+import { selectRunningBrief, selectTaskListView } from '../../../core/run-view/briefs.js';
 import {
   operationsStore,
   selectRunningSuite,
@@ -69,10 +65,9 @@ export function InputFooter({
   byline?: readonly ConversationRowSegment[] | undefined;
 }) {
   const t = useTheme();
-  const [lifecycle, { cols }, tasks, operations, controls, approval, recovery, runView] = useStores(
+  const [lifecycle, { cols }, operations, controls, approval, recovery, runView] = useStores(
     lifecycleStore,
     terminalSizeStore,
-    tasksStore,
     operationsStore,
     controlsStore,
     approvalPromptStore,
@@ -87,7 +82,7 @@ export function InputFooter({
   const atRestStatus = routerStore.use((s) =>
     s.screen === 'workflow' && s.execution.kind === 'at-rest' ? s.run.status.kind : null,
   );
-  const taskListView = selectTaskListView(tasks);
+  const taskListView = selectTaskListView(runView.briefs);
   const stopByline = useStopByline();
   // A seat change has no lead of its own: the run it waits beside keeps the byline.
   const stopped = stopByline !== null && stopByline.parts.length > 0 ? stopByline : null;
@@ -182,7 +177,7 @@ export function InputFooter({
     { text: `${glyph('statusPending')} Interrupted`, tone: stateTone('attention') },
     { text: ' — finishing current step…', tone: 'textDim' },
   ];
-  const runningBriefId = selectRunningBrief(tasks, runView.phase).current?.id ?? null;
+  const runningBriefId = selectRunningBrief(runView.briefs, runView.phase).current?.id ?? null;
   const seat = phaseStage(runView.phase);
   const resumingLead: ConversationRowSegment[] = [
     { text: `${frame} `, tone: stateTone('running') },

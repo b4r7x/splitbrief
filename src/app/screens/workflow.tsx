@@ -18,7 +18,6 @@ import { showRunDiff } from '../../features/workflow/result/show-diff.js';
 import { changedFileCount } from '../../features/workflow/closed/projections.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { stopStore } from '../../stores/workflow/stop.js';
-import { tasksStore } from '../../stores/workflow/tasks.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
 import { QuestionPrompt } from '../../features/workflow/components/question-prompt.js';
@@ -118,7 +117,7 @@ export function WorkflowScreen({
   const theme = useTheme();
   const [input, terminal] = useStores(inputHeightStore, terminalSizeStore);
   const { cols, rows } = terminal;
-  useStores(stopStore, tasksStore);
+  useStores(stopStore, runViewStore);
   const stopMenuOpen = overlayStore.use((state) => state.active === 'stop-sheet');
   const parked = stopStore.use((state) => state.phase === 'parked');
   const inputRows = input.rows;

@@ -24,7 +24,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
 import { groupEventsIntoSections } from '../../../core/sections/event-sections.js';
-import { taskTargetLabel } from '../../../stores/workflow/tasks.js';
+import { taskTargetLabel } from '../../../core/run-view/brief-labels.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { ConversationRowView } from '../components/conversation-flow/row-view.js';
 import { closedTranscriptBlock } from './block.js';

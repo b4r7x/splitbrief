@@ -11,7 +11,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 import type { ConversationRowSegment, ConversationRowTone } from '../conversation-rows/types.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
 import { lifecycleStore, type LifecycleState } from '../../../stores/workflow/lifecycle.js';
-import { tasksStore, type TasksState } from '../../../stores/workflow/tasks.js';
+import type { RunBriefs } from '../../../core/run-view/briefs.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -193,7 +193,7 @@ export function measureRailCells(input: {
   cancelled: boolean;
   form: RailForm;
   cols: number;
-  tasks: TasksState;
+  tasks: RunBriefs;
   events: readonly EngineEvent[];
   /** The step an open halt resumes at; null while no halt waits. */
   recoveryAt: StepRef | null;
@@ -235,11 +235,10 @@ export function Rail({
   /** A run at rest paints the stages its record names, not the ones a live phase implies. */
   stages?: readonly RailStageState[] | undefined;
 }) {
-  const [{ cols }, lifecycle, tasks, eventsState, controls, approval, recovery, { phase }] =
+  const [{ cols }, lifecycle, eventsState, controls, approval, recovery, { phase, briefs }] =
     useStores(
       terminalSizeStore,
       lifecycleStore,
-      tasksStore,
       eventsStore,
       controlsStore,
       approvalPromptStore,
@@ -272,7 +271,7 @@ export function Rail({
   ];
   const fraction = resolveRailFraction({
     phase,
-    tasks,
+    tasks: briefs,
     cancelled,
     buildBlockShown,
   });
