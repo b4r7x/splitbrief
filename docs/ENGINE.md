@@ -15,7 +15,7 @@ Entry point: `runWorkflow()` in `src/engine/orchestrator/run/workflow.ts`. It bu
 3. `runTasksAndReview()` — runs the task loop (implementer writes code, validation runs), then calls the review seat for a final review. `runTaskLoop()` returns one of four statuses — `complete`, `stopped` (a recovery or a reconciled halt), `cancelled`, or `paused` (the operator asked for a pause after the current brief) — and only `complete` runs the review. A `paused` loop does not end the run: `runTasksAndReview` parks it in place, recording the brief it stopped before and awaiting a continuation exactly as a mid-call park does, then re-enters the loop when the operator continues. A host with no prompt surface records the park and returns, so the run resumes at that brief later.
 4. `saveFinalSession()` (`session-lifecycle/finalize.ts`) — saves `summary.json` at the end of every run pass. It does not take a status from its caller: it derives the run's status with `deriveRunStatus` from the tracked state, writes that into `summary.json` alongside the run's phase and summary, and releases the active-session receipt (`.splitbrief/active`, a JSON `{ version, sessionId, generation }` written by `writeActiveReceiptLocked`, `src/core/sessions/active-pointer.ts`) **only when the run is closed**. A run that merely stopped keeps its pointer, because it is still continuable. A resumed pass drops the stop the last pass wrote as it starts (`reopenSessionRecord`), so `summary.json` never reports a stop the running run has left behind.
 
-If any step throws, the catch block records the error on the state as `lastFailure: { step, message, at }`, saves state to disk, kills all subprocesses, publishes an error event, and returns a partial summary. The run is not marked failed — there is no such status. `deriveRunStatus` reads `lastFailure` and reports the run as `open`, stopped for reason `failed`, and continuing it retries the step it died on. Re-entering the run clears `lastFailure` (`RESUME_STEP`, dispatched by `runPlanningPhases`), so a later stop that records nothing reads `interrupted`, never the old error.
+If any step throws, the catch block records the error on the state as `lastFailure: { step, message, at }`, saves state to disk, kills the run's subprocesses, publishes an error event, and returns a partial summary. The run is not marked failed — there is no such status. `deriveRunStatus` reads `lastFailure` and reports the run as `open`, stopped for reason `failed`, and continuing it retries the step it died on. Re-entering the run clears `lastFailure` (`RESUME_STEP`, dispatched by `runPlanningPhases`), so a later stop that records nothing reads `interrupted`, never the old error.
 
 ```mermaid
 flowchart TD
@@ -25,7 +25,7 @@ flowchart TD
   E --> F[saveFinalSession]
   B -->|planner unavailable| G[early return with summary]
   E -->|signal aborted| F
-  A -->|catch| H[recordLastFailure + saveState + killAllProcesses + partial summary]
+  A -->|catch| H[recordLastFailure + saveState + killProcessScope + partial summary]
 ```
 
 ### Orchestrator subdirectories
@@ -275,6 +275,8 @@ A SIGINT — the OS signal a headless run gets from Ctrl-C — reaches the handl
 
 1. `killAllProcesses()` — terminates all tracked subprocess (planner, implementer).
 2. Saves `state.json` from whatever `trackedState` is at the moment of interruption.
+
+**Process scope.** Every subprocess registers in `src/lib/process/registry.ts`. `runWorkflow` runs its body in a process scope (`runInProcessScope`, an `AsyncLocalStorage`), so a process that the run's work starts belongs to that run. The TUI run loop (`useRunLoop`) opens the scope for the whole loop, and `runWorkflow` joins it; a headless run opens its own. The composer queue handler that `installQueueHandler` installs runs in the run's scope too, because the composer calls it from outside the run. When a run fails, ends, stops or takes End run, `killProcessScope` ends only that run's processes. A process that no run started, such as a detection or model-list probe, keeps running. A store listener runs in the async context of the code that calls `store.set`, so a config reload inside the run would give the run's scope to the work the listener starts. Thus `refreshDetectionForCurrentConfig` runs its body through `runOutsideProcessScope`: a detection refresh belongs to no run, wherever it starts. Only the process shutdown paths call `killAllProcesses()`: `shutdownWorkflow` on a signal and the TUI cleanup in `src/cli/render/process-lifecycle.ts`.
 
 Shutdown reverts nothing. A task that was in progress keeps whatever it had written; the run parks with its partial changes and the operator decides what happens to them. (In the TUI `ctrl+c` never reaches this path as a signal — Ink delivers it as a key and it becomes Stop now, which aborts the call through the same `AbortController` the sheet uses.)
 

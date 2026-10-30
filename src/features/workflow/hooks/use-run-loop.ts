@@ -53,9 +53,12 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { stopStore, takesSeatAtBoundary } from '../../../stores/workflow/stop.js';
 import {
+  createProcessScope,
+  killProcessScope,
   onProcessRegistryChange,
-  registeredProcessCount,
-  killAllProcesses,
+  processScopeCount,
+  runInProcessScope,
+  type ProcessScope,
 } from '../../../lib/process/registry.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -143,6 +146,7 @@ export function useRunLoop({
   continueAtRest,
 }: UseRunLoopOptions): void {
   const abortedRef = useRef(false);
+  const processScopeRef = useRef<ProcessScope | undefined>(undefined);
   const retentionNoticeHandled = useRef(true);
   const { runId, inlineResume, setInlineResume, handleResume } = continuation;
 
@@ -150,7 +154,7 @@ export function useRunLoop({
     inlineResume !== undefined && inlineResume.prepared === prepared ? inlineResume : undefined;
   const inlineState = inlineForPrepared?.state;
 
-  const startWorkflow = useEffectEvent(async (controller: AbortController) => {
+  const startWorkflow = useEffectEvent(async (controller: AbortController, scope: ProcessScope) => {
     if (prepared === undefined) return;
     recordRunTerms(prepared);
     retentionNoticeHandled.current = true;
@@ -226,7 +230,7 @@ export function useRunLoop({
     let preparedForRun = prepared;
 
     const finishStoppedRun = async (): Promise<void> => {
-      await killAllProcesses();
+      await killProcessScope(scope);
       const hydrated = hydrateResume(session.ref);
       if (hydrated.kind !== 'loaded')
         throw error(
@@ -565,8 +569,10 @@ export function useRunLoop({
 
     abortedRef.current = false;
     const controller = new AbortController();
+    const scope = createProcessScope();
+    processScopeRef.current = scope;
     setResumeHandler((text) => handleResume(text));
-    void startWorkflow(controller);
+    void runInProcessScope(scope, () => startWorkflow(controller, scope));
     return () => {
       abortedRef.current = true;
       inputMode.resetMode();
@@ -587,7 +593,8 @@ export function useRunLoop({
         phase === 'failed'
       )
         return;
-      if (registeredProcessCount() > 0) {
+      const scope = processScopeRef.current;
+      if (scope !== undefined && processScopeCount(scope) > 0) {
         if (phase !== 'terminating') stopStore.markTerminating();
       } else if (phase !== 'settling') stopStore.markSettling();
     };

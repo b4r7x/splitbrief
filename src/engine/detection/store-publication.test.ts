@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { ProviderDetection } from '../../core/discovery/detection.js';
@@ -10,8 +11,16 @@ import type {
   ResolvedDetectionSourceContexts,
 } from './service.js';
 import { createProductionDetectionDeps } from './deps.js';
+import { createStore } from '../../stores/create-store.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import {
+  createProcessScope,
+  killProcessScope,
+  registerProcess,
+  runInProcessScope,
+  unregisterProcess,
+} from '../../lib/process/registry.js';
 import {
   detectionContextsForCurrentConfig,
   loadDetectionForCurrentConfig,
@@ -375,5 +384,53 @@ describe('store publication from current configuration', () => {
     expect(currentRefresh).toMatchObject({ status: 'fresh', published: true });
     expect(oldSummary).toMatchObject({ status: 'superseded', published: false });
     expect(modelCacheStore.getProviderModels('ollama')).toEqual([{ id: 'private-from-b' }]);
+  });
+
+  it("keeps a refresh that a store listener starts inside a run out of that run's processes", async () => {
+    const state = current(makeConfig(), '/projects/run-scope');
+    const signals: NodeJS.Signals[] = [];
+    const probe = {
+      pid: 2_147_482_997,
+      exitCode: null,
+      get signalCode() {
+        return signals[0] ?? null;
+      },
+      kill: (signal: NodeJS.Signals) => {
+        signals.push(signal);
+        return true;
+      },
+    } as unknown as ChildProcess;
+    const registered = Promise.withResolvers<void>();
+    const listing = Promise.withResolvers<DetectionServiceResult>();
+    const { publication } = publicationRecorder();
+    const { service } = recordingService({
+      refresh: async () => {
+        await Promise.resolve();
+        registerProcess(probe);
+        registered.resolve();
+        return listing.promise;
+      },
+    });
+    const crew = createStore(0);
+    const refreshes: Promise<unknown>[] = [];
+    const off = crew.subscribe(() => {
+      refreshes.push(
+        refreshDetectionForCurrentConfig({ service, publication, getCurrent: () => state }),
+      );
+    });
+    const scope = createProcessScope();
+
+    try {
+      runInProcessScope(scope, () => crew.set(1));
+      await registered.promise;
+      await killProcessScope(scope);
+
+      expect(signals).toEqual([]);
+    } finally {
+      off();
+      unregisterProcess(probe);
+      listing.resolve(freshResult());
+      await Promise.all(refreshes);
+    }
   });
 });

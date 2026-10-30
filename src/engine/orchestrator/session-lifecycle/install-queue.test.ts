@@ -8,6 +8,12 @@ import { setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createSteeringPort } from '../../calls/steering.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import { createInitialState, transition } from '../../../core/state/machine.js';
+import {
+  createProcessScope,
+  currentProcessScope,
+  type ProcessScope,
+} from '../../../lib/process/registry.js';
 import { settleMidCallDeliveries } from '../queue/mid-call.js';
 import type { WorkflowSinks } from '../types.js';
 import { installQueueHandler } from './install-queue.js';
@@ -39,6 +45,7 @@ describe('installQueueHandler', () => {
     };
     installQueueHandler({
       ...ref,
+      processScope: createProcessScope(),
       steering,
       sinks: {
         setAbortHandler: () => {},
@@ -77,5 +84,45 @@ describe('installQueueHandler', () => {
     expect(loadState(ref)?.lineages?.['T003']?.corrections).toEqual([
       expect.stringContaining('Keep the public API'),
     ]);
+  });
+
+  it("starts the planner turn of a message the composer queues in the run's process scope", async () => {
+    const ref = setupProject(dirs);
+    let state = transition(createInitialState('scope fixture'), { type: 'START' });
+    saveState(ref, state);
+    const scope = createProcessScope();
+    const injectedIn = Promise.withResolvers<ProcessScope | undefined>();
+    const installedHandler: { handler: Parameters<WorkflowSinks['setQueueHandler']>[0] } = {
+      handler: null,
+    };
+    installQueueHandler({
+      ...ref,
+      processScope: scope,
+      steering: createSteeringPort(),
+      sinks: {
+        setAbortHandler: () => {},
+        setQueueHandler: (installed) => {
+          installedHandler.handler = installed;
+        },
+      },
+      getTrackedState: () => state,
+      setTrackedState: (next) => {
+        state = next;
+      },
+      bus: makeBusRecorder().bus,
+      config: makeConfig(),
+      planner: makePlanner({
+        injectUserTurn: async () => {
+          injectedIn.resolve(currentProcessScope());
+          return { status: 'not-delivered', reason: 'not-ready' };
+        },
+      }),
+    });
+
+    expect(currentProcessScope()).toBeUndefined();
+    expect(
+      await installedHandler.handler?.(plainUserMessage('Use the old parser'), state.phase),
+    ).toMatchObject({ status: 'accepted' });
+    expect(await injectedIn.promise).toBe(scope);
   });
 });

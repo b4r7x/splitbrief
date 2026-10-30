@@ -13,8 +13,12 @@ import { resolveSpecMetadata } from '../../providers/model/display-names.js';
 import { NULL_CACHE } from '../../providers/model/resolution.js';
 import {
   clearProcessLedger,
-  killAllProcesses,
+  createProcessScope,
+  currentProcessScope,
+  killProcessScope,
+  runInProcessScope,
   setProcessLedger,
+  type ProcessScope,
 } from '../../../lib/process/registry.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -95,7 +99,19 @@ function assertNewWorkflowSessionUnstarted(
   );
 }
 
-export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
+/**
+ * A run inside the TUI run loop shares the loop's process scope, so a stop between engine passes
+ * ends the processes of both; a run started on its own gets a scope of its own.
+ */
+export function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
+  const processScope = currentProcessScope() ?? createProcessScope();
+  return runInProcessScope(processScope, () => runScopedWorkflow(opts, processScope));
+}
+
+async function runScopedWorkflow(
+  opts: RunWorkflowOptions,
+  processScope: ProcessScope,
+): Promise<Summary> {
   const { runtime, session } = opts.prepared;
   const config = opts.prepared.config;
   const feature = runtime.feature;
@@ -311,6 +327,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           trackedState = init.state;
 
           installQueueHandler({
+            processScope,
             projectDir,
             sessionId,
             sinks: wctx.sinks,
@@ -362,7 +379,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           });
           result = taskRun.summary;
         } catch (err) {
-          await killAllProcesses();
+          await killProcessScope(processScope);
           if (!opts.signal?.aborted || retentionError.isFailed(err)) {
             const bus = wctx?.bus ?? workflowBus;
             const message = toErrorMessage(err);
@@ -387,7 +404,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     // Every way out of the run body ends the same way: nothing it spawned outlives it, and the
     // summary lands only once those processes are gone — a child still running when the summary
     // appears could read a record of a run it is still part of.
-    await killAllProcesses();
+    await killProcessScope(processScope);
 
     const signalCancellationReason = workflowCancelledReasonFromSignal(opts.signal);
     const stoppedState = trackedState;

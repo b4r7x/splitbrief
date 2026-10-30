@@ -4,6 +4,7 @@ import type {
   DiscoveryRefreshSummary,
 } from '../../core/runtime/commands/types.js';
 import type { DetectionSourceOutcome } from './types.js';
+import { runOutsideProcessScope } from '../../lib/process/registry.js';
 import { createProductionDetectionDeps } from './deps.js';
 import type { DetectionLanePublication } from './lane-channel.js';
 import type { ModelsDevRefreshOutcome } from './models-dev-lane.js';
@@ -179,22 +180,28 @@ export async function loadDetectionForCurrentConfig(
   });
 }
 
-export async function refreshDetectionForCurrentConfig(
+/**
+ * The shared detection is never a run's work, so a refresh runs outside any process scope: a run
+ * whose reload of the config started it does not end its probes when the run stops.
+ */
+export function refreshDetectionForCurrentConfig(
   input: Readonly<{
     service: DetectionService;
     publication: DetectionPublicationPort;
     getCurrent: () => CurrentDetectionConfig | null;
   }>,
 ): Promise<DiscoveryRefreshSummary> {
-  if (hasUntrustedDependencyInput(input)) return uninitializedDetectionRefreshSummary();
-  const current = input.getCurrent();
-  if (current === null || hasUntrustedDependencyInput(current)) {
-    return uninitializedDetectionRefreshSummary();
-  }
+  return runOutsideProcessScope(async () => {
+    if (hasUntrustedDependencyInput(input)) return uninitializedDetectionRefreshSummary();
+    const current = input.getCurrent();
+    if (current === null || hasUntrustedDependencyInput(current)) {
+      return uninitializedDetectionRefreshSummary();
+    }
 
-  const deps = createProductionDetectionDeps(current);
-  const request = input.publication.beginRefresh({ contexts: deps.sourceContexts });
-  const result = await input.service.refreshDetection({ deps, projectDir: current.projectDir });
-  const published = input.publication.publish({ result, request });
-  return summarizeDetectionRefresh({ result, published });
+    const deps = createProductionDetectionDeps(current);
+    const request = input.publication.beginRefresh({ contexts: deps.sourceContexts });
+    const result = await input.service.refreshDetection({ deps, projectDir: current.projectDir });
+    const published = input.publication.publish({ result, request });
+    return summarizeDetectionRefresh({ result, published });
+  });
 }
