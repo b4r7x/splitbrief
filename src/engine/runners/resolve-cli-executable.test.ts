@@ -599,7 +599,34 @@ describe('resolveCustomExecutable', () => {
         projectDir,
         expected: first.executable,
       }),
-    ).resolves.toEqual({ kind: 'identity-drifted' });
+    ).resolves.toMatchObject({
+      kind: 'identity-drifted',
+      executable: { path: realpathSync(executable) },
+    });
+  });
+
+  itUnix('reports a removed executable as missing, not changed', async () => {
+    const projectDir = createTempDir('custom-resolver-removed-project');
+    const binDir = createTempDir('custom-resolver-removed-bin');
+    dirs.push(projectDir, binDir);
+    const executable = join(binDir, 'custom-runner');
+    makeExecutable(executable);
+    const first = await resolveCustomExecutable({ command: executable, projectDir });
+    if (first.kind !== 'resolved') throw new Error('fixture executable did not resolve');
+
+    unlinkSync(executable);
+
+    await expect(
+      resolveCustomExecutable({ command: executable, projectDir, expected: first.executable }),
+    ).resolves.toEqual({ kind: 'missing' });
+    await expect(
+      resolveCustomExecutable({
+        command: 'custom-runner',
+        projectDir,
+        pathEnv: binDir,
+        expected: first.executable,
+      }),
+    ).resolves.toEqual({ kind: 'missing' });
   });
 });
 

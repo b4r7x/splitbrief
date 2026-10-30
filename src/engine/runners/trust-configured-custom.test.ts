@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { CustomCommand } from '../../core/config/custom-commands.js';
@@ -8,7 +16,11 @@ import {
   revalidateCustomRunnerInvocation,
   resolveCustomRunnerLaunchability,
 } from './custom-launchability.js';
-import { customRunnerSecurityPosture, markCustomRunnerTrusted } from './custom-trust.js';
+import {
+  customRunnerSecurityPosture,
+  markCustomRunnerTrusted,
+  resolveCustomRunnerTrustFile,
+} from './custom-trust.js';
 import { resolveCustomExecutable } from './resolve-cli-executable.js';
 
 function customCommand(overrides: Partial<CustomCommand> = {}): CustomCommand {
@@ -126,7 +138,17 @@ describe('custom runner launchability', () => {
           posture,
           stateDir,
         }),
-      ).resolves.toEqual({ kind: 'drifted' });
+      ).resolves.toMatchObject({ kind: 'drifted', executable: { path: realpathSync(drifted) } });
+
+      unlinkSync(drifted);
+      await expect(
+        resolveCustomRunnerLaunchability({
+          projectDir,
+          runner: configuredRunner(driftedCommand),
+          posture,
+          stateDir,
+        }),
+      ).resolves.toEqual({ kind: 'missing' });
 
       await expect(
         resolveCustomRunnerLaunchability({
@@ -144,6 +166,54 @@ describe('custom runner launchability', () => {
 });
 
 describe('custom runner admission', () => {
+  it('admits a changed executable under the grant and asks for it interactively, keeping the old receipt', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-custom-drift-project-'));
+    const stateDir = mkdtempSync(join(tmpdir(), 'splitbrief-custom-drift-state-'));
+    try {
+      const executablePath = join(projectDir, 'custom-runner');
+      writeFileSync(executablePath, '#!/bin/sh\necho original\n', { mode: 0o755 });
+      chmodSync(executablePath, 0o755);
+      const options = {
+        projectDir,
+        runner: configuredRunner(customCommand({ executable: executablePath, argv: [] })),
+        posture: customRunnerSecurityPosture('implementer', 'output'),
+        stateDir,
+      };
+      const original = await resolveCustomExecutable({ command: executablePath, projectDir });
+      if (original.kind !== 'resolved') throw new Error('drift fixture did not resolve');
+      await markCustomRunnerTrusted({ ...options, executable: original.executable });
+      const receiptBefore = readFileSync(resolveCustomRunnerTrustFile(stateDir), 'utf8');
+      writeFileSync(executablePath, '#!/bin/sh\necho replacement\n', { mode: 0o755 });
+      chmodSync(executablePath, 0o755);
+
+      await expect(
+        admitCustomRunner({ ...options, interaction: 'headless', grant: false }),
+      ).resolves.toEqual({ kind: 'denied', status: 'drifted' });
+      await expect(
+        admitCustomRunner({ ...options, interaction: 'interactive', grant: false }),
+      ).resolves.toMatchObject({
+        kind: 'disclosure-required',
+        disclosure: { executable: JSON.stringify(realpathSync(executablePath)) },
+      });
+      const granted = await admitCustomRunner({ ...options, interaction: 'headless', grant: true });
+      expect(granted).toMatchObject({
+        kind: 'admitted',
+        invocation: { authorization: 'explicit-grant' },
+      });
+      if (granted.kind !== 'admitted') throw new Error('Changed runner was not granted');
+      expect(granted.invocation.executable.fingerprint).not.toEqual(
+        original.executable.fingerprint,
+      );
+      await expect(
+        revalidateCustomRunnerInvocation({ invocation: granted.invocation, projectDir }),
+      ).resolves.toMatchObject({ path: realpathSync(executablePath) });
+      expect(readFileSync(resolveCustomRunnerTrustFile(stateDir), 'utf8')).toBe(receiptBefore);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+      rmSync(stateDir, { recursive: true, force: true });
+    }
+  });
+
   it('blocks headless use without a grant or receipt and carries the exact runner in every admission', async () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-custom-admit-project-'));
     const stateDir = mkdtempSync(join(tmpdir(), 'splitbrief-custom-admit-state-'));

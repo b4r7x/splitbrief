@@ -43,7 +43,7 @@ export type CustomExecutableResolution =
   | Readonly<{ kind: 'resolved'; executable: CliExecutableReceipt }>
   | Readonly<{ kind: 'missing' }>
   | Readonly<{ kind: 'non-executable' }>
-  | Readonly<{ kind: 'identity-drifted' }>
+  | Readonly<{ kind: 'identity-drifted'; executable: CliExecutableReceipt }>
   | Readonly<{ kind: 'invalid' }>;
 
 export type ResolveCustomExecutableOptions = Readonly<{
@@ -365,11 +365,10 @@ function withExpectedCustomExecutable(
   resolution: CustomExecutableResolution,
   expected: CliExecutableReceipt | undefined,
 ): CustomExecutableResolution {
-  if (expected === undefined) return resolution;
-  if (resolution.kind === 'resolved' && executableReceiptsEqual(expected, resolution.executable)) {
-    return resolution;
-  }
-  return { kind: 'identity-drifted' };
+  if (expected === undefined || resolution.kind !== 'resolved') return resolution;
+  return executableReceiptsEqual(expected, resolution.executable)
+    ? resolution
+    : { kind: 'identity-drifted', executable: resolution.executable };
 }
 
 /**
@@ -409,7 +408,7 @@ export async function resolveCustomExecutable(
     }
   }
 
-  return options.expected === undefined ? { kind: 'missing' } : { kind: 'identity-drifted' };
+  return { kind: 'missing' };
 }
 
 async function firstExecutable(

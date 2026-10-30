@@ -8,7 +8,6 @@ import {
 } from '../../src/engine/implementers/command-invoke.js';
 import type { Implementer } from '../../src/engine/implementers/types.js';
 import { prepareCustomRunnerAdmission } from '../../src/engine/runners/custom-admission.js';
-import { customRunnerAdmissionError } from '../../src/engine/runners/custom-launchability.js';
 import {
   customRunnerSecurityPosture,
   type ConfiguredCustomRunner,
@@ -69,7 +68,9 @@ export async function createConfiguredCustomImplementer(
     authorizationPathEnv: options.runtime.authorizationPathEnv ?? '',
     authorizationPathExt: options.runtime.authorizationPathExt ?? '',
   });
-  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('implementer');
+  if (admission.kind !== 'admitted') {
+    throw new Error(`Custom runner admission denied: ${JSON.stringify(admission)}`);
+  }
   return createPreparedImplementer({
     runtime: options.runtime,
     ...(options.factoryOptions === undefined ? {} : { factoryOptions: options.factoryOptions }),

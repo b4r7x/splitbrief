@@ -14,7 +14,7 @@ import {
   type ConfiguredCustomRunner,
 } from './custom-trust.js';
 import {
-  inlineRunnerRefusal,
+  customRunnerRefusal,
   REPO_LOCAL_RUNNER_REFUSAL,
 } from './prepare-execution/evaluate-candidate.js';
 import { admitCustomRunner } from './custom-launchability.js';
@@ -179,7 +179,7 @@ export async function collectCustomRunnerConsentChecks(
       refusedCheck(
         candidate,
         input.interaction,
-        inlineRunnerRefusal(admission, candidate.runner.kind),
+        customRunnerRefusal(admission, candidate.runner.kind),
       ),
     );
   }

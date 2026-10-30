@@ -101,6 +101,7 @@
 
 ### Fixed
 
+- A `shell` or `agent` runner whose program changed after you trusted it, for example after an upgrade or a reinstall, can run again. In a terminal, SPLITBRIEF says that the program changed, shows its path and asks you to confirm it again; confirming replaces the old trust. A headless run accepts it with `--allow-repo-runners`. Before, the runner stayed blocked, and the confirmation and the flag that the message named did not help. A program that was removed now reads as missing, not as changed. `customCommands` runners now name the cause and the fix when they are refused.
 - A project gate command that runs the project's build wrapper, such as `./gradlew test` or `./mvnw verify`, now runs at the run base too. Before, it was refused there, so a failure your checkout already had counted as new.
 - Stopping or ending a run now stops only the tools the run started. Before, it also stopped the model lists that Settings, the seat picker or tool detection were loading at that moment, so those lists stayed empty or showed an error.
 - A Cursor file search shows the pattern it searches for, such as `biome.json*`, instead of `tool glob`.

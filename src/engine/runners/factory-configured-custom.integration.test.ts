@@ -24,7 +24,6 @@ import type { ImplementerFactoryOptions } from '../implementers/types.js';
 import { resolveConfiguredCustomRunner } from './configured-custom.js';
 import { prepareCustomRunnerAdmission } from './custom-admission.js';
 import { customRunnerSecurityPosture } from './custom-trust.js';
-import { customRunnerAdmissionError } from './custom-launchability.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { prepareExecution } from './prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
@@ -86,7 +85,9 @@ async function createPlanner(
     authorizationPathEnv: runtime.authorizationPathEnv ?? '',
     authorizationPathExt: runtime.authorizationPathExt ?? '',
   });
-  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('planner');
+  if (admission.kind !== 'admitted') {
+    throw new Error(`Custom runner admission denied: ${JSON.stringify(admission)}`);
+  }
   const preparationId = 'factory-configured-planner';
   const slot = { role: 'planner' as const };
   return createPreparedPlanner(config, {
@@ -120,7 +121,9 @@ async function createReviewer(config: Config, options: PlannerFactoryOptions) {
     authorizationPathEnv: runtime.authorizationPathEnv ?? '',
     authorizationPathExt: runtime.authorizationPathExt ?? '',
   });
-  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('planner');
+  if (admission.kind !== 'admitted') {
+    throw new Error(`Custom runner admission denied: ${JSON.stringify(admission)}`);
+  }
   const preparationId = 'factory-configured-reviewer';
   const slot = { role: 'reviewer' as const };
   return createPreparedReviewer(config, {
@@ -154,7 +157,9 @@ async function createImplementer(config: Config, options: ImplementerFactoryOpti
     authorizationPathEnv: runtime.authorizationPathEnv ?? '',
     authorizationPathExt: runtime.authorizationPathExt ?? '',
   });
-  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('implementer');
+  if (admission.kind !== 'admitted') {
+    throw new Error(`Custom runner admission denied: ${JSON.stringify(admission)}`);
+  }
   const preparationId = 'factory-configured-implementer';
   const slot = {
     role: 'implementer' as const,
@@ -712,7 +717,8 @@ describe('configured custom runner factory behavior', () => {
       expect(runnerChecks).toContainEqual(
         expect.objectContaining({
           severity: 'blocker',
-          details: ['Configured custom runner admission was denied.'],
+          details: [expect.stringContaining('runner command that this machine has not trusted.')],
+          fix: 'Run SPLITBRIEF in a terminal and confirm the runner disclosure, or pass --allow-repo-runners to grant it for this run only.',
           metadata: expect.objectContaining({ role }),
         }),
       );

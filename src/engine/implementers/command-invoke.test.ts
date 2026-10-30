@@ -62,10 +62,7 @@ describe('createConfiguredCustomImplementer', () => {
         }),
         runtime: harness.runtime,
       }),
-    ).rejects.toMatchObject({
-      kind: 'custom-runner-admission-denied',
-      message: 'Configured custom runner admission was denied.',
-    });
+    ).rejects.toThrow('Custom runner admission denied');
 
     expect(existsSync(childStarted)).toBe(false);
     expect(harness.stages).toEqual([]);
@@ -202,7 +199,7 @@ describe('createConfiguredCustomImplementer', () => {
             runner: configuredRunner({ executable: executableName }),
             runtime: harness.runtime,
           }),
-        ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
+        ).rejects.toThrow('Custom runner admission denied');
 
         expect(harness.runtime.authorizationPathEnv).toBe('');
         expect(existsSync(childStarted)).toBe(false);

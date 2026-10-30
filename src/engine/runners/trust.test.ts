@@ -35,8 +35,6 @@ function withCustomCommands(config: ReturnType<typeof makeConfig>, customCommand
 describe('custom runner admission errors', () => {
   it('preserves typed discriminators, messages, and empty data', () => {
     const invalid = customRunnerAdmissionError.invalid();
-    const plannerDenied = customRunnerAdmissionError.denied('planner');
-    const implementerDenied = customRunnerAdmissionError.denied('implementer');
     const scopeMismatch = customRunnerAdmissionError.scopeMismatch();
     const executableMissing = customRunnerAdmissionError.executableMissing();
     const executableDrifted = customRunnerAdmissionError.executableDrifted();
@@ -47,10 +45,6 @@ describe('custom runner admission errors', () => {
       kind: 'custom-runner-admission-invalid',
       message: 'Custom runner admission is invalid.',
     });
-    expect(matches('custom-runner-admission-denied')(plannerDenied)).toBe(true);
-    expect(plannerDenied.message).toBe('Configured custom planner admission was denied.');
-    expect(matches('custom-runner-admission-denied')(implementerDenied)).toBe(true);
-    expect(implementerDenied.message).toBe('Configured custom runner admission was denied.');
     expect(matches('custom-runner-admission-scope-mismatch')(scopeMismatch)).toBe(true);
     expect(scopeMismatch).toMatchObject({
       kind: 'custom-runner-admission-scope-mismatch',
@@ -76,8 +70,6 @@ describe('custom runner admission errors', () => {
 
     for (const value of [
       invalid,
-      plannerDenied,
-      implementerDenied,
       scopeMismatch,
       executableMissing,
       executableDrifted,

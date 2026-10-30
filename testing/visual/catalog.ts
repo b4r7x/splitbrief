@@ -342,6 +342,19 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         viewport({ cols: 39, rows: 40 }),
       ],
     }),
+    // The same panel when the trusted executable changed, as after an upgrade: it asks again.
+    defineScenario({
+      id: 'home-preparation-runner-trust-changed',
+      title: 'Home · trust a changed runner executable',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'review',
+        title: 'Runner trust panel',
+        kind: 'review',
+        marker: 'Trust and run a configured runner:',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Runner trust panel' }],
+    }),
     defineScenario({
       id: 'home-draft-image',
       title: 'Home · a draft with images at the caret',
