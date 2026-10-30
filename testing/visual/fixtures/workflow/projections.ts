@@ -15,6 +15,7 @@ import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifa
 import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
+import type { StepRef } from '../../../../src/core/schemas/run-step.js';
 import type { DriftFinding } from '../../../../src/core/schemas/drift.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
@@ -3355,7 +3356,10 @@ const reviewFixAgainProjection: WorkflowFixtureProjection = {
         const issue = reviewFailedRecoveryIssue;
         const halt = { bus, phase: 'complete', issue, action: 'revise' } as const;
         publishError({ bus, phase: issue.phase, message: issue.message });
-        publishRecoveryPrompted({ bus, phase: issue.phase }, VISUAL_WORKFLOW_SESSION_ID, issue);
+        publishRecoveryPrompted({ bus, phase: issue.phase }, VISUAL_WORKFLOW_SESSION_ID, issue, {
+          kind: 'review',
+          cycle: 0,
+        });
         publishRecoveryActionSelected(halt);
         bus.publish({
           type: 'user_message',
@@ -3604,6 +3608,7 @@ const resumedApplyPartialRecoveryProjection: WorkflowFixtureProjection = {
           { bus, phase },
           VISUAL_WORKFLOW_SESSION_ID,
           resumedApplyPartialIssue,
+          { kind: 'apply' },
         );
       });
     },
@@ -3782,6 +3787,9 @@ const repeatedTimeoutRecoveryProjection: WorkflowFixtureProjection = {
   resumeState: haltedResumeState(repeatedTimeoutRecoveryIssue),
 };
 
+/** The step a halt on the fixture brief resumes at. */
+const briefStep: StepRef = { kind: 'brief', taskId: WORKFLOW_FIXTURE_TASK_ID, attempt: 0 };
+
 const retriedBriefStart: EngineEventOf<'task_started'> = {
   type: 'task_started',
   ts: FIXED_TS,
@@ -3803,7 +3811,8 @@ function checkoutHaltRetried(bus: EventBus, prompted: boolean): void {
   const recovery = { bus, phase, issue, action: 'retry-same-worker' } as const;
   bus.publish(retriedBriefStart);
   publishError({ bus, phase, message: issue.message });
-  if (prompted) publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue);
+  if (prompted)
+    publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue, briefStep);
   publishRecoveryActionSelected(recovery);
   bus.publish({ type: 'task_reset', ts: FIXED_TS, phase, taskId: WORKFLOW_FIXTURE_TASK_ID });
   publishRecoveryResolved({
@@ -3847,7 +3856,7 @@ const resolvedSkipRecoveryProjection: WorkflowFixtureProjection = {
         const recovery = { bus, phase, issue, action: 'skip-current-task' } as const;
         bus.publish(brief);
         publishError({ bus, phase, message: issue.message });
-        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue);
+        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue, briefStep);
         publishRecoveryActionSelected(recovery);
         bus.publish({
           type: 'task_skipped',
@@ -3891,7 +3900,7 @@ const resolvedDependencySkipRecoveryProjection: WorkflowFixtureProjection = {
         const skipFirst = { bus, phase, issue: checkout, action: 'skip-current-task' } as const;
         bus.publish(brief);
         publishError({ bus, phase, message: checkout.message });
-        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, checkout);
+        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, checkout, briefStep);
         publishRecoveryActionSelected(skipFirst);
         bus.publish({
           type: 'task_skipped',
@@ -3915,7 +3924,11 @@ const resolvedDependencySkipRecoveryProjection: WorkflowFixtureProjection = {
           createdAt: new Date(FIXED_TS).toISOString(),
         });
         const skipSecond = { bus, phase, issue: blocked, action: 'skip-current-task' } as const;
-        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, blocked);
+        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, blocked, {
+          kind: 'brief',
+          taskId: second.id,
+          attempt: 0,
+        });
         publishRecoveryActionSelected(skipSecond);
         bus.publish({
           type: 'task_skipped',
@@ -3971,7 +3984,9 @@ const resolvedApplyRetryRecoveryProjection: WorkflowFixtureProjection = {
           message: issue.message,
           safety: { category: 'recovery', code: 'apply_partial' },
         });
-        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue);
+        publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue, {
+          kind: 'apply',
+        });
         publishRecoveryActionSelected(recovery);
         bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase, inProcess: true });
         bus.publish({
@@ -4195,7 +4210,7 @@ const planSeatRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RECOVERY_PLAN_SEAT_ID,
   feature: WORKFLOW_FEATURE,
   inputMode: 'question',
-  sidebarVisible: false,
+  sidebarVisible: true,
   get events() {
     return haltErrorEvents(planSeatRecoveryIssue());
   },
@@ -4598,7 +4613,11 @@ const balanceSeatSwitchProjection: WorkflowFixtureProjection = {
         error: words,
       });
       publishError({ ...ctx, message: formatRecoveryHeadline(issue) });
-      publishRecoveryPrompted(ctx, VISUAL_WORKFLOW_SESSION_ID, issue);
+      publishRecoveryPrompted(ctx, VISUAL_WORKFLOW_SESSION_ID, issue, {
+        kind: 'brief',
+        taskId: start.taskId,
+        attempt: 0,
+      });
       publishRecoveryActionSelected({ ...ctx, issue, action: 'switch-seat' });
       publishSeatSwitched(ctx, {
         seat: 'build',
@@ -4884,7 +4903,10 @@ const planSeatSwappedProjection: WorkflowFixtureProjection = {
       { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
       ...publishedEvents(FIXED_TS + 100, (bus) => {
         publishError({ bus, phase: issue.phase, message: issue.message, resetAt: issue.resetAt });
-        publishRecoveryPrompted({ bus, phase: issue.phase }, VISUAL_WORKFLOW_SESSION_ID, issue);
+        publishRecoveryPrompted({ bus, phase: issue.phase }, VISUAL_WORKFLOW_SESSION_ID, issue, {
+          kind: 'planner',
+          call: 'plan',
+        });
         publishRecoveryActionSelected({ bus, ...halt });
         publishRecoveryResolved({ bus, ...halt, outcome: 'continued' });
       }),

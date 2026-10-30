@@ -36,7 +36,7 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 | `post_validation`| After brief gate checks or plan and task checks before the final review, once per task that owns them (`checks_run` event) | `taskId`, `results` (`{ id, status }[]`)                         |
 | `pre_escalation` | Before the planner's consult runs           | `taskId`                                                             |
 | `on_error`       | Any unrecoverable engine error              | `message`                                                            |
-| `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `headlineSpans`, `recommendedAction`, `resumeCommand` (`sessionId` rides in `context`) |
+| `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `headlineSpans`, `recommendedAction`, `resumeCommand`, `issue` (the halt), `at` (the step the run resumes at) (`sessionId` rides in `context`) |
 | `on_complete`    | `workflow_complete` event                   | (none)                                                               |
 
 `pre_validation` fires when a brief gate has checks to run. In `review: task` cadence, the gate runs the task's checks and its due checks. The gate also runs the checks of the red a fix task answers, or the checks a consult `verify` names. In `review: end` cadence, the gate runs the task's own checks, except a `render` check. The `pre_validation` payload is a `validate` event with `status: 'running'` and `taskId`, and no stages.

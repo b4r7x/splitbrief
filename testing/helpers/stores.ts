@@ -36,8 +36,9 @@ import { pickerViewStore } from '../../src/stores/ui/picker-view.js';
 import { projectFilesStore } from '../../src/stores/ui/project-files.js';
 import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
 import { operationsStore } from '../../src/stores/workflow/operations/state.js';
-import { runViewStore } from '../../src/stores/workflow/run-view.js';
+import { _runViewInternal, runViewStore } from '../../src/stores/workflow/run-view.js';
 import type { RunBriefs } from '../../src/core/run-view/briefs.js';
+import type { RunHalt } from '../../src/core/run-view/halt.js';
 import { recoveryNoticeStore } from '../../src/stores/workflow/recovery-notice.js';
 import { __testDiscardPending as discardPendingSessionDrafts } from '../../src/stores/ui/session-drafts.js';
 
@@ -88,4 +89,9 @@ export function resetAllStores(): void {
 /** The run view's briefs, seeded over the rest of the view a test already set. */
 export function seedBriefs(briefs: Partial<RunBriefs> = {}): void {
   runViewStore.__testReset({ ...runViewStore.get(), briefs });
+}
+
+/** Puts a halt on the run view, or takes it off, as the run's events and the settle step do. */
+export function setRunHalt(halt: RunHalt | null): void {
+  _runViewInternal.set((view) => ({ ...view, halt }));
 }

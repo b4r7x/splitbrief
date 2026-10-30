@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import chalk from 'chalk';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, setRunHalt } from '#testing/helpers/stores.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { configStore } from '../../../stores/project/config.js';
 import {
@@ -14,7 +14,6 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { markCancellationRequested } from '../../../stores/workflow/actions/interrupt.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
@@ -374,10 +373,7 @@ describe('running brief seat chrome', () => {
 
   it('names the saved seat while a halt inside the brief waits', async () => {
     startBriefOnCodex();
-    recoveryNoticeStore.open({
-      seat: null,
-      ranOn: null,
-      resetAt: null,
+    setRunHalt({
       issue: makeRecoveryIssue({ taskId: taskId('T021') }),
       at: { kind: 'brief', taskId: taskId('T021'), attempt: 0 },
     });
@@ -399,10 +395,7 @@ describe('running brief seat chrome', () => {
   it('names the fallback seat after a Seat down switch inside the brief', async () => {
     startBriefOnCodex();
     saveCrew({ implementer: CODEX_SEAT });
-    recoveryNoticeStore.open({
-      seat: 'build',
-      ranOn: null,
-      resetAt: null,
+    setRunHalt({
       issue: makeRecoveryIssue({ reason: 'runner-usage-limit', taskId: taskId('T021') }),
       at: { kind: 'brief', taskId: taskId('T021'), attempt: 0 },
     });
@@ -418,7 +411,7 @@ describe('running brief seat chrome', () => {
       auto: true,
       configRevision: 'r2',
     } as unknown as EngineEvent);
-    recoveryNoticeStore.clear();
+    setRunHalt(null);
     addEvent({ type: 'workflow_resumed', ts: 5_100, phase: 'implementing' } as EngineEvent);
 
     const resumed = await buildRows();

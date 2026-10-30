@@ -77,10 +77,7 @@ import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
-import {
-  formatRecoveryPrompt,
-  recoveryComposerHint,
-} from '../../features/workflow/recovery-prompt.js';
+import { recoveryComposerHint } from '../../features/workflow/recovery-prompt.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { navigateIndex } from '../../utils/indexing.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
@@ -132,7 +129,8 @@ export function WorkflowScreen({
   const reviewKeysCommenting = reviewKeysStore.use((state) => state.commenting);
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
   const reviewConfirms = reviewStore.use((state) => state.confirms);
-  const recoveryIssue = recoveryNoticeStore.use((state) => state.issue);
+  const recoveryIssue = runViewStore.use((view) => view.halt?.issue ?? null);
+  const recoveryAsking = recoveryNoticeStore.use((state) => state.asking);
   const questionState = questionPromptStore.use((state) => state);
   const plannerQuestions = questionState.questions;
 
@@ -244,10 +242,7 @@ export function WorkflowScreen({
   });
   const showSidebar = sidebarWidth > 0;
   const questionHint = model.inputMode.mode === 'question' ? model.inputMode.hint : null;
-  const recoveryPromptOpen =
-    recoveryIssue !== null &&
-    questionHint !== null &&
-    questionHint === formatRecoveryPrompt(recoveryIssue);
+  const recoveryPromptOpen = recoveryIssue !== null && recoveryAsking && questionHint !== null;
   const recoveryFocusKey = `${recoveryIssue?.id ?? ''}:${model.inputMode.questionEpoch}`;
   const [recoveryFocus, setRecoveryFocus] = useState<{
     key: string;

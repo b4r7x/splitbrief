@@ -106,11 +106,12 @@ export function InputFooter({
     status: lifecycle.status,
     cancelled: lifecycle.cancelled,
     pendingQuestion: waiting || controls.inputMode !== 'normal',
-    pendingRecovery: recovery.issue !== null,
+    pendingRecovery: runView.halt !== null,
     pendingApproval: approval.status === 'pending',
   });
-  const recoveryWaiting = recovery.issue !== null && controls.inputMode === 'question';
-  const recoveryStopped = recovery.issue !== null && !recoveryWaiting;
+  const recoveryWaiting = runView.halt !== null && controls.inputMode === 'question';
+  // A halt the panel has not opened on yet is a run still going to it, not a stopped run.
+  const recoveryStopped = recovery.open && !recoveryWaiting;
   const liveStatus =
     waiting || !display.animate
       ? null

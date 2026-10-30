@@ -1,7 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 import { lifecycleStore } from './lifecycle.js';
-import { recoveryNoticeStore } from './recovery-notice.js';
+import { runViewStore } from './run-view.js';
 
 export type StopIntent = 'none' | 'stop-now' | 'pause-after-brief' | 'end-run' | 'quit';
 export type StopPhase =
@@ -66,7 +66,7 @@ function request(intent: Exclude<StopIntent, 'none'>): void {
  */
 export function takesSeatAtBoundary(): boolean {
   const { status } = lifecycleStore.get();
-  return (status === 'running' || status === 'paused') && recoveryNoticeStore.get().issue === null;
+  return (status === 'running' || status === 'paused') && runViewStore.get().halt === null;
 }
 
 /** A stop parked the run inside a call, and the run goes on with that call when it continues. */

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Box, Text } from 'ink';
 import { useAppKeys } from './keys.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, setRunHalt } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
@@ -796,10 +796,7 @@ describe('useAppKeys: ESC stop ladder', () => {
     async ({ reason, at }) => {
       runViewStore.__testReset({ phase: 'complete' });
       lifecycleStore.__testReset({ status: 'complete' });
-      recoveryNoticeStore.open({
-        seat: null,
-        ranOn: null,
-        resetAt: null,
+      setRunHalt({
         issue: makeRecoveryIssue({
           reason,
           phase: 'complete',
@@ -810,6 +807,7 @@ describe('useAppKeys: ESC stop ladder', () => {
         }),
         at,
       });
+      recoveryNoticeStore.open();
       const exit = vi.fn();
       const ui = renderFeature(<Harness exit={exit} />);
       await tick();

@@ -1,5 +1,7 @@
 import type { CrewSeatId } from '../crew/identity.js';
 import type { FileAction, RunnerKind, TaskCompletionMethod } from '../schemas/enums.js';
+import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
+import type { StepRef } from '../schemas/run-step.js';
 import type { CheckResult } from '../schemas/task.js';
 import type { SeatWait } from '../schemas/workflow.js';
 
@@ -18,6 +20,13 @@ export type SeatWaitEndedEvent = {
   seat: CrewSeatId;
   kept?: true | undefined;
 };
+
+export type RecoveryPromptedEvent = {
+  type: 'recovery_prompted';
+  issue?: RecoveryIssue | undefined;
+  at?: StepRef | undefined;
+};
+export type RecoveryResolvedEvent = { type: 'recovery_resolved'; issueId: string };
 
 export type TasksPlannedEvent = {
   type: 'tasks_planned';

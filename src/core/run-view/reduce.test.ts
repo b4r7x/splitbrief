@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import type { StepRef } from '../schemas/run-step.js';
+import { taskId } from '../schemas/task.js';
 import type { SeatWait } from '../schemas/workflow.js';
 import { EMPTY_RUN_VIEW, reduceRunView, type RunView } from './reduce.js';
 
@@ -154,4 +157,41 @@ describe('reduceRunView phase', () => {
 
     expect(reduceRunView(view, at('task_validating', 2_000, 'validating-task'))).toBe(view);
   });
+});
+
+describe('reduceRunView halt', () => {
+  const issue = makeRecoveryIssue({ id: 'halt-1' });
+  const step: StepRef = { kind: 'brief', taskId: taskId('T001'), attempt: 0 };
+  const prompted = (fields: Record<string, unknown> = { issue, at: step }) => ({
+    type: 'recovery_prompted',
+    ts: 1_000,
+    ...fields,
+  });
+  const halted = (): RunView => fold([prompted()]);
+  const resolved = (issueId: string) => ({ type: 'recovery_resolved', ts: 2_000, issueId });
+
+  it('holds the halt and the step a prompt names', () => {
+    expect(halted().halt).toEqual({ issue, at: step });
+  });
+
+  it('changes nothing for a prompt written before the log carried its issue', () => {
+    expect(reduceRunView(EMPTY_RUN_VIEW, prompted({}))).toBe(EMPTY_RUN_VIEW);
+    expect(reduceRunView(EMPTY_RUN_VIEW, prompted({ issue }))).toBe(EMPTY_RUN_VIEW);
+  });
+
+  it('clears the halt when the run resolves it', () => {
+    expect(reduceRunView(halted(), resolved('halt-1')).halt).toBeNull();
+  });
+
+  it('keeps the halt when the run resolves another one', () => {
+    const view = halted();
+    expect(reduceRunView(view, resolved('halt-0'))).toBe(view);
+  });
+
+  it.each(['workflow_cancelled', 'workflow_complete', 'workflow_started'])(
+    'clears the halt on %s',
+    (type) => {
+      expect(reduceRunView(halted(), { type, ts: 2_000 }).halt).toBeNull();
+    },
+  );
 });

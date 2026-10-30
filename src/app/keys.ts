@@ -100,7 +100,7 @@ function stopSheetReachable(): boolean {
     status === 'running' ||
     status === 'interrupted' ||
     status === 'paused' ||
-    recoveryNoticeStore.get().issue !== null
+    recoveryNoticeStore.get().open
   );
 }
 

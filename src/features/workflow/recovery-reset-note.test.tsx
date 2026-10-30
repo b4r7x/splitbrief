@@ -4,6 +4,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -12,10 +13,12 @@ import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import { CREW_SEAT_IDS, CREW_SEAT_LABELS, type CrewSeatId } from '../../core/crew/identity.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
 import { reactivateExistingSession } from '../../core/sessions/active-pointer.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { seatIdentitiesFromConfig, writeSeatIdentities } from '../../core/state/seats.js';
+import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
@@ -61,6 +64,15 @@ afterEach(() => {
   resetAllStores();
 });
 
+/** Puts the run on the workflow screen, where the header reads the seat its halt ran on. */
+function openRun(ref: SessionRef): void {
+  routerStore.navigate({
+    to: 'workflow',
+    execution: { kind: 'at-rest' },
+    run: makeRunRecord({ ref }),
+  });
+}
+
 function save(config: Config): void {
   configStore.__testReset({ projectDir: '/tmp/project', config });
 }
@@ -92,8 +104,9 @@ function usageHalt(seatId: CrewSeatId, overrides: Partial<RecoveryIssue> = {}): 
 }
 
 /**
- * Opens a halt through the recovery driver the way the run loop does, and reads the header line
- * when the panel opens and again after each seat saved while it waits. `ran` is the crew the
+ * Opens a halt through the recovery driver the way a reopened run does, republishing it to the
+ * run view, and reads the header line when the panel opens and again after each seat saved while
+ * it waits. `ran` is the crew the
  * halted pass started on; `configOfRun` is the config the run was prepared from (a run reopened
  * at rest is prepared from the config saved since).
  */
@@ -116,6 +129,7 @@ async function haltFrames(input: {
   );
   const state = loadState(ref);
   if (state === null) throw new Error('expected the halted state to persist');
+  openRun(ref);
   save(input.savedAtOpen ?? input.ran);
   const prepared = makePreparedExecution({
     projectDir,
@@ -150,7 +164,7 @@ async function haltFrames(input: {
     retentionNoticeHandled: { current: true },
     sink: addTuiEvent,
     setInlineResume: () => {},
-  })({ state, controller: new AbortController(), republishPrompt: false });
+  })({ state, controller: new AbortController(), republishPrompt: true });
   return frames;
 }
 
@@ -290,7 +304,7 @@ describe('the reset note where a seat is not its own', () => {
     expect(noSeat).not.toContain('(resets');
   });
 
-  it('opens no note while the declared fallback is taken at once', async () => {
+  it('opens no panel while the declared fallback is taken at once', async () => {
     const ran = crewWith('build', CODEX);
     const projectDir = createTempDir('reset-note-auto');
     dirs.push(projectDir);
@@ -320,8 +334,8 @@ describe('the reset note where a seat is not its own', () => {
       resumeState: state,
       active: reactivateExistingSession(ref),
     });
-    const opens: unknown[] = [];
-    const stop = recoveryNoticeStore.subscribe(() => opens.push(recoveryNoticeStore.get().issue));
+    const opens: boolean[] = [];
+    const stop = recoveryNoticeStore.subscribe(() => opens.push(recoveryNoticeStore.get().open));
     await createRecoveryDriver({
       prepared,
       configOfRun: prepared.sourceConfig,
@@ -341,8 +355,7 @@ describe('the reset note where a seat is not its own', () => {
     })({ state, controller: new AbortController(), republishPrompt: false });
     stop();
 
-    expect(opens.filter((issue) => issue !== null)).toEqual([]);
-    expect(await seatLine()).not.toContain('(resets');
+    expect(opens.filter((open) => open)).toEqual([]);
   });
 
   it('is not on the seat the switch-seat picker saved while the halt is still open', async () => {
@@ -364,6 +377,7 @@ describe('the reset note where a seat is not its own', () => {
     saveState(ref, makeImplState([makeTask({ id: 'T001' })], { pendingRecovery: issue }));
     const state = loadState(ref);
     if (state === null) throw new Error('expected the halted state to persist');
+    openRun(ref);
     save(ran);
     const prepared = makePreparedExecution({
       ...ref,
@@ -388,7 +402,7 @@ describe('the reset note where a seat is not its own', () => {
       retentionNoticeHandled: { current: true },
       sink: addTuiEvent,
       setInlineResume: () => {},
-    })({ state, controller: new AbortController(), republishPrompt: false });
+    })({ state, controller: new AbortController(), republishPrompt: true });
     await vi.waitFor(() => {
       expect(overlayStore.get().active).toBe('implementer-picker');
     });
@@ -400,7 +414,7 @@ describe('the reset note where a seat is not its own', () => {
     await pending;
 
     expect(noteOn(beforeSave, 'build')).toBe(true);
-    expect(recoveryNoticeStore.get().issue).toBeNull();
+    expect(recoveryNoticeStore.get().open).toBe(false);
     expect(inWindow).not.toContain('(resets');
   });
 });

@@ -42,7 +42,6 @@ import { Divider } from '../../../components/divider.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 import { passedCountSpans, taskOutcomeCountsSpans } from '../display/build-progress.js';
 import { useRunningSeats } from '../hooks/use-running-seats.js';
@@ -157,23 +156,22 @@ function rowSpec(status: WorkflowTask['status'], t: Theme, restMark: RailHalt | 
 
 function SidebarWaiting() {
   const t = useTheme();
-  const [lifecycle, controls, approval, recovery, { phase }] = useStores(
+  const [lifecycle, controls, approval, { phase, halt }] = useStores(
     lifecycleStore,
     controlsStore,
     approvalPromptStore,
-    recoveryNoticeStore,
     runViewStore,
   );
   const display = deriveWorkflowDisplay({
     status: lifecycle.status,
     cancelled: lifecycle.cancelled,
     pendingQuestion: controls.inputMode !== 'normal',
-    pendingRecovery: recovery.issue !== null,
+    pendingRecovery: halt !== null,
     pendingApproval: approval.status === 'pending',
   });
   const { frame } = useSpinnerFrame(display.animate);
 
-  if (recovery.issue !== null) {
+  if (halt !== null) {
     return <Text color={t[stateTone('attention')]}>{`${LIST_INDENT}Planning stopped`}</Text>;
   }
   if (display.kind === 'waiting') {

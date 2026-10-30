@@ -28,6 +28,11 @@ import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { getApprovalPromptRows } from '../prompt-rows/approval.js';
 import { getQuestionPromptRows } from '../prompt-rows/question.js';
+import { getRecoveryPromptRows } from '../prompt-rows/recovery.js';
+import { formatRecoveryPrompt } from '../recovery-prompt.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { setRunHalt } from '#testing/helpers/stores.js';
 import {
   getReviewContentLayout,
   getWorkflowSidebarWidth,
@@ -541,6 +546,28 @@ describe('readConversationScrollSnapshot', () => {
 
     expect(withPrompt.viewportHeight).toBe(withoutPrompt.viewportHeight - questionRows);
     expect(reviewWithPrompt).toBe(reviewWithoutPrompt - questionRows);
+  });
+
+  it('measures the note an action asks for as a question, not as the halt panel', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: true });
+    inputHeightStore.__testReset({ rows: 3 });
+    const issue = makeRecoveryIssue();
+    setRunHalt({ issue, at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 } });
+    const withoutPrompt = readConversationScrollSnapshot();
+    controlsStore.setInputMode('question');
+
+    recoveryNoticeStore.ask(true);
+    questionPromptStore.setHint(formatRecoveryPrompt(issue));
+    expect(readConversationScrollSnapshot().viewportHeight).toBe(
+      withoutPrompt.viewportHeight - getRecoveryPromptRows(issue, 80),
+    );
+
+    const hint = 'What should the fix change?';
+    recoveryNoticeStore.ask(false);
+    questionPromptStore.setHint(hint);
+    expect(readConversationScrollSnapshot().viewportHeight).toBe(
+      withoutPrompt.viewportHeight - getQuestionPromptRows(hint, 80),
+    );
   });
 
   it('review bottom offset from the snapshot height leaves no hidden lines in the view', () => {

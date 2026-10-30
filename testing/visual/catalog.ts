@@ -3378,6 +3378,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-recovery-plan-seat',
       title: 'Workflow · quota halt on the plan seat',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'recovery-plan',
         title: 'Plan-seat usage-limit recovery menu',
@@ -3387,6 +3388,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

@@ -1,4 +1,5 @@
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { setRunHalt } from '#testing/helpers/stores.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import chalk from 'chalk';
 import { defaultTheme } from '../../../components/theme.js';
@@ -1313,17 +1314,26 @@ describe('InputFooter', () => {
 
   it('paints a recovery stop with warning', () => {
     chalk.level = 3;
-    recoveryNoticeStore.open({
-      seat: 'build',
-      ranOn: null,
-      resetAt: null,
+    setRunHalt({
       issue: makeRecoveryIssue(),
       at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
     });
+    recoveryNoticeStore.open();
     const ui = renderFeature(<InputFooter width={120} />);
     expect(ui.lastFrame()).toContain(
       paint(defaultTheme.warning, `${glyph('statusFailed')} Run stopped`),
     );
+    ui.unmount();
+  });
+
+  it('reads a halt the panel has not opened on yet as a run still going to it', () => {
+    lifecycleStore.__testReset({ status: 'running' });
+    setRunHalt({
+      issue: makeRecoveryIssue(),
+      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+    });
+    const ui = renderFeature(<InputFooter width={120} />);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Run stopped');
     ui.unmount();
   });
 });

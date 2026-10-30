@@ -269,11 +269,12 @@ src/core/sessions/
 
 ```
 src/core/run-view/
+├── halt.ts            # reduceHalt — the halt the run waits on and the step it resumes at
 ├── reduce.ts          # reduceRunView — the run view: one fold of session.jsonl that every surface reads
 ├── briefs.ts          # reduceBriefs — the briefs slice, plus the brief selectors
 ├── brief-labels.ts    # taskTargetLabel, taskRowLabel — how a brief and its target read
 ├── events.ts          # the engine events the run view folds, by the fields it reads
-└── settle.ts          # settleRunView — the saved phase and brief list of state.json laid over the folded log
+└── settle.ts          # settleRunView — the saved phase, halt and brief list of state.json laid over the folded log
 ```
 
 ### `src/utils/` — generic primitives

@@ -216,7 +216,7 @@ The full path from engine to pixel:
 1. Engine calls `bus.publish({ type: 'task_completed', ... })`
 2. TUI sink calls `addEvent(event)` from `src/stores/workflow/actions/event.ts`
 3. `addEvent` dispatches to workflow sub-stores synchronously:
-   - `runViewStore` — folds the event into the run view: the phase, when the run first entered each phase, the seat wait and the briefs (`reduceRunView`, `src/core/run-view/reduce.ts`). This fold runs before the cancellation gate, so a late event still moves the view
+   - `runViewStore` — folds the event into the run view: the phase, when the run first entered each phase, the seat wait, the halt and the briefs (`reduceRunView`, `src/core/run-view/reduce.ts`). `recovery_prompted` carries the halt (`issue`) and the step the run resumes at (`at`); `recovery_resolved` with the same id, `workflow_cancelled`, `workflow_complete` and `workflow_started` clear it. This fold runs before the cancellation gate, so a late event still moves the view
    - `eventsStore` — appends the TUI-safe event-log projection
    - `tokensStore` — updates cost and token usage
    - `lifecycleStore` — updates run status, queue depth, terminal workflow timing; it reads a phase change from the run view's fold of the same event

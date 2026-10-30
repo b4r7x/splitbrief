@@ -5,7 +5,7 @@ import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
-import { resetAllStores } from '#testing/helpers/stores.js';
+import { resetAllStores, setRunHalt } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -23,7 +23,6 @@ import { feedbackStore } from '../../../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { addEvent } from '../../../../stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../../stores/workflow/actions/hydrate.js';
-import { recoveryNoticeStore } from '../../../../stores/workflow/recovery-notice.js';
 import { stopStore } from '../../../../stores/workflow/stop.js';
 import { departureStore } from '../../../../stores/workflow/departure.js';
 import { configStore } from '../../../../stores/project/config.js';
@@ -186,7 +185,7 @@ describe('useWorkflowScreen continuing a run stopped at Apply', () => {
 
   afterEach(() => {
     clearAllHandlers();
-    recoveryNoticeStore.reset();
+    setRunHalt(null);
     cleanupTempDir(projectDir);
     projectDir = '';
   });
@@ -241,15 +240,12 @@ describe('useWorkflowScreen continuing a run stopped at Apply', () => {
     ui.unmount();
   });
 
-  it('hands the rail to the halt the recovery menu opens', async () => {
+  it('hands the rail to the halt on the run view', async () => {
     const capture: { current: Model | null } = { current: null };
     const ui = renderFeature(<RailHarness capture={capture} />);
     await tick();
 
-    recoveryNoticeStore.open({
-      seat: null,
-      ranOn: null,
-      resetAt: null,
+    setRunHalt({
       issue: makeRecoveryIssue({ reason: 'apply-partial', phase: 'complete' }),
       at: { kind: 'apply' },
     });

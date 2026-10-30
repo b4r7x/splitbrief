@@ -170,7 +170,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. The commands tha
    - `createHookSink` (`src/engine/hooks/sink.ts`) dispatches matching `post_*`/`on_*` workflow hooks fire-and-forget. `pre_*` hooks are run synchronously at the orchestrator call site via `run-pre.ts`.
 
    `saveState()` writes to `.splitbrief/sessions/<id>/state.json` on every phase transition.
-7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes. The phase, the time the run first entered each phase, the seat wait and the briefs live on the run view (`runViewStore`, folded by `reduceRunView` in `src/core/run-view/reduce.ts`). The live screen, a run at rest and the `--plain` sink read that one fold; a run read back from disk takes the saved phase and brief list of `state.json` through `settleRunView`.
+7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes. The phase, the time the run first entered each phase, the seat wait, the halt the run waits on and the briefs live on the run view (`runViewStore`, folded by `reduceRunView` in `src/core/run-view/reduce.ts`). The live screen, a run at rest and the `--plain` sink read that one fold; a run read back from disk takes the saved phase, the saved halt and the saved brief list of `state.json` through `settleRunView`.
 8. For user-gated moments (approval, clarification, continuation, and protected-write confirmations), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onPlannerReply(…)`, `callbacks.onContinuationNeeded(…)` and `callbacks.onTieredApproval(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise.
 9. **Queue**: Enter with text appends a message to `WorkflowState.messageQueue` during a live run. `phaseStage(phase)` names its seat: PLAN, BUILD, or REVIEW. The lifecycle store counts message ids until their first delivery to any seat. `ctrl+⏎` with text stops now and continues with the text, like `/steer <text>`. See [Message queue](./ENGINE.md#message-queue) for delivery rules, corrections, retries, and verdicts.
 10. **Stop**: `ctrl+c` stops active work; another press quits after cleanup. `esc` opens the inline stop menu; another `esc` stops resumably. The state records `interruptedStep`, including whether the stop cut a call or landed at a boundary. `/resume` continues it. `/end` uses the shared close path, preserving unapplied workspace work first. See [WORKFLOW.md](./WORKFLOW.md#4-abort--continue--queue) and [Global keys](./SLASH-COMMANDS-REFERENCE.md#global-any-screen).
@@ -529,11 +529,12 @@ src/
 │   ├── providers/                 catalog, known-models, model-selection,
 │   │                              provenance, seat-identity
 │   ├── run-view/                  reduce (reduceRunView: the phase, when each
-│   │                              phase began, the seat wait and the briefs,
-│   │                              one fold of the log), briefs (reduceBriefs
-│   │                              and the brief selectors), brief-labels,
-│   │                              events (the engine events the view folds),
-│   │                              settle (the saved phase and briefs win)
+│   │                              phase began, the seat wait, the halt and the
+│   │                              briefs, one fold of the log), halt
+│   │                              (reduceHalt), briefs (reduceBriefs and the
+│   │                              brief selectors), brief-labels, events (the
+│   │                              engine events the view folds), settle (the
+│   │                              saved phase, halt and briefs win)
 │   ├── runners/                   capabilities (what a CLI tool can be told
 │   │                              to run), cli-tool-catalog, runner-billing
 │   ├── schemas/                   All Zod schemas (see §6 storage)
@@ -778,6 +779,7 @@ src/
 │       │                          use-mouse-pointer, use-mouse-scroll,
 │       │                          use-review-content, use-run-loop,
 │       │                          use-run-continue, use-rail-cells,
+│       │                          use-halt-ran-on,
 │       │                          workflow-screen/{use-model,
 │       │                          use-inline-edit}
 │       ├── keyboard.ts            Workflow keymap
@@ -914,7 +916,7 @@ The state actions are `RECORD_WORKSPACE`, `ACCEPT_AS_IS`, `APPLY_REVIEW_START`, 
 
 The old file-halt enums and event schemas remain readers for saved sessions. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) describes continuation.
 
-`recovery_prompted`, `recovery_action_selected`, `recovery_action_failed`, `recovery_resolved`. The selected, failed and resolved events carry an optional `seat` (`plan` | `build` | `review`), the seat the halt stopped. A prompt carries no top-level `seat`. Its optional `headlineSpans` record each span's text and optional seat, formatted from the complete issue at publication. The transcript replays those spans without rebuilding the issue or finding seat words inside formatted text. Older prompts without spans keep their recorded headline in the secondary text tone.
+`recovery_prompted`, `recovery_action_selected`, `recovery_action_failed`, `recovery_resolved`. The selected, failed and resolved events carry an optional `seat` (`plan` | `build` | `review`), the seat the halt stopped. A prompt carries no top-level `seat`. It carries the halt (`issue`) and the step the run resumes at (`at`), which the run view folds (`reduceHalt`, `src/core/run-view/halt.ts`); a prompt written before them carries neither. Its optional `headlineSpans` record each span's text and optional seat, formatted from the complete issue at publication. The transcript replays those spans without rebuilding the issue or finding seat words inside formatted text. Older prompts without spans keep their recorded headline in the secondary text tone.
 
 **Planner stream:**
 `planner_status`, `planner_text`, `planner_heartbeat`

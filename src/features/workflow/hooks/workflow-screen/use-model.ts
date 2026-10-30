@@ -35,7 +35,6 @@ import {
   type SessionSelectDeps,
 } from '../../../../stores/navigation/session-select.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
-import { recoveryNoticeStore } from '../../../../stores/workflow/recovery-notice.js';
 import { feedbackStore } from '../../../../stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
@@ -86,12 +85,11 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   const inputMode = useInputMode();
   const review = createReviewInputHandler(inputMode, deps?.reviewInput);
 
-  const [{ cancelled, restored }, { phase }, { filePath: reviewFilePath }] = useStores(
+  const [{ cancelled, restored }, { phase, halt }, { filePath: reviewFilePath }] = useStores(
     lifecycleStore,
     runViewStore,
     reviewStore,
   );
-  const recoveryOpen = recoveryNoticeStore.use((s) => s.issue !== null);
 
   const atRestRecord = execution?.kind === 'at-rest' ? record : undefined;
   const atRestProjectDir = atRestRecord?.ref.projectDir;
@@ -202,12 +200,13 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     atRestRecord === undefined ? null : deriveSummaryView({ record: atRestRecord });
   const closed = routeClosedAtRest(route);
   // A run continued into Apply keeps the rail it rested with until the engine re-enters it or a
-  // halt opens; the live rail cannot tell a run about to resume into Apply from a finished one.
+  // halt is on the view; the live rail cannot tell a run about to resume into Apply from a
+  // finished one.
   const railRecord =
     atRestRecord ??
     (local !== undefined &&
     restored === true &&
-    !recoveryOpen &&
+    halt === null &&
     record?.status.kind === 'open' &&
     record.status.resumeAt.kind === 'apply'
       ? record

@@ -751,7 +751,12 @@ export function raisePendingRecovery(
   setTrackedState?: (s: WorkflowState) => void,
 ): WorkflowState {
   const next = transitionAndSave(scope, state, { type: 'SET_PENDING_RECOVERY', issue });
-  publishRecoveryPrompted({ bus: scope.bus, phase: next.phase }, scope.sessionId, issue);
+  publishRecoveryPrompted(
+    { bus: scope.bus, phase: next.phase },
+    scope.sessionId,
+    issue,
+    resumeStep(next),
+  );
   setTrackedState?.(next);
   return next;
 }

@@ -1,7 +1,6 @@
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
@@ -14,11 +13,10 @@ export function useRailCells(input: {
   buildBlockShown: boolean;
   stages?: readonly RailStageState[] | undefined;
 }): number {
-  const [{ cols }, lifecycle, eventsState, recoveryNotice, { phase, briefs }] = useStores(
+  const [{ cols }, lifecycle, eventsState, { phase, briefs, halt }] = useStores(
     terminalSizeStore,
     lifecycleStore,
     eventsStore,
-    recoveryNoticeStore,
     runViewStore,
   );
   return measureRailCells({
@@ -29,7 +27,7 @@ export function useRailCells(input: {
     cols,
     tasks: briefs,
     events: eventsState.events,
-    recoveryAt: recoveryNotice.at,
+    recoveryAt: halt?.at ?? null,
     buildBlockShown: input.buildBlockShown,
     ...(input.stages !== undefined && { stages: input.stages }),
   });
