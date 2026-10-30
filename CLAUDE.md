@@ -122,6 +122,7 @@ An independent skeptic, not the agent that found it, checks every finding agains
 1. **Confirm first.** Before any edit, confirm the defect as "Reporting findings" requires: the evidence, the cause at `file:line`, and that a normal user hits it. A finding that cannot be confirmed is not fixed; report it as not confirmed.
 2. **Plan, then change.** Load the `change-discipline` skill. Write the plan: the one function every caller routes through, the callers to migrate, the old path to delete. Then implement it; no guessed design.
 3. **Tests at the end.** Planning, implementing, reviewing and fixing run no tests (typecheck, lint and format only). After the review passes, run the tests of the change once at the end. When a test fails, fix the root cause, review the fix, and run the tests again until they pass.
+4. **No flaky tests.** Write every test to be deterministic: wait on an event, a file or an output line, never on a fixed sleep; inject the clock, the random source and the order. A test that passes on one run and fails on the next is a defect, never a verdict. Find the race and fix it at the root, in the test (`TEST`) or in the product (`PRODUCT`). A longer timeout, a retry, `.skip` or a re-run is never the fix. Prove the fix with the file green 5 runs in a row. See [TESTING.md](./docs/TESTING.md#core-rules).
 
 ## User-facing text
 
