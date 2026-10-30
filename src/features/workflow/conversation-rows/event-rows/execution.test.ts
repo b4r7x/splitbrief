@@ -229,6 +229,31 @@ describe('fullSuiteRowBlock', () => {
         '                 total matches the ledger',
       ],
     },
+    {
+      name: 'red reviewer check with its failing tests on each side',
+      event: {
+        type: 'full_suite',
+        ts: 0,
+        phase: 'final-review',
+        moment: 'pre-review',
+        id: 'V2',
+        command: 'npm run test-ci',
+        status: 'done',
+        passed: false,
+        newFailures: 1,
+        preExisting: 1,
+        newKeys: ['src/ledger.test.ts::adds'],
+        preExistingKeys: ['legacy/report.test.ts::totals'],
+        duration: 2_000,
+      },
+      width: 65,
+      expected: [
+        'Reviewer check V2 · npm run test-ci · 1\u00a0new, 1\u00a0pre-existing ',
+        '  2.0s',
+        '           new · src/ledger.test.ts::adds',
+        '  pre-existing · legacy/report.test.ts::totals',
+      ],
+    },
   ])('hangs the continuation under its $name', ({ event, width, expected }) => {
     const block = fullSuiteRowBlock('check', event, width);
     if (block === null) throw new Error('Expected a check block');

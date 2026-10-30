@@ -216,10 +216,16 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     expect(calls.map((call) => call.kind)).toEqual(['plan', 'implement', 'final-review']);
     expect(calls[2]?.inputs).toEqual(['V1.1']);
 
-    const base = events.find(
-      (event) => event.type === 'full_suite' && event.moment === 'base' && event.status === 'done',
+    const reviewDone = events.find(
+      (event) =>
+        event.type === 'full_suite' && event.moment === 'pre-review' && event.status === 'done',
     );
-    expect(base).toMatchObject({ id: 'V1', passed: false, notVerified: 1, detail: NOT_VERIFIED });
+    expect(reviewDone).toMatchObject({
+      id: 'V1',
+      passed: false,
+      notVerified: 1,
+      detail: NOT_VERIFIED,
+    });
 
     const reason =
       'V1 is a wrong command, not a defect in the code: it names no spec file. The brief check T001-K1 passed.';

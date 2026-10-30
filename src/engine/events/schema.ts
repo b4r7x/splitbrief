@@ -748,29 +748,38 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   /**
    * One command run before a review: a reviewer check (`id`) or, in a session from before the
-   * reviewer chose them, a full-suite stage (`stage`). `base` is its re-run at the run base;
-   * `brief` is a fix brief's reviewer check, with no base re-run. `plan` is a plan check before review.
+   * reviewer chose them, a full-suite stage (`stage`). `base` is its run at the run base, beside
+   * the build; `brief` is a fix brief's reviewer check, with no base re-run. `plan` is a plan check before review.
    * `verify` is a check the review reads or runs to verify a claim, or a check the planner re-runs
    * on a review without progress, with no base re-run.
    */
   phaseEvent('full_suite').extend({
-    /** The transcript settles a command a stop cut; the engine publishes no settle for it. */
+    /**
+     * The transcript settles a command a stop cut. A base command runs beside the build, so the
+     * engine settles it itself, `stopped` when it cut it.
+     */
     status: z.enum(['running', 'done', 'not-run', 'refused', 'stopped']),
     stage: z.enum(['typecheck', 'lint', 'test']).optional(),
     id: z.string().optional(),
     command: z.string(),
     moment: z.enum(['pre-review', 'base', 'brief', 'plan', 'verify']),
     scenario: z.string().optional(),
+    /**
+     * On a red reviewer check's running update: its workspace run ended, and the review waits on
+     * the run of the same id at the run base.
+     */
+    waitsOnBase: z.literal(true).optional(),
     passed: z.boolean().optional(),
     /**
-     * On base done events, the red run's failure keys that are new, also red at the run base, or
-     * red at the run base too without proof that it is the same failure (`notVerified`).
+     * On a red reviewer check's done event (on base done events in an older run), the red run's
+     * failure keys that are new, also red at the run base, or red at the run base too without proof
+     * that it is the same failure (`notVerified`).
      */
     newFailures: z.number().int().nonnegative().optional(),
     preExisting: z.number().int().nonnegative().optional(),
     notVerified: z.number().int().nonnegative().optional(),
     /**
-     * On base done events with a verified split, the first failing tests that are new and those
+     * On the same done events with a verified split, the first failing tests that are new and those
      * also red at the run base (`BASE_SPLIT_NAMED` per side); the counts above say how many more.
      */
     newKeys: z.array(z.string()).optional(),
@@ -785,8 +794,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     deferredTo: z.array(z.string()).optional(),
     others: z.number().int().nonnegative().optional(),
     /**
-     * Why the command did not run or was refused; on a red base re-run, why SPLITBRIEF could not
-     * verify that it shows the same failure as the run workspace.
+     * Why the command did not run or was refused; on a red reviewer check (a red base re-run in an
+     * older run), why SPLITBRIEF could not verify that the run base shows the same failure.
      */
     detail: z.string().optional(),
     duration: z.number().optional(),

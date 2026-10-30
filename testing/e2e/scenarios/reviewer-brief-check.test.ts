@@ -130,7 +130,11 @@ console.log('Implemented total');
   const { events, diagnostics } = await readRunEvents(ref);
   expect(diagnostics.skipped).toBe(0);
   expect(events.filter((event) => event.type === 'review_checks')).toEqual([]);
-  expect(events.filter((event) => event.type === 'full_suite' && event.id === 'V1')).toMatchObject([
+  expect(
+    events.filter(
+      (event) => event.type === 'full_suite' && event.id === 'V1' && event.moment === 'pre-review',
+    ),
+  ).toMatchObject([
     { id: 'V1', command: COMMAND, moment: 'pre-review', status: 'running' },
     { id: 'V1', command: COMMAND, moment: 'pre-review', status: 'done', passed: true },
   ]);

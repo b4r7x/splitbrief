@@ -4,11 +4,12 @@ import { fixCheckCounts, judgeFixCheck, type FixCheckKeys } from '../../core/rev
 import type { Config } from '../../core/schemas/config.js';
 import type { TriageInput } from '../../core/schemas/review.js';
 import type { ReviewRecord, WorkflowState } from '../../core/schemas/workflow.js';
+import { throwIfAborted } from '../../utils/abort.js';
 import type { EventBus } from '../events/types.js';
 import { recordCheckRuns } from './evidence/record-checks.js';
 import { publishReviewCheck, publishReviewChecks } from './events.js';
-import { runBaseOf, withRunBaseTree, type RunBase } from './isolation/base-tree.js';
-import { runBaseTreeError } from './isolation/errors.js';
+import type { BaseGate } from './base-gate.js';
+import { runBaseIncomplete, runBaseOf, type RunBase } from './isolation/base-tree.js';
 import { transitionAndSave } from './state-ops.js';
 import { failingFilesFromKeys, fileOwnerSentence } from './task/file-owner.js';
 import type { FailureKeys } from './validation/extract-failure-keys.js';
@@ -38,6 +39,8 @@ export type ReviewChecksOptions = {
   config: Config;
   bus: EventBus;
   state: WorkflowState;
+  /** The project gate's run at the run base beside the build; none when the run has no run base. */
+  baseGate: BaseGate | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -61,125 +64,10 @@ function notVerifiedReason(workspace: FailureKeys, base: FailureKeys): string {
     .join(' and ');
 }
 
-/**
- * The keys of a red command that the same command text also shows at the run base, or why the
- * re-run at the run base could not tell. A red base re-run proves a pre-existing failure only when
- * both runs name their failures: with a placeholder on either side nothing is pre-existing, and
- * `notVerified` says why. A run base that cannot be prepared leaves every key not verified, with
- * the preparation error and any cleanup error as the reason. Cleanup errors after a completed
- * re-run also leave every key not verified, with the cleanup error visible in the row detail.
- */
-async function preExistingKeys(input: {
-  id: string;
-  command: string;
-  failure: FailureKeys;
-  base: RunBase;
-  checkOptions: RunChecksOptions;
-  notices: { bus: EventBus; phase: WorkflowState['phase'] };
-}): Promise<{
-  keys: string[];
-  run?: CheckRunResult | undefined;
-  unavailable?: string | undefined;
-  notVerified?: string | undefined;
-}> {
-  const startedAt = Date.now();
-  publishReviewCheck(input.notices, {
-    status: 'running',
-    id: input.id,
-    command: input.command,
-    moment: 'base',
-  });
-  let atBase: { run: CheckRunResult; incomplete: string | undefined } | undefined;
-  let treeError: string | undefined;
-  try {
-    const completed = await withRunBaseTree(
-      input.base,
-      input.checkOptions.projectDir,
-      async ({ dir, incomplete }) => {
-        const { results } = input.checkOptions;
-        const [run] = await runChecks([input.id], {
-          ...input.checkOptions,
-          projectDir: dir,
-          base: undefined,
-          checkoutDir: undefined,
-          results: results === undefined ? undefined : { ...results, tree: 'run-base' },
-        });
-        return run === undefined ? undefined : { run, incomplete };
-      },
-    );
-    atBase = completed.result;
-    treeError = completed.cleanupError;
-  } catch (err) {
-    if (!runBaseTreeError.isPreparationFailed(err)) throw err;
-    treeError = err.message;
-  }
-  if (treeError !== undefined) {
-    publishReviewCheck(input.notices, {
-      status: 'done',
-      id: input.id,
-      command: input.command,
-      moment: 'base',
-      passed: false,
-      detail: treeError,
-      duration: Date.now() - startedAt,
-      newFailures: 0,
-      preExisting: 0,
-      notVerified: input.failure.keys.length,
-    });
-    return { keys: [], notVerified: treeError };
-  }
-  if (atBase === undefined || (atBase.run.status !== 'pass' && atBase.run.status !== 'fail')) {
-    publishReviewCheck(input.notices, {
-      status: atBase?.run.status === 'refused' ? 'refused' : 'not-run',
-      id: input.id,
-      command: input.command,
-      moment: 'base',
-      detail: atBase?.run.output ?? `no check ${input.id}`,
-    });
-    return {
-      keys: [],
-      run: atBase?.run,
-      unavailable: `${atBase?.run.status === 'refused' ? 'refused' : 'not run'}: ${atBase?.run.output ?? `no check ${input.id}`}`,
-    };
-  }
-  const baseFailure = atBase.run.status === 'fail' ? atBase.run.failure : undefined;
-  const reason =
-    baseFailure === undefined
-      ? undefined
-      : (atBase.incomplete ??
-        (input.failure.placeholder !== undefined || baseFailure.placeholder !== undefined
-          ? notVerifiedReason(input.failure, baseFailure)
-          : undefined));
-  const known = new Set(baseFailure?.keys);
-  const keys =
-    baseFailure !== undefined && reason === undefined
-      ? input.failure.keys.filter((key) => known.has(key))
-      : [];
-  publishReviewCheck(input.notices, {
-    status: 'done',
-    id: input.id,
-    command: input.command,
-    moment: 'base',
-    passed: atBase.run.status === 'pass',
-    detail: reason,
-    ...(atBase.run.reusedAt === undefined
-      ? { duration: Date.now() - startedAt }
-      : { reusedAt: atBase.run.reusedAt }),
-    newFailures: reason === undefined ? input.failure.keys.length - keys.length : 0,
-    preExisting: keys.length,
-    notVerified: reason === undefined ? undefined : input.failure.keys.length,
-    ...(reason === undefined && {
-      newKeys: input.failure.keys.filter((key) => !known.has(key)),
-      preExistingKeys: keys,
-    }),
-  });
-  return { keys, run: atBase.run, notVerified: reason };
-}
-
 function noRunBase(
   notices: { bus: EventBus; phase: WorkflowState['phase'] },
   chosen: { id: string; command: string },
-): { keys: string[]; unavailable: string } {
+): { preExisting: string[]; unavailable: string } {
   const detail = 'this run recorded no run base';
   publishReviewCheck(notices, {
     status: 'not-run',
@@ -188,52 +76,115 @@ function noRunBase(
     moment: 'base',
     detail,
   });
-  return { keys: [], unavailable: `not run: ${detail}` };
+  return { preExisting: [], unavailable: `not run: ${detail}` };
 }
 
+type BaseSplitCounts = {
+  newFailures: number;
+  preExisting: number;
+  notVerified?: number | undefined;
+  newKeys?: string[] | undefined;
+  preExistingKeys?: string[] | undefined;
+  detail?: string | undefined;
+};
+
 /**
- * The failures of a red reviewer check split by the run base: `preExisting` are the keys the same
- * command text also shows there. `notVerified` says why a red that is also red at the run base is
- * not shown to be the same failure; its keys stay new.
+ * The failures of a red reviewer check split by the project gate's run at the run base, which ran
+ * beside the build: this waits for that run, marks the check's running row as waiting on it
+ * (`waitsOnBase`), and never runs the command itself. `preExisting` are
+ * the keys the same command text also shows there. A red at the run base proves a pre-existing
+ * failure only when both runs name their failures: with a placeholder on either side, or a run base
+ * copy with no base commit, nothing is pre-existing, and `notVerified` says why. A base run that
+ * could not run leaves every key not verified with its reason; a refused or skipped one leaves every
+ * key new, and `unavailable` says why. `counts` is the split the reviewer check's row carries.
  */
 async function splitAtRunBase(input: {
-  run: Extract<CheckRunResult, { status: 'fail' }>;
+  id: string;
   command: string;
-  checkOptions: RunChecksOptions;
+  failure: FailureKeys;
+  gate: BaseGate | undefined;
+  base: RunBase | undefined;
+  notices: { bus: EventBus; phase: WorkflowState['phase'] };
 }): Promise<{
   preExisting: string[];
   base?: CheckRunResult | undefined;
   unavailable?: string | undefined;
   notVerified?: string | undefined;
+  counts?: BaseSplitCounts | undefined;
 }> {
-  const { run, command, checkOptions } = input;
-  const notices = { bus: checkOptions.bus, phase: checkOptions.phase };
-  const failure = run.failure;
-  const atBase =
-    checkOptions.base === undefined
-      ? noRunBase(notices, { id: run.checkId, command })
-      : await preExistingKeys({
-          id: run.checkId,
-          command,
-          failure,
-          base: checkOptions.base,
-          checkOptions,
-          notices,
-        });
+  const { failure } = input;
+  if (input.gate === undefined || input.base === undefined) {
+    return noRunBase(input.notices, { id: input.id, command: input.command });
+  }
+  publishReviewCheck(input.notices, {
+    status: 'running',
+    id: input.id,
+    command: input.command,
+    moment: 'pre-review',
+    waitsOnBase: true,
+  });
+  const atBase = await input.gate.outcome(input.id);
+  if (atBase.kind === 'unavailable') {
+    return {
+      preExisting: [],
+      notVerified: atBase.reason,
+      counts: {
+        newFailures: 0,
+        preExisting: 0,
+        notVerified: failure.keys.length,
+        detail: atBase.reason,
+      },
+    };
+  }
+  const { run } = atBase;
+  if (run.status !== 'pass' && run.status !== 'fail') {
+    return {
+      preExisting: [],
+      base: run,
+      unavailable: `${run.status === 'refused' ? 'refused' : 'not run'}: ${run.output}`,
+    };
+  }
+  const baseFailure = run.status === 'fail' ? run.failure : undefined;
+  const reason =
+    baseFailure === undefined
+      ? undefined
+      : (runBaseIncomplete(input.base) ??
+        (failure.placeholder !== undefined || baseFailure.placeholder !== undefined
+          ? notVerifiedReason(failure, baseFailure)
+          : undefined));
+  const known = new Set(baseFailure?.keys);
+  const keys =
+    baseFailure !== undefined && reason === undefined
+      ? failure.keys.filter((key) => known.has(key))
+      : [];
   return {
-    preExisting: atBase.keys,
-    base: 'run' in atBase ? atBase.run : undefined,
-    unavailable: atBase.unavailable,
-    notVerified: 'notVerified' in atBase ? atBase.notVerified : undefined,
+    preExisting: keys,
+    base: run,
+    notVerified: reason,
+    counts:
+      reason === undefined
+        ? {
+            newFailures: failure.keys.length - keys.length,
+            preExisting: keys.length,
+            newKeys: failure.keys.filter((key) => !known.has(key)),
+            preExistingKeys: keys,
+          }
+        : { newFailures: 0, preExisting: 0, notVerified: failure.keys.length, detail: reason },
   };
 }
 
-/** Runs a reviewer check once; only a pre-review red splits at the run base. */
+/**
+ * Runs a reviewer check once. A pre-review red splits at the run base before its row settles, so
+ * the row carries the split; while the review waits on the run base its row stays running.
+ */
 export async function runReviewCheck(
   input: {
     check: { id: string; command: string };
     checkOptions: RunChecksOptions;
-  } & ({ moment: 'pre-review' } | { moment: 'brief'; carried: FixCheckKeys | undefined }),
+  } & (
+    | { moment: 'pre-review'; baseGate: BaseGate | undefined }
+    | { moment: 'brief'; carried: FixCheckKeys | undefined }
+  ),
 ): Promise<{
   run: CheckRunResult;
   fresh: string[];
@@ -262,29 +213,38 @@ export async function runReviewCheck(
     });
     return { run, fresh: [] };
   }
+  const clock =
+    run.reusedAt === undefined ? { duration: Date.now() - startedAt } : { reusedAt: run.reusedAt };
   const judged =
-    input.moment === 'brief' && (run.status === 'fail' || run.status === 'pass')
+    input.moment === 'brief'
       ? judgeFixCheck(input.carried, run.status === 'fail' ? run.failure : null)
       : null;
+  const split =
+    input.moment === 'pre-review' && run.status === 'fail'
+      ? await splitAtRunBase({
+          id,
+          command: run.command ?? command,
+          failure: run.failure,
+          gate: input.baseGate,
+          base: checkOptions.base,
+          notices,
+        })
+      : null;
+  throwIfAborted(checkOptions.signal);
   publishReviewCheck(notices, {
     status: 'done',
     id,
     command: run.command ?? command,
     moment,
     passed: run.status === 'pass' || judged?.left.length === 0,
-    ...(run.reusedAt === undefined
-      ? { duration: Date.now() - startedAt }
-      : { reusedAt: run.reusedAt }),
+    ...clock,
     ...(judged !== null && fixCheckCounts(judged)),
+    ...split?.counts,
   });
   if (run.status !== 'fail') return { run, fresh: [] };
-  if (moment === 'brief') return { run, fresh: judged === null ? run.failure.keys : judged.left };
-  const { preExisting, base, unavailable, notVerified } = await splitAtRunBase({
-    run,
-    command,
-    checkOptions,
-  });
-  const split: CheckRunResult = {
+  if (split === null) return { run, fresh: judged === null ? run.failure.keys : judged.left };
+  const { preExisting, base, unavailable, notVerified } = split;
+  const splitRun: CheckRunResult = {
     ...run,
     ...(preExisting.length > 0 && { preExisting }),
     ...(base !== undefined && {
@@ -294,7 +254,7 @@ export async function runReviewCheck(
       },
     }),
   };
-  return { run: split, fresh: newFailureKeys(split), unavailable, notVerified };
+  return { run: splitRun, fresh: newFailureKeys(splitRun), unavailable, notVerified };
 }
 
 /** A repeated review re-runs its commands: their earlier inputs give way to this run's. */
@@ -315,8 +275,8 @@ function replaceReviewCheckInputs(
 
 /**
  * SPLITBRIEF runs the project gate the plan names in the run workspace under the reviewer command
- * policy, re-runs a red command at the run base with the same text, and stops at the first command
- * with new failures. New failures become pending inputs; the returned section tells the verdict
+ * policy, compares a red command with the same command's run at the run base, and stops at the
+ * first command with new failures. New failures become pending inputs; the returned section tells the verdict
  * call what ran, what did not, and why.
  */
 export async function runReviewChecks(opts: ReviewChecksOptions): Promise<ReviewChecksOutcome> {
@@ -373,6 +333,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     const { run, fresh, unavailable, notVerified } = await runReviewCheck({
       check: chosen,
       moment: 'pre-review',
+      baseGate: opts.baseGate,
       checkOptions,
     });
     runs.push(run);

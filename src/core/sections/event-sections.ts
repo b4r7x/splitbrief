@@ -474,11 +474,11 @@ function isBuildRow(event: SectionableEvent | undefined, hasReviewStage: boolean
 }
 
 // A review opens at its start or at the first check it runs: the plan checks run in the review
-// phase before the review call starts.
+// phase before the review call starts. A base re-run runs beside the build and opens nothing.
 function opensReview(event: SectionableEvent): boolean {
   return (
     isReviewStartedEvent(event) ||
-    ((isFullSuiteEvent(event) || isChecksRunEvent(event)) &&
+    (((isFullSuiteEvent(event) && event.moment !== 'base') || isChecksRunEvent(event)) &&
       event.phase !== undefined &&
       phaseStage(event.phase) === 'review')
   );
@@ -534,19 +534,15 @@ function settledStageSummary<TEvent extends SectionableEvent>(
   const failedCommands = new Set<string>();
   let failedChecks = 0;
   let fixes: string[] = [];
-  // A red pre-review command counts as failed. A red base re-run with zero new failures and none
-  // not verified at the run base removes it because every failure is pre-existing and the run
-  // continued. Older base rows keep the count.
+  // A red pre-review command counts as failed, unless its split finds zero new failures and none
+  // not verified at the run base: every failure is pre-existing and the run continued. In an older
+  // run the base re-run carried that split and removed the count.
   for (const event of items) {
     if (isFullSuiteEvent(event) && event.status === 'done' && event.passed === false) {
-      if (event.moment === 'pre-review') failedCommands.add(event.command);
-      if (
-        event.moment === 'base' &&
-        event.newFailures === 0 &&
-        (event.notVerified === undefined || event.notVerified === 0)
-      ) {
-        failedCommands.delete(event.command);
-      }
+      const allPreExisting =
+        event.newFailures === 0 && (event.notVerified === undefined || event.notVerified === 0);
+      if (event.moment === 'pre-review' && !allPreExisting) failedCommands.add(event.command);
+      if (event.moment === 'base' && allPreExisting) failedCommands.delete(event.command);
     }
     if (isChecksRunEvent(event)) {
       failedChecks += event.results.filter((result) => result.status === 'fail').length;

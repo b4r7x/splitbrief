@@ -4,8 +4,7 @@ import {
   sanitizeTerminalDiagnosticText,
   sanitizeTerminalDisplayText,
 } from '../../utils/display-text.js';
-import { suiteCommandKey } from './operations/state.js';
-import { isProcessWentAwayMark } from '../../core/event-phase.js';
+import { endsBaseCommand, suiteCommandKey } from './operations/state.js';
 
 export interface EventsState {
   events: EngineEvent[];
@@ -38,10 +37,19 @@ const COMMAND_BOUNDARIES: ReadonlySet<EngineEvent['type']> = new Set([
   'workflow_resumed',
 ]);
 
-// A stop, an end, a continue, or the reopen of a run whose process went away: a command still
-// running then never finishes.
-function endsRunningCommands(event: EngineEvent): boolean {
-  return COMMAND_BOUNDARIES.has(event.type) || isProcessWentAwayMark(event);
+type CommandEvent = EngineEventOf<'full_suite' | 'validate'>;
+
+function isBaseCommand(event: CommandEvent): boolean {
+  return event.type === 'full_suite' && event.moment === 'base';
+}
+
+// A stop, an end, a continue, a steer or a cut seat call, or the reopen of a run whose process went
+// away: a command still running then never finishes. A base command ends only where
+// `endsBaseCommand` says.
+function commandsEndedBy(event: EngineEvent): ((command: CommandEvent) => boolean) | null {
+  if (endsBaseCommand(event)) return () => true;
+  if (!COMMAND_BOUNDARIES.has(event.type)) return null;
+  return (command) => !isBaseCommand(command);
 }
 
 export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | null {
@@ -170,9 +178,10 @@ function updateRunningCommandIndex(
 
 export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEvent[] {
   if (repeatsCallError(events, event)) return events;
-  if (endsRunningCommands(event)) {
+  const ended = commandsEndedBy(event);
+  if (ended !== null) {
     events = events.slice();
-    settleStoppedCommands(events);
+    settleStoppedCommands(events, ended);
   }
   const commandIndex = commandReplacementIndex(events, event);
   if (commandIndex >= 0) {
@@ -212,9 +221,8 @@ export function mergeEventLog(events: EngineEvent[]): EngineEvent[] {
   for (const event of events) {
     const projected = projectEventForTuiEventLog(event);
     if (projected === null) continue;
-    if (endsRunningCommands(projected)) {
-      settleStoppedCommands(log, runningCommands);
-    }
+    const ended = commandsEndedBy(projected);
+    if (ended !== null) settleStoppedCommands(log, ended, runningCommands);
     const commandIndex = commandReplacementIndex(log, projected, runningCommands);
     if (commandIndex >= 0) {
       log[commandIndex] = projected;
@@ -276,20 +284,24 @@ function repeatsCallError(events: readonly EngineEvent[], event: EngineEvent): b
   return false;
 }
 
-function settleStoppedCommands(events: EngineEvent[], runningCommands?: Map<string, number>): void {
+function settleStoppedCommands(
+  events: EngineEvent[],
+  ended: (command: CommandEvent) => boolean,
+  runningCommands?: Map<string, number>,
+): void {
   const running = runningCommands ?? new Map<string, number>();
   if (runningCommands === undefined) {
     for (const [index, event] of events.entries()) {
       updateRunningCommandIndex(running, event, index);
     }
   }
-  for (const index of running.values()) {
+  for (const [key, index] of running) {
     const event = events[index];
-    if (event?.type === 'full_suite' || event?.type === 'validate') {
+    if ((event?.type === 'full_suite' || event?.type === 'validate') && ended(event)) {
       events[index] = { ...event, status: 'stopped' };
+      running.delete(key);
     }
   }
-  running.clear();
 }
 
 // Both scans resume where the last one stopped: an entry already passed over is structural or

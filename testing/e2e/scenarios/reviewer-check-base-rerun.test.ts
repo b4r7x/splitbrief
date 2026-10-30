@@ -20,7 +20,6 @@ import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { factSpans, runRows } from '../../../src/features/workflow/closed/copy.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
-import { suiteStatusParts } from '../../../src/features/workflow/display/phase-verb.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
 import { eventsStore } from '../../../src/stores/workflow/events.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
@@ -287,44 +286,44 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
       assertPlainStdout(run.stdout);
       const lines = run.stdout.split('\n').map((line) => line.trim());
       expect(lines).toContain(`task ${brief.id}: done (1 of 1 checks passed)`);
-      expect(lines).toContain(`reviewer check V1: failed (${red.command})`);
+      expect(lines).toContain('base re-run V1: fails');
       expect(lines).toContain(
-        "base re-run V1: pre-existing · the failure also fails before this run's changes",
+        `reviewer check V1: pre-existing · the failure also fails before this run's changes (${red.command})`,
       );
-      expect(lines).toContain(`base re-run V1 pre-existing: ${red.key}`);
+      expect(lines).toContain(`reviewer check V1 pre-existing: ${red.key}`);
 
       expect(calls.map((call) => call.kind)).toEqual(['plan', 'implement', 'final-review']);
       expect(events.filter((event) => event.type === 'review_checks')).toEqual([]);
 
-      const rows = events.flatMap((event) =>
-        event.type === 'full_suite' && event.id === 'V1' ? [event] : [],
-      );
-      expect(rows.map((row) => ({ moment: row.moment, status: row.status }))).toEqual([
-        { moment: 'pre-review', status: 'running' },
-        { moment: 'pre-review', status: 'done' },
-        { moment: 'base', status: 'running' },
-        { moment: 'base', status: 'done' },
+      // The base run starts with the build, so its rows and the review's rows interleave by timing;
+      // each moment keeps its own order.
+      const rows = (moment: 'base' | 'pre-review') =>
+        events.flatMap((event) =>
+          event.type === 'full_suite' && event.id === 'V1' && event.moment === moment
+            ? [event]
+            : [],
+        );
+      expect(rows('base').map((row) => [row.phase, row.status, row.passed])).toEqual([
+        ['implementing', 'running', undefined],
+        ['implementing', 'done', false],
       ]);
-      expect(rows[1]).toMatchObject({ command: red.command, passed: false });
-      const baseDone = rows[3];
-      expect(baseDone).toMatchObject({
+      expect(rows('base')[1]).not.toHaveProperty('preExisting');
+      expect(rows('pre-review').map((row) => [row.status, row.waitsOnBase])).toEqual([
+        ['running', undefined],
+        ['running', true],
+        ['done', undefined],
+      ]);
+      const reviewDone = rows('pre-review')[2];
+      expect(reviewDone).toMatchObject({
         command: red.command,
         passed: false,
         newFailures: 0,
         preExisting: 1,
         preExistingKeys: [red.key],
       });
-      expect(baseDone).not.toHaveProperty('notVerified');
-      expect(baseDone).not.toHaveProperty('detail');
-      expect(baseDone).not.toHaveProperty('newKeys');
-
-      const baseRunning = rows[2];
-      if (baseRunning === undefined) throw new Error('Missing base re-run row');
-      expect(
-        suiteStatusParts(baseRunning.phase, { id: 'V1', moment: 'base', command: red.command })
-          .map((part) => part.text)
-          .join(''),
-      ).toBe(`Review · Base re-run V1 · ${red.command}`);
+      expect(reviewDone).not.toHaveProperty('notVerified');
+      expect(reviewDone).not.toHaveProperty('detail');
+      expect(reviewDone).not.toHaveProperty('newKeys');
 
       const verdictPrompt = calls.find((call) => call.kind === 'final-review')?.prompt;
       expect(verdictPrompt).toContain(
@@ -449,17 +448,16 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     });
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).not.toBe(0);
     const lines = run.stdout.split('\n').map((line) => line.trim());
-    expect(lines).toContain('base re-run V1: 1\u00a0new, 1\u00a0pre-existing');
-    expect(lines).toContain(`base re-run V1 new: ${LEDGER_SUITE_FILE}`);
-    expect(lines).toContain(`base re-run V1 pre-existing: ${red.key}`);
-    expect(lines).not.toContain(
-      "base re-run V1: pre-existing · the failure also fails before this run's changes",
-    );
+    expect(lines).toContain(`reviewer check V1: 1\u00a0new, 1\u00a0pre-existing (${command})`);
+    expect(lines).toContain(`reviewer check V1 new: ${LEDGER_SUITE_FILE}`);
+    expect(lines).toContain(`reviewer check V1 pre-existing: ${red.key}`);
+    expect(lines).toContain('base re-run V1: fails');
 
-    const base = events.find(
-      (event) => event.type === 'full_suite' && event.moment === 'base' && event.status === 'done',
+    const reviewDone = events.find(
+      (event) =>
+        event.type === 'full_suite' && event.moment === 'pre-review' && event.status === 'done',
     );
-    expect(base).toMatchObject({
+    expect(reviewDone).toMatchObject({
       id: 'V1',
       passed: false,
       newFailures: 1,

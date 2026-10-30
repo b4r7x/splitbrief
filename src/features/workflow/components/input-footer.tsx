@@ -23,6 +23,7 @@ import {
 } from '../../../stores/workflow/tasks.js';
 import {
   operationsStore,
+  selectRunningSuite,
   selectScheduledReview,
 } from '../../../stores/workflow/operations/state.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
@@ -127,7 +128,7 @@ export function InputFooter({
           reviewerLabel: reviewerSeat === '' ? null : reviewerSeat,
           plannerCall: lifecycle.plannerCall ?? null,
           plannerCallStartedTs: lifecycle.plannerCallStartedTs ?? null,
-          suiteStage: operations.suiteStage ?? null,
+          suiteStage: selectRunningSuite(operations),
           activeOperation: operations.active,
         });
   // A run on screen that is paused with no stop of its own and no record byline has been

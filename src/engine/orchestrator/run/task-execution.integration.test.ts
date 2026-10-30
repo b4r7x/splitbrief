@@ -4,7 +4,7 @@ import { writeSpecFile } from '../../../core/paths-io.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { describe, expect, it, afterEach, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -53,7 +53,7 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import { createSteeringPort } from '../../calls/steering.js';
 import type { TypedCallContext } from '../../planners/types.js';
-import { sessionDir } from '../../../core/paths.js';
+import { runBaseTreesRoot, sessionDir } from '../../../core/paths.js';
 import { readMessages } from '../../../core/sessions/log-reader.js';
 import { listSnapshots, readManifest } from '../../snapshots/manifest.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
@@ -898,10 +898,11 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
         },
       };
       const commands: string[] = [];
+      const baseCommands: string[] = [];
       const output = 'src/alpha.ts(1,1): error continued pre-review failure.';
-      vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args) => {
+      vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args, options) => {
         const command = [cmd, ...args].join(' ');
-        commands.push(command);
+        (options?.cwd?.startsWith(runBaseTreesRoot()) ? baseCommands : commands).push(command);
         if (cmd === 'tsc') throw processError.exitCode({ command, code: 2, stderr: '', output });
         return { stdout: 'ok', stderr: '', code: 0 };
       });
@@ -922,6 +923,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       const result = await runTasksAndReview(options);
 
       expect(commands).toEqual(['tsc --noEmit', 'node --version']);
+      expect(baseCommands).toEqual(['node --version']);
       expect(reviewPrompts).toHaveLength(1);
       expect(reviewPrompts[0]).toContain(output);
       expect(reviewPrompts[0]).toContain('**P1** (check · defect)');
@@ -931,6 +933,67 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       );
     },
   );
+
+  it('a halt in the build cuts the base run beside it, which stores nothing and leaves no base tree', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] });
+    const state: WorkflowState = {
+      ...reviewedState([task], head, 0),
+      plan: gatePlan(['npm test']),
+    };
+    const baseStarted = Promise.withResolvers<void>();
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (_cmd, _args, options) => {
+      if (options?.cwd?.startsWith(runBaseTreesRoot()) !== true) {
+        return { stdout: 'ok', stderr: '', code: 0 };
+      }
+      baseStarted.resolve();
+      return new Promise<never>((_, reject) => {
+        options.signal?.addEventListener('abort', () => reject(options.signal?.reason), {
+          once: true,
+        });
+      });
+    });
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        await baseStarted.promise;
+        return {
+          success: false,
+          output: '',
+          error: 'Please log out and sign in again.',
+          outcome: 'unauthenticated',
+          usage: { inputTokens: 3, outputTokens: 0 },
+        };
+      }),
+    });
+    const { options, events } = runOptions({
+      projectDir,
+      sessionId,
+      state,
+      implementer,
+      config: makeNoValidationConfig({
+        implementer: { kind: 'cli', tool: 'codex' },
+        validation: { endChecks: true },
+      }),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(result.state.pendingRecovery).toMatchObject({ reason: 'runner-unauthenticated' });
+    expect(
+      events.flatMap((event) =>
+        event.type === 'full_suite' && event.moment === 'base' ? [[event.id, event.status]] : [],
+      ),
+    ).toEqual([
+      ['V1', 'running'],
+      ['V1', 'stopped'],
+    ]);
+    expect(readEvidenceLedger({ projectDir, sessionId })?.commandRuns ?? []).toEqual([]);
+    expect(
+      readdirSync(runBaseTreesRoot()).filter((name) => name.startsWith(`base-${process.pid}-`)),
+    ).toEqual([]);
+  });
 
   it('the no-progress halt names the blockers and offers the exits', async () => {
     const { projectDir, sessionId, head } = setupProject();

@@ -40,7 +40,7 @@ export async function runCommandOnce(opts: {
   const stateId = await treeStateId(store, opts.workspaceDir);
   if (stateId === undefined) return opts.run();
   const stored = storedRun(store, stateId, opts.command);
-  if (stored !== undefined && !isStaleRed(store, stored)) return reusedResult(stored, opts.checkId);
+  if (stored !== undefined) return reusedResult(stored, opts.checkId);
   const result = await opts.run();
   const entry = commandRunEntry(result, store.tree, stateId, opts.command);
   if (entry !== null) {
@@ -53,6 +53,19 @@ export async function runCommandOnce(opts: {
     }
   }
   return result;
+}
+
+/** The stored result of a command on the tree's current state, or undefined when it must run. */
+export async function storedCheckRun(opts: {
+  store: CheckResultStore;
+  workspaceDir: string;
+  checkId: string;
+  command: string;
+}): Promise<CheckRunResult | undefined> {
+  const stateId = await treeStateId(opts.store, opts.workspaceDir);
+  if (stateId === undefined) return undefined;
+  const stored = storedRun(opts.store, stateId, opts.command);
+  return stored === undefined ? undefined : reusedResult(stored, opts.checkId);
 }
 
 function isStaleRed(store: CheckResultStore, stored: EvidenceCommandRun): boolean {
@@ -84,10 +97,11 @@ function storedRun(
   command: string,
 ): EvidenceCommandRun | undefined {
   try {
-    return readEvidenceLedger(store.ref)?.commandRuns?.find(
+    const stored = readEvidenceLedger(store.ref)?.commandRuns?.find(
       (entry) =>
         entry.tree === store.tree && entry.stateId === stateId && entry.command === command,
     );
+    return stored === undefined || isStaleRed(store, stored) ? undefined : stored;
   } catch (err) {
     warnError('Could not read the stored check results; the check runs its command', err);
     return undefined;

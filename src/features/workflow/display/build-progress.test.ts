@@ -412,6 +412,43 @@ describe('deriveBuildProgress', () => {
     }
   });
 
+  it('ends the counts line with the base re-run that runs beside the build, on its own clock', () => {
+    const progress = deriveBuildProgress(
+      input({
+        tasks: tasksState([{ id: 'T001', title: 'One', status: 'in_progress' }], {
+          currentAttempt: 2,
+        }),
+        operations: operationsState({
+          active: runningOperation(),
+          suiteStage: {
+            id: 'K1',
+            command: 'npm run lint',
+            moment: 'plan',
+            stageStartedTs: NOW - 3_000,
+          },
+          baseStage: {
+            id: 'V1',
+            command: 'npm test',
+            moment: 'base',
+            stageStartedTs: NOW - 42_000,
+          },
+        }),
+      }),
+    );
+
+    for (const width of [getChromeContentWidth(120), 80, 60]) {
+      const rows = buildProgressRows(progress, width);
+      expect(rows[0]?.text.endsWith('attempt 2 · Base re-run V1 0:42')).toBe(true);
+      expect(rows[0]?.spans).toContainEqual({ text: 'Base re-run V1', tone: 'accent' });
+      expect(
+        rows
+          .slice(1)
+          .map((row) => row.text)
+          .join(' '),
+      ).toContain('Plan check K1');
+    }
+  });
+
   it('states the attempt number without a maximum', () => {
     const progress = deriveBuildProgress(
       input({
@@ -863,29 +900,34 @@ describe('deriveBuildProgress', () => {
 
   // Render of workflow-review-base-rerun at 60 columns: `… legacy.test.ts · running…` lost its clock.
   it('cuts a long command, never the clock that follows it, where they share a row', () => {
+    const command = `npm test -- ${[
+      'legacy',
+      'modern',
+      'format',
+      'parse',
+      'render',
+      'store',
+      'theme',
+    ]
+      .map((name) => `src/${name}/${name}.test.ts`)
+      .join(' ')}`;
+    // The reviewer check V2 waits on the same command at the run base.
     const progress = deriveBuildProgress(
       input({
         lifecycle: lifecycleState({ phase: 'final-review' }),
         operations: operationsState({
           suiteStage: {
             id: 'V2',
-            command: `npm test -- ${[
-              'legacy',
-              'modern',
-              'format',
-              'parse',
-              'render',
-              'store',
-              'theme',
-            ]
-              .map((name) => `src/${name}/${name}.test.ts`)
-              .join(' ')}`,
-            moment: 'base',
-            stageStartedTs: NOW - 40_000,
+            command,
+            moment: 'pre-review',
+            waitsOnBase: true,
+            stageStartedTs: NOW - 5_000,
           },
+          baseStage: { id: 'V2', command, moment: 'base', stageStartedTs: NOW - 40_000 },
         }),
       }),
     );
+    expect(progress.base).toBeNull();
 
     for (const width of [getChromeContentWidth(120), 140]) {
       const line = buildProgressRows(progress, width)[1]?.text ?? '';
@@ -899,6 +941,34 @@ describe('deriveBuildProgress', () => {
       expect(rows).toHaveLength(buildProgressRowCount(width));
       expect(rows[2]?.text).toBe('running 0:40');
     }
+  });
+
+  // A gate command longer than the build: the reviewer check of its id runs in the workspace while
+  // the base run goes on, and the byline read `Review · Base re-run V1 · npm test` with the base clock.
+  it('leads with a reviewer check that runs beside the base run of its id, and keeps the base clock on the counts line', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review' }),
+        operations: operationsState({
+          suiteStage: {
+            id: 'V1',
+            command: 'npm test',
+            moment: 'pre-review',
+            stageStartedTs: NOW - 5_000,
+          },
+          baseStage: {
+            id: 'V1',
+            command: 'npm test',
+            moment: 'base',
+            stageStartedTs: NOW - 40_000,
+          },
+        }),
+      }),
+    );
+
+    expect(progress.activity).toBe('Review · Reviewer check V1 · npm test');
+    expect(progress.freshness).toBe('running 0:05');
+    expect(progress.base?.map((span) => span.text).join('')).toBe('Base re-run V1 0:40');
   });
 
   it('spells a long silence as a clock', () => {

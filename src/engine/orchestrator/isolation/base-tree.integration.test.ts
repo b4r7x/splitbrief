@@ -21,8 +21,7 @@ import { createTestGitRepo, recordGitLaunches } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { runBaseTreesRoot } from '../../../core/paths.js';
 import { installDiagnosticSink } from '../../../lib/warn.js';
-import { runBaseOf, withRunBaseTree } from './base-tree.js';
-import { runBaseTreeError } from './errors.js';
+import { runBaseIncomplete, runBaseOf, withRunBaseTree } from './base-tree.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs/promises')>()),
@@ -94,9 +93,9 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
         const first = git(run.dir, 'rev-parse HEAD~1').trim();
 
         let tree = '';
-        const legacy = await withRunBaseTree(baseOf(run), run.ws, async ({ dir, incomplete }) => {
+        expect(runBaseIncomplete(baseOf(run))).toBeUndefined();
+        const legacy = await withRunBaseTree(baseOf(run), run.ws, async ({ dir }) => {
           tree = dir;
-          expect(incomplete).toBeUndefined();
           expect(realpathSync(dir)).toHaveLength(realpathSync(run.ws).length);
           expect(inside(run.dir, dir)).toBe(false);
           expect(inside(run.ws, dir)).toBe(false);
@@ -238,7 +237,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
         (err: unknown) => err,
       );
 
-      expect(runBaseTreeError.isPreparationFailed(failed)).toBe(true);
+      expect(failed).toMatchObject({ kind: 'run-base-preparation-failed' });
       expect(failed).toHaveProperty(
         'message',
         expect.stringContaining('the run base could not be prepared'),
@@ -402,7 +401,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
           run.ws,
           use,
         ).catch((err: unknown) => err);
-        expect(runBaseTreeError.isPreparationFailed(failed)).toBe(true);
+        expect(failed).toMatchObject({ kind: 'run-base-preparation-failed' });
         expect(failed).toHaveProperty('message', expect.stringContaining('missing-snapshot'));
         expect(use).not.toHaveBeenCalled();
         expect(readdirSync(runBaseTreesRoot())).toEqual(before);
@@ -427,7 +426,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
           run.ws,
           vi.fn(),
         ).catch((err: unknown) => err);
-        expect(runBaseTreeError.isPreparationFailed(failed)).toBe(true);
+        expect(failed).toMatchObject({ kind: 'run-base-preparation-failed' });
         expect(failed).toHaveProperty('message', expect.stringContaining('f'.repeat(40)));
         expect(failed).toHaveProperty('message', expect.stringContaining(cleanupError.message));
         expect(failed).toHaveProperty('data.cleanupError', cleanupError);
@@ -521,11 +520,11 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
       { sessionId: 'sess-base-tree-staged', strategy: 'staged-copy' },
       async (run) => {
         writeFileSync(join(run.ws, 'src/legacy.ts'), 'export const legacy = 9;\n');
-        const seen = await withRunBaseTree(baseOf(run), run.ws, async ({ dir, incomplete }) => ({
+        const seen = await withRunBaseTree(baseOf(run), run.ws, async ({ dir }) => ({
           length: realpathSync(dir).length,
           legacy: readFileSync(join(dir, 'src/legacy.ts'), 'utf-8'),
           git: existsSync(join(dir, '.git')),
-          incomplete,
+          incomplete: runBaseIncomplete(baseOf(run)),
         }));
         expect(seen.result).toEqual({
           length: realpathSync(run.ws).length,

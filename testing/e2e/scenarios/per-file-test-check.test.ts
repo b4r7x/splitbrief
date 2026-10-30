@@ -178,7 +178,10 @@ describe('e2e: a plan with a per-file test check', () => {
     for (const [index, command] of parseOnly.entries()) {
       const rows = events.filter(
         (event) =>
-          event.type === 'full_suite' && event.id === `V${index + 1}` && event.status === 'done',
+          event.type === 'full_suite' &&
+          event.id === `V${index + 1}` &&
+          event.moment === 'pre-review' &&
+          event.status === 'done',
       );
       expect(rows.length).toBeGreaterThan(0);
       for (const row of rows) expect(row).toMatchObject({ command, passed: true });

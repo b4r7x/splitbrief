@@ -20,6 +20,7 @@ import {
 } from '#testing/helpers/typed-planner.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
+import { runBaseTreesRoot } from '../../../core/paths.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -80,8 +81,8 @@ function alphaIsBroken(cwd: string | undefined): boolean {
 }
 
 /**
- * One ordered log of what the run did: every check command, every reviewer-check row, every
- * implementer call and every review call.
+ * One ordered log of what the run did: every check command (`base:` at the run base, `cmd:` in the
+ * run workspace), every reviewer-check row, every implementer call and every review call.
  */
 function runHarness(opts: {
   projectDir: string;
@@ -158,7 +159,7 @@ function runHarness(opts: {
   });
   vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args, options) => {
     const line = [cmd, ...args].join(' ');
-    log.push(`cmd:${line}`);
+    log.push(`${options?.cwd?.startsWith(runBaseTreesRoot()) ? 'base' : 'cmd'}:${line}`);
     opts.runCommand(line, options?.cwd);
     return { stdout: '', stderr: '', code: 0 };
   });
@@ -206,7 +207,7 @@ function reviewerChecksSection(prompt: string | undefined): string {
 }
 
 describe("reviewer checks with workflow.review 'end'", { timeout: 120_000 }, () => {
-  it('runs no check before the final review, then lets the reviewer append a fix task for a red one brief owns', async () => {
+  it('runs no check in the run workspace before the final review, then lets the reviewer append a fix task for a red one brief owns', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
       makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
@@ -227,7 +228,8 @@ describe("reviewer checks with workflow.review 'end'", { timeout: 120_000 }, () 
     const result = await runTasksAndReview(harness.options);
 
     expect(result.completed).toBe(true);
-    // No command after either brief: the project gate is the first thing that runs one.
+    // No command after either brief: only the run base runs the project gate beside the build, once.
+    expect(harness.log.filter((entry) => entry.startsWith('base:'))).toEqual(['base:tsc --noEmit']);
     const firstPlan = harness.log.indexOf('check:V1:pre-review:running');
     expect(firstPlan).toBeGreaterThan(-1);
     const beforePlan = harness.log.slice(0, firstPlan);
@@ -363,6 +365,9 @@ describe("reviewer checks with workflow.review 'task'", { timeout: 120_000 }, ()
       entry === 'cmd:npx --no-install vitest run' ? [index] : [],
     );
     expect(gateRuns).toHaveLength(1);
+    expect(harness.log.filter((entry) => entry.startsWith('base:'))).toEqual([
+      'base:npx --no-install vitest run',
+    ]);
     const lastReview = harness.log.lastIndexOf('review');
     expect(gateRuns[0]).toBeGreaterThan(harness.log.indexOf('implement:T002'));
     expect(gateRuns[0]).toBeLessThan(lastReview);

@@ -13,13 +13,19 @@ import {
 import { formatElapsedClock, formatTime } from '../../../utils/format-time.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
-import type {
-  ActiveOperation,
-  OpenTool,
-  OperationsState,
+import {
+  selectRunningSuite,
+  type ActiveOperation,
+  type OpenTool,
+  type OperationsState,
 } from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
-import { suiteStatusParts, reviewActivityParts, reviewActivitySpans } from './phase-verb.js';
+import {
+  suiteStageParts,
+  suiteStatusParts,
+  reviewActivityParts,
+  reviewActivitySpans,
+} from './phase-verb.js';
 import { formatRecordedSeatIdentity } from './recorded-seat-identity.js';
 import { stallRunnerHint } from './live-activity.js';
 import { runnerActivityLedgerItem, runnerActivityModelRole } from './runner-activity-display.js';
@@ -47,6 +53,11 @@ export interface BuildProgress {
    * runs no brief, and on a brief's first attempt, which is the normal case.
    */
   attempt: number | null;
+  /**
+   * The project gate command running at the run base beside the build, with its clock, when the
+   * activity line does not already name it.
+   */
+  base: readonly BuildProgressSpan[] | null;
   /** What the run is doing: the seat and its operation, or the command it is inside. */
   activity: string;
   activitySpans: readonly BuildProgressSpan[];
@@ -158,7 +169,7 @@ function activityResult(
 }
 
 /**
- * The command the run is inside: a reviewer check, its re-run at the run base, or an older
+ * The command the run is inside: a reviewer check, the base command it waits on, or an older
  * session's gate stage. No seat speaks while it runs, so its own clock is the block's proof of
  * life, and the age of a seat's last word would only contradict it.
  */
@@ -166,7 +177,7 @@ function runningCommand(
   operations: OperationsState,
   phase: LifecycleState['phase'],
 ): { spans: readonly BuildProgressSpan[]; startedTs: number } | null {
-  const suite = operations.suiteStage ?? null;
+  const suite = selectRunningSuite(operations);
   if (suite !== null)
     return {
       spans: suiteStatusParts(phase, suite, operations.active),
@@ -277,6 +288,15 @@ function freshnessOf(
   );
 }
 
+function baseRun(input: DeriveBuildProgressInput): readonly BuildProgressSpan[] | null {
+  const base = input.operations.baseStage ?? null;
+  if (base === null || selectRunningSuite(input.operations) === base) return null;
+  return [
+    ...suiteStageParts({ ...base, command: '' }, 'live'),
+    { text: ` ${formatElapsedClock(input.now - base.stageStartedTs)}`, tone: 'textDim' },
+  ];
+}
+
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
   const view = selectTaskListView(input.tasks);
   const retrying = isImplementerPhase(input.lifecycle.phase) && input.tasks.currentAttempt >= 2;
@@ -288,6 +308,7 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
     escalated: view.escalated,
     failed: view.failed,
     attempt: retrying ? input.tasks.currentAttempt : null,
+    base: baseRun(input),
     ...(waitParts === null
       ? { ...activityLine(input), ...freshnessOf(input) }
       : {
@@ -337,6 +358,7 @@ function countsSpans(progress: BuildProgress): BuildProgressSpan[] {
       { text: `attempt ${progress.attempt}`, tone: 'textDim' },
     );
   }
+  if (progress.base !== null) parts.push({ text: SOFT_SEP, tone: 'textDim' }, ...progress.base);
   return parts;
 }
 

@@ -828,13 +828,14 @@ phase: planning
 phase: reviewing-plan
 phase: implementing
 task T001: done (2 of 2 checks passed)
+base re-run V1: passes
 task T002: done (no checks)
+base re-run V2: fails
 task T003: done (1 of 1 checks passed)
 phase: final-review
 reviewer check V1: passed (npm test)
-reviewer check V2: failed (npm run lint)
-base re-run V2: pre-existing · all 2 failures also fail before this run's changes
-base re-run V2 pre-existing: src/report.ts:4:3 Unexpected any · src/report.ts:9:1 Missing return type
+reviewer check V2: pre-existing · all 2 failures also fail before this run's changes (npm run lint)
+reviewer check V2 pre-existing: src/report.ts:4:3 Unexpected any · src/report.ts:9:1 Missing return type
 review: passed
 phase: complete
 done: 3 tasks
@@ -847,11 +848,11 @@ done: 3 tasks
 - `reviewer check <id>: passed (<command>)` or `reviewer check <id>: failed (<command>)` — the result of one reviewer check (`V1`, `V2`, …, a command of the project gate the plan names) in the run workspace.
 - `reviewer check <id>: refused (<detail>)` — the reviewer command policy refused the reviewer check, and `<detail>` names the rule, for example `runs a program by path` or `runs a setup command (pip install)`, or a package script, task file, build wrapper or interpreter script this run changed or the run base does not hold (`runs vendor/bin/phpunit, which the run base does not hold`).
 - `reviewer check <id>: not run (<detail>)` — the reviewer check did not run. An earlier reviewer check with new failures stops the later ones: `not run (V1 failed)`.
-- `base re-run <id>: passes` — the re-run of a red reviewer check at the run base, with the same command text, passed: every failure is new.
-- `base re-run <id>: <m> new, <n> pre-existing` — the re-run is red too, and `<m>` failures do not occur at the run base. New failures stop the later reviewer checks.
-- `base re-run <id>: <k> not verified at the run base · <reason>` — the re-run is red too, but `<k>` failures cannot be compared, and the line puts `<m> new, <n> pre-existing, ` before them when there are others: a timeout, or a red with no failing test name and no diagnostic line. Such a failure is never pre-existing. It stops the later reviewer checks, it reaches the reviewer as a pending input, and the reviewer decides.
-- `base re-run <id>: pre-existing · all <n> failures also fail before this run's changes` — every failure also occurs at the run base, so the run goes on (`the failure also fails …` for one). A session from before these counts reads `fails`. A re-run that is refused or does not run reads `base re-run <id>: refused (<detail>)` or `base re-run <id>: not run (<detail>)`.
-- `base re-run <id> new: <test> · <test> · +<n> more` and `base re-run <id> pre-existing: <test> · …` — under a `<m> new, <n> pre-existing`, `pre-existing` or `passes` line, one line for each side names its failing tests: the first three, then the rest as `+<n> more`. A failure that is not verified at the run base gets no names line.
+- `base re-run <id>: passes` or `base re-run <id>: fails` — during the build, the project gate runs once at the run base with the same command text, one command at a time, and the line reports each command there. A base command that is refused or does not run reads `base re-run <id>: refused (<detail>)` or `base re-run <id>: not run (<detail>)`.
+- `reviewer check <id>: <m> new, <n> pre-existing (<command>)` — the reviewer check is red, the same command is red at the run base too, and `<m>` failures do not occur there. New failures stop the later reviewer checks. When the base command has not finished, the review waits for it.
+- `reviewer check <id>: <k> not verified at the run base · <reason> (<command>)` — the run base is red too, but `<k>` failures cannot be compared, and the line puts `<m> new, <n> pre-existing, ` before them when there are others: a timeout, or a red with no failing test name and no diagnostic line. Such a failure is never pre-existing. It stops the later reviewer checks, it reaches the reviewer as a pending input, and the reviewer decides.
+- `reviewer check <id>: pre-existing · all <n> failures also fail before this run's changes (<command>)` — every failure also occurs at the run base, so the run goes on (`the failure also fails …` for one).
+- `reviewer check <id> new: <test> · <test> · +<n> more` and `reviewer check <id> pre-existing: <test> · …` — under a red reviewer check line with counts, one line for each side names its failing tests: the first three, then the rest as `+<n> more`. A failure that is not verified at the run base gets no names line. A session from before this release prints these counts and names on its `base re-run` lines.
 - `fix check <id>: your 2 failures gone · 3 others left for their fix tasks or the next review (<command>)` or `fix check <id>: 1 of your 2 failures remains · 1 left to T025 (<command>)` reports the own failures of a fix check. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. Every unmatched re-run key counts as another failure. A red passes when no own failure remains. An own failure that an unfinished fix task of the same cycle also carries reads `left to <task>` and does not gate the brief. Failures the brief does not own go to their fix tasks or the next review. Keys come from the full process capture. An incomplete capture gives one placeholder key. The command must pass.
 
   A green re-run reads `your N failures gone`. A check with no own failure reads `no failure of yours`. The line also reports judged plan and task checks. Their fix check row has no running state or duration. The line uses singular forms for one failure. Each fix check runs once, with no base re-run.

@@ -238,13 +238,16 @@ async function runCommandCheck(
 ): Promise<CheckRunResult> {
   // A reviewer check runs under the reviewer policy, any stack's program, and is refused for a
   // changed script; a plan check keeps the plan policy, and a plan may add a script and check it.
+  // At the run base every script is the one the run started from.
   const refusal = reviewCheck
     ? (reviewerCommandRefusal(check.value) ??
-      (await changedDefinitionRefusal({
-        command: check.value,
-        base: opts.base,
-        workspaceDir: opts.projectDir,
-      })))
+      (opts.results?.tree === 'run-base'
+        ? null
+        : await changedDefinitionRefusal({
+            command: check.value,
+            base: opts.base,
+            workspaceDir: opts.projectDir,
+          })))
     : commandTextRefusal(check.value, opts.npmScriptsApproved);
   if (refusal !== null) {
     return { checkId: check.id, status: 'refused', output: refusal, command: check.value };

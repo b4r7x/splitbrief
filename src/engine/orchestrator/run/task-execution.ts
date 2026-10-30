@@ -44,6 +44,8 @@ import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
 import { error } from '../../../utils/error.js';
 import { hasBaseline } from '../../snapshots/manifest.js';
 import { runCodeDir } from '../kept-work.js';
+import { startBaseGate, type BaseGate } from '../base-gate.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 
 export type RunTasksAndReviewOptions = {
   wctx: WorkflowContext;
@@ -283,7 +285,6 @@ export async function runTasksAndReview(
   const initialWctx = opts.wctx;
   const { summaryBase } = opts;
   let { state } = opts;
-  const { callbacks } = initialWctx;
   const bail = () => ({
     summary: buildSummary({ ...summaryBase, state }),
     completed: false,
@@ -357,7 +358,50 @@ export async function runTasksAndReview(
     ...initialWctx,
     workspaceDir: runCodeDir(initialWctx.projectDir, state.workspace),
   };
+  let phase = state.phase;
+  const trackState = (next: WorkflowState) => {
+    phase = next.phase;
+    setTrackedState(next);
+  };
+  const baseGate = startBaseGate({
+    ref,
+    workspaceDir: wctx.workspaceDir,
+    config: wctx.config,
+    bus: wctx.bus,
+    state,
+    phase: () => phase,
+    signal: wctx.signal,
+  });
+  // The base run never outlives the run loop: it stops before the run's processes are killed, so a
+  // killed base command is never stored as a red.
+  try {
+    return await buildAndReview({
+      wctx,
+      state,
+      ref,
+      summaryBase,
+      setTrackedState: trackState,
+      setCurrentTask,
+      baseGate,
+    });
+  } finally {
+    await baseGate?.stop();
+  }
+}
 
+/** The build and the review on the recorded run workspace, while the project gate runs at the run base. */
+async function buildAndReview(args: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  ref: SessionRef;
+  summaryBase: SummaryBase;
+  setTrackedState: (s: WorkflowState) => void;
+  setCurrentTask: RunTasksAndReviewOptions['setCurrentTask'];
+  baseGate: BaseGate | undefined;
+}): Promise<{ summary: Summary; completed: boolean; state: WorkflowState }> {
+  const { wctx, ref, summaryBase, setTrackedState, setCurrentTask, baseGate } = args;
+  const { callbacks } = wctx;
+  let { state } = args;
   let taskResult = await runTaskLoop({
     wctx,
     initialState: state,
@@ -530,7 +574,7 @@ export async function runTasksAndReview(
         preReview: (s: WorkflowState) =>
           runPreReview({ wctx, state: s, setTrackedState, inputs: recheck.inputs }),
       }),
-      reviewChecks: !reviewAgain,
+      ...(!reviewAgain && { reviewChecks: { baseGate } }),
     });
     state = review.state;
     setTrackedState(state);

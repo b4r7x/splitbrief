@@ -169,7 +169,7 @@ export function fullSuiteSegments(
     ]);
   }
   const split =
-    event.moment === 'base' &&
+    (event.moment === 'pre-review' || event.moment === 'base') &&
     event.passed === false &&
     event.newFailures !== undefined &&
     event.preExisting !== undefined
@@ -185,7 +185,7 @@ export function fullSuiteSegments(
     (event.moment === 'base'
       ? event.passed === true
         ? 'passes at the run base'
-        : 'red at the run base too'
+        : 'red at the run base'
       : event.passed === true
         ? event.scenario === undefined
           ? 'passed'
@@ -204,7 +204,7 @@ export function fullSuiteSegments(
 }
 
 /**
- * The failing tests a base re-run names, one row per test under the strip rather than on it, so a
+ * The failing tests a split names, new and pre-existing, one row per test under the strip rather than on it, so a
  * long test name never cuts the verdict. Each side's label leads its first test, right-aligned
  * with the other side's label, so every test of both sides and every wrapped line hang in one
  * column.
@@ -232,10 +232,9 @@ function separatedSegments(parts: readonly ConversationRowSegment[]): Conversati
   ]);
 }
 
-// A red reviewer or fix check is an error. A red base re-run is an error when new failures remain.
-// All-pre-existing failures, failures not verified at the run base (the red workspace row and its
-// pending input carry them; the reviewer decides) and older base rows stay warning. Refused
-// commands also stay warning.
+// A red reviewer or fix check is an error, unless every failure is pre-existing. A red at the run
+// base is a warning: it says only what the run base shows. In an older run the base row carried the
+// split, and a red there was an error when new failures remained. Refused commands stay warning.
 export function fullSuiteTone(
   event: Extract<EngineEvent, { type: 'full_suite' }>,
 ): ConversationRowTone {
@@ -243,7 +242,12 @@ export function fullSuiteTone(
     return stateTone('attention');
   if (event.status === 'running') return stateTone('running');
   if (event.passed === true) return stateTone('passed');
-  return event.moment === 'base' && (event.newFailures === undefined || event.newFailures === 0)
+  if (event.moment === 'base') {
+    return event.newFailures === undefined || event.newFailures === 0
+      ? stateTone('attention')
+      : stateTone('failed');
+  }
+  return event.moment === 'pre-review' && event.newFailures === 0 && (event.notVerified ?? 0) === 0
     ? stateTone('attention')
     : stateTone('failed');
 }

@@ -471,7 +471,7 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 
 { type: 'full_suite'; status: 'running' | 'done' | 'not-run' | 'refused' | 'stopped';
   id?: string; stage?: 'typecheck' | 'lint' | 'test'; command: string;
-  moment: 'pre-review' | 'base' | 'brief' | 'plan'; scenario?: string;
+  moment: 'pre-review' | 'base' | 'brief' | 'plan'; scenario?: string; waitsOnBase?: true;
   passed?: boolean; detail?: string; duration?: number;
   newFailures?: number; preExisting?: number; notVerified?: number;
   newKeys?: string[]; preExistingKeys?: string[];
@@ -482,14 +482,17 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // without `id` comes from an older session and carries its full-suite `stage`.
 // `passed` is set on the done event. Reviewer checks also set `duration`.
 // `detail` says why a command
-// did not run (`V1 failed`) or was refused. `moment: 'base'` is the re-run of a red
-// command at the run base with the same command text; its done event counts the
-// failures that are new, pre-existing and not verified at the run base, and a red
-// base done event's `detail` says why a failure is not verified. `moment: 'brief'`
+// did not run (`V1 failed`) or was refused. `moment: 'base'` is the run of a gate
+// command at the run base with the same command text, beside the build. The done
+// event of a red reviewer check (`moment: 'pre-review'`) counts the failures that
+// are new, pre-existing and not verified at the run base, and its `detail` says why
+// a failure is not verified; an older run carried them on its base done event. A red
+// reviewer check publishes a second running event with `waitsOnBase: true` while the
+// review waits on the base run of its id. `moment: 'brief'`
 // is a fix brief's check, run once per brief gate with no base re-run. `moment: 'plan'`
 // is a plan or task check run before the review; a render check also carries its
-// `scenario`. `stopped` is never published: the events store settles a running
-// command that a stop cut.
+// `scenario`. Only a base command publishes `stopped`, when the end of the run loop
+// cuts it; the events store settles every other running command that a stop cut.
 // A reviewer check uses the command the finding carries, under the reviewer
 // command policy. A fix check
 // done event counts `own` carried failures, `ownLeft` failures still present

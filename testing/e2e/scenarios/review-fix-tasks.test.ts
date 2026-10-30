@@ -385,12 +385,14 @@ describe('e2e: a failed final review creates fix tasks', { timeout: 300_000 }, (
           ]
         : [],
     );
-    expect(reviewCheckRows).toMatchObject([
-      { moment: 'pre-review', passed: false },
-      { moment: 'base', passed: false, newFailures: 1, preExisting: 1 },
+    // The base run settles V1 once, during the first build; the second review reads that result.
+    expect(reviewCheckRows.filter((row) => row.moment === 'base')).toMatchObject([
+      { passed: false },
+    ]);
+    expect(reviewCheckRows.filter((row) => row.moment !== 'base')).toMatchObject([
+      { moment: 'pre-review', passed: false, newFailures: 1, preExisting: 1 },
       { moment: 'brief', passed: true, own: 1, ownLeft: 0, deferred: 0, others: 1 },
-      { moment: 'pre-review', passed: false },
-      { moment: 'base', passed: false, newFailures: 0, preExisting: 1 },
+      { moment: 'pre-review', passed: false, newFailures: 0, preExisting: 1 },
     ]);
 
     const fixGate = events.find((event) => event.type === 'checks_run' && event.taskId === 'T003');

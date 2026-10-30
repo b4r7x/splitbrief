@@ -9,6 +9,7 @@ import {
 } from './runner.js';
 import { closeStatusFallbacks, updateStatusFallback } from './planner-status.js';
 import {
+  endsBaseCommand,
   suiteCommandKey,
   type OpenTool,
   type OperationsState,
@@ -49,18 +50,26 @@ function runningSuiteStage(event: SuiteEvent): RunningSuiteStage | null {
     command: event.command,
     moment: event.moment,
     ...(event.scenario !== undefined && { scenario: event.scenario }),
+    ...(event.waitsOnBase !== undefined && { waitsOnBase: event.waitsOnBase }),
     stageStartedTs: event.ts,
   };
 }
 
 function applySuiteStage(state: OperationsState, event: SuiteEvent): OperationsState {
+  const slot = event.moment === 'base' ? 'baseStage' : 'suiteStage';
   const next = runningSuiteStage(event);
-  const current = state.suiteStage ?? null;
+  const current = state[slot] ?? null;
+  // The same command keeps the clock it started on; only its wait on the run base changes.
   if (next !== null && current !== null && suiteCommandKey(current) === suiteCommandKey(next)) {
-    return state;
+    if (current.waitsOnBase === next.waitsOnBase) return state;
+    return { ...state, [slot]: { ...next, stageStartedTs: current.stageStartedTs } };
   }
   if (next === null && current === null) return state;
-  return { ...state, suiteStage: next };
+  return { ...state, [slot]: next };
+}
+
+function withoutBaseStage(state: OperationsState): OperationsState {
+  return (state.baseStage ?? null) === null ? state : { ...state, baseStage: null };
 }
 
 // A stopped command publishes no settled event, so the stop ends its stage: a resume that runs the
@@ -119,7 +128,10 @@ function nextOpenTools(
 }
 
 export function updateOperations(state: OperationsState, event: EngineEvent): OperationsState {
-  const next = updateRunningOperations(state, event);
+  const next = updateRunningOperations(
+    endsBaseCommand(event) ? withoutBaseStage(state) : state,
+    event,
+  );
   const scheduledReview =
     event.type === 'review_started' && event.scope === 'task'
       ? true

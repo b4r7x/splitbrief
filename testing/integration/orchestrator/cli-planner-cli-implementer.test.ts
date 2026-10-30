@@ -308,11 +308,21 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
       ]),
     );
     expect(events.find((event) => event.type === 'validate')).toBeUndefined();
-    // The plan names one gate command; SPLITBRIEF ran it before the verdict, and it passed.
+    // The plan names one gate command; SPLITBRIEF ran it at the run base beside the build and in
+    // the run workspace before the verdict, and it passed both times.
     expect(events.filter((event) => event.type === 'review_checks')).toEqual([]);
+    const suites = events.filter((event) => event.type === 'full_suite');
     expect(
-      events
-        .filter((event) => event.type === 'full_suite')
+      suites
+        .filter((event) => event.moment === 'base')
+        .map((event) => [event.id, event.status, event.command, event.passed]),
+    ).toEqual([
+      ['V1', 'running', GATE_COMMAND, undefined],
+      ['V1', 'done', GATE_COMMAND, true],
+    ]);
+    expect(
+      suites
+        .filter((event) => event.moment !== 'base')
         .map((event) => ({
           id: event.id,
           status: event.status,

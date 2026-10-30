@@ -867,6 +867,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-build-base-rerun',
+      title: 'Workflow · the project gate runs at the run base beside the build',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'build-base-rerun',
+        title: 'The counts line names the base command and its clock; the brief keeps the activity',
+        kind: 'implementation',
+        marker: 'Base re-run V1',
+      },
+      elements: [
+        { id: 'header', title: 'Build progress' },
+        { id: 'transcript', title: 'Running brief and base re-run' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-build-fix-consult',
       title: 'Workflow · planner consult on a fix task',
       surface: screenSurface('workflow'),
@@ -4580,11 +4596,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-review-base-rerun',
-      title: 'Workflow · a review failure re-runs at the run base',
+      title: 'Workflow · a red reviewer check waits for the run base',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-base-rerun',
-        title: 'The base command in the byline, build block and transcript',
+        title: 'The base command the review waits on in the byline, build block and transcript',
         kind: 'review',
         marker: 'Base re-run',
       },
@@ -4600,7 +4616,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-base-mixed',
-        title: 'The base row counts the new and the pre-existing failures',
+        title: 'The reviewer check row counts the new and the pre-existing failures',
         kind: 'review',
         marker: 'pre-existing',
       },
@@ -4612,13 +4628,14 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-review-base-not-verified',
-      title: 'Workflow · a red base re-run not verified at the run base',
+      title: 'Workflow · a red reviewer check not verified at the run base',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-base-not-verified',
-        title: 'The base re-run row counts the failure not verified at the run base and says why',
+        title:
+          'The reviewer check row counts the failure not verified at the run base and says why',
         kind: 'review',
-        marker: 'Base re-run V1',
+        marker: 'Reviewer check V1',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -4632,9 +4649,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-base-rejected',
-        title: 'The base re-run row quotes the error line and the review passes with its note',
+        title: 'The reviewer check row quotes the error line and the review passes with its note',
         kind: 'review',
-        marker: 'Base re-run V1',
+        marker: 'Reviewer check V1',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

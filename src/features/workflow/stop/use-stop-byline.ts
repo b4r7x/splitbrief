@@ -2,7 +2,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { operationsStore } from '../../../stores/workflow/operations/state.js';
+import { operationsStore, selectRunningSuite } from '../../../stores/workflow/operations/state.js';
 import {
   briefAfter,
   selectFinishedBrief,
@@ -27,7 +27,7 @@ export function useStopByline(): StopByline | null {
   // names it until the boundary suite hands it on, so a finished slot is what it is finishing.
   const finishedTaskId = selectFinishedBrief(tasks)?.id ?? null;
   const questionPending = controlsStore.use((s) => s.inputMode === 'question');
-  const suiteStage = operationsStore.use((s) => s.suiteStage ?? null);
+  const suiteStage = operationsStore.use(selectRunningSuite);
   // A stop that ended the run loop settles it at rest, and the record it re-read says where it
   // stopped and what it kept.
   const record = routerStore.use((s) =>

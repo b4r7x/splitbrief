@@ -85,9 +85,11 @@ async function watch() {
           const type = row?.type ?? row?.kind;
           if (typeof type !== 'string') throw new Error('Session log entry has no event kind');
           const data = row.data ?? row;
+          // A base re-run row only says what the run base holds; its reviewer check row judges it.
           const needsAttention =
             type === 'full_suite'
-              ? data.status === 'refused' || (data.status === 'done' && data.passed === false)
+              ? data.moment !== 'base' &&
+                (data.status === 'refused' || (data.status === 'done' && data.passed === false))
               : attention.test(type);
           if (needsAttention) {
             event = row;
