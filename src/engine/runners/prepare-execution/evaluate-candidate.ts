@@ -461,8 +461,11 @@ function evaluateApi(
   }
 }
 
-const INLINE_RUNNER_GRANT_FIX =
+const RUNNER_GRANT_FIX =
   'Run SPLITBRIEF in a terminal and confirm the runner disclosure, or pass --allow-repo-runners to grant it for this run only.';
+
+const CHANGED_RUNNER_GRANT_FIX =
+  'Run SPLITBRIEF in a terminal and confirm the changed executable, or pass --allow-repo-runners to grant it for this run only.';
 
 const REPO_LOCAL_RUNNER_REASON = 'Configured command is outside the current trust policy.';
 
@@ -488,11 +491,11 @@ export const REPO_LOCAL_RUNNER_FIX: Readonly<Record<PreparationPolicy['purpose']
 const RUNNER_KIND_WITH_ARTICLE = { shell: 'a shell', agent: 'an agent' } as const;
 
 /**
- * A refused inline runner is usually untrusted, but it can also be absent or
+ * A refused runner is usually untrusted, but it can also be absent or
  * changed. Naming which one is the difference between an actionable block and
  * a config the reader keeps re-reading.
  */
-export function inlineRunnerRefusal(
+export function customRunnerRefusal(
   admission: Awaited<ReturnType<typeof prepareCustomRunnerAdmission>>,
   kind: 'shell' | 'agent',
 ): Readonly<{ reason: string; fix: string }> {
@@ -512,12 +515,12 @@ export function inlineRunnerRefusal(
     case 'drifted':
       return {
         reason: `The ${kind} runner executable changed since this machine trusted it.`,
-        fix: INLINE_RUNNER_GRANT_FIX,
+        fix: CHANGED_RUNNER_GRANT_FIX,
       };
     default:
       return {
         reason: `${declared} that this machine has not trusted.`,
-        fix: INLINE_RUNNER_GRANT_FIX,
+        fix: RUNNER_GRANT_FIX,
       };
   }
 }
@@ -582,17 +585,7 @@ async function evaluateCommand(
     admission.kind === 'admitted' && admission.trustPersisted,
   );
   if (admission.kind !== 'admitted') {
-    if (runner.source === 'configured') {
-      return {
-        kind: 'blocked',
-        check: blockedCheck(
-          candidate.slot,
-          candidate.runner.kind,
-          'Configured custom runner admission was denied.',
-        ),
-      };
-    }
-    const refusal = inlineRunnerRefusal(admission, candidate.runner.kind);
+    const refusal = customRunnerRefusal(admission, candidate.runner.kind);
     return {
       kind: 'blocked',
       check: blockedCheck(candidate.slot, candidate.runner.kind, refusal.reason, refusal.fix),

@@ -47,7 +47,7 @@ import {
   REPO_LOCAL_RUNNER_REFUSAL,
 } from '../../../src/engine/runners/prepare-execution/evaluate-candidate.js';
 import { blockedCheck } from '../../../src/engine/runners/prepare-execution/runner-candidates.js';
-import { formatCustomRunnerDisclosure } from '../../../src/engine/runners/custom-runner-disclosure.js';
+import { formatCustomRunnerTrustRequest } from '../../../src/engine/runners/custom-runner-disclosure.js';
 import { openApprovalPrompt } from '../../../src/stores/approval-prompt/prompt.js';
 import type { CliToolDetection, DetectedModel } from '../../../src/core/discovery/detection.js';
 import {
@@ -931,13 +931,15 @@ function createHomePreparationBlockedFixture(): FixtureLifecycle {
 }
 
 /**
- * The trust panel a runner the project config declares opens on its first start. The disclosure is
- * the real formatter's output for a project `agent` command, so the panel shows the rows an
- * operator really reads.
+ * The trust panel a runner the project config declares opens on its first start, or after its
+ * executable changed. The disclosure is the real formatter's output for an `agent` command, so the
+ * panel shows the rows an operator really reads.
  */
-function openRunnerTrustPrompt(): void {
-  const disclosure = formatCustomRunnerDisclosure({
-    executable: '"tools/review-bot"',
+function openRunnerTrustPrompt(executableChanged = false): void {
+  const disclosure = {
+    executable: executableChanged
+      ? '"/opt/homebrew/Cellar/review-bot/2.5.0/bin/review-bot"'
+      : '"/usr/local/bin/review-bot"',
     argv: ['"--diff"'],
     contract: 'direct',
     cwd: 'Project directory',
@@ -947,23 +949,23 @@ function openRunnerTrustPrompt(): void {
     filesystem: 'Not an OS sandbox; the process can access files available to the current user',
     network: 'Network access is not restricted',
     result: 'Reviewed workspace diff; it writes directly into the project directory',
-  });
+  } as const;
   void openApprovalPrompt({
     tier: 'confirm',
     actionClass: 'runner_trust',
-    actionDescription: `${disclosure}\n\nExact confirmation stores an owner-only reusable receipt.`,
+    actionDescription: formatCustomRunnerTrustRequest(disclosure, executableChanged),
     phase: 'planning',
   });
 }
 
-/** The first start of a runner the project config declares: the check waits on the trust panel. */
-function createHomePreparationRunnerTrustFixture(): FixtureLifecycle {
+/** A start of a runner the project config declares: the check waits on the trust panel. */
+function createHomePreparationRunnerTrustFixture(executableChanged: boolean): FixtureLifecycle {
   const home = createHomeFixture();
   return {
     setup: async (context) => {
       await home.setup(context);
       submitHeldCheck('start');
-      openRunnerTrustPrompt();
+      openRunnerTrustPrompt(executableChanged);
     },
     teardown: home.teardown,
   };
@@ -1543,7 +1545,14 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-preparation-checkout-warning'), createHomePreparationCheckoutWarningFixture],
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
   [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
-  [scenarioId('home-preparation-runner-trust'), createHomePreparationRunnerTrustFixture],
+  [
+    scenarioId('home-preparation-runner-trust'),
+    () => createHomePreparationRunnerTrustFixture(false),
+  ],
+  [
+    scenarioId('home-preparation-runner-trust-changed'),
+    () => createHomePreparationRunnerTrustFixture(true),
+  ],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
   [scenarioId('home-palette-prefill-draft'), () => createPalettePrefillFixture(false)],
   [scenarioId('home-palette-prefill-cleared'), () => createPalettePrefillFixture(true)],

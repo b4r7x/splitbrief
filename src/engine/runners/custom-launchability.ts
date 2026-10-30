@@ -25,7 +25,7 @@ import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
 
 export type CustomRunnerLaunchability =
   | Readonly<{
-      kind: 'resolved' | 'untrusted';
+      kind: 'resolved' | 'untrusted' | 'drifted';
       executable: Extract<
         Awaited<ReturnType<typeof resolveCustomExecutable>>,
         { kind: 'resolved' }
@@ -41,7 +41,7 @@ export type CustomRunnerLaunchability =
       disclosure: CustomRunnerDisclosure;
       receipt: CustomRunnerTrustReceipt;
     }>
-  | Readonly<{ kind: 'missing' | 'non-executable' | 'drifted' | 'invalid' }>;
+  | Readonly<{ kind: 'missing' | 'non-executable' | 'invalid' }>;
 
 export type AdmittedCustomRunnerInvocation = Readonly<{
   kind: 'custom-runner-invocation';
@@ -65,13 +65,6 @@ export type CustomRunnerAdmission =
 
 export const customRunnerAdmissionError = {
   invalid: () => error('custom-runner-admission-invalid', 'Custom runner admission is invalid.'),
-  denied: (role: 'planner' | 'implementer') =>
-    error(
-      'custom-runner-admission-denied',
-      role === 'planner'
-        ? 'Configured custom planner admission was denied.'
-        : 'Configured custom runner admission was denied.',
-    ),
   scopeMismatch: () =>
     error(
       'custom-runner-admission-scope-mismatch',
@@ -202,14 +195,16 @@ export async function resolveCustomRunnerLaunchability(
     ...(options.pathEnv === undefined ? {} : { pathEnv: options.pathEnv }),
     ...(options.pathExt === undefined ? {} : { pathExt: options.pathExt }),
   });
-  if (resolution.kind === 'identity-drifted') return { kind: 'drifted' };
-  if (resolution.kind !== 'resolved') return resolution;
+  if (resolution.kind !== 'resolved' && resolution.kind !== 'identity-drifted') return resolution;
   const disclosure = buildCustomRunnerDisclosure({
     runner,
     posture: options.posture,
     executable: resolution.executable,
   });
   if (disclosure === null) return { kind: 'invalid' };
+  if (resolution.kind === 'identity-drifted') {
+    return { kind: 'drifted', executable: resolution.executable, disclosure };
+  }
   if (trust.kind === 'match') {
     return {
       kind: 'trusted',
@@ -249,7 +244,11 @@ export async function admitCustomRunner(
       }),
     };
   }
-  if (launchability.kind === 'resolved' || launchability.kind === 'untrusted') {
+  if (
+    launchability.kind === 'resolved' ||
+    launchability.kind === 'untrusted' ||
+    launchability.kind === 'drifted'
+  ) {
     if (options.grant) {
       return {
         kind: 'admitted',

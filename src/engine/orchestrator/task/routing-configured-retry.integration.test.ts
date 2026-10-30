@@ -24,7 +24,6 @@ import type { RunnerGate } from '../../runners/prepared-execution.js';
 import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
 import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
 import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
-import { customRunnerAdmissionError } from '../../runners/custom-launchability.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
@@ -221,7 +220,9 @@ async function configuredRetryContext(
       authorizationPathEnv: input.runtime.authorizationPathEnv ?? '',
       authorizationPathExt: input.runtime.authorizationPathExt ?? '',
     });
-    if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('implementer');
+    if (admission.kind !== 'admitted') {
+      throw new Error(`Custom runner admission denied: ${JSON.stringify(admission)}`);
+    }
     gates.push({
       kind: runner.command.contract === 'output' ? 'shell' : 'agent',
       slot: { role: 'implementer', profile: profile.name },
@@ -407,7 +408,7 @@ describe('createTaskImplementer configured retry runner', () => {
           config,
           runtime: childRuntime,
         }),
-      ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
+      ).rejects.toThrow('Custom runner admission denied');
       expect(existsSync(retryMarker)).toBe(false);
       expect(existsSync(defaultMarker)).toBe(false);
     },

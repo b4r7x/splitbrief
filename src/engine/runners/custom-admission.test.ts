@@ -215,7 +215,7 @@ describe('prepareCustomRunnerAdmission', () => {
         }),
       );
 
-      expect(admission).toEqual({ kind: 'denied', status: 'drifted' });
+      expect(admission).toEqual({ kind: 'denied', status: 'untrusted' });
       expect(existsSync(resolveCustomRunnerTrustFile(stateDir))).toBe(false);
       expect(existsSync(originalStarted)).toBe(false);
       expect(existsSync(replacementStarted)).toBe(false);

@@ -6,7 +6,7 @@ import { canonicalJSON } from '../../utils/canonical-json.js';
 import { isAbortError, throwIfAborted } from '../../utils/abort.js';
 import { error } from '../../utils/error.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { formatCustomRunnerDisclosure } from './custom-runner-disclosure.js';
+import { formatCustomRunnerTrustRequest } from './custom-runner-disclosure.js';
 import {
   markCustomRunnerTrusted,
   parseConfiguredCustomRunner,
@@ -22,8 +22,6 @@ import {
 } from './custom-launchability.js';
 import { resolveCustomExecutable } from './resolve-cli-executable.js';
 import type { CustomRunnerAdmissionPolicy } from './types.js';
-
-const RECEIPT_CONFIRMATION_NOTICE = 'Exact confirmation stores an owner-only reusable receipt.';
 
 export const CUSTOM_RUNNER_TRUST_PERSISTED_AFTER_ABORT =
   'custom-runner-trust-persisted-after-abort';
@@ -87,11 +85,12 @@ function isExecutableLaunchability(
   launchability: Awaited<ReturnType<typeof resolveCustomRunnerLaunchability>>,
 ): launchability is Extract<
   Awaited<ReturnType<typeof resolveCustomRunnerLaunchability>>,
-  { kind: 'resolved' | 'untrusted' | 'trusted' }
+  { kind: 'resolved' | 'untrusted' | 'drifted' | 'trusted' }
 > {
   return (
     launchability.kind === 'resolved' ||
     launchability.kind === 'untrusted' ||
+    launchability.kind === 'drifted' ||
     launchability.kind === 'trusted'
   );
 }
@@ -205,10 +204,11 @@ async function projectStillMatchesSnapshot({
 
 function deniedPreMarkRevalidation(
   resolution: Awaited<ReturnType<typeof resolveCustomExecutable>>,
+  declined: Extract<CustomRunnerAdmission, { kind: 'denied' }>,
 ): Extract<CustomRunnerAdmission, { kind: 'denied' }> {
   switch (resolution.kind) {
     case 'identity-drifted':
-      return { kind: 'denied', status: 'drifted' };
+      return declined;
     case 'missing':
     case 'non-executable':
     case 'invalid':
@@ -256,20 +256,26 @@ export async function prepareCustomRunnerAdmission(
     });
     throwIfAborted(options.signal);
     if (!isExecutableLaunchability(disclosed)) return { kind: 'denied', status: 'invalid' };
+    const declined = {
+      kind: 'denied',
+      status: disclosed.kind === 'drifted' ? 'drifted' : 'untrusted',
+    } as const;
 
     const request: TieredApprovalRequest = {
       tier: 'confirm',
       actionClass: 'runner_trust',
-      actionDescription: `${formatCustomRunnerDisclosure(disclosed.disclosure)}\n\n${RECEIPT_CONFIRMATION_NOTICE}`,
+      actionDescription: formatCustomRunnerTrustRequest(
+        disclosed.disclosure,
+        disclosed.kind === 'drifted',
+      ),
       phase: capturedOptions.phase,
       ...(capturedOptions.taskId === undefined ? {} : { taskId: capturedOptions.taskId }),
     };
-    if (capturedOptions.onTieredApproval === undefined)
-      return { kind: 'denied', status: 'untrusted' };
+    if (capturedOptions.onTieredApproval === undefined) return declined;
 
     const response = await capturedOptions.onTieredApproval(request);
     throwIfAborted(options.signal);
-    if (!isConfirmed(response)) return { kind: 'denied', status: 'untrusted' };
+    if (!isConfirmed(response)) return declined;
     const projectMatches = await projectStillMatchesSnapshot({
       originalProjectDir: options.projectDir,
       capturedProjectDir: capturedOptions.projectDir,
@@ -290,7 +296,7 @@ export async function prepareCustomRunnerAdmission(
       pathExt: capturedOptions.authorizationPathExt,
     });
     throwIfAborted(options.signal);
-    if (revalidated.kind !== 'resolved') return deniedPreMarkRevalidation(revalidated);
+    if (revalidated.kind !== 'resolved') return deniedPreMarkRevalidation(revalidated, declined);
 
     throwIfAborted(options.signal);
     const trusted = await markCustomRunnerTrusted({

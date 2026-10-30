@@ -9,7 +9,6 @@ import { customRunnerSecurityPosture } from '../runners/custom-trust.js';
 import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
 import type { RunnerGate } from '../runners/prepared-execution.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
-import { customRunnerAdmissionError } from '../runners/custom-launchability.js';
 import {
   configuredPlanner,
   createCommandInvokeTestFixtures,
@@ -35,7 +34,9 @@ async function createConfiguredCustomPlanner(
     authorizationPathEnv: runtime.authorizationPathEnv ?? '',
     authorizationPathExt: runtime.authorizationPathExt ?? '',
   });
-  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('planner');
+  if (admission.kind !== 'admitted') {
+    throw new Error(`Custom runner admission denied: ${JSON.stringify(admission)}`);
+  }
   const gate = {
     kind: runner.command.contract === 'output' ? 'shell' : 'agent',
     slot: { role: 'planner' },
@@ -368,7 +369,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
           },
         }),
       ),
-    ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
+    ).rejects.toThrow('Custom runner admission denied');
     expect(existsSync(reviewCandidateRoot(projectDir))).toBe(false);
   });
 });

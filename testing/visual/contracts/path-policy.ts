@@ -34,6 +34,8 @@ const FIXTURE_HOST_PATHS = new Set([
   '/Users/me/notes/product-planning/archive/',
   '/Users/me/notes/product-planning/archive/receiving-workflow/',
   '/Volumes/design/receiving-flow.png',
+  '/usr/local/bin/review-bot',
+  '/opt/homebrew/Cellar/review-bot/2.5.0/bin/review-bot',
 ]);
 // The HTTP route the OpenCode listing source names in the picker byline; no file system path.
 const PRODUCT_ROUTE_PATHS = new Set(['/api/model']);

@@ -88,3 +88,15 @@ export function formatCustomRunnerDisclosure(disclosure: CustomRunnerDisclosure)
     `Result: ${disclosure.result}`,
   ].join('\n');
 }
+
+/** The trust prompt: a changed executable leads with the change, so the reader knows why it asks again. */
+export function formatCustomRunnerTrustRequest(
+  disclosure: CustomRunnerDisclosure,
+  executableChanged: boolean,
+): string {
+  return [
+    ...(executableChanged ? ['The executable changed since this machine trusted it.'] : []),
+    formatCustomRunnerDisclosure(disclosure),
+    'Exact confirmation stores an owner-only reusable receipt.',
+  ].join('\n\n');
+}

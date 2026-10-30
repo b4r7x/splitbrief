@@ -2,7 +2,6 @@ import { chmodSync, existsSync, mkdirSync, symlinkSync, unlinkSync, writeFileSyn
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
-import { matches } from '../../utils/error.js';
 import { shellQuoteArg } from '../../utils/shell-quote.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project.js';
 import {
@@ -10,7 +9,6 @@ import {
   type ConfiguredCustomRunner,
 } from '../runners/custom-trust.js';
 import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
-import { customRunnerAdmissionError } from '../runners/custom-launchability.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import { createConfiguredCustomPlanner as createPreparedConfiguredCustomPlanner } from './command-invoke.js';
 import {
@@ -37,7 +35,9 @@ async function createConfiguredCustomPlanner(
     authorizationPathEnv: runtime.authorizationPathEnv ?? '',
     authorizationPathExt: runtime.authorizationPathExt ?? '',
   });
-  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('planner');
+  if (admission.kind !== 'admitted') {
+    throw new Error(`Custom runner admission denied: ${JSON.stringify(admission)}`);
+  }
   return createPreparedConfiguredCustomPlanner(runner, runtime, admission.invocation);
 }
 
@@ -171,19 +171,9 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
         throw new Error('Output planner must not begin declared artifact review.');
       },
     };
-    let denial: unknown;
-    try {
-      await createConfiguredCustomPlanner(runner, runtime);
-    } catch (err) {
-      denial = err;
-    }
-
-    expect(matches('custom-runner-admission-denied')(denial)).toBe(true);
-    expect(denial).toMatchObject({
-      kind: 'custom-runner-admission-denied',
-      message: 'Configured custom planner admission was denied.',
-    });
-    expect(denial).toMatchObject({ data: undefined });
+    await expect(createConfiguredCustomPlanner(runner, runtime)).rejects.toThrow(
+      'Custom runner admission denied',
+    );
 
     expect(existsSync(childSentinel)).toBe(false);
   });
@@ -206,7 +196,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
           },
         }),
       ),
-    ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
+    ).rejects.toThrow('Custom runner admission denied');
 
     expect(existsSync(childSentinel)).toBe(false);
   });
