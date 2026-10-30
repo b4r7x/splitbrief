@@ -33,6 +33,7 @@ import { buildProgressRowCount } from '../layout/chrome-rows.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { separatedSpans } from '../conversation-rows/row-format/text.js';
 import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
+import type { RunView } from '../../../core/run-view/reduce.js';
 
 /**
  * The floor under the silence warning: the block never paints it for a seat quieter than this,
@@ -81,6 +82,7 @@ export interface DeriveBuildProgressInput {
   tasks: TasksState;
   lifecycle: LifecycleState;
   operations: OperationsState;
+  runView: RunView;
   now: number;
 }
 
@@ -300,8 +302,8 @@ function baseRun(input: DeriveBuildProgressInput): readonly BuildProgressSpan[] 
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
   const view = selectTaskListView(input.tasks);
   const retrying = isImplementerPhase(input.lifecycle.phase) && input.tasks.currentAttempt >= 2;
-  const wait = input.lifecycle.seatWait;
-  const waitParts = wait === null ? null : seatWaitParts(wait.tool, wait.resetAt, input.now);
+  const wait = input.runView.seatWait;
+  const waitParts = wait?.live ? seatWaitParts(wait.tool, wait.wait.resetAt, input.now) : null;
   return {
     passed: view.passed,
     total: view.total,

@@ -7,7 +7,7 @@ import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SeatWait, WorkflowState } from '../../../core/schemas/workflow.js';
 import { heldSeatOf, seatWaitMoved } from '../../../core/sessions/held-seat.js';
-import { seatWaitToolWord } from '../../../core/sessions/run-status.js';
+import { seatWaitToolWord } from '../../../core/sessions/seat-wait-line.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { thrownSeatFailure } from '../../implementers/pipeline/call-result.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
@@ -96,9 +96,9 @@ export function seatFailureFromError(err: unknown): SeatFailure {
 
 /**
  * Park the seat on the persisted wait, publish it, wait until the deadline,
- * then release it. An abort ends the live wait but leaves `state.seatWait` in
- * place, so a resume reads the deadline back and keeps waiting before the task
- * continues.
+ * then release it. An abort ends the live wait with `kept` and leaves
+ * `state.seatWait` in place, so a resume reads the deadline back and keeps
+ * waiting before the task continues.
  */
 export async function waitForSeatReset(
   input: Readonly<{
@@ -112,15 +112,16 @@ export async function waitForSeatReset(
   let state = transitionAndSave(input.ref, base, { type: 'SET_SEAT_WAIT', wait: input.wait });
   publishSeatWaitStarted(
     { bus: input.ref.bus, phase: state.phase },
-    input.wait.seat,
-    input.wait.resetAt,
+    input.wait,
     seatWaitToolWord(state, input.wait),
   );
   try {
     await abortableDelay(new Date(input.wait.resetAt).getTime() - Date.now(), input.signal);
-  } finally {
-    publishSeatWaitEnded({ bus: input.ref.bus, phase: state.phase }, input.wait.seat);
+  } catch (error) {
+    publishSeatWaitEnded({ bus: input.ref.bus, phase: state.phase }, input.wait.seat, true);
+    throw error;
   }
+  publishSeatWaitEnded({ bus: input.ref.bus, phase: state.phase }, input.wait.seat);
   state = transitionAndSave(input.ref, state, { type: 'CLEAR_SEAT_WAIT' });
   return state;
 }

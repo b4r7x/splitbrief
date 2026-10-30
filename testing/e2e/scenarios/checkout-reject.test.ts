@@ -720,6 +720,7 @@ else {
     expect(
       openRunBylineParts({
         status: reopened.status,
+        wait: null,
         continuable: true,
         width: 120,
         now: Date.now(),

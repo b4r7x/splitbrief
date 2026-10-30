@@ -48,6 +48,7 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import {
   buildProgressRows,
   deriveBuildProgress,
@@ -349,6 +350,7 @@ describe('handleRetryAndEscalation', () => {
           tasks: tasksStore.get(),
           lifecycle: lifecycleStore.get(),
           operations: operationsStore.get(),
+          runView: runViewStore.get(),
           now: Date.now(),
         });
         counts.push(buildProgressRows(progress, 118)[0]?.text ?? '');

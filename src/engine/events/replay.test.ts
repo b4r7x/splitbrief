@@ -318,8 +318,16 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     phase: 'implementing',
     seat: 'build',
     resetAt: '2026-10-03T12:00:00.000Z',
+    tool: 'OpenAI Codex CLI',
+    wait: {
+      seat: 'build',
+      resetAt: '2026-10-03T12:00:00.000Z',
+      tool: 'codex',
+      kind: 'cli',
+      holds: { tool: 'codex', kind: 'cli' },
+    },
   },
-  seat_wait_ended: { phase: 'implementing', seat: 'build' },
+  seat_wait_ended: { phase: 'implementing', seat: 'build', kept: true },
   seat_switched: {
     phase: 'implementing',
     seat: 'build',
@@ -817,5 +825,23 @@ describe('readRunEvents', () => {
 
     expect(diagnostics.skipped).toBe(0);
     expect(events[1]).toEqual({ type: 'plan_approved', ts: TS, phase: 'reviewing-plan' });
+  });
+
+  it('reads a seat wait an older log wrote without the saved wait or kept', async () => {
+    const started = {
+      type: 'seat_wait_started',
+      ts: TS,
+      phase: 'implementing',
+      seat: 'build',
+      resetAt: '2026-10-03T12:00:00.000Z',
+      tool: 'OpenAI Codex CLI',
+    };
+    const ended = { type: 'seat_wait_ended', ts: TS + 1, phase: 'implementing', seat: 'build' };
+    writeLog(ref(), [sample(started), sample(ended)]);
+
+    const { events, diagnostics } = await readRunEvents(ref());
+
+    expect(diagnostics.skipped).toBe(0);
+    expect(events.slice(1, 3)).toEqual([started, ended]);
   });
 });

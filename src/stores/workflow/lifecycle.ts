@@ -30,7 +30,6 @@ interface LifecycleBase {
   steerableCall: { seat: CrewSeatId; taskId?: string } | null;
   phaseFirstSeenTs: PhaseFirstSeenTs;
   stall: LifecycleStall;
-  seatWait: { tool: string; resetAt: string } | null;
   /** When the run last produced any sign of life, so a silent seat can be named as silent. */
   lastRunnerEventTs?: number | null;
   /** When the attempt now running began, so its elapsed time is not the whole brief's. */
@@ -138,7 +137,6 @@ interface LifecycleResetState {
   cancelled?: boolean | undefined;
   queueDepth?: number | undefined;
   phaseFirstSeenTs?: PhaseFirstSeenTs | undefined;
-  seatWait?: { tool: string; resetAt: string } | null | undefined;
   startedAt?: number | null | undefined;
   endedAt?: number | null | undefined;
   durationMs?: number | null | undefined;
@@ -155,7 +153,6 @@ const initial: LifecycleState = {
   steerableCall: null,
   phaseFirstSeenTs: {},
   stall: null,
-  seatWait: null,
   lastRunnerEventTs: null,
   attemptStartedTs: null,
   plannerCall: null,
@@ -255,14 +252,6 @@ export function updatePhase(state: LifecycleState, event: EngineEvent): Lifecycl
 }
 
 function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleState {
-  if (event.type === 'seat_wait_started') {
-    if (event.tool === undefined) return state;
-    return { ...state, seatWait: { tool: event.tool, resetAt: event.resetAt } };
-  }
-  if (event.type === 'seat_wait_ended') {
-    return state.seatWait === null ? state : { ...state, seatWait: null };
-  }
-
   if (isInfrastructurePhaseEvent(event)) return state;
   const phase = eventPhase(event);
 
@@ -282,7 +271,6 @@ function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleSt
       phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, event.ts),
       startedAt: state.startedAt ?? event.ts,
       resumedAt: event.resumedAt ?? event.ts,
-      seatWait: state.seatWait,
     });
   }
 
@@ -392,7 +380,6 @@ export function markLifecycleCancellationRequested(
     steerableCall: null,
     phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, cancellation.ts),
     stall: null,
-    seatWait: null,
     startedAt: state.startedAt,
     endedAt: cancellation.ts,
     durationMs: state.durationMs ?? durationFromStart(state.startedAt, cancellation.ts),
@@ -474,7 +461,6 @@ function markLifecycleComplete(
     steerableCall: null,
     phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, endedAt),
     stall: null,
-    seatWait: null,
     startedAt: state.startedAt,
     endedAt,
     durationMs: state.durationMs ?? durationFromStart(state.startedAt, endedAt),
@@ -504,7 +490,6 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
   );
   const phaseFirstSeenTs = next.phaseFirstSeenTs ?? initial.phaseFirstSeenTs;
   const startedAt = next.startedAt ?? null;
-  const seatWait = next.seatWait ?? null;
 
   if (next.status === 'complete') {
     const endedAt = next.endedAt ?? startedAt ?? 0;
@@ -518,7 +503,6 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       steerableCall: null,
       phaseFirstSeenTs,
       stall: null,
-      seatWait,
       lastRunnerEventTs: null,
       attemptStartedTs: null,
       startedAt,
@@ -540,7 +524,6 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       steerableCall: null,
       phaseFirstSeenTs,
       stall: null,
-      seatWait,
       lastRunnerEventTs: null,
       attemptStartedTs: null,
       startedAt,
@@ -552,7 +535,7 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
 
   if (next.status === 'interrupted') {
     return markLifecycleInterrupted(
-      runningLifecycleState({ phase, queuedMessageIds, phaseFirstSeenTs, startedAt, seatWait }),
+      runningLifecycleState({ phase, queuedMessageIds, phaseFirstSeenTs, startedAt }),
     );
   }
 
@@ -562,7 +545,6 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       queuedMessageIds,
       phaseFirstSeenTs,
       startedAt,
-      seatWait,
     });
     return {
       ...running,
@@ -577,7 +559,6 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       queuedMessageIds,
       phaseFirstSeenTs,
       startedAt,
-      seatWait,
     });
   }
 
@@ -586,7 +567,6 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
     queueDepth,
     queuedMessageIds,
     phaseFirstSeenTs,
-    seatWait,
   };
 }
 
@@ -603,7 +583,6 @@ function applyRunningPhase(
       queuedMessageIds: state.queuedMessageIds,
       phaseFirstSeenTs,
       startedAt: ts,
-      seatWait: state.seatWait,
     });
   }
   if (state.status === 'running' || state.status === 'interrupted' || state.status === 'paused') {
@@ -617,7 +596,6 @@ function runningLifecycleState(input: {
   queuedMessageIds: ReadonlySet<string>;
   phaseFirstSeenTs: PhaseFirstSeenTs;
   startedAt: number | null;
-  seatWait?: { tool: string; resetAt: string } | null;
   lastRunnerEventTs?: number | null;
   attemptStartedTs?: number | null;
   resumedAt?: number | null;
@@ -632,7 +610,6 @@ function runningLifecycleState(input: {
     steerableCall: null,
     phaseFirstSeenTs: input.phaseFirstSeenTs,
     stall: null,
-    seatWait: input.seatWait ?? null,
     lastRunnerEventTs: input.lastRunnerEventTs ?? null,
     attemptStartedTs: input.attemptStartedTs ?? null,
     plannerCall: null,

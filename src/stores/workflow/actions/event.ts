@@ -12,12 +12,17 @@ import { _tasksInternal, updateTaskCounts, updateTaskMap, type TasksState } from
 import { _tokensInternal, updateTokens } from '../tokens.js';
 import { _operationsInternal } from '../operations/state.js';
 import { updateOperations } from '../operations/reducer.js';
+import { _runViewInternal } from '../run-view.js';
+import { reduceRunView } from '../../../core/run-view/reduce.js';
 
 export function addEvent(event: EngineEvent): void {
   if (event.type === 'cost_update') {
     _tokensInternal.set((s) => updateTokens(s, event));
     return;
   }
+
+  // Before the cancellation gate: a stop ends a live seat wait after it cancels the run.
+  _runViewInternal.set((view) => reduceRunView(view, event));
 
   if (lifecycleStore.get().cancelled && !acceptsEventAfterCancellation(event)) return;
 

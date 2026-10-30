@@ -24,6 +24,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
+import type { SeatWait } from '../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import {
@@ -1108,15 +1109,112 @@ describe('WorkflowScreen showing a run at rest', () => {
     return { ui, record };
   }
 
+  function loadKeptWait(wait: SeatWait): void {
+    loadEvents([
+      {
+        type: 'seat_wait_started',
+        ts: FIXED_TS - 1_000,
+        phase: 'implementing',
+        seat: wait.seat,
+        resetAt: wait.resetAt,
+        tool: 'OpenAI Codex CLI',
+        wait,
+      },
+      {
+        type: 'seat_wait_ended',
+        ts: FIXED_TS - 500,
+        phase: 'implementing',
+        seat: wait.seat,
+        kept: true,
+      },
+    ]);
+  }
+
+  it('shows no wait for a saved wait on a tool the seat no longer runs', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FIXED_TS);
+    const wait: SeatWait = {
+      seat: 'build',
+      resetAt: new Date(FIXED_TS + 60_000).toISOString(),
+      tool: 'codex',
+      kind: 'cli',
+      holds: { tool: 'codex', kind: 'cli' },
+    };
+    openRun({
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T003', status: 'in_progress' })],
+          seatWait: wait,
+        }),
+      },
+    });
+    loadKeptWait(wait);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Stopped at T003');
+    expect(frame).not.toContain('Waiting for');
+    ui.unmount();
+    vi.useRealTimers();
+  });
+
+  it('shows the wait of a run another process drives, though this crew runs another tool', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FIXED_TS);
+    const wait: SeatWait = {
+      seat: 'build',
+      resetAt: new Date(FIXED_TS + 60_000).toISOString(),
+      tool: 'codex',
+      kind: 'cli',
+      holds: { tool: 'codex', kind: 'cli' },
+    };
+    openRun({
+      status: { kind: 'running' },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T003', status: 'in_progress' })],
+          seatWait: wait,
+        }),
+      },
+    });
+    loadEvents([
+      {
+        type: 'seat_wait_started',
+        ts: FIXED_TS - 1_000,
+        phase: 'implementing',
+        seat: wait.seat,
+        resetAt: wait.resetAt,
+        tool: 'OpenAI Codex CLI',
+        wait,
+      },
+    ]);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Waiting for OpenAI Codex CLI');
+    expect(frame).toContain('resets');
+    expect(frame).not.toContain('Running in another process');
+    ui.unmount();
+    vi.useRealTimers();
+  });
+
   it('drops a seat wait from the byline once its reset passes, and stops the clock', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(FIXED_TS);
+    const wait = { seat: 'build' as const, resetAt: new Date(FIXED_TS + 2_500).toISOString() };
     const state = makeWorkflowState({
       phase: 'implementing',
       tasks: [makeTask({ id: 'T003', status: 'in_progress' })],
-      seatWait: { seat: 'build', resetAt: new Date(FIXED_TS + 2_500).toISOString() },
+      seatWait: wait,
     });
     openRun({ hydration: { kind: 'loaded', state } });
+    loadKeptWait(wait);
 
     const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
     await flushEffects();

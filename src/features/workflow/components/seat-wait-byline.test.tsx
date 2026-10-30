@@ -12,6 +12,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { _runViewInternal, runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { loadEvents } from '../../../stores/workflow/actions/load.js';
@@ -23,6 +24,10 @@ import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import { InputFooter } from './input-footer.js';
 
 const originalColorLevel = chalk.level;
+
+function seedWait(tool: string, resetAt: string, live = true): void {
+  _runViewInternal.set({ seatWait: { tool, wait: { seat: 'build', resetAt }, live } });
+}
 
 describe('seatWait byline', () => {
   beforeEach(() => {
@@ -43,6 +48,7 @@ describe('seatWait byline', () => {
     });
     lifecycleStore.__testReset();
     tasksStore.__testReset();
+    runViewStore.reset();
   });
 
   afterEach(() => {
@@ -51,6 +57,7 @@ describe('seatWait byline', () => {
     routerStore.init({ screen: 'home' });
     lifecycleStore.__testReset();
     tasksStore.__testReset();
+    runViewStore.reset();
     terminalSizeStore.reset();
   });
 
@@ -69,8 +76,8 @@ describe('seatWait byline', () => {
     lifecycleStore.__testReset({
       status: 'paused',
       phase: 'planning',
-      seatWait: { tool: 'claude', resetAt },
     });
+    seedWait('claude', resetAt);
     const ui = renderFeature(<InputFooter width={120} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     const sentence = seatWaitSentence('claude', resetAt)!;
@@ -86,8 +93,8 @@ describe('seatWait byline', () => {
     lifecycleStore.__testReset({
       status: 'paused',
       phase: 'implementing',
-      seatWait: { tool: 'codex', resetAt },
     });
+    seedWait('codex', resetAt);
     tasksStore.__testReset({
       currentTask: 2,
       totalTasks: 2,
@@ -111,8 +118,8 @@ describe('seatWait byline', () => {
     lifecycleStore.__testReset({
       status: 'paused',
       phase: 'final-review',
-      seatWait: { tool: 'gemini', resetAt },
     });
+    seedWait('gemini', resetAt);
     const ui = renderFeature(<InputFooter width={120} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     const sentence = seatWaitSentence('gemini', resetAt)!;
@@ -130,8 +137,8 @@ describe('seatWait byline', () => {
       phase: 'implementing',
       startedAt: Date.now() - 42_000,
       phaseFirstSeenTs: { implementing: Date.now() - 42_000 },
-      seatWait: { tool: 'codex', resetAt },
     });
+    seedWait('codex', resetAt);
     const ui = renderFeature(<InputFooter width={120} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     const sentence = seatWaitSentence('codex', resetAt)!;
@@ -141,12 +148,34 @@ describe('seatWait byline', () => {
     ui.unmount();
   });
 
-  it('shows Resuming when seatWait is null on paused Build', () => {
+  it('keeps Resuming T002 when a stop kept the wait and no process waits on it', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    lifecycleStore.__testReset({
+      status: 'paused',
+      phase: 'implementing',
+    });
+    seedWait('codex', resetAt, false);
+    tasksStore.__testReset({
+      currentTask: 2,
+      totalTasks: 2,
+      tasks: [
+        { id: 'T001', title: 'One', status: 'done' },
+        { id: 'T002', title: 'Two', status: 'in_progress' },
+      ],
+    });
+    const ui = renderFeature(<InputFooter width={120} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Resuming T002');
+    expect(frame).not.toContain('Waiting for');
+    ui.unmount();
+  });
+
+  it('shows Resuming when no seat waits on paused Build', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({
       status: 'paused',
       phase: 'implementing',
-      seatWait: null,
     });
     tasksStore.__testReset({
       currentTask: 2,
@@ -168,8 +197,8 @@ describe('seatWait byline', () => {
     lifecycleStore.__testReset({
       status: 'paused',
       phase: 'implementing',
-      seatWait: { tool: 'codex', resetAt },
     });
+    seedWait('codex', resetAt);
     tasksStore.__testReset({
       currentTask: 2,
       totalTasks: 2,
@@ -191,8 +220,8 @@ describe('seatWait byline', () => {
     lifecycleStore.__testReset({
       status: 'paused',
       phase: 'implementing',
-      seatWait: { tool: 'codex', resetAt },
     });
+    seedWait('codex', resetAt);
     const ui = renderFeature(
       <InputFooter
         width={120}
@@ -212,8 +241,8 @@ describe('seatWait byline', () => {
     lifecycleStore.__testReset({
       status: 'paused',
       phase: 'planning',
-      seatWait: { tool: 'claude', resetAt },
     });
+    seedWait('claude', resetAt);
     const ui = renderFeature(<InputFooter width={120} />);
     const sentence = seatWaitSentence('claude', resetAt)!;
     expect(ui.lastFrame()).toContain(

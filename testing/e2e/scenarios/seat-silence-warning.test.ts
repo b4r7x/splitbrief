@@ -14,6 +14,7 @@ import {
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../src/stores/workflow/operations/state.js';
+import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { tasksStore } from '../../../src/stores/workflow/tasks.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -143,6 +144,7 @@ function progressAt(now: number) {
     tasks: tasksStore.get(),
     lifecycle: lifecycleStore.get(),
     operations: operationsStore.get(),
+    runView: runViewStore.get(),
     now,
   });
 }

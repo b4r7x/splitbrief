@@ -265,6 +265,13 @@ src/core/sessions/
 └── find-unused-id.ts  # findUnusedId(input) — first free session id (flat, not under id/)
 ```
 
+### `src/core/run-view/` — the run view
+
+```
+src/core/run-view/
+└── reduce.ts          # reduceRunView — the run view: one fold of session.jsonl that every surface reads
+```
+
 ### `src/utils/` — generic primitives
 
 ```

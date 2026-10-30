@@ -6,12 +6,8 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { RECOVERY_ACTIONS, type RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
-import { createInitialState } from '../../../core/state/machine.js';
-import { atRestRunStatus } from '../../../core/sessions/run-status.js';
-import { formatResetAt } from '../../../core/recovery/reset-clock.js';
 import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
+import type { ViewSeatWait } from '../../../core/run-view/reduce.js';
 import { bylineParts, legendText, openRunBylineParts } from './byline.js';
 import { stopPoint } from '../stop/copy.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
@@ -29,6 +25,10 @@ const NOW = new Date(2026, 9, 10, 12, 0, 0, 0).getTime();
 
 function openRunByline(input: Parameters<typeof openRunBylineParts>[0]): string {
   return joinedByline(openRunBylineParts(input));
+}
+
+function codexWait(resetAt: string, live: boolean): ViewSeatWait {
+  return { tool: 'OpenAI Codex CLI', wait: { seat: 'build', resetAt }, live };
 }
 
 describe('bylineText', () => {
@@ -167,11 +167,12 @@ describe('bylineText', () => {
 });
 
 describe('openRunByline', () => {
-  const OPEN = { continuable: true, width: WIDE, now: NOW } as const;
+  const OPEN = { continuable: true, wait: null, width: WIDE, now: NOW } as const;
 
   it('points a run ready to apply at its result menu', () => {
     expect(
       openRunByline({
+        wait: null,
         continuable: false,
         now: NOW,
         width: WIDE,
@@ -183,6 +184,7 @@ describe('openRunByline', () => {
   it('says an override is applied as is', () => {
     expect(
       openRunByline({
+        wait: null,
         continuable: false,
         now: NOW,
         width: WIDE,
@@ -417,63 +419,67 @@ describe('openRunByline', () => {
     ).toBe('Stopped by an error · Planning failed. · ⏎ to retry the step');
   });
 
-  it('names the tool a run waits on and the clock its reset lands', () => {
+  it('names the tool a stopped run waits on and the clock its reset lands', () => {
     const resetAt = new Date(new Date(NOW).setHours(17, 0, 0, 0)).toISOString();
-    expect(
-      openRunByline({
-        ...OPEN,
-        status: {
-          kind: 'open',
-          stop: {
-            kind: 'stopped',
-            on: { kind: 'seat-wait', seat: 'review', tool: 'OpenAI Codex CLI', resetAt },
-          },
-          resumeAt: { kind: 'review', cycle: 0 },
-        },
-      }),
-    ).toBe('Waiting for OpenAI Codex CLI · resets 17:00');
+    const parts = openRunBylineParts({
+      ...OPEN,
+      wait: codexWait(resetAt, false),
+      status: {
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+        resumeAt: { kind: 'review', cycle: 0 },
+      },
+    });
+    expect(joinedByline(parts)).toBe('Waiting for OpenAI Codex CLI · resets 17:00');
+    expect(parts[0]).toEqual({ text: 'Waiting for OpenAI Codex CLI', tone: 'warning' });
   });
 
-  it('reads a wait whose reset has passed as an interrupted stop', () => {
+  it('reads a wait whose reset has passed as the stop under it', () => {
     expect(
       openRunByline({
         ...OPEN,
+        wait: codexWait(new Date(NOW - 60_000).toISOString(), false),
         status: {
           kind: 'open',
-          stop: {
-            kind: 'stopped',
-            on: {
-              kind: 'seat-wait',
-              seat: 'build',
-              tool: 'OpenAI Codex CLI',
-              resetAt: new Date(NOW - 60_000).toISOString(),
-            },
-          },
+          stop: { kind: 'stopped', on: { kind: 'interrupted' } },
           resumeAt: { kind: 'planner', call: 'plan' },
         },
       }),
     ).toBe('Stopped at the plan · ⏎ to continue');
   });
 
+  it('keeps the line of a halt that waits for you over a saved wait', () => {
+    const resetAt = new Date(new Date(NOW).setHours(17, 0, 0, 0)).toISOString();
+    expect(
+      openRunByline({
+        ...OPEN,
+        wait: codexWait(resetAt, false),
+        status: {
+          kind: 'open',
+          stop: { kind: 'waiting-for-you', on: { kind: 'question' } },
+          resumeAt: { kind: 'planner', call: 'plan' },
+        },
+      }),
+    ).toBe('Waiting for your answer · type a reply or ⏎ to continue');
+  });
+
   it('names the wait of a run another process holds as the live byline does', () => {
     const resetAt = new Date(new Date(NOW).setHours(17, 0, 0, 0)).toISOString();
     const text = openRunByline({
       ...OPEN,
-      status: { kind: 'running', seatWait: { tool: 'OpenAI Codex CLI', resetAt } },
+      wait: codexWait(resetAt, true),
+      status: { kind: 'running' },
     });
     expect(text).toBe('Waiting for OpenAI Codex CLI · resets 17:00');
     expect(text).toBe(seatWaitSentence('OpenAI Codex CLI', resetAt, NOW));
   });
 
-  it('says a run another process holds is running once its wait has passed', () => {
+  it.each([
+    ['its wait has passed', new Date(NOW - 60_000).toISOString(), true],
+    ['a steer cut its wait', new Date(NOW + 60 * 60_000).toISOString(), false],
+  ])('says a run another process holds is running once %s', (_, resetAt, live) => {
     expect(
-      openRunByline({
-        ...OPEN,
-        status: {
-          kind: 'running',
-          seatWait: { tool: 'OpenAI Codex CLI', resetAt: new Date(NOW - 60_000).toISOString() },
-        },
-      }),
+      openRunByline({ ...OPEN, wait: codexWait(resetAt, live), status: { kind: 'running' } }),
     ).toBe('Running in another process');
   });
 
@@ -493,6 +499,7 @@ describe('openRunByline', () => {
   it('says why a run nothing can pick up cannot be continued', () => {
     expect(
       openRunByline({
+        wait: null,
         continuable: false,
         now: NOW,
         width: WIDE,
@@ -542,6 +549,7 @@ describe('openRunByline', () => {
     (queued, width, text) => {
       expect(
         openRunByline({
+          wait: null,
           continuable: false,
           now: NOW,
           width,
@@ -576,7 +584,7 @@ describe('openRunByline', () => {
       },
       resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
     };
-    expect(openRunByline({ continuable: true, status, width: 40, now: NOW })).toBe(
+    expect(openRunByline({ wait: null, continuable: true, status, width: 40, now: NOW })).toBe(
       'Seat down · ⏎ to decide',
     );
   });
@@ -587,7 +595,7 @@ describe('openRunByline', () => {
       stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
       resumeAt: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
     } as const;
-    expect(openRunByline({ continuable: true, status, width: 30, now: NOW })).toBe(
+    expect(openRunByline({ wait: null, continuable: true, status, width: 30, now: NOW })).toBe(
       'Type a correction or ⏎ to con…',
     );
   });
@@ -597,6 +605,7 @@ describe('openRunByline', () => {
 describe('openRunByline on a halt whose action was chosen', () => {
   function haltByline(issue: RecoveryIssue): string {
     return openRunByline({
+      wait: null,
       continuable: true,
       now: NOW,
       width: WIDE,
@@ -678,6 +687,7 @@ describe('openRunByline on a halt whose action was chosen', () => {
   it('keeps the chosen action when a narrow line sheds the cause', () => {
     const issue = makeRecoveryIssue({ status: 'applying', selectedAction: 'retry-same-worker' });
     const parts = openRunBylineParts({
+      wait: null,
       continuable: true,
       now: NOW,
       width: 30,
@@ -726,19 +736,6 @@ describe('fitted byline parts', () => {
       'error',
     ],
     [{ kind: 'stopped', on: { kind: 'interrupted' } }, 'Stopped at the plan', 'warning'],
-    [
-      {
-        kind: 'stopped',
-        on: {
-          kind: 'seat-wait',
-          seat: 'build',
-          tool: 'OpenAI Codex CLI',
-          resetAt: '2026-10-11T17:00:00Z',
-        },
-      },
-      'Waiting for OpenAI Codex CLI',
-      'warning',
-    ],
   ] as const)('keeps %s structured and preserves its joined text', (stop, reason, reasonTone) => {
     const input = {
       status: {
@@ -746,6 +743,7 @@ describe('fitted byline parts', () => {
         stop,
         resumeAt: { kind: 'planner', call: 'plan' },
       },
+      wait: null,
       continuable: true,
       now: NOW,
       width: WIDE,
@@ -778,14 +776,16 @@ describe('fitted byline parts', () => {
       },
       resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
     };
-    expect(openRunBylineParts({ status, continuable: true, width: 40, now: NOW })).toEqual([
+    expect(
+      openRunBylineParts({ wait: null, status, continuable: true, width: 40, now: NOW }),
+    ).toEqual([
       { text: 'Seat down', tone: 'warning' },
       { text: ' · ', tone: 'textDim' },
       { text: '⏎ to decide', tone: 'textDim' },
     ]);
-    expect(openRunBylineParts({ status, continuable: true, width: 12, now: NOW })).toEqual([
-      { text: '⏎ to decide', tone: 'textDim' },
-    ]);
+    expect(
+      openRunBylineParts({ wait: null, status, continuable: true, width: 12, now: NOW }),
+    ).toEqual([{ text: '⏎ to decide', tone: 'textDim' }]);
   });
 
   it.each([
@@ -793,7 +793,9 @@ describe('fitted byline parts', () => {
     [{ kind: 'ready-to-apply', override: true }, 'warning'],
     [{ kind: 'running' }, 'accent'],
   ] as const)('colors %s from its state', (status, reasonTone) => {
-    expect(openRunBylineParts({ status, continuable: true, width: WIDE, now: NOW })[0]).toEqual({
+    expect(
+      openRunBylineParts({ wait: null, status, continuable: true, width: WIDE, now: NOW })[0],
+    ).toEqual({
       text:
         status.kind === 'running'
           ? 'Running in another process'
@@ -895,6 +897,7 @@ it('keeps status receipt text and fitting while coloring Apply undone and Ended'
 
 it('keeps the separator inside a failed reason dim', () => {
   const parts = openRunBylineParts({
+    wait: null,
     status: {
       kind: 'open',
       stop: { kind: 'stopped', on: { kind: 'failed', message: 'Disk full' } },
@@ -916,6 +919,7 @@ it('keeps the separator inside a failed reason dim', () => {
 it('keeps the review seat in an at-rest halt title', () => {
   const issue = makeRecoveryIssue({ reason: 'planner-call-failed', seat: 'review' });
   const parts = openRunBylineParts({
+    wait: null,
     status: {
       kind: 'open',
       stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
@@ -934,54 +938,4 @@ it('keeps the review seat in an at-rest halt title', () => {
     { text: ' · ', tone: 'textDim' },
     { text: '⏎ to decide', tone: 'textDim' },
   ]);
-});
-
-describe('the at-rest byline of a run stopped in a seat wait', () => {
-  const resetAt = new Date(NOW + 10 * 60 * 1000).toISOString();
-  const record = makeRunRecord({
-    status: {
-      kind: 'open',
-      stop: {
-        kind: 'stopped',
-        on: { kind: 'seat-wait', seat: 'build', tool: 'OpenAI Codex CLI', resetAt },
-      },
-      resumeAt: { kind: 'planner', call: 'plan' },
-    },
-    hydration: {
-      kind: 'loaded',
-      state: {
-        ...createInitialState('feat'),
-        seatWait: {
-          seat: 'build',
-          resetAt,
-          tool: 'codex',
-          kind: 'cli',
-          holds: { tool: 'codex', kind: 'cli' },
-        },
-      },
-    },
-  });
-
-  function atRestByline(config: ReturnType<typeof makeConfig>): string {
-    return joinedByline(
-      openRunBylineParts({
-        status: atRestRunStatus(record, config),
-        continuable: true,
-        now: NOW,
-        width: WIDE,
-      }),
-    );
-  }
-
-  it('names no wait once /crew moved the seat to another tool', () => {
-    expect(atRestByline(makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } }))).toBe(
-      'Stopped at the plan · ⏎ to continue',
-    );
-  });
-
-  it('keeps the wait when only the model of the seat changed', () => {
-    expect(
-      atRestByline(makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.1' } })),
-    ).toBe(`Waiting for OpenAI Codex CLI · ${formatResetAt(resetAt, NOW)}`);
-  });
 });

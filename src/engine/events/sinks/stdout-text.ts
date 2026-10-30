@@ -3,6 +3,7 @@ import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { stuckAnswerWords } from '../../../core/review/stuck.js';
 import { setAsideLine } from '../../../core/review/verdict.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
+import { EMPTY_RUN_VIEW, reduceRunView } from '../../../core/run-view/reduce.js';
 import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { checksSummary } from '../../../core/validation/checks-summary.js';
@@ -165,6 +166,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
   const output = opts.output ?? process.stdout;
   const checks = new Map<string, string>();
   let lastPhase: string | null = null;
+  let view = EMPTY_RUN_VIEW;
 
   function write(line: string): void {
     // A consumer's stdout pipe is a projection boundary: a closed pipe never
@@ -187,6 +189,8 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
       write(`phase: ${phase}`);
     }
 
+    const previous = view;
+    view = reduceRunView(view, bounded);
     switch (bounded.type) {
       case 'user_message':
         if (bounded.attachedInputs !== undefined && bounded.attachedInputs.length > 0)
@@ -198,10 +202,10 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
         checks.set(bounded.taskId, checksSummary(bounded.results));
         return;
       case 'seat_wait_started': {
-        if (typeof bounded.tool === 'string' && bounded.tool.trim() !== '') {
-          const parts = seatWaitParts(bounded.tool, bounded.resetAt);
-          if (parts !== null) write(`waiting: ${bounded.tool}${SOFT_SEP}${parts[1]}`);
-        }
+        // A start the view did not take (no tool) writes nothing.
+        const wait = view === previous ? null : view.seatWait;
+        const parts = wait === null ? null : seatWaitParts(wait.tool, wait.wait.resetAt);
+        if (wait !== null && parts !== null) write(`waiting: ${wait.tool}${SOFT_SEP}${parts[1]}`);
         return;
       }
       case 'review_checks':

@@ -533,77 +533,17 @@ describe('a run with a workspace', () => {
 });
 
 describe('deriveRunStatus: a seat wait', () => {
-  const resetAt = '2026-09-01T17:00:00.000Z';
-  function waitTool(overrides: Partial<WorkflowState>): string | undefined {
-    const status = statusOf(overrides);
-    return status.kind === 'open' &&
-      status.stop.kind === 'stopped' &&
-      status.stop.on.kind === 'seat-wait'
-      ? status.stop.on.tool
-      : undefined;
-  }
+  const seatWait = { seat: 'build', resetAt: '2026-09-01T17:00:00.000Z' } as const;
 
-  it.each([
-    { tool: 'codex', kind: 'cli', word: 'OpenAI Codex CLI' },
-    { tool: 'claude-code', kind: 'cli', word: 'Claude Code CLI' },
-    { tool: 'opencode', kind: 'cli', word: 'OpenCode CLI' },
-    { tool: 'ollama', kind: 'api', word: 'Ollama' },
-    { tool: 'my-endpoint', kind: 'api', word: 'my-endpoint' },
-    { tool: 'shell', kind: 'shell', word: 'Custom Shell' },
-    { tool: 'agent', kind: 'agent', word: 'Agent' },
-  ] as const)(
-    'names the recorded $kind runner $tool by its catalog name',
-    ({ tool, kind, word }) => {
-      expect(
-        waitTool({
-          plannerTool: 'claude-code',
-          implementerTool: 'claude-code',
-          seatWait: { seat: 'build', resetAt, tool, kind },
-        }),
-      ).toBe(word);
-    },
-  );
-
-  it.each([
-    {
-      seat: 'plan',
-      started: { plannerTool: 'codex', plannerKind: 'cli' },
-      word: 'OpenAI Codex CLI',
-    },
-    {
-      seat: 'build',
-      started: { implementerTool: 'ollama', implementerKind: 'api' },
-      word: 'Ollama',
-    },
-    {
-      seat: 'build',
-      started: { implementerTool: 'shell', implementerKind: 'shell' },
-      word: 'Custom Shell',
-    },
-    {
-      seat: 'review',
-      started: { reviewerTool: 'agent', reviewerKind: 'agent', plannerTool: 'codex' },
-      word: 'Agent',
-    },
-    {
-      seat: 'review',
-      started: { plannerTool: 'codex', plannerKind: 'cli' },
-      word: 'OpenAI Codex CLI',
-    },
-  ] as const)(
-    'names the $seat tool the run started on when an older wait recorded none',
-    ({ seat, started, word }) => {
-      expect(waitTool({ ...started, seatWait: { seat, resetAt } })).toBe(word);
-    },
-  );
-
-  it('carries the wait of a run another process holds', () => {
-    expect(
-      statusOf({ seatWait: { seat: 'build', resetAt, tool: 'codex', kind: 'cli' } }, 'alive'),
-    ).toEqual({ kind: 'running', seatWait: { tool: 'OpenAI Codex CLI', resetAt } });
+  // The run's log states the wait; the status reads the stop under it.
+  it('reads a run stopped on a saved wait as the stop under it', () => {
+    expect(statusOf({ seatWait })).toMatchObject({
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+    });
   });
 
-  it('names the seat when neither the wait nor the run recorded a tool', () => {
-    expect(waitTool({ seatWait: { seat: 'build', resetAt } })).toBe('BUILD');
+  it('reads a run another process holds as running', () => {
+    expect(statusOf({ seatWait }, 'alive')).toEqual({ kind: 'running' });
   });
 });

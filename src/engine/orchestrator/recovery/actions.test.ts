@@ -17,7 +17,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { writeSeatIdentities } from '../../../core/state/seats.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { seatWaitToolWord } from '../../../core/sessions/seat-wait-line.js';
 import type { CrewSeatId, SeatIds } from '../../../core/crew/identity.js';
 import { applyRecoveryAction, commitSeatSwitch, planSwitchSeatRecoveryAction } from './actions.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
@@ -1077,13 +1077,7 @@ describe('applyRecoveryAction: retry-later', () => {
     }
 
     function waitWord(state: WorkflowState | null): string | undefined {
-      if (state === null) return undefined;
-      const status = deriveRunStatus({ state, liveness: 'not-alive' });
-      return status.kind === 'open' &&
-        status.stop.kind === 'stopped' &&
-        status.stop.on.kind === 'seat-wait'
-        ? status.stop.on.tool
-        : undefined;
+      return state?.seatWait === undefined ? undefined : seatWaitToolWord(state, state.seatWait);
     }
 
     function halt(seat: CrewSeatId, extra: Partial<RecoveryIssue> = {}): RecoveryIssue {

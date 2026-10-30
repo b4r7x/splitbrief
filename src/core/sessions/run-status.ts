@@ -1,13 +1,8 @@
 import { opensPlanGate } from '../pipeline-spec/steps.js';
-import { CREW_SEAT_LABELS, type CrewSeatId } from '../crew/identity.js';
-import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
-import type { Config } from '../schemas/config.js';
 import type { Phase } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { GateName, StepCut, StepRef } from '../schemas/run-step.js';
-import { fixCyclesOf, type SeatWait, type WorkflowState } from '../schemas/workflow.js';
-import { seatWaitMoved } from './held-seat.js';
-import type { RunRecord } from './run-record.js';
+import { fixCyclesOf, type WorkflowState } from '../schemas/workflow.js';
 
 /** What a run waiting for you waits on: the planner's question, a gate, or a halt. */
 export type WaitingOn =
@@ -24,7 +19,6 @@ export type StoppedOn =
       kept?: readonly string[];
     }
   | { kind: 'failed'; message: string }
-  | { kind: 'seat-wait'; seat: CrewSeatId; tool: string; resetAt: string }
   | { kind: 'interrupted' };
 
 /**
@@ -36,7 +30,7 @@ export type StopReason =
   | { kind: 'stopped'; on: StoppedOn };
 
 export type RunStatus =
-  | { kind: 'running'; seatWait?: { tool: string; resetAt: string } }
+  | { kind: 'running' }
   | { kind: 'open'; stop: StopReason; resumeAt: StepRef }
   | { kind: 'ready-to-apply'; override: boolean }
   | { kind: 'closed'; as: 'complete' | 'ended' | 'applied' | 'undone' | 'discarded' };
@@ -156,26 +150,6 @@ export function isAnsweredApplyRecovery(issue: RecoveryIssue): issue is Recovery
 }
 
 /**
- * The tool a seat wait waits on, in the catalog's words: the runner the halted call ran on, else,
- * for a wait saved without it, the seat's tool from the run's start. The live wait and the
- * stopped run both name it through here, so one wait reads the same on both.
- */
-export function seatWaitToolWord(state: WorkflowState, wait: SeatWait): string {
-  const started =
-    wait.seat === 'plan'
-      ? { tool: state.plannerTool, kind: state.plannerKind }
-      : wait.seat === 'build'
-        ? { tool: state.implementerTool, kind: state.implementerKind }
-        : state.reviewerTool !== undefined
-          ? { tool: state.reviewerTool, kind: state.reviewerKind }
-          : { tool: state.plannerTool, kind: state.plannerKind };
-  const ran = wait.tool !== undefined ? { tool: wait.tool, kind: wait.kind } : started;
-  return ran.tool === undefined
-    ? CREW_SEAT_LABELS[wait.seat]
-    : getRunnerIdentityDisplayName(ran.kind, ran.tool);
-}
-
-/**
  * How a run stands, from the state it saved and whether a process still holds it.
  * A passing review, or a failed one accepted as is, closes a run without a workspace or on the
  * checkout; a run with a worktree or staged copy becomes ready to apply once no process holds it
@@ -186,7 +160,6 @@ export function deriveRunStatus(
   input: Readonly<{
     state: WorkflowState;
     liveness: 'alive' | 'not-alive';
-    config?: Config | undefined;
   }>,
 ): RunStatus {
   const { state } = input;
@@ -202,17 +175,7 @@ export function deriveRunStatus(
   ) {
     return { kind: 'closed', as: 'complete' };
   }
-  if (input.liveness === 'alive') {
-    return {
-      kind: 'running',
-      ...(state.seatWait !== undefined && {
-        seatWait: {
-          tool: seatWaitToolWord(state, state.seatWait),
-          resetAt: state.seatWait.resetAt,
-        },
-      }),
-    };
-  }
+  if (input.liveness === 'alive') return { kind: 'running' };
   if (
     awaitsApply(state) &&
     state.pendingRecovery === undefined &&
@@ -235,17 +198,6 @@ export function deriveRunStatus(
 
   if (state.pendingRecovery !== undefined) {
     return waiting({ kind: 'halt', issue: state.pendingRecovery });
-  }
-  if (
-    state.seatWait !== undefined &&
-    (input.config === undefined || !seatWaitMoved(state.seatWait, input.config))
-  ) {
-    return stopped({
-      kind: 'seat-wait',
-      seat: state.seatWait.seat,
-      tool: seatWaitToolWord(state, state.seatWait),
-      resetAt: state.seatWait.resetAt,
-    });
   }
   if (
     state.pendingPlannerConversation !== undefined &&
@@ -273,19 +225,4 @@ export function deriveRunStatus(
     return stopped({ kind: 'failed', message: state.lastFailure.message });
   }
   return stopped({ kind: 'interrupted' });
-}
-
-/**
- * The status the at-rest screen shows. A run record never reads the config, so a saved seat wait is
- * checked here against the crew the screen holds: once the seat runs another tool, it waits no more.
- */
-export function atRestRunStatus(record: RunRecord, config: Config): RunStatus {
-  if (
-    record.status.kind !== 'open' ||
-    record.hydration.kind !== 'loaded' ||
-    record.hydration.state.seatWait === undefined
-  ) {
-    return record.status;
-  }
-  return deriveRunStatus({ state: record.hydration.state, liveness: 'not-alive', config });
 }

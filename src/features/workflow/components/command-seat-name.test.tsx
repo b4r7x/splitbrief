@@ -13,6 +13,7 @@ import {
 import { configStore } from '../../../stores/project/config.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -118,6 +119,7 @@ function buildBlockActivity(): string {
     tasks: tasksStore.get(),
     lifecycle: lifecycleStore.get(),
     operations: operationsStore.get(),
+    runView: runViewStore.get(),
     now: 2_500,
   }).activity;
 }
